@@ -25,6 +25,7 @@
 *.pem
 
 # debug
+.cursor/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -39,3 +40,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+data/
+.env.local

@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3001",
+    "dev:server": "tsx watch server.ts",
     "build": "next build",
-    "start": "next start",
+    "start": "tsx server.ts",
     "lint": "eslint"
   },
   "dependencies": {
@@ -20,12 +21,14 @@
     "net-snmp": "^3.26.1",
     "next": "16.1.6",
     "next-auth": "^5.0.0-beta.30",
+    "next-themes": "^0.4.6",
     "node-cron": "^4.2.1",
     "oui": "^13.1.5",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.8.0",
     "shadcn": "^4.0.6",
+    "sonner": "^2.0.7",
     "ssh2": "^1.17.0",
     "tailwind-merge": "^3.5.0",
     "tw-animate-css": "^1.4.0",

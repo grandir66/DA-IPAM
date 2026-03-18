@@ -2,7 +2,7 @@
  * Proxmox VE API Client
  *
  * Estrae dati da hypervisor Proxmox (host, nodi, VM, LXC) per popolare inventario.
- * Logica ispirata a Proxreporter (https://github.com/grandir66/Proxreporter).
+ * Logica ispirata a Proxreporter.
  * Uso locale: nessun invio dati, solo estrazione e visualizzazione.
  */
 

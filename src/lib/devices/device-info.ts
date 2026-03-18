@@ -685,9 +685,6 @@ $r | ConvertTo-Json -Depth 5 -Compress
       });
     }
 
-    // #region agent log
-    fetch('http://127.0.0.1:7630/ingest/d99436e5-32dc-4da5-8bde-3d69579c9980',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a53ed4'},body:JSON.stringify({sessionId:'a53ed4',location:'device-info.ts:parser',message:'raw WMI fields',data:{install_date:raw.install_date,last_boot:raw.last_boot,uptime_days:raw.uptime_days,license_status:raw.license_status,license_name:raw.license_name,license_partial_key:raw.license_partial_key,gpu:raw.gpu,installed_hotfixes_count:Array.isArray(raw.installed_hotfixes)?raw.installed_hotfixes.length:0,installed_software_count:raw.installed_software_count,key_software_count:Array.isArray(raw.key_software)?raw.key_software.length:0},timestamp:Date.now(),hypothesisId:'H1-H3-H4'})}).catch(()=>{});
-    // #endregion
     // Campi sistema estesi
     result.system_type = getStr(raw.system_type);
     result.os_serial = getStr(raw.os_serial);
@@ -706,9 +703,6 @@ $r | ConvertTo-Json -Depth 5 -Compress
     };
     result.install_date = parseWmiDate(raw.install_date);
     result.last_boot = parseWmiDate(raw.last_boot);
-    // #region agent log
-    fetch('http://127.0.0.1:7630/ingest/d99436e5-32dc-4da5-8bde-3d69579c9980',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a53ed4'},body:JSON.stringify({sessionId:'a53ed4',location:'device-info.ts:parsed-dates',message:'after parseWmiDate',data:{install_date_raw:raw.install_date,install_date_parsed:result.install_date,last_boot_raw:raw.last_boot,last_boot_parsed:result.last_boot},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     result.uptime_days = getNum(raw.uptime_days);
     result.bios_version = getStr(raw.bios_version);
     result.bios_manufacturer = getStr(raw.bios_manufacturer);

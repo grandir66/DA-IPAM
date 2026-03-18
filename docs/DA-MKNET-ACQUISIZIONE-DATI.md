@@ -1,6 +1,6 @@
 # Acquisizione dati per prodotto – DA-MKNET
 
-Analisi del progetto DA-MKNET (`/Users/riccardo/Progetti/DA-MKNET`) su come vengono acquisiti i dati per ogni vendor.
+Analisi del progetto DA-MKNET su come vengono acquisiti i dati per ogni vendor.
 
 ## Prodotti supportati
 

@@ -35,7 +35,7 @@ npm run lint         # Lint check
 - **Scanning:** child_process for ping/nmap, Node.js `dns` builtin
 - **Device integration:** ssh2 (SSH), net-snmp (SNMP), fetch (REST API)
 - **Scheduling:** node-cron via custom server (`server.ts`)
-- **Palette:** Primary #00A7E7, Navy #0D2537, Gold #FFD400, BG #EDEDED (domarc.it colors)
+- **Palette:** Primary #00A7E7, Navy #0D2537, Gold #FFD400, BG #EDEDED (brand colors)
 
 ## Architecture
 

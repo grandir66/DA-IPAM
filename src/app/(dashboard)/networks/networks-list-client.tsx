@@ -354,7 +354,7 @@ export function NetworksListClient({ initialNetworks, routers }: NetworksListCli
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="snmp_community">Community SNMP (default)</Label>
-                  <Input id="snmp_community" name="snmp_community" placeholder="es. public, domarcsnmp" className="font-mono" />
+                  <Input id="snmp_community" name="snmp_community" placeholder="es. public, privata" className="font-mono" />
                   <p className="text-xs text-muted-foreground">Usata per scansioni nmap su questa rete se il profilo non ne specifica una</p>
                 </div>
                 <div className="space-y-2">

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 /**
  * Test SNMP connectivity on a host.
- * GET /api/test-snmp?host=192.168.40.254&community=domarcsnmp
+ * GET /api/test-snmp?host=192.168.1.1&community=public
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

@@ -50,7 +50,7 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* DA-INVENT Theme — domarc.it palette */
+/* DA-INVENT Theme — brand palette */
 /* Primary: #00A7E7, Navy: #0D2537, Gold: #FFD400, BG: #EDEDED */
 :root {
   --background: #EDEDED;

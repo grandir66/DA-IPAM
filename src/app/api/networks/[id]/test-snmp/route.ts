@@ -3,7 +3,7 @@ import { getNetworkById, getHostsByNetwork } from "@/lib/db";
 import { snmpDebugQuery } from "@/lib/scanner/snmp-debug";
 
 /**
- * GET /api/networks/[id]/test-snmp?ip=192.168.30.254&community=mycommunity
+ * GET /api/networks/[id]/test-snmp?ip=192.168.1.1&community=public
  *
  * Diagnostica SNMP dettagliata: mostra varbinds raw, tipi, errori.
  * Senza ?ip= testa i primi 5 host della rete.

@@ -1,21 +1,153 @@
 import { NextResponse } from "next/server";
-import { getNetworkDeviceById, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice } from "@/lib/db";
+import { getNetworkDeviceById, updateNetworkDevice, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, getInventoryAssetByNetworkDevice, updateInventoryAsset, syncDeviceToHost, trackDeviceInfoChanges } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
+import { getDeviceInfo } from "@/lib/devices/device-info";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { upsertHost, getNetworks } from "@/lib/db";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
+
+const QUERY_TIMEOUT_MS = 120_000; // 2 min server-side (allineato al client)
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout: la scansione ha superato i 2 minuti. Verifica connettività del dispositivo.")), ms)
+    ),
+  ]);
+}
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const device = getNetworkDeviceById(Number(id));
     if (!device) {
       return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
     }
 
-    if (device.device_type === "router") {
-      const client = await createRouterClient(device);
+    const isWindows = device.protocol === "winrm" || device.vendor === "windows";
+    const isSshScannable = device.protocol === "ssh" && (device.vendor === "linux" || device.vendor === "other" || device.vendor === "synology" || device.vendor === "qnap");
+    const isSnmpInfoDevice =
+      (device.protocol === "snmp_v2" || device.protocol === "snmp_v3" || device.community_string || device.snmp_credential_id)
+      && ["stampante", "telecamera", "voip", "iot", "access_point", "firewall", "vm"].includes(device.classification ?? "");
+
+    const result = await withTimeout(
+      (async () => {
+        if (isWindows) {
+          const info = await getDeviceInfo(device);
+          const now = new Date().toISOString();
+          const hasInfo = info.sysname || info.sysdescr || info.model || info.firmware || info.serial_number || info.part_number || info.os_name;
+          if (hasInfo) {
+            const deviceInfoJson = JSON.stringify({ ...info, scanned_at: now });
+            trackDeviceInfoChanges(Number(id), info);
+            updateNetworkDevice(Number(id), {
+              sysname: info.sysname ?? (info.hostname as string | undefined) ?? undefined,
+              sysdescr: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : (info.sysdescr ?? undefined),
+              model: info.model ?? undefined,
+              firmware: info.os_build ? `Build ${info.os_build}` : (info.firmware ?? undefined),
+              serial_number: info.serial_number ?? undefined,
+              part_number: info.part_number ?? undefined,
+              last_info_update: now,
+              last_device_info_json: deviceInfoJson,
+            });
+            // Sync info su host collegato
+            syncDeviceToHost(Number(id));
+            const asset = getInventoryAssetByNetworkDevice(Number(id));
+            if (asset) {
+              updateInventoryAsset(asset.id, {
+                modello: info.model ?? undefined,
+                serial_number: info.serial_number ?? undefined,
+                firmware_version: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : undefined,
+                technical_data: deviceInfoJson,
+              });
+            }
+          }
+          const fields = Object.keys(info).filter(k => info[k as keyof typeof info] != null).length;
+          return NextResponse.json({
+            success: true,
+            message: `Dati Windows acquisiti: ${fields} campi da ${device.name}`,
+          });
+        }
+
+        if (isSshScannable) {
+          const info = await getDeviceInfo(device);
+          const now = new Date().toISOString();
+          const hasInfo = info.sysname || info.sysdescr || info.model || info.firmware || info.serial_number || info.part_number || info.os_name;
+          if (hasInfo) {
+            const deviceInfoJson = JSON.stringify({ ...info, scanned_at: now });
+            trackDeviceInfoChanges(Number(id), info);
+            updateNetworkDevice(Number(id), {
+              sysname: info.sysname ?? (info.hostname as string | undefined) ?? undefined,
+              sysdescr: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : (info.sysdescr ?? undefined),
+              model: info.model ?? undefined,
+              firmware: info.os_version ? info.os_version : (info.firmware ?? undefined),
+              serial_number: info.serial_number ?? undefined,
+              part_number: info.part_number ?? undefined,
+              last_info_update: now,
+              last_device_info_json: deviceInfoJson,
+            });
+            // Sync info su host collegato
+            syncDeviceToHost(Number(id));
+            const asset = getInventoryAssetByNetworkDevice(Number(id));
+            if (asset) {
+              updateInventoryAsset(asset.id, {
+                modello: info.model ?? undefined,
+                serial_number: info.serial_number ?? undefined,
+                firmware_version: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : undefined,
+                technical_data: deviceInfoJson,
+              });
+            }
+          }
+          const fields = Object.keys(info).filter(k => info[k as keyof typeof info] != null).length;
+          const scanType = device.vendor === "synology" || device.vendor === "qnap" ? "Storage" : "Linux";
+          return NextResponse.json({
+            success: true,
+            message: `Dati ${scanType} acquisiti: ${fields} campi da ${device.name}`,
+          });
+        }
+
+        if (isSnmpInfoDevice) {
+          const info = await getDeviceInfo(device);
+          const now = new Date().toISOString();
+          const hasInfo = info.sysname || info.sysdescr || info.model || info.firmware || info.serial_number || info.part_number;
+          if (hasInfo) {
+            const deviceInfoJson = JSON.stringify({ ...info, scanned_at: now });
+            trackDeviceInfoChanges(Number(id), info);
+            updateNetworkDevice(Number(id), {
+              sysname: info.sysname ?? (info.hostname as string | undefined) ?? undefined,
+              sysdescr: info.sysdescr ?? undefined,
+              model: info.model ?? undefined,
+              firmware: info.firmware ?? undefined,
+              serial_number: info.serial_number ?? undefined,
+              part_number: info.part_number ?? undefined,
+              last_info_update: now,
+              last_device_info_json: deviceInfoJson,
+            });
+            // Sync info su host collegato
+            syncDeviceToHost(Number(id));
+            const asset = getInventoryAssetByNetworkDevice(Number(id));
+            if (asset) {
+              updateInventoryAsset(asset.id, {
+                modello: info.model ?? undefined,
+                serial_number: info.serial_number ?? undefined,
+                firmware_version: info.sysdescr ?? undefined,
+                technical_data: deviceInfoJson,
+              });
+            }
+          }
+          const fields = Object.keys(info).filter(k => info[k as keyof typeof info] != null).length;
+          return NextResponse.json({
+            success: true,
+            message: `Dati SNMP acquisiti: ${fields} campi da ${device.name}`,
+          });
+        }
+
+        if (device.device_type === "router") {
+          const client = await createRouterClient(device);
       const entries = await client.getArpTable();
 
       upsertArpEntries(Number(id), entries);
@@ -110,11 +242,54 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             trunk_neighbor_port: p.trunk_neighbor_port ?? null,
             trunk_primary_device_id,
             trunk_primary_name,
+            stp_state: p.stp_state ?? null,
           };
         });
 
         upsertSwitchPorts(deviceId, switchPorts);
       }
+
+      try {
+        const info = await getDeviceInfo(device);
+        const now = new Date().toISOString();
+        const hasInfo = info.sysname || info.sysdescr || info.model || info.firmware || info.serial_number || info.part_number;
+        if (hasInfo) {
+          const deviceInfoJson = JSON.stringify({ ...info, scanned_at: now });
+          trackDeviceInfoChanges(Number(id), info);
+          updateNetworkDevice(Number(id), {
+            sysname: info.sysname ?? undefined,
+            sysdescr: info.sysdescr ?? undefined,
+            model: info.model ?? undefined,
+            firmware: info.firmware ?? undefined,
+            serial_number: info.serial_number ?? undefined,
+            part_number: info.part_number ?? undefined,
+            last_info_update: now,
+            last_device_info_json: deviceInfoJson,
+          });
+          // Sync info su host collegato
+          syncDeviceToHost(Number(id));
+          const asset = getInventoryAssetByNetworkDevice(Number(id));
+          if (asset) {
+            const technicalData = JSON.stringify({
+              source: "device",
+              sysname: info.sysname,
+              sysdescr: info.sysdescr,
+              model: info.model,
+              firmware: info.firmware,
+              serial_number: info.serial_number,
+              part_number: info.part_number,
+              last_info_update: now,
+            });
+            updateInventoryAsset(asset.id, {
+              modello: info.model ?? undefined,
+              serial_number: info.serial_number ?? undefined,
+              part_number: info.part_number ?? undefined,
+              firmware_version: info.firmware ?? undefined,
+              technical_data: technicalData,
+            });
+          }
+        }
+      } catch { /* device info opzionale */ }
 
       const portsMsg = portInfos.length > 0 ? ` e ${portInfos.length} porte` : "";
       return NextResponse.json({
@@ -205,11 +380,63 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             trunk_neighbor_port: p.trunk_neighbor_port ?? null,
             trunk_primary_device_id,
             trunk_primary_name,
+            stp_state: p.stp_state ?? null,
           };
         });
 
         upsertSwitchPorts(deviceId, switchPorts);
       }
+
+      try {
+        const info = await getDeviceInfo(device);
+        const now = new Date().toISOString();
+        const hasInfo = info.sysname || info.sysdescr || info.model || info.firmware || info.serial_number || info.part_number;
+        if (hasInfo) {
+          const deviceInfoJson = JSON.stringify({ ...info, scanned_at: now });
+          trackDeviceInfoChanges(Number(id), info);
+          updateNetworkDevice(Number(id), {
+            sysname: info.sysname ?? undefined,
+            sysdescr: info.sysdescr ?? undefined,
+            model: info.model ?? undefined,
+            firmware: info.firmware ?? undefined,
+            serial_number: info.serial_number ?? undefined,
+            part_number: info.part_number ?? undefined,
+            last_info_update: now,
+            last_device_info_json: deviceInfoJson,
+          });
+          // Sync info su host collegato
+          syncDeviceToHost(Number(id));
+          const asset = getInventoryAssetByNetworkDevice(Number(id));
+          if (asset) {
+            const technicalData = JSON.stringify({
+              source: "device",
+              sysname: info.sysname,
+              sysdescr: info.sysdescr,
+              model: info.model,
+              firmware: info.firmware,
+              serial_number: info.serial_number,
+              part_number: info.part_number,
+              last_info_update: now,
+            });
+            updateInventoryAsset(asset.id, {
+              modello: info.model ?? undefined,
+              serial_number: info.serial_number ?? undefined,
+              part_number: info.part_number ?? undefined,
+              firmware_version: info.firmware ?? undefined,
+              technical_data: technicalData,
+            });
+          }
+        }
+      } catch { /* device info opzionale */ }
+
+      try {
+        if ("getStpInfo" in client && typeof client.getStpInfo === "function") {
+          const stpInfo = await client.getStpInfo();
+          if (stpInfo) {
+            updateNetworkDevice(Number(id), { stp_info: JSON.stringify(stpInfo) });
+          }
+        }
+      } catch { /* STP opzionale */ }
 
       return NextResponse.json({
         success: true,
@@ -218,6 +445,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         message: `${entries.length} MAC e ${portInfos.length} porte acquisite da ${device.name}`,
       });
     }
+      })(),
+      QUERY_TIMEOUT_MS
+    );
+
+    return result;
   } catch (error) {
     console.error("Device query error:", error);
     return NextResponse.json(

@@ -97,12 +97,17 @@ export const IpGrid = memo(function IpGrid({ cidr, hosts, gateway }: IpGridProps
     if (cell.isBroadcast) lines.push("Broadcast");
     if (cell.isGateway) lines.push("Gateway");
     if (cell.host) {
-      const name = cell.host.custom_name || cell.host.hostname || null;
+      const name = cell.host.custom_name || cell.host.hostname || cell.host.dns_reverse || null;
       if (name) lines.push(`Nome: ${name}`);
       lines.push(`Stato: ${cell.host.status}`);
       if (cell.host.mac) lines.push(`MAC: ${cell.host.mac}`);
       if (cell.host.vendor) lines.push(`Vendor: ${cell.host.vendor}`);
       if (cell.host.classification) lines.push(`Classificazione: ${cell.host.classification}`);
+      const device = (cell.host as { device?: { id: number; name: string; sysname?: string | null; vendor: string; protocol: string } }).device;
+      if (device) {
+        const displayName = cell.host.custom_name || cell.host.hostname || cell.host.dns_reverse || device.sysname || (device.name !== cell.host.ip ? device.name : null) || "—";
+        lines.push(`Dispositivo: ${displayName} (${device.vendor}, ${device.protocol.toUpperCase()})`);
+      }
       if (cell.host.open_ports) {
         try {
           const ports = JSON.parse(cell.host.open_ports) as { port: number; protocol?: string }[];

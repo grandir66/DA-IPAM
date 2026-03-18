@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs";
 import { invalidateCustomOuiCache } from "@/lib/scanner/mac-vendor";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const CUSTOM_OUI_PATH = path.join(DATA_DIR, "custom_oui.txt");
@@ -21,6 +22,8 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
     const content = typeof body.content === "string" ? body.content : "";
     if (!fs.existsSync(DATA_DIR)) {

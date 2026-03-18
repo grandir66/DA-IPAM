@@ -95,6 +95,26 @@ export async function getSnmpPortSchema(snmpWalk: SnmpWalkFn): Promise<PortInfo[
     }
   } catch { /* optional */ }
 
+  const stpStateByBridgePort = new Map<number, string>();
+  const stpStateByIfIndex = new Map<number, string>();
+  try {
+    const stpResults = await snmpWalk("1.3.6.1.2.1.17.2.15.1.3");
+    const labels: Record<number, string> = {
+      1: "disabled", 2: "blocking", 3: "listening", 4: "learning", 5: "forwarding", 6: "broken",
+    };
+    for (const r of stpResults) {
+      const bridgePort = parseInt(r.oid.split(".").pop()!);
+      const val = Number(r.value);
+      const state = labels[val] || `stp-${val}`;
+      stpStateByBridgePort.set(bridgePort, state);
+    }
+    // Mappa ifIndex -> stato STP usando dot1dBasePortIfIndex (bridgePort -> ifIndex)
+    for (const [ifIdx, brPort] of bridgePortMap) {
+      const state = stpStateByBridgePort.get(brPort);
+      if (state) stpStateByIfIndex.set(ifIdx, state);
+    }
+  } catch { /* STP opzionale */ }
+
   const neighborByPort = new Map<number, { name: string; port: string }>();
   try {
     const lldpSysResults = await snmpWalk("1.0.8802.1.1.2.1.4.1.1.9");
@@ -163,6 +183,9 @@ export async function getSnmpPortSchema(snmpWalk: SnmpWalkFn): Promise<PortInfo[
     const neighbor = neighborByPort.get(ifIndex) ?? (bridgePort != null ? neighborByPort.get(bridgePort) : null);
     const trunk_neighbor_name = neighbor?.name ? neighbor.name : null;
     const trunk_neighbor_port = neighbor?.port ? neighbor.port : null;
+    const stp_state = (bridgePort != null ? stpStateByBridgePort.get(bridgePort) : null)
+      ?? stpStateByIfIndex.get(ifIndex)
+      ?? (stpStateByBridgePort.get(ifIndex) ?? null);
 
     ports.push({
       port_index: ifIndex,
@@ -175,6 +198,7 @@ export async function getSnmpPortSchema(snmpWalk: SnmpWalkFn): Promise<PortInfo[
       poe_power_mw,
       trunk_neighbor_name: trunk_neighbor_name || null,
       trunk_neighbor_port: trunk_neighbor_port || null,
+      stp_state,
     });
   }
 

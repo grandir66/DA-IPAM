@@ -40,14 +40,19 @@ export const HostUpdateSchema = z.object({
   notes: z.string().max(2000).optional(),
   mac: z.string().regex(macRegex, "MAC address non valido").optional().or(z.literal("")),
   known_host: z.union([z.literal(0), z.literal(1)]).optional(),
+  monitor_ports: z.string().max(500).optional().nullable(),
 });
 
 export const NetworkDeviceSchema = z.object({
   name: z.string().min(1, "Nome richiesto").max(100),
-  host: z.string().regex(ipRegex, "Indirizzo IP non valido"),
-  device_type: z.enum(["router", "switch"]),
-  vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "other"]),
-  protocol: z.enum(["ssh", "snmp_v2", "snmp_v3", "api"]),
+  host: z.string().min(1, "Host richiesto").max(255),
+  device_type: z.enum(["router", "switch", "hypervisor"]),
+  classification: z.string().max(100).optional().nullable(),
+  vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"]),
+  vendor_subtype: z.enum(["procurve", "comware"]).optional().nullable(),
+  protocol: z.enum(["ssh", "snmp_v2", "snmp_v3", "api", "winrm"]),
+  credential_id: z.coerce.number().int().positive().optional().nullable(),
+  snmp_credential_id: z.coerce.number().int().positive().optional().nullable(),
   username: z.string().max(100).optional(),
   password: z.string().max(200).optional(),
   community_string: z.string().max(100).optional(),
@@ -56,17 +61,87 @@ export const NetworkDeviceSchema = z.object({
   port: z.coerce.number().int().min(1).max(65535).optional(),
 });
 
+export const CredentialSchema = z.object({
+  name: z.string().min(1, "Nome richiesto").max(100),
+  credential_type: z.enum(["ssh", "snmp", "api", "windows", "linux"]),
+  username: z.string().max(100).optional(),
+  password: z.string().max(200).optional(),
+});
+
 export const ScheduledJobSchema = z.object({
   network_id: z.coerce.number().int().positive().optional().nullable(),
-  job_type: z.enum(["ping_sweep", "nmap_scan", "arp_poll", "dns_resolve", "cleanup"]),
+  job_type: z.enum(["ping_sweep", "snmp_scan", "nmap_scan", "arp_poll", "dns_resolve", "cleanup", "known_host_check"]),
   interval_minutes: z.coerce.number().int().min(1).max(10080), // max 1 week
   config: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const ScanTriggerSchema = z.object({
   network_id: z.coerce.number().int().positive(),
-  scan_type: z.enum(["ping", "nmap", "arp_poll", "dhcp"]),
+  scan_type: z.enum(["ping", "snmp", "nmap", "arp_poll", "dhcp", "windows", "ssh", "dns"]),
   nmap_profile_id: z.coerce.number().int().positive().optional(),
+});
+
+const inventoryCategoria = z.enum(["Desktop", "Laptop", "Server", "Switch", "Firewall", "NAS", "Stampante", "VM", "Licenza", "Access Point", "Router", "Other"]).optional().nullable();
+const inventoryStato = z.enum(["Attivo", "In magazzino", "In riparazione", "Dismesso", "Rubato"]).optional().nullable();
+const inventoryStorageTipo = z.enum(["SSD", "HDD", "NVMe"]).optional().nullable();
+const inventoryClassificazioneDati = z.enum(["Pubblico", "Interno", "Confidenziale", "Riservato"]).optional().nullable();
+
+export const InventoryAssetSchema = z.object({
+  asset_tag: z.string().max(100).optional().nullable(),
+  serial_number: z.string().max(200).optional().nullable(),
+  network_device_id: z.coerce.number().int().positive().optional().nullable(),
+  host_id: z.coerce.number().int().positive().optional().nullable(),
+  hostname: z.string().max(255).optional().nullable(),
+  nome_prodotto: z.string().max(200).optional().nullable(),
+  categoria: inventoryCategoria,
+  marca: z.string().max(100).optional().nullable(),
+  modello: z.string().max(200).optional().nullable(),
+  part_number: z.string().max(100).optional().nullable(),
+  sede: z.string().max(200).optional().nullable(),
+  reparto: z.string().max(100).optional().nullable(),
+  utente_assegnatario_id: z.coerce.number().int().positive().optional().nullable(),
+  asset_assignee_id: z.coerce.number().int().positive().optional().nullable(),
+  location_id: z.coerce.number().int().positive().optional().nullable(),
+  posizione_fisica: z.string().max(200).optional().nullable(),
+  data_assegnazione: z.string().max(20).optional().nullable(),
+  data_acquisto: z.string().max(20).optional().nullable(),
+  data_installazione: z.string().max(20).optional().nullable(),
+  data_dismissione: z.string().max(20).optional().nullable(),
+  stato: inventoryStato,
+  fine_garanzia: z.string().max(20).optional().nullable(),
+  fine_supporto: z.string().max(20).optional().nullable(),
+  vita_utile_prevista: z.coerce.number().int().min(1).max(50).optional().nullable(),
+  sistema_operativo: z.string().max(100).optional().nullable(),
+  versione_os: z.string().max(50).optional().nullable(),
+  cpu: z.string().max(200).optional().nullable(),
+  ram_gb: z.coerce.number().int().min(0).optional().nullable(),
+  storage_gb: z.coerce.number().int().min(0).optional().nullable(),
+  storage_tipo: inventoryStorageTipo,
+  mac_address: z.string().max(100).optional().nullable(),
+  ip_address: z.string().max(50).optional().nullable(),
+  vlan: z.coerce.number().int().min(0).max(4094).optional().nullable(),
+  firmware_version: z.string().max(100).optional().nullable(),
+  prezzo_acquisto: z.coerce.number().min(0).optional().nullable(),
+  fornitore: z.string().max(200).optional().nullable(),
+  numero_ordine: z.string().max(100).optional().nullable(),
+  numero_fattura: z.string().max(100).optional().nullable(),
+  valore_attuale: z.coerce.number().min(0).optional().nullable(),
+  metodo_ammortamento: z.enum(["Lineare", "Quote decrescenti"]).optional().nullable(),
+  centro_di_costo: z.string().max(100).optional().nullable(),
+  crittografia_disco: z.coerce.number().int().min(0).max(1).optional(),
+  antivirus: z.string().max(100).optional().nullable(),
+  gestito_da_mdr: z.coerce.number().int().min(0).max(1).optional(),
+  classificazione_dati: inventoryClassificazioneDati,
+  in_scope_gdpr: z.coerce.number().int().min(0).max(1).optional(),
+  in_scope_nis2: z.coerce.number().int().min(0).max(1).optional(),
+  ultimo_audit: z.string().max(20).optional().nullable(),
+  contratto_supporto: z.string().max(200).optional().nullable(),
+  tipo_garanzia: z.string().max(100).optional().nullable(),
+  contatto_supporto: z.string().max(500).optional().nullable(),
+  ultimo_intervento: z.string().max(20).optional().nullable(),
+  prossima_manutenzione: z.string().max(20).optional().nullable(),
+  note_tecniche: z.string().max(5000).optional().nullable(),
+  technical_data: z.string().max(50000).optional().nullable(),
 });
 
 export const LoginSchema = z.object({

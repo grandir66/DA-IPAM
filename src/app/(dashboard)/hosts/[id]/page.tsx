@@ -19,6 +19,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -28,12 +35,13 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { formatPortsDisplay } from "@/lib/utils";
-import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
+import { DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel } from "@/lib/device-classifications";
 import { UptimeTimeline } from "@/components/shared/uptime-timeline";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, Save, Router, Cable, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, Router, Cable, Trash2, Server, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import type { HostDetail } from "@/types";
+import { LatencyChart } from "./latency-chart";
 
 export default function HostDetailPage() {
   const params = useParams();
@@ -47,6 +55,7 @@ export default function HostDetailPage() {
     inventory_code: "",
     notes: "",
     known_host: 0 as 0 | 1,
+    monitor_ports: "",
   });
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -59,12 +68,21 @@ export default function HostDetailPage() {
     }
     const data = await res.json();
     setHost(data);
+    // Parse monitor_ports JSON array to comma-separated string for display
+    let monitorPortsStr = "";
+    if (data.monitor_ports) {
+      try {
+        const arr = JSON.parse(data.monitor_ports);
+        if (Array.isArray(arr)) monitorPortsStr = arr.join(", ");
+      } catch { /* ignore */ }
+    }
     setForm({
       custom_name: data.custom_name || "",
       classification: data.classification || "",
       inventory_code: data.inventory_code || "",
       notes: data.notes || "",
       known_host: (data.known_host ?? 0) ? 1 : 0,
+      monitor_ports: monitorPortsStr,
     });
     setLoading(false);
   }, [params.id, router]);
@@ -75,11 +93,22 @@ export default function HostDetailPage() {
 
   async function handleSave() {
     setSaving(true);
-    const { known_host, ...rest } = form;
+    const { known_host, monitor_ports, ...rest } = form;
+    // Convert comma-separated ports to JSON array
+    let monitorPortsJson: string | null = null;
+    if (monitor_ports.trim()) {
+      const ports = monitor_ports
+        .split(",")
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => !isNaN(n) && n >= 1 && n <= 65535);
+      if (ports.length > 0) {
+        monitorPortsJson = JSON.stringify(ports);
+      }
+    }
     const res = await fetch(`/api/hosts/${params.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...rest, known_host }),
+      body: JSON.stringify({ ...rest, known_host, monitor_ports: monitorPortsJson }),
     });
 
     if (res.ok) {
@@ -199,17 +228,22 @@ export default function HostDetailPage() {
             </div>
             <div className="space-y-2">
               <Label>Classificazione</Label>
-              <Input
-                list="classification-list"
-                value={form.classification}
-                onChange={(e) => setForm({ ...form, classification: e.target.value })}
-                placeholder="Seleziona o digita..."
-              />
-              <datalist id="classification-list">
-                {DEVICE_CLASSIFICATIONS.map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
+              <Select
+                value={form.classification || "__empty__"}
+                onValueChange={(v) => setForm({ ...form, classification: v === "__empty__" ? "" : (v ?? "") })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleziona classificazione..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__empty__">— Nessuna —</SelectItem>
+                  {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {getClassificationLabel(c)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Codice Inventario</Label>
@@ -227,6 +261,17 @@ export default function HostDetailPage() {
                 placeholder="Note aggiuntive..."
                 rows={3}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Porte di monitoraggio TCP</Label>
+              <Input
+                value={form.monitor_ports}
+                onChange={(e) => setForm({ ...form, monitor_ports: e.target.value })}
+                placeholder="22, 80, 443, 3389..."
+              />
+              <p className="text-xs text-muted-foreground">
+                Porte separate da virgola. Verranno controllate nei check periodici.
+              </p>
             </div>
             <Button onClick={handleSave} disabled={saving} className="w-full">
               <Save className="h-4 w-4 mr-2" />
@@ -265,6 +310,37 @@ export default function HostDetailPage() {
         } catch { return null; }
       })()}
 
+      {/* Dispositivo gestito (stesso IP) */}
+      {host.network_device && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Server className="h-4 w-4" />
+              Dispositivo gestito
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Questo host corrisponde a un dispositivo configurato per acquisizione dati (WINRM, SSH, SNMP, ecc.)
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between rounded-lg border p-4">
+              <div>
+                <p className="font-medium">{host.custom_name || host.hostname || host.network_device.sysname || (host.network_device.name !== host.ip ? host.network_device.name : null) || "—"}</p>
+                <p className="text-sm text-muted-foreground capitalize">
+                  {host.network_device.vendor} · {host.network_device.protocol.toUpperCase()}
+                </p>
+              </div>
+              <Link href={`/devices/${host.network_device.id}`}>
+                <Button variant="outline" size="sm" className="gap-2">
+                  Dettagli dispositivo
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Network Connection Info */}
       {(host.arp_source || host.switch_port) && (
         <Card>
@@ -296,6 +372,9 @@ export default function HostDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Latency Chart */}
+      <LatencyChart hostId={host.id} />
 
       {/* Uptime Timeline */}
       <Card>

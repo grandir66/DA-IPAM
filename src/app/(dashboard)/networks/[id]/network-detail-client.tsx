@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -38,13 +38,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { IpGrid } from "@/components/shared/ip-grid";
 import { ScanProgress } from "@/components/shared/scan-progress";
-import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, ExternalLink, Router, Cable, MoreHorizontal } from "lucide-react";
+import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, Cpu, ExternalLink, Router, Cable, MoreHorizontal, X, Plus, Monitor, Server, Terminal } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
-import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
+
+type HostWithDevice = Host & { device_id?: number; device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string } };
+import { DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel } from "@/lib/device-classifications";
+import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
 
 const REFRESH_INTERVALS = [
   { value: 0, label: "Off" },
@@ -64,7 +68,7 @@ interface NmapProfile {
 
 interface NetworkDetailClientProps {
   network: Network;
-  initialHosts: Host[];
+  initialHosts: (Host & { device_id?: number })[];
   routerId: number | null;
   routers: NetworkDevice[];
   nmapProfiles: NmapProfile[];
@@ -80,8 +84,16 @@ export function NetworkDetailClient({
   const router = useRouter();
   const [network, setNetwork] = useState(initialNetwork);
   const [routerId, setRouterId] = useState<number | null>(initialRouterId);
-  const [hosts, setHosts] = useState<Host[]>(initialHosts);
+  const [hosts, setHosts] = useState<HostWithDevice[]>(initialHosts);
   const [scanning, setScanning] = useState<ScanProgressType | null>(null);
+  const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cleanup interval on unmount per evitare memory leak
+  useEffect(() => {
+    return () => {
+      if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
+    };
+  }, []);
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState<string>(
@@ -108,6 +120,8 @@ export function NetworkDetailClient({
   const [editingField, setEditingField] = useState<"custom_name" | "notes" | "classification" | null>(null);
   const [arpPolling, setArpPolling] = useState(false);
   const [dhcpPolling, setDhcpPolling] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [dnsResolving, setDnsResolving] = useState(false);
   const [hostEditOpen, setHostEditOpen] = useState(false);
   const [hostEditId, setHostEditId] = useState<number | null>(null);
   const [hostEditForm, setHostEditForm] = useState({
@@ -122,11 +136,31 @@ export function NetworkDetailClient({
   const [addDeviceType, setAddDeviceType] = useState<"router" | "switch">("router");
   const [addDeviceVendor, setAddDeviceVendor] = useState("mikrotik");
   const [addDeviceProtocol, setAddDeviceProtocol] = useState("ssh");
+  const [addDeviceCredentialId, setAddDeviceCredentialId] = useState<string | null>(null);
+  const [addDeviceSnmpCredentialId, setAddDeviceSnmpCredentialId] = useState<string | null>(null);
+  const [addDeviceVendorSubtype, setAddDeviceVendorSubtype] = useState<string | null>(null);
+  const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
   const [addDeviceSaving, setAddDeviceSaving] = useState(false);
+  const [selectedHostIds, setSelectedHostIds] = useState<Set<number>>(new Set());
+  const [bulkAddOpen, setBulkAddOpen] = useState(false);
+  const [bulkAddClassification, setBulkAddClassification] = useState("server");
+  const [bulkAddProtocol, setBulkAddProtocol] = useState("ssh");
+  const [bulkAddVendor, setBulkAddVendor] = useState("mikrotik");
+  const [bulkAddCredentialId, setBulkAddCredentialId] = useState<string | null>(null);
+  const [bulkAddSnmpCredentialId, setBulkAddSnmpCredentialId] = useState<string | null>(null);
+  const [bulkAddVendorSubtype, setBulkAddVendorSubtype] = useState<string | null>(null);
+  const [bulkAddSaving, setBulkAddSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/credentials")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setAddDeviceCredentials)
+      .catch(() => setAddDeviceCredentials([]));
+  }, []);
 
   const refreshHosts = useCallback(async () => {
     try {
-      const res = await fetch(`/api/networks/${network.id}`);
+      const res = await fetch(`/api/networks/${network.id}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setHosts(data.hosts ?? []);
@@ -172,7 +206,7 @@ export function NetworkDetailClient({
     return () => clearInterval(id);
   }, [autoRefreshInterval, autoScanPing, network.id, refreshHosts]);
 
-  async function saveHostField(hostId: number, field: "custom_name" | "notes" | "classification" | "known_host", value: string | number) {
+  async function saveHostField(hostId: number, field: "custom_name" | "notes" | "classification" | "known_host", value: string | number, deviceId?: number) {
     try {
       const payload = field === "known_host" ? { known_host: value as 0 | 1 } : { [field]: value };
       const res = await fetch(`/api/hosts/${hostId}`, {
@@ -182,7 +216,15 @@ export function NetworkDetailClient({
       });
       if (res.ok) {
         const updated = await res.json();
-        setHosts((prev) => prev.map((h) => (h.id === hostId ? (updated as Host) : h)));
+        setHosts((prev) => prev.map((h) => (h.id === hostId ? { ...(updated as Host), device_id: (h as HostWithDevice).device_id } : h)));
+        if (field === "classification" && deviceId != null) {
+          const patchRes = await fetch(`/api/devices/${deviceId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ classification: value }),
+          });
+          if (!patchRes.ok) toast.error("Host aggiornato, ma errore nell'aggiornamento del dispositivo");
+        }
         toast.success("Salvato");
       } else {
         toast.error("Errore nel salvataggio");
@@ -197,12 +239,71 @@ export function NetworkDetailClient({
 
   const filteredHosts = hosts.filter((h) => {
     if (filterStatus && h.status !== filterStatus) return false;
-    if (filterClassification && h.classification !== filterClassification) return false;
+    if (filterClassification) {
+      if (filterClassification === "__empty__") {
+        if (h.classification) return false;
+      } else if (h.classification !== filterClassification) {
+        return false;
+      }
+    }
     if (filterKnownOnly && !h.known_host) return false;
     return true;
   });
 
-  const classifications = [...new Set(hosts.map((h) => h.classification).filter(Boolean))].sort();
+  const toggleSelectHost = (id: number) => {
+    setSelectedHostIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllHosts = () => {
+    if (selectedHostIds.size === filteredHosts.length) {
+      setSelectedHostIds(new Set());
+    } else {
+      setSelectedHostIds(new Set(filteredHosts.map((h) => h.id)));
+    }
+  };
+
+  const clearHostSelection = () => setSelectedHostIds(new Set());
+
+  async function handleBulkAdd() {
+    if (selectedHostIds.size === 0) return;
+    const hasCred = bulkAddCredentialId && bulkAddCredentialId !== "none";
+    const hasSnmpCred = bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none";
+    setBulkAddSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        host_ids: Array.from(selectedHostIds),
+        classification: bulkAddClassification,
+        protocol: bulkAddProtocol,
+        vendor_subtype: bulkAddProtocol === "ssh" && bulkAddVendor === "hp" && bulkAddVendorSubtype ? bulkAddVendorSubtype : null,
+      };
+      if (bulkAddProtocol === "ssh" || bulkAddProtocol === "api" || bulkAddProtocol === "winrm") body.vendor = bulkAddVendor;
+      if (hasCred) body.credential_id = Number(bulkAddCredentialId);
+      if (hasSnmpCred) body.snmp_credential_id = Number(bulkAddSnmpCredentialId);
+      const res = await fetch("/api/devices/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        setBulkAddOpen(false);
+        clearHostSelection();
+        await refreshHosts();
+        router.refresh();
+      } else {
+        toast.error(data.error || "Errore nell'aggiunta");
+      }
+    } catch {
+      toast.error("Errore nell'aggiunta");
+    }
+    setBulkAddSaving(false);
+  }
 
   function openHostEdit(host: Host) {
     setHostEditId(host.id);
@@ -221,6 +322,8 @@ export function NetworkDetailClient({
     setAddDeviceType(deviceType);
     setAddDeviceVendor(deviceType === "router" ? "mikrotik" : "cisco");
     setAddDeviceProtocol("ssh");
+    setAddDeviceCredentialId(null);
+    setAddDeviceVendorSubtype(null);
     setAddDeviceOpen(true);
   }
 
@@ -236,12 +339,19 @@ export function NetworkDetailClient({
       host: addDeviceHost.ip,
       vendor: addDeviceVendor,
       protocol: addDeviceProtocol,
+      credential_id: addDeviceCredentialId && addDeviceCredentialId !== "none" ? Number(addDeviceCredentialId) : null,
+      snmp_credential_id: addDeviceSnmpCredentialId && addDeviceSnmpCredentialId !== "none" ? Number(addDeviceSnmpCredentialId) : null,
+      vendor_subtype: addDeviceVendor === "hp" && addDeviceVendorSubtype ? addDeviceVendorSubtype : null,
     };
     formData.forEach((val, key) => {
       if (val && !["device_type", "name", "host", "vendor", "protocol"].includes(key)) {
         body[key] = key === "port" ? Number(val) || undefined : val;
       }
     });
+    if (body.credential_id) {
+      delete body.username;
+      delete body.password;
+    }
     try {
       const res = await fetch("/api/devices", {
         method: "POST",
@@ -252,6 +362,7 @@ export function NetworkDetailClient({
         toast.success(addDeviceType === "router" ? "Router aggiunto" : "Switch aggiunto");
         setAddDeviceOpen(false);
         setAddDeviceHost(null);
+        await refreshHosts();
       } else {
         const data = await res.json();
         toast.error(data.error || "Errore nella creazione");
@@ -264,6 +375,8 @@ export function NetworkDetailClient({
 
   async function saveHostEdit() {
     if (!hostEditId) return;
+    const host = hosts.find((h) => h.id === hostEditId) as HostWithDevice | undefined;
+    const deviceId = host?.device_id;
     try {
       const res = await fetch(`/api/hosts/${hostEditId}`, {
         method: "PUT",
@@ -272,7 +385,14 @@ export function NetworkDetailClient({
       });
       if (res.ok) {
         const updated = await res.json();
-        setHosts((prev) => prev.map((h) => (h.id === hostEditId ? (updated as Host) : h)));
+        setHosts((prev) => prev.map((h) => (h.id === hostEditId ? (updated as Host & { device_id?: number }) : h)));
+        if (deviceId != null) {
+          await fetch(`/api/devices/${deviceId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ classification: hostEditForm.classification || null }),
+          });
+        }
         toast.success("Host aggiornato");
         setHostEditOpen(false);
         setHostEditId(null);
@@ -324,7 +444,7 @@ export function NetworkDetailClient({
     }
   }
 
-  async function triggerScan(scanType: "ping" | "nmap") {
+  async function triggerScan(scanType: "ping" | "snmp" | "nmap" | "windows" | "ssh") {
     const body: Record<string, unknown> = {
       network_id: network.id,
       scan_type: scanType,
@@ -344,10 +464,12 @@ export function NetworkDetailClient({
       return;
     }
 
+    const labels: Record<string, string> = { ping: "Ping", snmp: "SNMP", nmap: "Nmap", windows: "Windows", ssh: "Linux (SSH)" };
     const data = await res.json();
-    toast.success(`Scansione ${scanType} avviata`);
+    toast.success(`Scansione ${labels[scanType]} avviata`);
     setScanning(data.progress);
 
+    if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
     const interval = setInterval(async () => {
       try {
         const progressRes = await fetch(`/api/scans/progress/${data.id}`);
@@ -356,42 +478,96 @@ export function NetworkDetailClient({
           setScanning(progress);
           if (progress.status === "completed" || progress.status === "failed") {
             clearInterval(interval);
-            setScanning(null);
-            if (progress.status === "completed") {
-              toast.success(`Scansione completata: ${progress.found} host trovati`);
-            } else {
-              toast.error(`Scansione fallita: ${progress.error}`);
-            }
+            scanIntervalRef.current = null;
+            // Il modale resta aperto — l'utente chiude con il pulsante
             refreshHosts();
             router.refresh();
           }
         }
       } catch {
         clearInterval(interval);
+        scanIntervalRef.current = null;
         setScanning(null);
       }
-    }, 2000);
+    }, 1000);
+    scanIntervalRef.current = interval;
   }
 
   async function triggerArpPoll() {
     setArpPolling(true);
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 60000);
       const res = await fetch("/api/scans/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ network_id: network.id, scan_type: "arp_poll" }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       if (res.ok) {
-        toast.success("MAC recuperati dai router");
+        const data = await res.json();
+        toast.success(data.progress?.phase ?? "MAC recuperati dai router");
         await refreshHosts();
       } else {
         const data = await res.json();
         toast.error(data.error || "Errore nel recupero MAC");
       }
-    } catch {
-      toast.error("Errore nel recupero MAC");
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        toast.error("Timeout: il router non ha risposto entro 60 secondi");
+      } else {
+        toast.error("Errore nel recupero MAC");
+      }
     } finally {
       setArpPolling(false);
+    }
+  }
+
+  async function triggerDnsResolve() {
+    setDnsResolving(true);
+    try {
+      const res = await fetch("/api/scans/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network_id: network.id, scan_type: "dns" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.progress?.phase || "DNS completato");
+        refreshHosts();
+        router.refresh();
+      } else {
+        toast.error(data.error || "Errore DNS");
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setDnsResolving(false);
+    }
+  }
+
+  async function triggerRefresh(force = false) {
+    if (force && !confirm("Ricalcola forzato: sovrascrive TUTTE le classificazioni, anche quelle impostate manualmente. Continuare?")) return;
+    setRefreshing(true);
+    try {
+      const res = await fetch(`/api/networks/${network.id}/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        refreshHosts();
+        router.refresh();
+      } else {
+        toast.error(data.error || "Errore nell'aggiornamento");
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -442,53 +618,78 @@ export function NetworkDetailClient({
             <p className="text-muted-foreground mt-1">{network.description}</p>
           )}
         </div>
-        <div className="flex gap-1.5 flex-wrap">
-          <Button size="sm" onClick={() => triggerScan("ping")} disabled={!!scanning}>
-            <Play className="h-4 w-4 mr-2" />
-            Ping Scan
-          </Button>
-          {nmapProfiles.length > 0 && (
-            <div className="flex items-center gap-1">
-              <select
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                value={selectedProfileId}
-                onChange={(e) => setSelectedProfileId(e.target.value)}
-              >
-                {nmapProfiles.map((p) => (
-                  <option key={p.id} value={String(p.id)}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              <Button variant="secondary" size="sm" onClick={() => triggerScan("nmap")} disabled={!!scanning || !selectedProfileId}>
-                <Scan className="h-4 w-4 mr-2" />
-                Nmap
-              </Button>
-            </div>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={triggerArpPoll}
-            disabled={arpPolling || !!scanning}
-            title="MAC da ARP; se router MikroTik: anche hostname dai lease DHCP"
-          >
-            <NetworkIcon className="h-4 w-4 mr-2" />
-            {arpPolling ? "Recupero..." : "Recupera MAC"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={triggerDhcpPoll}
-            disabled={!canDhcp || dhcpPolling || !!scanning}
-            title={canDhcp ? "Hostname e MAC dai lease DHCP del router MikroTik" : "Configura un router MikroTik con SSH per questa rete"}
-          >
-            {dhcpPolling ? "Recupero..." : "Recupera da DHCP"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => refreshHosts()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Aggiorna
-          </Button>
+        <div className="flex gap-1 flex-wrap items-center">
+          {/* Gruppo 1: Scoperta host */}
+          <div className="flex gap-1 items-center border-r border-border/50 pr-2 mr-1">
+            <span className="text-[10px] uppercase text-muted-foreground mr-0.5 hidden lg:inline">Scoperta</span>
+            <Button size="sm" variant="outline" onClick={() => triggerScan("ping")} disabled={!!scanning} title="ICMP ping — scoperta rapida host online">
+              <Play className="h-3.5 w-3.5 mr-1" />
+              Ping
+            </Button>
+            {nmapProfiles.length > 0 && (
+              <>
+                <select
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                  value={selectedProfileId}
+                  onChange={(e) => setSelectedProfileId(e.target.value)}
+                >
+                  {nmapProfiles.map((p) => (
+                    <option key={p.id} value={String(p.id)}>{p.name}</option>
+                  ))}
+                </select>
+                <Button size="sm" variant="outline" onClick={() => triggerScan("nmap")} disabled={!!scanning || !selectedProfileId} title="Host discovery + porte TCP/UDP + servizi">
+                  <Scan className="h-3.5 w-3.5 mr-1" />
+                  Nmap
+                </Button>
+              </>
+            )}
+          </div>
+
+          {/* Gruppo 2: Arricchimento dati */}
+          <div className="flex gap-1 items-center border-r border-border/50 pr-2 mr-1">
+            <span className="text-[10px] uppercase text-muted-foreground mr-0.5 hidden lg:inline">Dati</span>
+            <Button size="sm" variant="outline" onClick={triggerArpPoll} disabled={arpPolling || !!scanning} title="MAC address dal router via ARP table">
+              <NetworkIcon className="h-3.5 w-3.5 mr-1" />
+              {arpPolling ? "ARP..." : "ARP"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={triggerDhcpPoll} disabled={!canDhcp || dhcpPolling || !!scanning} title={canDhcp ? "Hostname e MAC dai lease DHCP" : "Richiede router MikroTik SSH"}>
+              {dhcpPolling ? "DHCP..." : "DHCP"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => triggerScan("snmp")} disabled={!!scanning} title="SNMP query — raccolta sysName, sysDescr, sysObjectID, serial, model">
+              <Cpu className="h-3.5 w-3.5 mr-1" />
+              SNMP
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { triggerDnsResolve(); }} disabled={dnsResolving || !!scanning} title="Reverse + forward DNS per tutti gli host">
+              {dnsResolving ? "DNS..." : "DNS"}
+            </Button>
+          </div>
+
+          {/* Gruppo 3: Raccolta info sistema */}
+          <div className="flex gap-1 items-center border-r border-border/50 pr-2 mr-1">
+            <span className="text-[10px] uppercase text-muted-foreground mr-0.5 hidden lg:inline">Sistema</span>
+            <Button size="sm" variant="outline" onClick={() => triggerScan("windows")} disabled={!!scanning} title="WinRM/WMI su host online — richiede credenziali Windows">
+              <Monitor className="h-3.5 w-3.5 mr-1" />
+              Windows
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => triggerScan("ssh")} disabled={!!scanning} title="SSH su host online — richiede credenziali Linux">
+              <Terminal className="h-3.5 w-3.5 mr-1" />
+              Linux
+            </Button>
+          </div>
+
+          {/* Gruppo 4: Azioni generali */}
+          <div className="flex gap-1 items-center">
+            <Button size="sm" variant="secondary" onClick={() => triggerRefresh(false)} disabled={refreshing || !!scanning} title="Ricalcola classificazioni (rispetta impostazioni manuali)">
+              <RefreshCw className={`h-3.5 w-3.5 mr-1 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "..." : "Ricalcola"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => triggerRefresh(true)} disabled={refreshing || !!scanning} title="Forza ricalcolo — sovrascrive anche classificazioni manuali" className="text-orange-600 border-orange-300 hover:bg-orange-50 dark:text-orange-400 dark:border-orange-700 dark:hover:bg-orange-950">
+              Forza
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => refreshHosts()} title="Aggiorna visualizzazione">
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
           <Button
             variant="outline"
             size="sm"
@@ -502,7 +703,7 @@ export function NetworkDetailClient({
               <Pencil className="h-4 w-4 mr-2" />
               Modifica
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Modifica Rete</DialogTitle>
               </DialogHeader>
@@ -590,7 +791,7 @@ export function NetworkDetailClient({
       </div>
 
       {/* Scan Progress */}
-      {scanning && <ScanProgress progress={scanning} />}
+      {scanning && <ScanProgress progress={scanning} onClose={() => setScanning(null)} />}
 
       {/* Auto-refresh */}
       <div className="flex flex-wrap items-center gap-2 p-2 rounded-md border bg-muted/30">
@@ -659,6 +860,122 @@ export function NetworkDetailClient({
       )}
 
       {/* List view */}
+      {view === "list" && selectedHostIds.size > 0 && (
+        <Card size="sm">
+          <CardContent className="py-3 flex items-center justify-between gap-4">
+            <CardDescription>
+              {selectedHostIds.size} host selezionati
+            </CardDescription>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setBulkAddOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Aggiungi dispositivo
+              </Button>
+              <Button variant="ghost" size="icon" onClick={clearHostSelection}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={bulkAddOpen} onOpenChange={setBulkAddOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Aggiungi {selectedHostIds.size} dispositivo{selectedHostIds.size !== 1 ? "i" : ""}</DialogTitle>
+            <CardDescription>
+              Categoria, protocollo di scansione (SSH/SNMP) e credenziali opzionali.
+            </CardDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Categoria</Label>
+              <Select value={bulkAddClassification} onValueChange={(v) => v && setBulkAddClassification(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {getClassificationLabel(c)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Protocollo di scansione</Label>
+              <Select value={bulkAddProtocol} onValueChange={(v) => { if (v) { setBulkAddProtocol(v as "ssh" | "snmp_v2" | "snmp_v3" | "api" | "winrm"); if (v !== "ssh" && v !== "api" && v !== "winrm") setBulkAddVendorSubtype(null); else setBulkAddSnmpCredentialId(null); } }}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ssh">SSH</SelectItem>
+                  <SelectItem value="snmp_v2">SNMP v2</SelectItem>
+                  <SelectItem value="snmp_v3">SNMP v3</SelectItem>
+                  <SelectItem value="api">API</SelectItem>
+                  <SelectItem value="winrm">WinRM / WMI (Windows)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(bulkAddProtocol === "ssh" || bulkAddProtocol === "api" || bulkAddProtocol === "winrm") && (
+              <>
+                <div className="space-y-2">
+                  <Label>Profilo vendor (per comandi SSH)</Label>
+                  <Select value={bulkAddVendor} onValueChange={(v) => { if (v) { setBulkAddVendor(v); if (v !== "hp") setBulkAddVendorSubtype(null); } }}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mikrotik">MikroTik</SelectItem>
+                      <SelectItem value="cisco">Cisco</SelectItem>
+                      <SelectItem value="hp">HP</SelectItem>
+                      <SelectItem value="ubiquiti">Ubiquiti</SelectItem>
+                      <SelectItem value="omada">Omada</SelectItem>
+                      <SelectItem value="stormshield">Stormshield</SelectItem>
+                      <SelectItem value="proxmox">Proxmox</SelectItem>
+                      <SelectItem value="vmware">VMware</SelectItem>
+                      <SelectItem value="linux">Linux</SelectItem>
+                      <SelectItem value="windows">Windows</SelectItem>
+                      <SelectItem value="synology">Synology</SelectItem>
+                      <SelectItem value="qnap">QNAP</SelectItem>
+                      <SelectItem value="other">Altro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {bulkAddVendor === "hp" && (
+                  <div className="space-y-2">
+                    <Label>Sottotipo HP</Label>
+                    <Select value={bulkAddVendorSubtype ?? "procurve"} onValueChange={(v) => setBulkAddVendorSubtype(v === "procurve" || v === "comware" ? v : null)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="procurve">ProCurve</SelectItem>
+                        <SelectItem value="comware">Comware</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </>
+            )}
+            <CredentialAssignmentFields
+              credentials={addDeviceCredentials}
+              credentialId={bulkAddCredentialId}
+              snmpCredentialId={bulkAddSnmpCredentialId}
+              onCredentialIdChange={(v) => setBulkAddCredentialId(v)}
+              onSnmpCredentialIdChange={(v) => setBulkAddSnmpCredentialId(v)}
+              credentialPlaceholder="Nessuna"
+              snmpPlaceholder="Nessuna"
+              idPrefix="network-bulk-add"
+            />
+            <Button onClick={handleBulkAdd} disabled={bulkAddSaving} className="w-full">
+              {bulkAddSaving ? "Aggiunta in corso..." : "Aggiungi dispositivi"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {view === "list" && (
         <Card className="overflow-hidden">
           <div className="flex flex-wrap items-center gap-2 p-2 border-b">
@@ -680,11 +997,12 @@ export function NetworkDetailClient({
               <select
                 value={filterClassification}
                 onChange={(e) => setFilterClassification(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[120px]"
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
               >
                 <option value="">Tutte</option>
-                {classifications.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                <option value="__empty__">— Senza classificazione</option>
+                {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                  <option key={c} value={c}>{getClassificationLabel(c)}</option>
                 ))}
               </select>
             </div>
@@ -701,16 +1019,55 @@ export function NetworkDetailClient({
                 Cancella filtri
               </Button>
             )}
+            <div className="flex items-center gap-1 ml-auto">
+              <Label className="text-xs text-muted-foreground">Seleziona per tipo:</Label>
+              <select
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
+                value=""
+                onChange={(e) => {
+                  const c = e.target.value;
+                  e.target.value = "";
+                  if (!c) return;
+                  const toSelect = c === "__empty__"
+                    ? filteredHosts.filter((h) => !h.classification)
+                    : filteredHosts.filter((h) => h.classification === c);
+                  if (toSelect.length === 0) {
+                    toast.info(c === "__empty__" ? "Nessun host senza classificazione" : `Nessun host con classificazione "${getClassificationLabel(c)}"`);
+                    return;
+                  }
+                  setSelectedHostIds((prev) => {
+                    const next = new Set(prev);
+                    for (const h of toSelect) next.add(h.id);
+                    return next;
+                  });
+                  toast.success(`${toSelect.length} host selezionati`);
+                }}
+              >
+                <option value="">—</option>
+                <option value="__empty__">— Senza classificazione</option>
+                {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                  <option key={c} value={c}>{getClassificationLabel(c)}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={filteredHosts.length > 0 && selectedHostIds.size === filteredHosts.length}
+                    onCheckedChange={toggleSelectAllHosts}
+                    aria-label="Seleziona tutti"
+                  />
+                </TableHead>
                 <TableHead className="w-24">Dettagli</TableHead>
                 <TableHead>IP</TableHead>
                 <TableHead>Stato</TableHead>
                 <TableHead>Conosciuto</TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead>Classificazione</TableHead>
+                <TableHead>Dispositivo</TableHead>
                 <TableHead>Vendor</TableHead>
                 <TableHead>Note</TableHead>
                 <TableHead>Hostname</TableHead>
@@ -722,7 +1079,7 @@ export function NetworkDetailClient({
             <TableBody>
               {filteredHosts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={14} className="text-center text-muted-foreground py-8">
                     {hosts.length === 0
                       ? "Nessun host trovato. Avvia una scansione per scoprire i dispositivi."
                       : "Nessun host corrisponde ai filtri."}
@@ -731,6 +1088,13 @@ export function NetworkDetailClient({
               ) : (
                 filteredHosts.map((host) => (
                   <TableRow key={host.id}>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedHostIds.has(host.id)}
+                        onCheckedChange={() => toggleSelectHost(host.id)}
+                        aria-label={`Seleziona ${host.ip}`}
+                      />
+                    </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()} className="flex gap-1 items-center">
                       <Button
                         variant="ghost"
@@ -741,7 +1105,7 @@ export function NetworkDetailClient({
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" render={<Link href={`/hosts/${host.id}`} title="Dettagli host" />}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" nativeButton={false} render={<Link href={`/hosts/${host.id}`} title="Dettagli host" />}>
                         <ExternalLink className="h-4 w-4" />
                       </Button>
                       <DropdownMenu>
@@ -790,33 +1154,52 @@ export function NetworkDetailClient({
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : (
-                        <span className="flex items-center gap-1 truncate max-w-[140px]" title={host.custom_name || host.hostname || undefined}>
+                        <span className="flex items-center gap-1 truncate max-w-[140px]" title={host.custom_name || host.hostname || host.dns_reverse || (host as HostWithDevice).device?.sysname || ((host as HostWithDevice).device?.name !== host.ip ? (host as HostWithDevice).device?.name : null) || undefined}>
                           {host.known_host ? (
                              <span title="Host conosciuto"><CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-primary" /></span>
                           ) : null}
-                          {host.custom_name || host.hostname || "—"}
+                          {host.custom_name || host.hostname || host.dns_reverse || (host as HostWithDevice).device?.sysname || ((host as HostWithDevice).device?.name !== host.ip ? (host as HostWithDevice).device?.name : null) || "—"}
                         </span>
                       )}
                     </TableCell>
                     <TableCell
-                      className="min-w-[100px] cursor-text"
-                      onClick={(e) => { e.stopPropagation(); if (!(e.target as HTMLElement).closest("input")) { setEditingHostId(host.id); setEditingField("classification"); } }}
+                      className="min-w-[140px] cursor-text"
+                      onClick={(e) => { e.stopPropagation(); if (!(e.target as HTMLElement).closest("button, [role=combobox]")) { setEditingHostId(host.id); setEditingField("classification"); } }}
                     >
                       {editingHostId === host.id && editingField === "classification" ? (
-                        <Input
-                          autoFocus
-                          list="classification-list"
-                          defaultValue={host.classification || ""}
-                          className="h-8 text-sm"
-                          onBlur={(e) => saveHostField(host.id, "classification", e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") e.currentTarget.blur();
-                            else if (e.key === "Escape") { setEditingHostId(null); setEditingField(null); }
+                        <Select
+                          value={host.classification || "__empty__"}
+                          onValueChange={(v) => {
+                            saveHostField(host.id, "classification", v === "__empty__" ? "" : (v ?? ""), (host as HostWithDevice).device_id);
+                            setEditingHostId(null);
+                            setEditingField(null);
                           }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
+                          onOpenChange={(open) => { if (!open) { setEditingHostId(null); setEditingField(null); } }}
+                        >
+                          <SelectTrigger className="h-8 text-sm min-w-[120px]" onClick={(e) => e.stopPropagation()}>
+                            <SelectValue placeholder="Seleziona..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__empty__">— Nessuna —</SelectItem>
+                            {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                              <SelectItem key={c} value={c}>
+                                {getClassificationLabel(c)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       ) : (
-                        <Badge variant="outline">{host.classification}</Badge>
+                        <Badge variant="outline">{host.classification ? getClassificationLabel(host.classification) : "—"}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {(host as HostWithDevice).device ? (
+                        <Link href={`/devices/${(host as HostWithDevice).device!.id}`} className="text-primary hover:underline flex items-center gap-1">
+                          <Server className="h-3.5 w-3.5" />
+                          {host.custom_name || host.hostname || (host as HostWithDevice).device!.sysname || ((host as HostWithDevice).device!.name !== host.ip ? (host as HostWithDevice).device!.name : null) || "—"}
+                        </Link>
+                      ) : (
+                        "—"
                       )}
                     </TableCell>
                     <TableCell className="text-sm">{host.vendor || "—"}</TableCell>
@@ -846,7 +1229,7 @@ export function NetworkDetailClient({
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{host.hostname || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{host.hostname || host.dns_reverse || "—"}</TableCell>
                     <TableCell className="font-mono text-xs">{host.mac || "—"}</TableCell>
                     <TableCell className="text-xs font-mono">
                       {host.open_ports ? (() => {
@@ -874,17 +1257,12 @@ export function NetworkDetailClient({
               )}
             </TableBody>
           </Table>
-          <datalist id="classification-list">
-            {DEVICE_CLASSIFICATIONS.map((c) => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
         </Card>
       )}
 
       {/* Host Edit Dialog */}
       <Dialog open={hostEditOpen} onOpenChange={(open) => { setHostEditOpen(open); if (!open) setHostEditId(null); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Modifica host</DialogTitle>
           </DialogHeader>
@@ -912,17 +1290,22 @@ export function NetworkDetailClient({
             </div>
             <div className="space-y-2">
               <Label>Classificazione</Label>
-              <Input
-                list="host-edit-classification-list"
-                value={hostEditForm.classification}
-                onChange={(e) => setHostEditForm((f) => ({ ...f, classification: e.target.value }))}
-                placeholder="Seleziona o digita..."
-              />
-              <datalist id="host-edit-classification-list">
-                {DEVICE_CLASSIFICATIONS.map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
+              <Select
+                value={hostEditForm.classification || "__empty__"}
+                onValueChange={(v) => setHostEditForm((f) => ({ ...f, classification: v === "__empty__" ? "" : (v ?? "") }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleziona classificazione..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__empty__">— Nessuna —</SelectItem>
+                  {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {getClassificationLabel(c)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Codice inventario</Label>
@@ -955,11 +1338,12 @@ export function NetworkDetailClient({
 
       {/* Aggiungi come Router/Switch */}
       <Dialog open={addDeviceOpen} onOpenChange={(open) => { setAddDeviceOpen(open); if (!open) setAddDeviceHost(null); }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               Aggiungi come {addDeviceType === "router" ? "Router" : "Switch"}
             </DialogTitle>
+            <CardDescription>Credenziali riutilizzabili o inline</CardDescription>
           </DialogHeader>
           {addDeviceHost && (
             <form onSubmit={handleAddDevice} className="space-y-4">
@@ -984,7 +1368,7 @@ export function NetworkDetailClient({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Vendor</Label>
-                  <Select value={addDeviceVendor} onValueChange={setAddDeviceVendor}>
+                  <Select value={addDeviceVendor} onValueChange={(v) => { setAddDeviceVendor(v ?? ""); if (v !== "hp") setAddDeviceVendorSubtype(null); }}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="mikrotik">MikroTik</SelectItem>
@@ -992,13 +1376,33 @@ export function NetworkDetailClient({
                       <SelectItem value="cisco">Cisco</SelectItem>
                       <SelectItem value="hp">HP / Aruba</SelectItem>
                       <SelectItem value="omada">TP-Link Omada</SelectItem>
+                      <SelectItem value="stormshield">Stormshield</SelectItem>
+                      <SelectItem value="proxmox">Proxmox</SelectItem>
+                      <SelectItem value="vmware">VMware</SelectItem>
+                      <SelectItem value="linux">Linux</SelectItem>
+                      <SelectItem value="windows">Windows</SelectItem>
+                      <SelectItem value="synology">Synology</SelectItem>
+                      <SelectItem value="qnap">QNAP</SelectItem>
                       <SelectItem value="other">Altro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+                {addDeviceVendor === "hp" && (
+                  <div className="space-y-2">
+                    <Label>Sottotipo HP</Label>
+                    <Select value={addDeviceVendorSubtype ?? "none"} onValueChange={(v) => setAddDeviceVendorSubtype(v === "none" ? null : v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Generico</SelectItem>
+                        <SelectItem value="procurve">ProCurve / Aruba</SelectItem>
+                        <SelectItem value="comware">Comware</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label>Protocollo</Label>
-                  <Select value={addDeviceProtocol} onValueChange={setAddDeviceProtocol}>
+                  <Select value={addDeviceProtocol} onValueChange={(v) => setAddDeviceProtocol(v ?? "")}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ssh">SSH</SelectItem>
@@ -1009,30 +1413,19 @@ export function NetworkDetailClient({
                   </Select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Porta</Label>
-                  <Input
-                    name="port"
-                    type="number"
-                    placeholder={addDeviceProtocol === "ssh" ? "22" : addDeviceProtocol.startsWith("snmp") ? "161" : "443"}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Username</Label>
-                  <Input name="username" placeholder="admin" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Password</Label>
-                  <Input name="password" type="password" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Community String (SNMP)</Label>
-                  <Input name="community_string" placeholder="public" />
-                </div>
-              </div>
+              <CredentialAssignmentFields
+                credentials={addDeviceCredentials}
+                credentialId={addDeviceCredentialId}
+                snmpCredentialId={addDeviceSnmpCredentialId}
+                onCredentialIdChange={(v) => setAddDeviceCredentialId(v)}
+                onSnmpCredentialIdChange={(v) => setAddDeviceSnmpCredentialId(v)}
+                credentialPlaceholder="Nessuna (credenziali inline)"
+                showInlineCreds={addDeviceProtocol === "ssh" || addDeviceProtocol === "api" || addDeviceProtocol === "winrm"}
+                showPortAndCommunity
+                portDefaultValue={addDeviceProtocol === "ssh" ? 22 : addDeviceProtocol.startsWith("snmp") ? 161 : addDeviceProtocol === "winrm" ? 5985 : 443}
+                communityPlaceholder="public"
+                idPrefix="network-add-device"
+              />
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={() => setAddDeviceOpen(false)}>
                   Annulla

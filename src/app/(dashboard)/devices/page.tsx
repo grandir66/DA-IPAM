@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent } from "@/components/ui/card";
+import Link from "next/link";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,7 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, RefreshCw, Router, Cable } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Router, Cable, Wifi, HardDrive, Database, Laptop, Monitor, Server, Phone, Camera, Printer, Shield, Cpu, ChevronRight, Package, Box } from "lucide-react";
 import { toast } from "sonner";
 import type { NetworkDevice } from "@/types";
 
@@ -42,6 +43,7 @@ export default function DevicesPage() {
   const [vendor, setVendor] = useState<string>("mikrotik");
   const [protocol, setProtocol] = useState<string>("ssh");
   const [querying, setQuerying] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const fetchDevices = useCallback(async () => {
     const res = await fetch("/api/devices");
@@ -102,6 +104,23 @@ export default function DevicesPage() {
     setQuerying(null);
   }
 
+  async function handleSyncToInventory() {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/inventory/sync-devices", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+      } else {
+        toast.error(data.error ?? "Errore nella sincronizzazione");
+      }
+    } catch {
+      toast.error("Errore nella sincronizzazione");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   async function handleDelete(id: number, name: string) {
     if (!confirm(`Eliminare il dispositivo "${name}"?`)) return;
     const res = await fetch(`/api/devices/${id}`, { method: "DELETE" });
@@ -111,20 +130,71 @@ export default function DevicesPage() {
     }
   }
 
+  const deviceCategories = [
+    { href: "/devices/workstation", label: "PC", icon: Monitor },
+    { href: "/devices/notebook", label: "Notebook", icon: Laptop },
+    { href: "/devices/vm", label: "VM", icon: Box },
+    { href: "/devices/server", label: "Server", icon: Server },
+    { href: "/devices/access_point", label: "Access Point", icon: Wifi },
+    { href: "/devices/switch", label: "Switch", icon: Cable },
+    { href: "/devices/router", label: "Router", icon: Router },
+    { href: "/devices/firewall", label: "Firewall", icon: Shield },
+    { href: "/devices/storage", label: "Storage", icon: Database },
+    { href: "/devices/hypervisor", label: "Hypervisor", icon: HardDrive },
+    { href: "/devices/iot", label: "IoT", icon: Cpu },
+    { href: "/devices/stampante", label: "Stampanti", icon: Printer },
+    { href: "/devices/telecamera", label: "Telecamere", icon: Camera },
+    { href: "/devices/voip", label: "Telefoni", icon: Phone },
+  ] as const;
+
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Tipologie di dispositivi</CardTitle>
+          <CardDescription>
+            Clicca su una categoria per visualizzare i dispositivi assegnati
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+            {deviceCategories.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-card hover:bg-accent/50 hover:border-primary/30 transition-colors text-sm font-medium"
+              >
+                <item.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="truncate">{item.label}</span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 ml-auto text-muted-foreground/60" />
+              </Link>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Dispositivi</h1>
+          <h1 className="text-xl font-bold tracking-tight">Tutti i dispositivi</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
             Router e switch per acquisizione ARP e MAC table
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setDeviceType("router"); }}>
-          <DialogTrigger render={<Button />}>
-            <Plus className="h-4 w-4 mr-2" />Aggiungi dispositivo
-          </DialogTrigger>
-          <DialogContent className="max-w-lg">
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleSyncToInventory}
+            disabled={syncing || devices.length === 0}
+            className="gap-2"
+          >
+            <Package className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Sincronizzazione..." : "Aggiungi a inventario"}
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setDeviceType("router"); }}>
+            <DialogTrigger render={<Button />}>
+              <Plus className="h-4 w-4 mr-2" />Aggiungi dispositivo
+            </DialogTrigger>
+          <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Nuovo dispositivo</DialogTitle>
             </DialogHeader>
@@ -160,7 +230,7 @@ export default function DevicesPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Vendor</Label>
-                  <Select value={vendor} onValueChange={setVendor}>
+                  <Select value={vendor} onValueChange={(v) => setVendor(v ?? "")}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="mikrotik">MikroTik</SelectItem>
@@ -168,13 +238,20 @@ export default function DevicesPage() {
                       <SelectItem value="cisco">Cisco</SelectItem>
                       <SelectItem value="hp">HP / Aruba</SelectItem>
                       <SelectItem value="omada">TP-Link Omada</SelectItem>
+                      <SelectItem value="stormshield">Stormshield</SelectItem>
+                      <SelectItem value="proxmox">Proxmox</SelectItem>
+                      <SelectItem value="vmware">VMware</SelectItem>
+                      <SelectItem value="linux">Linux</SelectItem>
+                      <SelectItem value="windows">Windows</SelectItem>
+                      <SelectItem value="synology">Synology</SelectItem>
+                      <SelectItem value="qnap">QNAP</SelectItem>
                       <SelectItem value="other">Altro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Protocollo</Label>
-                  <Select value={protocol} onValueChange={setProtocol}>
+                  <Select value={protocol} onValueChange={(v) => setProtocol(v ?? "")}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ssh">SSH</SelectItem>
@@ -214,7 +291,8 @@ export default function DevicesPage() {
               </Button>
             </form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       {loading ? (
@@ -233,6 +311,7 @@ export default function DevicesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Tipo</TableHead>
+                <TableHead>Classificazione</TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead>IP</TableHead>
                 <TableHead>Vendor</TableHead>
@@ -258,6 +337,11 @@ export default function DevicesPage() {
                         <Cable className="h-3 w-3" /> Switch
                       </Badge>
                     )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="font-normal capitalize">
+                      {(dev as { classification?: string | null }).classification?.replace(/_/g, " ") ?? dev.device_type}
+                    </Badge>
                   </TableCell>
                   <TableCell className="font-medium">{dev.name}</TableCell>
                   <TableCell className="font-mono">{dev.host}</TableCell>

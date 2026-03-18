@@ -11,7 +11,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.username || !credentials?.password) {
           return null;
         }
@@ -19,21 +19,35 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const username = credentials.username as string;
         const password = credentials.password as string;
 
+        // Rate limiting: max 5 tentativi falliti per username ogni 15 minuti
+        const { checkRateLimit, recordFailedAttempt } = await import("./rate-limit");
+        const rateLimitKey = `login:${username}`;
+        if (!checkRateLimit(rateLimitKey, 5, 15 * 60 * 1000)) {
+          console.warn(`[Auth] Rate limit raggiunto per utente: ${username}`);
+          return null;
+        }
+
         const { getUserByUsername, updateUserLastLogin } = await import("./db");
         const bcrypt = await import("bcrypt");
 
         const user = getUserByUsername(username);
-        if (!user) return null;
+        if (!user) {
+          recordFailedAttempt(rateLimitKey);
+          return null;
+        }
 
         const isValid = await bcrypt.compare(password, user.password_hash);
-        if (!isValid) return null;
+        if (!isValid) {
+          recordFailedAttempt(rateLimitKey);
+          return null;
+        }
 
         updateUserLastLogin(user.id);
 
         return {
           id: String(user.id),
           name: user.username,
-          email: `${user.username}@da-ipam.local`,
+          email: `${user.username}@da-invent.local`,
           role: user.role,
         };
       },

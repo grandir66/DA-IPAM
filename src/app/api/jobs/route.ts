@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getScheduledJobs, createScheduledJob, toggleJob, deleteScheduledJob } from "@/lib/db";
 import { ScheduledJobSchema } from "@/lib/validators";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET() {
   try {
@@ -13,6 +14,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
     const parsed = ScheduledJobSchema.safeParse(body);
     if (!parsed.success) {
@@ -28,6 +31,8 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
     const { id, enabled } = body;
     if (typeof id !== "number" || typeof enabled !== "boolean") {
@@ -43,6 +48,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "ID richiesto" }, { status: 400 });

@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -23,41 +22,181 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Network } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
+import { Pagination } from "@/components/shared/pagination";
+import { Plus, Trash2, Network, Key, Scan, X, Search } from "lucide-react";
 import { toast } from "sonner";
 import type { NetworkWithStats } from "@/types";
 
-interface NetworksListClientProps {
-  initialNetworks: NetworkWithStats[];
+interface NetworkWithRouter extends NetworkWithStats {
+  router_id?: number | null;
 }
 
-export function NetworksListClient({ initialNetworks }: NetworksListClientProps) {
-  const router = useRouter();
-  const [networks, setNetworks] = useState<NetworkWithStats[]>(initialNetworks);
-  const [dialogOpen, setDialogOpen] = useState(false);
+interface Credential {
+  id: number;
+  name: string;
+  credential_type: string;
+}
 
-  const refreshNetworks = useCallback(async () => {
+interface NetworksListClientProps {
+  initialNetworks: (NetworkWithStats & { router_id?: number | null })[];
+  routers: { id: number; name: string; host: string }[];
+}
+
+export function NetworksListClient({ initialNetworks, routers }: NetworksListClientProps) {
+  const router = useRouter();
+  const [networks, setNetworks] = useState<NetworkWithRouter[]>(initialNetworks as NetworkWithRouter[]);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [assignCredentialId, setAssignCredentialId] = useState<string | null>(null);
+  const [assignSnmpCredentialId, setAssignSnmpCredentialId] = useState<string | null>(null);
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const pageSize = 25;
+
+  useEffect(() => {
+    fetch("/api/credentials")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setCredentials)
+      .catch(() => setCredentials([]));
+  }, []);
+
+  const refreshNetworks = useCallback(async (p?: number, s?: string) => {
+    const currentPage = p ?? page;
+    const currentSearch = s ?? search;
     try {
-      const res = await fetch("/api/networks");
+      const params = new URLSearchParams({ page: String(currentPage), pageSize: String(pageSize) });
+      if (currentSearch) params.set("search", currentSearch);
+      const res = await fetch(`/api/networks?${params.toString()}`);
       if (res.ok) {
-        const data = await res.json();
-        setNetworks(data);
+        const json = await res.json();
+        setNetworks(json.data);
+        setTotalPages(json.totalPages);
+        setPage(json.page);
       }
     } catch {
       toast.error("Impossibile aggiornare l'elenco");
     }
-  }, []);
+  }, [page, search, pageSize]);
+
+  useEffect(() => {
+    refreshNetworks(1, search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  const handlePageChange = useCallback((newPage: number) => {
+    refreshNetworks(newPage, search);
+  }, [refreshNetworks, search]);
+
+  const handleSearchSubmit = useCallback(() => {
+    setSearch(searchInput);
+  }, [searchInput]);
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === networks.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(networks.map((n) => n.id)));
+    }
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const selectedWithRouter = networks.filter((n) => selectedIds.has(n.id) && n.router_id);
+  const selectedWithoutRouter = selectedIds.size - selectedWithRouter.length;
+
+  async function handleBulkAssign() {
+    if (selectedIds.size === 0) return;
+    const hasCred = assignCredentialId && assignCredentialId !== "none";
+    const hasSnmpCred = assignSnmpCredentialId && assignSnmpCredentialId !== "none";
+    if (!hasCred && !hasSnmpCred) {
+      toast.error("Seleziona almeno una credenziale SSH o SNMP registrata");
+      return;
+    }
+    setAssignSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        network_ids: Array.from(selectedIds),
+      };
+      if (assignCredentialId && assignCredentialId !== "none") {
+        body.credential_id = Number(assignCredentialId);
+      }
+      if (assignSnmpCredentialId && assignSnmpCredentialId !== "none") {
+        body.snmp_credential_id = Number(assignSnmpCredentialId);
+      }
+      const res = await fetch("/api/networks/bulk-assign-credential", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        setAssignDialogOpen(false);
+        setAssignCredentialId(null);
+        setAssignSnmpCredentialId(null);
+        clearSelection();
+      } else {
+        toast.error(data.error || "Errore nell'assegnazione");
+      }
+    } catch {
+      toast.error("Errore nell'assegnazione");
+    }
+    setAssignSaving(false);
+  }
+
+  async function handleBulkScan() {
+    if (selectedIds.size === 0) return;
+    setScanning(true);
+    try {
+      const res = await fetch("/api/networks/bulk-scan-devices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network_ids: Array.from(selectedIds) }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        refreshNetworks();
+      } else {
+        toast.error(data.error || "Errore nella scansione");
+      }
+    } catch {
+      toast.error("Errore nella scansione");
+    }
+    setScanning(false);
+  };
 
   async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const routerIdVal = formData.get("router_id");
     const body = {
       cidr: formData.get("cidr"),
       name: formData.get("name"),
-      description: formData.get("description"),
+      description: formData.get("description") || undefined,
       gateway: formData.get("gateway") || undefined,
       vlan_id: formData.get("vlan_id") ? Number(formData.get("vlan_id")) : undefined,
       location: formData.get("location") || undefined,
+      dns_server: formData.get("dns_server") || undefined,
+      snmp_community: formData.get("snmp_community") || undefined,
+      router_id: routerIdVal && routerIdVal !== "" ? Number(routerIdVal) : undefined,
     };
 
     const res = await fetch("/api/networks", {
@@ -91,48 +230,147 @@ export function NetworksListClient({ initialNetworks }: NetworksListClientProps)
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {selectedIds.size > 0 && (
+        <Card size="sm">
+          <CardContent className="py-3 flex items-center justify-between gap-4">
+            <CardDescription>
+              {selectedIds.size} rete{selectedIds.size !== 1 ? "i" : ""} selezionata{selectedIds.size !== 1 ? "e" : ""}
+              {selectedWithoutRouter > 0 && (
+                <span className="text-amber-600 dark:text-amber-500 ml-1">
+                  ({selectedWithoutRouter} senza router, ignorate)
+                </span>
+              )}
+            </CardDescription>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setAssignDialogOpen(true)}>
+                <Key className="h-4 w-4 mr-2" />
+                Assegna credenziali
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleBulkScan} disabled={scanning}>
+                <Scan className="h-4 w-4 mr-2" />
+                {scanning ? "Scansione..." : "Scansiona dispositivi"}
+              </Button>
+              <Button variant="ghost" size="icon" onClick={clearSelection}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Assegna credenziali alle reti selezionate</DialogTitle>
+            <CardDescription>
+              Assegna credenziali SSH e/o SNMP ai router/switch delle {selectedIds.size} reti selezionate. Stessa maschera usata per dispositivi e subnet.
+            </CardDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <CredentialAssignmentFields
+              credentials={credentials}
+              credentialId={assignCredentialId}
+              snmpCredentialId={assignSnmpCredentialId}
+              onCredentialIdChange={setAssignCredentialId}
+              onSnmpCredentialIdChange={setAssignSnmpCredentialId}
+              sshFilter="ssh_api"
+              credentialPlaceholder="Nessuna"
+              snmpPlaceholder="Nessuna"
+              idPrefix="subnet-assign"
+            />
+            <Button onClick={handleBulkAssign} disabled={assignSaving} className="w-full">
+              {assignSaving ? "Applicazione..." : "Applica"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Reti</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Gestisci le reti monitorate</p>
+          <h1 className="text-xl font-bold tracking-tight">Subnet</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">Gestisci le subnet monitorate</p>
+        </div>
+        <div className="flex items-center gap-2 flex-1 max-w-sm">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Cerca per nome, CIDR, posizione..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSearchSubmit(); }}
+              className="pl-8"
+            />
+          </div>
+          {search && (
+            <Button variant="ghost" size="icon-sm" onClick={() => { setSearchInput(""); setSearch(""); }}>
+              <X className="h-4 w-4" />
+            </Button>
+          )}
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger render={<Button />}>
             <Plus className="h-4 w-4 mr-2" />
             Aggiungi Rete
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Nuova Rete</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="cidr">Rete (IP/Subnet)</Label>
+                <Input id="cidr" name="cidr" required placeholder="192.168.1.0/24" className="font-mono" />
+                <p className="text-xs text-muted-foreground">Es. 192.168.1.0/24</p>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Nome</Label>
                   <Input id="name" name="name" required placeholder="LAN Ufficio" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="cidr">CIDR</Label>
-                  <Input id="cidr" name="cidr" required placeholder="192.168.1.0/24" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
                   <Label htmlFor="gateway">Gateway</Label>
                   <Input id="gateway" name="gateway" placeholder="192.168.1.1" />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Descrizione</Label>
+                <Input id="description" name="description" placeholder="Descrizione opzionale" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="vlan_id">VLAN ID</Label>
                   <Input id="vlan_id" name="vlan_id" type="number" placeholder="100" />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="location">Posizione</Label>
+                  <Input id="location" name="location" placeholder="Sede principale" />
+                </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="location">Posizione</Label>
-                <Input id="location" name="location" placeholder="Sede principale" />
+                <Label htmlFor="dns_server">Server DNS</Label>
+                <Input id="dns_server" name="dns_server" placeholder="192.168.1.1" className="font-mono" />
+                <p className="text-xs text-muted-foreground">DNS per forward/reverse lookup di questa rete. Vuoto = DNS di sistema</p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Descrizione</Label>
-                <Textarea id="description" name="description" placeholder="Descrizione opzionale..." />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="snmp_community">Community SNMP (default)</Label>
+                  <Input id="snmp_community" name="snmp_community" placeholder="es. public, domarcsnmp" className="font-mono" />
+                  <p className="text-xs text-muted-foreground">Usata per scansioni nmap su questa rete se il profilo non ne specifica una</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="router_id">Router ARP (default)</Label>
+                  <select
+                    id="router_id"
+                    name="router_id"
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                  >
+                    <option value="">Nessuno</option>
+                    {routers.map((r) => (
+                      <option key={r.id} value={r.id}>{r.name} ({r.host})</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">Router per acquisizione tabella ARP di questa subnet</p>
+                </div>
               </div>
               <Button type="submit" className="w-full">Crea Rete</Button>
             </form>
@@ -153,6 +391,13 @@ export function NetworksListClient({ initialNetworks }: NetworksListClientProps)
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={networks.length > 0 && selectedIds.size === networks.length}
+                    onCheckedChange={toggleSelectAll}
+                    aria-label="Seleziona tutte"
+                  />
+                </TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead>CIDR</TableHead>
                 <TableHead>VLAN</TableHead>
@@ -171,6 +416,13 @@ export function NetworksListClient({ initialNetworks }: NetworksListClientProps)
                   className="cursor-pointer"
                   onClick={() => router.push(`/networks/${net.id}`)}
                 >
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.has(net.id)}
+                      onCheckedChange={() => toggleSelect(net.id)}
+                      aria-label={`Seleziona ${net.name}`}
+                    />
+                  </TableCell>
                   <TableCell className="font-medium">{net.name}</TableCell>
                   <TableCell>
                     <Badge variant="secondary" className="font-mono">{net.cidr}</Badge>
@@ -202,6 +454,8 @@ export function NetworksListClient({ initialNetworks }: NetworksListClientProps)
           </Table>
         </Card>
       )}
+
+      <Pagination page={page} totalPages={totalPages} onPageChange={handlePageChange} />
     </div>
   );
 }

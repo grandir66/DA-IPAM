@@ -30,7 +30,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash } from "lucide-react";
+import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash, Monitor, Users, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { buildCustomScanArgs, KNOWN_UDP_PORTS } from "@/lib/scanner/ports";
 import type { ScheduledJob, NetworkWithStats } from "@/types";
@@ -70,9 +70,11 @@ interface NmapProfile {
 
 const JOB_TYPE_LABELS: Record<string, string> = {
   ping_sweep: "Ping Sweep",
+  snmp_scan: "SNMP Scan",
   nmap_scan: "Nmap Scan",
   arp_poll: "ARP Poll",
   dns_resolve: "DNS Resolve",
+  known_host_check: "Monitoraggio host conosciuti",
   cleanup: "Pulizia Host",
 };
 
@@ -113,14 +115,29 @@ export default function SettingsPage() {
   const [customOui, setCustomOui] = useState("");
   const [savingOui, setSavingOui] = useState(false);
 
+  // Version
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  // Host credentials (Windows/Linux) - default per raccolta info da host
+  const [credentials, setCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
+  const [hostWindowsCredentialId, setHostWindowsCredentialId] = useState<string>("");
+  const [hostLinuxCredentialId, setHostLinuxCredentialId] = useState<string>("");
+  const [savingHostCreds, setSavingHostCreds] = useState(false);
+
   useEffect(() => {
     fetch("/api/jobs").then((r) => r.json()).then(setJobs);
     fetch("/api/networks").then((r) => r.json()).then(setNetworks);
     fetch("/api/settings").then((r) => r.json()).then((settings: Record<string, string>) => {
       if (settings.server_port) setServerPort(settings.server_port);
+      if (settings.host_windows_credential_id !== undefined) setHostWindowsCredentialId(settings.host_windows_credential_id || "");
+      if (settings.host_linux_credential_id !== undefined) setHostLinuxCredentialId(settings.host_linux_credential_id || "");
     });
     fetch("/api/nmap-profiles").then((r) => r.json()).then(setProfiles);
     fetch("/api/custom-oui").then((r) => r.json()).then((d: { content?: string }) => setCustomOui(d.content || ""));
+    fetch("/api/credentials").then((r) => r.json()).then((creds: { id: number; name: string; credential_type: string }[]) => setCredentials(creds));
+    fetch("/api/version").then((r) => r.json()).then((d: { version?: string }) => setAppVersion(d.version ?? null));
+    fetch("/api/users").then((r) => r.json()).then(setUsers).catch(() => {});
+    fetch("/api/tls").then((r) => r.json()).then(setTlsStatus).catch(() => {});
   }, []);
 
   // === Scheduled Jobs ===
@@ -168,6 +185,27 @@ export default function SettingsPage() {
   }
 
   // === Server Port ===
+
+  async function handleSaveHostCredentials() {
+    setSavingHostCreds(true);
+    try {
+      await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "host_windows_credential_id", value: hostWindowsCredentialId || "" }),
+      });
+      await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "host_linux_credential_id", value: hostLinuxCredentialId || "" }),
+      });
+      toast.success("Credenziali host salvate");
+    } catch {
+      toast.error("Errore nel salvataggio");
+    } finally {
+      setSavingHostCreds(false);
+    }
+  }
 
   async function handleSavePort() {
     const port = parseInt(serverPort);
@@ -331,12 +369,169 @@ export default function SettingsPage() {
     }
   }
 
+  // Users state
+  const [users, setUsers] = useState<{ id: number; username: string; role: string; created_at: string; last_login: string | null }[]>([]);
+  const [newUserOpen, setNewUserOpen] = useState(false);
+  const [newUsername, setNewUsername] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserRole, setNewUserRole] = useState<"admin" | "viewer">("viewer");
+  const [savingUser, setSavingUser] = useState(false);
+
+  // TLS state
+  const [tlsStatus, setTlsStatus] = useState<{
+    enabled: boolean;
+    cert_path: string | null;
+    key_path: string | null;
+    cert_exists: boolean;
+    cert_info: Record<string, string> | null;
+  } | null>(null);
+  const [tlsDomain, setTlsDomain] = useState("localhost");
+  const [tlsDays, setTlsDays] = useState("365");
+  const [generatingCert, setGeneratingCert] = useState(false);
+  const [importCert, setImportCert] = useState("");
+  const [importKey, setImportKey] = useState("");
+  const [importingCert, setImportingCert] = useState(false);
+
+  // === User Management ===
+
+  async function handleCreateUser(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingUser(true);
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: newUsername, password: newUserPassword, role: newUserRole }),
+      });
+      if (res.ok) {
+        toast.success("Utente creato");
+        setNewUserOpen(false);
+        setNewUsername(""); setNewUserPassword(""); setNewUserRole("viewer");
+        const updated = await fetch("/api/users").then(r => r.json());
+        setUsers(updated);
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Errore nella creazione utente");
+      }
+    } catch { toast.error("Errore di rete"); }
+    finally { setSavingUser(false); }
+  }
+
+  async function handleToggleUserRole(userId: number, newRole: string) {
+    const res = await fetch(`/api/users/${userId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: newRole }),
+    });
+    if (res.ok) {
+      toast.success(`Ruolo aggiornato a ${newRole === "admin" ? "Amministratore" : "Solo lettura"}`);
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+    } else {
+      const data = await res.json();
+      toast.error(data.error || "Errore");
+    }
+  }
+
+  async function handleDeleteUser(userId: number, username: string) {
+    if (!confirm(`Eliminare l'utente "${username}"? L'azione è irreversibile.`)) return;
+    const res = await fetch(`/api/users/${userId}`, { method: "DELETE" });
+    if (res.ok) {
+      toast.success("Utente eliminato");
+      setUsers(prev => prev.filter(u => u.id !== userId));
+    } else {
+      const data = await res.json();
+      toast.error(data.error || "Errore nell'eliminazione");
+    }
+  }
+
+  // === TLS Management ===
+
+  async function handleGenerateCert() {
+    setGeneratingCert(true);
+    try {
+      const res = await fetch("/api/tls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate", domain: tlsDomain, days: parseInt(tlsDays) || 365 }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        const updated = await fetch("/api/tls").then(r => r.json());
+        setTlsStatus(updated);
+      } else {
+        toast.error(data.error);
+      }
+    } catch { toast.error("Errore di rete"); }
+    finally { setGeneratingCert(false); }
+  }
+
+  async function handleImportCert() {
+    setImportingCert(true);
+    try {
+      const res = await fetch("/api/tls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "import", cert: importCert, key: importKey }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        setImportCert(""); setImportKey("");
+        const updated = await fetch("/api/tls").then(r => r.json());
+        setTlsStatus(updated);
+      } else {
+        toast.error(data.error);
+      }
+    } catch { toast.error("Errore di rete"); }
+    finally { setImportingCert(false); }
+  }
+
+  const [activeTab, setActiveTab] = useState<"generale" | "utenti" | "https" | "nmap" | "jobs" | "dati">("generale");
+
+  const tabs = [
+    { key: "generale" as const, label: "Generale", icon: Server },
+    { key: "utenti" as const, label: "Utenti", icon: Users },
+    { key: "https" as const, label: "HTTPS", icon: Shield },
+    { key: "nmap" as const, label: "Profili Nmap", icon: Radar },
+    { key: "jobs" as const, label: "Job Pianificati", icon: Clock },
+    { key: "dati" as const, label: "Gestione Dati", icon: Database },
+  ];
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Impostazioni</h1>
         <p className="text-muted-foreground mt-1">Configurazione sistema, sicurezza e profili di scansione</p>
+        {appVersion && (
+          <p className="text-xs text-muted-foreground mt-1">DA-INVENT v{appVersion}</p>
+        )}
       </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-border pb-0">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors -mb-px border border-transparent ${
+                isActive
+                  ? "bg-background border-border border-b-background text-[#00A7E7]"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* === Tab: Generale === */}
+      {activeTab === "generale" && (<>
 
       {/* Server Configuration */}
       <Card>
@@ -361,6 +556,55 @@ export default function SettingsPage() {
               />
             </div>
             <Button onClick={handleSavePort} disabled={savingPort}>
+              <Save className="h-4 w-4 mr-2" />
+              Salva
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Host Credentials (Windows/Linux) */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Monitor className="h-5 w-5 text-primary" />
+            <CardTitle className="text-base">Credenziali host (Windows / Linux)</CardTitle>
+          </div>
+          <CardDescription>
+            Credenziali di default per raccogliere informazioni da host Windows (WinRM/WMI) e Linux (SSH). Crea le credenziali in Credenziali con tipo &quot;Windows (host)&quot; o &quot;Linux (host)&quot;.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-2 min-w-[200px]">
+              <Label>Windows (WinRM/WMI)</Label>
+              <Select value={hostWindowsCredentialId || "none"} onValueChange={(v) => setHostWindowsCredentialId(v === "none" ? "" : (v ?? ""))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Nessuna" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nessuna</SelectItem>
+                  {credentials.filter((c) => c.credential_type === "windows").map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 min-w-[200px]">
+              <Label>Linux (SSH)</Label>
+              <Select value={hostLinuxCredentialId || "none"} onValueChange={(v) => setHostLinuxCredentialId(v === "none" ? "" : (v ?? ""))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Nessuna" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nessuna</SelectItem>
+                  {credentials.filter((c) => c.credential_type === "linux").map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleSaveHostCredentials} disabled={savingHostCreds}>
               <Save className="h-4 w-4 mr-2" />
               Salva
             </Button>
@@ -418,6 +662,174 @@ export default function SettingsPage() {
           </form>
         </CardContent>
       </Card>
+
+      </>)}
+
+      {/* === Tab: Utenti === */}
+      {activeTab === "utenti" && (<>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              <CardTitle className="text-base">Gestione Utenti</CardTitle>
+            </div>
+            <CardDescription className="mt-1">Gestisci gli account di accesso al sistema.</CardDescription>
+          </div>
+          <Dialog open={newUserOpen} onOpenChange={setNewUserOpen}>
+            <DialogTrigger render={<Button size="sm" />}>
+              <Plus className="h-4 w-4 mr-2" />Nuovo Utente
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Nuovo Utente</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleCreateUser} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Username</Label>
+                  <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} required minLength={3} placeholder="nome.cognome" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Password</Label>
+                  <Input type="password" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} required minLength={8} placeholder="Minimo 8 caratteri" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Ruolo</Label>
+                  <Select value={newUserRole} onValueChange={(v) => setNewUserRole(v as "admin" | "viewer")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Amministratore</SelectItem>
+                      <SelectItem value="viewer">Solo lettura</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button type="submit" disabled={savingUser}>Crea Utente</Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Username</TableHead>
+                <TableHead>Ruolo</TableHead>
+                <TableHead>Creato il</TableHead>
+                <TableHead>Ultimo accesso</TableHead>
+                <TableHead className="w-[100px]">Azioni</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {users.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell className="font-medium">{user.username}</TableCell>
+                  <TableCell>
+                    <Badge variant={user.role === "admin" ? "default" : "secondary"}>
+                      {user.role === "admin" ? "Amministratore" : "Solo lettura"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{new Date(user.created_at).toLocaleDateString("it-IT")}</TableCell>
+                  <TableCell>{user.last_login ? new Date(user.last_login).toLocaleString("it-IT") : "Mai"}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm" variant="ghost"
+                        onClick={() => handleToggleUserRole(user.id, user.role === "admin" ? "viewer" : "admin")}
+                        title={user.role === "admin" ? "Declassa a viewer" : "Promuovi ad admin"}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="sm" variant="ghost"
+                        onClick={() => handleDeleteUser(user.id, user.username)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {users.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">Nessun utente trovato</p>
+          )}
+        </CardContent>
+      </Card>
+      </>)}
+
+      {/* === Tab: HTTPS === */}
+      {activeTab === "https" && (<>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-primary" />
+            <CardTitle className="text-base">Configurazione HTTPS</CardTitle>
+          </div>
+          <CardDescription>Gestisci il certificato SSL/TLS per l&apos;accesso sicuro al sistema.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Status */}
+          <div className="flex items-center gap-3 p-3 rounded-md border bg-muted/30">
+            <div className={`h-3 w-3 rounded-full ${tlsStatus?.enabled && tlsStatus?.cert_exists ? "bg-green-500" : "bg-yellow-500"}`} />
+            <div>
+              <p className="text-sm font-medium">
+                {tlsStatus?.enabled && tlsStatus?.cert_exists
+                  ? "HTTPS attivo"
+                  : tlsStatus?.cert_exists
+                    ? "Certificato presente — riavvia il server per attivare HTTPS"
+                    : "HTTPS non configurato"}
+              </p>
+              {tlsStatus?.cert_info && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Soggetto: {tlsStatus.cert_info.subject} · Scadenza: {tlsStatus.cert_info.notafter}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Generate self-signed */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold">Genera certificato self-signed</h3>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Dominio / IP</Label>
+                <Input className="w-48" value={tlsDomain} onChange={(e) => setTlsDomain(e.target.value)} placeholder="es. ipam.azienda.local" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Validità (giorni)</Label>
+                <Input className="w-24" type="number" value={tlsDays} onChange={(e) => setTlsDays(e.target.value)} />
+              </div>
+              <Button onClick={handleGenerateCert} disabled={generatingCert || !tlsDomain.trim()}>
+                {generatingCert ? "Generazione..." : "Genera Certificato"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Import external cert */}
+          <div className="space-y-3 border-t pt-4">
+            <h3 className="text-sm font-semibold">Importa certificato esterno</h3>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Certificato (PEM)</Label>
+                <Textarea rows={4} className="font-mono text-xs" value={importCert} onChange={(e) => setImportCert(e.target.value)} placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Chiave privata (PEM)</Label>
+                <Textarea rows={4} className="font-mono text-xs" value={importKey} onChange={(e) => setImportKey(e.target.value)} placeholder={"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"} />
+              </div>
+              <Button onClick={handleImportCert} disabled={importingCert || !importCert.trim() || !importKey.trim()} variant="outline">
+                {importingCert ? "Importazione..." : "Importa Certificato"}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+      </>)}
+
+      {/* === Tab: Profili Nmap === */}
+      {activeTab === "nmap" && (<>
 
       {/* Nmap Profiles */}
       <Card>
@@ -596,6 +1008,11 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      </>)}
+
+      {/* === Tab: Job Pianificati === */}
+      {activeTab === "jobs" && (<>
+
       {/* Scheduled Jobs */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -620,9 +1037,11 @@ export default function SettingsPage() {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ping_sweep">Ping Sweep</SelectItem>
+                      <SelectItem value="snmp_scan">SNMP Scan</SelectItem>
                       <SelectItem value="nmap_scan">Nmap Scan</SelectItem>
                       <SelectItem value="arp_poll">ARP Poll</SelectItem>
                       <SelectItem value="dns_resolve">DNS Resolve</SelectItem>
+                      <SelectItem value="known_host_check">Monitoraggio host conosciuti</SelectItem>
                       <SelectItem value="cleanup">Pulizia Host</SelectItem>
                     </SelectContent>
                   </Select>
@@ -716,6 +1135,11 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      </>)}
+
+      {/* === Tab: Gestione Dati === */}
+      {activeTab === "dati" && (<>
+
       {/* Data Management */}
       <Card>
         <CardHeader>
@@ -750,6 +1174,8 @@ export default function SettingsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      </>)}
     </div>
   );
 }

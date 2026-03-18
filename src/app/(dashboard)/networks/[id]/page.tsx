@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getNetworkById, getHostsByNetwork, getNmapProfiles, getNetworkRouterId, getRouters } from "@/lib/db";
+import { getNetworkById, getHostsByNetworkWithDevices, getNmapProfiles, getNetworkRouterId, getRouters } from "@/lib/db";
 import { NetworkDetailClient } from "./network-detail-client";
 
 export default async function NetworkDetailPage({
@@ -14,7 +14,7 @@ export default async function NetworkDetailPage({
     notFound();
   }
 
-  const hosts = getHostsByNetwork(Number(id));
+  const hosts = getHostsByNetworkWithDevices(Number(id));
   const profiles = getNmapProfiles();
   const routerId = getNetworkRouterId(Number(id));
   const routers = getRouters();

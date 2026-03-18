@@ -1,0 +1,56 @@
+diff --git a/node_modules/httpntlm/ntlm.js b/node_modules/httpntlm/ntlm.js
+index 568ef66..50f6897 100644
+--- a/node_modules/httpntlm/ntlm.js
++++ b/node_modules/httpntlm/ntlm.js
+@@ -115,14 +115,48 @@ function createType1Message(options){
+ 	return 'NTLM ' + buf.toString('base64');
+ }
+ 
++function extractNtlmFromNegotiate(negotiateB64) {
++	var buf = Buffer.from(negotiateB64, 'base64');
++	var sig = Buffer.from('NTLMSSP\0', 'ascii');
++	for (var i = 0; i <= buf.length - sig.length; i++) {
++		if (buf.slice(i, i + sig.length).equals(sig) && (buf.readUInt16LE(i + 8) === 2 || buf.readUInt32LE(i + 8) === 2)) {
++			var o = i;
++			var targetNameMaxLen = buf.readUInt16LE(o + 14);
++			var targetNameOffset = buf.readUInt32LE(o + 16);
++			var end = o + Math.max(56, targetNameOffset + targetNameMaxLen);
++			if (buf.length >= o + 44 && (buf.readUInt32LE(o + 20) & 0x00800000)) {
++				var tiLen = buf.readUInt16LE(o + 40);
++				var tiOff = buf.readUInt32LE(o + 44);
++				end = Math.max(end, o + tiOff + tiLen);
++			}
++			return buf.slice(o, Math.min(end, buf.length)).toString('base64');
++		}
++	}
++	return null;
++}
++
+ function parseType2Message(rawmsg, callback){
+-	var match = rawmsg.match(/NTLM (.+)?/);
+-	if(!match || !match[1]) {
++	var headerStr = Array.isArray(rawmsg) ? rawmsg.join(', ') : (rawmsg || '');
++	var match = headerStr.match(/NTLM\s+([^,\s]+)/i);
++	var b64 = match ? match[1] : null;
++	if (!b64) {
++		var negMatch = headerStr.match(/Negotiate\s+([^,\s]+)/i);
++		if (negMatch) {
++			b64 = extractNtlmFromNegotiate(negMatch[1]);
++			if (!b64 && negMatch[1]) {
++				var decoded = Buffer.from(negMatch[1], 'base64');
++				if (decoded.length >= 12 && decoded.toString('ascii', 0, 8) === 'NTLMSSP\x00' && decoded.readUInt32LE(8) === 2) {
++					b64 = negMatch[1];
++				}
++			}
++		}
++	}
++	if(!b64) {
+ 		callback(new Error("Couldn't find NTLM in the message type2 coming from the server"));
+ 		return null;
+ 	}
+ 
+-	var buf = Buffer.from(match[1], 'base64');
++	var buf = Buffer.from(b64, 'base64');
+ 
+ 	var msg = {};
+ 

@@ -59,7 +59,10 @@ export default function SetupPage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-primary">DA-IPAM</CardTitle>
+          <div className="flex justify-center mb-4">
+            <img src="/logo-color.png" alt="Logo" className="h-14 w-64 object-contain" />
+          </div>
+          <CardTitle className="text-2xl font-bold text-primary">DA-INVENT</CardTitle>
           <CardDescription>Configurazione iniziale — Crea l&apos;account amministratore</CardDescription>
         </CardHeader>
         <CardContent>

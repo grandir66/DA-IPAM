@@ -163,6 +163,7 @@ function parseNmapXml(xml: string): NmapResult[] {
     const ports: NmapPort[] = [];
     let snmpHostname: string | null = null;
     let snmpSysDescr: string | null = null;
+    let snmpSysObjectID: string | null = null;
 
     const extractSnmp = (script: { "@_id"?: string; elem?: unknown; output?: string }) => {
       if (script["@_id"] !== "snmp-info") return;
@@ -176,13 +177,16 @@ function parseNmapXml(xml: string): NmapResult[] {
         const s = val ? String(val).trim() : "";
         if ((key === "sysname" || key === "sysName") && s) snmpHostname = s;
         if ((key === "sysdescr" || key === "sysDescr") && s) snmpSysDescr = s;
+        if ((key === "sysobjectid" || key === "sysObjectID") && s) snmpSysObjectID = s;
       }
-      if (!snmpHostname && !snmpSysDescr && script.output) {
+      if ((!snmpHostname || !snmpSysDescr || !snmpSysObjectID) && script.output) {
         const out = String(script.output);
         const m1 = out.match(/sysName[:\s]+([^\n]+)/i);
         const m2 = out.match(/sysDescr[:\s]+([^\n]+)/i);
-        if (m1) snmpHostname = m1[1].trim();
-        if (m2) snmpSysDescr = m2[1].trim();
+        const m3 = out.match(/sysObjectID[:\s]+([^\n]+)/i);
+        if (m1) snmpHostname = snmpHostname || m1[1].trim();
+        if (m2) snmpSysDescr = snmpSysDescr || m2[1].trim();
+        if (m3) snmpSysObjectID = snmpSysObjectID || m3[1].trim();
       }
     };
 
@@ -223,6 +227,7 @@ function parseNmapXml(xml: string): NmapResult[] {
       ip, alive, ports, os, mac,
       snmpHostname: snmpHostname || undefined,
       snmpSysDescr: snmpSysDescr || undefined,
+      snmpSysObjectID: snmpSysObjectID || undefined,
     });
   }
 

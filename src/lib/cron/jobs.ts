@@ -7,14 +7,21 @@ import {
   getNetworkDeviceById,
   cleanupStaleHosts,
   getHostsByNetwork,
+  getKnownHosts,
+  updateHost,
+  addStatusHistory,
+  getDb,
 } from "@/lib/db";
 import { discoverNetwork } from "@/lib/scanner/discovery";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
+import { pingHost } from "@/lib/scanner/ping";
+import { tcpConnect, FALLBACK_TCP_PORTS } from "@/lib/scanner/tcp-check";
 import { upsertHost } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
-import { upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice } from "@/lib/db";
+import { upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, upsertMacIpMapping } from "@/lib/db";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
+import { classifyDevice } from "@/lib/device-classifier";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 
 export async function runJob(jobId: number): Promise<void> {
@@ -26,6 +33,9 @@ export async function runJob(jobId: number): Promise<void> {
     case "ping_sweep":
       await runPingSweep(job.network_id);
       break;
+    case "snmp_scan":
+      await runSnmpScan(job.network_id);
+      break;
     case "nmap_scan":
       await runNmapScan(job.network_id);
       break;
@@ -34,6 +44,9 @@ export async function runJob(jobId: number): Promise<void> {
       break;
     case "dns_resolve":
       await runDnsResolve(job.network_id);
+      break;
+    case "known_host_check":
+      await runKnownHostCheck(job.network_id);
       break;
     case "cleanup":
       await runCleanup(job.config);
@@ -48,6 +61,23 @@ async function runPingSweep(networkId: number | null): Promise<void> {
     const networks = getNetworks();
     for (const net of networks) {
       await discoverNetwork(net.id, "ping");
+    }
+  }
+}
+
+async function runSnmpScan(networkId: number | null): Promise<void> {
+  const runForNetwork = async (nid: number) => {
+    const network = getNetworkById(nid);
+    if (!network) return;
+    const snmpCommunity = network.snmp_community ?? null;
+    await discoverNetwork(nid, "snmp", undefined, snmpCommunity);
+  };
+  if (networkId) {
+    await runForNetwork(networkId);
+  } else {
+    const networks = getNetworks();
+    for (const net of networks) {
+      await runForNetwork(net.id);
     }
   }
 }
@@ -71,32 +101,51 @@ async function runNmapScan(networkId: number | null): Promise<void> {
   }
 }
 
-export async function runArpPoll(): Promise<void> {
-  const devices = getNetworkDevices()
+export async function runArpPoll(networkId?: number | null): Promise<{ phase?: string; error?: string }> {
+  const networks = getNetworks();
+  let devices = getNetworkDevices()
     .filter((d) => d.enabled)
     .sort((a, b) => (a.device_type === "router" ? 0 : 1) - (b.device_type === "router" ? 0 : 1));
-  const networks = getNetworks();
+
+  if (networkId != null) {
+    const routerId = getNetworkRouterId(networkId);
+    if (!routerId) {
+      return { error: "Nessun router assegnato a questa rete. Assegna un router dalla pagina di modifica rete." };
+    }
+    const device = devices.find((d) => d.id === routerId);
+    if (!device || device.device_type !== "router") {
+      return { error: "Router non trovato o non abilitato" };
+    }
+    devices = [device];
+  }
 
   for (const device of devices) {
     try {
       if (device.device_type === "router") {
         const client = await createRouterClient(device);
         const entries = await client.getArpTable();
-        upsertArpEntries(device.id, entries);
 
-        // Update host MAC addresses
+        // Prima aggiorna hosts con MAC e vendor, poi upsertArpEntries (così host_id in arp_entries è corretto)
         for (const entry of entries) {
           if (!entry.ip || !entry.mac) continue;
           const network = networks.find((n) => isIpInCidr(entry.ip!, n.cidr));
           if (!network) continue;
           const vendor = await lookupVendor(entry.mac);
+          const classification = classifyDevice({ hostname: null, vendor: vendor ?? null });
           upsertHost({
             network_id: network.id,
             ip: entry.ip,
             mac: entry.mac,
             vendor: vendor || undefined,
+            status: "online",
+            hostname_source: "arp",
+            ...(classification && { classification }),
           });
         }
+        upsertArpEntries(device.id, entries, (ip) => {
+          const n = networks.find((net) => isIpInCidr(ip, net.cidr));
+          return n?.id ?? null;
+        });
 
         // MikroTik: recupera lease DHCP per popolare hostname, MAC e altri campi
         if (client.getDhcpLeases) {
@@ -105,11 +154,30 @@ export async function runArpPoll(): Promise<void> {
             for (const lease of leases) {
               const network = networks.find((n) => isIpInCidr(lease.ip, n.cidr));
               if (!network) continue;
-              upsertHost({
+              const vendor = await lookupVendor(lease.mac);
+              const classification = classifyDevice({
+                hostname: lease.hostname ?? null,
+                vendor: vendor ?? null,
+              });
+              const host = upsertHost({
                 network_id: network.id,
                 ip: lease.ip,
                 mac: lease.mac,
+                status: "online",
                 ...(lease.hostname && { hostname: lease.hostname }),
+                hostname_source: "dhcp",
+                vendor: vendor || undefined,
+                ...(classification && { classification }),
+              });
+              upsertMacIpMapping({
+                mac: lease.mac,
+                ip: lease.ip,
+                source: "dhcp",
+                source_device_id: device.id,
+                network_id: network.id,
+                host_id: host.id,
+                vendor: vendor ?? undefined,
+                hostname: lease.hostname ?? undefined,
               });
             }
           } catch (err) {
@@ -139,7 +207,7 @@ export async function runArpPoll(): Promise<void> {
           }
         }
 
-          const switchPorts = portInfos.map((p) => {
+        const switchPorts = portInfos.map((p) => {
             const portMacs = macsByPortByIndex.get(p.port_index) ?? macsByPortByName.get(normalizePortNameForMatch(p.port_name.trim()));
             const macCount = portMacs?.macs.length || 0;
             const isTrunk = macCount > 1 ? 1 : 0;
@@ -192,6 +260,7 @@ export async function runArpPoll(): Promise<void> {
               trunk_neighbor_port: p.trunk_neighbor_port ?? null,
               trunk_primary_device_id,
               trunk_primary_name,
+              stp_state: p.stp_state ?? null,
             };
           });
 
@@ -207,6 +276,25 @@ export async function runArpPoll(): Promise<void> {
           port_status: e.port_status,
           speed: e.speed,
         })));
+
+        // Popola mac_ip_mapping con MAC da switch risolti a IP (hosts/ARP)
+        const switchNetwork = networks.find((n) => isIpInCidr(device.host, n.cidr));
+        for (const e of entries) {
+          if (!e.mac) continue;
+          const resolved = resolveMacToDevice(e.mac);
+          if (resolved.ip) {
+            upsertMacIpMapping({
+              mac: e.mac,
+              ip: resolved.ip,
+              source: "switch",
+              source_device_id: device.id,
+              network_id: switchNetwork?.id ?? null,
+              host_id: resolved.host_id,
+              vendor: resolved.vendor ?? undefined,
+              hostname: resolved.hostname ?? undefined,
+            });
+          }
+        }
 
         // Port schema con cross-ref ARP/IPAM per assegnare device alla porta
         const portInfos = await client.getPortSchema();
@@ -270,20 +358,26 @@ export async function runArpPoll(): Promise<void> {
               single_mac_ip: singleMacIp,
               single_mac_hostname: singleMacHostname,
               host_id: hostId,
-              trunk_neighbor_name: p.trunk_neighbor_name ?? null,
-              trunk_neighbor_port: p.trunk_neighbor_port ?? null,
-              trunk_primary_device_id,
-              trunk_primary_name,
-            };
-          });
+            trunk_neighbor_name: p.trunk_neighbor_name ?? null,
+            trunk_neighbor_port: p.trunk_neighbor_port ?? null,
+            trunk_primary_device_id,
+            trunk_primary_name,
+            stp_state: p.stp_state ?? null,
+          };
+        });
 
-          upsertSwitchPorts(device.id, switchPorts);
-        }
+        upsertSwitchPorts(device.id, switchPorts);
       }
+    }
     } catch (error) {
       console.error(`[ARP Poll] Errore su ${device.name}:`, error);
     }
   }
+  const network = networkId != null ? networks.find((n) => n.id === networkId) : null;
+  const phase = networkId != null && network
+    ? `ARP poll completato per ${network.name}`
+    : "ARP poll completato";
+  return { phase };
 }
 
 /** Recupera lease DHCP dal router MikroTik della rete per popolare hostname e MAC */
@@ -311,26 +405,92 @@ export async function runDhcpPollForNetwork(networkId: number): Promise<{ update
   let updated = 0;
   for (const lease of leases) {
     if (!isIpInCidr(lease.ip, network.cidr)) continue;
-    upsertHost({
+    const vendor = await lookupVendor(lease.mac);
+    const classification = classifyDevice({
+      hostname: lease.hostname ?? null,
+      vendor: vendor ?? null,
+    });
+    const host = upsertHost({
       network_id: networkId,
       ip: lease.ip,
       mac: lease.mac,
       ...(lease.hostname && { hostname: lease.hostname }),
+      hostname_source: "dhcp",
+      vendor: vendor || undefined,
+      ...(classification && { classification }),
+    });
+    upsertMacIpMapping({
+      mac: lease.mac,
+      ip: lease.ip,
+      source: "dhcp",
+      source_device_id: device.id,
+      network_id: networkId,
+      host_id: host.id,
+      vendor: vendor ?? undefined,
+      hostname: lease.hostname ?? undefined,
     });
     updated++;
   }
   return { updated };
 }
 
-async function runDnsResolve(networkId: number | null): Promise<void> {
+async function runKnownHostCheck(networkId: number | null): Promise<void> {
+  const hosts = getKnownHosts(networkId);
+  const timeoutMs = 3000;
+
+  for (const host of hosts) {
+    let alive = false;
+    let latencyMs: number | null = null;
+
+    const pingResult = await pingHost(host.ip, timeoutMs);
+    latencyMs = pingResult.latency_ms;
+    if (pingResult.alive) {
+      alive = true;
+    } else {
+      // Use custom monitor_ports if set, otherwise fallback
+      let portsToCheck: number[] = FALLBACK_TCP_PORTS;
+      if (host.monitor_ports) {
+        try {
+          const parsed = JSON.parse(host.monitor_ports) as number[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            portsToCheck = parsed;
+          }
+        } catch { /* invalid JSON, use fallback */ }
+      }
+      for (const port of portsToCheck) {
+        const ok = await tcpConnect(host.ip, port, 2000);
+        if (ok) {
+          alive = true;
+          break;
+        }
+      }
+    }
+
+    const newStatus = alive ? "online" : "offline";
+    // Always record status history with latency
+    addStatusHistory(host.id, newStatus, latencyMs);
+    // Always update host status and latency
+    updateHost(host.id, { status: newStatus });
+    // Update last_response_time_ms directly
+    getDb().prepare("UPDATE hosts SET last_response_time_ms = ? WHERE id = ?").run(latencyMs, host.id);
+  }
+
+  console.log(`[KnownHostCheck] ${hosts.length} host verificati`);
+}
+
+export async function runDnsResolve(networkId: number | null): Promise<{ resolved: number; total: number }> {
   const networkIds = networkId
     ? [networkId]
     : getNetworks().map((n) => n.id);
+
+  let resolved = 0;
+  let total = 0;
 
   for (const nid of networkIds) {
     const network = getNetworkById(nid);
     const dnsServer = network?.dns_server ?? null;
     const hosts = getHostsByNetwork(nid);
+    total += hosts.length;
     for (const host of hosts) {
       const dnsReverse = await reverseDns(host.ip, dnsServer);
       let dnsForward: string | undefined;
@@ -344,19 +504,30 @@ async function runDnsResolve(networkId: number | null): Promise<void> {
           network_id: nid,
           ip: host.ip,
           hostname: dnsReverse || undefined,
+          hostname_source: "dns",
           dns_reverse: dnsReverse || undefined,
           dns_forward: dnsForward || undefined,
         });
+        resolved++;
       }
     }
   }
+
+  return { resolved, total };
 }
 
 async function runCleanup(configStr: string): Promise<void> {
-  const config = JSON.parse(configStr || "{}");
+  let config: { days_until_stale?: number; days_until_delete?: number };
+  try {
+    config = JSON.parse(configStr || "{}");
+  } catch {
+    console.error("[Cleanup] Configurazione JSON non valida, uso valori predefiniti:", configStr);
+    config = {};
+  }
   const daysUntilStale = config.days_until_stale || 30;
   const daysUntilDelete = config.days_until_delete || 90;
 
   const result = cleanupStaleHosts(daysUntilStale, daysUntilDelete);
   console.log(`[Cleanup] ${result.flagged} host segnalati stale, ${result.deleted} eliminati`);
 }
+

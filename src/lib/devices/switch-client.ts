@@ -1,6 +1,20 @@
 import type { NetworkDevice } from "@/types";
-import { decrypt } from "@/lib/crypto";
+import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString } from "@/lib/db";
+import { normalizePortNameForMatch } from "@/lib/utils";
 import { getSnmpPortSchema } from "./snmp-port-schema";
+import { getSnmpStpInfo, type StpInfo } from "./snmp-stp-info";
+import { getMikrotikStpInfo, getBrctlStpInfo, getUnifiStpInfo } from "./stp-ssh";
+import {
+  getHpProcurveMacTable,
+  getHpProcurveLldpNeighbors,
+  getHpProcurvePortSchema,
+  getHpProcurveStpInfo,
+  getHpComwareMacTable,
+  getHpComwareLldpNeighbors,
+  getHpComwarePortSchema,
+  getHpComwareStpInfo,
+} from "./hp-vendor";
+import { createWinrmClient } from "./winrm-client";
 
 export interface MacTableEntry {
   mac: string;
@@ -21,49 +35,100 @@ export interface PortInfo {
   poe_power_mw: number | null;
   trunk_neighbor_name: string | null;
   trunk_neighbor_port: string | null;
+  stp_state: string | null;
 }
 
 export interface SwitchClient {
   getMacTable(): Promise<MacTableEntry[]>;
   getPortSchema(): Promise<PortInfo[]>;
+  getStpInfo?(): Promise<StpInfo | null>;
   testConnection(): Promise<boolean>;
 }
 
 export async function createSwitchClient(device: NetworkDevice): Promise<SwitchClient> {
-  const password = device.encrypted_password ? decrypt(device.encrypted_password) : undefined;
-  const primaryClient = await createVendorClient(device, password);
+  const creds = getDeviceCredentials(device);
+  const password = creds?.password;
+  const username = creds?.username ?? device.username ?? undefined;
+  const primaryClient = await createVendorClient(device, { username, password });
+  const hasSnmpCommunity = device.community_string
+    || (device.snmp_credential_id ? !!getCredentialCommunityString(device.snmp_credential_id) : false)
+    || (device.credential_id ? !!getCredentialCommunityString(device.credential_id) : false);
+
+  // UniFi con SNMP: la MAC table va presa da SNMP (Bridge MIB), non da SSH che restituisce dati incompleti
+  const useSnmpFirstForMac = device.vendor === "ubiquiti" && hasSnmpCommunity;
 
   return {
     async getMacTable() {
+      if (useSnmpFirstForMac) {
+        try {
+          const snmpClient = await createSnmpSwitchClient(device);
+          const entries = await snmpClient.getMacTable();
+          if (entries.length > 0) return entries;
+        } catch { /* SNMP fallito, prova SSH */ }
+      }
+
       try {
         const entries = await primaryClient.getMacTable();
         if (entries.length > 0) return entries;
       } catch { /* primary failed, try fallback */ }
 
-      if (device.protocol === "ssh" && device.community_string) {
+      if (device.protocol === "ssh" && hasSnmpCommunity && !useSnmpFirstForMac) {
         const snmpClient = await createSnmpSwitchClient(device);
         return snmpClient.getMacTable();
       }
 
-      if ((device.protocol === "snmp_v2" || device.protocol === "snmp_v3") && device.encrypted_password && device.username) {
-        const sshClient = await createSshWithFallbackCommands(device, password);
+      if ((device.protocol === "snmp_v2" || device.protocol === "snmp_v3") && (password || (device.encrypted_password && device.username))) {
+        const sshClient = await createSshWithFallbackCommands(device, { username, password });
         return sshClient.getMacTable();
       }
 
       return primaryClient.getMacTable();
     },
     async getPortSchema() {
+      if (useSnmpFirstForMac) {
+        try {
+          const snmpClient = await createSnmpSwitchClient(device);
+          const ports = await snmpClient.getPortSchema();
+          if (ports.length > 0) return ports;
+        } catch { /* SNMP fallito, prova SSH */ }
+      }
+
       try {
         const ports = await primaryClient.getPortSchema();
         if (ports.length > 0) return ports;
       } catch { /* primary failed */ }
 
-      if (device.protocol === "ssh" && device.community_string) {
+      if (device.protocol === "ssh" && hasSnmpCommunity && !useSnmpFirstForMac) {
         const snmpClient = await createSnmpSwitchClient(device);
         return snmpClient.getPortSchema();
       }
 
       return [];
+    },
+    async getStpInfo() {
+      // Ubiquiti: SNMP STP (BRIDGE-MIB) funziona su più modelli; SSH (telnet+enable) solo su alcuni
+      if (device.vendor === "ubiquiti" && hasSnmpCommunity) {
+        try {
+          const snmpClient = await createSnmpSwitchClient(device);
+          const info = await snmpClient.getStpInfo?.();
+          if (info) return info;
+        } catch { /* SNMP STP fallito */ }
+      }
+      try {
+        if ("getStpInfo" in primaryClient && typeof primaryClient.getStpInfo === "function") {
+          const info = await primaryClient.getStpInfo();
+          if (info) return info;
+        }
+      } catch { /* SSH STP fallito */ }
+      if (hasSnmpCommunity && device.vendor !== "ubiquiti") {
+        try {
+          const snmpClient = await createSnmpSwitchClient(device);
+          return snmpClient.getStpInfo?.() ?? null;
+        } catch {
+          return null;
+        }
+      }
+      return null;
     },
     async testConnection() {
       return primaryClient.testConnection();
@@ -71,26 +136,31 @@ export async function createSwitchClient(device: NetworkDevice): Promise<SwitchC
   };
 }
 
-async function createVendorClient(device: NetworkDevice, password: string | undefined): Promise<SwitchClient> {
+type DeviceCreds = { username?: string; password?: string };
+
+async function createVendorClient(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
+  if (device.protocol === "winrm" || device.vendor === "windows") {
+    return createWinrmSwitchClient(device);
+  }
   switch (device.vendor) {
     case "mikrotik":
-      return createMikrotikSwitchClient(device, password);
+      return createMikrotikSwitchClient(device, creds);
     case "cisco":
-      return createCiscoSwitchClient(device, password);
+      return createCiscoSwitchClient(device, creds);
     case "ubiquiti":
-      return createUbiquitiSwitchClient(device, password);
+      return createUbiquitiSwitchClient(device, creds);
     case "hp":
-      return createHpSwitchClient(device, password);
+      return createHpSwitchClient(device, creds);
     case "omada":
       return createOmadaSwitchClient(device);
     default:
-      return createGenericSwitchClient(device, password);
+      return createGenericSwitchClient(device, creds);
   }
 }
 
 async function createSshSwitchClient(
   device: NetworkDevice,
-  password: string | undefined,
+  creds: DeviceCreds,
   command: string,
   parser: (output: string) => MacTableEntry[]
 ): Promise<SwitchClient> {
@@ -112,8 +182,8 @@ async function createSshSwitchClient(
       conn.connect({
         host: device.host,
         port: device.port,
-        username: device.username || undefined,
-        password,
+        username: creds.username || device.username || undefined,
+        password: creds.password,
         readyTimeout: 10000,
       });
     });
@@ -140,24 +210,30 @@ async function createSshSwitchClient(
 
 async function createSnmpSwitchClient(device: NetworkDevice): Promise<SwitchClient> {
   const snmp = await import("net-snmp");
-  let community = "public";
-  if (device.community_string) {
-    try {
-      community = decrypt(device.community_string);
-    } catch {
-      community = device.community_string;
-    }
-  }
-
   const isSnmpProtocol = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
   const snmpPort = isSnmpProtocol ? (device.port || 161) : 161;
+  const opts = { port: snmpPort, timeout: 10000 };
+
+  function createSession() {
+    if (device.protocol === "snmp_v3") {
+      const v3 = getDeviceSnmpV3Credentials(device);
+      if (v3) {
+        const user = {
+          name: v3.username,
+          level: snmp.SecurityLevel.authNoPriv,
+          authProtocol: snmp.AuthProtocols.md5,
+          authKey: v3.authKey,
+        };
+        return snmp.createV3Session(device.host, user, opts);
+      }
+    }
+    const community = getDeviceCommunityString(device);
+    return snmp.createSession(device.host, community, opts);
+  }
 
   function snmpWalk(oid: string): Promise<{ oid: string; value: Buffer | string | number }[]> {
     return new Promise((resolve, reject) => {
-      const session = snmp.createSession(device.host, community, {
-        port: snmpPort,
-        timeout: 10000,
-      });
+      const session = createSession();
       const results: { oid: string; value: Buffer | string | number }[] = [];
 
       session.subtree(
@@ -276,6 +352,9 @@ async function createSnmpSwitchClient(device: NetworkDevice): Promise<SwitchClie
     async getPortSchema() {
       return getSnmpPortSchema(snmpWalk);
     },
+    async getStpInfo() {
+      return getSnmpStpInfo(snmpWalk);
+    },
     async testConnection() {
       try {
         await snmpWalk("1.3.6.1.2.1.1.1.0");
@@ -287,7 +366,7 @@ async function createSnmpSwitchClient(device: NetworkDevice): Promise<SwitchClie
   };
 }
 
-async function createSshWithFallbackCommands(device: NetworkDevice, password: string | undefined): Promise<SwitchClient> {
+async function createSshWithFallbackCommands(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
   const commands = [
     { cmd: "show mac address-table", parser: parseGenericMacTable },
     { cmd: "show mac-address-table", parser: parseGenericMacTable },
@@ -313,8 +392,8 @@ async function createSshWithFallbackCommands(device: NetworkDevice, password: st
       conn.connect({
         host: device.host,
         port: device.port || 22,
-        username: device.username || undefined,
-        password,
+        username: creds.username || device.username || undefined,
+        password: creds.password,
         readyTimeout: 10000,
       });
     });
@@ -335,6 +414,9 @@ async function createSshWithFallbackCommands(device: NetworkDevice, password: st
     async getPortSchema() {
       return [];
     },
+    async getStpInfo() {
+      return getBrctlStpInfo(execCmd);
+    },
     async testConnection() {
       try { await execCmd("echo test"); return true; } catch { return false; }
     },
@@ -342,30 +424,160 @@ async function createSshWithFallbackCommands(device: NetworkDevice, password: st
 }
 
 // Vendor implementations
-function createMikrotikSwitchClient(device: NetworkDevice, password: string | undefined): Promise<SwitchClient> {
+async function createMikrotikSwitchClient(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
   if (device.protocol === "ssh") {
-    return createSshSwitchClient(device, password, "/interface bridge host print terse", parseMikrotikMacTable);
+    const { Client } = await import("ssh2");
+    function execCommand(cmd: string): Promise<string> {
+      return new Promise((resolve, reject) => {
+        const conn = new Client();
+        conn.on("ready", () => {
+          conn.exec(cmd, (err, stream) => {
+            if (err) { conn.end(); reject(err); return; }
+            let output = "";
+            stream.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.on("close", () => { conn.end(); resolve(output); });
+          });
+        });
+        conn.on("error", reject);
+        conn.connect({
+          host: device.host,
+          port: device.port,
+          username: creds.username ?? device.username ?? undefined,
+          password: creds.password,
+          readyTimeout: 10000,
+        });
+      });
+    }
+    return {
+      async getMacTable() {
+        const output = await execCommand("/interface bridge host print terse");
+        return parseMikrotikMacTable(output);
+      },
+      async getPortSchema() { return []; },
+      async getStpInfo() { return getMikrotikStpInfo(execCommand); },
+      async testConnection() {
+        try { await execCommand("echo test"); return true; } catch { return false; }
+      },
+    };
   }
   return createSnmpSwitchClient(device);
 }
 
-function createCiscoSwitchClient(device: NetworkDevice, password: string | undefined): Promise<SwitchClient> {
+function createCiscoSwitchClient(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
   if (device.protocol === "ssh") {
-    return createSshSwitchClient(device, password, "show mac address-table", parseCiscoMacTable);
+    return createSshSwitchClient(device, creds, "show mac address-table", parseCiscoMacTable);
   }
   return createSnmpSwitchClient(device);
 }
 
-function createUbiquitiSwitchClient(device: NetworkDevice, password: string | undefined): Promise<SwitchClient> {
+async function createUbiquitiSwitchClient(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
   if (device.protocol === "ssh") {
-    return createSshWithFallbackCommands(device, password);
+    const base = await createSshWithFallbackCommands(device, creds);
+    const opts = {
+      host: device.host,
+      port: device.port || 22,
+      username: creds.username ?? device.username ?? "",
+      password: creds.password ?? "",
+      timeout: 15000,
+    };
+    return {
+      ...base,
+      getStpInfo: async () => {
+        if (!opts.username || !opts.password) return null;
+        return getUnifiStpInfo(opts);
+      },
+    };
   }
   return createSnmpSwitchClient(device);
 }
 
-function createHpSwitchClient(device: NetworkDevice, password: string | undefined): Promise<SwitchClient> {
+async function createHpProcurveSwitchClient(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
+  const opts = {
+    host: device.host,
+    port: device.port || 22,
+    username: creds.username!,
+    password: creds.password!,
+    timeout: 30000,
+  };
+  return {
+    async getMacTable() {
+      return getHpProcurveMacTable(opts);
+    },
+    async getPortSchema() {
+      const [ports, lldp] = await Promise.all([getHpProcurvePortSchema(opts), getHpProcurveLldpNeighbors(opts)]);
+      return mergeLldpIntoPorts(ports, lldp);
+    },
+    async getStpInfo() {
+      return getHpProcurveStpInfo(opts);
+    },
+    async testConnection() {
+      try {
+        const { sshExec } = await import("./ssh-helper");
+        await sshExec(opts, "show version");
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
+async function createHpComwareSwitchClient(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
+  const opts = {
+    host: device.host,
+    port: device.port || 22,
+    username: creds.username!,
+    password: creds.password!,
+    timeout: 30000,
+  };
+  return {
+    async getMacTable() {
+      return getHpComwareMacTable(opts);
+    },
+    async getPortSchema() {
+      const [ports, lldp] = await Promise.all([getHpComwarePortSchema(opts), getHpComwareLldpNeighbors(opts)]);
+      return mergeLldpIntoPorts(ports, lldp);
+    },
+    async getStpInfo() {
+      return getHpComwareStpInfo(opts);
+    },
+    async testConnection() {
+      try {
+        const { sshExec } = await import("./ssh-helper");
+        await sshExec(opts, "display version");
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
+function mergeLldpIntoPorts(ports: PortInfo[], lldp: { interface: string; systemName: string; portId: string }[]): PortInfo[] {
+  const byPort = new Map<string, { systemName: string; portId: string }>();
+  for (const n of lldp) {
+    const key = normalizePortNameForMatch(n.interface);
+    if (!byPort.has(key)) byPort.set(key, { systemName: n.systemName, portId: n.portId });
+  }
+  return ports.map((p) => {
+    const n = byPort.get(normalizePortNameForMatch(p.port_name));
+    return n
+      ? { ...p, trunk_neighbor_name: n.systemName || null, trunk_neighbor_port: n.portId || null }
+      : p;
+  });
+}
+
+function createHpSwitchClient(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
+  if (device.protocol === "ssh" && creds?.username && creds?.password) {
+    const subtype = device.vendor_subtype ?? "procurve";
+    if (subtype === "comware") {
+      return createHpComwareSwitchClient(device, creds);
+    }
+    return createHpProcurveSwitchClient(device, creds);
+  }
   if (device.protocol === "ssh") {
-    return createSshSwitchClient(device, password, "show mac-address", parseGenericMacTable);
+    return createSshSwitchClient(device, creds, "show mac-address", parseGenericMacTable);
   }
   return createSnmpSwitchClient(device);
 }
@@ -374,9 +586,27 @@ function createOmadaSwitchClient(device: NetworkDevice): Promise<SwitchClient> {
   return createSnmpSwitchClient(device);
 }
 
-function createGenericSwitchClient(device: NetworkDevice, password: string | undefined): Promise<SwitchClient> {
+async function createWinrmSwitchClient(device: NetworkDevice): Promise<SwitchClient> {
+  const winrm = await createWinrmClient(device);
+  return {
+    async getMacTable() {
+      return []; // Windows host non ha MAC table come switch
+    },
+    async getPortSchema() {
+      return [];
+    },
+    async testConnection() {
+      return winrm.testConnection();
+    },
+  };
+}
+
+function createGenericSwitchClient(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
+  if (device.protocol === "winrm") {
+    return createWinrmSwitchClient(device);
+  }
   if (device.protocol === "ssh") {
-    return createSshWithFallbackCommands(device, password);
+    return createSshWithFallbackCommands(device, creds);
   }
   return createSnmpSwitchClient(device);
 }

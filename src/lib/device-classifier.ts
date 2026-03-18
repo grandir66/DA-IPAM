@@ -1,0 +1,282 @@
+/**
+ * Classificazione automatica dei dispositivi di rete da dati SSH/SNMP e scansioni.
+ * Usa sysDescr, sysObjectID, os_info, porte aperte, hostname e MAC vendor.
+ */
+
+import { DEVICE_CLASSIFICATIONS } from "./device-classifications";
+
+export type DeviceClassification = (typeof DEVICE_CLASSIFICATIONS)[number];
+
+export type ClassifierInput = {
+  /** sysDescr SNMP (1.3.6.1.2.1.1.1.0) */
+  sysDescr?: string | null;
+  /** sysObjectID SNMP (1.3.6.1.2.1.1.2.0) — es. "1.3.6.1.4.1.9.1.1234" */
+  sysObjectID?: string | null;
+  /** Nmap OS detection o sysDescr usato come os_info */
+  osInfo?: string | null;
+  /** Porte aperte: [{port, protocol, service, version}] */
+  openPorts?: Array<{ port: number; protocol?: string; service?: string | null; version?: string | null }> | null;
+  /** Hostname (DNS reverse, SNMP sysName, DHCP) */
+  hostname?: string | null;
+  /** MAC vendor da OUI lookup */
+  vendor?: string | null;
+};
+
+/** Regole per sysDescr / osInfo / hostname (test case-insensitive) */
+const TEXT_RULES: Array<{ pattern: RegExp; classification: DeviceClassification }> = [
+  // Router
+  { pattern: /router|ios\s|vyos|mikrotik|edge.?router|quagga|bird|frr|junos|arista/i, classification: "router" },
+  // Switch
+  { pattern: /switch|switching|procurve|nexus| catalyst|comware|netgear.*switch|d-link.*switch/i, classification: "switch" },
+  // Firewall
+  { pattern: /firewall|fortigate|pfsense|opnsense|sophos|palo\s*alto|check\s*point/i, classification: "firewall" },
+  // Access point
+  { pattern: /access.?point|ap-|unifi|ubiquiti|wifi|wireless|aruba|ruckus|meraki.*ap|cisco.*ap/i, classification: "access_point" },
+  // Hypervisor
+  { pattern: /esxi|vmware\s*esx|hyper-v|hyperv|proxmox|qemu|kvm|virtualbox|ovirt|xen\s*server/i, classification: "hypervisor" },
+  // VM / container
+  { pattern: /vmware\s*tools|vmtools|vmware\s*guest|virtual\s*machine|docker|containerd|podman|kvm\s*guest|qemu\s*guest/i, classification: "vm" },
+  // Server Windows
+  { pattern: /windows\s*server|microsoft.*server|win\s*srv|win\s*server/i, classification: "server_windows" },
+  // Server Linux
+  { pattern: /linux\s*server|debian|ubuntu\s*server|centos|rhel|sles|red\s*hat\s*enterprise|alma\s*linux|rocky\s*linux|oracle\s*linux|fedora\s*server/i, classification: "server_linux" },
+  // Server generico (fallback)
+  { pattern: /server/i, classification: "server" },
+  // NAS / Storage (Synology e QNAP unificati sotto storage; il profilo vendor gestisce i comandi)
+  { pattern: /nas|synology|qnap|netapp|truenas|free nas|storage|drobo/i, classification: "storage" },
+  // PC HP (prima delle stampanti: ProDesk, EliteBook, ProBook, ZBook, Pavilion, Omen, Envy, Compaq)
+  { pattern: /prodesk|elitebook|probook|zbook|pavilion|omen|envy|compaq|hp\s*elite|hp\s*pro\s*\d|hp\s*z\s*workstation/i, classification: "workstation" },
+  // Stampanti (laserjet, deskjet, ecc.; HP senza modello PC → OID/porte distinguono)
+  { pattern: /printer|print\s*server|laserjet|deskjet|officejet|epson|canon\s*print|brother\s*print|hp\s*lj|lexmark|ricoh\s*print|konica|sharp\s*print|samsung\s*print|xerox/i, classification: "stampante" },
+  { pattern: /multifunction|mfp|all-in-one\s*print|multifunzione/i, classification: "multifunzione" },
+  { pattern: /scanner\s*network|scan\s*server/i, classification: "scanner" },
+  { pattern: /copier|fotocopiatrice|photocopier/i, classification: "fotocopiatrice" },
+  // Telecamere
+  { pattern: /camera|ipcam|hikvision|dahua|axis|vivotek|foscam|reolink|annke|uniview|dahua|onvif/i, classification: "telecamera" },
+  // VoIP / telefoni
+  { pattern: /phone|voip|yealink|cisco.?phone|polycom|grandstream|snom|avaya\s*ip|mitel|fanvil|sangoma/i, classification: "voip" },
+  // UPS
+  { pattern: /ups|apc|eaton|tripp.?lite|cyberpower|schneider\s*ups/i, classification: "ups" },
+  // Load balancer / proxy
+  { pattern: /load\s*balancer|f5|nginx|haproxy|citrix\s*netscaler/i, classification: "load_balancer" },
+  { pattern: /vpn\s*gateway|openvpn|wireguard|ipsec/i, classification: "vpn_gateway" },
+  { pattern: /proxy\s*server|squid|blue\s*coat/i, classification: "proxy" },
+  // Server specializzati
+  { pattern: /dhcp\s*server|isc\s*dhcp|kea/i, classification: "dhcp_server" },
+  { pattern: /dns\s*server|bind|powerdns|unbound/i, classification: "dns_server" },
+  { pattern: /nfs\s*server|nfsd/i, classification: "nfs_server" },
+  { pattern: /mail\s*server|postfix|exim|exchange|zimbra/i, classification: "mail_server" },
+  { pattern: /web\s*server|apache|nginx|iis|tomcat/i, classification: "web_server" },
+  { pattern: /database|mysql|postgres|mariadb|mongodb|oracle\s*db/i, classification: "database_server" },
+  { pattern: /backup\s*server|veeam|bacula|bareos/i, classification: "backup_server" },
+  // Workstation / client Windows
+  { pattern: /workstation|desktop|windows\s*\d|windows\s*xp|windows\s*7|windows\s*10|windows\s*11/i, classification: "workstation" },
+  // Rilevamento generico Windows (dopo server_windows e workstation)
+  { pattern: /microsoft\s*windows(?!\s*server)/i, classification: "workstation" },
+  { pattern: /notebook|laptop|macbook|thinkpad|dell\s*xps|surface\s*pro/i, classification: "notebook" },
+  // IoT / consumer
+  { pattern: /smart\s*tv|roku|apple\s*tv|chromecast|fire\s*tv|android\s*tv/i, classification: "smart_tv" },
+  { pattern: /playstation|xbox|nintendo|switch\s*console/i, classification: "console" },
+  { pattern: /tablet|ipad|android\s*tablet|surface\s*go/i, classification: "tablet" },
+  { pattern: /smartphone|iphone|android\s*phone|pixel|galaxy/i, classification: "smartphone" },
+  { pattern: /media\s*player|dlna|plex|kodi/i, classification: "media_player" },
+  { pattern: /decoder|set.?top|stb|iptv/i, classification: "decoder" },
+  // OT / industriale
+  { pattern: /plc|siemens\s*s7|allen.?bradley|modbus|opc/i, classification: "plc" },
+  { pattern: /hmi|human.?machine|scada/i, classification: "hmi" },
+  { pattern: /sensor|sensore|iot\s*device|zigbee|zwave/i, classification: "sensore" },
+  { pattern: /controller|industrial|rete\s*ot/i, classification: "controller" },
+  // Altri
+  { pattern: /bridge|repeater|hub/i, classification: "bridge" },
+  { pattern: /modem|cable\s*modem|dsl/i, classification: "modem" },
+  { pattern: /ont|onu|gpon|epon|fiber\s*terminal/i, classification: "ont" },
+];
+
+/** Prefissi OID (sysObjectID) per tipo dispositivo. Ordine conta: più specifici prima. */
+const OID_RULES: Array<{ prefix: string; classification: DeviceClassification }> = [
+  // Cisco
+  { prefix: "1.3.6.1.4.1.9.1.", classification: "router" }, // Cisco generic
+  // HP printers
+  { prefix: "1.3.6.1.4.1.11.2.3.9.1.", classification: "stampante" },
+  { prefix: "1.3.6.1.4.1.11.2.3.9.", classification: "stampante" },
+  // HP ProCurve switches
+  { prefix: "1.3.6.1.4.1.11.2.3.7.11.", classification: "switch" },
+  { prefix: "1.3.6.1.4.1.11.2.3.7.", classification: "switch" },
+  // MikroTik
+  { prefix: "1.3.6.1.4.1.14988.1", classification: "router" },
+  // Ubiquiti
+  { prefix: "1.3.6.1.4.1.10002.1", classification: "access_point" },
+  // Hikvision
+  { prefix: "1.3.6.1.4.1.39165.", classification: "telecamera" },
+  // Dahua
+  { prefix: "1.3.6.1.4.1.55985.", classification: "telecamera" },
+  // Axis
+  { prefix: "1.3.6.1.4.1.368.", classification: "telecamera" },
+  // Synology / QNAP (unificati sotto storage; il profilo vendor gestisce i comandi)
+  { prefix: "1.3.6.1.4.1.6574.", classification: "storage" },
+  { prefix: "1.3.6.1.4.1.24681.", classification: "storage" },
+  // Epson printers
+  { prefix: "1.3.6.1.4.1.1248.", classification: "stampante" },
+  // VMware
+  { prefix: "1.3.6.1.4.1.6876.", classification: "hypervisor" },
+  { prefix: "1.3.6.1.4.1.6876.2.", classification: "hypervisor" },
+  // APC UPS
+  { prefix: "1.3.6.1.4.1.318.", classification: "ups" },
+  // Eaton UPS
+  { prefix: "1.3.6.1.4.1.705.", classification: "ups" },
+  // Yealink VoIP
+  { prefix: "1.3.6.1.4.1.3990.", classification: "voip" },
+  // Cisco VoIP
+  { prefix: "1.3.6.1.4.1.9.6.1.", classification: "voip" },
+  // Cisco switches (Catalyst, Nexus)
+  { prefix: "1.3.6.1.4.1.9.1.5", classification: "switch" },
+  { prefix: "1.3.6.1.4.1.9.1.1", classification: "switch" },
+  // Netgear
+  { prefix: "1.3.6.1.4.1.4526.", classification: "switch" },
+  // D-Link
+  { prefix: "1.3.6.1.4.1.171.10.", classification: "switch" },
+  // Fortinet
+  { prefix: "1.3.6.1.4.1.12356.", classification: "firewall" },
+  // pfSense
+  { prefix: "1.3.6.1.4.1.12325.", classification: "firewall" },
+  // Linux generic (net-snmp = quasi sempre Linux)
+  { prefix: "1.3.6.1.4.1.8072.3.2.", classification: "server_linux" },
+];
+
+/** Porte e servizi che indicano il tipo di dispositivo */
+const PORT_RULES: Array<{
+  ports: number[];
+  services?: string[];
+  classification: DeviceClassification;
+}> = [
+  { ports: [9100, 515, 631], services: ["ipp", "cups", "lpd", "printer"], classification: "stampante" },
+  { ports: [554, 8554], services: ["rtsp", "streaming"], classification: "telecamera" },
+  { ports: [5060, 5061], services: ["sip", "sip-tls"], classification: "voip" },
+  { ports: [389, 636], services: ["ldap", "ldaps"], classification: "server" },
+  { ports: [445, 139], services: ["microsoft-ds", "netbios-ssn"], classification: "workstation" },
+  { ports: [5900, 5901], services: ["vnc", "vnc-http"], classification: "workstation" },
+  { ports: [3389], services: ["ms-wbt-server", "rdp"], classification: "workstation" },
+  { ports: [5000, 32400], services: ["plex", "upnp"], classification: "media_player" },
+  { ports: [8443], services: ["unifi"], classification: "access_point" },
+  { ports: [8291], services: ["mikrotik"], classification: "router" },
+  { ports: [161], services: ["snmp"], classification: "server" }, // SNMP alone = network device, weak
+];
+
+/** Pattern hostname comuni (es. AP-01, PRINTER-02, CAM-001) */
+const HOSTNAME_RULES: Array<{ pattern: RegExp; classification: DeviceClassification }> = [
+  { pattern: /^ap[-_]|^wifi[-_]|^unifi[-_]|^ubnt[-_]/i, classification: "access_point" },
+  { pattern: /^printer[-_]|^print[-_]|^hp[-_]lj|^epson[-_]|^canon[-_]|^brother[-_]/i, classification: "stampante" },
+  { pattern: /^cam[-_]|^ipcam[-_]|^nvr[-_]|^dvr[-_]|^hik[-_]|^dahua[-_]/i, classification: "telecamera" },
+  { pattern: /^phone[-_]|^voip[-_]|^yealink[-_]|^cisco[-_]phone|^sip[-_]/i, classification: "voip" },
+  { pattern: /^switch[-_]|^sw[-_]|^core[-_]|^dist[-_]/i, classification: "switch" },
+  { pattern: /^router[-_]|^gw[-_]|^gateway[-_]|^mikrotik[-_]|^fw[-_]/i, classification: "router" },
+  { pattern: /^nas[-_]|^synology[-_]|^qnap[-_]/i, classification: "storage" },
+  { pattern: /^esxi[-_]|^vm[-_]|^hyperv[-_]|^proxmox[-_]|^vcenter[-_]/i, classification: "hypervisor" },
+  { pattern: /^srv[-_]|^server[-_]|^dc[-_]|^ad[-_]/i, classification: "server" },
+  { pattern: /^ups[-_]|^apc[-_]|^eaton[-_]/i, classification: "ups" },
+];
+
+/** MAC vendor → classificazione (OUI lookup). HP Inc/Hewlett prima come workstation (PC) perché le stampanti HP hanno OID/porte specifici. */
+const VENDOR_RULES: Array<{ pattern: RegExp; classification: DeviceClassification }> = [
+  { pattern: /cisco|arista|juniper|mikrotik|ubiquiti|netgear|d-link|tp-link|hp\s*networks|hpe\s*aruba|stormshield/i, classification: "router" },
+  { pattern: /hikvision|dahua|axis|vivotek|foscam|reolink|annke|uniview/i, classification: "telecamera" },
+  { pattern: /yealink|polycom|grandstream|cisco\s*systems.*phone|snom|avaya|mitel|fanvil/i, classification: "voip" },
+  { pattern: /apple|dell|lenovo|hp\s*inc|hewlett|asus|acer|msi|microsoft\s*surface/i, classification: "workstation" },
+  { pattern: /epson|canon|brother|lexmark|ricoh|konica|sharp|samsung.*print|xerox/i, classification: "stampante" },
+  { pattern: /synology|qnap|netapp|western\s*digital|seagate/i, classification: "storage" },
+  { pattern: /vmware|microsoft\s*virtual|hyper-v\s*virtual|red\s*hat\s*kvm|qemu|proxmox\s*server|oracle\s*vm|xensource/i, classification: "vm" },
+  { pattern: /apc|eaton|tripp.?lite|cyberpower|schneider/i, classification: "ups" },
+];
+
+/**
+ * Classifica un dispositivo in base ai dati disponibili.
+ * Restituisce la classificazione o undefined se non determinabile.
+ */
+export function classifyDevice(input: ClassifierInput): DeviceClassification | undefined {
+  const text = [
+    input.sysDescr ?? "",
+    input.osInfo ?? "",
+    input.hostname ?? "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  // 1. sysObjectID (molto affidabile)
+  const oid = (input.sysObjectID ?? "").trim();
+  if (oid) {
+    for (const rule of OID_RULES) {
+      if (oid.startsWith(rule.prefix)) {
+        return rule.classification;
+      }
+    }
+  }
+
+  // 2. MAC virtuale: se il vendor è VMware/Proxmox/Hyper-V/QEMU → è una VM
+  //    Poi raffina con OS info: server_windows, server_linux, o vm generico
+  const vendor = (input.vendor ?? "").trim();
+  const isVirtualMac = /vmware|proxmox\s*server|microsoft\s*virtual|hyper-v|qemu|xensource|oracle\s*vm|red\s*hat.*kvm/i.test(vendor);
+  if (isVirtualMac) {
+    const ports = input.openPorts ?? [];
+    const portSet = new Set(ports.map((p) => p.port));
+    const has445 = portSet.has(445);
+    const has135 = portSet.has(135);
+    const has22 = portSet.has(22);
+
+    // Porte: 445+135 → Server Windows, 22 senza 445 → Server Linux
+    if (has445 && has135) return "server_windows";
+    if (has22 && !has445) return "server_linux";
+
+    // Fallback su testo OS se le porte non sono ancora note
+    if (/windows\s*server|microsoft.*server|win\s*srv/i.test(text)) return "server_windows";
+    if (/debian|ubuntu|centos|rhel|red\s*hat|alma|rocky|oracle\s*linux|fedora|sles|linux\s*server/i.test(text)) return "server_linux";
+    if (/windows/i.test(text)) return "server_windows"; // VM Windows = quasi sempre server
+    if (/linux/i.test(text)) return "server_linux";     // VM Linux = quasi sempre server
+
+    return "vm"; // Nessuna porta nota, nessun OS info → VM generica
+  }
+
+  // 3. sysDescr / osInfo / hostname
+  if (text) {
+    for (const rule of TEXT_RULES) {
+      if (rule.pattern.test(text)) {
+        return rule.classification;
+      }
+    }
+  }
+
+  // 4. Porte e servizi
+  const ports = input.openPorts ?? [];
+  if (ports.length > 0) {
+    for (const rule of PORT_RULES) {
+      const portMatch = rule.ports.some((p) => ports.some((po) => po.port === p));
+      const serviceMatch = !rule.services?.length || ports.some((po) =>
+        rule.services!.some((s) => (po.service ?? "").toLowerCase().includes(s))
+      );
+      if (portMatch || serviceMatch) {
+        return rule.classification;
+      }
+    }
+  }
+
+  // 5. Hostname pattern
+  const hostname = (input.hostname ?? "").trim();
+  if (hostname) {
+    for (const rule of HOSTNAME_RULES) {
+      if (rule.pattern.test(hostname)) {
+        return rule.classification;
+      }
+    }
+  }
+
+  // 6. MAC vendor (dispositivi fisici)
+  if (vendor) {
+    for (const rule of VENDOR_RULES) {
+      if (rule.pattern.test(vendor)) {
+        return rule.classification;
+      }
+    }
+  }
+
+  return undefined;
+}

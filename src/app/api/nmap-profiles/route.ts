@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getNmapProfiles, createNmapProfile, updateNmapProfile, deleteNmapProfile } from "@/lib/db";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET() {
   try {
@@ -13,6 +14,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const { name, description, args, snmp_community, custom_ports } = await request.json();
     if (!name) {
       return NextResponse.json({ error: "Nome richiesto" }, { status: 400 });
@@ -36,6 +39,8 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const { id, name, description, args, snmp_community, custom_ports } = await request.json();
     if (!id || !name) {
       return NextResponse.json({ error: "ID e nome richiesti" }, { status: 400 });
@@ -55,6 +60,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const { searchParams } = new URL(request.url);
     const id = Number(searchParams.get("id"));
     if (!id) {

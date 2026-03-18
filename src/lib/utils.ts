@@ -66,6 +66,13 @@ export function isIpInCidr(ip: string, cidr: string): boolean {
   return ipLong >= networkLong && ipLong <= broadcastLong;
 }
 
+/** Verifica se due CIDR si sovrappongono (range overlap). */
+export function cidrOverlaps(cidr1: string, cidr2: string): boolean {
+  const a = parseCidr(cidr1);
+  const b = parseCidr(cidr2);
+  return a.networkLong <= b.broadcastLong && b.networkLong <= a.broadcastLong;
+}
+
 export function subnetMaskFromPrefix(prefix: number): string {
   const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
   return longToIp(mask);

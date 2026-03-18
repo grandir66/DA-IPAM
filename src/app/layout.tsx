@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DA-IPAM — IP Address Management",
+  title: "DA-INVENT — IP Address Management",
   description: "Network IP Address Management System",
 };
 

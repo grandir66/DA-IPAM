@@ -1,9 +1,9 @@
-import { getDashboardStats, getNetworks, getRecentActivity, getUserCount } from "@/lib/db";
+import { getDashboardStats, getNetworks, getRecentActivity, getUserCount, getKnownHostStats, getOfflineKnownHosts } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Network, Monitor, Wifi, WifiOff, HelpCircle } from "lucide-react";
+import { Network, Monitor, Wifi, WifiOff, HelpCircle, Shield, AlertTriangle, Activity } from "lucide-react";
 import { DashboardClient } from "./dashboard-client";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,8 @@ export default function DashboardPage() {
   const stats = getDashboardStats();
   const networks = getNetworks();
   const recentActivity = getRecentActivity(10);
+  const monitorStats = getKnownHostStats();
+  const offlineKnown = getOfflineKnownHosts();
 
   return (
     <div className="space-y-4">
@@ -29,7 +31,7 @@ export default function DashboardPage() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
         <StatCard
-          title="Reti"
+          title="Subnet"
           value={stats.total_networks}
           icon={<Network className="h-4 w-4" />}
           color="text-primary"
@@ -63,10 +65,78 @@ export default function DashboardPage() {
       {/* Online Chart */}
       <DashboardClient />
 
+      {/* Monitoring Card */}
+      {monitorStats.total > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-4 w-4 text-primary" />
+              Monitoraggio Attivo
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center gap-6 text-sm">
+              <div className="flex items-center gap-2">
+                <Monitor className="h-4 w-4 text-muted-foreground" />
+                <span><span className="font-bold">{monitorStats.total}</span> monitorati</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Wifi className="h-4 w-4 text-success" />
+                <span className="text-success font-medium">{monitorStats.online} online</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <WifiOff className="h-4 w-4 text-destructive" />
+                <span className="text-destructive font-medium">{monitorStats.offline} offline</span>
+              </div>
+              {monitorStats.avg_latency !== null && (
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-primary" />
+                  <span>Latenza media: <span className="font-mono font-medium">{Math.round(monitorStats.avg_latency)}ms</span></span>
+                </div>
+              )}
+            </div>
+
+            {offlineKnown.length > 0 && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                  <span className="text-sm font-medium text-destructive">
+                    {offlineKnown.length} host conosciut{offlineKnown.length === 1 ? "o" : "i"} offline
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {offlineKnown.map((h) => (
+                    <Link
+                      key={h.id}
+                      href={`/hosts/${h.id}`}
+                      className="flex items-center justify-between text-sm hover:bg-destructive/10 rounded px-2 py-1 transition-colors"
+                    >
+                      <span>
+                        <span className="font-mono">{h.ip}</span>
+                        {(h.custom_name || h.hostname) && (
+                          <span className="text-muted-foreground ml-2">
+                            ({h.custom_name || h.hostname})
+                          </span>
+                        )}
+                      </span>
+                      {h.last_seen && (
+                        <span className="text-xs text-muted-foreground">
+                          Ultimo contatto: {new Date(h.last_seen).toLocaleString("it-IT")}
+                        </span>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Networks Grid */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xl font-semibold">Reti</h2>
+          <h2 className="text-xl font-semibold">Subnet</h2>
           <Link
             href="/networks"
             className="text-sm text-primary hover:underline"

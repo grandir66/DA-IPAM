@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getHostsByNetwork, upsertHost } from "@/lib/db";
 import { HostSchema } from "@/lib/validators";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
   try {
@@ -19,6 +20,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
     const parsed = HostSchema.safeParse(body);
     if (!parsed.success) {

@@ -22,7 +22,8 @@ export const authConfig: NextAuthConfig = {
   ],
   session: {
     strategy: "jwt",
-    maxAge: 24 * 60 * 60,
+    maxAge: 8 * 60 * 60, // 8 ore — poi richiede nuovo login
+    updateAge: 4 * 60 * 60, // Rinnova token solo se più vecchio di 4 ore
   },
   pages: {
     signIn: "/login",
@@ -49,6 +50,8 @@ export const authConfig: NextAuthConfig = {
         pathname.startsWith("/api/auth") ||
         pathname === "/setup" ||
         pathname === "/api/setup" ||
+        pathname === "/api/health" ||
+        pathname === "/api/version" ||
         pathname === "/api/test-snmp" ||
         pathname === "/api/test-arp"
       ) {

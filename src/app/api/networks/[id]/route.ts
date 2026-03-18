@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getNetworkById, updateNetwork, deleteNetwork, setNetworkRouter, deleteNetworkRouter, getNetworkRouterId } from "@/lib/db";
-import { getHostsByNetwork } from "@/lib/db";
+import { getNetworkById, updateNetwork, deleteNetwork, setNetworkRouter, deleteNetworkRouter, getNetworkRouterId, getHostsByNetworkWithDevices } from "@/lib/db";
 import { NetworkSchema } from "@/lib/validators";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -10,7 +10,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     if (!network) {
       return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
     }
-    const hosts = getHostsByNetwork(Number(id));
+    const hosts = getHostsByNetworkWithDevices(Number(id));
     const router_id = getNetworkRouterId(Number(id));
     return NextResponse.json({ ...network, hosts, router_id });
   } catch (error) {
@@ -21,6 +21,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const networkId = Number(id);
     const body = await request.json();
@@ -51,6 +53,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const deleted = deleteNetwork(Number(id));
     if (!deleted) {

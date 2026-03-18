@@ -1,4 +1,5 @@
 import type { NetworkDevice } from "@/types";
+import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import type { PortInfo } from "./switch-client";
 import { getSnmpPortSchema } from "./snmp-port-schema";
@@ -26,19 +27,24 @@ export interface RouterClient {
 }
 
 export async function createRouterClient(device: NetworkDevice): Promise<RouterClient> {
-  const password = device.encrypted_password ? decrypt(device.encrypted_password) : undefined;
-  const primary = await getVendorRouterClient(device, password);
+  const creds = getDeviceCredentials(device);
+  const username = creds?.username ?? device.username ?? undefined;
+  const password = creds?.password;
+  const primary = await getVendorRouterClient(device, { username, password });
 
-  // Se il client primario non ha getPortSchema ma il device ha SNMP (community_string),
+  // Se il client primario non ha getPortSchema ma il device ha SNMP (community_string o credential SNMP),
   // aggiungi fallback per acquisire porte e LLDP/CDP
+  const hasSnmpCommunity = device.community_string
+    || (device.snmp_credential_id ? !!getCredentialCommunityString(device.snmp_credential_id) : false)
+    || (device.credential_id ? !!getCredentialCommunityString(device.credential_id) : false);
   let client: RouterClient = primary;
-  if (!primary.getPortSchema && device.community_string) {
+  if (!primary.getPortSchema && hasSnmpCommunity) {
     const snmpClient = await createSnmpArpClient(device);
     client = { ...primary, getPortSchema: () => snmpClient.getPortSchema!() };
   }
 
   // Fallback SSH → SNMP: se SSH fallisce (es. credenziali mancanti), prova SNMP
-  if (device.protocol === "ssh" && device.community_string) {
+  if (device.protocol === "ssh" && hasSnmpCommunity) {
     const snmpClient = await createSnmpArpClient(device);
     return {
       async getArpTable() {
@@ -69,35 +75,38 @@ export async function createRouterClient(device: NetworkDevice): Promise<RouterC
   return client;
 }
 
-async function getVendorRouterClient(device: NetworkDevice, password: string | undefined): Promise<RouterClient> {
+type DeviceCreds = { username?: string; password?: string };
+
+async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
   switch (device.vendor) {
     case "mikrotik":
-      return createMikrotikClient(device, password);
+      return createMikrotikClient(device, creds);
     case "cisco":
-      return createCiscoClient(device, password);
+      return createCiscoClient(device, creds);
     case "ubiquiti":
-      return createUbiquitiClient(device, password);
+      return createUbiquitiClient(device, creds);
     case "hp":
-      return createHpClient(device, password);
+      return createHpClient(device, creds);
     case "omada":
       return createOmadaClient(device);
+    case "stormshield":
     case "other":
       if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") {
         return createSnmpArpClient(device);
       }
-      return createGenericSshClient(device, password);
+      return createGenericSshRouterClient(device, creds);
     default:
       if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") {
         return createSnmpArpClient(device);
       }
-      return createGenericSshClient(device, password);
+      return createGenericSshRouterClient(device, creds);
   }
 }
 
 // SSH-based client factory
 async function createSshClient(
   device: NetworkDevice,
-  password: string | undefined,
+  creds: DeviceCreds,
   command: string,
   parser: (output: string) => ArpTableEntry[]
 ): Promise<RouterClient> {
@@ -119,8 +128,8 @@ async function createSshClient(
       conn.connect({
         host: device.host,
         port: device.port,
-        username: device.username || undefined,
-        password: password,
+        username: creds.username || device.username || undefined,
+        password: creds.password,
         readyTimeout: 10000,
         algorithms: {
           kex: ["diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1", "diffie-hellman-group-exchange-sha256"],
@@ -145,29 +154,35 @@ async function createSshClient(
   };
 }
 
-// SNMP-based ARP client
+// SNMP-based ARP client (v2c e v3)
 async function createSnmpArpClient(
   device: NetworkDevice
 ): Promise<RouterClient> {
   const snmp = await import("net-snmp");
-  let community = "public";
-  if (device.community_string) {
-    try {
-      community = decrypt(device.community_string);
-    } catch {
-      community = device.community_string;
-    }
-  }
-
   const isSnmpProtocol = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
   const snmpPort = isSnmpProtocol ? (device.port || 161) : 161;
+  const opts = { port: snmpPort, timeout: 10000 };
+
+  function createSession() {
+    if (device.protocol === "snmp_v3") {
+      const v3 = getDeviceSnmpV3Credentials(device);
+      if (v3) {
+        const user = {
+          name: v3.username,
+          level: snmp.SecurityLevel.authNoPriv,
+          authProtocol: snmp.AuthProtocols.md5,
+          authKey: v3.authKey,
+        };
+        return snmp.createV3Session(device.host, user, opts);
+      }
+    }
+    const community = getDeviceCommunityString(device);
+    return snmp.createSession(device.host, community, opts);
+  }
 
   function snmpWalk(oid: string): Promise<{ oid: string; value: Buffer | string | number }[]> {
     return new Promise((resolve, reject) => {
-      const session = snmp.createSession(device.host, community, {
-        port: snmpPort,
-        timeout: 10000,
-      });
+      const session = createSession();
       const results: { oid: string; value: Buffer | string | number }[] = [];
 
       session.subtree(
@@ -236,7 +251,7 @@ async function createSnmpArpClient(
 }
 
 // Vendor-specific implementations
-async function createMikrotikClient(device: NetworkDevice, password: string | undefined): Promise<RouterClient> {
+async function createMikrotikClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
   if (device.protocol !== "ssh") {
     return createSnmpArpClient(device);
   }
@@ -258,8 +273,8 @@ async function createMikrotikClient(device: NetworkDevice, password: string | un
       conn.connect({
         host: device.host,
         port: device.port,
-        username: device.username || undefined,
-        password: password,
+        username: creds.username || device.username || undefined,
+        password: creds.password,
         readyTimeout: 10000,
         algorithms: {
           kex: ["diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1", "diffie-hellman-group-exchange-sha256"],
@@ -288,23 +303,23 @@ async function createMikrotikClient(device: NetworkDevice, password: string | un
   };
 }
 
-function createCiscoClient(device: NetworkDevice, password: string | undefined): Promise<RouterClient> {
+function createCiscoClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
   if (device.protocol === "ssh") {
-    return createSshClient(device, password, "show ip arp", parseCiscoArp);
+    return createSshClient(device, creds, "show ip arp", parseCiscoArp);
   }
   return createSnmpArpClient(device);
 }
 
-function createUbiquitiClient(device: NetworkDevice, password: string | undefined): Promise<RouterClient> {
+function createUbiquitiClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
   if (device.protocol === "ssh") {
-    return createSshClient(device, password, "show arp", parseGenericArp);
+    return createSshClient(device, creds, "show arp", parseGenericArp);
   }
   return createSnmpArpClient(device);
 }
 
-function createHpClient(device: NetworkDevice, password: string | undefined): Promise<RouterClient> {
+function createHpClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
   if (device.protocol === "ssh") {
-    return createSshClient(device, password, "show arp", parseGenericArp);
+    return createSshClient(device, creds, "show arp", parseGenericArp);
   }
   return createSnmpArpClient(device);
 }
@@ -348,8 +363,118 @@ async function createOmadaApiClient(device: NetworkDevice): Promise<RouterClient
   };
 }
 
-function createGenericSshClient(device: NetworkDevice, password: string | undefined): Promise<RouterClient> {
-  return createSshClient(device, password, "show arp", parseGenericArp);
+/** Router client con fallback su più comandi ARP per firewall/dispositivi "other" */
+async function createGenericSshRouterClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
+  const commands = [
+    { cmd: "show arp", parser: parseGenericArp },
+    { cmd: "show ip arp", parser: parseGenericArp },
+    { cmd: "arp -a", parser: parseGenericArp },
+    { cmd: "arp -n", parser: parseGenericArp },
+    { cmd: "arp", parser: parseGenericArp },
+    { cmd: "ip neigh show", parser: parseLinuxIpNeigh },
+    { cmd: "ip neighbor", parser: parseLinuxIpNeigh },
+    { cmd: "cat /proc/net/arp", parser: parseLinuxProcArp },
+  ];
+
+  const { Client } = await import("ssh2");
+
+  function execCmd(cmd: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const conn = new Client();
+      conn.on("ready", () => {
+        conn.exec(cmd, (err, stream) => {
+          if (err) {
+            conn.end();
+            reject(err);
+            return;
+          }
+          let output = "";
+          stream.on("data", (data: Buffer) => {
+            output += data.toString();
+          });
+          stream.stderr.on("data", (data: Buffer) => {
+            output += data.toString();
+          });
+          stream.on("close", () => {
+            conn.end();
+            resolve(output);
+          });
+        });
+      });
+      conn.on("error", reject);
+      conn.connect({
+        host: device.host,
+        port: device.port || 22,
+        username: creds.username || device.username || undefined,
+        password: creds.password,
+        readyTimeout: 10000,
+        algorithms: {
+          kex: ["diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1", "diffie-hellman-group-exchange-sha256", "diffie-hellman-group1-sha1"],
+        },
+      });
+    });
+  }
+
+  return {
+    async getArpTable() {
+      for (const { cmd, parser } of commands) {
+        try {
+          const output = await execCmd(cmd);
+          if (
+            output.includes("not found") ||
+            output.includes("Invalid") ||
+            output.includes("Unknown command") ||
+            output.includes("command not found") ||
+            output.trim().length === 0
+          ) {
+            continue;
+          }
+          const entries = parser(output);
+          if (entries.length > 0) return entries;
+        } catch {
+          continue;
+        }
+      }
+      return [];
+    },
+    async testConnection() {
+      try {
+        await execCmd("echo test");
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
+function parseLinuxIpNeigh(output: string): ArpTableEntry[] {
+  const entries: ArpTableEntry[] = [];
+  for (const line of output.split("\n")) {
+    const parts = line.trim().split(/\s+/);
+    const ipMatch = parts.find((p) => /^\d+\.\d+\.\d+\.\d+$/.test(p));
+    const macMatch = parts.find((p) => /^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$/.test(p));
+    if (ipMatch && macMatch) {
+      entries.push({ ip: ipMatch, mac: macMatch.toUpperCase(), interface_name: null });
+    }
+  }
+  return entries;
+}
+
+function parseLinuxProcArp(output: string): ArpTableEntry[] {
+  const entries: ArpTableEntry[] = [];
+  const lines = output.split("\n").slice(1);
+  for (const line of lines) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length >= 4) {
+      const ip = parts[0];
+      const mac = parts[3];
+      if (/^\d+\.\d+\.\d+\.\d+$/.test(ip) && /^[0-9a-fA-F:]+$/.test(mac) && mac !== "00:00:00:00:00:00") {
+        entries.push({ ip, mac: mac.toUpperCase(), interface_name: null });
+      }
+    }
+  }
+  return entries;
 }
 
 function parseMikrotikDhcpLeases(output: string): DhcpLeaseEntry[] {

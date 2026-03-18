@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getHostById, updateHost, deleteHost } from "@/lib/db";
 import { HostUpdateSchema } from "@/lib/validators";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -18,6 +19,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const body = await request.json();
     const parsed = HostUpdateSchema.safeParse(body);
@@ -37,6 +40,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const deleted = deleteHost(Number(id));
     if (!deleted) {

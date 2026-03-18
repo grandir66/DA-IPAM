@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAllSettings, setSetting } from "@/lib/db";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET() {
   try {
@@ -13,6 +14,8 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
     const { key, value } = body;
 

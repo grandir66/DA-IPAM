@@ -41,7 +41,13 @@ export interface Host {
   status: "online" | "offline" | "unknown";
   open_ports: string | null;  // JSON: [{port, protocol, service, version}]
   os_info: string | null;
+  model: string | null;
+  serial_number: string | null;
   known_host: number;  // 0 or 1 — host verificato/conosciuto
+  last_response_time_ms: number | null;
+  monitor_ports: string | null;  // JSON array of port numbers, or null
+  hostname_source: string | null;  // manual | dhcp | snmp | nmap | dns | arp
+  conflict_flags: string | null;
   last_seen: string | null;
   first_seen: string | null;
   created_at: string;
@@ -52,7 +58,7 @@ export interface ScanHistory {
   id: number;
   host_id: number | null;
   network_id: number | null;
-  scan_type: "ping" | "nmap" | "arp" | "dns";
+  scan_type: "ping" | "snmp" | "nmap" | "arp" | "dns" | "windows" | "ssh";
   status: string;
   ports_open: string | null;
   raw_output: string | null;
@@ -60,13 +66,27 @@ export interface ScanHistory {
   timestamp: string;
 }
 
+export interface Credential {
+  id: number;
+  name: string;
+  credential_type: "ssh" | "snmp" | "api" | "windows" | "linux";
+  encrypted_username: string | null;
+  encrypted_password: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface NetworkDevice {
   id: number;
   name: string;
   host: string;
-  device_type: "router" | "switch";
-  vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "other";
-  protocol: "ssh" | "snmp_v2" | "snmp_v3" | "api";
+  device_type: "router" | "switch" | "hypervisor";
+  classification: string | null;
+  vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "other";
+  vendor_subtype: "procurve" | "comware" | null;
+  protocol: "ssh" | "snmp_v2" | "snmp_v3" | "api" | "winrm";
+  credential_id: number | null;
+  snmp_credential_id: number | null;
   username: string | null;
   encrypted_password: string | null;
   community_string: string | null;
@@ -74,6 +94,18 @@ export interface NetworkDevice {
   api_url: string | null;
   port: number;
   enabled: number;
+  sysname: string | null;
+  sysdescr: string | null;
+  model: string | null;
+  firmware: string | null;
+  serial_number: string | null;
+  part_number: string | null;
+  last_info_update: string | null;
+  last_device_info_json: string | null;
+  stp_info: string | null;
+  last_proxmox_scan_at: string | null;
+  last_proxmox_scan_result: string | null;
+  scan_target: "proxmox" | "vmware" | "windows" | "linux" | null;
   created_at: string;
   updated_at: string;
 }
@@ -99,6 +131,208 @@ export interface MacPortEntry {
   timestamp: string;
 }
 
+export interface MacIpMapping {
+  id: number;
+  mac_normalized: string;
+  mac_display: string;
+  ip: string;
+  source: "arp" | "dhcp" | "host" | "switch";
+  source_device_id: number | null;
+  network_id: number | null;
+  host_id: number | null;
+  vendor: string | null;
+  hostname: string | null;
+  first_seen: string;
+  last_seen: string;
+  previous_ip: string | null;
+  network_name?: string | null;
+  source_device_name?: string | null;
+}
+
+export type InventoryAssetCategoria =
+  | "Desktop" | "Laptop" | "Server" | "Switch" | "Firewall" | "NAS" | "Stampante"
+  | "VM" | "Licenza" | "Access Point" | "Router" | "Other";
+export type InventoryAssetStato =
+  | "Attivo" | "In magazzino" | "In riparazione" | "Dismesso" | "Rubato";
+export type InventoryAssetStorageTipo = "SSD" | "HDD" | "NVMe";
+export type InventoryAssetClassificazioneDati = "Pubblico" | "Interno" | "Confidenziale" | "Riservato";
+
+export interface InventoryAsset {
+  id: number;
+  asset_id: string | null;
+  asset_tag: string | null;
+  serial_number: string | null;
+  network_device_id: number | null;
+  host_id: number | null;
+  hostname: string | null;
+  nome_prodotto: string | null;
+  categoria: InventoryAssetCategoria | null;
+  marca: string | null;
+  modello: string | null;
+  part_number: string | null;
+  sede: string | null;
+  reparto: string | null;
+  utente_assegnatario_id: number | null;
+  asset_assignee_id: number | null;
+  location_id: number | null;
+  posizione_fisica: string | null;
+  data_assegnazione: string | null;
+  data_acquisto: string | null;
+  data_installazione: string | null;
+  data_dismissione: string | null;
+  stato: InventoryAssetStato | null;
+  fine_garanzia: string | null;
+  fine_supporto: string | null;
+  vita_utile_prevista: number | null;
+  sistema_operativo: string | null;
+  versione_os: string | null;
+  cpu: string | null;
+  ram_gb: number | null;
+  storage_gb: number | null;
+  storage_tipo: InventoryAssetStorageTipo | null;
+  mac_address: string | null;
+  ip_address: string | null;
+  vlan: number | null;
+  firmware_version: string | null;
+  prezzo_acquisto: number | null;
+  fornitore: string | null;
+  numero_ordine: string | null;
+  numero_fattura: string | null;
+  valore_attuale: number | null;
+  metodo_ammortamento: "Lineare" | "Quote decrescenti" | null;
+  centro_di_costo: string | null;
+  crittografia_disco: number;
+  antivirus: string | null;
+  gestito_da_mdr: number;
+  classificazione_dati: InventoryAssetClassificazioneDati | null;
+  in_scope_gdpr: number;
+  in_scope_nis2: number;
+  ultimo_audit: string | null;
+  contratto_supporto: string | null;
+  tipo_garanzia: string | null;
+  contatto_supporto: string | null;
+  ultimo_intervento: string | null;
+  prossima_manutenzione: string | null;
+  note_tecniche: string | null;
+  technical_data: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InventoryAssetInput {
+  asset_tag?: string | null;
+  serial_number?: string | null;
+  network_device_id?: number | null;
+  host_id?: number | null;
+  hostname?: string | null;
+  nome_prodotto?: string | null;
+  categoria?: InventoryAssetCategoria | null;
+  marca?: string | null;
+  modello?: string | null;
+  part_number?: string | null;
+  sede?: string | null;
+  reparto?: string | null;
+  utente_assegnatario_id?: number | null;
+  asset_assignee_id?: number | null;
+  location_id?: number | null;
+  posizione_fisica?: string | null;
+  data_assegnazione?: string | null;
+  data_acquisto?: string | null;
+  data_installazione?: string | null;
+  data_dismissione?: string | null;
+  stato?: InventoryAssetStato | null;
+  fine_garanzia?: string | null;
+  fine_supporto?: string | null;
+  vita_utile_prevista?: number | null;
+  sistema_operativo?: string | null;
+  versione_os?: string | null;
+  cpu?: string | null;
+  ram_gb?: number | null;
+  storage_gb?: number | null;
+  storage_tipo?: InventoryAssetStorageTipo | null;
+  mac_address?: string | null;
+  ip_address?: string | null;
+  vlan?: number | null;
+  firmware_version?: string | null;
+  prezzo_acquisto?: number | null;
+  fornitore?: string | null;
+  numero_ordine?: string | null;
+  numero_fattura?: string | null;
+  valore_attuale?: number | null;
+  metodo_ammortamento?: "Lineare" | "Quote decrescenti" | null;
+  centro_di_costo?: string | null;
+  crittografia_disco?: number;
+  antivirus?: string | null;
+  gestito_da_mdr?: number;
+  classificazione_dati?: InventoryAssetClassificazioneDati | null;
+  in_scope_gdpr?: number;
+  in_scope_nis2?: number;
+  ultimo_audit?: string | null;
+  contratto_supporto?: string | null;
+  tipo_garanzia?: string | null;
+  contatto_supporto?: string | null;
+  ultimo_intervento?: string | null;
+  prossima_manutenzione?: string | null;
+  note_tecniche?: string | null;
+  technical_data?: string | null;
+}
+
+export interface AssetAssignee {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  note: string | null;
+  user_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Location {
+  id: number;
+  name: string;
+  parent_id: number | null;
+  address: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface License {
+  id: number;
+  name: string;
+  serial: string | null;
+  seats: number;
+  category: string | null;
+  expiration_date: string | null;
+  purchase_cost: number | null;
+  min_amt: number;
+  fornitore: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LicenseSeat {
+  id: number;
+  license_id: number;
+  asset_type: "inventory_asset" | "host" | null;
+  asset_id: number | null;
+  asset_assignee_id: number | null;
+  assigned_at: string;
+  note: string | null;
+}
+
+export interface InventoryAuditLog {
+  id: number;
+  asset_id: number;
+  user_id: number | null;
+  action: "create" | "update" | "delete";
+  field_name: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  created_at: string;
+}
+
 export interface SwitchPort {
   id: number;
   device_id: number;
@@ -121,13 +355,14 @@ export interface SwitchPort {
   trunk_neighbor_port: string | null;
   trunk_primary_device_id: number | null;
   trunk_primary_name: string | null;
+  stp_state: string | null;
   timestamp: string;
 }
 
 export interface ScheduledJob {
   id: number;
   network_id: number | null;
-  job_type: "ping_sweep" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup";
+  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check";
   interval_minutes: number;
   last_run: string | null;
   next_run: string | null;
@@ -137,10 +372,24 @@ export interface ScheduledJob {
   updated_at: string;
 }
 
+export interface ProxmoxHost {
+  id: number;
+  name: string;
+  host: string;
+  port: number;
+  credential_id: number | null;
+  enabled: number;
+  last_scan_at: string | null;
+  last_scan_result: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface StatusHistory {
   id: number;
   host_id: number;
   status: "online" | "offline";
+  response_time_ms: number | null;
   checked_at: string;
 }
 
@@ -170,6 +419,14 @@ export interface HostDetail extends Host {
     device_vendor: string;
     port_name: string;
     vlan: number | null;
+  } | null;
+  /** Dispositivo gestito (WINRM, SSH, SNMP) con stesso IP */
+  network_device: {
+    id: number;
+    name: string;
+    sysname: string | null;
+    vendor: string;
+    protocol: string;
   } | null;
 }
 
@@ -217,14 +474,19 @@ export interface HostUpdate {
   notes?: string;
   mac?: string;
   known_host?: 0 | 1;
+  status?: "online" | "offline" | "unknown";
+  monitor_ports?: string | null;
 }
 
 export interface NetworkDeviceInput {
   name: string;
   host: string;
   device_type: "router" | "switch";
-  vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "other";
-  protocol: "ssh" | "snmp_v2" | "snmp_v3" | "api";
+  vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "other";
+  vendor_subtype?: "procurve" | "comware" | null;
+  protocol: "ssh" | "snmp_v2" | "snmp_v3" | "api" | "winrm";
+  credential_id?: number | null;
+  snmp_credential_id?: number | null;
   username?: string;
   password?: string;
   community_string?: string;
@@ -233,9 +495,16 @@ export interface NetworkDeviceInput {
   port?: number;
 }
 
+export interface CredentialInput {
+  name: string;
+  credential_type: "ssh" | "snmp" | "api" | "windows" | "linux";
+  username?: string;
+  password?: string;
+}
+
 export interface ScheduledJobInput {
   network_id?: number | null;
-  job_type: "ping_sweep" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup";
+  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check";
   interval_minutes: number;
   config?: Record<string, unknown>;
 }
@@ -258,6 +527,7 @@ export interface NmapResult {
   mac: string | null;
   snmpHostname?: string | null;
   snmpSysDescr?: string | null;
+  snmpSysObjectID?: string | null;
 }
 
 export interface NmapPort {
@@ -279,6 +549,8 @@ export interface ScanProgress {
   phase: string;
   started_at: string;
   error?: string;
+  /** Log live delle operazioni in corso (ultime N righe) */
+  logs?: string[];
 }
 
 export interface DiscoveryResult {

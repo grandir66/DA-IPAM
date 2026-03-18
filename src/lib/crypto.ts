@@ -44,6 +44,19 @@ export function decrypt(ciphertext: string): string {
   return decrypted;
 }
 
+/**
+ * Decrypt con protezione: ritorna null su ciphertext corrotto/malformato
+ * invece di lanciare eccezione. Da usare nei path non-critici.
+ */
+export function safeDecrypt(ciphertext: string): string | null {
+  try {
+    return decrypt(ciphertext);
+  } catch (err) {
+    console.warn("[crypto] Decifrazione fallita per ciphertext corrotto:", (err as Error).message);
+    return null;
+  }
+}
+
 export function generateEncryptionKey(): string {
   return crypto.randomBytes(32).toString("hex");
 }

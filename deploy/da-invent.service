@@ -1,0 +1,24 @@
+[Unit]
+Description=DA-INVENT - IP Address Management
+After=network.target
+
+[Service]
+Type=simple
+User=da-invent
+WorkingDirectory=/opt/da-invent
+Environment=NODE_ENV=production
+Environment=PORT=3001
+EnvironmentFile=/opt/da-invent/.env.local
+ExecStart=/opt/da-invent/node_modules/.bin/tsx /opt/da-invent/server.ts
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/da-invent/data
+
+[Install]
+WantedBy=multi-user.target

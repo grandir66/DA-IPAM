@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS hosts (
   status TEXT DEFAULT 'unknown' CHECK(status IN ('online', 'offline', 'unknown')),
   open_ports TEXT,
   os_info TEXT,
+  model TEXT,
+  serial_number TEXT,
   last_seen TEXT,
   first_seen TEXT,
   created_at TEXT DEFAULT (datetime('now')),
@@ -49,7 +51,7 @@ CREATE TABLE IF NOT EXISTS scan_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'nmap', 'arp', 'dns')),
+  scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh')),
   status TEXT NOT NULL,
   ports_open TEXT,
   raw_output TEXT,
@@ -57,13 +59,26 @@ CREATE TABLE IF NOT EXISTS scan_history (
   timestamp TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS credentials (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  credential_type TEXT NOT NULL CHECK(credential_type IN ('ssh', 'snmp', 'api', 'windows', 'linux')),
+  encrypted_username TEXT,
+  encrypted_password TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS network_devices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   host TEXT NOT NULL,
-  device_type TEXT NOT NULL CHECK(device_type IN ('router', 'switch')),
-  vendor TEXT NOT NULL CHECK(vendor IN ('mikrotik', 'ubiquiti', 'hp', 'cisco', 'omada', 'other')),
-  protocol TEXT NOT NULL CHECK(protocol IN ('ssh', 'snmp_v2', 'snmp_v3', 'api')),
+  device_type TEXT NOT NULL CHECK(device_type IN ('router', 'switch', 'hypervisor')),
+  vendor TEXT NOT NULL CHECK(vendor IN ('mikrotik', 'ubiquiti', 'hp', 'cisco', 'omada', 'stormshield', 'proxmox', 'vmware', 'linux', 'windows', 'synology', 'qnap', 'other')),
+  vendor_subtype TEXT CHECK(vendor_subtype IN ('procurve', 'comware')),
+  protocol TEXT NOT NULL CHECK(protocol IN ('ssh', 'snmp_v2', 'snmp_v3', 'api', 'winrm')),
+  credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+  snmp_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
   username TEXT,
   encrypted_password TEXT,
   community_string TEXT,
@@ -71,6 +86,19 @@ CREATE TABLE IF NOT EXISTS network_devices (
   api_url TEXT,
   port INTEGER DEFAULT 22,
   enabled INTEGER DEFAULT 1,
+  classification TEXT,
+  sysname TEXT,
+  sysdescr TEXT,
+  model TEXT,
+  firmware TEXT,
+  serial_number TEXT,
+  part_number TEXT,
+  last_info_update TEXT,
+  last_device_info_json TEXT,
+  stp_info TEXT,
+  last_proxmox_scan_at TEXT,
+  last_proxmox_scan_result TEXT,
+  scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux')),
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -125,6 +153,7 @@ CREATE TABLE IF NOT EXISTS switch_ports (
   trunk_neighbor_port TEXT,
   trunk_primary_device_id INTEGER REFERENCES network_devices(id) ON DELETE SET NULL,
   trunk_primary_name TEXT,
+  stp_state TEXT,
   timestamp TEXT DEFAULT (datetime('now')),
   UNIQUE(device_id, port_index)
 );
@@ -132,7 +161,7 @@ CREATE TABLE IF NOT EXISTS switch_ports (
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'nmap_scan', 'arp_poll', 'dns_resolve', 'cleanup')),
+  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'cleanup', 'known_host_check')),
   interval_minutes INTEGER NOT NULL DEFAULT 60,
   last_run TEXT,
   next_run TEXT,
@@ -177,6 +206,32 @@ CREATE TABLE IF NOT EXISTS status_history (
   checked_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Tabella cumulativa MAC-IP: aggrega da ARP, DHCP, switch, hosts. Aggiornata quando un MAC cambia IP.
+CREATE TABLE IF NOT EXISTS mac_ip_mapping (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mac_normalized TEXT NOT NULL UNIQUE,
+  mac_display TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  source TEXT NOT NULL CHECK(source IN ('arp', 'dhcp', 'host', 'switch')),
+  source_device_id INTEGER REFERENCES network_devices(id) ON DELETE SET NULL,
+  network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+  host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+  vendor TEXT,
+  hostname TEXT,
+  first_seen TEXT DEFAULT (datetime('now')),
+  last_seen TEXT DEFAULT (datetime('now')),
+  previous_ip TEXT
+);
+
+-- Cronologia cambi IP per MAC (analisi spostamenti)
+CREATE TABLE IF NOT EXISTS mac_ip_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mac_normalized TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  source TEXT NOT NULL,
+  changed_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_hosts_network ON hosts(network_id);
 CREATE INDEX IF NOT EXISTS idx_hosts_status ON hosts(status);
 CREATE INDEX IF NOT EXISTS idx_hosts_ip ON hosts(ip);
@@ -192,4 +247,178 @@ CREATE INDEX IF NOT EXISTS idx_mac_port_entries_mac ON mac_port_entries(mac);
 CREATE INDEX IF NOT EXISTS idx_network_router_network ON network_router(network_id);
 CREATE INDEX IF NOT EXISTS idx_network_router_router ON network_router(router_id);
 CREATE INDEX IF NOT EXISTS idx_switch_ports_device ON switch_ports(device_id);
+CREATE INDEX IF NOT EXISTS idx_network_devices_credential ON network_devices(credential_id);
+CREATE INDEX IF NOT EXISTS idx_mac_ip_mapping_mac ON mac_ip_mapping(mac_normalized);
+CREATE INDEX IF NOT EXISTS idx_mac_ip_mapping_ip ON mac_ip_mapping(ip);
+CREATE INDEX IF NOT EXISTS idx_mac_ip_history_mac ON mac_ip_history(mac_normalized);
+
+-- Assegnatari asset: elenco persone a cui possono essere assegnati gli asset (diversi dagli utenti di sistema)
+CREATE TABLE IF NOT EXISTS asset_assignees (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  note TEXT,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Ubicazioni: sedi, edifici, stanze (gerarchia opzionale)
+CREATE TABLE IF NOT EXISTS locations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  parent_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+  address TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Inventario asset: device di rete, host, o standalone. Molti campi opzionali.
+CREATE TABLE IF NOT EXISTS inventory_assets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id TEXT UNIQUE,
+  asset_tag TEXT,
+  serial_number TEXT,
+  network_device_id INTEGER REFERENCES network_devices(id) ON DELETE SET NULL,
+  host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+  hostname TEXT,
+  nome_prodotto TEXT,
+  categoria TEXT CHECK(categoria IN ('Desktop', 'Laptop', 'Server', 'Switch', 'Firewall', 'NAS', 'Stampante', 'VM', 'Licenza', 'Access Point', 'Router', 'Other') OR categoria IS NULL),
+  marca TEXT,
+  modello TEXT,
+  part_number TEXT,
+  sede TEXT,
+  reparto TEXT,
+  utente_assegnatario_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  asset_assignee_id INTEGER REFERENCES asset_assignees(id) ON DELETE SET NULL,
+  location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+  posizione_fisica TEXT,
+  data_assegnazione TEXT,
+  data_acquisto TEXT,
+  data_installazione TEXT,
+  data_dismissione TEXT,
+  stato TEXT CHECK(stato IN ('Attivo', 'In magazzino', 'In riparazione', 'Dismesso', 'Rubato') OR stato IS NULL),
+  fine_garanzia TEXT,
+  fine_supporto TEXT,
+  vita_utile_prevista INTEGER,
+  sistema_operativo TEXT,
+  versione_os TEXT,
+  cpu TEXT,
+  ram_gb INTEGER,
+  storage_gb INTEGER,
+  storage_tipo TEXT CHECK(storage_tipo IN ('SSD', 'HDD', 'NVMe') OR storage_tipo IS NULL),
+  mac_address TEXT,
+  ip_address TEXT,
+  vlan INTEGER,
+  firmware_version TEXT,
+  prezzo_acquisto REAL,
+  fornitore TEXT,
+  numero_ordine TEXT,
+  numero_fattura TEXT,
+  valore_attuale REAL,
+  metodo_ammortamento TEXT CHECK(metodo_ammortamento IN ('Lineare', 'Quote decrescenti') OR metodo_ammortamento IS NULL),
+  centro_di_costo TEXT,
+  crittografia_disco INTEGER DEFAULT 0,
+  antivirus TEXT,
+  gestito_da_mdr INTEGER DEFAULT 0,
+  classificazione_dati TEXT CHECK(classificazione_dati IN ('Pubblico', 'Interno', 'Confidenziale', 'Riservato') OR classificazione_dati IS NULL),
+  in_scope_gdpr INTEGER DEFAULT 0,
+  in_scope_nis2 INTEGER DEFAULT 0,
+  ultimo_audit TEXT,
+  contratto_supporto TEXT,
+  tipo_garanzia TEXT,
+  contatto_supporto TEXT,
+  ultimo_intervento TEXT,
+  prossima_manutenzione TEXT,
+  note_tecniche TEXT,
+  technical_data TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_assets_network_device ON inventory_assets(network_device_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_assets_host ON inventory_assets(host_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_assets_asset_tag ON inventory_assets(asset_tag);
+CREATE INDEX IF NOT EXISTS idx_inventory_assets_serial ON inventory_assets(serial_number);
+CREATE INDEX IF NOT EXISTS idx_inventory_assets_stato ON inventory_assets(stato);
+CREATE INDEX IF NOT EXISTS idx_inventory_assets_fine_garanzia ON inventory_assets(fine_garanzia);
+CREATE INDEX IF NOT EXISTS idx_inventory_assets_asset_assignee ON inventory_assets(asset_assignee_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_assets_location ON inventory_assets(location_id);
+
+-- Licenze software (stile Snipe-IT)
+CREATE TABLE IF NOT EXISTS licenses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  serial TEXT,
+  seats INTEGER NOT NULL DEFAULT 1,
+  category TEXT,
+  expiration_date TEXT,
+  purchase_cost REAL,
+  min_amt INTEGER DEFAULT 0,
+  fornitore TEXT,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Posti licenza: ogni licenza ha N posti, assegnabili a asset o assegnatario
+CREATE TABLE IF NOT EXISTS license_seats (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  license_id INTEGER NOT NULL REFERENCES licenses(id) ON DELETE CASCADE,
+  asset_type TEXT CHECK(asset_type IN ('inventory_asset', 'host')),
+  asset_id INTEGER,
+  asset_assignee_id INTEGER REFERENCES asset_assignees(id) ON DELETE SET NULL,
+  assigned_at TEXT DEFAULT (datetime('now')),
+  note TEXT
+);
+
+-- Audit log modifiche inventario (GDPR/NIS2 tracciabilità)
+CREATE TABLE IF NOT EXISTS inventory_audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER NOT NULL REFERENCES inventory_assets(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL CHECK(action IN ('create', 'update', 'delete')),
+  field_name TEXT,
+  old_value TEXT,
+  new_value TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_asset_assignees_user ON asset_assignees(user_id);
+CREATE INDEX IF NOT EXISTS idx_locations_parent ON locations(parent_id);
+CREATE INDEX IF NOT EXISTS idx_license_seats_license ON license_seats(license_id);
+CREATE INDEX IF NOT EXISTS idx_license_seats_asset ON license_seats(asset_type, asset_id);
+CREATE INDEX IF NOT EXISTS idx_license_seats_assignee ON license_seats(asset_assignee_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_audit_log_asset ON inventory_audit_log(asset_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_audit_log_created ON inventory_audit_log(created_at);
+
+-- Hypervisor Proxmox: configurazione per estrazione dati host e VM
+CREATE TABLE IF NOT EXISTS proxmox_hosts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  host TEXT NOT NULL,
+  port INTEGER DEFAULT 8006,
+  credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+  enabled INTEGER DEFAULT 1,
+  last_scan_at TEXT,
+  last_scan_result TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_proxmox_hosts_credential ON proxmox_hosts(credential_id);
+
+-- Performance indexes (composite e lookup frequenti)
+CREATE INDEX IF NOT EXISTS idx_hosts_network_ip ON hosts(network_id, ip);
+CREATE INDEX IF NOT EXISTS idx_hosts_hostname ON hosts(hostname);
+CREATE INDEX IF NOT EXISTS idx_hosts_custom_name ON hosts(custom_name);
+CREATE INDEX IF NOT EXISTS idx_hosts_vendor ON hosts(vendor);
+CREATE INDEX IF NOT EXISTS idx_network_devices_host ON network_devices(host);
+CREATE INDEX IF NOT EXISTS idx_network_devices_device_type ON network_devices(device_type);
+CREATE INDEX IF NOT EXISTS idx_arp_entries_mac_timestamp ON arp_entries(mac, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_mac_port_entries_device_mac ON mac_port_entries(device_id, mac);
+CREATE INDEX IF NOT EXISTS idx_status_history_checked_host ON status_history(checked_at DESC, host_id);
+CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run);
+CREATE INDEX IF NOT EXISTS idx_inventory_audit_log_asset_created ON inventory_audit_log(asset_id, created_at DESC);
 `;

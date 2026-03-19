@@ -19,7 +19,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "DA-INVENT — IP Address Management",
-  description: "Network IP Address Management System",
+  description:
+    "IPAM e inventario asset — software open source by Domarc (domarc.it). Fork pubblici: attribuzione richiesta (LICENSE).",
 };
 
 // Blocking script to set dark class before hydration, preventing FOUC and hydration mismatch

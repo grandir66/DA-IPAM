@@ -1,7 +1,15 @@
 {
   "name": "da-invent",
-  "version": "0.2.34",
+  "version": "0.2.37",
   "private": true,
+  "description": "IPAM e inventario asset — progetto open source Domarc (domarc.it). Vedi LICENSE per attribuzione su fork.",
+  "author": "Domarc (https://domarc.it)",
+  "license": "SEE LICENSE IN LICENSE",
+  "homepage": "https://domarc.it",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/grandir66/DA-IPAM.git"
+  },
   "scripts": {
     "dev": "next dev -p 3001",
     "dev:server": "tsx watch server.ts",

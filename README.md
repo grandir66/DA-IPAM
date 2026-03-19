@@ -101,7 +101,7 @@ git clone https://github.com/grandir66/DA-IPAM.git
 cd DA-IPAM
 chmod +x scripts/install.sh
 ./scripts/install.sh              # dipendenze, npm, build, .env.local
-sudo ./scripts/install.sh --systemd   # servizio systemd (opzionale)
+sudo ./scripts/install.sh --systemd   # servizio systemd: abilitato al boot e avviato subito (enable --now)
 ```
 
 `install.sh` installa Node 20, build-essential, nmap, sqlite3, esegue `npm ci`/`npm install` e `npm run build`, genera `.env.local` con `ENCRYPTION_KEY` e `AUTH_SECRET`.

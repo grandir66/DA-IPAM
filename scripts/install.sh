@@ -145,8 +145,9 @@ EOF
   sed -i "s|ExecStart=.*|ExecStart=$tsx_path $APP_DIR/server.ts|" "$service_file"
 
   systemctl daemon-reload
-  systemctl enable "$APP_NAME"
-  echo "    Servizio installato. Avvia con: systemctl start $APP_NAME"
+  # enable = avvio al boot; --now = avvia anche subito (evita stato inactive fino al primo reboot)
+  systemctl enable --now "$APP_NAME"
+  echo "    Servizio installato, abilitato al boot e avviato (systemctl enable --now)."
 }
 
 # Main
@@ -171,8 +172,8 @@ echo ""
 echo "Avvio rapido (senza systemd):"
 echo "  cd $APP_DIR && npm run start"
 echo ""
-echo "Oppure con systemd (se installato):"
-echo "  sudo systemctl start da-invent"
+echo "Con systemd (se installato con --systemd) il servizio è già stato avviato; stato:"
+echo "  systemctl status da-invent"
 echo ""
 echo "Accedi a: http://<indirizzo-ip>:$PORT"
 echo "Al primo avvio completa il setup dalla pagina /setup"

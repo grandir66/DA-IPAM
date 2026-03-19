@@ -103,17 +103,39 @@ prompt_secret() {
   echo "$s1"
 }
 
-list_bridges() {
-  echo "Bridge rilevati sul nodo (usa quello a cui è collegata la LAN o il Wi‑Fi già configurato come bridge, es. vmbr0):"
-  local found=0
-  while read -r line; do
-    [[ -z "$line" ]] && continue
-    echo "  - $line"
-    found=1
-  done < <(ip -o link show type bridge 2>/dev/null | awk -F': ' '{print $2}' | sed 's/@.*//' || true)
-  if [[ "$found" -eq 0 ]]; then
-    warn "Nessun bridge rilevato via ip. Controlla /etc/network/interfaces (vmbr0, vmbr1, …)."
+get_bridge_names() {
+  ip -o link show type bridge 2>/dev/null | awk -F': ' '{print $2}' | sed 's/@.*//' | grep -v '^[[:space:]]*$' || true
+}
+
+# Menu numerato dei bridge Linux sul nodo; fallback manuale se nessuno rilevato.
+pick_bridge() {
+  local raw
+  raw=$(get_bridge_names)
+  if [[ -z "$(echo "$raw" | tr -d '[:space:]')" ]]; then
+    warn "Nessun bridge rilevato (ip link type bridge). Inserisci il nome manualmente (es. vmbr0)."
+    read -r -p "Nome bridge: " bridge
+    [[ -n "${bridge:-}" ]] || die "Nome bridge obbligatorio."
+    echo "$bridge"
+    return
   fi
+  echo "" >&2
+  echo "Bridge di rete rilevati (scegli quello collegato a LAN o Wi‑Fi bridge-ato sul host):" >&2
+  echo "$raw" | nl -w2 -s') ' >&2
+  echo " 0) Inserisci manualmente il nome del bridge (es. vmbr0)" >&2
+  echo "" >&2
+  local num
+  read -r -p "Numero bridge [1] (0 = manuale): " num
+  num="${num:-1}"
+  if [[ "$num" == "0" ]]; then
+    read -r -p "Nome bridge: " name
+    [[ -n "${name:-}" ]] || die "Nome bridge obbligatorio."
+    echo "$name"
+    return
+  fi
+  local name
+  name=$(echo "$raw" | sed -n "${num}p")
+  [[ -n "$name" ]] || die "Selezione bridge non valida."
+  echo "$name"
 }
 
 ctid_in_use() {
@@ -266,10 +288,9 @@ main() {
   storage=$(pick_storage)
 
   # --- Network ---
-  info "7) Rete"
-  list_bridges
+  info "7) Rete — bridge (menu numerato)"
   local bridge
-  bridge=$(prompt "vmbr0" "   Nome bridge (es. vmbr0 per LAN, o il bridge dove hai messo il Wi‑Fi)")
+  bridge=$(pick_bridge)
 
   local vlan_ask
   vlan_ask=$(prompt "" "   VLAN tag (opzionale, Invio = nessuna)")

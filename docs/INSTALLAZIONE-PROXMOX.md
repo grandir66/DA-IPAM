@@ -15,7 +15,7 @@ Lo script:
 
 1. Installa `git` e `curl` con `apt` se mancanti  
 2. Clona il repository (branch `main`, URL configurabile con `DA_INVENT_GIT_URL`)  
-3. Avvia `scripts/proxmox-lxc-install.sh` (wizard LXC): storage **vztmpl** e **rootdir** da elenco numerato `pvesm`, template da `pveam list` o da catalogo numerato se serve il download
+3. Avvia `scripts/proxmox-lxc-install.sh` (wizard LXC): storage **vztmpl** e **rootdir** da elenco numerato `pvesm`, template da `pveam list` o da catalogo numerato se serve il download, **bridge** da menu numerato (opzione 0 = nome manuale)
 
 ## Solo wizard (repository già presente)
 

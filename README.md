@@ -70,7 +70,7 @@ Cosa fa `bootstrap-proxmox.sh`:
 
 1. Installa `git`, `curl`, `ca-certificates` con `apt` se assenti  
 2. Clona il repository (default: `https://github.com/grandir66/DA-IPAM.git`, branch `main`)  
-3. Avvia il wizard `scripts/proxmox-lxc-install.sh`: **storage template** e **storage root** da menu numerati (`pvesm`), **template OS** da elenco o da catalogo numerato per il download; CTID, hostname, risorse, **bridge** / VLAN, DHCP o statico, privilegi, password root, installazione opzionale di DA-INVENT nel CT
+3. Avvia il wizard `scripts/proxmox-lxc-install.sh`: **storage template** e **storage root** da menu numerati (`pvesm`), **template OS** da elenco o da catalogo numerato per il download; CTID, hostname, risorse, **bridge** da menu numerato (`ip link type bridge`, opzione 0 = nome manuale), VLAN, DHCP o statico, privilegi, password root, installazione opzionale di DA-INVENT nel CT
 
 **Variabili d’ambiente (opzionali):**
 

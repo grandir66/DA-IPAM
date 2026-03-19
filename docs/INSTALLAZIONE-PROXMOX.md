@@ -78,3 +78,7 @@ DA_INVENT_SSH=root@tuo-pve DA_INVENT_PCT=150 ./scripts/pull-db-from-pct.sh
 ```
 
 Chiudi i processi che tengono aperto il DB (`npm run dev`, ecc.) prima di eseguirlo; poi riavvia l’app locale.
+
+**Conferma obbligatoria:** lo script chiede di digitare `YES` (il CT spesso ha un DB vuoto: non usare questo comando per “tenere” il dataset di test sul Mac). In automazione: `DA_INVENT_PULL_DB_CONFIRM=yes`.
+
+**Ripristino backup sul Mac:** `./scripts/restore-local-db.sh data/ipam.db.backup-…`

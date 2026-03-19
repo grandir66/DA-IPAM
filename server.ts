@@ -22,7 +22,7 @@ app.prepare().then(() => {
       };
       createSecureServer(options, (req, res) => {
         handle(req, res);
-      }).listen(port, () => {
+      }).listen(port, hostname, () => {
         console.log(`> DA-INVENT ready on https://localhost:${port}`);
         initCron();
       });
@@ -34,7 +34,7 @@ app.prepare().then(() => {
           const host = req.headers.host?.replace(`:${httpPort}`, `:${port}`) || `localhost:${port}`;
           res.writeHead(301, { Location: `https://${host}${req.url}` });
           res.end();
-        }).listen(httpPort, () => {
+        }).listen(httpPort, hostname, () => {
           console.log(`> HTTP redirect on port ${httpPort} → https://localhost:${port}`);
         });
       }
@@ -51,8 +51,8 @@ app.prepare().then(() => {
   function startHttp() {
     createServer((req, res) => {
       handle(req, res);
-    }).listen(port, () => {
-      console.log(`> DA-INVENT ready on http://localhost:${port}`);
+    }).listen(port, hostname, () => {
+      console.log(`> DA-INVENT ready on http://0.0.0.0:${port} (anche http://localhost:${port})`);
       initCron();
     });
   }

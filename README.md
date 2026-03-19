@@ -292,6 +292,22 @@ npm run lint
 
 Convenzioni e anti-regressioni: vedi `CLAUDE.md` nel repository.
 
+### Porta 3001: il sito non si apre sul Mac
+
+1. **Avvia il server** dalla root del repo: `npm run dev` (solo UI) o `npm run dev:server` (con cron). Senza processo in ascolto non c’è nulla su `:3001`.
+2. Usa **HTTP**: **`http://localhost:3001`** o **`http://127.0.0.1:3001`**. Se in `.env.local` hai **`TLS_CERT`** / **`TLS_KEY`** e avvii **`npm run start`** (non `dev`), l’app è in **HTTPS**: apri **`https://localhost:3001`** (il browser segnalerà certificato self-signed se usi cert di test).
+3. Controlla che la porta sia libera: `lsof -i :3001` (Mac). Se un altro processo la usa, termina quel processo o cambia `PORT` in `.env.local`.
+
+### Database di test sul Mac (dopo un `pull:db` sbagliato)
+
+`npm run pull:db` **sostituisce** il DB locale con quello del CT (spesso piccolo). Ora lo script chiede conferma **`YES`** (oppure `DA_INVENT_PULL_DB_CONFIRM=yes` in CI).
+
+Per **ripristinare** un backup locale:
+
+```bash
+./scripts/restore-local-db.sh data/ipam.db.backup-<data>
+```
+
 ---
 
 ## Aggiornamento

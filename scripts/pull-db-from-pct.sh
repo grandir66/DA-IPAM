@@ -35,6 +35,24 @@ fi
 
 mkdir -p "$DATA_LOCAL"
 
+# Il CT spesso ha un DB piccolo/vuoto: sovrascrivere il Mac può distruggere dati di test ricchi.
+if [[ "${DA_INVENT_PULL_DB_CONFIRM:-}" != "yes" ]]; then
+  echo "" >&2
+  echo "ATTENZIONE: questo comando SOSTITUISCE ipam.db sul Mac con quello del CT." >&2
+  echo "Se sul Mac hai il dataset di test e il CT è vuoto o minimale, NON proseguire." >&2
+  echo "" >&2
+  if [[ -t 0 ]]; then
+    read -r -p "Scrivi esattamente YES per confermare: " line || true
+    if [[ "$line" != "YES" ]]; then
+      echo "Annullato." >&2
+      exit 1
+    fi
+  else
+    echo "Non sei in un terminale interattivo. Per forzare: DA_INVENT_PULL_DB_CONFIRM=yes npm run pull:db" >&2
+    exit 1
+  fi
+fi
+
 TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$DATA_LOCAL/.backup-before-pull-$TS"
 mkdir -p "$BACKUP_DIR"

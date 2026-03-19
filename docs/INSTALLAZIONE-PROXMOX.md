@@ -34,3 +34,25 @@ chmod +x scripts/proxmox-lxc-install.sh
 | `DA_INVENT_BOOTSTRAP_DIR` | Directory clone bootstrap (default `/root/da-invent-install`) |
 
 Dopo la creazione del container, vedi il README per accesso web (`http://<ip-ct>:3001`) e setup iniziale.
+
+## Aggiornamento CT di test / produzione (dal nodo Proxmox)
+
+Esegui come **root sul nodo Proxmox** (non dentro il CT). Lo script usa `pct exec` e la directory predefinita **`/opt/da-invent`** nel container (come da wizard).
+
+```bash
+cd /percorso/del/clone/DA-IPAM
+chmod +x scripts/pct-update.sh
+./scripts/pct-update.sh <VMID>
+```
+
+Esempio: `./scripts/pct-update.sh 150` per il CT con ID 150.
+
+Equivalente manuale:
+
+```bash
+pct exec <VMID> -- bash -ce 'cd /opt/da-invent && ./scripts/update.sh --restart'
+```
+
+Se l’app è installata altrove nel CT: `DA_INVENT_DIR=/percorso ./scripts/pct-update.sh <VMID>`.
+
+In alternativa, da **dentro** il CT: `cd /opt/da-invent && ./scripts/update.sh --restart`.

@@ -82,6 +82,20 @@ Cosa fa `bootstrap-proxmox.sh`:
 
 Dettagli aggiuntivi: [`docs/INSTALLAZIONE-PROXMOX.md`](docs/INSTALLAZIONE-PROXMOX.md).
 
+### Aggiornamento dell’istanza nel CT (da nodo Proxmox)
+
+Sul **nodo Proxmox**, come **root**, con il repository già clonato (o copiando solo lo script):
+
+```bash
+cd /root/da-invent-install           # clone bootstrap (o altro percorso del repo sul nodo)
+chmod +x scripts/pct-update.sh
+./scripts/pct-update.sh <VMID>       # es. CT di test: ./scripts/pct-update.sh 150
+```
+
+Equivale a `pct exec <VMID> -- bash` in `/opt/da-invent` con `git pull`, `npm install`, `build` e `systemctl restart da-invent` (vedi `scripts/update.sh`).
+
+Variabile opzionale: `DA_INVENT_DIR` se l’app non è in `/opt/da-invent`.
+
 ---
 
 ## Installazione manuale (LXC / VM / bare metal)

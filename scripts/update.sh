@@ -40,10 +40,22 @@ echo ">>> npm run build..."
 npm run build
 
 # Restart servizio systemd (se richiesto)
+# In LXC Debian minimale spesso non c'è `sudo`; come root usare systemctl diretto.
+restart_service() {
+  if [ "$(id -u)" -eq 0 ]; then
+    systemctl restart da-invent
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo systemctl restart da-invent
+  else
+    echo "Errore: servizio da riavviare ma né root né sudo disponibili."
+    return 1
+  fi
+}
+
 if [ "$RESTART" = true ]; then
   if systemctl is-active --quiet da-invent 2>/dev/null; then
     echo ">>> systemctl restart da-invent..."
-    sudo systemctl restart da-invent
+    restart_service
     echo "    Servizio riavviato."
   else
     echo ">>> Servizio da-invent non attivo, skip restart."

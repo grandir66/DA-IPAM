@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -25,7 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
 import { Pagination } from "@/components/shared/pagination";
-import { Plus, Trash2, Network, Key, Scan, X, Search } from "lucide-react";
+import { Plus, Trash2, Network, Key, Scan, X, Search, Router } from "lucide-react";
 import { toast } from "sonner";
 import type { NetworkWithStats } from "@/types";
 
@@ -44,7 +51,25 @@ interface NetworksListClientProps {
   routers: { id: number; name: string; host: string }[];
 }
 
-export function NetworksListClient({ initialNetworks, routers }: NetworksListClientProps) {
+const ROUTER_VENDOR_OPTIONS = [
+  { value: "mikrotik", label: "MikroTik" },
+  { value: "ubiquiti", label: "Ubiquiti" },
+  { value: "cisco", label: "Cisco" },
+  { value: "hp", label: "HP / Aruba" },
+  { value: "omada", label: "TP-Link Omada" },
+  { value: "stormshield", label: "Stormshield" },
+  { value: "linux", label: "Linux" },
+  { value: "other", label: "Altro" },
+] as const;
+
+const ROUTER_PROTOCOL_OPTIONS = [
+  { value: "ssh", label: "SSH" },
+  { value: "snmp_v2", label: "SNMP v2" },
+  { value: "snmp_v3", label: "SNMP v3" },
+  { value: "api", label: "API REST" },
+] as const;
+
+export function NetworksListClient({ initialNetworks, routers: initialRouters }: NetworksListClientProps) {
   const router = useRouter();
   const [networks, setNetworks] = useState<NetworkWithRouter[]>(initialNetworks as NetworkWithRouter[]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -60,6 +85,31 @@ export function NetworksListClient({ initialNetworks, routers }: NetworksListCli
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const pageSize = 25;
+
+  const [routersList, setRoutersList] = useState(initialRouters);
+  const [newNetworkRouterId, setNewNetworkRouterId] = useState<string>("");
+  const [quickRouterOpen, setQuickRouterOpen] = useState(false);
+  const [quickRouterVendor, setQuickRouterVendor] = useState<string>("mikrotik");
+  const [quickRouterProtocol, setQuickRouterProtocol] = useState<string>("ssh");
+  const [quickRouterCredId, setQuickRouterCredId] = useState<string | null>(null);
+  const [quickRouterSnmpId, setQuickRouterSnmpId] = useState<string | null>(null);
+  const [quickRouterSaving, setQuickRouterSaving] = useState(false);
+  const quickRouterFormRef = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    setRoutersList(initialRouters);
+  }, [initialRouters]);
+
+  const refreshRoutersList = useCallback(async () => {
+    try {
+      const res = await fetch("/api/devices?type=router");
+      if (!res.ok) return;
+      const data = (await res.json()) as { id: number; name: string; host: string }[];
+      setRoutersList(data.map((d) => ({ id: d.id, name: d.name, host: d.host })));
+    } catch {
+      toast.error("Impossibile aggiornare l'elenco router");
+    }
+  }, []);
 
   useEffect(() => {
     fetch("/api/credentials")
@@ -183,10 +233,90 @@ export function NetworksListClient({ initialNetworks, routers }: NetworksListCli
     setScanning(false);
   };
 
+  function resetQuickRouterForm() {
+    setQuickRouterVendor("mikrotik");
+    setQuickRouterProtocol("ssh");
+    setQuickRouterCredId(null);
+    setQuickRouterSnmpId(null);
+  }
+
+  async function handleQuickRouterSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    const name = String(fd.get("qr_name") ?? "").trim();
+    const host = String(fd.get("qr_host") ?? "").trim();
+    const username = String(fd.get("username") ?? "").trim();
+    const password = String(fd.get("password") ?? "");
+    const portRaw = String(fd.get("port") ?? "").trim();
+    const community = String(fd.get("community_string") ?? "").trim();
+
+    if (!name || !host) {
+      toast.error("Nome e indirizzo IP del router sono obbligatori");
+      return;
+    }
+
+    const hasCred = quickRouterCredId && quickRouterCredId !== "none";
+    const hasSnmpCred = quickRouterSnmpId && quickRouterSnmpId !== "none";
+    const proto = quickRouterProtocol;
+
+    if (proto === "ssh" || proto === "api") {
+      if (!hasCred && (!username || !password)) {
+        toast.error("Seleziona una credenziale dall'archivio oppure username e password");
+        return;
+      }
+    }
+    if (proto === "snmp_v2" || proto === "snmp_v3") {
+      if (!hasSnmpCred && !community) {
+        toast.error("Per SNMP serve una credenziale SNMP registrata oppure la community");
+        return;
+      }
+    }
+
+    const portNum = portRaw ? Number(portRaw) : undefined;
+    const body: Record<string, unknown> = {
+      name,
+      host,
+      device_type: "router",
+      vendor: quickRouterVendor,
+      protocol: proto,
+      credential_id: hasCred ? Number(quickRouterCredId) : null,
+      snmp_credential_id: hasSnmpCred ? Number(quickRouterSnmpId) : null,
+      username: hasCred ? undefined : username || undefined,
+      password: hasCred ? undefined : password || undefined,
+      community_string: community || undefined,
+      port: portNum && !Number.isNaN(portNum) ? portNum : undefined,
+    };
+
+    setQuickRouterSaving(true);
+    try {
+      const res = await fetch("/api/devices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Errore nella creazione del router");
+        return;
+      }
+      const newId = data.id as number;
+      toast.success("Router aggiunto");
+      await refreshRoutersList();
+      setNewNetworkRouterId(String(newId));
+      setQuickRouterOpen(false);
+      resetQuickRouterForm();
+      form.reset();
+    } catch {
+      toast.error("Errore di connessione");
+    } finally {
+      setQuickRouterSaving(false);
+    }
+  }
+
   async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const routerIdVal = formData.get("router_id");
     const body = {
       cidr: formData.get("cidr"),
       name: formData.get("name"),
@@ -196,7 +326,7 @@ export function NetworksListClient({ initialNetworks, routers }: NetworksListCli
       location: formData.get("location") || undefined,
       dns_server: formData.get("dns_server") || undefined,
       snmp_community: formData.get("snmp_community") || undefined,
-      router_id: routerIdVal && routerIdVal !== "" ? Number(routerIdVal) : undefined,
+      router_id: newNetworkRouterId && newNetworkRouterId !== "" ? Number(newNetworkRouterId) : undefined,
     };
 
     const res = await fetch("/api/networks", {
@@ -213,6 +343,7 @@ export function NetworksListClient({ initialNetworks, routers }: NetworksListCli
 
     toast.success("Rete creata con successo");
     setDialogOpen(false);
+    setNewNetworkRouterId("");
     refreshNetworks();
   }
 
@@ -307,7 +438,13 @@ export function NetworksListClient({ initialNetworks, routers }: NetworksListCli
             </Button>
           )}
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog
+          open={dialogOpen}
+          onOpenChange={(open) => {
+            setDialogOpen(open);
+            if (open) setNewNetworkRouterId("");
+          }}
+        >
           <DialogTrigger render={<Button />}>
             <Plus className="h-4 w-4 mr-2" />
             Aggiungi Rete
@@ -358,21 +495,122 @@ export function NetworksListClient({ initialNetworks, routers }: NetworksListCli
                   <p className="text-xs text-muted-foreground">Usata per scansioni nmap su questa rete se il profilo non ne specifica una</p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="router_id">Router ARP (default)</Label>
-                  <select
-                    id="router_id"
-                    name="router_id"
-                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
-                  >
-                    <option value="">Nessuno</option>
-                    {routers.map((r) => (
-                      <option key={r.id} value={r.id}>{r.name} ({r.host})</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-muted-foreground">Router per acquisizione tabella ARP di questa subnet</p>
+                  <Label htmlFor="new-net-router">Router ARP (default)</Label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Select value={newNetworkRouterId || "none"} onValueChange={(v) => setNewNetworkRouterId(v === "none" ? "" : v)}>
+                      <SelectTrigger id="new-net-router" className="flex-1 bg-background">
+                        <SelectValue placeholder="Nessuno" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Nessuno</SelectItem>
+                        {routersList.map((r) => (
+                          <SelectItem key={r.id} value={String(r.id)}>
+                            {r.name} ({r.host})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => {
+                        resetQuickRouterForm();
+                        setQuickRouterOpen(true);
+                      }}
+                    >
+                      <Router className="h-4 w-4 mr-2" />
+                      Aggiungi router
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Router per la tabella ARP della subnet. Se non è ancora registrato, usare &quot;Aggiungi router&quot;.
+                  </p>
                 </div>
               </div>
               <Button type="submit" className="w-full">Crea Rete</Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={quickRouterOpen}
+          onOpenChange={(open) => {
+            setQuickRouterOpen(open);
+            if (!open) {
+              resetQuickRouterForm();
+              quickRouterFormRef.current?.reset();
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Router className="h-5 w-5" />
+                Nuovo router (ARP)
+              </DialogTitle>
+            </DialogHeader>
+            <form ref={quickRouterFormRef} onSubmit={handleQuickRouterSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="qr_name">Nome</Label>
+                <Input id="qr_name" name="qr_name" required placeholder="Router principale" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="qr_host">Indirizzo IP</Label>
+                <Input id="qr_host" name="qr_host" required placeholder="192.168.1.1" className="font-mono" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Vendor</Label>
+                  <Select value={quickRouterVendor} onValueChange={setQuickRouterVendor}>
+                    <SelectTrigger className="bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ROUTER_VENDOR_OPTIONS.map((v) => (
+                        <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Protocollo</Label>
+                  <Select value={quickRouterProtocol} onValueChange={setQuickRouterProtocol}>
+                    <SelectTrigger className="bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ROUTER_PROTOCOL_OPTIONS.map((p) => (
+                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <CredentialAssignmentFields
+                credentials={credentials}
+                credentialId={quickRouterCredId}
+                snmpCredentialId={quickRouterSnmpId}
+                onCredentialIdChange={setQuickRouterCredId}
+                onSnmpCredentialIdChange={setQuickRouterSnmpId}
+                sshFilter="ssh_api"
+                credentialPlaceholder="Nessuna (inline)"
+                snmpPlaceholder="Nessuna"
+                showInlineCreds
+                inlinePasswordPlaceholder="Obbligatoria se senza archivio"
+                showPortAndCommunity
+                portDefaultValue={quickRouterProtocol.startsWith("snmp") ? 161 : 22}
+                communityPlaceholder="SNMP community"
+                idPrefix="quick-router"
+              />
+              <div className="flex gap-2 justify-end pt-2">
+                <Button type="button" variant="outline" onClick={() => setQuickRouterOpen(false)}>
+                  Annulla
+                </Button>
+                <Button type="submit" disabled={quickRouterSaving}>
+                  {quickRouterSaving ? "Salvataggio…" : "Crea router"}
+                </Button>
+              </div>
             </form>
           </DialogContent>
         </Dialog>

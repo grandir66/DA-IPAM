@@ -17,12 +17,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -41,8 +35,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { IpGrid } from "@/components/shared/ip-grid";
 import { ScanProgress } from "@/components/shared/scan-progress";
-import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, Cpu, ExternalLink, Router, Cable, MoreHorizontal, X, Plus, Monitor, Server, Terminal } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
+import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, Cpu, ExternalLink, X, Plus, Monitor, Server, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 
@@ -122,25 +115,7 @@ export function NetworkDetailClient({
   const [dhcpPolling, setDhcpPolling] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [dnsResolving, setDnsResolving] = useState(false);
-  const [hostEditOpen, setHostEditOpen] = useState(false);
-  const [hostEditId, setHostEditId] = useState<number | null>(null);
-  const [hostEditForm, setHostEditForm] = useState({
-    custom_name: "",
-    classification: "",
-    inventory_code: "",
-    notes: "",
-    known_host: 0 as 0 | 1,
-  });
-  const [addDeviceOpen, setAddDeviceOpen] = useState(false);
-  const [addDeviceHost, setAddDeviceHost] = useState<Host | null>(null);
-  const [addDeviceType, setAddDeviceType] = useState<"router" | "switch">("router");
-  const [addDeviceVendor, setAddDeviceVendor] = useState("mikrotik");
-  const [addDeviceProtocol, setAddDeviceProtocol] = useState("ssh");
-  const [addDeviceCredentialId, setAddDeviceCredentialId] = useState<string | null>(null);
-  const [addDeviceSnmpCredentialId, setAddDeviceSnmpCredentialId] = useState<string | null>(null);
-  const [addDeviceVendorSubtype, setAddDeviceVendorSubtype] = useState<string | null>(null);
   const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
-  const [addDeviceSaving, setAddDeviceSaving] = useState(false);
   const [selectedHostIds, setSelectedHostIds] = useState<Set<number>>(new Set());
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
   const [bulkAddClassification, setBulkAddClassification] = useState("server");
@@ -303,106 +278,6 @@ export function NetworkDetailClient({
       toast.error("Errore nell'aggiunta");
     }
     setBulkAddSaving(false);
-  }
-
-  function openHostEdit(host: Host) {
-    setHostEditId(host.id);
-    setHostEditForm({
-      custom_name: host.custom_name || "",
-      classification: host.classification || "",
-      inventory_code: host.inventory_code || "",
-      notes: host.notes || "",
-      known_host: (host.known_host ?? 0) ? 1 : 0,
-    });
-    setHostEditOpen(true);
-  }
-
-  function openAddDevice(host: Host, deviceType: "router" | "switch") {
-    setAddDeviceHost(host);
-    setAddDeviceType(deviceType);
-    setAddDeviceVendor(deviceType === "router" ? "mikrotik" : "cisco");
-    setAddDeviceProtocol("ssh");
-    setAddDeviceCredentialId(null);
-    setAddDeviceVendorSubtype(null);
-    setAddDeviceOpen(true);
-  }
-
-  async function handleAddDevice(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!addDeviceHost) return;
-    setAddDeviceSaving(true);
-    const form = e.currentTarget;
-    const formData = new FormData(form);
-    const body: Record<string, unknown> = {
-      device_type: addDeviceType,
-      name: formData.get("name") || addDeviceHost.custom_name || addDeviceHost.hostname || addDeviceHost.ip,
-      host: addDeviceHost.ip,
-      vendor: addDeviceVendor,
-      protocol: addDeviceProtocol,
-      credential_id: addDeviceCredentialId && addDeviceCredentialId !== "none" ? Number(addDeviceCredentialId) : null,
-      snmp_credential_id: addDeviceSnmpCredentialId && addDeviceSnmpCredentialId !== "none" ? Number(addDeviceSnmpCredentialId) : null,
-      vendor_subtype: addDeviceVendor === "hp" && addDeviceVendorSubtype ? addDeviceVendorSubtype : null,
-    };
-    formData.forEach((val, key) => {
-      if (val && !["device_type", "name", "host", "vendor", "protocol"].includes(key)) {
-        body[key] = key === "port" ? Number(val) || undefined : val;
-      }
-    });
-    if (body.credential_id) {
-      delete body.username;
-      delete body.password;
-    }
-    try {
-      const res = await fetch("/api/devices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        toast.success(addDeviceType === "router" ? "Router aggiunto" : "Switch aggiunto");
-        setAddDeviceOpen(false);
-        setAddDeviceHost(null);
-        await refreshHosts();
-      } else {
-        const data = await res.json();
-        toast.error(data.error || "Errore nella creazione");
-      }
-    } catch {
-      toast.error("Errore nella creazione");
-    }
-    setAddDeviceSaving(false);
-  }
-
-  async function saveHostEdit() {
-    if (!hostEditId) return;
-    const host = hosts.find((h) => h.id === hostEditId) as HostWithDevice | undefined;
-    const deviceId = host?.device_id;
-    try {
-      const res = await fetch(`/api/hosts/${hostEditId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(hostEditForm),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setHosts((prev) => prev.map((h) => (h.id === hostEditId ? (updated as Host & { device_id?: number }) : h)));
-        if (deviceId != null) {
-          await fetch(`/api/devices/${deviceId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ classification: hostEditForm.classification || null }),
-          });
-        }
-        toast.success("Host aggiornato");
-        setHostEditOpen(false);
-        setHostEditId(null);
-        router.refresh();
-      } else {
-        toast.error("Errore nell'aggiornamento");
-      }
-    } catch {
-      toast.error("Errore nell'aggiornamento");
-    }
   }
 
   async function handleSaveEdit(e: React.FormEvent<HTMLFormElement>) {
@@ -1061,7 +936,7 @@ export function NetworkDetailClient({
                     aria-label="Seleziona tutti"
                   />
                 </TableHead>
-                <TableHead className="w-24">Dettagli</TableHead>
+                <TableHead className="w-12 text-center" title="Apri scheda host">Dettagli</TableHead>
                 <TableHead>IP</TableHead>
                 <TableHead>Stato</TableHead>
                 <TableHead>Conosciuto</TableHead>
@@ -1095,34 +970,16 @@ export function NetworkDetailClient({
                         aria-label={`Seleziona ${host.ip}`}
                       />
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()} className="flex gap-1 items-center">
+                    <TableCell onClick={(e) => e.stopPropagation()} className="text-center">
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
-                        onClick={() => openHostEdit(host)}
-                        title="Modifica dettagli"
+                        nativeButton={false}
+                        render={<Link href={`/hosts/${host.id}`} title="Apri scheda host" />}
                       >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" nativeButton={false} render={<Link href={`/hosts/${host.id}`} title="Dettagli host" />}>
                         <ExternalLink className="h-4 w-4" />
                       </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" title="Aggiungi come dispositivo" />}>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
-                          <DropdownMenuItem onClick={() => openAddDevice(host, "router")}>
-                            <Router className="h-4 w-4 mr-2" />
-                            Aggiungi come Router
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openAddDevice(host, "switch")}>
-                            <Cable className="h-4 w-4 mr-2" />
-                            Aggiungi come Switch
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
                     </TableCell>
                     <TableCell className="font-mono font-medium">{host.ip}</TableCell>
                     <TableCell><StatusBadge status={host.status} /></TableCell>
@@ -1260,184 +1117,6 @@ export function NetworkDetailClient({
         </Card>
       )}
 
-      {/* Host Edit Dialog */}
-      <Dialog open={hostEditOpen} onOpenChange={(open) => { setHostEditOpen(open); if (!open) setHostEditId(null); }}>
-        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Modifica host</DialogTitle>
-          </DialogHeader>
-          <form
-            onSubmit={(e) => { e.preventDefault(); saveHostEdit(); }}
-            className="space-y-4"
-          >
-            <div className="flex items-center justify-between rounded-lg border p-4">
-              <div>
-                <Label>Host conosciuto</Label>
-                <p className="text-xs text-muted-foreground">Monitoraggio continuo dell&apos;IP</p>
-              </div>
-              <Switch
-                checked={hostEditForm.known_host === 1}
-                onCheckedChange={(v) => setHostEditForm((f) => ({ ...f, known_host: v ? 1 : 0 }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Nome</Label>
-              <Input
-                value={hostEditForm.custom_name}
-                onChange={(e) => setHostEditForm((f) => ({ ...f, custom_name: e.target.value }))}
-                placeholder="Nome personalizzato"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Classificazione</Label>
-              <Select
-                value={hostEditForm.classification || "__empty__"}
-                onValueChange={(v) => setHostEditForm((f) => ({ ...f, classification: v === "__empty__" ? "" : (v ?? "") }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleziona classificazione..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__empty__">— Nessuna —</SelectItem>
-                  {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {getClassificationLabel(c)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Codice inventario</Label>
-              <Input
-                value={hostEditForm.inventory_code}
-                onChange={(e) => setHostEditForm((f) => ({ ...f, inventory_code: e.target.value }))}
-                placeholder="INV-2024-001"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Note</Label>
-              <Textarea
-                value={hostEditForm.notes}
-                onChange={(e) => setHostEditForm((f) => ({ ...f, notes: e.target.value }))}
-                placeholder="Note aggiuntive..."
-                rows={3}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={() => setHostEditOpen(false)}>
-                Annulla
-              </Button>
-              <Button type="submit">
-                Salva
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Aggiungi come Router/Switch */}
-      <Dialog open={addDeviceOpen} onOpenChange={(open) => { setAddDeviceOpen(open); if (!open) setAddDeviceHost(null); }}>
-        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              Aggiungi come {addDeviceType === "router" ? "Router" : "Switch"}
-            </DialogTitle>
-            <CardDescription>Credenziali riutilizzabili o inline</CardDescription>
-          </DialogHeader>
-          {addDeviceHost && (
-            <form onSubmit={handleAddDevice} className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Crea un dispositivo da <span className="font-mono font-medium">{addDeviceHost.ip}</span>
-                {addDeviceHost.custom_name || addDeviceHost.hostname ? ` (${addDeviceHost.custom_name || addDeviceHost.hostname})` : ""}
-              </p>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Nome</Label>
-                  <Input
-                    name="name"
-                    defaultValue={addDeviceHost.custom_name || addDeviceHost.hostname || addDeviceHost.ip}
-                    placeholder={addDeviceType === "router" ? "Router Core" : "Switch Core"}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>IP</Label>
-                  <Input value={addDeviceHost.ip} disabled className="bg-muted" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Vendor</Label>
-                  <Select value={addDeviceVendor} onValueChange={(v) => { setAddDeviceVendor(v ?? ""); if (v !== "hp") setAddDeviceVendorSubtype(null); }}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="mikrotik">MikroTik</SelectItem>
-                      <SelectItem value="ubiquiti">Ubiquiti</SelectItem>
-                      <SelectItem value="cisco">Cisco</SelectItem>
-                      <SelectItem value="hp">HP / Aruba</SelectItem>
-                      <SelectItem value="omada">TP-Link Omada</SelectItem>
-                      <SelectItem value="stormshield">Stormshield</SelectItem>
-                      <SelectItem value="proxmox">Proxmox</SelectItem>
-                      <SelectItem value="vmware">VMware</SelectItem>
-                      <SelectItem value="linux">Linux</SelectItem>
-                      <SelectItem value="windows">Windows</SelectItem>
-                      <SelectItem value="synology">Synology</SelectItem>
-                      <SelectItem value="qnap">QNAP</SelectItem>
-                      <SelectItem value="other">Altro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {addDeviceVendor === "hp" && (
-                  <div className="space-y-2">
-                    <Label>Sottotipo HP</Label>
-                    <Select value={addDeviceVendorSubtype ?? "none"} onValueChange={(v) => setAddDeviceVendorSubtype(v === "none" ? null : v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Generico</SelectItem>
-                        <SelectItem value="procurve">ProCurve / Aruba</SelectItem>
-                        <SelectItem value="comware">Comware</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label>Protocollo</Label>
-                  <Select value={addDeviceProtocol} onValueChange={(v) => setAddDeviceProtocol(v ?? "")}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ssh">SSH</SelectItem>
-                      <SelectItem value="snmp_v2">SNMP v2</SelectItem>
-                      <SelectItem value="snmp_v3">SNMP v3</SelectItem>
-                      <SelectItem value="api">API REST</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <CredentialAssignmentFields
-                credentials={addDeviceCredentials}
-                credentialId={addDeviceCredentialId}
-                snmpCredentialId={addDeviceSnmpCredentialId}
-                onCredentialIdChange={(v) => setAddDeviceCredentialId(v)}
-                onSnmpCredentialIdChange={(v) => setAddDeviceSnmpCredentialId(v)}
-                credentialPlaceholder="Nessuna (credenziali inline)"
-                showInlineCreds={addDeviceProtocol === "ssh" || addDeviceProtocol === "api" || addDeviceProtocol === "winrm"}
-                showPortAndCommunity
-                portDefaultValue={addDeviceProtocol === "ssh" ? 22 : addDeviceProtocol.startsWith("snmp") ? 161 : addDeviceProtocol === "winrm" ? 5985 : 443}
-                communityPlaceholder="public"
-                idPrefix="network-add-device"
-              />
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => setAddDeviceOpen(false)}>
-                  Annulla
-                </Button>
-                <Button type="submit" disabled={addDeviceSaving}>
-                  {addDeviceSaving ? "Creazione..." : `Aggiungi ${addDeviceType === "router" ? "Router" : "Switch"}`}
-                </Button>
-              </div>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

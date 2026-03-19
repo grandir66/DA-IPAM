@@ -397,6 +397,7 @@ main() {
   echo "  pct enter $vmid              # shell root nel container"
   echo "  pct console $vmid            # console se necessario"
   echo "  ip del CT:   pct exec $vmid -- hostname -I"
+  echo "  Aggiorna app: dal clone sul nodo: ./scripts/pct-update.sh $vmid"
   echo ""
   if [[ ! "$do_install" =~ ^[sSyY] ]]; then
     echo "Installazione manuale DA-INVENT nel CT:"

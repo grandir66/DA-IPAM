@@ -15,8 +15,10 @@ export default function LoginPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
+    // Non lasciare mai “Caricamento…” all’infinito (DB bloccato, /api/setup lento, rete locale).
+    const giveUp = setTimeout(() => setChecking(false), 12_000);
     const ac = new AbortController();
-    const timeout = setTimeout(() => ac.abort(), 20000);
+    const abortSlow = setTimeout(() => ac.abort(), 10_000);
     fetch("/api/setup", { signal: ac.signal, credentials: "same-origin" })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -30,9 +32,13 @@ export default function LoginPage() {
         }
       })
       .catch(() => setChecking(false))
-      .finally(() => clearTimeout(timeout));
+      .finally(() => {
+        clearTimeout(abortSlow);
+        clearTimeout(giveUp);
+      });
     return () => {
-      clearTimeout(timeout);
+      clearTimeout(giveUp);
+      clearTimeout(abortSlow);
       ac.abort();
     };
   }, [router]);

@@ -294,9 +294,17 @@ Convenzioni e anti-regressioni: vedi `CLAUDE.md` nel repository.
 
 ### Porta 3001: il sito non si apre sul Mac
 
-1. **Avvia il server** dalla root del repo: `npm run dev` (solo UI) o `npm run dev:server` (con cron). Senza processo in ascolto non c’è nulla su `:3001`.
-2. Usa **HTTP**: **`http://localhost:3001`** o **`http://127.0.0.1:3001`**. Se in `.env.local` hai **`TLS_CERT`** / **`TLS_KEY`** e avvii **`npm run start`** (non `dev`), l’app è in **HTTPS**: apri **`https://localhost:3001`** (il browser segnalerà certificato self-signed se usi cert di test).
-3. Controlla che la porta sia libera: `lsof -i :3001` (Mac). Se un altro processo la usa, termina quel processo o cambia `PORT` in `.env.local`.
+1. **Apri un terminale** e avvia il server dalla root del repo — **non basta** avere solo i file in cartella:
+   ```bash
+   cd ~/Progetti/DA-IPAM   # o il tuo percorso
+   npm run dev
+   ```
+   Attendi la riga **Ready** (es. “Ready in … ms”). Lascia il terminale aperto.
+2. Nel browser usa **HTTP**: **`http://127.0.0.1:3001`** o **`http://localhost:3001`**.  
+   Se in `.env.local` hai **`TLS_CERT`** / **`TLS_KEY`** e usi **`npm run start`** (produzione), allora è **HTTPS**: **`https://127.0.0.1:3001`**. Con **`npm run dev`** di solito è solo HTTP: **non** usare `https://` se il server non è in TLS.
+3. **Diagnostica**: in un secondo terminale, con il server avviato: `npm run dev:doctor` (controlla porta e `/api/health`).  
+   Oppure: `lsof -i :3001` e `curl -s http://127.0.0.1:3001/api/health`
+4. Se la **login** resta su «Caricamento…», dopo ~12 secondi dovrebbe comunque apparire il modulo; se il DB non risponde, controlla che nessun altro processo tenga aperto `data/ipam.db`.
 
 ### Database di test sul Mac (dopo un `pull:db` sbagliato)
 

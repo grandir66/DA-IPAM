@@ -4,12 +4,9 @@ import { Sidebar } from "./sidebar";
 import { PageTransition } from "./page-transition";
 import { GlobalSearch } from "./global-search";
 import { ThemeToggle } from "./theme-toggle";
-import { SessionProvider } from "next-auth/react";
-
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider>
-      <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background">
         <Sidebar />
         <main className="md:ml-64 min-h-screen flex flex-col">
           {/* Top bar */}
@@ -26,6 +23,5 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </main>
       </div>
-    </SessionProvider>
   );
 }

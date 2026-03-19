@@ -15,39 +15,55 @@ export default function LoginPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    fetch("/api/setup")
-      .then((r) => r.json())
-      .then((data) => {
+    const ac = new AbortController();
+    const timeout = setTimeout(() => ac.abort(), 20000);
+    fetch("/api/setup", { signal: ac.signal, credentials: "same-origin" })
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data: { needsSetup?: boolean }) => {
         if (data.needsSetup) {
           router.replace("/setup");
         } else {
           setChecking(false);
         }
       })
-      .catch(() => setChecking(false));
+      .catch(() => setChecking(false))
+      .finally(() => clearTimeout(timeout));
+    return () => {
+      clearTimeout(timeout);
+      ac.abort();
+    };
   }, [router]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
     setLoading(true);
+    try {
+      const formData = new FormData(e.currentTarget);
+      const result = await signIn("credentials", {
+        username: formData.get("username"),
+        password: formData.get("password"),
+        redirect: false,
+      });
 
-    const formData = new FormData(e.currentTarget);
-
-    const result = await signIn("credentials", {
-      username: formData.get("username"),
-      password: formData.get("password"),
-      redirect: false,
-    });
-
-    if (result?.error) {
-      setError("Credenziali non valide");
+      if (result?.error) {
+        setError("Credenziali non valide");
+        return;
+      }
+      if (result?.ok === false && !result?.error) {
+        setError("Accesso non riuscito");
+        return;
+      }
+      router.push("/");
+      router.refresh();
+    } catch {
+      setError("Errore di connessione durante l’accesso");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    router.push("/");
-    router.refresh();
   }
 
   if (checking) {

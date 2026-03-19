@@ -3,6 +3,7 @@ import { Signika } from "next/font/google";
 import { Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider } from "@/components/providers/auth-provider";
 import "./globals.css";
 
 const signika = Signika({
@@ -40,9 +41,11 @@ export default function RootLayout({
         className={`${signika.className} ${signika.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
-        <TooltipProvider>
-          {children}
-        </TooltipProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            {children}
+          </TooltipProvider>
+        </AuthProvider>
         <Toaster />
       </body>
     </html>

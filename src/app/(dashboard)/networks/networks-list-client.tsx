@@ -497,7 +497,10 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
                 <div className="space-y-2">
                   <Label htmlFor="new-net-router">Router ARP (default)</Label>
                   <div className="flex flex-col sm:flex-row gap-2">
-                    <Select value={newNetworkRouterId || "none"} onValueChange={(v) => setNewNetworkRouterId(v === "none" ? "" : v)}>
+                    <Select
+                      value={newNetworkRouterId || "none"}
+                      onValueChange={(v) => setNewNetworkRouterId(v === "none" || v == null ? "" : v)}
+                    >
                       <SelectTrigger id="new-net-router" className="flex-1 bg-background">
                         <SelectValue placeholder="Nessuno" />
                       </SelectTrigger>
@@ -562,7 +565,10 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label>Vendor</Label>
-                  <Select value={quickRouterVendor} onValueChange={setQuickRouterVendor}>
+                  <Select
+                    value={quickRouterVendor}
+                    onValueChange={(v) => setQuickRouterVendor(v ?? "mikrotik")}
+                  >
                     <SelectTrigger className="bg-background">
                       <SelectValue />
                     </SelectTrigger>
@@ -575,7 +581,10 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
                 </div>
                 <div className="space-y-2">
                   <Label>Protocollo</Label>
-                  <Select value={quickRouterProtocol} onValueChange={setQuickRouterProtocol}>
+                  <Select
+                    value={quickRouterProtocol}
+                    onValueChange={(v) => setQuickRouterProtocol(v ?? "ssh")}
+                  >
                     <SelectTrigger className="bg-background">
                       <SelectValue />
                     </SelectTrigger>

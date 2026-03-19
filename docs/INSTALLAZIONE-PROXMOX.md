@@ -56,3 +56,25 @@ pct exec <VMID> -- bash -ce 'cd /opt/da-invent && ./scripts/update.sh --restart'
 Se l’app è installata altrove nel CT: `DA_INVENT_DIR=/percorso ./scripts/pct-update.sh <VMID>`.
 
 In alternativa, da **dentro** il CT: `cd /opt/da-invent && ./scripts/update.sh --restart`.
+
+## Opzionale: snapshot database CT → Mac
+
+La **copia di riferimento** del progetto è la **cartella sul Mac** (clone Git). Il CT è deploy; **non** si usa per «ricostruire» il progetto al posto del Mac.
+
+Questo script serve **solo** se vuoi **sostituire** i file `data/ipam.db*` sul Mac con quelli attuali del container (debug, confronto). **Sovrascrive** i dati locali (ma fa un backup in `data/.backup-before-pull-<timestamp>/`).
+
+Sul **Mac**, dalla root del repo, con SSH al nodo Proxmox già configurato:
+
+```bash
+cd /percorso/DA-IPAM
+chmod +x scripts/pull-db-from-pct.sh
+./scripts/pull-db-from-pct.sh
+```
+
+Default: `root@192.168.99.10`, CT **150**, dati in `/opt/da-invent/data` nel CT. Personalizza:
+
+```bash
+DA_INVENT_SSH=root@tuo-pve DA_INVENT_PCT=150 ./scripts/pull-db-from-pct.sh
+```
+
+Chiudi i processi che tengono aperto il DB (`npm run dev`, ecc.) prima di eseguirlo; poi riavvia l’app locale.

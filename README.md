@@ -22,7 +22,7 @@ Il codice sorgente è **rilasciato in forma open source** (vedi [`LICENSE`](LICE
 10. [API e dati](#api-e-dati)  
 11. [Documentazione in `docs/`](#documentazione-in-docs)  
 12. [Deploy in produzione](#deploy-in-produzione)  
-13. [Sviluppo](#sviluppo)  
+13. [Sviluppo](#sviluppo) (include copia locale da Git)  
 14. [Aggiornamento](#aggiornamento)  
 15. [Versioning](#versioning)  
 16. [Licenza](#licenza)
@@ -95,6 +95,8 @@ chmod +x scripts/pct-update.sh
 Equivale a `pct exec <VMID> -- bash` in `/opt/da-invent` con `git pull`, `npm install`, `build` e `systemctl restart da-invent` (vedi `scripts/update.sh`).
 
 Variabile opzionale: `DA_INVENT_DIR` se l’app non è in `/opt/da-invent`.
+
+**Opzionale — snapshot DB dal CT:** se vuoi **sostituire temporaneamente** `data/ipam.db` sul Mac con quello del CT (solo per confronto/debug), usa `npm run pull:db`. **Non** è la copia principale del progetto; la copia «buona» resta la **cartella sul Mac**. Dettagli: [`docs/INSTALLAZIONE-PROXMOX.md`](docs/INSTALLAZIONE-PROXMOX.md#opzionale-snapshot-database-ct--mac).
 
 ---
 
@@ -258,6 +260,27 @@ I job (`ping_sweep`, `nmap_scan`, `arp_poll`, `dns_resolve`, `cleanup`, monitora
 ---
 
 ## Sviluppo
+
+### Dove è la copia «buona» del progetto
+
+La **cartella sul tuo Mac** dove hai il clone Git (es. `~/Progetti/DA-IPAM`) è la copia di **riferimento**: ci lavori, committi e fai push. Il **CT Proxmox** è solo **deploy** (aggiornato da Git sul nodo, non il contrario). **Non** va considerata «la copia giusta» quella dentro il container rispetto al Mac.
+
+### Copia locale dal repository (non è “tutto” nell’archivio Git)
+
+L’**archivio su GitHub** contiene il **codice**; il **database** (`data/ipam.db`) **non** è versionato (è nel `.gitignore`). Per avere il progetto in locale:
+
+```bash
+git clone https://github.com/grandir66/DA-IPAM.git
+cd DA-IPAM
+npm install
+npm run dev
+```
+
+Apri `http://localhost:3001`, vai su **/setup** e crea il primo utente: SQLite crea `data/ipam.db` da solo (istanza vuota).
+
+Solo se ti serve **uno snapshot del database del CT** sul Mac (sovrascrive `data/ipam.db` locale, con backup automatico): **`npm run pull:db`** e SSH al Proxmox. Vedi [doc Proxmox](docs/INSTALLAZIONE-PROXMOX.md#opzionale-snapshot-database-ct--mac).
+
+---
 
 ```bash
 npm install

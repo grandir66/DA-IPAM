@@ -122,6 +122,12 @@ Avvio senza systemd: `npm run start` (porta default **3001**).
 | `AUTH_SECRET` | Secret NextAuth (generato) |
 | `PORT` | Porta HTTP (default 3001) |
 | `WINRM_PYTHON` | Path interprete Python con pywinrm (opzionale) |
+| `AUTH_TRUST_HOST` | Default: host attendibile (accesso via IP/LAN). Solo se serve: `false` + `AUTH_URL` fisso |
+| `AUTH_URL` | URL pubblico dell’app (es. `https://invent.esempio.it`) se usi `AUTH_TRUST_HOST=false` |
+
+### Errore «Server error / problem with the server configuration» (login)
+
+Spesso **Auth.js v5** con accesso tramite **IP o hostname non previsto**. Dalla v0.2.45 il progetto imposta **`trustHost`** salvo `AUTH_TRUST_HOST=false`. Se l’errore resta: verifica che **`AUTH_SECRET`** sia valorizzato in `.env.local` e che **systemd** carichi il file (`EnvironmentFile=` nel servizio), poi `sudo systemctl restart da-invent`.
 
 ---
 

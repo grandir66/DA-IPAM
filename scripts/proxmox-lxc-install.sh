@@ -26,8 +26,9 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 die() { echo -e "${RED}Errore:${NC} $*" >&2; exit 1; }
-info() { echo -e "${GREEN}==>${NC} $*"; }
-warn() { echo -e "${YELLOW}Attenzione:${NC} $*"; }
+# Messaggi su stderr così $(comandi) ricevono solo valori “puliti” (es. tpl_pick=$(pick_template))
+info() { echo -e "${GREEN}==>${NC} $*" >&2; }
+warn() { echo -e "${YELLOW}Attenzione:${NC} $*" >&2; }
 
 # pveam list stampa la prima colonna come "local:vztmpl/debian-12-standard_….tar.zst".
 # pct create vuole "<storage>:vztmpl/<solo-nome-file>": estraiamo solo il nome archivio.
@@ -68,10 +69,10 @@ pick_numbered_storage() {
   if [[ -z "$(echo "$raw" | tr -d '[:space:]')" ]]; then
     die "Nessuno storage con contenuto '$content'. Aggiungine uno in Datacenter → Storage (es. local per vztmpl, local-lvm per rootdir)."
   fi
-  echo ""
-  echo "$title"
-  echo "(tipo contenuto Proxmox: $content)"
-  echo "$raw" | nl -w2 -s') '
+  echo "" >&2
+  echo "$title" >&2
+  echo "(tipo contenuto Proxmox: $content)" >&2
+  echo "$raw" | nl -w2 -s') ' >&2
   local num
   read -r -p "Numero storage [1]: " num
   num="${num:-1}"
@@ -149,10 +150,10 @@ pick_available_template_filename() {
   fi
   local filtered
   filtered=$(echo "$avail" | grep -iE 'debian|ubuntu' || echo "$avail")
-  echo ""
-  echo "Template scaricabili (sezione system). Debian/Ubuntu consigliati per DA-INVENT:"
-  echo "$filtered" | nl -w3 -s') '
-  echo ""
+  echo "" >&2
+  echo "Template scaricabili (sezione system). Debian/Ubuntu consigliati per DA-INVENT:" >&2
+  echo "$filtered" | nl -w3 -s') ' >&2
+  echo "" >&2
   read -r -p "Numero riga del template da scaricare [1]: " num
   num="${num:-1}"
   local line
@@ -180,7 +181,7 @@ pick_template() {
     return
   fi
 
-  echo "$lines" | nl -w2 -s') '
+  echo "$lines" | nl -w2 -s') ' >&2
   local num
   read -r -p "Numero riga del template da usare [1]: " num
   num="${num:-1}"

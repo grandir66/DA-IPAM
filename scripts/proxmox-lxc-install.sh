@@ -50,6 +50,35 @@ require_root() {
 require_proxmox() {
   command -v pct >/dev/null 2>&1 || die "Comando 'pct' non trovato. Questo script va eseguito su Proxmox VE."
   command -v pveam >/dev/null 2>&1 || die "Comando 'pveam' non trovato."
+  command -v pvesm >/dev/null 2>&1 || die "Comando 'pvesm' non trovato."
+}
+
+# Elenco righe dati da pvesm status (salta intestazione).
+pvesm_data_lines() {
+  local content="$1"
+  pvesm status -content "$content" 2>/dev/null | tail -n +2 || true
+}
+
+# Sceglie uno storage per tipo contenuto Proxmox (vztmpl, rootdir, …) da menu numerato.
+pick_numbered_storage() {
+  local content="$1"
+  local title="$2"
+  local raw
+  raw=$(pvesm_data_lines "$content")
+  if [[ -z "$(echo "$raw" | tr -d '[:space:]')" ]]; then
+    die "Nessuno storage con contenuto '$content'. Aggiungine uno in Datacenter → Storage (es. local per vztmpl, local-lvm per rootdir)."
+  fi
+  echo ""
+  echo "$title"
+  echo "(tipo contenuto Proxmox: $content)"
+  echo "$raw" | nl -w2 -s') '
+  local num
+  read -r -p "Numero storage [1]: " num
+  num="${num:-1}"
+  local name
+  name=$(echo "$raw" | sed -n "${num}p" | awk '{print $1}')
+  [[ -n "$name" ]] || die "Selezione storage non valida."
+  echo "$name"
 }
 
 prompt() {
@@ -106,7 +135,33 @@ list_templates_on_storage() {
 }
 
 pick_template_storage() {
-  prompt "local" "Storage Proxmox che contiene i template LXC (di solito 'local', vedi pveam)"
+  pick_numbered_storage vztmpl "Storage per i template LXC (dove risiedono i .tar.zst / download pveam)"
+}
+
+# Se non ci sono template sullo storage: elenco da pveam available e scelta numerata → solo nome file .tar.*
+pick_available_template_filename() {
+  info "Aggiornamento indice template (pveam update)…"
+  pveam update || true
+  local avail
+  avail=$(pveam available --section system 2>/dev/null | grep -E '\.(tar\.zst|tar\.gz|tar\.xz)(\s|$)' || true)
+  if [[ -z "$(echo "$avail" | tr -d '[:space:]')" ]]; then
+    die "Nessun template in 'pveam available'. Verifica la connessione Internet del nodo Proxmox."
+  fi
+  local filtered
+  filtered=$(echo "$avail" | grep -iE 'debian|ubuntu' || echo "$avail")
+  echo ""
+  echo "Template scaricabili (sezione system). Debian/Ubuntu consigliati per DA-INVENT:"
+  echo "$filtered" | nl -w3 -s') '
+  echo ""
+  read -r -p "Numero riga del template da scaricare [1]: " num
+  num="${num:-1}"
+  local line
+  line=$(echo "$filtered" | sed -n "${num}p")
+  [[ -n "$line" ]] || die "Selezione template non valida."
+  local tname
+  tname=$(echo "$line" | grep -oE '[a-zA-Z0-9._+-]+\.(tar\.zst|tar\.gz|tar\.xz)' | tail -1)
+  [[ -n "$tname" ]] || die "Impossibile ricavare il nome archivio dalla riga selezionata."
+  echo "$tname"
 }
 
 pick_template() {
@@ -116,20 +171,12 @@ pick_template() {
   local lines
   lines=$(list_templates_on_storage "$tpl_stor")
   if [[ -z "$(echo "$lines" | tr -d '[:space:]')" ]]; then
-    warn "Nessun template scaricato. Aggiorno indice e ti guido al download."
-    pveam update || true
-    echo ""
-    echo "Esempi di template Debian/Ubuntu (scegline uno e incollalo per intero):"
-    pveam available --section system 2>/dev/null | grep -E 'debian-1[12]|ubuntu-2[24]' | head -20 || pveam available --section system 2>/dev/null | head -15
-    echo ""
-    local tstore
-    tstore=$(prompt "$tpl_stor" "Nome storage su cui scaricare il template (di solito 'local')")
+    warn "Nessun template sullo storage '$tpl_stor'. Scelta da catalogo e download."
     local tname
-    read -r -p "Nome completo del template da scaricare (es. debian-12-standard_12.8-1_amd64.tar.zst): " tname
-    [[ -n "$tname" ]] || die "Nome template obbligatorio."
-    info "Download in corso (può richiedere alcuni minuti)..."
-    pveam download "$tstore" "$tname" || die "Download template fallito."
-    echo "$tstore|$tname"
+    tname=$(pick_available_template_filename)
+    info "Download su storage '$tpl_stor' (può richiedere alcuni minuti)…"
+    pveam download "$tpl_stor" "$tname" || die "Download template fallito."
+    echo "$tpl_stor|$tname"
     return
   fi
 
@@ -145,20 +192,8 @@ pick_template() {
   echo "$tpl_stor|$file"
 }
 
-list_storages() {
-  pvesm status -content rootdir 2>/dev/null | tail -n +2 | awk '{print $1}' || true
-}
-
 pick_storage() {
-  local st
-  st=$(list_storages)
-  if [[ -z "$(echo "$st" | tr -d '[:space:]')" ]]; then
-    prompt "local-lvm" "Nome storage per il disco root del CT"
-    return
-  fi
-  echo "Storage disponibili per rootfs:"
-  echo "$st" | sed 's/^/  - /'
-  prompt "local-lvm" "Nome storage da usare"
+  pick_numbered_storage rootdir "Storage per il disco root del container"
 }
 
 build_net0() {

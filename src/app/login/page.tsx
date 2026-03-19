@@ -57,8 +57,8 @@ export default function LoginPage() {
         setError("Accesso non riuscito");
         return;
       }
-      router.push("/");
-      router.refresh();
+      // Navigazione completa: assicura che i cookie di sessione siano inviati al middleware (evita loop login)
+      window.location.assign("/");
     } catch {
       setError("Errore di connessione durante l’accesso");
     } finally {

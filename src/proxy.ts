@@ -1,7 +1,8 @@
-import NextAuth from "next-auth";
-import { authConfig } from "@/lib/auth.config";
-
-const { auth } = NextAuth(authConfig);
+/**
+ * Usa lo stesso `auth` di auth.ts così JWT/session e segreto coincidono con le API route.
+ * Una seconda istanza NextAuth(authConfig) può far risultare la sessione assente dopo il login.
+ */
+import { auth } from "@/lib/auth";
 
 export const proxy = auth;
 

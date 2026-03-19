@@ -29,6 +29,20 @@ die() { echo -e "${RED}Errore:${NC} $*" >&2; exit 1; }
 info() { echo -e "${GREEN}==>${NC} $*"; }
 warn() { echo -e "${YELLOW}Attenzione:${NC} $*"; }
 
+# pveam list stampa la prima colonna come "local:vztmpl/debian-12-standard_….tar.zst".
+# pct create vuole "<storage>:vztmpl/<solo-nome-file>": estraiamo solo il nome archivio.
+normalize_template_filename() {
+  local raw="$1"
+  [[ -n "$raw" ]] || { echo ""; return; }
+  if [[ "$raw" == *":vztmpl/"* ]]; then
+    echo "${raw#*:vztmpl/}"
+  elif [[ "$raw" == vztmpl/* ]]; then
+    echo "${raw#vztmpl/}"
+  else
+    echo "$raw"
+  fi
+}
+
 require_root() {
   [[ "$(id -u)" -eq 0 ]] || die "Esegui come root sul nodo Proxmox (es. ssh root@pve)."
 }
@@ -126,6 +140,8 @@ pick_template() {
   local file
   file=$(echo "$lines" | sed -n "${num}p" | awk '{print $1}')
   [[ -n "$file" ]] || die "Selezione template non valida."
+  file=$(normalize_template_filename "$file")
+  [[ -n "$file" ]] || die "Nome template non valido dopo normalizzazione."
   echo "$tpl_stor|$file"
 }
 

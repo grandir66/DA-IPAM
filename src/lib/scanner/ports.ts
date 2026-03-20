@@ -1,38 +1,47 @@
 /**
  * Port lists for nmap scans.
- * TCP e UDP vengono scansionati separatamente:
- *   -sT per TCP (non richiede root)
- *   -sU per UDP (richiede root, tentativo separato)
+ * TCP e UDP vengono scansionati in sequenza (due invocazioni nmap distinte):
+ *   1) -sT TCP (non richiede root)
+ *   2) -sU UDP (richiede root; fallisce in modo silenzioso se non disponibile)
+ *
+ * Default allineato a profilo “infrastruttura” (servizi comuni + monitoring).
  */
 
-/** Top 100 TCP ports by open frequency (from nmap-services) + 5001 (Synology/Docker HTTPS) */
-export const NMAP_TOP_100_TCP =
-  "80,23,443,21,22,25,3389,110,445,139,143,53,135,3306,8080,1723,111,995,993,5900,1025,587,8888,199,1720,465,548,113,81,6001,10000,514,5060,179,1026,2000,8443,8000,32768,554,26,1433,49152,2001,515,8008,49154,1027,5666,646,5000,5001,5631,631,49153,8081,2049,88,79,5800,106,2121,1110,49155,6000,513,990,5357,427,49156,543,544,5101,144,7,389,8009,3128,444,9999,5009,7070,5190,3000,5432,3986,1900,13,1029,9,6646,5051,49157,1028,873,1755,2717,4899,9100,119,37";
+/** Porte TCP predefinite (scan -sT + -sV --version-intensity 0 -T4 --host-timeout 120s) */
+export const NMAP_DEFAULT_TCP_PORTS =
+  "21,22,23,25,53,80,81,88,110,111,135,139,143,179,199,389,443,445,465,554,587,631,873,990,993,995,1433,1514,1515,1720,1723,2049,2121,3000,3128,3306,3389,4899,5000,5001,5060,5061,5100,5432,5631,5666,5800,5900,6000,6690,6789,7304,8000,8001,8006,8007,8080,8081,8291,8443,8554,8880,8888,9000,9100,9999,10000,10050,10051,17988,17990,34567,37777,49152,49153,49154,49155,49156,49157,55000";
 
-/** Known UDP ports: DNS, DHCP, TFTP, NTP, SNMP, syslog, IKE, etc. */
-export const KNOWN_UDP_PORTS = "53,67,68,69,123,161,162,500,514,520,4500";
+/** Porte UDP predefinite (sudo nmap -sU …) */
+export const NMAP_DEFAULT_UDP_PORTS =
+  "53,67,68,69,123,161,162,500,514,520,521,623,1194,1900,4500,4789,5060,5353,10161";
+
+/** @deprecated Usare NMAP_DEFAULT_TCP_PORTS */
+export const NMAP_TOP_100_TCP = NMAP_DEFAULT_TCP_PORTS;
+
+/** @deprecated Usare NMAP_DEFAULT_UDP_PORTS */
+export const KNOWN_UDP_PORTS = NMAP_DEFAULT_UDP_PORTS;
 
 /**
  * Build nmap args per scansione TCP (non richiede root).
- * Top 100 TCP + porte esplicite, con version detection.
- * @param customPorts - Comma-separated additional TCP ports (e.g. "8080,8443")
+ * Porte default + eventuali porte extra dal profilo.
+ * @param customPorts - Porte TCP aggiuntive separate da virgola (es. "8444,9443")
  */
 export function buildTcpScanArgs(customPorts?: string | null): string {
   const tcpExtra = (customPorts ?? "")
     .split(",")
     .map((p) => p.trim())
     .filter((p) => /^\d+$/.test(p));
-  const tcpSet = new Set([...NMAP_TOP_100_TCP.split(","), ...tcpExtra]);
+  const tcpSet = new Set([...NMAP_DEFAULT_TCP_PORTS.split(","), ...tcpExtra]);
   const tcpList = [...tcpSet].map(Number).sort((a, b) => a - b).join(",");
   return `-sT -p ${tcpList} -sV --version-intensity 0 -T4 --host-timeout 120s`;
 }
 
 /**
- * Build nmap args per scansione UDP (richiede root/sudo).
- * Porte UDP note: DNS, DHCP, TFTP, NTP, SNMP, syslog, etc.
+ * Build nmap args per scansione UDP (richiede privilegi root su molti sistemi).
+ * Eseguita come seconda fase dopo il TCP in nmapPortScan.
  */
 export function buildUdpScanArgs(): string {
-  return `-sU -p ${KNOWN_UDP_PORTS} -T4 --host-timeout 60s`;
+  return `-sU -p ${NMAP_DEFAULT_UDP_PORTS} -sV --version-intensity 0 -T4 --host-timeout 120s`;
 }
 
 /** @deprecated Usa buildTcpScanArgs — mantenuto per retrocompatibilità */

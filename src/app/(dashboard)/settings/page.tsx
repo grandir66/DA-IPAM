@@ -32,7 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash, Monitor, Users, Shield } from "lucide-react";
 import { toast } from "sonner";
-import { buildCustomScanArgs, KNOWN_UDP_PORTS } from "@/lib/scanner/ports";
+import { buildCustomScanArgs, buildUdpScanArgs } from "@/lib/scanner/ports";
 import type { ScheduledJob, NetworkWithStats } from "@/types";
 
 function getNmapCommandForProfile(profile: NmapProfile): string {
@@ -40,19 +40,19 @@ function getNmapCommandForProfile(profile: NmapProfile): string {
     profile.custom_ports !== null && profile.custom_ports !== undefined
       ? buildCustomScanArgs(profile.custom_ports)
       : profile.args;
-  const udp = `nmap -sU -p ${KNOWN_UDP_PORTS} (richiede root)`;
+  const udp = `nmap ${buildUdpScanArgs()} (richiede root)`;
   const snmp = profile.snmp_community?.trim()
-    ? `SNMP via net-snmp (community: ${profile.snmp_community.trim()}, public)`
-    : "SNMP via net-snmp (community: public)";
+    ? `SNMP walk net-snmp (community: ${profile.snmp_community.trim()}, public, private)`
+    : "SNMP walk net-snmp (community: public, private)";
   return `TCP: ${tcp}\nUDP: ${udp}\n${snmp}`;
 }
 
 function getNmapCommandForForm(form: { custom_ports: string | null; args: string; snmp_community: string }): string {
   const tcp = form.custom_ports !== null ? buildCustomScanArgs(form.custom_ports) : form.args;
-  const udp = `nmap -sU -p ${KNOWN_UDP_PORTS} (richiede root)`;
+  const udp = `nmap ${buildUdpScanArgs()} (richiede root)`;
   const snmp = form.snmp_community?.trim()
-    ? `SNMP via net-snmp (community: ${form.snmp_community.trim()}, public)`
-    : "SNMP via net-snmp (community: public)";
+    ? `SNMP walk net-snmp (community: ${form.snmp_community.trim()}, public, private)`
+    : "SNMP walk net-snmp (community: public, private)";
   return `TCP: ${tcp}\nUDP: ${udp}\n${snmp}`;
 }
 

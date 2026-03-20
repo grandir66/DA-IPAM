@@ -53,7 +53,7 @@ Il codice sorgente è **rilasciato in forma open source** (vedi [`LICENSE`](LICE
 | **Python 3 + pywinrm** | Opzionale, per WinRM su host Windows (`WINRM_PYTHON` in `.env.local`) |
 | **Sistema** | Debian/Ubuntu consigliati per script `install.sh` (apt) |
 
-Per **scansioni nmap/ping** da container **Proxmox LXC**, un container **privilegiato** è spesso necessario (lo script `proxmox-lxc-install.sh` lo propone come default).
+Per **scansioni nmap** (inclusa **UDP `-sU`**) e **ping ICMP** servono in genere **socket privilegiati**. Nel **container LXC/VM** il servizio systemd è quindi previsto in esecuzione come **`root`** (default di `scripts/install.sh` e di `deploy/da-invent.service`), così `nmap` non viene eseguito senza i diritti necessari. Un container **non privilegiato** può comunque bastare se accetti solo scan TCP; per UDP serve **root** nel CT oppure capability `CAP_NET_RAW` / `CAP_NET_ADMIN` su un utente dedicato (configurazione avanzata).
 
 ---
 
@@ -122,6 +122,8 @@ sudo ./scripts/install.sh --systemd   # servizio systemd: abilitato al boot e av
 
 `install.sh` installa Node 20, build-essential, nmap, sqlite3, esegue `npm ci`/`npm install` e `npm run build`, genera `.env.local` con `ENCRYPTION_KEY` e `AUTH_SECRET`.
 
+Con `sudo ./scripts/install.sh --systemd` il servizio systemd usa per default **`User=root`** (adatto al container: scan nmap UDP e ping). Per forzare un altro utente: `DA_INVENT_SERVICE_USER=da-invent sudo -E ./scripts/install.sh --systemd` (in quel caso valuta capability di rete per `nmap`).
+
 Avvio senza systemd: `npm run start` (porta default **3001**).
 
 ---
@@ -134,6 +136,8 @@ Avvio senza systemd: `npm run start` (porta default **3001**).
 
 | Variabile | Descrizione |
 |-----------|-------------|
+| `DA_INVENT_SERVICE_USER` | Solo installer `--systemd`: utente del servizio (default **`root`**, consigliato per nmap UDP nel CT) |
+| `DA_INVENT_SERVICE_GROUP` | Gruppo del servizio (default = stesso nome di `DA_INVENT_SERVICE_USER`) |
 | `ENCRYPTION_KEY` | Cifratura credenziali dispositivi (generata dall’installer) |
 | `AUTH_SECRET` | Secret NextAuth (generato) |
 | `PORT` | Porta HTTP (default 3001) |

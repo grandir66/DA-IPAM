@@ -85,13 +85,23 @@ export async function discoverNetwork(
   return { id, progress };
 }
 
-/** Deduplica e costruisce la lista di community SNMP da provare. */
+/**
+ * Ordine: community configurata (rete/profilo), poi `public`, poi `private`.
+ * Dedup preservando l'ordine.
+ */
 function buildSnmpCommunities(configured?: string | null): string[] {
-  const list: string[] = [];
+  const ordered: string[] = [];
   const c = configured?.trim();
-  if (c) list.push(c);
-  if (!list.includes("public")) list.push("public");
-  return list;
+  if (c) ordered.push(c);
+  ordered.push("public", "private");
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of ordered) {
+    if (seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+  }
+  return out;
 }
 
 type HostScanData = {
@@ -366,7 +376,16 @@ async function runDiscovery(
             const modelStr = r.model || parsed.model;
             const fwStr = parsed.firmware;
             const extra = [modelStr, fwStr, r.serialNumber].filter(Boolean).join(", ");
-            log(`✓ ${ip} → ${r.sysName || "—"} (${r.sysDescr?.slice(0, 50) || "—"})${extra ? ` [${extra}]` : ""}`);
+            const walkHint = [
+              r.ifDescrSummary ? `if: ${r.ifDescrSummary.slice(0, 60)}` : "",
+              r.arpEntryCount != null ? `ARP~${r.arpEntryCount}` : "",
+              r.hostResourcesSummary ? `hr: ${r.hostResourcesSummary.slice(0, 80)}` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            log(
+              `✓ ${ip} → ${r.sysName || "—"} (${r.sysDescr?.slice(0, 50) || "—"})${extra ? ` [${extra}]` : ""}${walkHint ? ` {${walkHint}}` : ""}`
+            );
             return { ip, ...r };
           }
           log(`✗ ${ip} — nessuna risposta SNMP`);

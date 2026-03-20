@@ -84,8 +84,12 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <img src="/logo-color.png" alt="Logo" className="h-14 w-64 object-contain" />
+          <div className="flex justify-center mb-4 rounded-md bg-[#0D2537] px-6 py-4">
+            <img
+              src="/logo-white.png"
+              alt="DA-INVENT"
+              className="h-12 w-auto max-w-[260px] object-contain"
+            />
           </div>
           <CardTitle className="text-2xl font-bold text-primary">DA-INVENT</CardTitle>
           <CardDescription>Accedi al sistema di gestione IP</CardDescription>

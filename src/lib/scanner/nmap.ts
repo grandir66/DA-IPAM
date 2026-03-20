@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { XMLParser } from "fast-xml-parser";
 import type { NmapResult, NmapPort } from "@/types";
-import { stripUdpFromArgs, buildUdpScanArgs } from "./ports";
+import { stripUdpFromArgs, buildUdpScanArgs, buildTcpScanArgs } from "./ports";
 
 const execFileAsync = promisify(execFile);
 
@@ -48,9 +48,10 @@ export async function nmapDiscoverHosts(
 export async function nmapPortScan(
   ip: string,
   customArgs?: string,
-  timeout: number = 60000
+  /** Timeout exec per singola fase (TCP o UDP); con entrambe le fasi servono ~2× questo tempo. Default 280s. */
+  timeout: number = 280_000
 ): Promise<NmapResult | null> {
-  const tcpArgs = ensureTcpOnly(customArgs || "-sT --top-ports 100 -sV --version-intensity 0 -T4 --host-timeout 30s");
+  const tcpArgs = ensureTcpOnly(customArgs?.trim() ? customArgs : buildTcpScanArgs(null));
 
   // --- TCP scan (always runs, no root needed) ---
   let tcpResult: NmapResult | null = null;
@@ -74,7 +75,7 @@ export async function nmapPortScan(
   try {
     const args = [...udpArgs.split(/\s+/).filter(Boolean), "-oX", "-", ip];
     const { stdout } = await execFileAsync("nmap", args, {
-      timeout: Math.min(timeout, 90000),
+      timeout,
       maxBuffer: 10 * 1024 * 1024,
     });
     const results = parseNmapXml(stdout);

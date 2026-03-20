@@ -11,6 +11,10 @@ done
 
 APP_NAME="da-invent"
 APP_USER="${DA_INVENT_USER:-da-invent}"
+# Utente systemd: default **root** (container/LXC) per nmap UDP (-sU) e ping raw.
+# Per servizio non privilegiato: DA_INVENT_SERVICE_USER=da-invent + capability (vedi README).
+SERVICE_USER="${DA_INVENT_SERVICE_USER:-root}"
+SERVICE_GROUP="${DA_INVENT_SERVICE_GROUP:-$SERVICE_USER}"
 APP_DIR="${DA_INVENT_DIR:-$(pwd)}"
 PORT="${PORT:-3001}"
 
@@ -117,7 +121,7 @@ install_systemd_service() {
     return
   fi
 
-  echo ">>> Installazione servizio systemd..."
+  echo ">>> Installazione servizio systemd (utente: $SERVICE_USER)..."
   local service_file="/etc/systemd/system/${APP_NAME}.service"
   cat > "$service_file" << EOF
 [Unit]
@@ -126,7 +130,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=$USER
+User=$SERVICE_USER
+Group=$SERVICE_GROUP
 WorkingDirectory=$APP_DIR
 Environment=NODE_ENV=production
 Environment=PORT=$PORT
@@ -134,6 +139,7 @@ EnvironmentFile=$APP_DIR/.env.local
 ExecStart=$(which node) $APP_DIR/node_modules/next/dist/bin/next start -p $PORT -H 0.0.0.0
 Restart=on-failure
 RestartSec=5
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

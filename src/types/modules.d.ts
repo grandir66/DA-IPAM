@@ -15,6 +15,12 @@ declare module "net-snmp" {
       feedCallback: (varbinds: Varbind[]) => void,
       doneCallback: (error: Error | undefined) => void
     ): void;
+    subtree(
+      oid: string,
+      maxRepetitions: number,
+      feedCallback: (varbinds: Varbind[]) => boolean | void,
+      doneCallback: (error: Error | undefined) => void
+    ): void;
     get(oids: string[], callback: (error: Error | null, varbinds: Varbind[]) => void): void;
     close(): void;
   }
@@ -24,6 +30,7 @@ declare module "net-snmp" {
 
   function createSession(host: string, community: string, options?: SessionOptions): Session;
   function createV3Session(host: string, user: { name: string; level: number; authProtocol: number; authKey: string }, options?: SessionOptions): Session;
+  function isVarbindError(varbind: Varbind): boolean;
 }
 
 declare module "oui" {

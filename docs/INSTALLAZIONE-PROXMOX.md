@@ -32,6 +32,14 @@ chmod +x scripts/proxmox-lxc-install.sh
 | `DA_INVENT_GIT_URL` | URL del repository da clonare nel bootstrap / default nel wizard |
 | `DA_INVENT_BRANCH` | Branch Git (default `main`) |
 | `DA_INVENT_BOOTSTRAP_DIR` | Directory clone bootstrap (default `/root/da-invent-install`) |
+| `DA_INVENT_SERVICE_USER` | Utente **systemd** nel CT dopo `install.sh --systemd` (default **`root`**) per `nmap` UDP `-sU` e ping raw |
+| `DA_INVENT_SERVICE_GROUP` | Gruppo systemd (default = stesso nome utente) |
+
+### Servizio systemd e utente root nel container
+
+Le scansioni **nmap UDP** (`-sU`) e in molti casi il **ping ICMP** richiedono privilegi sulle socket. Nel **container** la configurazione prevista è **`User=root`** nel unit systemd (file `deploy/da-invent.service` e `scripts/install.sh` con default `DA_INVENT_SERVICE_USER=root`).
+
+Se preferisci un utente non privilegiato, imposta `DA_INVENT_SERVICE_USER=da-invent` prima dell’installazione systemd e configura **capability** (`CAP_NET_RAW`, `CAP_NET_ADMIN`) o accetta solo scansioni TCP senza UDP.
 
 Dopo la creazione del container, vedi il README per accesso web (`http://<ip-ct>:3001`) e setup iniziale.
 

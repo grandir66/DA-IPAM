@@ -113,7 +113,22 @@ type HostScanData = {
   snmpSysObjectID?: string | null;
   snmpSerial?: string | null;
   snmpModel?: string | null;
+  /** Hint da walk SNMP (detect / categorizzazione) */
+  snmpMikrotikIdentity?: string | null;
+  snmpUnifiSummary?: string | null;
+  snmpIfDescrSummary?: string | null;
+  snmpHostResourcesSummary?: string | null;
 };
+
+function buildSnmpContextForClassifier(d: HostScanData | undefined): string | null {
+  if (!d) return null;
+  const parts: string[] = [];
+  if (d.snmpMikrotikIdentity) parts.push(`RouterOS identity ${d.snmpMikrotikIdentity}`);
+  if (d.snmpUnifiSummary) parts.push(d.snmpUnifiSummary);
+  if (d.snmpIfDescrSummary) parts.push(`interfaces ${d.snmpIfDescrSummary}`);
+  if (d.snmpHostResourcesSummary) parts.push(d.snmpHostResourcesSummary);
+  return parts.length ? parts.join("\n") : null;
+}
 
 async function runDiscovery(
   scanId: string,
@@ -404,6 +419,10 @@ async function runDiscovery(
             snmpSysObjectID: r.sysObjectID ?? null,
             snmpSerial: r.serialNumber ?? null,
             snmpModel: r.model ?? null,
+            snmpMikrotikIdentity: r.mikrotikIdentity ?? null,
+            snmpUnifiSummary: r.unifiSummary ?? null,
+            snmpIfDescrSummary: r.ifDescrSummary ?? null,
+            snmpHostResourcesSummary: r.hostResourcesSummary ?? null,
           });
         }
       }
@@ -543,6 +562,7 @@ async function runDiscovery(
       openPorts: nmapData?.ports ?? null,
       hostname: hostname ?? null,
       vendor: vendor ?? null,
+      snmpContext: buildSnmpContextForClassifier(nmapData),
     });
 
     const portsJson = nmapData?.ports.length

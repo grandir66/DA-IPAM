@@ -343,6 +343,7 @@ Esempio cron giornaliero:
 - Versione semver in `package.json`  
 - Incremento patch: `npm run version:bump`  
 - Endpoint: `GET /api/version`  
+- **Tag di stabilità:** `v0.2.62-stable` — checkpoint (pre-miglioramenti classificazione dispositivi). Ripristino: `git checkout -b nome-branch v0.2.62-stable`  
 
 ---
 

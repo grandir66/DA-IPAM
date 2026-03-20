@@ -20,7 +20,45 @@ export type ClassifierInput = {
   hostname?: string | null;
   /** MAC vendor da OUI lookup */
   vendor?: string | null;
+  /**
+   * Testo aggiuntivo da walk SNMP (MikroTik identity, UniFi enterprise MIB, ifDescr, HOST-RESOURCES).
+   * Viene unito al corpus testuale per TEXT_RULES (RouterOS, UniFi, ecc.).
+   */
+  snmpContext?: string | null;
 };
+
+/** Come è stata determinata la classificazione (per log / debug). */
+export type DetectionMethod = "oid" | "virtual_mac" | "text" | "port" | "hostname" | "vendor" | "none";
+
+export interface DeviceDetectionResult {
+  classification: DeviceClassification | undefined;
+  /** Affidabilità stimata della singola regola applicata */
+  confidence: "high" | "medium" | "low";
+  method: DetectionMethod;
+}
+
+/** Confronto OID per segmenti (evita che "…9.1.516" matchi il prefisso "…9.1.5"). */
+function oidPrefixMatches(oid: string, prefix: string): boolean {
+  const o = oid.replace(/^\.+/, "").split(".").filter(Boolean);
+  const p = prefix.replace(/^\.+/, "").split(".").filter(Boolean);
+  if (p.length > o.length) return false;
+  for (let i = 0; i < p.length; i++) {
+    if (o[i] !== p[i]) return false;
+  }
+  return true;
+}
+
+function buildClassifierText(input: ClassifierInput): string {
+  return [
+    input.sysDescr ?? "",
+    input.osInfo ?? "",
+    input.hostname ?? "",
+    input.snmpContext ?? "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
 
 /** Regole per sysDescr / osInfo / hostname (test case-insensitive) */
 const TEXT_RULES: Array<{ pattern: RegExp; classification: DeviceClassification }> = [
@@ -92,55 +130,61 @@ const TEXT_RULES: Array<{ pattern: RegExp; classification: DeviceClassification 
   { pattern: /ont|onu|gpon|epon|fiber\s*terminal/i, classification: "ont" },
 ];
 
-/** Prefissi OID (sysObjectID) per tipo dispositivo. Ordine conta: più specifici prima. */
+/**
+ * Prefissi OID (sysObjectID) per tipo dispositivo.
+ * Ordine: più specifici prima; **Cisco generico (9.1)** solo dopo le regole Cisco/altro specifiche.
+ * Matching **per segmenti OID** tramite oidPrefixMatches().
+ */
 const OID_RULES: Array<{ prefix: string; classification: DeviceClassification }> = [
-  // Cisco
-  { prefix: "1.3.6.1.4.1.9.1.", classification: "router" }, // Cisco generic
   // HP printers
-  { prefix: "1.3.6.1.4.1.11.2.3.9.1.", classification: "stampante" },
-  { prefix: "1.3.6.1.4.1.11.2.3.9.", classification: "stampante" },
+  { prefix: "1.3.6.1.4.1.11.2.3.9.1", classification: "stampante" },
+  { prefix: "1.3.6.1.4.1.11.2.3.9", classification: "stampante" },
   // HP ProCurve switches
-  { prefix: "1.3.6.1.4.1.11.2.3.7.11.", classification: "switch" },
-  { prefix: "1.3.6.1.4.1.11.2.3.7.", classification: "switch" },
+  { prefix: "1.3.6.1.4.1.11.2.3.7.11", classification: "switch" },
+  { prefix: "1.3.6.1.4.1.11.2.3.7", classification: "switch" },
   // MikroTik
   { prefix: "1.3.6.1.4.1.14988.1", classification: "router" },
-  // Ubiquiti
+  // Ubiquiti (AP / airOS)
   { prefix: "1.3.6.1.4.1.10002.1", classification: "access_point" },
+  // UniFi / Ubiquiti enterprise MIB (walk 1.3.6.1.4.1.41112)
+  { prefix: "1.3.6.1.4.1.41112", classification: "access_point" },
   // Hikvision
-  { prefix: "1.3.6.1.4.1.39165.", classification: "telecamera" },
+  { prefix: "1.3.6.1.4.1.39165", classification: "telecamera" },
   // Dahua
-  { prefix: "1.3.6.1.4.1.55985.", classification: "telecamera" },
+  { prefix: "1.3.6.1.4.1.55985", classification: "telecamera" },
   // Axis
-  { prefix: "1.3.6.1.4.1.368.", classification: "telecamera" },
-  // Synology / QNAP (unificati sotto storage; il profilo vendor gestisce i comandi)
-  { prefix: "1.3.6.1.4.1.6574.", classification: "storage" },
-  { prefix: "1.3.6.1.4.1.24681.", classification: "storage" },
+  { prefix: "1.3.6.1.4.1.368", classification: "telecamera" },
+  // Synology / QNAP
+  { prefix: "1.3.6.1.4.1.6574", classification: "storage" },
+  { prefix: "1.3.6.1.4.1.24681", classification: "storage" },
   // Epson printers
-  { prefix: "1.3.6.1.4.1.1248.", classification: "stampante" },
+  { prefix: "1.3.6.1.4.1.1248", classification: "stampante" },
   // VMware
-  { prefix: "1.3.6.1.4.1.6876.", classification: "hypervisor" },
-  { prefix: "1.3.6.1.4.1.6876.2.", classification: "hypervisor" },
+  { prefix: "1.3.6.1.4.1.6876.2", classification: "hypervisor" },
+  { prefix: "1.3.6.1.4.1.6876", classification: "hypervisor" },
   // APC UPS
-  { prefix: "1.3.6.1.4.1.318.", classification: "ups" },
+  { prefix: "1.3.6.1.4.1.318", classification: "ups" },
   // Eaton UPS
-  { prefix: "1.3.6.1.4.1.705.", classification: "ups" },
+  { prefix: "1.3.6.1.4.1.705", classification: "ups" },
   // Yealink VoIP
-  { prefix: "1.3.6.1.4.1.3990.", classification: "voip" },
+  { prefix: "1.3.6.1.4.1.3990", classification: "voip" },
   // Cisco VoIP
-  { prefix: "1.3.6.1.4.1.9.6.1.", classification: "voip" },
-  // Cisco switches (Catalyst, Nexus)
+  { prefix: "1.3.6.1.4.1.9.6.1", classification: "voip" },
+  // Cisco switches (product ID specifici — match per segmenti esatti)
   { prefix: "1.3.6.1.4.1.9.1.5", classification: "switch" },
   { prefix: "1.3.6.1.4.1.9.1.1", classification: "switch" },
   // Netgear
-  { prefix: "1.3.6.1.4.1.4526.", classification: "switch" },
+  { prefix: "1.3.6.1.4.1.4526", classification: "switch" },
   // D-Link
-  { prefix: "1.3.6.1.4.1.171.10.", classification: "switch" },
+  { prefix: "1.3.6.1.4.1.171.10", classification: "switch" },
   // Fortinet
-  { prefix: "1.3.6.1.4.1.12356.", classification: "firewall" },
+  { prefix: "1.3.6.1.4.1.12356", classification: "firewall" },
   // pfSense
-  { prefix: "1.3.6.1.4.1.12325.", classification: "firewall" },
-  // Linux generic (net-snmp = quasi sempre Linux)
-  { prefix: "1.3.6.1.4.1.8072.3.2.", classification: "server_linux" },
+  { prefix: "1.3.6.1.4.1.12325", classification: "firewall" },
+  // Linux net-snmp (host / VM Linux)
+  { prefix: "1.3.6.1.4.1.8072.3.2", classification: "server_linux" },
+  // Cisco IOS/IOS-XE generico (1.3.6.1.4.1.9.1.<productId>) — dopo regole specifiche
+  { prefix: "1.3.6.1.4.1.9.1", classification: "router" },
 ];
 
 /** Porte e servizi che indicano il tipo di dispositivo */
@@ -189,31 +233,22 @@ const VENDOR_RULES: Array<{ pattern: RegExp; classification: DeviceClassificatio
 ];
 
 /**
- * Classifica un dispositivo in base ai dati disponibili.
- * Restituisce la classificazione o undefined se non determinabile.
+ * Classificazione con metodo e confidenza stimata (per audit e future UI).
  */
-export function classifyDevice(input: ClassifierInput): DeviceClassification | undefined {
-  const text = [
-    input.sysDescr ?? "",
-    input.osInfo ?? "",
-    input.hostname ?? "",
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+export function classifyDeviceDetailed(input: ClassifierInput): DeviceDetectionResult {
+  const text = buildClassifierText(input);
 
-  // 1. sysObjectID (molto affidabile)
+  // 1. sysObjectID (affidabile — matching per segmenti OID)
   const oid = (input.sysObjectID ?? "").trim();
   if (oid) {
     for (const rule of OID_RULES) {
-      if (oid.startsWith(rule.prefix)) {
-        return rule.classification;
+      if (oidPrefixMatches(oid, rule.prefix)) {
+        return { classification: rule.classification, confidence: "high", method: "oid" };
       }
     }
   }
 
-  // 2. MAC virtuale: se il vendor è VMware/Proxmox/Hyper-V/QEMU → è una VM
-  //    Poi raffina con OS info: server_windows, server_linux, o vm generico
+  // 2. MAC virtuale: VMware/Proxmox/Hyper-V/QEMU → VM / server
   const vendor = (input.vendor ?? "").trim();
   const isVirtualMac = /vmware|proxmox\s*server|microsoft\s*virtual|hyper-v|qemu|xensource|oracle\s*vm|red\s*hat.*kvm/i.test(vendor);
   if (isVirtualMac) {
@@ -223,24 +258,24 @@ export function classifyDevice(input: ClassifierInput): DeviceClassification | u
     const has135 = portSet.has(135);
     const has22 = portSet.has(22);
 
-    // Porte: 445+135 → Server Windows, 22 senza 445 → Server Linux
-    if (has445 && has135) return "server_windows";
-    if (has22 && !has445) return "server_linux";
+    if (has445 && has135) return { classification: "server_windows", confidence: "high", method: "virtual_mac" };
+    if (has22 && !has445) return { classification: "server_linux", confidence: "high", method: "virtual_mac" };
 
-    // Fallback su testo OS se le porte non sono ancora note
-    if (/windows\s*server|microsoft.*server|win\s*srv/i.test(text)) return "server_windows";
-    if (/debian|ubuntu|centos|rhel|red\s*hat|alma|rocky|oracle\s*linux|fedora|sles|linux\s*server/i.test(text)) return "server_linux";
-    if (/windows/i.test(text)) return "server_windows"; // VM Windows = quasi sempre server
-    if (/linux/i.test(text)) return "server_linux";     // VM Linux = quasi sempre server
+    if (/windows\s*server|microsoft.*server|win\s*srv/i.test(text)) return { classification: "server_windows", confidence: "high", method: "virtual_mac" };
+    if (/debian|ubuntu|centos|rhel|red\s*hat|alma|rocky|oracle\s*linux|fedora|sles|linux\s*server/i.test(text)) {
+      return { classification: "server_linux", confidence: "high", method: "virtual_mac" };
+    }
+    if (/windows/i.test(text)) return { classification: "server_windows", confidence: "medium", method: "virtual_mac" };
+    if (/linux/i.test(text)) return { classification: "server_linux", confidence: "medium", method: "virtual_mac" };
 
-    return "vm"; // Nessuna porta nota, nessun OS info → VM generica
+    return { classification: "vm", confidence: "medium", method: "virtual_mac" };
   }
 
-  // 3. sysDescr / osInfo / hostname
+  // 3. sysDescr / osInfo / hostname / snmpContext
   if (text) {
     for (const rule of TEXT_RULES) {
       if (rule.pattern.test(text)) {
-        return rule.classification;
+        return { classification: rule.classification, confidence: "medium", method: "text" };
       }
     }
   }
@@ -254,7 +289,12 @@ export function classifyDevice(input: ClassifierInput): DeviceClassification | u
         rule.services!.some((s) => (po.service ?? "").toLowerCase().includes(s))
       );
       if (portMatch || serviceMatch) {
-        return rule.classification;
+        const weakSnmpOnly = rule.ports.length === 1 && rule.ports[0] === 161 && (rule.services?.includes("snmp") ?? false);
+        return {
+          classification: rule.classification,
+          confidence: weakSnmpOnly ? "low" : "medium",
+          method: "port",
+        };
       }
     }
   }
@@ -264,19 +304,27 @@ export function classifyDevice(input: ClassifierInput): DeviceClassification | u
   if (hostname) {
     for (const rule of HOSTNAME_RULES) {
       if (rule.pattern.test(hostname)) {
-        return rule.classification;
+        return { classification: rule.classification, confidence: "medium", method: "hostname" };
       }
     }
   }
 
-  // 6. MAC vendor (dispositivi fisici)
+  // 6. MAC vendor
   if (vendor) {
     for (const rule of VENDOR_RULES) {
       if (rule.pattern.test(vendor)) {
-        return rule.classification;
+        return { classification: rule.classification, confidence: "low", method: "vendor" };
       }
     }
   }
 
-  return undefined;
+  return { classification: undefined, confidence: "low", method: "none" };
+}
+
+/**
+ * Classifica un dispositivo in base ai dati disponibili.
+ * Restituisce la classificazione o undefined se non determinabile.
+ */
+export function classifyDevice(input: ClassifierInput): DeviceClassification | undefined {
+  return classifyDeviceDetailed(input).classification;
 }

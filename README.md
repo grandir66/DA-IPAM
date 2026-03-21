@@ -12,9 +12,9 @@ Il codice sorgente è **rilasciato in forma open source** (vedi [`LICENSE`](LICE
 
 1. [Panoramica e architettura](#panoramica-e-architettura)  
 2. [Requisiti](#requisiti)  
-3. [Panoramica installer (Proxmox vs Linux)](#panoramica-installer-proxmox-vs-linux)  
+3. [Tre scenari di installazione (Proxmox, VM Linux, container)](#tre-scenari-di-installazione-proxmox-vm-linux-container)  
 4. [Installazione Proxmox (una riga)](#installazione-proxmox-una-riga)  
-5. [Installazione manuale (LXC / VM / bare metal)](#installazione-manuale-lxc--vm--bare-metal)  
+5. [Installazione su Debian/Ubuntu (VM, bare metal, container)](#installazione-su-debianubuntu-vm-bare-metal-container)  
 6. [Script di installazione e variabili d’ambiente](#script-di-installazione-e-variabili-dambiente)  
 7. [Primo avvio e configurazione](#primo-avvio-e-configurazione)  
 8. [Funzionalità dell’applicazione](#funzionalità-dellapplicazione)  
@@ -61,21 +61,27 @@ Oltre a Node e agli strumenti di scansione, in **produzione** servono i **pacche
 
 ---
 
-## Panoramica installer (Proxmox vs Linux)
+## Tre scenari di installazione (Proxmox, VM Linux, container)
 
-| Scenario | Cosa usare | Dove si esegue |
-|----------|------------|----------------|
-| **Nodo Proxmox** — creare un CT e opzionalmente installare l’app | `bootstrap-proxmox.sh` → `proxmox-lxc-install.sh` | Shell **root** sul **nodo** PVE (non dentro il CT) |
-| **Container/app già su Debian/Ubuntu** — tutto in locale (apt + NodeSource + npm + build) | `bootstrap-linux.sh` **oppure** `git clone` + `install.sh` | **root** nel CT, nella VM o sul bare metal |
-| **Solo aggiornamento** Git dell’istanza in `/opt/da-invent` | `scripts/update.sh` (nel repo) o `pct-update.sh` dal nodo | Dentro il CT o dalla macchina dove risiede il clone |
+Gli script ufficiali presuppongono **Debian o Ubuntu** (apt). Il codice viene sempre preso da **Git** (repository pubblico o fork): o lo scarica uno **script di bootstrap** da GitHub, oppure esegui tu `git clone` e poi `install.sh`.
 
-- **`bootstrap-linux.sh`**: installa `git`/`curl` se mancano, clona il repository (default `/opt/da-invent`) e lancia `install.sh` (con `--systemd` salvo `DA_INVENT_SKIP_SYSTEMD=1`). Scarica da Internet repository NodeSource, pacchetti apt e dipendenze npm sul sistema target.
-- **`install.sh`**: cuore comune — dipendenze di sistema, Node.js 20 LTS, `npm ci`/`npm install`, `npm run build`, `.env.local`, opzione **`--systemd`** per unità `da-invent` (cron + Next tramite `tsx server.ts`).
-- **Proxmox**: il wizard, se scegli l’installazione automatica nel CT, installa solo `git`, `curl`, `ca-certificates` prima del clone; **tutto il resto** (nmap, SNMP, toolchain, librerie per native modules) arriva da `install.sh` dentro al container.
+| # | Scenario | Dove esegui i comandi | Installer «facilitato» | Alternativa: solo Git + `install.sh` |
+|---|----------|------------------------|-------------------------|--------------------------------------|
+| **1** | **Proxmox VE** — crei un **container LXC** dal nodo | Shell **root** sul **nodo** Proxmox (mai nel CT per il wizard) | `bootstrap-proxmox.sh` → scarica il repo sul nodo e lancia `proxmox-lxc-install.sh` (wizard **pct**). Nel CT puoi rispondere **sì** all’installazione automatica: viene fatto `git clone` in `/opt/da-invent` ed eseguito `install.sh --systemd` | Sul nodo: hai già il clone → `./scripts/proxmox-lxc-install.sh`. **Dentro il CT** (se non hai usato l’auto-install): `bootstrap-linux.sh` oppure `git clone` + `./scripts/install.sh --systemd` |
+| **2** | **VM o bare metal** — Linux **Debian/Ubuntu** come sistema operativo «principale», **senza** creare un CT in questa guida | Shell **root** (o `sudo`) **dentro la VM o sul server fisico** | `bootstrap-linux.sh` (una riga con `curl` da raw GitHub): installa il minimo, **clona** il repo in `/opt/da-invent`, lancia `install.sh --systemd` | `git clone https://github.com/grandir66/DA-IPAM.git /opt/da-invent` poi `chmod +x scripts/install.sh && sudo ./scripts/install.sh --systemd` |
+| **3** | **Container Linux** (stesso percorso dello scenario 2, ma **dentro** il CT) — es. CT già esistente, LXC su altro host, o ambiente containerizzato con OS Debian/Ubuntu | Shell **root** **dentro il container** | Stesso **`bootstrap-linux.sh`** da eseguire nel container (serve rete verso GitHub e NodeSource) | Stesso **`git clone`** + **`install.sh`** nel container |
+
+Note operative:
+
+- **Scenario 1 vs 3:** sul **nodo** Proxmox usi solo il **wizard** (`proxmox-lxc-install.sh`) per definire template, disco, rete e privilegi del CT. **Dopo** che il CT esiste, l’installazione dell’applicazione è **identica** allo scenario 3 (comandi **dentro** il CT): `bootstrap-linux.sh` oppure clone manuale + `install.sh`.
+- **`install.sh`** è sempre il passo che installa dipendenze apt, Node.js 20, moduli npm (con build nativa), `npm run build`, `.env.local` e opzionalmente **systemd** (`tsx server.ts` + cron).
+- **Aggiornamenti** dopo il deploy: `./scripts/update.sh` nell’istanza (es. `/opt/da-invent`); da **nodo** Proxmox verso un CT: `./scripts/pct-update.sh <VMID>`.
 
 ---
 
 ## Installazione Proxmox (una riga)
+
+**Scenario [1](#tre-scenari-di-installazione-proxmox-vm-linux-container)** — solo sul **nodo** Proxmox: creazione del CT e (opzionale) installazione automatica **dentro** il CT tramite `git clone` + `install.sh`.
 
 Sul **nodo Proxmox VE**, come **root**, esegui (script salvato su disco — **non** usare `curl … | bash` per non interferire con le domande interattive):
 
@@ -118,11 +124,51 @@ Variabile opzionale: `DA_INVENT_DIR` se l’app non è in `/opt/da-invent`.
 
 ---
 
-## Installazione manuale (LXC / VM / bare metal)
+## Installazione su Debian/Ubuntu (VM, bare metal, container)
 
-### Repository già sul nodo Proxmox (solo wizard LXC)
+**Scenari [2](#tre-scenari-di-installazione-proxmox-vm-linux-container) e [3](#tre-scenari-di-installazione-proxmox-vm-linux-container):** qui installi l’applicazione **sul sistema operativo Debian/Ubuntu** — che sia una **VM**, un **server fisico** o un **container** (es. CT LXC già creato, anche se il CT stesso è stato creato prima su Proxmox con altri strumenti). I comandi si eseguono **dentro** quella macchina, come **root**.
 
-Se hai già clonato il repo sul **nodo** Proxmox (es. dopo `bootstrap-proxmox.sh`):
+### Opzione A — Installer facilitato (`bootstrap-linux.sh`)
+
+Scarica lo script da GitHub ed eseguilo: clona il repository e lancia `install.sh --systemd`.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-linux.sh -o /tmp/da-invent-bootstrap-linux.sh \
+  && bash /tmp/da-invent-bootstrap-linux.sh
+```
+
+Cosa fa: installa `git` / `curl` / `ca-certificates` se mancano; **`git clone`** in **`/opt/da-invent`** (o `DA_INVENT_BOOTSTRAP_DIR`); poi **`scripts/install.sh --systemd`**.
+
+### Opzione B — Solo Git, poi installer locale
+
+```bash
+git clone https://github.com/grandir66/DA-IPAM.git /opt/da-invent
+cd /opt/da-invent
+chmod +x scripts/install.sh
+sudo ./scripts/install.sh --systemd
+```
+
+(`sudo` non serve se sei già root.)
+
+### Cosa fa `install.sh` (comune alle opzioni A e B)
+
+- **apt** (solo come root): toolchain e librerie per moduli nativi, nmap, SNMP client, ping, ecc. (elenco nella sezione [Script di installazione](#script-di-installazione-e-variabili-dambiente)).
+- **Node.js 20 LTS** ([NodeSource](https://github.com/nodesource/distributions)).
+- **`npm ci`** o **`npm install`**, poi **`npm run build`**.
+- **`.env.local`** con `ENCRYPTION_KEY`, `AUTH_SECRET`, `PORT` se assente.
+- Con **`--systemd`**: servizio `da-invent` con `systemctl enable --now`.
+
+**Utente del servizio:** default **`root`** (consigliato per nmap UDP e ping in CT). Alternativa: `DA_INVENT_SERVICE_USER=da-invent sudo -E ./scripts/install.sh --systemd` (valuta le capability di rete).
+
+**Senza systemd:** `npm run start` (porta **3001**).
+
+### Caso particolare: CT Proxmox senza installazione automatica
+
+Se hai creato il CT con il wizard ma **senza** installare l’app, oppure entri in un CT già esistente: dal **nodo** esegui `pct enter <VMID>`, poi **Opzione A** o **B** sopra (stessi comandi **dentro** il CT).
+
+### Solo wizard LXC dal nodo (nessun `bootstrap-proxmox`)
+
+Se il repository è già sul **nodo** Proxmox:
 
 ```bash
 cd /percorso/DA-IPAM
@@ -130,52 +176,7 @@ chmod +x scripts/proxmox-lxc-install.sh
 ./scripts/proxmox-lxc-install.sh
 ```
 
-Lo script è **interattivo** (template, storage, rete, privilegi CT, installazione opzionale dell’app nel CT). **Non** usare `curl … | bash` per questo wizard: salva gli script su file ed eseguili, così lo stdin resta libero per le domande.
-
-### Installazione su Debian/Ubuntu — bootstrap da una riga (consigliato)
-
-Su una **VM**, un **bare metal** o un **CT** già avviato (con rete), come **root**:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-linux.sh -o /tmp/da-invent-bootstrap-linux.sh \
-  && bash /tmp/da-invent-bootstrap-linux.sh
-```
-
-Lo script installa gli strumenti minimi (`git`, `curl`, `ca-certificates` se mancano), clona il repository in **`/opt/da-invent`** (o in `DA_INVENT_BOOTSTRAP_DIR`) ed esegue `scripts/install.sh --systemd`.
-
-### Installazione applicazione con clone manuale
-
-```bash
-git clone https://github.com/grandir66/DA-IPAM.git /opt/da-invent   # o altra directory
-cd /opt/da-invent
-chmod +x scripts/install.sh
-sudo ./scripts/install.sh --systemd
-```
-
-Usa **un solo comando** come **root**: `./scripts/install.sh` senza `sudo` se sei già root; con `sudo` se sei un utente con privilegi. L’installer **non** completa le dipendenze di sistema se non è eseguito come root (manca `apt`); in quel caso serve **Node.js 20+** già installato e comunque mancano toolchain e librerie per i moduli nativi.
-
-`install.sh` esegue in sequenza:
-
-- **apt** (solo come root): toolchain e header per moduli nativi, strumenti di rete e scansione, client SNMP, ecc. (elenco completo nella sezione [Script di installazione](#script-di-installazione-e-variabili-dambiente)).
-- **Node.js 20 LTS** tramite repository [NodeSource](https://github.com/nodesource/distributions) (solo come root).
-- **`npm ci`** oppure **`npm install`**, poi **`npm run build`**.
-- Creazione di **`.env.local`** con `ENCRYPTION_KEY`, `AUTH_SECRET`, `PORT` (se non già presente).
-- Opzione **`--systemd`**: unità `da-invent` con `ExecStart` = `tsx server.ts` (Next + cron), **`systemctl enable --now`**.
-
-Con systemd il servizio usa per default **`User=root`** (adatto a LXC: nmap UDP e ping ICMP). Per un altro utente: `DA_INVENT_SERVICE_USER=da-invent sudo -E ./scripts/install.sh --systemd` (valuta le **capability** di rete per `nmap`).
-
-**Avvio senza systemd:** `cd` nella directory dell’app e `npm run start` (porta default **3001**).
-
-### Installazione manuale nel CT (se non hai usato l’opzione automatica nel wizard)
-
-Dal **nodo** Proxmox, dopo `pct enter <VMID>`:
-
-```bash
-apt update && apt install -y curl ca-certificates
-curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-linux.sh -o /tmp/da-bl.sh && bash /tmp/da-bl.sh
-```
-
-Oppure: `apt install -y git curl ca-certificates`, poi `git clone … /opt/da-invent`, `cd /opt/da-invent` e `chmod +x scripts/install.sh && ./scripts/install.sh --systemd`.
+Script **interattivo** (template, storage, rete, privilegi, install opzionale nel CT). **Non** usare `curl … | bash` per questo wizard: salva lo script ed eseguilo da file così le domande funzionano.
 
 ---
 

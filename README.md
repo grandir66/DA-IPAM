@@ -12,20 +12,22 @@ Il codice sorgente è **rilasciato in forma open source** (vedi [`LICENSE`](LICE
 
 1. [Panoramica e architettura](#panoramica-e-architettura)  
 2. [Requisiti](#requisiti)  
-3. [Installazione Proxmox (una riga)](#installazione-proxmox-una-riga)  
-4. [Installazione manuale (LXC / VM / bare metal)](#installazione-manuale-lxc--vm--bare-metal)  
-5. [Primo avvio e configurazione](#primo-avvio-e-configurazione)  
-6. [Funzionalità dell’applicazione](#funzionalità-dellapplicazione)  
-7. [Allineamento al documento di requisiti funzionali](#allineamento-al-documento-di-requisiti-funzionali)  
-8. [Job schedulati e server di produzione](#job-schedulati-e-server-di-produzione)  
-9. [Sicurezza](#sicurezza)  
-10. [API e dati](#api-e-dati)  
-11. [Documentazione in `docs/`](#documentazione-in-docs)  
-12. [Deploy in produzione](#deploy-in-produzione)  
-13. [Sviluppo](#sviluppo) (include copia locale da Git)  
-14. [Aggiornamento](#aggiornamento)  
-15. [Versioning](#versioning)  
-16. [Licenza](#licenza)
+3. [Panoramica installer (Proxmox vs Linux)](#panoramica-installer-proxmox-vs-linux)  
+4. [Installazione Proxmox (una riga)](#installazione-proxmox-una-riga)  
+5. [Installazione manuale (LXC / VM / bare metal)](#installazione-manuale-lxc--vm--bare-metal)  
+6. [Script di installazione e variabili d’ambiente](#script-di-installazione-e-variabili-dambiente)  
+7. [Primo avvio e configurazione](#primo-avvio-e-configurazione)  
+8. [Funzionalità dell’applicazione](#funzionalità-dellapplicazione)  
+9. [Allineamento al documento di requisiti funzionali](#allineamento-al-documento-di-requisiti-funzionali)  
+10. [Job schedulati e server di produzione](#job-schedulati-e-server-di-produzione)  
+11. [Sicurezza](#sicurezza)  
+12. [API e dati](#api-e-dati)  
+13. [Documentazione in `docs/`](#documentazione-in-docs)  
+14. [Deploy in produzione](#deploy-in-produzione)  
+15. [Sviluppo](#sviluppo) (include copia locale da Git)  
+16. [Aggiornamento](#aggiornamento)  
+17. [Versioning](#versioning)  
+18. [Licenza](#licenza)  
 
 ---
 
@@ -54,6 +56,22 @@ Il codice sorgente è **rilasciato in forma open source** (vedi [`LICENSE`](LICE
 | **Sistema** | Debian/Ubuntu consigliati per script `install.sh` (apt) |
 
 Per **scansioni nmap** (inclusa **UDP `-sU`**) e **ping ICMP** servono in genere **socket privilegiati**. Nel **container LXC/VM** il servizio systemd è quindi previsto in esecuzione come **`root`** (default di `scripts/install.sh` e di `deploy/da-invent.service`), così `nmap` non viene eseguito senza i diritti necessari. Un container **non privilegiato** può comunque bastare se accetti solo scan TCP; per UDP serve **root** nel CT oppure capability `CAP_NET_RAW` / `CAP_NET_ADMIN` su un utente dedicato (configurazione avanzata).
+
+Oltre a Node e agli strumenti di scansione, in **produzione** servono i **pacchetti di sviluppo** per compilare moduli nativi npm (`better-sqlite3`, `bcrypt`, `ssh2`, `net-snmp`, …): `build-essential`, `pkg-config`, `libssl-dev`, `libsqlite3-dev`, `libsnmp-dev` (installati automaticamente da `scripts/install.sh` come **root** su Debian/Ubuntu).
+
+---
+
+## Panoramica installer (Proxmox vs Linux)
+
+| Scenario | Cosa usare | Dove si esegue |
+|----------|------------|----------------|
+| **Nodo Proxmox** — creare un CT e opzionalmente installare l’app | `bootstrap-proxmox.sh` → `proxmox-lxc-install.sh` | Shell **root** sul **nodo** PVE (non dentro il CT) |
+| **Container/app già su Debian/Ubuntu** — tutto in locale (apt + NodeSource + npm + build) | `bootstrap-linux.sh` **oppure** `git clone` + `install.sh` | **root** nel CT, nella VM o sul bare metal |
+| **Solo aggiornamento** Git dell’istanza in `/opt/da-invent` | `scripts/update.sh` (nel repo) o `pct-update.sh` dal nodo | Dentro il CT o dalla macchina dove risiede il clone |
+
+- **`bootstrap-linux.sh`**: installa `git`/`curl` se mancano, clona il repository (default `/opt/da-invent`) e lancia `install.sh` (con `--systemd` salvo `DA_INVENT_SKIP_SYSTEMD=1`). Scarica da Internet repository NodeSource, pacchetti apt e dipendenze npm sul sistema target.
+- **`install.sh`**: cuore comune — dipendenze di sistema, Node.js 20 LTS, `npm ci`/`npm install`, `npm run build`, `.env.local`, opzione **`--systemd`** per unità `da-invent` (cron + Next tramite `tsx server.ts`).
+- **Proxmox**: il wizard, se scegli l’installazione automatica nel CT, installa solo `git`, `curl`, `ca-certificates` prima del clone; **tutto il resto** (nmap, SNMP, toolchain, librerie per native modules) arriva da `install.sh` dentro al container.
 
 ---
 
@@ -104,27 +122,112 @@ Variabile opzionale: `DA_INVENT_DIR` se l’app non è in `/opt/da-invent`.
 
 ### Repository già sul nodo Proxmox (solo wizard LXC)
 
+Se hai già clonato il repo sul **nodo** Proxmox (es. dopo `bootstrap-proxmox.sh`):
+
 ```bash
 cd /percorso/DA-IPAM
 chmod +x scripts/proxmox-lxc-install.sh
 ./scripts/proxmox-lxc-install.sh
 ```
 
-### Installazione applicazione dentro il CT o su una VM
+Lo script è **interattivo** (template, storage, rete, privilegi CT, installazione opzionale dell’app nel CT). **Non** usare `curl … | bash` per questo wizard: salva gli script su file ed eseguili, così lo stdin resta libero per le domande.
+
+### Installazione su Debian/Ubuntu — bootstrap da una riga (consigliato)
+
+Su una **VM**, un **bare metal** o un **CT** già avviato (con rete), come **root**:
 
 ```bash
-git clone https://github.com/grandir66/DA-IPAM.git
-cd DA-IPAM
-chmod +x scripts/install.sh
-./scripts/install.sh              # dipendenze, npm, build, .env.local
-sudo ./scripts/install.sh --systemd   # servizio systemd: abilitato al boot e avviato subito (enable --now)
+curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-linux.sh -o /tmp/da-invent-bootstrap-linux.sh \
+  && bash /tmp/da-invent-bootstrap-linux.sh
 ```
 
-`install.sh` installa Node 20, build-essential, **nmap**, **snmp** (client `snmpwalk`/`snmpget` per discovery), **iputils-ping**, sqlite3, esegue `npm ci`/`npm install` e `npm run build`, genera `.env.local` con `ENCRYPTION_KEY` e `AUTH_SECRET`.
+Lo script installa gli strumenti minimi (`git`, `curl`, `ca-certificates` se mancano), clona il repository in **`/opt/da-invent`** (o in `DA_INVENT_BOOTSTRAP_DIR`) ed esegue `scripts/install.sh --systemd`.
 
-Con `sudo ./scripts/install.sh --systemd` il servizio systemd usa per default **`User=root`** (adatto al container: scan nmap UDP e ping). Per forzare un altro utente: `DA_INVENT_SERVICE_USER=da-invent sudo -E ./scripts/install.sh --systemd` (in quel caso valuta capability di rete per `nmap`).
+### Installazione applicazione con clone manuale
 
-Avvio senza systemd: `npm run start` (porta default **3001**).
+```bash
+git clone https://github.com/grandir66/DA-IPAM.git /opt/da-invent   # o altra directory
+cd /opt/da-invent
+chmod +x scripts/install.sh
+sudo ./scripts/install.sh --systemd
+```
+
+Usa **un solo comando** come **root**: `./scripts/install.sh` senza `sudo` se sei già root; con `sudo` se sei un utente con privilegi. L’installer **non** completa le dipendenze di sistema se non è eseguito come root (manca `apt`); in quel caso serve **Node.js 20+** già installato e comunque mancano toolchain e librerie per i moduli nativi.
+
+`install.sh` esegue in sequenza:
+
+- **apt** (solo come root): toolchain e header per moduli nativi, strumenti di rete e scansione, client SNMP, ecc. (elenco completo nella sezione [Script di installazione](#script-di-installazione-e-variabili-dambiente)).
+- **Node.js 20 LTS** tramite repository [NodeSource](https://github.com/nodesource/distributions) (solo come root).
+- **`npm ci`** oppure **`npm install`**, poi **`npm run build`**.
+- Creazione di **`.env.local`** con `ENCRYPTION_KEY`, `AUTH_SECRET`, `PORT` (se non già presente).
+- Opzione **`--systemd`**: unità `da-invent` con `ExecStart` = `tsx server.ts` (Next + cron), **`systemctl enable --now`**.
+
+Con systemd il servizio usa per default **`User=root`** (adatto a LXC: nmap UDP e ping ICMP). Per un altro utente: `DA_INVENT_SERVICE_USER=da-invent sudo -E ./scripts/install.sh --systemd` (valuta le **capability** di rete per `nmap`).
+
+**Avvio senza systemd:** `cd` nella directory dell’app e `npm run start` (porta default **3001**).
+
+### Installazione manuale nel CT (se non hai usato l’opzione automatica nel wizard)
+
+Dal **nodo** Proxmox, dopo `pct enter <VMID>`:
+
+```bash
+apt update && apt install -y curl ca-certificates
+curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-linux.sh -o /tmp/da-bl.sh && bash /tmp/da-bl.sh
+```
+
+Oppure: `apt install -y git curl ca-certificates`, poi `git clone … /opt/da-invent`, `cd /opt/da-invent` e `chmod +x scripts/install.sh && ./scripts/install.sh --systemd`.
+
+---
+
+## Script di installazione e variabili d’ambiente
+
+### Tabella script
+
+| Script | Ruolo |
+|--------|--------|
+| [`scripts/bootstrap-proxmox.sh`](scripts/bootstrap-proxmox.sh) | Sul **nodo** PVE: `git`/`curl`, clone repo, avvio `proxmox-lxc-install.sh` |
+| [`scripts/proxmox-lxc-install.sh`](scripts/proxmox-lxc-install.sh) | Wizard **pct**: template, risorse, rete, CT privilegiato/opzionale, clone + `install.sh` opzionale nel CT |
+| [`scripts/bootstrap-linux.sh`](scripts/bootstrap-linux.sh) | Su **Debian/Ubuntu**: clone in `/opt/da-invent` (o `DA_INVENT_BOOTSTRAP_DIR`) ed esecuzione di `install.sh` |
+| [`scripts/install.sh`](scripts/install.sh) | Dipendenze di sistema, Node 20, npm, build, `.env.local`, opzione systemd |
+| [`scripts/update.sh`](scripts/update.sh) | `git pull`, `npm install`, `build`; `--restart` per `systemctl restart da-invent` |
+| [`scripts/pct-update.sh`](scripts/pct-update.sh) | Dal **nodo** Proxmox: `pct exec <VMID>` → `update.sh` nella directory dell’app |
+
+### Variabili — bootstrap Proxmox (`bootstrap-proxmox.sh`)
+
+| Variabile | Descrizione |
+|-----------|-------------|
+| `DA_INVENT_GIT_URL` | URL repository da clonare sul nodo |
+| `DA_INVENT_BRANCH` | Branch (default `main`) |
+| `DA_INVENT_BOOTSTRAP_DIR` | Directory del clone sul nodo (default `/root/da-invent-install`) |
+
+### Variabili — bootstrap Linux (`bootstrap-linux.sh`)
+
+| Variabile | Descrizione |
+|-----------|-------------|
+| `DA_INVENT_GIT_URL` | URL repository |
+| `DA_INVENT_BRANCH` | Branch (default `main`) |
+| `DA_INVENT_BOOTSTRAP_DIR` | Directory di installazione (default `/opt/da-invent`) |
+| `DA_INVENT_SKIP_SYSTEMD` | Se impostata a `1`, non passa `--systemd` a `install.sh` |
+
+### Variabili — wizard Proxmox (`proxmox-lxc-install.sh`)
+
+| Variabile | Descrizione |
+|-----------|-------------|
+| `DA_INVENT_GIT_URL` | URL usato per il clone **dentro** al CT quando scegli l’installazione automatica |
+
+### Variabili — `install.sh`
+
+| Variabile | Descrizione |
+|-----------|-------------|
+| `DA_INVENT_DIR` | Directory dell’applicazione (default: directory corrente / `$(pwd)`) |
+| `DA_INVENT_USER` | Nome utente sistema per cartelle home (raramente usato; default `da-invent`) |
+| `DA_INVENT_SERVICE_USER` | Utente dell’unità systemd (default **`root`**) |
+| `DA_INVENT_SERVICE_GROUP` | Gruppo dell’unità systemd (default = utente servizio) |
+| `PORT` | Porta HTTP in `.env.local` e nel servizio (default **3001**) |
+
+### Pacchetti Debian/Ubuntu installati da `install.sh` (apt)
+
+Come **root**, lo script installa tra gli altri: `ca-certificates`, `curl`, `git`, `openssl`, `build-essential`, `pkg-config`, `python3`, `python3-venv`, `python3-pip`, `net-tools`, `nmap`, `snmp`, `iputils-ping`, `sqlite3`, `libssl-dev`, `libsqlite3-dev`, `libsnmp-dev`. Servono per **ping/nmap/SNMP** da riga di comando e per la **compilazione** dei moduli nativi npm.
 
 ---
 
@@ -246,7 +349,7 @@ I job (`ping_sweep`, `nmap_scan`, `arp_poll`, `dns_resolve`, `cleanup`, monitora
 
 | File | Contenuto |
 |------|-----------|
-| [`INSTALLAZIONE-PROXMOX.md`](docs/INSTALLAZIONE-PROXMOX.md) | Procedura Proxmox e comando bootstrap |
+| [`INSTALLAZIONE-PROXMOX.md`](docs/INSTALLAZIONE-PROXMOX.md) | Procedura Proxmox approfondita (bootstrap, rete, aggiornamenti); riepilogo installer anche in questo README |
 | [`REVISIONE-LOGICA-PROGETTO.md`](docs/REVISIONE-LOGICA-PROGETTO.md) | Requisiti funzionali vs implementazione, gap |
 | [`INVENTARIO-ASSET-MANAGEMENT.md`](docs/INVENTARIO-ASSET-MANAGEMENT.md) | Modello inventario e licenze (riferimenti Snipe-IT/GLPI/Shelf) |
 | [`CREDENZIALI-E-PROTOCOLLI.md`](docs/CREDENZIALI-E-PROTOCOLLI.md) | Priorità archivio vs inline, uso multi-protocollo |

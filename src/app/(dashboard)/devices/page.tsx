@@ -1,19 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -29,357 +22,504 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, RefreshCw, Router, Cable, Wifi, HardDrive, Database, Laptop, Monitor, Server, Phone, Camera, Printer, Shield, Cpu, ChevronRight, Package, Box } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Search,
+  RefreshCw,
+  Router,
+  Cable,
+  Wifi,
+  HardDrive,
+  Database,
+  Laptop,
+  Monitor,
+  Server,
+  Phone,
+  Camera,
+  Printer,
+  Shield,
+  Cpu,
+  Box,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  X,
+  ExternalLink,
+  Trash2,
+  Filter,
+} from "lucide-react";
 import { toast } from "sonner";
-import type { NetworkDevice } from "@/types";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { Pagination } from "@/components/shared/pagination";
+import { SkeletonTable } from "@/components/shared/skeleton-table";
+import { getClassificationLabel } from "@/lib/device-classifications";
+import type { NetworkDevice, Host } from "@/types";
 
-export default function DevicesPage() {
+type DeviceOrHost = 
+  | (NetworkDevice & { source: "device"; host_status?: string })
+  | (Host & { source: "host"; device_id?: number });
+
+interface ClassificationCount {
+  classification: string;
+  count: number;
+}
+
+const CLASSIFICATION_ICONS: Record<string, typeof Router> = {
+  router: Router,
+  switch: Cable,
+  firewall: Shield,
+  access_point: Wifi,
+  server: Server,
+  workstation: Monitor,
+  notebook: Laptop,
+  vm: Box,
+  storage: Database,
+  hypervisor: HardDrive,
+  stampante: Printer,
+  telecamera: Camera,
+  voip: Phone,
+  iot: Cpu,
+  unknown: Server,
+};
+
+type SortField = "name" | "ip" | "classification" | "vendor" | "status";
+type SortDirection = "asc" | "desc";
+
+export default function DevicesUnifiedPage() {
   const router = useRouter();
-  const [devices, setDevices] = useState<NetworkDevice[]>([]);
+  const [items, setItems] = useState<DeviceOrHost[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [deviceType, setDeviceType] = useState<"router" | "switch">("router");
-  const [vendor, setVendor] = useState<string>("mikrotik");
-  const [protocol, setProtocol] = useState<string>("ssh");
-  const [querying, setQuerying] = useState<number | null>(null);
-  const [syncing, setSyncing] = useState(false);
+  const [counts, setCounts] = useState<ClassificationCount[]>([]);
 
-  const fetchDevices = useCallback(async () => {
-    const res = await fetch("/api/devices");
-    setDevices(await res.json());
-    setLoading(false);
+  // Filtri
+  const [search, setSearch] = useState("");
+  const [classificationFilter, setClassificationFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [vendorFilter, setVendorFilter] = useState<string>("all");
+
+  // Ordinamento
+  const [sortField, setSortField] = useState<SortField>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+  // Paginazione
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [devicesRes, hostsRes] = await Promise.all([
+        fetch("/api/devices"),
+        fetch("/api/hosts?limit=5000"),
+      ]);
+      
+      const devices: NetworkDevice[] = await devicesRes.json();
+      const hostsData = await hostsRes.json();
+      const hosts: Host[] = hostsData.hosts || hostsData || [];
+
+      const deviceIps = new Set(devices.map((d) => d.host));
+      
+      const combined: DeviceOrHost[] = [
+        ...devices.map((d) => ({ ...d, source: "device" as const })),
+        ...hosts
+          .filter((h) => !deviceIps.has(h.ip))
+          .map((h) => ({ ...h, source: "host" as const })),
+      ];
+
+      setItems(combined);
+
+      const countMap = new Map<string, number>();
+      for (const item of combined) {
+        const cls = item.classification || "unknown";
+        countMap.set(cls, (countMap.get(cls) || 0) + 1);
+      }
+      setCounts(
+        Array.from(countMap.entries())
+          .map(([classification, count]) => ({ classification, count }))
+          .sort((a, b) => b.count - a.count)
+      );
+    } catch {
+      toast.error("Errore nel caricamento dispositivi");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { fetchDevices(); }, [fetchDevices]);
-
   useEffect(() => {
-    if (deviceType === "router") {
-      setVendor("mikrotik");
-    } else {
-      setVendor("cisco");
-    }
-  }, [deviceType]);
+    fetchData();
+  }, [fetchData]);
 
-  async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const body: Record<string, unknown> = {
-      device_type: deviceType,
-      vendor,
-      protocol,
-    };
-    formData.forEach((val, key) => {
-      if (val && key !== "device_type") {
-        body[key] = key === "port" ? Number(val) || undefined : val;
+  const vendors = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of items) {
+      if (item.vendor) set.add(item.vendor);
+    }
+    return Array.from(set).sort();
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    let result = items;
+
+    if (search.trim()) {
+      const s = search.toLowerCase();
+      result = result.filter((item) => {
+        const name = item.source === "device" ? item.name : (item.hostname || item.custom_name || "");
+        const ip = item.source === "device" ? item.host : item.ip;
+        return (
+          name.toLowerCase().includes(s) ||
+          ip.toLowerCase().includes(s) ||
+          (item.vendor?.toLowerCase().includes(s)) ||
+          (item.classification?.toLowerCase().includes(s))
+        );
+      });
+    }
+
+    if (classificationFilter !== "all") {
+      result = result.filter((item) => item.classification === classificationFilter);
+    }
+
+    if (statusFilter !== "all") {
+      result = result.filter((item) => {
+        if (item.source === "device") {
+          return statusFilter === "online" ? item.enabled : !item.enabled;
+        }
+        return item.status === statusFilter;
+      });
+    }
+
+    if (vendorFilter !== "all") {
+      result = result.filter((item) => item.vendor === vendorFilter);
+    }
+
+    return result;
+  }, [items, search, classificationFilter, statusFilter, vendorFilter]);
+
+  const sortedItems = useMemo(() => {
+    const sorted = [...filteredItems].sort((a, b) => {
+      let aVal: string | number = "";
+      let bVal: string | number = "";
+
+      switch (sortField) {
+        case "name":
+          aVal = a.source === "device" ? a.name : (a.hostname || a.custom_name || a.ip);
+          bVal = b.source === "device" ? b.name : (b.hostname || b.custom_name || b.ip);
+          break;
+        case "ip":
+          aVal = a.source === "device" ? a.host : a.ip;
+          bVal = b.source === "device" ? b.host : b.ip;
+          const aParts = aVal.split(".").map(Number);
+          const bParts = bVal.split(".").map(Number);
+          for (let i = 0; i < 4; i++) {
+            if (aParts[i] !== bParts[i]) {
+              return sortDirection === "asc" ? aParts[i] - bParts[i] : bParts[i] - aParts[i];
+            }
+          }
+          return 0;
+        case "classification":
+          aVal = a.classification || "zzz";
+          bVal = b.classification || "zzz";
+          break;
+        case "vendor":
+          aVal = a.vendor || "zzz";
+          bVal = b.vendor || "zzz";
+          break;
+        case "status":
+          if (a.source === "device" && b.source === "device") {
+            aVal = a.enabled ? 0 : 1;
+            bVal = b.enabled ? 0 : 1;
+          } else {
+            aVal = a.source === "host" ? (a.status === "online" ? 0 : 1) : 0;
+            bVal = b.source === "host" ? (b.status === "online" ? 0 : 1) : 0;
+          }
+          break;
       }
+
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        return sortDirection === "asc" 
+          ? aVal.localeCompare(bVal, "it") 
+          : bVal.localeCompare(aVal, "it");
+      }
+      return sortDirection === "asc" ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
     });
 
-    const res = await fetch("/api/devices", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    return sorted;
+  }, [filteredItems, sortField, sortDirection]);
 
-    if (!res.ok) {
-      const data = await res.json();
-      toast.error(data.error || "Errore nella creazione");
-      return;
-    }
+  const paginatedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sortedItems.slice(start, start + pageSize);
+  }, [sortedItems, page]);
 
-    toast.success(deviceType === "router" ? "Router aggiunto" : "Switch aggiunto");
-    setDialogOpen(false);
-    fetchDevices();
-  }
+  const totalPages = Math.ceil(sortedItems.length / pageSize);
 
-  async function handleQuery(id: number) {
-    setQuerying(id);
-    const res = await fetch(`/api/devices/${id}/query`, { method: "POST" });
-    const data = await res.json();
-    if (res.ok) {
-      toast.success(data.message);
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
     } else {
-      toast.error(data.error || "Errore nella query");
+      setSortField(field);
+      setSortDirection("asc");
     }
-    setQuerying(null);
-  }
+  };
 
-  async function handleSyncToInventory() {
-    setSyncing(true);
-    try {
-      const res = await fetch("/api/inventory/sync-devices", { method: "POST" });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.message);
-      } else {
-        toast.error(data.error ?? "Errore nella sincronizzazione");
-      }
-    } catch {
-      toast.error("Errore nella sincronizzazione");
-    } finally {
-      setSyncing(false);
-    }
-  }
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-50" />;
+    return sortDirection === "asc" 
+      ? <ArrowUp className="h-3 w-3 ml-1" /> 
+      : <ArrowDown className="h-3 w-3 ml-1" />;
+  };
 
-  async function handleDelete(id: number, name: string) {
-    if (!confirm(`Eliminare il dispositivo "${name}"?`)) return;
-    const res = await fetch(`/api/devices/${id}`, { method: "DELETE" });
+  const clearFilters = () => {
+    setSearch("");
+    setClassificationFilter("all");
+    setStatusFilter("all");
+    setVendorFilter("all");
+    setPage(1);
+  };
+
+  const hasFilters = search || classificationFilter !== "all" || statusFilter !== "all" || vendorFilter !== "all";
+
+  const handleDelete = async (item: DeviceOrHost) => {
+    if (item.source !== "device") return;
+    if (!confirm(`Eliminare il dispositivo "${item.name}"?`)) return;
+    const res = await fetch(`/api/devices/${item.id}`, { method: "DELETE" });
     if (res.ok) {
       toast.success("Dispositivo eliminato");
-      fetchDevices();
+      fetchData();
     }
-  }
+  };
 
-  const deviceCategories = [
-    { href: "/devices/workstation", label: "PC", icon: Monitor },
-    { href: "/devices/notebook", label: "Notebook", icon: Laptop },
-    { href: "/devices/vm", label: "VM", icon: Box },
-    { href: "/devices/server", label: "Server", icon: Server },
-    { href: "/devices/access_point", label: "Access Point", icon: Wifi },
-    { href: "/devices/switch", label: "Switch", icon: Cable },
-    { href: "/devices/router", label: "Router", icon: Router },
-    { href: "/devices/firewall", label: "Firewall", icon: Shield },
-    { href: "/devices/storage", label: "Storage", icon: Database },
-    { href: "/devices/hypervisor", label: "Hypervisor", icon: HardDrive },
-    { href: "/devices/iot", label: "IoT", icon: Cpu },
-    { href: "/devices/stampante", label: "Stampanti", icon: Printer },
-    { href: "/devices/telecamera", label: "Telecamere", icon: Camera },
-    { href: "/devices/voip", label: "Telefoni", icon: Phone },
-  ] as const;
+  const navigateToItem = (item: DeviceOrHost) => {
+    if (item.source === "device") {
+      router.push(`/devices/${item.id}`);
+    } else {
+      router.push(`/hosts/${item.id}`);
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Tipologie di dispositivi</CardTitle>
-          <CardDescription>
-            Clicca su una categoria per visualizzare i dispositivi assegnati
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-            {deviceCategories.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-card hover:bg-accent/50 hover:border-primary/30 transition-colors text-sm font-medium"
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Dispositivi</h1>
+          <p className="text-muted-foreground">
+            {sortedItems.length} dispositivi {hasFilters && `(filtrati da ${items.length})`}
+          </p>
+        </div>
+        <Button onClick={fetchData} variant="outline" className="gap-2">
+          <RefreshCw className="h-4 w-4" />
+          Aggiorna
+        </Button>
+      </div>
+
+      {/* Contatori per classificazione */}
+      {counts.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <Badge
+            variant={classificationFilter === "all" ? "default" : "outline"}
+            className="cursor-pointer hover:bg-primary/80 transition-colors"
+            onClick={() => { setClassificationFilter("all"); setPage(1); }}
+          >
+            Tutti ({items.length})
+          </Badge>
+          {counts.slice(0, 12).map((c) => {
+            const Icon = CLASSIFICATION_ICONS[c.classification] || Server;
+            return (
+              <Badge
+                key={c.classification}
+                variant={classificationFilter === c.classification ? "default" : "outline"}
+                className="cursor-pointer hover:bg-primary/80 transition-colors gap-1"
+                onClick={() => { setClassificationFilter(c.classification); setPage(1); }}
               >
-                <item.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="truncate">{item.label}</span>
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 ml-auto text-muted-foreground/60" />
-              </Link>
-            ))}
+                <Icon className="h-3 w-3" />
+                {getClassificationLabel(c.classification)} ({c.count})
+              </Badge>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Filtri */}
+      <Card>
+        <CardHeader className="py-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Filter className="h-4 w-4" />
+            Filtri e ricerca
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Cerca per nome, IP, vendor, classificazione..."
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                className="pl-9"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={(v) => { v && setStatusFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Stato" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tutti gli stati</SelectItem>
+                <SelectItem value="online">Online</SelectItem>
+                <SelectItem value="offline">Offline</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={vendorFilter} onValueChange={(v) => { v && setVendorFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Vendor" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tutti i vendor</SelectItem>
+                {vendors.map((v) => (
+                  <SelectItem key={v} value={v} className="capitalize">{v}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {hasFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1">
+                <X className="h-4 w-4" />
+                Reset
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">Tutti i dispositivi</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            Router e switch per acquisizione ARP e MAC table
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={handleSyncToInventory}
-            disabled={syncing || devices.length === 0}
-            className="gap-2"
-          >
-            <Package className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Sincronizzazione..." : "Aggiungi a inventario"}
-          </Button>
-          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setDeviceType("router"); }}>
-            <DialogTrigger render={<Button />}>
-              <Plus className="h-4 w-4 mr-2" />Aggiungi dispositivo
-            </DialogTrigger>
-          <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Nuovo dispositivo</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Tipo</Label>
-                <Select value={deviceType} onValueChange={(v) => setDeviceType(v as "router" | "switch")}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="router">
-                      <span className="flex items-center gap-2">
-                        <Router className="h-4 w-4" /> Router
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="switch">
-                      <span className="flex items-center gap-2">
-                        <Cable className="h-4 w-4" /> Switch
-                      </span>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Nome</Label>
-                  <Input name="name" required placeholder={deviceType === "router" ? "Router Core" : "Switch Core"} />
-                </div>
-                <div className="space-y-2">
-                  <Label>IP</Label>
-                  <Input name="host" required placeholder="192.168.1.1" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Vendor</Label>
-                  <Select value={vendor} onValueChange={(v) => setVendor(v ?? "")}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="mikrotik">MikroTik</SelectItem>
-                      <SelectItem value="ubiquiti">Ubiquiti</SelectItem>
-                      <SelectItem value="cisco">Cisco</SelectItem>
-                      <SelectItem value="hp">HP / Aruba</SelectItem>
-                      <SelectItem value="omada">TP-Link Omada</SelectItem>
-                      <SelectItem value="stormshield">Stormshield</SelectItem>
-                      <SelectItem value="proxmox">Proxmox</SelectItem>
-                      <SelectItem value="vmware">VMware</SelectItem>
-                      <SelectItem value="linux">Linux</SelectItem>
-                      <SelectItem value="windows">Windows</SelectItem>
-                      <SelectItem value="synology">Synology</SelectItem>
-                      <SelectItem value="qnap">QNAP</SelectItem>
-                      <SelectItem value="other">Altro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Protocollo</Label>
-                  <Select value={protocol} onValueChange={(v) => setProtocol(v ?? "")}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ssh">SSH</SelectItem>
-                      <SelectItem value="snmp_v2">SNMP v2</SelectItem>
-                      <SelectItem value="snmp_v3">SNMP v3</SelectItem>
-                      <SelectItem value="api">API REST</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Porta</Label>
-                  <Input
-                    name="port"
-                    type="number"
-                    placeholder={protocol === "ssh" ? "22" : protocol.startsWith("snmp") ? "161" : "443"}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Username</Label>
-                  <Input name="username" placeholder="admin" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Password</Label>
-                  <Input name="password" type="password" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Community String (SNMP)</Label>
-                  <Input name="community_string" placeholder="public" />
-                </div>
-              </div>
-              <Button type="submit" className="w-full">
-                Aggiungi {deviceType === "router" ? "Router" : "Switch"}
-              </Button>
-            </form>
-          </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      {loading ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground">Caricamento...</CardContent></Card>
-      ) : devices.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Router className="h-12 w-12 mx-auto text-muted-foreground/40 mb-4" />
-            <p className="text-muted-foreground">Nessun dispositivo configurato</p>
-            <p className="text-sm text-muted-foreground/70 mt-2">Clicca &quot;Aggiungi dispositivo&quot; per iniziare</p>
+      {/* Tabella */}
+      <Card>
+        {loading ? (
+          <CardContent className="p-0">
+            <SkeletonTable columns={7} rows={15} />
           </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Classificazione</TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead>IP</TableHead>
-                <TableHead>Vendor</TableHead>
-                <TableHead>Protocollo</TableHead>
-                <TableHead>Stato</TableHead>
-                <TableHead className="w-28">Azioni</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {devices.map((dev) => (
-                <TableRow
-                  key={dev.id}
-                  className="cursor-pointer"
-                  onClick={() => router.push(`/devices/${dev.id}`)}
-                >
-                  <TableCell>
-                    {dev.device_type === "router" ? (
-                      <Badge variant="default" className="gap-1">
-                        <Router className="h-3 w-3" /> Router
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="gap-1">
-                        <Cable className="h-3 w-3" /> Switch
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="font-normal capitalize">
-                      {(dev as { classification?: string | null }).classification?.replace(/_/g, " ") ?? dev.device_type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-medium">{dev.name}</TableCell>
-                  <TableCell className="font-mono">{dev.host}</TableCell>
-                  <TableCell className="capitalize">{dev.vendor}</TableCell>
-                  <TableCell className="uppercase text-xs">{dev.protocol}</TableCell>
-                  <TableCell>
-                    <Badge variant={dev.enabled ? "outline" : "secondary"}>
-                      {dev.enabled ? "Attivo" : "Disabilitato"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => handleQuery(dev.id)}
-                        disabled={querying === dev.id}
-                        title="Query"
-                      >
-                        <RefreshCw className={`h-4 w-4 ${querying === dev.id ? "animate-spin" : ""}`} />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive/60 hover:text-destructive"
-                        onClick={() => handleDelete(dev.id, dev.name)}
-                        title="Elimina"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
+        ) : paginatedItems.length === 0 ? (
+          <CardContent className="py-12 text-center">
+            <Server className="h-12 w-12 mx-auto text-muted-foreground/40 mb-4" />
+            <p className="text-muted-foreground">
+              {hasFilters ? "Nessun dispositivo corrisponde ai filtri" : "Nessun dispositivo trovato"}
+            </p>
+          </CardContent>
+        ) : (
+          <TooltipProvider>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead 
+                    className="cursor-pointer hover:bg-muted/50 select-none"
+                    onClick={() => handleSort("classification")}
+                  >
+                    <span className="flex items-center">Tipo <SortIcon field="classification" /></span>
+                  </TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:bg-muted/50 select-none"
+                    onClick={() => handleSort("name")}
+                  >
+                    <span className="flex items-center">Nome <SortIcon field="name" /></span>
+                  </TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:bg-muted/50 select-none"
+                    onClick={() => handleSort("ip")}
+                  >
+                    <span className="flex items-center">IP <SortIcon field="ip" /></span>
+                  </TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:bg-muted/50 select-none"
+                    onClick={() => handleSort("vendor")}
+                  >
+                    <span className="flex items-center">Vendor <SortIcon field="vendor" /></span>
+                  </TableHead>
+                  <TableHead>MAC</TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:bg-muted/50 select-none"
+                    onClick={() => handleSort("status")}
+                  >
+                    <span className="flex items-center">Stato <SortIcon field="status" /></span>
+                  </TableHead>
+                  <TableHead className="w-24">Azioni</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+              </TableHeader>
+              <TableBody>
+                {paginatedItems.map((item) => {
+                  const key = item.source === "device" ? `d-${item.id}` : `h-${item.id}`;
+                  const name = item.source === "device" ? item.name : (item.hostname || item.custom_name || "—");
+                  const ip = item.source === "device" ? item.host : item.ip;
+                  const mac = item.source === "device" ? null : item.mac;
+                  const classification = item.classification || "unknown";
+                  const Icon = CLASSIFICATION_ICONS[classification] || Server;
+                  const status = item.source === "device" 
+                    ? (item.enabled ? "online" : "offline") 
+                    : (item.status || "unknown");
+
+                  return (
+                    <TableRow
+                      key={key}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => navigateToItem(item)}
+                    >
+                      <TableCell>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="outline" className="gap-1 font-normal">
+                              <Icon className="h-3 w-3" />
+                              {getClassificationLabel(classification)}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {item.source === "device" ? "Dispositivo configurato" : "Host rilevato"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell className="font-medium">{name}</TableCell>
+                      <TableCell className="font-mono text-sm">{ip}</TableCell>
+                      <TableCell className="capitalize text-sm">{item.vendor || "—"}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {mac || "—"}
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={status} />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => navigateToItem(item)}
+                            title="Dettagli"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                          {item.source === "device" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive/60 hover:text-destructive"
+                              onClick={() => handleDelete(item)}
+                              title="Elimina"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TooltipProvider>
+        )}
+      </Card>
+
+      {totalPages > 1 && (
+        <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
       )}
     </div>
   );

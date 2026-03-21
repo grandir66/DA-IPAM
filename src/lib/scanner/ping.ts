@@ -15,12 +15,18 @@ export async function pingHost(ip: string, timeoutMs: number = 2000): Promise<Pi
       ? ["-c", "1", "-W", String(timeoutMs), ip]
       : ["-c", "1", "-W", String(timeoutSec), ip];
 
-    await execFileAsync("ping", args, { timeout: timeoutMs + 1000 });
+    const { stdout, stderr } = await execFileAsync("ping", args, {
+      timeout: timeoutMs + 1000,
+      encoding: "utf8",
+    });
     const latency = Date.now() - startTime;
+    const combined = `${stdout}\n${stderr}`;
+    const ttlMatch = combined.match(/ttl[=\s]+(\d+)/i);
+    const ttl = ttlMatch ? parseInt(ttlMatch[1], 10) : null;
 
-    return { ip, alive: true, latency_ms: latency };
+    return { ip, alive: true, latency_ms: latency, ttl };
   } catch {
-    return { ip, alive: false, latency_ms: null };
+    return { ip, alive: false, latency_ms: null, ttl: null };
   }
 }
 

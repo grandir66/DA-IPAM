@@ -66,8 +66,19 @@ export async function POST(request: Request) {
       const scanRes = await fetch(scanUrl, { method: "POST", cache: "no-store" });
       const scanData = await scanRes.json();
 
-      if (scanRes.ok && scanData?.message) {
-        scanned.push({ id, name: device.name, message: scanData.message });
+      const scanOk =
+        scanRes.ok &&
+        !scanData?.error &&
+        (scanData?.message ||
+          (isProxmox && (Array.isArray(scanData?.hosts) || Array.isArray(scanData?.vms))));
+      if (scanOk) {
+        const msg =
+          typeof scanData?.message === "string"
+            ? scanData.message
+            : isProxmox
+              ? `Proxmox: ${scanData?.hosts?.length ?? 0} nodi, ${scanData?.vms?.length ?? 0} VM/CT`
+              : "OK";
+        scanned.push({ id, name: device.name, message: msg });
       } else {
         failed.push({
           id,

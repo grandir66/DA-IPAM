@@ -38,10 +38,38 @@ import { formatPortsDisplay } from "@/lib/utils";
 import { DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel } from "@/lib/device-classifications";
 import { UptimeTimeline } from "@/components/shared/uptime-timeline";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, Save, Router, Cable, Trash2, Server, ChevronRight } from "lucide-react";
+import { ArrowLeft, Save, Router, Cable, Trash2, Server, ChevronRight, ScanSearch, PlusCircle, Wifi } from "lucide-react";
 import { toast } from "sonner";
-import type { HostDetail } from "@/types";
+import type { DeviceFingerprintSnapshot, HostDetail, HostSnmpData } from "@/types";
 import { LatencyChart } from "./latency-chart";
+
+const VENDOR_FROM_MANUFACTURER: Record<string, string> = {
+  proxmox: "proxmox", vmware: "vmware",
+  mikrotik: "mikrotik", ubiquiti: "ubiquiti", cisco: "cisco",
+  juniper: "other", huawei: "other",
+  hpe: "hp", "hp ": "hp", aruba: "hp",
+  synology: "synology", qnap: "qnap",
+  windows: "windows", linux: "linux",
+};
+
+function inferVendorFromManufacturer(m: string | null): string {
+  if (!m) return "other";
+  const lower = m.toLowerCase();
+  for (const [key, val] of Object.entries(VENDOR_FROM_MANUFACTURER)) {
+    if (lower.includes(key)) return val;
+  }
+  return "other";
+}
+
+function inferDeviceTypeFromClassification(c: string): "router" | "switch" | "hypervisor" {
+  if (c === "router" || c === "firewall") return "router";
+  if (c === "switch") return "switch";
+  return "hypervisor";
+}
+
+function inferProtocolFromSnmp(snmp: HostSnmpData | null): string {
+  return snmp ? "snmp_v2" : "ssh";
+}
 
 export default function HostDetailPage() {
   const params = useParams();
@@ -59,6 +87,15 @@ export default function HostDetailPage() {
   });
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [createDeviceOpen, setCreateDeviceOpen] = useState(false);
+  const [creatingDevice, setCreatingDevice] = useState(false);
+  const [deviceForm, setDeviceForm] = useState({
+    name: "", vendor: "other", protocol: "ssh",
+    device_type: "hypervisor" as "router" | "switch" | "hypervisor",
+    classification: "", port: 22,
+    model: "", serial_number: "", firmware: "",
+    sysname: "", sysdescr: "", community_string: "",
+  });
 
   const fetchHost = useCallback(async () => {
     const res = await fetch(`/api/hosts/${params.id}`);
@@ -134,9 +171,71 @@ export default function HostDetailPage() {
     setDeleteOpen(false);
   }
 
+  function openCreateDevice() {
+    if (!host) return;
+    let snmp: HostSnmpData | null = null;
+    try { if (host.snmp_data) snmp = JSON.parse(host.snmp_data) as HostSnmpData; } catch { /* ignore */ }
+    const vendor = inferVendorFromManufacturer(snmp?.manufacturer ?? host.device_manufacturer ?? null);
+    const protocol = inferProtocolFromSnmp(snmp);
+    const device_type = inferDeviceTypeFromClassification(host.classification);
+    setDeviceForm({
+      name: snmp?.sysName || host.custom_name || host.hostname || host.ip,
+      vendor,
+      protocol,
+      device_type,
+      classification: host.classification !== "unknown" ? host.classification : "",
+      port: protocol === "snmp_v2" ? 161 : 22,
+      model: snmp?.model || host.model || "",
+      serial_number: snmp?.serialNumber || host.serial_number || "",
+      firmware: snmp?.firmware || host.firmware || "",
+      sysname: snmp?.sysName || host.hostname || "",
+      sysdescr: snmp?.sysDescr || host.os_info || "",
+      community_string: snmp?.community || "",
+    });
+    setCreateDeviceOpen(true);
+  }
+
+  async function handleCreateDevice(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!host) return;
+    setCreatingDevice(true);
+    const body = {
+      name: deviceForm.name,
+      host: host.ip,
+      device_type: deviceForm.device_type,
+      vendor: deviceForm.vendor,
+      protocol: deviceForm.protocol,
+      port: deviceForm.port,
+      classification: deviceForm.classification || undefined,
+      model: deviceForm.model || undefined,
+      serial_number: deviceForm.serial_number || undefined,
+      firmware: deviceForm.firmware || undefined,
+      sysname: deviceForm.sysname || undefined,
+      sysdescr: deviceForm.sysdescr || undefined,
+      community_string: deviceForm.community_string || undefined,
+    };
+    const res = await fetch("/api/devices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      toast.success("Dispositivo creato");
+      setCreateDeviceOpen(false);
+      fetchHost();
+    } else {
+      const data = await res.json();
+      toast.error(data.error || "Errore nella creazione");
+    }
+    setCreatingDevice(false);
+  }
+
   if (loading || !host) {
     return <div className="text-muted-foreground">Caricamento...</div>;
   }
+
+  let parsedSnmpData: HostSnmpData | null = null;
+  try { if (host.snmp_data) parsedSnmpData = JSON.parse(host.snmp_data) as HostSnmpData; } catch { /* ignore */ }
 
   return (
     <div className="space-y-3">
@@ -281,6 +380,9 @@ export default function HostDetailPage() {
         </Card>
       </div>
 
+      {/* Device fingerprint (discovery nmap/snmp) */}
+      <FingerprintCard detectionJson={host.detection_json} />
+
       {/* Open Ports */}
       {host.open_ports && (() => {
         try {
@@ -310,8 +412,63 @@ export default function HostDetailPage() {
         } catch { return null; }
       })()}
 
+      {/* Dati SNMP raccolti durante scan */}
+      {parsedSnmpData && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Wifi className="h-4 w-4 text-primary" />
+              Dati SNMP
+              <Badge variant="outline" className="text-xs font-normal ml-auto">
+                community: {parsedSnmpData.community} · porta {parsedSnmpData.port}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+              {parsedSnmpData.sysName && <InfoRow label="sysName" value={parsedSnmpData.sysName} mono />}
+              {parsedSnmpData.sysObjectID && <InfoRow label="sysObjectID" value={parsedSnmpData.sysObjectID} mono />}
+              {parsedSnmpData.model && <InfoRow label="Modello" value={parsedSnmpData.model} />}
+              {parsedSnmpData.serialNumber && <InfoRow label="Seriale" value={parsedSnmpData.serialNumber} mono />}
+              {parsedSnmpData.partNumber && <InfoRow label="Part Number" value={parsedSnmpData.partNumber} mono />}
+              {parsedSnmpData.firmware && <InfoRow label="Firmware" value={parsedSnmpData.firmware} mono />}
+              {parsedSnmpData.manufacturer && <InfoRow label="Produttore" value={parsedSnmpData.manufacturer} />}
+              {parsedSnmpData.sysUpTime && <InfoRow label="Uptime" value={parsedSnmpData.sysUpTime} mono />}
+              {parsedSnmpData.arpEntryCount != null && <InfoRow label="Voci ARP" value={String(parsedSnmpData.arpEntryCount)} />}
+            </div>
+            {parsedSnmpData.sysDescr && (
+              <div className="mt-2">
+                <p className="text-xs text-muted-foreground mb-1">sysDescr</p>
+                <p className="rounded-md bg-muted/80 px-2 py-1.5 font-mono text-xs break-words whitespace-pre-wrap leading-relaxed">
+                  {parsedSnmpData.sysDescr}
+                </p>
+              </div>
+            )}
+            {parsedSnmpData.ifDescrSummary && (
+              <div className="mt-1">
+                <p className="text-xs text-muted-foreground mb-1">Interfacce</p>
+                <p className="rounded-md bg-muted/80 px-2 py-1.5 font-mono text-xs break-words whitespace-pre-wrap leading-relaxed">
+                  {parsedSnmpData.ifDescrSummary}
+                </p>
+              </div>
+            )}
+            {parsedSnmpData.hostResourcesSummary && (
+              <div className="mt-1">
+                <p className="text-xs text-muted-foreground mb-1">Risorse host</p>
+                <p className="rounded-md bg-muted/80 px-2 py-1.5 font-mono text-xs break-words whitespace-pre-wrap leading-relaxed">
+                  {parsedSnmpData.hostResourcesSummary}
+                </p>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground mt-2">
+              Rilevato: {new Date(parsedSnmpData.collected_at).toLocaleString("it-IT")}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Dispositivo gestito (stesso IP) */}
-      {host.network_device && (
+      {host.network_device ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -339,7 +496,157 @@ export default function HostDetailPage() {
             </div>
           </CardContent>
         </Card>
+      ) : (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Server className="h-4 w-4 text-muted-foreground" />
+              Nessun dispositivo gestito
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Crea un dispositivo gestito per abilitare acquisizione dati via SSH, SNMP o API.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" size="sm" className="gap-2" onClick={openCreateDevice}>
+              <PlusCircle className="h-4 w-4" />
+              Crea dispositivo{parsedSnmpData ? " (dati SNMP disponibili)" : ""}
+            </Button>
+          </CardContent>
+        </Card>
       )}
+
+      {/* Dialog: Crea dispositivo da host */}
+      <Dialog open={createDeviceOpen} onOpenChange={setCreateDeviceOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Crea dispositivo gestito — {host.ip}</DialogTitle>
+            <DialogDescription>
+              Campi pre-compilati da dati SNMP/scan. Modifica dove necessario prima di salvare.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateDevice} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Nome</Label>
+                <Input required value={deviceForm.name} onChange={(e) => setDeviceForm((f) => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">IP / Host</Label>
+                <Input value={host.ip} readOnly className="bg-muted" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Tipo dispositivo</Label>
+                <Select value={deviceForm.device_type} onValueChange={(v) => setDeviceForm((f) => ({ ...f, device_type: v as "router" | "switch" | "hypervisor" }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="router">Router / Firewall</SelectItem>
+                    <SelectItem value="switch">Switch</SelectItem>
+                    <SelectItem value="hypervisor">Hypervisor / Server</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Vendor</Label>
+                <Select value={deviceForm.vendor} onValueChange={(v) => setDeviceForm((f) => ({ ...f, vendor: v ?? "other" }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[
+                      { value: "mikrotik", label: "MikroTik" },
+                      { value: "ubiquiti", label: "Ubiquiti" },
+                      { value: "cisco", label: "Cisco" },
+                      { value: "hp", label: "HP / Aruba" },
+                      { value: "omada", label: "TP-Link Omada" },
+                      { value: "stormshield", label: "Stormshield" },
+                      { value: "proxmox", label: "Proxmox" },
+                      { value: "vmware", label: "VMware" },
+                      { value: "linux", label: "Linux" },
+                      { value: "windows", label: "Windows" },
+                      { value: "synology", label: "Synology" },
+                      { value: "qnap", label: "QNAP" },
+                      { value: "other", label: "Altro" },
+                    ].map((v) => <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Protocollo</Label>
+                <Select value={deviceForm.protocol} onValueChange={(v) => setDeviceForm((f) => ({ ...f, protocol: v ?? "ssh", port: v === "snmp_v2" || v === "snmp_v3" ? 161 : v === "winrm" ? 5985 : 22 }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ssh">SSH</SelectItem>
+                    <SelectItem value="snmp_v2">SNMP v2</SelectItem>
+                    <SelectItem value="snmp_v3">SNMP v3</SelectItem>
+                    <SelectItem value="api">API REST</SelectItem>
+                    <SelectItem value="winrm">WinRM</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Porta connessione</Label>
+                <Input type="number" value={deviceForm.port} onChange={(e) => setDeviceForm((f) => ({ ...f, port: Number(e.target.value) }))} min={1} max={65535} />
+              </div>
+              {(deviceForm.protocol === "snmp_v2" || deviceForm.protocol === "snmp_v3") && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Community SNMP</Label>
+                  <Input value={deviceForm.community_string} onChange={(e) => setDeviceForm((f) => ({ ...f, community_string: e.target.value }))} placeholder="public" />
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label className="text-xs">Classificazione</Label>
+                <Select value={deviceForm.classification || ""} onValueChange={(v) => setDeviceForm((f) => ({ ...f, classification: v ?? "" }))}>
+                  <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
+                  <SelectContent>
+                    {DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown").map((c) => (
+                      <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <Separator />
+            <p className="text-xs text-muted-foreground font-medium">Dati inventario (da SNMP)</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Modello</Label>
+                <Input value={deviceForm.model} onChange={(e) => setDeviceForm((f) => ({ ...f, model: e.target.value }))} placeholder="—" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Seriale</Label>
+                <Input value={deviceForm.serial_number} onChange={(e) => setDeviceForm((f) => ({ ...f, serial_number: e.target.value }))} placeholder="—" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Firmware</Label>
+                <Input value={deviceForm.firmware} onChange={(e) => setDeviceForm((f) => ({ ...f, firmware: e.target.value }))} placeholder="—" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">sysName</Label>
+                <Input value={deviceForm.sysname} onChange={(e) => setDeviceForm((f) => ({ ...f, sysname: e.target.value }))} placeholder="—" />
+              </div>
+              <div className="space-y-1 col-span-1">
+                <Label className="text-xs">sysDescr</Label>
+                <Textarea rows={2} className="text-xs font-mono resize-none" value={deviceForm.sysdescr} onChange={(e) => setDeviceForm((f) => ({ ...f, sysdescr: e.target.value }))} placeholder="—" />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreateDeviceOpen(false)}>Annulla</Button>
+              <Button type="submit" disabled={creatingDevice}>
+                {creatingDevice ? "Creazione…" : "Crea dispositivo"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Network Connection Info */}
       {(host.arp_source || host.switch_port) && (
@@ -432,5 +739,137 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
       <span className="text-muted-foreground">{label}</span>
       <span className={mono ? "font-mono" : ""}>{value}</span>
     </div>
+  );
+}
+
+function parseDetectionJson(json: string | null): DeviceFingerprintSnapshot | null {
+  if (!json?.trim()) return null;
+  try {
+    const o = JSON.parse(json) as unknown;
+    if (typeof o !== "object" || o === null) return null;
+    return o as DeviceFingerprintSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function FingerprintCard({ detectionJson }: { detectionJson: string | null }) {
+  const fp = parseDetectionJson(detectionJson);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <ScanSearch className="h-4 w-4 text-primary" />
+          Rilevamento automatico
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Dati da scan <strong>nmap</strong> o <strong>snmp</strong> sulla subnet (TTL, firme porte, banner, SNMP).
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!fp ? (
+          <p className="text-sm text-muted-foreground">
+            Nessun dato di rilevamento disponibile. Eseguire una scansione che includa il rilevamento porte/SNMP sulla rete dell&apos;host.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              {fp.final_device ? (
+                <Badge variant="default" className="text-sm">
+                  {fp.final_device}
+                  {fp.final_confidence != null && fp.final_confidence > 0 && (
+                    <span className="ml-2 font-normal opacity-90">
+                      {(fp.final_confidence * 100).toFixed(0)}% confidenza
+                    </span>
+                  )}
+                </Badge>
+              ) : (
+                <span className="text-sm text-muted-foreground">Tipo dispositivo non determinato</span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+              {fp.os_hint && <InfoRow label="OS (hint TTL)" value={fp.os_hint} />}
+              {fp.ttl != null && <InfoRow label="TTL ICMP" value={String(fp.ttl)} mono />}
+            </div>
+            {fp.detection_sources?.length ? (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Fonti</p>
+                <div className="flex flex-wrap gap-1">
+                  {fp.detection_sources.map((s) => (
+                    <Badge key={s} variant="outline" className="text-xs font-normal">
+                      {s}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {fp.matches && fp.matches.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Match firme porte</p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[40%]">Profilo</TableHead>
+                      <TableHead className="w-[15%]">Score</TableHead>
+                      <TableHead>Porte</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {fp.matches.slice(0, 3).map((m) => (
+                      <TableRow key={m.name}>
+                        <TableCell className="font-medium">{m.name}</TableCell>
+                        <TableCell className="font-mono text-xs">{(m.confidence * 100).toFixed(0)}%</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {m.matched_ports?.length ? m.matched_ports.join(", ") : "—"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            {(fp.banner_http || fp.banner_ssh || fp.snmp_sysdescr) && (
+              <div className="space-y-2 text-sm">
+                {fp.banner_http && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">HTTP / titolo</p>
+                    <p className="rounded-md bg-muted/80 px-2 py-1.5 font-mono text-xs break-words whitespace-pre-wrap">
+                      {fp.banner_http}
+                    </p>
+                  </div>
+                )}
+                {fp.banner_ssh && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">SSH banner</p>
+                    <p className="rounded-md bg-muted/80 px-2 py-1.5 font-mono text-xs break-all">{fp.banner_ssh}</p>
+                  </div>
+                )}
+                {fp.snmp_sysdescr && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">SNMP sysDescr</p>
+                    <p className="rounded-md bg-muted/80 px-2 py-1.5 font-mono text-xs break-words">{fp.snmp_sysdescr}</p>
+                  </div>
+                )}
+                {fp.snmp_vendor_oid && (
+                  <InfoRow label="SNMP sysObjectID" value={fp.snmp_vendor_oid} mono />
+                )}
+              </div>
+            )}
+            {fp.generated_at && (
+              <p className="text-xs text-muted-foreground">
+                Generato: {new Date(fp.generated_at).toLocaleString("it-IT")}
+              </p>
+            )}
+            <details className="text-xs">
+              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">JSON grezzo</summary>
+              <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-muted p-2 font-mono text-[11px] leading-relaxed">
+                {JSON.stringify(fp, null, 2)}
+              </pre>
+            </details>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -38,7 +38,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Trash2, RefreshCw, Pencil, ArrowLeft, Link2, Server, ExternalLink, Settings2, ShieldCheck, Check, X } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Pencil, ArrowLeft, Link2, Server, ExternalLink, Settings2, ShieldCheck, Check, X, Database } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { getClassificationLabel, DEVICE_CLASSIFICATIONS_ORDERED } from "@/lib/device-classifications";
@@ -144,6 +144,10 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   const [rowTesting, setRowTesting] = useState<number | null>(null);
   const [hostToAdd, setHostToAdd] = useState<{ name: string; host: string } | null>(null);
   const [bulkAddingFromHosts, setBulkAddingFromHosts] = useState(false);
+  const [dhcpSyncing, setDhcpSyncing] = useState<number | null>(null);
+
+  const isMikrotikRouter = (dev: DeviceOrHost) =>
+    !isHostItem(dev) && dev.vendor === "mikrotik" && dev.protocol === "ssh";
 
   const meta = CLASSIFICATION_LABELS[effectiveClassification] ?? {
     title: effectiveClassification.replace(/_/g, " "),
@@ -321,6 +325,24 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     }
   }
 
+  async function handleDhcpSync(id: number) {
+    setDhcpSyncing(id);
+    try {
+      const res = await fetch("/api/dhcp-leases?action=sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId: id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(`DHCP: ${data.inserted} nuovi lease, ${data.updated} aggiornati`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Errore sync DHCP");
+    } finally {
+      setDhcpSyncing(null);
+    }
+  }
+
   async function handleBulkTest() {
     if (selectedDeviceIds.length === 0) {
       toast.error("Seleziona almeno un dispositivo di rete (non host)");
@@ -446,13 +468,19 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     }
   }
 
-  function loadProxmoxResult(dev: NetworkDevice) {
-    const result = (dev as NetworkDevice & { last_proxmox_scan_result?: string | null }).last_proxmox_scan_result;
-    if (!result) return;
+  async function loadProxmoxResult(dev: NetworkDevice) {
     try {
-      setProxmoxScanResult(JSON.parse(result)); setProxmoxSelectedDevice(dev);
+      const res = await fetch(`/api/devices/${dev.id}`, { cache: "no-store" });
+      if (!res.ok) { toast.error("Impossibile caricare i dati Proxmox"); return; }
+      const data = await res.json();
+      if (data.proxmox_data) {
+        setProxmoxScanResult(data.proxmox_data);
+        setProxmoxSelectedDevice(dev);
+      } else {
+        toast.info("Nessun dato Proxmox disponibile");
+      }
     } catch {
-      toast.error("Dati scan non validi");
+      toast.error("Errore nel caricamento dati Proxmox");
     }
   }
 
@@ -896,10 +924,10 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleProxmoxScan(dev.id)} disabled={proxmoxScanning !== null} title="Scan Proxmox">
                                     <RefreshCw className={`h-4 w-4 ${proxmoxScanning === dev.id ? "animate-spin" : ""}`} />
                                   </Button>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => loadProxmoxResult(dev)} disabled={!(dev as NetworkDevice & { last_proxmox_scan_result?: string }).last_proxmox_scan_result} title="Visualizza dati">
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => loadProxmoxResult(dev)} disabled={!dev.last_proxmox_scan_result} title="Visualizza dati">
                                     <Server className="h-4 w-4" />
                                   </Button>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleProxmoxMatch(dev.id)} disabled={!(dev as NetworkDevice & { last_proxmox_scan_result?: string }).last_proxmox_scan_result || proxmoxMatching !== null} title="Abbina inventario">
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleProxmoxMatch(dev.id)} disabled={!dev.last_proxmox_scan_result || proxmoxMatching !== null} title="Abbina inventario">
                                     <Link2 className="h-4 w-4" />
                                   </Button>
                                 </>
@@ -929,6 +957,18 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleQuery(dev.id)} disabled={querying === dev.id} title="Scansiona">
                                     <RefreshCw className={`h-4 w-4 ${querying === dev.id ? "animate-spin" : ""}`} />
                                   </Button>
+                                  {isMikrotikRouter(dev) && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={(e) => { e.stopPropagation(); handleDhcpSync(dev.id); }}
+                                      disabled={dhcpSyncing === dev.id}
+                                      title="Acquisisci lease DHCP"
+                                    >
+                                      <Database className={`h-4 w-4 ${dhcpSyncing === dev.id ? "animate-pulse" : ""}`} />
+                                    </Button>
+                                  )}
                                 </>
                               )}
                             </>

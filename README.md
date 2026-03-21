@@ -120,7 +120,7 @@ chmod +x scripts/install.sh
 sudo ./scripts/install.sh --systemd   # servizio systemd: abilitato al boot e avviato subito (enable --now)
 ```
 
-`install.sh` installa Node 20, build-essential, nmap, sqlite3, esegue `npm ci`/`npm install` e `npm run build`, genera `.env.local` con `ENCRYPTION_KEY` e `AUTH_SECRET`.
+`install.sh` installa Node 20, build-essential, **nmap**, **snmp** (client `snmpwalk`/`snmpget` per discovery), **iputils-ping**, sqlite3, esegue `npm ci`/`npm install` e `npm run build`, genera `.env.local` con `ENCRYPTION_KEY` e `AUTH_SECRET`.
 
 Con `sudo ./scripts/install.sh --systemd` il servizio systemd usa per default **`User=root`** (adatto al container: scan nmap UDP e ping). Per forzare un altro utente: `DA_INVENT_SERVICE_USER=da-invent sudo -E ./scripts/install.sh --systemd` (in quel caso valuta capability di rete per `nmap`).
 

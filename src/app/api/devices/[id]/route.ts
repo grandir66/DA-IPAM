@@ -5,6 +5,40 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
+const PROXMOX_MAX_VMS = 500;
+
+interface ProxmoxSummary {
+  hosts: unknown[];
+  vms: unknown[];
+  scanned_at: string | null;
+  avvisi?: string[];
+  _truncated?: boolean;
+  _total_vms?: number;
+}
+
+function parseProxmoxSummary(raw: string | null): ProxmoxSummary | null {
+  if (!raw?.trim()) return null;
+  try {
+    const p = JSON.parse(raw) as {
+      hosts?: unknown[];
+      vms?: unknown[];
+      scanned_at?: string;
+      avvisi?: string[];
+    };
+    const allVms = p.vms ?? [];
+    const capped = allVms.length > PROXMOX_MAX_VMS;
+    return {
+      hosts: p.hosts ?? [],
+      vms: capped ? allVms.slice(0, PROXMOX_MAX_VMS) : allVms,
+      scanned_at: p.scanned_at ?? null,
+      avvisi: p.avvisi,
+      ...(capped ? { _truncated: true, _total_vms: allVms.length } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
@@ -13,9 +47,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
     }
 
+    const isHypervisor = device.device_type === "hypervisor" || device.scan_target === "proxmox";
     const arpEntries = device.device_type === "router" ? getArpEntriesByDevice(Number(id)) : [];
     const macPortEntries = device.device_type === "switch" ? getMacPortEntriesByDevice(Number(id)) : [];
-    const switchPorts = getSwitchPortsByDevice(Number(id)); // router e switch
+    const switchPorts = isHypervisor ? [] : getSwitchPortsByDevice(Number(id));
 
     let stp_info: unknown = null;
     if (device.stp_info) {
@@ -45,9 +80,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       } catch { /* invalid JSON */ }
     }
 
+    const proxmox_data = isHypervisor ? parseProxmoxSummary(device.last_proxmox_scan_result) : null;
+
     return NextResponse.json(
       {
         ...device,
+        last_proxmox_scan_result: null,
+        proxmox_data,
         encrypted_password: device.encrypted_password ? "●●●●●●●●" : null,
         community_string: device.community_string ? "●●●●●●●●" : null,
         api_token: device.api_token ? "●●●●●●●●" : null,
@@ -102,6 +141,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     return NextResponse.json({
       ...device,
+      last_proxmox_scan_result: null,
       encrypted_password: device.encrypted_password ? "●●●●●●●●" : null,
       community_string: device.community_string ? "●●●●●●●●" : null,
       api_token: device.api_token ? "●●●●●●●●" : null,

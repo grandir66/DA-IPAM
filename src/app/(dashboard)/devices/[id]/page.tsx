@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { DeviceListByClassification } from "../device-list-by-classification";
 import Link from "next/link";
@@ -37,7 +37,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ArrowLeft, RefreshCw, Zap, ZapOff, Cable, Minus, Pencil, Key, Server, Wifi, Database, Activity, Radio, Package, ExternalLink, Plus, Monitor, Cpu, HardDrive, Shield, Users, Clock, Award, Layers, Info } from "lucide-react";
+import { ArrowLeft, RefreshCw, Zap, ZapOff, Cable, Minus, Pencil, Key, Server, Wifi, Database, Activity, Radio, Package, ExternalLink, Plus, Monitor, Cpu, HardDrive, Shield, Users, Clock, Award, Layers, Info, Download } from "lucide-react";
 
 function Tip({ text }: { text: string }) {
   return (
@@ -140,6 +140,89 @@ interface DeviceDetail extends Omit<NetworkDevice, "stp_info" | "last_device_inf
   switch_ports: SwitchPort[];
   stp_info: StpInfo | null;
   device_info: DeviceInfo | null;
+}
+
+/** Payload da `last_proxmox_scan_result` (eventualmente troncato dall'API GET). */
+interface ProxmoxScanViewModel {
+  hosts?: Array<{
+    hostname: string;
+    status: string;
+    cpu_model?: string | null;
+    cpu_mhz?: number | null;
+    cpu_sockets?: number | null;
+    cpu_cores?: number | null;
+    cpu_total_cores?: number | null;
+    memory_total_gb?: number | null;
+    memory_usage_percent?: number | null;
+    proxmox_version?: string | null;
+    kernel_version?: string | null;
+    uptime_human?: string | null;
+    rootfs_total_gb?: number | null;
+    rootfs_used_gb?: number | null;
+    subscription?: { status?: string; productname?: string; key?: string; level?: string; nextduedate?: string; regdate?: string; serverid?: string; sockets?: number } | null;
+    hardware_serial?: string | null;
+    hardware_model?: string | null;
+    hardware_manufacturer?: string | null;
+  }>;
+  vms?: Array<{
+    node: string;
+    vmid: number;
+    name: string;
+    type: string;
+    maxcpu: number;
+    memory_mb: number;
+    disk_gb: number;
+    ip_addresses: string[];
+  }>;
+  scanned_at?: string;
+  avvisi?: string[];
+  _truncated?: boolean;
+  _total_vm_rows?: number;
+}
+
+const PROXMOX_VM_RENDER_CAP = 450;
+
+interface MikrotikDhcpLease {
+  ip: string;
+  mac: string;
+  hostname: string | null;
+  status?: string;
+  server?: string;
+  expiresAfter?: string;
+  lastSeen?: string;
+  comment?: string;
+}
+
+interface MikrotikDhcpServer {
+  name: string;
+  interface: string;
+  addressPool: string;
+  disabled: boolean;
+}
+
+interface MikrotikDhcpPool {
+  name: string;
+  ranges: string;
+  nextPool?: string;
+}
+
+interface MikrotikConfig {
+  exportFull: string;
+  exportCompact?: string;
+  systemInfo?: {
+    identity?: string;
+    version?: string;
+    boardName?: string;
+    serialNumber?: string;
+    uptime?: string;
+  };
+}
+
+interface MikrotikData {
+  config: MikrotikConfig | null;
+  leases: MikrotikDhcpLease[];
+  servers: MikrotikDhcpServer[];
+  pools: MikrotikDhcpPool[];
 }
 
 function PortStatusDot({ status }: { status: string | null }) {
@@ -333,6 +416,12 @@ function DeviceDetailPage() {
   const [editClassification, setEditClassification] = useState<string>("");
   const [editSaving, setEditSaving] = useState(false);
 
+  // MikroTik
+  const [mikrotikData, setMikrotikData] = useState<MikrotikData | null>(null);
+  const [mikrotikLoading, setMikrotikLoading] = useState(false);
+  const [mikrotikImporting, setMikrotikImporting] = useState(false);
+  const [showMikrotikConfig, setShowMikrotikConfig] = useState(false);
+
   useEffect(() => {
     if (device) {
       setEditVendor(device.vendor);
@@ -353,13 +442,84 @@ function DeviceDetailPage() {
   }, []);
 
   const fetchDevice = useCallback(async () => {
-    const res = await fetch(`/api/devices/${params.id}`, { cache: "no-store" });
-    if (!res.ok) { router.push("/devices"); return; }
-    setDevice(await res.json());
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/devices/${params.id}`, { cache: "no-store" });
+      if (!res.ok) {
+        router.push("/devices");
+        return;
+      }
+      setDevice(await res.json());
+    } catch {
+      toast.error("Impossibile caricare il dispositivo");
+      router.push("/devices");
+    } finally {
+      setLoading(false);
+    }
   }, [params.id, router]);
 
-  useEffect(() => { fetchDevice(); }, [fetchDevice]);
+  useEffect(() => {
+    void fetchDevice();
+  }, [fetchDevice]);
+
+  const proxmoxScanData = useMemo((): ProxmoxScanViewModel | null => {
+    if (!device) return null;
+    const pd = (device as unknown as { proxmox_data?: ProxmoxScanViewModel | null }).proxmox_data;
+    if (pd && typeof pd === "object") return pd;
+    return null;
+  }, [device]);
+
+  const isMikrotik = device?.vendor === "mikrotik" && device?.protocol === "ssh";
+
+  const fetchMikrotikData = useCallback(async () => {
+    if (!device || !isMikrotik) return;
+    setMikrotikLoading(true);
+    try {
+      const res = await fetch(`/api/devices/${params.id}/mikrotik?action=all`);
+      if (!res.ok) throw new Error("Errore caricamento dati MikroTik");
+      const data = await res.json();
+      setMikrotikData(data);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Errore MikroTik");
+    } finally {
+      setMikrotikLoading(false);
+    }
+  }, [device, isMikrotik, params.id]);
+
+  const handleImportDhcpLeases = async (selectedLeases?: MikrotikDhcpLease[]) => {
+    if (!mikrotikData) return;
+    const leases = selectedLeases || mikrotikData.leases;
+    if (leases.length === 0) {
+      toast.info("Nessun lease da importare");
+      return;
+    }
+    setMikrotikImporting(true);
+    try {
+      const res = await fetch(`/api/devices/${params.id}/mikrotik?action=import-dhcp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leases, overwriteHostname: false }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(`Importati: ${data.imported}, Aggiornati: ${data.updated}, Saltati: ${data.skipped}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Errore importazione");
+    } finally {
+      setMikrotikImporting(false);
+    }
+  };
+
+  const downloadConfig = () => {
+    if (!mikrotikData?.config?.exportFull) return;
+    const blob = new Blob([mikrotikData.config.exportFull], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mikrotik-${device?.name || params.id}-config.rsc`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Configurazione scaricata");
+  };
 
   async function handleQuery() {
     if (!device) return;
@@ -849,229 +1009,199 @@ function DeviceDetailPage() {
       })()}
 
       {/* Dati Proxmox (host e VM) */}
-      {((device.device_type === "hypervisor") || (device as { scan_target?: string }).scan_target === "proxmox") && (() => {
-        const resultJson = (device as { last_proxmox_scan_result?: string | null }).last_proxmox_scan_result;
-        if (!resultJson) return null;
-        try {
-          const data = JSON.parse(resultJson) as {
-            hosts?: Array<{
-              hostname: string;
-              status: string;
-              cpu_model?: string | null;
-              cpu_mhz?: number | null;
-              cpu_sockets?: number | null;
-              cpu_cores?: number | null;
-              cpu_total_cores?: number | null;
-              memory_total_gb?: number | null;
-              memory_usage_percent?: number | null;
-              proxmox_version?: string | null;
-              kernel_version?: string | null;
-              uptime_human?: string | null;
-              rootfs_total_gb?: number | null;
-              rootfs_used_gb?: number | null;
-              subscription?: { status?: string; productname?: string; key?: string; level?: string; nextduedate?: string; regdate?: string; serverid?: string; sockets?: number } | null;
-              hardware_serial?: string | null;
-              hardware_model?: string | null;
-              hardware_manufacturer?: string | null;
-            }>;
-            vms?: unknown[];
-            scanned_at?: string;
-          };
-          const hosts = data.hosts ?? [];
-          const vms = data.vms ?? [];
-          if (hosts.length === 0 && vms.length === 0) return null;
-          return (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Server className="h-5 w-5" />
-                  Dati Proxmox
-                </CardTitle>
-                <CardDescription>
-                  Scan del {data.scanned_at ? new Date(data.scanned_at).toLocaleString("it-IT") : "—"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Tabs defaultValue="hosts">
-                  <TabsList>
-                    <TabsTrigger value="hosts">Host ({hosts.length})</TabsTrigger>
-                    <TabsTrigger value="vms">VM e CT ({vms.length})</TabsTrigger>
-                    <TabsTrigger value="details">Hardware e licenza</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="hosts" className="mt-4">
-                    {hosts.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Hostname</TableHead>
-                            <TableHead>Stato</TableHead>
-                            <TableHead>CPU</TableHead>
-                            <TableHead>RAM</TableHead>
-                            <TableHead>Versione</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {hosts.map((h, i) => (
-                            <TableRow key={i}>
-                              <TableCell className="font-medium">{h.hostname}</TableCell>
-                              <TableCell><Badge variant={h.status === "online" ? "default" : "secondary"}>{h.status}</Badge></TableCell>
-                              <TableCell>{h.cpu_total_cores ?? "—"} core{h.cpu_model ? ` (${h.cpu_model})` : ""}</TableCell>
-                              <TableCell>
-                                {h.memory_total_gb != null ? `${h.memory_total_gb.toFixed(1)} GiB` : "—"}
-                                {h.memory_usage_percent != null && ` (${h.memory_usage_percent}%)`}
-                              </TableCell>
-                              <TableCell className="text-sm">{h.proxmox_version ?? "—"}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <p className="text-muted-foreground py-4">Nessun host estratto.</p>
-                    )}
-                  </TabsContent>
-                  <TabsContent value="details" className="mt-4">
-                    {hosts.length > 0 ? (
-                      <div className="space-y-6">
-                        {hosts.map((h, i) => (
-                          <div key={i} className="rounded-lg border p-4 space-y-4">
-                            <h4 className="font-medium">{h.hostname}</h4>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 text-sm">
+      {proxmoxScanData && (proxmoxScanData.hosts?.length || proxmoxScanData.vms?.length) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Server className="h-5 w-5" />
+              Dati Proxmox
+            </CardTitle>
+            <CardDescription>
+              Scan del {proxmoxScanData.scanned_at ? new Date(proxmoxScanData.scanned_at).toLocaleString("it-IT") : "—"}
+              {proxmoxScanData._truncated && (
+                <span className="ml-2 text-amber-600">
+                  (mostrate {proxmoxScanData.vms?.length ?? 0} di {proxmoxScanData._total_vm_rows} VM)
+                </span>
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="hosts">
+              <TabsList>
+                <TabsTrigger value="hosts">Host ({proxmoxScanData.hosts?.length ?? 0})</TabsTrigger>
+                <TabsTrigger value="vms">VM e CT ({proxmoxScanData._total_vm_rows ?? proxmoxScanData.vms?.length ?? 0})</TabsTrigger>
+                <TabsTrigger value="details">Hardware e licenza</TabsTrigger>
+              </TabsList>
+              <TabsContent value="hosts" className="mt-4">
+                {(proxmoxScanData.hosts?.length ?? 0) > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Hostname</TableHead>
+                        <TableHead>Stato</TableHead>
+                        <TableHead>CPU</TableHead>
+                        <TableHead>RAM</TableHead>
+                        <TableHead>Versione</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {proxmoxScanData.hosts!.map((h, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="font-medium">{h.hostname}</TableCell>
+                          <TableCell><Badge variant={h.status === "online" ? "default" : "secondary"}>{h.status}</Badge></TableCell>
+                          <TableCell>{h.cpu_total_cores ?? "—"} core{h.cpu_model ? ` (${h.cpu_model})` : ""}</TableCell>
+                          <TableCell>
+                            {h.memory_total_gb != null ? `${h.memory_total_gb.toFixed(1)} GiB` : "—"}
+                            {h.memory_usage_percent != null && ` (${h.memory_usage_percent}%)`}
+                          </TableCell>
+                          <TableCell className="text-sm">{h.proxmox_version ?? "—"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground py-4">Nessun host estratto.</p>
+                )}
+              </TabsContent>
+              <TabsContent value="details" className="mt-4">
+                {(proxmoxScanData.hosts?.length ?? 0) > 0 ? (
+                  <div className="space-y-6">
+                    {proxmoxScanData.hosts!.map((h, i) => (
+                      <div key={i} className="rounded-lg border p-4 space-y-4">
+                        <h4 className="font-medium">{h.hostname}</h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase">CPU</p>
+                            <p className="font-medium">{h.cpu_model ?? "—"}</p>
+                            {(h.cpu_mhz ?? h.cpu_sockets ?? h.cpu_cores) && (
+                              <p className="text-xs text-muted-foreground">
+                                {[h.cpu_mhz && `${h.cpu_mhz} MHz`, h.cpu_sockets && `${h.cpu_sockets} socket`, h.cpu_cores && `${h.cpu_cores} core`].filter(Boolean).join(" · ")}
+                              </p>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase">Kernel</p>
+                            <p className="font-medium">{h.kernel_version ?? "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase">Uptime</p>
+                            <p className="font-medium">{h.uptime_human ?? "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase">Root FS</p>
+                            <p className="font-medium">
+                              {h.rootfs_used_gb != null && h.rootfs_total_gb != null
+                                ? `${h.rootfs_used_gb.toFixed(1)} / ${h.rootfs_total_gb.toFixed(1)} GiB`
+                                : "—"}
+                            </p>
+                          </div>
+                          {h.hardware_manufacturer && (
+                            <div>
+                              <p className="text-xs text-muted-foreground uppercase">Produttore</p>
+                              <p className="font-medium">{h.hardware_manufacturer}</p>
+                            </div>
+                          )}
+                          {h.hardware_model && (
+                            <div>
+                              <p className="text-xs text-muted-foreground uppercase">Modello</p>
+                              <p className="font-medium">{h.hardware_model}</p>
+                            </div>
+                          )}
+                          {h.hardware_serial && (
+                            <div>
+                              <p className="text-xs text-muted-foreground uppercase">Seriale</p>
+                              <p className="font-mono text-xs">{h.hardware_serial}</p>
+                            </div>
+                          )}
+                          {h.subscription && (
+                            <>
                               <div>
-                                <p className="text-xs text-muted-foreground uppercase">CPU</p>
-                                <p className="font-medium">{h.cpu_model ?? "—"}</p>
-                                {(h.cpu_mhz ?? h.cpu_sockets ?? h.cpu_cores) && (
-                                  <p className="text-xs text-muted-foreground">
-                                    {[h.cpu_mhz && `${h.cpu_mhz} MHz`, h.cpu_sockets && `${h.cpu_sockets} socket`, h.cpu_cores && `${h.cpu_cores} core`].filter(Boolean).join(" · ")}
-                                  </p>
-                                )}
-                              </div>
-                              <div>
-                                <p className="text-xs text-muted-foreground uppercase">Kernel</p>
-                                <p className="font-medium">{h.kernel_version ?? "—"}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-muted-foreground uppercase">Uptime</p>
-                                <p className="font-medium">{h.uptime_human ?? "—"}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-muted-foreground uppercase">Root FS</p>
+                                <p className="text-xs text-muted-foreground uppercase">Licenza</p>
                                 <p className="font-medium">
-                                  {h.rootfs_used_gb != null && h.rootfs_total_gb != null
-                                    ? `${h.rootfs_used_gb.toFixed(1)} / ${h.rootfs_total_gb.toFixed(1)} GiB`
-                                    : "—"}
+                                  <Badge variant={h.subscription.status === "active" ? "default" : "secondary"}>
+                                    {h.subscription.status || "—"}
+                                  </Badge>
                                 </p>
                               </div>
-                              {h.hardware_manufacturer && (
+                              {h.subscription.productname && (
                                 <div>
-                                  <p className="text-xs text-muted-foreground uppercase">Produttore</p>
-                                  <p className="font-medium">{h.hardware_manufacturer}</p>
+                                  <p className="text-xs text-muted-foreground uppercase">Prodotto</p>
+                                  <p className="font-medium">{h.subscription.productname}</p>
                                 </div>
                               )}
-                              {h.hardware_model && (
+                              {h.subscription.level && (
                                 <div>
-                                  <p className="text-xs text-muted-foreground uppercase">Modello</p>
-                                  <p className="font-medium">{h.hardware_model}</p>
+                                  <p className="text-xs text-muted-foreground uppercase">Livello</p>
+                                  <p className="font-medium">{h.subscription.level}</p>
                                 </div>
                               )}
-                              {h.hardware_serial && (
-                                <div>
-                                  <p className="text-xs text-muted-foreground uppercase">Seriale</p>
-                                  <p className="font-mono text-xs">{h.hardware_serial}</p>
+                              {h.subscription.key && (
+                                <div className="col-span-2">
+                                  <p className="text-xs text-muted-foreground uppercase">Codice licenza</p>
+                                  <p className="font-mono text-xs break-all">{h.subscription.key}</p>
                                 </div>
                               )}
-                              {h.subscription && (
-                                <>
-                                  <div>
-                                    <p className="text-xs text-muted-foreground uppercase">Licenza</p>
-                                    <p className="font-medium">
-                                      <Badge variant={h.subscription.status === "active" ? "default" : "secondary"}>
-                                        {h.subscription.status || "—"}
-                                      </Badge>
-                                    </p>
-                                  </div>
-                                  {h.subscription.productname && (
-                                    <div>
-                                      <p className="text-xs text-muted-foreground uppercase">Prodotto</p>
-                                      <p className="font-medium">{h.subscription.productname}</p>
-                                    </div>
-                                  )}
-                                  {h.subscription.level && (
-                                    <div>
-                                      <p className="text-xs text-muted-foreground uppercase">Livello</p>
-                                      <p className="font-medium">{h.subscription.level}</p>
-                                    </div>
-                                  )}
-                                  {h.subscription.key && (
-                                    <div className="col-span-2">
-                                      <p className="text-xs text-muted-foreground uppercase">Codice licenza</p>
-                                      <p className="font-mono text-xs break-all">{h.subscription.key}</p>
-                                    </div>
-                                  )}
-                                  {h.subscription.nextduedate && (
-                                    <div>
-                                      <p className="text-xs text-muted-foreground uppercase">Scadenza</p>
-                                      <p className="font-medium">{h.subscription.nextduedate}</p>
-                                    </div>
-                                  )}
-                                  {h.subscription.serverid && (
-                                    <div>
-                                      <p className="text-xs text-muted-foreground uppercase">Server ID</p>
-                                      <p className="font-mono text-xs">{h.subscription.serverid}</p>
-                                    </div>
-                                  )}
-                                </>
+                              {h.subscription.nextduedate && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground uppercase">Scadenza</p>
+                                  <p className="font-medium">{h.subscription.nextduedate}</p>
+                                </div>
                               )}
-                            </div>
-                          </div>
-                        ))}
+                              {h.subscription.serverid && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground uppercase">Server ID</p>
+                                  <p className="font-mono text-xs">{h.subscription.serverid}</p>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </div>
-                    ) : (
-                      <p className="text-muted-foreground py-4">Nessun host. Esegui uno scan per acquisire i dati.</p>
-                    )}
-                  </TabsContent>
-                  <TabsContent value="vms" className="mt-4">
-                    {vms.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Nome</TableHead>
-                            <TableHead>Tipo</TableHead>
-                            <TableHead>Nodo</TableHead>
-                            <TableHead>vCPU</TableHead>
-                            <TableHead>RAM</TableHead>
-                            <TableHead>Storage</TableHead>
-                            <TableHead>IP</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {(vms as { node: string; vmid: number; name: string; type: string; maxcpu: number; memory_mb: number; disk_gb: number; ip_addresses: string[] }[]).map((vm) => (
-                            <TableRow key={`${vm.node}-${vm.vmid}`}>
-                              <TableCell className="font-medium">{vm.name}</TableCell>
-                              <TableCell><Badge variant="outline">{vm.type.toUpperCase()}</Badge></TableCell>
-                              <TableCell>{vm.node}</TableCell>
-                              <TableCell>{vm.maxcpu}</TableCell>
-                              <TableCell>{Math.round(vm.memory_mb / 1024)} GiB</TableCell>
-                              <TableCell>{vm.disk_gb.toFixed(1)} GiB</TableCell>
-                              <TableCell className="font-mono text-xs">{vm.ip_addresses?.length ? vm.ip_addresses.join(", ") : "—"}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <p className="text-muted-foreground py-4">Nessuna VM/CT in esecuzione.</p>
-                    )}
-                  </TabsContent>
-                </Tabs>
-                <p className="text-sm text-muted-foreground mt-4">
-                  Vai a Dispositivi → Hypervisor per abbinare le VM all&apos;inventario tramite il pulsante Link.
-                </p>
-              </CardContent>
-            </Card>
-          );
-        } catch {
-          return null;
-        }
-      })()}
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground py-4">Nessun host. Esegui uno scan per acquisire i dati.</p>
+                )}
+              </TabsContent>
+              <TabsContent value="vms" className="mt-4">
+                {(proxmoxScanData.vms?.length ?? 0) > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nome</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>Nodo</TableHead>
+                        <TableHead>vCPU</TableHead>
+                        <TableHead>RAM</TableHead>
+                        <TableHead>Storage</TableHead>
+                        <TableHead>IP</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {proxmoxScanData.vms!.slice(0, PROXMOX_VM_RENDER_CAP).map((vm) => (
+                        <TableRow key={`${vm.node}-${vm.vmid}-${vm.type}`}>
+                          <TableCell className="font-medium">{vm.name}</TableCell>
+                          <TableCell><Badge variant="outline">{vm.type.toUpperCase()}</Badge></TableCell>
+                          <TableCell>{vm.node}</TableCell>
+                          <TableCell>{vm.maxcpu}</TableCell>
+                          <TableCell>{Math.round(vm.memory_mb / 1024)} GiB</TableCell>
+                          <TableCell>{vm.disk_gb.toFixed(1)} GiB</TableCell>
+                          <TableCell className="font-mono text-xs">{vm.ip_addresses?.length ? vm.ip_addresses.join(", ") : "—"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground py-4">Nessuna VM/CT in esecuzione.</p>
+                )}
+              </TabsContent>
+            </Tabs>
+            <p className="text-sm text-muted-foreground mt-4">
+              Vai a Dispositivi → Hypervisor per abbinare le VM all&apos;inventario tramite il pulsante Link.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {device.device_type === "switch" && device.stp_info && (
         <Card>
@@ -1145,8 +1275,22 @@ function DeviceDetailPage() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">IP</Label>
-                  <Input name="host" required defaultValue={device.host} placeholder="192.168.1.1" />
+                  <Input
+                    name="host"
+                    required
+                    defaultValue={device.host}
+                    placeholder={
+                      (device.device_type === "hypervisor" || (device as { scan_target?: string }).scan_target === "proxmox")
+                        ? "192.168.40.1 oppure 192.168.40.1,2,3,4,5"
+                        : "192.168.1.1"
+                    }
+                  />
                 </div>
+                {((device.device_type === "hypervisor") || (device as { scan_target?: string }).scan_target === "proxmox") && (
+                  <p className="text-xs text-muted-foreground col-span-2 -mt-1">
+                    Scan Proxmox: su ogni IP si usano API (8006) e SSH (porta dispositivo); più nodi stesso /24 con virgole dopo il primo IP.
+                  </p>
+                )}
                 {((device.device_type === "hypervisor") || (device as { scan_target?: string }).scan_target === "proxmox") && (
                   <div className="space-y-2 col-span-2">
                     <Label htmlFor="api_url">URL API Proxmox</Label>
@@ -1266,12 +1410,233 @@ function DeviceDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Tabs defaultValue={device.device_type === "router" && totalPorts === 0 ? "arp" : "ports"}>
+      <Tabs defaultValue={isMikrotik ? "mikrotik" : device.device_type === "router" && totalPorts === 0 ? "arp" : "ports"}>
         <TabsList>
+          {isMikrotik && <TabsTrigger value="mikrotik">MikroTik</TabsTrigger>}
           {device.device_type === "router" && <TabsTrigger value="arp">Tabella ARP</TabsTrigger>}
           {totalPorts > 0 && <TabsTrigger value="ports">Schema Porte ({totalPorts})</TabsTrigger>}
           {device.device_type === "switch" && <TabsTrigger value="mac">MAC Table ({device.mac_port_entries.length})</TabsTrigger>}
         </TabsList>
+
+        {/* Tab MikroTik */}
+        {isMikrotik && (
+          <TabsContent value="mikrotik" className="mt-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Dati MikroTik</h3>
+                <p className="text-sm text-muted-foreground">Configurazione, DHCP leases e pool</p>
+              </div>
+              <Button onClick={fetchMikrotikData} disabled={mikrotikLoading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${mikrotikLoading ? "animate-spin" : ""}`} />
+                {mikrotikLoading ? "Caricamento..." : "Carica dati"}
+              </Button>
+            </div>
+
+            {!mikrotikData && !mikrotikLoading && (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Clicca &quot;Carica dati&quot; per ottenere configurazione e DHCP dal MikroTik
+                </CardContent>
+              </Card>
+            )}
+
+            {mikrotikData && (
+              <>
+                {/* System Info */}
+                {mikrotikData.config?.systemInfo && (
+                  <Card>
+                    <CardHeader className="py-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Server className="h-4 w-4" />
+                        Informazioni Sistema
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                        {mikrotikData.config.systemInfo.identity && (
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase">Identity</p>
+                            <p className="font-medium">{mikrotikData.config.systemInfo.identity}</p>
+                          </div>
+                        )}
+                        {mikrotikData.config.systemInfo.boardName && (
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase">Modello</p>
+                            <p className="font-medium">{mikrotikData.config.systemInfo.boardName}</p>
+                          </div>
+                        )}
+                        {mikrotikData.config.systemInfo.version && (
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase">RouterOS</p>
+                            <p className="font-medium">{mikrotikData.config.systemInfo.version}</p>
+                          </div>
+                        )}
+                        {mikrotikData.config.systemInfo.serialNumber && (
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase">Seriale</p>
+                            <p className="font-mono text-sm">{mikrotikData.config.systemInfo.serialNumber}</p>
+                          </div>
+                        )}
+                        {mikrotikData.config.systemInfo.uptime && (
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase">Uptime</p>
+                            <p className="font-medium">{mikrotikData.config.systemInfo.uptime}</p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Config */}
+                <Card>
+                  <CardHeader className="py-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base">Configurazione</CardTitle>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setShowMikrotikConfig(!showMikrotikConfig)}>
+                          {showMikrotikConfig ? "Nascondi" : "Mostra"}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={downloadConfig} disabled={!mikrotikData.config?.exportFull}>
+                          <Download className="h-4 w-4 mr-1" />
+                          Scarica .rsc
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  {showMikrotikConfig && mikrotikData.config?.exportFull && (
+                    <CardContent className="p-0">
+                      <pre className="text-xs font-mono bg-muted p-4 overflow-auto max-h-[400px] whitespace-pre-wrap">
+                        {mikrotikData.config.exportFull}
+                      </pre>
+                    </CardContent>
+                  )}
+                </Card>
+
+                {/* DHCP Servers */}
+                {mikrotikData.servers.length > 0 && (
+                  <Card>
+                    <CardHeader className="py-3">
+                      <CardTitle className="text-base">Server DHCP ({mikrotikData.servers.length})</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Nome</TableHead>
+                            <TableHead>Interfaccia</TableHead>
+                            <TableHead>Pool</TableHead>
+                            <TableHead>Stato</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {mikrotikData.servers.map((server, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="font-medium">{server.name}</TableCell>
+                              <TableCell className="font-mono text-sm">{server.interface}</TableCell>
+                              <TableCell className="font-mono text-sm">{server.addressPool}</TableCell>
+                              <TableCell>
+                                <Badge variant={server.disabled ? "secondary" : "default"}>
+                                  {server.disabled ? "Disabilitato" : "Attivo"}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* DHCP Pools */}
+                {mikrotikData.pools.length > 0 && (
+                  <Card>
+                    <CardHeader className="py-3">
+                      <CardTitle className="text-base">Pool IP ({mikrotikData.pools.length})</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Nome</TableHead>
+                            <TableHead>Range</TableHead>
+                            <TableHead>Next Pool</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {mikrotikData.pools.map((pool, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="font-medium">{pool.name}</TableCell>
+                              <TableCell className="font-mono text-sm">{pool.ranges}</TableCell>
+                              <TableCell className="font-mono text-sm text-muted-foreground">{pool.nextPool || "—"}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* DHCP Leases */}
+                <Card>
+                  <CardHeader className="py-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-base">DHCP Leases ({mikrotikData.leases.length})</CardTitle>
+                        <CardDescription>Client con lease DHCP attivi o recenti</CardDescription>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleImportDhcpLeases()}
+                        disabled={mikrotikImporting || mikrotikData.leases.length === 0}
+                      >
+                        <Database className="h-4 w-4 mr-1" />
+                        {mikrotikImporting ? "Importazione..." : "Importa in IPAM"}
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {mikrotikData.leases.length === 0 ? (
+                      <div className="py-8 text-center text-muted-foreground">Nessun lease DHCP trovato</div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>IP</TableHead>
+                              <TableHead>MAC</TableHead>
+                              <TableHead>Hostname</TableHead>
+                              <TableHead>Server</TableHead>
+                              <TableHead>Stato</TableHead>
+                              <TableHead>Scade tra</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {mikrotikData.leases.map((lease, i) => (
+                              <TableRow key={i}>
+                                <TableCell className="font-mono">{lease.ip}</TableCell>
+                                <TableCell className="font-mono text-xs">{lease.mac}</TableCell>
+                                <TableCell>{lease.hostname || <span className="text-muted-foreground">—</span>}</TableCell>
+                                <TableCell className="text-sm">{lease.server || "—"}</TableCell>
+                                <TableCell>
+                                  <Badge variant={lease.status === "bound" ? "default" : "secondary"} className="text-xs">
+                                    {lease.status || "unknown"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">{lease.expiresAfter || "—"}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </TabsContent>
+        )}
 
         {device.device_type === "router" && (
           <TabsContent value="arp" className="mt-4">

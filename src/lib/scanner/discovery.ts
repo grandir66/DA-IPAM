@@ -1,21 +1,41 @@
 import { getAllHostIps } from "@/lib/utils";
 import { pingSweep } from "./ping";
 import { nmapDiscoverHosts, nmapPortScan, isNmapAvailable } from "./nmap";
-import { buildTcpScanArgs } from "./ports";
-import { reverseDns, forwardDns } from "./dns";
+import {
+  buildTcpScanArgs,
+  buildNetworkDiscoveryQuickTcpArgs,
+  getNmapHostTimeoutSeconds,
+  getNetworkDiscoveryQuickConcurrency,
+  getNetworkDiscoveryQuickExecMs,
+} from "./ports";
 import { readArpCache } from "./arp-cache";
 import { lookupVendor } from "./mac-vendor";
 import { querySnmpInfoMultiCommunity } from "./snmp-query";
 import { classifyDevice } from "@/lib/device-classifier";
+import { getClassificationFromFingerprintSnapshot } from "@/lib/device-fingerprint-classification";
 import {
   getNetworkById,
+  getHostsByNetwork,
   upsertHost,
   markHostsOffline,
+  noteHostsNonResponding,
   addScanHistory,
   addStatusHistory,
-  getHostWindowsCredentials,
+  getCredentialLoginPair,
+  getSshLinuxCredentialPair,
+  getHostDetectCredentialId,
+  setHostDetectCredential,
+  getOrderedDetectCredentialIds,
+  getOrderedSshLinuxCredentialIds,
+  buildSnmpCommunitiesForNetwork,
+  getFingerprintClassificationRulesForResolve,
+  getEnabledDeviceFingerprintRules,
+  getNetworkDeviceByHost,
+  syncNetworkDeviceFromHostScan,
+  mergeOpenPortsJson,
 } from "@/lib/db";
-import type { ScanProgress, DiscoveryResult } from "@/types";
+import type { ScanProgress, DiscoveryResult, DeviceFingerprintSnapshot } from "@/types";
+import type { DnsResolution } from "./dns";
 
 const GLOBAL_KEY = "__daipam_scan_progress__" as const;
 
@@ -33,13 +53,23 @@ export function getScanProgress(id: string): ScanProgress | undefined {
 
 let scanIdCounter = Date.now();
 
-export type DiscoveryScanType = "ping" | "snmp" | "nmap" | "windows" | "ssh";
+export type DiscoveryScanType = "ping" | "snmp" | "nmap" | "windows" | "ssh" | "network_discovery";
+
+export type DiscoverNetworkOptions = {
+  /** Se impostato, la scansione riguarda solo questi IP (devono appartenere alla subnet). */
+  targetIps?: string[];
+  /** Elenco porte TCP esplicito (sovrascrive default se presente). */
+  tcpPorts?: string | null;
+  /** Elenco porte UDP esplicito (sovrascrive default se presente). */
+  udpPorts?: string | null;
+};
 
 /**
  * Start a network discovery scan.
  * - ping: solo ICMP ping sweep (veloce, scoperta host)
+ * - network_discovery: ICMP → Nmap TCP “quick” (porte comuni) in sequenza sugli host online → DNS → persistenza → ARP dal router
  * - snmp: solo SNMP discovery + enrichment (raccolta dati sysName, sysDescr, sysObjectID)
- * - nmap: host discovery + port scan (verifica risposta, compila porte/os; SNMP non usato per dati)
+ * - nmap: host discovery + port scan TCP/UDP + nella stessa sessione SNMP (porte 161, sysDescr, modello/seriale/firmware, firme OID)
  *
  * @param nmapArgs - Custom nmap args string from DB profile (TCP-only). Usato solo per scanType "nmap".
  * @param snmpCommunity - SNMP community per questa rete/profilo. Usato solo per scanType "snmp".
@@ -48,13 +78,21 @@ export async function discoverNetwork(
   networkId: number,
   scanType: DiscoveryScanType,
   nmapArgs?: string,
-  snmpCommunity?: string | null
+  snmpCommunity?: string | null,
+  options?: DiscoverNetworkOptions
 ): Promise<{ id: string; progress: ScanProgress }> {
   const network = getNetworkById(networkId);
   if (!network) throw new Error("Rete non trovata");
 
   const id = `scan-${++scanIdCounter}-${Date.now()}`;
-  const ips = getAllHostIps(network.cidr);
+  let ips = getAllHostIps(network.cidr);
+  if (options?.targetIps?.length) {
+    const allow = new Set(options.targetIps);
+    ips = ips.filter((ip) => allow.has(ip));
+    if (ips.length === 0) {
+      throw new Error("Nessun host selezionato valido per questa subnet");
+    }
+  }
 
   const progress: ScanProgress = {
     id,
@@ -71,7 +109,7 @@ export async function discoverNetwork(
 
   getProgressMap().set(id, progress);
 
-  runDiscovery(id, network.id, network.cidr, ips, scanType, nmapArgs, snmpCommunity, network.dns_server ?? null).catch(
+  runDiscovery(id, network.id, network.cidr, ips, scanType, nmapArgs, snmpCommunity, network.dns_server ?? null, options).catch(
     (error) => {
       console.error("[Discovery] Fatal error:", error);
       const p = getProgressMap().get(id);
@@ -83,25 +121,6 @@ export async function discoverNetwork(
   );
 
   return { id, progress };
-}
-
-/**
- * Ordine: community configurata (rete/profilo), poi `public`, poi `private`.
- * Dedup preservando l'ordine.
- */
-function buildSnmpCommunities(configured?: string | null): string[] {
-  const ordered: string[] = [];
-  const c = configured?.trim();
-  if (c) ordered.push(c);
-  ordered.push("public", "private");
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const x of ordered) {
-    if (seen.has(x)) continue;
-    seen.add(x);
-    out.push(x);
-  }
-  return out;
 }
 
 type HostScanData = {
@@ -118,7 +137,55 @@ type HostScanData = {
   snmpUnifiSummary?: string | null;
   snmpIfDescrSummary?: string | null;
   snmpHostResourcesSummary?: string | null;
+  /** OID fingerprint enterprise rilevati come attivi */
+  snmpFingerprintOidMatches?: Array<{ oid_prefix: string; device_label: string; classification: string }> | null;
+  /** Firmware dedotto da SNMP (sysDescr / ENTITY) */
+  snmpFirmware?: string | null;
+  /** Produttore dedotto da SNMP */
+  snmpManufacturer?: string | null;
+  /** Community SNMP con cui ha risposto (null = non risposto) */
+  snmpCommunity?: string | null;
+  /** Numero parte (ENTITY-MIB partNumber) */
+  snmpPartNumber?: string | null;
+  /** Uptime SNMP */
+  snmpSysUpTime?: string | null;
+  /** Voci ARP lette via SNMP */
+  snmpArpEntryCount?: number | null;
+  /** Profilo vendor SNMP (da snmp-vendor-profiles.ts) */
+  vendorProfileId?: string | null;
+  vendorProfileName?: string | null;
+  vendorProfileConfidence?: number | null;
+  vendorProfileCategory?: string | null;
+  vendorProfileFirmware?: string | null;
+  vendorProfileExtra?: Record<string, string | null>;
 };
+
+/** Produttore da sysDescr / OID enterprise / prima firma fingerprint */
+function inferManufacturerFromSnmp(
+  sysDescr: string | null,
+  sysObjectID: string | null,
+  fpOid?: Array<{ device_label: string }> | null
+): string | null {
+  const label = fpOid?.[0]?.device_label;
+  if (label) {
+    const m = label.match(/^([A-Za-z][A-Za-z0-9]+(?:\s+[A-Za-z][A-Za-z0-9]+)?)/);
+    if (m && !/unknown|generic|linux|server/i.test(m[1])) return m[1].trim();
+  }
+  const oid = sysObjectID || "";
+  if (oid.includes("6574")) return "Synology";
+  if (oid.includes("55062")) return "QNAP";
+  if (/^1\.3\.6\.1\.4\.1\.9\./.test(oid)) return "Cisco";
+  if (/^1\.3\.6\.1\.4\.1\.2636/.test(oid)) return "Juniper";
+  if (/^1\.3\.6\.1\.4\.1\.2011/.test(oid)) return "Huawei";
+  const s = (sysDescr || "").toLowerCase();
+  if (/synology|diskstation|\bdsm\b/.test(s)) return "Synology";
+  if (/qnap|qts|turbo nas/.test(s)) return "QNAP";
+  if (/routeros|mikrotik/.test(s)) return "MikroTik";
+  if (/ubiquiti|unifi|edgeswitch|u6-|u7-/.test(s)) return "Ubiquiti";
+  if (/hewlett|hp |procurve|aruba/.test(s)) return "HPE";
+  if (/\bcisco\b|ios xe|cat\d+k/.test(s)) return "Cisco";
+  return null;
+}
 
 function buildSnmpContextForClassifier(d: HostScanData | undefined): string | null {
   if (!d) return null;
@@ -138,7 +205,8 @@ async function runDiscovery(
   scanType: DiscoveryScanType,
   nmapArgs?: string,
   snmpCommunity?: string | null,
-  dnsServer?: string | null
+  dnsServer?: string | null,
+  discoverOpts?: DiscoverNetworkOptions
 ): Promise<DiscoveryResult> {
   const startTime = Date.now();
   const progressRef = getProgressMap().get(scanId);
@@ -176,13 +244,11 @@ async function runDiscovery(
     return { model: null, firmware: null };
   }
 
-  /** Aggiunge una riga al log live (max 50 righe, le più vecchie vengono rimosse) */
+  /** Aggiunge una riga al log live (max 200 righe, le più vecchie vengono rimosse) */
   function log(msg: string) {
     progress.logs!.push(`[${new Date().toLocaleTimeString("it-IT")}] ${msg}`);
-    if (progress.logs!.length > 50) progress.logs = progress.logs!.slice(-50);
+    if (progress.logs!.length > 200) progress.logs = progress.logs!.slice(-200);
   }
-
-  const snmpCommunities = buildSnmpCommunities(snmpCommunity);
 
   // ═══════════════════════════════════════════════════════════════
   // PING: solo ICMP sweep — veloce, nessun SNMP/nmap
@@ -197,83 +263,140 @@ async function runDiscovery(
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // WINDOWS: WinRM su host online — richiede credenziali Windows globali
+  // NETWORK_DISCOVERY: ICMP → Nmap TCP quick (sequenziale) → poi DNS/DB; ARP router a fine run
+  // ═══════════════════════════════════════════════════════════════
+  else if (scanType === "network_discovery") {
+    progress.phase = "Ping sweep (ICMP)";
+    const results = await pingSweep(ips, 50, (scanned, found) => {
+      progress.scanned = scanned;
+      progress.found = found;
+    });
+    onlineIps = results.filter((r) => r.alive).map((r) => r.ip);
+
+    const nmapAvailable = await isNmapAvailable();
+    const quickArgs = buildNetworkDiscoveryQuickTcpArgs();
+    const quickExecMs = getNetworkDiscoveryQuickExecMs();
+    const quickBatch = getNetworkDiscoveryQuickConcurrency();
+
+    if (nmapAvailable && onlineIps.length > 0) {
+      progress.phase = `Nmap quick TCP — 0/${onlineIps.length}`;
+      progress.total = onlineIps.length;
+      progress.scanned = 0;
+      log(
+        `ICMP: ${onlineIps.length} host rispondenti; Nmap TCP (batch ${quickBatch}, ~${Math.ceil(quickExecMs / 1000)}s max/host)`
+      );
+      for (let i = 0; i < onlineIps.length; i += quickBatch) {
+        const batch = onlineIps.slice(i, i + quickBatch);
+        const batchResults = await Promise.all(
+          batch.map((ip) => nmapPortScan(ip, quickArgs, quickExecMs, { skipUdp: true }))
+        );
+        for (let j = 0; j < batch.length; j++) {
+          const ip = batch[j];
+          const result = batchResults[j];
+          if (result) {
+            nmapResults.set(ip, {
+              ports: result.ports.map((p) => ({
+                port: p.port,
+                protocol: p.protocol,
+                service: p.service,
+                version: p.version,
+              })),
+              os: result.os,
+              mac: result.mac || null,
+            });
+          }
+        }
+        progress.scanned = Math.min(i + quickBatch, onlineIps.length);
+        progress.phase = `Nmap quick TCP — ${progress.scanned}/${onlineIps.length}`;
+        if (i + quickBatch < onlineIps.length) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      }
+      progress.found = onlineIps.length;
+    } else if (!nmapAvailable) {
+      log("Nmap non disponibile: solo ICMP (nessuna scansione TCP)");
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // WINDOWS: WinRM — credenziali dalla subnet (ordine) o globali; una prova per credenziale; salvataggio su IP
   // ═══════════════════════════════════════════════════════════════
   else if (scanType === "windows") {
-    const winCreds = getHostWindowsCredentials();
-    if (!winCreds) {
-      throw new Error("Configura le credenziali Windows globali in Impostazioni (host_windows_credential_id)");
-    }
-    // Filtra host che hanno porta 445 o 135 aperta (indicatore Windows), oppure 5985/5986 (WinRM)
-    const { getHostsByNetwork } = await import("@/lib/db");
     const existingHosts = getHostsByNetwork(networkId);
-    const windowsIps = existingHosts
-      .filter((h) => {
-        if (!h.open_ports) return false;
-        try {
-          const ports = JSON.parse(h.open_ports) as Array<{ port: number }>;
-          return ports.some((p) => [445, 135, 5985, 5986].includes(p.port));
-        } catch { return false; }
-      })
-      .map((h) => h.ip);
-    onlineIps = windowsIps;
-    progress.total = windowsIps.length;
+    const inScopeWin = new Set(ips);
+    const windowsHosts = existingHosts.filter((h) => {
+      if (!inScopeWin.has(h.ip)) return false;
+      if (!h.open_ports) return false;
+      try {
+        const ports = JSON.parse(h.open_ports) as Array<{ port: number }>;
+        return ports.some((p) => [445, 135, 5985, 5986].includes(p.port));
+      } catch {
+        return false;
+      }
+    });
+    onlineIps = windowsHosts.map((h) => h.ip);
+    progress.total = windowsHosts.length;
     progress.scanned = 0;
-    log(`Trovati ${windowsIps.length} host con porte Windows (445/135/5985/5986) su ${existingHosts.length} host in DB`);
-    if (windowsIps.length === 0) { log("Nessun host con porte Windows trovato. Esegui prima una scansione Nmap."); }
+    const defaultChain = getOrderedDetectCredentialIds(networkId, "windows");
+    log(
+      `Trovati ${windowsHosts.length} host Windows in DB; catena credenziali: ${defaultChain.length ? defaultChain.map((id) => `#${id}`).join(" → ") : "nessuna (configura rete o Impostazioni)"}`
+    );
+    if (windowsHosts.length === 0) {
+      log("Nessun host con porte Windows. Esegui prima Nmap.");
+    }
     progress.phase = `Scansione WinRM — 0/${onlineIps.length}`;
     const { runWinrmCommand } = await import("@/lib/devices/winrm-run");
-    for (let i = 0; i < onlineIps.length; i++) {
-      const ip = onlineIps[i];
-      log(`WinRM ${ip} — tentativo porta 5985...`);
+    const pickWinrmPort = (host: (typeof windowsHosts)[0]): 5985 | 5986 => {
       try {
-        const hostname = await runWinrmCommand(
-          ip,
-          5985,
-          winCreds.username,
-          winCreds.password,
-          "hostname",
-          false
-        );
-        const hn = String(hostname ?? "").trim();
-        if (hn) {
-          nmapResults.set(ip, {
-            ports: [{ port: 5985, protocol: "tcp", service: "winrm", version: null }],
-            os: "Microsoft Windows",
-            mac: null,
-            snmpHostname: hn,
-          });
-          log(`✓ ${ip} → hostname: ${hn} (WinRM 5985)`);
-        } else {
-          log(`✗ ${ip} — risposta vuota su 5985`);
+        const ports = JSON.parse(host.open_ports || "[]") as Array<{ port: number }>;
+        const s = new Set(ports.map((p) => p.port));
+        if (s.has(5986) && !s.has(5985)) return 5986;
+        return 5985;
+      } catch {
+        return 5985;
+      }
+    };
+    for (let i = 0; i < windowsHosts.length; i++) {
+      const host = windowsHosts[i];
+      const ip = host.ip;
+      const bound = getHostDetectCredentialId(host.id, "windows");
+      const chain = bound != null ? [bound] : defaultChain;
+      if (chain.length === 0) {
+        log(`✗ ${ip} — nessuna credenziale Windows (subnet o globale)`);
+        progress.scanned = i + 1;
+        progress.found = nmapResults.size;
+        progress.phase = `Scansione WinRM — ${i + 1}/${onlineIps.length}`;
+        continue;
+      }
+      const winrmPort = pickWinrmPort(host);
+      let ok = false;
+      for (const credId of chain) {
+        const creds = getCredentialLoginPair(credId, "windows");
+        if (!creds) {
+          log(`✗ ${ip} cred#${credId} — dati mancanti`);
+          continue;
         }
-      } catch (err5985) {
-        log(`✗ ${ip}:5985 fallito (${(err5985 as Error).message?.slice(0, 60)}), provo 5986...`);
         try {
-          const hostname = await runWinrmCommand(
-            ip,
-            5986,
-            winCreds.username,
-            winCreds.password,
-            "hostname",
-            false
-          );
+          const hostname = await runWinrmCommand(ip, winrmPort, creds.username, creds.password, "hostname", false);
           const hn = String(hostname ?? "").trim();
           if (hn) {
             nmapResults.set(ip, {
-              ports: [{ port: 5986, protocol: "tcp", service: "winrm-https", version: null }],
+              ports: [{ port: winrmPort, protocol: "tcp", service: winrmPort === 5986 ? "winrm-https" : "winrm", version: null }],
               os: "Microsoft Windows",
               mac: null,
               snmpHostname: hn,
             });
-            log(`✓ ${ip} → hostname: ${hn} (WinRM 5986/HTTPS)`);
-          } else {
-            log(`✗ ${ip} — risposta vuota anche su 5986`);
+            setHostDetectCredential(host.id, "windows", credId);
+            log(`✓ ${ip} → ${hn} (cred#${credId}, porta ${winrmPort})`);
+            ok = true;
+            break;
           }
-        } catch (err5986) {
-          log(`✗ ${ip} — WinRM non disponibile (${(err5986 as Error).message?.slice(0, 60)})`);
+          log(`✗ ${ip} cred#${credId} — risposta vuota`);
+        } catch (e) {
+          log(`✗ ${ip} cred#${credId}: ${(e as Error).message?.slice(0, 72) ?? "errore"}`);
         }
       }
+      if (!ok) log(`✗ ${ip} — nessuna credenziale valida`);
       progress.scanned = i + 1;
       progress.found = nmapResults.size;
       progress.phase = `Scansione WinRM — ${i + 1}/${onlineIps.length}`;
@@ -281,84 +404,139 @@ async function runDiscovery(
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // SSH: Ping + SSH su host online — richiede credenziali Linux globali
-  // Raccoglie hostname, OS info, kernel, CPU, RAM
+  // SSH: credenziali Linux per subnet (ordine) o globali; una connessione per credenziale; salvataggio su IP
   // ═══════════════════════════════════════════════════════════════
   else if (scanType === "ssh") {
-    const { getHostLinuxCredentials, getHostsByNetwork } = await import("@/lib/db");
-    const linuxCreds = getHostLinuxCredentials();
-    if (!linuxCreds) {
-      throw new Error("Configura le credenziali Linux globali in Impostazioni (host_linux_credential_id)");
-    }
-    // Filtra host che hanno porta 22 aperta (SSH) e NON hanno 445 (quelli sono Windows)
     const existingHosts = getHostsByNetwork(networkId);
-    const sshIps = existingHosts
-      .filter((h) => {
-        if (!h.open_ports) return false;
-        try {
-          const ports = JSON.parse(h.open_ports) as Array<{ port: number }>;
-          const has22 = ports.some((p) => p.port === 22);
-          const has445 = ports.some((p) => p.port === 445);
-          return has22 && !has445; // SSH ma non Windows
-        } catch { return false; }
-      })
-      .map((h) => h.ip);
-    onlineIps = sshIps;
-    progress.total = sshIps.length;
+    const inScopeSsh = new Set(ips);
+    const sshHosts = existingHosts.filter((h) => {
+      if (!inScopeSsh.has(h.ip)) return false;
+      if (!h.open_ports) return false;
+      try {
+        const ports = JSON.parse(h.open_ports) as Array<{ port: number }>;
+        const has22 = ports.some((p) => p.port === 22);
+        const has445 = ports.some((p) => p.port === 445);
+        return has22 && !has445;
+      } catch {
+        return false;
+      }
+    });
+    onlineIps = sshHosts.map((h) => h.ip);
+    progress.total = sshHosts.length;
     progress.scanned = 0;
-    log(`Trovati ${sshIps.length} host con porta 22 (senza 445) su ${existingHosts.length} host in DB`);
-    if (sshIps.length === 0) { log("Nessun host con porta 22 trovato. Esegui prima una scansione Nmap."); }
+    const defaultSshChain = getOrderedSshLinuxCredentialIds(networkId);
+    log(
+      `Trovati ${sshHosts.length} host SSH in DB; catena credenziali: ${defaultSshChain.length ? defaultSshChain.map((id) => `#${id}`).join(" → ") : "nessuna (configura rete o Impostazioni)"}`
+    );
+    if (sshHosts.length === 0) {
+      log("Nessun host con porta 22 (senza 445). Esegui prima Nmap.");
+    }
     progress.phase = `Scansione SSH — 0/${onlineIps.length}`;
 
     const { Client } = await import("ssh2");
-    for (let i = 0; i < onlineIps.length; i++) {
-      const ip = onlineIps[i];
-      log(`SSH ${ip} — connessione...`);
-      try {
-        const output = await new Promise<string>((resolve, reject) => {
-          const conn = new Client();
-          const timeout = setTimeout(() => { conn.end(); reject(new Error("timeout")); }, 8000);
-          conn.on("ready", () => {
-            conn.exec("hostname -f 2>/dev/null || hostname; uname -sr 2>/dev/null; cat /etc/os-release 2>/dev/null | head -5", (err, stream) => {
-              if (err) { clearTimeout(timeout); conn.end(); reject(err); return; }
-              let data = "";
-              stream.on("data", (d: Buffer) => { data += d.toString(); });
-              stream.stderr.on("data", () => {});
-              stream.on("close", () => { clearTimeout(timeout); conn.end(); resolve(data); });
+
+    for (let i = 0; i < sshHosts.length; i++) {
+      const host = sshHosts[i];
+      const ip = host.ip;
+      const bound = getHostDetectCredentialId(host.id, "linux");
+      const chain = bound != null ? [bound] : defaultSshChain;
+      if (chain.length === 0) {
+        log(`✗ ${ip} — nessuna credenziale Linux (subnet o globale)`);
+        progress.scanned = i + 1;
+        progress.found = nmapResults.size;
+        progress.phase = `Scansione SSH — ${i + 1}/${onlineIps.length}`;
+        continue;
+      }
+      let ok = false;
+      for (const credId of chain) {
+        const creds = getSshLinuxCredentialPair(credId);
+        if (!creds) {
+          log(`✗ ${ip} cred#${credId} — dati mancanti`);
+          continue;
+        }
+        log(`SSH ${ip} — prova cred#${credId}`);
+        try {
+          const output = await new Promise<string>((resolve, reject) => {
+            const conn = new Client();
+            const timeout = setTimeout(() => {
+              conn.end();
+              reject(new Error("timeout"));
+            }, 8000);
+            conn.on("ready", () => {
+              conn.exec(
+                "hostname -f 2>/dev/null || hostname; uname -sr 2>/dev/null; cat /etc/os-release 2>/dev/null | head -5",
+                (err, stream) => {
+                  if (err) {
+                    clearTimeout(timeout);
+                    conn.end();
+                    reject(err);
+                    return;
+                  }
+                  let data = "";
+                  stream.on("data", (d: Buffer) => {
+                    data += d.toString();
+                  });
+                  stream.stderr.on("data", () => {});
+                  stream.on("close", () => {
+                    clearTimeout(timeout);
+                    conn.end();
+                    resolve(data);
+                  });
+                }
+              );
+            });
+            conn.on("error", (err) => {
+              clearTimeout(timeout);
+              reject(err);
+            });
+            conn.connect({
+              host: ip,
+              port: 22,
+              username: creds.username,
+              password: creds.password,
+              readyTimeout: 6000,
+              algorithms: {
+                kex: [
+                  "ecdh-sha2-nistp256",
+                  "ecdh-sha2-nistp384",
+                  "ecdh-sha2-nistp521",
+                  "diffie-hellman-group-exchange-sha256",
+                  "diffie-hellman-group14-sha256",
+                  "diffie-hellman-group14-sha1",
+                  "diffie-hellman-group1-sha1",
+                ],
+              },
             });
           });
-          conn.on("error", (err) => { clearTimeout(timeout); reject(err); });
-          conn.connect({
-            host: ip,
-            port: 22,
-            username: linuxCreds.username,
-            password: linuxCreds.password,
-            readyTimeout: 6000,
-            algorithms: { kex: ["ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521", "diffie-hellman-group-exchange-sha256", "diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"] },
+
+          const lines = output.trim().split("\n");
+          const hn = lines[0]?.trim() || null;
+          const kernel = lines[1]?.trim() || null;
+          let osName: string | null = null;
+          for (const line of lines) {
+            const m = line.match(/^PRETTY_NAME="?(.+?)"?\s*$/);
+            if (m) {
+              osName = m[1];
+              break;
+            }
+          }
+          const osInfo = osName || kernel || "Linux";
+
+          nmapResults.set(ip, {
+            ports: [{ port: 22, protocol: "tcp", service: "ssh", version: null }],
+            os: osInfo,
+            mac: null,
+            snmpHostname: hn,
           });
-        });
-
-        const lines = output.trim().split("\n");
-        const hn = lines[0]?.trim() || null;
-        const kernel = lines[1]?.trim() || null;
-        // Parse PRETTY_NAME da /etc/os-release
-        let osName: string | null = null;
-        for (const line of lines) {
-          const m = line.match(/^PRETTY_NAME="?(.+?)"?\s*$/);
-          if (m) { osName = m[1]; break; }
+          setHostDetectCredential(host.id, "linux", credId);
+          log(`✓ ${ip} → ${hn || "—"}, OS: ${osInfo} (cred#${credId})`);
+          ok = true;
+          break;
+        } catch (sshErr) {
+          log(`✗ ${ip} cred#${credId}: ${(sshErr as Error).message?.slice(0, 80)}`);
         }
-        const osInfo = osName || kernel || "Linux";
-
-        nmapResults.set(ip, {
-          ports: [{ port: 22, protocol: "tcp", service: "ssh", version: null }],
-          os: osInfo,
-          mac: null,
-          snmpHostname: hn,
-        });
-        log(`✓ ${ip} → hostname: ${hn || "—"}, OS: ${osInfo}`);
-      } catch (sshErr) {
-        log(`✗ ${ip} — SSH fallito (${(sshErr as Error).message?.slice(0, 80)})`);
       }
+      if (!ok) log(`✗ ${ip} — nessuna credenziale valida`);
       progress.scanned = i + 1;
       progress.found = nmapResults.size;
       progress.phase = `Scansione SSH — ${i + 1}/${onlineIps.length}`;
@@ -370,12 +548,18 @@ async function runDiscovery(
   // Nessun ping, nessun nmap
   // ═══════════════════════════════════════════════════════════════
   else if (scanType === "snmp") {
-    // SNMP solo sugli host già presenti nel DB (non su tutta la subnet)
+    const snmpCommunities = buildSnmpCommunitiesForNetwork(networkId, snmpCommunity ?? null);
+    // SNMP: host in DB intersecati con l’insieme `ips` (subnet o selezione); se vuoto, fallback a `ips`
     const { getHostsByNetwork } = await import("@/lib/db");
     const existingHosts = getHostsByNetwork(networkId);
-    const targetIps = existingHosts.length > 0
-      ? existingHosts.map((h) => h.ip)
-      : ips; // Fallback a tutta la subnet solo se la rete è vuota
+    const inScope = new Set(ips);
+    let targetIps =
+      existingHosts.length > 0
+        ? existingHosts.map((h) => h.ip).filter((ip) => inScope.has(ip))
+        : ips;
+    if (targetIps.length === 0 && ips.length > 0) {
+      targetIps = ips;
+    }
 
     progress.phase = `Query SNMP — 0/${targetIps.length}`;
     progress.total = targetIps.length;
@@ -383,9 +567,10 @@ async function runDiscovery(
     const BATCH = 16;
     for (let i = 0; i < targetIps.length; i += BATCH) {
       const batch = targetIps.slice(i, i + BATCH);
+      log(`SNMP batch ${Math.floor(i / BATCH) + 1}: ${batch.join(", ")}`);
       const results = await Promise.all(
         batch.map(async (ip) => {
-          const r = await querySnmpInfoMultiCommunity(ip, snmpCommunities);
+          const r = await querySnmpInfoMultiCommunity(ip, snmpCommunities, 161, { onLog: log });
           if (r.sysName || r.sysDescr || r.sysObjectID) {
             const parsed = parseModelFromSysDescr(r.sysDescr);
             const modelStr = r.model || parsed.model;
@@ -398,8 +583,9 @@ async function runDiscovery(
             ]
               .filter(Boolean)
               .join(" · ");
+            const fpOidHint = r.fingerprintOidMatches?.map((m) => m.device_label).join(", ");
             log(
-              `✓ ${ip} → ${r.sysName || "—"} (${r.sysDescr?.slice(0, 50) || "—"})${extra ? ` [${extra}]` : ""}${walkHint ? ` {${walkHint}}` : ""}`
+              `✓ ${ip} → ${r.sysName || "—"} (${r.sysDescr?.slice(0, 50) || "—"})${extra ? ` [${extra}]` : ""}${walkHint ? ` {${walkHint}}` : ""}${fpOidHint ? ` [FP: ${fpOidHint}]` : ""}`
             );
             return { ip, ...r };
           }
@@ -410,8 +596,24 @@ async function runDiscovery(
       for (const r of results) {
         if (r) {
           onlineIps.push(r.ip);
+          // Recupera porte TCP esistenti dal DB per non perderle
+          const existingHost = existingHosts.find((h) => h.ip === r.ip);
+          let existingPorts: Array<{ port: number; protocol: string; service: string | null; version: string | null }> = [];
+          if (existingHost?.open_ports) {
+            try {
+              existingPorts = JSON.parse(existingHost.open_ports);
+            } catch { /* ignore */ }
+          }
+          // Aggiungi 161/udp se non presente
+          const has161 = existingPorts.some((p) => p.port === 161 && p.protocol === "udp");
+          const mergedPorts = has161
+            ? existingPorts
+            : [...existingPorts, { port: 161, protocol: "udp", service: "snmp", version: null }];
+          const parsedSnmp = parseModelFromSysDescr(r.sysDescr ?? null);
+          const snmpManufacturerOnly = inferManufacturerFromSnmp(r.sysDescr ?? null, r.sysObjectID ?? null, r.fingerprintOidMatches ?? null);
+
           nmapResults.set(r.ip, {
-            ports: [{ port: 161, protocol: "udp", service: "snmp", version: null }],
+            ports: mergedPorts,
             os: null,
             mac: null,
             snmpHostname: r.sysName ?? null,
@@ -423,6 +625,9 @@ async function runDiscovery(
             snmpUnifiSummary: r.unifiSummary ?? null,
             snmpIfDescrSummary: r.ifDescrSummary ?? null,
             snmpHostResourcesSummary: r.hostResourcesSummary ?? null,
+            snmpFingerprintOidMatches: r.fingerprintOidMatches ?? null,
+            snmpFirmware: parsedSnmp.firmware ?? null,
+            snmpManufacturer: snmpManufacturerOnly,
           });
         }
       }
@@ -440,6 +645,8 @@ async function runDiscovery(
   else if (scanType === "nmap") {
     const isDiscoveryOnly = nmapArgs?.trim() === "-sn";
     const nmapAvailable = await isNmapAvailable();
+    const isTargetedScan = ips.length < getAllHostIps(cidr).length;
+
     if (!nmapAvailable) {
       progress.phase = "Nmap non disponibile, fallback a ping";
       const results = await pingSweep(ips, 50, (scanned, found) => {
@@ -447,6 +654,15 @@ async function runDiscovery(
         progress.found = found;
       });
       onlineIps = results.filter((r) => r.alive).map((r) => r.ip);
+    } else if (isTargetedScan) {
+      progress.phase = "Ping — host selezionati";
+      const results = await pingSweep(ips, 50, (scanned, found) => {
+        progress.scanned = scanned;
+        progress.found = found;
+      });
+      onlineIps = results.filter((r) => r.alive).map((r) => r.ip);
+      progress.scanned = ips.length;
+      progress.found = onlineIps.length;
     } else {
       progress.phase = "Scoperta host (nmap -sn)";
       console.log(`[Discovery] Nmap: host discovery su ${cidr}`);
@@ -479,42 +695,127 @@ async function runDiscovery(
         });
         onlineIps = results.filter((r) => r.alive).map((r) => r.ip);
       }
+    }
 
-      if (!isDiscoveryOnly && onlineIps.length > 0) {
-        progress.phase = `Scansione porte — 0/${onlineIps.length}`;
-        progress.scanned = 0;
-        progress.total = onlineIps.length;
-        const portScanArgs = nmapArgs ?? buildTcpScanArgs(null);
-        const BATCH_SIZE = 5;
-        for (let i = 0; i < onlineIps.length; i += BATCH_SIZE) {
-          const batch = onlineIps.slice(i, i + BATCH_SIZE);
-          const batchResults = await Promise.all(
-            batch.map((ip) => nmapPortScan(ip, portScanArgs, 150000))
-          );
-          for (let j = 0; j < batch.length; j++) {
-            const ip = batch[j];
-            const result = batchResults[j];
-            if (result) {
-              const existing = nmapResults.get(ip);
-              nmapResults.set(ip, {
-                ports: result.ports.map((p) => ({
-                  port: p.port,
-                  protocol: p.protocol,
-                  service: p.service,
-                  version: p.version,
-                })),
-                os: result.os,
-                mac: result.mac || existing?.mac || null,
-                snmpHostname: null,
-                snmpSysDescr: null,
-                snmpSysObjectID: null,
-              });
-            }
+    if (nmapAvailable && !isDiscoveryOnly && onlineIps.length > 0) {
+      progress.phase = `Scansione porte — 0/${onlineIps.length}`;
+      progress.scanned = 0;
+      progress.total = onlineIps.length;
+      // Usa porte esplicite dal profilo se presenti, altrimenti fallback a nmapArgs o default
+      const portScanArgs = nmapArgs ?? buildTcpScanArgs(null, discoverOpts?.tcpPorts);
+      const udpPortsRaw = discoverOpts?.udpPorts;
+      /** `""` = nessuna scansione UDP (solo TCP); `null`/`undefined` = elenco UDP predefinito (profilo legacy). */
+      const skipUdpPhase = udpPortsRaw === "";
+      const udpPortsArg = skipUdpPhase ? null : (udpPortsRaw ?? null);
+      /** TCP + UDP in sequenza: max ~2× host-timeout + margine; tetto per evitare blocchi di minuti. */
+      const htMs = getNmapHostTimeoutSeconds() * 1000;
+      const nmapPortExecTimeoutMs = Math.min(240_000, htMs * 2 + 45_000);
+      log(`Profilo Nmap TCP: ${portScanArgs}`);
+      if (skipUdpPhase) log("UDP: disattivato (nessuna porta UDP nel profilo)");
+      else if (udpPortsArg) log(`Porte UDP profilo: ${udpPortsArg}`);
+      else log("UDP: elenco predefinito applicazione (profilo senza elenco UDP)");
+      /** Pochi host in parallelo: batch alti (es. 8) saturano la rete e fanno perdere risposte (es. HTTPS :8006 Proxmox). Override: DA_INVENT_NMAP_PORT_SCAN_CONCURRENCY */
+      const BATCH_SIZE = Math.min(
+        8,
+        Math.max(1, parseInt(process.env.DA_INVENT_NMAP_PORT_SCAN_CONCURRENCY || "2", 10))
+      );
+      if (BATCH_SIZE < 8) log(`Nmap port scan: concorrenza ${BATCH_SIZE} host (consigliato per reti con hypervisor / TLS)`);
+      for (let i = 0; i < onlineIps.length; i += BATCH_SIZE) {
+        const batch = onlineIps.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.all(
+          batch.map((ip) =>
+            nmapPortScan(ip, portScanArgs, nmapPortExecTimeoutMs, {
+              onLog: log,
+              udpPorts: udpPortsArg,
+              skipUdp: skipUdpPhase,
+            })
+          )
+        );
+        for (let j = 0; j < batch.length; j++) {
+          const ip = batch[j];
+          const result = batchResults[j];
+          if (result) {
+            const existing = nmapResults.get(ip);
+            nmapResults.set(ip, {
+              ports: result.ports.map((p) => ({
+                port: p.port,
+                protocol: p.protocol,
+                service: p.service,
+                version: p.version,
+              })),
+              os: result.os,
+              mac: result.mac || existing?.mac || null,
+              snmpHostname: null,
+              snmpSysDescr: null,
+              snmpSysObjectID: null,
+            });
           }
-          progress.scanned = Math.min(i + BATCH_SIZE, onlineIps.length);
-          progress.phase = `Scansione porte — ${progress.scanned}/${onlineIps.length}`;
         }
+        progress.scanned = Math.min(i + BATCH_SIZE, onlineIps.length);
+        progress.phase = `Scansione porte — ${progress.scanned}/${onlineIps.length}`;
       }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // SNMP nella stessa sessione di Nmap / network_discovery: somma porte + walk (produttore, modello, firmware, seriale)
+  // ═══════════════════════════════════════════════════════════════
+  if ((scanType === "nmap" || scanType === "network_discovery") && onlineIps.length > 0) {
+    const snmpCommunities = buildSnmpCommunitiesForNetwork(networkId, snmpCommunity ?? null);
+    progress.phase = `SNMP (sessione unificata) — 0/${onlineIps.length}`;
+    log(`SNMP + walk nella sessione con Nmap: ${onlineIps.length} host (community: ${snmpCommunities.join(", ")})`);
+    const SNMP_BATCH = 16;
+    for (let si = 0; si < onlineIps.length; si += SNMP_BATCH) {
+      const batch = onlineIps.slice(si, si + SNMP_BATCH);
+      const snmpRows = await Promise.all(
+        batch.map((ip) => querySnmpInfoMultiCommunity(ip, snmpCommunities, 161, { onLog: log }))
+      );
+      for (let bi = 0; bi < batch.length; bi++) {
+        const ip = batch[bi];
+        const r = snmpRows[bi];
+        if (!r.sysName && !r.sysDescr && !r.sysObjectID) continue;
+        const prev = nmapResults.get(ip) ?? { ports: [], os: null, mac: null };
+        const parsed = parseModelFromSysDescr(r.sysDescr ?? null);
+        const mergedPorts = [...prev.ports];
+        const has161 = mergedPorts.some((p) => p.port === 161 && p.protocol === "udp");
+        if (!has161) {
+          mergedPorts.push({ port: 161, protocol: "udp", service: "snmp", version: null });
+        }
+        const fpMatches = r.fingerprintOidMatches ?? null;
+        const manufacturer = inferManufacturerFromSnmp(r.sysDescr ?? null, r.sysObjectID ?? null, fpMatches);
+        nmapResults.set(ip, {
+          ...prev,
+          ports: mergedPorts,
+          snmpHostname: r.sysName ?? prev.snmpHostname ?? null,
+          snmpSysDescr: r.sysDescr ?? prev.snmpSysDescr ?? null,
+          snmpSysObjectID: r.sysObjectID ?? prev.snmpSysObjectID ?? null,
+          snmpSerial: r.serialNumber ?? prev.snmpSerial ?? null,
+          snmpModel: r.model ?? prev.snmpModel ?? null,
+          snmpPartNumber: r.partNumber ?? prev.snmpPartNumber ?? null,
+          snmpMikrotikIdentity: r.mikrotikIdentity ?? prev.snmpMikrotikIdentity ?? null,
+          snmpUnifiSummary: r.unifiSummary ?? prev.snmpUnifiSummary ?? null,
+          snmpIfDescrSummary: r.ifDescrSummary ?? prev.snmpIfDescrSummary ?? null,
+          snmpHostResourcesSummary: r.hostResourcesSummary ?? prev.snmpHostResourcesSummary ?? null,
+          snmpFingerprintOidMatches: fpMatches ?? prev.snmpFingerprintOidMatches ?? null,
+          snmpFirmware: parsed.firmware ?? prev.snmpFirmware ?? null,
+          snmpManufacturer: manufacturer ?? prev.snmpManufacturer ?? null,
+          snmpCommunity: r.community ?? prev.snmpCommunity ?? null,
+          snmpSysUpTime: r.sysUpTime ?? prev.snmpSysUpTime ?? null,
+          snmpArpEntryCount: r.arpEntryCount ?? prev.snmpArpEntryCount ?? null,
+          vendorProfileId: r.vendorProfileId ?? prev.vendorProfileId ?? null,
+          vendorProfileName: r.vendorProfileName ?? prev.vendorProfileName ?? null,
+          vendorProfileConfidence: r.vendorProfileConfidence ?? prev.vendorProfileConfidence ?? null,
+          vendorProfileCategory: r.vendorProfileCategory ?? prev.vendorProfileCategory ?? null,
+          vendorProfileFirmware: r.vendorProfileFirmware ?? prev.vendorProfileFirmware ?? null,
+          vendorProfileExtra: r.vendorProfileExtra ?? prev.vendorProfileExtra ?? undefined,
+        });
+        const extra = [r.model || parsed.model, parsed.firmware, r.serialNumber].filter(Boolean).join(", ");
+        log(
+          `✓ SNMP sessione ${ip} → ${r.sysName || "—"}${extra ? ` [${extra}]` : ""}${manufacturer ? ` · ${manufacturer}` : ""}`
+        );
+      }
+      progress.scanned = Math.min(si + SNMP_BATCH, onlineIps.length);
+      progress.phase = `SNMP (sessione unificata) — ${progress.scanned}/${onlineIps.length}`;
     }
   }
 
@@ -533,46 +834,245 @@ async function runDiscovery(
   progress.total = onlineIps.length;
   let newHosts = 0;
 
+  /** TTL ICMP per fingerprint (solo scan nmap; batch 8, 50ms tra batch). */
+  const ttlByIp = new Map<string, number | null>();
+  const fpEnabled = process.env.DA_INVENT_FINGERPRINT !== "false";
+  if (
+    fpEnabled &&
+    (scanType === "nmap" || scanType === "network_discovery") &&
+    onlineIps.length > 0 &&
+    process.env.DA_INVENT_FINGERPRINT_TTL !== "false"
+  ) {
+    progress.phase = "Fingerprint — TTL ICMP";
+    const { pingHost } = await import("./ping");
+    const TTL_BATCH = 8;
+    for (let t = 0; t < onlineIps.length; t += TTL_BATCH) {
+      const chunk = onlineIps.slice(t, t + TTL_BATCH);
+      const pings = await Promise.all(chunk.map((aip) => pingHost(aip, 2000)));
+      for (let u = 0; u < chunk.length; u++) {
+        ttlByIp.set(chunk[u], pings[u].ttl ?? null);
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    progress.phase = "Risoluzione DNS e vendor";
+  }
+
+  /** PTR + forward: usa valori già in DB se presenti (nessuna query di rete). Import dns solo se serve. */
+  const dnsConcurrency = Math.min(64, Math.max(1, parseInt(process.env.DA_INVENT_DNS_CONCURRENCY || "16", 10)));
+  const forceDnsRefresh = process.env.DA_INVENT_DNS_ALWAYS_REFRESH === "true";
+  const dbHostsForDns = getHostsByNetwork(networkId);
+  const hostRowByIp = new Map(dbHostsForDns.map((h) => [h.ip, h]));
+  const dnsByIp = new Map<string, DnsResolution>();
+  const ipsNeedingNetworkDns: string[] = [];
+  for (const ip of onlineIps) {
+    const row = hostRowByIp.get(ip);
+    if (!forceDnsRefresh && row?.dns_reverse) {
+      dnsByIp.set(ip, { reverse: row.dns_reverse, forward: row.dns_forward ?? null });
+    } else {
+      ipsNeedingNetworkDns.push(ip);
+    }
+  }
+  if (ipsNeedingNetworkDns.length > 0) {
+    const { resolveDnsBatch } = await import("./dns");
+    const merged = await resolveDnsBatch(ipsNeedingNetworkDns, dnsServer, dnsConcurrency, (done, tot) => {
+      progress.scanned = done;
+      progress.phase = `Risoluzione DNS — ${done}/${tot}`;
+    });
+    for (const [k, v] of merged) dnsByIp.set(k, v);
+  } else {
+    progress.phase = "Risoluzione DNS (da archivio locale)";
+    progress.scanned = onlineIps.length;
+  }
+
+  /** Oltre questa soglia non eseguiamo HTTP/SSH/SMB sul fingerprint (troppo lento in sequenza su scan Nmap). Default 8: oltre 8 host online solo firme porte/SNMP. */
+  const fpProbesMaxHosts = parseInt(process.env.DA_INVENT_FINGERPRINT_PROBES_MAX_HOSTS || "8", 10);
+  const fpHostOk = onlineIps.length <= Math.max(1, Math.min(500, fpProbesMaxHosts));
+  const fingerprintAllowHeavyProbes =
+    fpEnabled && fpHostOk && process.env.DA_INVENT_FINGERPRINT_PROBES !== "false";
+  if (fpEnabled && !fpHostOk && (scanType === "nmap" || scanType === "snmp" || scanType === "network_discovery")) {
+    console.warn(
+      `[Discovery] Fingerprint: probe HTTP/SSH/SMB disattivati (${onlineIps.length} host online > ${fpProbesMaxHosts}); uso solo firme porte/SNMP. Alzare DA_INVENT_FINGERPRINT_PROBES_MAX_HOSTS solo su subnet piccole.`
+    );
+  }
+
+  const fpUserRules = getFingerprintClassificationRulesForResolve();
+  const fpDbRules = fpEnabled ? getEnabledDeviceFingerprintRules() : [];
+
   for (let i = 0; i < onlineIps.length; i++) {
     const ip = onlineIps[i];
+    progress.phase = `Elaborazione host — ${i + 1}/${onlineIps.length} (${ip})`;
+    log(`Host ${i + 1}/${onlineIps.length}: ${ip}`);
+
     const nmapData = nmapResults.get(ip);
     const mac = nmapData?.mac || arpMap.get(ip) || null;
     const vendor = mac ? await lookupVendor(mac) : null;
 
     const snmpHostname = nmapData?.snmpHostname || null;
 
-    // Reverse DNS — SEMPRE tentato, indipendentemente da SNMP
-    const dnsReverse = await reverseDns(ip, dnsServer);
-    let dnsForward: string | null = null;
-    if (dnsReverse) {
-      const forwardResults = await forwardDns(dnsReverse, dnsServer);
-      if (forwardResults.includes(ip)) {
-        dnsForward = dnsReverse; // Forward confermato: il PTR punta a un nome che risolve a questo IP
-      }
-    }
+    const dnsPair = dnsByIp.get(ip) ?? { reverse: null, forward: null };
+    const dnsReverse = dnsPair.reverse;
+    const dnsForward = dnsPair.forward;
 
     // Hostname: priorità SNMP > DNS reverse
     const hostname = snmpHostname || dnsReverse;
     const hostnameSource = snmpHostname ? "snmp" : (dnsReverse ? "dns" : undefined);
 
-    const classification = classifyDevice({
+    /** Somma sessione corrente + archivio: non si perdono TCP se lo scan ha solo UDP o viceversa */
+    const existingPortsFromDb = hostRowByIp.get(ip)?.open_ports ?? null;
+    const portsJson =
+      nmapData?.ports?.length
+        ? mergeOpenPortsJson(existingPortsFromDb, JSON.stringify(nmapData.ports))
+        : undefined;
+
+    /**
+     * Per classificazione e fingerprint usa SEMPRE le porte merged (archivio + sessione corrente).
+     * Se uno scan parziale non rileva una porta già nota (es. 8006 su Proxmox), la classificazione
+     * non deve degradare a "unknown" solo perché questa singola sessione non l'ha trovata.
+     */
+    type PortEntry = { port: number; protocol?: string; service?: string | null; version?: string | null };
+    let portsForClassification: PortEntry[] | null = null;
+    try {
+      portsForClassification = portsJson
+        ? (JSON.parse(portsJson) as PortEntry[])
+        : (nmapData?.ports ?? null);
+    } catch {
+      portsForClassification = nmapData?.ports ?? null;
+    }
+
+    const classificationFromRules = classifyDevice({
       sysDescr: nmapData?.snmpSysDescr ?? null,
       sysObjectID: nmapData?.snmpSysObjectID ?? null,
       osInfo: nmapData?.os ?? null,
-      openPorts: nmapData?.ports ?? null,
+      openPorts: portsForClassification,
       hostname: hostname ?? null,
       vendor: vendor ?? null,
       snmpContext: buildSnmpContextForClassifier(nmapData),
     });
 
-    const portsJson = nmapData?.ports.length
-      ? JSON.stringify(nmapData.ports)
-      : undefined;
-
     // Estrai modello/firmware da ENTITY-MIB, oppure fallback su sysDescr
     const sysDescrParsed = parseModelFromSysDescr(nmapData?.snmpSysDescr ?? null);
-    const hostModel = nmapData?.snmpModel || sysDescrParsed.model || undefined;
+    const hostFirmware = nmapData?.snmpFirmware ?? sysDescrParsed.firmware ?? undefined;
+    const hostManufacturer =
+      nmapData?.snmpManufacturer ??
+      inferManufacturerFromSnmp(
+        nmapData?.snmpSysDescr ?? null,
+        nmapData?.snmpSysObjectID ?? null,
+        nmapData?.snmpFingerprintOidMatches ?? null
+      ) ??
+      undefined;
+    let fpSnap: DeviceFingerprintSnapshot | null = null;
+    let detectionJson: string | undefined;
+    if (fpEnabled && (scanType === "nmap" || scanType === "snmp" || scanType === "network_discovery")) {
+      try {
+        const { buildDeviceFingerprint } = await import("./device-fingerprint");
+        const tcpPortCount = (portsForClassification ?? []).filter((p) => (p.protocol ?? "tcp") === "tcp").length;
+        fpSnap = await buildDeviceFingerprint({
+          ip,
+          hostname: hostname ?? null,
+          mac: mac ?? null,
+          macVendor: vendor ?? null,
+          ttl: ttlByIp.get(ip) ?? null,
+          openPorts: portsForClassification ?? [],
+          snmpSysDescr: nmapData?.snmpSysDescr ?? null,
+          snmpSysObjectID: nmapData?.snmpSysObjectID ?? null,
+          snmpSysName: snmpHostname ?? null,
+          activeProbes:
+            fingerprintAllowHeavyProbes &&
+            (scanType === "nmap" || scanType === "network_discovery") &&
+            tcpPortCount > 0,
+        }, fpDbRules);
+        if (fpSnap) detectionJson = JSON.stringify(fpSnap);
+      } catch (fpErr) {
+        console.warn("[Fingerprint]", ip, fpErr);
+      }
+    }
+
+    // Classificazione — catena di priorità:
+    // 0. VENDOR PROFILE SNMP (confidenza 90-99%) → massima affidabilità, basato su OID specifici
+    // 1. OID enterprise SPECIFICO (non net-snmp 8072)  → alta affidabilità
+    // 2. Fingerprint SPECIFICO (es. Synology DSM, QNAP QTS, MikroTik…) con confidenza ≥ soglia
+    //    — ESCLUSI "Linux generico" e "Linux/net-snmp": sono agenti generici e cedono alle regole host
+    // 3. Regole classiche: hostname prefix (SW-, AP-…), vendor MAC, porte, testo sysDescr
+    // 4. OID generico (net-snmp 8072) — last resort, solo se nessuna fonte più specifica ha esito
+    // 5. Fingerprint GENERICO (Linux generico / Linux/net-snmp) — ultimo fallback
+    //
+    // Razionale: "Linux/net-snmp" a 90% identifica il protocollo SNMP, non il device.
+    // Uno switch Ubiquiti risponde come Linux via net-snmp ma è uno switch, non un server.
+    const GENERIC_FINGERPRINT_DEVICES = new Set(["Linux generico", "Linux/net-snmp"]);
+
+    // Profilo vendor SNMP: ha confidenza alta (90-99%) e usa OID specifici
+    // NB: linux_generic e windows_snmp hanno confidenza più bassa (85%) e vengono bypassati
+    const vendorProfileConf = nmapData?.vendorProfileConfidence ?? 0;
+    const vendorProfileCat = nmapData?.vendorProfileCategory ?? null;
+    const isVendorProfileHighConf = vendorProfileConf >= 0.90 && vendorProfileCat;
+    const classificationFromVendorProfile = isVendorProfileHighConf
+      ? (vendorProfileCat as import("@/lib/device-classifier").DeviceClassification)
+      : undefined;
+
+    const firstOidMatch = nmapData?.snmpFingerprintOidMatches?.[0];
+    const isGenericSnmpAgent = (firstOidMatch?.oid_prefix ?? "").includes("8072");
+    const classificationFromFpOid = (firstOidMatch && !isGenericSnmpAgent)
+      ? (firstOidMatch.classification as import("@/lib/device-classifier").DeviceClassification)
+      : undefined;
+
+    const fpClassRaw = fpSnap ? getClassificationFromFingerprintSnapshot(fpSnap, fpUserRules) : undefined;
+    const fpDeviceName = fpSnap?.final_device ?? "";
+    const isGenericFp = GENERIC_FINGERPRINT_DEVICES.has(fpDeviceName);
+    // Fingerprint generico → ceduto a classificationFromRules
+    const classificationFromFingerprint = (!isGenericFp && fpClassRaw) ? fpClassRaw : undefined;
+    const classificationFromGenericFp = (isGenericFp && fpClassRaw) ? fpClassRaw : undefined;
+
+    // OID generico (net-snmp) → last resort, prima dei fallback fingerprint generici
+    const classificationFromGenericOid = (firstOidMatch && isGenericSnmpAgent)
+      ? (firstOidMatch.classification as import("@/lib/device-classifier").DeviceClassification)
+      : undefined;
+
+    const classification = (
+      classificationFromVendorProfile ??
+      classificationFromFpOid ??
+      classificationFromFingerprint ??
+      classificationFromRules ??
+      classificationFromGenericOid ??
+      classificationFromGenericFp
+    ) ?? "unknown";
+
+    const hostModel =
+      nmapData?.snmpModel ||
+      sysDescrParsed.model ||
+      (fpSnap && (fpSnap.final_confidence ?? 0) >= 0.72 && fpSnap.final_device ? fpSnap.final_device : undefined) ||
+      undefined;
     const hostSerial = nmapData?.snmpSerial || undefined;
+    // Firmware: preferisci quello dal profilo vendor (OID specifici) se disponibile
+    const finalFirmware = nmapData?.vendorProfileFirmware || hostFirmware || undefined;
+
+    // Costruisce snmp_data JSON solo se SNMP ha risposto (sysDescr o sysObjectID o sysName)
+    let snmpDataJson: string | undefined;
+    if (nmapData?.snmpSysDescr || nmapData?.snmpSysObjectID || nmapData?.snmpHostname) {
+      snmpDataJson = JSON.stringify({
+        sysName: nmapData.snmpHostname ?? null,
+        sysDescr: nmapData.snmpSysDescr ?? null,
+        sysObjectID: nmapData.snmpSysObjectID ?? null,
+        serialNumber: nmapData.snmpSerial ?? null,
+        model: nmapData.snmpModel ?? null,
+        partNumber: nmapData.snmpPartNumber ?? null,
+        firmware: finalFirmware ?? null,
+        manufacturer: hostManufacturer ?? null,
+        community: nmapData.snmpCommunity ?? "public",
+        port: 161,
+        mikrotikIdentity: nmapData.snmpMikrotikIdentity ?? null,
+        unifiSummary: nmapData.snmpUnifiSummary ?? null,
+        ifDescrSummary: nmapData.snmpIfDescrSummary ?? null,
+        hostResourcesSummary: nmapData.snmpHostResourcesSummary ?? null,
+        sysUpTime: nmapData.snmpSysUpTime ?? null,
+        arpEntryCount: nmapData.snmpArpEntryCount ?? null,
+        // Dati profilo vendor SNMP (OID specifici)
+        vendorProfileId: nmapData.vendorProfileId ?? null,
+        vendorProfileName: nmapData.vendorProfileName ?? null,
+        vendorProfileConfidence: nmapData.vendorProfileConfidence ?? null,
+        vendorProfileExtra: nmapData.vendorProfileExtra ?? null,
+        collected_at: new Date().toISOString(),
+      });
+    }
 
     const host = upsertHost({
       network_id: networkId,
@@ -586,12 +1086,29 @@ async function runDiscovery(
       classification: classification,
       status: "online",
       open_ports: portsJson,
+      // Valore già unione DB + sessione (TCP+UDP+SNMP 161); persistenza puntuale
+      open_ports_replace: portsJson !== undefined,
       os_info: nmapData?.snmpSysDescr || nmapData?.os || undefined,
       model: hostModel,
       serial_number: hostSerial,
+      // preserve_existing: scan nmap/network_discovery non sovrascrivono dati già rilevati
+      preserve_existing: scanType === "nmap" || scanType === "network_discovery",
+      ...(finalFirmware !== undefined || hostManufacturer !== undefined
+        ? {
+            firmware: finalFirmware ?? null,
+            device_manufacturer: hostManufacturer ?? null,
+          }
+        : {}),
+      ...(detectionJson !== undefined ? { detection_json: detectionJson } : {}),
+      ...(snmpDataJson !== undefined ? { snmp_data: snmpDataJson } : {}),
     });
 
     if (host.first_seen === host.created_at) newHosts++;
+
+    // Sync network_device collegato (stesso IP) — port e classification
+    if (nmapData?.ports?.length && getNetworkDeviceByHost(ip)) {
+      syncNetworkDeviceFromHostScan(ip, nmapData.ports, classification);
+    }
 
     addStatusHistory(host.id, "online");
 
@@ -608,15 +1125,43 @@ async function runDiscovery(
     });
 
     progress.scanned = i + 1;
-    progress.phase = `Risoluzione DNS e vendor — ${i + 1}/${onlineIps.length}`;
+    progress.phase = `Elaborazione host — ${i + 1}/${onlineIps.length} (${ip})`;
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // Phase 4: Mark offline hosts (solo per ping/nmap; SNMP è additivo)
+  // Post-scoperta rete: MAC dal router (solo IP già scoperti; niente nuovi host da ARP/DHCP)
   // ═══════════════════════════════════════════════════════════════
-  if (scanType !== "snmp") {
+  if (scanType === "network_discovery") {
+    progress.phase = "ARP dal router…";
+    log("Aggiornamento MAC da tabella ARP del router…");
+    try {
+      const { runArpPoll } = await import("@/lib/cron/jobs");
+      const arpResult = await runArpPoll(networkId, {
+        onlyEnrichIps: onlineIps,
+        skipDhcpLeases: true,
+      });
+      if (arpResult.error) {
+        log(`ARP router: ${arpResult.error}`);
+      } else {
+        log("ARP router completato");
+      }
+    } catch (arpErr) {
+      log(`ARP router: ${arpErr instanceof Error ? arpErr.message : "errore"}`);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Phase 4: Gestione host non rispondenti
+  // - nmap / network_discovery: additivi → annotano nelle note, non marcano offline
+  // - ping: comportamento classico → marca offline (la scansione ha solo ICMP, nessun dato parziale)
+  // ═══════════════════════════════════════════════════════════════
+  if (scanType === "nmap" || scanType === "network_discovery") {
+    progress.phase = "Annotazione host non rispondenti";
+    noteHostsNonResponding(networkId, onlineIps, ips, scanType);
+    log(`Host non rispondenti (${ips.length - onlineIps.length}): annotati nelle note per revisione`);
+  } else if (scanType !== "snmp") {
     progress.phase = "Aggiornamento host offline";
-    markHostsOffline(networkId, onlineIps);
+    markHostsOffline(networkId, onlineIps, ips);
   }
 
   const totalPorts = Array.from(nmapResults.values()).reduce((sum, r) => sum + r.ports.length, 0);

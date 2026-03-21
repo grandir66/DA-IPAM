@@ -1,8 +1,14 @@
 #!/bin/bash
 # DA-INVENT — Installer per LXC/Proxmox e Debian/Ubuntu
 # Uso: ./scripts/install.sh [--systemd]
+#
+# Installa tutte le dipendenze di sistema (apt), Node.js 20+, dipendenze npm e build.
+# Per clone automatico su Linux senza Proxmox: scripts/bootstrap-linux.sh
+# Per wizard LXC su nodo Proxmox: scripts/proxmox-lxc-install.sh (o bootstrap-proxmox.sh)
 
 set -e
+
+SCRIPT_ARGS=("$@")
 
 INSTALL_SYSTEMD=false
 for arg in "$@"; do
@@ -33,21 +39,31 @@ else
   exit 1
 fi
 
-# Installa dipendenze di sistema (Debian/Ubuntu)
+# Installa dipendenze di sistema (Debian/Ubuntu / container LXC)
+# Inclusi header e toolchain per moduli nativi npm: better-sqlite3, bcrypt, ssh2, net-snmp, oui
 install_system_deps() {
   echo ">>> Installazione dipendenze di sistema..."
+  export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y -qq \
+    ca-certificates \
     curl \
+    git \
+    openssl \
     build-essential \
+    pkg-config \
     python3 \
     python3-venv \
     python3-pip \
     net-tools \
     nmap \
+    snmp \
+    iputils-ping \
     sqlite3 \
-    > /dev/null 2>&1 || true
-  echo "    Dipendenze installate."
+    libssl-dev \
+    libsqlite3-dev \
+    libsnmp-dev
+  echo "    Dipendenze installate (toolchain, SNMP client, nmap, ping; librerie per build npm)."
 }
 
 # Installa Node.js 20 LTS se non presente
@@ -58,11 +74,21 @@ install_node() {
       echo ">>> Node.js $(node -v) già presente."
       return
     fi
+    if [ "$(id -u)" -ne 0 ]; then
+      echo "Errore: richiesto Node.js 20+ (trovato $(node -v)). Esegui come root: sudo $0 ${SCRIPT_ARGS[*]}"
+      exit 1
+    fi
+  fi
+
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "Errore: Node.js 20+ assente. Esegui l'installer come root: sudo $0 ${SCRIPT_ARGS[*]}"
+    exit 1
   fi
 
   echo ">>> Installazione Node.js 20 LTS..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1
-  apt-get install -y -qq nodejs > /dev/null 2>&1
+  export DEBIAN_FRONTEND=noninteractive
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y -qq nodejs
   echo "    Node.js $(node -v) installato."
 }
 
@@ -158,6 +184,12 @@ EOF
 
 # Main
 cd "$APP_DIR"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Avviso: esecuzione senza root — le dipendenze di sistema (apt) non sono state installate."
+  echo "         Per un deploy completo: sudo $0 ${SCRIPT_ARGS[*]}"
+  echo ""
+fi
 
 if [ "$(id -u)" -eq 0 ]; then
   install_system_deps

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
 
 const cidrRegex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
 const ipRegex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
@@ -22,6 +23,22 @@ export const NetworkSchema = z.object({
   router_id: z.coerce.number().int().positive().optional().nullable(),
 });
 
+/** Creazione rete + eventuali catene credenziali (stessa semantica della modifica). */
+export const NetworkCreateSchema = NetworkSchema.extend({
+  windows_credential_ids: z.array(z.number().int().positive()).optional(),
+  linux_credential_ids: z.array(z.number().int().positive()).optional(),
+  ssh_credential_ids: z.array(z.number().int().positive()).optional(),
+  snmp_credential_ids: z.array(z.number().int().positive()).optional(),
+});
+
+/** Aggiornamento rete + credenziali detect (ordine = priorità tentativi, un solo accesso per credenziale in scan). */
+export const NetworkUpdateSchema = NetworkSchema.partial().extend({
+  windows_credential_ids: z.array(z.number().int().positive()).optional(),
+  linux_credential_ids: z.array(z.number().int().positive()).optional(),
+  ssh_credential_ids: z.array(z.number().int().positive()).optional(),
+  snmp_credential_ids: z.array(z.number().int().positive()).optional(),
+});
+
 export const HostSchema = z.object({
   network_id: z.coerce.number().int().positive(),
   ip: z.string().regex(ipRegex, "Indirizzo IP non valido"),
@@ -43,9 +60,23 @@ export const HostUpdateSchema = z.object({
   monitor_ports: z.string().max(500).optional().nullable(),
 });
 
+/** Bulk operazioni host sulla stessa subnet (rete). */
+export const HostsBulkBaseSchema = z.object({
+  network_id: z.coerce.number().int().positive(),
+  host_ids: z.array(z.coerce.number().int().positive()).min(1).max(2000),
+});
+
+export const HostsBulkKnownSchema = HostsBulkBaseSchema.extend({
+  known_host: z.union([z.literal(0), z.literal(1)]),
+});
+
+export const KnownHostRunCheckSchema = z.object({
+  network_id: z.coerce.number().int().positive().optional().nullable(),
+});
+
 export const NetworkDeviceSchema = z.object({
   name: z.string().min(1, "Nome richiesto").max(100),
-  host: z.string().min(1, "Host richiesto").max(255),
+  host: z.string().min(1, "Host richiesto").max(2000),
   device_type: z.enum(["router", "switch", "hypervisor"]),
   classification: z.string().max(100).optional().nullable(),
   vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"]),
@@ -77,8 +108,20 @@ export const ScheduledJobSchema = z.object({
 
 export const ScanTriggerSchema = z.object({
   network_id: z.coerce.number().int().positive(),
-  scan_type: z.enum(["ping", "snmp", "nmap", "arp_poll", "dhcp", "windows", "ssh", "dns"]),
+  scan_type: z.enum([
+    "ping",
+    "network_discovery",
+    "snmp",
+    "nmap",
+    "arp_poll",
+    "dhcp",
+    "windows",
+    "ssh",
+    "dns",
+  ]),
   nmap_profile_id: z.coerce.number().int().positive().optional(),
+  /** Per azioni manuali: limita agli host selezionati (vista lista). */
+  host_ids: z.array(z.coerce.number().int().positive()).optional(),
 });
 
 const inventoryCategoria = z.enum(["Desktop", "Laptop", "Server", "Switch", "Firewall", "NAS", "Stampante", "VM", "Licenza", "Access Point", "Router", "Other"]).optional().nullable();
@@ -157,3 +200,16 @@ export const SetupSchema = z.object({
   message: "Le password non corrispondono",
   path: ["confirm_password"],
 });
+
+const fingerprintClassEnum = z.enum(DEVICE_CLASSIFICATIONS as unknown as [string, ...string[]]);
+
+export const FingerprintClassificationMapCreateSchema = z.object({
+  match_kind: z.enum(["exact", "contains"]),
+  pattern: z.string().min(1, "Pattern richiesto").max(500),
+  classification: fingerprintClassEnum,
+  priority: z.coerce.number().int().min(0).max(99999),
+  enabled: z.boolean().optional().default(true),
+  note: z.string().max(500).optional().nullable(),
+});
+
+export const FingerprintClassificationMapUpdateSchema = FingerprintClassificationMapCreateSchema.partial();

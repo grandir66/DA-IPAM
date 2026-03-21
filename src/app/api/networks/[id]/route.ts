@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
-import { getNetworkById, updateNetwork, deleteNetwork, setNetworkRouter, deleteNetworkRouter, getNetworkRouterId, getHostsByNetworkWithDevices } from "@/lib/db";
-import { NetworkSchema } from "@/lib/validators";
+import {
+  getNetworkById,
+  updateNetwork,
+  deleteNetwork,
+  setNetworkRouter,
+  deleteNetworkRouter,
+  getNetworkRouterId,
+  getHostsByNetworkWithDevices,
+  getNetworkHostCredentialIds,
+  replaceNetworkHostCredentials,
+} from "@/lib/db";
+import { NetworkUpdateSchema } from "@/lib/validators";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -12,7 +22,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     }
     const hosts = getHostsByNetworkWithDevices(Number(id));
     const router_id = getNetworkRouterId(Number(id));
-    return NextResponse.json({ ...network, hosts, router_id });
+    const windows_credential_ids = getNetworkHostCredentialIds(Number(id), "windows");
+    const linux_credential_ids = getNetworkHostCredentialIds(Number(id), "linux");
+    const ssh_credential_ids = getNetworkHostCredentialIds(Number(id), "ssh");
+    const snmp_credential_ids = getNetworkHostCredentialIds(Number(id), "snmp");
+    return NextResponse.json({
+      ...network,
+      hosts,
+      router_id,
+      windows_credential_ids,
+      linux_credential_ids,
+      ssh_credential_ids,
+      snmp_credential_ids,
+    });
   } catch (error) {
     console.error("Error fetching network:", error);
     return NextResponse.json({ error: "Errore nel recupero della rete" }, { status: 500 });
@@ -26,11 +48,18 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const networkId = Number(id);
     const body = await request.json();
-    const parsed = NetworkSchema.partial().safeParse(body);
+    const parsed = NetworkUpdateSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
-    const { router_id, ...networkData } = parsed.data;
+    const {
+      router_id,
+      windows_credential_ids,
+      linux_credential_ids,
+      ssh_credential_ids,
+      snmp_credential_ids,
+      ...networkData
+    } = parsed.data;
     const network = updateNetwork(networkId, networkData);
     if (!network) {
       return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
@@ -42,9 +71,35 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         deleteNetworkRouter(networkId);
       }
     }
+    try {
+      if (windows_credential_ids !== undefined) {
+        replaceNetworkHostCredentials(networkId, "windows", windows_credential_ids);
+      }
+      if (linux_credential_ids !== undefined) {
+        replaceNetworkHostCredentials(networkId, "linux", linux_credential_ids);
+      }
+      if (ssh_credential_ids !== undefined) {
+        replaceNetworkHostCredentials(networkId, "ssh", ssh_credential_ids);
+      }
+      if (snmp_credential_ids !== undefined) {
+        replaceNetworkHostCredentials(networkId, "snmp", snmp_credential_ids);
+      }
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Credenziali non valide" },
+        { status: 400 }
+      );
+    }
     const updated = getNetworkById(networkId);
     const currentRouterId = getNetworkRouterId(networkId);
-    return NextResponse.json({ ...updated, router_id: currentRouterId });
+    return NextResponse.json({
+      ...updated,
+      router_id: currentRouterId,
+      windows_credential_ids: getNetworkHostCredentialIds(networkId, "windows"),
+      linux_credential_ids: getNetworkHostCredentialIds(networkId, "linux"),
+      ssh_credential_ids: getNetworkHostCredentialIds(networkId, "ssh"),
+      snmp_credential_ids: getNetworkHostCredentialIds(networkId, "snmp"),
+    });
   } catch (error) {
     console.error("Error updating network:", error);
     return NextResponse.json({ error: "Errore nell'aggiornamento della rete" }, { status: 500 });

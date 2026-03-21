@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getNetworks, getNetworksPaginated, createNetwork, setNetworkRouter } from "@/lib/db";
-import { NetworkSchema } from "@/lib/validators";
+import { getNetworks, getNetworksPaginated, createNetwork, setNetworkRouter, replaceNetworkHostCredentials } from "@/lib/db";
+import { NetworkCreateSchema } from "@/lib/validators";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
@@ -30,14 +30,40 @@ export async function POST(request: Request) {
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
-    const parsed = NetworkSchema.safeParse(body);
+    const parsed = NetworkCreateSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
-    const { router_id, ...networkData } = parsed.data;
+    const {
+      router_id,
+      windows_credential_ids,
+      linux_credential_ids,
+      ssh_credential_ids,
+      snmp_credential_ids,
+      ...networkData
+    } = parsed.data;
     const network = createNetwork(networkData);
     if (router_id) {
       setNetworkRouter(network.id, router_id);
+    }
+    try {
+      if (windows_credential_ids !== undefined) {
+        replaceNetworkHostCredentials(network.id, "windows", windows_credential_ids);
+      }
+      if (linux_credential_ids !== undefined) {
+        replaceNetworkHostCredentials(network.id, "linux", linux_credential_ids);
+      }
+      if (ssh_credential_ids !== undefined) {
+        replaceNetworkHostCredentials(network.id, "ssh", ssh_credential_ids);
+      }
+      if (snmp_credential_ids !== undefined) {
+        replaceNetworkHostCredentials(network.id, "snmp", snmp_credential_ids);
+      }
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Credenziali non valide" },
+        { status: 400 }
+      );
     }
     return NextResponse.json(network, { status: 201 });
   } catch (error) {

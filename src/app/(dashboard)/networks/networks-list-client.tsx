@@ -31,6 +31,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
+import { NetworkCredentialChains } from "@/components/shared/network-credential-chains";
 import { Pagination } from "@/components/shared/pagination";
 import { Plus, Trash2, Network, Key, Scan, X, Search, Router } from "lucide-react";
 import { toast } from "sonner";
@@ -95,6 +96,10 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
   const [quickRouterSnmpId, setQuickRouterSnmpId] = useState<string | null>(null);
   const [quickRouterSaving, setQuickRouterSaving] = useState(false);
   const quickRouterFormRef = useRef<HTMLFormElement>(null);
+  const [credWindows, setCredWindows] = useState<number[]>([]);
+  const [credLinux, setCredLinux] = useState<number[]>([]);
+  const [credSsh, setCredSsh] = useState<number[]>([]);
+  const [credSnmp, setCredSnmp] = useState<number[]>([]);
 
   useEffect(() => {
     setRoutersList(initialRouters);
@@ -116,6 +121,18 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
       .then((r) => (r.ok ? r.json() : []))
       .then(setCredentials)
       .catch(() => setCredentials([]));
+  }, []);
+
+  const refreshCredentialsList = useCallback(async () => {
+    try {
+      const r = await fetch("/api/credentials");
+      if (r.ok) {
+        const data = (await r.json()) as Credential[];
+        setCredentials(data);
+      }
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const refreshNetworks = useCallback(async (p?: number, s?: string) => {
@@ -327,6 +344,10 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
       dns_server: formData.get("dns_server") || undefined,
       snmp_community: formData.get("snmp_community") || undefined,
       router_id: newNetworkRouterId && newNetworkRouterId !== "" ? Number(newNetworkRouterId) : undefined,
+      windows_credential_ids: credWindows,
+      linux_credential_ids: credLinux,
+      ssh_credential_ids: credSsh,
+      snmp_credential_ids: credSnmp,
     };
 
     const res = await fetch("/api/networks", {
@@ -344,6 +365,10 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
     toast.success("Rete creata con successo");
     setDialogOpen(false);
     setNewNetworkRouterId("");
+    setCredWindows([]);
+    setCredLinux([]);
+    setCredSsh([]);
+    setCredSnmp([]);
     refreshNetworks();
   }
 
@@ -442,7 +467,13 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
           open={dialogOpen}
           onOpenChange={(open) => {
             setDialogOpen(open);
-            if (open) setNewNetworkRouterId("");
+            if (open) {
+              setNewNetworkRouterId("");
+              setCredWindows([]);
+              setCredLinux([]);
+              setCredSsh([]);
+              setCredSnmp([]);
+            }
           }}
         >
           <DialogTrigger render={<Button />}>
@@ -531,6 +562,18 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
                   </p>
                 </div>
               </div>
+              <NetworkCredentialChains
+                credentials={credentials}
+                windowsIds={credWindows}
+                linuxIds={credLinux}
+                sshIds={credSsh}
+                snmpIds={credSnmp}
+                onWindowsChange={setCredWindows}
+                onLinuxChange={setCredLinux}
+                onSshChange={setCredSsh}
+                onSnmpChange={setCredSnmp}
+                onCredentialsRefresh={refreshCredentialsList}
+              />
               <Button type="submit" className="w-full">Crea Rete</Button>
             </form>
           </DialogContent>

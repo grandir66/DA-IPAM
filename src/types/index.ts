@@ -43,6 +43,14 @@ export interface Host {
   os_info: string | null;
   model: string | null;
   serial_number: string | null;
+  /** Firmware da SNMP / sysDescr (se disponibile) */
+  firmware: string | null;
+  /** Produttore dedotto da SNMP (sysDescr / OID enterprise) */
+  device_manufacturer: string | null;
+  /** JSON: risultato device fingerprinting (TTL, firme porte, banner, SNMP) */
+  detection_json: string | null;
+  /** JSON: dati SNMP completi raccolti durante scan (sysDescr, sysObjectID, model, serial, firmware, manufacturer, ecc.) */
+  snmp_data: string | null;
   known_host: number;  // 0 or 1 — host verificato/conosciuto
   last_response_time_ms: number | null;
   monitor_ports: string | null;  // JSON array of port numbers, or null
@@ -54,11 +62,69 @@ export interface Host {
   updated_at: string;
 }
 
+/** Host conosciuto con nome rete (JOIN per UI monitoraggio). */
+export type KnownHostWithNetworkRow = Host & { network_name: string; network_cidr: string };
+
+/** Struttura JSON di hosts.snmp_data — tutto ciò che SNMP ha restituito durante la scansione. */
+export interface HostSnmpData {
+  sysName: string | null;
+  sysDescr: string | null;
+  sysObjectID: string | null;
+  serialNumber: string | null;
+  model: string | null;
+  partNumber: string | null;
+  firmware: string | null;
+  manufacturer: string | null;
+  community: string;
+  port: number;
+  mikrotikIdentity?: string | null;
+  unifiSummary?: string | null;
+  ifDescrSummary?: string | null;
+  hostResourcesSummary?: string | null;
+  sysUpTime?: string | null;
+  arpEntryCount?: number | null;
+  collected_at: string;
+}
+
+/** Match port-signature (matrice pesi 0.75/0.25). */
+export interface DeviceFingerprintPortMatch {
+  name: string;
+  confidence: number;
+  matched_ports: number[];
+}
+
+/** Snapshot fingerprint per host (persistito in hosts.detection_json). */
+export interface DeviceFingerprintSnapshot {
+  ip: string;
+  hostname?: string | null;
+  mac?: string | null;
+  ttl?: number | null;
+  os_hint?: string | null;
+  /** OS rilevato da nmap (-O / service), utile per VM vs hypervisor */
+  nmap_os?: string | null;
+  open_ports: number[];
+  matches: DeviceFingerprintPortMatch[];
+  banner_http?: string | null;
+  banner_ssh?: string | null;
+  snmp_sysdescr?: string | null;
+  snmp_vendor_oid?: string | null;
+  final_device?: string | null;
+  final_confidence?: number;
+  /** Ruolo stimato: switch vs AP, NAS vs iLO, hypervisor vs guest, ecc. */
+  role_hint?: string | null;
+  /** Ipotesi OS per VM / host generico (SMB, nmap OS) */
+  guest_os_hint?: string | null;
+  /** Dettaglio vendor (es. summary UniFi da walk SNMP) */
+  vendor_detail?: string | null;
+  detection_sources: string[];
+  generated_at: string;
+}
+
 export interface ScanHistory {
   id: number;
   host_id: number | null;
   network_id: number | null;
-  scan_type: "ping" | "snmp" | "nmap" | "arp" | "dns" | "windows" | "ssh";
+  scan_type: "ping" | "snmp" | "nmap" | "arp" | "dns" | "windows" | "ssh" | "network_discovery";
   status: string;
   ports_open: string | null;
   raw_output: string | null;
@@ -362,7 +428,7 @@ export interface SwitchPort {
 export interface ScheduledJob {
   id: number;
   network_id: number | null;
-  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check";
+  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync";
   interval_minutes: number;
   last_run: string | null;
   next_run: string | null;
@@ -504,7 +570,7 @@ export interface CredentialInput {
 
 export interface ScheduledJobInput {
   network_id?: number | null;
-  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check";
+  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync";
   interval_minutes: number;
   config?: Record<string, unknown>;
 }
@@ -517,6 +583,8 @@ export interface PingResult {
   ip: string;
   alive: boolean;
   latency_ms: number | null;
+  /** TTL ICMP se ricavato dall'output di ping (fingerprint OS). */
+  ttl?: number | null;
 }
 
 export interface NmapResult {

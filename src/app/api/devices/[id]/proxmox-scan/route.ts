@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { getNetworkDeviceById, updateNetworkDevice, getCredentialById, syncInventoryFromDevice } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
-import { ProxmoxClient } from "@/lib/proxmox/proxmox-client";
+import { ProxmoxClient, resolveProxmoxApiPortOverride, type ProxmoxHostInfo, type ProxmoxVM } from "@/lib/proxmox/proxmox-client";
 import { extractProxmoxViaSsh } from "@/lib/proxmox/proxmox-ssh";
+import { mergeProxmoxExtractResults } from "@/lib/proxmox/proxmox-merge-results";
+import {
+  buildProxmoxApiUrlForIp,
+  MAX_PROXMOX_SCAN_TARGETS,
+  proxmoxSshUsername,
+  resolveProxmoxTargetIps,
+} from "@/lib/proxmox/proxmox-targets";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function POST(
@@ -24,9 +31,15 @@ export async function POST(
     }
 
     const scanTarget = (device as { scan_target?: string | null }).scan_target;
-    const isProxmox = scanTarget === "proxmox" || device.device_type === "hypervisor" || (device.classification === "hypervisor" && (device.protocol === "api" || device.protocol === "ssh"));
+    const isProxmox =
+      scanTarget === "proxmox" ||
+      device.device_type === "hypervisor" ||
+      (device.classification === "hypervisor" && (device.protocol === "api" || device.protocol === "ssh"));
     if (!isProxmox) {
-      return NextResponse.json({ error: "Questo dispositivo non è configurato come Proxmox. Imposta 'Tipo di scansione' su Proxmox in Modifica." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Questo dispositivo non è configurato come Proxmox. Imposta 'Tipo di scansione' su Proxmox in Modifica." },
+        { status: 400 }
+      );
     }
 
     if (!device.enabled) {
@@ -55,6 +68,14 @@ export async function POST(
         }
       }
     }
+    if (!password && device.encrypted_password) {
+      try {
+        password = decrypt(device.encrypted_password);
+        if (device.username?.trim()) username = device.username.trim();
+      } catch {
+        return NextResponse.json({ error: "Impossibile decifrare password sul dispositivo" }, { status: 500 });
+      }
+    }
 
     if (!password) {
       return NextResponse.json(
@@ -63,41 +84,74 @@ export async function POST(
       );
     }
 
-    const host = (device.api_url?.trim() || device.host).replace(/^https?:\/\//i, "").split(":")[0];
-
-    let hosts: Awaited<ReturnType<typeof import("@/lib/proxmox/proxmox-client").ProxmoxClient.prototype.extractAll>>["hosts"];
-    let vms: Awaited<ReturnType<typeof import("@/lib/proxmox/proxmox-client").ProxmoxClient.prototype.extractAll>>["vms"];
-
-    if (device.protocol === "ssh") {
-      const result = await extractProxmoxViaSsh(
-        { host, port: device.port ?? 22, username, password },
-        { includeStopped: false, includeContainers: true }
+    const targets = resolveProxmoxTargetIps(device);
+    if (targets.length === 0) {
+      return NextResponse.json({ error: "Indica un host o IP valido (es. 192.168.40.1 o 192.168.40.1,2,3)." }, { status: 400 });
+    }
+    if (targets.length > MAX_PROXMOX_SCAN_TARGETS) {
+      return NextResponse.json(
+        { error: `Troppi indirizzi (${targets.length}). Massimo ${MAX_PROXMOX_SCAN_TARGETS}.` },
+        { status: 400 }
       );
-      hosts = result.hosts;
-      vms = result.vms;
-    } else {
-      if (username && !username.includes("@")) username = `${username}@pam`;
-      const hostOrUrl = device.api_url?.trim() || device.host;
-      const port = device.port || 8006;
-      const client = new ProxmoxClient({
-        host: hostOrUrl,
-        port,
-        username,
-        password,
-        verifySsl: false,
-      });
-      const result = await client.extractAll({
-        includeStopped: false,
-        includeContainers: true,
-      });
-      hosts = result.hosts;
-      vms = result.vms;
+    }
+
+    const apiUsername = username.includes("@") ? username : `${username}@pam`;
+    const sshUsername = proxmoxSshUsername(username);
+
+    const chunks: { hosts: ProxmoxHostInfo[]; vms: ProxmoxVM[] }[] = [];
+    const partialErrors: string[] = [];
+
+    for (const ip of targets) {
+      const apiUrl = buildProxmoxApiUrlForIp(ip, device.api_url);
+      try {
+        const port = resolveProxmoxApiPortOverride(apiUrl, device.port ?? undefined);
+        const client = new ProxmoxClient({
+          host: apiUrl,
+          ...(port !== undefined ? { port } : {}),
+          username: apiUsername,
+          password,
+          verifySsl: false,
+        });
+        chunks.push(
+          await client.extractAll({
+            includeStopped: false,
+            includeContainers: true,
+          })
+        );
+      } catch (e) {
+        partialErrors.push(`API ${ip}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
+      try {
+        chunks.push(
+          await extractProxmoxViaSsh(
+            { host: ip, port: device.port ?? 22, username: sshUsername, password },
+            { includeStopped: false, includeContainers: true }
+          )
+        );
+      } catch (e) {
+        partialErrors.push(`SSH ${ip}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    const merged = mergeProxmoxExtractResults(chunks);
+    if (merged.hosts.length === 0 && merged.vms.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            partialErrors.length > 0
+              ? partialErrors.join(" | ")
+              : "Nessun dato raccolto da API o SSH sui target indicati.",
+        },
+        { status: 500 }
+      );
     }
 
     const result = {
-      hosts,
-      vms,
+      hosts: merged.hosts,
+      vms: merged.vms,
       scanned_at: new Date().toISOString(),
+      ...(partialErrors.length > 0 ? { avvisi: partialErrors } : {}),
     };
 
     const updatedDevice = { ...device, last_proxmox_scan_at: result.scanned_at, last_proxmox_scan_result: JSON.stringify(result) };

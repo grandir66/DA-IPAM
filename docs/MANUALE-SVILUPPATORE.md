@@ -905,7 +905,7 @@ Installer per LXC Proxmox / Debian / Ubuntu.
 
 **Fasi:**
 1. Rileva OS (Debian/Ubuntu)
-2. Installa: curl, build-essential, python3, nmap, sqlite3
+2. Installa: curl, build-essential, python3, nmap, **snmp** (snmpwalk), **iputils-ping**, sqlite3
 3. Installa Node.js 20 via nodesource
 4. Crea venv Python per WinRM (`~/.da-invent-venv`)
 5. `npm ci && npm run build`

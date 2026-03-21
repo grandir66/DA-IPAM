@@ -5,8 +5,14 @@ import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { createWinrmClient } from "@/lib/devices/winrm-client";
 import { sshExec } from "@/lib/devices/ssh-helper";
-import { ProxmoxClient } from "@/lib/proxmox/proxmox-client";
+import { ProxmoxClient, resolveProxmoxApiPortOverride } from "@/lib/proxmox/proxmox-client";
 import { testProxmoxSsh } from "@/lib/proxmox/proxmox-ssh";
+import {
+  buildProxmoxApiUrlForIp,
+  MAX_PROXMOX_SCAN_TARGETS,
+  proxmoxSshUsername,
+  resolveProxmoxTargetIps,
+} from "@/lib/proxmox/proxmox-targets";
 
 function isProxmoxDevice(device: { device_type?: string; protocol?: string; scan_target?: string | null }): boolean {
   const scanTarget = (device as { scan_target?: string | null }).scan_target;
@@ -37,9 +43,21 @@ export async function GET(
       return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
     }
 
-    const timeoutMs = 15000;
+    const targetCount =
+      isProxmoxDevice(device) ? Math.max(1, resolveProxmoxTargetIps(device).length) : 1;
+    const timeoutMs = isProxmoxDevice(device)
+      ? Math.min(180_000, 15_000 + targetCount * 25_000)
+      : 15_000;
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout: il dispositivo non ha risposto entro 15 secondi")), timeoutMs)
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `Timeout: il dispositivo non ha risposto entro ${Math.round(timeoutMs / 1000)} secondi`
+            )
+          ),
+        timeoutMs
+      )
     );
 
     const testPromise = (async () => {
@@ -53,32 +71,72 @@ export async function GET(
             if (cred.encrypted_password) password = decrypt(cred.encrypted_password);
           }
         }
+        if (!password && device.encrypted_password) {
+          try {
+            password = decrypt(device.encrypted_password);
+            if (device.username?.trim()) username = device.username.trim();
+          } catch {
+            throw new Error("Impossibile decifrare password sul dispositivo");
+          }
+        }
         if (!password) {
           throw new Error("Configura le credenziali (SSH o API) per questo dispositivo. Per Proxmox usa root e password.");
         }
-        const host = (device.api_url?.trim() || device.host).replace(/^https?:\/\//i, "").split(":")[0];
-
-        if (device.protocol === "ssh") {
-          const ok = await testProxmoxSsh({
-            host,
-            port: device.port ?? 22,
-            username,
-            password,
-          });
-          return { success: ok, device_type: "hypervisor" };
+        const targets = resolveProxmoxTargetIps(device);
+        if (targets.length === 0) {
+          throw new Error("Indica un host o IP valido (es. 192.168.40.1 o 192.168.40.1,2,3).");
+        }
+        if (targets.length > MAX_PROXMOX_SCAN_TARGETS) {
+          throw new Error(`Troppi indirizzi (max ${MAX_PROXMOX_SCAN_TARGETS}).`);
         }
 
-        if (username && !username.includes("@")) username = `${username}@pam`;
-        const hostOrUrl = device.api_url?.trim() || device.host;
-        const client = new ProxmoxClient({
-          host: hostOrUrl,
-          port: device.port || 8006,
-          username,
-          password,
-          verifySsl: false,
-        });
-        await client.login();
-        return { success: true, device_type: "hypervisor" };
+        const apiUsername = username.includes("@") ? username : `${username}@pam`;
+        const sshUsername = proxmoxSshUsername(username);
+
+        let anyApi = false;
+        let anySsh = false;
+        const proxmox_targets: { ip: string; api: boolean; ssh: boolean }[] = [];
+
+        for (const ip of targets) {
+          const apiUrl = buildProxmoxApiUrlForIp(ip, device.api_url);
+          let apiOk = false;
+          try {
+            const apiPort = resolveProxmoxApiPortOverride(apiUrl, device.port ?? undefined);
+            const client = new ProxmoxClient({
+              host: apiUrl,
+              ...(apiPort !== undefined ? { port: apiPort } : {}),
+              username: apiUsername,
+              password,
+              verifySsl: false,
+            });
+            await client.login();
+            apiOk = true;
+            anyApi = true;
+          } catch {
+            /* tentativo API su questo IP fallito */
+          }
+          let sshOk = false;
+          try {
+            sshOk = await testProxmoxSsh({
+              host: ip,
+              port: device.port ?? 22,
+              username: sshUsername,
+              password,
+            });
+            if (sshOk) anySsh = true;
+          } catch {
+            /* SSH fallita su questo IP */
+          }
+          proxmox_targets.push({ ip, api: apiOk, ssh: sshOk });
+        }
+
+        return {
+          success: anyApi || anySsh,
+          device_type: "hypervisor",
+          proxmox_api_ok: anyApi,
+          proxmox_ssh_ok: anySsh,
+          proxmox_targets,
+        };
       }
       if (device.device_type === "router") {
         const client = await createRouterClient(device);

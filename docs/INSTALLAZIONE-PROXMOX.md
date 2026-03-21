@@ -39,6 +39,8 @@ chmod +x scripts/proxmox-lxc-install.sh
 
 Le scansioni **nmap UDP** (`-sU`) e in molti casi il **ping ICMP** richiedono privilegi sulle socket. Nel **container** la configurazione prevista è **`User=root`** nel unit systemd (file `deploy/da-invent.service` e `scripts/install.sh` con default `DA_INVENT_SERVICE_USER=root`).
 
+L’installer automatico nel CT installa anche i pacchetti **`snmp`** (binari `snmpwalk` / fallback SNMP) e **`iputils-ping`** insieme alle dipendenze base, prima di `scripts/install.sh`.
+
 Se preferisci un utente non privilegiato, imposta `DA_INVENT_SERVICE_USER=da-invent` prima dell’installazione systemd e configura **capability** (`CAP_NET_RAW`, `CAP_NET_ADMIN`) o accetta solo scansioni TCP senza UDP.
 
 Dopo la creazione del container, vedi il README per accesso web (`http://<ip-ct>:3001`) e setup iniziale.

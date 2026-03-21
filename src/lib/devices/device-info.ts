@@ -120,44 +120,67 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice): Promise<Devi
       "1.3.6.1.2.1.47.1.1.1.1.13.2", // entPhysicalModelName.2 (fallback)
     ];
 
+    const emptySnmp: DeviceInfo = {
+      sysname: null,
+      sysdescr: null,
+      model: null,
+      firmware: null,
+      serial_number: null,
+      part_number: null,
+    };
+
     return new Promise((resolve) => {
+      let settled = false;
+      const safeClose = (): void => {
+        try {
+          session.close();
+        } catch {
+          /* Timeout e callback possono entrambi chiudere; net-snmp lancia ERR_SOCKET_DGRAM_NOT_RUNNING se il socket è già spento */
+        }
+      };
+      const finish = (info: DeviceInfo): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(t);
+        safeClose();
+        resolve(info);
+      };
+
       const t = setTimeout(() => {
-        session.close();
-        resolve({ sysname: null, sysdescr: null, model: null, firmware: null, serial_number: null, part_number: null });
+        finish(emptySnmp);
       }, 8000);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (session as any).get(oids, (error: Error | null, varbinds: Array<{ oid: string; value: Buffer | string | number }>) => {
-          clearTimeout(t);
-          session.close();
-          if (error) {
-            resolve({ sysname: null, sysdescr: null, model: null, firmware: null, serial_number: null, part_number: null });
-            return;
-          }
-          let sysdescr: string | null = null;
-          let sysname: string | null = null;
-          let serial_number: string | null = null;
-          let model: string | null = null;
-          let part_number: string | null = null;
-
-          for (const vb of varbinds) {
-            const val = Buffer.isBuffer(vb.value) ? vb.value.toString("utf-8").trim() : String(vb.value ?? "").trim();
-            if (!val || val === "noSuchObject" || val === "noSuchInstance" || val === "endOfMibView") continue;
-
-            // Match robusto usando endsWith per gestire formati OID variabili
-            const oid = vb.oid;
-            if (oid === "1.3.6.1.2.1.1.1.0" || oid.endsWith(".1.1.1.0")) sysdescr = sysdescr || val;
-            if (oid === "1.3.6.1.2.1.1.5.0" || oid.endsWith(".1.1.5.0")) sysname = sysname || val;
-            // entPhysicalSerialNum (.11.1 o .11.2)
-            if (oid.includes(".47.1.1.1.1.11.")) serial_number = serial_number || val;
-            // entPhysicalDescr (.2.1 o .2.2) - model
-            if (oid.includes(".47.1.1.1.1.2.")) model = model || val;
-            // entPhysicalModelName (.13.1 o .13.2) - part number
-            if (oid.includes(".47.1.1.1.1.13.")) part_number = part_number || val;
-          }
-          resolve({ sysname, sysdescr, model, firmware: null, serial_number, part_number });
+        if (settled) return;
+        clearTimeout(t);
+        if (error) {
+          finish(emptySnmp);
+          return;
         }
-      );
+        let sysdescr: string | null = null;
+        let sysname: string | null = null;
+        let serial_number: string | null = null;
+        let model: string | null = null;
+        let part_number: string | null = null;
+
+        for (const vb of varbinds) {
+          const val = Buffer.isBuffer(vb.value) ? vb.value.toString("utf-8").trim() : String(vb.value ?? "").trim();
+          if (!val || val === "noSuchObject" || val === "noSuchInstance" || val === "endOfMibView") continue;
+
+          // Match robusto usando endsWith per gestire formati OID variabili
+          const oid = vb.oid;
+          if (oid === "1.3.6.1.2.1.1.1.0" || oid.endsWith(".1.1.1.0")) sysdescr = sysdescr || val;
+          if (oid === "1.3.6.1.2.1.1.5.0" || oid.endsWith(".1.1.5.0")) sysname = sysname || val;
+          // entPhysicalSerialNum (.11.1 o .11.2)
+          if (oid.includes(".47.1.1.1.1.11.")) serial_number = serial_number || val;
+          // entPhysicalDescr (.2.1 o .2.2) - model
+          if (oid.includes(".47.1.1.1.1.2.")) model = model || val;
+          // entPhysicalModelName (.13.1 o .13.2) - part number
+          if (oid.includes(".47.1.1.1.1.13.")) part_number = part_number || val;
+        }
+        finish({ sysname, sysdescr, model, firmware: null, serial_number, part_number });
+      });
     });
   } catch {
     return { sysname: null, sysdescr: null, model: null, firmware: null, serial_number: null, part_number: null };
@@ -789,8 +812,45 @@ function parseLegacyWinrmOutput(text: string): Partial<DeviceInfo> {
 }
 
 /**
+ * Recupera info device via profilo vendor SNMP (OID specifici).
+ * Usa il catalogo snmp-vendor-profiles.ts per identificare device e interrogare OID dedicati.
+ * Questa funzione è alternativa a SSH/WinRM: se il profilo restituisce dati completi,
+ * può essere usata come unica fonte (risparmia connessioni SSH).
+ */
+export async function getDeviceInfoViaSNMPProfile(
+  ip: string,
+  community: string,
+  port: number = 161
+): Promise<DeviceInfo & { vendorProfileId?: string | null; vendorProfileName?: string | null; vendorProfileExtra?: Record<string, string | null> }> {
+  const baseResult: DeviceInfo = { sysname: null, sysdescr: null, model: null, firmware: null, serial_number: null, part_number: null };
+  try {
+    const { querySnmpInfoMultiCommunity } = await import("@/lib/scanner/snmp-query");
+    const snmpInfo = await querySnmpInfoMultiCommunity(ip, [community], port);
+
+    if (!snmpInfo.sysDescr && !snmpInfo.sysObjectID && !snmpInfo.sysName) {
+      return baseResult;
+    }
+
+    return {
+      sysname: snmpInfo.sysName ?? null,
+      sysdescr: snmpInfo.sysDescr ?? null,
+      model: snmpInfo.model ?? null,
+      firmware: snmpInfo.vendorProfileFirmware ?? null,
+      serial_number: snmpInfo.serialNumber ?? null,
+      part_number: snmpInfo.partNumber ?? null,
+      vendorProfileId: snmpInfo.vendorProfileId ?? null,
+      vendorProfileName: snmpInfo.vendorProfileName ?? null,
+      vendorProfileExtra: snmpInfo.vendorProfileExtra ?? undefined,
+    };
+  } catch {
+    return baseResult;
+  }
+}
+
+/**
  * Combina SNMP e SSH per ottenere info complete.
  * Prova SNMP se disponibile (community o protocollo SNMP), poi SSH per model/firmware.
+ * Se il profilo SNMP vendor è completo (model + firmware + serial), può saltare SSH.
  */
 export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> {
   let result: DeviceInfo = { sysname: null, sysdescr: null, model: null, firmware: null, serial_number: null, part_number: null };
@@ -801,6 +861,7 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
   const hasSsh = device.protocol === "ssh" && (device.username || getDeviceCredentials(device)?.username);
   const hasWinrm = device.protocol === "winrm" || device.vendor === "windows";
 
+  // Prima WinRM se configurato
   if (hasWinrm) {
     try {
       const winrmInfo = await getDeviceInfoFromWinrm(device);
@@ -808,11 +869,36 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
     } catch { /* WinRM info opzionale */ }
   }
 
+  // SNMP con profilo vendor: prova a ottenere dati completi
   if (hasSnmp) {
-    const snmpInfo = await getDeviceInfoFromSnmp(device);
-    result = { ...result, ...snmpInfo };
+    const community = getDeviceCommunityString(device);
+    const snmpPort = (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") ? (device.port || 161) : 161;
+
+    // Prima prova il profilo vendor per dati specifici
+    const profileInfo = await getDeviceInfoViaSNMPProfile(device.host, community, snmpPort);
+    if (profileInfo.vendorProfileId) {
+      result = {
+        sysname: profileInfo.sysname ?? result.sysname,
+        sysdescr: profileInfo.sysdescr ?? result.sysdescr,
+        model: profileInfo.model ?? result.model,
+        firmware: profileInfo.firmware ?? result.firmware,
+        serial_number: profileInfo.serial_number ?? result.serial_number,
+        part_number: profileInfo.part_number ?? result.part_number,
+      };
+      // Se il profilo ha fornito model + firmware + serial, possiamo saltare SSH
+      const snmpComplete = result.model && result.firmware && result.serial_number;
+      if (snmpComplete && hasSsh) {
+        // SNMP sufficiente, skip SSH per questo device
+        return result;
+      }
+    } else {
+      // Fallback: SNMP base (ENTITY-MIB)
+      const snmpInfo = await getDeviceInfoFromSnmp(device);
+      result = { ...result, ...snmpInfo };
+    }
   }
 
+  // SSH per completare i dati mancanti
   if (hasSsh) {
     const sshInfo = await getDeviceInfoFromSsh(device);
     result = {

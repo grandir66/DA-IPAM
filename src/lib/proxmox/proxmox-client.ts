@@ -143,7 +143,7 @@ function createAgent(verifySsl = false): https.Agent {
 }
 
 /** Estrae host, porta e protocollo da una stringa (IP, hostname o URL completo) */
-function parseHost(hostOrUrl: string): { host: string; port: number; useHttps: boolean } {
+export function parseProxmoxUrl(hostOrUrl: string): { host: string; port: number; useHttps: boolean } {
   let s = hostOrUrl.trim();
   const defaultPort = 8006;
   let useHttps = true;
@@ -161,6 +161,18 @@ function parseHost(hostOrUrl: string): { host: string; port: number; useHttps: b
   return { host: s, port: defaultPort, useHttps };
 }
 
+/**
+ * Porta da passare al client API: il DB usa spesso 22 (SSH) come default su `network_devices.port`;
+ * se lo passiamo così com'è, l'API viene contattata sulla 22 e fallisce (TLS errato / 401) anche con credenziali valide.
+ * Se l'URL contiene già `:porta`, non si passa override (usa il valore parsato).
+ */
+export function resolveProxmoxApiPortOverride(hostOrUrl: string, devicePort: number | null | undefined): number | undefined {
+  const hostPart = hostOrUrl.trim().replace(/^https?:\/\//i, "").split("/")[0] ?? "";
+  if (/:\d+$/.test(hostPart)) return undefined;
+  if (devicePort != null && devicePort !== 22) return devicePort;
+  return undefined;
+}
+
 export class ProxmoxClient {
   private baseUrl: string;
   private config: ProxmoxConfig;
@@ -170,7 +182,7 @@ export class ProxmoxClient {
   private useHttps: boolean;
 
   constructor(config: ProxmoxConfig) {
-    const { host: parsedHost, port: parsedPort, useHttps } = parseHost(config.host);
+    const { host: parsedHost, port: parsedPort, useHttps } = parseProxmoxUrl(config.host);
     const port = config.port ?? parsedPort;
     const host = parsedHost || config.host;
     this.config = config;

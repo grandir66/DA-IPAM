@@ -15,6 +15,7 @@ import type {
   Network,
   NetworkWithStats,
   Host,
+  KnownHostWithNetworkRow,
   HostDetail,
   ScanHistory,
   NetworkDevice,
@@ -30,6 +31,7 @@ import type {
   ScheduledJobInput,
   CredentialInput,
 } from "@/types";
+import type { FingerprintUserRule } from "./device-fingerprint-classification";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "ipam.db");
@@ -66,6 +68,21 @@ export function getDb(): Database.Database {
   } catch { /* column already exists or table missing */ }
   try {
     _db.exec("ALTER TABLE nmap_profiles ADD COLUMN custom_ports TEXT");
+  } catch { /* column already exists */ }
+  try {
+    _db.exec("ALTER TABLE nmap_profiles ADD COLUMN tcp_ports TEXT");
+  } catch { /* column already exists */ }
+  try {
+    _db.exec("ALTER TABLE nmap_profiles ADD COLUMN udp_ports TEXT");
+  } catch { /* column already exists */ }
+  try {
+    _db.exec("ALTER TABLE hosts ADD COLUMN firmware TEXT");
+  } catch { /* column already exists */ }
+  try {
+    _db.exec("ALTER TABLE hosts ADD COLUMN device_manufacturer TEXT");
+  } catch { /* column already exists */ }
+  try {
+    _db.exec("ALTER TABLE hosts ADD COLUMN snmp_data TEXT");
   } catch { /* column already exists */ }
   try {
     _db.exec("ALTER TABLE networks ADD COLUMN dns_server TEXT");
@@ -157,6 +174,9 @@ export function getDb(): Database.Database {
   try { _db.exec("ALTER TABLE hosts ADD COLUMN hostname_source TEXT"); } catch { /* already exists */ }
   try { _db.exec("ALTER TABLE hosts ADD COLUMN conflict_flags TEXT"); } catch { /* already exists */ }
   try {
+    _db.exec("ALTER TABLE hosts ADD COLUMN detection_json TEXT");
+  } catch { /* column already exists */ }
+  try {
     _db.exec("DROP TABLE IF EXISTS scheduled_jobs_new");
     _db.exec(`CREATE TABLE scheduled_jobs_new (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -234,6 +254,118 @@ export function getDb(): Database.Database {
       } catch { /* already migrated */ }
       _db.pragma("foreign_keys = ON");
     }
+  }
+  // Migrazione: scan_type include 'network_discovery'
+  {
+    const schema = _db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scan_history'").get() as { sql: string } | undefined;
+    if (schema?.sql && !schema.sql.includes("'network_discovery'")) {
+      _db.pragma("foreign_keys = OFF");
+      try {
+        _db.exec("DROP TABLE IF EXISTS scan_history_v4");
+        _db.exec(`CREATE TABLE scan_history_v4 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
+          network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+          scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery')),
+          status TEXT NOT NULL,
+          ports_open TEXT,
+          raw_output TEXT,
+          duration_ms INTEGER,
+          timestamp TEXT DEFAULT (datetime('now'))
+        )`);
+        _db.exec("INSERT INTO scan_history_v4 SELECT * FROM scan_history");
+        _db.exec("DROP TABLE scan_history");
+        _db.exec("ALTER TABLE scan_history_v4 RENAME TO scan_history");
+        _db.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_host ON scan_history(host_id)");
+        _db.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_network ON scan_history(network_id)");
+      } catch {
+        /* already migrated */
+      }
+      _db.pragma("foreign_keys = ON");
+    }
+  }
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS network_host_credentials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+      credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK(role IN ('windows', 'linux', 'ssh', 'snmp')),
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(network_id, credential_id, role)
+    )`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_network_host_credentials_net_role ON network_host_credentials(network_id, role)`);
+  } catch { /* already exists */ }
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS host_detect_credential (
+      host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK(role IN ('windows', 'linux', 'ssh', 'snmp')),
+      credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+      updated_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (host_id, role)
+    )`);
+  } catch { /* already exists */ }
+  try {
+    const nhc = _db
+      .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='network_host_credentials'`)
+      .get() as { sql: string } | undefined;
+    if (nhc?.sql && !nhc.sql.includes("'ssh'")) {
+      _db.pragma("foreign_keys = OFF");
+      _db.exec(`CREATE TABLE network_host_credentials_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+        credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK(role IN ('windows', 'linux', 'ssh', 'snmp')),
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(network_id, credential_id, role)
+      )`);
+      _db.exec(`INSERT INTO network_host_credentials_new SELECT * FROM network_host_credentials`);
+      _db.exec(`DROP TABLE network_host_credentials`);
+      _db.exec(`ALTER TABLE network_host_credentials_new RENAME TO network_host_credentials`);
+      _db.exec(`CREATE INDEX IF NOT EXISTS idx_network_host_credentials_net_role ON network_host_credentials(network_id, role)`);
+      _db.pragma("foreign_keys = ON");
+    }
+  } catch {
+    /* migration skipped or already applied */
+  }
+  try {
+    const hdc = _db
+      .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='host_detect_credential'`)
+      .get() as { sql: string } | undefined;
+    if (hdc?.sql && !hdc.sql.includes("'snmp'")) {
+      _db.pragma("foreign_keys = OFF");
+      _db.exec(`CREATE TABLE host_detect_credential_new (
+        host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK(role IN ('windows', 'linux', 'ssh', 'snmp')),
+        credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+        updated_at TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (host_id, role)
+      )`);
+      _db.exec(`INSERT INTO host_detect_credential_new SELECT * FROM host_detect_credential`);
+      _db.exec(`DROP TABLE host_detect_credential`);
+      _db.exec(`ALTER TABLE host_detect_credential_new RENAME TO host_detect_credential`);
+      _db.pragma("foreign_keys = ON");
+    }
+  } catch {
+    /* migration skipped or already applied */
+  }
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS fingerprint_classification_map (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_kind TEXT NOT NULL CHECK(match_kind IN ('exact','contains')),
+      pattern TEXT NOT NULL,
+      classification TEXT NOT NULL,
+      priority INTEGER NOT NULL DEFAULT 100,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      note TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(match_kind, pattern)
+    )`);
+    _db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_fingerprint_class_map_pri ON fingerprint_classification_map(enabled, priority ASC, id ASC)`
+    );
+  } catch {
+    /* */
   }
   try {
     _db.pragma("foreign_keys = OFF");
@@ -326,6 +458,11 @@ export function getDb(): Database.Database {
   try {
     _db.exec("CREATE INDEX IF NOT EXISTS idx_mac_ip_history_mac ON mac_ip_history(mac_normalized)");
   } catch { /* exists */ }
+
+  // Migrazione: rimuovi vecchi profili nmap default (Quick, Standard, Completo) — ora c'è un solo profilo editabile
+  try {
+    _db.exec("DELETE FROM nmap_profiles WHERE name IN ('Quick', 'Standard', 'Completo') AND is_default = 1");
+  } catch { /* table might not exist yet */ }
 
   _db.exec(SCHEMA_SQL);
 
@@ -598,6 +735,16 @@ export function getDb(): Database.Database {
       VALUES ('Personalizzato', 'Top 100 TCP + porte esplicite + UDP note + SNMP con community', '', 'public', '', 0)`);
   } catch { /* profile may exist */ }
 
+  // Un solo profilo Nmap globale: elimina duplicati, mantieni quello predefinito (o id minimo)
+  try {
+    const def = _db.prepare("SELECT id FROM nmap_profiles WHERE is_default = 1 ORDER BY id LIMIT 1").get() as { id: number } | undefined;
+    const keep = def?.id ?? (_db.prepare("SELECT MIN(id) as id FROM nmap_profiles").get() as { id: number } | undefined)?.id;
+    if (keep != null) {
+      _db.prepare("DELETE FROM nmap_profiles WHERE id != ?").run(keep);
+      _db.prepare("UPDATE nmap_profiles SET is_default = 1 WHERE id = ?").run(keep);
+    }
+  } catch { /* tabella assente o vuota */ }
+
   try {
     _db.exec("ALTER TABLE inventory_assets ADD COLUMN technical_data TEXT");
   } catch { /* column already exists */ }
@@ -679,7 +826,411 @@ export function getDb(): Database.Database {
     _db.exec("ALTER TABLE inventory_assets ADD COLUMN location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL");
   } catch { /* column already exists */ }
 
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS device_fingerprint_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      device_label TEXT NOT NULL,
+      classification TEXT NOT NULL,
+      priority INTEGER NOT NULL DEFAULT 100,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      tcp_ports_key TEXT,
+      tcp_ports_optional TEXT,
+      min_key_ports INTEGER,
+      oid_prefix TEXT,
+      sysdescr_pattern TEXT,
+      hostname_pattern TEXT,
+      mac_vendor_pattern TEXT,
+      banner_pattern TEXT,
+      ttl_min INTEGER,
+      ttl_max INTEGER,
+      note TEXT,
+      builtin INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(name)
+    )`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_device_fp_rules_pri ON device_fingerprint_rules(enabled, priority ASC, id ASC)`);
+    seedBuiltinFingerprintRules(_db);
+  } catch { /* exists */ }
+
+  // Active Directory tables
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS ad_integrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      dc_host TEXT NOT NULL,
+      domain TEXT NOT NULL,
+      base_dn TEXT NOT NULL,
+      encrypted_username TEXT NOT NULL,
+      encrypted_password TEXT NOT NULL,
+      use_ssl INTEGER NOT NULL DEFAULT 1,
+      port INTEGER NOT NULL DEFAULT 636,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_sync_at TEXT,
+      last_sync_status TEXT,
+      computers_count INTEGER DEFAULT 0,
+      users_count INTEGER DEFAULT 0,
+      groups_count INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(dc_host, domain)
+    )`);
+  } catch { /* exists */ }
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS ad_computers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+      object_guid TEXT NOT NULL,
+      sam_account_name TEXT NOT NULL,
+      dns_host_name TEXT,
+      display_name TEXT,
+      distinguished_name TEXT NOT NULL,
+      operating_system TEXT,
+      operating_system_version TEXT,
+      last_logon_at TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+      raw_data TEXT,
+      synced_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(integration_id, object_guid)
+    )`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_ad_computers_integration ON ad_computers(integration_id)`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_ad_computers_host ON ad_computers(host_id)`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_ad_computers_dns ON ad_computers(dns_host_name)`);
+  } catch { /* exists */ }
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS ad_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+      object_guid TEXT NOT NULL,
+      sam_account_name TEXT NOT NULL,
+      user_principal_name TEXT,
+      display_name TEXT,
+      email TEXT,
+      department TEXT,
+      title TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_logon_at TEXT,
+      password_last_set_at TEXT,
+      raw_data TEXT,
+      synced_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(integration_id, object_guid)
+    )`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_ad_users_integration ON ad_users(integration_id)`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_ad_users_upn ON ad_users(user_principal_name)`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_ad_users_email ON ad_users(email)`);
+  } catch { /* exists */ }
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS ad_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+      object_guid TEXT NOT NULL,
+      sam_account_name TEXT NOT NULL,
+      display_name TEXT,
+      description TEXT,
+      distinguished_name TEXT NOT NULL,
+      group_type INTEGER,
+      member_guids TEXT,
+      synced_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(integration_id, object_guid)
+    )`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_ad_groups_integration ON ad_groups(integration_id)`);
+  } catch { /* exists */ }
+  // AD: nuove colonne e tabella DHCP leases
+  try { _db.exec("ALTER TABLE ad_integrations ADD COLUMN winrm_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL"); } catch { /* already exists */ }
+  try { _db.exec("ALTER TABLE ad_integrations ADD COLUMN dhcp_leases_count INTEGER DEFAULT 0"); } catch { /* already exists */ }
+  try { _db.exec("ALTER TABLE ad_computers ADD COLUMN ip_address TEXT"); } catch { /* already exists */ }
+  try { _db.exec("ALTER TABLE ad_computers ADD COLUMN ou TEXT"); } catch { /* already exists */ }
+  try { _db.exec("ALTER TABLE ad_users ADD COLUMN phone TEXT"); } catch { /* already exists */ }
+  try { _db.exec("ALTER TABLE ad_users ADD COLUMN ou TEXT"); } catch { /* already exists */ }
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS ad_dhcp_leases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+      scope_id TEXT NOT NULL,
+      scope_name TEXT,
+      ip_address TEXT NOT NULL,
+      mac_address TEXT NOT NULL,
+      hostname TEXT,
+      lease_expires TEXT,
+      address_state TEXT,
+      description TEXT,
+      last_synced TEXT DEFAULT (datetime('now')),
+      UNIQUE(integration_id, ip_address)
+    )`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_ad_dhcp_leases_integration ON ad_dhcp_leases(integration_id)`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_ad_dhcp_leases_mac ON ad_dhcp_leases(mac_address)`);
+  } catch { /* exists */ }
+
+  // SNMP Vendor Profiles table
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS snmp_vendor_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      enterprise_oid_prefixes TEXT NOT NULL DEFAULT '[]',
+      sysdescr_pattern TEXT,
+      fields TEXT NOT NULL DEFAULT '{}',
+      confidence REAL NOT NULL DEFAULT 0.90,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      builtin INTEGER NOT NULL DEFAULT 0,
+      note TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_snmp_vendor_profiles_category ON snmp_vendor_profiles(category)`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_snmp_vendor_profiles_enabled ON snmp_vendor_profiles(enabled)`);
+    seedBuiltinSnmpVendorProfiles(_db);
+  } catch { /* exists */ }
+
+  // DHCP Leases table (unified)
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS dhcp_leases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_type TEXT NOT NULL CHECK(source_type IN ('mikrotik', 'windows', 'cisco', 'other')),
+      source_device_id INTEGER REFERENCES network_devices(id) ON DELETE CASCADE,
+      source_name TEXT,
+      server_name TEXT,
+      scope_id TEXT,
+      scope_name TEXT,
+      ip_address TEXT NOT NULL,
+      mac_address TEXT NOT NULL,
+      hostname TEXT,
+      status TEXT,
+      lease_start TEXT,
+      lease_expires TEXT,
+      description TEXT,
+      host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+      network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+      last_synced TEXT DEFAULT (datetime('now')),
+      UNIQUE(source_device_id, ip_address)
+    )`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_dhcp_leases_source ON dhcp_leases(source_type, source_device_id)`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_dhcp_leases_mac ON dhcp_leases(mac_address)`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_dhcp_leases_ip ON dhcp_leases(ip_address)`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_dhcp_leases_host ON dhcp_leases(host_id)`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_dhcp_leases_network ON dhcp_leases(network_id)`);
+  } catch { /* exists */ }
+
   return _db;
+}
+
+function seedBuiltinFingerprintRules(db: Database.Database): void {
+  const count = (db.prepare("SELECT COUNT(*) as c FROM device_fingerprint_rules").get() as { c: number }).c;
+  if (count > 0) return;
+  const ins = db.prepare(
+    `INSERT OR IGNORE INTO device_fingerprint_rules
+     (name, device_label, classification, priority, enabled, tcp_ports_key, tcp_ports_optional, min_key_ports,
+      oid_prefix, sysdescr_pattern, hostname_pattern, mac_vendor_pattern, banner_pattern, ttl_min, ttl_max, note, builtin)
+     VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+  );
+  const rules: Array<{
+    name: string; label: string; cls: string; pri: number;
+    keyPorts?: number[]; optPorts?: number[]; minKey?: number;
+    oid?: string; sysDescr?: string; hostname?: string; macVendor?: string; banner?: string;
+    ttlMin?: number; ttlMax?: number; note?: string;
+  }> = [
+    // ── Port signatures ──
+    { name: "Proxmox VE (porte)", label: "Proxmox VE", cls: "hypervisor", pri: 10, keyPorts: [8006, 22], optPorts: [3128, 8007] },
+    { name: "Synology DSM (porte)", label: "Synology DSM", cls: "storage", pri: 10, keyPorts: [5000, 5001, 22], optPorts: [6690, 7304] },
+    { name: "QNAP QTS (porte)", label: "QNAP QTS", cls: "storage", pri: 10, keyPorts: [8080, 22], optPorts: [9000, 443] },
+    { name: "TrueNAS (porte)", label: "TrueNAS", cls: "storage", pri: 15, keyPorts: [80, 443, 2049], optPorts: [22], note: "Richiede NFS (2049) per distinguere da generico" },
+    { name: "MikroTik RouterOS (porte)", label: "MikroTik RouterOS", cls: "router", pri: 10, keyPorts: [8291, 22], optPorts: [80, 443, 8728] },
+    { name: "UniFi Controller (porte)", label: "UniFi Controller", cls: "access_point", pri: 10, keyPorts: [8443, 8080], optPorts: [8880, 6789, 22] },
+    { name: "Stormshield SNS (porte)", label: "Stormshield SNS", cls: "firewall", pri: 10, keyPorts: [443, 22, 1300], optPorts: [] },
+    { name: "Hikvision (porte)", label: "Hikvision", cls: "telecamera", pri: 10, keyPorts: [554, 8000], optPorts: [80, 8001, 443] },
+    { name: "Dahua / NVR (porte)", label: "Dahua / NVR", cls: "telecamera", pri: 10, keyPorts: [554, 37777], optPorts: [80, 443] },
+    { name: "Telecam XMEye/clone (porte)", label: "Telecam XMEye/clone", cls: "telecamera", pri: 10, keyPorts: [34567, 554], optPorts: [80] },
+    { name: "Windows Server (porte)", label: "Windows Server", cls: "server_windows", pri: 20, keyPorts: [135, 139, 445], optPorts: [3389, 5985] },
+    { name: "HPE iLO (porte)", label: "HPE iLO", cls: "server", pri: 10, keyPorts: [17988, 17990], optPorts: [443, 623] },
+    { name: "PBX SIP (porte)", label: "PBX SIP (FreePBX/3CX)", cls: "voip", pri: 10, keyPorts: [5060], optPorts: [5061, 80, 443] },
+    { name: "Zabbix (porte)", label: "Zabbix", cls: "server", pri: 10, keyPorts: [10050, 10051], optPorts: [80, 443] },
+    { name: "Wazuh (porte)", label: "Wazuh", cls: "server", pri: 10, keyPorts: [1514, 1515, 55000], optPorts: [443] },
+    { name: "Linux generico (porte)", label: "Linux generico", cls: "server_linux", pri: 90, keyPorts: [22], optPorts: [80, 443], note: "Bassa priorità: fallback generico" },
+    // ── OID ──
+    { name: "HP stampante (OID)", label: "HP Stampante", cls: "stampante", pri: 5, oid: "1.3.6.1.4.1.11.2.3.9" },
+    { name: "HP ProCurve switch (OID)", label: "HP ProCurve", cls: "switch", pri: 5, oid: "1.3.6.1.4.1.11.2.3.7" },
+    { name: "MikroTik (OID)", label: "MikroTik RouterOS", cls: "router", pri: 5, oid: "1.3.6.1.4.1.14988.1" },
+    { name: "Ubiquiti AP (OID)", label: "UniFi/Ubiquiti", cls: "access_point", pri: 5, oid: "1.3.6.1.4.1.41112" },
+    { name: "Hikvision (OID)", label: "Hikvision", cls: "telecamera", pri: 5, oid: "1.3.6.1.4.1.39165" },
+    { name: "Synology (OID)", label: "Synology DSM", cls: "storage", pri: 5, oid: "1.3.6.1.4.1.6574" },
+    { name: "QNAP (OID)", label: "QNAP QTS", cls: "storage", pri: 5, oid: "1.3.6.1.4.1.24681" },
+    { name: "Epson stampante (OID)", label: "Epson", cls: "stampante", pri: 5, oid: "1.3.6.1.4.1.1248" },
+    { name: "VMware (OID)", label: "VMware ESXi", cls: "hypervisor", pri: 5, oid: "1.3.6.1.4.1.6876" },
+    { name: "APC UPS (OID)", label: "APC UPS", cls: "ups", pri: 5, oid: "1.3.6.1.4.1.318" },
+    { name: "Yealink VoIP (OID)", label: "Yealink VoIP", cls: "voip", pri: 5, oid: "1.3.6.1.4.1.3990" },
+    { name: "Fortinet (OID)", label: "Fortinet FortiGate", cls: "firewall", pri: 5, oid: "1.3.6.1.4.1.12356" },
+    { name: "pfSense (OID)", label: "pfSense", cls: "firewall", pri: 5, oid: "1.3.6.1.4.1.12325" },
+    { name: "Netgear (OID)", label: "Netgear", cls: "switch", pri: 5, oid: "1.3.6.1.4.1.4526" },
+    { name: "Cisco switch (OID)", label: "Cisco", cls: "switch", pri: 6, oid: "1.3.6.1.4.1.9.1" },
+    { name: "net-snmp Linux (OID)", label: "Linux/net-snmp", cls: "server_linux", pri: 50, oid: "1.3.6.1.4.1.8072.3.2", note: "Generico Linux; Proxmox override se porta 8006 o sysDescr" },
+    // ── sysDescr / testo ──
+    { name: "RouterOS (sysDescr)", label: "MikroTik RouterOS", cls: "router", pri: 30, sysDescr: "routeros|mikrotik" },
+    { name: "Proxmox (sysDescr)", label: "Proxmox VE", cls: "hypervisor", pri: 30, sysDescr: "proxmox|pve-manager|qemu.?kvm" },
+    { name: "Synology (sysDescr)", label: "Synology DSM", cls: "storage", pri: 30, sysDescr: "synology|diskstation" },
+    { name: "QNAP (sysDescr)", label: "QNAP QTS", cls: "storage", pri: 30, sysDescr: "qnap|\\bqts\\b" },
+    { name: "ESXi (sysDescr)", label: "VMware ESXi", cls: "hypervisor", pri: 30, sysDescr: "esxi|vmware\\s*esx" },
+    { name: "Firewall generico (sysDescr)", label: "Firewall", cls: "firewall", pri: 35, sysDescr: "firewall|fortigate|pfsense|opnsense|sophos" },
+    { name: "Windows Server (sysDescr)", label: "Windows Server", cls: "server_windows", pri: 35, sysDescr: "windows\\s*server|microsoft.*server" },
+    { name: "Stampante (sysDescr)", label: "Stampante", cls: "stampante", pri: 35, sysDescr: "printer|laserjet|deskjet|officejet|epson|brother.*print|lexmark|ricoh|xerox" },
+    // ── Hostname ──
+    { name: "AP hostname", label: "Access Point", cls: "access_point", pri: 60, hostname: "^ap[-_]|^wifi[-_]|^unifi[-_]|^ubnt[-_]" },
+    { name: "Printer hostname", label: "Stampante", cls: "stampante", pri: 60, hostname: "^printer[-_]|^print[-_]|^hp[-_]lj" },
+    { name: "Camera hostname", label: "Telecamera", cls: "telecamera", pri: 60, hostname: "^cam[-_]|^ipcam[-_]|^nvr[-_]|^dvr[-_]" },
+    { name: "NAS hostname", label: "NAS/Storage", cls: "storage", pri: 60, hostname: "^nas[-_]|^synology[-_]|^qnap[-_]" },
+    { name: "Switch hostname", label: "Switch", cls: "switch", pri: 60, hostname: "^switch[-_]|^sw[-_]" },
+    { name: "Router hostname", label: "Router", cls: "router", pri: 60, hostname: "^router[-_]|^gw[-_]|^gateway[-_]" },
+    { name: "Hypervisor hostname", label: "Hypervisor", cls: "hypervisor", pri: 60, hostname: "^esxi[-_]|^proxmox[-_]|^pve[-_]" },
+    // ── MAC vendor ──
+    { name: "Synology MAC", label: "Synology DSM", cls: "storage", pri: 70, macVendor: "synology" },
+    { name: "QNAP MAC", label: "QNAP QTS", cls: "storage", pri: 70, macVendor: "qnap" },
+    { name: "Hikvision MAC", label: "Hikvision", cls: "telecamera", pri: 70, macVendor: "hikvision|hangzhou" },
+    { name: "VM MAC", label: "VM", cls: "vm", pri: 70, macVendor: "vmware|proxmox\\s*server|microsoft\\s*virtual|hyper-v|qemu|xensource|oracle\\s*vm|red\\s*hat.*kvm" },
+    { name: "Apple MAC", label: "Client Apple", cls: "workstation", pri: 75, macVendor: "apple" },
+    // ── Banner HTTP ──
+    { name: "Proxmox banner", label: "Proxmox VE", cls: "hypervisor", pri: 25, banner: "proxmox|pve-manager" },
+    { name: "Synology banner", label: "Synology DSM", cls: "storage", pri: 25, banner: "synology|diskstation" },
+    { name: "QNAP banner", label: "QNAP QTS", cls: "storage", pri: 25, banner: "qnap|qts" },
+    // ── TTL ──
+    { name: "TTL Windows", label: "Windows", cls: "workstation", pri: 95, ttlMin: 65, ttlMax: 128, note: "TTL 65-128 suggerisce Windows; bassa priorità" },
+  ];
+  const t = db.transaction(() => {
+    for (const r of rules) {
+      ins.run(
+        r.name, r.label, r.cls, r.pri,
+        r.keyPorts ? JSON.stringify(r.keyPorts) : null,
+        r.optPorts ? JSON.stringify(r.optPorts) : null,
+        r.minKey ?? null,
+        r.oid ?? null,
+        r.sysDescr ?? null,
+        r.hostname ?? null,
+        r.macVendor ?? null,
+        r.banner ?? null,
+        r.ttlMin ?? null,
+        r.ttlMax ?? null,
+        r.note ?? null,
+      );
+    }
+  });
+  t();
+}
+
+function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
+  const count = (db.prepare("SELECT COUNT(*) as c FROM snmp_vendor_profiles").get() as { c: number }).c;
+  if (count > 0) return;
+
+  const ins = db.prepare(`INSERT INTO snmp_vendor_profiles
+    (profile_id, name, category, enterprise_oid_prefixes, sysdescr_pattern, fields, confidence, enabled, builtin)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)`);
+
+  const profiles = [
+    // FIREWALL
+    { id: "stormshield", name: "Stormshield SNS", cat: "firewall", oids: ["1.3.6.1.4.1.11256"], conf: 0.98,
+      fields: { model: "1.3.6.1.4.1.11256.1.1.1.0", firmware: "1.3.6.1.4.1.11256.1.1.2.0", serial: "1.3.6.1.4.1.11256.1.1.3.0" } },
+    { id: "fortinet", name: "Fortinet FortiGate", cat: "firewall", oids: ["1.3.6.1.4.1.12356"], conf: 0.98,
+      fields: { firmware: "1.3.6.1.4.1.12356.101.4.1.1.0", model: "1.3.6.1.4.1.12356.101.4.1.5.0", serial: "1.3.6.1.4.1.12356.101.4.1.4.0" } },
+    { id: "pfsense", name: "pfSense", cat: "firewall", oids: ["1.3.6.1.4.1.12325"], sysDescr: "pfsense", conf: 0.95,
+      fields: { os: "1.3.6.1.2.1.1.1.0" } },
+    { id: "opnsense", name: "OPNsense", cat: "firewall", oids: [], sysDescr: "opnsense", conf: 0.95,
+      fields: { os: "1.3.6.1.2.1.1.1.0" } },
+    { id: "sophos", name: "Sophos XG/XGS", cat: "firewall", oids: ["1.3.6.1.4.1.2604"], conf: 0.97,
+      fields: { model: "1.3.6.1.4.1.2604.5.1.1.2.0", firmware: "1.3.6.1.4.1.2604.5.1.1.3.0" } },
+    { id: "paloalto", name: "Palo Alto Networks", cat: "firewall", oids: ["1.3.6.1.4.1.25461"], conf: 0.98,
+      fields: { firmware: "1.3.6.1.4.1.25461.2.1.2.1.1.0", model: "1.3.6.1.4.1.25461.2.1.2.1.5.0", serial: "1.3.6.1.4.1.25461.2.1.2.1.3.0" } },
+    // SWITCH
+    { id: "cisco_switch", name: "Cisco Switch", cat: "switch", oids: ["1.3.6.1.4.1.9.1.5", "1.3.6.1.4.1.9.1.1"], conf: 0.96,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: ["1.3.6.1.2.1.47.1.1.1.1.11.1", "1.3.6.1.4.1.9.3.6.3.0"], firmware: "1.3.6.1.2.1.47.1.1.1.1.10.1" } },
+    { id: "cisco_router", name: "Cisco Router", cat: "router", oids: ["1.3.6.1.4.1.9.1"], conf: 0.94,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: ["1.3.6.1.2.1.47.1.1.1.1.11.1", "1.3.6.1.4.1.9.3.6.3.0"], firmware: "1.3.6.1.2.1.47.1.1.1.1.10.1" } },
+    { id: "hp_procurve", name: "HP ProCurve (ArubaOS-Switch)", cat: "switch", oids: ["1.3.6.1.4.1.11.2.14.11.5.1", "1.3.6.1.4.1.11.2.3.7"], conf: 0.97,
+      fields: { model: "1.3.6.1.4.1.11.2.14.11.5.1.1.2.0", firmware: "1.3.6.1.4.1.11.2.14.11.5.1.1.7.0", serial: "1.3.6.1.4.1.11.2.14.11.5.1.1.10.0" } },
+    { id: "hp_comware", name: "HP Comware (FlexFabric)", cat: "switch", oids: ["1.3.6.1.4.1.25506"], conf: 0.96,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
+    { id: "juniper", name: "Juniper Networks", cat: "router", oids: ["1.3.6.1.4.1.2636"], conf: 0.97,
+      fields: { model: "1.3.6.1.4.1.2636.3.1.2.0", serial: "1.3.6.1.4.1.2636.3.1.3.0" } },
+    { id: "aruba", name: "Aruba Networks (HPE)", cat: "switch", oids: ["1.3.6.1.4.1.14823"], conf: 0.96,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
+    { id: "netgear", name: "Netgear Switch", cat: "switch", oids: ["1.3.6.1.4.1.4526"], conf: 0.95,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
+    { id: "dlink", name: "D-Link Switch", cat: "switch", oids: ["1.3.6.1.4.1.171"], conf: 0.94,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
+    { id: "tplink_omada", name: "TP-Link Omada", cat: "switch", oids: ["1.3.6.1.4.1.11863"], conf: 0.95,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1", firmware: "1.3.6.1.2.1.47.1.1.1.1.9.1" } },
+    { id: "ubiquiti_edgeswitch", name: "Ubiquiti EdgeSwitch", cat: "switch", oids: ["1.3.6.1.4.1.4413"], conf: 0.96,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
+    // ROUTER
+    { id: "mikrotik", name: "MikroTik RouterOS", cat: "router", oids: ["1.3.6.1.4.1.14988"], conf: 0.98,
+      fields: { model: "1.3.6.1.4.1.14988.1.1.7.1.0", serial: "1.3.6.1.4.1.14988.1.1.7.3.0", firmware: "1.3.6.1.4.1.14988.1.1.7.4.0" } },
+    { id: "ubiquiti_edgerouter", name: "Ubiquiti EdgeRouter", cat: "router", oids: ["1.3.6.1.4.1.41112.1.5"], sysDescr: "edgeos", conf: 0.95,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1" } },
+    // ACCESS POINT
+    { id: "ubiquiti_unifi_ap", name: "Ubiquiti UniFi AP", cat: "access_point", oids: ["1.3.6.1.4.1.41112.1.6"], conf: 0.97,
+      fields: { model: "1.3.6.1.4.1.41112.1.6.1.1.0", firmware: "1.3.6.1.4.1.41112.1.6.1.2.0", serial: "1.3.6.1.4.1.41112.1.6.1.3.0" } },
+    { id: "ubiquiti_airmax", name: "Ubiquiti AirMAX", cat: "access_point", oids: ["1.3.6.1.4.1.41112.1.2"], conf: 0.96, fields: {} },
+    { id: "ubiquiti_generic", name: "Ubiquiti Device", cat: "access_point", oids: ["1.3.6.1.4.1.41112"], conf: 0.90,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1" } },
+    // STORAGE
+    { id: "synology", name: "Synology DSM", cat: "storage", oids: ["1.3.6.1.4.1.6574"], conf: 0.98,
+      fields: { model: "1.3.6.1.4.1.6574.1.5.1.0", serial: "1.3.6.1.4.1.6574.1.5.2.0", firmware: "1.3.6.1.4.1.6574.1.5.3.0" } },
+    { id: "qnap", name: "QNAP QTS", cat: "storage", oids: ["1.3.6.1.4.1.24681"], conf: 0.98,
+      fields: { model: "1.3.6.1.4.1.24681.1.2.1.0", serial: "1.3.6.1.4.1.24681.1.2.2.0", firmware: "1.3.6.1.4.1.24681.1.2.3.0" } },
+    { id: "truenas", name: "TrueNAS", cat: "storage", oids: [], sysDescr: "truenas|freenas", conf: 0.94, fields: { os: "1.3.6.1.2.1.1.1.0" } },
+    { id: "netapp", name: "NetApp ONTAP", cat: "storage", oids: ["1.3.6.1.4.1.789"], conf: 0.97,
+      fields: { firmware: "1.3.6.1.4.1.789.1.1.2.0", model: "1.3.6.1.4.1.789.1.1.3.0", serial: "1.3.6.1.4.1.789.1.1.4.0" } },
+    // SERVER / HYPERVISOR
+    { id: "hpe_ilo", name: "HPE iLO (ProLiant)", cat: "server", oids: ["1.3.6.1.4.1.232"], conf: 0.97,
+      fields: { model: "1.3.6.1.4.1.232.2.2.4.2.0", serial: "1.3.6.1.4.1.232.2.2.2.6.0", partNumber: "1.3.6.1.4.1.232.2.2.4.3.0" } },
+    { id: "dell_idrac", name: "Dell iDRAC (PowerEdge)", cat: "server", oids: ["1.3.6.1.4.1.674"], conf: 0.97,
+      fields: { serial: "1.3.6.1.4.1.674.10892.5.1.3.2.0", model: "1.3.6.1.4.1.674.10892.5.1.3.21.0" } },
+    { id: "vmware_esxi", name: "VMware ESXi", cat: "hypervisor", oids: ["1.3.6.1.4.1.6876"], conf: 0.98,
+      fields: { model: "1.3.6.1.4.1.6876.1.1.0", firmware: "1.3.6.1.4.1.6876.1.2.0" } },
+    { id: "proxmox", name: "Proxmox VE", cat: "hypervisor", oids: [], sysDescr: "proxmox|pve|pve-manager|qemu/kvm", conf: 0.95, fields: { os: "1.3.6.1.2.1.1.1.0" } },
+    { id: "linux_generic", name: "Linux (net-snmp)", cat: "server_linux", oids: ["1.3.6.1.4.1.8072"], conf: 0.85, fields: { os: "1.3.6.1.2.1.1.1.0" } },
+    { id: "windows_snmp", name: "Windows SNMP Agent", cat: "server_windows", oids: [], sysDescr: "windows", conf: 0.85, fields: { os: "1.3.6.1.2.1.1.1.0" } },
+    // TELECAMERE
+    { id: "hikvision", name: "Hikvision", cat: "telecamera", oids: ["1.3.6.1.4.1.39165", "1.3.6.1.4.1.50001"], conf: 0.97,
+      fields: { model: "1.3.6.1.4.1.39165.1.1.0", firmware: "1.3.6.1.4.1.39165.1.3.0" } },
+    { id: "dahua", name: "Dahua / NVR", cat: "telecamera", oids: ["1.3.6.1.4.1.1004849"], sysDescr: "dahua", conf: 0.95, fields: { os: "1.3.6.1.2.1.1.1.0" } },
+    { id: "axis", name: "Axis Communications", cat: "telecamera", oids: ["1.3.6.1.4.1.368"], conf: 0.96,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
+    // VoIP
+    { id: "yealink", name: "Yealink VoIP", cat: "voip", oids: ["1.3.6.1.4.1.3990"], conf: 0.97,
+      fields: { model: "1.3.6.1.4.1.3990.9.1.0", firmware: "1.3.6.1.4.1.3990.9.2.0" } },
+    { id: "snom", name: "Snom VoIP", cat: "voip", oids: ["1.3.6.1.4.1.1526"], conf: 0.96,
+      fields: { firmware: "1.3.6.1.4.1.1526.11.1.0" } },
+    { id: "grandstream", name: "Grandstream VoIP", cat: "voip", oids: ["1.3.6.1.4.1.31746"], conf: 0.95, fields: { os: "1.3.6.1.2.1.1.1.0" } },
+    { id: "cisco_phone", name: "Cisco IP Phone", cat: "voip", oids: ["1.3.6.1.4.1.9.6.1"], conf: 0.96,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
+    // UPS
+    { id: "apc", name: "APC (Schneider Electric)", cat: "ups", oids: ["1.3.6.1.4.1.318"], conf: 0.98,
+      fields: { model: "1.3.6.1.4.1.318.1.1.1.1.1.1.0", firmware: "1.3.6.1.4.1.318.1.1.1.1.2.1.0", serial: "1.3.6.1.4.1.318.1.1.1.1.2.3.0" } },
+    { id: "eaton", name: "Eaton UPS", cat: "ups", oids: ["1.3.6.1.4.1.705"], conf: 0.97,
+      fields: { model: "1.3.6.1.4.1.705.1.1.1.0", firmware: "1.3.6.1.4.1.705.1.1.7.0" } },
+    { id: "ups_rfc1628", name: "UPS (RFC 1628)", cat: "ups", oids: [], sysDescr: "ups|uninterruptible", conf: 0.88,
+      fields: { model: "1.3.6.1.2.1.33.1.1.2.0", firmware: "1.3.6.1.2.1.33.1.1.3.0" } },
+    // STAMPANTI
+    { id: "hp_printer", name: "HP JetDirect (LaserJet)", cat: "stampante", oids: ["1.3.6.1.4.1.11.2.3.9"], conf: 0.97,
+      fields: { serial: "1.3.6.1.4.1.11.2.3.9.1.1.7.0", model: "1.3.6.1.4.1.11.2.3.9.4.2.1.1.1.1.20.1" } },
+    { id: "epson", name: "Epson Printer", cat: "stampante", oids: ["1.3.6.1.4.1.1248"], conf: 0.96,
+      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.43.5.1.1.16.1" } },
+    { id: "printer_generic", name: "Printer (RFC 3805)", cat: "stampante", oids: [], sysDescr: "printer|laserjet|deskjet|officejet|multifunction|mfp", conf: 0.88,
+      fields: { serial: "1.3.6.1.2.1.43.5.1.1.16.1" } },
+  ];
+
+  const t = db.transaction(() => {
+    for (const p of profiles) {
+      ins.run(
+        p.id, p.name, p.cat,
+        JSON.stringify(p.oids),
+        p.sysDescr ?? null,
+        JSON.stringify(p.fields),
+        p.conf
+      );
+    }
+  });
+  t();
 }
 
 // ========================
@@ -813,6 +1364,17 @@ export function getDevicesPaginated(
 
 export function getNetworkById(id: number): Network | undefined {
   return getDb().prepare("SELECT * FROM networks WHERE id = ?").get(id) as Network | undefined;
+}
+
+export function getNetworkContainingIp(ip: string): Network | undefined {
+  const { isIpInCidr } = require("./utils") as { isIpInCidr: (ip: string, cidr: string) => boolean };
+  const networks = getDb().prepare("SELECT * FROM networks").all() as Network[];
+  for (const net of networks) {
+    if (isIpInCidr(ip, net.cidr)) {
+      return net;
+    }
+  }
+  return undefined;
 }
 
 export function createNetwork(input: NetworkInput): Network {
@@ -1017,37 +1579,74 @@ export function getHostById(id: number): HostDetail | undefined {
   };
 }
 
-/** Merge existing open_ports JSON with new scan result (union by port+protocol) */
-function mergeOpenPorts(existing: string | null, incoming: string): string {
-  const toMap = (json: string): Map<string, { port: number; protocol: string; service?: string | null; version?: string | null }> => {
-    const map = new Map<string, { port: number; protocol: string; service?: string | null; version?: string | null }>();
-    try {
-      const arr = JSON.parse(json) as Array<{ port: number; protocol?: string; service?: string | null; version?: string | null }>;
-      if (Array.isArray(arr)) {
-        for (const p of arr) {
-          const key = `${p.port}:${p.protocol || "tcp"}`;
-          if (!map.has(key)) map.set(key, { port: p.port, protocol: p.protocol || "tcp", service: p.service, version: p.version });
-        }
-      }
-    } catch { /* ignore */ }
+type PortEntry = { port: number; protocol: string; service?: string | null; version?: string | null };
+
+function parsePortsJson(json: string | null): PortEntry[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json) as Array<{ port: number; protocol?: string; service?: string | null; version?: string | null }>;
+    if (Array.isArray(arr)) {
+      return arr.map((p) => ({ port: p.port, protocol: p.protocol || "tcp", service: p.service, version: p.version }));
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+/** Merge existing open_ports JSON with new scan result (union by port+protocol). Esportato per sessione Nmap+SNMP unificata. */
+export function mergeOpenPortsJson(existing: string | null, incoming: string): string {
+  const toMap = (ports: PortEntry[]): Map<string, PortEntry> => {
+    const map = new Map<string, PortEntry>();
+    for (const p of ports) {
+      const key = `${p.port}:${p.protocol}`;
+      if (!map.has(key)) map.set(key, p);
+    }
     return map;
   };
-  const merged = toMap(existing || "[]");
-  const incomingMap = toMap(incoming);
+  const merged = toMap(parsePortsJson(existing));
+  const incomingMap = toMap(parsePortsJson(incoming));
   for (const [k, v] of incomingMap) {
     merged.set(k, v);
   }
   return JSON.stringify([...merged.values()].sort((a, b) => a.port - b.port || String(a.protocol).localeCompare(b.protocol)));
 }
 
-export function upsertHost(input: HostInput & { mac?: string; vendor?: string; hostname?: string; hostname_source?: string; dns_forward?: string; dns_reverse?: string; status?: "online" | "offline" | "unknown"; open_ports?: string; os_info?: string; model?: string; serial_number?: string }): Host {
+/**
+ * Sostituisce le porte di un protocollo specifico mantenendo quelle dell'altro.
+ * Es: replaceProtocol="tcp" → rimuove tutte le TCP esistenti, aggiunge le nuove TCP, mantiene UDP.
+ */
+function mergeOpenPortsByProtocol(existing: string | null, incoming: string, replaceProtocol: "tcp" | "udp"): string {
+  const existingPorts = parsePortsJson(existing);
+  const incomingPorts = parsePortsJson(incoming);
+  // Mantieni porte dell'altro protocollo
+  const kept = existingPorts.filter((p) => p.protocol !== replaceProtocol);
+  // Aggiungi le nuove porte del protocollo target
+  const newOfProtocol = incomingPorts.filter((p) => p.protocol === replaceProtocol);
+  const merged = [...kept, ...newOfProtocol];
+  // Dedup per port:protocol
+  const seen = new Set<string>();
+  const unique: PortEntry[] = [];
+  for (const p of merged) {
+    const key = `${p.port}:${p.protocol}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(p);
+    }
+  }
+  return JSON.stringify(unique.sort((a, b) => a.port - b.port || String(a.protocol).localeCompare(b.protocol)));
+}
+
+export function upsertHost(input: HostInput & { mac?: string; vendor?: string; hostname?: string; hostname_source?: string; dns_forward?: string; dns_reverse?: string; status?: "online" | "offline" | "unknown"; open_ports?: string; open_ports_replace?: boolean; open_ports_replace_protocol?: "tcp" | "udp"; os_info?: string; model?: string; serial_number?: string; firmware?: string | null; device_manufacturer?: string | null; detection_json?: string | null; snmp_data?: string | null; preserve_existing?: boolean }): Host {
   const existing = getDb().prepare(
     "SELECT id FROM hosts WHERE network_id = ? AND ip = ?"
   ).get(input.network_id, input.ip) as { id: number } | undefined;
 
   if (existing) {
-    const existingRow = getDb().prepare("SELECT open_ports, classification_manual FROM hosts WHERE id = ?").get(existing.id) as { open_ports: string | null; classification_manual?: number } | undefined;
+    const existingRow = getDb().prepare(
+      "SELECT open_ports, classification_manual, model, serial_number, firmware, device_manufacturer, os_info FROM hosts WHERE id = ?"
+    ).get(existing.id) as { open_ports: string | null; classification_manual?: number; model?: string | null; serial_number?: string | null; firmware?: string | null; device_manufacturer?: string | null; os_info?: string | null } | undefined;
     const classificationManual = existingRow?.classification_manual === 1;
+    /** Quando preserve_existing=true (scan discovery/nmap) non si sovrascrivono dati già valorizzati */
+    const preserve = input.preserve_existing === true;
     const fields: string[] = ["updated_at = datetime('now')"];
     const values: unknown[] = [];
 
@@ -1073,17 +1672,72 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       }
     }
     if (input.custom_name !== undefined) { fields.push("custom_name = ?"); values.push(input.custom_name); }
-    if (input.classification !== undefined && !classificationManual) { fields.push("classification = ?"); values.push(input.classification); }
+    if (input.classification !== undefined && !classificationManual) {
+      if (input.classification !== "unknown") {
+        // preserve_existing per classification: NON applicato — le classificazioni auto-rilevate
+        // possono sempre essere aggiornate da scan successivi con dati migliori.
+        // Solo classification_manual=1 è protetto (via classificationManual check sopra).
+        fields.push("classification = ?"); values.push(input.classification);
+      } else {
+        const cur = (getDb().prepare("SELECT classification FROM hosts WHERE id = ?").get(existing.id) as { classification?: string })?.classification;
+        if (!cur || cur === "unknown") {
+          fields.push("classification = ?"); values.push(input.classification);
+        }
+      }
+    }
     if (input.inventory_code !== undefined) { fields.push("inventory_code = ?"); values.push(input.inventory_code); }
     if (input.notes !== undefined) { fields.push("notes = ?"); values.push(input.notes); }
     if (input.open_ports !== undefined) {
-      const merged = mergeOpenPorts(existingRow?.open_ports ?? null, input.open_ports);
+      let portsValue: string;
+      if (input.open_ports_replace_protocol) {
+        // Sostituisci solo porte del protocollo specificato, mantieni l'altro
+        portsValue = mergeOpenPortsByProtocol(existingRow?.open_ports ?? null, input.open_ports, input.open_ports_replace_protocol);
+      } else if (input.open_ports_replace) {
+        // Sovrascrittura totale (deprecato, usare open_ports_replace_protocol)
+        portsValue = input.open_ports;
+      } else {
+        // Merge union standard
+        portsValue = mergeOpenPortsJson(existingRow?.open_ports ?? null, input.open_ports);
+      }
       fields.push("open_ports = ?");
-      values.push(merged);
+      values.push(portsValue);
     }
-    if (input.os_info !== undefined) { fields.push("os_info = ?"); values.push(input.os_info); }
-    if (input.model !== undefined) { fields.push("model = ?"); values.push(input.model); }
-    if (input.serial_number !== undefined) { fields.push("serial_number = ?"); values.push(input.serial_number); }
+    // Campi "inventario": se preserve_existing=true, aggiorna solo se il valore corrente è vuoto/null
+    if (input.os_info !== undefined) {
+      if (!preserve || !existingRow?.os_info) { fields.push("os_info = ?"); values.push(input.os_info); }
+    }
+    if (input.model !== undefined) {
+      if (!preserve || !existingRow?.model) { fields.push("model = ?"); values.push(input.model); }
+    }
+    if (input.serial_number !== undefined) {
+      if (!preserve || !existingRow?.serial_number) { fields.push("serial_number = ?"); values.push(input.serial_number); }
+    }
+    if (input.firmware !== undefined) {
+      if (!preserve || !existingRow?.firmware) { fields.push("firmware = ?"); values.push(input.firmware); }
+    }
+    if (input.device_manufacturer !== undefined) {
+      if (!preserve || !existingRow?.device_manufacturer) { fields.push("device_manufacturer = ?"); values.push(input.device_manufacturer); }
+    }
+    // snmp_data si aggiorna sempre: contiene i dati più freschi e arricchisce host precedentemente parziali
+    if (input.snmp_data !== undefined) { fields.push("snmp_data = ?"); values.push(input.snmp_data); }
+    if (input.detection_json !== undefined) {
+      let shouldUpdate = true;
+      if (input.detection_json && !input.open_ports_replace) {
+        try {
+          const incoming = JSON.parse(input.detection_json) as { final_confidence?: number; open_ports?: number[] };
+          const existingDet = (getDb().prepare("SELECT detection_json FROM hosts WHERE id = ?").get(existing.id) as { detection_json?: string | null })?.detection_json;
+          if (existingDet) {
+            const prev = JSON.parse(existingDet) as { final_confidence?: number; open_ports?: number[] };
+            const prevPorts = prev.open_ports?.length ?? 0;
+            const newPorts = incoming.open_ports?.length ?? 0;
+            if (prevPorts > newPorts && (prev.final_confidence ?? 0) > (incoming.final_confidence ?? 0)) {
+              shouldUpdate = false;
+            }
+          }
+        } catch { /* parse error → update anyway */ }
+      }
+      if (shouldUpdate) { fields.push("detection_json = ?"); values.push(input.detection_json); }
+    }
 
     values.push(existing.id);
     getDb().prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`).run(...values);
@@ -1115,8 +1769,8 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
   }
 
   const stmt = getDb().prepare(`
-    INSERT INTO hosts (network_id, ip, mac, vendor, hostname, hostname_source, dns_forward, dns_reverse, custom_name, classification, inventory_code, notes, status, open_ports, os_info, model, serial_number, first_seen, last_seen)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${input.status === "online" ? "datetime('now')" : "NULL"}, ${input.status === "online" ? "datetime('now')" : "NULL"})
+    INSERT INTO hosts (network_id, ip, mac, vendor, hostname, hostname_source, dns_forward, dns_reverse, custom_name, classification, inventory_code, notes, status, open_ports, os_info, model, serial_number, firmware, device_manufacturer, detection_json, snmp_data, first_seen, last_seen)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${input.status === "online" ? "datetime('now')" : "NULL"}, ${input.status === "online" ? "datetime('now')" : "NULL"})
   `);
   const result = stmt.run(
     input.network_id,
@@ -1135,7 +1789,11 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     (input as { open_ports?: string }).open_ports || null,
     (input as { os_info?: string }).os_info || null,
     (input as { model?: string }).model || null,
-    (input as { serial_number?: string }).serial_number || null
+    (input as { serial_number?: string }).serial_number || null,
+    (input as { firmware?: string | null }).firmware ?? null,
+    (input as { device_manufacturer?: string | null }).device_manufacturer ?? null,
+    (input as { detection_json?: string | null }).detection_json ?? null,
+    (input as { snmp_data?: string | null }).snmp_data ?? null
   );
   const host = getDb().prepare("SELECT * FROM hosts WHERE id = ?").get(result.lastInsertRowid) as Host;
   if (host.mac && input.ip) {
@@ -1188,7 +1846,63 @@ export function deleteHost(id: number): boolean {
   return getDb().prepare("DELETE FROM hosts WHERE id = ?").run(id).changes > 0;
 }
 
-export function markHostsOffline(networkId: number, onlineIps: string[]): void {
+/** Aggiorna known_host per più host della stessa rete. Ritorna il numero di righe aggiornate. */
+export function bulkUpdateHostsKnownHost(networkId: number, hostIds: number[], knownHost: 0 | 1): number {
+  if (hostIds.length === 0) return 0;
+  const placeholders = hostIds.map(() => "?").join(",");
+  const stmt = getDb().prepare(
+    `UPDATE hosts SET known_host = ?, updated_at = datetime('now') WHERE network_id = ? AND id IN (${placeholders})`
+  );
+  return stmt.run(knownHost, networkId, ...hostIds).changes;
+}
+
+/** Elimina host della stessa rete (bulk). Ritorna il numero di righe eliminate. */
+export function bulkDeleteHosts(networkId: number, hostIds: number[]): number {
+  if (hostIds.length === 0) return 0;
+  const placeholders = hostIds.map(() => "?").join(",");
+  const stmt = getDb().prepare(`DELETE FROM hosts WHERE network_id = ? AND id IN (${placeholders})`);
+  return stmt.run(networkId, ...hostIds).changes;
+}
+
+/** Quanti degli id appartengono alla rete indicata (nessun duplicato negli id). */
+export function countHostsInNetwork(networkId: number, hostIds: number[]): number {
+  if (hostIds.length === 0) return 0;
+  const unique = [...new Set(hostIds)];
+  const placeholders = unique.map(() => "?").join(",");
+  const row = getDb()
+    .prepare(`SELECT COUNT(*) AS c FROM hosts WHERE network_id = ? AND id IN (${placeholders})`)
+    .get(networkId, ...unique) as { c: number };
+  return row.c;
+}
+
+/** Host conosciuti con nome/CIDR rete (per pagina monitoraggio). */
+export function getKnownHostsWithNetwork(): KnownHostWithNetworkRow[] {
+  return getDb()
+    .prepare(
+      `SELECT h.*, n.name AS network_name, n.cidr AS network_cidr
+       FROM hosts h
+       INNER JOIN networks n ON h.network_id = n.id
+       WHERE h.known_host = 1
+       ORDER BY n.name COLLATE NOCASE, h.ip`
+    )
+    .all() as KnownHostWithNetworkRow[];
+}
+
+/**
+ * Marca host offline rispetto a un ping/scan.
+ * @param scannedIps — se impostato, solo gli IP in questo insieme possono passare a offline (scansioni parziali su host selezionati/elenco). Se omesso, comportamento legacy su tutta la rete.
+ */
+export function markHostsOffline(networkId: number, onlineIps: string[], scannedIps?: string[]): void {
+  if (scannedIps?.length) {
+    const onlineSet = new Set(onlineIps);
+    const toOffline = scannedIps.filter((ip) => !onlineSet.has(ip));
+    if (toOffline.length === 0) return;
+    const ph = toOffline.map(() => "?").join(",");
+    getDb().prepare(
+      `UPDATE hosts SET status = 'offline', updated_at = datetime('now') WHERE network_id = ? AND ip IN (${ph})`
+    ).run(networkId, ...toOffline);
+    return;
+  }
   if (onlineIps.length === 0) {
     getDb().prepare(
       "UPDATE hosts SET status = 'offline', updated_at = datetime('now') WHERE network_id = ? AND status = 'online'"
@@ -1199,6 +1913,38 @@ export function markHostsOffline(networkId: number, onlineIps: string[]): void {
   getDb().prepare(
     `UPDATE hosts SET status = 'offline', updated_at = datetime('now') WHERE network_id = ? AND status = 'online' AND ip NOT IN (${placeholders})`
   ).run(networkId, ...onlineIps);
+}
+
+/**
+ * Per i tipi di scan "additivi" (nmap/network_discovery): invece di marcare offline,
+ * aggiunge una riga nelle note dell'host con data e tipo scan per segnalare la mancata risposta.
+ * Non modifica lo status né sovrascrive dati già rilevati — consente revisione manuale.
+ */
+export function noteHostsNonResponding(
+  networkId: number,
+  onlineIps: string[],
+  scannedIps: string[],
+  scanType: string
+): void {
+  const onlineSet = new Set(onlineIps);
+  const nonResponding = scannedIps.filter((ip) => !onlineSet.has(ip));
+  if (nonResponding.length === 0) return;
+  const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const tag = `[${dateStr}] Non risposto (${scanType}) — verificare se eliminare`;
+  const db = getDb();
+  for (const ip of nonResponding) {
+    const row = db.prepare(
+      "SELECT id, notes FROM hosts WHERE network_id = ? AND ip = ?"
+    ).get(networkId, ip) as { id: number; notes: string } | undefined;
+    if (!row) continue;
+    const existing = row.notes ?? "";
+    // Evita duplicati dello stesso giorno
+    if (existing.includes(`[${dateStr}]`)) continue;
+    const updated = existing.trim() ? `${existing.trim()}\n${tag}` : tag;
+    db.prepare(
+      "UPDATE hosts SET notes = ?, updated_at = datetime('now') WHERE id = ?"
+    ).run(updated, row.id);
+  }
 }
 
 // ========================
@@ -1393,6 +2139,181 @@ export function getHostLinuxCredentials(): { username: string; password: string 
     if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
   } catch { /* ignore */ }
   return null;
+}
+
+/** Username/password decifrati se la credenziale esiste ed è del tipo atteso (Windows/Linux). */
+export function getCredentialLoginPair(
+  credentialId: number,
+  expectedType: "windows" | "linux"
+): { username: string; password: string } | null {
+  const cred = getCredentialById(credentialId);
+  if (!cred) return null;
+  const type = String(cred.credential_type || "").toLowerCase();
+  if (type !== expectedType) return null;
+  try {
+    const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
+    const password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
+    if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** Ruoli catena credenziali per subnet (detect / SNMP). */
+export type NetworkCredentialRole = "windows" | "linux" | "ssh" | "snmp";
+
+function credentialMatchesNetworkRole(
+  credentialType: string,
+  role: NetworkCredentialRole
+): boolean {
+  const t = credentialType.toLowerCase();
+  if (role === "windows") return t === "windows";
+  if (role === "linux") return t === "linux";
+  if (role === "ssh") return t === "ssh";
+  if (role === "snmp") return t === "snmp";
+  return false;
+}
+
+/** Username/password per credenziali SSH o Linux (scan SSH unificato). */
+export function getSshLinuxCredentialPair(credentialId: number): { username: string; password: string } | null {
+  const cred = getCredentialById(credentialId);
+  if (!cred) return null;
+  const type = String(cred.credential_type || "").toLowerCase();
+  if (type !== "ssh" && type !== "linux") return null;
+  try {
+    const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
+    const password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
+    if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** Credenziali Windows/Linux/SSH/SNMP assegnate alla subnet (ordine = priorità tentativi). */
+export function getNetworkHostCredentialIds(networkId: number, role: NetworkCredentialRole): number[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT credential_id FROM network_host_credentials WHERE network_id = ? AND role = ? ORDER BY sort_order ASC, id ASC`
+    )
+    .all(networkId, role) as { credential_id: number }[];
+  return rows.map((r) => r.credential_id);
+}
+
+export function replaceNetworkHostCredentials(
+  networkId: number,
+  role: NetworkCredentialRole,
+  credentialIds: number[]
+): void {
+  const seen = new Set<number>();
+  const unique: number[] = [];
+  for (const id of credentialIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const c = getCredentialById(id);
+    if (!c || !credentialMatchesNetworkRole(String(c.credential_type), role)) {
+      throw new Error(`Credenziale #${id} non valida per ruolo ${role}`);
+    }
+    unique.push(id);
+  }
+  const db = getDb();
+  db.transaction(() => {
+    db.prepare(`DELETE FROM network_host_credentials WHERE network_id = ? AND role = ?`).run(networkId, role);
+    const ins = db.prepare(
+      `INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (?,?,?,?)`
+    );
+    unique.forEach((cid, i) => ins.run(networkId, cid, role, i));
+  })();
+}
+
+/** Ruoli binding detect su host (stesso nome tabella host_detect_credential). */
+export type HostDetectCredentialRole = "windows" | "linux" | "ssh" | "snmp";
+
+/** Credenziale salvata dopo primo detect riuscito (un solo tentativo per credenziale in scan). */
+export function getHostDetectCredentialId(hostId: number, role: HostDetectCredentialRole): number | null {
+  const row = getDb()
+    .prepare(`SELECT credential_id FROM host_detect_credential WHERE host_id = ? AND role = ?`)
+    .get(hostId, role) as { credential_id: number } | undefined;
+  return row?.credential_id ?? null;
+}
+
+function credentialMatchesDetectRole(credentialType: string, role: HostDetectCredentialRole): boolean {
+  const t = credentialType.toLowerCase();
+  if (role === "windows") return t === "windows";
+  if (role === "linux") return t === "linux" || t === "ssh";
+  if (role === "ssh") return t === "ssh";
+  if (role === "snmp") return t === "snmp";
+  return false;
+}
+
+export function setHostDetectCredential(hostId: number, role: HostDetectCredentialRole, credentialId: number): void {
+  const c = getCredentialById(credentialId);
+  if (!c || !credentialMatchesDetectRole(String(c.credential_type), role)) return;
+  getDb()
+    .prepare(
+      `INSERT INTO host_detect_credential (host_id, role, credential_id, updated_at)
+       VALUES (?, ?, ?, datetime('now'))
+       ON CONFLICT(host_id, role) DO UPDATE SET credential_id = excluded.credential_id, updated_at = datetime('now')`
+    )
+    .run(hostId, role, credentialId);
+}
+
+/** Ordine: credenziali della rete, poi quella globale Impostazioni (se non già in elenco). */
+export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux"): number[] {
+  const netIds = getNetworkHostCredentialIds(networkId, role);
+  const globalKey = role === "windows" ? "host_windows_credential_id" : "host_linux_credential_id";
+  const gStr = getSetting(globalKey);
+  const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
+  const out: number[] = [...netIds];
+  if (!Number.isNaN(gId) && gId > 0 && !out.includes(gId)) out.push(gId);
+  return out;
+}
+
+/**
+ * Catena SSH per scan: credenziali ruolo `ssh` sulla rete, poi `linux`, poi globale Impostazioni.
+ * Ordine e dedup preservati.
+ */
+export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
+  const sshIds = getNetworkHostCredentialIds(networkId, "ssh");
+  const linuxIds = getNetworkHostCredentialIds(networkId, "linux");
+  const out: number[] = [];
+  const seen = new Set<number>();
+  for (const id of [...sshIds, ...linuxIds]) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  const gStr = getSetting("host_linux_credential_id");
+  const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
+  if (!Number.isNaN(gId) && gId > 0 && !seen.has(gId)) out.push(gId);
+  return out;
+}
+
+/**
+ * Community SNMP per scan su una rete: credenziali SNMP della subnet (ordine),
+ * poi override profilo/scan, poi community di default sulla rete, infine public/private.
+ */
+export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverride?: string | null): string[] {
+  const fromCreds: string[] = [];
+  for (const credId of getNetworkHostCredentialIds(networkId, "snmp")) {
+    const com = getCredentialCommunityString(credId);
+    if (com?.trim()) fromCreds.push(com.trim());
+  }
+  const net = getNetworkById(networkId);
+  const pushSplit = (s: string | null | undefined, into: string[]) => {
+    const t = s?.trim();
+    if (!t) return;
+    for (const part of t.split(",").map((x) => x.trim()).filter(Boolean)) into.push(part);
+  };
+  const mid: string[] = [];
+  pushSplit(profileOrOverride, mid);
+  pushSplit(net?.snmp_community ?? null, mid);
+  const ordered = [...fromCreds, ...mid, "public", "private"];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of ordered) {
+    if (!x || seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+  }
+  return out;
 }
 
 /** Restituisce la community string decifrata per una credenziale SNMP. */
@@ -2567,6 +3488,232 @@ export function setSetting(key: string, value: string): void {
 }
 
 // ========================
+// Fingerprint → classificazione (regole manuali)
+// ========================
+
+export interface FingerprintClassificationMapRow {
+  id: number;
+  match_kind: "exact" | "contains";
+  pattern: string;
+  classification: string;
+  priority: number;
+  enabled: number;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function getAllFingerprintClassificationMapRows(): FingerprintClassificationMapRow[] {
+  try {
+    return getDb()
+      .prepare(`SELECT * FROM fingerprint_classification_map ORDER BY priority ASC, id ASC`)
+      .all() as FingerprintClassificationMapRow[];
+  } catch {
+    return [];
+  }
+}
+
+/** Regole attive per discovery/refresh (priorità crescente). */
+export function getFingerprintClassificationRulesForResolve(): FingerprintUserRule[] {
+  try {
+    const rows = getDb()
+      .prepare(
+        `SELECT match_kind, pattern, classification, priority FROM fingerprint_classification_map WHERE enabled = 1 ORDER BY priority ASC, id ASC`
+      )
+      .all() as { match_kind: string; pattern: string; classification: string; priority: number }[];
+    return rows.map((r) => ({
+      match_kind: r.match_kind as "exact" | "contains",
+      pattern: r.pattern,
+      classification: r.classification,
+      priority: r.priority,
+      enabled: true,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function createFingerprintClassificationMapRow(input: {
+  match_kind: "exact" | "contains";
+  pattern: string;
+  classification: string;
+  priority: number;
+  enabled: boolean;
+  note?: string | null;
+}): FingerprintClassificationMapRow {
+  const result = getDb()
+    .prepare(
+      `INSERT INTO fingerprint_classification_map (match_kind, pattern, classification, priority, enabled, note, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`
+    )
+    .run(
+      input.match_kind,
+      input.pattern.trim(),
+      input.classification.trim(),
+      input.priority,
+      input.enabled ? 1 : 0,
+      input.note?.trim() || null
+    );
+  const id = Number(result.lastInsertRowid);
+  const row = getDb().prepare("SELECT * FROM fingerprint_classification_map WHERE id = ?").get(id) as FingerprintClassificationMapRow | undefined;
+  if (!row) throw new Error("Inserimento regola fallito");
+  return row;
+}
+
+export function updateFingerprintClassificationMapRow(
+  id: number,
+  input: {
+    match_kind?: "exact" | "contains";
+    pattern?: string;
+    classification?: string;
+    priority?: number;
+    enabled?: boolean;
+    note?: string | null;
+  }
+): FingerprintClassificationMapRow | undefined {
+  const existing = getDb().prepare("SELECT id FROM fingerprint_classification_map WHERE id = ?").get(id) as { id: number } | undefined;
+  if (!existing) return undefined;
+  const sets: string[] = ["updated_at = datetime('now')"];
+  const vals: unknown[] = [];
+  if (input.match_kind !== undefined) {
+    sets.push("match_kind = ?");
+    vals.push(input.match_kind);
+  }
+  if (input.pattern !== undefined) {
+    sets.push("pattern = ?");
+    vals.push(input.pattern.trim());
+  }
+  if (input.classification !== undefined) {
+    sets.push("classification = ?");
+    vals.push(input.classification.trim());
+  }
+  if (input.priority !== undefined) {
+    sets.push("priority = ?");
+    vals.push(input.priority);
+  }
+  if (input.enabled !== undefined) {
+    sets.push("enabled = ?");
+    vals.push(input.enabled ? 1 : 0);
+  }
+  if (input.note !== undefined) {
+    sets.push("note = ?");
+    vals.push(input.note?.trim() || null);
+  }
+  vals.push(id);
+  getDb().prepare(`UPDATE fingerprint_classification_map SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getDb().prepare("SELECT * FROM fingerprint_classification_map WHERE id = ?").get(id) as FingerprintClassificationMapRow | undefined;
+}
+
+export function deleteFingerprintClassificationMapRow(id: number): boolean {
+  return getDb().prepare("DELETE FROM fingerprint_classification_map WHERE id = ?").run(id).changes > 0;
+}
+
+// ========================
+// Device Fingerprint Rules (tabella unificata)
+// ========================
+
+export interface DeviceFingerprintRuleRow {
+  id: number;
+  name: string;
+  device_label: string;
+  classification: string;
+  priority: number;
+  enabled: number;
+  tcp_ports_key: string | null;
+  tcp_ports_optional: string | null;
+  min_key_ports: number | null;
+  oid_prefix: string | null;
+  sysdescr_pattern: string | null;
+  hostname_pattern: string | null;
+  mac_vendor_pattern: string | null;
+  banner_pattern: string | null;
+  ttl_min: number | null;
+  ttl_max: number | null;
+  note: string | null;
+  builtin: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export function getDeviceFingerprintRules(): DeviceFingerprintRuleRow[] {
+  return getDb()
+    .prepare("SELECT * FROM device_fingerprint_rules ORDER BY priority ASC, id ASC")
+    .all() as DeviceFingerprintRuleRow[];
+}
+
+export function getEnabledDeviceFingerprintRules(): DeviceFingerprintRuleRow[] {
+  return getDb()
+    .prepare("SELECT * FROM device_fingerprint_rules WHERE enabled = 1 ORDER BY priority ASC, id ASC")
+    .all() as DeviceFingerprintRuleRow[];
+}
+
+export function createDeviceFingerprintRule(input: {
+  name: string; device_label: string; classification: string; priority?: number;
+  tcp_ports_key?: string | null; tcp_ports_optional?: string | null; min_key_ports?: number | null;
+  oid_prefix?: string | null; sysdescr_pattern?: string | null; hostname_pattern?: string | null;
+  mac_vendor_pattern?: string | null; banner_pattern?: string | null;
+  ttl_min?: number | null; ttl_max?: number | null; note?: string | null; enabled?: boolean;
+}): DeviceFingerprintRuleRow {
+  const result = getDb().prepare(
+    `INSERT INTO device_fingerprint_rules
+     (name, device_label, classification, priority, enabled, tcp_ports_key, tcp_ports_optional, min_key_ports,
+      oid_prefix, sysdescr_pattern, hostname_pattern, mac_vendor_pattern, banner_pattern, ttl_min, ttl_max, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.name.trim(), input.device_label.trim(), input.classification.trim(),
+    input.priority ?? 100, input.enabled !== false ? 1 : 0,
+    input.tcp_ports_key ?? null, input.tcp_ports_optional ?? null, input.min_key_ports ?? null,
+    input.oid_prefix?.trim() || null, input.sysdescr_pattern?.trim() || null,
+    input.hostname_pattern?.trim() || null, input.mac_vendor_pattern?.trim() || null,
+    input.banner_pattern?.trim() || null, input.ttl_min ?? null, input.ttl_max ?? null,
+    input.note?.trim() || null,
+  );
+  return getDb().prepare("SELECT * FROM device_fingerprint_rules WHERE id = ?").get(result.lastInsertRowid) as DeviceFingerprintRuleRow;
+}
+
+export function updateDeviceFingerprintRule(id: number, input: Partial<{
+  name: string; device_label: string; classification: string; priority: number; enabled: boolean;
+  tcp_ports_key: string | null; tcp_ports_optional: string | null; min_key_ports: number | null;
+  oid_prefix: string | null; sysdescr_pattern: string | null; hostname_pattern: string | null;
+  mac_vendor_pattern: string | null; banner_pattern: string | null;
+  ttl_min: number | null; ttl_max: number | null; note: string | null;
+}>): DeviceFingerprintRuleRow | undefined {
+  const existing = getDb().prepare("SELECT id FROM device_fingerprint_rules WHERE id = ?").get(id) as { id: number } | undefined;
+  if (!existing) return undefined;
+  const sets: string[] = ["updated_at = datetime('now')"];
+  const vals: unknown[] = [];
+  const field = (col: string, val: unknown) => { sets.push(`${col} = ?`); vals.push(val); };
+  if (input.name !== undefined) field("name", input.name.trim());
+  if (input.device_label !== undefined) field("device_label", input.device_label.trim());
+  if (input.classification !== undefined) field("classification", input.classification.trim());
+  if (input.priority !== undefined) field("priority", input.priority);
+  if (input.enabled !== undefined) field("enabled", input.enabled ? 1 : 0);
+  if (input.tcp_ports_key !== undefined) field("tcp_ports_key", input.tcp_ports_key);
+  if (input.tcp_ports_optional !== undefined) field("tcp_ports_optional", input.tcp_ports_optional);
+  if (input.min_key_ports !== undefined) field("min_key_ports", input.min_key_ports);
+  if (input.oid_prefix !== undefined) field("oid_prefix", input.oid_prefix?.trim() || null);
+  if (input.sysdescr_pattern !== undefined) field("sysdescr_pattern", input.sysdescr_pattern?.trim() || null);
+  if (input.hostname_pattern !== undefined) field("hostname_pattern", input.hostname_pattern?.trim() || null);
+  if (input.mac_vendor_pattern !== undefined) field("mac_vendor_pattern", input.mac_vendor_pattern?.trim() || null);
+  if (input.banner_pattern !== undefined) field("banner_pattern", input.banner_pattern?.trim() || null);
+  if (input.ttl_min !== undefined) field("ttl_min", input.ttl_min);
+  if (input.ttl_max !== undefined) field("ttl_max", input.ttl_max);
+  if (input.note !== undefined) field("note", input.note?.trim() || null);
+  vals.push(id);
+  getDb().prepare(`UPDATE device_fingerprint_rules SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getDb().prepare("SELECT * FROM device_fingerprint_rules WHERE id = ?").get(id) as DeviceFingerprintRuleRow | undefined;
+}
+
+export function deleteDeviceFingerprintRule(id: number): boolean {
+  return getDb().prepare("DELETE FROM device_fingerprint_rules WHERE id = ?").run(id).changes > 0;
+}
+
+export function resetBuiltinFingerprintRules(): void {
+  getDb().prepare("DELETE FROM device_fingerprint_rules WHERE builtin = 1").run();
+  seedBuiltinFingerprintRules(getDb());
+}
+
+// ========================
 // Nmap Profiles
 // ========================
 
@@ -2577,6 +3724,10 @@ export interface NmapProfileRow {
   args: string;
   snmp_community: string | null;
   custom_ports: string | null;
+  /** Elenco porte TCP esplicito (sovrascrive default se presente) */
+  tcp_ports: string | null;
+  /** Elenco porte UDP esplicito (sovrascrive default se presente) */
+  udp_ports: string | null;
   is_default: number;
   created_at: string;
   updated_at: string;
@@ -2590,16 +3741,35 @@ export function getNmapProfileById(id: number): NmapProfileRow | undefined {
   return getDb().prepare("SELECT * FROM nmap_profiles WHERE id = ?").get(id) as NmapProfileRow | undefined;
 }
 
+/**
+ * Profilo usato da scansioni Nmap (trigger, job) quando non si passa `nmap_profile_id`.
+ * Deve essere il profilo **predefinito** (`is_default = 1`), come quello modificabile in Impostazioni
+ * — non l’ultimo aggiornato per qualsiasi profilo (evita porte/argomenti da un altro profilo).
+ */
+export function getActiveNmapProfile(): NmapProfileRow | undefined {
+  const byDefault = getDb()
+    .prepare("SELECT * FROM nmap_profiles WHERE is_default = 1 ORDER BY id ASC LIMIT 1")
+    .get() as NmapProfileRow | undefined;
+  if (byDefault) return byDefault;
+  return getDb().prepare("SELECT * FROM nmap_profiles ORDER BY updated_at DESC LIMIT 1").get() as NmapProfileRow | undefined;
+}
+
 export function createNmapProfile(
   name: string,
   description: string,
   args: string,
   snmpCommunity?: string | null,
-  customPorts?: string | null
+  customPorts?: string | null,
+  tcpPorts?: string | null,
+  udpPorts?: string | null
 ): NmapProfileRow {
+  const count = (getDb().prepare("SELECT COUNT(*) as c FROM nmap_profiles").get() as { c: number }).c;
+  if (count > 0) {
+    throw new Error("È consentito un solo profilo Nmap: modifica quello esistente dalle Impostazioni.");
+  }
   const result = getDb().prepare(
-    "INSERT INTO nmap_profiles (name, description, args, snmp_community, custom_ports, is_default) VALUES (?, ?, ?, ?, ?, 0)"
-  ).run(name, description, args, snmpCommunity || null, customPorts ?? null);
+    "INSERT INTO nmap_profiles (name, description, args, snmp_community, custom_ports, tcp_ports, udp_ports, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, 1)"
+  ).run(name, description, args, snmpCommunity || null, customPorts ?? null, tcpPorts ?? null, udpPorts ?? null);
   return getDb().prepare("SELECT * FROM nmap_profiles WHERE id = ?").get(result.lastInsertRowid) as NmapProfileRow;
 }
 
@@ -2609,11 +3779,13 @@ export function updateNmapProfile(
   description: string,
   args: string,
   snmpCommunity?: string | null,
-  customPorts?: string | null
+  customPorts?: string | null,
+  tcpPorts?: string | null,
+  udpPorts?: string | null
 ): NmapProfileRow | undefined {
   getDb().prepare(
-    "UPDATE nmap_profiles SET name = ?, description = ?, args = ?, snmp_community = ?, custom_ports = ?, updated_at = datetime('now') WHERE id = ? AND is_default = 0"
-  ).run(name, description, args, snmpCommunity ?? null, customPorts ?? null, id);
+    "UPDATE nmap_profiles SET name = ?, description = ?, args = ?, snmp_community = ?, custom_ports = ?, tcp_ports = ?, udp_ports = ?, updated_at = datetime('now') WHERE id = ?"
+  ).run(name, description, args, snmpCommunity ?? null, customPorts ?? null, tcpPorts ?? null, udpPorts ?? null, id);
   return getNmapProfileById(id);
 }
 
@@ -2650,10 +3822,36 @@ export function deleteUser(userId: number): boolean {
 /** Reset all networks and devices for new client. Keeps users, settings, nmap_profiles. */
 export function resetConfiguration(): void {
   const db = getDb();
-  db.exec(`
-    DELETE FROM networks;
-    DELETE FROM network_devices;
-  `);
+  db.transaction(() => {
+    db.exec(`
+      DELETE FROM scan_history;
+      DELETE FROM status_history;
+      DELETE FROM host_detect_credential;
+      DELETE FROM network_host_credentials;
+      DELETE FROM arp_entries;
+      DELETE FROM mac_port_entries;
+      DELETE FROM mac_ip_history;
+      DELETE FROM mac_ip_mapping;
+      DELETE FROM switch_ports;
+      DELETE FROM network_router;
+      DELETE FROM hosts;
+      DELETE FROM network_devices;
+      DELETE FROM networks;
+      DELETE FROM credentials;
+      DELETE FROM users;
+      DELETE FROM scheduled_jobs;
+      DELETE FROM settings;
+      DELETE FROM proxmox_hosts;
+      DELETE FROM inventory_audit_log;
+      DELETE FROM license_seats;
+      DELETE FROM licenses;
+      DELETE FROM asset_assignees;
+      DELETE FROM inventory_assets;
+      DELETE FROM locations;
+      DELETE FROM device_fingerprint_rules;
+    `);
+    db.exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('server_port', '3000')");
+  })();
 }
 
 // ========================
@@ -2779,4 +3977,893 @@ export function trackDeviceInfoChanges(deviceId: number, newInfoObj: object): st
   }
 
   return changes;
+}
+
+// ========================
+// Sync network_device da scan host
+// ========================
+
+/**
+ * Aggiorna network_devices.port e classification basandosi sui dati host appena scansionati.
+ * - port: se la porta attuale del device non è tra le porte rilevate, assegna una porta candidata
+ *   appropriata per protocollo/vendor; se il device ha già una porta presente nei dati scan, non tocca.
+ * - classification: allinea se l'host ha una classificazione più specifica (solo per router/switch/hypervisor).
+ * Chiamare subito dopo upsertHost quando getNetworkDeviceByHost(ip) esiste.
+ */
+export function syncNetworkDeviceFromHostScan(ip: string, hostOpenPorts: Array<{ port: number; protocol?: string }>, hostClassification: string | null): void {
+  const device = getNetworkDeviceByHost(ip);
+  if (!device) return;
+
+  const tcpPorts = new Set(hostOpenPorts.filter((p) => (p.protocol ?? "tcp") === "tcp").map((p) => p.port));
+  const updates: Partial<NetworkDevice> = {};
+
+  // Euristica porta per protocollo / vendor
+  const candidatesMap: Record<string, number[]> = {
+    ssh: [22, 2222],
+    snmp_v2: [161],
+    snmp_v3: [161],
+    api: [443, 8728, 8006, 80],
+    winrm: [5985, 5986],
+  };
+  const candidatesVendor: Record<string, number[]> = {
+    mikrotik: [8291, 8728, 22, 443],
+    proxmox: [8006, 443],
+    omada: [443],
+    cisco: [22, 23, 443],
+    ubiquiti: [443, 22],
+    hp: [22, 23, 443],
+    fortinet: [443, 22],
+    vmware: [443],
+    generic: [22, 443, 80],
+  };
+
+  const currentPort = device.port ?? 22;
+  const protocol = device.protocol ?? "ssh";
+  const vendor = (device.vendor ?? "generic").toLowerCase();
+
+  if (!tcpPorts.has(currentPort)) {
+    const vendorCandidates = candidatesVendor[vendor] ?? [];
+    const protoCandidates = candidatesMap[protocol] ?? [];
+    const orderedCandidates = [...new Set([...vendorCandidates, ...protoCandidates])];
+    for (const c of orderedCandidates) {
+      if (tcpPorts.has(c)) {
+        updates.port = c;
+        break;
+      }
+    }
+  }
+
+  // Allinea classification se l'host ha valore più specifico
+  if (hostClassification && hostClassification !== "unknown") {
+    const deviceClassification = device.classification ?? device.device_type;
+    const isInfra = ["router", "switch", "hypervisor"].includes(device.device_type);
+    if (isInfra && deviceClassification !== hostClassification) {
+      const infraSpecific = ["router", "switch", "hypervisor", "firewall", "access_point", "load_balancer", "vpn_gateway", "server", "server_linux", "server_windows", "nas", "nas_synology", "nas_qnap", "storage"];
+      if (infraSpecific.includes(hostClassification)) {
+        updates.classification = hostClassification;
+      }
+    }
+  }
+
+  if (Object.keys(updates).length > 0) {
+    updateNetworkDevice(device.id, updates);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ACTIVE DIRECTORY INTEGRATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface AdIntegration {
+  id: number;
+  name: string;
+  dc_host: string;
+  domain: string;
+  base_dn: string;
+  encrypted_username: string;
+  encrypted_password: string;
+  use_ssl: number;
+  port: number;
+  enabled: number;
+  winrm_credential_id: number | null;
+  dhcp_leases_count: number;
+  last_sync_at: string | null;
+  last_sync_status: string | null;
+  computers_count: number;
+  users_count: number;
+  groups_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdComputer {
+  id: number;
+  integration_id: number;
+  object_guid: string;
+  sam_account_name: string;
+  dns_host_name: string | null;
+  display_name: string | null;
+  distinguished_name: string;
+  operating_system: string | null;
+  operating_system_version: string | null;
+  last_logon_at: string | null;
+  enabled: number;
+  host_id: number | null;
+  ip_address: string | null;
+  ou: string | null;
+  raw_data: string | null;
+  synced_at: string;
+}
+
+export interface AdUser {
+  id: number;
+  integration_id: number;
+  object_guid: string;
+  sam_account_name: string;
+  user_principal_name: string | null;
+  display_name: string | null;
+  email: string | null;
+  department: string | null;
+  title: string | null;
+  phone: string | null;
+  ou: string | null;
+  enabled: number;
+  last_logon_at: string | null;
+  password_last_set_at: string | null;
+  raw_data: string | null;
+  synced_at: string;
+}
+
+export interface AdDhcpLease {
+  id: number;
+  integration_id: number;
+  scope_id: string;
+  scope_name: string | null;
+  ip_address: string;
+  mac_address: string;
+  hostname: string | null;
+  lease_expires: string | null;
+  address_state: string | null;
+  description: string | null;
+  last_synced: string;
+}
+
+export interface AdGroup {
+  id: number;
+  integration_id: number;
+  object_guid: string;
+  sam_account_name: string;
+  display_name: string | null;
+  description: string | null;
+  distinguished_name: string;
+  group_type: number | null;
+  member_guids: string | null;
+  synced_at: string;
+}
+
+export function getAdIntegrations(): AdIntegration[] {
+  return getDb().prepare("SELECT * FROM ad_integrations ORDER BY name").all() as AdIntegration[];
+}
+
+export function getAdIntegrationById(id: number): AdIntegration | undefined {
+  return getDb().prepare("SELECT * FROM ad_integrations WHERE id = ?").get(id) as AdIntegration | undefined;
+}
+
+export function createAdIntegration(input: {
+  name: string;
+  dc_host: string;
+  domain: string;
+  base_dn: string;
+  encrypted_username: string;
+  encrypted_password: string;
+  use_ssl?: number;
+  port?: number;
+  enabled?: number;
+  winrm_credential_id?: number | null;
+}): AdIntegration {
+  const stmt = getDb().prepare(`INSERT INTO ad_integrations
+    (name, dc_host, domain, base_dn, encrypted_username, encrypted_password, use_ssl, port, enabled, winrm_credential_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const r = stmt.run(
+    input.name,
+    input.dc_host,
+    input.domain,
+    input.base_dn,
+    input.encrypted_username,
+    input.encrypted_password,
+    input.use_ssl ?? 1,
+    input.port ?? 636,
+    input.enabled ?? 1,
+    input.winrm_credential_id ?? null
+  );
+  return getAdIntegrationById(Number(r.lastInsertRowid))!;
+}
+
+export function updateAdIntegration(id: number, input: Partial<{
+  name: string;
+  dc_host: string;
+  domain: string;
+  base_dn: string;
+  encrypted_username: string;
+  encrypted_password: string;
+  use_ssl: number;
+  port: number;
+  enabled: number;
+  winrm_credential_id: number | null;
+  dhcp_leases_count: number;
+  last_sync_at: string | null;
+  last_sync_status: string | null;
+  computers_count: number;
+  users_count: number;
+  groups_count: number;
+}>): AdIntegration | undefined {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  for (const [k, v] of Object.entries(input)) {
+    if (v !== undefined) {
+      fields.push(`${k} = ?`);
+      values.push(v);
+    }
+  }
+  if (fields.length === 0) return getAdIntegrationById(id);
+  fields.push("updated_at = datetime('now')");
+  values.push(id);
+  getDb().prepare(`UPDATE ad_integrations SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  return getAdIntegrationById(id);
+}
+
+export function deleteAdIntegration(id: number): boolean {
+  const r = getDb().prepare("DELETE FROM ad_integrations WHERE id = ?").run(id);
+  return r.changes > 0;
+}
+
+// AD Computers
+export function getAdComputers(integrationId: number): AdComputer[] {
+  return getDb().prepare("SELECT * FROM ad_computers WHERE integration_id = ? ORDER BY sam_account_name").all(integrationId) as AdComputer[];
+}
+
+export function getAdComputersPaginated(integrationId: number, page: number, pageSize: number, search?: string, activeDays?: number): { rows: AdComputer[]; total: number } {
+  const offset = (page - 1) * pageSize;
+  let whereClause = "WHERE integration_id = ?";
+  const params: unknown[] = [integrationId];
+  if (search?.trim()) {
+    whereClause += " AND (sam_account_name LIKE ? OR dns_host_name LIKE ? OR display_name LIKE ? OR operating_system LIKE ?)";
+    const s = `%${search.trim()}%`;
+    params.push(s, s, s, s);
+  }
+  if (activeDays && activeDays > 0) {
+    whereClause += ` AND last_logon_at IS NOT NULL AND last_logon_at >= datetime('now', '-${activeDays} days')`;
+  }
+  const total = (getDb().prepare(`SELECT COUNT(*) as c FROM ad_computers ${whereClause}`).get(...params) as { c: number }).c;
+  const rows = getDb().prepare(`SELECT * FROM ad_computers ${whereClause} ORDER BY sam_account_name LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdComputer[];
+  return { rows, total };
+}
+
+export function upsertAdComputer(integrationId: number, input: {
+  object_guid: string;
+  sam_account_name: string;
+  dns_host_name?: string | null;
+  display_name?: string | null;
+  distinguished_name: string;
+  operating_system?: string | null;
+  operating_system_version?: string | null;
+  last_logon_at?: string | null;
+  enabled?: number;
+  host_id?: number | null;
+  ip_address?: string | null;
+  ou?: string | null;
+  raw_data?: string | null;
+}): void {
+  getDb().prepare(`INSERT INTO ad_computers
+    (integration_id, object_guid, sam_account_name, dns_host_name, display_name, distinguished_name, operating_system, operating_system_version, last_logon_at, enabled, host_id, ip_address, ou, raw_data, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(integration_id, object_guid) DO UPDATE SET
+      sam_account_name = excluded.sam_account_name,
+      dns_host_name = excluded.dns_host_name,
+      display_name = excluded.display_name,
+      distinguished_name = excluded.distinguished_name,
+      operating_system = excluded.operating_system,
+      operating_system_version = excluded.operating_system_version,
+      last_logon_at = excluded.last_logon_at,
+      enabled = excluded.enabled,
+      host_id = excluded.host_id,
+      ip_address = excluded.ip_address,
+      ou = excluded.ou,
+      raw_data = excluded.raw_data,
+      synced_at = datetime('now')
+  `).run(
+    integrationId,
+    input.object_guid,
+    input.sam_account_name,
+    input.dns_host_name ?? null,
+    input.display_name ?? null,
+    input.distinguished_name,
+    input.operating_system ?? null,
+    input.operating_system_version ?? null,
+    input.last_logon_at ?? null,
+    input.enabled ?? 1,
+    input.host_id ?? null,
+    input.ip_address ?? null,
+    input.ou ?? null,
+    input.raw_data ?? null
+  );
+}
+
+export function linkAdComputerToHost(integrationId: number, objectGuid: string, hostId: number): void {
+  getDb().prepare("UPDATE ad_computers SET host_id = ? WHERE integration_id = ? AND object_guid = ?").run(hostId, integrationId, objectGuid);
+}
+
+// AD Users
+export function getAdUsers(integrationId: number): AdUser[] {
+  return getDb().prepare("SELECT * FROM ad_users WHERE integration_id = ? ORDER BY sam_account_name").all(integrationId) as AdUser[];
+}
+
+export function getAdUsersPaginated(integrationId: number, page: number, pageSize: number, search?: string, activeDays?: number): { rows: AdUser[]; total: number } {
+  const offset = (page - 1) * pageSize;
+  let whereClause = "WHERE integration_id = ?";
+  const params: unknown[] = [integrationId];
+  if (search?.trim()) {
+    whereClause += " AND (sam_account_name LIKE ? OR user_principal_name LIKE ? OR display_name LIKE ? OR email LIKE ? OR department LIKE ?)";
+    const s = `%${search.trim()}%`;
+    params.push(s, s, s, s, s);
+  }
+  if (activeDays && activeDays > 0) {
+    whereClause += ` AND last_logon_at IS NOT NULL AND last_logon_at >= datetime('now', '-${activeDays} days')`;
+  }
+  const total = (getDb().prepare(`SELECT COUNT(*) as c FROM ad_users ${whereClause}`).get(...params) as { c: number }).c;
+  const rows = getDb().prepare(`SELECT * FROM ad_users ${whereClause} ORDER BY sam_account_name LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdUser[];
+  return { rows, total };
+}
+
+export function upsertAdUser(integrationId: number, input: {
+  object_guid: string;
+  sam_account_name: string;
+  user_principal_name?: string | null;
+  display_name?: string | null;
+  email?: string | null;
+  department?: string | null;
+  title?: string | null;
+  phone?: string | null;
+  ou?: string | null;
+  enabled?: number;
+  last_logon_at?: string | null;
+  password_last_set_at?: string | null;
+  raw_data?: string | null;
+}): void {
+  getDb().prepare(`INSERT INTO ad_users
+    (integration_id, object_guid, sam_account_name, user_principal_name, display_name, email, department, title, phone, ou, enabled, last_logon_at, password_last_set_at, raw_data, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(integration_id, object_guid) DO UPDATE SET
+      sam_account_name = excluded.sam_account_name,
+      user_principal_name = excluded.user_principal_name,
+      display_name = excluded.display_name,
+      email = excluded.email,
+      department = excluded.department,
+      title = excluded.title,
+      phone = excluded.phone,
+      ou = excluded.ou,
+      enabled = excluded.enabled,
+      last_logon_at = excluded.last_logon_at,
+      password_last_set_at = excluded.password_last_set_at,
+      raw_data = excluded.raw_data,
+      synced_at = datetime('now')
+  `).run(
+    integrationId,
+    input.object_guid,
+    input.sam_account_name,
+    input.user_principal_name ?? null,
+    input.display_name ?? null,
+    input.email ?? null,
+    input.department ?? null,
+    input.title ?? null,
+    input.phone ?? null,
+    input.ou ?? null,
+    input.enabled ?? 1,
+    input.last_logon_at ?? null,
+    input.password_last_set_at ?? null,
+    input.raw_data ?? null
+  );
+}
+
+// AD Groups
+export function getAdGroups(integrationId: number): AdGroup[] {
+  return getDb().prepare("SELECT * FROM ad_groups WHERE integration_id = ? ORDER BY sam_account_name").all(integrationId) as AdGroup[];
+}
+
+export function getAdGroupsPaginated(integrationId: number, page: number, pageSize: number, search?: string): { rows: AdGroup[]; total: number } {
+  const offset = (page - 1) * pageSize;
+  let whereClause = "WHERE integration_id = ?";
+  const params: unknown[] = [integrationId];
+  if (search?.trim()) {
+    whereClause += " AND (sam_account_name LIKE ? OR display_name LIKE ? OR description LIKE ?)";
+    const s = `%${search.trim()}%`;
+    params.push(s, s, s);
+  }
+  const total = (getDb().prepare(`SELECT COUNT(*) as c FROM ad_groups ${whereClause}`).get(...params) as { c: number }).c;
+  const rows = getDb().prepare(`SELECT * FROM ad_groups ${whereClause} ORDER BY sam_account_name LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdGroup[];
+  return { rows, total };
+}
+
+export function upsertAdGroup(integrationId: number, input: {
+  object_guid: string;
+  sam_account_name: string;
+  display_name?: string | null;
+  description?: string | null;
+  distinguished_name: string;
+  group_type?: number | null;
+  member_guids?: string | null;
+}): void {
+  getDb().prepare(`INSERT INTO ad_groups
+    (integration_id, object_guid, sam_account_name, display_name, description, distinguished_name, group_type, member_guids, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(integration_id, object_guid) DO UPDATE SET
+      sam_account_name = excluded.sam_account_name,
+      display_name = excluded.display_name,
+      description = excluded.description,
+      distinguished_name = excluded.distinguished_name,
+      group_type = excluded.group_type,
+      member_guids = excluded.member_guids,
+      synced_at = datetime('now')
+  `).run(
+    integrationId,
+    input.object_guid,
+    input.sam_account_name,
+    input.display_name ?? null,
+    input.description ?? null,
+    input.distinguished_name,
+    input.group_type ?? null,
+    input.member_guids ?? null
+  );
+}
+
+export function clearAdData(integrationId: number): void {
+  getDb().prepare("DELETE FROM ad_computers WHERE integration_id = ?").run(integrationId);
+  getDb().prepare("DELETE FROM ad_users WHERE integration_id = ?").run(integrationId);
+  getDb().prepare("DELETE FROM ad_groups WHERE integration_id = ?").run(integrationId);
+  getDb().prepare("DELETE FROM ad_dhcp_leases WHERE integration_id = ?").run(integrationId);
+}
+
+// AD DHCP Leases
+export function getAdDhcpLeasesPaginated(integrationId: number, page: number, pageSize: number, search?: string): { rows: AdDhcpLease[]; total: number } {
+  const offset = (page - 1) * pageSize;
+  let whereClause = "WHERE integration_id = ?";
+  const params: unknown[] = [integrationId];
+  if (search?.trim()) {
+    whereClause += " AND (hostname LIKE ? OR ip_address LIKE ? OR mac_address LIKE ? OR scope_id LIKE ?)";
+    const s = `%${search.trim()}%`;
+    params.push(s, s, s, s);
+  }
+  const total = (getDb().prepare(`SELECT COUNT(*) as c FROM ad_dhcp_leases ${whereClause}`).get(...params) as { c: number }).c;
+  const rows = getDb().prepare(`SELECT * FROM ad_dhcp_leases ${whereClause} ORDER BY ip_address LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdDhcpLease[];
+  return { rows, total };
+}
+
+export function upsertAdDhcpLease(integrationId: number, input: {
+  scope_id: string;
+  scope_name?: string | null;
+  ip_address: string;
+  mac_address: string;
+  hostname?: string | null;
+  lease_expires?: string | null;
+  address_state?: string | null;
+  description?: string | null;
+}): void {
+  getDb().prepare(`INSERT INTO ad_dhcp_leases
+    (integration_id, scope_id, scope_name, ip_address, mac_address, hostname, lease_expires, address_state, description, last_synced)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(integration_id, ip_address) DO UPDATE SET
+      scope_id = excluded.scope_id,
+      scope_name = excluded.scope_name,
+      mac_address = excluded.mac_address,
+      hostname = excluded.hostname,
+      lease_expires = excluded.lease_expires,
+      address_state = excluded.address_state,
+      description = excluded.description,
+      last_synced = datetime('now')
+  `).run(
+    integrationId,
+    input.scope_id,
+    input.scope_name ?? null,
+    input.ip_address,
+    input.mac_address,
+    input.hostname ?? null,
+    input.lease_expires ?? null,
+    input.address_state ?? null,
+    input.description ?? null
+  );
+}
+
+export function clearAdDhcpLeases(integrationId: number): void {
+  getDb().prepare("DELETE FROM ad_dhcp_leases WHERE integration_id = ?").run(integrationId);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SNMP VENDOR PROFILES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface SnmpVendorProfileRow {
+  id: number;
+  profile_id: string;
+  name: string;
+  category: string;
+  enterprise_oid_prefixes: string;
+  sysdescr_pattern: string | null;
+  fields: string;
+  confidence: number;
+  enabled: number;
+  builtin: number;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function getSnmpVendorProfiles(): SnmpVendorProfileRow[] {
+  return getDb().prepare("SELECT * FROM snmp_vendor_profiles ORDER BY category, name").all() as SnmpVendorProfileRow[];
+}
+
+export function getEnabledSnmpVendorProfiles(): SnmpVendorProfileRow[] {
+  return getDb().prepare("SELECT * FROM snmp_vendor_profiles WHERE enabled = 1 ORDER BY confidence DESC, name").all() as SnmpVendorProfileRow[];
+}
+
+export function getSnmpVendorProfileById(id: number): SnmpVendorProfileRow | undefined {
+  return getDb().prepare("SELECT * FROM snmp_vendor_profiles WHERE id = ?").get(id) as SnmpVendorProfileRow | undefined;
+}
+
+export function getSnmpVendorProfileByProfileId(profileId: string): SnmpVendorProfileRow | undefined {
+  return getDb().prepare("SELECT * FROM snmp_vendor_profiles WHERE profile_id = ?").get(profileId) as SnmpVendorProfileRow | undefined;
+}
+
+export function createSnmpVendorProfile(input: {
+  profile_id: string;
+  name: string;
+  category: string;
+  enterprise_oid_prefixes?: string[];
+  sysdescr_pattern?: string | null;
+  fields?: Record<string, string | string[]>;
+  confidence?: number;
+  enabled?: number;
+  builtin?: number;
+  note?: string | null;
+}): SnmpVendorProfileRow {
+  const stmt = getDb().prepare(`INSERT INTO snmp_vendor_profiles
+    (profile_id, name, category, enterprise_oid_prefixes, sysdescr_pattern, fields, confidence, enabled, builtin, note)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const r = stmt.run(
+    input.profile_id,
+    input.name,
+    input.category,
+    JSON.stringify(input.enterprise_oid_prefixes ?? []),
+    input.sysdescr_pattern ?? null,
+    JSON.stringify(input.fields ?? {}),
+    input.confidence ?? 0.90,
+    input.enabled ?? 1,
+    input.builtin ?? 0,
+    input.note ?? null
+  );
+  return getSnmpVendorProfileById(Number(r.lastInsertRowid))!;
+}
+
+export function updateSnmpVendorProfile(id: number, input: Partial<{
+  profile_id: string;
+  name: string;
+  category: string;
+  enterprise_oid_prefixes: string[];
+  sysdescr_pattern: string | null;
+  fields: Record<string, string | string[]>;
+  confidence: number;
+  enabled: number;
+  note: string | null;
+}>): SnmpVendorProfileRow | undefined {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (input.profile_id !== undefined) { fields.push("profile_id = ?"); values.push(input.profile_id); }
+  if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
+  if (input.category !== undefined) { fields.push("category = ?"); values.push(input.category); }
+  if (input.enterprise_oid_prefixes !== undefined) { fields.push("enterprise_oid_prefixes = ?"); values.push(JSON.stringify(input.enterprise_oid_prefixes)); }
+  if (input.sysdescr_pattern !== undefined) { fields.push("sysdescr_pattern = ?"); values.push(input.sysdescr_pattern); }
+  if (input.fields !== undefined) { fields.push("fields = ?"); values.push(JSON.stringify(input.fields)); }
+  if (input.confidence !== undefined) { fields.push("confidence = ?"); values.push(input.confidence); }
+  if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled); }
+  if (input.note !== undefined) { fields.push("note = ?"); values.push(input.note); }
+
+  if (fields.length === 0) return getSnmpVendorProfileById(id);
+  fields.push("updated_at = datetime('now')");
+  values.push(id);
+
+  getDb().prepare(`UPDATE snmp_vendor_profiles SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  return getSnmpVendorProfileById(id);
+}
+
+export function deleteSnmpVendorProfile(id: number): boolean {
+  const r = getDb().prepare("DELETE FROM snmp_vendor_profiles WHERE id = ?").run(id);
+  return r.changes > 0;
+}
+
+export function resetBuiltinSnmpVendorProfiles(): void {
+  getDb().prepare("DELETE FROM snmp_vendor_profiles WHERE builtin = 1").run();
+  seedBuiltinSnmpVendorProfiles(getDb());
+}
+
+export function exportSnmpVendorProfiles(): SnmpVendorProfileRow[] {
+  return getDb().prepare("SELECT * FROM snmp_vendor_profiles ORDER BY category, name").all() as SnmpVendorProfileRow[];
+}
+
+export function importSnmpVendorProfiles(profiles: Array<{
+  profile_id: string;
+  name: string;
+  category: string;
+  enterprise_oid_prefixes: string[] | string;
+  sysdescr_pattern?: string | null;
+  fields: Record<string, string | string[]> | string;
+  confidence?: number;
+  enabled?: number;
+  note?: string | null;
+}>, replaceExisting: boolean = false): { imported: number; skipped: number; errors: string[] } {
+  const result = { imported: 0, skipped: 0, errors: [] as string[] };
+
+  for (const p of profiles) {
+    try {
+      const existing = getSnmpVendorProfileByProfileId(p.profile_id);
+      if (existing) {
+        if (replaceExisting && !existing.builtin) {
+          updateSnmpVendorProfile(existing.id, {
+            name: p.name,
+            category: p.category,
+            enterprise_oid_prefixes: Array.isArray(p.enterprise_oid_prefixes) ? p.enterprise_oid_prefixes : JSON.parse(p.enterprise_oid_prefixes),
+            sysdescr_pattern: p.sysdescr_pattern ?? null,
+            fields: typeof p.fields === "string" ? JSON.parse(p.fields) : p.fields,
+            confidence: p.confidence ?? 0.90,
+            enabled: p.enabled ?? 1,
+            note: p.note ?? null,
+          });
+          result.imported++;
+        } else {
+          result.skipped++;
+        }
+      } else {
+        createSnmpVendorProfile({
+          profile_id: p.profile_id,
+          name: p.name,
+          category: p.category,
+          enterprise_oid_prefixes: Array.isArray(p.enterprise_oid_prefixes) ? p.enterprise_oid_prefixes : JSON.parse(p.enterprise_oid_prefixes),
+          sysdescr_pattern: p.sysdescr_pattern ?? null,
+          fields: typeof p.fields === "string" ? JSON.parse(p.fields) : p.fields,
+          confidence: p.confidence ?? 0.90,
+          enabled: p.enabled ?? 1,
+          builtin: 0,
+          note: p.note ?? null,
+        });
+        result.imported++;
+      }
+    } catch (err) {
+      result.errors.push(`${p.profile_id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DHCP LEASES (unified table)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface DhcpLease {
+  id: number;
+  source_type: "mikrotik" | "windows" | "cisco" | "other";
+  source_device_id: number | null;
+  source_name: string | null;
+  server_name: string | null;
+  scope_id: string | null;
+  scope_name: string | null;
+  ip_address: string;
+  mac_address: string;
+  hostname: string | null;
+  status: string | null;
+  lease_start: string | null;
+  lease_expires: string | null;
+  description: string | null;
+  host_id: number | null;
+  network_id: number | null;
+  last_synced: string;
+}
+
+export interface DhcpLeaseWithRelations extends DhcpLease {
+  host_hostname?: string | null;
+  host_ip?: string | null;
+  network_name?: string | null;
+  network_cidr?: string | null;
+  device_name?: string | null;
+}
+
+export function getDhcpLeases(): DhcpLeaseWithRelations[] {
+  return getDb().prepare(`
+    SELECT 
+      d.*,
+      h.hostname as host_hostname,
+      h.ip as host_ip,
+      n.name as network_name,
+      n.cidr as network_cidr,
+      nd.name as device_name
+    FROM dhcp_leases d
+    LEFT JOIN hosts h ON h.id = d.host_id
+    LEFT JOIN networks n ON n.id = d.network_id
+    LEFT JOIN network_devices nd ON nd.id = d.source_device_id
+    ORDER BY d.last_synced DESC
+  `).all() as DhcpLeaseWithRelations[];
+}
+
+export function getDhcpLeasesPaginated(
+  page: number,
+  pageSize: number,
+  filters?: {
+    search?: string;
+    sourceType?: string;
+    sourceDeviceId?: number;
+    networkId?: number;
+  }
+): { rows: DhcpLeaseWithRelations[]; total: number } {
+  const offset = (page - 1) * pageSize;
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters?.search?.trim()) {
+    const s = `%${filters.search.trim()}%`;
+    conditions.push("(d.ip_address LIKE ? OR d.mac_address LIKE ? OR d.hostname LIKE ?)");
+    params.push(s, s, s);
+  }
+  if (filters?.sourceType) {
+    conditions.push("d.source_type = ?");
+    params.push(filters.sourceType);
+  }
+  if (filters?.sourceDeviceId) {
+    conditions.push("d.source_device_id = ?");
+    params.push(filters.sourceDeviceId);
+  }
+  if (filters?.networkId) {
+    conditions.push("d.network_id = ?");
+    params.push(filters.networkId);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const total = (getDb().prepare(`SELECT COUNT(*) as c FROM dhcp_leases d ${whereClause}`).get(...params) as { c: number }).c;
+  const rows = getDb().prepare(`
+    SELECT 
+      d.*,
+      h.hostname as host_hostname,
+      h.ip as host_ip,
+      n.name as network_name,
+      n.cidr as network_cidr,
+      nd.name as device_name
+    FROM dhcp_leases d
+    LEFT JOIN hosts h ON h.id = d.host_id
+    LEFT JOIN networks n ON n.id = d.network_id
+    LEFT JOIN network_devices nd ON nd.id = d.source_device_id
+    ${whereClause}
+    ORDER BY d.last_synced DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, pageSize, offset) as DhcpLeaseWithRelations[];
+
+  return { rows, total };
+}
+
+export function getDhcpLeasesByDevice(deviceId: number): DhcpLease[] {
+  return getDb().prepare("SELECT * FROM dhcp_leases WHERE source_device_id = ? ORDER BY ip_address").all(deviceId) as DhcpLease[];
+}
+
+export function upsertDhcpLease(input: {
+  source_type: "mikrotik" | "windows" | "cisco" | "other";
+  source_device_id: number;
+  source_name?: string | null;
+  server_name?: string | null;
+  scope_id?: string | null;
+  scope_name?: string | null;
+  ip_address: string;
+  mac_address: string;
+  hostname?: string | null;
+  status?: string | null;
+  lease_start?: string | null;
+  lease_expires?: string | null;
+  description?: string | null;
+  host_id?: number | null;
+  network_id?: number | null;
+}): void {
+  getDb().prepare(`INSERT INTO dhcp_leases
+    (source_type, source_device_id, source_name, server_name, scope_id, scope_name,
+     ip_address, mac_address, hostname, status, lease_start, lease_expires, description,
+     host_id, network_id, last_synced)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(source_device_id, ip_address) DO UPDATE SET
+      source_name = excluded.source_name,
+      server_name = excluded.server_name,
+      scope_id = excluded.scope_id,
+      scope_name = excluded.scope_name,
+      mac_address = excluded.mac_address,
+      hostname = excluded.hostname,
+      status = excluded.status,
+      lease_start = excluded.lease_start,
+      lease_expires = excluded.lease_expires,
+      description = excluded.description,
+      host_id = COALESCE(excluded.host_id, dhcp_leases.host_id),
+      network_id = COALESCE(excluded.network_id, dhcp_leases.network_id),
+      last_synced = datetime('now')
+  `).run(
+    input.source_type,
+    input.source_device_id,
+    input.source_name ?? null,
+    input.server_name ?? null,
+    input.scope_id ?? null,
+    input.scope_name ?? null,
+    input.ip_address,
+    input.mac_address,
+    input.hostname ?? null,
+    input.status ?? null,
+    input.lease_start ?? null,
+    input.lease_expires ?? null,
+    input.description ?? null,
+    input.host_id ?? null,
+    input.network_id ?? null
+  );
+}
+
+export function bulkUpsertDhcpLeases(leases: Array<{
+  source_type: "mikrotik" | "windows" | "cisco" | "other";
+  source_device_id: number;
+  source_name?: string | null;
+  server_name?: string | null;
+  ip_address: string;
+  mac_address: string;
+  hostname?: string | null;
+  status?: string | null;
+  lease_expires?: string | null;
+  description?: string | null;
+  network_id?: number | null;
+}>): { inserted: number; updated: number } {
+  let inserted = 0;
+  let updated = 0;
+
+  const t = getDb().transaction(() => {
+    for (const lease of leases) {
+      const existing = getDb().prepare(
+        "SELECT id FROM dhcp_leases WHERE source_device_id = ? AND ip_address = ?"
+      ).get(lease.source_device_id, lease.ip_address);
+
+      upsertDhcpLease(lease);
+      if (existing) updated++;
+      else inserted++;
+    }
+  });
+  t();
+
+  return { inserted, updated };
+}
+
+export function deleteDhcpLeasesByDevice(deviceId: number): number {
+  const r = getDb().prepare("DELETE FROM dhcp_leases WHERE source_device_id = ?").run(deviceId);
+  return r.changes;
+}
+
+export function getDhcpLeaseStats(): {
+  total: number;
+  bySource: Record<string, number>;
+  byNetwork: Array<{ network_id: number; network_name: string; count: number }>;
+} {
+  const total = (getDb().prepare("SELECT COUNT(*) as c FROM dhcp_leases").get() as { c: number }).c;
+
+  const bySourceRows = getDb().prepare(
+    "SELECT source_type, COUNT(*) as c FROM dhcp_leases GROUP BY source_type"
+  ).all() as Array<{ source_type: string; c: number }>;
+  const bySource: Record<string, number> = {};
+  for (const r of bySourceRows) bySource[r.source_type] = r.c;
+
+  const byNetwork = getDb().prepare(`
+    SELECT d.network_id, COALESCE(n.name, 'Sconosciuta') as network_name, COUNT(*) as count
+    FROM dhcp_leases d
+    LEFT JOIN networks n ON n.id = d.network_id
+    GROUP BY d.network_id
+    ORDER BY count DESC
+  `).all() as Array<{ network_id: number; network_name: string; count: number }>;
+
+  return { total, bySource, byNetwork };
 }

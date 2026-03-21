@@ -40,6 +40,10 @@ CREATE TABLE IF NOT EXISTS hosts (
   os_info TEXT,
   model TEXT,
   serial_number TEXT,
+  firmware TEXT,
+  device_manufacturer TEXT,
+  detection_json TEXT,
+  snmp_data TEXT,
   last_seen TEXT,
   first_seen TEXT,
   created_at TEXT DEFAULT (datetime('now')),
@@ -51,7 +55,7 @@ CREATE TABLE IF NOT EXISTS scan_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh')),
+  scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery')),
   status TEXT NOT NULL,
   ports_open TEXT,
   raw_output TEXT,
@@ -161,7 +165,7 @@ CREATE TABLE IF NOT EXISTS switch_ports (
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'cleanup', 'known_host_check')),
+  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'cleanup', 'known_host_check', 'ad_sync')),
   interval_minutes INTEGER NOT NULL DEFAULT 60,
   last_run TEXT,
   next_run TEXT,
@@ -189,12 +193,9 @@ CREATE TABLE IF NOT EXISTS nmap_profiles (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
--- Default nmap profiles
+-- Default nmap profile (unico profilo, editabile dalle impostazioni)
 INSERT OR IGNORE INTO nmap_profiles (name, description, args, snmp_community, custom_ports, is_default) VALUES
-  ('Quick', 'Solo scoperta host, nessuna scansione porte', '-sn', NULL, NULL, 1),
-  ('Standard', 'Top 100 porte TCP', '-sT --top-ports 100 -T4 --host-timeout 30s', NULL, NULL, 1),
-  ('Completo', 'Top 1000 porte TCP con rilevamento versione', '-sT -sV --top-ports 1000 -T4 --host-timeout 120s', NULL, NULL, 1),
-  ('Personalizzato', 'Top 100 TCP + porte esplicite + UDP note + SNMP con community', '', 'public', '', 0);
+  ('Personalizzato', 'Top 100 TCP + porte esplicite + UDP note + SNMP con community', '', 'public', '', 1);
 
 -- Default settings
 INSERT OR IGNORE INTO settings (key, value) VALUES ('server_port', '3000');
@@ -421,4 +422,223 @@ CREATE INDEX IF NOT EXISTS idx_mac_port_entries_device_mac ON mac_port_entries(d
 CREATE INDEX IF NOT EXISTS idx_status_history_checked_host ON status_history(checked_at DESC, host_id);
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run);
 CREATE INDEX IF NOT EXISTS idx_inventory_audit_log_asset_created ON inventory_audit_log(asset_id, created_at DESC);
+
+-- Credenziali Windows/Linux aggiuntive per subnet (ordine = tentativi sequenziali)
+CREATE TABLE IF NOT EXISTS network_host_credentials (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+  credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK(role IN ('windows', 'linux', 'ssh', 'snmp')),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(network_id, credential_id, role)
+);
+CREATE INDEX IF NOT EXISTS idx_network_host_credentials_net_role ON network_host_credentials(network_id, role);
+
+-- Credenziale usata con successo per detect (una combinazione host+ruolo)
+CREATE TABLE IF NOT EXISTS host_detect_credential (
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK(role IN ('windows', 'linux', 'ssh', 'snmp')),
+  credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+  updated_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (host_id, role)
+);
+
+-- Mapping manuale: etichetta fingerprint (final_device) → classificazione host
+CREATE TABLE IF NOT EXISTS fingerprint_classification_map (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_kind TEXT NOT NULL CHECK(match_kind IN ('exact','contains')),
+  pattern TEXT NOT NULL,
+  classification TEXT NOT NULL,
+  priority INTEGER NOT NULL DEFAULT 100,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(match_kind, pattern)
+);
+CREATE INDEX IF NOT EXISTS idx_fingerprint_class_map_pri ON fingerprint_classification_map(enabled, priority ASC, id ASC);
+
+-- Regole unificate fingerprint: ogni riga è una "firma" dispositivo.
+-- Tutti i criteri sono opzionali (JSON): la regola matcha quando TUTTI i criteri specificati sono soddisfatti.
+CREATE TABLE IF NOT EXISTS device_fingerprint_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  device_label TEXT NOT NULL,
+  classification TEXT NOT NULL,
+  priority INTEGER NOT NULL DEFAULT 100,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  -- Criteri di match (tutti opzionali, JSON dove servono array/pattern)
+  tcp_ports_key TEXT,
+  tcp_ports_optional TEXT,
+  min_key_ports INTEGER,
+  oid_prefix TEXT,
+  sysdescr_pattern TEXT,
+  hostname_pattern TEXT,
+  mac_vendor_pattern TEXT,
+  banner_pattern TEXT,
+  ttl_min INTEGER,
+  ttl_max INTEGER,
+  note TEXT,
+  builtin INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(name)
+);
+CREATE INDEX IF NOT EXISTS idx_device_fp_rules_pri ON device_fingerprint_rules(enabled, priority ASC, id ASC);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ACTIVE DIRECTORY INTEGRATION
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Configurazione connessione AD / LDAP
+CREATE TABLE IF NOT EXISTS ad_integrations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  dc_host TEXT NOT NULL,
+  domain TEXT NOT NULL,
+  base_dn TEXT NOT NULL,
+  encrypted_username TEXT NOT NULL,
+  encrypted_password TEXT NOT NULL,
+  use_ssl INTEGER NOT NULL DEFAULT 1,
+  port INTEGER NOT NULL DEFAULT 636,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_sync_at TEXT,
+  last_sync_status TEXT,
+  computers_count INTEGER DEFAULT 0,
+  users_count INTEGER DEFAULT 0,
+  groups_count INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(dc_host, domain)
+);
+
+-- Computer AD sincronizzati
+CREATE TABLE IF NOT EXISTS ad_computers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+  object_guid TEXT NOT NULL,
+  sam_account_name TEXT NOT NULL,
+  dns_host_name TEXT,
+  display_name TEXT,
+  distinguished_name TEXT NOT NULL,
+  operating_system TEXT,
+  operating_system_version TEXT,
+  last_logon_at TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+  raw_data TEXT,
+  synced_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(integration_id, object_guid)
+);
+CREATE INDEX IF NOT EXISTS idx_ad_computers_integration ON ad_computers(integration_id);
+CREATE INDEX IF NOT EXISTS idx_ad_computers_host ON ad_computers(host_id);
+CREATE INDEX IF NOT EXISTS idx_ad_computers_dns ON ad_computers(dns_host_name);
+
+-- Utenti AD sincronizzati
+CREATE TABLE IF NOT EXISTS ad_users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+  object_guid TEXT NOT NULL,
+  sam_account_name TEXT NOT NULL,
+  user_principal_name TEXT,
+  display_name TEXT,
+  email TEXT,
+  department TEXT,
+  title TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_logon_at TEXT,
+  password_last_set_at TEXT,
+  raw_data TEXT,
+  synced_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(integration_id, object_guid)
+);
+CREATE INDEX IF NOT EXISTS idx_ad_users_integration ON ad_users(integration_id);
+CREATE INDEX IF NOT EXISTS idx_ad_users_upn ON ad_users(user_principal_name);
+CREATE INDEX IF NOT EXISTS idx_ad_users_email ON ad_users(email);
+
+-- Gruppi AD sincronizzati
+CREATE TABLE IF NOT EXISTS ad_groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+  object_guid TEXT NOT NULL,
+  sam_account_name TEXT NOT NULL,
+  display_name TEXT,
+  description TEXT,
+  distinguished_name TEXT NOT NULL,
+  group_type INTEGER,
+  member_guids TEXT,
+  synced_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(integration_id, object_guid)
+);
+CREATE INDEX IF NOT EXISTS idx_ad_groups_integration ON ad_groups(integration_id);
+
+-- Lease DHCP da Windows Server DHCP (opzionale, richiede WinRM sul DC)
+CREATE TABLE IF NOT EXISTS ad_dhcp_leases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+  scope_id TEXT NOT NULL,
+  scope_name TEXT,
+  ip_address TEXT NOT NULL,
+  mac_address TEXT NOT NULL,
+  hostname TEXT,
+  lease_expires TEXT,
+  address_state TEXT,
+  description TEXT,
+  last_synced TEXT DEFAULT (datetime('now')),
+  UNIQUE(integration_id, ip_address)
+);
+CREATE INDEX IF NOT EXISTS idx_ad_dhcp_leases_integration ON ad_dhcp_leases(integration_id);
+CREATE INDEX IF NOT EXISTS idx_ad_dhcp_leases_mac ON ad_dhcp_leases(mac_address);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SNMP VENDOR PROFILES (gestione dinamica profili OID)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS snmp_vendor_profiles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  profile_id TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  enterprise_oid_prefixes TEXT NOT NULL DEFAULT '[]',
+  sysdescr_pattern TEXT,
+  fields TEXT NOT NULL DEFAULT '{}',
+  confidence REAL NOT NULL DEFAULT 0.90,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  builtin INTEGER NOT NULL DEFAULT 0,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_snmp_vendor_profiles_category ON snmp_vendor_profiles(category);
+CREATE INDEX IF NOT EXISTS idx_snmp_vendor_profiles_enabled ON snmp_vendor_profiles(enabled);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- DHCP LEASES (tabella unificata per lease da tutte le fonti)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS dhcp_leases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_type TEXT NOT NULL CHECK(source_type IN ('mikrotik', 'windows', 'cisco', 'other')),
+  source_device_id INTEGER REFERENCES network_devices(id) ON DELETE CASCADE,
+  source_name TEXT,
+  server_name TEXT,
+  scope_id TEXT,
+  scope_name TEXT,
+  ip_address TEXT NOT NULL,
+  mac_address TEXT NOT NULL,
+  hostname TEXT,
+  status TEXT,
+  lease_start TEXT,
+  lease_expires TEXT,
+  description TEXT,
+  host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+  network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+  last_synced TEXT DEFAULT (datetime('now')),
+  UNIQUE(source_device_id, ip_address)
+);
+CREATE INDEX IF NOT EXISTS idx_dhcp_leases_source ON dhcp_leases(source_type, source_device_id);
+CREATE INDEX IF NOT EXISTS idx_dhcp_leases_mac ON dhcp_leases(mac_address);
+CREATE INDEX IF NOT EXISTS idx_dhcp_leases_ip ON dhcp_leases(ip_address);
+CREATE INDEX IF NOT EXISTS idx_dhcp_leases_host ON dhcp_leases(host_id);
+CREATE INDEX IF NOT EXISTS idx_dhcp_leases_network ON dhcp_leases(network_id);
 `;

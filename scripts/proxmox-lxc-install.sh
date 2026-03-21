@@ -370,7 +370,7 @@ main() {
     done
     sleep 5
 
-    info "Aggiornamento pacchetti e installazione dipendenze base..."
+    info "Aggiornamento pacchetti e strumenti minimi per il clone Git (apt completo in install.sh)..."
     pct exec "$vmid" -- bash -c "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq git curl ca-certificates"
 
     info "Clone, build e servizio systemd (può richiedere diversi minuti)..."
@@ -402,9 +402,13 @@ main() {
   if [[ ! "$do_install" =~ ^[sSyY] ]]; then
     echo "Installazione manuale DA-INVENT nel CT:"
     echo "  pct enter $vmid"
-    echo "  apt update && apt install -y git curl"
-    echo "  git clone $DEFAULT_GIT_URL /opt/da-invent && cd /opt/da-invent"
-    echo "  chmod +x scripts/install.sh && ./scripts/install.sh --systemd"
+    echo "  Opzione A — bootstrap (scarica repo + install.sh completo):"
+    echo "    apt update && apt install -y curl ca-certificates"
+    echo "    curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-linux.sh -o /tmp/da-bl.sh && bash /tmp/da-bl.sh"
+    echo "  Opzione B — clone manuale:"
+    echo "    apt update && apt install -y git curl ca-certificates"
+    echo "    git clone $DEFAULT_GIT_URL /opt/da-invent && cd /opt/da-invent"
+    echo "    chmod +x scripts/install.sh && ./scripts/install.sh --systemd"
     echo ""
   fi
 }

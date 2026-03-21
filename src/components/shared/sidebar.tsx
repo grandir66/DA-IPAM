@@ -18,64 +18,17 @@ import {
   ChevronDown,
   ChevronRight,
   Server,
-  Wifi,
-  HardDrive,
-  Database,
   Shield,
-  Cpu,
-  Laptop,
-  Monitor,
-  Phone,
-  Camera,
-  Printer,
   ListOrdered,
   Package,
-  Box,
   User,
   FileKey,
+  FolderTree,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
-/** Dispositivi raggruppati per sottocategoria */
-const deviceSubCategories = [
-  {
-    label: "Sistema",
-    items: [
-      { href: "/devices/workstation", label: "PC", icon: Monitor },
-      { href: "/devices/notebook", label: "Notebook", icon: Laptop },
-      { href: "/devices/vm", label: "VM", icon: Box },
-      { href: "/devices/server", label: "Server", icon: Server },
-    ],
-  },
-  {
-    label: "Infrastruttura",
-    items: [
-      { href: "/devices/access_point", label: "Access Point", icon: Wifi },
-      { href: "/devices/switch", label: "Switch", icon: Cable },
-      { href: "/devices/router", label: "Router", icon: Router },
-      { href: "/devices/firewall", label: "Firewall", icon: Shield },
-    ],
-  },
-  {
-    label: null,
-    items: [
-      { href: "/devices/storage", label: "Storage", icon: Database },
-      { href: "/devices/hypervisor", label: "Hypervisor", icon: HardDrive },
-    ],
-  },
-  {
-    label: "Altro",
-    items: [
-      { href: "/devices/iot", label: "IoT", icon: Cpu },
-      { href: "/devices/stampante", label: "Stampanti", icon: Printer },
-      { href: "/devices/telecamera", label: "Telecamere", icon: Camera },
-      { href: "/devices/voip", label: "Telefoni", icon: Phone },
-    ],
-  },
-] as const;
-
-const allDeviceHrefs = deviceSubCategories.flatMap((c) => c.items.map((i) => i.href));
+/** Voci menu Rete (con router, switch, firewall per gestione infrastruttura) */
 
 const inventorySubItems = [
   { href: "/inventory", label: "Asset", icon: Package },
@@ -87,13 +40,16 @@ const networkSubItems = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/devices/router", label: "Router", icon: Router },
   { href: "/devices/switch", label: "Switch", icon: Cable },
+  { href: "/devices/firewall", label: "Firewall", icon: Shield },
   { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered },
+  { href: "/dhcp", label: "Tabella DHCP", icon: Server },
   { href: "/credentials", label: "Credenziali", icon: Key },
   { href: "/scans", label: "Scansioni", icon: Scan },
 ] as const;
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/active-directory", label: "Active Directory", icon: FolderTree },
   { href: "/settings", label: "Impostazioni", icon: Settings },
 ];
 
@@ -102,9 +58,6 @@ export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [networkOpen, setNetworkOpen] = useState(() =>
     networkSubItems.some((d) => pathname.startsWith(d.href))
-  );
-  const [devicesOpen, setDevicesOpen] = useState(() =>
-    allDeviceHrefs.some((href) => pathname.startsWith(href))
   );
   const [inventoryOpen, setInventoryOpen] = useState(() =>
     inventorySubItems.some((d) => pathname.startsWith(d.href))
@@ -178,53 +131,19 @@ export function Sidebar() {
             </div>
           )}
         </div>
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={() => setDevicesOpen((o) => !o)}
-            className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full",
-              allDeviceHrefs.some((href) => pathname.startsWith(href))
-                ? "bg-sidebar-primary/20 text-sidebar-foreground"
-                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            )}
-          >
-            {devicesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            <Cable className="h-4 w-4" />
-            Dispositivi
-          </button>
-          {devicesOpen && (
-            <div className="ml-4 mt-1 space-y-1">
-              {deviceSubCategories.map((cat) => (
-                <div key={cat.label ?? "main"}>
-                  {cat.label && (
-                    <p className="px-2.5 py-1.5 text-xs font-medium text-sidebar-foreground/60 uppercase tracking-wider">
-                      {cat.label}
-                    </p>
-                  )}
-                  <div className={cat.label ? "border-l border-sidebar-border pl-2 space-y-0.5" : "space-y-0.5"}>
-                    {cat.items.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setMobileOpen(false)}
-                        className={cn(
-                          "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
-                          isActive(item.href)
-                            ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                            : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                        )}
-                      >
-                        <item.icon className="h-3.5 w-3.5 shrink-0" />
-                        {item.label}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+        <Link
+          href="/devices"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            pathname === "/devices" || (pathname.startsWith("/devices/") && !networkSubItems.some((n) => pathname.startsWith(n.href)))
+              ? "bg-sidebar-primary text-sidebar-primary-foreground"
+              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           )}
-        </div>
+        >
+          <Cable className="h-4 w-4" />
+          Dispositivi
+        </Link>
         <div className="pt-1">
           <button
             type="button"

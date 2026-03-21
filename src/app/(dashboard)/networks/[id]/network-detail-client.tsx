@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,13 +35,16 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { IpGrid } from "@/components/shared/ip-grid";
 import { ScanProgress } from "@/components/shared/scan-progress";
-import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, Cpu, ExternalLink, X, Plus, Monitor, Server, Terminal } from "lucide-react";
+import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Monitor, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 
 type HostWithDevice = Host & { device_id?: number; device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string } };
+import { cn } from "@/lib/utils";
 import { DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel } from "@/lib/device-classifications";
+import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
+import { NetworkCredentialChains } from "@/components/shared/network-credential-chains";
 
 const REFRESH_INTERVALS = [
   { value: 0, label: "Off" },
@@ -51,20 +54,17 @@ const REFRESH_INTERVALS = [
   { value: 300, label: "5m" },
 ] as const;
 
-interface NmapProfile {
-  id: number;
-  name: string;
-  description: string;
-  args: string;
-  is_default: number;
-}
-
 interface NetworkDetailClientProps {
   network: Network;
   initialHosts: (Host & { device_id?: number })[];
   routerId: number | null;
   routers: NetworkDevice[];
-  nmapProfiles: NmapProfile[];
+  initialCredentialChains: {
+    windows: number[];
+    linux: number[];
+    ssh: number[];
+    snmp: number[];
+  };
 }
 
 export function NetworkDetailClient({
@@ -72,7 +72,7 @@ export function NetworkDetailClient({
   initialHosts,
   routerId: initialRouterId,
   routers,
-  nmapProfiles,
+  initialCredentialChains,
 }: NetworkDetailClientProps) {
   const router = useRouter();
   const [network, setNetwork] = useState(initialNetwork);
@@ -89,13 +89,6 @@ export function NetworkDetailClient({
   }, []);
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [selectedProfileId, setSelectedProfileId] = useState<string>(
-    nmapProfiles.length > 1
-      ? String(nmapProfiles[1].id)
-      : nmapProfiles.length > 0
-        ? String(nmapProfiles[0].id)
-        : ""
-  );
   const [view, setView] = useState<"grid" | "list">("list");
   const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(() => {
     if (typeof window === "undefined") return 0;
@@ -125,12 +118,36 @@ export function NetworkDetailClient({
   const [bulkAddSnmpCredentialId, setBulkAddSnmpCredentialId] = useState<string | null>(null);
   const [bulkAddVendorSubtype, setBulkAddVendorSubtype] = useState<string | null>(null);
   const [bulkAddSaving, setBulkAddSaving] = useState(false);
+  const [bulkHostBusy, setBulkHostBusy] = useState(false);
+  const [credWindows, setCredWindows] = useState<number[]>(initialCredentialChains.windows);
+  const [credLinux, setCredLinux] = useState<number[]>(initialCredentialChains.linux);
+  const [credSsh, setCredSsh] = useState<number[]>(initialCredentialChains.ssh);
+  const [credSnmp, setCredSnmp] = useState<number[]>(initialCredentialChains.snmp);
+
+  useEffect(() => {
+    setCredWindows(initialCredentialChains.windows);
+    setCredLinux(initialCredentialChains.linux);
+    setCredSsh(initialCredentialChains.ssh);
+    setCredSnmp(initialCredentialChains.snmp);
+  }, [initialCredentialChains]);
 
   useEffect(() => {
     fetch("/api/credentials")
       .then((r) => (r.ok ? r.json() : []))
       .then(setAddDeviceCredentials)
       .catch(() => setAddDeviceCredentials([]));
+  }, []);
+
+  const refreshCredentialsList = useCallback(async () => {
+    try {
+      const r = await fetch("/api/credentials");
+      if (r.ok) {
+        const data = (await r.json()) as { id: number; name: string; credential_type: string }[];
+        setAddDeviceCredentials(data);
+      }
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const refreshHosts = useCallback(async () => {
@@ -141,6 +158,10 @@ export function NetworkDetailClient({
         setHosts(data.hosts ?? []);
         setNetwork((n) => ({ ...n, ...data }));
         setRouterId(data.router_id ?? null);
+        if (Array.isArray(data.windows_credential_ids)) setCredWindows(data.windows_credential_ids);
+        if (Array.isArray(data.linux_credential_ids)) setCredLinux(data.linux_credential_ids);
+        if (Array.isArray(data.ssh_credential_ids)) setCredSsh(data.ssh_credential_ids);
+        if (Array.isArray(data.snmp_credential_ids)) setCredSnmp(data.snmp_credential_ids);
       }
     } catch { /* ignore */ }
   }, [network.id]);
@@ -171,7 +192,7 @@ export function NetworkDetailClient({
             await fetch("/api/scans/trigger", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ network_id: network.id, scan_type: "ping" }),
+              body: JSON.stringify({ network_id: network.id, scan_type: "network_discovery" }),
             });
           } catch { /* ignore */ }
         }
@@ -280,6 +301,71 @@ export function NetworkDetailClient({
     setBulkAddSaving(false);
   }
 
+  async function handleBulkKnown(known: 0 | 1) {
+    if (selectedHostIds.size === 0) return;
+    const n = selectedHostIds.size;
+    const msg =
+      known === 1
+        ? `Segnare ${n} host come conosciuti (monitoraggio continuo)?`
+        : `Rimuovere ${n} host dall'elenco conosciuti?`;
+    if (!confirm(msg)) return;
+    setBulkHostBusy(true);
+    try {
+      const res = await fetch("/api/hosts/bulk", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          network_id: network.id,
+          host_ids: Array.from(selectedHostIds),
+          known_host: known,
+        }),
+      });
+      const data = (await res.json()) as { error?: string; updated?: number };
+      if (res.ok) {
+        toast.success(known === 1 ? "Host segnati come conosciuti" : "Flag conosciuto rimosso");
+        clearHostSelection();
+        await refreshHosts();
+        router.refresh();
+      } else {
+        toast.error(data.error || "Errore");
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setBulkHostBusy(false);
+    }
+  }
+
+  async function handleBulkDeleteHosts() {
+    if (selectedHostIds.size === 0) return;
+    const n = selectedHostIds.size;
+    if (!confirm(`Eliminare definitivamente ${n} host dall'inventario IP? Azione irreversibile.`)) return;
+    setBulkHostBusy(true);
+    try {
+      const res = await fetch("/api/hosts/bulk", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          network_id: network.id,
+          host_ids: Array.from(selectedHostIds),
+        }),
+      });
+      const data = (await res.json()) as { error?: string; deleted?: number };
+      if (res.ok) {
+        toast.success(data.deleted != null ? `${data.deleted} host eliminati` : "Host eliminati");
+        clearHostSelection();
+        await refreshHosts();
+        router.refresh();
+      } else {
+        toast.error(data.error || "Errore");
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setBulkHostBusy(false);
+    }
+  }
+
   async function handleSaveEdit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
@@ -294,6 +380,10 @@ export function NetworkDetailClient({
       snmp_community: (form.elements.namedItem("snmp_community") as HTMLInputElement).value?.trim() || null,
       dns_server: (form.elements.namedItem("dns_server") as HTMLInputElement).value?.trim() || null,
       router_id: (form.elements.namedItem("router_id") as HTMLSelectElement).value ? Number((form.elements.namedItem("router_id") as HTMLSelectElement).value) : null,
+      windows_credential_ids: credWindows,
+      linux_credential_ids: credLinux,
+      ssh_credential_ids: credSsh,
+      snmp_credential_ids: credSnmp,
     };
     try {
       const res = await fetch(`/api/networks/${network.id}`, {
@@ -305,6 +395,10 @@ export function NetworkDetailClient({
         const updated = await res.json();
         setNetwork((n) => ({ ...n, ...updated }));
         setRouterId(updated.router_id ?? null);
+        if (Array.isArray(updated.windows_credential_ids)) setCredWindows(updated.windows_credential_ids);
+        if (Array.isArray(updated.linux_credential_ids)) setCredLinux(updated.linux_credential_ids);
+        if (Array.isArray(updated.ssh_credential_ids)) setCredSsh(updated.ssh_credential_ids);
+        if (Array.isArray(updated.snmp_credential_ids)) setCredSnmp(updated.snmp_credential_ids);
         setEditOpen(false);
         toast.success("Rete aggiornata");
         router.refresh();
@@ -319,13 +413,34 @@ export function NetworkDetailClient({
     }
   }
 
-  async function triggerScan(scanType: "ping" | "snmp" | "nmap" | "windows" | "ssh") {
+  const SCAN_LABELS: Record<
+    "network_discovery" | "snmp" | "nmap" | "windows" | "ssh",
+    string
+  > = {
+    network_discovery: "Scoperta rete",
+    snmp: "SNMP",
+    nmap: "Nmap",
+    windows: "WinRM (Windows)",
+    ssh: "SSH (Linux)",
+  };
+
+  async function runScanJob(
+    scanType: "network_discovery" | "snmp" | "nmap" | "windows" | "ssh",
+    options?: { showStartToast?: boolean; refreshOnComplete?: boolean }
+  ): Promise<{ ok: boolean; lastProgress: ScanProgressType | null }> {
+    const showStartToast = options?.showStartToast !== false;
+    const refreshOnComplete = options?.refreshOnComplete !== false;
+
+    if (scanType !== "network_discovery" && selectedHostIds.size === 0) {
+      toast.error("Seleziona uno o più host nella vista lista (azioni manuali solo sugli IP selezionati)");
+      return { ok: false, lastProgress: null };
+    }
     const body: Record<string, unknown> = {
       network_id: network.id,
       scan_type: scanType,
     };
-    if (scanType === "nmap" && selectedProfileId) {
-      body.nmap_profile_id = Number(selectedProfileId);
+    if (scanType !== "network_discovery" && selectedHostIds.size > 0) {
+      body.host_ids = Array.from(selectedHostIds);
     }
 
     const res = await fetch("/api/scans/trigger", {
@@ -336,39 +451,90 @@ export function NetworkDetailClient({
 
     if (!res.ok) {
       toast.error("Errore nell'avvio della scansione");
-      return;
+      return { ok: false, lastProgress: null };
     }
 
-    const labels: Record<string, string> = { ping: "Ping", snmp: "SNMP", nmap: "Nmap", windows: "Windows", ssh: "Linux (SSH)" };
-    const data = await res.json();
-    toast.success(`Scansione ${labels[scanType]} avviata`);
+    const data = (await res.json()) as { id: string; progress: ScanProgressType };
+    if (showStartToast) {
+      toast.success(`Scansione ${SCAN_LABELS[scanType]} avviata`);
+    }
     setScanning(data.progress);
 
     if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
-    const interval = setInterval(async () => {
-      try {
-        const progressRes = await fetch(`/api/scans/progress/${data.id}`);
-        if (progressRes.ok) {
-          const progress = await progressRes.json();
-          setScanning(progress);
-          if (progress.status === "completed" || progress.status === "failed") {
+
+    return await new Promise((resolve) => {
+      const interval = setInterval(() => {
+        void (async () => {
+          try {
+            const progressRes = await fetch(`/api/scans/progress/${data.id}`);
+            if (progressRes.ok) {
+              const progress = (await progressRes.json()) as ScanProgressType;
+              setScanning(progress);
+              if (progress.status === "completed" || progress.status === "failed") {
+                clearInterval(interval);
+                scanIntervalRef.current = null;
+                if (refreshOnComplete) {
+                  refreshHosts();
+                  router.refresh();
+                }
+                resolve({
+                  ok: progress.status === "completed",
+                  lastProgress: progress,
+                });
+              }
+            }
+          } catch {
             clearInterval(interval);
             scanIntervalRef.current = null;
-            // Il modale resta aperto — l'utente chiude con il pulsante
-            refreshHosts();
-            router.refresh();
+            setScanning(null);
+            resolve({ ok: false, lastProgress: null });
           }
-        }
-      } catch {
-        clearInterval(interval);
-        scanIntervalRef.current = null;
-        setScanning(null);
-      }
-    }, 1000);
-    scanIntervalRef.current = interval;
+        })();
+      }, 1000);
+      scanIntervalRef.current = interval;
+    });
+  }
+
+  async function triggerScan(scanType: "network_discovery" | "snmp" | "nmap" | "windows" | "ssh") {
+    await runScanJob(scanType);
+  }
+
+  async function triggerAdvancedDetection() {
+    if (selectedHostIds.size === 0) {
+      toast.error("Seleziona uno o più host nella vista lista (azioni manuali solo sugli IP selezionati)");
+      return;
+    }
+    toast.info("Rilevamento avanzato — fase 1/2: WinRM (Windows)…");
+    const phase1 = await runScanJob("windows", { showStartToast: false, refreshOnComplete: true });
+    if (!phase1.ok) {
+      toast.error(
+        phase1.lastProgress?.status === "failed"
+          ? "Fase WinRM terminata con errori"
+          : "Impossibile completare la fase WinRM"
+      );
+      setScanning(null);
+      return;
+    }
+    toast.info("Rilevamento avanzato — fase 2/2: SSH (Linux)…");
+    const phase2 = await runScanJob("ssh", { showStartToast: false, refreshOnComplete: true });
+    if (!phase2.ok) {
+      toast.error(
+        phase2.lastProgress?.status === "failed"
+          ? "Fase SSH terminata con errori"
+          : "Impossibile completare la fase SSH"
+      );
+      setScanning(null);
+      return;
+    }
+    toast.success("Rilevamento avanzato completato (WinRM + SSH)");
+    setScanning(null);
   }
 
   async function triggerArpPoll() {
+    if (selectedHostIds.size === 0) {
+      toast.error("Seleziona uno o più host nella lista (ARP manuale solo su IP selezionati)");
+      return;
+    }
     setArpPolling(true);
     try {
       const controller = new AbortController();
@@ -376,7 +542,11 @@ export function NetworkDetailClient({
       const res = await fetch("/api/scans/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ network_id: network.id, scan_type: "arp_poll" }),
+        body: JSON.stringify({
+          network_id: network.id,
+          scan_type: "arp_poll",
+          host_ids: Array.from(selectedHostIds),
+        }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -400,12 +570,20 @@ export function NetworkDetailClient({
   }
 
   async function triggerDnsResolve() {
+    if (selectedHostIds.size === 0) {
+      toast.error("Seleziona uno o più host nella lista (DNS manuale solo su IP selezionati)");
+      return;
+    }
     setDnsResolving(true);
     try {
       const res = await fetch("/api/scans/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ network_id: network.id, scan_type: "dns" }),
+        body: JSON.stringify({
+          network_id: network.id,
+          scan_type: "dns",
+          host_ids: Array.from(selectedHostIds),
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -451,12 +629,20 @@ export function NetworkDetailClient({
 
   async function triggerDhcpPoll() {
     if (!canDhcp) return;
+    if (selectedHostIds.size === 0) {
+      toast.error("Seleziona uno o più host nella lista (DHCP manuale solo su IP selezionati)");
+      return;
+    }
     setDhcpPolling(true);
     try {
       const res = await fetch("/api/scans/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ network_id: network.id, scan_type: "dhcp" }),
+        body: JSON.stringify({
+          network_id: network.id,
+          scan_type: "dhcp",
+          host_ids: Array.from(selectedHostIds),
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -477,112 +663,44 @@ export function NetworkDetailClient({
 
   return (
     <div className="space-y-3">
-      {/* Header */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Link href="/networks">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight">{network.name}</h1>
-            <Badge variant="secondary" className="font-mono text-sm">{network.cidr}</Badge>
-          </div>
-          {network.description && (
-            <p className="text-muted-foreground mt-1">{network.description}</p>
-          )}
-        </div>
-        <div className="flex gap-1 flex-wrap items-center">
-          {/* Gruppo 1: Scoperta host */}
-          <div className="flex gap-1 items-center border-r border-border/50 pr-2 mr-1">
-            <span className="text-[10px] uppercase text-muted-foreground mr-0.5 hidden lg:inline">Scoperta</span>
-            <Button size="sm" variant="outline" onClick={() => triggerScan("ping")} disabled={!!scanning} title="ICMP ping — scoperta rapida host online">
-              <Play className="h-3.5 w-3.5 mr-1" />
-              Ping
+      {/* Header: titolo compatto + azioni */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap min-h-8">
+          <Link href="/networks">
+            <Button variant="ghost" size="icon" className="size-7 shrink-0">
+              <ArrowLeft className="h-4 w-4" />
             </Button>
-            {nmapProfiles.length > 0 && (
-              <>
-                <select
-                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                  value={selectedProfileId}
-                  onChange={(e) => setSelectedProfileId(e.target.value)}
-                >
-                  {nmapProfiles.map((p) => (
-                    <option key={p.id} value={String(p.id)}>{p.name}</option>
-                  ))}
-                </select>
-                <Button size="sm" variant="outline" onClick={() => triggerScan("nmap")} disabled={!!scanning || !selectedProfileId} title="Host discovery + porte TCP/UDP + servizi">
-                  <Scan className="h-3.5 w-3.5 mr-1" />
-                  Nmap
-                </Button>
-              </>
+          </Link>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-lg font-bold tracking-tight leading-tight">{network.name}</h1>
+              <Badge variant="secondary" className="font-mono text-xs py-0">{network.cidr}</Badge>
+            </div>
+            {network.description && (
+              <p className="text-muted-foreground text-xs leading-snug line-clamp-1 mt-0.5" title={network.description}>
+                {network.description}
+              </p>
             )}
           </div>
-
-          {/* Gruppo 2: Arricchimento dati */}
-          <div className="flex gap-1 items-center border-r border-border/50 pr-2 mr-1">
-            <span className="text-[10px] uppercase text-muted-foreground mr-0.5 hidden lg:inline">Dati</span>
-            <Button size="sm" variant="outline" onClick={triggerArpPoll} disabled={arpPolling || !!scanning} title="MAC address dal router via ARP table">
-              <NetworkIcon className="h-3.5 w-3.5 mr-1" />
-              {arpPolling ? "ARP..." : "ARP"}
+          <div className="flex gap-1 flex-wrap items-center shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { window.location.href = `/api/export?network_id=${network.id}`; }}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              CSV
             </Button>
-            <Button size="sm" variant="outline" onClick={triggerDhcpPoll} disabled={!canDhcp || dhcpPolling || !!scanning} title={canDhcp ? "Hostname e MAC dai lease DHCP" : "Richiede router MikroTik SSH"}>
-              {dhcpPolling ? "DHCP..." : "DHCP"}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => triggerScan("snmp")} disabled={!!scanning} title="SNMP query — raccolta sysName, sysDescr, sysObjectID, serial, model">
-              <Cpu className="h-3.5 w-3.5 mr-1" />
-              SNMP
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => { triggerDnsResolve(); }} disabled={dnsResolving || !!scanning} title="Reverse + forward DNS per tutti gli host">
-              {dnsResolving ? "DNS..." : "DNS"}
-            </Button>
-          </div>
-
-          {/* Gruppo 3: Raccolta info sistema */}
-          <div className="flex gap-1 items-center border-r border-border/50 pr-2 mr-1">
-            <span className="text-[10px] uppercase text-muted-foreground mr-0.5 hidden lg:inline">Sistema</span>
-            <Button size="sm" variant="outline" onClick={() => triggerScan("windows")} disabled={!!scanning} title="WinRM/WMI su host online — richiede credenziali Windows">
-              <Monitor className="h-3.5 w-3.5 mr-1" />
-              Windows
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => triggerScan("ssh")} disabled={!!scanning} title="SSH su host online — richiede credenziali Linux">
-              <Terminal className="h-3.5 w-3.5 mr-1" />
-              Linux
-            </Button>
-          </div>
-
-          {/* Gruppo 4: Azioni generali */}
-          <div className="flex gap-1 items-center">
-            <Button size="sm" variant="secondary" onClick={() => triggerRefresh(false)} disabled={refreshing || !!scanning} title="Ricalcola classificazioni (rispetta impostazioni manuali)">
-              <RefreshCw className={`h-3.5 w-3.5 mr-1 ${refreshing ? "animate-spin" : ""}`} />
-              {refreshing ? "..." : "Ricalcola"}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => triggerRefresh(true)} disabled={refreshing || !!scanning} title="Forza ricalcolo — sovrascrive anche classificazioni manuali" className="text-orange-600 border-orange-300 hover:bg-orange-50 dark:text-orange-400 dark:border-orange-700 dark:hover:bg-orange-950">
-              Forza
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => refreshHosts()} title="Aggiorna visualizzazione">
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => { window.location.href = `/api/export?network_id=${network.id}`; }}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            CSV
-          </Button>
-          <Dialog open={editOpen} onOpenChange={setEditOpen}>
-            <DialogTrigger render={<Button variant="outline" size="sm" />}>
-              <Pencil className="h-4 w-4 mr-2" />
-              Modifica
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Modifica Rete</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSaveEdit} className="space-y-4">
+            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+              <DialogTrigger render={<Button variant="outline" size="sm" />}>
+                <Pencil className="h-4 w-4 mr-2" />
+                Modifica
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Modifica Rete</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSaveEdit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-cidr">Rete (IP/Subnet)</Label>
                   <Input id="edit-cidr" name="cidr" defaultValue={network.cidr} placeholder="192.168.1.0/24" required className="font-mono" />
@@ -639,13 +757,348 @@ export function NetworkDetailClient({
                     <p className="text-xs text-muted-foreground">Router per acquisizione tabella ARP di questa subnet</p>
                   </div>
                 </div>
+                <NetworkCredentialChains
+                  credentials={addDeviceCredentials}
+                  windowsIds={credWindows}
+                  linuxIds={credLinux}
+                  sshIds={credSsh}
+                  snmpIds={credSnmp}
+                  onWindowsChange={setCredWindows}
+                  onLinuxChange={setCredLinux}
+                  onSshChange={setCredSsh}
+                  onSnmpChange={setCredSnmp}
+                  onCredentialsRefresh={refreshCredentialsList}
+                />
                 <Button type="submit" className="w-full" disabled={saving}>
                   {saving ? "Salvataggio..." : "Salva"}
                 </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
+
+        {/* Toolbar a fasi: area principale in evidenza rispetto ad auto-refresh sotto */}
+        <div className="space-y-2">
+          <div className="rounded-xl border-2 border-primary/20 bg-card/95 shadow-md ring-1 ring-primary/10 p-3">
+            <p className="text-xs font-semibold text-foreground mb-1.5 flex items-center gap-2">
+              <span className="rounded bg-primary/15 text-primary px-1.5 py-0.5 text-[10px] uppercase tracking-wide">Azioni</span>
+              Scansione e acquisizione dati
+            </p>
+            <div className="flex flex-wrap gap-2 items-start content-start">
+            {/* Fase 1 */}
+            <div
+              className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none sm:max-w-[min(100%,18rem)] shadow-sm"
+              title="ICMP, Nmap rapido, DNS, ARP router (passi 1.1–1.4)"
+            >
+              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
+                Fase 1 — Scoperta rete
+              </p>
+              <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5">
+                <Button
+                  size="default"
+                  variant="default"
+                  className="font-medium"
+                  onClick={() => triggerScan("network_discovery")}
+                  disabled={!!scanning}
+                  title="Avvia scoperta rete completa"
+                >
+                  <Play className="h-4 w-4 mr-1.5 shrink-0" />
+                  Scoperta rete
+                </Button>
+                <Link
+                  href="/monitoring/known-hosts"
+                  title="Monitoraggio continuo host conosciuti (1.5)"
+                  className={cn(
+                    buttonVariants({ variant: "outline", size: "default" }),
+                    "border-primary/30 bg-background font-medium"
+                  )}
+                >
+                  <Monitor className="h-4 w-4 mr-1.5 shrink-0" />
+                  Host conosciuti
+                </Link>
+              </div>
+            </div>
+
+            {/* Dati subnet (non numerato) */}
+            <div
+              className="rounded-lg border border-border/80 bg-muted/40 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none sm:max-w-[min(100%,18rem)]"
+              title="ARP, DHCP, DNS su IP selezionati (vista lista)"
+            >
+              <p className="text-[11px] font-semibold text-foreground/90 leading-tight mb-1">
+                Dati su IP selezionati
+              </p>
+              <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={triggerArpPoll}
+                  disabled={arpPolling || !!scanning || view !== "list" || selectedHostIds.size === 0}
+                  title={view !== "list" ? "Passa alla vista lista e seleziona gli IP" : "MAC dal router"}
+                >
+                  <NetworkIcon className="h-3.5 w-3.5 mr-1" />
+                  {arpPolling ? "ARP…" : "ARP"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={triggerDhcpPoll}
+                  disabled={!canDhcp || dhcpPolling || !!scanning || view !== "list" || selectedHostIds.size === 0}
+                  title={canDhcp ? "Lease DHCP MikroTik" : "Richiede router MikroTik SSH"}
+                >
+                  {dhcpPolling ? "DHCP…" : "DHCP"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => { void triggerDnsResolve(); }}
+                  disabled={dnsResolving || !!scanning || view !== "list" || selectedHostIds.size === 0}
+                  title="Risoluzione DNS"
+                >
+                  {dnsResolving ? "DNS…" : "DNS"}
+                </Button>
+              </div>
+            </div>
+
+            {/* Fase 2 */}
+            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,10rem)] flex-1 sm:flex-none shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
+                Fase 2 — Nmap
+              </p>
+              <Button
+                size="default"
+                variant="default"
+                className="w-full font-medium"
+                onClick={() => triggerScan("nmap")}
+                disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
+                title="Profilo Nmap dalle impostazioni"
+              >
+                <Scan className="h-4 w-4 mr-1.5 shrink-0" />
+                Nmap profilo
+              </Button>
+            </div>
+
+            {/* Fase 3 */}
+            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,10rem)] flex-1 sm:flex-none shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
+                Fase 3 — SNMP
+              </p>
+              <Button
+                size="default"
+                variant="default"
+                className="w-full font-medium"
+                onClick={() => triggerScan("snmp")}
+                disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
+                title="Query SNMP sugli host selezionati"
+              >
+                <Cpu className="h-4 w-4 mr-1.5 shrink-0" />
+                SNMP
+              </Button>
+            </div>
+
+            {/* Fase 4 — una sola riga pulsanti (nowrap + scroll orizzontale se serve) */}
+            <div
+              className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-0 w-full sm:min-w-[min(100%,18rem)] sm:max-w-[min(100%,26rem)] flex-1 sm:flex-none shadow-sm"
+              title="Sottovoci: avanzato (WinRM+SSH), oppure WinRM/SSH singoli"
+            >
+              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
+                Fase 4 — Rilevamento OS
+              </p>
+              <div className="flex flex-nowrap items-center gap-1 sm:gap-1.5 overflow-x-auto overscroll-x-contain pb-0.5 -mx-0.5 px-0.5 [scrollbar-width:thin]">
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="shrink-0 font-medium h-8 text-xs sm:text-sm px-2 sm:px-3"
+                  onClick={() => void triggerAdvancedDetection()}
+                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
+                  title="Sequenza WinRM poi SSH"
+                >
+                  <Sparkles className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 shrink-0" />
+                  <span className="hidden min-[420px]:inline">Rilevamento avanzato</span>
+                  <span className="min-[420px]:hidden">Avanzato</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 bg-background/90 font-medium h-8"
+                  onClick={() => triggerScan("windows")}
+                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
+                  title="Solo WinRM"
+                >
+                  <Server className="h-3.5 w-3.5 mr-1" />
+                  WinRM
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 bg-background/90 font-medium h-8"
+                  onClick={() => triggerScan("ssh")}
+                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
+                  title="Solo SSH"
+                >
+                  <Terminal className="h-3.5 w-3.5 mr-1" />
+                  SSH
+                </Button>
+              </div>
+            </div>
+
+            {/* Classificazione */}
+            <div className="rounded-lg border border-dashed border-border bg-muted/25 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,12rem)] flex-1 sm:flex-none">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide leading-tight mb-1">
+                Classificazione
+              </p>
+              <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => triggerRefresh(false)}
+                  disabled={refreshing || !!scanning}
+                  title="Ricalcola (rispetta manuali)"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 mr-1 ${refreshing ? "animate-spin" : ""}`} />
+                  {refreshing ? "…" : "Ricalcola"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-orange-600 border-orange-300 hover:bg-orange-50 dark:text-orange-400 dark:border-orange-700 dark:hover:bg-orange-950"
+                  onClick={() => triggerRefresh(true)}
+                  disabled={refreshing || !!scanning}
+                  title="Forza (sovrascrive manuali)"
+                >
+                  Forza
+                </Button>
+                <Button variant="ghost" size="icon-sm" className="size-8 shrink-0" onClick={() => refreshHosts()} title="Aggiorna elenco">
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+            </div>
+          </div>
+
+          {/* Barra unica: azioni bulk a sinistra, refresh live a destra (niente toolbar dedicata sotto) */}
+          <div
+            className={cn(
+              "rounded-lg border px-2.5 py-2 flex flex-wrap items-center gap-x-3 gap-y-2 justify-between",
+              view === "list" && selectedHostIds.size > 0
+                ? "border-amber-500/40 bg-amber-500/5"
+                : "border-border/80 bg-muted/10"
+            )}
+          >
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0 flex-1">
+              {view === "list" ? (
+                <>
+                  <div className="min-w-0 shrink">
+                    <p className="text-[11px] font-semibold text-foreground leading-tight">
+                      Selezione in lista
+                    </p>
+                    <p className="text-[10px] text-muted-foreground leading-snug">
+                      {selectedHostIds.size === 0
+                        ? "Spunta gli host nella tabella per le azioni a sinistra."
+                        : `${selectedHostIds.size} host selezionati`}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 items-center">
+                    <Button
+                      variant="default"
+                      size="default"
+                      className="font-medium"
+                      onClick={() => setBulkAddOpen(true)}
+                      disabled={selectedHostIds.size === 0 || bulkHostBusy}
+                    >
+                      <Plus className="h-4 w-4 mr-1.5 shrink-0" />
+                      Aggiungi dispositivo
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void handleBulkKnown(1)}
+                      disabled={selectedHostIds.size === 0 || bulkHostBusy}
+                    >
+                      <UserCheck className="h-3.5 w-3.5 mr-1" />
+                      Conosciuti
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleBulkKnown(0)}
+                      disabled={selectedHostIds.size === 0 || bulkHostBusy}
+                    >
+                      <UserX className="h-3.5 w-3.5 mr-1" />
+                      Rimuovi noti
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => void handleBulkDeleteHosts()}
+                      disabled={selectedHostIds.size === 0 || bulkHostBusy}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      Elimina
+                    </Button>
+                    <Button variant="ghost" size="icon-sm" className="size-8" onClick={clearHostSelection} disabled={selectedHostIds.size === 0} title="Deseleziona tutti">
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  Vista griglia: passa a <span className="font-medium text-foreground">Lista</span> per selezione e azioni bulk a sinistra.
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 shrink-0 border-t border-border/50 pt-2 mt-1 w-full sm:border-t-0 sm:border-l sm:pt-0 sm:mt-0 sm:pl-3 sm:w-auto sm:max-w-[min(100%,28rem)]">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80 whitespace-nowrap">
+                Refresh
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="auto-refresh" className="text-[11px] whitespace-nowrap font-normal text-muted-foreground">
+                  Intervallo
+                </Label>
+                <select
+                  id="auto-refresh"
+                  value={autoRefreshInterval}
+                  onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
+                  className="h-7 rounded border border-input/80 bg-background px-1.5 text-[11px] text-foreground"
+                >
+                  {REFRESH_INTERVALS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              {autoRefreshInterval > 0 && (
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Switch id="auto-scan" checked={autoScanPing} onCheckedChange={setAutoScanPing} />
+                  <Label htmlFor="auto-scan" className="text-[11px] font-normal leading-snug text-muted-foreground">
+                    Scoperta periodica
+                  </Label>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Vista: subito dopo le azioni principali (prima di statistiche e auto-refresh) */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-medium text-muted-foreground mr-1">Visualizzazione</span>
+        <Button
+          variant={view === "grid" ? "secondary" : "outline"}
+          size="default"
+          onClick={() => setView("grid")}
+        >
+          <LayoutGrid className="h-4 w-4 mr-1.5" />
+          Griglia IP
+        </Button>
+        <Button
+          variant={view === "list" ? "secondary" : "outline"}
+          size="default"
+          onClick={() => setView("list")}
+        >
+          <List className="h-4 w-4 mr-1.5" />
+          Lista
+        </Button>
       </div>
 
       {/* Stats - minimali */}
@@ -668,53 +1121,6 @@ export function NetworkDetailClient({
       {/* Scan Progress */}
       {scanning && <ScanProgress progress={scanning} onClose={() => setScanning(null)} />}
 
-      {/* Auto-refresh */}
-      <div className="flex flex-wrap items-center gap-2 p-2 rounded-md border bg-muted/30">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="auto-refresh" className="text-sm whitespace-nowrap">Auto-refresh</Label>
-          <select
-            id="auto-refresh"
-            value={autoRefreshInterval}
-            onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
-            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-          >
-            {REFRESH_INTERVALS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-        {autoRefreshInterval > 0 && (
-          <div className="flex items-center gap-2">
-            <Switch
-              id="auto-scan"
-              checked={autoScanPing}
-              onCheckedChange={setAutoScanPing}
-            />
-            <Label htmlFor="auto-scan" className="text-sm">Scansione ping periodica</Label>
-          </div>
-        )}
-      </div>
-
-      {/* View toggle */}
-      <div className="flex items-center gap-2">
-        <Button
-          variant={view === "grid" ? "secondary" : "ghost"}
-          size="sm"
-          onClick={() => setView("grid")}
-        >
-          <LayoutGrid className="h-4 w-4 mr-1.5" />
-          Griglia IP
-        </Button>
-        <Button
-          variant={view === "list" ? "secondary" : "ghost"}
-          size="sm"
-          onClick={() => setView("list")}
-        >
-          <List className="h-4 w-4 mr-1.5" />
-          Lista
-        </Button>
-      </div>
-
       {/* Grid view */}
       {view === "grid" && (
         <Card className="overflow-visible" size="sm">
@@ -729,26 +1135,6 @@ export function NetworkDetailClient({
               <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-muted-foreground/40 inline-block" /> Sconosciuto</span>
               <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-accent/60 inline-block" /> Gateway</span>
               <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-card border border-border inline-block" /> Libero</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* List view */}
-      {view === "list" && selectedHostIds.size > 0 && (
-        <Card size="sm">
-          <CardContent className="py-3 flex items-center justify-between gap-4">
-            <CardDescription>
-              {selectedHostIds.size} host selezionati
-            </CardDescription>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setBulkAddOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Aggiungi dispositivo
-              </Button>
-              <Button variant="ghost" size="icon" onClick={clearHostSelection}>
-                <X className="h-4 w-4" />
-              </Button>
             </div>
           </CardContent>
         </Card>
@@ -942,6 +1328,7 @@ export function NetworkDetailClient({
                 <TableHead>Conosciuto</TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead>Classificazione</TableHead>
+                <TableHead title="Tipo dispositivo da fingerprint (porte, SNMP, banner)">Rilevato</TableHead>
                 <TableHead>Dispositivo</TableHead>
                 <TableHead>Vendor</TableHead>
                 <TableHead>Note</TableHead>
@@ -954,7 +1341,7 @@ export function NetworkDetailClient({
             <TableBody>
               {filteredHosts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={14} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={15} className="text-center text-muted-foreground py-8">
                     {hosts.length === 0
                       ? "Nessun host trovato. Avvia una scansione per scoprire i dispositivi."
                       : "Nessun host corrisponde ai filtri."}
@@ -1048,6 +1435,27 @@ export function NetworkDetailClient({
                       ) : (
                         <Badge variant="outline">{host.classification ? getClassificationLabel(host.classification) : "—"}</Badge>
                       )}
+                    </TableCell>
+                    <TableCell className="text-sm max-w-[200px]">
+                      {(() => {
+                        const det = parseDetectedDeviceFromDetectionJson(host.detection_json);
+                        if (!det) {
+                          return <span className="text-muted-foreground">—</span>;
+                        }
+                        const pct =
+                          det.confidence != null ? `${Math.round(det.confidence * 100)}%` : null;
+                        return (
+                          <span
+                            className="block truncate"
+                            title={pct ? `Confidenza fingerprint: ${pct}` : "Fingerprint"}
+                          >
+                            {det.label}
+                            {pct ? (
+                              <span className="text-muted-foreground text-xs ml-1 tabular-nums">({pct})</span>
+                            ) : null}
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell className="text-sm">
                       {(host as HostWithDevice).device ? (

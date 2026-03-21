@@ -21,6 +21,7 @@ export async function GET(request: Request) {
       const maskedDevices = networkDevices.map((d) => ({
         ...d,
         source: "network_device" as const,
+        last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
         encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,
         community_string: d.community_string ? "●●●●●●●●" : null,
         api_token: d.api_token ? "●●●●●●●●" : null,
@@ -36,6 +37,7 @@ export async function GET(request: Request) {
     const masked = devices.map((d) => ({
       ...d,
       source: "network_device" as const,
+      last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
       encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,
       community_string: d.community_string ? "●●●●●●●●" : null,
       api_token: d.api_token ? "●●●●●●●●" : null,

@@ -1,5 +1,11 @@
 import { notFound } from "next/navigation";
-import { getNetworkById, getHostsByNetworkWithDevices, getNmapProfiles, getNetworkRouterId, getRouters } from "@/lib/db";
+import {
+  getNetworkById,
+  getHostsByNetworkWithDevices,
+  getNetworkRouterId,
+  getRouters,
+  getNetworkHostCredentialIds,
+} from "@/lib/db";
 import { NetworkDetailClient } from "./network-detail-client";
 
 export default async function NetworkDetailPage({
@@ -14,10 +20,16 @@ export default async function NetworkDetailPage({
     notFound();
   }
 
-  const hosts = getHostsByNetworkWithDevices(Number(id));
-  const profiles = getNmapProfiles();
-  const routerId = getNetworkRouterId(Number(id));
+  const nid = Number(id);
+  const hosts = getHostsByNetworkWithDevices(nid);
+  const routerId = getNetworkRouterId(nid);
   const routers = getRouters();
+  const initialCredentialChains = {
+    windows: getNetworkHostCredentialIds(nid, "windows"),
+    linux: getNetworkHostCredentialIds(nid, "linux"),
+    ssh: getNetworkHostCredentialIds(nid, "ssh"),
+    snmp: getNetworkHostCredentialIds(nid, "snmp"),
+  };
 
   return (
     <NetworkDetailClient
@@ -25,13 +37,7 @@ export default async function NetworkDetailPage({
       initialHosts={hosts}
       routerId={routerId}
       routers={routers}
-      nmapProfiles={profiles.map((p) => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        args: p.args,
-        is_default: p.is_default,
-      }))}
+      initialCredentialChains={initialCredentialChains}
     />
   );
 }

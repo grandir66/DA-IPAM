@@ -163,10 +163,22 @@ export function DeviceFormFields({
                 name="host"
                 required={!isBulk}
                 defaultValue={mode === "edit" ? host : mode === "create" && host ? host : undefined}
-                placeholder={mode === "create" ? "192.168.1.1" : undefined}
+                placeholder={
+                  mode === "create"
+                    ? showApiUrl
+                      ? "192.168.1.1 oppure 192.168.40.1,2,3,4,5 (più nodi Proxmox)"
+                      : "192.168.1.1"
+                    : undefined
+                }
                 onChange={(e) => onHostChange?.(e.target.value)}
               />
             </div>
+            {showApiUrl ? (
+              <p className="text-xs text-muted-foreground col-span-2 -mt-1">
+                Proxmox: più nodi dello stesso /24 come <code className="bg-muted px-1 rounded">192.168.40.1,2,3</code>.
+                Lo scan usa <strong>API</strong> e <strong>SSH</strong> su ogni IP e unisce i risultati.
+              </p>
+            ) : null}
             {showApiUrl && (
               <div className="space-y-2 col-span-2">
                 <Label htmlFor={`${idPrefix}-api_url`}>URL API (Proxmox)</Label>

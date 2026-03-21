@@ -16,21 +16,39 @@ export async function POST(request: Request) {
   try {
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
-    const { name, description, args, snmp_community, custom_ports } = await request.json();
+    const existing = getNmapProfiles();
+    if (existing.length > 0) {
+      return NextResponse.json(
+        { error: "È supportato un solo profilo Nmap. Modificalo da Impostazioni → Profilo Nmap." },
+        { status: 400 }
+      );
+    }
+    const { name, description, args, snmp_community, custom_ports, tcp_ports, udp_ports } = await request.json();
     if (!name) {
       return NextResponse.json({ error: "Nome richiesto" }, { status: 400 });
     }
-    // Profilo Personalizzato: custom_ports definito, args ignorato
-    const isCustomProfile = custom_ports !== undefined;
-    const useArgs = isCustomProfile ? "" : (args ?? "");
-    if (!isCustomProfile && !useArgs) {
-      return NextResponse.json({ error: "Argomenti nmap richiesti" }, { status: 400 });
+    const hasTcpPorts = tcp_ports !== undefined && tcp_ports !== null && String(tcp_ports).trim() !== "";
+    const isCustomProfile = custom_ports !== undefined && custom_ports !== null;
+    const useArgs = hasTcpPorts ? "" : isCustomProfile ? "" : (args ?? "");
+    if (!hasTcpPorts && !isCustomProfile && !useArgs) {
+      return NextResponse.json({ error: "Indica le porte TCP o gli argomenti nmap" }, { status: 400 });
     }
-    const profile = createNmapProfile(name, description || "", useArgs, snmp_community || null, custom_ports ?? null);
+    const profile = createNmapProfile(
+      name,
+      description || "",
+      useArgs,
+      snmp_community || null,
+      custom_ports ?? null,
+      hasTcpPorts ? String(tcp_ports).trim() : null,
+      udp_ports !== undefined && udp_ports !== null ? String(udp_ports) : null
+    );
     return NextResponse.json(profile, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message.includes("UNIQUE")) {
       return NextResponse.json({ error: "Esiste già un profilo con questo nome" }, { status: 409 });
+    }
+    if (error instanceof Error && error.message.includes("solo profilo")) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
     console.error("Error creating nmap profile:", error);
     return NextResponse.json({ error: "Errore nella creazione" }, { status: 500 });
@@ -41,16 +59,23 @@ export async function PUT(request: Request) {
   try {
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
-    const { id, name, description, args, snmp_community, custom_ports } = await request.json();
+    const { id, name, description, args, snmp_community, custom_ports, tcp_ports, udp_ports } = await request.json();
     if (!id || !name) {
       return NextResponse.json({ error: "ID e nome richiesti" }, { status: 400 });
     }
-    const isCustomProfile = custom_ports !== undefined;
-    const useArgs = isCustomProfile ? "" : (args ?? "");
-    if (!isCustomProfile && !useArgs) {
-      return NextResponse.json({ error: "Argomenti nmap richiesti" }, { status: 400 });
+    // Priorità: tcp_ports esplicito > custom_ports > args
+    const hasTcpPorts = tcp_ports !== undefined && tcp_ports !== null && tcp_ports !== "";
+    const isCustomProfile = custom_ports !== undefined && custom_ports !== null;
+    const useArgs = hasTcpPorts ? "" : (isCustomProfile ? "" : (args ?? ""));
+    if (!hasTcpPorts && !isCustomProfile && !useArgs) {
+      return NextResponse.json({ error: "Porte TCP o argomenti nmap richiesti" }, { status: 400 });
     }
-    const profile = updateNmapProfile(id, name, description || "", useArgs, snmp_community ?? null, custom_ports ?? null);
+    const profile = updateNmapProfile(
+      id, name, description || "", useArgs, snmp_community ?? null, 
+      hasTcpPorts ? null : (custom_ports ?? null),
+      hasTcpPorts ? tcp_ports : null,
+      udp_ports ?? null
+    );
     return NextResponse.json(profile);
   } catch (error) {
     console.error("Error updating nmap profile:", error);

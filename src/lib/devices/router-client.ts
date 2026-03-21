@@ -15,6 +15,40 @@ export interface DhcpLeaseEntry {
   ip: string;
   mac: string;
   hostname: string | null;
+  status?: "bound" | "waiting" | "offered" | string;
+  server?: string;
+  expiresAfter?: string;
+  lastSeen?: string;
+  comment?: string;
+}
+
+/** Info pool DHCP MikroTik */
+export interface DhcpPoolInfo {
+  name: string;
+  ranges: string;
+  nextPool?: string;
+}
+
+/** Info server DHCP MikroTik */
+export interface DhcpServerInfo {
+  name: string;
+  interface: string;
+  addressPool: string;
+  disabled: boolean;
+  leaseCount?: number;
+}
+
+/** Configurazione MikroTik esportata */
+export interface MikrotikConfig {
+  exportFull: string;
+  exportCompact?: string;
+  systemInfo?: {
+    identity?: string;
+    version?: string;
+    boardName?: string;
+    serialNumber?: string;
+    uptime?: string;
+  };
 }
 
 export interface RouterClient {
@@ -24,6 +58,12 @@ export interface RouterClient {
   getDhcpLeases?(): Promise<DhcpLeaseEntry[]>;
   /** SNMP: elenco interfacce con LLDP/CDP (opzionale) */
   getPortSchema?(): Promise<PortInfo[]>;
+  /** MikroTik: esporta configurazione completa */
+  getConfig?(): Promise<MikrotikConfig>;
+  /** MikroTik: info server DHCP */
+  getDhcpServers?(): Promise<DhcpServerInfo[]>;
+  /** MikroTik: info pool DHCP */
+  getDhcpPools?(): Promise<DhcpPoolInfo[]>;
 }
 
 export async function createRouterClient(device: NetworkDevice): Promise<RouterClient> {
@@ -257,19 +297,24 @@ async function createMikrotikClient(device: NetworkDevice, creds: DeviceCreds): 
   }
   const { Client } = await import("ssh2");
 
-  function execCommand(cmd: string): Promise<string> {
+  function execCommand(cmd: string, timeoutMs = 30000): Promise<string> {
     return new Promise((resolve, reject) => {
       const conn = new Client();
+      const timeout = setTimeout(() => {
+        conn.end();
+        reject(new Error("Timeout"));
+      }, timeoutMs);
+
       conn.on("ready", () => {
         conn.exec(cmd, (err, stream) => {
-          if (err) { conn.end(); reject(err); return; }
+          if (err) { clearTimeout(timeout); conn.end(); reject(err); return; }
           let output = "";
           stream.on("data", (data: Buffer) => { output += data.toString(); });
           stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.on("close", () => { conn.end(); resolve(output); });
+          stream.on("close", () => { clearTimeout(timeout); conn.end(); resolve(output); });
         });
       });
-      conn.on("error", reject);
+      conn.on("error", (err) => { clearTimeout(timeout); reject(err); });
       conn.connect({
         host: device.host,
         port: device.port,
@@ -291,6 +336,47 @@ async function createMikrotikClient(device: NetworkDevice, creds: DeviceCreds): 
     async getDhcpLeases() {
       const output = await execCommand("/ip dhcp-server lease print terse");
       return parseMikrotikDhcpLeases(output);
+    },
+    async getDhcpServers() {
+      const output = await execCommand("/ip dhcp-server print terse");
+      return parseMikrotikDhcpServers(output);
+    },
+    async getDhcpPools() {
+      const output = await execCommand("/ip pool print terse");
+      return parseMikrotikDhcpPools(output);
+    },
+    async getConfig() {
+      const [exportFull, exportCompact, sysInfo] = await Promise.all([
+        execCommand("/export", 60000),
+        execCommand("/export compact", 60000).catch(() => undefined),
+        execCommand("/system resource print terse").catch(() => ""),
+      ]);
+      const [identity, routerboard] = await Promise.all([
+        execCommand("/system identity print terse").catch(() => ""),
+        execCommand("/system routerboard print terse").catch(() => ""),
+      ]);
+
+      const systemInfo: MikrotikConfig["systemInfo"] = {};
+      const identityMatch = identity.match(/name=(\S+)/);
+      if (identityMatch) systemInfo.identity = identityMatch[1].replace(/"/g, "");
+
+      const versionMatch = sysInfo.match(/version=(\S+)/);
+      if (versionMatch) systemInfo.version = versionMatch[1];
+
+      const boardMatch = routerboard.match(/model=(\S+)/);
+      if (boardMatch) systemInfo.boardName = boardMatch[1];
+
+      const serialMatch = routerboard.match(/serial-number=(\S+)/);
+      if (serialMatch) systemInfo.serialNumber = serialMatch[1];
+
+      const uptimeMatch = sysInfo.match(/uptime=(\S+)/);
+      if (uptimeMatch) systemInfo.uptime = uptimeMatch[1];
+
+      return {
+        exportFull,
+        exportCompact,
+        systemInfo: Object.keys(systemInfo).length > 0 ? systemInfo : undefined,
+      };
     },
     async testConnection() {
       try {
@@ -484,12 +570,61 @@ function parseMikrotikDhcpLeases(output: string): DhcpLeaseEntry[] {
     const ipMatch = line.match(/(?:active-address|address)=(\d+\.\d+\.\d+\.\d+)/);
     const macMatch = line.match(/(?:active-mac-address|mac-address)=([0-9A-Fa-f:]+)/);
     const hostMatch = line.match(/host-name="([^"]*)"|host-name=(\S+)/);
+    const statusMatch = line.match(/status=(\S+)/);
+    const serverMatch = line.match(/server=(\S+)/);
+    const expiresMatch = line.match(/expires-after=(\S+)/);
+    const lastSeenMatch = line.match(/last-seen=(\S+)/);
+    const commentMatch = line.match(/comment="([^"]*)"|comment=(\S+)/);
+
     if (ipMatch && macMatch) {
       const hostname = (hostMatch?.[1] ?? hostMatch?.[2])?.trim() || null;
       entries.push({
         ip: ipMatch[1],
         mac: macMatch[1].toUpperCase(),
         hostname: hostname && hostname.length > 0 ? hostname : null,
+        status: statusMatch?.[1] || undefined,
+        server: serverMatch?.[1] || undefined,
+        expiresAfter: expiresMatch?.[1] || undefined,
+        lastSeen: lastSeenMatch?.[1] || undefined,
+        comment: (commentMatch?.[1] ?? commentMatch?.[2]) || undefined,
+      });
+    }
+  }
+  return entries;
+}
+
+function parseMikrotikDhcpServers(output: string): DhcpServerInfo[] {
+  const entries: DhcpServerInfo[] = [];
+  for (const line of output.split("\n")) {
+    const nameMatch = line.match(/name=(\S+)/);
+    const ifMatch = line.match(/interface=(\S+)/);
+    const poolMatch = line.match(/address-pool=(\S+)/);
+    const disabledMatch = line.match(/disabled=(yes|no)/);
+
+    if (nameMatch) {
+      entries.push({
+        name: nameMatch[1].replace(/"/g, ""),
+        interface: ifMatch?.[1] || "",
+        addressPool: poolMatch?.[1] || "",
+        disabled: disabledMatch?.[1] === "yes",
+      });
+    }
+  }
+  return entries;
+}
+
+function parseMikrotikDhcpPools(output: string): DhcpPoolInfo[] {
+  const entries: DhcpPoolInfo[] = [];
+  for (const line of output.split("\n")) {
+    const nameMatch = line.match(/name=(\S+)/);
+    const rangesMatch = line.match(/ranges=(\S+)/);
+    const nextPoolMatch = line.match(/next-pool=(\S+)/);
+
+    if (nameMatch) {
+      entries.push({
+        name: nameMatch[1].replace(/"/g, ""),
+        ranges: rangesMatch?.[1] || "",
+        nextPool: nextPoolMatch?.[1],
       });
     }
   }

@@ -64,8 +64,12 @@ function buildClassifierText(input: ClassifierInput): string {
 const TEXT_RULES: Array<{ pattern: RegExp; classification: DeviceClassification }> = [
   // Router
   { pattern: /router|ios\s|vyos|mikrotik|edge.?router|quagga|bird|frr|junos|arista/i, classification: "router" },
-  // Switch
-  { pattern: /switch|switching|procurve|nexus| catalyst|comware|netgear.*switch|d-link.*switch/i, classification: "switch" },
+  // Switch — \b su "switch" riduce falsi positivi (es. testi lunghi con parole casuali che contengono "switch")
+  {
+    pattern:
+      /\b(?:ethernet\s+)?switch\b|\bswitching\b|procurve|nexus|\bcatalyst\b|comware|netgear.{0,48}\bswitch\b|d-link.{0,48}\bswitch\b/i,
+    classification: "switch",
+  },
   // Firewall
   { pattern: /firewall|fortigate|pfsense|opnsense|sophos|palo\s*alto|check\s*point/i, classification: "firewall" },
   // Access point
@@ -148,6 +152,8 @@ const OID_RULES: Array<{ prefix: string; classification: DeviceClassification }>
   { prefix: "1.3.6.1.4.1.10002.1", classification: "access_point" },
   // UniFi / Ubiquiti enterprise MIB (walk 1.3.6.1.4.1.41112)
   { prefix: "1.3.6.1.4.1.41112", classification: "access_point" },
+  // Ubiquiti EdgeSwitch / EdgeMax (OID 4413)
+  { prefix: "1.3.6.1.4.1.4413", classification: "switch" },
   // Hikvision
   { prefix: "1.3.6.1.4.1.39165", classification: "telecamera" },
   // Dahua
@@ -237,10 +243,49 @@ const VENDOR_RULES: Array<{ pattern: RegExp; classification: DeviceClassificatio
  */
 export function classifyDeviceDetailed(input: ClassifierInput): DeviceDetectionResult {
   const text = buildClassifierText(input);
-
-  // 1. sysObjectID (affidabile — matching per segmenti OID)
   const oid = (input.sysObjectID ?? "").trim();
+  const openPortSet = new Set((input.openPorts ?? []).map((p) => p.port));
+  const sysDescrLower = (input.sysDescr ?? "").toLowerCase();
+
+  // 1. Porta TCP 8006 → Proxmox VE (pveproxy). Viene prima degli OID hardcoded perché Proxmox usa
+  //    net-snmp (OID 8072 = generico Linux) che altrimenti restituirebbe server_linux.
+  //    Nota: le regole OID del DB (snmpFingerprintOidMatches) vengono applicate in discovery.ts
+  //    PRIMA di chiamare classifyDevice, quindi qui gestiamo solo il fallback senza match DB.
+  if (openPortSet.has(8006)) {
+    return { classification: "hypervisor", confidence: "high", method: "port" };
+  }
+
+  // 2. sysObjectID hardcoded (per device con OID vendor specifico non presente nel DB fingerprint)
   if (oid) {
+    // net-snmp (8072): agente generico usato da Linux, Synology, QNAP, Proxmox, switch Ubiquiti, ecc.
+    // → disambiguare con corpus (vendor MAC, hostname, sysDescr) prima di restituire server_linux
+    if (oidPrefixMatches(oid, "1.3.6.1.4.1.8072")) {
+      const corpus = `${text} ${sysDescrLower}`;
+      if (/\bproxmox\b|\bpve\b|pve-manager|qemu\/kvm|kvm\s*virtualization/i.test(corpus)) {
+        return { classification: "hypervisor", confidence: "high", method: "oid" };
+      }
+      if (/synology|diskstation|\bdsm\b/i.test(corpus)) {
+        return { classification: "storage", confidence: "high", method: "oid" };
+      }
+      if (/\bqnap\b|turbo\s*nas|\bqts\b/i.test(corpus)) {
+        return { classification: "storage", confidence: "high", method: "oid" };
+      }
+      if (/asustor|adm\s*\d|asus\s*nas/i.test(corpus)) {
+        return { classification: "storage", confidence: "high", method: "oid" };
+      }
+      // Hostname prefix di device di rete: cedere al naming convention piuttosto che a server_linux
+      const hn = (input.hostname ?? "").toLowerCase();
+      if (/^sw[-_]|^swi[-_]|^switch[-_]|^core[-_]|^dist[-_]|^acc[-_]|^usw[-_]|^us[-_]/.test(hn)) {
+        return { classification: "switch", confidence: "high", method: "oid" };
+      }
+      if (/^ap[-_]|^wifi[-_]|^uap[-_]|^unifi[-_]|^ubnt[-_]|^uap[0-9]/.test(hn)) {
+        return { classification: "access_point", confidence: "high", method: "oid" };
+      }
+      if (/^gw[-_]|^rtr[-_]|^router[-_]|^fw[-_]|^firewall[-_]/.test(hn)) {
+        return { classification: "router", confidence: "high", method: "oid" };
+      }
+      return { classification: "server_linux", confidence: "high", method: "oid" };
+    }
     for (const rule of OID_RULES) {
       if (oidPrefixMatches(oid, rule.prefix)) {
         return { classification: rule.classification, confidence: "high", method: "oid" };
@@ -257,6 +302,8 @@ export function classifyDeviceDetailed(input: ClassifierInput): DeviceDetectionR
     const has445 = portSet.has(445);
     const has135 = portSet.has(135);
     const has22 = portSet.has(22);
+
+    if (portSet.has(8006)) return { classification: "hypervisor", confidence: "high", method: "virtual_mac" };
 
     if (has445 && has135) return { classification: "server_windows", confidence: "high", method: "virtual_mac" };
     if (has22 && !has445) return { classification: "server_linux", confidence: "high", method: "virtual_mac" };
@@ -280,7 +327,26 @@ export function classifyDeviceDetailed(input: ClassifierInput): DeviceDetectionR
     }
   }
 
-  // 4. Porte e servizi
+  // 4. Hostname pattern — PRIMA delle porte: "SW-*" deve vincere su porta 161→server
+  const hostname = (input.hostname ?? "").trim();
+  if (hostname) {
+    for (const rule of HOSTNAME_RULES) {
+      if (rule.pattern.test(hostname)) {
+        return { classification: rule.classification, confidence: "medium", method: "hostname" };
+      }
+    }
+  }
+
+  // 5. MAC vendor — anch'esso prima delle porte per device di rete identificati dal vendor
+  if (vendor) {
+    for (const rule of VENDOR_RULES) {
+      if (rule.pattern.test(vendor)) {
+        return { classification: rule.classification, confidence: "low", method: "vendor" };
+      }
+    }
+  }
+
+  // 6. Porte e servizi (ultima risorsa: 161/SNMP da solo è molto debole)
   const ports = input.openPorts ?? [];
   if (ports.length > 0) {
     for (const rule of PORT_RULES) {
@@ -295,25 +361,6 @@ export function classifyDeviceDetailed(input: ClassifierInput): DeviceDetectionR
           confidence: weakSnmpOnly ? "low" : "medium",
           method: "port",
         };
-      }
-    }
-  }
-
-  // 5. Hostname pattern
-  const hostname = (input.hostname ?? "").trim();
-  if (hostname) {
-    for (const rule of HOSTNAME_RULES) {
-      if (rule.pattern.test(hostname)) {
-        return { classification: rule.classification, confidence: "medium", method: "hostname" };
-      }
-    }
-  }
-
-  // 6. MAC vendor
-  if (vendor) {
-    for (const rule of VENDOR_RULES) {
-      if (rule.pattern.test(vendor)) {
-        return { classification: rule.classification, confidence: "low", method: "vendor" };
       }
     }
   }

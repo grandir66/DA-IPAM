@@ -96,6 +96,50 @@ export function formatIpSort(ip: string): string {
   return ip.split(".").map((p) => p.padStart(3, "0")).join(".");
 }
 
+const IPV4_FULL = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+
+function isValidIpv4(s: string): boolean {
+  const m = s.match(IPV4_FULL);
+  if (!m) return false;
+  return [m[1], m[2], m[3], m[4]].every((o) => {
+    const n = parseInt(o, 10);
+    return n >= 0 && n <= 255;
+  });
+}
+
+/**
+ * Espande notazione breve IPv4: `192.168.40.1,2,3,4,5` → cinque indirizzi (stesso /24).
+ * Supporta anche voci successive come IPv4 completi. Hostname senza virgole resta invariato.
+ */
+export function expandIpv4CommaShorthand(input: string): string[] {
+  const trimmed = input.trim().replace(/^https?:\/\//i, "");
+  const hostOnly = trimmed.split("/")[0] ?? trimmed;
+  const beforePath = hostOnly.split(":")[0]?.trim() ?? "";
+  if (!beforePath.includes(",")) {
+    return [beforePath].filter(Boolean);
+  }
+  const parts = beforePath.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) return [];
+  const first = parts[0]!;
+  if (!isValidIpv4(first)) {
+    return [beforePath];
+  }
+  const prefixMatch = first.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.)\d{1,3}$/);
+  if (!prefixMatch) return [first];
+  const prefix = prefixMatch[1]!;
+  const out: string[] = [first];
+  for (let i = 1; i < parts.length; i++) {
+    const p = parts[i]!;
+    if (/^\d{1,3}$/.test(p)) {
+      const n = parseInt(p, 10);
+      if (n >= 0 && n <= 255) out.push(`${prefix}${p}`);
+    } else if (isValidIpv4(p)) {
+      out.push(p);
+    }
+  }
+  return out;
+}
+
 /** Estrae solo i numeri di porta da ports_open (JSON). Supporta vecchio formato "80/tcp (http)" e nuovo "80". */
 export function formatPortsDisplay(portsOpenJson: string | null): string {
   if (!portsOpenJson) return "—";

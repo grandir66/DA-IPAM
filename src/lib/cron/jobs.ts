@@ -11,6 +11,7 @@ import {
   updateHost,
   addStatusHistory,
   getDb,
+  getActiveNmapProfile,
 } from "@/lib/db";
 import { discoverNetwork } from "@/lib/scanner/discovery";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
@@ -51,16 +52,19 @@ export async function runJob(jobId: number): Promise<void> {
     case "cleanup":
       await runCleanup(job.config);
       break;
+    case "ad_sync":
+      await runAdSync(job.config);
+      break;
   }
 }
 
 async function runPingSweep(networkId: number | null): Promise<void> {
   if (networkId) {
-    await discoverNetwork(networkId, "ping");
+    await discoverNetwork(networkId, "network_discovery");
   } else {
     const networks = getNetworks();
     for (const net of networks) {
-      await discoverNetwork(net.id, "ping");
+      await discoverNetwork(net.id, "network_discovery");
     }
   }
 }
@@ -84,12 +88,27 @@ async function runSnmpScan(networkId: number | null): Promise<void> {
 
 async function runNmapScan(networkId: number | null): Promise<void> {
   const { buildCustomScanArgs } = await import("@/lib/scanner/ports");
+  const profile = getActiveNmapProfile();
   const runForNetwork = async (nid: number) => {
     const network = getNetworkById(nid);
     if (!network) return;
-    const nmapArgs = buildCustomScanArgs(null);
-    const snmpCommunity = network.snmp_community ?? null;
-    await discoverNetwork(nid, "nmap", nmapArgs, snmpCommunity);
+    let nmapArgs: string | undefined;
+    let tcpPorts: string | null = null;
+    let udpPorts: string | null = null;
+    if (profile) {
+      tcpPorts = profile.tcp_ports ?? null;
+      udpPorts = profile.udp_ports ?? null;
+      if (!tcpPorts) {
+        nmapArgs =
+          profile.custom_ports !== null && profile.custom_ports !== undefined
+            ? buildCustomScanArgs(profile.custom_ports)
+            : profile.args || buildCustomScanArgs(null);
+      }
+    } else {
+      nmapArgs = buildCustomScanArgs(null);
+    }
+    const snmpCommunity = profile?.snmp_community || network.snmp_community || null;
+    await discoverNetwork(nid, "nmap", nmapArgs, snmpCommunity, { tcpPorts, udpPorts });
   };
   if (networkId) {
     await runForNetwork(networkId);
@@ -101,8 +120,19 @@ async function runNmapScan(networkId: number | null): Promise<void> {
   }
 }
 
-export async function runArpPoll(networkId?: number | null): Promise<{ phase?: string; error?: string }> {
+export type RunArpPollOptions = {
+  /** Se impostato, aggiorna solo questi IP (nessun nuovo host da voci ARP fuori elenco). */
+  onlyEnrichIps?: string[];
+  /** Se true, non importa lease DHCP MikroTik (evita host extra durante scoperta rete). */
+  skipDhcpLeases?: boolean;
+};
+
+export async function runArpPoll(
+  networkId?: number | null,
+  options?: RunArpPollOptions
+): Promise<{ phase?: string; error?: string }> {
   const networks = getNetworks();
+  const enrichSet = options?.onlyEnrichIps?.length ? new Set(options.onlyEnrichIps) : null;
   let devices = getNetworkDevices()
     .filter((d) => d.enabled)
     .sort((a, b) => (a.device_type === "router" ? 0 : 1) - (b.device_type === "router" ? 0 : 1));
@@ -121,6 +151,9 @@ export async function runArpPoll(networkId?: number | null): Promise<{ phase?: s
 
   for (const device of devices) {
     try {
+      if (device.device_type === "hypervisor") {
+        continue;
+      }
       if (device.device_type === "router") {
         const client = await createRouterClient(device);
         const entries = await client.getArpTable();
@@ -128,6 +161,7 @@ export async function runArpPoll(networkId?: number | null): Promise<{ phase?: s
         // Prima aggiorna hosts con MAC e vendor, poi upsertArpEntries (così host_id in arp_entries è corretto)
         for (const entry of entries) {
           if (!entry.ip || !entry.mac) continue;
+          if (enrichSet && !enrichSet.has(entry.ip)) continue;
           const network = networks.find((n) => isIpInCidr(entry.ip!, n.cidr));
           if (!network) continue;
           const vendor = await lookupVendor(entry.mac);
@@ -148,10 +182,11 @@ export async function runArpPoll(networkId?: number | null): Promise<{ phase?: s
         });
 
         // MikroTik: recupera lease DHCP per popolare hostname, MAC e altri campi
-        if (client.getDhcpLeases) {
+        if (client.getDhcpLeases && !options?.skipDhcpLeases) {
           try {
             const leases = await client.getDhcpLeases();
             for (const lease of leases) {
+              if (enrichSet && !enrichSet.has(lease.ip)) continue;
               const network = networks.find((n) => isIpInCidr(lease.ip, n.cidr));
               if (!network) continue;
               const vendor = await lookupVendor(lease.mac);
@@ -381,7 +416,10 @@ export async function runArpPoll(networkId?: number | null): Promise<{ phase?: s
 }
 
 /** Recupera lease DHCP dal router MikroTik della rete per popolare hostname e MAC */
-export async function runDhcpPollForNetwork(networkId: number): Promise<{ updated: number; error?: string }> {
+export async function runDhcpPollForNetwork(
+  networkId: number,
+  options?: { onlyIps?: string[] }
+): Promise<{ updated: number; error?: string }> {
   const routerId = getNetworkRouterId(networkId);
   if (!routerId) {
     return { updated: 0, error: "Nessun router configurato per questa rete" };
@@ -402,8 +440,10 @@ export async function runDhcpPollForNetwork(networkId: number): Promise<{ update
     return { updated: 0, error: "Router non supporta DHCP leases" };
   }
   const leases = await client.getDhcpLeases();
+  const allow = options?.onlyIps?.length ? new Set(options.onlyIps) : null;
   let updated = 0;
   for (const lease of leases) {
+    if (allow && !allow.has(lease.ip)) continue;
     if (!isIpInCidr(lease.ip, network.cidr)) continue;
     const vendor = await lookupVendor(lease.mac);
     const classification = classifyDevice({
@@ -434,7 +474,7 @@ export async function runDhcpPollForNetwork(networkId: number): Promise<{ update
   return { updated };
 }
 
-async function runKnownHostCheck(networkId: number | null): Promise<void> {
+export async function runKnownHostCheck(networkId: number | null): Promise<void> {
   const hosts = getKnownHosts(networkId);
   const timeoutMs = 3000;
 
@@ -478,10 +518,15 @@ async function runKnownHostCheck(networkId: number | null): Promise<void> {
   console.log(`[KnownHostCheck] ${hosts.length} host verificati`);
 }
 
-export async function runDnsResolve(networkId: number | null): Promise<{ resolved: number; total: number }> {
+export async function runDnsResolve(
+  networkId: number | null,
+  hostIds?: number[] | null
+): Promise<{ resolved: number; total: number }> {
   const networkIds = networkId
     ? [networkId]
     : getNetworks().map((n) => n.id);
+
+  const idFilter = hostIds?.length ? new Set(hostIds) : null;
 
   let resolved = 0;
   let total = 0;
@@ -489,9 +534,16 @@ export async function runDnsResolve(networkId: number | null): Promise<{ resolve
   for (const nid of networkIds) {
     const network = getNetworkById(nid);
     const dnsServer = network?.dns_server ?? null;
-    const hosts = getHostsByNetwork(nid);
+    let hosts = getHostsByNetwork(nid);
+    if (idFilter) {
+      hosts = hosts.filter((h) => idFilter.has(h.id));
+    }
     total += hosts.length;
+    const cronRefreshDnsStored = process.env.DA_INVENT_DNS_CRON_REFRESH_STORED === "true";
     for (const host of hosts) {
+      if (!cronRefreshDnsStored && host.dns_reverse) {
+        continue;
+      }
       const dnsReverse = await reverseDns(host.ip, dnsServer);
       let dnsForward: string | undefined;
       if (dnsReverse) {
@@ -529,5 +581,44 @@ async function runCleanup(configStr: string): Promise<void> {
 
   const result = cleanupStaleHosts(daysUntilStale, daysUntilDelete);
   console.log(`[Cleanup] ${result.flagged} host segnalati stale, ${result.deleted} eliminati`);
+}
+
+async function runAdSync(configStr: string): Promise<void> {
+  let config: { integration_id?: number };
+  try {
+    config = JSON.parse(configStr || "{}");
+  } catch {
+    console.error("[AD Sync] Configurazione JSON non valida:", configStr);
+    return;
+  }
+
+  const integrationId = config.integration_id;
+  if (!integrationId) {
+    const { getAdIntegrations } = await import("@/lib/db");
+    const integrations = getAdIntegrations().filter((i) => i.enabled);
+    if (integrations.length === 0) {
+      console.log("[AD Sync] Nessuna integrazione AD abilitata");
+      return;
+    }
+    for (const int of integrations) {
+      await syncSingleAdIntegration(int.id);
+    }
+  } else {
+    await syncSingleAdIntegration(integrationId);
+  }
+}
+
+async function syncSingleAdIntegration(integrationId: number): Promise<void> {
+  try {
+    const { syncActiveDirectory } = await import("@/lib/ad/ad-client");
+    console.log(`[AD Sync] Avvio sincronizzazione integrazione #${integrationId}`);
+    const result = await syncActiveDirectory(integrationId);
+    console.log(`[AD Sync] Completato: ${result.computers} computer, ${result.users} utenti, ${result.groups} gruppi, ${result.linked_hosts} host collegati (${result.duration_ms}ms)`);
+    if (result.errors.length > 0) {
+      console.warn(`[AD Sync] Errori: ${result.errors.join(", ")}`);
+    }
+  } catch (err) {
+    console.error(`[AD Sync] Errore integrazione #${integrationId}:`, err);
+  }
 }
 

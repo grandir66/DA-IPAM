@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { getNetworkById, getHostsByNetwork, getDb } from "@/lib/db";
+import { getNetworkById, getHostsByNetwork, getDb, getFingerprintClassificationRulesForResolve } from "@/lib/db";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { classifyDevice } from "@/lib/device-classifier";
+import { getClassificationFromFingerprintSnapshot } from "@/lib/device-fingerprint-classification";
+import type { DeviceFingerprintSnapshot } from "@/types";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
 
@@ -16,8 +18,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   try {
     const { id } = await params;
-    const body = await _request.json().catch(() => ({})) as { force?: boolean };
+    const body = await _request.json().catch(() => ({})) as { force?: boolean; forceDns?: boolean };
     const forceReclassify = body.force === true;
+    const forceDns = body.forceDns === true;
 
     const network = getNetworkById(Number(id));
     if (!network) {
@@ -27,6 +30,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     const hosts = getHostsByNetwork(Number(id));
     const db = getDb();
     const dnsServer = network.dns_server ?? null;
+    const fpUserRules = getFingerprintClassificationRulesForResolve();
 
     let updated = 0;
     let reclassified = 0;
@@ -49,28 +53,29 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         }
       }
 
-      // 2. Reverse DNS — sempre ricalcolato
-      const dnsReverse = await reverseDns(host.ip, dnsServer);
-      if (dnsReverse) {
+      // 2. DNS — da DB se già archiviato; rete solo con forceDns o se manca dns_reverse
+      let dnsReverse: string | null = host.dns_reverse;
+      let dnsForward: string | null = host.dns_forward ?? null;
+      if (forceDns || !host.dns_reverse) {
+        dnsReverse = await reverseDns(host.ip, dnsServer);
+        dnsForward = null;
+        if (dnsReverse) {
+          const forwardResults = await forwardDns(dnsReverse, dnsServer);
+          dnsForward = forwardResults.includes(host.ip) ? dnsReverse : null;
+        }
         if (dnsReverse !== host.dns_reverse) {
           fields.push("dns_reverse = ?");
           values.push(dnsReverse);
           changes.push("dns_reverse");
           dnsUpdated++;
         }
-
-        // Forward DNS — verifica bidirezionale
-        const forwardResults = await forwardDns(dnsReverse, dnsServer);
-        const dnsForward = forwardResults.includes(host.ip) ? dnsReverse : null;
         if (dnsForward !== host.dns_forward) {
           fields.push("dns_forward = ?");
           values.push(dnsForward);
           changes.push("dns_forward");
         }
-
-        // Se non c'è hostname o hostname_source è "dns" o assente, aggiorna hostname
         const currentSource = (host as unknown as Record<string, unknown>).hostname_source as string | null;
-        if (!host.hostname || !currentSource || currentSource === "dns") {
+        if (dnsReverse && (!host.hostname || !currentSource || currentSource === "dns")) {
           if (dnsReverse !== host.hostname) {
             fields.push("hostname = ?");
             values.push(dnsReverse);
@@ -93,13 +98,24 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           ? host.vendor
           : (changes.includes("vendor") ? values[fields.indexOf("vendor = ?")]  as string : host.vendor);
 
-        const newClassification = classifyDevice({
-          sysDescr: host.os_info ?? null,
+        let fpSnap: DeviceFingerprintSnapshot | null = null;
+        if (host.detection_json) {
+          try {
+            fpSnap = JSON.parse(host.detection_json) as DeviceFingerprintSnapshot;
+          } catch {
+            /* ignore */
+          }
+        }
+        const fromFingerprint = fpSnap ? getClassificationFromFingerprintSnapshot(fpSnap, fpUserRules) : undefined;
+        const fromRules = classifyDevice({
+          sysDescr: fpSnap?.snmp_sysdescr ?? host.os_info ?? null,
+          sysObjectID: fpSnap?.snmp_vendor_oid ?? null,
           osInfo: host.os_info ?? null,
           openPorts,
           hostname: host.hostname ?? null,
           vendor: effectiveVendor ?? null,
         });
+        const newClassification = fromFingerprint ?? fromRules;
 
         if (newClassification && newClassification !== host.classification) {
           fields.push("classification = ?");

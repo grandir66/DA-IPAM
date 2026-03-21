@@ -126,9 +126,18 @@ Cliccare **"Aggiungi Subnet"** (pulsante in alto a destra).
 
 **Aggiungere un router al volo:** Nel campo "Router ARP" è disponibile il pulsante **"Aggiungi router"** che apre un modale per registrare il dispositivo prima ancora di chiudere il form rete.
 
+**Catene di credenziali:** nello stesso modale **Nuova Rete** trovi la stessa maschera del dialog **Modifica rete** sul dettaglio subnet (blocco **Rilevamento avanzato** con WinRM + account Linux, poi SSH dispositivi e SNMP): archivio, ordine di priorità e creazione credenziali esplicite. Vedi anche sotto «Modifica rete».
+
 ### Modifica rete
 
 Dal dettaglio rete (`/networks/[id]`), pulsante **matita** → dialog di modifica con gli stessi campi della creazione.
+
+**Catene di credenziali per la subnet:** il blocco **Rilevamento avanzato** raggruppa le catene **WinRM (Windows)** e **account Linux (OS)** (usate in sequenza dal pulsante omonimo in toolbar); separati trovi **SSH dispositivi** e **SNMP**. Per ciascun elenco puoi:
+
+- **Prelevare dall’archivio** credenziali già registrate in **Credenziali** (menu laterale);
+- **Creare credenziali esplicite** con «Nuova credenziale» (nome + dati); vengono salvate in archivio e aggiunte alla catena.
+
+L’**ordine** nella lista è l’ordine di tentativo in scansione (un solo tentativo per credenziale per host). Per uso in produzione è consigliato configurare **almeno tre** credenziali per tipo dove serve. Per SSH, la catena effettiva è: credenziali ruolo **SSH** sulla rete → credenziali **Linux** sulla rete → credenziale globale «host Linux» in **Impostazioni**. Per SNMP: community dalle credenziali SNMP in catena → eventuale valore nel campo **Community SNMP** della rete → `public` / `private`.
 
 ### Eliminazione rete
 
@@ -154,33 +163,26 @@ Cliccando una cella si apre la scheda host.
 
 | Tipo | Cosa fa |
 |------|---------|
-| **ping** | Sweep ICMP su tutti gli IP della subnet. Aggiorna stato online/offline e rileva nuovi host |
-| **snmp** | Query SNMP (community della rete) sugli host in DB. Rileva sysName, sysDescr, model, serial |
-| **nmap** | Port scan TCP/UDP. Richiede `nmap` installato sul server. Rileva porte aperte e OS. La parte **UDP** (`-sU`) richiede in genere **privilegi root** sul processo (nel container il servizio systemd è configurato di conseguenza) |
-| **arp_poll** | Acquisisce la tabella ARP dal router assegnato alla rete. Aggiorna MAC e associazioni IP-MAC |
-| **dns** | Risoluzione reverse (PTR) e forward (A) per tutti gli host della rete |
-| **windows** | Connessione WinRM agli host Windows (porte 445/5985/5986) per raccogliere hostname |
-| **ssh** | Connessione SSH agli host Linux per raccogliere hostname e info OS |
+| **Scoperta rete** (`network_discovery`) | **Automatica sulla subnet:** sweep **ICMP** sugli IP della CIDR → su ogni host che risponde, **Nmap TCP “quick”** (solo porte comuni ridotte: SSH, SMTP, DNS, HTTP/S, SMB, RDP, ecc.; **non** l’elenco completo del profilo) **in sequenza** → registrazione host, **DNS** (PTR/forward) → **ARP dal router** (solo per arricchire i MAC degli host già scoperti, senza aggiungere IP solo da ARP/DHCP). Richiede `nmap` sul server per la fase TCP; senza Nmap resta solo ICMP. Per porte aggiuntive (es. **8291** MikroTik) usare **Nmap profilo** sulla lista host. |
+| **snmp**, **nmap**, **arp**, **dns**, **dhcp**, **Rilevamento avanzato** | **Manuali:** nella **vista lista** selezionare gli host con le checkbox, poi il pulsante desiderato. L’azione si applica **solo agli IP selezionati** (Nmap usa ping sugli IP scelti poi il profilo; SNMP interroga solo quelli in elenco; ARP/DNS/DHCP filtrano sugli IP selezionati). |
+| **nmap** (profilo) | Port scan completo come da profilo: **due esecuzioni nmap distinte** (prima TCP `-sT`, poi UDP `-sU` con porte predefinite). Richiede `nmap`. La fase **UDP** richiede in genere **privilegi root** sul processo. |
+| **Rilevamento avanzato** | Dalla toolbar del dettaglio rete: esegue **in sequenza** (1) **WinRM** sugli host selezionati con porte Windows note da Nmap, (2) **SSH** sugli host con porta 22 senza 445, usando le catene credenziali del blocco «Rilevamento avanzato» nella subnet e le impostazioni globali. Serve acquisire hostname, sistema operativo e dati fondamentali dei dispositivi. |
 
 ### Avviare una scansione
 
-Dal dettaglio rete:
-1. Selezionare il **tipo di scansione** dal menu a tendina
-2. (Solo per nmap) Selezionare il **profilo nmap** (Quick, Standard, Completo, Personalizzato)
-3. Cliccare **"Avvia Scansione"**
+Dal dettaglio rete usare i pulsanti in toolbar (**Scoperta rete**, **Nmap**, **ARP**, **Rilevamento avanzato**, …). Per **Scoperta rete** non serve selezione (lavora su tutta la subnet). Per le altre azioni, passare alla **vista lista**, selezionare gli host, poi il comando.
+
+Per **Nmap** manuale, scegliere il **profilo** nel menu a tendina accanto al pulsante.
 
 La barra di progresso mostra in tempo reale: fase, IP elaborati/totale, host trovati, log live.
 
-### Profili Nmap
+**Auto-refresh:** se attivo l’intervallo e l’opzione **Scoperta rete periodica**, a intervalli viene lanciata la stessa pipeline di **Scoperta rete** (non le azioni manuali).
 
-Configurabili in **Impostazioni → Profili Nmap**:
+### Profilo Nmap
 
-| Profilo | Argomenti |
-|---------|-----------|
-| Quick | `-sn` (solo discovery, nessun port scan) |
-| Standard | Top 100 porte TCP |
-| Completo | Top 1000 porte TCP + versione servizi |
-| Personalizzato | Definibile dall'utente |
+È disponibile **un solo profilo globale** in **Impostazioni → Profilo Nmap**. Definisci **l’elenco delle porte TCP** da testare (obbligatorio, separato da virgole) e, se serve, **l’elenco UDP** (opzionale). **Non** viene aggiunto alcun elenco predefinito alle tue porte TCP: vengono usate solo quelle che indichi.
+
+L’app esegue **due processi Nmap distinti** (prima TCP, poi UDP se hai indicato almeno una porta UDP). Se lasci **vuoto** il campo UDP, **non** viene eseguita la fase UDP (solo TCP). La community SNMP opzionale nel profilo viene usata nella sessione con lo scan (oltre alle community di rete/credenziali).
 
 ---
 
@@ -209,6 +211,8 @@ Accessibile cliccando l'IP in qualsiasi tabella, o la cella nella griglia IP.
 | **Porte di monitoraggio** | Porte TCP da controllare nel monitoring attivo (es. `22, 80, 443`). Se non configurate, il sistema usa porte note (80, 22, 443, 3389) |
 
 #### Sezioni dati
+
+**Rilevamento automatico (fingerprint):** dopo **Scoperta rete**, **nmap** o **snmp**, la scheda host può mostrare un riepilogo (ipotesi tipo dispositivo, confidenza, TTL, porte chiave, fonti: firme porte, banner, SNMP). Con confidenza sufficiente, la **classificazione** dell’host viene allineata al tipo rilevato (es. Proxmox VE → *hypervisor*). Il pulsante **Ricalcola** sulla rete riallinea classificazioni da `detection_json` e regole aggiornate. Per variabili d’ambiente e dettaglio tecnico vedi `docs/DEVICE-FINGERPRINTING.md`.
 
 **Porte aperte:** badge con numero porta (UDP in blu).
 
@@ -280,6 +284,8 @@ Sistema operativo, hardware (CPU, RAM, dischi con utilizzo), schede di rete, lic
 #### Dati Proxmox (hypervisor)
 Stato nodo, lista VM/CT con risorse, licenza subscription, dettagli hardware.
 
+**Più nodi (stessa subnet):** nel campo **IP / Host** puoi usare la forma breve `192.168.40.1,2,3,4,5` (ultimo ottetto elencato dopo la virgola). Per ogni indirizzo lo scan interroga sia l’**API** (porta 8006, da URL API o `https://IP:8006`) sia la **SSH** (porta del dispositivo, di default 22), poi unisce nodi e VM evitando duplicati. Dettagli ricchi (storage, rete, agent QEMU) provengono soprattutto dall’API; `pvesh` via SSH integra o conferma l’elenco cluster. Massimo 32 indirizzi per dispositivo.
+
 #### Spanning Tree (switch)
 Bridge ID, root bridge ID, priority, costi, porte, hello/forward/max-age time. Badge **ROOT BRIDGE** se questo switch è la radice STP.
 
@@ -333,7 +339,7 @@ Dal pulsante **"Testa"** nella lista o dalla scheda credenziale: inserire IP e p
 
 ### Utilizzo
 
-Le credenziali si assegnano ai dispositivi di rete (campo "Credenziale SSH" e "Credenziale SNMP") o alle impostazioni globali per scan di massa su host Windows/Linux.
+Le credenziali si assegnano ai dispositivi di rete (campo "Credenziale SSH" e "Credenziale SNMP"), alle **catene per subnet** nel dialog **Modifica rete** (vedi §4), o alle impostazioni globali per scan di massa su host Windows/Linux.
 
 **Priorità:** una credenziale da archivio ha sempre la precedenza sulle credenziali inline del dispositivo.
 
@@ -410,7 +416,7 @@ I job schedulati automatizzano le operazioni di monitoraggio e acquisizione dati
 
 | Tipo | Cosa fa |
 |------|---------|
-| **ping_sweep** | Esegue sweep ICMP su una rete (o tutte) per aggiornare lo stato host |
+| **ping_sweep** | Esegue la **scoperta rete** (ICMP + Nmap TCP quick + DNS + ARP router) su una rete o su tutte |
 | **snmp_scan** | Query SNMP sugli host per aggiornare info dispositivo |
 | **nmap_scan** | Port scan nmap |
 | **arp_poll** | Acquisisce ARP e MAC table da tutti i dispositivi abilitati |
@@ -452,10 +458,10 @@ Lo scheduler usa `node-cron` avviato da `server.ts` in produzione. Con `npm run 
 - **Genera certificato self-signed:** inserire dominio/IP, durata in giorni → genera automaticamente
 - **Importa certificato esterno:** incollare PEM certificato e chiave privata
 
-### Tab Profili Nmap
+### Tab Profilo Nmap
 
-- Lista profili con comando nmap completo visualizzato
-- **Crea/modifica profilo:** nome, descrizione, argomenti nmap personalizzati oppure "porte custom" (aggiunge top 100 TCP + porte specificate + UDP noti + SNMP)
+- **Porte TCP** (obbligatorie) e **porte UDP** (opzionali), testo libero separato da virgole; anteprima dei comandi generati
+- **Community SNMP** opzionale per la sessione di scan
 - **Custom OUI:** textarea per sovrascrivere/aggiungere vendor per prefissi MAC. Formato: `AABBCC Nome Vendor` (una riga per prefisso). Utile per dispositivi non nel database OUI standard.
 
 ### Tab Job Schedulati

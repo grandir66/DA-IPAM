@@ -4,6 +4,13 @@ import { XMLParser } from "fast-xml-parser";
 import type { NmapResult, NmapPort } from "@/types";
 import { stripUdpFromArgs, buildUdpScanArgs, buildTcpScanArgs } from "./ports";
 
+/** Argomenti profilo utente: la fase TCP non deve mai includere -sU (UDP è una seconda invocazione). */
+function tcpProfileArgs(customArgs: string | undefined): string {
+  const trimmed = customArgs?.trim();
+  if (!trimmed) return buildTcpScanArgs(null);
+  return stripUdpFromArgs(trimmed);
+}
+
 const execFileAsync = promisify(execFile);
 
 export async function isNmapAvailable(): Promise<boolean> {
@@ -20,9 +27,9 @@ export async function isNmapAvailable(): Promise<boolean> {
  */
 export async function nmapDiscoverHosts(
   target: string,
-  timeout: number = 120000
+  timeout: number = 90000
 ): Promise<NmapResult[]> {
-  const args = ["-sn", "-oX", "-", target];
+  const args = ["-sn", "-T4", "--min-rate", "200", "--max-retries", "1", "-oX", "-", target];
   try {
     const { stdout } = await execFileAsync("nmap", args, {
       timeout,
@@ -43,37 +50,65 @@ export async function nmapDiscoverHosts(
  *  2. Scansione UDP (-sU, richiede root) — tentata separatamente, non bloccante
  *  3. I risultati vengono fusi (TCP + UDP)
  *
- * SNMP non viene gestito qui — è compito di discovery.ts via net-snmp.
+ * Non eseguire mai TCP e UDP in un unico comando nmap: alcuni profili/ambienti vanno in errore.
+ * Il parametro `customArgs` personalizza **solo la scansione TCP**; `-sU` viene ignorato qui
+ * (la UDP è sempre `buildUdpScanArgs()` in processo separato).
+ *
+ * SNMP non viene gestito qui — è compito di discovery.ts via net-snmp / snmpwalk.
  */
 export async function nmapPortScan(
   ip: string,
   customArgs?: string,
   /** Timeout exec per singola fase (TCP o UDP); con entrambe le fasi servono ~2× questo tempo. Default 280s. */
-  timeout: number = 280_000
+  timeout: number = 280_000,
+  opts?: { skipUdp?: boolean; onLog?: (msg: string) => void; udpPorts?: string | null }
 ): Promise<NmapResult | null> {
-  const tcpArgs = ensureTcpOnly(customArgs?.trim() ? customArgs : buildTcpScanArgs(null));
+  const tcpArgs = ensureTcpOnly(tcpProfileArgs(customArgs));
+  const skipUdp = opts?.skipUdp === true;
+  const emitLog = opts?.onLog ?? (() => {});
 
-  // --- TCP scan (always runs, no root needed) ---
+  // --- Fase 1/2: TCP (-sT), processo dedicato ---
   let tcpResult: NmapResult | null = null;
   try {
     const args = [...tcpArgs.split(/\s+/).filter(Boolean), "-oX", "-", ip];
-    console.log(`[Nmap] TCP scan ${ip}: nmap ${args.join(" ")}`);
+    const cmdLine = `nmap ${args.join(" ")}`;
+    console.log(`[Nmap] Fase 1/2 TCP ${ip}: ${cmdLine}`);
+    emitLog(`TCP ${ip}: ${cmdLine}`);
     const { stdout } = await execFileAsync("nmap", args, {
       timeout,
       maxBuffer: 10 * 1024 * 1024,
     });
     const results = parseNmapXml(stdout);
     tcpResult = results.length > 0 ? results[0] : null;
-    console.log(`[Nmap] TCP scan ${ip}: ${tcpResult?.ports.length ?? 0} porte aperte`);
+    const portList = tcpResult?.ports.map((p) => `${p.port}/${p.protocol}`).join(", ") || "—";
+    console.log(`[Nmap] Fase 1/2 TCP ${ip}: ${tcpResult?.ports.length ?? 0} porte TCP aperte`);
+    emitLog(`TCP ${ip}: ${tcpResult?.ports.length ?? 0} porte → ${portList}`);
   } catch (error) {
-    console.error(`[Nmap] TCP scan error for ${ip}:`, error instanceof Error ? error.message : error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[Nmap] TCP scan error for ${ip}:`, errMsg);
+    emitLog(`✗ TCP ${ip}: ${errMsg.slice(0, 80)}`);
   }
 
-  // --- UDP scan (separate, requires root — fails gracefully) ---
+  if (skipUdp) {
+    return tcpResult
+      ? {
+          ip,
+          alive: true,
+          ports: tcpResult.ports.sort((a, b) => a.port - b.port),
+          os: tcpResult.os,
+          mac: tcpResult.mac,
+        }
+      : null;
+  }
+
+  // --- Fase 2/2: UDP (-sU), processo dedicato (richiede spesso root / capability raw) ---
   let udpResult: NmapResult | null = null;
-  const udpArgs = buildUdpScanArgs();
+  const udpArgs = buildUdpScanArgs(opts?.udpPorts);
   try {
     const args = [...udpArgs.split(/\s+/).filter(Boolean), "-oX", "-", ip];
+    const cmdLine = `nmap ${args.join(" ")}`;
+    console.log(`[Nmap] Fase 2/2 UDP ${ip}: ${cmdLine}`);
+    emitLog(`UDP ${ip}: ${cmdLine}`);
     const { stdout } = await execFileAsync("nmap", args, {
       timeout,
       maxBuffer: 10 * 1024 * 1024,
@@ -81,14 +116,20 @@ export async function nmapPortScan(
     const results = parseNmapXml(stdout);
     udpResult = results.length > 0 ? results[0] : null;
     if (udpResult && udpResult.ports.length > 0) {
-      console.log(`[Nmap] UDP scan ${ip}: ${udpResult.ports.length} porte aperte`);
+      const portList = udpResult.ports.map((p) => `${p.port}/${p.protocol}`).join(", ");
+      console.log(`[Nmap] Fase 2/2 UDP ${ip}: ${udpResult.ports.length} porte UDP aperte`);
+      emitLog(`UDP ${ip}: ${udpResult.ports.length} porte → ${portList}`);
+    } else {
+      emitLog(`UDP ${ip}: 0 porte`);
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     if (/root|privileges|permission/i.test(msg)) {
       console.log(`[Nmap] UDP scan ${ip}: skip (richiede root)`);
+      emitLog(`UDP ${ip}: skip (richiede root)`);
     } else {
       console.warn(`[Nmap] UDP scan ${ip} fallito:`, msg);
+      emitLog(`✗ UDP ${ip}: ${msg.slice(0, 80)}`);
     }
   }
 
@@ -194,12 +235,19 @@ function parseNmapXml(xml: string): NmapResult[] {
     if (host.ports?.port) {
       const portList = Array.isArray(host.ports.port) ? host.ports.port : [host.ports.port];
       for (const port of portList) {
-        if (port.state?.["@_state"] === "open") {
+        const portState = port.state?.["@_state"] as string | undefined;
+        const protocol = (port["@_protocol"] as string | undefined) || "tcp";
+        /** TCP: open + open|filtered. UDP: solo `open` — `open|filtered` su UDP è quasi sempre ambiguo (falsi positivi massicci). */
+        const isResponding =
+          protocol === "udp"
+            ? portState === "open"
+            : portState === "open" || portState === "open|filtered";
+        if (isResponding) {
           const portId = port["@_portid"];
           ports.push({
             port: parseInt(portId),
-            protocol: port["@_protocol"] || "tcp",
-            state: port.state["@_state"],
+            protocol,
+            state: portState ?? "open",
             service: port.service?.["@_name"] || null,
             version: port.service?.["@_product"]
               ? `${port.service["@_product"]} ${port.service["@_version"] || ""}`.trim()

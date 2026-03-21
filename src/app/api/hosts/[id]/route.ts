@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { getHostById, updateHost, deleteHost } from "@/lib/db";
 import { HostUpdateSchema } from "@/lib/validators";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const authCheck = await requireAuth();
+    if (isAuthError(authCheck)) return authCheck;
     const { id } = await params;
     const host = getHostById(Number(id));
     if (!host) {

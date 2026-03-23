@@ -75,9 +75,18 @@ if [ "$RESTART" = true ]; then
   fi
 fi
 
-# Mostra versione aggiornata
+# Mostra versione e commit (la versione è quella nel package.json dopo git pull = branch remoto)
 VERSION=$(node -e "console.log(require('./package.json').version)")
+SHORT=$(git rev-parse --short HEAD 2>/dev/null || echo "?")
+SUBJECT=$(git log -1 --format=%s 2>/dev/null || echo "")
 echo ""
 echo "=== Aggiornamento completato ==="
-echo "Versione: $VERSION"
+echo "Versione package.json: $VERSION"
+echo "Commit installato: $SHORT"
+if [ -n "$SUBJECT" ]; then
+  echo "Ultimo commit: $SUBJECT"
+fi
+echo ""
+echo "Nota: git pull porta solo ciò che è su GitHub (branch corrente). Se la versione non sale,"
+echo "      su origin non c'è ancora un commit più nuovo, oppure non sei sul branch giusto."
 echo ""

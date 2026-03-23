@@ -75,6 +75,19 @@ export function ManualUpdateInstructions({ variant = "default", className }: Man
             vai nella directory dell&apos;installazione (es. <code className="text-[11px] bg-muted px-1 rounded">/opt/da-invent</code>)
             e usa uno dei due metodi seguenti.
           </p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Dopo <code className="text-[11px] bg-muted px-1 rounded">git pull</code> la versione è quella nel{" "}
+            <code className="text-[11px] bg-muted px-1 rounded">package.json</code> del branch su{" "}
+            <a
+              href="https://github.com/grandir66/DA-IPAM/blob/main/package.json"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary underline underline-offset-2"
+            >
+              GitHub (main)
+            </a>
+            . Se il numero non cambia, non è stato pubblicato un release più recente su quel branch (oppure il server è su un altro remote/branch).
+          </p>
         </div>
       </div>
 

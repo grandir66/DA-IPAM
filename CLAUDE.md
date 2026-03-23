@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Versioning (OBBLIGATORIO)
 
-**Ogni modifica al codice deve incrementare la patch version.** Dopo aver completato modifiche:
-1. Esegui `npm run version:bump` oppure incrementa manualmente `version` in `package.json`
-2. Aggiorna anche `version` in `package-lock.json` se necessario
+**Ogni modifica al codice deve incrementare la patch version** e finire in un **commit Git** con messaggio `release: vX.Y.Z`.
+
+Dopo le modifiche:
+1. **`npm run version:release`** — esegue `version:bump`, poi `git add -A` e commit `release: vX.Y.Z` (usa `version:commit` con `--no-bump` solo se il bump è già stato fatto a mano)
+2. **`git push`** verso `origin`, altrimenti sul server `git pull` non vede la nuova versione
 
 Versione attuale: vedi `package.json`.
 

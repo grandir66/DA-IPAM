@@ -170,6 +170,7 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     fields: {
       model: "1.3.6.1.4.1.2604.5.1.1.2.0",
       firmware: "1.3.6.1.4.1.2604.5.1.1.3.0",
+      serial: [ENTITY_MIB_OIDS.entPhysicalSerialNum, "1.3.6.1.4.1.2604.5.1.1.4.0"],
     },
   },
 
@@ -362,6 +363,23 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // CATEGORIA: SWITCH (UBIQUITI UniFi)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  {
+    id: "ubiquiti_unifi_switch",
+    name: "Ubiquiti UniFi Switch",
+    category: "switch",
+    enterpriseOidPrefixes: [],
+    identifyBySysDescr: /\busw[-\s]|\bus[-\s]\d|\buflex\b|\bunifi\s*switch\b|\bindustrial\b.*ubiquiti|ubiquiti.*\bindustrial\b/i,
+    confidence: 0.96,
+    fields: {
+      model: ENTITY_MIB_OIDS.entPhysicalModelName,
+      serial: ENTITY_MIB_OIDS.entPhysicalSerialNum,
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // CATEGORIA: ACCESS POINT / WIFI
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -370,6 +388,7 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     name: "Ubiquiti UniFi AP",
     category: "access_point",
     enterpriseOidPrefixes: ["1.3.6.1.4.1.41112.1.6"],
+    identifyBySysDescr: /\buap[-\s]|\bu6[-\s]|\bunifi\s*ap\b/i,
     confidence: 0.97,
     fields: {
       model: "1.3.6.1.4.1.41112.1.6.1.1.0",
@@ -956,7 +975,9 @@ export function resolveSnmpVendorProfileFromDb(
   sysDescr: string | null
 ): SnmpVendorProfile | null {
   const profiles = getSnmpVendorProfilesFromDb();
-  
+
+  let oidMatch: SnmpVendorProfile | null = null;
+
   // Prima prova: match per enterpriseOidPrefixes
   if (sysObjectID) {
     const sortedByOid = [...profiles]
@@ -970,21 +991,32 @@ export function resolveSnmpVendorProfileFromDb(
     for (const profile of sortedByOid) {
       for (const prefix of profile.enterpriseOidPrefixes) {
         if (oidMatchesPrefix(sysObjectID, prefix)) {
-          return profile;
+          oidMatch = profile;
+          break;
         }
       }
+      if (oidMatch) break;
     }
   }
 
   // Seconda prova: match per identifyBySysDescr (pattern regex)
+  // Se il sysDescr individua un profilo PIU SPECIFICO (stesso vendor, diversa categoria),
+  // preferiscilo al match OID generico. Es: OID 41112 → ubiquiti_generic (AP), ma sysDescr
+  // contiene "USW" → ubiquiti_unifi_switch (switch) è più accurato.
   if (sysDescr) {
     const profilesWithSysDescrMatch = profiles.filter(
       (p) => p.identifyBySysDescr && p.identifyBySysDescr.test(sysDescr)
     );
     if (profilesWithSysDescrMatch.length > 0) {
-      return profilesWithSysDescrMatch.sort((a, b) => b.confidence - a.confidence)[0];
+      const bestSysDescrMatch = profilesWithSysDescrMatch.sort((a, b) => b.confidence - a.confidence)[0];
+      if (!oidMatch) return bestSysDescrMatch;
+      // sysDescr match sovrascrive OID match se hanno categorie diverse
+      // (disambiguazione per vendor con OID ambigui come Ubiquiti 41112)
+      if (bestSysDescrMatch.category !== oidMatch.category) {
+        return bestSysDescrMatch;
+      }
     }
   }
 
-  return null;
+  return oidMatch;
 }

@@ -20,15 +20,10 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogScrollableArea,
   DialogTitle,
+  DIALOG_PANEL_COMPACT_CLASS,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -39,19 +34,16 @@ import {
 } from "@/components/ui/tooltip";
 import { ArrowLeft, RefreshCw, Zap, ZapOff, Cable, Minus, Pencil, Key, Server, Wifi, Database, Activity, Radio, Package, ExternalLink, Plus, Monitor, Cpu, HardDrive, Shield, Users, Clock, Award, Layers, Info, Download } from "lucide-react";
 
-function Tip({ text }: { text: string }) {
-  return (
-    <span className="relative group/tip inline-flex ml-1 cursor-help">
-      <Info className="h-3 w-3 text-muted-foreground" />
-      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-popover text-popover-foreground border rounded shadow-md max-w-[220px] whitespace-normal opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto transition-opacity z-50">
-        {text}
-      </span>
-    </span>
-  );
-}
 import { toast } from "sonner";
-import { getClassificationLabel, DEVICE_CLASSIFICATIONS_ORDERED } from "@/lib/device-classifications";
+import { getClassificationLabel } from "@/lib/device-classifications";
 import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
+import { DeviceFormFields } from "@/components/shared/device-form-fields";
+import {
+  inferProductProfileFromLegacy,
+  PRODUCT_PROFILE_LABELS,
+  vendorSubtypeFromProductProfile,
+  type ProductProfileId,
+} from "@/lib/device-product-profiles";
 import type { NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 
 interface Credential {
@@ -132,6 +124,34 @@ interface DeviceInfo {
   // Software
   installed_software_count?: number | null;
   key_software?: Array<{ name: string; version?: string; publisher?: string }>;
+  // Linux-specific
+  kernel_version?: string | null;
+  uptime?: string | null;
+  load_average?: string | null;
+  virtualization?: string | null;
+  is_virtual?: boolean;
+  ram_free_mb?: number | null;
+  physical_disks?: Array<{ device: string; model?: string; size_gb?: number; serial?: string; interface_type?: string; vendor?: string; rotational?: boolean }>;
+  packages_count?: number | null;
+  domain_joined?: boolean;
+  last_logged_on_user?: string | null;
+  logged_on_users?: Array<{ username: string; session_type?: string; logon_time?: string }>;
+  user_profiles?: Array<{
+    username: string; sid?: string; profile_path?: string; loaded?: boolean; last_use?: string;
+    ad_display_name?: string; ad_email?: string; ad_department?: string; ad_title?: string; ad_enabled?: boolean; ad_last_logon?: string;
+  }>;
+  /** Synology / QNAP (SNMP + SSH) */
+  nas_inventory?: {
+    vendor?: string;
+    sources?: string[];
+    snmp?: {
+      temperature_c?: number | null;
+      disks?: Array<{ index?: string; model?: string; status?: string; temperature_c?: number | null; type?: string; id?: string }>;
+      raids?: Array<{ name?: string; status?: string; free_gb?: number | null; total_gb?: number | null }>;
+      volumes_snmp?: Array<{ name?: string; size_gb?: number | null }>;
+    };
+    ssh?: { mdstat_summary?: string; cpu_model?: string | null; kernel?: string | null };
+  };
 }
 
 interface DeviceDetail extends Omit<NetworkDevice, "stp_info" | "last_device_info_json"> {
@@ -386,6 +406,90 @@ function getPortTypeIcon(portName: string, isTrunk: boolean) {
 
 const CLASSIFICATION_SLUGS = ["access_point", "firewall", "hypervisor", "iot", "notebook", "router", "server", "stampante", "storage", "switch", "telecamera", "voip", "vm", "workstation"];
 
+/** Etichette modale modifica in base al protocollo principale. */
+function getPrimaryCredentialLabels(protocol: string): { section: string; select: string } {
+  switch (protocol) {
+    case "ssh":
+      return { section: "SSH — shell e comandi", select: "Credenziale da archivio (SSH / API / Windows)" };
+    case "winrm":
+      return { section: "WinRM — Windows", select: "Credenziale Windows / WinRM (archivio)" };
+    case "api":
+      return { section: "API REST", select: "Credenziale API (archivio)" };
+    case "snmp_v2":
+      return { section: "SNMP v2 — gestione", select: "Credenziale SNMP (archivio)" };
+    case "snmp_v3":
+      return { section: "SNMP v3 — gestione", select: "Credenziale SNMP (archivio)" };
+    default:
+      return { section: "Accesso principale", select: "Credenziale (archivio)" };
+  }
+}
+
+type DeviceCredentialRowInput = Pick<
+  NetworkDevice,
+  | "protocol"
+  | "port"
+  | "credential_id"
+  | "snmp_credential_id"
+  | "username"
+  | "community_string"
+  | "device_type"
+>;
+
+/** Righe tabella credenziali: un protocollo per riga (principale + SNMP aggiuntivo se applicabile). */
+function buildDeviceCredentialRows(
+  device: DeviceCredentialRowInput,
+  creds: Credential[]
+): { key: string; protocolLabel: string; archiveLabel: string; note: string }[] {
+  const nameOf = (id: number | null | undefined) =>
+    id ? creds.find((c) => c.id === id)?.name ?? `ID ${id}` : null;
+  const cn = nameOf(device.credential_id);
+  const sn = nameOf(device.snmp_credential_id);
+  const rows: { key: string; protocolLabel: string; archiveLabel: string; note: string }[] = [];
+
+  if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") {
+    rows.push({
+      key: "snmp-main",
+      protocolLabel: `${device.protocol.toUpperCase()} — gestione dispositivo`,
+      archiveLabel: sn || cn || (device.community_string ? "Community inline" : "—"),
+      note: `Porta ${device.port}`,
+    });
+    return rows;
+  }
+
+  const primaryTitle =
+    device.protocol === "ssh"
+      ? "SSH — shell / comandi"
+      : device.protocol === "winrm"
+        ? "WinRM — Windows Management"
+        : device.protocol === "api"
+          ? "API REST"
+          : String(device.protocol);
+
+  rows.push({
+    key: "primary",
+    protocolLabel: primaryTitle,
+    archiveLabel: cn || (device.username ? "Credenziali inline (utente/password)" : "—"),
+    note: `Porta ${device.port}`,
+  });
+
+  const showSnmp =
+    !!device.snmp_credential_id ||
+    !!device.community_string ||
+    device.device_type === "router" ||
+    device.device_type === "switch";
+
+  if (showSnmp) {
+    rows.push({
+      key: "snmp-sup",
+      protocolLabel: "SNMP — walk, porte, LLDP, spanning tree",
+      archiveLabel: sn || (device.community_string ? "Community inline" : "—"),
+      note: "Opzionale, oltre all’accesso principale",
+    });
+  }
+
+  return rows;
+}
+
 export default function DevicePage() {
   const params = useParams();
   const slug = params.id as string;
@@ -413,6 +517,7 @@ function DeviceDetailPage() {
   const [editCredentialId, setEditCredentialId] = useState<string | null>(null);
   const [editSnmpCredentialId, setEditSnmpCredentialId] = useState<string | null>(null);
   const [editScanTarget, setEditScanTarget] = useState<string | null>(null);
+  const [editProductProfile, setEditProductProfile] = useState<string | null>(null);
   const [editClassification, setEditClassification] = useState<string>("");
   const [editSaving, setEditSaving] = useState(false);
 
@@ -431,6 +536,9 @@ function DeviceDetailPage() {
       setEditSnmpCredentialId(device.snmp_credential_id != null ? String(device.snmp_credential_id) : null);
       setEditScanTarget((device as { scan_target?: string | null }).scan_target ?? null);
       setEditClassification((device as { classification?: string | null }).classification ?? "");
+      setEditProductProfile(
+        device.product_profile ?? inferProductProfileFromLegacy(device.vendor, device.device_type, device.vendor_subtype, device.scan_target)
+      );
     }
   }, [device]);
 
@@ -442,13 +550,30 @@ function DeviceDetailPage() {
   }, []);
 
   const fetchDevice = useCallback(async () => {
+    const id = params.id;
+    if (!id || typeof id !== "string" || !/^\d+$/.test(id)) {
+      setLoading(false);
+      router.push("/devices");
+      return;
+    }
     try {
-      const res = await fetch(`/api/devices/${params.id}`, { cache: "no-store" });
+      const res = await fetch(`/api/devices/${id}`, { cache: "no-store" });
       if (!res.ok) {
         router.push("/devices");
         return;
       }
-      setDevice(await res.json());
+      const data = await res.json();
+      if (data?.error || !data?.id) {
+        toast.error("Dati dispositivo non validi");
+        router.push("/devices");
+        return;
+      }
+      setDevice({
+        ...data,
+        arp_entries: Array.isArray(data.arp_entries) ? data.arp_entries : [],
+        mac_port_entries: Array.isArray(data.mac_port_entries) ? data.mac_port_entries : [],
+        switch_ports: Array.isArray(data.switch_ports) ? data.switch_ports : [],
+      });
     } catch {
       toast.error("Impossibile caricare il dispositivo");
       router.push("/devices");
@@ -524,8 +649,8 @@ function DeviceDetailPage() {
   async function handleQuery() {
     if (!device) return;
     const target = (device as { scan_target?: string | null }).scan_target;
-    if (target === "vmware" || target === "linux") {
-      toast.info("Scansione " + target + " non ancora implementata");
+    if (target === "vmware") {
+      toast.info("Scansione VMware non ancora implementata (API vCenter). Usa SSH sul singolo ESXi se configurato come dispositivo Linux.");
       return;
     }
     const isWinrm = target === "windows" || device.protocol === "winrm" || device.vendor === "windows";
@@ -587,6 +712,12 @@ function DeviceDetailPage() {
     }
   }
 
+  const credentialRows = useMemo(
+    () => (device ? buildDeviceCredentialRows(device, credentials) : []),
+    [device, credentials]
+  );
+  const primaryCredLabels = useMemo(() => getPrimaryCredentialLabels(editProtocol), [editProtocol]);
+
   async function handleEdit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!device) return;
@@ -601,6 +732,7 @@ function DeviceDetailPage() {
       snmp_credential_id: editSnmpCredentialId && editSnmpCredentialId !== "none" ? Number(editSnmpCredentialId) : null,
       scan_target: editScanTarget || null,
     };
+    if (editProductProfile) body.product_profile = editProductProfile;
     if (editClassification) body.classification = editClassification;
     formData.forEach((val, key) => {
       if (key === "password" || key === "community_string") {
@@ -661,15 +793,12 @@ function DeviceDetailPage() {
       return acc;
     }, new Map());
 
-  const credentialName = device.credential_id && credentials.find((c) => c.id === device.credential_id)?.name;
-  const snmpCredentialName = device.snmp_credential_id && credentials.find((c) => c.id === device.snmp_credential_id)?.name;
-
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-4">
-          <Link href={device.device_type === "router" ? "/devices/router" : "/devices/switch"}>
+          <Link href={device.device_type === "router" ? "/devices/router" : device.device_type === "switch" ? "/devices/switch" : "/devices"}>
             <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
           </Link>
           <div>
@@ -684,6 +813,11 @@ function DeviceDetailPage() {
                 </Badge>
               )}
               <Badge variant="outline" className="capitalize">{device.vendor}</Badge>
+              {device.product_profile && (
+                <Badge variant="outline" className="text-xs font-normal">
+                  {PRODUCT_PROFILE_LABELS[device.product_profile as ProductProfileId] ?? device.product_profile}
+                </Badge>
+              )}
               {device.vendor_subtype && (
                 <Badge variant="outline" className="text-xs">{device.vendor_subtype}</Badge>
               )}
@@ -765,35 +899,46 @@ function DeviceDetailPage() {
               <p className="text-sm font-medium mt-0.5 uppercase">{device.protocol}</p>
             </div>
             <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Credenziale SSH</p>
-              <p className="text-sm font-medium mt-0.5 flex items-center gap-1">
-                {credentialName ? (
-                  <><Key className="h-3.5 w-3.5" />{credentialName}</>
-                ) : device.username ? (
-                  "Inline"
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Credenziale SNMP</p>
-              <p className="text-sm font-medium mt-0.5 flex items-center gap-1">
-                {snmpCredentialName ? (
-                  <><Key className="h-3.5 w-3.5" />{snmpCredentialName}</>
-                ) : device.community_string ? (
-                  "Community inline"
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </p>
-            </div>
-            <div>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Ultimo aggiornamento</p>
               <p className="text-sm font-medium mt-0.5">
                 {lastRefresh ? new Date(lastRefresh).toLocaleString("it-IT") : <span className="text-muted-foreground">Mai</span>}
               </p>
             </div>
+          </div>
+
+          <div className="mt-5 pt-4 border-t border-border">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
+              <Key className="h-3.5 w-3.5" />
+              Credenziali archivio per protocollo
+            </p>
+            <p className="text-xs text-muted-foreground mb-3">
+              Ogni riga indica quale credenziale viene usata per quel tipo di accesso. Modifica da &quot;Modifica&quot; in alto.
+            </p>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[40%]">Protocollo / ambito</TableHead>
+                  <TableHead>Credenziale archivio</TableHead>
+                  <TableHead className="w-[28%]">Nota</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {credentialRows.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell className="font-medium text-sm">{row.protocolLabel}</TableCell>
+                    <TableCell>
+                      <span className="flex items-center gap-1.5 text-sm">
+                        {row.archiveLabel !== "—" && !row.archiveLabel.includes("inline") && (
+                          <Key className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        )}
+                        {row.archiveLabel}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{row.note}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>
@@ -804,14 +949,17 @@ function DeviceDetailPage() {
       {/* Dati tecnici acquisiti (persistenti) */}
       {device.device_info && (() => {
         const di = device.device_info;
-        const isWin = !!(di.os_name || di.hostname || di.cpu_model || di.domain);
+        const isNas = !!(di.nas_inventory || di.manufacturer === "Synology" || di.manufacturer === "QNAP");
+        const isLinux = !!(di.kernel_version || di.load_average || di.virtualization != null || di.packages_count != null);
+        const isWin = !isLinux && !isNas && !!(di.os_name || di.hostname || di.cpu_model || di.domain);
+        const hasDetailedInfo = isLinux || isWin;
         return (
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
                 <Database className="h-4 w-4" />
-                {isWin ? "Dati sistema Windows (WMI)" : "Dati tecnici acquisiti"}
+                {isNas ? "Storage (SNMP + SSH)" : isLinux ? "Dati sistema Linux (SSH)" : isWin ? "Dati sistema Windows (WMI)" : "Dati tecnici acquisiti"}
               </CardTitle>
               {di.scanned_at && (
                 <span className="text-xs text-muted-foreground">
@@ -822,27 +970,32 @@ function DeviceDetailPage() {
           </CardHeader>
           <CardContent className="space-y-5">
             {/* === SISTEMA OPERATIVO === */}
-            {(di.os_name || di.hostname || di.uptime_days != null) && (
+            {(di.os_name || di.hostname || di.uptime_days != null || di.uptime || di.kernel_version) && (
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><Monitor className="h-3.5 w-3.5" /> Sistema operativo</h4>
               <dl className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 text-sm">
                 {di.hostname && <div><dt className="text-xs text-muted-foreground">Hostname</dt><dd className="font-mono font-medium">{di.hostname}</dd></div>}
-                {di.domain && <div><dt className="text-xs text-muted-foreground">Dominio</dt><dd className="font-mono">{di.domain}</dd></div>}
+                {(di.domain || di.domain_joined) && <div><dt className="text-xs text-muted-foreground">Dominio</dt><dd className="font-mono flex items-center gap-1">{di.domain ?? "—"}{di.domain_joined && <Badge variant="secondary" className="text-[10px] ml-1">AD</Badge>}</dd></div>}
                 {di.os_name && <div className="col-span-2"><dt className="text-xs text-muted-foreground">Sistema operativo</dt><dd>{di.os_name}</dd></div>}
                 {di.os_version && <div><dt className="text-xs text-muted-foreground">Versione</dt><dd className="font-mono">{di.os_version}</dd></div>}
                 {di.os_build && <div><dt className="text-xs text-muted-foreground">Build</dt><dd className="font-mono">{di.os_build}</dd></div>}
+                {di.kernel_version && <div className="col-span-2"><dt className="text-xs text-muted-foreground">Kernel</dt><dd className="font-mono text-xs">{di.kernel_version}</dd></div>}
                 {di.architecture && <div><dt className="text-xs text-muted-foreground">Architettura</dt><dd>{di.architecture}</dd></div>}
+                {di.is_virtual != null && <div><dt className="text-xs text-muted-foreground">Tipo</dt><dd><Badge variant={di.is_virtual ? "secondary" : "outline"} className="text-xs">{di.is_virtual ? (di.virtualization ?? "Virtuale") : "Fisico"}</Badge></dd></div>}
                 {di.domain_role && <div><dt className="text-xs text-muted-foreground">Ruolo</dt><dd><Badge variant="outline" className="text-xs">{di.domain_role}</Badge></dd></div>}
                 {di.uptime_days != null && <div><dt className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Uptime</dt><dd className="font-semibold">{di.uptime_days} giorni</dd></div>}
-                {di.install_date && <div><dt className="text-xs text-muted-foreground">Data installazione</dt><dd className="text-xs">{(() => { try { return new Date(di.install_date).toLocaleDateString("it-IT"); } catch { return di.install_date; } })()}</dd></div>}
+                {!di.uptime_days && di.uptime && <div className="col-span-2"><dt className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Uptime</dt><dd className="text-xs">{di.uptime}</dd></div>}
+                {di.last_boot && <div className="col-span-2"><dt className="text-xs text-muted-foreground">Ultimo avvio</dt><dd className="text-xs font-mono">{(() => { try { return new Date(di.last_boot!).toLocaleString("it-IT"); } catch { return di.last_boot; } })()}</dd></div>}
+                {di.load_average && <div className="col-span-2"><dt className="text-xs text-muted-foreground">Load average</dt><dd className="font-mono text-xs">{di.load_average}</dd></div>}
+                {di.install_date && <div><dt className="text-xs text-muted-foreground">Data installazione</dt><dd className="text-xs">{(() => { try { return new Date(di.install_date!).toLocaleDateString("it-IT"); } catch { return di.install_date; } })()}</dd></div>}
                 {di.registered_user && <div><dt className="text-xs text-muted-foreground">Utente registrato</dt><dd>{di.registered_user}</dd></div>}
                 {di.organization && <div><dt className="text-xs text-muted-foreground">Organizzazione</dt><dd>{di.organization}</dd></div>}
               </dl>
             </div>
             )}
 
-            {/* === HARDWARE === */}
-            {(di.cpu_model || di.ram_total_gb || di.manufacturer) && (
+            {/* === HARDWARE === (modello/seriale anche senza CPU/RAM — es. NAS) */}
+            {(di.cpu_model || di.ram_total_gb || di.manufacturer || di.model || di.serial_number) && (
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><Cpu className="h-3.5 w-3.5" /> Hardware</h4>
               <dl className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 text-sm">
@@ -850,10 +1003,10 @@ function DeviceDetailPage() {
                 {di.model && <div><dt className="text-xs text-muted-foreground">Modello</dt><dd>{di.model}</dd></div>}
                 {di.serial_number && <div><dt className="text-xs text-muted-foreground">Serial Number</dt><dd className="font-mono text-xs">{di.serial_number}</dd></div>}
                 {di.system_type && <div><dt className="text-xs text-muted-foreground">Tipo sistema</dt><dd className="text-xs">{di.system_type}</dd></div>}
-                {di.cpu_model && <div className="col-span-2"><dt className="text-xs text-muted-foreground">CPU</dt><dd className="text-xs">{di.cpu_model}</dd></div>}
-                {di.cpu_cores && <div><dt className="text-xs text-muted-foreground">Core / Thread</dt><dd>{di.cpu_cores}{di.cpu_threads ? ` / ${di.cpu_threads}` : ""}</dd></div>}
-                {di.cpu_speed_mhz && <div><dt className="text-xs text-muted-foreground">Frequenza</dt><dd>{(di.cpu_speed_mhz / 1000).toFixed(1)} GHz</dd></div>}
-                {di.ram_total_gb && <div><dt className="text-xs text-muted-foreground">RAM totale</dt><dd className="font-semibold">{di.ram_total_gb} GB</dd></div>}
+                {di.cpu_model && <div className="col-span-2"><dt className="text-xs text-muted-foreground">CPU{di.cpu_manufacturer ? ` (${di.cpu_manufacturer})` : ""}</dt><dd className="text-xs">{di.cpu_model}</dd></div>}
+                {di.cpu_cores && <div><dt className="text-xs text-muted-foreground">Core / Thread</dt><dd>{di.cpu_cores}{di.cpu_threads ? ` / ${di.cpu_threads}` : ""}{di.processor_count && di.processor_count > 1 ? ` × ${di.processor_count} socket` : ""}</dd></div>}
+                {di.cpu_speed_mhz && <div><dt className="text-xs text-muted-foreground">Frequenza</dt><dd>{(di.cpu_speed_mhz / 1000).toFixed(2)} GHz</dd></div>}
+                {di.ram_total_gb && <div><dt className="text-xs text-muted-foreground">RAM totale</dt><dd className="font-semibold">{di.ram_total_gb} GB{di.ram_free_mb != null ? <span className="text-muted-foreground font-normal text-xs ml-1">({Math.round(di.ram_free_mb / 1024 * 10) / 10} GB liberi)</span> : null}</dd></div>}
                 {di.bios_version && <div><dt className="text-xs text-muted-foreground">BIOS</dt><dd className="text-xs">{di.bios_manufacturer ? `${di.bios_manufacturer} ` : ""}{di.bios_version}</dd></div>}
               </dl>
               {di.gpu && di.gpu.length > 0 && (
@@ -871,10 +1024,92 @@ function DeviceDetailPage() {
             </div>
             )}
 
-            {/* === DISCHI === */}
+            {/* === NAS: inventario SNMP (RAID / dischi MIB) + sintesi mdstat === */}
+            {di.nas_inventory?.snmp && (di.nas_inventory.snmp.disks?.length || di.nas_inventory.snmp.raids?.length || di.nas_inventory.snmp.volumes_snmp?.length || di.nas_inventory.snmp.temperature_c != null) ? (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><Layers className="h-3.5 w-3.5" /> Storage — SNMP</h4>
+              {di.nas_inventory.snmp.temperature_c != null && (
+                <p className="text-xs text-muted-foreground mb-2">Temperatura sistema (SNMP): {di.nas_inventory.snmp.temperature_c} °C</p>
+              )}
+              {di.nas_inventory.snmp.disks && di.nas_inventory.snmp.disks.length > 0 && (
+                <div className="mb-3">
+                  <dt className="text-xs text-muted-foreground mb-1">Dischi (MIB)</dt>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {di.nas_inventory.snmp.disks.map((d, i) => (
+                      <div key={i} className="border rounded-md p-2 text-xs space-y-0.5">
+                        {d.model && <div className="font-medium">{d.model}</div>}
+                        <div className="flex flex-wrap gap-1 font-mono text-[10px] text-muted-foreground">
+                          {d.id && <span>ID {d.id}</span>}
+                          {d.status && <Badge variant="outline" className="text-[10px]">{d.status}</Badge>}
+                          {d.temperature_c != null && <span>{d.temperature_c}°C</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {di.nas_inventory.snmp.raids && di.nas_inventory.snmp.raids.length > 0 && (
+                <div className="mb-3">
+                  <dt className="text-xs text-muted-foreground mb-1">RAID / pool (SNMP)</dt>
+                  <div className="space-y-1">
+                    {di.nas_inventory.snmp.raids.map((r, i) => (
+                      <div key={i} className="border rounded-md p-2 text-xs flex flex-wrap gap-2 justify-between">
+                        <span className="font-medium">{r.name ?? `Gruppo ${i + 1}`}</span>
+                        {r.status && <Badge variant="secondary" className="text-[10px]">{r.status}</Badge>}
+                        {(r.total_gb != null || r.free_gb != null) && (
+                          <span className="text-muted-foreground">{r.free_gb != null ? `${r.free_gb} GB liberi` : ""}{r.total_gb != null ? ` / ${r.total_gb} GB` : ""}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {di.nas_inventory.snmp.volumes_snmp && di.nas_inventory.snmp.volumes_snmp.length > 0 && (
+                <div>
+                  <dt className="text-xs text-muted-foreground mb-1">Volumi (SNMP)</dt>
+                  <div className="flex flex-wrap gap-2">
+                    {di.nas_inventory.snmp.volumes_snmp.map((v, i) => (
+                      <Badge key={i} variant="outline" className="text-xs">{v.name}{v.size_gb != null ? ` — ${v.size_gb} GB` : ""}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            ) : null}
+
+            {di.nas_inventory?.ssh?.mdstat_summary ? (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><Layers className="h-3.5 w-3.5" /> RAID (kernel)</h4>
+              <pre className="text-[10px] font-mono bg-muted/50 rounded-md p-2 overflow-x-auto whitespace-pre-wrap">{di.nas_inventory.ssh.mdstat_summary}</pre>
+            </div>
+            ) : null}
+
+            {/* === DISCHI FISICI === */}
+            {di.physical_disks && di.physical_disks.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><HardDrive className="h-3.5 w-3.5" /> Dischi fisici</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                {di.physical_disks.map((d, i) => (
+                  <div key={i} className="border rounded-md p-2 text-xs space-y-0.5">
+                    <div className="font-mono font-semibold text-[11px]">{d.device}</div>
+                    {d.model && <div className="font-medium">{d.model}</div>}
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {d.size_gb != null && <Badge variant="secondary" className="text-[10px]">{d.size_gb} GB</Badge>}
+                      {d.interface_type && <Badge variant="outline" className="text-[10px]">{d.interface_type}</Badge>}
+                      {d.rotational != null && <Badge variant="outline" className="text-[10px]">{d.rotational ? "HDD" : "SSD"}</Badge>}
+                    </div>
+                    {d.vendor && <div className="text-muted-foreground">{d.vendor}</div>}
+                    {d.serial && <div className="font-mono text-muted-foreground text-[10px]">{d.serial}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+            )}
+
+            {/* === VOLUMI / FILESYSTEM === */}
             {di.disks && di.disks.length > 0 && (
             <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><HardDrive className="h-3.5 w-3.5" /> Dischi {di.disk_total_gb ? <span className="font-normal">— {di.disk_total_gb} GB totali, {di.disk_free_gb} GB liberi</span> : null}</h4>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><HardDrive className="h-3.5 w-3.5" /> {di.physical_disks ? "Volumi / Filesystem" : "Dischi"} {di.disk_total_gb ? <span className="font-normal">— {di.disk_total_gb} GB totali, {di.disk_free_gb} GB liberi</span> : null}</h4>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                 {di.disks.map((d, i) => {
                   const pct = d.size_gb && d.free_gb ? Math.round(((d.size_gb - d.free_gb) / d.size_gb) * 100) : null;
@@ -974,10 +1209,73 @@ function DeviceDetailPage() {
             </div>
             )}
 
-            {/* === SOFTWARE === */}
-            {((di.key_software && di.key_software.length > 0) || (di.installed_software_count != null && di.installed_software_count > 0)) && (
+            {/* === UTENTI / SESSIONI (solo Windows) === */}
+            {isWin && (di.last_logged_on_user || (di.logged_on_users && di.logged_on_users.length > 0) || (di.user_profiles && di.user_profiles.length > 0)) && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Utenti</h4>
+
+              {/* Ultimo utente loggato */}
+              {di.last_logged_on_user && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-muted-foreground text-xs">Ultimo accesso:</span>
+                  <span className="font-mono font-medium text-xs">{di.last_logged_on_user}</span>
+                </div>
+              )}
+
+              {/* Sessioni attive */}
+              {di.logged_on_users && di.logged_on_users.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1.5">Sessioni attive ({di.logged_on_users.length})</p>
+                  <div className="flex flex-wrap gap-2">
+                    {di.logged_on_users.map((u, i) => (
+                      <div key={i} className="border rounded-md px-2 py-1 text-xs flex items-center gap-1.5 bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
+                        <span className="font-mono font-medium">{u.username}</span>
+                        {u.session_type && <Badge variant="secondary" className="text-[10px] py-0">{u.session_type}</Badge>}
+                        {u.logon_time && <span className="text-muted-foreground">{new Date(u.logon_time).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Profili utente */}
+              {di.user_profiles && di.user_profiles.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1.5">Profili sul sistema ({di.user_profiles.length})</p>
+                  <div className="space-y-1.5">
+                    {di.user_profiles.map((p, i) => (
+                      <div key={i} className={`border rounded-md p-2 text-xs ${p.loaded ? "border-green-200 dark:border-green-800" : ""}`}>
+                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {p.loaded && <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />}
+                            <span className="font-mono font-semibold">{p.ad_display_name || p.username}</span>
+                            {p.ad_display_name && p.username && p.ad_display_name !== p.username && (
+                              <span className="font-mono text-muted-foreground">({p.username})</span>
+                            )}
+                            {p.ad_enabled === false && <Badge variant="destructive" className="text-[10px] py-0">Disabilitato</Badge>}
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {p.ad_department && <Badge variant="outline" className="text-[10px] py-0">{p.ad_department}</Badge>}
+                            {p.ad_title && <Badge variant="outline" className="text-[10px] py-0">{p.ad_title}</Badge>}
+                            {p.last_use && <span className="text-muted-foreground text-[10px]">Ultimo uso: {new Date(p.last_use).toLocaleDateString("it-IT")}</span>}
+                          </div>
+                        </div>
+                        {p.ad_email && <div className="text-muted-foreground mt-0.5">{p.ad_email}</div>}
+                        {p.ad_last_logon && <div className="text-muted-foreground text-[10px]">Ultimo login AD: {new Date(p.ad_last_logon).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            )}
+
+            {/* === SOFTWARE / PACCHETTI === */}
+            {((di.key_software && di.key_software.length > 0) || (di.installed_software_count != null && di.installed_software_count > 0) || (di.packages_count != null && di.packages_count > 0)) && (
             <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><Package className="h-3.5 w-3.5" /> Software {di.installed_software_count ? `(${di.installed_software_count} installati)` : ""}</h4>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><Package className="h-3.5 w-3.5" /> {isLinux ? "Pacchetti" : "Software"} {di.installed_software_count ? `(${di.installed_software_count} installati)` : di.packages_count ? `(${di.packages_count} pacchetti)` : ""}</h4>
               {di.key_software && di.key_software.length > 0 && (
                 <div className="space-y-1">
                   {di.key_software.map((s, i) => (
@@ -992,8 +1290,8 @@ function DeviceDetailPage() {
             </div>
             )}
 
-            {/* Fallback per device non-Windows: mostra campi base SNMP */}
-            {!isWin && (
+            {/* Fallback per device SNMP/generico: mostra campi base */}
+            {!hasDetailedInfo && (
             <dl className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 text-sm">
               {di.sysname && <div><dt className="text-xs font-medium text-muted-foreground uppercase tracking-wider">sysName</dt><dd className="font-mono mt-0.5">{di.sysname}</dd></div>}
               {di.model && <div><dt className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</dt><dd className="mt-0.5">{di.model}</dd></div>}
@@ -1258,16 +1556,17 @@ function DeviceDetailPage() {
       )}
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className={DIALOG_PANEL_COMPACT_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border/50 px-4 pt-4 pb-3">
             <DialogTitle>Modifica {getClassificationLabel(device.classification ?? "") || device.device_type}</DialogTitle>
-            <CardDescription>
-              Modifica identificazione, gruppo, profilo e credenziali. Il profilo vendor determina i comandi usati per acquisire i dati.
+            <CardDescription className="text-xs leading-snug">
+              Identificazione, profilo marca, protocollo e credenziali. Il vendor seleziona i comandi di acquisizione.
             </CardDescription>
           </DialogHeader>
-          <form onSubmit={handleEdit} className="space-y-5">
+          <DialogScrollableArea className="px-4 py-3">
+          <form onSubmit={handleEdit} className="space-y-4">
             <div className="space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">Identificazione</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Identificazione</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Nome</Label>
@@ -1308,88 +1607,42 @@ function DeviceDetailPage() {
                 )}
               </div>
             </div>
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">Gruppo e profilo</p>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs flex items-center">Classificazione<Tip text="Categoria in cui appare nella lista dispositivi (es. Router, Switch, Storage)." /></Label>
-                  <Select value={editClassification} onValueChange={(v) => setEditClassification(v ?? "")}>
-                    <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
-                    <SelectContent>
-                      {DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown").map((c) => (
-                        <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs flex items-center">Vendor<Tip text="Profilo che determina i comandi SSH/SNMP usati (es. MikroTik, Cisco, HP ProCurve)." /></Label>
-                  <Select value={editVendor} onValueChange={(v) => { setEditVendor(v ?? ""); if (v !== "hp") setEditVendorSubtype(null); }}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="mikrotik">MikroTik</SelectItem>
-                      <SelectItem value="ubiquiti">Ubiquiti</SelectItem>
-                      <SelectItem value="cisco">Cisco</SelectItem>
-                      <SelectItem value="hp">HP / Aruba</SelectItem>
-                      <SelectItem value="omada">TP-Link Omada</SelectItem>
-                      <SelectItem value="stormshield">Stormshield</SelectItem>
-                      <SelectItem value="proxmox">Proxmox</SelectItem>
-                      <SelectItem value="vmware">VMware</SelectItem>
-                      <SelectItem value="linux">Linux</SelectItem>
-                      <SelectItem value="windows">Windows</SelectItem>
-                      <SelectItem value="synology">Synology</SelectItem>
-                      <SelectItem value="qnap">QNAP</SelectItem>
-                      <SelectItem value="other">Altro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {editVendor === "hp" && (
-                  <div className="space-y-1">
-                    <Label className="text-xs">Sottotipo HP</Label>
-                    <Select value={editVendorSubtype ?? "none"} onValueChange={(v) => setEditVendorSubtype(v === "none" ? null : v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Generico</SelectItem>
-                        <SelectItem value="procurve">ProCurve / Aruba</SelectItem>
-                        <SelectItem value="comware">Comware</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                <div className="space-y-1">
-                  <Label className="text-xs flex items-center">Protocollo<Tip text="Come connettersi: SSH per comandi, SNMP per porte/LLDP, WinRM per Windows." /></Label>
-                  <Select value={editProtocol} onValueChange={(v) => setEditProtocol(v ?? "")}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ssh">SSH</SelectItem>
-                      <SelectItem value="snmp_v2">SNMP v2</SelectItem>
-                      <SelectItem value="snmp_v3">SNMP v3</SelectItem>
-                      <SelectItem value="api">API REST</SelectItem>
-                      <SelectItem value="winrm">WinRM (Windows)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs flex items-center">Tipo scansione<Tip text="Forza il tipo di scan. Automatico = rilevato da vendor/protocollo." /></Label>
-                  <Select value={editScanTarget ?? "none"} onValueChange={(v) => setEditScanTarget(v === "none" ? null : v)}>
-                    <SelectTrigger><SelectValue placeholder="Automatico" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Automatico</SelectItem>
-                      <SelectItem value="proxmox">Proxmox</SelectItem>
-                      <SelectItem value="vmware">VMware</SelectItem>
-                      <SelectItem value="windows">Windows</SelectItem>
-                      <SelectItem value="linux">Linux</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
+            <DeviceFormFields
+              mode="edit"
+              credentials={credentials}
+              idPrefix="device-detail-edit"
+              showIdentificazione={false}
+              showProfilo={true}
+              showCredenziali={false}
+              classification={editClassification}
+              vendor={editVendor}
+              vendorSubtype={editVendorSubtype}
+              protocol={editProtocol}
+              scanTarget={editScanTarget}
+              productProfile={editProductProfile}
+              onClassificationChange={setEditClassification}
+              onVendorChange={(v) => {
+                setEditVendor(v ?? "");
+                if (v !== "hp") setEditVendorSubtype(null);
+              }}
+              onVendorSubtypeChange={setEditVendorSubtype}
+              onProtocolChange={setEditProtocol}
+              onScanTargetChange={setEditScanTarget}
+              onProductProfileChange={(v) => {
+                setEditProductProfile(v);
+                setEditVendorSubtype(vendorSubtypeFromProductProfile(v as ProductProfileId));
+              }}
+            />
             <CredentialAssignmentFields
               credentials={credentials}
               credentialId={editCredentialId}
               snmpCredentialId={editSnmpCredentialId}
               onCredentialIdChange={(v) => setEditCredentialId(v)}
               onSnmpCredentialIdChange={(v) => setEditSnmpCredentialId(v)}
+              primarySectionTitle={primaryCredLabels.section}
+              primarySelectLabel={primaryCredLabels.select}
+              snmpSectionTitle="SNMP aggiuntivo (porte, LLDP, spanning tree)"
+              snmpSelectLabel="Credenziale SNMP (archivio)"
               credentialPlaceholder="Nessuna (credenziali inline)"
               showInlineCreds={editProtocol === "ssh" || editProtocol === "api" || editProtocol === "winrm"}
               inlineUsername={device.username || ""}
@@ -1407,6 +1660,7 @@ function DeviceDetailPage() {
               {editSaving ? "Salvataggio..." : "Salva modifiche"}
             </Button>
           </form>
+          </DialogScrollableArea>
         </DialogContent>
       </Dialog>
 
@@ -1415,7 +1669,7 @@ function DeviceDetailPage() {
           {isMikrotik && <TabsTrigger value="mikrotik">MikroTik</TabsTrigger>}
           {device.device_type === "router" && <TabsTrigger value="arp">Tabella ARP</TabsTrigger>}
           {totalPorts > 0 && <TabsTrigger value="ports">Schema Porte ({totalPorts})</TabsTrigger>}
-          {device.device_type === "switch" && <TabsTrigger value="mac">MAC Table ({device.mac_port_entries.length})</TabsTrigger>}
+          {device.device_type === "switch" && <TabsTrigger value="mac">MAC Table ({device.mac_port_entries?.length ?? 0})</TabsTrigger>}
         </TabsList>
 
         {/* Tab MikroTik */}
@@ -1643,7 +1897,7 @@ function DeviceDetailPage() {
             <Card>
               <CardHeader className="py-3">
                 <CardTitle className="text-base">
-                  ARP Entries ({device.arp_entries.length})
+                  ARP Entries ({device.arp_entries?.length ?? 0})
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -1658,7 +1912,7 @@ function DeviceDetailPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {device.arp_entries.length === 0 ? (
+                    {(device.arp_entries?.length ?? 0) === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5}>
                           <EmptyState
@@ -1668,7 +1922,7 @@ function DeviceDetailPage() {
                           />
                         </TableCell>
                       </TableRow>
-                    ) : device.arp_entries.map((entry) => (
+                    ) : (device.arp_entries ?? []).map((entry) => (
                       <TableRow key={entry.id}>
                         <TableCell className="font-mono">{entry.ip || "—"}</TableCell>
                         <TableCell className="font-mono text-xs">{entry.mac}</TableCell>

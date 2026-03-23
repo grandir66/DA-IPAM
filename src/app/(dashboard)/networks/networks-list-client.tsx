@@ -10,8 +10,11 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogScrollableArea,
   DialogTitle,
   DialogTrigger,
+  DIALOG_PANEL_SM_CLASS,
+  DIALOG_PANEL_WIDE_CLASS,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -415,13 +418,14 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
       )}
 
       <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+          <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
             <DialogTitle>Assegna credenziali alle reti selezionate</DialogTitle>
             <CardDescription>
               Assegna credenziali SSH e/o SNMP ai router/switch delle {selectedIds.size} reti selezionate. Stessa maschera usata per dispositivi e subnet.
             </CardDescription>
           </DialogHeader>
+          <DialogScrollableArea className="px-4 py-3">
           <div className="space-y-4">
             <CredentialAssignmentFields
               credentials={credentials}
@@ -438,6 +442,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
               {assignSaving ? "Applicazione..." : "Applica"}
             </Button>
           </div>
+          </DialogScrollableArea>
         </DialogContent>
       </Dialog>
 
@@ -480,10 +485,11 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
             <Plus className="h-4 w-4 mr-2" />
             Aggiungi Rete
           </DialogTrigger>
-          <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-            <DialogHeader>
+          <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+            <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
               <DialogTitle>Nuova Rete</DialogTitle>
             </DialogHeader>
+            <DialogScrollableArea className="px-4 py-3">
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="cidr">Rete (IP/Subnet)</Label>
@@ -576,6 +582,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
               />
               <Button type="submit" className="w-full">Crea Rete</Button>
             </form>
+            </DialogScrollableArea>
           </DialogContent>
         </Dialog>
 
@@ -589,13 +596,14 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
             }
           }}
         >
-          <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
+          <DialogContent className={DIALOG_PANEL_SM_CLASS}>
+            <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
               <DialogTitle className="flex items-center gap-2">
                 <Router className="h-5 w-5" />
                 Nuovo router (ARP)
               </DialogTitle>
             </DialogHeader>
+            <DialogScrollableArea className="px-4 py-3">
             <form ref={quickRouterFormRef} onSubmit={handleQuickRouterSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="qr_name">Nome</Label>
@@ -664,6 +672,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
                 </Button>
               </div>
             </form>
+            </DialogScrollableArea>
           </DialogContent>
         </Dialog>
       </div>

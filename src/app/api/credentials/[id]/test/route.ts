@@ -106,9 +106,11 @@ export async function POST(
       }
       try {
         const { runWinrmCommand } = await import("@/lib/devices/winrm-run");
+        const { getAdRealm } = await import("@/lib/db");
         const port = typeof body.port === "number" ? body.port : 5985;
+        const adInfo = getAdRealm();
         await withTimeout(
-          runWinrmCommand(host, port, username, password, "echo test", false),
+          runWinrmCommand(host, port, username, password, "echo test", false, adInfo?.realm || ""),
           TEST_TIMEOUT_MS
         );
         return NextResponse.json({ success: true, message: "Connessione WinRM riuscita" });

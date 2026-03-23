@@ -91,6 +91,13 @@ export function getClassificationLabel(classification: string): string {
   return CLASSIFICATION_LABELS[classification] ?? classification.replace(/_/g, " ");
 }
 
+/** Ordina gli slug di classificazione per etichetta visibile (locale it), per menu select. */
+export function sortClassificationsByDisplayLabel(classifications: readonly string[]): string[] {
+  return [...classifications].sort((a, b) =>
+    getClassificationLabel(a).localeCompare(getClassificationLabel(b), "it", { sensitivity: "base" })
+  );
+}
+
 /**
  * Macro-categoria per dashboard / filtri (raggruppa tipi tecnici).
  * - **infrastructure**: switching, routing, Wi‑Fi, sicurezza perimetrale

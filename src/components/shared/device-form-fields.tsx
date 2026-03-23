@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,42 +11,79 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CredentialAssignmentFields, type CredentialItem } from "./credential-assignment-fields";
-import { getClassificationLabel, DEVICE_CLASSIFICATIONS_ORDERED } from "@/lib/device-classifications";
+import {
+  getClassificationLabel,
+  DEVICE_CLASSIFICATIONS_ORDERED,
+  sortClassificationsByDisplayLabel,
+} from "@/lib/device-classifications";
+import {
+  getVendorDeviceProfile,
+  coerceProtocolForVendor,
+  coerceScanTargetForVendor,
+  scanTargetToSelectValue,
+  type ScanTargetKey,
+} from "@/lib/vendor-device-profile";
+import {
+  getProductProfilesForVendor,
+  getDefaultProductProfileForVendor,
+  isValidProductProfileForVendor,
+  vendorSubtypeFromProductProfile,
+  productProfileRequiresNamedCredential,
+  type ProductProfileId,
+} from "@/lib/device-product-profiles";
+import type { NetworkDevice } from "@/types";
+import {
+  getDefaultNetworkDeviceVendorOptions,
+  type NetworkDeviceVendorSelectOption,
+} from "@/lib/network-device-vendor-options";
 import { Info } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-function Tip({ text }: { text: string }) {
+function Tip({ text, wide }: { text: string; wide?: boolean }) {
   return (
-    <span className="relative group/tip inline-flex ml-1 cursor-help">
+    <span className="relative group/tip inline-flex shrink-0 ml-0.5 cursor-help align-middle">
       <Info className="h-3 w-3 text-muted-foreground" />
-      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-popover text-popover-foreground border rounded shadow-md max-w-[220px] whitespace-normal opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto transition-opacity z-50">
+      <span
+        className={cn(
+          "absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 rounded border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md opacity-0 transition-opacity pointer-events-none group-hover/tip:pointer-events-auto group-hover/tip:opacity-100",
+          wide ? "max-w-[min(20rem,calc(100vw-2rem))] whitespace-pre-line" : "max-w-[220px] whitespace-normal"
+        )}
+      >
         {text}
       </span>
     </span>
   );
 }
 
-const VENDORS = [
-  { value: "mikrotik", label: "MikroTik" },
-  { value: "ubiquiti", label: "Ubiquiti" },
-  { value: "cisco", label: "Cisco" },
-  { value: "hp", label: "HP / Aruba" },
-  { value: "omada", label: "TP-Link Omada" },
-  { value: "stormshield", label: "Stormshield" },
-  { value: "proxmox", label: "Proxmox" },
-  { value: "vmware", label: "VMware" },
-  { value: "linux", label: "Linux" },
-  { value: "windows", label: "Windows" },
-  { value: "synology", label: "Synology" },
-  { value: "qnap", label: "QNAP" },
-  { value: "other", label: "Altro" },
-] as const;
+/** Riga campo: etichetta + info sulla stessa riga, controllo sotto — allinea le colonne in griglia. */
+function FieldRow({
+  label,
+  tip,
+  tipWide,
+  children,
+}: {
+  label: string;
+  tip: string;
+  tipWide?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex min-h-[1.25rem] items-center gap-0.5">
+        <Label className="text-xs font-medium leading-none">{label}</Label>
+        <Tip text={tip} wide={tipWide} />
+      </div>
+      {children}
+    </div>
+  );
+}
 
 const PROTOCOLS = [
   { value: "ssh", label: "SSH" },
   { value: "snmp_v2", label: "SNMP v2" },
   { value: "snmp_v3", label: "SNMP v3" },
   { value: "api", label: "API REST" },
-  { value: "winrm", label: "WinRM (Windows)" },
+  { value: "winrm", label: "WinRM / WMI" },
 ] as const;
 
 const SCAN_TARGETS = [
@@ -89,6 +127,9 @@ export interface DeviceFormFieldsProps {
   onVendorSubtypeChange?: (v: string | null) => void;
   onProtocolChange?: (v: string) => void;
   onScanTargetChange?: (v: string | null) => void;
+  /** Profilo prodotto (marca + tipologia): obbligatorio per acquisizione inventario dedicata */
+  productProfile?: string | null;
+  onProductProfileChange?: (v: string | null) => void;
   onCredentialIdChange?: (v: string | null) => void;
   onSnmpCredentialIdChange?: (v: string | null) => void;
   /** Default per create */
@@ -97,6 +138,8 @@ export interface DeviceFormFieldsProps {
   defaultProtocol?: string;
   /** Mostra URL API (Proxmox) - quando vendor=proxmox o classification=hypervisor */
   showApiUrl?: boolean;
+  /** Opzioni vendor (es. test). Se omesso, caricamento da GET /api/device-vendor-options */
+  vendorOptions?: NetworkDeviceVendorSelectOption[];
 }
 
 /**
@@ -130,25 +173,100 @@ export function DeviceFormFields({
   onVendorSubtypeChange,
   onProtocolChange,
   onScanTargetChange,
+  productProfile = null,
+  onProductProfileChange,
   onCredentialIdChange,
   onSnmpCredentialIdChange,
   defaultClassification = "router",
   defaultVendor = "mikrotik",
   defaultProtocol = "ssh",
   showApiUrl = false,
+  vendorOptions: vendorOptionsProp,
 }: DeviceFormFieldsProps) {
   const isBulk = mode === "bulk";
   const noChange = isBulk ? "Non modificare" : "";
-  const classificationOptions = DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown");
+  const classificationOptionsSorted = useMemo(
+    () => sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown")),
+    []
+  );
+
+  const [vendorOptions, setVendorOptions] = useState<NetworkDeviceVendorSelectOption[]>(() =>
+    vendorOptionsProp ?? getDefaultNetworkDeviceVendorOptions()
+  );
+
+  useEffect(() => {
+    if (vendorOptionsProp) {
+      setVendorOptions(vendorOptionsProp);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/device-vendor-options")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { options?: NetworkDeviceVendorSelectOption[] } | null) => {
+        if (cancelled || !data?.options?.length) return;
+        setVendorOptions(data.options);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [vendorOptionsProp]);
+
+  const vendorProfile = getVendorDeviceProfile(vendor || "other");
+  const protocolOptions = PROTOCOLS.filter((p) =>
+    vendorProfile.allowedProtocols.includes(p.value as NetworkDevice["protocol"])
+  ).sort((a, b) => a.label.localeCompare(b.label, "it", { sensitivity: "base" }));
+  const scanTargetOptions = useMemo(() => {
+    const profile = getVendorDeviceProfile(vendor || "other");
+    return SCAN_TARGETS.filter((s) => profile.allowedScanTargets.includes(s.value as ScanTargetKey)).sort((a, b) =>
+      a.label.localeCompare(b.label, "it", { sensitivity: "base" })
+    );
+  }, [vendor]);
+  const productProfileOptions = useMemo(
+    () =>
+      [...getProductProfilesForVendor(vendor || "other")].sort((a, b) =>
+        a.label.localeCompare(b.label, "it", { sensitivity: "base" })
+      ),
+    [vendor]
+  );
+
+  const vendorOptionsSorted = useMemo(
+    () => [...vendorOptions].sort((a, b) => a.label.localeCompare(b.label, "it", { sensitivity: "base" })),
+    [vendorOptions]
+  );
+
+  // Allinea protocollo e tipo scansione al profilo vendor (es. dati DB incoerenti dopo cambio manuale)
+  useEffect(() => {
+    if (isBulk && !vendor) return;
+    const pv = vendor || "other";
+    const nextP = coerceProtocolForVendor(pv, protocol);
+    if (nextP !== protocol) onProtocolChange?.(nextP);
+    const nextS = coerceScanTargetForVendor(pv, scanTarget ?? undefined);
+    if (nextS !== (scanTarget ?? null)) onScanTargetChange?.(nextS);
+  }, [vendor, isBulk, protocol, scanTarget, onProtocolChange, onScanTargetChange]);
+
+  // Profilo prodotto coerente con la marca
+  useEffect(() => {
+    if (!onProductProfileChange) return;
+    const pv = vendor || "other";
+    if (!productProfile || !isValidProductProfileForVendor(pv, productProfile)) {
+      onProductProfileChange(getDefaultProductProfileForVendor(pv));
+    }
+  }, [vendor, productProfile, onProductProfileChange]);
+
+  const vendorMarcaTip =
+    "Solo la marca del dispositivo. Protocollo, tipo scansione e credenziali seguono il profilo vendor; le scansioni non modificano la marca. " +
+    "Nel menu marca, passa il mouse sulle voci per OID/IPAM se presenti.\n\n" +
+    vendorProfile.shortHint;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {showIdentificazione && (mode === "create" || mode === "edit") && (
         <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">Identificazione</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Identificazione</p>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Nome</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Nome</Label>
               <Input
                 name="name"
                 required={!isBulk}
@@ -157,8 +275,8 @@ export function DeviceFormFields({
                 onChange={(e) => onNameChange?.(e.target.value)}
               />
             </div>
-            <div className="space-y-2">
-              <Label>IP / Host</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs">IP / Host</Label>
               <Input
                 name="host"
                 required={!isBulk}
@@ -200,96 +318,138 @@ export function DeviceFormFields({
       )}
 
       {showProfilo && (
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">Gruppo e profilo</p>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs flex items-center">
-                Classificazione
-                <Tip text="Categoria in cui appare nella lista dispositivi (es. Router, Switch, Storage)." />
-              </Label>
+        <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Profilo dispositivo</p>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
+            <FieldRow
+              label="Classificazione"
+              tip="Categoria in lista dispositivi (Router, Switch, Storage, …)."
+            >
               <Select
                 value={classification || (isBulk ? "" : defaultClassification)}
                 onValueChange={(v) => onClassificationChange?.(v ?? "")}
               >
-                <SelectTrigger><SelectValue placeholder={noChange || "Seleziona"} /></SelectTrigger>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={noChange || "Seleziona"} />
+                </SelectTrigger>
                 <SelectContent>
                   {isBulk && <SelectItem value="">{noChange}</SelectItem>}
-                  {classificationOptions.map((c) => (
-                    <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>
+                  {classificationOptionsSorted.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {getClassificationLabel(c)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs flex items-center">
-                Vendor
-                <Tip text="Profilo che determina i comandi SSH/SNMP usati per acquisire dati (es. MikroTik, Cisco, HP)." />
-              </Label>
+            </FieldRow>
+
+            <FieldRow label="Marca (vendor)" tip={vendorMarcaTip} tipWide>
               <Select
                 value={vendor || (isBulk ? "" : defaultVendor)}
-                onValueChange={(v) => { onVendorChange?.(v ?? ""); if (v !== "hp") onVendorSubtypeChange?.(null); }}
+                onValueChange={(v) => {
+                  const nv = v ?? "";
+                  onVendorChange?.(nv);
+                  const nextProto = coerceProtocolForVendor(nv, protocol);
+                  if (nextProto !== protocol) onProtocolChange?.(nextProto);
+                  const nextSt = coerceScanTargetForVendor(nv, scanTarget ?? undefined);
+                  if (nextSt !== (scanTarget ?? null)) onScanTargetChange?.(nextSt);
+                  const defP = getDefaultProductProfileForVendor(nv);
+                  onProductProfileChange?.(defP);
+                  onVendorSubtypeChange?.(vendorSubtypeFromProductProfile(defP as ProductProfileId));
+                }}
               >
-                <SelectTrigger><SelectValue placeholder={noChange} /></SelectTrigger>
-                <SelectContent>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={noChange || "Scegli marca"} />
+                </SelectTrigger>
+                <SelectContent className="max-w-[min(28rem,calc(100vw-2rem))]">
                   {isBulk && <SelectItem value="">{noChange}</SelectItem>}
-                  {VENDORS.map((v) => (
-                    <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
+                  {vendorOptionsSorted.map((v) => (
+                    <SelectItem
+                      key={v.value}
+                      value={v.value}
+                      title={v.hint ? `${v.label}. ${v.hint}` : v.label}
+                    >
+                      <span className="truncate">{v.label}</span>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            {vendor === "hp" && (
-              <div className="space-y-1">
-                <Label className="text-xs">Sottotipo HP</Label>
-                <Select
-                  value={vendorSubtype ?? "none"}
-                  onValueChange={(v) => onVendorSubtypeChange?.(v === "none" ? null : v)}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Generico</SelectItem>
-                    <SelectItem value="procurve">ProCurve / Aruba</SelectItem>
-                    <SelectItem value="comware">Comware</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            <div className="space-y-1">
-              <Label className="text-xs flex items-center">
-                Protocollo
-                <Tip text="Come connettersi: SSH per comandi, SNMP per porte/LLDP, WinRM per Windows." />
-              </Label>
+            </FieldRow>
+          </div>
+
+          {onProductProfileChange && (
+            <FieldRow
+              label="Tipologia prodotto"
+              tip="Dettaglio per questa marca (es. switch gestito). Influenza scan e inventario. Catalogo OID: Impostazioni → SNMP."
+              tipWide
+            >
+              <Select
+                value={productProfile ?? getDefaultProductProfileForVendor(vendor)}
+                onValueChange={(v) => {
+                  if (!v) return;
+                  onProductProfileChange(v);
+                  onVendorSubtypeChange?.(vendorSubtypeFromProductProfile(v as ProductProfileId));
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {productProfileOptions.map((opt) => (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FieldRow>
+          )}
+
+          <div className="grid grid-cols-1 gap-3 border-t border-border/40 pt-3 sm:grid-cols-2 sm:gap-4">
+            <FieldRow
+              label="Protocollo principale"
+              tip="Connessione per query e comandi (SSH, SNMP, API, WinRM). Con SNMP puoi aggiungere credenziale SNMP sotto per porte/LLDP."
+              tipWide
+            >
               <Select
                 value={protocol || (isBulk ? "" : defaultProtocol)}
                 onValueChange={(v) => onProtocolChange?.(v ?? "")}
               >
-                <SelectTrigger><SelectValue placeholder={noChange} /></SelectTrigger>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={noChange} />
+                </SelectTrigger>
                 <SelectContent>
                   {isBulk && <SelectItem value="">{noChange}</SelectItem>}
-                  {PROTOCOLS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                  {protocolOptions.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs flex items-center">
-                Tipo scansione
-                <Tip text="Forza il tipo di scan. Automatico = rilevato da vendor/protocollo." />
-              </Label>
+            </FieldRow>
+
+            <FieldRow
+              label="Tipo scansione"
+              tip="Es. Proxmox VE vs PBS. «Automatico» usa il default del vendor."
+            >
               <Select
-                value={scanTarget ?? "none"}
+                value={scanTargetToSelectValue(scanTarget ?? null)}
                 onValueChange={(v) => onScanTargetChange?.(v === "none" ? null : v)}
               >
-                <SelectTrigger><SelectValue placeholder="Automatico" /></SelectTrigger>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Automatico" />
+                </SelectTrigger>
                 <SelectContent>
-                  {SCAN_TARGETS.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  {scanTargetOptions.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </FieldRow>
           </div>
         </div>
       )}
@@ -306,7 +466,7 @@ export function DeviceFormFields({
               <SelectTrigger><SelectValue placeholder={noChange || "Seleziona"} /></SelectTrigger>
               <SelectContent>
                 {isBulk && <SelectItem value="">{noChange}</SelectItem>}
-                {classificationOptions.map((c) => (
+                {classificationOptionsSorted.map((c) => (
                   <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>
                 ))}
               </SelectContent>
@@ -316,20 +476,30 @@ export function DeviceFormFields({
       )}
 
       {showCredenziali && onCredentialIdChange && onSnmpCredentialIdChange && (
-        <CredentialAssignmentFields
-          credentials={credentials}
-          credentialId={credentialId}
-          snmpCredentialId={snmpCredentialId}
-          onCredentialIdChange={onCredentialIdChange}
-          onSnmpCredentialIdChange={onSnmpCredentialIdChange}
-          credentialPlaceholder={isBulk ? noChange : "Nessuna (credenziali inline)"}
-          snmpPlaceholder={isBulk ? noChange : "Nessuna"}
-          showInlineCreds={!isBulk && (protocol === "ssh" || protocol === "api" || protocol === "winrm")}
-          inlineUsername={inlineUsername}
-          showPortAndCommunity={!isBulk}
-          portDefaultValue={port}
-          idPrefix={idPrefix}
-        />
+        <>
+          {productProfile &&
+            productProfileRequiresNamedCredential(productProfile as ProductProfileId) &&
+            (!credentialId || credentialId === "none") && (
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-200/90">
+                Assegna una <strong>credenziale nominata</strong> dall&apos;archivio per dispositivi gestiti (profilo prodotto e test connessione).
+              </p>
+            )}
+          <CredentialAssignmentFields
+            credentials={credentials}
+            credentialId={credentialId}
+            snmpCredentialId={snmpCredentialId}
+            onCredentialIdChange={onCredentialIdChange}
+            onSnmpCredentialIdChange={onSnmpCredentialIdChange}
+            sshFilter={vendorProfile.credentialSshFilter}
+            credentialPlaceholder={isBulk ? noChange : "Nessuna (credenziali inline)"}
+            snmpPlaceholder={isBulk ? noChange : "Nessuna"}
+            showInlineCreds={!isBulk && (protocol === "ssh" || protocol === "api" || protocol === "winrm")}
+            inlineUsername={inlineUsername}
+            showPortAndCommunity={!isBulk}
+            portDefaultValue={port}
+            idPrefix={idPrefix}
+          />
+        </>
       )}
     </div>
   );

@@ -6,8 +6,8 @@
 import type { DeviceFingerprintSnapshot } from "@/types";
 import type { DeviceClassification } from "./device-classifier";
 
-/** Allineato a discovery.ts per il campo model da fingerprint */
-export const FINGERPRINT_CLASSIFICATION_MIN_CONFIDENCE = 0.72;
+/** Soglia per applicare classificazione da fingerprint (sotto: restano hostname/MAC/regole classiche). */
+export const FINGERPRINT_CLASSIFICATION_MIN_CONFIDENCE = 0.56;
 
 /**
  * Mappa `final_device` del fingerprint (firme porte, SNMP, banner) → slug classificazione.
@@ -27,6 +27,8 @@ const FINAL_DEVICE_TO_CLASSIFICATION: Record<string, DeviceClassification> = {
   "Dahua / NVR": "telecamera",
   "Telecam XMEye/clone": "telecamera",
   "Windows Server": "server_windows",
+  /** Regola TTL + indizi porte (etichetta «Windows» da device_fingerprint_rules) */
+  "Windows": "server_windows",
   "Linux generico": "server_linux",
   "HPE iLO": "server",
   "PBX SIP (FreePBX/3CX)": "voip",

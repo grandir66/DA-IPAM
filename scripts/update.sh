@@ -35,6 +35,12 @@ git pull origin "$BRANCH"
 echo ">>> npm install..."
 npm install
 
+# Venv Python WinRM (stesso set di install.sh): aggiorna dopo git pull
+if [ -f "${HOME}/.da-invent-venv/bin/pip" ]; then
+  echo ">>> pip WinRM (venv ~/.da-invent-venv)..."
+  "${HOME}/.da-invent-venv/bin/pip" install -q -U pywinrm requests-ntlm requests-credssp gssapi 2>/dev/null || true
+fi
+
 # Build
 echo ">>> npm run build..."
 npm run build

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getHostsByNetwork, upsertHost } from "@/lib/db";
+import { getHostsByNetwork, getAllHosts, upsertHost } from "@/lib/db";
 import { HostSchema } from "@/lib/validators";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
@@ -7,10 +7,16 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const networkId = searchParams.get("network_id");
-    if (!networkId) {
-      return NextResponse.json({ error: "network_id richiesto" }, { status: 400 });
+    const limitParam = searchParams.get("limit");
+
+    if (networkId) {
+      const hosts = getHostsByNetwork(Number(networkId));
+      return NextResponse.json(hosts);
     }
-    const hosts = getHostsByNetwork(Number(networkId));
+
+    // Senza network_id: restituisce tutti gli host (per pagina Dispositivi unificata)
+    const limit = limitParam ? Math.min(Math.max(1, parseInt(limitParam, 10)), 50000) : 10000;
+    const hosts = getAllHosts(limit);
     return NextResponse.json(hosts);
   } catch (error) {
     console.error("Error fetching hosts:", error);

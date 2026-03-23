@@ -1,12 +1,52 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { PageTransition } from "./page-transition";
 import { GlobalSearch } from "./global-search";
 import { ThemeToggle } from "./theme-toggle";
+import { UpdateChecker } from "./update-checker";
+
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const [onboardingGateReady, setOnboardingGateReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/onboarding/status")
+      .then(async (r) => {
+        if (r.status === 401 || r.status === 403) {
+          router.replace("/login");
+          return;
+        }
+        const data = (await r.json()) as { completed?: boolean };
+        if (cancelled) return;
+        if (data.completed === false) {
+          router.replace("/onboarding");
+          return;
+        }
+        setOnboardingGateReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setOnboardingGateReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  if (!onboardingGateReady) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground text-sm">Caricamento…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
+        <UpdateChecker />
         <Sidebar />
         <main className="md:ml-64 min-h-screen flex flex-col">
           {/* Top bar */}

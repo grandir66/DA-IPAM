@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS network_devices (
   last_proxmox_scan_at TEXT,
   last_proxmox_scan_result TEXT,
   scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux')),
+  product_profile TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -199,6 +200,7 @@ INSERT OR IGNORE INTO nmap_profiles (name, description, args, snmp_community, cu
 
 -- Default settings
 INSERT OR IGNORE INTO settings (key, value) VALUES ('server_port', '3000');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('onboarding_completed', '0');
 
 CREATE TABLE IF NOT EXISTS status_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -421,6 +423,9 @@ CREATE INDEX IF NOT EXISTS idx_arp_entries_mac_timestamp ON arp_entries(mac, tim
 CREATE INDEX IF NOT EXISTS idx_mac_port_entries_device_mac ON mac_port_entries(device_id, mac);
 CREATE INDEX IF NOT EXISTS idx_status_history_checked_host ON status_history(checked_at DESC, host_id);
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run);
+CREATE INDEX IF NOT EXISTS idx_hosts_network_status ON hosts(network_id, status);
+CREATE INDEX IF NOT EXISTS idx_hosts_known_status ON hosts(known_host, status);
+CREATE INDEX IF NOT EXISTS idx_hosts_network_mac ON hosts(network_id, mac);
 CREATE INDEX IF NOT EXISTS idx_inventory_audit_log_asset_created ON inventory_audit_log(asset_id, created_at DESC);
 
 -- Credenziali Windows/Linux aggiuntive per subnet (ordine = tentativi sequenziali)
@@ -631,6 +636,7 @@ CREATE TABLE IF NOT EXISTS dhcp_leases (
   lease_start TEXT,
   lease_expires TEXT,
   description TEXT,
+  dynamic_lease INTEGER,
   host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
   network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
   last_synced TEXT DEFAULT (datetime('now')),

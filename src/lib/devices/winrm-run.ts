@@ -1,8 +1,11 @@
 /**
  * Esecuzione comandi WinRM tramite pywinrm (Python subprocess).
  *
- * WinRM su HTTP richiede SPNEGO session encryption (NTLM + message sealing)
- * che pywinrm gestisce nativamente. Il bridge Python è in winrm-bridge.py.
+ * Catena di trasporto: Kerberos → NTLM → CredSSP → Basic
+ * - Kerberos: auto-kinit con credenziali + auto-setup krb5.conf dal realm AD
+ * - NTLM: SPNEGO session encryption via pyspnego + requests-ntlm
+ * - CredSSP: fallback se NTLM rifiutato
+ * - Basic: ultimo tentativo (richiede AllowUnencrypted=true)
  */
 
 import { execFile } from "child_process";
@@ -28,32 +31,40 @@ function findPython(): string {
     "/usr/bin/python3",
   ];
   for (const c of candidates) {
-    try { if (fs.existsSync(c)) return c; } catch {}
+    try { if (fs.existsSync(c)) return c; } catch { /* skip */ }
   }
   return "python3";
 }
 
+/**
+ * Esegue un comando su un host Windows tramite WinRM.
+ * @param realm - Dominio AD (es. "azienda.local") per Kerberos auto-kinit. Opzionale.
+ */
 export function runWinrmCommand(
   host: string,
   port: number,
   username: string,
   password: string,
   command: string,
-  usePowershell: boolean
+  usePowershell: boolean,
+  realm?: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const pythonBin = findPython();
-    const input = JSON.stringify({ host, port, username, password, command, usePowershell });
+    const input = JSON.stringify({
+      host, port, username, password, command, usePowershell,
+      realm: realm || "",
+    });
 
     const child = execFile(
       pythonBin,
       [BRIDGE_SCRIPT],
       { timeout: TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8" },
-      (error, stdout, stderr) => {
+      (error, stdout, _stderr) => {
         if (error && !stdout) {
           const msg = error.message || "Errore esecuzione WinRM bridge";
           if (msg.includes("ENOENT")) {
-            reject(new Error(`Python non trovato: ${pythonBin}. Installa pywinrm: python3 -m pip install pywinrm requests-ntlm`));
+            reject(new Error(`Python non trovato: ${pythonBin}. Installa pywinrm: python3 -m pip install pywinrm requests-ntlm requests-credssp`));
           } else if (msg.includes("ETIMEDOUT") || msg.includes("timeout") || error.killed) {
             reject(new Error("Timeout: il dispositivo non ha risposto."));
           } else {

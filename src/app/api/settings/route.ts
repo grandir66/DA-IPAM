@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { getAllSettings, setSetting } from "@/lib/db";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET() {
   try {
+    const authCheck = await requireAuth();
+    if (isAuthError(authCheck)) return authCheck;
     const settings = getAllSettings();
     return NextResponse.json(settings);
   } catch (error) {

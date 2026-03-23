@@ -219,7 +219,20 @@ function evaluateRules(
         const max = rule.ttl_max ?? 999;
         if (ctx.ttl >= min && ctx.ttl <= max) {
           criteriaMatched++;
-          confidence = Math.max(confidence, 0.3);
+          let ttlScore = 0.3;
+          if (rule.device_label === "Windows") {
+            const smbRpc = [135, 139, 445].filter((p) => ctx.openTcpSet.has(p)).length;
+            const hasRdpOrWinrm = ctx.openTcpSet.has(3389) || ctx.openTcpSet.has(5985);
+            const hasSmb = ctx.openTcpSet.has(445);
+            if (smbRpc >= 2 || (hasSmb && hasRdpOrWinrm)) {
+              ttlScore = 0.68;
+            } else if (smbRpc >= 1 || hasRdpOrWinrm || hasSmb) {
+              ttlScore = 0.58;
+            } else {
+              ttlScore = 0.4;
+            }
+          }
+          confidence = Math.max(confidence, ttlScore);
           source = source ? `${source}+ttl` : "ttl";
           matched = true;
         }

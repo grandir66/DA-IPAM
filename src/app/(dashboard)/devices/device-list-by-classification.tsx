@@ -11,8 +11,11 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogScrollableArea,
   DialogTitle,
   DialogTrigger,
+  DIALOG_PANEL_COMPACT_CLASS,
+  DIALOG_PANEL_WIDE_CLASS,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -41,10 +44,29 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Trash2, RefreshCw, Pencil, ArrowLeft, Link2, Server, ExternalLink, Settings2, ShieldCheck, Check, X, Database } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { getClassificationLabel, DEVICE_CLASSIFICATIONS_ORDERED } from "@/lib/device-classifications";
+import {
+  getClassificationLabel,
+  DEVICE_CLASSIFICATIONS_ORDERED,
+  sortClassificationsByDisplayLabel,
+} from "@/lib/device-classifications";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
+import {
+  inferProductProfileFromLegacy,
+  PRODUCT_PROFILE_LABELS,
+  vendorSubtypeFromProductProfile,
+  type ProductProfileId,
+} from "@/lib/device-product-profiles";
 import type { NetworkDevice } from "@/types";
+import { getDefaultNetworkDeviceVendorOptions } from "@/lib/network-device-vendor-options";
+
+const BULK_PROTOCOL_SELECT_OPTIONS = [
+  { value: "ssh", label: "SSH" },
+  { value: "snmp_v2", label: "SNMP v2" },
+  { value: "snmp_v3", label: "SNMP v3" },
+  { value: "api", label: "API REST" },
+  { value: "winrm", label: "WinRM (Windows)" },
+].sort((a, b) => a.label.localeCompare(b.label, "it", { sensitivity: "base" }));
 
 type DeviceOrHost = (NetworkDevice & { source?: "network_device"; host_id?: never }) | {
   id: string;
@@ -116,11 +138,13 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   const [createCredentialId, setCreateCredentialId] = useState<string | null>(null);
   const [createSnmpCredentialId, setCreateSnmpCredentialId] = useState<string | null>(null);
   const [createVendorSubtype, setCreateVendorSubtype] = useState<string | null>(null);
+  const [createProductProfile, setCreateProductProfile] = useState<string | null>(null);
   const [editVendor, setEditVendor] = useState<string>("mikrotik");
   const [editProtocol, setEditProtocol] = useState<string>("ssh");
   const [editCredentialId, setEditCredentialId] = useState<string | null>(null);
   const [editSnmpCredentialId, setEditSnmpCredentialId] = useState<string | null>(null);
   const [editVendorSubtype, setEditVendorSubtype] = useState<string | null>(null);
+  const [editProductProfile, setEditProductProfile] = useState<string | null>(null);
   const [editScanTarget, setEditScanTarget] = useState<string | null>(null);
   const [editClassification, setEditClassification] = useState<string>("");
   const [querying, setQuerying] = useState<number | null>(null);
@@ -163,6 +187,14 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
       setEditVendorSubtype("vendor_subtype" in editingDevice ? editingDevice.vendor_subtype ?? null : null);
       setEditScanTarget((editingDevice as { scan_target?: string | null }).scan_target ?? null);
       setEditClassification((editingDevice as { classification?: string | null }).classification ?? effectiveClassification);
+      if ((editingDevice as { source?: string }).source !== "host") {
+        const nd = editingDevice as NetworkDevice;
+        setEditProductProfile(
+          nd.product_profile ?? inferProductProfileFromLegacy(nd.vendor, nd.device_type, nd.vendor_subtype, nd.scan_target)
+        );
+      } else {
+        setEditProductProfile(null);
+      }
     }
   }, [editingDevice, effectiveClassification]);
 
@@ -529,6 +561,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
       snmp_credential_id: createSnmpCredentialId && createSnmpCredentialId !== "none" ? Number(createSnmpCredentialId) : null,
       vendor_subtype: createVendor === "hp" && createVendorSubtype ? createVendorSubtype : null,
     };
+    if (createProductProfile) body.product_profile = createProductProfile;
     if (SCANNABLE_CLASSIFICATIONS.includes(effectiveClassification) && effectiveClassification !== "router" && effectiveClassification !== "switch" && effectiveClassification !== "hypervisor") {
       body.classification = effectiveClassification;
     }
@@ -592,6 +625,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
       vendor_subtype: editVendor === "hp" && editVendorSubtype ? editVendorSubtype : null,
       scan_target: editScanTarget || null,
     };
+    if (editProductProfile) body.product_profile = editProductProfile;
     if (editClassification) body.classification = editClassification;
     formData.forEach((val, key) => {
       if (key === "password" || key === "community_string") {
@@ -644,8 +678,8 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
         {showAddButton && (
           <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setHostToAdd(null); }}>
             <DialogTrigger render={<Button><Plus className="h-4 w-4 mr-2" />Aggiungi {isHypervisor ? "Proxmox" : meta.title}</Button>} />
-            <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-              <DialogHeader>
+            <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+              <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
                 <DialogTitle>Nuovo {isHypervisor ? "Hypervisor Proxmox" : meta.title}</DialogTitle>
                 {isHypervisor && (
                   <CardDescription>SSH (porta 22) è consigliato per evitare problemi SSL; puoi usare anche API (porta 8006). Credenziale tipo &quot;SSH&quot; o &quot;API&quot; con username root e password.</CardDescription>
@@ -662,6 +696,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                   </CardDescription>
                 )}
               </DialogHeader>
+              <DialogScrollableArea className="px-4 py-3">
               <form key={hostToAdd ? `from-host-${hostToAdd.host}` : "new"} onSubmit={handleCreate} className="space-y-4">
                 <DeviceFormFields
                   mode="create"
@@ -687,9 +722,15 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                   onCredentialIdChange={setCreateCredentialId}
                   onSnmpCredentialIdChange={setCreateSnmpCredentialId}
                   onVendorSubtypeChange={setCreateVendorSubtype}
+                  productProfile={createProductProfile}
+                  onProductProfileChange={(v) => {
+                    setCreateProductProfile(v);
+                    setCreateVendorSubtype(vendorSubtypeFromProductProfile(v as ProductProfileId));
+                  }}
                 />
                 <Button type="submit" className="w-full">Aggiungi {isHypervisor ? "Proxmox" : meta.title}</Button>
               </form>
+              </DialogScrollableArea>
             </DialogContent>
           </Dialog>
         )}
@@ -779,6 +820,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                 {(devices.some(isHostItem) || devices.some((d) => (d as { network_name?: string }).network_name)) && <TableHead>Rete</TableHead>}
                 {isHypervisor && devices.some((d) => !isHostItem(d)) && <TableHead>Ultimo scan</TableHead>}
                 <TableHead>Vendor</TableHead>
+                {devices.some((d) => !isHostItem(d)) && <TableHead>Profilo</TableHead>}
                 {devices.some((d) => !isHostItem(d)) && <TableHead>Protocollo</TableHead>}
                 {devices.some((d) => !isHostItem(d)) && (
                   <TableHead className="text-center" title="Risultato test credenziali (Testa credenziali)">
@@ -825,6 +867,13 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     </TableCell>
                   )}
                   <TableCell className="capitalize">{dev.vendor || "—"}</TableCell>
+                  {devices.some((d) => !isHostItem(d)) && (
+                    <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate">
+                      {!isHostItem(dev) && (dev as NetworkDevice).product_profile
+                        ? PRODUCT_PROFILE_LABELS[(dev as NetworkDevice).product_profile as ProductProfileId] ?? (dev as NetworkDevice).product_profile
+                        : "—"}
+                    </TableCell>
+                  )}
                   {devices.some((d) => !isHostItem(d)) && (
                     <TableCell className="uppercase text-xs">{!isHostItem(dev) ? (dev as NetworkDevice).protocol : "—"}</TableCell>
                   )}
@@ -995,13 +1044,14 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
         </TooltipProvider>
 
         <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
-          <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-            <DialogHeader>
+          <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+            <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
               <DialogTitle>Assegna caratteristiche a {selectedIds.size} elementi</DialogTitle>
               <CardDescription>
                 Stessa struttura della maschera di modifica singola. Solo i campi compilati verranno applicati ai dispositivi selezionati.
               </CardDescription>
             </DialogHeader>
+            <DialogScrollableArea className="px-4 py-3">
             <form onSubmit={handleBulkUpdate} className="space-y-6">
               <div className="space-y-3">
                 <p className="text-sm font-medium text-muted-foreground">Gruppo</p>
@@ -1011,7 +1061,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     <SelectTrigger><SelectValue placeholder="Non modificare" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">Non modificare</SelectItem>
-                      {DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown").map((c) => (
+                      {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown")).map((c) => (
                         <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>
                       ))}
                     </SelectContent>
@@ -1028,11 +1078,9 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                       <SelectTrigger><SelectValue placeholder="Non modificare" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">Non modificare</SelectItem>
-                        <SelectItem value="ssh">SSH</SelectItem>
-                        <SelectItem value="snmp_v2">SNMP v2</SelectItem>
-                        <SelectItem value="snmp_v3">SNMP v3</SelectItem>
-                        <SelectItem value="api">API REST</SelectItem>
-                        <SelectItem value="winrm">WinRM (Windows)</SelectItem>
+                        {BULK_PROTOCOL_SELECT_OPTIONS.map((p) => (
+                          <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">Come connettersi: SSH, SNMP, WinRM per Windows.</p>
@@ -1043,19 +1091,9 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                       <SelectTrigger><SelectValue placeholder="Non modificare" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">Non modificare</SelectItem>
-                        <SelectItem value="mikrotik">MikroTik</SelectItem>
-                        <SelectItem value="ubiquiti">Ubiquiti</SelectItem>
-                        <SelectItem value="cisco">Cisco</SelectItem>
-                        <SelectItem value="hp">HP / Aruba</SelectItem>
-                        <SelectItem value="omada">TP-Link Omada</SelectItem>
-                        <SelectItem value="stormshield">Stormshield</SelectItem>
-                        <SelectItem value="proxmox">Proxmox</SelectItem>
-                        <SelectItem value="vmware">VMware</SelectItem>
-                        <SelectItem value="linux">Linux</SelectItem>
-                        <SelectItem value="windows">Windows</SelectItem>
-                        <SelectItem value="synology">Synology</SelectItem>
-                        <SelectItem value="qnap">QNAP</SelectItem>
-                        <SelectItem value="other">Altro</SelectItem>
+                        {getDefaultNetworkDeviceVendorOptions().map((v) => (
+                          <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">Profilo che determina i comandi usati (es. Windows per WinRM).</p>
@@ -1081,6 +1119,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                 </Button>
               </div>
             </form>
+            </DialogScrollableArea>
           </DialogContent>
         </Dialog>
         </>
@@ -1299,24 +1338,25 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
 
       {showAddButton && (
         <Dialog open={editDialogOpen} onOpenChange={(open) => { setEditDialogOpen(open); if (!open) setEditingDevice(null); }}>
-          <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-            <DialogHeader>
+          <DialogContent className={DIALOG_PANEL_COMPACT_CLASS}>
+            <DialogHeader className="shrink-0 space-y-1 border-b border-border/50 px-4 pt-4 pb-3">
               <DialogTitle>Modifica {meta.title}</DialogTitle>
-              <CardDescription>
-                Modifica identificazione, gruppo, profilo e credenziali. Il profilo vendor determina i comandi usati per acquisire i dati.
+              <CardDescription className="text-xs leading-snug">
+                Identificazione, profilo marca, protocollo e credenziali. Il vendor seleziona i comandi di acquisizione.
               </CardDescription>
             </DialogHeader>
+            <DialogScrollableArea className="px-4 py-3">
             {editingDevice && (
-              <form onSubmit={handleUpdate} className="space-y-6">
-                <div className="space-y-3">
-                  <p className="text-sm font-medium text-muted-foreground">Identificazione</p>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Nome</Label>
+              <form onSubmit={handleUpdate} className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Identificazione</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Nome</Label>
                       <Input name="name" required defaultValue={editingDevice.name} placeholder="Nome del dispositivo" />
                     </div>
-                    <div className="space-y-2">
-                      <Label>IP</Label>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">IP</Label>
                       <Input name="host" required defaultValue={editingDevice.host} placeholder="192.168.1.1" />
                     </div>
                     {!isHostItem(editingDevice) && (editingDevice.device_type === "hypervisor" || (editingDevice as { scan_target?: string }).scan_target === "proxmox") && (
@@ -1336,86 +1376,34 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     )}
                   </div>
                 </div>
-                <div className="space-y-3">
-                  <p className="text-sm font-medium text-muted-foreground">Gruppo e profilo</p>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Classificazione / Gruppo</Label>
-                      <Select value={editClassification} onValueChange={(v) => setEditClassification(v ?? "")}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown").map((c) => (
-                            <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">Categoria in cui appare nella lista dispositivi (es. Router, Switch, Storage).</p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Vendor</Label>
-                      <Select value={editVendor} onValueChange={(v) => { setEditVendor(v ?? ""); if (v !== "hp") setEditVendorSubtype(null); }}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="mikrotik">MikroTik</SelectItem>
-                          <SelectItem value="ubiquiti">Ubiquiti</SelectItem>
-                          <SelectItem value="cisco">Cisco</SelectItem>
-                          <SelectItem value="hp">HP / Aruba</SelectItem>
-                          <SelectItem value="omada">TP-Link Omada</SelectItem>
-                          <SelectItem value="stormshield">Stormshield</SelectItem>
-                          <SelectItem value="proxmox">Proxmox</SelectItem>
-                          <SelectItem value="vmware">VMware</SelectItem>
-                          <SelectItem value="linux">Linux</SelectItem>
-                          <SelectItem value="windows">Windows</SelectItem>
-                          <SelectItem value="synology">Synology</SelectItem>
-                          <SelectItem value="qnap">QNAP</SelectItem>
-                          <SelectItem value="other">Altro</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">Profilo che determina i comandi SSH/SNMP (es. MikroTik, Cisco, HP ProCurve).</p>
-                    </div>
-                    {editVendor === "hp" && (
-                      <div className="space-y-2">
-                        <Label>Sottotipo HP</Label>
-                        <Select value={editVendorSubtype ?? "none"} onValueChange={(v) => setEditVendorSubtype(v === "none" ? null : v)}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Generico</SelectItem>
-                            <SelectItem value="procurve">ProCurve / Aruba</SelectItem>
-                            <SelectItem value="comware">Comware</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    <div className="space-y-2">
-                      <Label>Protocollo</Label>
-                      <Select value={editProtocol} onValueChange={(v) => setEditProtocol(v ?? "")}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ssh">SSH</SelectItem>
-                          <SelectItem value="snmp_v2">SNMP v2</SelectItem>
-                          <SelectItem value="snmp_v3">SNMP v3</SelectItem>
-                          <SelectItem value="api">API REST</SelectItem>
-                          <SelectItem value="winrm">WinRM (Windows)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">Come connettersi: SSH per comandi, SNMP per porte/LLDP, WinRM per Windows.</p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Tipo di scansione</Label>
-                      <Select value={editScanTarget ?? "none"} onValueChange={(v) => setEditScanTarget(v === "none" ? null : v)}>
-                        <SelectTrigger><SelectValue placeholder="Automatico" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Automatico</SelectItem>
-                          <SelectItem value="proxmox">Proxmox</SelectItem>
-                          <SelectItem value="vmware">VMware</SelectItem>
-                          <SelectItem value="windows">Windows</SelectItem>
-                          <SelectItem value="linux">Linux</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">Forza il tipo di scan senza pulsanti dedicati. Automatico = rilevato da vendor/protocollo.</p>
-                    </div>
-                  </div>
-                </div>
+                {!isHostItem(editingDevice) && (
+                  <DeviceFormFields
+                    mode="edit"
+                    credentials={credentials}
+                    idPrefix="device-classification-edit"
+                    showIdentificazione={false}
+                    showProfilo={true}
+                    showCredenziali={false}
+                    classification={editClassification}
+                    vendor={editVendor}
+                    vendorSubtype={editVendorSubtype}
+                    protocol={editProtocol}
+                    scanTarget={editScanTarget}
+                    productProfile={editProductProfile}
+                    onClassificationChange={setEditClassification}
+                    onVendorChange={(v) => {
+                      setEditVendor(v ?? "");
+                      if (v !== "hp") setEditVendorSubtype(null);
+                    }}
+                    onVendorSubtypeChange={setEditVendorSubtype}
+                    onProtocolChange={setEditProtocol}
+                    onScanTargetChange={setEditScanTarget}
+                    onProductProfileChange={(v) => {
+                      setEditProductProfile(v);
+                      setEditVendorSubtype(vendorSubtypeFromProductProfile(v as ProductProfileId));
+                    }}
+                  />
+                )}
                 <CredentialAssignmentFields
                   credentials={credentials}
                   credentialId={editCredentialId}
@@ -1440,6 +1428,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                 <Button type="submit" className="w-full">Salva modifiche</Button>
               </form>
             )}
+            </DialogScrollableArea>
           </DialogContent>
         </Dialog>
       )}

@@ -150,3 +150,18 @@
     color: #E7EAEB;
   }
 }
+
+@layer utilities {
+  /**
+   * Scroll senza barra visibile (modal/dialog): rotella e touch funzionano ancora.
+   */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+}

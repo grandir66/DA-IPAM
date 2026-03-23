@@ -13,8 +13,10 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogScrollableArea,
   DialogTitle,
   DialogTrigger,
+  DIALOG_PANEL_WIDE_CLASS,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -38,13 +40,30 @@ import { ScanProgress } from "@/components/shared/scan-progress";
 import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Monitor, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
-
-type HostWithDevice = Host & { device_id?: number; device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string } };
-import { cn } from "@/lib/utils";
-import { DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel } from "@/lib/device-classifications";
+import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
+import {
+  DEVICE_CLASSIFICATIONS_ORDERED,
+  getClassificationLabel,
+  sortClassificationsByDisplayLabel,
+} from "@/lib/device-classifications";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
-import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
 import { NetworkCredentialChains } from "@/components/shared/network-credential-chains";
+import {
+  getDefaultNetworkDeviceVendorOptions,
+  type NetworkDeviceVendorSelectOption,
+} from "@/lib/network-device-vendor-options";
+import { DeviceFormFields } from "@/components/shared/device-form-fields";
+import {
+  coerceProtocolForVendor,
+  coerceScanTargetForVendor,
+} from "@/lib/vendor-device-profile";
+import { ipAssignmentShortLabel } from "@/lib/ip-assignment";
+
+type HostWithDevice = Host & {
+  device_id?: number;
+  device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string };
+  ad_dns_host_name?: string | null;
+};
 
 const REFRESH_INTERVALS = [
   { value: 0, label: "Off" },
@@ -113,11 +132,18 @@ export function NetworkDetailClient({
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
   const [bulkAddClassification, setBulkAddClassification] = useState("server");
   const [bulkAddProtocol, setBulkAddProtocol] = useState("ssh");
-  const [bulkAddVendor, setBulkAddVendor] = useState("mikrotik");
+  const [bulkAddVendor, setBulkAddVendor] = useState("other");
   const [bulkAddCredentialId, setBulkAddCredentialId] = useState<string | null>(null);
   const [bulkAddSnmpCredentialId, setBulkAddSnmpCredentialId] = useState<string | null>(null);
   const [bulkAddVendorSubtype, setBulkAddVendorSubtype] = useState<string | null>(null);
+  const [bulkAddScanTarget, setBulkAddScanTarget] = useState<string | null>(null);
+  const [bulkAddProductProfile, setBulkAddProductProfile] = useState<string | null>(null);
+  const [bulkVendorOptions, setBulkVendorOptions] = useState<NetworkDeviceVendorSelectOption[]>(() =>
+    getDefaultNetworkDeviceVendorOptions()
+  );
   const [bulkAddSaving, setBulkAddSaving] = useState(false);
+  const [bulkTestResult, setBulkTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [bulkTesting, setBulkTesting] = useState(false);
   const [bulkHostBusy, setBulkHostBusy] = useState(false);
   const [credWindows, setCredWindows] = useState<number[]>(initialCredentialChains.windows);
   const [credLinux, setCredLinux] = useState<number[]>(initialCredentialChains.linux);
@@ -136,6 +162,20 @@ export function NetworkDetailClient({
       .then((r) => (r.ok ? r.json() : []))
       .then(setAddDeviceCredentials)
       .catch(() => setAddDeviceCredentials([]));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/device-vendor-options")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { options?: NetworkDeviceVendorSelectOption[] } | null) => {
+        if (cancelled || !data?.options?.length) return;
+        setBulkVendorOptions(data.options);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const refreshCredentialsList = useCallback(async () => {
@@ -204,7 +244,10 @@ export function NetworkDetailClient({
 
   async function saveHostField(hostId: number, field: "custom_name" | "notes" | "classification" | "known_host", value: string | number, deviceId?: number) {
     try {
-      const payload = field === "known_host" ? { known_host: value as 0 | 1 } : { [field]: value };
+      const payload =
+        field === "known_host"
+          ? { known_host: value as 0 | 1 }
+          : { [field]: value };
       const res = await fetch(`/api/hosts/${hostId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -212,7 +255,18 @@ export function NetworkDetailClient({
       });
       if (res.ok) {
         const updated = await res.json();
-        setHosts((prev) => prev.map((h) => (h.id === hostId ? { ...(updated as Host), device_id: (h as HostWithDevice).device_id } : h)));
+        setHosts((prev) =>
+          prev.map((h) =>
+            h.id === hostId
+              ? {
+                  ...(updated as HostWithDevice),
+                  device_id: (h as HostWithDevice).device_id,
+                  device: (h as HostWithDevice).device,
+                  ad_dns_host_name: (updated as HostWithDevice).ad_dns_host_name ?? (h as HostWithDevice).ad_dns_host_name,
+                }
+              : h
+          )
+        );
         if (field === "classification" && deviceId != null) {
           const patchRes = await fetch(`/api/devices/${deviceId}`, {
             method: "PUT",
@@ -275,9 +329,10 @@ export function NetworkDetailClient({
         host_ids: Array.from(selectedHostIds),
         classification: bulkAddClassification,
         protocol: bulkAddProtocol,
-        vendor_subtype: bulkAddProtocol === "ssh" && bulkAddVendor === "hp" && bulkAddVendorSubtype ? bulkAddVendorSubtype : null,
+        vendor: bulkAddVendor,
+        scan_target: bulkAddScanTarget,
       };
-      if (bulkAddProtocol === "ssh" || bulkAddProtocol === "api" || bulkAddProtocol === "winrm") body.vendor = bulkAddVendor;
+      if (bulkAddProductProfile) body.product_profile = bulkAddProductProfile;
       if (hasCred) body.credential_id = Number(bulkAddCredentialId);
       if (hasSnmpCred) body.snmp_credential_id = Number(bulkAddSnmpCredentialId);
       const res = await fetch("/api/devices/bulk", {
@@ -696,10 +751,11 @@ export function NetworkDetailClient({
                 <Pencil className="h-4 w-4 mr-2" />
                 Modifica
               </DialogTrigger>
-              <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-                <DialogHeader>
+              <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+                <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
                   <DialogTitle>Modifica Rete</DialogTitle>
                 </DialogHeader>
+                <DialogScrollableArea className="px-4 py-3">
                 <form onSubmit={handleSaveEdit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-cidr">Rete (IP/Subnet)</Label>
@@ -773,6 +829,7 @@ export function NetworkDetailClient({
                   {saving ? "Salvataggio..." : "Salva"}
                 </Button>
                 </form>
+                </DialogScrollableArea>
               </DialogContent>
             </Dialog>
           </div>
@@ -1140,100 +1197,107 @@ export function NetworkDetailClient({
         </Card>
       )}
 
-      <Dialog open={bulkAddOpen} onOpenChange={setBulkAddOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
+      <Dialog open={bulkAddOpen} onOpenChange={(open) => { setBulkAddOpen(open); if (!open) setBulkTestResult(null); }}>
+        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+          <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
             <DialogTitle>Aggiungi {selectedHostIds.size} dispositivo{selectedHostIds.size !== 1 ? "i" : ""}</DialogTitle>
             <CardDescription>
-              Categoria, protocollo di scansione (SSH/SNMP) e credenziali opzionali.
+              Configura profilo, protocollo e credenziali. Usa <strong>Prova connessione</strong> per testare le credenziali su uno degli host selezionati prima di salvare.
             </CardDescription>
           </DialogHeader>
+          <DialogScrollableArea className="px-4 py-3">
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Categoria</Label>
-              <Select value={bulkAddClassification} onValueChange={(v) => v && setBulkAddClassification(v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {getClassificationLabel(c)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Protocollo di scansione</Label>
-              <Select value={bulkAddProtocol} onValueChange={(v) => { if (v) { setBulkAddProtocol(v as "ssh" | "snmp_v2" | "snmp_v3" | "api" | "winrm"); if (v !== "ssh" && v !== "api" && v !== "winrm") setBulkAddVendorSubtype(null); else setBulkAddSnmpCredentialId(null); } }}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ssh">SSH</SelectItem>
-                  <SelectItem value="snmp_v2">SNMP v2</SelectItem>
-                  <SelectItem value="snmp_v3">SNMP v3</SelectItem>
-                  <SelectItem value="api">API</SelectItem>
-                  <SelectItem value="winrm">WinRM / WMI (Windows)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {(bulkAddProtocol === "ssh" || bulkAddProtocol === "api" || bulkAddProtocol === "winrm") && (
-              <>
-                <div className="space-y-2">
-                  <Label>Profilo vendor (per comandi SSH)</Label>
-                  <Select value={bulkAddVendor} onValueChange={(v) => { if (v) { setBulkAddVendor(v); if (v !== "hp") setBulkAddVendorSubtype(null); } }}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="mikrotik">MikroTik</SelectItem>
-                      <SelectItem value="cisco">Cisco</SelectItem>
-                      <SelectItem value="hp">HP</SelectItem>
-                      <SelectItem value="ubiquiti">Ubiquiti</SelectItem>
-                      <SelectItem value="omada">Omada</SelectItem>
-                      <SelectItem value="stormshield">Stormshield</SelectItem>
-                      <SelectItem value="proxmox">Proxmox</SelectItem>
-                      <SelectItem value="vmware">VMware</SelectItem>
-                      <SelectItem value="linux">Linux</SelectItem>
-                      <SelectItem value="windows">Windows</SelectItem>
-                      <SelectItem value="synology">Synology</SelectItem>
-                      <SelectItem value="qnap">QNAP</SelectItem>
-                      <SelectItem value="other">Altro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {bulkAddVendor === "hp" && (
-                  <div className="space-y-2">
-                    <Label>Sottotipo HP</Label>
-                    <Select value={bulkAddVendorSubtype ?? "procurve"} onValueChange={(v) => setBulkAddVendorSubtype(v === "procurve" || v === "comware" ? v : null)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="procurve">ProCurve</SelectItem>
-                        <SelectItem value="comware">Comware</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </>
-            )}
-            <CredentialAssignmentFields
+            <DeviceFormFields
+              mode="bulk"
               credentials={addDeviceCredentials}
+              idPrefix="network-bulk-add"
+              showIdentificazione={false}
+              showProfilo={true}
+              showCredenziali={true}
+              classification={bulkAddClassification}
+              vendor={bulkAddVendor}
+              vendorSubtype={bulkAddVendorSubtype}
+              protocol={bulkAddProtocol}
+              scanTarget={bulkAddScanTarget}
+              productProfile={bulkAddProductProfile}
+              onProductProfileChange={setBulkAddProductProfile}
               credentialId={bulkAddCredentialId}
               snmpCredentialId={bulkAddSnmpCredentialId}
+              onClassificationChange={(v) => setBulkAddClassification(v)}
+              onVendorChange={(v) => {
+                setBulkAddVendor(v);
+                if (v !== "hp") setBulkAddVendorSubtype(null);
+                const nextP = coerceProtocolForVendor(v, bulkAddProtocol);
+                if (nextP !== bulkAddProtocol) setBulkAddProtocol(nextP);
+                const nextS = coerceScanTargetForVendor(v, bulkAddScanTarget);
+                if (nextS !== bulkAddScanTarget) setBulkAddScanTarget(nextS);
+              }}
+              onVendorSubtypeChange={(v) => setBulkAddVendorSubtype(v)}
+              onProtocolChange={(v) => setBulkAddProtocol(v)}
+              onScanTargetChange={(v) => setBulkAddScanTarget(v)}
               onCredentialIdChange={(v) => setBulkAddCredentialId(v)}
               onSnmpCredentialIdChange={(v) => setBulkAddSnmpCredentialId(v)}
-              credentialPlaceholder="Nessuna"
-              snmpPlaceholder="Nessuna"
-              idPrefix="network-bulk-add"
+              vendorOptions={bulkVendorOptions}
+              defaultClassification="server"
+              defaultVendor="other"
+              defaultProtocol="ssh"
             />
-            <Button onClick={handleBulkAdd} disabled={bulkAddSaving} className="w-full">
-              {bulkAddSaving ? "Aggiunta in corso..." : "Aggiungi dispositivi"}
-            </Button>
+            {bulkTestResult && (
+              <div className={cn("text-sm px-3 py-2 rounded border", bulkTestResult.ok ? "border-green-500 bg-green-50 text-green-700" : "border-red-500 bg-red-50 text-red-700")}>
+                {bulkTestResult.message}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  if (selectedHostIds.size === 0) return;
+                  setBulkTesting(true);
+                  setBulkTestResult(null);
+                  try {
+                    const firstHostId = Array.from(selectedHostIds)[0];
+                    const firstHost = hosts.find((h) => h.id === firstHostId);
+                    if (!firstHost) {
+                      setBulkTestResult({ ok: false, message: "Host non trovato" });
+                      setBulkTesting(false);
+                      return;
+                    }
+                    const res = await fetch("/api/devices/test-provisional", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        host: firstHost.ip,
+                        vendor: bulkAddVendor,
+                        protocol: bulkAddProtocol,
+                        scan_target: bulkAddScanTarget,
+                        product_profile: bulkAddProductProfile,
+                        credential_id: bulkAddCredentialId && bulkAddCredentialId !== "none" ? Number(bulkAddCredentialId) : null,
+                        snmp_credential_id: bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none" ? Number(bulkAddSnmpCredentialId) : null,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                      setBulkTestResult({ ok: true, message: data.message || `Connessione a ${firstHost.ip} riuscita` });
+                    } else {
+                      setBulkTestResult({ ok: false, message: data.error || "Connessione fallita" });
+                    }
+                  } catch {
+                    setBulkTestResult({ ok: false, message: "Errore di rete" });
+                  } finally {
+                    setBulkTesting(false);
+                  }
+                }}
+                disabled={bulkTesting || bulkAddSaving}
+                className="flex-1"
+              >
+                {bulkTesting ? "Test in corso..." : "Prova connessione"}
+              </Button>
+              <Button onClick={handleBulkAdd} disabled={bulkAddSaving} className="flex-1">
+                {bulkAddSaving ? "Aggiunta in corso..." : "Aggiungi dispositivi"}
+              </Button>
+            </div>
           </div>
+          </DialogScrollableArea>
         </DialogContent>
       </Dialog>
 
@@ -1262,7 +1326,7 @@ export function NetworkDetailClient({
               >
                 <option value="">Tutte</option>
                 <option value="__empty__">— Senza classificazione</option>
-                {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
                   <option key={c} value={c}>{getClassificationLabel(c)}</option>
                 ))}
               </select>
@@ -1306,7 +1370,7 @@ export function NetworkDetailClient({
               >
                 <option value="">—</option>
                 <option value="__empty__">— Senza classificazione</option>
-                {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
                   <option key={c} value={c}>{getClassificationLabel(c)}</option>
                 ))}
               </select>
@@ -1326,22 +1390,21 @@ export function NetworkDetailClient({
                 <TableHead>IP</TableHead>
                 <TableHead>Stato</TableHead>
                 <TableHead>Conosciuto</TableHead>
+                <TableHead>DHCP</TableHead>
+                <TableHead title="Presente in Active Directory" className="w-10 text-center">AD</TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead>Classificazione</TableHead>
                 <TableHead title="Tipo dispositivo da fingerprint (porte, SNMP, banner)">Rilevato</TableHead>
                 <TableHead>Dispositivo</TableHead>
                 <TableHead>Vendor</TableHead>
                 <TableHead>Note</TableHead>
-                <TableHead>Hostname</TableHead>
-                <TableHead>MAC</TableHead>
                 <TableHead>Porte</TableHead>
-                <TableHead>Ultimo Contatto</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredHosts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={15} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={14} className="text-center text-muted-foreground py-8">
                     {hosts.length === 0
                       ? "Nessun host trovato. Avvia una scansione per scoprire i dispositivi."
                       : "Nessun host corrisponde ai filtri."}
@@ -1368,14 +1431,42 @@ export function NetworkDetailClient({
                         <ExternalLink className="h-4 w-4" />
                       </Button>
                     </TableCell>
-                    <TableCell className="font-mono font-medium">{host.ip}</TableCell>
-                    <TableCell><StatusBadge status={host.status} /></TableCell>
+                    <TableCell>
+                      <div className="font-mono font-medium">{host.ip}</div>
+                      {host.mac && <div className="font-mono text-[10px] text-muted-foreground">{host.mac}</div>}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={host.status} />
+                      {host.last_seen && (
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          {new Date(host.last_seen).toLocaleDateString("it-IT", { day: "2-digit", month: "short" })}{" "}
+                          {new Date(host.last_seen).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Switch
                         checked={!!host.known_host}
                         onCheckedChange={(v) => saveHostField(host.id, "known_host", v ? 1 : 0)}
                         title="Host conosciuto: monitoraggio continuo"
                       />
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()} className="min-w-[52px]">
+                      {(() => {
+                        const short = ipAssignmentShortLabel(host.ip_assignment ?? "unknown");
+                        return short ? (
+                          <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0 font-semibold tracking-tight">
+                            {short}
+                          </Badge>
+                        ) : null;
+                      })()}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {(host as HostWithDevice).ad_dns_host_name ? (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-semibold" title={(host as HostWithDevice).ad_dns_host_name!}>
+                          AD
+                        </Badge>
+                      ) : null}
                     </TableCell>
                     <TableCell
                       className="min-w-[120px] cursor-text"
@@ -1425,7 +1516,7 @@ export function NetworkDetailClient({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="__empty__">— Nessuna —</SelectItem>
-                            {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                            {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
                               <SelectItem key={c} value={c}>
                                 {getClassificationLabel(c)}
                               </SelectItem>
@@ -1494,28 +1585,30 @@ export function NetworkDetailClient({
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{host.hostname || host.dns_reverse || "—"}</TableCell>
-                    <TableCell className="font-mono text-xs">{host.mac || "—"}</TableCell>
-                    <TableCell className="text-xs font-mono">
+                    <TableCell
+                      className="text-xs font-mono max-w-[200px] cursor-default"
+                      title={host.open_ports ? hostOpenPortsToFullLabel(host.open_ports) : undefined}
+                    >
                       {host.open_ports ? (() => {
                         try {
                           const ports = JSON.parse(host.open_ports) as { port: number; protocol?: string }[];
+                          const sorted = [...ports].sort(
+                            (a, b) => a.port - b.port || String(a.protocol ?? "").localeCompare(String(b.protocol ?? ""))
+                          );
+                          const maxShown = 20;
                           return (
                             <>
-                              {ports.slice(0, 10).map((p, i) => (
+                              {sorted.slice(0, maxShown).map((p, i) => (
                                 <span key={`${p.port}-${p.protocol}`}>
                                   {i > 0 && ", "}
                                   <span className={p.protocol === "udp" ? "text-primary" : ""}>{p.port}{p.protocol === "udp" ? "/u" : ""}</span>
                                 </span>
                               ))}
-                              {ports.length > 10 ? ` +${ports.length - 10}` : ""}
+                              {sorted.length > maxShown ? ` +${sorted.length - maxShown}` : ""}
                             </>
                           );
                         } catch { return "—"; }
                       })() : "—"}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {host.last_seen ? new Date(host.last_seen).toLocaleString("it-IT") : "Mai"}
                     </TableCell>
                   </TableRow>
                 ))

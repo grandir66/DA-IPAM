@@ -1,5 +1,11 @@
 import type { NetworkDevice } from "@/types";
-import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString } from "@/lib/db";
+import {
+  getDeviceCredentials,
+  getDeviceCommunityString,
+  getDeviceSnmpV3Credentials,
+  getCredentialCommunityString,
+  getCredentialById,
+} from "@/lib/db";
 import { normalizePortNameForMatch } from "@/lib/utils";
 import { getSnmpPortSchema } from "./snmp-port-schema";
 import { getSnmpStpInfo, type StpInfo } from "./snmp-stp-info";
@@ -45,17 +51,33 @@ export interface SwitchClient {
   testConnection(): Promise<boolean>;
 }
 
+/**
+ * True se possiamo aprire una sessione SNMP (v2 community, v3, o protocollo SNMP).
+ * `hasSnmpCommunity` da solo era troppo stretto: SNMPv3 e credenziali SNMP in archivio
+ * senza "community" in chiaro facevano saltare porte/STP pur avendo MAC via SSH.
+ */
+function deviceHasSnmpSession(device: NetworkDevice): boolean {
+  if (device.community_string) return true;
+  if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") return true;
+  if (device.snmp_credential_id) {
+    if (getCredentialCommunityString(device.snmp_credential_id)) return true;
+    if (getDeviceSnmpV3Credentials(device)) return true;
+    const cred = getCredentialById(device.snmp_credential_id);
+    if (cred && String(cred.credential_type || "").toLowerCase() === "snmp") return true;
+  }
+  if (device.credential_id && getCredentialCommunityString(device.credential_id)) return true;
+  return false;
+}
+
 export async function createSwitchClient(device: NetworkDevice): Promise<SwitchClient> {
   const creds = getDeviceCredentials(device);
   const password = creds?.password;
   const username = creds?.username ?? device.username ?? undefined;
   const primaryClient = await createVendorClient(device, { username, password });
-  const hasSnmpCommunity = device.community_string
-    || (device.snmp_credential_id ? !!getCredentialCommunityString(device.snmp_credential_id) : false)
-    || (device.credential_id ? !!getCredentialCommunityString(device.credential_id) : false);
+  const hasSnmp = deviceHasSnmpSession(device);
 
   // UniFi con SNMP: la MAC table va presa da SNMP (Bridge MIB), non da SSH che restituisce dati incompleti
-  const useSnmpFirstForMac = device.vendor === "ubiquiti" && hasSnmpCommunity;
+  const useSnmpFirstForMac = device.vendor === "ubiquiti" && hasSnmp;
 
   return {
     async getMacTable() {
@@ -72,7 +94,7 @@ export async function createSwitchClient(device: NetworkDevice): Promise<SwitchC
         if (entries.length > 0) return entries;
       } catch { /* primary failed, try fallback */ }
 
-      if (device.protocol === "ssh" && hasSnmpCommunity && !useSnmpFirstForMac) {
+      if (device.protocol === "ssh" && hasSnmp && !useSnmpFirstForMac) {
         const snmpClient = await createSnmpSwitchClient(device);
         return snmpClient.getMacTable();
       }
@@ -85,12 +107,14 @@ export async function createSwitchClient(device: NetworkDevice): Promise<SwitchC
       return primaryClient.getMacTable();
     },
     async getPortSchema() {
-      if (useSnmpFirstForMac) {
+      // Schema porte / LLDP / STP per ifIndex: richiede IF-MIB via SNMP. Provare SNMP
+      // ogni volta che è configurato, non solo quando useSnmpFirstForMac (SSH+SNMPv3).
+      if (hasSnmp) {
         try {
           const snmpClient = await createSnmpSwitchClient(device);
           const ports = await snmpClient.getPortSchema();
           if (ports.length > 0) return ports;
-        } catch { /* SNMP fallito, prova SSH */ }
+        } catch { /* SNMP fallito, prova vendor */ }
       }
 
       try {
@@ -98,16 +122,20 @@ export async function createSwitchClient(device: NetworkDevice): Promise<SwitchC
         if (ports.length > 0) return ports;
       } catch { /* primary failed */ }
 
-      if (device.protocol === "ssh" && hasSnmpCommunity && !useSnmpFirstForMac) {
-        const snmpClient = await createSnmpSwitchClient(device);
-        return snmpClient.getPortSchema();
+      if (device.protocol === "ssh" && hasSnmp && !useSnmpFirstForMac) {
+        try {
+          const snmpClient = await createSnmpSwitchClient(device);
+          return await snmpClient.getPortSchema();
+        } catch {
+          return [];
+        }
       }
 
       return [];
     },
     async getStpInfo() {
       // Ubiquiti: SNMP STP (BRIDGE-MIB) funziona su più modelli; SSH (telnet+enable) solo su alcuni
-      if (device.vendor === "ubiquiti" && hasSnmpCommunity) {
+      if (device.vendor === "ubiquiti" && hasSnmp) {
         try {
           const snmpClient = await createSnmpSwitchClient(device);
           const info = await snmpClient.getStpInfo?.();
@@ -120,7 +148,7 @@ export async function createSwitchClient(device: NetworkDevice): Promise<SwitchC
           if (info) return info;
         }
       } catch { /* SSH STP fallito */ }
-      if (hasSnmpCommunity && device.vendor !== "ubiquiti") {
+      if (hasSnmp && device.vendor !== "ubiquiti") {
         try {
           const snmpClient = await createSnmpSwitchClient(device);
           return snmpClient.getStpInfo?.() ?? null;
@@ -211,7 +239,10 @@ async function createSshSwitchClient(
 async function createSnmpSwitchClient(device: NetworkDevice): Promise<SwitchClient> {
   const snmp = await import("net-snmp");
   const isSnmpProtocol = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
-  const snmpPort = isSnmpProtocol ? (device.port || 161) : 161;
+  // device.port può essere la porta SSH (22) quando il device ha credenziali miste SSH+SNMP.
+  // La porta SNMP standard è 161; usiamo device.port solo se è diversa da 22 e diversa da 0.
+  const rawPort = device.port || 0;
+  const snmpPort = isSnmpProtocol && rawPort > 0 && rawPort !== 22 ? rawPort : 161;
   const opts = { port: snmpPort, timeout: 10000 };
 
   function createSession() {

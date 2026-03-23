@@ -44,3 +44,9 @@ next-env.d.ts
 data/
 .env.local
 .venv/
+
+# Python (bridge WinRM locale)
+**/__pycache__/
+*.py[cod]
+.~lock.*
+

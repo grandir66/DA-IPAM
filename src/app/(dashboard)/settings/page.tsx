@@ -30,10 +30,14 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash, Monitor, Users, Shield, Tags } from "lucide-react";
+import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash, Monitor, Users, Shield, Tags, ArrowUpCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { buildTcpScanArgs, buildUdpScanArgs } from "@/lib/scanner/ports";
-import { getClassificationLabel, DEVICE_CLASSIFICATIONS_ORDERED } from "@/lib/device-classifications";
+import {
+  getClassificationLabel,
+  DEVICE_CLASSIFICATIONS_ORDERED,
+  sortClassificationsByDisplayLabel,
+} from "@/lib/device-classifications";
 import type { ScheduledJob, NetworkWithStats } from "@/types";
 import Link from "next/link";
 
@@ -127,8 +131,10 @@ export default function SettingsPage() {
   const [customOui, setCustomOui] = useState("");
   const [savingOui, setSavingOui] = useState(false);
 
-  // Version
+  // Version & Update
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<{ remoteVersion: string; updateAvailable: boolean } | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   // Host credentials (Windows/Linux) - default per raccolta info da host
   const [credentials, setCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
@@ -278,6 +284,9 @@ export default function SettingsPage() {
     fetch("/api/custom-oui").then((r) => r.json()).then((d: { content?: string }) => setCustomOui(d.content || ""));
     fetch("/api/credentials").then((r) => r.json()).then((creds: { id: number; name: string; credential_type: string }[]) => setCredentials(creds));
     fetch("/api/version").then((r) => r.json()).then((d: { version?: string }) => setAppVersion(d.version ?? null));
+    fetch("/api/system/update").then((r) => r.json()).then((d) => {
+      if (d.remoteVersion) setUpdateInfo({ remoteVersion: d.remoteVersion, updateAvailable: d.updateAvailable });
+    }).catch(() => {});
     fetch("/api/users").then((r) => r.json()).then(setUsers).catch(() => {});
     fetch("/api/tls").then((r) => r.json()).then(setTlsStatus).catch(() => {});
     fetch("/api/fingerprint-classification-map")
@@ -725,7 +734,47 @@ export default function SettingsPage() {
         <h1 className="text-3xl font-bold tracking-tight">Impostazioni</h1>
         <p className="text-muted-foreground mt-1">Configurazione sistema, sicurezza e profili di scansione</p>
         {appVersion && (
-          <p className="text-xs text-muted-foreground mt-1">DA-INVENT v{appVersion}</p>
+          <div className="flex items-center gap-3 mt-2">
+            <Badge variant="outline" className="text-xs">
+              v{appVersion}
+            </Badge>
+            {updateInfo?.updateAvailable && (
+              <Badge variant="default" className="text-xs gap-1 animate-pulse">
+                <ArrowUpCircle className="h-3 w-3" />
+                v{updateInfo.remoteVersion} disponibile
+              </Badge>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs gap-1"
+              onClick={async () => {
+                setCheckingUpdate(true);
+                try {
+                  const res = await fetch("/api/system/update");
+                  const data = await res.json();
+                  if (data.remoteVersion) {
+                    setUpdateInfo({ remoteVersion: data.remoteVersion, updateAvailable: data.updateAvailable });
+                    if (data.updateAvailable) {
+                      toast.info(`Nuova versione disponibile: ${data.remoteVersion}`);
+                    } else {
+                      toast.success("Il sistema è aggiornato");
+                    }
+                  } else if (data.error) {
+                    toast.error(data.error);
+                  }
+                } catch {
+                  toast.error("Errore nel controllo aggiornamenti");
+                } finally {
+                  setCheckingUpdate(false);
+                }
+              }}
+              disabled={checkingUpdate}
+            >
+              <RefreshCw className={`h-3 w-3 ${checkingUpdate ? "animate-spin" : ""}`} />
+              Controlla aggiornamenti
+            </Button>
+          </div>
         )}
       </div>
 
@@ -1286,7 +1335,7 @@ export default function SettingsPage() {
       </Card>
 
       <Dialog open={fpRuleDialogOpen} onOpenChange={setFpRuleDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto scrollbar-none">
           <DialogHeader>
             <DialogTitle>{editingFpRule ? "Modifica firma" : "Nuova firma dispositivo"}</DialogTitle>
           </DialogHeader>
@@ -1307,7 +1356,7 @@ export default function SettingsPage() {
                 <Select value={fpRuleForm.classification} onValueChange={(v) => setFpRuleForm((f) => ({ ...f, classification: v ?? f.classification }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent className="max-h-[280px]">
-                    {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                    {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
                       <SelectItem key={c} value={c}>{getClassificationLabel(c)} ({c})</SelectItem>
                     ))}
                   </SelectContent>
@@ -1455,7 +1504,7 @@ export default function SettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="max-h-[280px]">
-                      {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                      {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
                         <SelectItem key={c} value={c}>
                           {getClassificationLabel(c)} ({c})
                         </SelectItem>

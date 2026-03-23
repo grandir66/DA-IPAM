@@ -1,16 +1,13 @@
 /**
  * Client WinRM per interrogare host Windows via WMI/PowerShell.
- * Supporta HTTP (5985) e HTTPS (5986) con timeout e messaggi di errore chiari.
+ * Supporta Kerberos (auto-kinit), NTLM, CredSSP, Basic.
  *
- * Requisiti sul host Windows (PowerShell come Admin):
- *   winrm quickconfig
- *   winrm set winrm/config/service/Auth '@{Basic="true"}'
- *   winrm set winrm/config/service '@{AllowUnencrypted="true"}'
- *   winrm set winrm/config/winrs '@{MaxMemoryPerShellMB="1024"}'
+ * Kerberos è il metodo preferito in ambienti Active Directory con GPO
+ * che bloccano NTLM. Il realm viene recuperato dalla configurazione AD.
  */
 
 import type { NetworkDevice } from "@/types";
-import { getDeviceCredentials } from "@/lib/db";
+import { getDeviceCredentials, getAdRealm } from "@/lib/db";
 import { runWinrmCommand } from "./winrm-run";
 
 export interface WinrmClient {
@@ -29,15 +26,17 @@ export async function createWinrmClient(device: NetworkDevice): Promise<WinrmCli
 
   const host = device.host;
   const port = device.port || 5985;
+  const adInfo = getAdRealm();
+  const realm = adInfo?.realm || "";
 
   return {
     async runCommand(command: string, usePowershell = false): Promise<string> {
-      return runWinrmCommand(host, port, username, password, command, usePowershell);
+      return runWinrmCommand(host, port, username, password, command, usePowershell, realm);
     },
 
     async testConnection(): Promise<boolean> {
       try {
-        const out = await runWinrmCommand(host, port, username, password, "echo test", false);
+        const out = await runWinrmCommand(host, port, username, password, "echo test", false, realm);
         return out != null && String(out).trim().length >= 0;
       } catch {
         return false;

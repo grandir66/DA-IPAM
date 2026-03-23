@@ -12,6 +12,7 @@ import {
   upsertAdUser,
   upsertAdGroup,
   upsertAdDhcpLease,
+  syncIpAssignmentsForAllNetworks,
   type AdIntegration,
 } from "@/lib/db";
 
@@ -396,6 +397,12 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
     result.errors.push(`Host linking error: ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  try {
+    syncIpAssignmentsForAllNetworks();
+  } catch (err) {
+    result.errors.push(`IP assignment sync: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // Update integration status
   // ═══════════════════════════════════════════════════════════════
@@ -432,16 +439,18 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
   const cred = getCredentialById(integration.winrm_credential_id);
   if (!cred) throw new Error("Credenziale WinRM non trovata");
 
-  const username = decrypt(cred.encrypted_username ?? "");
-  const password = decrypt(cred.encrypted_password ?? "");
+  const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
+  const password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
   const host = integration.dc_host;
   const port = 5985;
+  const realm = integration.domain || "";
 
   // Recupera scopes
   const scopesJson = await runWinrmCommand(
     host, port, username, password,
     "Get-DhcpServerv4Scope | ConvertTo-Json -Depth 2 -Compress",
-    true
+    true,
+    realm
   );
 
   let scopes: Array<{ ScopeId: string; Name?: string }> = [];
@@ -465,7 +474,8 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
       leasesJson = await runWinrmCommand(
         host, port, username, password,
         `Get-DhcpServerv4Lease -ScopeId "${scopeId}" | ConvertTo-Json -Depth 2 -Compress`,
-        true
+        true,
+        realm
       );
     } catch {
       continue; // scope senza lease attivi

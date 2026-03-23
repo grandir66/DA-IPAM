@@ -72,8 +72,8 @@ const TEXT_RULES: Array<{ pattern: RegExp; classification: DeviceClassification 
   },
   // Firewall
   { pattern: /firewall|fortigate|pfsense|opnsense|sophos|palo\s*alto|check\s*point/i, classification: "firewall" },
-  // Access point
-  { pattern: /access.?point|ap-|unifi|ubiquiti|wifi|wireless|aruba|ruckus|meraki.*ap|cisco.*ap/i, classification: "access_point" },
+  // Access point — NB: "ubiquiti" e "unifi" rimossi (Ubiquiti produce anche switch, router, gateway; il brand da solo non basta)
+  { pattern: /access.?point|ap-|unifi\s*ap|uap[-\s]|wifi|wireless|aruba|ruckus|meraki.*ap|cisco.*ap/i, classification: "access_point" },
   // Hypervisor
   { pattern: /esxi|vmware\s*esx|hyper-v|hyperv|proxmox|qemu|kvm|virtualbox|ovirt|xen\s*server/i, classification: "hypervisor" },
   // VM / container
@@ -148,12 +148,16 @@ const OID_RULES: Array<{ prefix: string; classification: DeviceClassification }>
   { prefix: "1.3.6.1.4.1.11.2.3.7", classification: "switch" },
   // MikroTik
   { prefix: "1.3.6.1.4.1.14988.1", classification: "router" },
-  // Ubiquiti (AP / airOS)
+  // Ubiquiti airOS / airMAX (10002 = antenna/bridge, pre-UniFi)
   { prefix: "1.3.6.1.4.1.10002.1", classification: "access_point" },
-  // UniFi / Ubiquiti enterprise MIB (walk 1.3.6.1.4.1.41112)
-  { prefix: "1.3.6.1.4.1.41112", classification: "access_point" },
   // Ubiquiti EdgeSwitch / EdgeMax (OID 4413)
   { prefix: "1.3.6.1.4.1.4413", classification: "switch" },
+  // Ubiquiti EdgeRouter (41112.1.5)
+  { prefix: "1.3.6.1.4.1.41112.1.5", classification: "router" },
+  // Ubiquiti AirMAX (41112.1.2)
+  { prefix: "1.3.6.1.4.1.41112.1.2", classification: "access_point" },
+  // NB: 41112 generico NON mappato qui — è ambiguo (AP, switch, gateway); la
+  // disambiguazione avviene via vendor profile + hostname prefix in discovery.ts
   // Hikvision
   { prefix: "1.3.6.1.4.1.39165", classification: "telecamera" },
   // Dahua
@@ -228,7 +232,8 @@ const HOSTNAME_RULES: Array<{ pattern: RegExp; classification: DeviceClassificat
 
 /** MAC vendor → classificazione (OUI lookup). HP Inc/Hewlett prima come workstation (PC) perché le stampanti HP hanno OID/porte specifici. */
 const VENDOR_RULES: Array<{ pattern: RegExp; classification: DeviceClassification }> = [
-  { pattern: /cisco|arista|juniper|mikrotik|ubiquiti|netgear|d-link|tp-link|hp\s*networks|hpe\s*aruba|stormshield/i, classification: "router" },
+  // NB: "ubiquiti" rimosso — Ubiquiti produce switch, AP, gateway; il vendor MAC da solo non basta
+  { pattern: /cisco|arista|juniper|mikrotik|netgear|d-link|tp-link|hp\s*networks|hpe\s*aruba|stormshield/i, classification: "router" },
   { pattern: /hikvision|dahua|axis|vivotek|foscam|reolink|annke|uniview/i, classification: "telecamera" },
   { pattern: /yealink|polycom|grandstream|cisco\s*systems.*phone|snom|avaya|mitel|fanvil/i, classification: "voip" },
   { pattern: /apple|dell|lenovo|hp\s*inc|hewlett|asus|acer|msi|microsoft\s*surface/i, classification: "workstation" },
@@ -275,14 +280,18 @@ export function classifyDeviceDetailed(input: ClassifierInput): DeviceDetectionR
       }
       // Hostname prefix di device di rete: cedere al naming convention piuttosto che a server_linux
       const hn = (input.hostname ?? "").toLowerCase();
-      if (/^sw[-_]|^swi[-_]|^switch[-_]|^core[-_]|^dist[-_]|^acc[-_]|^usw[-_]|^us[-_]/.test(hn)) {
+      if (/^sw[-_]|^swi[-_]|^switch[-_]|^core[-_]|^dist[-_]|^acc[-_]|^usw[-_]|^us[-_]\d/.test(hn)) {
         return { classification: "switch", confidence: "high", method: "oid" };
       }
-      if (/^ap[-_]|^wifi[-_]|^uap[-_]|^unifi[-_]|^ubnt[-_]|^uap[0-9]/.test(hn)) {
+      if (/^ap[-_]|^wifi[-_]|^uap[-_]|^unifi[-_]|^ubnt[-_]|^uap\d/.test(hn)) {
         return { classification: "access_point", confidence: "high", method: "oid" };
       }
-      if (/^gw[-_]|^rtr[-_]|^router[-_]|^fw[-_]|^firewall[-_]/.test(hn)) {
+      if (/^gw[-_]|^rtr[-_]|^router[-_]|^fw[-_]|^firewall[-_]|^udm[-_]|^usg[-_]/.test(hn)) {
         return { classification: "router", confidence: "high", method: "oid" };
+      }
+      // sysDescr Ubiquiti switch: USW, US-8, US-24, UFlex, etc.
+      if (/\busw[-\s]|\bus[-\s]\d|\buflex\b|\bunifi\s*switch\b|\bindustrial\b/i.test(corpus)) {
+        return { classification: "switch", confidence: "high", method: "oid" };
       }
       return { classification: "server_linux", confidence: "high", method: "oid" };
     }

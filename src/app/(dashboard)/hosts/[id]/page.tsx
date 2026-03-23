@@ -16,7 +16,9 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogScrollableArea,
   DialogTitle,
+  DIALOG_PANEL_COMPACT_CLASS,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -35,12 +37,17 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { formatPortsDisplay } from "@/lib/utils";
-import { DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel } from "@/lib/device-classifications";
+import {
+  DEVICE_CLASSIFICATIONS_ORDERED,
+  getClassificationLabel,
+  sortClassificationsByDisplayLabel,
+} from "@/lib/device-classifications";
 import { UptimeTimeline } from "@/components/shared/uptime-timeline";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, Save, Router, Cable, Trash2, Server, ChevronRight, ScanSearch, PlusCircle, Wifi } from "lucide-react";
+import { ArrowLeft, Save, Router, Cable, Trash2, Server, ChevronRight, ScanSearch, PlusCircle, Wifi, Key } from "lucide-react";
 import { toast } from "sonner";
 import type { DeviceFingerprintSnapshot, HostDetail, HostSnmpData } from "@/types";
+import { getDefaultNetworkDeviceVendorOptions } from "@/lib/network-device-vendor-options";
 import { LatencyChart } from "./latency-chart";
 
 const VENDOR_FROM_MANUFACTURER: Record<string, string> = {
@@ -71,6 +78,26 @@ function inferProtocolFromSnmp(snmp: HostSnmpData | null): string {
   return snmp ? "snmp_v2" : "ssh";
 }
 
+const HOST_CLASSIFICATION_OPTIONS_SORTED = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
+
+const CREATE_DEVICE_CLASSIFICATION_OPTIONS = sortClassificationsByDisplayLabel(
+  DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown")
+);
+
+const CREATE_DEVICE_PROTOCOL_OPTIONS = [
+  { value: "ssh", label: "SSH" },
+  { value: "snmp_v2", label: "SNMP v2" },
+  { value: "snmp_v3", label: "SNMP v3" },
+  { value: "api", label: "API REST" },
+  { value: "winrm", label: "WinRM" },
+].sort((a, b) => a.label.localeCompare(b.label, "it", { sensitivity: "base" }));
+
+const CREATE_DEVICE_TYPE_OPTIONS = [
+  { value: "router", label: "Router / Firewall" },
+  { value: "switch", label: "Switch" },
+  { value: "hypervisor", label: "Hypervisor / Server" },
+].sort((a, b) => a.label.localeCompare(b.label, "it", { sensitivity: "base" }));
+
 export default function HostDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -89,6 +116,9 @@ export default function HostDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [createDeviceOpen, setCreateDeviceOpen] = useState(false);
   const [creatingDevice, setCreatingDevice] = useState(false);
+  const [credentialList, setCredentialList] = useState<{ id: number; name: string; credential_type: string }[]>([]);
+  const [detectDraft, setDetectDraft] = useState<Record<string, string>>({});
+  const [savingDetectCreds, setSavingDetectCreds] = useState(false);
   const [deviceForm, setDeviceForm] = useState({
     name: "", vendor: "other", protocol: "ssh",
     device_type: "hypervisor" as "router" | "switch" | "hypervisor",
@@ -98,12 +128,23 @@ export default function HostDetailPage() {
   });
 
   const fetchHost = useCallback(async () => {
-    const res = await fetch(`/api/hosts/${params.id}`);
+    const id = params.id;
+    if (!id || typeof id !== "string" || !/^\d+$/.test(id)) {
+      setLoading(false);
+      router.push("/devices");
+      return;
+    }
+    const res = await fetch(`/api/hosts/${id}`);
     if (!res.ok) {
-      router.push("/");
+      router.push("/devices");
       return;
     }
     const data = await res.json();
+    if (data?.error || !data?.id) {
+      setLoading(false);
+      router.push("/devices");
+      return;
+    }
     setHost(data);
     // Parse monitor_ports JSON array to comma-separated string for display
     let monitorPortsStr = "";
@@ -127,6 +168,24 @@ export default function HostDetailPage() {
   useEffect(() => {
     fetchHost();
   }, [fetchHost]);
+
+  useEffect(() => {
+    fetch("/api/credentials")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setCredentialList)
+      .catch(() => setCredentialList([]));
+  }, []);
+
+  useEffect(() => {
+    if (!host) return;
+    const roles = ["windows", "linux", "ssh", "snmp"] as const;
+    const d: Record<string, string> = {};
+    for (const role of roles) {
+      const row = host.detect_credentials?.find((x) => x.role === role);
+      d[role] = row ? String(row.credential_id) : "none";
+    }
+    setDetectDraft(d);
+  }, [host]);
 
   async function handleSave() {
     setSaving(true);
@@ -155,6 +214,44 @@ export default function HostDetailPage() {
       toast.error("Errore nell'aggiornamento");
     }
     setSaving(false);
+  }
+
+  function credentialsForDetectRole(role: string) {
+    return credentialList
+      .filter((c) => {
+        if (role === "windows") return c.credential_type === "windows";
+        if (role === "linux") return c.credential_type === "linux";
+        if (role === "ssh") return c.credential_type === "ssh";
+        if (role === "snmp") return c.credential_type === "snmp";
+        return false;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, "it", { sensitivity: "base" }));
+  }
+
+  async function handleSaveDetectCredentials() {
+    if (!host) return;
+    setSavingDetectCreds(true);
+    try {
+      const detect_credentials: Record<string, number | null> = {};
+      for (const role of ["windows", "linux", "ssh", "snmp"] as const) {
+        const v = detectDraft[role];
+        detect_credentials[role] = v && v !== "none" ? Number(v) : null;
+      }
+      const res = await fetch(`/api/hosts/${params.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ detect_credentials }),
+      });
+      if (res.ok) {
+        toast.success("Credenziali per protocollo salvate");
+        fetchHost();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Errore nel salvataggio");
+      }
+    } finally {
+      setSavingDetectCreds(false);
+    }
   }
 
   async function handleDelete() {
@@ -336,7 +433,7 @@ export default function HostDetailPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__empty__">— Nessuna —</SelectItem>
-                  {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                  {HOST_CLASSIFICATION_OPTIONS_SORTED.map((c) => (
                     <SelectItem key={c} value={c}>
                       {getClassificationLabel(c)}
                     </SelectItem>
@@ -379,6 +476,79 @@ export default function HostDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Key className="h-4 w-4" />
+            Credenziali per protocollo (archivio)
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Per ogni protocollo usato nelle scansioni puoi forzare una credenziale dall&apos;archivio: da quel momento le acquisizioni useranno solo quella per quel ruolo.
+            Lascia &quot;Nessuna&quot; per provare la catena definita sulla subnet / Impostazioni.
+          </p>
+          {host.scan_types_used && host.scan_types_used.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-xs text-muted-foreground">Tipi di scansione già eseguiti su questo host:</span>
+              {host.scan_types_used.map((t) => (
+                <Badge key={t} variant="secondary" className="text-xs font-mono">
+                  {t}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {(
+              [
+                ["windows", "Windows (WinRM)"],
+                ["linux", "Linux (SSH / raccolta)"],
+                ["ssh", "SSH dedicato"],
+                ["snmp", "SNMP"],
+              ] as const
+            ).map(([role, label]) => (
+              <div key={role} className="space-y-1.5">
+                <Label className="text-xs">{label}</Label>
+                <Select
+                  value={detectDraft[role] ?? "none"}
+                  onValueChange={(v) => v && setDetectDraft((d) => ({ ...d, [role]: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Nessuna" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nessuna (catena automatica)</SelectItem>
+                    {credentialsForDetectRole(role).map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {host.detect_credentials?.find((x) => x.role === role) && (
+                  <p className="text-xs text-muted-foreground">
+                    Attuale:{" "}
+                    <span className="font-medium text-foreground">
+                      {host.detect_credentials.find((x) => x.role === role)?.credential_name}
+                    </span>
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleSaveDetectCredentials}
+            disabled={savingDetectCreds}
+            className="w-full sm:w-auto"
+          >
+            <Key className="h-4 w-4 mr-2" />
+            {savingDetectCreds ? "Salvataggio..." : "Salva credenziali forzate"}
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Device fingerprint (discovery nmap/snmp) */}
       <FingerprintCard detectionJson={host.detection_json} />
@@ -518,13 +688,14 @@ export default function HostDetailPage() {
 
       {/* Dialog: Crea dispositivo da host */}
       <Dialog open={createDeviceOpen} onOpenChange={setCreateDeviceOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className={DIALOG_PANEL_COMPACT_CLASS}>
+          <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
             <DialogTitle>Crea dispositivo gestito — {host.ip}</DialogTitle>
             <DialogDescription>
               Campi pre-compilati da dati SNMP/scan. Modifica dove necessario prima di salvare.
             </DialogDescription>
           </DialogHeader>
+          <DialogScrollableArea className="px-4 py-3">
           <form onSubmit={handleCreateDevice} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -543,9 +714,9 @@ export default function HostDetailPage() {
                 <Select value={deviceForm.device_type} onValueChange={(v) => setDeviceForm((f) => ({ ...f, device_type: v as "router" | "switch" | "hypervisor" }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="router">Router / Firewall</SelectItem>
-                    <SelectItem value="switch">Switch</SelectItem>
-                    <SelectItem value="hypervisor">Hypervisor / Server</SelectItem>
+                    {CREATE_DEVICE_TYPE_OPTIONS.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -554,21 +725,9 @@ export default function HostDetailPage() {
                 <Select value={deviceForm.vendor} onValueChange={(v) => setDeviceForm((f) => ({ ...f, vendor: v ?? "other" }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {[
-                      { value: "mikrotik", label: "MikroTik" },
-                      { value: "ubiquiti", label: "Ubiquiti" },
-                      { value: "cisco", label: "Cisco" },
-                      { value: "hp", label: "HP / Aruba" },
-                      { value: "omada", label: "TP-Link Omada" },
-                      { value: "stormshield", label: "Stormshield" },
-                      { value: "proxmox", label: "Proxmox" },
-                      { value: "vmware", label: "VMware" },
-                      { value: "linux", label: "Linux" },
-                      { value: "windows", label: "Windows" },
-                      { value: "synology", label: "Synology" },
-                      { value: "qnap", label: "QNAP" },
-                      { value: "other", label: "Altro" },
-                    ].map((v) => <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>)}
+                    {getDefaultNetworkDeviceVendorOptions().map((v) => (
+                      <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -577,11 +736,9 @@ export default function HostDetailPage() {
                 <Select value={deviceForm.protocol} onValueChange={(v) => setDeviceForm((f) => ({ ...f, protocol: v ?? "ssh", port: v === "snmp_v2" || v === "snmp_v3" ? 161 : v === "winrm" ? 5985 : 22 }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ssh">SSH</SelectItem>
-                    <SelectItem value="snmp_v2">SNMP v2</SelectItem>
-                    <SelectItem value="snmp_v3">SNMP v3</SelectItem>
-                    <SelectItem value="api">API REST</SelectItem>
-                    <SelectItem value="winrm">WinRM</SelectItem>
+                    {CREATE_DEVICE_PROTOCOL_OPTIONS.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -603,7 +760,7 @@ export default function HostDetailPage() {
                 <Select value={deviceForm.classification || ""} onValueChange={(v) => setDeviceForm((f) => ({ ...f, classification: v ?? "" }))}>
                   <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
                   <SelectContent>
-                    {DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown").map((c) => (
+                    {CREATE_DEVICE_CLASSIFICATION_OPTIONS.map((c) => (
                       <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>
                     ))}
                   </SelectContent>
@@ -645,6 +802,7 @@ export default function HostDetailPage() {
               </Button>
             </DialogFooter>
           </form>
+          </DialogScrollableArea>
         </DialogContent>
       </Dialog>
 

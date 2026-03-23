@@ -29,8 +29,18 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
     }
 
-    const isWindows = device.protocol === "winrm" || device.vendor === "windows";
-    const isSshScannable = device.protocol === "ssh" && (device.vendor === "linux" || device.vendor === "other" || device.vendor === "synology" || device.vendor === "qnap");
+    const scanTarget = (device as { scan_target?: string | null }).scan_target;
+    const isWindows =
+      device.protocol === "winrm" || device.vendor === "windows" || scanTarget === "windows";
+    // SSH-scannable: vendor Linux-type (linux/other/synology/qnap) OPPURE scan_target=linux,
+    // indipendentemente dal protocol (un host Linux può avere anche SNMP configurato)
+    const isLinuxVendor =
+      scanTarget === "linux" ||
+      device.vendor === "linux" ||
+      device.vendor === "other" ||
+      device.vendor === "synology" ||
+      device.vendor === "qnap";
+    const isSshScannable = isLinuxVendor;
     const isSnmpInfoDevice =
       (device.protocol === "snmp_v2" || device.protocol === "snmp_v3" || device.community_string || device.snmp_credential_id)
       && ["stampante", "telecamera", "voip", "iot", "access_point", "firewall", "vm"].includes(device.classification ?? "");
@@ -40,31 +50,45 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         if (isWindows) {
           const info = await getDeviceInfo(device);
           const now = new Date().toISOString();
-          const hasInfo = info.sysname || info.sysdescr || info.model || info.firmware || info.serial_number || info.part_number || info.os_name;
-          if (hasInfo) {
-            const deviceInfoJson = JSON.stringify({ ...info, scanned_at: now });
-            trackDeviceInfoChanges(Number(id), info);
-            updateNetworkDevice(Number(id), {
-              sysname: info.sysname ?? (info.hostname as string | undefined) ?? undefined,
-              sysdescr: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : (info.sysdescr ?? undefined),
-              model: info.model ?? undefined,
-              firmware: info.os_build ? `Build ${info.os_build}` : (info.firmware ?? undefined),
+          const hasInfo =
+            info.sysname ||
+            info.sysdescr ||
+            info.model ||
+            info.firmware ||
+            info.serial_number ||
+            info.part_number ||
+            info.os_name ||
+            info.hostname;
+          if (!hasInfo) {
+            return NextResponse.json(
+              {
+                error:
+                  "Nessun dato acquisito via WinRM/SNMP. Verifica: protocollo e porta (5985 HTTP / 5986 HTTPS), credenziale Windows collegata al dispositivo, firewall verso l'IP, e su Windows: winrm quickconfig e Basic auth se necessario.",
+              },
+              { status: 502 }
+            );
+          }
+          const deviceInfoJson = JSON.stringify({ ...info, scanned_at: now });
+          trackDeviceInfoChanges(Number(id), info);
+          updateNetworkDevice(Number(id), {
+            sysname: info.sysname ?? (info.hostname as string | undefined) ?? undefined,
+            sysdescr: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : (info.sysdescr ?? undefined),
+            model: info.model ?? undefined,
+            firmware: info.os_build ? `Build ${info.os_build}` : (info.firmware ?? undefined),
+            serial_number: info.serial_number ?? undefined,
+            part_number: info.part_number ?? undefined,
+            last_info_update: now,
+            last_device_info_json: deviceInfoJson,
+          });
+          syncDeviceToHost(Number(id));
+          const asset = getInventoryAssetByNetworkDevice(Number(id));
+          if (asset) {
+            updateInventoryAsset(asset.id, {
+              modello: info.model ?? undefined,
               serial_number: info.serial_number ?? undefined,
-              part_number: info.part_number ?? undefined,
-              last_info_update: now,
-              last_device_info_json: deviceInfoJson,
+              firmware_version: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : undefined,
+              technical_data: deviceInfoJson,
             });
-            // Sync info su host collegato
-            syncDeviceToHost(Number(id));
-            const asset = getInventoryAssetByNetworkDevice(Number(id));
-            if (asset) {
-              updateInventoryAsset(asset.id, {
-                modello: info.model ?? undefined,
-                serial_number: info.serial_number ?? undefined,
-                firmware_version: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : undefined,
-                technical_data: deviceInfoJson,
-              });
-            }
           }
           const fields = Object.keys(info).filter(k => info[k as keyof typeof info] != null).length;
           return NextResponse.json({
@@ -76,31 +100,52 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         if (isSshScannable) {
           const info = await getDeviceInfo(device);
           const now = new Date().toISOString();
-          const hasInfo = info.sysname || info.sysdescr || info.model || info.firmware || info.serial_number || info.part_number || info.os_name;
-          if (hasInfo) {
-            const deviceInfoJson = JSON.stringify({ ...info, scanned_at: now });
-            trackDeviceInfoChanges(Number(id), info);
-            updateNetworkDevice(Number(id), {
-              sysname: info.sysname ?? (info.hostname as string | undefined) ?? undefined,
-              sysdescr: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : (info.sysdescr ?? undefined),
-              model: info.model ?? undefined,
-              firmware: info.os_version ? info.os_version : (info.firmware ?? undefined),
+          const hasNasPayload =
+            (info.nas_inventory != null &&
+              (info.nas_inventory.snmp != null || info.nas_inventory.ssh != null)) ||
+            (Array.isArray(info.disks) && info.disks.length > 0) ||
+            (Array.isArray(info.physical_disks) && info.physical_disks.length > 0) ||
+            (Array.isArray(info.network_adapters) && info.network_adapters.length > 0);
+          const hasInfo =
+            info.sysname ||
+            info.sysdescr ||
+            info.model ||
+            info.firmware ||
+            info.serial_number ||
+            info.part_number ||
+            info.os_name ||
+            info.hostname ||
+            hasNasPayload;
+          if (!hasInfo) {
+            return NextResponse.json(
+              {
+                error:
+                  "Nessun dato acquisito via SSH. Verifica: protocollo SSH, porta (default 22), credenziale collegata al dispositivo, utente con shell e accesso (sudo se necessario per dmidecode).",
+              },
+              { status: 502 }
+            );
+          }
+          const deviceInfoJsonSsh = JSON.stringify({ ...info, scanned_at: now });
+          trackDeviceInfoChanges(Number(id), info);
+          updateNetworkDevice(Number(id), {
+            sysname: info.sysname ?? (info.hostname as string | undefined) ?? undefined,
+            sysdescr: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : (info.sysdescr ?? undefined),
+            model: info.model ?? undefined,
+            firmware: info.os_version ? info.os_version : (info.firmware ?? undefined),
+            serial_number: info.serial_number ?? undefined,
+            part_number: info.part_number ?? undefined,
+            last_info_update: now,
+            last_device_info_json: deviceInfoJsonSsh,
+          });
+          syncDeviceToHost(Number(id));
+          const assetSsh = getInventoryAssetByNetworkDevice(Number(id));
+          if (assetSsh) {
+            updateInventoryAsset(assetSsh.id, {
+              modello: info.model ?? undefined,
               serial_number: info.serial_number ?? undefined,
-              part_number: info.part_number ?? undefined,
-              last_info_update: now,
-              last_device_info_json: deviceInfoJson,
+              firmware_version: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : undefined,
+              technical_data: deviceInfoJsonSsh,
             });
-            // Sync info su host collegato
-            syncDeviceToHost(Number(id));
-            const asset = getInventoryAssetByNetworkDevice(Number(id));
-            if (asset) {
-              updateInventoryAsset(asset.id, {
-                modello: info.model ?? undefined,
-                serial_number: info.serial_number ?? undefined,
-                firmware_version: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : undefined,
-                technical_data: deviceInfoJson,
-              });
-            }
           }
           const fields = Object.keys(info).filter(k => info[k as keyof typeof info] != null).length;
           const scanType = device.vendor === "synology" || device.vendor === "qnap" ? "Storage" : "Linux";

@@ -80,6 +80,35 @@ function DialogContent({
   )
 }
 
+/** Pannello compatto: altezza massima fissa, nessun overflow sul popup (evita doppie barre). Scroll solo in DialogScrollableArea. */
+export const DIALOG_PANEL_COMPACT_CLASS =
+  "!gap-0 !p-0 flex !flex-col max-h-[min(80vh,100dvh-1.5rem)] w-full max-w-[min(42rem,calc(100vw-2rem))] overflow-hidden sm:max-w-2xl";
+
+/** Variante più larga (form complessi, bulk). */
+export const DIALOG_PANEL_WIDE_CLASS =
+  "!gap-0 !p-0 flex !flex-col max-h-[min(80vh,100dvh-1.5rem)] w-full max-w-[min(48rem,calc(100vw-2rem))] overflow-hidden sm:max-w-3xl";
+
+/** Dialog stretti (router rapido, conferme). */
+export const DIALOG_PANEL_SM_CLASS =
+  "!gap-0 !p-0 flex !flex-col max-h-[min(85vh,100dvh-1.5rem)] w-full max-w-[min(32rem,calc(100vw-2rem))] overflow-hidden sm:max-w-lg";
+
+/**
+ * Area centrale con un solo scroll verticale e senza scroll orizzontale sul dialog.
+ * Usare dentro DialogContent con DIALOG_PANEL_* e header/footer shrink-0.
+ */
+function DialogScrollableArea({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="dialog-scrollable-area"
+      className={cn(
+        "scrollbar-none min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -152,6 +181,7 @@ export {
   DialogHeader,
   DialogOverlay,
   DialogPortal,
+  DialogScrollableArea,
   DialogTitle,
   DialogTrigger,
 }

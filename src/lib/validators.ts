@@ -1,9 +1,12 @@
 import { z } from "zod";
+import { PRODUCT_PROFILE_IDS } from "@/lib/device-product-profiles";
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
 
 const cidrRegex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
 const ipRegex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+/** MAC con separatori oppure 12 hex senza separatori (es. output router). */
+const macRegex =
+  /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$|^[0-9A-Fa-f]{12}$/;
 
 export const NetworkSchema = z.object({
   cidr: z.string().regex(cidrRegex, "CIDR non valido (es. 192.168.1.0/24)").refine((val) => {
@@ -58,6 +61,13 @@ export const HostUpdateSchema = z.object({
   mac: z.string().regex(macRegex, "MAC address non valido").optional().or(z.literal("")),
   known_host: z.union([z.literal(0), z.literal(1)]).optional(),
   monitor_ports: z.string().max(500).optional().nullable(),
+  /** Forza credenziali archivio per ruolo detect (null = rimuovi binding). */
+  detect_credentials: z
+    .record(
+      z.enum(["windows", "linux", "ssh", "snmp"]),
+      z.union([z.number().int().positive(), z.null()])
+    )
+    .optional(),
 });
 
 /** Bulk operazioni host sulla stessa subnet (rete). */
@@ -74,6 +84,8 @@ export const KnownHostRunCheckSchema = z.object({
   network_id: z.coerce.number().int().positive().optional().nullable(),
 });
 
+const productProfileEnum = z.enum(PRODUCT_PROFILE_IDS as unknown as [string, ...string[]]);
+
 export const NetworkDeviceSchema = z.object({
   name: z.string().min(1, "Nome richiesto").max(100),
   host: z.string().min(1, "Host richiesto").max(2000),
@@ -81,6 +93,8 @@ export const NetworkDeviceSchema = z.object({
   classification: z.string().max(100).optional().nullable(),
   vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"]),
   vendor_subtype: z.enum(["procurve", "comware"]).optional().nullable(),
+  /** Profilo prodotto (marca + tipologia), obbligatorio per scan e inventario dedicati */
+  product_profile: productProfileEnum.optional().nullable(),
   protocol: z.enum(["ssh", "snmp_v2", "snmp_v3", "api", "winrm"]),
   credential_id: z.coerce.number().int().positive().optional().nullable(),
   snmp_credential_id: z.coerce.number().int().positive().optional().nullable(),
@@ -90,6 +104,7 @@ export const NetworkDeviceSchema = z.object({
   api_token: z.string().max(500).optional(),
   api_url: z.string().url().optional().or(z.literal("")),
   port: z.coerce.number().int().min(1).max(65535).optional(),
+  scan_target: z.enum(["proxmox", "vmware", "windows", "linux"]).optional().nullable(),
 });
 
 export const CredentialSchema = z.object({
@@ -118,6 +133,7 @@ export const ScanTriggerSchema = z.object({
     "windows",
     "ssh",
     "dns",
+    "ipam_full",
   ]),
   nmap_profile_id: z.coerce.number().int().positive().optional(),
   /** Per azioni manuali: limita agli host selezionati (vista lista). */

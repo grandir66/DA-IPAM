@@ -12,15 +12,22 @@ import {
   addStatusHistory,
   getDb,
   getActiveNmapProfile,
+  upsertHost,
+  upsertArpEntries,
+  upsertMacPortEntries,
+  upsertSwitchPorts,
+  resolveMacToDevice,
+  resolveMacToNetworkDevice,
+  upsertMacIpMapping,
+  upsertDhcpLease,
+  syncIpAssignmentsForNetwork,
 } from "@/lib/db";
 import { discoverNetwork } from "@/lib/scanner/discovery";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
 import { pingHost } from "@/lib/scanner/ping";
 import { tcpConnect, FALLBACK_TCP_PORTS } from "@/lib/scanner/tcp-check";
-import { upsertHost } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
-import { upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, upsertMacIpMapping } from "@/lib/db";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { classifyDevice } from "@/lib/device-classifier";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
@@ -185,6 +192,7 @@ export async function runArpPoll(
         if (client.getDhcpLeases && !options?.skipDhcpLeases) {
           try {
             const leases = await client.getDhcpLeases();
+            const dhcpNetworksToSync = new Set<number>();
             for (const lease of leases) {
               if (enrichSet && !enrichSet.has(lease.ip)) continue;
               const network = networks.find((n) => isIpInCidr(lease.ip, n.cidr));
@@ -214,6 +222,25 @@ export async function runArpPoll(
                 vendor: vendor ?? undefined,
                 hostname: lease.hostname ?? undefined,
               });
+              upsertDhcpLease({
+                source_type: "mikrotik",
+                source_device_id: device.id,
+                source_name: device.name,
+                server_name: lease.server ?? null,
+                ip_address: lease.ip,
+                mac_address: lease.mac,
+                hostname: lease.hostname ?? null,
+                status: lease.status ?? null,
+                lease_expires: lease.expiresAfter ?? null,
+                description: lease.comment ?? null,
+                dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
+                host_id: host.id,
+                network_id: network.id,
+              });
+              dhcpNetworksToSync.add(network.id);
+            }
+            for (const nid of dhcpNetworksToSync) {
+              syncIpAssignmentsForNetwork(nid);
             }
           } catch (err) {
             console.error(`[DHCP Leases] Errore su ${device.name}:`, err);
@@ -469,8 +496,24 @@ export async function runDhcpPollForNetwork(
       vendor: vendor ?? undefined,
       hostname: lease.hostname ?? undefined,
     });
+    upsertDhcpLease({
+      source_type: "mikrotik",
+      source_device_id: device.id,
+      source_name: device.name,
+      server_name: lease.server ?? null,
+      ip_address: lease.ip,
+      mac_address: lease.mac,
+      hostname: lease.hostname ?? null,
+      status: lease.status ?? null,
+      lease_expires: lease.expiresAfter ?? null,
+      description: lease.comment ?? null,
+      dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
+      host_id: host.id,
+      network_id: networkId,
+    });
     updated++;
   }
+  syncIpAssignmentsForNetwork(networkId);
   return { updated };
 }
 
@@ -515,7 +558,7 @@ export async function runKnownHostCheck(networkId: number | null): Promise<void>
     getDb().prepare("UPDATE hosts SET last_response_time_ms = ? WHERE id = ?").run(latencyMs, host.id);
   }
 
-  console.log(`[KnownHostCheck] ${hosts.length} host verificati`);
+  console.info(`[KnownHostCheck] ${hosts.length} host verificati`);
 }
 
 export async function runDnsResolve(
@@ -580,7 +623,7 @@ async function runCleanup(configStr: string): Promise<void> {
   const daysUntilDelete = config.days_until_delete || 90;
 
   const result = cleanupStaleHosts(daysUntilStale, daysUntilDelete);
-  console.log(`[Cleanup] ${result.flagged} host segnalati stale, ${result.deleted} eliminati`);
+  console.info(`[Cleanup] ${result.flagged} host segnalati stale, ${result.deleted} eliminati`);
 }
 
 async function runAdSync(configStr: string): Promise<void> {
@@ -597,7 +640,7 @@ async function runAdSync(configStr: string): Promise<void> {
     const { getAdIntegrations } = await import("@/lib/db");
     const integrations = getAdIntegrations().filter((i) => i.enabled);
     if (integrations.length === 0) {
-      console.log("[AD Sync] Nessuna integrazione AD abilitata");
+      console.info("[AD Sync] Nessuna integrazione AD abilitata");
       return;
     }
     for (const int of integrations) {
@@ -611,9 +654,9 @@ async function runAdSync(configStr: string): Promise<void> {
 async function syncSingleAdIntegration(integrationId: number): Promise<void> {
   try {
     const { syncActiveDirectory } = await import("@/lib/ad/ad-client");
-    console.log(`[AD Sync] Avvio sincronizzazione integrazione #${integrationId}`);
+    console.info(`[AD Sync] Avvio sincronizzazione integrazione #${integrationId}`);
     const result = await syncActiveDirectory(integrationId);
-    console.log(`[AD Sync] Completato: ${result.computers} computer, ${result.users} utenti, ${result.groups} gruppi, ${result.linked_hosts} host collegati (${result.duration_ms}ms)`);
+    console.info(`[AD Sync] Completato: ${result.computers} computer, ${result.users} utenti, ${result.groups} gruppi, ${result.linked_hosts} host collegati (${result.duration_ms}ms)`);
     if (result.errors.length > 0) {
       console.warn(`[AD Sync] Errori: ${result.errors.join(", ")}`);
     }

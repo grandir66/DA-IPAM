@@ -6,14 +6,14 @@ type ScheduledTask = ReturnType<typeof cron.schedule>;
 const activeTasks = new Map<number, ScheduledTask>();
 
 export function initializeScheduler(): void {
-  console.log("[Scheduler] Inizializzazione scheduler...");
+  console.info("[Scheduler] Inizializzazione scheduler...");
 
   const jobs = getEnabledJobs();
   for (const job of jobs) {
     scheduleJob(job.id, job.interval_minutes);
   }
 
-  console.log(`[Scheduler] ${jobs.length} job attivi caricati`);
+  console.info(`[Scheduler] ${jobs.length} job attivi caricati`);
 }
 
 function intervalToCron(minutes: number): string {
@@ -34,11 +34,11 @@ export function scheduleJob(jobId: number, intervalMinutes: number): void {
   const cronExpr = intervalToCron(intervalMinutes);
 
   const task = cron.schedule(cronExpr, async () => {
-    console.log(`[Scheduler] Esecuzione job #${jobId}`);
+    console.info(`[Scheduler] Esecuzione job #${jobId}`);
     try {
       await runJob(jobId);
       updateJobLastRun(jobId);
-      console.log(`[Scheduler] Job #${jobId} completato`);
+      console.info(`[Scheduler] Job #${jobId} completato`);
     } catch (error) {
       console.error(`[Scheduler] Job #${jobId} fallito:`, error);
     }

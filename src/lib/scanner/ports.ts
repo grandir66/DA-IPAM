@@ -31,9 +31,15 @@ export function getNmapHostTimeoutSeconds(): number {
   return Math.min(180, Math.max(20, n));
 }
 
-/** Porte TCP “quick” per scoperta rete dopo ICMP (SSH, SMTP, HTTP/S, RDP, SMB, DNS, IMAP/POP comuni). */
+/**
+ * Porte TCP “quick” per scoperta rete dopo ICMP (SSH, HTTP/S, RDP, SMB, …).
+ * Include **8291** (Winbox) e **8728** (API) MikroTik: la lista ridotta storica non le aveva e Nmap non le sondava
+ * pur essendo in `NMAP_DEFAULT_TCP_PORTS` per lo scan profilo completo.
+ * Include **88** (Kerberos), **139** (NetBIOS), **389** (LDAP), **636** (LDAPS) per Domain Controller / AD — altrimenti i DC
+ * non mostrano LDAP in UI se si usa solo questa fase (network_discovery / ipam_full non rifanno lo scan TCP completo).
+ */
 export const NETWORK_DISCOVERY_QUICK_TCP_PORTS =
-  "22,25,53,80,110,135,143,443,445,993,995,3389";
+  "22,25,53,80,88,110,135,139,143,389,443,445,636,993,995,3389,8291,8728";
 
 /** Timeout Nmap interno per fase quick (s). L’host è già verificato con ICMP. */
 export function getNetworkDiscoveryQuickHostTimeoutSeconds(): number {
@@ -73,19 +79,22 @@ export function buildNetworkDiscoveryQuickTcpArgs(): string {
 /**
  * Build nmap args per scansione TCP.
  * @param customPorts - Porte TCP aggiuntive (legacy, merge con default)
- * @param explicitTcpPorts - Elenco TCP esplicito (se presente, sovrascrive default)
+ * @param explicitTcpPorts - Porte dal profilo Nmap (`tcp_ports`): vengono **unite** all’elenco predefinito
+ *   (`NMAP_DEFAULT_TCP_PORTS`), non lo sostituiscono — così un profilo “ridotto” non esclude più servizi
+ *   infrastrutturali (es. MikroTik 8291/8728 già nel default).
  */
 export function buildTcpScanArgs(customPorts?: string | null, explicitTcpPorts?: string | null): string {
-  let tcpList: string;
-  if (explicitTcpPorts && explicitTcpPorts.trim()) {
-    // Usa elenco esplicito
-    tcpList = explicitTcpPorts.split(",").map((p) => p.trim()).filter((p) => /^\d+$/.test(p)).join(",");
-  } else {
-    // Merge default + custom
-    const tcpExtra = (customPorts ?? "")
+  const parsePortNums = (s: string) =>
+    s
       .split(",")
       .map((p) => p.trim())
       .filter((p) => /^\d+$/.test(p));
+  let tcpList: string;
+  if (explicitTcpPorts && explicitTcpPorts.trim()) {
+    const tcpSet = new Set([...parsePortNums(NMAP_DEFAULT_TCP_PORTS), ...parsePortNums(explicitTcpPorts)]);
+    tcpList = [...tcpSet].map(Number).sort((a, b) => a - b).join(",");
+  } else {
+    const tcpExtra = parsePortNums(customPorts ?? "");
     const tcpSet = new Set([...NMAP_DEFAULT_TCP_PORTS.split(","), ...tcpExtra]);
     tcpList = [...tcpSet].map(Number).sort((a, b) => a - b).join(",");
   }

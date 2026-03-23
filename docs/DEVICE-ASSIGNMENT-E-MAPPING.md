@@ -49,6 +49,22 @@ classificazione = (da fingerprint + regole DB + mappa integrata) ?? (da classify
 | `classification` | Slug opzionale per filtri UI (es. `router`, `switch`, `hypervisor`, `storage`…). Se `NULL`, per router/switch si usa ancora `device_type` (compatibilità legacy). |
 | `scan_target` | Opzionale: `proxmox`, `vmware`, `windows`, `linux` — modula scan/query. |
 
+### Profilo vendor (coerenza manuale)
+
+Il **vendor** su `network_devices` è scelto dall’operatore e **non viene sovrascritto** dalle scansioni automatiche (ARP, discovery host, query SNMP di dettaglio aggiornano `sysname`/`model`/… ma non `vendor`).
+
+La UI del modulo dispositivo (`DeviceFormFields`) usa **`src/lib/vendor-device-profile.ts`**: per ogni vendor sono definiti **protocolli ammessi**, **tipo scansione** (`scan_target`) e **filtro tipologie credenziale** (SSH/API vs WinRM). Cambiando vendor, protocollo e tipo scansione vengono allineati al profilo; finché non si cambia di nuovo vendor, il comportamento di detect resta quello del profilo scelto.
+
+**Elenco vendor in UI (etichette arricchite)**  
+Le opzioni del select **non sono solo** l’elenco fisso degli slug: `GET /api/device-vendor-options` (auth richiesta) costruisce le etichette unendo:
+
+- **Profili SNMP abilitati** (`snmp_vendor_profiles` con `enabled = 1`): ogni `profile_id` è mappato su uno slug `network_devices.vendor` tramite `mapSnmpProfileIdToNetworkDeviceVendor()` in **`src/lib/network-device-vendor-options.ts`**; in etichetta compaiono i **nomi profilo** e un **campione di OID enterprise** (`enterprise_oid_prefixes`).
+- **IPAM**: stringhe distinte da `hosts.vendor` e `hosts.device_manufacturer`, inferite con **`inferNetworkDeviceVendorFromHostHint()`** (`src/lib/device-vendor-infer.ts`).
+
+I valori `value` restano sempre gli slug ammessi dal DB; cambiano solo le descrizioni mostrate. Fallback offline: `getDefaultNetworkDeviceVendorOptions()`.
+
+---
+
 **Query di raggruppamento** (esempio da `src/lib/db.ts`):
 
 - Router in lista: `classification = 'router'` **oppure** (`device_type = 'router'` e `classification` vuota).
@@ -68,6 +84,7 @@ Per aggiungere un nuovo **tipo** di `network_devices` serve aggiornare: `db-sche
 | **`mac_port_entries`** | MAC table da switch. |
 | **`switch_ports`** | Schema porte + incrocio MAC/IP (router/switch). |
 | **`network_host_credentials`** / **`host_detect_credential`** | Credenziali per host (detect), non sono classificazione ma acquisizione dati. |
+| **`dhcp_leases`** / **`ad_dhcp_leases`** | Lease DHCP (router e DHCP Microsoft). `syncIpAssignmentsForNetwork` (`src/lib/db.ts`) imposta **`hosts.ip_assignment`** usando `inferIpAssignment`: match **prioritario su MAC** tra host e lease (stessa rete per `dhcp_leases`), poi fallback su IP; per AD anche ricerca per MAC se non c’è lease per IP. Vedi `resolveDhcpLeaseForHost` / `resolveAdDhcpLeaseForHost` in `src/lib/ip-assignment.ts`. |
 
 ---
 
@@ -166,5 +183,7 @@ flowchart TD
 | `docs/DEVICE-FINGERPRINTING.md` | Dettaglio fingerprint (porte, OID, ecc.). |
 
 ---
+
+Per il **dettaglio operativo** su priorità SNMP/fingerprint, anomalie tipiche (Ubiquiti, net-snmp 8072, soglia 0.72) e come sanarle, vedi **`docs/IPAM-ASSEGNAZIONE-DEVICE-SNMP-FINGERPRINT.md`**.
 
 *Documento generato per supportare modifiche a classificazione e assegnazione dispositivi. Aggiornalo se cambi CHECK SQL o il flusso in `discovery.ts`.*

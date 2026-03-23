@@ -142,7 +142,7 @@ function normalizeOidString(s: string): string | null {
   return t;
 }
 
-function stringifySnmpValue(value: unknown): string | null {
+export function stringifySnmpValue(value: unknown): string | null {
   if (value == null) return null;
   if (Buffer.isBuffer(value)) return value.toString("utf-8").trim() || null;
   const s = String(value).trim();
@@ -150,7 +150,7 @@ function stringifySnmpValue(value: unknown): string | null {
 }
 
 /** Esegue un SNMP GET su una lista di OID e restituisce i varbinds validi. */
-async function snmpGet(
+export async function snmpGet(
   ip: string,
   community: string,
   port: number,
@@ -198,7 +198,7 @@ function parseVarbind(vb: { oid: string; value: unknown; type?: number }): { oid
  * Walk SNMP subtree (come snmpwalk) con limite varbind e timeout.
  * Usa session.subtree(oid, maxRepetitions, feed, done).
  */
-async function snmpSubwalkLimited(
+export async function snmpSubwalkLimited(
   ip: string,
   community: string,
   port: number,
@@ -247,6 +247,33 @@ async function snmpSubwalkLimited(
       }
     );
   });
+}
+
+/** ENTITY-MIB entPhysicalSerialNum: colonne .11.{indice} — walk quando i GET su .11.1/.11.2 non bastano */
+const OID_ENT_PHYSICAL_SERIAL_NUM_SUBTREE = "1.3.6.1.2.1.47.1.1.1.1.11";
+
+/**
+ * Walk sulla colonna serial ENTITY-MIB per trovare un seriale chassis/scheda quando i GET fissi falliscono.
+ * Usato da querySnmpInfo e (fallback) da getDeviceInfo per switch/router/firewall compatibili SNMP v2c.
+ */
+export async function trySnmpSerialFromEntityWalk(
+  ip: string,
+  community: string,
+  port: number
+): Promise<string | null> {
+  try {
+    const { isPlausibleHardwareSerial } = await import("@/lib/hardware-serial");
+    const rows = await snmpSubwalkLimited(ip, community, port, OID_ENT_PHYSICAL_SERIAL_NUM_SUBTREE, 72, 7500, 18);
+    let best: string | null = null;
+    for (const r of rows) {
+      const v = stringifySnmpValue(r.value);
+      if (!v || !isPlausibleHardwareSerial(v)) continue;
+      if (!best || v.length >= best.length) best = v;
+    }
+    return best;
+  } catch {
+    return null;
+  }
 }
 
 function summarizeIfTable(rows: Array<{ oid: string; value: unknown }>): string | null {
@@ -425,6 +452,15 @@ export async function querySnmpInfo(ip: string, community: string, port: number 
       }
     } catch {
       // ENTITY-MIB non supportata — ok, i dati base sono sufficienti
+    }
+
+    if (!serialNumber) {
+      try {
+        const fromWalk = await trySnmpSerialFromEntityWalk(ip, community, port);
+        if (fromWalk) serialNumber = fromWalk;
+      } catch {
+        /* ignore */
+      }
     }
 
     // FASE 3: walk estesi (paralleli, come snmpwalk da CLI)

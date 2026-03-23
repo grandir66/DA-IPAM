@@ -20,6 +20,8 @@ export interface DhcpLeaseEntry {
   expiresAfter?: string;
   lastSeen?: string;
   comment?: string;
+  /** RouterOS `dynamic=yes|no`: true = pool DHCP, false = lease statico (binding fisso) */
+  dynamic?: boolean;
 }
 
 /** Info pool DHCP MikroTik */
@@ -576,6 +578,20 @@ function parseMikrotikDhcpLeases(output: string): DhcpLeaseEntry[] {
     const lastSeenMatch = line.match(/last-seen=(\S+)/);
     const commentMatch = line.match(/comment="([^"]*)"|comment=(\S+)/);
 
+    // RouterOS terse: il flag "D" tra numero e primo key=value indica lease dinamico.
+    // Formato riga:  " 0 D  address=... " (dynamic) oppure " 1    address=..." (static)
+    // Fallback: alcune versioni potrebbero esporre dynamic=yes|no come key=value.
+    let dynamic: boolean | undefined;
+    const dynamicKvMatch = line.match(/dynamic=(yes|no|true|false)/i);
+    if (dynamicKvMatch) {
+      const v = dynamicKvMatch[1].toLowerCase();
+      dynamic = v === "yes" || v === "true";
+    } else if (ipMatch) {
+      // Controlla flags terse: la porzione prima del primo "key=" contiene i flag
+      const beforeKeys = line.substring(0, line.indexOf("=")).replace(/\S+=.*/, "");
+      dynamic = /\bD\b/.test(beforeKeys);
+    }
+
     if (ipMatch && macMatch) {
       const hostname = (hostMatch?.[1] ?? hostMatch?.[2])?.trim() || null;
       entries.push({
@@ -587,6 +603,7 @@ function parseMikrotikDhcpLeases(output: string): DhcpLeaseEntry[] {
         expiresAfter: expiresMatch?.[1] || undefined,
         lastSeen: lastSeenMatch?.[1] || undefined,
         comment: (commentMatch?.[1] ?? commentMatch?.[2]) || undefined,
+        dynamic,
       });
     }
   }

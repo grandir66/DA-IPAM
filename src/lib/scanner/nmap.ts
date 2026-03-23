@@ -72,7 +72,6 @@ export async function nmapPortScan(
   try {
     const args = [...tcpArgs.split(/\s+/).filter(Boolean), "-oX", "-", ip];
     const cmdLine = `nmap ${args.join(" ")}`;
-    console.log(`[Nmap] Fase 1/2 TCP ${ip}: ${cmdLine}`);
     emitLog(`TCP ${ip}: ${cmdLine}`);
     const { stdout } = await execFileAsync("nmap", args, {
       timeout,
@@ -81,7 +80,6 @@ export async function nmapPortScan(
     const results = parseNmapXml(stdout);
     tcpResult = results.length > 0 ? results[0] : null;
     const portList = tcpResult?.ports.map((p) => `${p.port}/${p.protocol}`).join(", ") || "—";
-    console.log(`[Nmap] Fase 1/2 TCP ${ip}: ${tcpResult?.ports.length ?? 0} porte TCP aperte`);
     emitLog(`TCP ${ip}: ${tcpResult?.ports.length ?? 0} porte → ${portList}`);
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
@@ -107,7 +105,6 @@ export async function nmapPortScan(
   try {
     const args = [...udpArgs.split(/\s+/).filter(Boolean), "-oX", "-", ip];
     const cmdLine = `nmap ${args.join(" ")}`;
-    console.log(`[Nmap] Fase 2/2 UDP ${ip}: ${cmdLine}`);
     emitLog(`UDP ${ip}: ${cmdLine}`);
     const { stdout } = await execFileAsync("nmap", args, {
       timeout,
@@ -117,7 +114,6 @@ export async function nmapPortScan(
     udpResult = results.length > 0 ? results[0] : null;
     if (udpResult && udpResult.ports.length > 0) {
       const portList = udpResult.ports.map((p) => `${p.port}/${p.protocol}`).join(", ");
-      console.log(`[Nmap] Fase 2/2 UDP ${ip}: ${udpResult.ports.length} porte UDP aperte`);
       emitLog(`UDP ${ip}: ${udpResult.ports.length} porte → ${portList}`);
     } else {
       emitLog(`UDP ${ip}: 0 porte`);
@@ -125,7 +121,6 @@ export async function nmapPortScan(
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     if (/root|privileges|permission/i.test(msg)) {
-      console.log(`[Nmap] UDP scan ${ip}: skip (richiede root)`);
       emitLog(`UDP ${ip}: skip (richiede root)`);
     } else {
       console.warn(`[Nmap] UDP scan ${ip} fallito:`, msg);

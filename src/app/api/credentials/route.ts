@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { getAllCredentials, createCredential } from "@/lib/db";
 import { CredentialSchema } from "@/lib/validators";
 import { encrypt } from "@/lib/crypto";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET() {
   try {
+    const authCheck = await requireAuth();
+    if (isAuthError(authCheck)) return authCheck;
     const credentials = getAllCredentials();
     const masked = credentials.map((c) => ({
       ...c,

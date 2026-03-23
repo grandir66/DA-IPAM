@@ -12,7 +12,7 @@ import {
   getNetworkDeviceById,
   bulkUpsertDhcpLeases,
   deleteDhcpLeasesByDevice,
-  getNetworkContainingIp,
+  buildNetworkLookup,
   getRouters,
 } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
@@ -99,9 +99,10 @@ export async function POST(request: NextRequest) {
       }
 
       const leases = await client.getDhcpLeases();
+      const findNetwork = buildNetworkLookup();
 
       const leasesToInsert = leases.map((lease) => {
-        const network = getNetworkContainingIp(lease.ip);
+        const network = findNetwork(lease.ip);
         return {
           source_type: "mikrotik" as const,
           source_device_id: deviceId,
@@ -113,6 +114,7 @@ export async function POST(request: NextRequest) {
           status: lease.status || null,
           lease_expires: lease.expiresAfter || null,
           description: lease.comment || null,
+          dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
           network_id: network?.id || null,
         };
       });
@@ -146,6 +148,7 @@ export async function POST(request: NextRequest) {
       let totalInserted = 0;
       let totalUpdated = 0;
       const errors: string[] = [];
+      const findNetwork = buildNetworkLookup();
 
       for (const device of mikrotikRouters) {
         try {
@@ -155,7 +158,7 @@ export async function POST(request: NextRequest) {
           const leases = await client.getDhcpLeases();
 
           const leasesToInsert = leases.map((lease) => {
-            const network = getNetworkContainingIp(lease.ip);
+            const network = findNetwork(lease.ip);
             return {
               source_type: "mikrotik" as const,
               source_device_id: device.id,
@@ -167,6 +170,7 @@ export async function POST(request: NextRequest) {
               status: lease.status || null,
               lease_expires: lease.expiresAfter || null,
               description: lease.comment || null,
+              dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
               network_id: network?.id || null,
             };
           });

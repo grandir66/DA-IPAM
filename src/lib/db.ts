@@ -2,9 +2,10 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import { SCHEMA_SQL } from "./db-schema";
-import { macToHex, normalizeMac } from "./utils";
+import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { decrypt } from "./crypto";
 import { randomUUID } from "crypto";
+import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
 
 /** Convert IPv4 string to numeric value for sorting */
 function ipToNum(ip: string): number {
@@ -175,6 +176,9 @@ export function getDb(): Database.Database {
   try { _db.exec("ALTER TABLE hosts ADD COLUMN conflict_flags TEXT"); } catch { /* already exists */ }
   try {
     _db.exec("ALTER TABLE hosts ADD COLUMN detection_json TEXT");
+  } catch { /* column already exists */ }
+  try {
+    _db.exec("ALTER TABLE hosts ADD COLUMN ip_assignment TEXT DEFAULT 'unknown'");
   } catch { /* column already exists */ }
   try {
     _db.exec("DROP TABLE IF EXISTS scheduled_jobs_new");
@@ -465,6 +469,51 @@ export function getDb(): Database.Database {
   } catch { /* table might not exist yet */ }
 
   _db.exec(SCHEMA_SQL);
+
+  try {
+    const row = _db.prepare("SELECT value FROM settings WHERE key = 'onboarding_completed'").get() as { value: string } | undefined;
+    if (!row) {
+      const n = (_db.prepare("SELECT COUNT(*) as c FROM networks").get() as { c: number }).c;
+      const d = (_db.prepare("SELECT COUNT(*) as c FROM network_devices").get() as { c: number }).c;
+      const v = n > 0 || d > 0 ? "1" : "0";
+      _db.prepare("INSERT INTO settings (key, value) VALUES ('onboarding_completed', ?)").run(v);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    _db.exec("ALTER TABLE network_devices ADD COLUMN product_profile TEXT");
+  } catch { /* column exists */ }
+  try {
+    _db.exec("CREATE INDEX IF NOT EXISTS idx_network_devices_product_profile ON network_devices(product_profile)");
+  } catch { /* */ }
+  try {
+    _db.exec(`
+      UPDATE network_devices SET product_profile = CASE
+        WHEN vendor = 'mikrotik' AND device_type = 'router' THEN 'mikrotik_router'
+        WHEN vendor = 'mikrotik' THEN 'mikrotik_switch'
+        WHEN vendor = 'ubiquiti' THEN 'ubiquiti_switch_managed'
+        WHEN vendor = 'windows' THEN 'windows_client'
+        WHEN vendor = 'linux' THEN 'linux_server'
+        WHEN vendor = 'proxmox' AND device_type = 'hypervisor' THEN 'proxmox_ve'
+        WHEN vendor = 'proxmox' THEN 'proxmox_pbs'
+        WHEN vendor = 'synology' THEN 'synology_storage'
+        WHEN vendor = 'qnap' AND device_type = 'router' THEN 'qnap_router'
+        WHEN vendor = 'qnap' THEN 'qnap_storage'
+        WHEN vendor = 'hp' AND vendor_subtype = 'procurve' THEN 'hp_switch_procurve'
+        WHEN vendor = 'hp' AND vendor_subtype = 'comware' THEN 'hp_switch_comware'
+        WHEN vendor = 'hp' THEN 'hp_switch_arubaos'
+        WHEN vendor = 'omada' THEN 'omada_switch'
+        WHEN vendor = 'stormshield' THEN 'stormshield_firewall'
+        WHEN vendor = 'cisco' AND device_type = 'router' THEN 'cisco_router'
+        WHEN vendor = 'cisco' THEN 'cisco_switch'
+        WHEN vendor = 'vmware' THEN 'vmware_vsphere'
+        ELSE 'generic_iot'
+      END
+      WHERE product_profile IS NULL OR TRIM(product_profile) = ''
+    `);
+  } catch { /* backfill optional */ }
 
   try {
     _db.exec(`CREATE TABLE IF NOT EXISTS inventory_assets (
@@ -1013,6 +1062,71 @@ export function getDb(): Database.Database {
     _db.exec(`CREATE INDEX IF NOT EXISTS idx_dhcp_leases_host ON dhcp_leases(host_id)`);
     _db.exec(`CREATE INDEX IF NOT EXISTS idx_dhcp_leases_network ON dhcp_leases(network_id)`);
   } catch { /* exists */ }
+  try {
+    _db.exec("ALTER TABLE dhcp_leases ADD COLUMN dynamic_lease INTEGER");
+  } catch { /* column exists */ }
+
+  try {
+    const flag = _db.prepare("SELECT value FROM settings WHERE key = 'migration_mac_normalize_v1'").get() as
+      | { value: string }
+      | undefined;
+    if (!flag?.value) {
+      const hostRows = _db.prepare("SELECT id, mac FROM hosts WHERE mac IS NOT NULL AND trim(mac) != ''").all() as {
+        id: number;
+        mac: string;
+      }[];
+      const updHost = _db.prepare("UPDATE hosts SET mac = ? WHERE id = ?");
+      for (const h of hostRows) {
+        const n = normalizeMacForStorage(h.mac);
+        if (n && n !== h.mac) updHost.run(n, h.id);
+      }
+      const leaseRows = _db.prepare("SELECT id, mac_address FROM dhcp_leases").all() as {
+        id: number;
+        mac_address: string;
+      }[];
+      const updLease = _db.prepare("UPDATE dhcp_leases SET mac_address = ? WHERE id = ?");
+      for (const r of leaseRows) {
+        const n = normalizeMacForStorage(r.mac_address);
+        if (n && n !== r.mac_address) updLease.run(n, r.id);
+      }
+      try {
+        const adRows = _db.prepare("SELECT id, mac_address FROM ad_dhcp_leases").all() as {
+          id: number;
+          mac_address: string;
+        }[];
+        const updAd = _db.prepare("UPDATE ad_dhcp_leases SET mac_address = ? WHERE id = ?");
+        for (const r of adRows) {
+          const n = normalizeMacForStorage(r.mac_address);
+          if (n && n !== r.mac_address) updAd.run(n, r.id);
+        }
+      } catch {
+        /* tabella assente in DB molto vecchi */
+      }
+      _db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_mac_normalize_v1', '1')").run();
+      syncIpAssignmentsForAllNetworks();
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const fpWin = _db.prepare("SELECT value FROM settings WHERE key = 'migration_fp_windows_relaxed_v1'").get() as
+      | { value: string }
+      | undefined;
+    if (!fpWin?.value) {
+      _db
+        .prepare(
+          `UPDATE device_fingerprint_rules SET min_key_ports = 2,
+           note = CASE WHEN note IS NULL OR trim(note) = '' THEN 'Almeno 2/3 porte SMB/RPC (135,139,445)'
+                ELSE note END
+           WHERE builtin = 1 AND name = 'Windows Server (porte)'`
+        )
+        .run();
+      _db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_fp_windows_relaxed_v1', '1')").run();
+    }
+  } catch {
+    /* ignore */
+  }
 
   return _db;
 }
@@ -1043,7 +1157,16 @@ function seedBuiltinFingerprintRules(db: Database.Database): void {
     { name: "Hikvision (porte)", label: "Hikvision", cls: "telecamera", pri: 10, keyPorts: [554, 8000], optPorts: [80, 8001, 443] },
     { name: "Dahua / NVR (porte)", label: "Dahua / NVR", cls: "telecamera", pri: 10, keyPorts: [554, 37777], optPorts: [80, 443] },
     { name: "Telecam XMEye/clone (porte)", label: "Telecam XMEye/clone", cls: "telecamera", pri: 10, keyPorts: [34567, 554], optPorts: [80] },
-    { name: "Windows Server (porte)", label: "Windows Server", cls: "server_windows", pri: 20, keyPorts: [135, 139, 445], optPorts: [3389, 5985] },
+    {
+      name: "Windows Server (porte)",
+      label: "Windows Server",
+      cls: "server_windows",
+      pri: 20,
+      keyPorts: [135, 139, 445],
+      optPorts: [3389, 5985],
+      minKey: 2,
+      note: "Almeno 2 tra 135/139/445 + opzionali RDP/WinRM",
+    },
     { name: "HPE iLO (porte)", label: "HPE iLO", cls: "server", pri: 10, keyPorts: [17988, 17990], optPorts: [443, 623] },
     { name: "PBX SIP (porte)", label: "PBX SIP (FreePBX/3CX)", cls: "voip", pri: 10, keyPorts: [5060], optPorts: [5061, 80, 443] },
     { name: "Zabbix (porte)", label: "Zabbix", cls: "server", pri: 10, keyPorts: [10050, 10051], optPorts: [80, 443] },
@@ -1377,6 +1500,31 @@ export function getNetworkContainingIp(ip: string): Network | undefined {
   return undefined;
 }
 
+/**
+ * Pre-carica tutte le reti e ritorna una funzione di lookup in-memory.
+ * Usare al posto di getNetworkContainingIp() quando si devono risolvere
+ * molti IP in un loop (evita N+1 query).
+ */
+export function buildNetworkLookup(): (ip: string) => Network | undefined {
+  const { ipToLong, parseCidr } = require("./utils") as {
+    ipToLong: (ip: string) => number;
+    parseCidr: (cidr: string) => { networkLong: number; broadcastLong: number; prefix: number };
+  };
+  const networks = getDb().prepare("SELECT * FROM networks").all() as Network[];
+  const parsed = networks.map((net) => {
+    const { networkLong, broadcastLong } = parseCidr(net.cidr);
+    return { net, networkLong, broadcastLong };
+  });
+
+  return (ip: string) => {
+    const ipLong = ipToLong(ip);
+    for (const { net, networkLong, broadcastLong } of parsed) {
+      if (ipLong >= networkLong && ipLong <= broadcastLong) return net;
+    }
+    return undefined;
+  };
+}
+
 export function createNetwork(input: NetworkInput): Network {
   // Verifica overlap CIDR con reti esistenti
   const { cidrOverlaps } = require("./utils") as { cidrOverlaps: (a: string, b: string) => boolean };
@@ -1443,21 +1591,44 @@ export function getHostsByNetwork(networkId: number): Host[] {
   return hosts.sort((a, b) => ipToNum(a.ip) - ipToNum(b.ip));
 }
 
+/** Tutti gli host (tutte le reti), per lista dispositivi unificata. limit opzionale (default 10000). */
+export function getAllHosts(limit: number = 10000): Host[] {
+  const hosts = getDb()
+    .prepare("SELECT * FROM hosts ORDER BY (network_id, ip) LIMIT ?")
+    .all(limit) as Host[];
+  return hosts.sort((a, b) => {
+    if (a.network_id !== b.network_id) return a.network_id - b.network_id;
+    return ipToNum(a.ip) - ipToNum(b.ip);
+  });
+}
+
 /** Hosts con device associato in una sola query (evita N+1 getNetworkDeviceByHost) */
-export function getHostsByNetworkWithDevices(networkId: number): (Host & { device_id?: number; device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string } })[] {
+export function getHostsByNetworkWithDevices(networkId: number): (Host & {
+  device_id?: number;
+  device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string };
+  ad_dns_host_name?: string | null;
+})[] {
   const hosts = getDb().prepare(
-    `SELECT h.*, nd.id as _dev_id, nd.name as _dev_name, nd.sysname as _dev_sysname, nd.vendor as _dev_vendor, nd.protocol as _dev_protocol
+    `SELECT h.*, nd.id as _dev_id, nd.name as _dev_name, nd.sysname as _dev_sysname, nd.vendor as _dev_vendor, nd.protocol as _dev_protocol,
+            ac.ad_dns as _ad_dns
      FROM hosts h
      LEFT JOIN network_devices nd ON nd.host = h.ip
+     LEFT JOIN (
+       SELECT host_id, MAX(dns_host_name) as ad_dns
+       FROM ad_computers
+       WHERE host_id IS NOT NULL
+       GROUP BY host_id
+     ) ac ON ac.host_id = h.id
      WHERE h.network_id = ?`
-  ).all(networkId) as (Host & { _dev_id?: number; _dev_name?: string; _dev_sysname?: string | null; _dev_vendor?: string; _dev_protocol?: string })[];
+  ).all(networkId) as (Host & { _dev_id?: number; _dev_name?: string; _dev_sysname?: string | null; _dev_vendor?: string; _dev_protocol?: string; _ad_dns?: string | null })[];
 
   return hosts
     .sort((a, b) => ipToNum(a.ip) - ipToNum(b.ip))
-    .map(({ _dev_id, _dev_name, _dev_sysname, _dev_vendor, _dev_protocol, ...h }) => ({
+    .map(({ _dev_id, _dev_name, _dev_sysname, _dev_vendor, _dev_protocol, _ad_dns, ...h }) => ({
       ...h,
       device_id: _dev_id ?? undefined,
       device: _dev_id ? { id: _dev_id, name: _dev_name!, sysname: _dev_sysname ?? null, vendor: _dev_vendor!, protocol: _dev_protocol! } : undefined,
+      ad_dns_host_name: _ad_dns ?? undefined,
     }));
 }
 
@@ -1527,8 +1698,12 @@ export function resolveMacToDevice(mac: string): { ip: string | null; hostname: 
   };
 }
 
-export function getHostBasic(id: number): Pick<Host, "id" | "ip" | "custom_name" | "hostname"> | undefined {
-  return getDb().prepare("SELECT id, ip, custom_name, hostname FROM hosts WHERE id = ?").get(id) as Pick<Host, "id" | "ip" | "custom_name" | "hostname"> | undefined;
+export function getHostBasic(
+  id: number
+): Pick<Host, "id" | "ip" | "custom_name" | "hostname" | "vendor" | "device_manufacturer"> | undefined {
+  return getDb()
+    .prepare("SELECT id, ip, custom_name, hostname, vendor, device_manufacturer FROM hosts WHERE id = ?")
+    .get(id) as Pick<Host, "id" | "ip" | "custom_name" | "hostname" | "vendor" | "device_manufacturer"> | undefined;
 }
 
 export function getHostByIp(ip: string): Host | undefined {
@@ -1570,9 +1745,13 @@ export function getHostById(id: number): HostDetail | undefined {
   // Dispositivo gestito con stesso IP (es. WINRM, SSH, SNMP)
   const networkDevice = getNetworkDeviceByHost(host.ip);
 
+  const scanTypesSeen = [...new Set(recentScans.map((s) => s.scan_type))];
+
   return {
     ...host,
     recent_scans: recentScans,
+    scan_types_used: scanTypesSeen,
+    detect_credentials: getHostDetectCredentialsEnriched(id),
     arp_source: arpSource || null,
     switch_port: switchPort || null,
     network_device: networkDevice ? { id: networkDevice.id, name: networkDevice.name, sysname: networkDevice.sysname, vendor: networkDevice.vendor, protocol: networkDevice.protocol } : null,
@@ -1642,15 +1821,18 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
 
   if (existing) {
     const existingRow = getDb().prepare(
-      "SELECT open_ports, classification_manual, model, serial_number, firmware, device_manufacturer, os_info FROM hosts WHERE id = ?"
-    ).get(existing.id) as { open_ports: string | null; classification_manual?: number; model?: string | null; serial_number?: string | null; firmware?: string | null; device_manufacturer?: string | null; os_info?: string | null } | undefined;
+      "SELECT open_ports, classification_manual, model, serial_number, firmware, device_manufacturer, os_info, mac FROM hosts WHERE id = ?"
+    ).get(existing.id) as { open_ports: string | null; classification_manual?: number; model?: string | null; serial_number?: string | null; firmware?: string | null; device_manufacturer?: string | null; os_info?: string | null; mac?: string | null } | undefined;
     const classificationManual = existingRow?.classification_manual === 1;
     /** Quando preserve_existing=true (scan discovery/nmap) non si sovrascrivono dati già valorizzati */
     const preserve = input.preserve_existing === true;
     const fields: string[] = ["updated_at = datetime('now')"];
     const values: unknown[] = [];
 
-    if (input.mac !== undefined) { fields.push("mac = ?"); values.push(input.mac); }
+    if (input.mac !== undefined) {
+      fields.push("mac = ?");
+      values.push(normalizeMacForStorage(input.mac) ?? null);
+    }
     if (input.vendor !== undefined) { fields.push("vendor = ?"); values.push(input.vendor); }
     if (input.hostname !== undefined) {
       const HOSTNAME_PRIORITY: Record<string, number> = { manual: 6, dhcp: 5, snmp: 4, nmap: 3, dns: 2, arp: 1 };
@@ -1754,15 +1936,22 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       });
     }
     // IP/MAC conflict detection
-    if (input.mac && existing) {
+    if (input.mac !== undefined && host.mac && existing) {
       const duplicate = getDb().prepare(
         "SELECT id, ip FROM hosts WHERE network_id = ? AND mac = ? AND id != ?"
-      ).get(input.network_id, input.mac, existing.id) as { id: number; ip: string } | undefined;
+      ).get(input.network_id, host.mac, existing.id) as { id: number; ip: string } | undefined;
       if (duplicate) {
         getDb().prepare("UPDATE hosts SET conflict_flags = ? WHERE id = ?")
           .run(`mac_duplicate:${duplicate.ip}`, existing.id);
         getDb().prepare("UPDATE hosts SET conflict_flags = ? WHERE id = ?")
           .run(`mac_duplicate:${input.ip}`, duplicate.id);
+      }
+    }
+    if (input.mac !== undefined) {
+      const prevHex = macToHex(existingRow?.mac ?? "");
+      const newHex = macToHex(host.mac ?? "");
+      if (prevHex !== newHex) {
+        syncIpAssignmentsForNetwork(input.network_id);
       }
     }
     return host;
@@ -1775,7 +1964,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
   const result = stmt.run(
     input.network_id,
     input.ip,
-    input.mac || null,
+    normalizeMacForStorage(input.mac ?? "") ?? null,
     input.vendor || null,
     input.hostname || null,
     input.hostname_source || null,
@@ -1811,6 +2000,13 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
 }
 
 export function updateHost(id: number, input: HostUpdate): Host | undefined {
+  const prevForMac =
+    input.mac !== undefined
+      ? (getDb().prepare("SELECT network_id, mac FROM hosts WHERE id = ?").get(id) as
+          | { network_id: number; mac: string | null }
+          | undefined)
+      : undefined;
+
   const fields: string[] = [];
   const values: unknown[] = [];
 
@@ -1822,7 +2018,7 @@ export function updateHost(id: number, input: HostUpdate): Host | undefined {
   }
   if (input.inventory_code !== undefined) { fields.push("inventory_code = ?"); values.push(input.inventory_code); }
   if (input.notes !== undefined) { fields.push("notes = ?"); values.push(input.notes); }
-  if (input.mac !== undefined) { fields.push("mac = ?"); values.push(input.mac); }
+  if (input.mac !== undefined) { fields.push("mac = ?"); values.push(normalizeMacForStorage(input.mac) ?? null); }
   if (input.known_host !== undefined) { fields.push("known_host = ?"); values.push(input.known_host); }
   if (input.monitor_ports !== undefined) { fields.push("monitor_ports = ?"); values.push(input.monitor_ports); }
   if (input.status !== undefined) {
@@ -1839,7 +2035,13 @@ export function updateHost(id: number, input: HostUpdate): Host | undefined {
   values.push(id);
 
   getDb().prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  return getDb().prepare("SELECT * FROM hosts WHERE id = ?").get(id) as Host | undefined;
+  const updated = getDb().prepare("SELECT * FROM hosts WHERE id = ?").get(id) as Host | undefined;
+  if (input.mac !== undefined && prevForMac && updated) {
+    if (macToHex(prevForMac.mac ?? "") !== macToHex(updated.mac ?? "")) {
+      syncIpAssignmentsForNetwork(prevForMac.network_id);
+    }
+  }
+  return updated;
 }
 
 export function deleteHost(id: number): boolean {
@@ -2255,6 +2457,29 @@ export function setHostDetectCredential(hostId: number, role: HostDetectCredenti
     .run(hostId, role, credentialId);
 }
 
+export function deleteHostDetectCredential(hostId: number, role: HostDetectCredentialRole): void {
+  getDb().prepare(`DELETE FROM host_detect_credential WHERE host_id = ? AND role = ?`).run(hostId, role);
+}
+
+/** Credenziali archiviate per host (detect) con nome per UI. */
+export function getHostDetectCredentialsEnriched(hostId: number): Array<{
+  role: HostDetectCredentialRole;
+  credential_id: number;
+  credential_name: string;
+}> {
+  const rows = getDb()
+    .prepare(`SELECT role, credential_id FROM host_detect_credential WHERE host_id = ? ORDER BY role`)
+    .all(hostId) as Array<{ role: HostDetectCredentialRole; credential_id: number }>;
+  return rows.map((r) => {
+    const c = getCredentialById(r.credential_id);
+    return {
+      role: r.role,
+      credential_id: r.credential_id,
+      credential_name: c?.name ?? `#${r.credential_id}`,
+    };
+  });
+}
+
 /** Ordine: credenziali della rete, poi quella globale Impostazioni (se non già in elenco). */
 export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux"): number[] {
   const netIds = getNetworkHostCredentialIds(networkId, role);
@@ -2314,6 +2539,26 @@ export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverr
     out.push(x);
   }
   return out;
+}
+
+/**
+ * Community SNMP per un host: se in `host_detect_credential` è forzata una credenziale SNMP,
+ * usa **solo** quella community (come richiesto per scan vincolati); altrimenti stessa logica di
+ * {@link buildSnmpCommunitiesForNetwork}.
+ */
+export function buildSnmpCommunitiesForHost(
+  networkId: number,
+  hostId: number | null,
+  profileOrOverride?: string | null
+): string[] {
+  if (hostId != null) {
+    const boundId = getHostDetectCredentialId(hostId, "snmp");
+    if (boundId != null) {
+      const com = getCredentialCommunityString(boundId);
+      if (com?.trim()) return [com.trim()];
+    }
+  }
+  return buildSnmpCommunitiesForNetwork(networkId, profileOrOverride);
 }
 
 /** Restituisce la community string decifrata per una credenziale SNMP. */
@@ -2407,12 +2652,16 @@ export function getNetworkDeviceByHost(ip: string): NetworkDevice | undefined {
   return getDb().prepare("SELECT * FROM network_devices WHERE host = ?").get(ip) as NetworkDevice | undefined;
 }
 
-type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target"> & { classification?: string | null; scan_target?: string | null };
+type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile"> & {
+  classification?: string | null;
+  scan_target?: string | null;
+  product_profile?: string | null;
+};
 
 export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
   const stmt = getDb().prepare(
-    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name, input.host, input.device_type, input.vendor,
@@ -2420,7 +2669,9 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     input.credential_id ?? null, (input as { snmp_credential_id?: number | null }).snmp_credential_id ?? null,
     input.username, input.encrypted_password,
     input.community_string, input.api_token, input.api_url, input.port, input.enabled,
-    (input as { classification?: string | null }).classification ?? null
+    (input as { classification?: string | null }).classification ?? null,
+    (input as { scan_target?: string | null }).scan_target ?? null,
+    (input as { product_profile?: string | null }).product_profile ?? null
   );
   return getDb().prepare("SELECT * FROM network_devices WHERE id = ?").get(result.lastInsertRowid) as NetworkDevice;
 }
@@ -2429,7 +2680,7 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target"] as const;
+  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile"] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);
@@ -3474,6 +3725,11 @@ export function getSetting(key: string): string | null {
   return row?.value ?? null;
 }
 
+/** Configurazione guidata iniziale completata (impostazione `onboarding_completed`). */
+export function isOnboardingCompleted(): boolean {
+  return getSetting("onboarding_completed") === "1";
+}
+
 export function getAllSettings(): Record<string, string> {
   const rows = getDb().prepare("SELECT key, value FROM settings").all() as { key: string; value: string }[];
   const result: Record<string, string> = {};
@@ -3985,6 +4241,7 @@ export function trackDeviceInfoChanges(deviceId: number, newInfoObj: object): st
 
 /**
  * Aggiorna network_devices.port e classification basandosi sui dati host appena scansionati.
+ * Non modifica mai **vendor** (resta impostazione manuale; vedi `vendor-device-profile.ts`).
  * - port: se la porta attuale del device non è tra le porte rilevate, assegna una porta candidata
  *   appropriata per protocollo/vendor; se il device ha già una porta presente nei dati scan, non tocca.
  * - classification: allinea se l'host ha una classificazione più specifica (solo per router/switch/hypervisor).
@@ -4143,6 +4400,18 @@ export interface AdGroup {
 
 export function getAdIntegrations(): AdIntegration[] {
   return getDb().prepare("SELECT * FROM ad_integrations ORDER BY name").all() as AdIntegration[];
+}
+
+/**
+ * Restituisce il realm (dominio AD) dalla prima integrazione AD abilitata.
+ * Usato per Kerberos auto-kinit nelle connessioni WinRM.
+ */
+export function getAdRealm(): { realm: string; dcHost: string } | null {
+  const row = getDb().prepare(
+    "SELECT domain, dc_host FROM ad_integrations WHERE enabled = 1 ORDER BY id LIMIT 1"
+  ).get() as { domain: string; dc_host: string } | undefined;
+  if (!row) return null;
+  return { realm: row.domain, dcHost: row.dc_host };
 }
 
 export function getAdIntegrationById(id: number): AdIntegration | undefined {
@@ -4448,6 +4717,7 @@ export function upsertAdDhcpLease(integrationId: number, input: {
   address_state?: string | null;
   description?: string | null;
 }): void {
+  const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
   getDb().prepare(`INSERT INTO ad_dhcp_leases
     (integration_id, scope_id, scope_name, ip_address, mac_address, hostname, lease_expires, address_state, description, last_synced)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -4465,7 +4735,7 @@ export function upsertAdDhcpLease(integrationId: number, input: {
     input.scope_id,
     input.scope_name ?? null,
     input.ip_address,
-    input.mac_address,
+    macNorm,
     input.hostname ?? null,
     input.lease_expires ?? null,
     input.address_state ?? null,
@@ -4503,6 +4773,22 @@ export function getSnmpVendorProfiles(): SnmpVendorProfileRow[] {
 
 export function getEnabledSnmpVendorProfiles(): SnmpVendorProfileRow[] {
   return getDb().prepare("SELECT * FROM snmp_vendor_profiles WHERE enabled = 1 ORDER BY confidence DESC, name").all() as SnmpVendorProfileRow[];
+}
+
+/**
+ * Stringhe distinte da vendor MAC / produttore SNMP sugli host (per suggerimenti vendor dispositivo).
+ */
+export function getDistinctHostVendorHints(limit = 400): string[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT DISTINCT trim(v) AS v FROM (
+        SELECT vendor AS v FROM hosts WHERE vendor IS NOT NULL AND trim(vendor) != ''
+        UNION
+        SELECT device_manufacturer AS v FROM hosts WHERE device_manufacturer IS NOT NULL AND trim(device_manufacturer) != ''
+      ) ORDER BY v COLLATE NOCASE LIMIT ?`
+    )
+    .all(limit) as { v: string }[];
+  return rows.map((r) => r.v);
 }
 
 export function getSnmpVendorProfileById(id: number): SnmpVendorProfileRow | undefined {
@@ -4663,6 +4949,8 @@ export interface DhcpLease {
   lease_start: string | null;
   lease_expires: string | null;
   description: string | null;
+  /** 1=dinamico (MikroTik pool), 0=statico, NULL=non noto / altra fonte */
+  dynamic_lease: number | null;
   host_id: number | null;
   network_id: number | null;
   last_synced: string;
@@ -4768,12 +5056,14 @@ export function upsertDhcpLease(input: {
   description?: string | null;
   host_id?: number | null;
   network_id?: number | null;
+  dynamic_lease?: number | null;
 }): void {
+  const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
   getDb().prepare(`INSERT INTO dhcp_leases
     (source_type, source_device_id, source_name, server_name, scope_id, scope_name,
      ip_address, mac_address, hostname, status, lease_start, lease_expires, description,
-     host_id, network_id, last_synced)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     dynamic_lease, host_id, network_id, last_synced)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(source_device_id, ip_address) DO UPDATE SET
       source_name = excluded.source_name,
       server_name = excluded.server_name,
@@ -4785,6 +5075,7 @@ export function upsertDhcpLease(input: {
       lease_start = excluded.lease_start,
       lease_expires = excluded.lease_expires,
       description = excluded.description,
+      dynamic_lease = COALESCE(excluded.dynamic_lease, dhcp_leases.dynamic_lease),
       host_id = COALESCE(excluded.host_id, dhcp_leases.host_id),
       network_id = COALESCE(excluded.network_id, dhcp_leases.network_id),
       last_synced = datetime('now')
@@ -4796,15 +5087,62 @@ export function upsertDhcpLease(input: {
     input.scope_id ?? null,
     input.scope_name ?? null,
     input.ip_address,
-    input.mac_address,
+    macNorm,
     input.hostname ?? null,
     input.status ?? null,
     input.lease_start ?? null,
     input.lease_expires ?? null,
     input.description ?? null,
+    input.dynamic_lease ?? null,
     input.host_id ?? null,
     input.network_id ?? null
   );
+}
+
+/** Aggiorna hosts.ip_assignment da dhcp_leases (rete) e ad_dhcp_leases, con match preferito su MAC poi su IP. */
+export function syncIpAssignmentsForNetwork(networkId: number): number {
+  const network = getNetworkById(networkId);
+  if (!network) return 0;
+  const rows = getDb().prepare(`SELECT id, ip, mac FROM hosts WHERE network_id = ?`).all(networkId) as {
+    id: number;
+    ip: string;
+    mac: string | null;
+  }[];
+  if (rows.length === 0) return 0;
+  const dhcpLeases = getDb().prepare(`SELECT * FROM dhcp_leases WHERE network_id = ?`).all(networkId) as DhcpLease[];
+  const ips = rows.map((r) => r.ip);
+  const placeholders = ips.map(() => "?").join(",");
+  const adLeasesByIp = getDb()
+    .prepare(`SELECT * FROM ad_dhcp_leases WHERE ip_address IN (${placeholders})`)
+    .all(...ips) as AdDhcpLease[];
+  const byIpAd = new Map<string, AdDhcpLease>();
+  for (const a of adLeasesByIp) {
+    if (!byIpAd.has(a.ip_address)) byIpAd.set(a.ip_address, a);
+  }
+  const needsFullAdForMac = rows.some((h) => !!h.mac?.trim() && !byIpAd.get(h.ip));
+  const adAllRows = needsFullAdForMac
+    ? (getDb().prepare(`SELECT * FROM ad_dhcp_leases`).all() as AdDhcpLease[])
+    : [];
+  const stmt = getDb().prepare(`UPDATE hosts SET ip_assignment = ?, updated_at = datetime('now') WHERE id = ?`);
+  let n = 0;
+  for (const h of rows) {
+    const dhcpLease = resolveDhcpLeaseForHost(h.ip, h.mac, dhcpLeases);
+    const adLease = resolveAdDhcpLeaseForHost(h.ip, h.mac, byIpAd, adAllRows);
+    const next = inferIpAssignment(dhcpLease, adLease);
+    stmt.run(next, h.id);
+    n++;
+  }
+  return n;
+}
+
+/** Ricalcola assegnazione IP per tutte le reti (es. dopo sync AD DHCP). */
+export function syncIpAssignmentsForAllNetworks(): number {
+  const nets = getNetworks();
+  let t = 0;
+  for (const n of nets) {
+    t += syncIpAssignmentsForNetwork(n.id);
+  }
+  return t;
 }
 
 export function bulkUpsertDhcpLeases(leases: Array<{
@@ -4819,10 +5157,12 @@ export function bulkUpsertDhcpLeases(leases: Array<{
   lease_expires?: string | null;
   description?: string | null;
   network_id?: number | null;
+  dynamic_lease?: number | null;
 }>): { inserted: number; updated: number } {
   let inserted = 0;
   let updated = 0;
 
+  const netIds = new Set<number | null>();
   const t = getDb().transaction(() => {
     for (const lease of leases) {
       const existing = getDb().prepare(
@@ -4832,9 +5172,14 @@ export function bulkUpsertDhcpLeases(leases: Array<{
       upsertDhcpLease(lease);
       if (existing) updated++;
       else inserted++;
+      if (lease.network_id != null) netIds.add(lease.network_id);
     }
   });
   t();
+
+  for (const nid of netIds) {
+    if (nid != null) syncIpAssignmentsForNetwork(nid);
+  }
 
   return { inserted, updated };
 }

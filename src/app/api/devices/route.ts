@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { getNetworkDevices, getRouters, getSwitches, getDevicesByClassificationOrLegacy, createNetworkDevice, getHostByIp, updateHost, ensureInventoryAssetForNetworkDevice } from "@/lib/db";
 import { NetworkDeviceSchema } from "@/lib/validators";
 import { encrypt } from "@/lib/crypto";
+import {
+  getDefaultProductProfileForVendor,
+  suggestDeviceTypeFromProductProfile,
+  scanTargetHintFromProductProfile,
+  vendorSubtypeFromProductProfile,
+  type ProductProfileId,
+} from "@/lib/device-product-profiles";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
@@ -60,15 +67,22 @@ export async function POST(request: Request) {
     }
 
     const data = parsed.data;
-    const deviceClassification = data.classification ?? (data.device_type === "router" ? "router" : data.device_type === "switch" ? "switch" : "hypervisor");
-    const defaultPort = data.protocol === "ssh" ? 22 : data.protocol === "api" ? (data.device_type === "hypervisor" ? 8006 : 443) : data.protocol === "winrm" ? 5985 : 161;
+    const productProfile = (data.product_profile ?? getDefaultProductProfileForVendor(data.vendor)) as ProductProfileId;
+    const deviceType = suggestDeviceTypeFromProductProfile(productProfile);
+    const deviceClassification =
+      data.classification ??
+      (deviceType === "router" ? "router" : deviceType === "switch" ? "switch" : "hypervisor");
+    const defaultPort =
+      data.protocol === "ssh" ? 22 : data.protocol === "api" ? (deviceType === "hypervisor" ? 8006 : 443) : data.protocol === "winrm" ? 5985 : 161;
+    const scanTarget =
+      data.scan_target ?? scanTargetHintFromProductProfile(productProfile);
     const device = createNetworkDevice({
       name: data.name,
       host: data.host,
-      device_type: data.device_type,
+      device_type: deviceType,
       classification: deviceClassification,
       vendor: data.vendor,
-      vendor_subtype: data.vendor_subtype ?? null,
+      vendor_subtype: data.vendor_subtype ?? vendorSubtypeFromProductProfile(productProfile),
       protocol: data.protocol,
       credential_id: data.credential_id ?? null,
       snmp_credential_id: data.snmp_credential_id ?? null,
@@ -79,6 +93,8 @@ export async function POST(request: Request) {
       api_url: data.api_url || null,
       port: data.port || defaultPort,
       enabled: 1,
+      scan_target: scanTarget,
+      product_profile: productProfile,
     });
 
     const host = getHostByIp(data.host);

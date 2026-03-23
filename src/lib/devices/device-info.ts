@@ -72,6 +72,81 @@ export interface DeviceInfo {
   virtualization?: string | null;
   is_virtual?: boolean;
   ram_free_mb?: number | null;
+  /** Dischi fisici (Win32_DiskDrive / lsblk -d) — modello, seriale, interfaccia */
+  physical_disks?: Array<{ device: string; model?: string; size_gb?: number; serial?: string; interface_type?: string; vendor?: string; rotational?: boolean }>;
+  /** Numero pacchetti installati (dpkg/rpm su Linux; installed_software_count per Windows) */
+  packages_count?: number | null;
+  /** Host è membro di un dominio AD/Kerberos */
+  domain_joined?: boolean;
+  /** Ultimo utente che ha effettuato il login (da registro Windows) */
+  last_logged_on_user?: string | null;
+  /** Sessioni attive (console + RDP) */
+  logged_on_users?: Array<{
+    username: string;
+    session_type?: string;
+    logon_time?: string;
+  }>;
+  /** Profili utente presenti sul sistema + dati AD */
+  user_profiles?: Array<{
+    username: string;
+    sid?: string;
+    profile_path?: string;
+    loaded?: boolean;
+    last_use?: string;
+    ad_display_name?: string;
+    ad_email?: string;
+    ad_department?: string;
+    ad_title?: string;
+    ad_enabled?: boolean;
+    ad_last_logon?: string;
+  }>;
+  /** Inventario NAS Synology/QNAP (SNMP + SSH) */
+  nas_inventory?: NasInventorySnapshot;
+}
+
+/** Snapshot strutturato per Synology / QNAP (serializzato in last_device_info_json) */
+export interface NasInventorySnapshot {
+  vendor: "synology" | "qnap";
+  sources: ("snmp" | "ssh")[];
+  snmp?: {
+    temperature_c?: number | null;
+    system_status?: string | null;
+    disks?: Array<{
+      index?: string;
+      id?: string;
+      model?: string;
+      type?: string;
+      status?: string;
+      temperature_c?: number | null;
+    }>;
+    raids?: Array<{
+      index?: string;
+      name?: string;
+      status?: string;
+      free_gb?: number | null;
+      total_gb?: number | null;
+    }>;
+    volumes_snmp?: Array<{ name?: string; size_gb?: number | null; free_gb?: number | null; status?: string | null }>;
+  };
+  ssh?: {
+    mdstat_summary?: string;
+    cpu_model?: string | null;
+    kernel?: string | null;
+  };
+}
+
+/** Almeno un campo “inventario” utile per query WinRM/SNMP/SSH. */
+function deviceInfoHasAnyData(r: DeviceInfo | Partial<DeviceInfo>): boolean {
+  return !!(
+    r.sysname ||
+    r.sysdescr ||
+    r.model ||
+    r.firmware ||
+    r.serial_number ||
+    r.part_number ||
+    r.os_name ||
+    r.hostname
+  );
 }
 
 /**
@@ -205,6 +280,54 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
   };
 
   try {
+    if (device.vendor === "synology" || device.vendor === "qnap") {
+      const { getNasDeviceInfoFromSsh } = await import("./nas-acquisition");
+      return getNasDeviceInfoFromSsh(device, device.vendor === "synology" ? "synology" : "qnap");
+    }
+
+    if (device.vendor === "stormshield") {
+      const r = await sshExec(opts, "show version 2>/dev/null; get system status 2>/dev/null; display version 2>/dev/null").catch(() => ({
+        stdout: "",
+      }));
+      const serial =
+        r.stdout.match(/serial\s*(?:number|#)?\s*[:#]\s*(\S+)/i)?.[1]?.trim()
+        || r.stdout.match(/\bSerial\s*:\s*(\S+)/i)?.[1]?.trim()
+        || r.stdout.match(/SerialNumber\s*=\s*(\S+)/i)?.[1]?.trim();
+      const model = r.stdout.match(/(?:model|appliance|product)\s*[:#]\s*(.+)/i)?.[1]?.trim();
+      const fw = r.stdout.match(/(?:firmware|version|Software)\s*[:#]\s*([^\n]+)/i)?.[1]?.trim();
+      const name = r.stdout.match(/(?:hostname|Name)\s*[:#]\s*(\S+)/i)?.[1]?.trim();
+      return {
+        serial_number: serial || null,
+        model: model || null,
+        firmware: fw || null,
+        sysname: name || null,
+      };
+    }
+
+    if (device.vendor === "omada") {
+      const [ver, serialOut, hn] = await Promise.all([
+        sshExec(opts, "cat /etc/version 2>/dev/null || head -2 /etc/os-release 2>/dev/null").catch(() => ({ stdout: "" })),
+        sshExec(opts, "cat /sys/class/dmi/id/product_serial 2>/dev/null; cat /sys/class/dmi/id/board_serial 2>/dev/null; dmidecode -s system-serial-number 2>/dev/null").catch(() => ({ stdout: "" })),
+        sshExec(opts, "hostname 2>/dev/null").catch(() => ({ stdout: "" })),
+      ]);
+      const { isPlausibleHardwareSerial } = await import("@/lib/hardware-serial");
+      let serial: string | null = null;
+      for (const line of serialOut.stdout.split("\n")) {
+        const t = line.trim();
+        if (t && isPlausibleHardwareSerial(t)) {
+          serial = t;
+          break;
+        }
+      }
+      const model = await sshExec(opts, "cat /sys/class/dmi/id/product_name 2>/dev/null").then((x) => x.stdout.trim() || null).catch(() => null);
+      return {
+        sysname: hn.stdout.trim() || null,
+        firmware: ver.stdout.trim() || null,
+        model: model || null,
+        serial_number: serial,
+      };
+    }
+
     if (device.vendor === "mikrotik") {
       const r = await sshExec(opts, '/system resource print');
       const board = r.stdout.match(/board-name:\s*(.+)/)?.[1]?.trim();
@@ -292,42 +415,25 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
       const r = await sshExec(opts, "cat /etc/version 2>/dev/null || cat /tmp/version 2>/dev/null || echo");
       const version = r.stdout.trim() || null;
       const model = r.stdout.match(/^(U[^\s]+)/)?.[1] || null;
-      return { model: model || null, firmware: version || null };
-    }
-
-    // Synology DSM (DADude3 ssh_vendors/synology.py) — comandi determinati dal profilo vendor
-    if (device.vendor === "synology") {
-      const syno = await sshExec(opts, "cat /etc/synoinfo.conf 2>/dev/null").catch(() => ({ stdout: "" }));
-      const model = syno.stdout.match(/upnpmodelname\s*=\s*["']?([^"'\n]+)/i)?.[1]?.trim() || null;
-      const serial = await sshExec(opts, "synogetkeyvalue /etc/synoinfo.conf serial 2>/dev/null || cat /proc/sys/kernel/syno_serial 2>/dev/null").catch(() => ({ stdout: "" }));
-      const ver = await sshExec(opts, "cat /etc.defaults/VERSION 2>/dev/null || cat /etc/VERSION 2>/dev/null").catch(() => ({ stdout: "" }));
-      const build = ver.stdout.match(/buildnumber\s*=\s*["']?(\d+)/i)?.[1];
-      const major = ver.stdout.match(/majorversion\s*=\s*["']?(\d+)/i)?.[1];
-      const minor = ver.stdout.match(/minorversion\s*=\s*["']?(\d+)/i)?.[1];
-      const firmware = [major, minor, build].filter(Boolean).join(".") || ver.stdout.trim() || null;
-      const hostname = await sshExec(opts, "hostname").catch(() => ({ stdout: "" }));
-      return {
-        model: model || null,
-        firmware: firmware || null,
-        sysname: hostname.stdout.trim() || null,
-        serial_number: serial.stdout.trim() && !serial.stdout.includes("synology_") ? serial.stdout.trim() : null,
-      };
-    }
-
-    // QNAP QTS/QuTS Hero (DADude3 ssh_vendors/qnap.py) — comandi determinati dal profilo vendor
-    if (device.vendor === "qnap") {
-      const model = await sshExec(opts, "getsysinfo model 2>/dev/null").catch(() => ({ stdout: "" }));
-      const serial = await sshExec(opts, "getsysinfo serial 2>/dev/null || cat /etc/nas_serial 2>/dev/null").catch(() => ({ stdout: "" }));
-      const ver = await sshExec(opts, "get_hwspec 2>/dev/null | grep -i version || cat /etc/default_config/uLinux.conf 2>/dev/null | grep -i version").catch(() => ({ stdout: "" }));
-      const version = ver.stdout.match(/version\s*[=:]\s*["']?([^"'\s\n]+)/i)?.[1]?.trim()
-        || await sshExec(opts, "uname -r 2>/dev/null").then((x) => x.stdout.trim()).catch(() => null);
-      const hostname = await sshExec(opts, "hostname").catch(() => ({ stdout: "" }));
-      return {
-        model: model.stdout.trim() || null,
-        firmware: version || null,
-        sysname: hostname.stdout.trim() || null,
-        serial_number: serial.stdout.trim() || null,
-      };
+      const serialRaw = await sshExec(
+        opts,
+        "sh -c 'cat /sys/class/dmi/id/product_serial 2>/dev/null; cat /sys/class/dmi/id/board_serial 2>/dev/null; command -v ubntbox >/dev/null 2>&1 && ubntbox mca-status 2>/dev/null | head -80'"
+      ).catch(() => ({ stdout: "" }));
+      const { isPlausibleHardwareSerial } = await import("@/lib/hardware-serial");
+      let serial_number: string | null = null;
+      for (const line of serialRaw.stdout.split("\n")) {
+        const t = line.trim();
+        const m = t.match(/(?:serial|SerialNo|serialNo|board\.serial)[\s:=#]+([^\s,]+)/i);
+        if (m?.[1] && isPlausibleHardwareSerial(m[1])) {
+          serial_number = m[1];
+          break;
+        }
+        if (t && isPlausibleHardwareSerial(t) && /[0-9A-Z]{4,}/i.test(t)) {
+          serial_number = t;
+          break;
+        }
+      }
+      return { model: model || null, firmware: version || null, serial_number };
     }
 
     // Proxmox VE (DADude3 ssh_vendors/proxmox.py)
@@ -346,7 +452,8 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
     }
 
     // Linux generico (DADude3 ssh_vendors/linux.py) - acquisizione completa
-    if (device.vendor === "linux" || device.vendor === "other") {
+    const st = (device as { scan_target?: string | null }).scan_target;
+    if (device.vendor === "linux" || device.vendor === "other" || st === "linux") {
       return getDeviceInfoFromLinux(opts);
     }
   } catch {
@@ -360,13 +467,14 @@ type SshOpts = { host: string; port?: number; username: string; password: string
 
 /**
  * Acquisizione dati completi da host Linux (DADude3 linux_probe).
- * Raccoglie: sistema, hardware, interfacce, dischi, servizi, utenti.
+ * Raccoglie: sistema, hardware (CPU completo, BIOS, RAM moduli, dischi fisici),
+ * interfacce, filesystem, servizi, utenti, pacchetti, dominio.
  */
 async function getDeviceInfoFromLinux(opts: SshOpts): Promise<Partial<DeviceInfo>> {
   const exec = (cmd: string) => sshExec(opts, cmd).then((r) => r.stdout).catch(() => "");
   const execSudo = (cmd: string) => sshExec(opts, `sudo ${cmd} 2>/dev/null`).then((r) => r.stdout).catch(() => "");
 
-  // Esecuzione parallela dei comandi base
+  // Esecuzione parallela dei comandi base + nuovi
   const [
     hostname,
     osRelease,
@@ -374,8 +482,8 @@ async function getDeviceInfoFromLinux(opts: SshOpts): Promise<Partial<DeviceInfo
     arch,
     uptime,
     load,
-    cpuLine,
-    nproc,
+    cpuInfo,
+    lscpuOut,
     memTotal,
     memAvail,
     sysProduct,
@@ -385,6 +493,10 @@ async function getDeviceInfoFromLinux(opts: SshOpts): Promise<Partial<DeviceInfo
     dmiSerial,
     dmiVendor,
     virt,
+    lastBoot,
+    biosVersion,
+    biosVendor,
+    boardProduct,
   ] = await Promise.all([
     exec("hostname 2>/dev/null"),
     exec("cat /etc/os-release 2>/dev/null"),
@@ -393,7 +505,7 @@ async function getDeviceInfoFromLinux(opts: SshOpts): Promise<Partial<DeviceInfo
     exec("uptime -p 2>/dev/null || uptime 2>/dev/null"),
     exec("cat /proc/loadavg 2>/dev/null"),
     exec("grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2"),
-    exec("nproc 2>/dev/null || grep -c processor /proc/cpuinfo 2>/dev/null"),
+    exec("lscpu 2>/dev/null"),
     exec("grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}'"),
     exec("grep MemAvailable /proc/meminfo 2>/dev/null | awk '{print $2}'"),
     exec("cat /sys/class/dmi/id/product_name 2>/dev/null"),
@@ -403,6 +515,10 @@ async function getDeviceInfoFromLinux(opts: SshOpts): Promise<Partial<DeviceInfo
     execSudo("dmidecode -s system-serial-number 2>/dev/null"),
     execSudo("dmidecode -s system-manufacturer 2>/dev/null"),
     exec("systemd-detect-virt 2>/dev/null || echo none"),
+    exec("uptime -s 2>/dev/null"),
+    execSudo("dmidecode -s bios-version 2>/dev/null"),
+    execSudo("dmidecode -s bios-vendor 2>/dev/null"),
+    execSudo("dmidecode -s baseboard-product-name 2>/dev/null"),
   ]);
 
   const hwProduct = (dmiProduct || sysProduct || "").trim();
@@ -422,7 +538,35 @@ async function getDeviceInfoFromLinux(opts: SshOpts): Promise<Partial<DeviceInfo
   const isVirtual = virtLower !== "none" && virtLower !== "" && /vmware|virtualbox|kvm|xen|hyperv|docker|lxc|qemu/.test(virtLower);
 
   const serial = hwSerial.trim();
-  const validSerial = serial && !["Not Specified", "None", "To Be Filled"].includes(serial);
+  const validSerial = serial && !["Not Specified", "None", "To Be Filled", "ToBeFilledByO.E.M."].includes(serial);
+
+  // CPU dettagliato da lscpu
+  const lscpuLine = (key: string): string | null =>
+    lscpuOut.match(new RegExp(`^${key}\\s*:\\s*(.+)`, "mi"))?.[1]?.trim() ?? null;
+  const threadsPerCore = parseInt(lscpuLine("Thread\\(s\\) per core") ?? "0", 10);
+  const coresPerSocket = parseInt(lscpuLine("Core\\(s\\) per socket") ?? "0", 10);
+  const sockets = parseInt(lscpuLine("Socket\\(s\\)") ?? "1", 10);
+  const cpuThreads = threadsPerCore > 0 && coresPerSocket > 0 ? threadsPerCore * coresPerSocket * sockets : null;
+  const cpuCores = coresPerSocket > 0 && sockets > 0 ? coresPerSocket * sockets : null;
+  const cpuSpeedStr = lscpuLine("CPU max MHz") ?? lscpuLine("CPU MHz");
+  const cpuSpeedMhz = cpuSpeedStr ? Math.round(parseFloat(cpuSpeedStr)) : null;
+  const cpuVendorId = lscpuLine("Vendor ID");
+  const cpuManufacturer = cpuVendorId
+    ? cpuVendorId.replace("GenuineIntel", "Intel").replace("AuthenticAMD", "AMD")
+    : null;
+  const cpuModelFromLscpu = lscpuLine("Model name");
+  const cpuModel = (cpuInfo?.trim() || cpuModelFromLscpu || "").trim() || null;
+
+  // Numero CPU fisiche (socket) da lscpu
+  const processorCount = sockets > 0 ? sockets : null;
+
+  // BIOS e board
+  const biosVer = biosVersion.trim().replace(/Not Specified|Unknown/gi, "").trim() || null;
+  const biosMan = biosVendor.trim().replace(/Not Specified|Unknown/gi, "").trim() || null;
+  const partNum = boardProduct.trim().replace(/Not Specified|Unknown/gi, "").trim() || null;
+
+  // Ultimo boot (uptime -s → "2025-03-20 09:14:00")
+  const lastBootStr = lastBoot.trim() || null;
 
   const result: Partial<DeviceInfo> = {
     sysname: hostname.trim() || null,
@@ -431,20 +575,34 @@ async function getDeviceInfoFromLinux(opts: SshOpts): Promise<Partial<DeviceInfo
     firmware: osVersion || prettyName || null,
     sysdescr: prettyName || osName || null,
     serial_number: validSerial ? serial : null,
+    part_number: partNum,
     manufacturer: hwManufacturer.trim() || null,
     os_name: osName || prettyName || null,
     os_version: osVersion || null,
     kernel_version: kernel.trim() || null,
     architecture: arch.trim() || null,
     uptime: uptime.trim() || null,
+    last_boot: lastBootStr,
     load_average: load.trim() ? load.trim().split(/\s+/).slice(0, 3).join(", ") : null,
-    cpu_model: cpuLine?.trim() || null,
-    cpu_cores: nproc && /^\d+$/.test(nproc.trim()) ? parseInt(nproc.trim(), 10) : null,
+    cpu_model: cpuModel || null,
+    cpu_cores: cpuCores ?? (lscpuOut ? null : null),
+    cpu_threads: cpuThreads,
+    cpu_speed_mhz: !Number.isNaN(cpuSpeedMhz ?? NaN) ? cpuSpeedMhz : null,
+    cpu_manufacturer: cpuManufacturer,
+    processor_count: processorCount,
+    bios_version: biosVer,
+    bios_manufacturer: biosMan,
     ram_total_gb: ramTotalGb,
     ram_free_mb: ramFreeMb,
     virtualization: virtLower !== "none" && virtLower ? virtLower : null,
     is_virtual: isVirtual,
   };
+
+  // Se lscpu non ha fornito cores, fallback a nproc
+  if (!result.cpu_cores) {
+    const nproc = await exec("nproc 2>/dev/null || grep -c processor /proc/cpuinfo 2>/dev/null");
+    result.cpu_cores = nproc && /^\d+$/.test(nproc.trim()) ? parseInt(nproc.trim(), 10) : null;
+  }
 
   // Interfacce di rete (ip addr)
   const ipOutput = await exec("ip addr 2>/dev/null || ifconfig -a 2>/dev/null");
@@ -460,8 +618,22 @@ async function getDeviceInfoFromLinux(opts: SshOpts): Promise<Partial<DeviceInfo
     if (disks.length > 0) result.disks = disks;
   }
 
+  // Dischi fisici (lsblk)
+  const lsblkOut = await exec("lsblk -d -o NAME,SIZE,MODEL,SERIAL,VENDOR,ROTA,TRAN --noheadings 2>/dev/null | grep -v loop");
+  if (lsblkOut.trim()) {
+    const physDisks = parseLinuxPhysicalDisks(lsblkOut);
+    if (physDisks.length > 0) result.physical_disks = physDisks;
+  }
+
+  // Moduli RAM (dmidecode --type 17)
+  const dmiMemOut = await execSudo("dmidecode --type 17 2>/dev/null");
+  if (dmiMemOut && dmiMemOut.includes("Memory Device")) {
+    const memModules = parseLinuxDmidecodeMemory(dmiMemOut);
+    if (memModules.length > 0) result.memory_modules = memModules;
+  }
+
   // Servizi in esecuzione (systemctl)
-  const svcOutput = await exec("systemctl list-units --type=service --state=running --no-pager 2>/dev/null | head -25");
+  const svcOutput = await exec("systemctl list-units --type=service --state=running --no-pager 2>/dev/null | head -30");
   if (svcOutput && svcOutput.includes("loaded")) {
     const services = parseLinuxServices(svcOutput);
     if (services.length > 0) result.important_services = services;
@@ -474,7 +646,82 @@ async function getDeviceInfoFromLinux(opts: SshOpts): Promise<Partial<DeviceInfo
     if (users.length > 0) result.local_users = users;
   }
 
+  // Dominio AD/Kerberos (realm/sssd/winbind)
+  const realmOut = await exec("realm list 2>/dev/null | grep -i 'domain-name\\|realm-name' | head -2");
+  if (realmOut.trim()) {
+    result.domain_joined = true;
+    const domMatch = realmOut.match(/(?:domain-name|realm-name)\s*:\s*(.+)/i);
+    if (domMatch) result.domain = domMatch[1].trim();
+  } else {
+    const domainname = await exec("domainname 2>/dev/null");
+    const dn = domainname.trim();
+    if (dn && dn !== "(none)" && dn !== "localdomain") {
+      result.domain_joined = true;
+      result.domain = dn;
+    }
+  }
+
+  // Conteggio pacchetti installati
+  const pkgCount = await exec(
+    "dpkg -l 2>/dev/null | grep -c '^ii' || rpm -qa 2>/dev/null | wc -l || apk info 2>/dev/null | wc -l || echo 0"
+  );
+  const pkgNum = parseInt(pkgCount.trim().split("\n")[0] ?? "0", 10);
+  if (!Number.isNaN(pkgNum) && pkgNum > 0) result.packages_count = pkgNum;
+
   return result;
+}
+
+function parseLinuxPhysicalDisks(
+  output: string
+): Array<{ device: string; model?: string; size_gb?: number; serial?: string; interface_type?: string; vendor?: string; rotational?: boolean }> {
+  const disks: Array<{ device: string; model?: string; size_gb?: number; serial?: string; interface_type?: string; vendor?: string; rotational?: boolean }> = [];
+  for (const line of output.split("\n")) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 2 || !parts[0]) continue;
+    const [name, sizeStr, model, serial, vendor, rotaStr, tran] = parts;
+    const sizeNum = parseFloat(sizeStr ?? "");
+    let sizeGb: number | undefined;
+    if (!Number.isNaN(sizeNum) && sizeStr) {
+      if (sizeStr.endsWith("T")) sizeGb = Math.round(sizeNum * 1024);
+      else if (sizeStr.endsWith("G")) sizeGb = Math.round(sizeNum);
+      else if (sizeStr.endsWith("M")) sizeGb = Math.round(sizeNum / 1024);
+    }
+    disks.push({
+      device: `/dev/${name}`,
+      model: model && model !== "" ? model.replace(/_/g, " ").trim() : undefined,
+      size_gb: sizeGb,
+      serial: serial && serial !== "" ? serial : undefined,
+      vendor: vendor && vendor !== "" ? vendor.trim() : undefined,
+      interface_type: tran && tran !== "" ? tran.toUpperCase() : undefined,
+      rotational: rotaStr === "1" ? true : rotaStr === "0" ? false : undefined,
+    });
+  }
+  return disks;
+}
+
+function parseLinuxDmidecodeMemory(
+  output: string
+): Array<{ size_gb?: number; speed_mhz?: number; manufacturer?: string }> {
+  const modules: Array<{ size_gb?: number; speed_mhz?: number; manufacturer?: string }> = [];
+  const blocks = output.split(/\n\s*\n/);
+  for (const block of blocks) {
+    if (!block.includes("Memory Device")) continue;
+    const sizeLine = block.match(/^\s*Size:\s*(.+)/m)?.[1]?.trim();
+    if (!sizeLine || sizeLine === "No Module Installed" || sizeLine === "Unknown") continue;
+    const sizeMatch = sizeLine.match(/^(\d+)\s*(MB|GB)/i);
+    let sizeGb: number | undefined;
+    if (sizeMatch) {
+      const n = parseInt(sizeMatch[1], 10);
+      sizeGb = sizeMatch[2].toUpperCase() === "GB" ? n : Math.round(n / 1024);
+    }
+    const speedLine = block.match(/^\s*Speed:\s*(.+)/m)?.[1]?.trim();
+    const speedMatch = speedLine?.match(/(\d+)\s*(?:MT\/s|MHz)/i);
+    const speedMhz = speedMatch ? parseInt(speedMatch[1], 10) : undefined;
+    const mfr = block.match(/^\s*Manufacturer:\s*(.+)/m)?.[1]?.trim();
+    const manufacturer = mfr && mfr !== "Unknown" && mfr !== "Not Specified" ? mfr : undefined;
+    modules.push({ size_gb: sizeGb, speed_mhz: speedMhz, manufacturer });
+  }
+  return modules;
 }
 
 function parseLinuxNetworkInterfaces(output: string): Array<{ name: string; mac?: string; ips?: string[] }> {
@@ -595,6 +842,10 @@ $gpu=@();foreach($v in qa "Win32_VideoController" 4){if($v.Name){$obj=@{name=$v.
 try{$lic=Get-CimInstance SoftwareLicensingProduct -EA 0|?{$_.PartialProductKey -and $_.LicenseStatus -ne $null}|Select-Object -First 1;if(-not $lic){$lic=Get-WmiObject SoftwareLicensingProduct -EA 0|?{$_.PartialProductKey -and $_.LicenseStatus -ne $null}|Select-Object -First 1};if($lic){$ls=@{0='Unlicensed';1='Licensed';2='OOBGrace';3='OOTGrace';4='NonGenuineGrace';5='Notification';6='ExtendedGrace'};$r.license_status=$ls[[int]$lic.LicenseStatus];$r.license_name=$lic.Name;$r.license_partial_key=$lic.PartialProductKey}}catch{}
 $hf=@();foreach($h in qa "SELECT * FROM Win32_QuickFixEngineering" 30){if($h.HotFixID){$obj=@{id=$h.HotFixID};if($h.Description){$obj.description=$h.Description};if($h.InstalledOn){$obj.installed_on=$h.InstalledOn.ToString('yyyy-MM-dd')};$hf+=$obj}};if($hf.Count){$r.installed_hotfixes=$hf}
 try{$sw=@();$paths=@('HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*');$all=foreach($p in $paths){Get-ItemProperty $p -EA 0|?{$_.DisplayName}};$r.installed_software_count=$all.Count;$kw=@('SQL Server','Office','Exchange','Visual Studio','.NET Framework','Java','Python','Node','IIS','Hyper-V','VMware','Citrix','Veeam','Adobe','AutoCAD','SAP');$ks=@();foreach($s in $all){$dn=$s.DisplayName;if($kw|?{$dn -match $_}){$ks+=@{name=$dn;version=$s.DisplayVersion;publisher=$s.Publisher}}};if($ks.Count){$r.key_software=$ks|Select-Object -First 20}}catch{}
+$pdisks=@();foreach($d in qa "SELECT * FROM Win32_DiskDrive" 20){$obj=@{device=$d.DeviceID;model=$d.Model};if($d.Size -and [long]$d.Size -gt 0){$obj.size_gb=[int]([long]$d.Size/1GB)};$sn=$d.SerialNumber;if($sn){$sn=$sn.Trim()};if($sn -and $sn -ne ''){$obj.serial=$sn};if($d.Manufacturer -and $d.Manufacturer -ne '(Standard disk drives)'){$obj.vendor=$d.Manufacturer};if($d.InterfaceType){$obj.interface_type=$d.InterfaceType};$pdisks+=$obj};if($pdisks.Count){$r.physical_disks=$pdisks}
+$llu=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI' -EA 0);$r.last_logged_on_user=if($llu -and $llu.LastLoggedOnUser){$llu.LastLoggedOnUser}elseif($llu -and $llu.LastLoggedOnSAMUser){$llu.LastLoggedOnSAMUser}elseif($cs.UserName){$cs.UserName}else{$null}
+try{$sess=@();$seen2=@{};foreach($lu in Get-WmiObject Win32_LoggedOnUser -EA 0){if($lu.Antecedent -match 'Domain="([^"]+)",Name="([^"]+)"'){$dom=$Matches[1];$nam=$Matches[2];if($nam -and $nam -notmatch '^(SYSTEM|LOCAL SERVICE|NETWORK SERVICE|DWM-|UMFD-)'){$un="$dom\$nam";if(-not $seen2[$un]){$seen2[$un]=$true;$sess+=@{username=$un}}}}};if($sess.Count){$r.logged_on_users=$sess}}catch{}
+try{$isDom=($cs -and $cs.PartOfDomain);$profs=@();$wup=Get-WmiObject Win32_UserProfile -EA 0;foreach($p in ($wup|?{!$_.Special -and $_.LocalPath -and $_.LocalPath -notmatch 'Windows\\(System|Default)|\\(Public|Default User)$'}|Select-Object -First 30)){$sid=$p.SID;$obj=@{profile_path=$p.LocalPath;loaded=[bool]$p.Loaded;sid=$sid};try{$obj.username=([Security.Principal.SecurityIdentifier]$sid).Translate([Security.Principal.NTAccount]).Value}catch{$obj.username=($p.LocalPath -split '\\')[-1]};try{if($p.LastUseTime){$obj.last_use=[Management.ManagementDateTimeConverter]::ToDateTime($p.LastUseTime).ToString('yyyy-MM-ddTHH:mm:ss')}}catch{};if($isDom){$sam=if($obj.username -match '\\'){($obj.username -split '\\')[-1]}else{$obj.username};if($sam -and $sam.Length -gt 1 -and $sam -notmatch '^S-1-'){try{$ds=New-Object System.DirectoryServices.DirectorySearcher;$ds.Filter="(&(objectClass=user)(sAMAccountName=$sam))";'displayName','mail','department','title','lastLogon','userAccountControl'|foreach{$ds.PropertiesToLoad.Add($_)|Out-Null};$res=$ds.FindOne();if($res){if($res.Properties['displayname'].Count){$obj.ad_display_name=[string]$res.Properties['displayname'][0]};if($res.Properties['mail'].Count){$obj.ad_email=[string]$res.Properties['mail'][0]};if($res.Properties['department'].Count){$obj.ad_department=[string]$res.Properties['department'][0]};if($res.Properties['title'].Count){$obj.ad_title=[string]$res.Properties['title'][0]};if($res.Properties['useraccountcontrol'].Count){$obj.ad_enabled=([int]$res.Properties['useraccountcontrol'][0] -band 2) -eq 0};if($res.Properties['lastlogon'].Count){$ll=[long]$res.Properties['lastlogon'][0];if($ll -gt 0){$obj.ad_last_logon=[datetime]::FromFileTime($ll).ToString('yyyy-MM-ddTHH:mm:ss')}}}}catch{}}};$profs+=$obj};if($profs.Count){$r.user_profiles=@($profs|Sort-Object{[int]$_.loaded} -Descending)}}catch{}
 $r | ConvertTo-Json -Depth 5 -Compress
 `.trim();
 
@@ -607,7 +858,13 @@ $r | ConvertTo-Json -Depth 5 -Compress
       const parsed = JSON.parse(text);
       raw = typeof parsed === "object" && parsed !== null ? parsed : {};
     } catch {
-      return parseLegacyWinrmOutput(text);
+      const legacy = parseLegacyWinrmOutput(text);
+      if (!deviceInfoHasAnyData(legacy)) {
+        throw new Error(
+          "Risposta WinRM non interpretabile (output non JSON). Controlla che lo script PowerShell sia eseguito e che l'utente abbia permessi di lettura CIM/WMI."
+        );
+      }
+      return legacy;
     }
 
     const getStr = (v: unknown): string | null =>
@@ -765,6 +1022,21 @@ $r | ConvertTo-Json -Depth 5 -Compress
     }
     result.pending_updates_count = getNum(raw.pending_updates_count);
 
+    // Dischi fisici (Win32_DiskDrive)
+    if (Array.isArray(raw.physical_disks)) {
+      result.physical_disks = raw.physical_disks.map((d: unknown) => {
+        const o = d as Record<string, unknown>;
+        return {
+          device: String(o.device ?? ""),
+          model: getStr(o.model) ?? undefined,
+          size_gb: getNum(o.size_gb) ?? undefined,
+          serial: getStr(o.serial) ?? undefined,
+          vendor: getStr(o.vendor) ?? undefined,
+          interface_type: getStr(o.interface_type) ?? undefined,
+        };
+      });
+    }
+
     // Software
     result.installed_software_count = getNum(raw.installed_software_count);
     if (Array.isArray(raw.key_software)) {
@@ -778,11 +1050,49 @@ $r | ConvertTo-Json -Depth 5 -Compress
       });
     }
 
+    // Utenti e sessioni
+    result.last_logged_on_user = getStr(raw.last_logged_on_user);
+    if (Array.isArray(raw.logged_on_users)) {
+      result.logged_on_users = raw.logged_on_users.map((u: unknown) => {
+        const o = u as Record<string, unknown>;
+        return {
+          username: String(o.username ?? ""),
+          session_type: getStr(o.session_type) ?? undefined,
+          logon_time: getStr(o.logon_time) ?? undefined,
+        };
+      });
+    }
+    if (Array.isArray(raw.user_profiles)) {
+      result.user_profiles = raw.user_profiles.map((p: unknown) => {
+        const o = p as Record<string, unknown>;
+        return {
+          username: String(o.username ?? ""),
+          sid: getStr(o.sid) ?? undefined,
+          profile_path: getStr(o.profile_path) ?? undefined,
+          loaded: o.loaded === true,
+          last_use: getStr(o.last_use) ?? undefined,
+          ad_display_name: getStr(o.ad_display_name) ?? undefined,
+          ad_email: getStr(o.ad_email) ?? undefined,
+          ad_department: getStr(o.ad_department) ?? undefined,
+          ad_title: getStr(o.ad_title) ?? undefined,
+          ad_enabled: typeof o.ad_enabled === "boolean" ? o.ad_enabled : undefined,
+          ad_last_logon: getStr(o.ad_last_logon) ?? undefined,
+        };
+      });
+    }
+
     const parts = [result.model, result.sysdescr].filter(Boolean);
     result.sysdescr = parts.length > 0 ? parts.join(" | ") : result.sysdescr;
+
+    if (!deviceInfoHasAnyData(result)) {
+      throw new Error(
+        "WinRM connesso ma nessun dato inventario (JSON vuoto o CIM senza risultati). Verifica account amministratore sul dominio o locale e policy di esecuzione."
+      );
+    }
     return result;
-  } catch {
-    return {};
+  } catch (e) {
+    if (e instanceof Error) throw e;
+    throw new Error(String(e));
   }
 }
 
@@ -854,19 +1164,27 @@ export async function getDeviceInfoViaSNMPProfile(
  */
 export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> {
   let result: DeviceInfo = { sysname: null, sysdescr: null, model: null, firmware: null, serial_number: null, part_number: null };
+  let winrmFailure: Error | null = null;
 
   const hasSnmp = device.community_string || device.protocol === "snmp_v2" || device.protocol === "snmp_v3"
     || (device.snmp_credential_id ? !!getCredentialCommunityString(device.snmp_credential_id) : false)
     || (device.credential_id ? !!getCredentialCommunityString(device.credential_id) : false);
-  const hasSsh = device.protocol === "ssh" && (device.username || getDeviceCredentials(device)?.username);
-  const hasWinrm = device.protocol === "winrm" || device.vendor === "windows";
+  const scanTarget = (device as { scan_target?: string | null }).scan_target;
+  const isLinuxVendorInfo = scanTarget === "linux" || device.vendor === "linux" || device.vendor === "other" || device.vendor === "synology" || device.vendor === "qnap";
+  const hasSsh =
+    (device.protocol === "ssh" || isLinuxVendorInfo) &&
+    !!(device.username || getDeviceCredentials(device)?.username);
+  const hasWinrm =
+    device.protocol === "winrm" || device.vendor === "windows" || scanTarget === "windows";
 
   // Prima WinRM se configurato
   if (hasWinrm) {
     try {
       const winrmInfo = await getDeviceInfoFromWinrm(device);
       result = { ...result, ...winrmInfo };
-    } catch { /* WinRM info opzionale */ }
+    } catch (e) {
+      winrmFailure = e instanceof Error ? e : new Error(String(e));
+    }
   }
 
   // SNMP con profilo vendor: prova a ottenere dati completi
@@ -885,10 +1203,10 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
         serial_number: profileInfo.serial_number ?? result.serial_number,
         part_number: profileInfo.part_number ?? result.part_number,
       };
-      // Se il profilo ha fornito model + firmware + serial, possiamo saltare SSH
+      // Se il profilo ha fornito model + firmware + serial, possiamo saltare SSH (tranne NAS: serve SSH per volumi/utenti/rete)
       const snmpComplete = result.model && result.firmware && result.serial_number;
-      if (snmpComplete && hasSsh) {
-        // SNMP sufficiente, skip SSH per questo device
+      const isNasVendor = device.vendor === "synology" || device.vendor === "qnap";
+      if (snmpComplete && hasSsh && !isNasVendor) {
         return result;
       }
     } else {
@@ -896,19 +1214,40 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
       const snmpInfo = await getDeviceInfoFromSnmp(device);
       result = { ...result, ...snmpInfo };
     }
+
+    // Synology / QNAP: walk MIB enterprise (dischi RAID/volumi SNMP) oltre al profilo
+    if (device.vendor === "synology" || device.vendor === "qnap") {
+      const { getNasSnmpInventory } = await import("./nas-acquisition");
+      const nasSnmp = await getNasSnmpInventory(
+        device.host,
+        community,
+        snmpPort,
+        device.vendor === "synology" ? "synology" : "qnap"
+      );
+      result = { ...result, ...nasSnmp };
+    }
+
+    // Ultimo tentativo SNMP v2c: walk ENTITY-MIB seriali (molti switch/router espongono il seriale solo su indici >2)
+    if (!result.serial_number && device.protocol !== "snmp_v3") {
+      const { trySnmpSerialFromEntityWalk } = await import("@/lib/scanner/snmp-query");
+      const sn = await trySnmpSerialFromEntityWalk(device.host, community, snmpPort);
+      if (sn) result.serial_number = sn;
+    }
   }
 
   // SSH per completare i dati mancanti
   if (hasSsh) {
     const sshInfo = await getDeviceInfoFromSsh(device);
-    result = {
-      sysname: sshInfo.sysname ?? result.sysname,
-      sysdescr: sshInfo.sysdescr ?? result.sysdescr,
-      model: sshInfo.model ?? result.model,
-      firmware: sshInfo.firmware ?? result.firmware,
-      serial_number: sshInfo.serial_number ?? result.serial_number,
-      part_number: sshInfo.part_number ?? result.part_number,
-    };
+    const snmpNas = result.nas_inventory;
+    result = { ...result, ...sshInfo };
+    if (snmpNas && sshInfo.nas_inventory && (device.vendor === "synology" || device.vendor === "qnap")) {
+      const { mergeNasInventorySnapshots } = await import("./nas-acquisition");
+      result.nas_inventory = mergeNasInventorySnapshots(snmpNas, sshInfo.nas_inventory);
+    }
+  }
+
+  if (!deviceInfoHasAnyData(result) && winrmFailure) {
+    throw winrmFailure;
   }
 
   return result;

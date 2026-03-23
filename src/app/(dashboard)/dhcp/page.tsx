@@ -47,6 +47,7 @@ interface DhcpLease {
   lease_start: string | null;
   lease_expires: string | null;
   description: string | null;
+  dynamic_lease: number | null;
   host_id: number | null;
   network_id: number | null;
   last_synced: string;
@@ -330,7 +331,7 @@ export default function DhcpPage() {
           </form>
 
           {loading ? (
-            <SkeletonTable columns={7} rows={10} />
+            <SkeletonTable columns={8} rows={10} />
           ) : leases.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Server className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -345,6 +346,7 @@ export default function DhcpPage() {
                     <TableRow>
                       <TableHead>IP</TableHead>
                       <TableHead>MAC</TableHead>
+                      <TableHead className="w-14">Tipo</TableHead>
                       <TableHead>Hostname</TableHead>
                       <TableHead>Sorgente</TableHead>
                       <TableHead>Rete</TableHead>
@@ -365,6 +367,13 @@ export default function DhcpPage() {
                           )}
                         </TableCell>
                         <TableCell className="font-mono text-xs">{lease.mac_address}</TableCell>
+                        <TableCell>
+                          {lease.dynamic_lease === 1 ? (
+                            <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">DYN</Badge>
+                          ) : lease.dynamic_lease === 0 ? (
+                            <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">STAT</Badge>
+                          ) : null}
+                        </TableCell>
                         <TableCell>{lease.hostname || <span className="text-muted-foreground">—</span>}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">

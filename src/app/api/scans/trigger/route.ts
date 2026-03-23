@@ -16,7 +16,7 @@ function resolveTargetIps(networkId: number, hostIds: number[] | undefined): str
   return ips.length ? ips : undefined;
 }
 
-const MANUAL_SCAN_TYPES = new Set<string>(["nmap", "snmp", "windows", "ssh", "dns", "arp_poll", "dhcp"]);
+const MANUAL_SCAN_TYPES = new Set<string>(["nmap", "snmp", "windows", "ssh", "dns", "arp_poll", "dhcp", "ipam_full"]);
 
 export async function POST(request: Request) {
   try {
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
 
     const { id, progress } = await discoverNetwork(
       parsed.data.network_id,
-      parsed.data.scan_type as "ping" | "network_discovery" | "snmp" | "nmap" | "windows" | "ssh",
+      parsed.data.scan_type as "ping" | "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "ipam_full",
       nmapArgs,
       snmpCommunity,
       discoverOpts

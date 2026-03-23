@@ -87,6 +87,15 @@ export function macToHex(mac: string): string {
   return (mac || "").replace(/[^0-9a-fA-F]/g, "").toUpperCase().padEnd(12, "0").slice(0, 12);
 }
 
+/** Forma canonica per DB e UI: `AA:BB:CC:DD:EE:FF`. Solo MAC EUI-48 validi (12 cifre esadecimali). */
+export function normalizeMacForStorage(mac: string | null | undefined): string | null {
+  const raw = (mac ?? "").replace(/[^0-9a-fA-F]/g, "");
+  if (raw.length !== 12) return null;
+  if (raw.toUpperCase() === "000000000000") return null;
+  const hex = raw.toUpperCase();
+  return hex.match(/.{2}/g)!.join(":");
+}
+
 /** Normalizza nome porta per match (es. "Port 1" e "Port1" → "port1") */
 export function normalizePortNameForMatch(name: string): string {
   return (name || "").replace(/\s+/g, "").toLowerCase();
@@ -149,5 +158,20 @@ export function formatPortsDisplay(portsOpenJson: string | null): string {
     return nums.filter(Boolean).join(", ") || "—";
   } catch {
     return "—";
+  }
+}
+
+/** Elenco completo porte da `hosts.open_ports` (array `{ port, protocol? }`) per tooltip / confronti. Ordinato per numero porta. */
+export function hostOpenPortsToFullLabel(openPortsJson: string | null | undefined): string {
+  if (!openPortsJson?.trim()) return "";
+  try {
+    const ports = JSON.parse(openPortsJson) as { port: number; protocol?: string }[];
+    if (!Array.isArray(ports) || ports.length === 0) return "";
+    return [...ports]
+      .sort((a, b) => a.port - b.port || String(a.protocol ?? "").localeCompare(String(b.protocol ?? "")))
+      .map((p) => `${p.port}${p.protocol === "udp" ? "/u" : ""}`)
+      .join(", ");
+  } catch {
+    return "";
   }
 }

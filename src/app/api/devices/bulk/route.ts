@@ -13,6 +13,18 @@ import { encrypt } from "@/lib/crypto";
 import { z } from "zod";
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { inferNetworkDeviceVendorFromHostHint } from "@/lib/device-vendor-infer";
+import type { NetworkDevice } from "@/types";
+import {
+  getDefaultProductProfileForVendor,
+  PRODUCT_PROFILE_IDS,
+  suggestDeviceTypeFromProductProfile,
+  vendorSubtypeFromProductProfile,
+  scanTargetHintFromProductProfile,
+  type ProductProfileId,
+} from "@/lib/device-product-profiles";
+
+const productProfileEnum = z.enum(PRODUCT_PROFILE_IDS as unknown as [string, ...string[]]);
 
 const classificationSchema = z.enum(DEVICE_CLASSIFICATIONS as unknown as [string, ...string[]]);
 
@@ -48,6 +60,8 @@ const BulkDeviceSchema = z.object({
   credential_id: z.coerce.number().int().positive().optional().nullable(),
   snmp_credential_id: z.coerce.number().int().positive().optional().nullable(),
   port: z.coerce.number().int().min(1).max(65535).optional(),
+  scan_target: z.enum(["proxmox", "vmware", "windows", "linux"]).optional().nullable(),
+  product_profile: productProfileEnum.optional().nullable(),
 });
 
 /**
@@ -68,7 +82,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { host_ids, classification, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, port } =
+    const { host_ids, classification, vendor, protocol, credential_id, snmp_credential_id, port, scan_target, product_profile } =
       parsed.data;
 
     const hasCred = credential_id && credential_id > 0;
@@ -83,8 +97,15 @@ export async function POST(request: Request) {
     }
     const hasSnmpCred = !!communityString;
 
-    const deviceType = ["router", "firewall", "vpn_gateway", "load_balancer"].includes(classification) ? "router" : "switch";
-    const deviceVendor = (protocol === "ssh" || protocol === "api" || protocol === "winrm") ? (vendor ?? (protocol === "winrm" ? "windows" : "other")) : "other";
+    /** Prima: vendor dal form; poi: inferenza da OUI/MAC host; infine: default per protocollo.
+     *  Prima SNMP forzava sempre "other" e l'UI non inviava vendor → Ubiquiti/Cisco persi. */
+    function resolveVendorForHost(hostRow: NonNullable<ReturnType<typeof getHostBasic>>): NetworkDevice["vendor"] {
+      if (vendor) return vendor;
+      const fromHost = inferNetworkDeviceVendorFromHostHint(hostRow.vendor ?? hostRow.device_manufacturer);
+      if (fromHost) return fromHost;
+      if (protocol === "winrm") return "windows";
+      return "other";
+    }
 
     const defaultPort = protocol === "ssh" ? 22 : protocol === "api" ? 443 : protocol === "winrm" ? 5985 : 161;
     const devicePort = port ?? defaultPort;
@@ -105,12 +126,15 @@ export async function POST(request: Request) {
       }
 
       const name = host.custom_name || host.hostname || host.ip;
+      const deviceVendor = resolveVendorForHost(host);
+      const profileId = (product_profile ?? getDefaultProductProfileForVendor(deviceVendor)) as ProductProfileId;
+      const deviceType = suggestDeviceTypeFromProductProfile(profileId);
       const device = createNetworkDevice({
         name,
         host: host.ip,
         device_type: deviceType,
         vendor: deviceVendor,
-        vendor_subtype: (protocol === "ssh" && deviceVendor === "hp") ? (vendor_subtype ?? null) : null,
+        vendor_subtype: vendorSubtypeFromProductProfile(profileId),
         credential_id: (hasCred || (protocol === "winrm" && credential_id)) ? credential_id : (hasSnmpCred && snmp_credential_id ? snmp_credential_id : null),
         protocol,
         snmp_credential_id: hasCred && hasSnmpCred && snmp_credential_id ? snmp_credential_id : null,
@@ -122,6 +146,8 @@ export async function POST(request: Request) {
         port: devicePort,
         enabled: 1,
         classification,
+        scan_target: scan_target ?? scanTargetHintFromProductProfile(profileId) ?? null,
+        product_profile: profileId,
       });
 
       created.push({ id: device.id, name: device.name, host: device.host });

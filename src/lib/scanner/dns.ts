@@ -71,7 +71,7 @@ function logDnsServersIfVerbose(): void {
   try {
     const systemServers = dns.getServers();
     if (systemServers.length > 0) {
-      console.log("[DNS] Resolver, server:", systemServers.join(", "));
+      console.info("[DNS] Resolver, server:", systemServers.join(", "));
     }
   } catch (e) {
     console.warn("[DNS] Lettura server DNS:", e);

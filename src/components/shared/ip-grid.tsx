@@ -2,11 +2,12 @@
 
 import { memo, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { cn, parseCidr, longToIp } from "@/lib/utils";
+import { cn, parseCidr, longToIp, hostOpenPortsToFullLabel } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import type { Host } from "@/types";
+import { ipAssignmentShortLabel } from "@/lib/ip-assignment";
 
 interface IpGridProps {
   cidr: string;
@@ -102,6 +103,10 @@ export const IpGrid = memo(function IpGrid({ cidr, hosts, gateway }: IpGridProps
       lines.push(`Stato: ${cell.host.status}`);
       if (cell.host.mac) lines.push(`MAC: ${cell.host.mac}`);
       if (cell.host.vendor) lines.push(`Vendor: ${cell.host.vendor}`);
+      const ipAsg = ipAssignmentShortLabel(cell.host.ip_assignment);
+      if (ipAsg) lines.push(`DHCP: ${ipAsg}`);
+      const adDns = (cell.host as Host & { ad_dns_host_name?: string | null }).ad_dns_host_name;
+      if (adDns) lines.push("AD: ✓");
       if (cell.host.classification) lines.push(`Classificazione: ${cell.host.classification}`);
       const device = (cell.host as { device?: { id: number; name: string; sysname?: string | null; vendor: string; protocol: string } }).device;
       if (device) {
@@ -109,11 +114,8 @@ export const IpGrid = memo(function IpGrid({ cidr, hosts, gateway }: IpGridProps
         lines.push(`Dispositivo: ${displayName} (${device.vendor}, ${device.protocol.toUpperCase()})`);
       }
       if (cell.host.open_ports) {
-        try {
-          const ports = JSON.parse(cell.host.open_ports) as { port: number; protocol?: string }[];
-          const portStr = ports.slice(0, 8).map((p) => `${p.port}${p.protocol === "udp" ? "/u" : ""}`).join(", ") + (ports.length > 8 ? ` +${ports.length - 8}` : "");
-          if (portStr) lines.push(`Porte: ${portStr}`);
-        } catch { /* ignore */ }
+        const full = hostOpenPortsToFullLabel(cell.host.open_ports);
+        if (full) lines.push(`Porte: ${full}`);
       }
       if (cell.host.last_seen) lines.push(`Ultimo contatto: ${new Date(cell.host.last_seen).toLocaleString("it-IT")}`);
     } else if (!cell.isNetwork && !cell.isBroadcast) lines.push("Non occupato");

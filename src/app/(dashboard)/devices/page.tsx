@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,13 +51,20 @@ import {
   ExternalLink,
   Trash2,
   Filter,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { getClassificationLabel } from "@/lib/device-classifications";
+import { PRODUCT_PROFILE_LABELS, type ProductProfileId } from "@/lib/device-product-profiles";
 import type { NetworkDevice, Host } from "@/types";
+import {
+  formatAcquisitionBadgeDate,
+  isNetworkDeviceAcquisitionComplete,
+  networkDeviceAcquisitionAt,
+} from "@/lib/network-device-acquisition";
 
 type DeviceOrHost = 
   | (NetworkDevice & { source: "device"; host_status?: string })
@@ -101,6 +107,7 @@ export default function DevicesUnifiedPage() {
   const [classificationFilter, setClassificationFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [vendorFilter, setVendorFilter] = useState<string>("all");
+  const [productProfileFilter, setProductProfileFilter] = useState<string>("all");
 
   // Ordinamento
   const [sortField, setSortField] = useState<SortField>("name");
@@ -117,10 +124,16 @@ export default function DevicesUnifiedPage() {
         fetch("/api/devices"),
         fetch("/api/hosts?limit=5000"),
       ]);
-      
-      const devices: NetworkDevice[] = await devicesRes.json();
+
+      const devices: NetworkDevice[] = devicesRes.ok
+        ? (await devicesRes.json())
+        : [];
       const hostsData = await hostsRes.json();
-      const hosts: Host[] = hostsData.hosts || hostsData || [];
+      const hosts: Host[] = Array.isArray(hostsData)
+        ? hostsData
+        : Array.isArray(hostsData?.hosts)
+          ? hostsData.hosts
+          : [];
 
       const deviceIps = new Set(devices.map((d) => d.host));
       
@@ -162,6 +175,18 @@ export default function DevicesUnifiedPage() {
     return Array.from(set).sort();
   }, [items]);
 
+  const productProfilesInList = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of items) {
+      if (item.source === "device" && item.product_profile) set.add(item.product_profile);
+    }
+    return Array.from(set).sort((a, b) => {
+      const la = PRODUCT_PROFILE_LABELS[a as ProductProfileId] ?? a;
+      const lb = PRODUCT_PROFILE_LABELS[b as ProductProfileId] ?? b;
+      return la.localeCompare(lb, "it");
+    });
+  }, [items]);
+
   const filteredItems = useMemo(() => {
     let result = items;
 
@@ -170,11 +195,17 @@ export default function DevicesUnifiedPage() {
       result = result.filter((item) => {
         const name = item.source === "device" ? item.name : (item.hostname || item.custom_name || "");
         const ip = item.source === "device" ? item.host : item.ip;
+        const profileLabel =
+          item.source === "device" && item.product_profile
+            ? (PRODUCT_PROFILE_LABELS[item.product_profile as ProductProfileId] ?? item.product_profile).toLowerCase()
+            : "";
         return (
           name.toLowerCase().includes(s) ||
           ip.toLowerCase().includes(s) ||
           (item.vendor?.toLowerCase().includes(s)) ||
-          (item.classification?.toLowerCase().includes(s))
+          (item.classification?.toLowerCase().includes(s)) ||
+          profileLabel.includes(s) ||
+          (item.source === "device" && item.product_profile?.toLowerCase().includes(s))
         );
       });
     }
@@ -196,8 +227,14 @@ export default function DevicesUnifiedPage() {
       result = result.filter((item) => item.vendor === vendorFilter);
     }
 
+    if (productProfileFilter !== "all") {
+      result = result.filter(
+        (item) => item.source === "device" && item.product_profile === productProfileFilter
+      );
+    }
+
     return result;
-  }, [items, search, classificationFilter, statusFilter, vendorFilter]);
+  }, [items, search, classificationFilter, statusFilter, vendorFilter, productProfileFilter]);
 
   const sortedItems = useMemo(() => {
     const sorted = [...filteredItems].sort((a, b) => {
@@ -278,10 +315,16 @@ export default function DevicesUnifiedPage() {
     setClassificationFilter("all");
     setStatusFilter("all");
     setVendorFilter("all");
+    setProductProfileFilter("all");
     setPage(1);
   };
 
-  const hasFilters = search || classificationFilter !== "all" || statusFilter !== "all" || vendorFilter !== "all";
+  const hasFilters =
+    search ||
+    classificationFilter !== "all" ||
+    statusFilter !== "all" ||
+    vendorFilter !== "all" ||
+    productProfileFilter !== "all";
 
   const handleDelete = async (item: DeviceOrHost) => {
     if (item.source !== "device") return;
@@ -356,13 +399,13 @@ export default function DevicesUnifiedPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Cerca per nome, IP, vendor, classificazione..."
+                placeholder="Cerca per nome, IP, vendor, profilo prodotto, classificazione..."
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                 className="pl-9"
               />
             </div>
-            <Select value={statusFilter} onValueChange={(v) => { v && setStatusFilter(v); setPage(1); }}>
+            <Select value={statusFilter} onValueChange={(v) => { if (v) { setStatusFilter(v); setPage(1); } }}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Stato" />
               </SelectTrigger>
@@ -383,6 +426,21 @@ export default function DevicesUnifiedPage() {
                 ))}
               </SelectContent>
             </Select>
+            {productProfilesInList.length > 0 && (
+              <Select value={productProfileFilter} onValueChange={(v) => { if (v) { setProductProfileFilter(v); setPage(1); } }}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Profilo prodotto" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tutti i profili</SelectItem>
+                  {productProfilesInList.map((pid) => (
+                    <SelectItem key={pid} value={pid}>
+                      {PRODUCT_PROFILE_LABELS[pid as ProductProfileId] ?? pid}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {hasFilters && (
               <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1">
                 <X className="h-4 w-4" />
@@ -397,7 +455,7 @@ export default function DevicesUnifiedPage() {
       <Card>
         {loading ? (
           <CardContent className="p-0">
-            <SkeletonTable columns={7} rows={15} />
+            <SkeletonTable columns={9} rows={15} />
           </CardContent>
         ) : paginatedItems.length === 0 ? (
           <CardContent className="py-12 text-center">
@@ -435,6 +493,8 @@ export default function DevicesUnifiedPage() {
                   >
                     <span className="flex items-center">Vendor <SortIcon field="vendor" /></span>
                   </TableHead>
+                  <TableHead>Profilo</TableHead>
+                  <TableHead className="w-[120px] whitespace-nowrap">Acquisizione</TableHead>
                   <TableHead>MAC</TableHead>
                   <TableHead 
                     className="cursor-pointer hover:bg-muted/50 select-none"
@@ -456,6 +516,12 @@ export default function DevicesUnifiedPage() {
                   const status = item.source === "device" 
                     ? (item.enabled ? "online" : "offline") 
                     : (item.status || "unknown");
+                  const acquisitionAt =
+                    item.source === "device" ? networkDeviceAcquisitionAt(item) : null;
+                  const showAcquisitionBadge =
+                    item.source === "device" &&
+                    isNetworkDeviceAcquisitionComplete(item) &&
+                    !!acquisitionAt;
 
                   return (
                     <TableRow
@@ -465,11 +531,9 @@ export default function DevicesUnifiedPage() {
                     >
                       <TableCell>
                         <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Badge variant="outline" className="gap-1 font-normal">
-                              <Icon className="h-3 w-3" />
-                              {getClassificationLabel(classification)}
-                            </Badge>
+                          <TooltipTrigger render={<Badge variant="outline" className="gap-1 font-normal" />}>
+                            <Icon className="h-3 w-3" />
+                            {getClassificationLabel(classification)}
                           </TooltipTrigger>
                           <TooltipContent>
                             {item.source === "device" ? "Dispositivo configurato" : "Host rilevato"}
@@ -479,6 +543,31 @@ export default function DevicesUnifiedPage() {
                       <TableCell className="font-medium">{name}</TableCell>
                       <TableCell className="font-mono text-sm">{ip}</TableCell>
                       <TableCell className="capitalize text-sm">{item.vendor || "—"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {item.source === "device" && item.product_profile
+                          ? PRODUCT_PROFILE_LABELS[item.product_profile as ProductProfileId] ?? item.product_profile
+                          : "—"}
+                      </TableCell>
+                      <TableCell className="align-middle">
+                        {showAcquisitionBadge && acquisitionAt ? (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <Badge
+                                  variant="secondary"
+                                  className="font-mono text-[10px] px-1.5 py-0 gap-1 max-w-[118px] truncate font-normal"
+                                />
+                              }
+                            >
+                              <CheckCircle2 className="h-3 w-3 shrink-0 text-primary" aria-hidden />
+                              {formatAcquisitionBadgeDate(acquisitionAt)}
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-xs">
+                              Acquisizione completata — {acquisitionAt}
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : null}
+                      </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {mac || "—"}
                       </TableCell>
@@ -519,7 +608,7 @@ export default function DevicesUnifiedPage() {
       </Card>
 
       {totalPages > 1 && (
-        <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
       )}
     </div>
   );

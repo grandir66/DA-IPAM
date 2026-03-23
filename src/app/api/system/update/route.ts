@@ -6,11 +6,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
-import { execSync, spawn } from "child_process";
+import { execSync } from "child_process";
 import path from "path";
 import fs from "fs";
 
-const REPO_URL = "https://github.com/grandir66/DA-IPAM.git";
 const REPO_API_URL = "https://api.github.com/repos/grandir66/DA-IPAM";
 
 interface UpdateInfo {

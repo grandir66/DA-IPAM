@@ -99,7 +99,7 @@ setup_winrm_venv() {
     echo ">>> Creazione venv Python per WinRM (opzionale)..."
     python3 -m venv "$venv_dir" 2>/dev/null || true
     if [ -f "$venv_dir/bin/pip" ]; then
-      "$venv_dir/bin/pip" install --quiet pywinrm requests-ntlm 2>/dev/null || true
+      "$venv_dir/bin/pip" install --quiet pywinrm requests-ntlm requests-credssp gssapi 2>/dev/null || true
       echo "    Venv WinRM creato in $venv_dir"
     fi
   fi
@@ -194,7 +194,8 @@ fi
 if [ "$(id -u)" -eq 0 ]; then
   install_system_deps
   install_node
-  # setup_winrm_venv va fatto come utente finale
+  # Venv pywinrm anche per root (deploy tipico LXC): altrimenti WinRM dal server non funziona.
+  setup_winrm_venv
 else
   install_node
   setup_winrm_venv
@@ -215,4 +216,8 @@ echo "  systemctl status da-invent"
 echo ""
 echo "Accedi a: http://<indirizzo-ip>:$PORT"
 echo "Al primo avvio completa il setup dalla pagina /setup"
+echo ""
+echo "WinRM verso host Windows: richiede Python + pywinrm sul server (venv in \$HOME/.da-invent-venv)."
+echo "Se la scansione WinRM fallisce: verifica che il venv esista o esegui"
+echo "  python3 -m venv ~/.da-invent-venv && ~/.da-invent-venv/bin/pip install pywinrm requests-ntlm requests-credssp gssapi"
 echo ""

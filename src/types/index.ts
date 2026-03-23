@@ -52,6 +52,10 @@ export interface Host {
   /** JSON: dati SNMP completi raccolti durante scan (sysDescr, sysObjectID, model, serial, firmware, manufacturer, ecc.) */
   snmp_data: string | null;
   known_host: number;  // 0 or 1 — host verificato/conosciuto
+  /** Origine DHCP/statico: derivato da lease o impostato manualmente */
+  ip_assignment: "unknown" | "dynamic" | "static" | "reserved";
+  /** Presente quando la lista host è arricchita (rete): nome DNS da computer AD collegato */
+  ad_dns_host_name?: string | null;
   last_response_time_ms: number | null;
   monitor_ports: string | null;  // JSON array of port numbers, or null
   hostname_source: string | null;  // manual | dhcp | snmp | nmap | dns | arp
@@ -124,7 +128,7 @@ export interface ScanHistory {
   id: number;
   host_id: number | null;
   network_id: number | null;
-  scan_type: "ping" | "snmp" | "nmap" | "arp" | "dns" | "windows" | "ssh" | "network_discovery";
+  scan_type: "ping" | "snmp" | "nmap" | "arp" | "dns" | "windows" | "ssh" | "network_discovery" | "ipam_full";
   status: string;
   ports_open: string | null;
   raw_output: string | null;
@@ -172,6 +176,8 @@ export interface NetworkDevice {
   last_proxmox_scan_at: string | null;
   last_proxmox_scan_result: string | null;
   scan_target: "proxmox" | "vmware" | "windows" | "linux" | null;
+  /** Profilo prodotto (marca + tipologia), assegnazione manuale per scan e inventario dedicati */
+  product_profile: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -471,10 +477,20 @@ export interface NetworkWithStats extends Network {
   last_scan: string | null;
 }
 
+export interface HostDetectCredentialRow {
+  role: "windows" | "linux" | "ssh" | "snmp";
+  credential_id: number;
+  credential_name: string;
+}
+
 export interface HostDetail extends Host {
   network_cidr: string;
   network_name: string;
   recent_scans: ScanHistory[];
+  /** Tipi di scansione già eseguiti su questo host (deduplicati). */
+  scan_types_used?: string[];
+  /** Credenziali archivio usate con successo per acquisizione (per ruolo). */
+  detect_credentials?: HostDetectCredentialRow[];
   arp_source: {
     device_name: string;
     device_vendor: string;

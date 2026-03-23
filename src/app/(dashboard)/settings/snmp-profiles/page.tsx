@@ -52,7 +52,11 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getClassificationLabel, DEVICE_CLASSIFICATIONS_ORDERED } from "@/lib/device-classifications";
+import {
+  getClassificationLabel,
+  DEVICE_CLASSIFICATIONS_ORDERED,
+  sortClassificationsByDisplayLabel,
+} from "@/lib/device-classifications";
 import Link from "next/link";
 
 interface SnmpProfile {
@@ -521,7 +525,7 @@ export default function SnmpProfilesPage() {
               </Button>
               <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogTrigger render={<Button size="sm"><Plus className="h-4 w-4 mr-1" />Nuovo profilo</Button>} onClick={handleOpenCreate} />
-                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto scrollbar-none">
                   <DialogHeader>
                     <DialogTitle>
                       {editingProfile ? `Modifica profilo: ${editingProfile.name}` : "Nuovo profilo SNMP"}
@@ -564,7 +568,7 @@ export default function SnmpProfilesPage() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {DEVICE_CLASSIFICATIONS_ORDERED.map((c) => (
+                            {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
                               <SelectItem key={c} value={c}>
                                 {getClassificationLabel(c)}
                               </SelectItem>

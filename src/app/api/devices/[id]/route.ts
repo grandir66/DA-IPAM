@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { getNetworkDeviceById, updateNetworkDevice, deleteNetworkDevice, getArpEntriesByDevice, getMacPortEntriesByDevice, getSwitchPortsByDevice } from "@/lib/db";
+import {
+  isValidProductProfileForVendor,
+  suggestDeviceTypeFromProductProfile,
+  vendorSubtypeFromProductProfile,
+  type ProductProfileId,
+} from "@/lib/device-product-profiles";
 import { encrypt } from "@/lib/crypto";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
@@ -109,6 +115,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
+    const existing = getNetworkDeviceById(Number(id));
+    if (!existing) {
+      return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
+    }
     const body = await request.json();
 
     const updates: Record<string, unknown> = {};
@@ -133,6 +143,24 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (body.port !== undefined) updates.port = body.port;
     if (body.enabled !== undefined) updates.enabled = body.enabled;
     if (body.scan_target !== undefined) updates.scan_target = body.scan_target;
+
+    if (body.product_profile !== undefined) {
+      const vendorForProfile = (body.vendor !== undefined ? body.vendor : existing.vendor) as import("@/types").NetworkDevice["vendor"];
+      const raw = body.product_profile;
+      const pp = raw === "" || raw === null ? null : String(raw);
+      if (pp !== null && !isValidProductProfileForVendor(vendorForProfile, pp)) {
+        return NextResponse.json(
+          { error: "Profilo prodotto non valido per questo vendor" },
+          { status: 400 }
+        );
+      }
+      updates.product_profile = pp;
+      if (pp) {
+        const pid = pp as ProductProfileId;
+        updates.device_type = suggestDeviceTypeFromProductProfile(pid);
+        updates.vendor_subtype = vendorSubtypeFromProductProfile(pid);
+      }
+    }
 
     const device = updateNetworkDevice(Number(id), updates as Partial<import("@/types").NetworkDevice>);
     if (!device) {

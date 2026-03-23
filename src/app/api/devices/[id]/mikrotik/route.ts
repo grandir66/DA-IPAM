@@ -6,7 +6,15 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
-import { getNetworkDeviceById, getNetworkContainingIp, upsertHost, getHostByIp, getHostByMac } from "@/lib/db";
+import {
+  getNetworkDeviceById,
+  buildNetworkLookup,
+  upsertHost,
+  getHostByIp,
+  getHostByMac,
+  upsertDhcpLease,
+  syncIpAssignmentsForNetwork,
+} from "@/lib/db";
 import { createRouterClient, type DhcpLeaseEntry } from "@/lib/devices/router-client";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -134,13 +142,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       let updated = 0;
       let skipped = 0;
       const errors: string[] = [];
+      const netsToSync = new Set<number>();
+      const findNetwork = buildNetworkLookup();
 
       for (const lease of leases) {
         try {
           // Determina la rete di appartenenza
           let targetNetworkId = networkId;
           if (!targetNetworkId) {
-            const network = getNetworkContainingIp(lease.ip);
+            const network = findNetwork(lease.ip);
             if (network) {
               targetNetworkId = network.id;
             }
@@ -191,9 +201,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             });
             imported++;
           }
+
+          const hostForLease = getHostByIp(lease.ip) ?? (lease.mac ? getHostByMac(lease.mac) : undefined);
+          if (hostForLease && targetNetworkId) {
+            upsertDhcpLease({
+              source_type: "mikrotik",
+              source_device_id: deviceId,
+              source_name: device.name,
+              server_name: lease.server ?? null,
+              ip_address: lease.ip,
+              mac_address: lease.mac,
+              hostname: lease.hostname ?? null,
+              status: lease.status ?? null,
+              lease_expires: lease.expiresAfter ?? null,
+              description: lease.comment ?? null,
+              dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
+              host_id: hostForLease.id,
+              network_id: targetNetworkId,
+            });
+            netsToSync.add(targetNetworkId);
+          }
         } catch (err) {
           errors.push(`${lease.ip}: ${err instanceof Error ? err.message : String(err)}`);
         }
+      }
+
+      for (const nid of netsToSync) {
+        syncIpAssignmentsForNetwork(nid);
       }
 
       return NextResponse.json({

@@ -52,7 +52,7 @@ Il codice sorgente è **rilasciato in forma open source** (vedi [`LICENSE`](LICE
 | **Node.js** | 20 o superiore |
 | **SQLite 3** | File DB in `data/` (directory esclusa da Git) |
 | **nmap** | Scansioni porte/OS |
-| **Python 3 + pywinrm** | Opzionale, per WinRM su host Windows (`WINRM_PYTHON` in `.env.local`) |
+| **Python 3 + venv WinRM** | Opzionale, per WinRM su host Windows. `scripts/install.sh` crea `~/.da-invent-venv` e installa: `pywinrm`, `requests-ntlm`, `requests-credssp`, `gssapi` (Kerberos opzionale). Variabili: `WINRM_PYTHON`, `WINRM_TRANSPORT` (vedi `.env.example`) |
 | **Sistema** | Debian/Ubuntu consigliati per script `install.sh` (apt) |
 
 Per **scansioni nmap** (inclusa **UDP `-sU`**) e **ping ICMP** servono in genere **socket privilegiati**. Nel **container LXC/VM** il servizio systemd è quindi previsto in esecuzione come **`root`** (default di `scripts/install.sh` e di `deploy/da-invent.service`), così `nmap` non viene eseguito senza i diritti necessari. Un container **non privilegiato** può comunque bastare se accetti solo scan TCP; per UDP serve **root** nel CT oppure capability `CAP_NET_RAW` / `CAP_NET_ADMIN` su un utente dedicato (configurazione avanzata).
@@ -246,6 +246,7 @@ Come **root**, lo script installa tra gli altri: `ca-certificates`, `curl`, `git
 | `AUTH_SECRET` | Secret NextAuth (generato) |
 | `PORT` | Porta HTTP (default 3001) |
 | `WINRM_PYTHON` | Path interprete Python con pywinrm (opzionale) |
+| `WINRM_TRANSPORT` | `ntlm`, `credssp` o vuoto: default NTLM poi CredSSP se necessario (bridge WinRM) |
 | `AUTH_TRUST_HOST` | Default: host attendibile (accesso via IP/LAN). Solo se serve: `false` + `AUTH_URL` fisso |
 | `AUTH_URL` | URL pubblico dell’app (es. `https://invent.esempio.it`) se usi `AUTH_TRUST_HOST=false` |
 

@@ -42,6 +42,7 @@ import {
 } from "@/lib/device-classifications";
 import type { ScheduledJob, NetworkWithStats } from "@/types";
 import Link from "next/link";
+import { ManualUpdateInstructions } from "@/components/shared/manual-update-instructions";
 
 /** Anteprima solo con le porte che inserisci (nessun elenco nascosto). */
 function getNmapCommandForForm(form: { tcp_ports: string; udp_ports: string; snmp_community: string }): string {
@@ -956,10 +957,12 @@ export default function SettingsPage() {
           <p className="text-xs text-amber-600 dark:text-amber-500 mt-2 max-w-2xl">
             Controllo remoto: {updateCheckError}
             {" "}
-            Se sei amministratore puoi usare &quot;Aggiorna da Git (main)&quot; oppure <code className="text-[11px] bg-muted px-1 rounded">./scripts/update.sh --restart</code> sul server.
+            Puoi comunque aggiornare da SSH con i comandi nella sezione qui sotto, oppure usare &quot;Aggiorna da Git (main)&quot; se sei amministratore.
           </p>
         )}
       </div>
+
+      <ManualUpdateInstructions className="max-w-3xl" />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border pb-0">

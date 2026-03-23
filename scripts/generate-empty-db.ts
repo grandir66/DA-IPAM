@@ -22,6 +22,13 @@ async function main(): Promise<void> {
   const { getDb, closeDb } = await import("../src/lib/db");
   getDb();
   const db = getDb();
+
+  // Rimuovi tabelle temporanee orfane create dalle migrazioni (CREATE TABLE ... poi catch)
+  const orphans = (db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND (name LIKE '%_new' OR name LIKE '%_ext' OR name LIKE '%_fix' OR name LIKE '%_winrm' OR name LIKE '%_nas')`).all() as { name: string }[]);
+  for (const { name } of orphans) {
+    db.exec(`DROP TABLE IF EXISTS "${name}"`);
+  }
+
   db.pragma("journal_mode = DELETE");
   closeDb();
 

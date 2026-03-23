@@ -21,6 +21,7 @@ import {
   GitBranch,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ManualUpdateInstructions } from "@/components/shared/manual-update-instructions";
 
 interface UpdateInfo {
   currentVersion: string;
@@ -219,7 +220,7 @@ export function UpdateChecker() {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ArrowUpCircle className="h-5 w-5 text-primary" />
@@ -285,6 +286,8 @@ export function UpdateChecker() {
                 )}
               </div>
             )}
+
+            <ManualUpdateInstructions variant="compact" />
 
             {updateStatus !== "idle" && updateStatus !== "checking" && (
               <div className={`p-3 rounded-lg flex items-start gap-2 ${

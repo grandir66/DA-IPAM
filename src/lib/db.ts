@@ -42,6 +42,23 @@ const DB_PATH = process.env.DA_IPAM_DB_PATH?.trim()
 
 let _db: Database.Database | null = null;
 
+/** Verifica colonna su tabella (migrazioni più affidabili del solo try/catch su ALTER). */
+function tableHasColumn(db: Database.Database, table: string, column: string): boolean {
+  try {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    return rows.some((r) => r.name === column);
+  } catch {
+    return false;
+  }
+}
+
+/** Aggiunge colonna se assente (DB vecchi / template copiati prima di una migrazione). */
+function ensureNetworkDevicesColumn(db: Database.Database, column: string, ddl: string): void {
+  if (!tableHasColumn(db, "network_devices", column)) {
+    db.exec(ddl);
+  }
+}
+
 /** Chiude la connessione (solo script di manutenzione / generazione `ipam.empty.db`). */
 export function closeDb(): void {
   if (_db) {
@@ -448,7 +465,14 @@ export function getDb(): Database.Database {
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
       )`);
-      _db.exec("INSERT INTO network_devices_vendor_new SELECT * FROM network_devices");
+      {
+        const srcInfo = _db.prepare("PRAGMA table_info(network_devices)").all() as { name: string }[];
+        const srcCols = srcInfo.map((r) => r.name);
+        const dstInfo = _db.prepare("PRAGMA table_info(network_devices_vendor_new)").all() as { name: string }[];
+        const dstCols = new Set(dstInfo.map((r) => r.name));
+        const common = srcCols.filter((c) => dstCols.has(c)).join(", ");
+        _db.exec(`INSERT INTO network_devices_vendor_new (${common}) SELECT ${common} FROM network_devices`);
+      }
       _db.exec("DROP TABLE network_devices");
       _db.exec("ALTER TABLE network_devices_vendor_new RENAME TO network_devices");
     } finally {
@@ -497,6 +521,10 @@ export function getDb(): Database.Database {
   } catch { /* table might not exist yet */ }
 
   _db.exec(SCHEMA_SQL);
+
+  // DB esistenti senza colonne aggiunte in release successive: ALTER puro può fallire in modo silenzioso con try/catch.
+  ensureNetworkDevicesColumn(_db, "product_profile", "ALTER TABLE network_devices ADD COLUMN product_profile TEXT");
+  ensureNetworkDevicesColumn(_db, "scan_target", "ALTER TABLE network_devices ADD COLUMN scan_target TEXT");
 
   // Colonne hosts aggiunte in migrazioni pre-SCHEMA: su DB nuovi la tabella non esisteva e l'ALTER veniva ignorato.
   // Ripetizione idempotente dopo CREATE TABLE garantisce schema allineato (build/prerender inclusi).
@@ -548,9 +576,6 @@ export function getDb(): Database.Database {
     /* ignore */
   }
 
-  try {
-    _db.exec("ALTER TABLE network_devices ADD COLUMN product_profile TEXT");
-  } catch { /* column exists */ }
   try {
     _db.exec("CREATE INDEX IF NOT EXISTS idx_network_devices_product_profile ON network_devices(product_profile)");
   } catch { /* */ }
@@ -679,27 +704,23 @@ export function getDb(): Database.Database {
       protocol TEXT NOT NULL CHECK(protocol IN ('ssh', 'snmp_v2', 'snmp_v3', 'api')),
       credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
       snmp_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
-      username TEXT,
-      encrypted_password TEXT,
-      community_string TEXT,
-      api_token TEXT,
-      api_url TEXT,
-      port INTEGER DEFAULT 22,
-      enabled INTEGER DEFAULT 1,
-      classification TEXT,
-      sysname TEXT,
-      sysdescr TEXT,
-      model TEXT,
-      firmware TEXT,
-      last_info_update TEXT,
-      stp_info TEXT,
-      last_proxmox_scan_at TEXT,
-      last_proxmox_scan_result TEXT,
+      username TEXT, encrypted_password TEXT, community_string TEXT, api_token TEXT, api_url TEXT,
+      port INTEGER DEFAULT 22, enabled INTEGER DEFAULT 1, classification TEXT,
+      sysname TEXT, sysdescr TEXT, model TEXT, firmware TEXT, serial_number TEXT, part_number TEXT,
+      last_info_update TEXT, last_device_info_json TEXT, stp_info TEXT,
+      last_proxmox_scan_at TEXT, last_proxmox_scan_result TEXT,
+      scan_target TEXT, product_profile TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     )`);
-    _db.exec(`INSERT INTO network_devices_hypervisor_new (id, name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, sysname, sysdescr, model, firmware, last_info_update, stp_info, created_at, updated_at)
-      SELECT id, name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, sysname, sysdescr, model, firmware, last_info_update, stp_info, created_at, updated_at FROM network_devices`);
+    {
+      const srcInfo = _db.prepare("PRAGMA table_info(network_devices)").all() as { name: string }[];
+      const srcCols = srcInfo.map((r) => r.name);
+      const dstInfo = _db.prepare("PRAGMA table_info(network_devices_hypervisor_new)").all() as { name: string }[];
+      const dstCols = new Set(dstInfo.map((r) => r.name));
+      const common = srcCols.filter((c) => dstCols.has(c)).join(", ");
+      _db.exec(`INSERT INTO network_devices_hypervisor_new (${common}) SELECT ${common} FROM network_devices`);
+    }
     try {
       _db.exec(`INSERT INTO network_devices_hypervisor_new (name, host, device_type, vendor, protocol, credential_id, port, enabled, classification, last_proxmox_scan_at, last_proxmox_scan_result, created_at, updated_at)
         SELECT name, host, 'hypervisor', 'proxmox', 'api', credential_id, port, 1, 'hypervisor', last_scan_at, last_scan_result, created_at, updated_at FROM proxmox_hosts`);
@@ -728,16 +749,20 @@ export function getDb(): Database.Database {
       snmp_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
       username TEXT, encrypted_password TEXT, community_string TEXT, api_token TEXT, api_url TEXT,
       port INTEGER DEFAULT 22, enabled INTEGER DEFAULT 1, classification TEXT,
-      sysname TEXT, sysdescr TEXT, model TEXT, firmware TEXT, serial_number TEXT,
-      last_info_update TEXT, stp_info TEXT, last_proxmox_scan_at TEXT, last_proxmox_scan_result TEXT,
-      scan_target TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
+      sysname TEXT, sysdescr TEXT, model TEXT, firmware TEXT, serial_number TEXT, part_number TEXT,
+      last_info_update TEXT, last_device_info_json TEXT, stp_info TEXT,
+      last_proxmox_scan_at TEXT, last_proxmox_scan_result TEXT,
+      scan_target TEXT, product_profile TEXT,
+      created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
     )`);
-    _db.exec(`INSERT INTO network_devices_vendor_ext
-      SELECT id, name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id,
-        username, encrypted_password, community_string, api_token, api_url, port, enabled, classification,
-        sysname, sysdescr, model, firmware, serial_number, last_info_update, stp_info,
-        last_proxmox_scan_at, last_proxmox_scan_result, scan_target, created_at, updated_at
-      FROM network_devices`);
+    {
+      const srcInfo = _db.prepare("PRAGMA table_info(network_devices)").all() as { name: string }[];
+      const srcCols = srcInfo.map((r) => r.name);
+      const dstInfo = _db.prepare("PRAGMA table_info(network_devices_vendor_ext)").all() as { name: string }[];
+      const dstCols = new Set(dstInfo.map((r) => r.name));
+      const common = srcCols.filter((c) => dstCols.has(c)).join(", ");
+      _db.exec(`INSERT INTO network_devices_vendor_ext (${common}) SELECT ${common} FROM network_devices`);
+    }
     _db.exec("DROP TABLE network_devices");
     _db.exec("ALTER TABLE network_devices_vendor_ext RENAME TO network_devices");
     _db.pragma("foreign_keys = ON");
@@ -760,9 +785,17 @@ export function getDb(): Database.Database {
       last_info_update TEXT, last_device_info_json TEXT, stp_info TEXT,
       last_proxmox_scan_at TEXT, last_proxmox_scan_result TEXT,
       scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux')),
+      product_profile TEXT,
       created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
     )`);
-    _db.exec(`INSERT INTO network_devices_winrm SELECT * FROM network_devices`);
+    {
+      const srcInfo = _db.prepare("PRAGMA table_info(network_devices)").all() as { name: string }[];
+      const srcCols = srcInfo.map((r) => r.name);
+      const dstInfo = _db.prepare("PRAGMA table_info(network_devices_winrm)").all() as { name: string }[];
+      const dstCols = new Set(dstInfo.map((r) => r.name));
+      const common = srcCols.filter((c) => dstCols.has(c)).join(", ");
+      _db.exec(`INSERT INTO network_devices_winrm (${common}) SELECT ${common} FROM network_devices`);
+    }
     _db.exec("DROP TABLE network_devices");
     _db.exec("ALTER TABLE network_devices_winrm RENAME TO network_devices");
     _db.pragma("foreign_keys = ON");
@@ -796,9 +829,10 @@ export function getDb(): Database.Database {
         last_info_update TEXT, last_device_info_json TEXT, stp_info TEXT,
         last_proxmox_scan_at TEXT, last_proxmox_scan_result TEXT,
         scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux')),
+        product_profile TEXT,
         created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
       )`);
-      const targetCols = ["id","name","host","device_type","vendor","vendor_subtype","protocol","credential_id","snmp_credential_id","username","encrypted_password","community_string","api_token","api_url","port","enabled","classification","sysname","sysdescr","model","firmware","serial_number","part_number","last_info_update","last_device_info_json","stp_info","last_proxmox_scan_at","last_proxmox_scan_result","scan_target","created_at","updated_at"];
+      const targetCols = ["id","name","host","device_type","vendor","vendor_subtype","protocol","credential_id","snmp_credential_id","username","encrypted_password","community_string","api_token","api_url","port","enabled","classification","sysname","sysdescr","model","firmware","serial_number","part_number","last_info_update","last_device_info_json","stp_info","last_proxmox_scan_at","last_proxmox_scan_result","scan_target","product_profile","created_at","updated_at"];
       const common = targetCols.filter((c) => cols.includes(c)).join(", ");
       _db.exec(`INSERT INTO network_devices_vendor_fix (${common}) SELECT ${common} FROM network_devices`);
       _db.exec("DROP TABLE network_devices");
@@ -817,7 +851,7 @@ export function getDb(): Database.Database {
       _db.pragma("foreign_keys = OFF");
       const info = _db.prepare("PRAGMA table_info(network_devices)").all() as { name: string }[];
       const cols = info.map((r) => r.name);
-      const targetCols = ["id","name","host","device_type","vendor","vendor_subtype","protocol","credential_id","snmp_credential_id","username","encrypted_password","community_string","api_token","api_url","port","enabled","classification","sysname","sysdescr","model","firmware","serial_number","part_number","last_info_update","last_device_info_json","stp_info","last_proxmox_scan_at","last_proxmox_scan_result","scan_target","created_at","updated_at"];
+      const targetCols = ["id","name","host","device_type","vendor","vendor_subtype","protocol","credential_id","snmp_credential_id","username","encrypted_password","community_string","api_token","api_url","port","enabled","classification","sysname","sysdescr","model","firmware","serial_number","part_number","last_info_update","last_device_info_json","stp_info","last_proxmox_scan_at","last_proxmox_scan_result","scan_target","product_profile","created_at","updated_at"];
       const common = targetCols.filter((c) => cols.includes(c)).join(", ");
       _db.exec(`CREATE TABLE network_devices_nas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -833,6 +867,7 @@ export function getDb(): Database.Database {
         last_info_update TEXT, last_device_info_json TEXT, stp_info TEXT,
         last_proxmox_scan_at TEXT, last_proxmox_scan_result TEXT,
         scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux')),
+        product_profile TEXT,
         created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
       )`);
       _db.exec(`INSERT INTO network_devices_nas (${common}) SELECT ${common} FROM network_devices`);
@@ -1283,6 +1318,45 @@ export function getDb(): Database.Database {
     }
   } catch {
     /* ignore */
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // VERIFICA INTEGRITÀ SCHEMA — garantisce che tutte le colonne attese esistano
+  // dopo migrazioni e SCHEMA_SQL. Aggiunge colonne mancanti con ALTER TABLE.
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    const expectedColumns: Record<string, string[]> = {
+      network_devices: [
+        "product_profile", "scan_target", "serial_number", "part_number",
+        "last_device_info_json", "last_proxmox_scan_at", "last_proxmox_scan_result",
+        "sysname", "sysdescr", "model", "firmware", "stp_info", "classification",
+      ],
+      hosts: [
+        "known_host", "classification_manual", "last_response_time_ms",
+        "monitor_ports", "hostname_source", "conflict_flags", "ip_assignment",
+        "last_seen", "first_seen", "detection_json", "snmp_data",
+      ],
+      inventory_assets: [
+        "asset_assignee_id", "location_id", "technical_data",
+      ],
+      dhcp_leases: ["dynamic_lease"],
+    };
+    const defaultDefs: Record<string, string> = {
+      known_host: "INTEGER DEFAULT 0",
+      classification_manual: "INTEGER DEFAULT 0",
+      ip_assignment: "TEXT DEFAULT 'unknown'",
+      dynamic_lease: "INTEGER",
+    };
+    for (const [table, columns] of Object.entries(expectedColumns)) {
+      for (const col of columns) {
+        if (!tableHasColumn(_db, table, col)) {
+          const def = defaultDefs[col] || "TEXT";
+          try {
+            _db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+          } catch { /* ignore if table does not exist yet */ }
+        }
+      }
+    }
   }
 
   // Migrazione: popola device_credential_bindings dai vecchi credential_id / snmp_credential_id
@@ -4634,6 +4708,7 @@ export function resetConfiguration(): void {
       DELETE FROM device_fingerprint_rules;
     `);
     db.exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('server_port', '3000')");
+    db.exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('onboarding_completed', '0')");
   })();
 }
 

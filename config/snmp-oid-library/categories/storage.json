@@ -1,0 +1,5 @@
+{
+  "category": "storage",
+  "note": "OID opzionali condivisi tra profili storage (NAS). Aggiungi qui solo ciò che vale per più vendor.",
+  "fields": {}
+}

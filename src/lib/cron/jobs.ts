@@ -21,6 +21,8 @@ import {
   upsertMacIpMapping,
   upsertDhcpLease,
   syncIpAssignmentsForNetwork,
+  upsertNeighbors,
+  upsertRoutes,
 } from "@/lib/db";
 import { discoverNetwork } from "@/lib/scanner/discovery";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
@@ -327,6 +329,30 @@ export async function runArpPoll(
           });
 
           upsertSwitchPorts(device.id, switchPorts);
+        }
+
+        // Neighbors LLDP/CDP/MNDP
+        if (client.getNeighbors) {
+          try {
+            const neighbors = await client.getNeighbors();
+            if (neighbors.length > 0) {
+              upsertNeighbors(device.id, neighbors);
+            }
+          } catch (err) {
+            console.warn(`[Neighbors] Errore su ${device.name}:`, err);
+          }
+        }
+
+        // Tabella di routing
+        if (client.getRoutingTable) {
+          try {
+            const routes = await client.getRoutingTable();
+            if (routes.length > 0) {
+              upsertRoutes(device.id, routes);
+            }
+          } catch (err) {
+            console.warn(`[Routing] Errore su ${device.name}:`, err);
+          }
         }
       } else {
         const client = await createSwitchClient(device);

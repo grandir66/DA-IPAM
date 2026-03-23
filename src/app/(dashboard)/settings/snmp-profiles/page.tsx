@@ -50,6 +50,9 @@ import {
   Check,
   AlertCircle,
   X,
+  FolderOpen,
+  RefreshCw,
+  FolderUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -67,12 +70,30 @@ interface SnmpProfile {
   enterprise_oid_prefixes: string;
   sysdescr_pattern: string | null;
   fields: string;
+  /** Presente con ?merged=1: campi dopo merge file categories/ + devices/ */
+  fields_merged?: string;
   confidence: number;
   enabled: number;
   builtin: number;
   note: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface OidLibraryFileRow {
+  kind: "common" | "category" | "device";
+  name: string;
+  path: string;
+  category?: string;
+  profile_id?: string;
+  fieldCount?: number;
+}
+
+interface OidLibraryResponse {
+  revision: string;
+  common: unknown;
+  files: OidLibraryFileRow[];
+  root: string;
 }
 
 interface FieldEntry {
@@ -181,9 +202,27 @@ export default function SnmpProfilesPage() {
   const [copied, setCopied] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [oidLibrary, setOidLibrary] = useState<OidLibraryResponse | null>(null);
+  const [oidLibraryLoading, setOidLibraryLoading] = useState(true);
+  const [exportingToFiles, setExportingToFiles] = useState(false);
+
+  const fetchOidLibrary = useCallback(async () => {
+    setOidLibraryLoading(true);
+    try {
+      const res = await fetch("/api/snmp-profiles/oid-library");
+      if (!res.ok) throw new Error("Errore libreria OID");
+      const data = await res.json();
+      setOidLibrary(data);
+    } catch {
+      setOidLibrary(null);
+    } finally {
+      setOidLibraryLoading(false);
+    }
+  }, []);
+
   const fetchProfiles = useCallback(async () => {
     try {
-      const res = await fetch("/api/snmp-profiles");
+      const res = await fetch("/api/snmp-profiles?merged=1");
       if (!res.ok) throw new Error("Errore caricamento profili");
       const data = await res.json();
       setProfiles(data.profiles || []);
@@ -194,9 +233,16 @@ export default function SnmpProfilesPage() {
     }
   }, []);
 
+  const refreshSnmpData = useCallback(() => {
+    setLoading(true);
+    void fetchProfiles();
+    void fetchOidLibrary();
+  }, [fetchProfiles, fetchOidLibrary]);
+
   useEffect(() => {
     fetchProfiles();
-  }, [fetchProfiles]);
+    fetchOidLibrary();
+  }, [fetchProfiles, fetchOidLibrary]);
 
   const toggleExpanded = (id: number) => {
     setExpandedProfiles((prev) => {
@@ -392,6 +438,20 @@ export default function SnmpProfilesPage() {
     }
   };
 
+  const handleExportDbToStructuredFiles = async () => {
+    setExportingToFiles(true);
+    try {
+      const res = await fetch("/api/snmp-profiles?action=export-to-files", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Errore esportazione");
+      toast.success(data.message ?? `Cartella: ${data.rootRelative}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Errore esportazione file");
+    } finally {
+      setExportingToFiles(false);
+    }
+  };
+
   const handleImport = async () => {
     if (!importJson.trim()) {
       toast.error("Inserisci il JSON da importare");
@@ -446,7 +506,12 @@ export default function SnmpProfilesPage() {
   };
 
   const handleResetBuiltin = async () => {
-    if (!confirm("Ripristinare tutti i profili builtin ai valori predefiniti? I profili personalizzati non verranno modificati.")) return;
+    if (
+      !confirm(
+        "Ripristinare tutti i profili builtin ai valori predefiniti del programma? Le modifiche manuali ai profili builtin andranno perse. I profili personalizzati (non builtin) non verranno toccati."
+      )
+    )
+      return;
     try {
       const res = await fetch("/api/snmp-profiles?action=reset-builtin", { method: "POST" });
       if (!res.ok) throw new Error("Errore reset");
@@ -484,6 +549,30 @@ export default function SnmpProfilesPage() {
     return found ? found.label : key;
   };
 
+  const renderOidFieldRows = (obj: Record<string, string | string[]>) =>
+    Object.entries(obj).map(([key, value]) => (
+      <TableRow key={key}>
+        <TableCell className="font-medium">
+          {getFieldLabel(key)}
+          <span className="text-xs text-muted-foreground ml-1">({key})</span>
+        </TableCell>
+        <TableCell className="font-mono text-xs">
+          {Array.isArray(value) ? (
+            <div className="space-y-1">
+              {value.map((v, i) => (
+                <div key={i} className="flex items-center gap-1">
+                  <span className="text-muted-foreground">{i + 1}.</span>
+                  {v}
+                </div>
+              ))}
+            </div>
+          ) : (
+            value
+          )}
+        </TableCell>
+      </TableRow>
+    ));
+
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center gap-4">
@@ -503,6 +592,73 @@ export default function SnmpProfilesPage() {
 
       <Card>
         <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div className="space-y-1">
+              <CardTitle className="flex items-center gap-2">
+                <FolderOpen className="h-5 w-5 text-muted-foreground" />
+                Libreria OID (file)
+              </CardTitle>
+              <CardDescription>
+                Cartella <code className="text-xs bg-muted px-1 rounded">config/snmp-oid-library/</code>:{" "}
+                <strong>common.json</strong> per OID fondamentali di riferimento,{" "}
+                <strong>categories/&lt;tipo&gt;.json</strong> per OID condivisi per classificazione,{" "}
+                <strong>devices/&lt;profile_id&gt;.json</strong> per elenchi lunghi legati al profilo. Nuovi file
+                compaiono automaticamente nell&apos;elenco sotto.
+              </CardDescription>
+            </div>
+            <Button variant="outline" size="sm" className="shrink-0" onClick={() => refreshSnmpData()} disabled={loading || oidLibraryLoading}>
+              <RefreshCw className={`h-4 w-4 mr-1 ${oidLibraryLoading ? "animate-spin" : ""}`} />
+              Aggiorna elenco
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {oidLibraryLoading ? (
+            <p className="text-sm text-muted-foreground">Caricamento libreria…</p>
+          ) : oidLibrary && oidLibrary.files.length > 0 ? (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Revisione file: <span className="font-mono">{oidLibrary.revision}</span>
+              </p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[100px]">Tipo</TableHead>
+                    <TableHead>File</TableHead>
+                    <TableHead className="w-[100px]">Dettaglio</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {oidLibrary.files.map((f) => (
+                    <TableRow key={`${f.kind}-${f.path}`}>
+                      <TableCell>
+                        <Badge variant="outline" className="text-[10px]">
+                          {f.kind === "common" ? "comuni" : f.kind === "category" ? "categoria" : "dispositivo"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{f.path}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {f.kind === "device" && f.fieldCount != null ? `${f.fieldCount} campi` : f.kind === "category" ? f.category : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <p className="text-xs text-muted-foreground">
+                Leggi <code className="bg-muted px-1 rounded">config/snmp-oid-library/README.md</code> nel repository per
+                formato JSON e ordine di merge.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Nessun file in <code className="text-xs bg-muted px-1 rounded">config/snmp-oid-library/</code> oppure cartella assente sul server.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <CardTitle>Profili ({filteredProfiles.length})</CardTitle>
@@ -513,7 +669,17 @@ export default function SnmpProfilesPage() {
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={handleExport}>
                 <Download className="h-4 w-4 mr-1" />
-                Esporta
+                Esporta JSON
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportDbToStructuredFiles}
+                disabled={exportingToFiles}
+                title="Crea sotto data/ una cartella snmp-oid-export-*/ con devices/, categories/, profiles_complete/ e manifest.json"
+              >
+                <FolderUp className={`h-4 w-4 mr-1 ${exportingToFiles ? "opacity-50" : ""}`} />
+                {exportingToFiles ? "Esportazione…" : "Esporta in cartelle"}
               </Button>
               <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)}>
                 <Upload className="h-4 w-4 mr-1" />
@@ -528,7 +694,9 @@ export default function SnmpProfilesPage() {
                 <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto scrollbar-none">
                   <DialogHeader>
                     <DialogTitle>
-                      {editingProfile ? `Modifica profilo: ${editingProfile.name}` : "Nuovo profilo SNMP"}
+                      {editingProfile
+                        ? `Modifica profilo: ${editingProfile.name}${editingProfile.builtin === 1 ? " (builtin)" : ""}`
+                        : "Nuovo profilo SNMP"}
                     </DialogTitle>
                   </DialogHeader>
                   <form onSubmit={handleSubmit} className="space-y-6 mt-4">
@@ -819,6 +987,19 @@ export default function SnmpProfilesPage() {
                 let fields: Record<string, string | string[]> = {};
                 try { fields = JSON.parse(profile.fields); } catch { /* ignore */ }
 
+                let mergedFieldsRuntime: Record<string, string | string[]> = {};
+                if (profile.fields_merged) {
+                  try {
+                    mergedFieldsRuntime = JSON.parse(profile.fields_merged) as Record<string, string | string[]>;
+                  } catch {
+                    /* ignore */
+                  }
+                }
+                const runtimeFieldCount = Object.keys(mergedFieldsRuntime).length;
+                const hasDeviceOidFile = oidLibrary?.files.some(
+                  (f) => f.kind === "device" && f.profile_id === profile.profile_id
+                );
+
                 const isExpanded = expandedProfiles.has(profile.id);
                 const fieldCount = Object.keys(fields).length;
 
@@ -841,10 +1022,15 @@ export default function SnmpProfilesPage() {
                             />
                           </div>
                           <div className="flex-1 text-left min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium truncate">{profile.name}</span>
                               {profile.builtin === 1 && (
                                 <Badge variant="secondary" className="text-[10px] px-1 py-0">builtin</Badge>
+                              )}
+                              {hasDeviceOidFile && (
+                                <Badge variant="outline" className="text-[10px] px-1 py-0" title="Esiste devices/{profile.profile_id}.json">
+                                  OID file
+                                </Badge>
                               )}
                             </div>
                             <div className="text-xs text-muted-foreground font-mono truncate">
@@ -856,7 +1042,11 @@ export default function SnmpProfilesPage() {
                           </div>
                           <div className="flex-shrink-0 text-xs text-muted-foreground">
                             {oids.length > 0 && <span className="mr-2">{oids.length} OID</span>}
-                            {fieldCount > 0 && <span>{fieldCount} campi</span>}
+                            {runtimeFieldCount > 0 ? (
+                              <span title="Campi effettivi a runtime (con file libreria)">{runtimeFieldCount} campi</span>
+                            ) : fieldCount > 0 ? (
+                              <span>{fieldCount} campi</span>
+                            ) : null}
                           </div>
                           <div className="flex-shrink-0 font-mono text-sm">
                             {(profile.confidence * 100).toFixed(0)}%
@@ -879,26 +1069,24 @@ export default function SnmpProfilesPage() {
                             >
                               {copied === profile.id ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
                             </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenEdit(profile)}
+                              title="Modifica"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
                             {profile.builtin === 0 && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleOpenEdit(profile)}
-                                  title="Modifica"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDelete(profile)}
-                                  title="Elimina"
-                                  className="text-destructive hover:text-destructive"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDelete(profile)}
+                                title="Elimina"
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
                             )}
                           </div>
                         </div>
@@ -930,44 +1118,44 @@ export default function SnmpProfilesPage() {
                             </div>
                           )}
 
-                          {/* Fields Table */}
-                          <div>
-                            <h4 className="text-sm font-medium mb-2">Campi OID ({fieldCount})</h4>
-                            {fieldCount === 0 ? (
-                              <p className="text-sm text-muted-foreground">Nessun campo definito</p>
-                            ) : (
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead className="w-[150px]">Campo</TableHead>
-                                    <TableHead>OID</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {Object.entries(fields).map(([key, value]) => (
-                                    <TableRow key={key}>
-                                      <TableCell className="font-medium">
-                                        {getFieldLabel(key)}
-                                        <span className="text-xs text-muted-foreground ml-1">({key})</span>
-                                      </TableCell>
-                                      <TableCell className="font-mono text-xs">
-                                        {Array.isArray(value) ? (
-                                          <div className="space-y-1">
-                                            {value.map((v, i) => (
-                                              <div key={i} className="flex items-center gap-1">
-                                                <span className="text-muted-foreground">{i + 1}.</span>
-                                                {v}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        ) : (
-                                          value
-                                        )}
-                                      </TableCell>
+                          {/* Campi OID: database vs runtime */}
+                          <div className="space-y-4">
+                            <div>
+                              <h4 className="text-sm font-medium mb-2">Campi salvati nel database ({fieldCount})</h4>
+                              {fieldCount === 0 ? (
+                                <p className="text-sm text-muted-foreground">Nessun campo definito nel DB</p>
+                              ) : (
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="w-[150px]">Campo</TableHead>
+                                      <TableHead>OID</TableHead>
                                     </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
+                                  </TableHeader>
+                                  <TableBody>{renderOidFieldRows(fields)}</TableBody>
+                                </Table>
+                              )}
+                            </div>
+                            {profile.fields_merged && runtimeFieldCount > 0 && (
+                              <div className="border-t border-border/60 pt-4">
+                                <h4 className="text-sm font-medium mb-1">
+                                  OID effettivi a runtime ({runtimeFieldCount})
+                                </h4>
+                                <p className="text-xs text-muted-foreground mb-2">
+                                  Include merge da <code className="bg-muted px-1 rounded">categories/&lt;tipo&gt;.json</code> e{" "}
+                                  <code className="bg-muted px-1 rounded">devices/&lt;profile_id&gt;.json</code> (le chiavi dei file
+                                  sovrascrivono omonime del database).
+                                </p>
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="w-[150px]">Campo</TableHead>
+                                      <TableHead>OID</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>{renderOidFieldRows(mergedFieldsRuntime)}</TableBody>
+                                </Table>
+                              </div>
                             )}
                           </div>
 
@@ -979,11 +1167,10 @@ export default function SnmpProfilesPage() {
                             </div>
                           )}
 
-                          {/* Edit button for builtin */}
                           {profile.builtin === 1 && (
                             <div className="pt-2 border-t">
                               <p className="text-xs text-muted-foreground">
-                                I profili builtin non possono essere modificati. Per personalizzare, crea un nuovo profilo con lo stesso OID ma priorità diversa.
+                                Profilo <strong>builtin</strong>: modificabile qui sopra con l&apos;icona matita. &quot;Reset Builtin&quot; ripristina tutti i default del programma (perde le tue modifiche ai builtin).
                               </p>
                             </div>
                           )}
@@ -1035,7 +1222,7 @@ export default function SnmpProfilesPage() {
             <div className="flex items-start gap-2 p-3 bg-muted rounded-lg">
               <AlertCircle className="h-4 w-4 mt-0.5 text-yellow-600" />
               <div className="text-sm text-muted-foreground">
-                I profili builtin non vengono mai sovrascritti. Per ripristinarli usa il pulsante &quot;Reset Builtin&quot;.
+                L&apos;import non sovrascrive i profili builtin: modificali dalla lista oppure usa &quot;Reset Builtin&quot; per ripristinare i default del programma.
               </div>
             </div>
             <div className="flex justify-end gap-2">

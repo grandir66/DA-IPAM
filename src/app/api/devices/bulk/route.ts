@@ -8,6 +8,7 @@ import {
   updateHost,
   updateNetworkDevice,
   ensureInventoryAssetForNetworkDevice,
+  addDeviceCredentialBinding,
 } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { z } from "zod";
@@ -151,6 +152,16 @@ export async function POST(request: Request) {
       });
 
       created.push({ id: device.id, name: device.name, host: device.host });
+
+      // Crea bindings credenziali nella nuova tabella
+      const protoType = protocol === "winrm" ? "winrm" : protocol === "snmp_v2" || protocol === "snmp_v3" ? "snmp" : protocol === "api" ? "api" : "ssh";
+      if (hasCred && credential_id) {
+        addDeviceCredentialBinding({ device_id: device.id, credential_id, protocol_type: protoType, port: devicePort });
+      }
+      if (snmp_credential_id && snmp_credential_id > 0 && snmp_credential_id !== credential_id) {
+        addDeviceCredentialBinding({ device_id: device.id, credential_id: snmp_credential_id, protocol_type: "snmp", port: 161 });
+      }
+
       updateHost(host.id, { classification });
       ensureInventoryAssetForNetworkDevice(device);
     }

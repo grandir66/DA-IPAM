@@ -55,6 +55,7 @@ import {
   CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL,
   getPrimaryCredentialLabels,
 } from "@/components/shared/credential-assignment-fields";
+import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import {
   inferProductProfileFromLegacy,
   PRODUCT_PROFILE_LABELS,
@@ -1420,30 +1421,9 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     }}
                   />
                 )}
-                <CredentialAssignmentFields
-                  credentials={credentials}
-                  credentialId={editCredentialId}
-                  snmpCredentialId={editSnmpCredentialId}
-                  onCredentialIdChange={(v) => setEditCredentialId(v)}
-                  onSnmpCredentialIdChange={(v) => setEditSnmpCredentialId(v)}
-                  primarySectionTitle={primaryEditCredLabels.section}
-                  primarySelectLabel={primaryEditCredLabels.select}
-                  snmpSelectLabel={CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL}
-                  credentialPlaceholder="Nessuna (credenziali inline)"
-                  showInlineCreds={editProtocol === "ssh" || editProtocol === "api" || editProtocol === "winrm"}
-                  inlineUsername={"username" in editingDevice ? (editingDevice.username || "") : ""}
-                  showPortAndCommunity
-                  portDefaultValue={"port" in editingDevice ? (editingDevice.port ?? 22) : 22}
-                  idPrefix="device-edit"
-                  testButton={
-                    !isHostItem(editingDevice) && typeof editingDevice.id === "number" ? (
-                      <Button type="button" variant="outline" size="sm" onClick={handleEditTest} disabled={editTesting}>
-                        <ShieldCheck className={`h-4 w-4 mr-2 ${editTesting ? "animate-pulse" : ""}`} />
-                        {editTesting ? "Test in corso…" : "Testa credenziali"}
-                      </Button>
-                    ) : undefined
-                  }
-                />
+                {editingDevice && !isHostItem(editingDevice) && typeof editingDevice.id === "number" && (
+                  <DeviceCredentialsTable deviceId={editingDevice.id} />
+                )}
                 <Button type="submit" className="w-full">Salva modifiche</Button>
               </form>
             )}

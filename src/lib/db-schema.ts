@@ -654,4 +654,61 @@ CREATE INDEX IF NOT EXISTS idx_dhcp_leases_mac ON dhcp_leases(mac_address);
 CREATE INDEX IF NOT EXISTS idx_dhcp_leases_ip ON dhcp_leases(ip_address);
 CREATE INDEX IF NOT EXISTS idx_dhcp_leases_host ON dhcp_leases(host_id);
 CREATE INDEX IF NOT EXISTS idx_dhcp_leases_network ON dhcp_leases(network_id);
+
+-- Neighbors LLDP/CDP/MNDP scoperti sui device di rete
+CREATE TABLE IF NOT EXISTS device_neighbors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  local_port TEXT NOT NULL,
+  remote_device_name TEXT NOT NULL DEFAULT '',
+  remote_port TEXT NOT NULL DEFAULT '',
+  protocol TEXT NOT NULL CHECK(protocol IN ('lldp', 'cdp', 'mndp', 'unknown')),
+  remote_ip TEXT,
+  remote_mac TEXT,
+  remote_platform TEXT,
+  timestamp TEXT DEFAULT (datetime('now')),
+  UNIQUE(device_id, local_port, remote_device_name, remote_port)
+);
+CREATE INDEX IF NOT EXISTS idx_device_neighbors_device ON device_neighbors(device_id);
+CREATE INDEX IF NOT EXISTS idx_device_neighbors_remote ON device_neighbors(remote_device_name);
+
+-- Tabella di routing raccolta dai router
+CREATE TABLE IF NOT EXISTS routing_table (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  destination TEXT NOT NULL,
+  gateway TEXT,
+  interface_name TEXT,
+  protocol TEXT NOT NULL CHECK(protocol IN ('connected', 'static', 'ospf', 'bgp', 'rip', 'other')),
+  metric INTEGER,
+  distance INTEGER,
+  active INTEGER DEFAULT 1,
+  timestamp TEXT DEFAULT (datetime('now')),
+  UNIQUE(device_id, destination, gateway, interface_name)
+);
+CREATE INDEX IF NOT EXISTS idx_routing_table_device ON routing_table(device_id);
+CREATE INDEX IF NOT EXISTS idx_routing_table_dest ON routing_table(destination);
+
+-- Binding credenziali per device (sistema tabellare multi-credenziale)
+CREATE TABLE IF NOT EXISTS device_credential_bindings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  credential_id INTEGER REFERENCES credentials(id) ON DELETE CASCADE,
+  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api')),
+  port INTEGER NOT NULL DEFAULT 22,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  -- Credenziali inline (se credential_id è NULL)
+  inline_username TEXT,
+  inline_encrypted_password TEXT,
+  -- Stato test
+  test_status TEXT NOT NULL DEFAULT 'untested' CHECK(test_status IN ('success', 'failed', 'untested')),
+  test_message TEXT,
+  tested_at TEXT,
+  -- Flag: aggiunta automaticamente dal discovery IPAM
+  auto_detected INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(device_id, credential_id, protocol_type, port)
+);
+CREATE INDEX IF NOT EXISTS idx_dcb_device ON device_credential_bindings(device_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_dcb_credential ON device_credential_bindings(credential_id);
 `;

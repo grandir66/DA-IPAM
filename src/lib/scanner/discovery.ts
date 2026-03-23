@@ -34,6 +34,9 @@ import {
   getFingerprintClassificationRulesForResolve,
   getEnabledDeviceFingerprintRules,
   getNetworkDeviceByHost,
+  findExistingBinding,
+  addDeviceCredentialBinding,
+  updateBindingTestStatus,
   syncNetworkDeviceFromHostScan,
   mergeOpenPortsJson,
   syncIpAssignmentsForNetwork,
@@ -80,6 +83,29 @@ export type DiscoverNetworkOptions = {
  * @param nmapArgs - Custom nmap args string from DB profile (TCP-only). Usato solo per scanType "nmap".
  * @param snmpCommunity - SNMP community per questa rete/profilo. Usato solo per scanType "snmp".
  */
+
+/** Auto-aggiunge una credenziale funzionante ai bindings del device, se l'host corrisponde a un network_device */
+function autoBindCredentialToDevice(hostIp: string, credentialId: number, protocolType: "ssh" | "snmp" | "winrm", port: number): void {
+  try {
+    const device = getNetworkDeviceByHost(hostIp);
+    if (!device) return;
+    const existing = findExistingBinding(device.id, credentialId, protocolType, port);
+    if (existing) {
+      // Aggiorna stato test del binding esistente
+      updateBindingTestStatus(existing.id, "success", "Auto-detect riuscito");
+      return;
+    }
+    const binding = addDeviceCredentialBinding({
+      device_id: device.id,
+      credential_id: credentialId,
+      protocol_type: protocolType,
+      port,
+      auto_detected: true,
+    });
+    updateBindingTestStatus(binding.id, "success", "Auto-detect riuscito");
+  } catch { /* ignore: device non trovato o duplicato */ }
+}
+
 export async function discoverNetwork(
   networkId: number,
   scanType: DiscoveryScanType,
@@ -395,6 +421,7 @@ async function runDiscovery(
               snmpHostname: hn,
             });
             setHostDetectCredential(host.id, "windows", credId);
+            autoBindCredentialToDevice(ip, credId, "winrm", winrmPort);
             log(`✓ ${ip} → ${hn} (cred#${credId}, porta ${winrmPort})`);
             ok = true;
             break;
@@ -516,12 +543,10 @@ async function runDiscovery(
               readyTimeout: 6000,
               algorithms: {
                 kex: [
-                  "ecdh-sha2-nistp256",
-                  "ecdh-sha2-nistp384",
-                  "ecdh-sha2-nistp521",
+                  "curve25519-sha256", "curve25519-sha256@libssh.org",
+                  "ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521",
                   "diffie-hellman-group-exchange-sha256",
-                  "diffie-hellman-group14-sha256",
-                  "diffie-hellman-group14-sha1",
+                  "diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1",
                   "diffie-hellman-group1-sha1",
                 ],
               },
@@ -548,6 +573,7 @@ async function runDiscovery(
             snmpHostname: hn,
           });
           setHostDetectCredential(host.id, "linux", credId);
+          autoBindCredentialToDevice(ip, credId, "ssh", 22);
           if (boundSshForSave == null) {
             setHostDetectCredential(host.id, "ssh", credId);
           }
@@ -802,6 +828,7 @@ async function runDiscovery(
                 setHostDetectCredential(hostId, "ssh", credId);
               }
             }
+            autoBindCredentialToDevice(ip, credId, "ssh", 22);
             log(`SSH ✓ ${ip} → ${hn || "—"}, OS: ${osInfo}`);
             ok = true;
             break;

@@ -120,29 +120,15 @@ export default function DevicesUnifiedPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [devicesRes, hostsRes] = await Promise.all([
-        fetch("/api/devices"),
-        fetch("/api/hosts?limit=5000"),
-      ]);
+      // Solo network_devices: gli host IPAM restano in Reti / scheda host. Unire tutti gli host
+      // qui faceva esplodere la lista e apriva /hosts/[id] invece del dettaglio dispositivo.
+      const devicesRes = await fetch("/api/devices");
+      const devices: NetworkDevice[] = devicesRes.ok ? await devicesRes.json() : [];
 
-      const devices: NetworkDevice[] = devicesRes.ok
-        ? (await devicesRes.json())
-        : [];
-      const hostsData = await hostsRes.json();
-      const hosts: Host[] = Array.isArray(hostsData)
-        ? hostsData
-        : Array.isArray(hostsData?.hosts)
-          ? hostsData.hosts
-          : [];
-
-      const deviceIps = new Set(devices.map((d) => d.host));
-      
-      const combined: DeviceOrHost[] = [
-        ...devices.map((d) => ({ ...d, source: "device" as const })),
-        ...hosts
-          .filter((h) => !deviceIps.has(h.ip))
-          .map((h) => ({ ...h, source: "host" as const })),
-      ];
+      const combined: DeviceOrHost[] = devices.map((d) => ({
+        ...d,
+        source: "device" as const,
+      }));
 
       setItems(combined);
 

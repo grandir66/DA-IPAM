@@ -5,7 +5,13 @@
  */
 
 import type { NetworkDevice } from "@/types";
-import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString } from "@/lib/db";
+import {
+  getDeviceCredentials,
+  getDeviceCommunityString,
+  getDeviceSnmpV3Credentials,
+  getCredentialCommunityString,
+  getEffectiveSnmpPort,
+} from "@/lib/db";
 import { sshExec, sshExecViaShell } from "./ssh-helper";
 
 export interface DeviceInfo {
@@ -102,6 +108,23 @@ export interface DeviceInfo {
   }>;
   /** Inventario NAS Synology/QNAP (SNMP + SSH) */
   nas_inventory?: NasInventorySnapshot;
+  /** Linux: porte TCP/UDP in ascolto (da ss -tlnp / ss -ulnp) */
+  listening_ports?: Array<{
+    port: number;
+    protocol: "tcp" | "udp";
+    process?: string;
+    bind_address?: string;
+  }>;
+  /** Linux: stato firewall */
+  firewall_active?: boolean;
+  firewall_type?: "iptables" | "nftables" | "ufw" | null;
+  firewall_rules_count?: number | null;
+  /** Linux: cron jobs attivi */
+  cron_jobs?: Array<{ user: string; schedule: string; command: string }>;
+  /** MikroTik: conteggio regole firewall (filter + nat + mangle) */
+  firewall_filter_count?: number | null;
+  firewall_nat_count?: number | null;
+  firewall_mangle_count?: number | null;
 }
 
 /** Snapshot strutturato per Synology / QNAP (serializzato in last_device_info_json) */
@@ -110,6 +133,7 @@ export interface NasInventorySnapshot {
   sources: ("snmp" | "ssh")[];
   snmp?: {
     temperature_c?: number | null;
+    cpu_temperature_c?: number | null;
     system_status?: string | null;
     disks?: Array<{
       index?: string;
@@ -118,6 +142,10 @@ export interface NasInventorySnapshot {
       type?: string;
       status?: string;
       temperature_c?: number | null;
+      serial?: string;
+      capacity_gb?: number | null;
+      slot?: string;
+      smart_health?: string;
     }>;
     raids?: Array<{
       index?: string;
@@ -126,13 +154,51 @@ export interface NasInventorySnapshot {
       free_gb?: number | null;
       total_gb?: number | null;
     }>;
-    volumes_snmp?: Array<{ name?: string; size_gb?: number | null; free_gb?: number | null; status?: string | null }>;
+    volumes_snmp?: Array<{
+      name?: string;
+      size_gb?: number | null;
+      free_gb?: number | null;
+      status?: string | null;
+      raid_type?: string | null;
+    }>;
+    storage_pools?: Array<{
+      name?: string;
+      status?: string | null;
+      total_gb?: number | null;
+      used_gb?: number | null;
+    }>;
+    volume_io?: Array<{ name?: string; read_bps?: string | null; write_bps?: string | null }>;
+    ups?: { status?: string | null; battery_pct?: string | null };
+    services?: Array<{ name?: string; state?: string | null }>;
+    qts5_pool_rows?: number;
   };
   ssh?: {
     mdstat_summary?: string;
     cpu_model?: string | null;
     kernel?: string | null;
+    synology_shares_preview?: string;
+    synology_packages_count?: number | null;
+    synology_storage_lines?: string;
+    synology_temperature_lines?: string;
+    qnap_raid_info_preview?: string;
+    qnap_storage_cfg_preview?: string;
+    qnap_qpkg_preview?: string;
   };
+}
+
+/**
+ * Riconosce un NAS Synology/QNAP da vendor o da classification.
+ * Se il vendor è ancora "generic" ma la classificazione è nas_synology / nas_qnap,
+ * i percorsi SNMP/SSH NAS devono comunque attivarsi.
+ */
+export function resolveNasKind(device: NetworkDevice): "synology" | "qnap" | null {
+  const v = (device.vendor ?? "").toLowerCase();
+  if (v === "synology") return "synology";
+  if (v === "qnap") return "qnap";
+  const c = device.classification ?? "";
+  if (c === "nas_synology") return "synology";
+  if (c === "nas_qnap") return "qnap";
+  return null;
 }
 
 /** Almeno un campo “inventario” utile per query WinRM/SNMP/SSH. */
@@ -155,7 +221,7 @@ function deviceInfoHasAnyData(r: DeviceInfo | Partial<DeviceInfo>): boolean {
  */
 export async function getDeviceInfoFromSnmp(device: NetworkDevice): Promise<DeviceInfo> {
   const isSnmpProtocol = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
-  const snmpPort = isSnmpProtocol ? (device.port || 161) : 161;
+  const snmpPort = isSnmpProtocol ? getEffectiveSnmpPort(device) : 161;
   const opts = { port: snmpPort, timeout: 5000 };
 
   try {
@@ -271,18 +337,21 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
   const password = creds?.password;
   if (!username || !password) return {};
 
+  // Se il protocollo primario è SNMP, la porta configurata è quella SNMP (161): usa 22 per SSH
+  const sshPort = (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") ? 22 : (device.port || 22);
   const opts = {
     host: device.host,
-    port: device.port || 22,
+    port: sshPort,
     username,
     password,
     timeout: 15000,
   };
 
   try {
-    if (device.vendor === "synology" || device.vendor === "qnap") {
+    const nasKindSsh = resolveNasKind(device);
+    if (nasKindSsh) {
       const { getNasDeviceInfoFromSsh } = await import("./nas-acquisition");
-      return getNasDeviceInfoFromSsh(device, device.vendor === "synology" ? "synology" : "qnap");
+      return getNasDeviceInfoFromSsh(device, nasKindSsh);
     }
 
     if (device.vendor === "stormshield") {
@@ -333,9 +402,13 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
       const board = r.stdout.match(/board-name:\s*(.+)/)?.[1]?.trim();
       const version = r.stdout.match(/version:\s*(.+)/)?.[1]?.trim();
       const serial = r.stdout.match(/serial-number:\s*(.+)/)?.[1]?.trim();
-      const identity = await sshExec(opts, '/system identity print').then((x) => x.stdout.match(/name:\s*(.+)/)?.[1]?.trim());
-      // MikroTik usa routerboard print per part number
-      const rbInfo = await sshExec(opts, '/system routerboard print').catch(() => ({ stdout: "" }));
+      const [identity, rbInfo, fwFilter, fwNat, fwMangle] = await Promise.all([
+        sshExec(opts, '/system identity print').then((x) => x.stdout.match(/name:\s*(.+)/)?.[1]?.trim()).catch(() => undefined),
+        sshExec(opts, '/system routerboard print').catch(() => ({ stdout: "" })),
+        sshExec(opts, '/ip firewall filter print count-only').then((x) => parseInt(x.stdout.trim(), 10)).catch(() => NaN),
+        sshExec(opts, '/ip firewall nat print count-only').then((x) => parseInt(x.stdout.trim(), 10)).catch(() => NaN),
+        sshExec(opts, '/ip firewall mangle print count-only').then((x) => parseInt(x.stdout.trim(), 10)).catch(() => NaN),
+      ]);
       const partNumber = rbInfo.stdout.match(/model:\s*(.+)/i)?.[1]?.trim();
       return {
         model: board || null,
@@ -343,6 +416,9 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
         sysname: identity || null,
         serial_number: serial || null,
         part_number: partNumber || null,
+        firewall_filter_count: !Number.isNaN(fwFilter) ? fwFilter : null,
+        firewall_nat_count: !Number.isNaN(fwNat) ? fwNat : null,
+        firewall_mangle_count: !Number.isNaN(fwMangle) ? fwMangle : null,
       };
     }
 
@@ -412,28 +488,56 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
     }
 
     if (device.vendor === "ubiquiti") {
-      const r = await sshExec(opts, "cat /etc/version 2>/dev/null || cat /tmp/version 2>/dev/null || echo");
-      const version = r.stdout.trim() || null;
-      const model = r.stdout.match(/^(U[^\s]+)/)?.[1] || null;
-      const serialRaw = await sshExec(
-        opts,
-        "sh -c 'cat /sys/class/dmi/id/product_serial 2>/dev/null; cat /sys/class/dmi/id/board_serial 2>/dev/null; command -v ubntbox >/dev/null 2>&1 && ubntbox mca-status 2>/dev/null | head -80'"
-      ).catch(() => ({ stdout: "" }));
+      const exec = (cmd: string) => sshExec(opts, cmd).then((x) => x.stdout).catch(() => "");
+      const [versionOut, boardInfo, serialRaw, showVersion, uptimeOut, cpuOut, memOut, hostnameOut] = await Promise.all([
+        exec("cat /etc/version 2>/dev/null || cat /tmp/version 2>/dev/null"),
+        exec("cat /etc/board.info 2>/dev/null"),
+        exec("sh -c 'cat /sys/class/dmi/id/product_serial 2>/dev/null; cat /sys/class/dmi/id/board_serial 2>/dev/null; command -v ubntbox >/dev/null 2>&1 && ubntbox mca-status 2>/dev/null | head -80'"),
+        exec("show version 2>/dev/null"),
+        exec("uptime 2>/dev/null"),
+        exec("grep -c processor /proc/cpuinfo 2>/dev/null"),
+        exec("grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}'"),
+        exec("hostname 2>/dev/null"),
+      ]);
+
+      const version = versionOut.trim() || null;
+      const fwModel = versionOut.match(/^(U[^\s]+)/)?.[1] || null;
+
+      // board.info: board.name=, board.hwid=, board.serial=
+      const boardName = boardInfo.match(/board\.name=(.+)/)?.[1]?.trim();
+      const boardHwId = boardInfo.match(/board\.hwid=(.+)/)?.[1]?.trim();
+      const boardSerial = boardInfo.match(/board\.serial=(.+)/)?.[1]?.trim();
+
+      // show version (EdgeOS): HW/SW model, uptime, etc.
+      const edgeModel = showVersion.match(/HW model:\s*(.+)/i)?.[1]?.trim()
+        || showVersion.match(/Version:\s*(.+)/i)?.[1]?.trim();
+
       const { isPlausibleHardwareSerial } = await import("@/lib/hardware-serial");
-      let serial_number: string | null = null;
-      for (const line of serialRaw.stdout.split("\n")) {
-        const t = line.trim();
-        const m = t.match(/(?:serial|SerialNo|serialNo|board\.serial)[\s:=#]+([^\s,]+)/i);
-        if (m?.[1] && isPlausibleHardwareSerial(m[1])) {
-          serial_number = m[1];
-          break;
-        }
-        if (t && isPlausibleHardwareSerial(t) && /[0-9A-Z]{4,}/i.test(t)) {
-          serial_number = t;
-          break;
+      let serial_number: string | null = boardSerial || null;
+      if (!serial_number) {
+        for (const line of serialRaw.split("\n")) {
+          const t = line.trim();
+          const m = t.match(/(?:serial|SerialNo|serialNo|board\.serial)[\s:=#]+([^\s,]+)/i);
+          if (m?.[1] && isPlausibleHardwareSerial(m[1])) { serial_number = m[1]; break; }
+          if (t && isPlausibleHardwareSerial(t) && /[0-9A-Z]{4,}/i.test(t)) { serial_number = t; break; }
         }
       }
-      return { model: model || null, firmware: version || null, serial_number };
+
+      const ramKb = parseInt(memOut.trim(), 10);
+      const ramTotalGb = !Number.isNaN(ramKb) ? Math.round((ramKb / (1024 * 1024)) * 10) / 10 : null;
+      const cpuCores = parseInt(cpuOut.trim(), 10);
+
+      return {
+        model: boardName || edgeModel || fwModel || null,
+        firmware: version || null,
+        serial_number,
+        sysname: hostnameOut.trim() || null,
+        hostname: hostnameOut.trim() || null,
+        part_number: boardHwId || null,
+        uptime: uptimeOut.trim() || null,
+        ram_total_gb: ramTotalGb,
+        cpu_cores: !Number.isNaN(cpuCores) ? cpuCores : null,
+      };
     }
 
     // Proxmox VE (DADude3 ssh_vendors/proxmox.py)
@@ -668,6 +772,52 @@ async function getDeviceInfoFromLinux(opts: SshOpts): Promise<Partial<DeviceInfo
   const pkgNum = parseInt(pkgCount.trim().split("\n")[0] ?? "0", 10);
   if (!Number.isNaN(pkgNum) && pkgNum > 0) result.packages_count = pkgNum;
 
+  // Porte in ascolto (ss -tlnp + ss -ulnp)
+  const [ssTcp, ssUdp] = await Promise.all([
+    exec("ss -tlnp 2>/dev/null | tail -n +2 | head -50"),
+    exec("ss -ulnp 2>/dev/null | tail -n +2 | head -30"),
+  ]);
+  const listeningPorts = parseListeningPorts(ssTcp, "tcp").concat(parseListeningPorts(ssUdp, "udp"));
+  if (listeningPorts.length > 0) result.listening_ports = listeningPorts;
+
+  // Firewall status (ufw → iptables → nftables)
+  const ufwStatus = await exec("ufw status 2>/dev/null");
+  if (ufwStatus.includes("Status: active")) {
+    result.firewall_active = true;
+    result.firewall_type = "ufw";
+    const ufwRules = await exec("ufw status numbered 2>/dev/null | grep -c '^\\[' || echo 0");
+    result.firewall_rules_count = parseInt(ufwRules.trim(), 10) || null;
+  } else {
+    // nftables prima di iptables (nft è il backend moderno)
+    const nftCount = await exec("nft list ruleset 2>/dev/null | grep -c 'rule' || echo 0");
+    const nftNum = parseInt(nftCount.trim(), 10);
+    if (nftNum > 0) {
+      result.firewall_active = true;
+      result.firewall_type = "nftables";
+      result.firewall_rules_count = nftNum;
+    } else {
+      const iptCount = await exec("iptables -L -n 2>/dev/null | grep -cE '^(ACCEPT|DROP|REJECT|LOG)' || echo 0");
+      const iptNum = parseInt(iptCount.trim(), 10);
+      if (iptNum > 0) {
+        result.firewall_active = true;
+        result.firewall_type = "iptables";
+        result.firewall_rules_count = iptNum;
+      } else {
+        result.firewall_active = false;
+      }
+    }
+  }
+
+  // Cron jobs (utenti con shell + system crontabs)
+  const cronOut = await exec(
+    "for u in $(cut -f1 -d: /etc/passwd 2>/dev/null); do crontab -l -u $u 2>/dev/null | grep -v '^#\\|^$' | while read -r line; do echo \"$u|$line\"; done; done | head -30"
+  );
+  const systemCron = await exec(
+    "cat /etc/crontab 2>/dev/null | grep -vE '^#|^$|^SHELL|^MAILTO|^PATH|^HOME' | head -20"
+  );
+  const cronJobs = parseLinuxCronJobs(cronOut, systemCron);
+  if (cronJobs.length > 0) result.cron_jobs = cronJobs;
+
   return result;
 }
 
@@ -803,6 +953,69 @@ function parseLinuxUsers(output: string): Array<{ name: string; full_name?: stri
     }
   }
   return users.slice(0, 20);
+}
+
+/** Parsing output di ss -tlnp / ss -ulnp per porte in ascolto */
+function parseListeningPorts(
+  output: string,
+  proto: "tcp" | "udp"
+): Array<{ port: number; protocol: "tcp" | "udp"; process?: string; bind_address?: string }> {
+  const ports: Array<{ port: number; protocol: "tcp" | "udp"; process?: string; bind_address?: string }> = [];
+  for (const line of output.split("\n")) {
+    if (!line.trim()) continue;
+    // ss format: LISTEN  0  128  0.0.0.0:22  0.0.0.0:*  users:(("sshd",pid=1234,fd=3))
+    const localMatch = line.match(/\s+([\d.*:[\]]+):(\d+)\s/);
+    if (!localMatch) continue;
+    const port = parseInt(localMatch[2], 10);
+    if (Number.isNaN(port)) continue;
+    const bindAddr = localMatch[1].replace(/[\[\]]/g, "");
+    const procMatch = line.match(/users:\(\("([^"]+)"/);
+    ports.push({
+      port,
+      protocol: proto,
+      process: procMatch?.[1] || undefined,
+      bind_address: bindAddr || undefined,
+    });
+  }
+  return ports;
+}
+
+/** Parsing cron jobs da output user crontab + /etc/crontab */
+function parseLinuxCronJobs(
+  userCronOut: string,
+  systemCronOut: string
+): Array<{ user: string; schedule: string; command: string }> {
+  const jobs: Array<{ user: string; schedule: string; command: string }> = [];
+  // User crontabs: "user|* * * * * /path/to/cmd"
+  for (const line of userCronOut.split("\n")) {
+    if (!line.trim()) continue;
+    const pipeIdx = line.indexOf("|");
+    if (pipeIdx < 0) continue;
+    const user = line.substring(0, pipeIdx);
+    const rest = line.substring(pipeIdx + 1).trim();
+    // Cron schedule = primi 5 campi (o @reboot/@daily/etc)
+    const atMatch = rest.match(/^(@\w+)\s+(.+)/);
+    if (atMatch) {
+      jobs.push({ user, schedule: atMatch[1], command: atMatch[2] });
+      continue;
+    }
+    const fields = rest.split(/\s+/);
+    if (fields.length >= 6) {
+      jobs.push({ user, schedule: fields.slice(0, 5).join(" "), command: fields.slice(5).join(" ") });
+    }
+  }
+  // System crontab: "* * * * * root /path/to/cmd"
+  for (const line of systemCronOut.split("\n")) {
+    if (!line.trim()) continue;
+    const fields = line.trim().split(/\s+/);
+    if (fields.length >= 7) {
+      const schedule = fields.slice(0, 5).join(" ");
+      const user = fields[5];
+      const command = fields.slice(6).join(" ");
+      jobs.push({ user, schedule, command });
+    }
+  }
+  return jobs.slice(0, 30);
 }
 
 /**
@@ -1165,12 +1378,25 @@ export async function getDeviceInfoViaSNMPProfile(
 export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> {
   let result: DeviceInfo = { sysname: null, sysdescr: null, model: null, firmware: null, serial_number: null, part_number: null };
   let winrmFailure: Error | null = null;
+  const nasKind = resolveNasKind(device);
 
-  const hasSnmp = device.community_string || device.protocol === "snmp_v2" || device.protocol === "snmp_v3"
-    || (device.snmp_credential_id ? !!getCredentialCommunityString(device.snmp_credential_id) : false)
-    || (device.credential_id ? !!getCredentialCommunityString(device.credential_id) : false);
+  const snmpV3Creds = getDeviceSnmpV3Credentials(device);
+  const hasSnmp =
+    !!device.community_string ||
+    device.protocol === "snmp_v2" ||
+    device.protocol === "snmp_v3" ||
+    (device.snmp_credential_id
+      ? !!getCredentialCommunityString(device.snmp_credential_id) || !!snmpV3Creds
+      : false) ||
+    (device.credential_id ? !!getCredentialCommunityString(device.credential_id) : false);
   const scanTarget = (device as { scan_target?: string | null }).scan_target;
-  const isLinuxVendorInfo = scanTarget === "linux" || device.vendor === "linux" || device.vendor === "other" || device.vendor === "synology" || device.vendor === "qnap";
+  const isLinuxVendorInfo =
+    scanTarget === "linux" ||
+    device.vendor === "linux" ||
+    device.vendor === "other" ||
+    device.vendor === "synology" ||
+    device.vendor === "qnap" ||
+    nasKind != null;
   const hasSsh =
     (device.protocol === "ssh" || isLinuxVendorInfo) &&
     !!(device.username || getDeviceCredentials(device)?.username);
@@ -1190,7 +1416,8 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
   // SNMP con profilo vendor: prova a ottenere dati completi
   if (hasSnmp) {
     const community = getDeviceCommunityString(device);
-    const snmpPort = (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") ? (device.port || 161) : 161;
+    const snmpPort =
+      device.protocol === "snmp_v2" || device.protocol === "snmp_v3" ? getEffectiveSnmpPort(device) : 161;
 
     // Prima prova il profilo vendor per dati specifici
     const profileInfo = await getDeviceInfoViaSNMPProfile(device.host, community, snmpPort);
@@ -1205,8 +1432,7 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
       };
       // Se il profilo ha fornito model + firmware + serial, possiamo saltare SSH (tranne NAS: serve SSH per volumi/utenti/rete)
       const snmpComplete = result.model && result.firmware && result.serial_number;
-      const isNasVendor = device.vendor === "synology" || device.vendor === "qnap";
-      if (snmpComplete && hasSsh && !isNasVendor) {
+      if (snmpComplete && hasSsh && !nasKind) {
         return result;
       }
     } else {
@@ -1216,14 +1442,9 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
     }
 
     // Synology / QNAP: walk MIB enterprise (dischi RAID/volumi SNMP) oltre al profilo
-    if (device.vendor === "synology" || device.vendor === "qnap") {
+    if (nasKind) {
       const { getNasSnmpInventory } = await import("./nas-acquisition");
-      const nasSnmp = await getNasSnmpInventory(
-        device.host,
-        community,
-        snmpPort,
-        device.vendor === "synology" ? "synology" : "qnap"
-      );
+      const nasSnmp = await getNasSnmpInventory(device, nasKind);
       result = { ...result, ...nasSnmp };
     }
 
@@ -1233,6 +1454,33 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
       const sn = await trySnmpSerialFromEntityWalk(device.host, community, snmpPort);
       if (sn) result.serial_number = sn;
     }
+  } else if (nasKind) {
+    // NAS solo SSH senza community esplicita: prova comunque SNMP (community default da getDeviceCommunityString, es. public) + profilo vendor
+    const community = getDeviceCommunityString(device);
+    const snmpPort =
+      device.protocol === "snmp_v2" || device.protocol === "snmp_v3" ? getEffectiveSnmpPort(device) : 161;
+    try {
+      const profileInfo = await getDeviceInfoViaSNMPProfile(device.host, community, snmpPort);
+      if (profileInfo.vendorProfileId) {
+        result = {
+          sysname: profileInfo.sysname ?? result.sysname,
+          sysdescr: profileInfo.sysdescr ?? result.sysdescr,
+          model: profileInfo.model ?? result.model,
+          firmware: profileInfo.firmware ?? result.firmware,
+          serial_number: profileInfo.serial_number ?? result.serial_number,
+          part_number: profileInfo.part_number ?? result.part_number,
+        };
+      }
+    } catch {
+      /* SNMP non raggiungibile */
+    }
+    try {
+      const { getNasSnmpInventory } = await import("./nas-acquisition");
+      const nasOnlySnmp = await getNasSnmpInventory(device, nasKind);
+      result = { ...result, ...nasOnlySnmp };
+    } catch {
+      /* walk NAS fallito */
+    }
   }
 
   // SSH per completare i dati mancanti
@@ -1240,7 +1488,7 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
     const sshInfo = await getDeviceInfoFromSsh(device);
     const snmpNas = result.nas_inventory;
     result = { ...result, ...sshInfo };
-    if (snmpNas && sshInfo.nas_inventory && (device.vendor === "synology" || device.vendor === "qnap")) {
+    if (snmpNas && sshInfo.nas_inventory && nasKind) {
       const { mergeNasInventorySnapshots } = await import("./nas-acquisition");
       result.nas_inventory = mergeNasInventorySnapshots(snmpNas, sshInfo.nas_inventory);
     }

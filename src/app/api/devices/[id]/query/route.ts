@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { getNetworkDeviceById, updateNetworkDevice, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, getInventoryAssetByNetworkDevice, updateInventoryAsset, syncDeviceToHost, trackDeviceInfoChanges } from "@/lib/db";
+import { getNetworkDeviceById, updateNetworkDevice, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, getInventoryAssetByNetworkDevice, updateInventoryAsset, syncDeviceToHost, trackDeviceInfoChanges, upsertNeighbors, upsertRoutes } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
-import { getDeviceInfo } from "@/lib/devices/device-info";
+import { getDeviceInfo, resolveNasKind } from "@/lib/devices/device-info";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { upsertHost, getNetworks } from "@/lib/db";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
@@ -30,17 +30,19 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     }
 
     const scanTarget = (device as { scan_target?: string | null }).scan_target;
+    const nasKindRoute = resolveNasKind(device);
     const isWindows =
       device.protocol === "winrm" || device.vendor === "windows" || scanTarget === "windows";
     // SSH-scannable: vendor Linux-type (linux/other/synology/qnap) OPPURE scan_target=linux,
-    // indipendentemente dal protocol (un host Linux può avere anche SNMP configurato)
+    // indipendentemente dal protocol (un host Linux può avere anche SNMP configurato).
+    // Anche classificazione nas_synology / nas_qnap con vendor ancora "generic".
     const isLinuxVendor =
       scanTarget === "linux" ||
       device.vendor === "linux" ||
       device.vendor === "other" ||
       device.vendor === "synology" ||
       device.vendor === "qnap";
-    const isSshScannable = isLinuxVendor;
+    const isSshScannable = isLinuxVendor || nasKindRoute != null;
     const isSnmpInfoDevice =
       (device.protocol === "snmp_v2" || device.protocol === "snmp_v3" || device.community_string || device.snmp_credential_id)
       && ["stampante", "telecamera", "voip", "iot", "access_point", "firewall", "vm"].includes(device.classification ?? "");
@@ -148,7 +150,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             });
           }
           const fields = Object.keys(info).filter(k => info[k as keyof typeof info] != null).length;
-          const scanType = device.vendor === "synology" || device.vendor === "qnap" ? "Storage" : "Linux";
+          const scanType = nasKindRoute != null ? "Storage" : "Linux";
           return NextResponse.json({
             success: true,
             message: `Dati ${scanType} acquisiti: ${fields} campi da ${device.name}`,
@@ -196,6 +198,74 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       const entries = await client.getArpTable();
 
       upsertArpEntries(Number(id), entries);
+
+      // Neighbors LLDP/CDP/MNDP
+      if (client.getNeighbors) {
+        try {
+          const neighbors = await client.getNeighbors();
+          if (neighbors.length > 0) upsertNeighbors(Number(id), neighbors);
+        } catch { /* optional */ }
+      }
+
+      // Tabella di routing
+      if (client.getRoutingTable) {
+        try {
+          const routes = await client.getRoutingTable();
+          if (routes.length > 0) upsertRoutes(Number(id), routes);
+        } catch { /* optional */ }
+      }
+
+      // DHCP leases (MikroTik, Ubiquiti, ecc.)
+      if (client.getDhcpLeases) {
+        try {
+          const { upsertDhcpLease, upsertMacIpMapping, syncIpAssignmentsForNetwork } = await import("@/lib/db");
+          const leases = await client.getDhcpLeases();
+          const dhcpNetworks = new Set<number>();
+          const nets = getNetworks();
+          for (const lease of leases) {
+            const network = nets.find((n) => isIpInCidr(lease.ip, n.cidr));
+            if (!network) continue;
+            const vendor = await lookupVendor(lease.mac);
+            const host = upsertHost({
+              network_id: network.id,
+              ip: lease.ip,
+              mac: lease.mac,
+              status: "online",
+              ...(lease.hostname && { hostname: lease.hostname }),
+              hostname_source: "dhcp",
+              vendor: vendor || undefined,
+            });
+            upsertMacIpMapping({
+              mac: lease.mac,
+              ip: lease.ip,
+              source: "dhcp",
+              source_device_id: Number(id),
+              network_id: network.id,
+              host_id: host.id,
+              vendor: vendor ?? undefined,
+              hostname: lease.hostname ?? undefined,
+            });
+            const sourceType = device.vendor === "mikrotik" ? "mikrotik" : "other";
+            upsertDhcpLease({
+              source_type: sourceType,
+              source_device_id: Number(id),
+              source_name: device.name,
+              server_name: lease.server ?? null,
+              ip_address: lease.ip,
+              mac_address: lease.mac,
+              hostname: lease.hostname ?? null,
+              status: lease.status ?? null,
+              lease_expires: lease.expiresAfter ?? null,
+              description: lease.comment ?? null,
+              dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
+              host_id: host.id,
+              network_id: network.id,
+            });
+            dhcpNetworks.add(network.id);
+          }
+          for (const nid of dhcpNetworks) syncIpAssignmentsForNetwork(nid);
+        } catch { /* DHCP optional */ }
+      }
 
       const networks = getNetworks();
       for (const entry of entries) {

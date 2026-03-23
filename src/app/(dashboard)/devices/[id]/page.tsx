@@ -41,6 +41,7 @@ import {
   getPrimaryCredentialLabels,
 } from "@/components/shared/credential-assignment-fields";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
+import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import {
   inferProductProfileFromLegacy,
   PRODUCT_PROFILE_LABELS,
@@ -136,6 +137,16 @@ interface DeviceInfo {
   ram_free_mb?: number | null;
   physical_disks?: Array<{ device: string; model?: string; size_gb?: number; serial?: string; interface_type?: string; vendor?: string; rotational?: boolean }>;
   packages_count?: number | null;
+  // Linux: porte, firewall, cron
+  listening_ports?: Array<{ port: number; protocol: string; process?: string; bind_address?: string }>;
+  firewall_active?: boolean;
+  firewall_type?: string | null;
+  firewall_rules_count?: number | null;
+  cron_jobs?: Array<{ user: string; schedule: string; command: string }>;
+  // MikroTik firewall counts
+  firewall_filter_count?: number | null;
+  firewall_nat_count?: number | null;
+  firewall_mangle_count?: number | null;
   domain_joined?: boolean;
   last_logged_on_user?: string | null;
   logged_on_users?: Array<{ username: string; session_type?: string; logon_time?: string }>;
@@ -149,12 +160,72 @@ interface DeviceInfo {
     sources?: string[];
     snmp?: {
       temperature_c?: number | null;
-      disks?: Array<{ index?: string; model?: string; status?: string; temperature_c?: number | null; type?: string; id?: string }>;
+      cpu_temperature_c?: number | null;
+      disks?: Array<{
+        index?: string;
+        model?: string;
+        status?: string;
+        temperature_c?: number | null;
+        type?: string;
+        id?: string;
+        serial?: string;
+        capacity_gb?: number | null;
+        slot?: string;
+        smart_health?: string;
+      }>;
       raids?: Array<{ name?: string; status?: string; free_gb?: number | null; total_gb?: number | null }>;
-      volumes_snmp?: Array<{ name?: string; size_gb?: number | null }>;
+      volumes_snmp?: Array<{
+        name?: string;
+        size_gb?: number | null;
+        free_gb?: number | null;
+        status?: string | null;
+        raid_type?: string | null;
+      }>;
+      storage_pools?: Array<{ name?: string; status?: string | null; total_gb?: number | null; used_gb?: number | null }>;
+      volume_io?: Array<{ name?: string; read_bps?: string | null; write_bps?: string | null }>;
+      ups?: { status?: string | null; battery_pct?: string | null };
+      services?: Array<{ name?: string; state?: string | null }>;
+      qts5_pool_rows?: number;
     };
-    ssh?: { mdstat_summary?: string; cpu_model?: string | null; kernel?: string | null };
+    ssh?: {
+      mdstat_summary?: string;
+      cpu_model?: string | null;
+      kernel?: string | null;
+      synology_shares_preview?: string;
+      synology_packages_count?: number | null;
+      synology_storage_lines?: string;
+      synology_temperature_lines?: string;
+      qnap_raid_info_preview?: string;
+      qnap_storage_cfg_preview?: string;
+      qnap_qpkg_preview?: string;
+    };
   };
+}
+
+interface NeighborRow {
+  id: number;
+  device_id: number;
+  local_port: string;
+  remote_device_name: string;
+  remote_port: string;
+  protocol: string;
+  remote_ip: string | null;
+  remote_mac: string | null;
+  remote_platform: string | null;
+  timestamp: string;
+}
+
+interface RouteRow {
+  id: number;
+  device_id: number;
+  destination: string;
+  gateway: string | null;
+  interface_name: string | null;
+  protocol: string;
+  metric: number | null;
+  distance: number | null;
+  active: number;
+  timestamp: string;
 }
 
 interface DeviceDetail extends Omit<NetworkDevice, "stp_info" | "last_device_info_json"> {
@@ -163,6 +234,8 @@ interface DeviceDetail extends Omit<NetworkDevice, "stp_info" | "last_device_inf
   switch_ports: SwitchPort[];
   stp_info: StpInfo | null;
   device_info: DeviceInfo | null;
+  neighbors?: NeighborRow[];
+  routes?: RouteRow[];
 }
 
 /** Payload da `last_proxmox_scan_result` (eventualmente troncato dall'API GET). */
@@ -938,6 +1011,18 @@ function DeviceDetailPage() {
         const isLinux = !!(di.kernel_version || di.load_average || di.virtualization != null || di.packages_count != null);
         const isWin = !isLinux && !isNas && !!(di.os_name || di.hostname || di.cpu_model || di.domain);
         const hasDetailedInfo = isLinux || isWin;
+        const nasSnmpEmpty =
+          isNas &&
+          !(
+            di.nas_inventory?.snmp?.disks?.length ||
+            di.nas_inventory?.snmp?.raids?.length ||
+            di.nas_inventory?.snmp?.volumes_snmp?.length ||
+            di.nas_inventory?.snmp?.storage_pools?.length ||
+            di.nas_inventory?.snmp?.volume_io?.length ||
+            di.nas_inventory?.snmp?.services?.length ||
+            di.nas_inventory?.snmp?.ups != null ||
+            di.nas_inventory?.snmp?.temperature_c != null
+          );
         return (
         <Card>
           <CardHeader className="pb-3">
@@ -952,6 +1037,11 @@ function DeviceDetailPage() {
                 </span>
               )}
             </div>
+            {isNas && nasSnmpEmpty && (
+              <p className="text-xs text-muted-foreground px-6 -mt-2 pb-1">
+                Nessun dato dai MIB SNMP: configura la community (o credenziale SNMP v2/v3) sul dispositivo o in archivio credenziali, poi riesegui la query. Con solo SSH vengono comunque tentati i walk sulla porta 161 con community di default se il NAS risponde.
+              </p>
+            )}
           </CardHeader>
           <CardContent className="space-y-5">
             {/* === SISTEMA OPERATIVO === */}
@@ -1010,11 +1100,21 @@ function DeviceDetailPage() {
             )}
 
             {/* === NAS: inventario SNMP (RAID / dischi MIB) + sintesi mdstat === */}
-            {di.nas_inventory?.snmp && (di.nas_inventory.snmp.disks?.length || di.nas_inventory.snmp.raids?.length || di.nas_inventory.snmp.volumes_snmp?.length || di.nas_inventory.snmp.temperature_c != null) ? (
+            {di.nas_inventory?.snmp && (di.nas_inventory.snmp.disks?.length || di.nas_inventory.snmp.raids?.length || di.nas_inventory.snmp.volumes_snmp?.length || di.nas_inventory.snmp.storage_pools?.length || di.nas_inventory.snmp.volume_io?.length || di.nas_inventory.snmp.services?.length || di.nas_inventory.snmp.ups != null || di.nas_inventory.snmp.temperature_c != null || di.nas_inventory.snmp.cpu_temperature_c != null || (di.nas_inventory.snmp.qts5_pool_rows != null && di.nas_inventory.snmp.qts5_pool_rows > 0)) ? (
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><Layers className="h-3.5 w-3.5" /> Storage — SNMP</h4>
-              {di.nas_inventory.snmp.temperature_c != null && (
-                <p className="text-xs text-muted-foreground mb-2">Temperatura sistema (SNMP): {di.nas_inventory.snmp.temperature_c} °C</p>
+              {(di.nas_inventory.snmp.temperature_c != null || di.nas_inventory.snmp.cpu_temperature_c != null) && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  {di.nas_inventory.snmp.temperature_c != null && <span>Temperatura sistema: {di.nas_inventory.snmp.temperature_c} °C</span>}
+                  {di.nas_inventory.snmp.temperature_c != null && di.nas_inventory.snmp.cpu_temperature_c != null ? " · " : null}
+                  {di.nas_inventory.snmp.cpu_temperature_c != null && <span>CPU: {di.nas_inventory.snmp.cpu_temperature_c} °C</span>}
+                </p>
+              )}
+              {di.nas_inventory.snmp.ups && (di.nas_inventory.snmp.ups.status != null || di.nas_inventory.snmp.ups.battery_pct != null) && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  UPS: {di.nas_inventory.snmp.ups.status ?? "—"}
+                  {di.nas_inventory.snmp.ups.battery_pct != null ? ` — batteria ${di.nas_inventory.snmp.ups.battery_pct}%` : ""}
+                </p>
               )}
               {di.nas_inventory.snmp.disks && di.nas_inventory.snmp.disks.length > 0 && (
                 <div className="mb-3">
@@ -1024,8 +1124,11 @@ function DeviceDetailPage() {
                       <div key={i} className="border rounded-md p-2 text-xs space-y-0.5">
                         {d.model && <div className="font-medium">{d.model}</div>}
                         <div className="flex flex-wrap gap-1 font-mono text-[10px] text-muted-foreground">
-                          {d.id && <span>ID {d.id}</span>}
+                          {d.id && <span>{d.id}</span>}
+                          {d.serial && <span className="truncate max-w-[140px]" title={d.serial}>S/N {d.serial}</span>}
+                          {d.capacity_gb != null && <span>{d.capacity_gb} GB</span>}
                           {d.status && <Badge variant="outline" className="text-[10px]">{d.status}</Badge>}
+                          {d.smart_health && <span>SMART {d.smart_health}</span>}
                           {d.temperature_c != null && <span>{d.temperature_c}°C</span>}
                         </div>
                       </div>
@@ -1033,9 +1136,26 @@ function DeviceDetailPage() {
                   </div>
                 </div>
               )}
+              {di.nas_inventory.snmp.storage_pools && di.nas_inventory.snmp.storage_pools.length > 0 && (
+                <div className="mb-3">
+                  <dt className="text-xs text-muted-foreground mb-1">Storage pool (SNMP)</dt>
+                  <div className="space-y-1">
+                    {di.nas_inventory.snmp.storage_pools.map((p, i) => (
+                      <div key={i} className="border rounded-md p-2 text-xs flex flex-wrap gap-2 justify-between">
+                        <span className="font-medium">{p.name ?? `Pool ${i + 1}`}</span>
+                        {p.status && <Badge variant="secondary" className="text-[10px]">{p.status}</Badge>}
+                        <span className="text-muted-foreground">
+                          {p.used_gb != null ? `${p.used_gb} GB usati` : ""}
+                          {p.total_gb != null ? ` / ${p.total_gb} GB` : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {di.nas_inventory.snmp.raids && di.nas_inventory.snmp.raids.length > 0 && (
                 <div className="mb-3">
-                  <dt className="text-xs text-muted-foreground mb-1">RAID / pool (SNMP)</dt>
+                  <dt className="text-xs text-muted-foreground mb-1">RAID / md (SNMP)</dt>
                   <div className="space-y-1">
                     {di.nas_inventory.snmp.raids.map((r, i) => (
                       <div key={i} className="border rounded-md p-2 text-xs flex flex-wrap gap-2 justify-between">
@@ -1049,23 +1169,98 @@ function DeviceDetailPage() {
                   </div>
                 </div>
               )}
-              {di.nas_inventory.snmp.volumes_snmp && di.nas_inventory.snmp.volumes_snmp.length > 0 && (
-                <div>
-                  <dt className="text-xs text-muted-foreground mb-1">Volumi (SNMP)</dt>
-                  <div className="flex flex-wrap gap-2">
-                    {di.nas_inventory.snmp.volumes_snmp.map((v, i) => (
-                      <Badge key={i} variant="outline" className="text-xs">{v.name}{v.size_gb != null ? ` — ${v.size_gb} GB` : ""}</Badge>
+              {di.nas_inventory.snmp.volume_io && di.nas_inventory.snmp.volume_io.length > 0 && (
+                <div className="mb-3">
+                  <dt className="text-xs text-muted-foreground mb-1">I/O volumi (SNMP)</dt>
+                  <div className="space-y-1 text-[10px] font-mono">
+                    {di.nas_inventory.snmp.volume_io.map((io, i) => (
+                      <div key={i} className="border rounded-md p-2">
+                        <span className="font-medium text-xs">{io.name}</span>
+                        {io.read_bps != null && <span className="ml-2 text-muted-foreground">read {io.read_bps} B/s</span>}
+                        {io.write_bps != null && <span className="ml-2 text-muted-foreground">write {io.write_bps} B/s</span>}
+                      </div>
                     ))}
                   </div>
                 </div>
               )}
+              {di.nas_inventory.snmp.services && di.nas_inventory.snmp.services.length > 0 && (
+                <div className="mb-3">
+                  <dt className="text-xs text-muted-foreground mb-1">Servizi (SNMP)</dt>
+                  <div className="flex flex-wrap gap-1">
+                    {di.nas_inventory.snmp.services.map((s, i) => (
+                      <Badge key={i} variant="outline" className="text-[10px]">{s.name}{s.state != null ? ` (${s.state})` : ""}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {di.nas_inventory.snmp.volumes_snmp && di.nas_inventory.snmp.volumes_snmp.length > 0 && (
+                <div className="mb-3">
+                  <dt className="text-xs text-muted-foreground mb-1">Volumi (SNMP)</dt>
+                  <div className="flex flex-wrap gap-2">
+                    {di.nas_inventory.snmp.volumes_snmp.map((v, i) => (
+                      <Badge key={i} variant="outline" className="text-xs">
+                        {v.name}
+                        {v.size_gb != null ? ` — ${v.size_gb} GB` : ""}
+                        {v.free_gb != null ? `, liberi ${v.free_gb} GB` : ""}
+                        {v.raid_type ? ` (${v.raid_type})` : ""}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {di.nas_inventory.snmp.qts5_pool_rows != null && di.nas_inventory.snmp.qts5_pool_rows > 0 && (
+                <p className="text-xs text-muted-foreground mb-2">QNAP: rilevati dati MIB QTS 5.x (pool estesi, {di.nas_inventory.snmp.qts5_pool_rows} varbind)</p>
+              )}
             </div>
             ) : null}
 
-            {di.nas_inventory?.ssh?.mdstat_summary ? (
-            <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><Layers className="h-3.5 w-3.5" /> RAID (kernel)</h4>
-              <pre className="text-[10px] font-mono bg-muted/50 rounded-md p-2 overflow-x-auto whitespace-pre-wrap">{di.nas_inventory.ssh.mdstat_summary}</pre>
+            {(di.nas_inventory?.ssh?.mdstat_summary || di.nas_inventory?.ssh?.synology_shares_preview || di.nas_inventory?.ssh?.synology_storage_lines || di.nas_inventory?.ssh?.synology_temperature_lines || di.nas_inventory?.ssh?.qnap_raid_info_preview || di.nas_inventory?.ssh?.qnap_storage_cfg_preview || di.nas_inventory?.ssh?.qnap_qpkg_preview) ? (
+            <div className="space-y-3">
+              {di.nas_inventory?.ssh?.mdstat_summary ? (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><Layers className="h-3.5 w-3.5" /> RAID (kernel)</h4>
+                <pre className="text-[10px] font-mono bg-muted/50 rounded-md p-2 overflow-x-auto whitespace-pre-wrap">{di.nas_inventory.ssh.mdstat_summary}</pre>
+              </div>
+              ) : null}
+              {di.nas_inventory?.ssh?.synology_shares_preview ? (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Cartelle condivise (SSH)</h4>
+                <pre className="text-[10px] font-mono bg-muted/50 rounded-md p-2 overflow-x-auto whitespace-pre-wrap max-h-40">{di.nas_inventory.ssh.synology_shares_preview}</pre>
+              </div>
+              ) : null}
+              {di.nas_inventory?.ssh?.synology_packages_count != null ? (
+                <p className="text-xs text-muted-foreground">Pacchetti DSM (prime righe): ~{di.nas_inventory.ssh.synology_packages_count} righe</p>
+              ) : null}
+              {di.nas_inventory?.ssh?.synology_storage_lines ? (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Pool / volumi (SSH)</h4>
+                <pre className="text-[10px] font-mono bg-muted/50 rounded-md p-2 overflow-x-auto whitespace-pre-wrap max-h-36">{di.nas_inventory.ssh.synology_storage_lines}</pre>
+              </div>
+              ) : null}
+              {di.nas_inventory?.ssh?.synology_temperature_lines ? (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Temperature (SSH)</h4>
+                <pre className="text-[10px] font-mono bg-muted/50 rounded-md p-2 overflow-x-auto whitespace-pre-wrap max-h-28">{di.nas_inventory.ssh.synology_temperature_lines}</pre>
+              </div>
+              ) : null}
+              {di.nas_inventory?.ssh?.qnap_raid_info_preview ? (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">RAID (SSH)</h4>
+                <pre className="text-[10px] font-mono bg-muted/50 rounded-md p-2 overflow-x-auto whitespace-pre-wrap max-h-36">{di.nas_inventory.ssh.qnap_raid_info_preview}</pre>
+              </div>
+              ) : null}
+              {di.nas_inventory?.ssh?.qnap_storage_cfg_preview ? (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Storage (getcfg)</h4>
+                <pre className="text-[10px] font-mono bg-muted/50 rounded-md p-2 overflow-x-auto whitespace-pre-wrap max-h-32">{di.nas_inventory.ssh.qnap_storage_cfg_preview}</pre>
+              </div>
+              ) : null}
+              {di.nas_inventory?.ssh?.qnap_qpkg_preview ? (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">QPKG (prime voci)</h4>
+                <pre className="text-[10px] font-mono bg-muted/50 rounded-md p-2 overflow-x-auto whitespace-pre-wrap max-h-28">{di.nas_inventory.ssh.qnap_qpkg_preview}</pre>
+              </div>
+              ) : null}
             </div>
             ) : null}
 
@@ -1177,6 +1372,71 @@ function DeviceDetailPage() {
                 {di.local_users && di.local_users.length > 0 && (
                   <div><dt className="text-xs text-muted-foreground mb-1">Utenti locali</dt><div className="flex flex-wrap gap-1">{di.local_users.map((u, i) => <Badge key={i} variant={u.disabled ? "secondary" : "outline"} className={`text-xs ${u.disabled ? "opacity-50 line-through" : ""}`}><Users className="h-2.5 w-2.5 mr-0.5" />{u.name}</Badge>)}</div></div>
                 )}
+              </div>
+            </div>
+            )}
+
+            {/* === RETE E FIREWALL (Linux + MikroTik) === */}
+            {(di.listening_ports || di.firewall_active !== undefined || di.firewall_filter_count !== undefined || di.firewall_filter_count !== null) && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><Shield className="h-3.5 w-3.5" /> Firewall e porte</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Stato firewall Linux */}
+                {di.firewall_active !== undefined && (
+                  <div>
+                    <dt className="text-xs text-muted-foreground mb-1">Firewall</dt>
+                    <dd className="text-sm flex items-center gap-2">
+                      <Badge variant={di.firewall_active ? "default" : "secondary"}>
+                        {di.firewall_active ? "Attivo" : "Inattivo"}
+                      </Badge>
+                      {di.firewall_type && <span className="text-xs text-muted-foreground">{di.firewall_type}</span>}
+                      {di.firewall_rules_count != null && <span className="text-xs text-muted-foreground">({di.firewall_rules_count} regole)</span>}
+                    </dd>
+                  </div>
+                )}
+                {/* MikroTik firewall counts */}
+                {(di.firewall_filter_count != null || di.firewall_nat_count != null || di.firewall_mangle_count != null) && (
+                  <div>
+                    <dt className="text-xs text-muted-foreground mb-1">Regole firewall</dt>
+                    <div className="flex flex-wrap gap-1.5">
+                      {di.firewall_filter_count != null && <Badge variant="outline" className="text-xs">Filter: {di.firewall_filter_count}</Badge>}
+                      {di.firewall_nat_count != null && <Badge variant="outline" className="text-xs">NAT: {di.firewall_nat_count}</Badge>}
+                      {di.firewall_mangle_count != null && <Badge variant="outline" className="text-xs">Mangle: {di.firewall_mangle_count}</Badge>}
+                    </div>
+                  </div>
+                )}
+                {/* Porte in ascolto */}
+                {di.listening_ports && di.listening_ports.length > 0 && (
+                  <div className="sm:col-span-2">
+                    <dt className="text-xs text-muted-foreground mb-1">Porte in ascolto ({di.listening_ports.length})</dt>
+                    <div className="flex flex-wrap gap-1">
+                      {di.listening_ports.slice(0, 30).map((p, i) => (
+                        <Badge key={i} variant="secondary" className="text-[10px] font-mono gap-1">
+                          {p.protocol.toUpperCase()}:{p.port}
+                          {p.process && <span className="text-muted-foreground">({p.process})</span>}
+                        </Badge>
+                      ))}
+                      {di.listening_ports.length > 30 && <Badge variant="outline" className="text-[10px]">+{di.listening_ports.length - 30}</Badge>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            )}
+
+            {/* === CRON JOBS (Linux) === */}
+            {di.cron_jobs && di.cron_jobs.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 mb-2"><Clock className="h-3.5 w-3.5" /> Cron Jobs ({di.cron_jobs.length})</h4>
+              <div className="space-y-1">
+                {di.cron_jobs.slice(0, 15).map((j, i) => (
+                  <div key={i} className="text-xs flex items-center gap-2 font-mono">
+                    <Badge variant="outline" className="text-[10px] shrink-0">{j.user}</Badge>
+                    <span className="text-muted-foreground shrink-0">{j.schedule}</span>
+                    <span className="truncate">{j.command}</span>
+                  </div>
+                ))}
+                {di.cron_jobs.length > 15 && <p className="text-xs text-muted-foreground">+{di.cron_jobs.length - 15} altri</p>}
               </div>
             </div>
             )}
@@ -1618,27 +1878,7 @@ function DeviceDetailPage() {
                 setEditVendorSubtype(vendorSubtypeFromProductProfile(v as ProductProfileId));
               }}
             />
-            <CredentialAssignmentFields
-              credentials={credentials}
-              credentialId={editCredentialId}
-              snmpCredentialId={editSnmpCredentialId}
-              onCredentialIdChange={(v) => setEditCredentialId(v)}
-              onSnmpCredentialIdChange={(v) => setEditSnmpCredentialId(v)}
-              primarySectionTitle={primaryCredLabels.section}
-              primarySelectLabel={primaryCredLabels.select}
-              credentialPlaceholder="Nessuna (credenziali inline)"
-              showInlineCreds={editProtocol === "ssh" || editProtocol === "api" || editProtocol === "winrm"}
-              inlineUsername={device.username || ""}
-              showPortAndCommunity
-              portDefaultValue={device.port ?? 22}
-              idPrefix="device-detail-edit"
-              testButton={
-                <Button type="button" variant="outline" size="sm" onClick={handleTestConnection} disabled={testingConnection}>
-                  <Radio className={`h-4 w-4 mr-2 ${testingConnection ? "animate-pulse" : ""}`} />
-                  {testingConnection ? "Test in corso…" : "Testa credenziali"}
-                </Button>
-              }
-            />
+            <DeviceCredentialsTable deviceId={device.id} />
             <Button type="submit" className="w-full" disabled={editSaving}>
               {editSaving ? "Salvataggio..." : "Salva modifiche"}
             </Button>
@@ -1647,12 +1887,16 @@ function DeviceDetailPage() {
         </DialogContent>
       </Dialog>
 
+      <DeviceCredentialsTable deviceId={device.id} />
+
       <Tabs defaultValue={isMikrotik ? "mikrotik" : device.device_type === "router" && totalPorts === 0 ? "arp" : "ports"}>
         <TabsList>
           {isMikrotik && <TabsTrigger value="mikrotik">MikroTik</TabsTrigger>}
           {device.device_type === "router" && <TabsTrigger value="arp">Tabella ARP</TabsTrigger>}
           {totalPorts > 0 && <TabsTrigger value="ports">Schema Porte ({totalPorts})</TabsTrigger>}
           {device.device_type === "switch" && <TabsTrigger value="mac">MAC Table ({device.mac_port_entries?.length ?? 0})</TabsTrigger>}
+          {(device.neighbors?.length ?? 0) > 0 && <TabsTrigger value="neighbors">Neighbors ({device.neighbors!.length})</TabsTrigger>}
+          {(device.routes?.length ?? 0) > 0 && <TabsTrigger value="routing">Routing ({device.routes!.length})</TabsTrigger>}
         </TabsList>
 
         {/* Tab MikroTik */}
@@ -2125,6 +2369,106 @@ function DeviceDetailPage() {
               </Card>
             </TabsContent>
           </>
+        )}
+
+        {/* Tab Neighbors LLDP/CDP/MNDP */}
+        {(device.neighbors?.length ?? 0) > 0 && (
+          <TabsContent value="neighbors" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Radio className="h-4 w-4" />
+                  Neighbors LLDP/CDP/MNDP
+                </CardTitle>
+                <CardDescription>Dispositivi adiacenti rilevati via protocolli di discovery</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Porta Locale</TableHead>
+                      <TableHead>Dispositivo Remoto</TableHead>
+                      <TableHead>Porta Remota</TableHead>
+                      <TableHead>Protocollo</TableHead>
+                      <TableHead>IP Remoto</TableHead>
+                      <TableHead>Piattaforma</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {device.neighbors!.map((n) => (
+                      <TableRow key={n.id}>
+                        <TableCell className="font-mono text-sm">{n.local_port}</TableCell>
+                        <TableCell className="font-medium">{n.remote_device_name || "—"}</TableCell>
+                        <TableCell className="font-mono text-sm">{n.remote_port || "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant={n.protocol === "lldp" ? "default" : n.protocol === "cdp" ? "secondary" : "outline"}>
+                            {n.protocol.toUpperCase()}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">{n.remote_ip || "—"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{n.remote_platform || "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+
+        {/* Tab Routing Table */}
+        {(device.routes?.length ?? 0) > 0 && (
+          <TabsContent value="routing" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  Tabella di Routing
+                </CardTitle>
+                <CardDescription>Route attive e statiche raccolte dal dispositivo</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Destinazione</TableHead>
+                      <TableHead>Gateway</TableHead>
+                      <TableHead>Interfaccia</TableHead>
+                      <TableHead>Protocollo</TableHead>
+                      <TableHead>Distanza</TableHead>
+                      <TableHead>Metrica</TableHead>
+                      <TableHead>Stato</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {device.routes!.map((r) => (
+                      <TableRow key={r.id} className={r.active ? "" : "opacity-50"}>
+                        <TableCell className="font-mono text-sm font-medium">{r.destination}</TableCell>
+                        <TableCell className="font-mono text-sm">{r.gateway || "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{r.interface_name || "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant={
+                            r.protocol === "connected" ? "default" :
+                            r.protocol === "static" ? "secondary" :
+                            "outline"
+                          }>
+                            {r.protocol}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{r.distance ?? "—"}</TableCell>
+                        <TableCell>{r.metric ?? "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant={r.active ? "default" : "destructive"}>
+                            {r.active ? "attiva" : "inattiva"}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
         )}
 
       </Tabs>

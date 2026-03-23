@@ -14,6 +14,7 @@
 
 import type { DeviceClassification } from "@/lib/device-classifier";
 import type { SnmpVendorProfileRow } from "@/lib/db";
+import { getSnmpOidLibraryRevision, mergeProfileFieldsWithOidLibrary } from "./snmp-oid-library";
 
 /**
  * Profilo SNMP vendor-specific. Identifica il device e fornisce OID per recuperare
@@ -434,11 +435,13 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     enterpriseOidPrefixes: ["1.3.6.1.4.1.6574"],
     confidence: 0.98,
     fields: {
+      // SYNOLOGY-SYSTEM-MIB dsmInfo: modelName, serialNumber, version
       model: "1.3.6.1.4.1.6574.1.5.1.0",
       serial: "1.3.6.1.4.1.6574.1.5.2.0",
       firmware: "1.3.6.1.4.1.6574.1.5.3.0",
       systemStatus: "1.3.6.1.4.1.6574.1.1.0",
-      temperature: "1.3.6.1.4.1.6574.1.2.0",
+      powerStatus: "1.3.6.1.4.1.6574.1.2.0",
+      temperature: "1.3.6.1.4.1.6574.1.4.2.0",
     },
   },
 
@@ -450,9 +453,9 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     confidence: 0.98,
     fields: {
       model: "1.3.6.1.4.1.24681.1.2.1.0",
-      serial: "1.3.6.1.4.1.24681.1.2.2.0",
-      firmware: "1.3.6.1.4.1.24681.1.2.3.0",
-      temperature: "1.3.6.1.4.1.24681.1.2.4.0",
+      firmware: "1.3.6.1.4.1.24681.1.2.2.0",
+      serial: "1.3.6.1.4.1.24681.1.2.3.0",
+      temperature: "1.3.6.1.4.1.24681.1.2.7.0",
     },
   },
 
@@ -897,6 +900,7 @@ export function getVendorFromEnterprise(sysObjectID: string | null): string | nu
 
 let _cachedDbProfiles: SnmpVendorProfile[] | null = null;
 let _cacheTimestamp = 0;
+let _cachedLibraryRevision: string | null = null;
 const CACHE_TTL_MS = 60000;
 
 /**
@@ -936,9 +940,21 @@ function dbRowToProfile(row: SnmpVendorProfileRow): SnmpVendorProfile {
  * Carica i profili SNMP dal database. Ritorna i profili hardcoded se DB non disponibile.
  * I risultati sono cachati per 60 secondi per evitare query ripetute.
  */
+function applyOidLibraryToProfiles(profiles: SnmpVendorProfile[]): SnmpVendorProfile[] {
+  return profiles.map((p) => {
+    const merged = mergeProfileFieldsWithOidLibrary(p.id, p.category, p.fields);
+    return { ...p, fields: merged as SnmpVendorProfile["fields"] };
+  });
+}
+
 export function getSnmpVendorProfilesFromDb(): SnmpVendorProfile[] {
   const now = Date.now();
-  if (_cachedDbProfiles && now - _cacheTimestamp < CACHE_TTL_MS) {
+  const libRev = getSnmpOidLibraryRevision();
+  if (
+    _cachedDbProfiles &&
+    _cachedLibraryRevision === libRev &&
+    now - _cacheTimestamp < CACHE_TTL_MS
+  ) {
     return _cachedDbProfiles;
   }
 
@@ -947,7 +963,9 @@ export function getSnmpVendorProfilesFromDb(): SnmpVendorProfile[] {
     const db = require("@/lib/db");
     const rows: SnmpVendorProfileRow[] = db.getEnabledSnmpVendorProfiles();
     if (rows && rows.length > 0) {
-      _cachedDbProfiles = rows.map(dbRowToProfile);
+      const base = rows.map(dbRowToProfile);
+      _cachedDbProfiles = applyOidLibraryToProfiles(base);
+      _cachedLibraryRevision = libRev;
       _cacheTimestamp = now;
       return _cachedDbProfiles;
     }
@@ -955,7 +973,10 @@ export function getSnmpVendorProfilesFromDb(): SnmpVendorProfile[] {
     // DB non disponibile (build time, test, ecc.) - usa hardcoded
   }
 
-  return SNMP_VENDOR_PROFILES;
+  _cachedDbProfiles = applyOidLibraryToProfiles([...SNMP_VENDOR_PROFILES]);
+  _cachedLibraryRevision = libRev;
+  _cacheTimestamp = now;
+  return _cachedDbProfiles;
 }
 
 /**
@@ -964,6 +985,7 @@ export function getSnmpVendorProfilesFromDb(): SnmpVendorProfile[] {
 export function invalidateSnmpVendorProfilesCache(): void {
   _cachedDbProfiles = null;
   _cacheTimestamp = 0;
+  _cachedLibraryRevision = null;
 }
 
 /**

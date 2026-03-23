@@ -1166,6 +1166,151 @@ export function getDb(): Database.Database {
     /* ignore */
   }
 
+  try {
+    const nasProf = _db.prepare("SELECT value FROM settings WHERE key = 'migration_snmp_nas_profiles_v1'").get() as
+      | { value: string }
+      | undefined;
+    if (!nasProf?.value) {
+      // dsmInfo: modelName .5.1, serialNumber .5.2, version .5.3 (SYNOLOGY-SYSTEM-MIB)
+      const synoFields = JSON.stringify({
+        model: "1.3.6.1.4.1.6574.1.5.1.0",
+        serial: "1.3.6.1.4.1.6574.1.5.2.0",
+        firmware: "1.3.6.1.4.1.6574.1.5.3.0",
+        systemStatus: "1.3.6.1.4.1.6574.1.1.0",
+        powerStatus: "1.3.6.1.4.1.6574.1.2.0",
+        temperature: "1.3.6.1.4.1.6574.1.4.2.0",
+      });
+      const qnapFields = JSON.stringify({
+        model: "1.3.6.1.4.1.24681.1.2.1.0",
+        firmware: "1.3.6.1.4.1.24681.1.2.2.0",
+        serial: "1.3.6.1.4.1.24681.1.2.3.0",
+        temperature: "1.3.6.1.4.1.24681.1.2.7.0",
+      });
+      _db
+        .prepare(
+          `UPDATE snmp_vendor_profiles SET fields = ?, updated_at = datetime('now') WHERE profile_id = 'synology' AND builtin = 1`
+        )
+        .run(synoFields);
+      _db
+        .prepare(
+          `UPDATE snmp_vendor_profiles SET fields = ?, updated_at = datetime('now') WHERE profile_id = 'qnap' AND builtin = 1`
+        )
+        .run(qnapFields);
+      _db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_snmp_nas_profiles_v1', '1')").run();
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const synoOids = _db.prepare("SELECT value FROM settings WHERE key = 'migration_snmp_synology_dsm_info_oids_v1'").get() as
+      | { value: string }
+      | undefined;
+    if (!synoOids?.value) {
+      const synoFields = JSON.stringify({
+        model: "1.3.6.1.4.1.6574.1.5.1.0",
+        serial: "1.3.6.1.4.1.6574.1.5.2.0",
+        firmware: "1.3.6.1.4.1.6574.1.5.3.0",
+        systemStatus: "1.3.6.1.4.1.6574.1.1.0",
+        powerStatus: "1.3.6.1.4.1.6574.1.2.0",
+        temperature: "1.3.6.1.4.1.6574.1.4.2.0",
+      });
+      _db
+        .prepare(
+          `UPDATE snmp_vendor_profiles SET fields = ?, updated_at = datetime('now') WHERE profile_id = 'synology' AND builtin = 1`
+        )
+        .run(synoFields);
+      _db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_snmp_synology_dsm_info_oids_v1', '1')").run();
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const invFix = _db.prepare("SELECT value FROM settings WHERE key = 'migration_snmp_synology_serial_model_swap_v2'").get() as
+      | { value: string }
+      | undefined;
+    if (!invFix?.value) {
+      const row = _db
+        .prepare("SELECT id, fields FROM snmp_vendor_profiles WHERE profile_id = 'synology' AND builtin = 1")
+        .get() as { id: number; fields: string } | undefined;
+      if (row?.fields) {
+        try {
+          const f = JSON.parse(row.fields) as Record<string, string>;
+          if (
+            f.serial === "1.3.6.1.4.1.6574.1.5.1.0" &&
+            f.model === "1.3.6.1.4.1.6574.1.5.2.0"
+          ) {
+            f.model = "1.3.6.1.4.1.6574.1.5.1.0";
+            f.serial = "1.3.6.1.4.1.6574.1.5.2.0";
+            _db
+              .prepare("UPDATE snmp_vendor_profiles SET fields = ?, updated_at = datetime('now') WHERE id = ?")
+              .run(JSON.stringify(f), row.id);
+          }
+        } catch {
+          /* JSON non valido */
+        }
+      }
+      _db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_snmp_synology_serial_model_swap_v2', '1')").run();
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Migrazione: popola device_credential_bindings dai vecchi credential_id / snmp_credential_id
+  try {
+    const migDone = _db.prepare("SELECT value FROM settings WHERE key = 'migration_credential_bindings_v1'").get();
+    if (!migDone) {
+      const devices = _db.prepare(`
+        SELECT id, credential_id, snmp_credential_id, protocol, port, username, encrypted_password, community_string
+        FROM network_devices
+        WHERE credential_id IS NOT NULL OR snmp_credential_id IS NOT NULL OR username IS NOT NULL OR community_string IS NOT NULL
+      `).all() as Array<{
+        id: number; credential_id: number | null; snmp_credential_id: number | null;
+        protocol: string; port: number | null; username: string | null;
+        encrypted_password: string | null; community_string: string | null;
+      }>;
+
+      const ins = _db.prepare(`
+        INSERT OR IGNORE INTO device_credential_bindings
+          (device_id, credential_id, protocol_type, port, sort_order, inline_username, inline_encrypted_password, test_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'untested')
+      `);
+
+      _db.transaction(() => {
+        for (const d of devices) {
+          let order = 0;
+          const protoType = d.protocol === "winrm" ? "winrm"
+            : d.protocol === "snmp_v2" || d.protocol === "snmp_v3" ? "snmp"
+            : d.protocol === "api" ? "api"
+            : "ssh";
+          const defaultPort = protoType === "snmp" ? 161 : protoType === "winrm" ? 5985 : protoType === "api" ? 443 : 22;
+
+          // Credenziale principale da archivio
+          if (d.credential_id) {
+            ins.run(d.id, d.credential_id, protoType, d.port || defaultPort, order++, null, null);
+          }
+          // Credenziale inline (username/password senza credential_id)
+          if (!d.credential_id && d.username) {
+            ins.run(d.id, null, protoType, d.port || defaultPort, order++, d.username, d.encrypted_password);
+          }
+          // Credenziale SNMP secondaria
+          if (d.snmp_credential_id && d.snmp_credential_id !== d.credential_id) {
+            ins.run(d.id, d.snmp_credential_id, "snmp", 161, order++, null, null);
+          }
+          // Community string inline (senza snmp_credential_id)
+          if (!d.snmp_credential_id && d.community_string) {
+            ins.run(d.id, null, "snmp", 161, order++, null, d.community_string);
+          }
+        }
+      })();
+
+      _db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_credential_bindings_v1', '1')").run();
+    }
+  } catch {
+    /* ignore migration errors */
+  }
+
   return _db;
 }
 
@@ -1334,9 +1479,21 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1" } },
     // STORAGE
     { id: "synology", name: "Synology DSM", cat: "storage", oids: ["1.3.6.1.4.1.6574"], conf: 0.98,
-      fields: { model: "1.3.6.1.4.1.6574.1.5.1.0", serial: "1.3.6.1.4.1.6574.1.5.2.0", firmware: "1.3.6.1.4.1.6574.1.5.3.0" } },
+      fields: {
+        model: "1.3.6.1.4.1.6574.1.5.1.0",
+        serial: "1.3.6.1.4.1.6574.1.5.2.0",
+        firmware: "1.3.6.1.4.1.6574.1.5.3.0",
+        systemStatus: "1.3.6.1.4.1.6574.1.1.0",
+        powerStatus: "1.3.6.1.4.1.6574.1.2.0",
+        temperature: "1.3.6.1.4.1.6574.1.4.2.0",
+      } },
     { id: "qnap", name: "QNAP QTS", cat: "storage", oids: ["1.3.6.1.4.1.24681"], conf: 0.98,
-      fields: { model: "1.3.6.1.4.1.24681.1.2.1.0", serial: "1.3.6.1.4.1.24681.1.2.2.0", firmware: "1.3.6.1.4.1.24681.1.2.3.0" } },
+      fields: {
+        model: "1.3.6.1.4.1.24681.1.2.1.0",
+        firmware: "1.3.6.1.4.1.24681.1.2.2.0",
+        serial: "1.3.6.1.4.1.24681.1.2.3.0",
+        temperature: "1.3.6.1.4.1.24681.1.2.7.0",
+      } },
     { id: "truenas", name: "TrueNAS", cat: "storage", oids: [], sysDescr: "truenas|freenas", conf: 0.94, fields: { os: "1.3.6.1.2.1.1.1.0" } },
     { id: "netapp", name: "NetApp ONTAP", cat: "storage", oids: ["1.3.6.1.4.1.789"], conf: 0.97,
       fields: { firmware: "1.3.6.1.4.1.789.1.1.2.0", model: "1.3.6.1.4.1.789.1.1.3.0", serial: "1.3.6.1.4.1.789.1.1.4.0" } },
@@ -1632,7 +1789,7 @@ export function getHostsByNetwork(networkId: number): Host[] {
 /** Tutti gli host (tutte le reti), per lista dispositivi unificata. limit opzionale (default 10000). */
 export function getAllHosts(limit: number = 10000): Host[] {
   const hosts = getDb()
-    .prepare("SELECT * FROM hosts ORDER BY (network_id, ip) LIMIT ?")
+    .prepare("SELECT * FROM hosts ORDER BY network_id, ip LIMIT ?")
     .all(limit) as Host[];
   return hosts.sort((a, b) => {
     if (a.network_id !== b.network_id) return a.network_id - b.network_id;
@@ -2617,26 +2774,67 @@ export function getCredentialCommunityString(credentialId: number): string | nul
 
 /** Restituisce le credenziali SNMP v3 per un device (user name + auth key). Per v3 serve credential con username e password. */
 export function getDeviceSnmpV3Credentials(device: NetworkDevice): { username: string; authKey: string } | null {
-  const credId = device.snmp_credential_id || device.credential_id;
-  if (!credId) return null;
-  const cred = getCredentialById(credId);
-  if (!cred || String(cred.credential_type || "").toLowerCase() !== "snmp") return null;
-  try {
-    const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
-    const authKey = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
-    if (username?.trim() && authKey?.trim()) return { username: username.trim(), authKey: authKey.trim() };
-  } catch { /* ignore */ }
+  const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
+  const credIds = isSnmpPrimary
+    ? [device.credential_id, device.snmp_credential_id]
+    : [device.snmp_credential_id, device.credential_id];
+  for (const credId of credIds) {
+    if (!credId) continue;
+    const cred = getCredentialById(credId);
+    if (!cred || String(cred.credential_type || "").toLowerCase() !== "snmp") continue;
+    try {
+      const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
+      const authKey = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
+      if (username?.trim() && authKey?.trim()) return { username: username.trim(), authKey: authKey.trim() };
+    } catch { /* ignore */ }
+  }
   return null;
 }
 
-/** Restituisce la community string per un device: da snmp_credential_id, credential_id (se SNMP), community_string, o "public". */
-export function getDeviceCommunityString(device: NetworkDevice): string {
-  if (device.snmp_credential_id) {
-    const fromCred = getCredentialCommunityString(device.snmp_credential_id);
-    if (fromCred) return fromCred;
+/**
+ * Porta per sessioni SNMP: con protocollo principale SNMP, evita 22/2222 lasciati per errore da SSH.
+ */
+export function getEffectiveSnmpPort(device: NetworkDevice): number {
+  const p = device.port ?? 161;
+  if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") {
+    if (p === 22 || p === 2222) return 161;
+    return p;
   }
-  if (device.credential_id) {
-    const fromCred = getCredentialCommunityString(device.credential_id);
+  return 161;
+}
+
+/**
+ * Community SNMP: con protocollo principale snmp_v2/v3 la credenziale di «gestione» è credential_id;
+ * snmp_credential_id è tipicamente SNMP secondario (porte/LLDP su router). Con SSH/API prima snmp_credential_id.
+ */
+export function getDeviceCommunityString(device: NetworkDevice): string {
+  // Prima: cerca nei bindings SNMP (nuovo sistema tabellare)
+  const snmpBinding = getDb().prepare(`
+    SELECT * FROM device_credential_bindings
+    WHERE device_id = ? AND protocol_type = 'snmp'
+    ORDER BY sort_order LIMIT 1
+  `).get(device.id) as DeviceCredentialBinding | undefined;
+
+  if (snmpBinding) {
+    if (snmpBinding.credential_id) {
+      const fromCred = getCredentialCommunityString(snmpBinding.credential_id);
+      if (fromCred) return fromCred;
+    } else if (snmpBinding.inline_encrypted_password) {
+      try {
+        const s = decrypt(snmpBinding.inline_encrypted_password);
+        if (s?.trim()) return s;
+      } catch { /* fallthrough */ }
+    }
+  }
+
+  // Fallback: vecchio sistema
+  const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
+  const tryCredIds = isSnmpPrimary
+    ? [device.credential_id, device.snmp_credential_id]
+    : [device.snmp_credential_id, device.credential_id];
+  for (const credId of tryCredIds) {
+    if (!credId) continue;
+    const fromCred = getCredentialCommunityString(credId);
     if (fromCred) return fromCred;
   }
   if (device.community_string) {
@@ -2652,6 +2850,30 @@ export function getDeviceCommunityString(device: NetworkDevice): string {
 
 /** Restituisce { username, password } per un device: da credential_id se presente, altrimenti da device */
 export function getDeviceCredentials(device: NetworkDevice): { username: string; password: string } | null {
+  // Prima: cerca nei bindings (nuovo sistema tabellare) — primo binding SSH/WinRM/API per sort_order
+  const protoType = device.protocol === "winrm" ? "winrm"
+    : device.protocol === "api" ? "api"
+    : "ssh";
+  const binding = getDb().prepare(`
+    SELECT * FROM device_credential_bindings
+    WHERE device_id = ? AND protocol_type = ?
+    ORDER BY sort_order LIMIT 1
+  `).get(device.id, protoType) as DeviceCredentialBinding | undefined;
+
+  if (binding) {
+    if (binding.credential_id) {
+      const cred = getCredentialById(binding.credential_id);
+      if (cred?.encrypted_username && cred?.encrypted_password) {
+        try { return { username: decrypt(cred.encrypted_username), password: decrypt(cred.encrypted_password) }; }
+        catch { /* fallthrough */ }
+      }
+    } else if (binding.inline_username && binding.inline_encrypted_password) {
+      try { return { username: binding.inline_username, password: decrypt(binding.inline_encrypted_password) }; }
+      catch { /* fallthrough */ }
+    }
+  }
+
+  // Fallback: vecchio sistema (credential_id diretto sul device)
   if (device.credential_id) {
     const cred = getCredentialById(device.credential_id);
     if (cred?.encrypted_username && cred?.encrypted_password) {
@@ -3561,6 +3783,244 @@ export function getSwitchPortsByDevice(deviceId: number): import("@/types").Swit
   return getDb().prepare(
     "SELECT * FROM switch_ports WHERE device_id = ? ORDER BY port_index"
   ).all(deviceId) as import("@/types").SwitchPort[];
+}
+
+// ========================
+// Device Neighbors (LLDP/CDP/MNDP)
+// ========================
+
+export interface DbNeighborEntry {
+  id: number;
+  device_id: number;
+  local_port: string;
+  remote_device_name: string;
+  remote_port: string;
+  protocol: string;
+  remote_ip: string | null;
+  remote_mac: string | null;
+  remote_platform: string | null;
+  timestamp: string;
+}
+
+export function upsertNeighbors(
+  deviceId: number,
+  neighbors: Array<{
+    localPort: string;
+    remoteDevice: string;
+    remotePort: string;
+    protocol: string;
+    remoteIp?: string;
+    remoteMac?: string;
+    remotePlatform?: string;
+  }>
+): void {
+  const db = getDb();
+  const del = db.prepare("DELETE FROM device_neighbors WHERE device_id = ?");
+  const ins = db.prepare(`
+    INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  db.transaction(() => {
+    del.run(deviceId);
+    for (const n of neighbors) {
+      ins.run(deviceId, n.localPort, n.remoteDevice, n.remotePort, n.protocol, n.remoteIp ?? null, n.remoteMac ?? null, n.remotePlatform ?? null);
+    }
+  })();
+}
+
+export function getNeighborsByDevice(deviceId: number): DbNeighborEntry[] {
+  return getDb().prepare(
+    "SELECT * FROM device_neighbors WHERE device_id = ? ORDER BY local_port, protocol"
+  ).all(deviceId) as DbNeighborEntry[];
+}
+
+// ========================
+// Device Routes (Routing Table)
+// ========================
+
+export interface DbRouteEntry {
+  id: number;
+  device_id: number;
+  destination: string;
+  gateway: string | null;
+  interface_name: string | null;
+  protocol: string;
+  metric: number | null;
+  distance: number | null;
+  active: number;
+  timestamp: string;
+}
+
+export function upsertRoutes(
+  deviceId: number,
+  routes: Array<{
+    destination: string;
+    gateway: string | null;
+    interface_name: string | null;
+    protocol: string;
+    metric?: number;
+    distance?: number;
+    active: boolean;
+  }>
+): void {
+  const db = getDb();
+  const del = db.prepare("DELETE FROM routing_table WHERE device_id = ?");
+  const ins = db.prepare(`
+    INSERT INTO routing_table (device_id, destination, gateway, interface_name, protocol, metric, distance, active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  db.transaction(() => {
+    del.run(deviceId);
+    for (const r of routes) {
+      ins.run(deviceId, r.destination, r.gateway ?? null, r.interface_name ?? null, r.protocol, r.metric ?? null, r.distance ?? null, r.active ? 1 : 0);
+    }
+  })();
+}
+
+export function getRoutesByDevice(deviceId: number, activeOnly = false): DbRouteEntry[] {
+  const sql = activeOnly
+    ? "SELECT * FROM routing_table WHERE device_id = ? AND active = 1 ORDER BY protocol, destination"
+    : "SELECT * FROM routing_table WHERE device_id = ? ORDER BY active DESC, protocol, destination";
+  return getDb().prepare(sql).all(deviceId) as DbRouteEntry[];
+}
+
+// ========================
+// Device Credential Bindings
+// ========================
+
+export interface DeviceCredentialBinding {
+  id: number;
+  device_id: number;
+  credential_id: number | null;
+  protocol_type: "ssh" | "snmp" | "winrm" | "api";
+  port: number;
+  sort_order: number;
+  inline_username: string | null;
+  inline_encrypted_password: string | null;
+  test_status: "success" | "failed" | "untested";
+  test_message: string | null;
+  tested_at: string | null;
+  auto_detected: number;
+  created_at: string;
+  // JOIN fields
+  credential_name?: string | null;
+  credential_type?: string | null;
+}
+
+export function getDeviceCredentialBindings(deviceId: number): DeviceCredentialBinding[] {
+  return getDb().prepare(`
+    SELECT dcb.*, c.name AS credential_name, c.credential_type
+    FROM device_credential_bindings dcb
+    LEFT JOIN credentials c ON c.id = dcb.credential_id
+    WHERE dcb.device_id = ?
+    ORDER BY dcb.sort_order, dcb.id
+  `).all(deviceId) as DeviceCredentialBinding[];
+}
+
+export function addDeviceCredentialBinding(input: {
+  device_id: number;
+  credential_id?: number | null;
+  protocol_type: string;
+  port: number;
+  sort_order?: number;
+  inline_username?: string | null;
+  inline_encrypted_password?: string | null;
+  auto_detected?: boolean;
+}): DeviceCredentialBinding {
+  const db = getDb();
+  // sort_order = max + 1 se non specificato
+  const maxOrder = (db.prepare(
+    "SELECT COALESCE(MAX(sort_order), -1) as m FROM device_credential_bindings WHERE device_id = ?"
+  ).get(input.device_id) as { m: number }).m;
+  const sortOrder = input.sort_order ?? maxOrder + 1;
+
+  const result = db.prepare(`
+    INSERT INTO device_credential_bindings
+      (device_id, credential_id, protocol_type, port, sort_order, inline_username, inline_encrypted_password, auto_detected)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    input.device_id,
+    input.credential_id ?? null,
+    input.protocol_type,
+    input.port,
+    sortOrder,
+    input.inline_username ?? null,
+    input.inline_encrypted_password ?? null,
+    input.auto_detected ? 1 : 0
+  );
+
+  return db.prepare(`
+    SELECT dcb.*, c.name AS credential_name, c.credential_type
+    FROM device_credential_bindings dcb
+    LEFT JOIN credentials c ON c.id = dcb.credential_id
+    WHERE dcb.id = ?
+  `).get(result.lastInsertRowid) as DeviceCredentialBinding;
+}
+
+export function updateDeviceCredentialBinding(bindingId: number, updates: {
+  credential_id?: number | null;
+  protocol_type?: string;
+  port?: number;
+  inline_username?: string | null;
+  inline_encrypted_password?: string | null;
+}): void {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (updates.credential_id !== undefined) { sets.push("credential_id = ?"); params.push(updates.credential_id); }
+  if (updates.protocol_type !== undefined) { sets.push("protocol_type = ?"); params.push(updates.protocol_type); }
+  if (updates.port !== undefined) { sets.push("port = ?"); params.push(updates.port); }
+  if (updates.inline_username !== undefined) { sets.push("inline_username = ?"); params.push(updates.inline_username); }
+  if (updates.inline_encrypted_password !== undefined) { sets.push("inline_encrypted_password = ?"); params.push(updates.inline_encrypted_password); }
+  if (sets.length === 0) return;
+  // Quando si assegna un credential_id, rimuovi inline; viceversa se inline, rimuovi credential_id
+  if (updates.credential_id != null) {
+    sets.push("inline_username = NULL", "inline_encrypted_password = NULL");
+  } else if (updates.inline_username !== undefined || updates.inline_encrypted_password !== undefined) {
+    sets.push("credential_id = NULL");
+  }
+  params.push(bindingId);
+  getDb().prepare(`UPDATE device_credential_bindings SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+}
+
+export function deleteDeviceCredentialBinding(bindingId: number): void {
+  getDb().prepare("DELETE FROM device_credential_bindings WHERE id = ?").run(bindingId);
+}
+
+export function reorderDeviceCredentialBindings(deviceId: number, orderedIds: number[]): void {
+  const db = getDb();
+  const stmt = db.prepare("UPDATE device_credential_bindings SET sort_order = ? WHERE id = ? AND device_id = ?");
+  db.transaction(() => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      stmt.run(i, orderedIds[i], deviceId);
+    }
+  })();
+}
+
+export function updateBindingTestStatus(bindingId: number, status: "success" | "failed", message: string): void {
+  getDb().prepare(`
+    UPDATE device_credential_bindings SET test_status = ?, test_message = ?, tested_at = datetime('now') WHERE id = ?
+  `).run(status, message, bindingId);
+}
+
+/** Cerca un binding identico (stesso device, credential, protocollo, porta) per evitare duplicati auto-detect */
+export function findExistingBinding(deviceId: number, credentialId: number, protocolType: string, port: number): DeviceCredentialBinding | null {
+  return getDb().prepare(`
+    SELECT dcb.*, c.name AS credential_name, c.credential_type
+    FROM device_credential_bindings dcb
+    LEFT JOIN credentials c ON c.id = dcb.credential_id
+    WHERE dcb.device_id = ? AND dcb.credential_id = ? AND dcb.protocol_type = ? AND dcb.port = ?
+  `).get(deviceId, credentialId, protocolType, port) as DeviceCredentialBinding | null;
+}
+
+/** Ritorna il primo binding funzionante (sort_order più basso con test_status=success) per un protocollo */
+export function getPrimaryBindingForProtocol(deviceId: number, protocolType: string): DeviceCredentialBinding | null {
+  return getDb().prepare(`
+    SELECT dcb.*, c.name AS credential_name, c.credential_type
+    FROM device_credential_bindings dcb
+    LEFT JOIN credentials c ON c.id = dcb.credential_id
+    WHERE dcb.device_id = ? AND dcb.protocol_type = ? AND dcb.test_status = 'success'
+    ORDER BY dcb.sort_order LIMIT 1
+  `).get(deviceId, protocolType) as DeviceCredentialBinding | null;
 }
 
 // ========================

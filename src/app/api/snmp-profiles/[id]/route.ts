@@ -64,12 +64,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Profilo non trovato" }, { status: 404 });
   }
 
-  if (existing.builtin === 1) {
-    return NextResponse.json({
-      error: "I profili builtin non possono essere modificati. Puoi disabilitarli o creare un profilo personalizzato.",
-    }, { status: 403 });
-  }
-
   try {
     const body = await request.json();
     const parsed = UpdateProfileSchema.safeParse(body);

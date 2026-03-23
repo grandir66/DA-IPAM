@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getNetworkDeviceById, updateNetworkDevice, deleteNetworkDevice, getArpEntriesByDevice, getMacPortEntriesByDevice, getSwitchPortsByDevice } from "@/lib/db";
+import { getNetworkDeviceById, updateNetworkDevice, deleteNetworkDevice, getArpEntriesByDevice, getMacPortEntriesByDevice, getSwitchPortsByDevice, getNeighborsByDevice, getRoutesByDevice, getDeviceCredentialBindings } from "@/lib/db";
 import {
   isValidProductProfileForVendor,
   suggestDeviceTypeFromProductProfile,
@@ -57,6 +57,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const arpEntries = device.device_type === "router" ? getArpEntriesByDevice(Number(id)) : [];
     const macPortEntries = device.device_type === "switch" ? getMacPortEntriesByDevice(Number(id)) : [];
     const switchPorts = isHypervisor ? [] : getSwitchPortsByDevice(Number(id));
+    const neighbors = getNeighborsByDevice(Number(id));
+    const routes = device.device_type === "router" ? getRoutesByDevice(Number(id)) : [];
+    const credential_bindings = getDeviceCredentialBindings(Number(id)).map((b) => ({
+      ...b,
+      inline_encrypted_password: b.inline_encrypted_password ? "●●●●●●●●" : null,
+      source: b.credential_id ? "archive" as const : "inline" as const,
+    }));
 
     let stp_info: unknown = null;
     if (device.stp_info) {
@@ -101,6 +108,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         arp_entries: arpEntries,
         mac_port_entries: macPortEntries,
         switch_ports: switchPorts,
+        neighbors,
+        routes,
+        credential_bindings,
       },
       { headers: NO_CACHE_HEADERS }
     );

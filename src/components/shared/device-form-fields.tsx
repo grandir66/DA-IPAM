@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useCallback, type ReactNode } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -217,6 +218,25 @@ export function DeviceFormFields({
     };
   }, [vendorOptionsProp]);
 
+  const [detecting, setDetecting] = useState(false);
+  const handleDetectProtocol = useCallback(async () => {
+    if (!host) return;
+    setDetecting(true);
+    try {
+      const res = await fetch("/api/devices/detect-protocol", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host, timeout: 4000 }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.protocol) {
+        onProtocolChange?.(data.protocol);
+      }
+    } catch { /* ignore */ }
+    finally { setDetecting(false); }
+  }, [host, onProtocolChange]);
+
   const vendorProfile = getVendorDeviceProfile(vendor || "other");
   const primaryCredentialLabels = useMemo(
     () => getPrimaryCredentialLabels(protocol ?? "ssh"),
@@ -421,27 +441,41 @@ export function DeviceFormFields({
               tip="Connessione per query e comandi (SSH, SNMP, API, WinRM). Con SNMP puoi aggiungere credenziale SNMP sotto per porte/LLDP."
               tipWide
             >
-              <Select
-                value={protocol || (isBulk ? "" : defaultProtocol)}
-                onValueChange={(v) => onProtocolChange?.(v ?? "")}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={noChange} />
-                </SelectTrigger>
-                <SelectContent>
-                  {isBulk && <SelectItem value="">{noChange}</SelectItem>}
-                  {protocolOptions.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <Select
+                  value={protocol || (isBulk ? "" : defaultProtocol)}
+                  onValueChange={(v) => onProtocolChange?.(v ?? "")}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={noChange} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {isBulk && <SelectItem value="">{noChange}</SelectItem>}
+                    {protocolOptions.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!isBulk && host && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 text-xs"
+                    disabled={detecting}
+                    onClick={handleDetectProtocol}
+                  >
+                    {detecting ? "..." : "Rileva"}
+                  </Button>
+                )}
+              </div>
             </FieldRow>
 
             <FieldRow
               label="Tipo scansione"
-              tip="Es. Proxmox VE vs PBS. «Automatico» usa il default del vendor."
+              tip="Solo per hypervisor (es. Proxmox VE vs PBS). «Automatico» non disattiva le query: con SNMP/SSH il dispositivo viene comunque interrogato."
             >
               <Select
                 value={scanTargetToSelectValue(scanTarget ?? null)}

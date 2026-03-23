@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getNetworkDevices, getRouters, getSwitches, getDevicesByClassificationOrLegacy, createNetworkDevice, getHostByIp, updateHost, ensureInventoryAssetForNetworkDevice } from "@/lib/db";
+import { getNetworkDevices, getRouters, getSwitches, getDevicesByClassificationOrLegacy, createNetworkDevice, getHostByIp, updateHost, ensureInventoryAssetForNetworkDevice, addDeviceCredentialBinding } from "@/lib/db";
 import { NetworkDeviceSchema } from "@/lib/validators";
 import { encrypt } from "@/lib/crypto";
 import {
@@ -96,6 +96,26 @@ export async function POST(request: Request) {
       scan_target: scanTarget,
       product_profile: productProfile,
     });
+
+    // Crea bindings credenziali nella nuova tabella
+    const protoType = data.protocol === "winrm" ? "winrm" : data.protocol === "snmp_v2" || data.protocol === "snmp_v3" ? "snmp" : data.protocol === "api" ? "api" : "ssh";
+    const devicePort = data.port || defaultPort;
+    if (data.credential_id) {
+      addDeviceCredentialBinding({ device_id: device.id, credential_id: data.credential_id, protocol_type: protoType, port: devicePort });
+    } else if (data.username) {
+      addDeviceCredentialBinding({
+        device_id: device.id, protocol_type: protoType, port: devicePort,
+        inline_username: data.username, inline_encrypted_password: data.password ? encrypt(data.password) : null,
+      });
+    }
+    if (data.snmp_credential_id && data.snmp_credential_id !== data.credential_id) {
+      addDeviceCredentialBinding({ device_id: device.id, credential_id: data.snmp_credential_id, protocol_type: "snmp", port: 161 });
+    } else if (data.community_string && !data.snmp_credential_id) {
+      addDeviceCredentialBinding({
+        device_id: device.id, protocol_type: "snmp", port: 161,
+        inline_encrypted_password: encrypt(data.community_string),
+      });
+    }
 
     const host = getHostByIp(data.host);
     if (host) updateHost(host.id, { classification: deviceClassification });

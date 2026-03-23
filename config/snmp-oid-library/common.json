@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "title": "OID fondamentali (riferimento)",
+  "description": "Mappa di consultazione: MIB-II system, ENTITY-MIB, estratti usati come fallback. I GET principali usano già sysDescr/sysObjectID; questi OID possono essere copiati nei profili o nei file devices/.",
+  "fundamental": {
+    "sysDescr": "1.3.6.1.2.1.1.1.0",
+    "sysObjectID": "1.3.6.1.2.1.1.2.0",
+    "sysName": "1.3.6.1.2.1.1.5.0",
+    "sysUpTime": "1.3.6.1.2.1.1.3.0",
+    "entPhysicalSerialNum": "1.3.6.1.2.1.47.1.1.1.1.11.1",
+    "entPhysicalModelName": "1.3.6.1.2.1.47.1.1.1.1.13.1"
+  },
+  "groups": [
+    {
+      "id": "mib2_system",
+      "label": "MIB-2 system",
+      "fields": {
+        "sysDescr": "1.3.6.1.2.1.1.1.0",
+        "sysObjectID": "1.3.6.1.2.1.1.2.0",
+        "sysName": "1.3.6.1.2.1.1.5.0"
+      }
+    },
+    {
+      "id": "entity_mib",
+      "label": "ENTITY-MIB (indice 1)",
+      "fields": {
+        "entPhysicalSerialNum": "1.3.6.1.2.1.47.1.1.1.1.11.1",
+        "entPhysicalModelName": "1.3.6.1.2.1.47.1.1.1.1.13.1",
+        "entPhysicalFirmwareRev": "1.3.6.1.2.1.47.1.1.1.1.9.1"
+      }
+    }
+  ]
+}

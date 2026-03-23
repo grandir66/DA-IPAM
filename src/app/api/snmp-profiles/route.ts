@@ -15,7 +15,11 @@ import {
   resetBuiltinSnmpVendorProfiles,
 } from "@/lib/db";
 import { invalidateSnmpVendorProfilesCache } from "@/lib/scanner/snmp-vendor-profiles";
+import { mergeProfileFieldsWithOidLibrary } from "@/lib/scanner/snmp-oid-library";
+import { exportSnmpProfilesFromDbToFiles } from "@/lib/scanner/snmp-oid-export";
 import { z } from "zod/v4";
+import fs from "fs";
+import path from "path";
 
 const ProfileSchema = z.object({
   profile_id: z.string().min(1).max(64).regex(/^[a-z0-9_-]+$/),
@@ -41,8 +45,27 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ profiles }, { status: 200 });
   }
 
+  const merged = url.searchParams.get("merged") === "1";
   const profiles = getSnmpVendorProfiles();
-  return NextResponse.json({ profiles }, { status: 200 });
+  if (!merged) {
+    return NextResponse.json({ profiles }, { status: 200 });
+  }
+
+  const enriched = profiles.map((p) => {
+    let dbFields: Record<string, string | string[] | undefined> = {};
+    try {
+      dbFields = JSON.parse(p.fields || "{}") as Record<string, string | string[] | undefined>;
+    } catch {
+      /* ignore */
+    }
+    const mergedFields = mergeProfileFieldsWithOidLibrary(p.profile_id, p.category, dbFields);
+    return {
+      ...p,
+      fields_merged: JSON.stringify(mergedFields),
+    };
+  });
+
+  return NextResponse.json({ profiles: enriched }, { status: 200 });
 }
 
 export async function POST(request: NextRequest) {
@@ -86,6 +109,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         error: `Errore reset: ${error instanceof Error ? error.message : String(error)}`,
       }, { status: 500 });
+    }
+  }
+
+  if (action === "export-to-files") {
+    try {
+      const dataDir = path.join(process.cwd(), "data");
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+      const profiles = getSnmpVendorProfiles();
+      const result = exportSnmpProfilesFromDbToFiles(dataDir, profiles);
+      return NextResponse.json(
+        {
+          success: true,
+          message: `Esportati ${result.manifest.profile_count} profili in ${result.rootRelative}`,
+          rootRelative: result.rootRelative,
+          manifest: result.manifest,
+          filesWritten: result.filesWritten,
+        },
+        { status: 200 }
+      );
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error: `Errore esportazione file: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        { status: 500 }
+      );
     }
   }
 

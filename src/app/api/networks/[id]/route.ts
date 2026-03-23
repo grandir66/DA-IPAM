@@ -9,6 +9,8 @@ import {
   getHostsByNetworkWithDevices,
   getNetworkHostCredentialIds,
   replaceNetworkHostCredentials,
+  getNetworkCredentials,
+  getHostValidatedProtocolsByNetwork,
 } from "@/lib/db";
 import { NetworkUpdateSchema } from "@/lib/validators";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
@@ -26,6 +28,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const linux_credential_ids = getNetworkHostCredentialIds(Number(id), "linux");
     const ssh_credential_ids = getNetworkHostCredentialIds(Number(id), "ssh");
     const snmp_credential_ids = getNetworkHostCredentialIds(Number(id), "snmp");
+    const network_credentials = getNetworkCredentials(Number(id));
+    // Badge: protocolli validati per host (mappa host_id → protocol_type[])
+    const validatedMap = getHostValidatedProtocolsByNetwork(Number(id));
+    const host_validated_protocols: Record<number, string[]> = {};
+    for (const [hostId, protocols] of validatedMap) {
+      host_validated_protocols[hostId] = protocols;
+    }
     return NextResponse.json({
       ...network,
       hosts,
@@ -34,6 +43,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       linux_credential_ids,
       ssh_credential_ids,
       snmp_credential_ids,
+      network_credentials,
+      host_validated_protocols,
     });
   } catch (error) {
     console.error("Error fetching network:", error);

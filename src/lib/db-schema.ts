@@ -435,7 +435,7 @@ CREATE INDEX IF NOT EXISTS idx_hosts_known_status ON hosts(known_host, status);
 CREATE INDEX IF NOT EXISTS idx_hosts_network_mac ON hosts(network_id, mac);
 CREATE INDEX IF NOT EXISTS idx_inventory_audit_log_asset_created ON inventory_audit_log(asset_id, created_at DESC);
 
--- Credenziali Windows/Linux aggiuntive per subnet (ordine = tentativi sequenziali)
+-- Credenziali Windows/Linux aggiuntive per subnet (ordine = tentativi sequenziali) [LEGACY — vedi network_credentials]
 CREATE TABLE IF NOT EXISTS network_host_credentials (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
@@ -446,7 +446,7 @@ CREATE TABLE IF NOT EXISTS network_host_credentials (
 );
 CREATE INDEX IF NOT EXISTS idx_network_host_credentials_net_role ON network_host_credentials(network_id, role);
 
--- Credenziale usata con successo per detect (una combinazione host+ruolo)
+-- Credenziale usata con successo per detect (una combinazione host+ruolo) [LEGACY — vedi host_credentials]
 CREATE TABLE IF NOT EXISTS host_detect_credential (
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
   role TEXT NOT NULL CHECK(role IN ('windows', 'linux', 'ssh', 'snmp')),
@@ -454,6 +454,38 @@ CREATE TABLE IF NOT EXISTS host_detect_credential (
   updated_at TEXT DEFAULT (datetime('now')),
   PRIMARY KEY (host_id, role)
 );
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- CREDENTIAL SYSTEM v2: subnet-first, lista unificata
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Credenziali assegnate a una subnet (lista unica ordinata, senza distinzione di ruolo)
+CREATE TABLE IF NOT EXISTS network_credentials (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+  credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(network_id, credential_id)
+);
+CREATE INDEX IF NOT EXISTS idx_network_credentials_net ON network_credentials(network_id, sort_order);
+
+-- Credenziali validate per singolo host/IP (N credenziali per host, multi-protocollo)
+CREATE TABLE IF NOT EXISTS host_credentials (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api')),
+  port INTEGER NOT NULL,
+  validated INTEGER NOT NULL DEFAULT 0,
+  validated_at TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  auto_detected INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(host_id, credential_id, protocol_type, port)
+);
+CREATE INDEX IF NOT EXISTS idx_host_credentials_host ON host_credentials(host_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_host_credentials_validated ON host_credentials(host_id, validated);
 
 -- Mapping manuale: etichetta fingerprint (final_device) → classificazione host
 CREATE TABLE IF NOT EXISTS fingerprint_classification_map (

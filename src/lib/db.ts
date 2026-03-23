@@ -1413,6 +1413,81 @@ export function getDb(): Database.Database {
     /* ignore migration errors */
   }
 
+  // ── Migrazione: popola network_credentials da network_host_credentials (deduplica per credential_id) ──
+  try {
+    const migDone = _db.prepare("SELECT value FROM settings WHERE key = 'migration_network_credentials_v1'").get() as { value: string } | undefined;
+    if (!migDone) {
+      const db = _db;
+      db.transaction(() => {
+        const rows = db.prepare(`
+          SELECT DISTINCT network_id, credential_id, MIN(sort_order) as sort_order
+          FROM network_host_credentials
+          GROUP BY network_id, credential_id
+          ORDER BY network_id, MIN(sort_order) ASC, MIN(id) ASC
+        `).all() as Array<{ network_id: number; credential_id: number; sort_order: number }>;
+
+        const ins = db.prepare(
+          `INSERT OR IGNORE INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
+        );
+
+        let curNet = -1;
+        let order = 0;
+        for (const r of rows) {
+          if (r.network_id !== curNet) {
+            curNet = r.network_id;
+            order = 0;
+          }
+          ins.run(r.network_id, r.credential_id, order++);
+        }
+
+        db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_network_credentials_v1', '1')").run();
+      })();
+    }
+  } catch {
+    /* ignore migration errors */
+  }
+
+  // ── Migrazione: popola host_credentials da host_detect_credential ──
+  try {
+    const migDone = _db.prepare("SELECT value FROM settings WHERE key = 'migration_host_credentials_v1'").get() as { value: string } | undefined;
+    if (!migDone) {
+      const db = _db;
+      db.transaction(() => {
+        const rows = db.prepare(`SELECT host_id, role, credential_id FROM host_detect_credential`).all() as Array<{
+          host_id: number;
+          role: string;
+          credential_id: number;
+        }>;
+
+        const ins = db.prepare(
+          `INSERT OR IGNORE INTO host_credentials (host_id, credential_id, protocol_type, port, validated, validated_at, auto_detected) VALUES (?, ?, ?, ?, 1, datetime('now'), 1)`
+        );
+
+        for (const r of rows) {
+          let protocolType: string;
+          let port: number;
+          if (r.role === "ssh" || r.role === "linux") {
+            protocolType = "ssh";
+            port = 22;
+          } else if (r.role === "snmp") {
+            protocolType = "snmp";
+            port = 161;
+          } else if (r.role === "windows") {
+            protocolType = "winrm";
+            port = 5985;
+          } else {
+            continue;
+          }
+          ins.run(r.host_id, r.credential_id, protocolType, port);
+        }
+
+        db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_host_credentials_v1', '1')").run();
+      })();
+    }
+  } catch {
+    /* ignore migration errors */
+  }
+
   return _db;
 }
 
@@ -2856,6 +2931,210 @@ export function buildSnmpCommunitiesForHost(
     }
   }
   return buildSnmpCommunitiesForNetwork(networkId, profileOrOverride);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREDENTIAL SYSTEM v2: network_credentials + host_credentials
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface NetworkCredentialRow {
+  id: number;
+  network_id: number;
+  credential_id: number;
+  sort_order: number;
+  credential_name: string;
+  credential_type: string;
+}
+
+/** Lista unificata credenziali assegnate alla subnet (ordinate). */
+export function getNetworkCredentials(networkId: number): NetworkCredentialRow[] {
+  return getDb()
+    .prepare(
+      `SELECT nc.id, nc.network_id, nc.credential_id, nc.sort_order,
+              c.name AS credential_name, c.credential_type
+       FROM network_credentials nc
+       JOIN credentials c ON c.id = nc.credential_id
+       WHERE nc.network_id = ?
+       ORDER BY nc.sort_order ASC, nc.id ASC`
+    )
+    .all(networkId) as NetworkCredentialRow[];
+}
+
+/** Sostituisce atomicamente la lista credenziali della subnet. */
+export function replaceNetworkCredentials(networkId: number, credentialIds: number[]): void {
+  const seen = new Set<number>();
+  const unique: number[] = [];
+  for (const id of credentialIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    unique.push(id);
+  }
+  const db = getDb();
+  db.transaction(() => {
+    db.prepare(`DELETE FROM network_credentials WHERE network_id = ?`).run(networkId);
+    const ins = db.prepare(
+      `INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
+    );
+    unique.forEach((cid, i) => ins.run(networkId, cid, i));
+  })();
+}
+
+/** Aggiunge una credenziale alla subnet (in coda). */
+export function addNetworkCredential(networkId: number, credentialId: number): void {
+  const db = getDb();
+  const max = db.prepare(
+    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM network_credentials WHERE network_id = ?`
+  ).get(networkId) as { m: number };
+  db.prepare(
+    `INSERT OR IGNORE INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
+  ).run(networkId, credentialId, max.m + 1);
+}
+
+/** Rimuove una credenziale dalla subnet. */
+export function removeNetworkCredential(networkId: number, credentialId: number): void {
+  getDb().prepare(
+    `DELETE FROM network_credentials WHERE network_id = ? AND credential_id = ?`
+  ).run(networkId, credentialId);
+}
+
+/** Riordina credenziali di una subnet. orderedCredentialIds = array di credential_id nell'ordine desiderato. */
+export function reorderNetworkCredentials(networkId: number, orderedCredentialIds: number[]): void {
+  const db = getDb();
+  db.transaction(() => {
+    const upd = db.prepare(
+      `UPDATE network_credentials SET sort_order = ? WHERE network_id = ? AND credential_id = ?`
+    );
+    orderedCredentialIds.forEach((cid, i) => upd.run(i, networkId, cid));
+  })();
+}
+
+/** Copia credenziali da una subnet sorgente alla destinazione (senza duplicare quelle già presenti). */
+export function copyNetworkCredentials(sourceNetworkId: number, targetNetworkId: number): number {
+  const db = getDb();
+  const source = getNetworkCredentials(sourceNetworkId);
+  const existing = new Set(
+    getNetworkCredentials(targetNetworkId).map((r) => r.credential_id)
+  );
+  const max = db.prepare(
+    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM network_credentials WHERE network_id = ?`
+  ).get(targetNetworkId) as { m: number };
+  let order = max.m + 1;
+  let added = 0;
+  const ins = db.prepare(
+    `INSERT OR IGNORE INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
+  );
+  db.transaction(() => {
+    for (const s of source) {
+      if (existing.has(s.credential_id)) continue;
+      ins.run(targetNetworkId, s.credential_id, order++);
+      added++;
+    }
+  })();
+  return added;
+}
+
+/** Subnet che hanno almeno una credenziale configurata (per UI "importa da altra subnet"). */
+export function getNetworksWithCredentials(): Array<{ id: number; name: string; cidr: string; credential_count: number }> {
+  return getDb()
+    .prepare(
+      `SELECT n.id, n.name, n.cidr, COUNT(nc.id) AS credential_count
+       FROM networks n
+       JOIN network_credentials nc ON nc.network_id = n.id
+       GROUP BY n.id
+       HAVING credential_count > 0
+       ORDER BY n.name`
+    )
+    .all() as Array<{ id: number; name: string; cidr: string; credential_count: number }>;
+}
+
+// ── host_credentials CRUD ──
+
+export interface HostCredentialRow {
+  id: number;
+  host_id: number;
+  credential_id: number;
+  protocol_type: "ssh" | "snmp" | "winrm" | "api";
+  port: number;
+  validated: number;
+  validated_at: string | null;
+  sort_order: number;
+  auto_detected: number;
+  created_at: string;
+  credential_name: string;
+  credential_type: string;
+}
+
+/** Credenziali associate a un host (con JOIN per nome/tipo). */
+export function getHostCredentials(hostId: number): HostCredentialRow[] {
+  return getDb()
+    .prepare(
+      `SELECT hc.*, c.name AS credential_name, c.credential_type
+       FROM host_credentials hc
+       JOIN credentials c ON c.id = hc.credential_id
+       WHERE hc.host_id = ?
+       ORDER BY hc.sort_order ASC, hc.id ASC`
+    )
+    .all(hostId) as HostCredentialRow[];
+}
+
+/** Mappa batch: per ogni host di una rete, i protocol_type validati. Evita N+1. */
+export function getHostValidatedProtocolsByNetwork(networkId: number): Map<number, string[]> {
+  const rows = getDb()
+    .prepare(
+      `SELECT hc.host_id, hc.protocol_type
+       FROM host_credentials hc
+       JOIN hosts h ON h.id = hc.host_id
+       WHERE h.network_id = ? AND hc.validated = 1
+       ORDER BY hc.host_id, hc.protocol_type`
+    )
+    .all(networkId) as Array<{ host_id: number; protocol_type: string }>;
+  const map = new Map<number, string[]>();
+  for (const r of rows) {
+    const arr = map.get(r.host_id) || [];
+    if (!arr.includes(r.protocol_type)) arr.push(r.protocol_type);
+    map.set(r.host_id, arr);
+  }
+  return map;
+}
+
+/** Aggiunge credenziale a un host. */
+export function addHostCredential(
+  hostId: number,
+  credentialId: number,
+  protocolType: "ssh" | "snmp" | "winrm" | "api",
+  port: number,
+  options?: { validated?: boolean; auto_detected?: boolean }
+): void {
+  const db = getDb();
+  const max = db.prepare(
+    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
+  ).get(hostId) as { m: number };
+  db.prepare(
+    `INSERT OR IGNORE INTO host_credentials (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected)
+     VALUES (?, ?, ?, ?, ?, ${options?.validated ? "datetime('now')" : "NULL"}, ?, ?)`
+  ).run(
+    hostId,
+    credentialId,
+    protocolType,
+    port,
+    options?.validated ? 1 : 0,
+    max.m + 1,
+    options?.auto_detected ? 1 : 0
+  );
+}
+
+/** Rimuove credenziale da un host per id riga. */
+export function removeHostCredential(id: number): void {
+  getDb().prepare(`DELETE FROM host_credentials WHERE id = ?`).run(id);
+}
+
+/** Aggiorna stato validazione di una credenziale host. */
+export function setHostCredentialValidated(id: number, validated: boolean): void {
+  getDb()
+    .prepare(
+      `UPDATE host_credentials SET validated = ?, validated_at = ${validated ? "datetime('now')" : "NULL"} WHERE id = ?`
+    )
+    .run(validated ? 1 : 0, id);
 }
 
 /** Restituisce la community string decifrata per una credenziale SNMP. */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,7 +50,11 @@ import {
   sortClassificationsByDisplayLabel,
 } from "@/lib/device-classifications";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
-import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
+import {
+  CredentialAssignmentFields,
+  CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL,
+  getPrimaryCredentialLabels,
+} from "@/components/shared/credential-assignment-fields";
 import {
   inferProductProfileFromLegacy,
   PRODUCT_PROFILE_LABELS,
@@ -169,6 +173,15 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   const [hostToAdd, setHostToAdd] = useState<{ name: string; host: string } | null>(null);
   const [bulkAddingFromHosts, setBulkAddingFromHosts] = useState(false);
   const [dhcpSyncing, setDhcpSyncing] = useState<number | null>(null);
+
+  const primaryBulkCredLabels = useMemo(
+    () => getPrimaryCredentialLabels(bulkProtocol || "ssh"),
+    [bulkProtocol]
+  );
+  const primaryEditCredLabels = useMemo(
+    () => getPrimaryCredentialLabels(editProtocol),
+    [editProtocol]
+  );
 
   const isMikrotikRouter = (dev: DeviceOrHost) =>
     !isHostItem(dev) && dev.vendor === "mikrotik" && dev.protocol === "ssh";
@@ -1104,6 +1117,9 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     snmpCredentialId={bulkSnmpCredentialId}
                     onCredentialIdChange={(v) => setBulkCredentialId(v)}
                     onSnmpCredentialIdChange={(v) => setBulkSnmpCredentialId(v)}
+                    primarySectionTitle={primaryBulkCredLabels.section}
+                    primarySelectLabel={primaryBulkCredLabels.select}
+                    snmpSelectLabel={CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL}
                     credentialPlaceholder="Non modificare"
                     snmpPlaceholder="Non modificare"
                     idPrefix="device-bulk"
@@ -1410,6 +1426,9 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                   snmpCredentialId={editSnmpCredentialId}
                   onCredentialIdChange={(v) => setEditCredentialId(v)}
                   onSnmpCredentialIdChange={(v) => setEditSnmpCredentialId(v)}
+                  primarySectionTitle={primaryEditCredLabels.section}
+                  primarySelectLabel={primaryEditCredLabels.select}
+                  snmpSelectLabel={CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL}
                   credentialPlaceholder="Nessuna (credenziali inline)"
                   showInlineCreds={editProtocol === "ssh" || editProtocol === "api" || editProtocol === "winrm"}
                   inlineUsername={"username" in editingDevice ? (editingDevice.username || "") : ""}

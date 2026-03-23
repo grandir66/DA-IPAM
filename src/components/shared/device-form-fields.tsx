@@ -10,7 +10,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CredentialAssignmentFields, type CredentialItem } from "./credential-assignment-fields";
+import {
+  CredentialAssignmentFields,
+  CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL,
+  getPrimaryCredentialLabels,
+  type CredentialItem,
+} from "./credential-assignment-fields";
 import {
   getClassificationLabel,
   DEVICE_CLASSIFICATIONS_ORDERED,
@@ -213,6 +218,10 @@ export function DeviceFormFields({
   }, [vendorOptionsProp]);
 
   const vendorProfile = getVendorDeviceProfile(vendor || "other");
+  const primaryCredentialLabels = useMemo(
+    () => getPrimaryCredentialLabels(protocol ?? "ssh"),
+    [protocol]
+  );
   const protocolOptions = PROTOCOLS.filter((p) =>
     vendorProfile.allowedProtocols.includes(p.value as NetworkDevice["protocol"])
   ).sort((a, b) => a.label.localeCompare(b.label, "it", { sensitivity: "base" }));
@@ -491,6 +500,10 @@ export function DeviceFormFields({
             onCredentialIdChange={onCredentialIdChange}
             onSnmpCredentialIdChange={onSnmpCredentialIdChange}
             sshFilter={vendorProfile.credentialSshFilter}
+            primarySectionTitle={primaryCredentialLabels.section}
+            primarySelectLabel={primaryCredentialLabels.select}
+            snmpSectionTitle="SNMP aggiuntivo (porte, LLDP, spanning tree)"
+            snmpSelectLabel={CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL}
             credentialPlaceholder={isBulk ? noChange : "Nessuna (credenziali inline)"}
             snmpPlaceholder={isBulk ? noChange : "Nessuna"}
             showInlineCreds={!isBulk && (protocol === "ssh" || protocol === "api" || protocol === "winrm")}

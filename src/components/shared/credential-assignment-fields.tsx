@@ -17,6 +17,34 @@ export interface CredentialItem {
   credential_type: string;
 }
 
+/** Seconda colonna SNMP: sempre con etichetta diversa dalla credenziale principale (evita duplicati visivi). */
+export const CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL =
+  "Credenziale SNMP — porte e topologia (archivio)";
+
+/** Titoli sezione / etichetta select in base al protocollo principale (modifica dispositivo). */
+export function getPrimaryCredentialLabels(protocol: string): { section: string; select: string } {
+  switch (protocol) {
+    case "ssh":
+      return { section: "SSH — shell e comandi", select: "Credenziale da archivio (SSH / API / Windows)" };
+    case "winrm":
+      return { section: "WinRM — Windows", select: "Credenziale Windows / WinRM (archivio)" };
+    case "api":
+      return { section: "API REST", select: "Credenziale API (archivio)" };
+    case "snmp_v2":
+      return {
+        section: "SNMP v2 — gestione",
+        select: "Credenziale SNMP — gestione dispositivo (archivio)",
+      };
+    case "snmp_v3":
+      return {
+        section: "SNMP v3 — gestione",
+        select: "Credenziale SNMP — gestione dispositivo (archivio)",
+      };
+    default:
+      return { section: "Accesso principale", select: "Credenziale (archivio)" };
+  }
+}
+
 export interface CredentialAssignmentFieldsProps {
   credentials: CredentialItem[];
   credentialId: string | null;
@@ -74,8 +102,8 @@ export function CredentialAssignmentFields({
   testButton,
   primarySectionTitle = "Accesso principale",
   primarySelectLabel = "SSH / API / Windows",
-  snmpSectionTitle = "SNMP (porte, LLDP, spanning tree)",
-  snmpSelectLabel = "Credenziale SNMP (archivio)",
+  snmpSectionTitle = "SNMP aggiuntivo (porte, LLDP, spanning tree)",
+  snmpSelectLabel = CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL,
 }: CredentialAssignmentFieldsProps) {
   const sshCreds = credentials
     .filter((c) =>
@@ -125,7 +153,7 @@ export function CredentialAssignmentFields({
             <div className="space-y-1">
               <Label className="text-xs flex items-center">
                 {snmpSelectLabel}
-                <Tip text="Community string dall'archivio. Se 'Nessuna', usa il campo Community SNMP sotto. Usata per porte, LLDP, spanning tree." />
+                <Tip text="Opzionale se diversa dalla gestione: community da archivio per walk su porte, LLDP, spanning tree. Se «Nessuna», usa la community sotto (o la stessa della gestione)." />
               </Label>
               <Select value={snmpCredentialId ?? "none"} onValueChange={(v) => onSnmpCredentialIdChange(v === "none" ? null : v)}>
                 <SelectTrigger className="h-9 bg-background">
@@ -198,7 +226,7 @@ export function CredentialAssignmentFields({
             <div className="space-y-1">
               <Label className="text-xs flex items-center" htmlFor={`${idPrefix}-community`}>
                 Community SNMP
-                <Tip text="Community string diretta. Ignorata se una credenziale SNMP dall'archivio è selezionata sopra." />
+                <Tip text="Community inline se non usi credenziali SNMP dalle due liste sopra (gestione o porte/topologia)." />
               </Label>
               <Input
                 id={`${idPrefix}-community`}

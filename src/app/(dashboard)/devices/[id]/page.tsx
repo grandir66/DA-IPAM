@@ -36,7 +36,10 @@ import { ArrowLeft, RefreshCw, Zap, ZapOff, Cable, Minus, Pencil, Key, Server, W
 
 import { toast } from "sonner";
 import { getClassificationLabel } from "@/lib/device-classifications";
-import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
+import {
+  CredentialAssignmentFields,
+  getPrimaryCredentialLabels,
+} from "@/components/shared/credential-assignment-fields";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import {
   inferProductProfileFromLegacy,
@@ -405,24 +408,6 @@ function getPortTypeIcon(portName: string, isTrunk: boolean) {
 }
 
 const CLASSIFICATION_SLUGS = ["access_point", "firewall", "hypervisor", "iot", "notebook", "router", "server", "stampante", "storage", "switch", "telecamera", "voip", "vm", "workstation"];
-
-/** Etichette modale modifica in base al protocollo principale. */
-function getPrimaryCredentialLabels(protocol: string): { section: string; select: string } {
-  switch (protocol) {
-    case "ssh":
-      return { section: "SSH — shell e comandi", select: "Credenziale da archivio (SSH / API / Windows)" };
-    case "winrm":
-      return { section: "WinRM — Windows", select: "Credenziale Windows / WinRM (archivio)" };
-    case "api":
-      return { section: "API REST", select: "Credenziale API (archivio)" };
-    case "snmp_v2":
-      return { section: "SNMP v2 — gestione", select: "Credenziale SNMP (archivio)" };
-    case "snmp_v3":
-      return { section: "SNMP v3 — gestione", select: "Credenziale SNMP (archivio)" };
-    default:
-      return { section: "Accesso principale", select: "Credenziale (archivio)" };
-  }
-}
 
 type DeviceCredentialRowInput = Pick<
   NetworkDevice,
@@ -1641,8 +1626,6 @@ function DeviceDetailPage() {
               onSnmpCredentialIdChange={(v) => setEditSnmpCredentialId(v)}
               primarySectionTitle={primaryCredLabels.section}
               primarySelectLabel={primaryCredLabels.select}
-              snmpSectionTitle="SNMP aggiuntivo (porte, LLDP, spanning tree)"
-              snmpSelectLabel="Credenziale SNMP (archivio)"
               credentialPlaceholder="Nessuna (credenziali inline)"
               showInlineCreds={editProtocol === "ssh" || editProtocol === "api" || editProtocol === "winrm"}
               inlineUsername={device.username || ""}

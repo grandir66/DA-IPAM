@@ -105,12 +105,16 @@ export function CredentialAssignmentFields({
   snmpSectionTitle = "SNMP aggiuntivo (porte, LLDP, spanning tree)",
   snmpSelectLabel = CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL,
 }: CredentialAssignmentFieldsProps) {
-  const sshCreds = credentials
-    .filter((c) =>
-      sshFilter === "ssh_api_windows"
+  const primaryCreds = credentials
+    .filter((c) => {
+      // Protocollo SNMP: la credenziale primaria deve essere tipo SNMP (non SSH/API)
+      if (primarySectionTitle?.toLowerCase().includes("snmp")) {
+        return c.credential_type === "snmp";
+      }
+      return sshFilter === "ssh_api_windows"
         ? c.credential_type === "ssh" || c.credential_type === "api" || c.credential_type === "windows"
-        : c.credential_type === "ssh" || c.credential_type === "api"
-    )
+        : c.credential_type === "ssh" || c.credential_type === "api";
+    })
     .sort((a, b) => a.name.localeCompare(b.name, "it", { sensitivity: "base" }));
   const snmpCreds = credentials
     .filter((c) => c.credential_type === "snmp")
@@ -137,7 +141,7 @@ export function CredentialAssignmentFields({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{credentialPlaceholder}</SelectItem>
-                  {sshCreds.map((c) => (
+                  {primaryCreds.map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>
                       {c.name}
                       <span className="ml-2 text-xs text-muted-foreground uppercase">({c.credential_type})</span>

@@ -1292,6 +1292,11 @@ async function runDiscovery(
       undefined;
     let fpSnap: DeviceFingerprintSnapshot | null = null;
     let detectionJson: string | undefined;
+    // Vendor profile override — dichiarati fuori dal try per uso nel fallback snapshot
+    let vpName = nmapData?.vendorProfileName ?? null;
+    let vpId = nmapData?.vendorProfileId ?? null;
+    let vpConf = nmapData?.vendorProfileConfidence ?? 0;
+    let isGenericVp = vpId === "linux_generic" || vpId === "windows_snmp";
     if (fpEnabled && (scanType === "nmap" || scanType === "snmp" || scanType === "network_discovery" || scanType === "ipam_full")) {
       try {
         const { buildDeviceFingerprint } = await import("./device-fingerprint");
@@ -1311,10 +1316,82 @@ async function runDiscovery(
             (scanType === "nmap" || scanType === "network_discovery" || scanType === "ipam_full") &&
             tcpPortCount > 0,
         }, fpDbRules);
+        // Se il vendor profile SNMP ha identificato un device specifico (non linux_generic/windows_snmp),
+        // sovrascrivere il final_device del fingerprint con il nome del profilo.
+        // Es: fingerprint dice "Linux/net-snmp" ma il vendor profile dice "Ubiquiti UniFi Switch" → usa quest'ultimo.
+        // NB: vpName/vpId/vpConf/isGenericVp dichiarati sopra (fuori dal try) per il fallback snapshot.
+
+        // Ubiquiti non identificato dal profilo: se l'enterprise MIB 41112 ha risposto (snmpUnifiSummary)
+        // o se i fingerprintOidMatches contengono 41112, il device è Ubiquiti.
+        // Combinare con hostname per determinare switch vs AP vs router.
+        if (isGenericVp || !vpName) {
+          const hasUnifiMib = !!nmapData?.snmpUnifiSummary ||
+            nmapData?.snmpFingerprintOidMatches?.some((m) => m.oid_prefix.includes("41112"));
+          const macIsUbiquiti = /ubiquiti/i.test(vendor ?? "");
+          if (hasUnifiMib || macIsUbiquiti) {
+            const hn = (hostname ?? "").toLowerCase();
+            if (/^sw[-_]|^usw[-_]|^us[-_]\d|switch/i.test(hn)) {
+              vpName = "Ubiquiti UniFi Switch";
+              vpId = "ubiquiti_unifi_switch";
+              vpConf = 0.92;
+              isGenericVp = false;
+            } else if (/^ap[-_]|^uap[-_]|^wifi[-_]|^u6[-_]|^u7[-_]/i.test(hn)) {
+              vpName = "Ubiquiti UniFi AP";
+              vpId = "ubiquiti_unifi_ap";
+              vpConf = 0.92;
+              isGenericVp = false;
+            } else if (/^gw[-_]|^udm[-_]|^usg[-_]|^router[-_]/i.test(hn)) {
+              vpName = "Ubiquiti EdgeRouter";
+              vpId = "ubiquiti_edgerouter";
+              vpConf = 0.92;
+              isGenericVp = false;
+            } else if (hasUnifiMib) {
+              // UniFi MIB risponde ma hostname non indica il tipo → generico Ubiquiti
+              vpName = "Ubiquiti Device";
+              vpId = "ubiquiti_generic";
+              vpConf = 0.90;
+              isGenericVp = false;
+            }
+          }
+        }
+
+        if (fpSnap && vpName && vpConf >= 0.90 && !isGenericVp) {
+          const fpIsGeneric = !fpSnap.final_device ||
+            fpSnap.final_device === "Linux/net-snmp" ||
+            fpSnap.final_device === "Linux generico" ||
+            fpSnap.final_device === "Switch" ||
+            (fpSnap.final_confidence ?? 0) < 0.70;
+          if (fpIsGeneric) {
+            fpSnap = { ...fpSnap, final_device: vpName, final_confidence: vpConf };
+          }
+        }
         if (fpSnap) detectionJson = JSON.stringify(fpSnap);
       } catch (fpErr) {
         console.warn("[Fingerprint]", ip, fpErr);
       }
+    }
+
+    // Se non c'è fingerprint snapshot ma c'è un vendor profile specifico, crearne uno minimale
+    // così la UI mostra il nome del profilo nella colonna "Rilevamento"
+    if (!detectionJson && vpName && !isGenericVp) {
+      const vpSnap: DeviceFingerprintSnapshot = {
+        ip,
+        hostname: hostname ?? null,
+        mac: mac ?? null,
+        ttl: null,
+        os_hint: null,
+        open_ports: [],
+        matches: [],
+        banner_http: null,
+        banner_ssh: null,
+        snmp_sysdescr: nmapData?.snmpSysDescr ?? null,
+        snmp_vendor_oid: nmapData?.snmpSysObjectID ?? null,
+        final_device: vpName,
+        final_confidence: vpConf || 0.90,
+        detection_sources: ["snmp_vendor_profile"],
+        generated_at: new Date().toISOString(),
+      };
+      detectionJson = JSON.stringify(vpSnap);
     }
 
     // Classificazione — catena di priorità:

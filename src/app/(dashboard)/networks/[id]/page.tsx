@@ -5,6 +5,9 @@ import {
   getNetworkRouterId,
   getRouters,
   getNetworkHostCredentialIds,
+  getNetworkCredentials,
+  getNetworksWithCredentials,
+  getHostValidatedProtocolsByNetwork,
 } from "@/lib/db";
 import { NetworkDetailClient } from "./network-detail-client";
 
@@ -31,6 +34,18 @@ export default async function NetworkDetailPage({
     snmp: getNetworkHostCredentialIds(nid, "snmp"),
   };
 
+  // v2: lista unificata credenziali subnet
+  const networkCredentials = getNetworkCredentials(nid);
+  const initialCredentialIds = networkCredentials.map((c) => c.credential_id);
+  const availableSources = getNetworksWithCredentials().filter((n) => n.id !== nid);
+
+  // Badge: protocolli validati per host
+  const validatedMap = getHostValidatedProtocolsByNetwork(nid);
+  const hostValidatedProtocols: Record<number, string[]> = {};
+  for (const [hostId, protocols] of validatedMap) {
+    hostValidatedProtocols[hostId] = protocols;
+  }
+
   return (
     <NetworkDetailClient
       network={network}
@@ -38,6 +53,9 @@ export default async function NetworkDetailPage({
       routerId={routerId}
       routers={routers}
       initialCredentialChains={initialCredentialChains}
+      initialCredentialIds={initialCredentialIds}
+      initialAvailableSources={availableSources}
+      initialHostValidatedProtocols={hostValidatedProtocols}
     />
   );
 }

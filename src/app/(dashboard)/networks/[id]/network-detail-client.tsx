@@ -48,6 +48,7 @@ import {
 } from "@/lib/device-classifications";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
+import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import {
   getDefaultNetworkDeviceVendorOptions,
   type NetworkDeviceVendorSelectOption,
@@ -84,6 +85,9 @@ interface NetworkDetailClientProps {
     ssh: number[];
     snmp: number[];
   };
+  initialCredentialIds: number[];
+  initialAvailableSources: Array<{ id: number; name: string; cidr: string; credential_count: number }>;
+  initialHostValidatedProtocols: Record<number, string[]>;
 }
 
 export function NetworkDetailClient({
@@ -92,6 +96,9 @@ export function NetworkDetailClient({
   routerId: initialRouterId,
   routers,
   initialCredentialChains,
+  initialCredentialIds,
+  initialAvailableSources,
+  initialHostValidatedProtocols,
 }: NetworkDetailClientProps) {
   const router = useRouter();
   const [network, setNetwork] = useState(initialNetwork);
@@ -149,6 +156,10 @@ export function NetworkDetailClient({
   const [credLinux, setCredLinux] = useState<number[]>(initialCredentialChains.linux);
   const [credSsh, setCredSsh] = useState<number[]>(initialCredentialChains.ssh);
   const [credSnmp, setCredSnmp] = useState<number[]>(initialCredentialChains.snmp);
+  // v2: lista unificata credenziali subnet
+  const [networkCredentialIds, setNetworkCredentialIds] = useState<number[]>(initialCredentialIds);
+  const [availableSources, setAvailableSources] = useState(initialAvailableSources);
+  const [hostValidatedProtocols, setHostValidatedProtocols] = useState<Record<number, string[]>>(initialHostValidatedProtocols);
 
   useEffect(() => {
     setCredWindows(initialCredentialChains.windows);
@@ -156,6 +167,14 @@ export function NetworkDetailClient({
     setCredSsh(initialCredentialChains.ssh);
     setCredSnmp(initialCredentialChains.snmp);
   }, [initialCredentialChains]);
+
+  useEffect(() => {
+    setNetworkCredentialIds(initialCredentialIds);
+  }, [initialCredentialIds]);
+
+  useEffect(() => {
+    setHostValidatedProtocols(initialHostValidatedProtocols);
+  }, [initialHostValidatedProtocols]);
 
   useEffect(() => {
     fetch("/api/credentials")
@@ -202,6 +221,13 @@ export function NetworkDetailClient({
         if (Array.isArray(data.linux_credential_ids)) setCredLinux(data.linux_credential_ids);
         if (Array.isArray(data.ssh_credential_ids)) setCredSsh(data.ssh_credential_ids);
         if (Array.isArray(data.snmp_credential_ids)) setCredSnmp(data.snmp_credential_ids);
+        // v2
+        if (Array.isArray(data.network_credentials)) {
+          setNetworkCredentialIds(data.network_credentials.map((c: { credential_id: number }) => c.credential_id));
+        }
+        if (data.host_validated_protocols) {
+          setHostValidatedProtocols(data.host_validated_protocols);
+        }
       }
     } catch { /* ignore */ }
   }, [network.id]);
@@ -440,12 +466,21 @@ export function NetworkDetailClient({
       ssh_credential_ids: credSsh,
       snmp_credential_ids: credSnmp,
     };
+    // Salva anche credenziali v2 (lista unificata) in parallelo
+    const saveV2 = fetch(`/api/networks/${network.id}/credentials`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential_ids: networkCredentialIds }),
+    }).catch(() => null);
     try {
-      const res = await fetch(`/api/networks/${network.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const [res] = await Promise.all([
+        fetch(`/api/networks/${network.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        saveV2,
+      ]);
       if (res.ok) {
         const updated = await res.json();
         setNetwork((n) => ({ ...n, ...updated }));
@@ -454,6 +489,9 @@ export function NetworkDetailClient({
         if (Array.isArray(updated.linux_credential_ids)) setCredLinux(updated.linux_credential_ids);
         if (Array.isArray(updated.ssh_credential_ids)) setCredSsh(updated.ssh_credential_ids);
         if (Array.isArray(updated.snmp_credential_ids)) setCredSnmp(updated.snmp_credential_ids);
+        if (Array.isArray(updated.network_credentials)) {
+          setNetworkCredentialIds(updated.network_credentials.map((c: { credential_id: number }) => c.credential_id));
+        }
         setEditOpen(false);
         toast.success("Rete aggiornata");
         router.refresh();
@@ -815,15 +853,11 @@ export function NetworkDetailClient({
                 </div>
                 <NetworkCredentialsTable
                   credentials={addDeviceCredentials}
-                  windowsIds={credWindows}
-                  linuxIds={credLinux}
-                  sshIds={credSsh}
-                  snmpIds={credSnmp}
-                  onWindowsChange={setCredWindows}
-                  onLinuxChange={setCredLinux}
-                  onSshChange={setCredSsh}
-                  onSnmpChange={setCredSnmp}
+                  credentialIds={networkCredentialIds}
+                  onCredentialIdsChange={setNetworkCredentialIds}
                   onCredentialsRefresh={refreshCredentialsList}
+                  networkId={network.id}
+                  availableSources={availableSources}
                 />
                 <Button type="submit" className="w-full" disabled={saving}>
                   {saving ? "Salvataggio..." : "Salva"}
@@ -1389,6 +1423,7 @@ export function NetworkDetailClient({
                 <TableHead className="w-12 text-center" title="Apri scheda host">Dettagli</TableHead>
                 <TableHead>IP</TableHead>
                 <TableHead>Stato</TableHead>
+                <TableHead title="Credenziali validate">Cred.</TableHead>
                 <TableHead>Conosciuto</TableHead>
                 <TableHead>DHCP</TableHead>
                 <TableHead title="Presente in Active Directory" className="w-10 text-center">AD</TableHead>
@@ -1404,7 +1439,7 @@ export function NetworkDetailClient({
             <TableBody>
               {filteredHosts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={14} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={15} className="text-center text-muted-foreground py-8">
                     {hosts.length === 0
                       ? "Nessun host trovato. Avvia una scansione per scoprire i dispositivi."
                       : "Nessun host corrisponde ai filtri."}
@@ -1443,6 +1478,9 @@ export function NetworkDetailClient({
                           {new Date(host.last_seen).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
                         </div>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <ProtocolBadges protocols={hostValidatedProtocols[host.id] || []} />
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Switch

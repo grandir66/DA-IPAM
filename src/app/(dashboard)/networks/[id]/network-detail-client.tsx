@@ -746,7 +746,7 @@ export function NetworkDetailClient({
               <Download className="h-4 w-4 mr-2" />
               CSV
             </Button>
-            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <Dialog open={editOpen} onOpenChange={(open) => { setEditOpen(open); if (open) void refreshCredentialsList(); }}>
               <DialogTrigger render={<Button variant="outline" size="sm" />}>
                 <Pencil className="h-4 w-4 mr-2" />
                 Modifica

@@ -125,6 +125,11 @@ export function OnboardingWizard() {
     if (routerProtocol === "ssh") {
       body.username = routerUser.trim();
       body.password = routerPass;
+      // Anche con protocollo primario SSH, invia la community SNMP per permettere
+      // scansioni porte, LLDP/CDP, STP e vendor profile (es. MikroTik via SNMP)
+      if (routerCommunity.trim()) {
+        body.community_string = routerCommunity.trim();
+      }
     } else {
       body.community_string = routerCommunity.trim();
     }
@@ -399,16 +404,25 @@ export function OnboardingWizard() {
                   </Select>
                 </div>
                 {routerProtocol === "ssh" ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-2">
-                      <Label>Utente</Label>
-                      <Input value={routerUser} onChange={(e) => setRouterUser(e.target.value)} autoComplete="off" />
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-2">
+                        <Label>Utente SSH</Label>
+                        <Input value={routerUser} onChange={(e) => setRouterUser(e.target.value)} autoComplete="off" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Password SSH</Label>
+                        <Input type="password" value={routerPass} onChange={(e) => setRouterPass(e.target.value)} autoComplete="new-password" />
+                      </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Password</Label>
-                      <Input type="password" value={routerPass} onChange={(e) => setRouterPass(e.target.value)} autoComplete="new-password" />
+                      <Label>Community SNMP (per scansione porte, LLDP, STP)</Label>
+                      <Input value={routerCommunity} onChange={(e) => setRouterCommunity(e.target.value)} placeholder="public" />
+                      <p className="text-xs text-muted-foreground">
+                        Necessaria per rilevare porte, LLDP/CDP, Spanning Tree e dati vendor via SNMP.
+                      </p>
                     </div>
-                  </div>
+                  </>
                 ) : (
                   <div className="space-y-2">
                     <Label>Community SNMP</Label>
@@ -538,7 +552,7 @@ export function OnboardingWizard() {
                   onChange={(e) => setAdForm((f) => ({ ...f, password: e.target.value }))}
                 />
                 <div className="flex items-center gap-2">
-                  <Checkbox id="adssl" checked={adForm.use_ssl} onCheckedChange={(c) => setAdForm((f) => ({ ...f, use_ssl: !!c }))} />
+                  <Checkbox id="adssl" checked={adForm.use_ssl} onCheckedChange={(c) => setAdForm((f) => ({ ...f, use_ssl: !!c, port: c ? 636 : 389 }))} />
                   <Label htmlFor="adssl">LDAPS (consigliato)</Label>
                 </div>
                 <p className="text-xs text-muted-foreground">

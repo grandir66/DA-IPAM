@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getNetworkRouterId, getNetworkDeviceById } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
-import { upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice } from "@/lib/db";
+import { upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, upsertNeighbors, updateNetworkDevice } from "@/lib/db";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { upsertHost, getNetworks } from "@/lib/db";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
@@ -43,17 +43,32 @@ export async function POST(request: Request) {
           upsertArpEntries(deviceId, entries);
 
           const networks = getNetworks();
-          for (const entry of entries) {
-            if (!entry.ip || !entry.mac) continue;
+          // Batch vendor lookup per evitare N query sequenziali (performance)
+          const validEntries = entries.filter((e) => e.ip && e.mac);
+          const vendorMap = new Map<string, string | null>();
+          const VENDOR_BATCH = 20;
+          for (let i = 0; i < validEntries.length; i += VENDOR_BATCH) {
+            const batch = validEntries.slice(i, i + VENDOR_BATCH);
+            const vendors = await Promise.all(batch.map((e) => lookupVendor(e.mac)));
+            batch.forEach((e, j) => vendorMap.set(e.mac, vendors[j]));
+          }
+          for (const entry of validEntries) {
             const network = networks.find((n) => isIpInCidr(entry.ip!, n.cidr));
             if (!network) continue;
-            const vendor = await lookupVendor(entry.mac);
             upsertHost({
               network_id: network.id,
-              ip: entry.ip,
+              ip: entry.ip!,
               mac: entry.mac,
-              vendor: vendor || undefined,
+              vendor: vendorMap.get(entry.mac) || undefined,
             });
+          }
+
+          // Neighbors LLDP/CDP/MNDP
+          if (client.getNeighbors) {
+            try {
+              const neighbors = await client.getNeighbors();
+              if (neighbors.length > 0) upsertNeighbors(deviceId, neighbors);
+            } catch { /* neighbor discovery opzionale */ }
           }
 
           const portInfos = await client.getPortSchema?.().catch(() => []) ?? [];
@@ -133,6 +148,27 @@ export async function POST(request: Request) {
             });
             upsertSwitchPorts(deviceId, switchPorts);
           }
+
+          // STP info via SNMP (se disponibile)
+          try {
+            const { getDeviceCommunityString } = await import("@/lib/db");
+            const community = getDeviceCommunityString(device);
+            if (community) {
+              const { getSnmpStpInfo } = await import("@/lib/devices/snmp-stp-info");
+              const snmpMod = await import("net-snmp");
+              const snmpPort = device.protocol === "snmp_v2" || device.protocol === "snmp_v3" ? (device.port || 161) : 161;
+              const session = snmpMod.createSession(device.host, community, { port: snmpPort, timeout: 8000 });
+              const snmpWalk = (oid: string) => new Promise<{ oid: string; value: Buffer | string | number }[]>((resolve, reject) => {
+                const results: { oid: string; value: Buffer | string | number }[] = [];
+                session.subtree(oid, (vbs: Array<{ oid: string; value: Buffer | string | number }>) => { for (const vb of vbs) results.push({ oid: vb.oid, value: vb.value }); }, (err: Error | undefined) => { session.close(); if (err) reject(err); else resolve(results); });
+              });
+              const stpInfo = await getSnmpStpInfo(snmpWalk);
+              if (stpInfo) {
+                updateNetworkDevice(deviceId, { stp_info: JSON.stringify(stpInfo) });
+              }
+            }
+          } catch { /* STP opzionale */ }
+
           results.push({ device_id: deviceId, device_name: device.name, success: true });
         } else {
           const client = await createSwitchClient(device);
@@ -210,6 +246,17 @@ export async function POST(request: Request) {
             });
             upsertSwitchPorts(deviceId, switchPorts);
           }
+
+          // STP info per switch
+          try {
+            if ("getStpInfo" in client && typeof client.getStpInfo === "function") {
+              const stpInfo = await client.getStpInfo();
+              if (stpInfo) {
+                updateNetworkDevice(deviceId, { stp_info: JSON.stringify(stpInfo) });
+              }
+            }
+          } catch { /* STP opzionale */ }
+
           results.push({ device_id: deviceId, device_name: device.name, success: true });
         }
       } catch (err) {

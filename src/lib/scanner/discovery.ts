@@ -192,6 +192,8 @@ type HostScanData = {
   vendorProfileCategory?: string | null;
   vendorProfileFirmware?: string | null;
   vendorProfileExtra?: Record<string, string | null>;
+  /** Match da tabella sysObjectID (vendor, prodotto, categoria) */
+  sysObjMatch?: import("./snmp-sysobj-lookup").SysObjMatch;
 };
 
 /** Produttore da sysDescr / OID enterprise / prima firma fingerprint */
@@ -349,6 +351,63 @@ async function runDiscovery(
       progress.found = onlineIps.length;
     } else if (!nmapAvailable) {
       log("Nmap non disponibile: solo ICMP (nessuna scansione TCP)");
+    }
+
+    // ── SNMP sysObjectID quick probe: identifica vendor/prodotto con un singolo GET ──
+    if (onlineIps.length > 0) {
+      const { lookupSysObjectId } = await import("./snmp-sysobj-lookup");
+      const { buildSnmpCommunitiesForNetwork } = await import("@/lib/db");
+      const communities = buildSnmpCommunitiesForNetwork(networkId, snmpCommunity ?? null);
+      const SNMP_BATCH = 24;
+      let identified = 0;
+      progress.phase = `SNMP sysObjectID — 0/${onlineIps.length}`;
+      log(`SNMP sysObjectID probe: ${onlineIps.length} host, community: ${communities.slice(0, 3).join(", ")}${communities.length > 3 ? "…" : ""}`);
+
+      for (let si = 0; si < onlineIps.length; si += SNMP_BATCH) {
+        const batch = onlineIps.slice(si, si + SNMP_BATCH);
+        const results = await Promise.all(
+          batch.map(async (ip) => {
+            for (const community of communities) {
+              try {
+                const r = await querySnmpInfoMultiCommunity(ip, [community], 161, {});
+                if (r.sysObjectID) {
+                  return { ip, sysObjectID: r.sysObjectID, sysName: r.sysName ?? null, sysDescr: r.sysDescr ?? null };
+                }
+              } catch { /* next community */ }
+            }
+            return null;
+          })
+        );
+        for (const r of results) {
+          if (!r) continue;
+          const match = lookupSysObjectId(r.sysObjectID);
+          const prev = nmapResults.get(r.ip);
+          // Aggiungi porta 161 UDP ai risultati se non presente
+          const ports = prev?.ports ? [...prev.ports] : [];
+          if (!ports.some((p) => p.port === 161 && p.protocol === "udp")) {
+            ports.push({ port: 161, protocol: "udp", service: "snmp", version: null });
+          }
+          nmapResults.set(r.ip, {
+            ...prev,
+            ports,
+            os: prev?.os ?? null,
+            mac: prev?.mac ?? null,
+            snmpHostname: r.sysName,
+            snmpSysDescr: r.sysDescr,
+            snmpSysObjectID: r.sysObjectID,
+            sysObjMatch: match ?? undefined,
+          });
+          if (match) {
+            identified++;
+            log(`✓ ${r.ip} → ${match.vendor} ${match.product} (${match.category})`);
+          } else {
+            log(`⚙ ${r.ip} sysObjectID=${r.sysObjectID} (non in tabella)`);
+          }
+        }
+        progress.scanned = Math.min(si + SNMP_BATCH, onlineIps.length);
+        progress.phase = `SNMP sysObjectID — ${progress.scanned}/${onlineIps.length}`;
+      }
+      log(`SNMP sysObjectID: ${identified} device identificati su ${onlineIps.length} host`);
     }
   }
 
@@ -1429,6 +1488,7 @@ async function runDiscovery(
     const sysDescrParsed = parseModelFromSysDescr(nmapData?.snmpSysDescr ?? null);
     const hostFirmware = nmapData?.snmpFirmware ?? sysDescrParsed.firmware ?? undefined;
     const hostManufacturer =
+      nmapData?.sysObjMatch?.vendor ??
       nmapData?.snmpManufacturer ??
       inferManufacturerFromSnmp(
         nmapData?.snmpSysDescr ?? null,
@@ -1603,9 +1663,15 @@ async function runDiscovery(
       ? (firstOidMatch.classification as DC)
       : undefined;
 
+    // sysObjectID lookup (dalla tabella snmp-sysobj-lookup.ts): alta affidabilità, match esatto su OID standard
+    const classFromSysObj: DC | undefined = nmapData?.sysObjMatch
+      ? (nmapData.sysObjMatch.category as DC)
+      : undefined;
+
     const classification = (
       effectiveVendorProfileClass ??
       classFromHostnamePrefix ??
+      classFromSysObj ??
       classificationFromFpOid ??
       classificationFromFingerprint ??
       classificationFromRules ??
@@ -1616,6 +1682,7 @@ async function runDiscovery(
     const hostModel =
       nmapData?.snmpModel ||
       sysDescrParsed.model ||
+      nmapData?.sysObjMatch?.product ||
       (fpSnap &&
       (fpSnap.final_confidence ?? 0) >= FINGERPRINT_CLASSIFICATION_MIN_CONFIDENCE &&
       fpSnap.final_device

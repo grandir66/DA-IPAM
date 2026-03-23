@@ -470,6 +470,44 @@ export function getDb(): Database.Database {
 
   _db.exec(SCHEMA_SQL);
 
+  // Colonne hosts aggiunte in migrazioni pre-SCHEMA: su DB nuovi la tabella non esisteva e l'ALTER veniva ignorato.
+  // Ripetizione idempotente dopo CREATE TABLE garantisce schema allineato (build/prerender inclusi).
+  try {
+    _db.exec("ALTER TABLE hosts ADD COLUMN known_host INTEGER DEFAULT 0");
+  } catch {
+    /* exists */
+  }
+  try {
+    _db.exec("ALTER TABLE hosts ADD COLUMN classification_manual INTEGER DEFAULT 0");
+  } catch {
+    /* exists */
+  }
+  try {
+    _db.exec("ALTER TABLE hosts ADD COLUMN last_response_time_ms INTEGER");
+  } catch {
+    /* exists */
+  }
+  try {
+    _db.exec("ALTER TABLE hosts ADD COLUMN monitor_ports TEXT");
+  } catch {
+    /* exists */
+  }
+  try {
+    _db.exec("ALTER TABLE hosts ADD COLUMN hostname_source TEXT");
+  } catch {
+    /* exists */
+  }
+  try {
+    _db.exec("ALTER TABLE hosts ADD COLUMN conflict_flags TEXT");
+  } catch {
+    /* exists */
+  }
+  try {
+    _db.exec("ALTER TABLE hosts ADD COLUMN ip_assignment TEXT DEFAULT 'unknown'");
+  } catch {
+    /* exists */
+  }
+
   try {
     const row = _db.prepare("SELECT value FROM settings WHERE key = 'onboarding_completed'").get() as { value: string } | undefined;
     if (!row) {

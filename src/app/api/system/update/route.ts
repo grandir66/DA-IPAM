@@ -186,24 +186,29 @@ function listDirtyFiles(root: string): string[] {
   return [...new Set(parts)].sort();
 }
 
-/** Come scripts/update.sh: npm può aver alterato solo package-lock.json — ripristino da HEAD. */
-function tryRestorePackageLockOnly(root: string): boolean {
+/**
+ * Ripristina file gestiti da Git che possono essere stati modificati localmente
+ * da npm install (package-lock.json) o version:bump (package.json, VERSION).
+ * Restituisce true se dopo il ripristino il working tree è pulito.
+ */
+function tryRestoreKnownDirtyFiles(root: string): boolean {
   const dirty = listDirtyFiles(root);
-  const onlyLock =
-    dirty.length === 1 &&
-    (dirty[0] === "package-lock.json" || dirty[0].endsWith("/package-lock.json"));
-  if (!onlyLock) return false;
-  try {
-    execSync("git restore --source=HEAD --staged --worktree package-lock.json", {
-      cwd: root,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-  } catch {
+  const autoRestoreable = new Set(["package-lock.json", "package.json", "VERSION"]);
+  const allKnown = dirty.every((f) => autoRestoreable.has(f));
+  if (!allKnown || dirty.length === 0) return false;
+  for (const file of dirty) {
     try {
-      execSync("git checkout HEAD -- package-lock.json", { cwd: root, encoding: "utf-8" });
+      execSync(`git restore --source=HEAD --staged --worktree ${file}`, {
+        cwd: root,
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
     } catch {
-      return false;
+      try {
+        execSync(`git checkout HEAD -- ${file}`, { cwd: root, encoding: "utf-8" });
+      } catch {
+        return false;
+      }
     }
   }
   return true;
@@ -302,7 +307,7 @@ export async function POST(request: NextRequest) {
     const root = getProjectRoot();
     let gitStatus = getGitStatus();
     if (!gitStatus.clean) {
-      if (tryRestorePackageLockOnly(root)) {
+      if (tryRestoreKnownDirtyFiles(root)) {
         gitStatus = getGitStatus();
       }
     }

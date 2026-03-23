@@ -27,12 +27,15 @@ fi
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 echo ">>> Branch: $BRANCH"
 
-# In produzione `npm install` può riscrivere package-lock.json rispetto al commit;
-# git pull fallirebbe con "would be overwritten by merge". Ripristiniamo il lockfile da HEAD.
-if [ -n "$(git status --porcelain -- package-lock.json 2>/dev/null)" ]; then
-  echo ">>> package-lock.json modificato localmente: ripristino da Git prima del pull..."
-  git restore package-lock.json 2>/dev/null || git checkout -- package-lock.json
-fi
+# In produzione npm install/version:bump possono modificare file gestiti da Git
+# (package-lock.json, package.json, VERSION). Ripristiniamo da HEAD per evitare conflitti.
+RESTORE_FILES=(package-lock.json package.json VERSION)
+for f in "${RESTORE_FILES[@]}"; do
+  if [ -n "$(git status --porcelain -- "$f" 2>/dev/null)" ]; then
+    echo ">>> $f modificato localmente: ripristino da Git prima del pull..."
+    git restore "$f" 2>/dev/null || git checkout -- "$f"
+  fi
+done
 
 # Pull
 echo ">>> git pull..."

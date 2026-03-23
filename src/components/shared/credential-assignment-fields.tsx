@@ -1,3 +1,7 @@
+/**
+ * @deprecated Usare DeviceCredentialsTable (per device esistenti) o la tabella v2 di NetworkCredentialsTable.
+ * Questo componente verrà rimosso quando tutti i consumatori saranno migrati.
+ */
 "use client";
 
 import { Label } from "@/components/ui/label";

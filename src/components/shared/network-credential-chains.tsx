@@ -1,3 +1,7 @@
+/**
+ * @deprecated Usare NetworkCredentialsTable v2 (con props credentialIds/onCredentialIdsChange).
+ * Questo componente usa 4 catene separate per ruolo — la v2 usa una lista unificata.
+ */
 "use client";
 
 import { useCallback, useState } from "react";

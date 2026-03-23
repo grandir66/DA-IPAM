@@ -1,6 +1,6 @@
 {
   "name": "da-invent",
-  "version": "0.2.224",
+  "version": "0.2.236",
   "private": true,
   "description": "IPAM e inventario asset — progetto open source Domarc (domarc.it). Vedi LICENSE per attribuzione su fork.",
   "author": "Domarc (https://domarc.it)",
@@ -9,6 +9,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/grandir66/DA-IPAM.git"
+  },
+  "engines": {
+    "node": ">=20.0.0 <25.0.0"
   },
   "scripts": {
     "dev": "next dev -p 3001 -H 0.0.0.0",
@@ -20,6 +23,7 @@
     "postinstall": "patch-package",
     "pull:db": "bash ./scripts/pull-db-from-pct.sh",
     "restore:db": "bash ./scripts/restore-local-db.sh",
+    "db:empty": "tsx scripts/generate-empty-db.ts",
     "version:bump": "node scripts/version-bump.js"
   },
   "dependencies": {

@@ -86,25 +86,34 @@ export const KnownHostRunCheckSchema = z.object({
 
 const productProfileEnum = z.enum(PRODUCT_PROFILE_IDS as unknown as [string, ...string[]]);
 
+/** Form HTML inviano spesso "" invece di undefined: gli enum Zod altrimenti falliscono. */
+const emptyToUndefined = (v: unknown) => (v === "" ? undefined : v);
+
 export const NetworkDeviceSchema = z.object({
   name: z.string().min(1, "Nome richiesto").max(100),
   host: z.string().min(1, "Host richiesto").max(2000),
   device_type: z.enum(["router", "switch", "hypervisor"]),
-  classification: z.string().max(100).optional().nullable(),
+  classification: z.preprocess(emptyToUndefined, z.string().max(100).optional().nullable()),
   vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"]),
-  vendor_subtype: z.enum(["procurve", "comware"]).optional().nullable(),
+  vendor_subtype: z.preprocess(emptyToUndefined, z.enum(["procurve", "comware"]).optional().nullable()),
   /** Profilo prodotto (marca + tipologia), obbligatorio per scan e inventario dedicati */
-  product_profile: productProfileEnum.optional().nullable(),
+  product_profile: z.preprocess(emptyToUndefined, productProfileEnum.optional().nullable()),
   protocol: z.enum(["ssh", "snmp_v2", "snmp_v3", "api", "winrm"]),
-  credential_id: z.coerce.number().int().positive().optional().nullable(),
-  snmp_credential_id: z.coerce.number().int().positive().optional().nullable(),
+  credential_id: z.preprocess(
+    (v) => (v === "" || v === null ? undefined : v),
+    z.coerce.number().int().positive().optional().nullable()
+  ),
+  snmp_credential_id: z.preprocess(
+    (v) => (v === "" || v === null ? undefined : v),
+    z.coerce.number().int().positive().optional().nullable()
+  ),
   username: z.string().max(100).optional(),
   password: z.string().max(200).optional(),
   community_string: z.string().max(100).optional(),
   api_token: z.string().max(500).optional(),
-  api_url: z.string().url().optional().or(z.literal("")),
+  api_url: z.preprocess(emptyToUndefined, z.string().url().optional()),
   port: z.coerce.number().int().min(1).max(65535).optional(),
-  scan_target: z.enum(["proxmox", "vmware", "windows", "linux"]).optional().nullable(),
+  scan_target: z.preprocess(emptyToUndefined, z.enum(["proxmox", "vmware", "windows", "linux"]).optional().nullable()),
 });
 
 export const CredentialSchema = z.object({

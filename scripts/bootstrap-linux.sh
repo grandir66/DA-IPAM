@@ -5,11 +5,12 @@
 # Installa gli strumenti minimi (git, curl), clona il repository ed esegue
 # scripts/install.sh che scarica Node.js, dipendenze npm e compila l’app in locale.
 #
-# Esegui come root (es. sudo bash bootstrap-linux.sh). Non usare pipe da curl su stdin
-# interattivo: salva lo script e avvialo da file.
+# Esegui come root. Comando unico (Debian/Ubuntu, script non interattivo):
 #
-#   curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-linux.sh -o /tmp/da-invent-bootstrap-linux.sh \
-#     && bash /tmp/da-invent-bootstrap-linux.sh
+#   curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-linux.sh | sudo bash
+#
+# Se sei già root: ... | bash
+# Alternativa (stesso effetto, script salvato su disco): curl ... -o /tmp/bootstrap.sh && sudo bash /tmp/bootstrap.sh
 #
 # Variabili d'ambiente (opzionali):
 #   DA_INVENT_GIT_URL       — URL repository (default: repo pubblico)

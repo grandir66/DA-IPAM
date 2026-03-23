@@ -114,24 +114,58 @@ build_app() {
   echo "    Build completata."
 }
 
+# URL per Auth.js (evita callback con 0.0.0.0 quando il servizio ascolta su tutte le interfacce).
+# Override: DA_INVENT_AUTH_URL=https://esempio.it  —  altrimenti prima IPv4 non-loopback rilevata.
+compute_auth_url() {
+  if [ -n "${DA_INVENT_AUTH_URL:-}" ]; then
+    echo "$DA_INVENT_AUTH_URL"
+    return
+  fi
+  local ip=""
+  ip=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' | grep -v '^127\.' | head -1)
+  if [ -z "$ip" ]; then
+    ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i=="src") { print $(i+1); exit }}')
+  fi
+  if [ -z "$ip" ] || [ "$ip" = "127.0.0.1" ]; then
+    echo ""
+    return
+  fi
+  echo "http://${ip}:${PORT}"
+}
+
 # Crea .env.local se non esiste
 setup_env() {
   local env_file="$APP_DIR/.env.local"
+  local auth_url
+  auth_url="$(compute_auth_url)"
+
   if [ ! -f "$env_file" ] || ! grep -q "ENCRYPTION_KEY" "$env_file" 2>/dev/null; then
     echo ">>> Generazione .env.local..."
     local key=$(openssl rand -hex 32)
     local secret=$(openssl rand -hex 32)
-    cat > "$env_file" << EOF
-# DA-INVENT — generato dall'installer
-ENCRYPTION_KEY=$key
-AUTH_SECRET=$secret
-PORT=$PORT
-NODE_ENV=production
-EOF
+    {
+      echo "# DA-INVENT — generato dall'installer"
+      echo "ENCRYPTION_KEY=$key"
+      echo "AUTH_SECRET=$secret"
+      echo "PORT=$PORT"
+      echo "NODE_ENV=production"
+      if [ -n "$auth_url" ]; then
+        echo "AUTH_URL=$auth_url"
+      fi
+    } > "$env_file"
     chmod 600 "$env_file"
-    echo "    .env.local creato. Completare il setup dalla UI al primo avvio."
+    if [ -n "$auth_url" ]; then
+      echo "    .env.local creato (AUTH_URL=$auth_url per accesso da browser). Completare il setup dalla UI al primo avvio."
+    else
+      echo "    .env.local creato (AUTH_URL non impostato: non rilevato IP LAN). Aggiungi AUTH_URL in .env.local se accedi via IP/hostname. Completare il setup dalla UI al primo avvio."
+    fi
   else
     echo ">>> .env.local già presente."
+    if [ -n "$auth_url" ] && ! grep -qE '^[[:space:]]*AUTH_URL=' "$env_file" 2>/dev/null; then
+      echo "AUTH_URL=$auth_url" >> "$env_file"
+      chmod 600 "$env_file"
+      echo "    Aggiunto AUTH_URL=$auth_url (accesso da rete)."
+    fi
   fi
 }
 

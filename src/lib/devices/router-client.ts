@@ -100,11 +100,16 @@ export async function createRouterClient(device: NetworkDevice): Promise<RouterC
   const password = creds?.password;
   const primary = await getVendorRouterClient(device, { username, password });
 
-  // Se il client primario non ha getPortSchema ma il device ha SNMP (community_string o credential SNMP),
+  // Se il client primario non ha getPortSchema ma il device ha SNMP (community_string, credential, o binding SNMP),
   // aggiungi fallback per acquisire porte e LLDP/CDP
+  const { getDb } = await import("@/lib/db");
+  const hasSnmpBinding = !!(getDb().prepare(
+    "SELECT 1 FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'snmp' LIMIT 1"
+  ).get(device.id));
   const hasSnmpCommunity = device.community_string
     || (device.snmp_credential_id ? !!getCredentialCommunityString(device.snmp_credential_id) : false)
-    || (device.credential_id ? !!getCredentialCommunityString(device.credential_id) : false);
+    || (device.credential_id ? !!getCredentialCommunityString(device.credential_id) : false)
+    || hasSnmpBinding;
   let client: RouterClient = primary;
   if (!primary.getPortSchema && hasSnmpCommunity) {
     const snmpClient = await createSnmpArpClient(device);

@@ -1381,6 +1381,11 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
   const nasKind = resolveNasKind(device);
 
   const snmpV3Creds = getDeviceSnmpV3Credentials(device);
+  // Controlla se c'è un binding SNMP nella nuova tabella
+  const { getDb: getDbForSnmpCheck } = await import("@/lib/db");
+  const hasSnmpBinding = !!(getDbForSnmpCheck().prepare(
+    "SELECT 1 FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'snmp' LIMIT 1"
+  ).get(device.id));
   const hasSnmp =
     !!device.community_string ||
     device.protocol === "snmp_v2" ||
@@ -1388,7 +1393,8 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
     (device.snmp_credential_id
       ? !!getCredentialCommunityString(device.snmp_credential_id) || !!snmpV3Creds
       : false) ||
-    (device.credential_id ? !!getCredentialCommunityString(device.credential_id) : false);
+    (device.credential_id ? !!getCredentialCommunityString(device.credential_id) : false) ||
+    hasSnmpBinding;
   const scanTarget = (device as { scan_target?: string | null }).scan_target;
   const isLinuxVendorInfo =
     scanTarget === "linux" ||

@@ -321,16 +321,14 @@ export default function SettingsPage() {
     if (!confirm(confirmMessage)) return;
     setApplyingUpdate(true);
     try {
-      const statusRes = await fetch("/api/system/update?action=status");
-      const status = await statusRes.json();
-      if (!status.gitClean) {
-        toast.error(
-          "Repository con modifiche locali non committate. Esegui commit o stash sul server, oppure usa lo script di aggiornamento manuale."
-        );
-        return;
-      }
       const res = await fetch("/api/system/update?action=apply", { method: "POST" });
-      let data: { error?: string; requiresRestart?: boolean; message?: string } = {};
+      let data: {
+        error?: string;
+        detail?: string;
+        dirtyFiles?: string[];
+        requiresRestart?: boolean;
+        message?: string;
+      } = {};
       try {
         data = await res.json();
       } catch {
@@ -338,7 +336,11 @@ export default function SettingsPage() {
         return;
       }
       if (!res.ok) {
-        toast.error(data.error || "Errore durante l'aggiornamento");
+        const parts = [data.error || "Errore durante l'aggiornamento"];
+        if (typeof data.detail === "string" && data.detail.length > 0) {
+          parts.push(data.detail);
+        }
+        toast.error(parts.join(" "));
         return;
       }
       toast.success(data.message || "Aggiornamento completato");
@@ -708,7 +710,7 @@ export default function SettingsPage() {
   }
 
   async function handleResetConfiguration() {
-    if (!confirm("Resettare tutta la configurazione? Verranno eliminati TUTTI i dati: reti, host, dispositivi, credenziali, utenti e impostazioni. Resteranno solo il profilo Nmap e le regole fingerprint. Dovrai rifare il setup iniziale. Procedere?")) return;
+    if (!confirm("Resettare tutta la configurazione? Verranno eliminati TUTTI i dati: reti, host, dispositivi, credenziali, integrazioni Active Directory (e dati sincronizzati), utenti e impostazioni. Resteranno solo il profilo Nmap e le regole fingerprint. Dovrai rifare il setup iniziale. Procedere?")) return;
     setResetting(true);
     try {
       const res = await fetch("/api/reset", { method: "POST" });
@@ -1965,7 +1967,7 @@ export default function SettingsPage() {
             <Database className="h-5 w-5 text-primary" />
             <CardTitle className="text-base">Gestione Dati</CardTitle>
           </div>
-          <CardDescription>Esporta dati o resetta la configurazione per un nuovo cliente. Il reset cancella tutto tranne il profilo Nmap e le regole fingerprint.</CardDescription>
+          <CardDescription>Esporta dati o resetta la configurazione per un nuovo cliente. Il reset cancella tutto (incluso Active Directory) tranne il profilo Nmap e le regole fingerprint.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
           <Button

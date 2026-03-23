@@ -236,6 +236,19 @@ interface DeviceDetail extends Omit<NetworkDevice, "stp_info" | "last_device_inf
   device_info: DeviceInfo | null;
   neighbors?: NeighborRow[];
   routes?: RouteRow[];
+  dhcp_leases?: DhcpLeaseRow[];
+}
+
+interface DhcpLeaseRow {
+  id: number;
+  ip_address: string;
+  mac_address: string;
+  hostname: string | null;
+  status: string | null;
+  server_name: string | null;
+  lease_expires: string | null;
+  dynamic_lease: number | null;
+  last_synced: string;
 }
 
 /** Payload da `last_proxmox_scan_result` (eventualmente troncato dall'API GET). */
@@ -1897,6 +1910,7 @@ function DeviceDetailPage() {
           {device.device_type === "switch" && <TabsTrigger value="mac">MAC Table ({device.mac_port_entries?.length ?? 0})</TabsTrigger>}
           {(device.neighbors?.length ?? 0) > 0 && <TabsTrigger value="neighbors">Neighbors ({device.neighbors!.length})</TabsTrigger>}
           {(device.routes?.length ?? 0) > 0 && <TabsTrigger value="routing">Routing ({device.routes!.length})</TabsTrigger>}
+          {(device.dhcp_leases?.length ?? 0) > 0 && <TabsTrigger value="dhcp">DHCP ({device.dhcp_leases!.length})</TabsTrigger>}
         </TabsList>
 
         {/* Tab MikroTik */}
@@ -2461,6 +2475,62 @@ function DeviceDetailPage() {
                           <Badge variant={r.active ? "default" : "destructive"}>
                             {r.active ? "attiva" : "inattiva"}
                           </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+
+        {/* Tab DHCP Leases */}
+        {(device.dhcp_leases?.length ?? 0) > 0 && (
+          <TabsContent value="dhcp" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  DHCP Leases
+                </CardTitle>
+                <CardDescription>Lease DHCP raccolti dal dispositivo</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>IP</TableHead>
+                      <TableHead>MAC</TableHead>
+                      <TableHead>Hostname</TableHead>
+                      <TableHead>Stato</TableHead>
+                      <TableHead>Server</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Scadenza</TableHead>
+                      <TableHead>Aggiornato</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {device.dhcp_leases!.map((l) => (
+                      <TableRow key={l.id}>
+                        <TableCell className="font-mono text-sm">{l.ip_address}</TableCell>
+                        <TableCell className="font-mono text-xs">{l.mac_address}</TableCell>
+                        <TableCell className="text-sm">{l.hostname || "—"}</TableCell>
+                        <TableCell>
+                          {l.status && (
+                            <Badge variant={l.status === "bound" ? "default" : "secondary"} className="text-xs">
+                              {l.status}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">{l.server_name || "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {l.dynamic_lease === 1 ? "Dinamico" : l.dynamic_lease === 0 ? "Statico" : "—"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{l.lease_expires || "—"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {new Date(l.last_synced).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}
                         </TableCell>
                       </TableRow>
                     ))}

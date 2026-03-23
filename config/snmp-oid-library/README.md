@@ -36,8 +36,8 @@ Da **Impostazioni → Profili SNMP** usa **«Esporta in cartelle»** (admin): vi
 - `categories/<classificazione>.json` — elenco `profile_id` per categoria
 - `manifest.json` e `README.txt`
 
-La cartella `data/` è tipicamente in `.gitignore`: copia i file verso `config/snmp-oid-library/` se vuoi versionarli nel repo.
+La cartella `data/` è in `.gitignore`. I file operativi (`common.json`, `categories/*.json`, `devices/<profilo>.json` tranne `*.example.json`) **non vanno committati** nel repository Git: restano sul server o sulla postazione di lavoro. Nel repo ci sono solo questo README e i modelli `*.example.json`.
 
 ## Sicurezza
 
-Solo processi sul server leggono questi file. Modificare i JSON richiede accesso al filesystem del deploy.
+Solo processi sul server leggono questi file. Modificare i JSON richiede accesso al filesystem del deploy. Non inserire in Git elenchi OID o profili legati alla tua rete interna.

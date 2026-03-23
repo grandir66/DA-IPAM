@@ -35,15 +35,43 @@ import type {
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 
 const DATA_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "ipam.db");
+/** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
+const DB_PATH = process.env.DA_IPAM_DB_PATH?.trim()
+  ? path.resolve(process.env.DA_IPAM_DB_PATH.trim())
+  : path.join(DATA_DIR, "ipam.db");
 
 let _db: Database.Database | null = null;
+
+/** Chiude la connessione (solo script di manutenzione / generazione `ipam.empty.db`). */
+export function closeDb(): void {
+  if (_db) {
+    try {
+      _db.close();
+    } catch {
+      /* ignore */
+    }
+    _db = null;
+  }
+}
 
 export function getDb(): Database.Database {
   if (_db) return _db;
 
+  const dbDir = path.dirname(DB_PATH);
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+
+  // Prima installazione: copia dal template vuoto nel repo (mai committare ipam.db con dati reali).
+  if (!process.env.DA_IPAM_DB_PATH?.trim() && !fs.existsSync(DB_PATH)) {
+    const template = path.join(DATA_DIR, "ipam.empty.db");
+    if (fs.existsSync(template)) {
+      fs.copyFileSync(template, DB_PATH);
+    }
   }
 
   _db = new Database(DB_PATH);
@@ -3277,7 +3305,7 @@ function mapClassificationToInventoryCategoria(classification: string | null, de
   if (["router", "load_balancer", "vpn_gateway"].includes(c)) return "Router";
   if (["switch"].includes(c)) return "Switch";
   if (["server", "hypervisor"].includes(c)) return "Server";
-  if (["nas", "nas_synology", "nas_qnap"].includes(c)) return "NAS";
+  if (["nas", "nas_synology", "nas_qnap", "storage"].includes(c)) return "NAS";
   if (["stampante", "scanner", "fotocopiatrice", "multifunzione"].includes(c)) return "Stampante";
   return deviceType === "router" ? "Router" : "Switch";
 }
@@ -4573,7 +4601,7 @@ export function deleteUser(userId: number): boolean {
   return getDb().prepare("DELETE FROM users WHERE id = ?").run(userId).changes > 0;
 }
 
-/** Reset all networks and devices for new client. Keeps users, settings, nmap_profiles. */
+/** Reset all networks and devices for new client. Keeps nmap_profiles e regole fingerprint (vedi corpo transazione). */
 export function resetConfiguration(): void {
   const db = getDb();
   db.transaction(() => {
@@ -4591,6 +4619,7 @@ export function resetConfiguration(): void {
       DELETE FROM hosts;
       DELETE FROM network_devices;
       DELETE FROM networks;
+      DELETE FROM ad_integrations;
       DELETE FROM credentials;
       DELETE FROM users;
       DELETE FROM scheduled_jobs;

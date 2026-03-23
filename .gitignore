@@ -41,8 +41,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-data/
+# Dati locali: solo il template DB vuoto è versionato
+data/*
+!data/ipam.empty.db
+!data/README.md
 .env.local
+
+# Libreria OID SNMP: dati di ambiente / inventario (non versionare)
+# Nel repo restano solo README e file `*.example.json` come modelli.
+config/snmp-oid-library/common.json
+config/snmp-oid-library/categories/
+config/snmp-oid-library/devices/*
+!config/snmp-oid-library/devices/*.example.json
 .venv/
 
 # Python (bridge WinRM locale)

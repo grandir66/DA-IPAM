@@ -37,7 +37,7 @@ Il codice sorgente è **rilasciato in forma open source** (vedi [`LICENSE`](LICE
 |------------|--------|
 | **Next.js 16 (App Router)** | UI dashboard, route API sotto `src/app/api/` |
 | **`server.ts`** | Avvio in produzione: integra Next + **node-cron** per job schedulati (`src/lib/cron/`) |
-| **SQLite** (`data/ipam.db`) | Persistenza: reti, host, device, ARP, porte, inventario, utenti, job, impostazioni |
+| **SQLite** (`data/ipam.db` locale; in repo solo `data/ipam.empty.db` come template) | Persistenza: reti, host, device, ARP, porte, inventario, utenti, job, impostazioni |
 | **NextAuth v5** | Login con credenziali, JWT in cookie HttpOnly, ruoli (es. admin / viewer) |
 
 - In **sviluppo** si può usare solo `npm run dev` (senza cron) oppure `npm run dev:server` (con scheduler).  
@@ -130,11 +130,19 @@ Variabile opzionale: `DA_INVENT_DIR` se l’app non è in `/opt/da-invent`.
 
 ### Opzione A — Installer facilitato (`bootstrap-linux.sh`)
 
-Scarica lo script da GitHub ed eseguilo: clona il repository e lancia `install.sh --systemd`.
+**Comando unico** (da utente con `sudo`; clona `main`, installa dipendenze, Node 20, build, `.env.local` con `AUTH_URL` se rilevabile, servizio `systemd`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-linux.sh | sudo bash
+```
+
+Se sei già **root**: sostituisci `sudo bash` con `bash`.
+
+Equivalente con script salvato su disco:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-linux.sh -o /tmp/da-invent-bootstrap-linux.sh \
-  && bash /tmp/da-invent-bootstrap-linux.sh
+  && sudo bash /tmp/da-invent-bootstrap-linux.sh
 ```
 
 Cosa fa: installa `git` / `curl` / `ca-certificates` se mancano; **`git clone`** in **`/opt/da-invent`** (o `DA_INVENT_BOOTSTRAP_DIR`); poi **`scripts/install.sh --systemd`**.
@@ -225,6 +233,7 @@ Script **interattivo** (template, storage, rete, privilegi, install opzionale ne
 | `DA_INVENT_SERVICE_USER` | Utente dell’unità systemd (default **`root`**) |
 | `DA_INVENT_SERVICE_GROUP` | Gruppo dell’unità systemd (default = utente servizio) |
 | `PORT` | Porta HTTP in `.env.local` e nel servizio (default **3001**) |
+| `DA_INVENT_AUTH_URL` | URL completo dell’app per Auth.js (es. `http://192.168.1.10:3001`). Se assente, l’installer prova a impostare **`AUTH_URL`** in `.env.local` con la prima **IPv4** non loopback rilevata (accesso LAN). |
 
 ### Pacchetti Debian/Ubuntu installati da `install.sh` (apt)
 
@@ -343,7 +352,7 @@ I job (`ping_sweep`, `nmap_scan`, `arp_poll`, `dns_resolve`, `cleanup`, monitora
 
 - API REST sotto `/api/*` (reti, host, device, scan, inventario, licenze, utenti, …)  
 - Database **SQLite** con schema ed indici in `src/lib/db-schema.ts` e query in `src/lib/db.ts`  
-- File dati **non** versionato: `data/ipam.db` (in `.gitignore`)
+- In **Git** c’è solo il template **`data/ipam.empty.db`** (DB vuoto / schema). Il file in uso **`data/ipam.db`** non va versionato (è nel `.gitignore`).
 
 ---
 
@@ -385,7 +394,7 @@ npm install
 npm run dev
 ```
 
-Apri `http://localhost:3001`, vai su **/setup** e crea il primo utente: SQLite crea `data/ipam.db` da solo (istanza vuota).
+Apri `http://localhost:3001`, vai su **/setup** e crea il primo utente: alla prima esecuzione, se manca `data/ipam.db`, viene copiato `data/ipam.empty.db` dal repo (oppure lo schema viene creato come prima). Vedi `data/README.md`.
 
 Solo se ti serve **uno snapshot del database del CT** sul Mac (sovrascrive `data/ipam.db` locale, con backup automatico): **`npm run pull:db`** e SSH al Proxmox. Vedi [doc Proxmox](docs/INSTALLAZIONE-PROXMOX.md#opzionale-snapshot-database-ct--mac).
 

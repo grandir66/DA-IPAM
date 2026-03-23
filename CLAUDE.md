@@ -28,7 +28,7 @@ npm run lint         # Lint check
 
 - **Framework:** Next.js 16 (App Router), TypeScript strict
 - **UI:** Tailwind CSS v4, shadcn/ui v4 (uses @base-ui/react, NOT @radix-ui), framer-motion, Recharts
-- **Database:** SQLite via better-sqlite3 (WAL mode, file at `data/ipam.db`)
+- **Database:** SQLite via better-sqlite3 (WAL mode, runtime file `data/ipam.db`; template vuoto versionato `data/ipam.empty.db`, rigenerabile con `npm run db:empty`)
 - **Auth:** NextAuth v5 (beta) with Credentials provider, JWT in HttpOnly cookies
 - **Validation:** Zod v4 (uses `.issues` not `.errors`)
 - **Font:** Signika (Google Fonts) via `next/font/google`
@@ -36,6 +36,7 @@ npm run lint         # Lint check
 - **Device integration:** ssh2 (SSH), net-snmp (SNMP), fetch (REST API)
 - **Scheduling:** node-cron via custom server (`server.ts`)
 - **Palette:** Primary #00A7E7, Navy #0D2537, Gold #FFD400, BG #EDEDED (Domarc / domarc.it)
+- **Node (produzione):** 20.x o 22.x LTS (`package.json` → `engines`). Evitare Node ≥25 per `better-sqlite3`: errori tipo *module factory is not available* → usare Node 22 o `npm rebuild better-sqlite3` dopo cambio versione Node.
 
 ## Architecture
 

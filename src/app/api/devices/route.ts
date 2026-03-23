@@ -13,6 +13,21 @@ import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
+function deviceCreateErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return "Errore nella creazione del dispositivo";
+  const m = err.message;
+  if (m.includes("ENCRYPTION_KEY")) {
+    return "Configurazione server incompleta: manca ENCRYPTION_KEY in .env.local.";
+  }
+  if (m.includes("SQLITE_CONSTRAINT") || m.toLowerCase().includes("constraint failed")) {
+    if (m.includes("FOREIGN KEY") || m.includes("foreign key")) {
+      return "Credenziale o riferimento non valido (vincolo database).";
+    }
+    return "Esiste già un record in conflitto con questi dati oppure vincolo violato.";
+  }
+  return m.length > 0 && m.length < 220 ? m : "Errore nella creazione del dispositivo";
+}
+
 /** Alias storage unificati (Synology, QNAP, nas generico → storage) */
 const STORAGE_ALIASES = ["nas", "nas_synology", "nas_qnap"];
 
@@ -130,6 +145,6 @@ export async function POST(request: Request) {
     }, { status: 201 });
   } catch (error) {
     console.error("Error creating device:", error);
-    return NextResponse.json({ error: "Errore nella creazione del dispositivo" }, { status: 500 });
+    return NextResponse.json({ error: deviceCreateErrorMessage(error) }, { status: 500 });
   }
 }

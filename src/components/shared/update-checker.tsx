@@ -104,17 +104,6 @@ export function UpdateChecker() {
   const handleApplyUpdate = async () => {
     try {
       setUpdateStatus("downloading");
-      setStatusMessage("Controllo stato repository...");
-
-      const statusRes = await fetch("/api/system/update?action=status");
-      const status = await statusRes.json();
-
-      if (!status.gitClean) {
-        setUpdateStatus("error");
-        setStatusMessage("Ci sono modifiche locali non committate. Contatta l'amministratore.");
-        return;
-      }
-
       setStatusMessage("Scaricamento aggiornamenti...");
       setUpdateStatus("downloading");
 
@@ -123,7 +112,11 @@ export function UpdateChecker() {
 
       if (!res.ok) {
         setUpdateStatus("error");
-        setStatusMessage(data.error || "Errore durante l'aggiornamento");
+        const extra =
+          typeof (data as { detail?: string }).detail === "string"
+            ? ` ${(data as { detail: string }).detail}`
+            : "";
+        setStatusMessage((data.error || "Errore durante l'aggiornamento") + extra);
         return;
       }
 

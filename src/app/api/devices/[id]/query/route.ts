@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getNetworkDeviceById, updateNetworkDevice, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, getInventoryAssetByNetworkDevice, updateInventoryAsset, syncDeviceToHost, trackDeviceInfoChanges, upsertNeighbors, upsertRoutes } from "@/lib/db";
+import { getNetworkDeviceById, updateNetworkDevice, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, getInventoryAssetByNetworkDevice, updateInventoryAsset, syncDeviceToHost, trackDeviceInfoChanges, upsertNeighbors, upsertRoutes, getDeviceCommunityString } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { getDeviceInfo, resolveNasKind } from "@/lib/devices/device-info";
@@ -405,6 +405,23 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           }
         }
       } catch { /* device info opzionale */ }
+
+      // STP via SNMP (router — stessa logica degli switch)
+      try {
+        const { getSnmpStpInfo } = await import("@/lib/devices/snmp-stp-info");
+        const snmpMod = await import("net-snmp");
+        const community = getDeviceCommunityString(device);
+        const snmpPort = device.protocol === "snmp_v2" || device.protocol === "snmp_v3" ? (device.port || 161) : 161;
+        const session = snmpMod.createSession(device.host, community, { port: snmpPort, timeout: 8000 });
+        const snmpWalk = (oid: string) => new Promise<{ oid: string; value: Buffer | string | number }[]>((resolve, reject) => {
+          const results: { oid: string; value: Buffer | string | number }[] = [];
+          session.subtree(oid, (vbs: Array<{ oid: string; value: Buffer | string | number }>) => { for (const vb of vbs) results.push({ oid: vb.oid, value: vb.value }); }, (err: Error | undefined) => { session.close(); if (err) reject(err); else resolve(results); });
+        });
+        const stpInfo = await getSnmpStpInfo(snmpWalk);
+        if (stpInfo) {
+          updateNetworkDevice(Number(id), { stp_info: JSON.stringify(stpInfo) });
+        }
+      } catch { /* STP opzionale */ }
 
       const portsMsg = portInfos.length > 0 ? ` e ${portInfos.length} porte` : "";
       return NextResponse.json({

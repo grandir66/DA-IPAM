@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getNetworkDeviceById, updateNetworkDevice, deleteNetworkDevice, getArpEntriesByDevice, getMacPortEntriesByDevice, getSwitchPortsByDevice, getNeighborsByDevice, getRoutesByDevice, getDeviceCredentialBindings } from "@/lib/db";
+import { getNetworkDeviceById, updateNetworkDevice, deleteNetworkDevice, getArpEntriesByDevice, getMacPortEntriesByDevice, getSwitchPortsByDevice, getNeighborsByDevice, getRoutesByDevice, getDeviceCredentialBindings, getDhcpLeasesByDevice } from "@/lib/db";
 import {
   isValidProductProfileForVendor,
   suggestDeviceTypeFromProductProfile,
@@ -59,6 +59,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const switchPorts = isHypervisor ? [] : getSwitchPortsByDevice(Number(id));
     const neighbors = getNeighborsByDevice(Number(id));
     const routes = device.device_type === "router" ? getRoutesByDevice(Number(id)) : [];
+    const dhcp_leases = getDhcpLeasesByDevice(Number(id));
     const credential_bindings = getDeviceCredentialBindings(Number(id)).map((b) => ({
       ...b,
       inline_encrypted_password: b.inline_encrypted_password ? "●●●●●●●●" : null,
@@ -110,6 +111,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         switch_ports: switchPorts,
         neighbors,
         routes,
+        dhcp_leases,
         credential_bindings,
       },
       { headers: NO_CACHE_HEADERS }

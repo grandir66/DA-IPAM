@@ -169,14 +169,54 @@ function compareVersions(v1: string, v2: string): number {
   return 0;
 }
 
-function checkGitStatus(): { clean: boolean; branch: string; error?: string } {
+function listDirtyFiles(root: string): string[] {
+  const parts: string[] = [];
+  for (const cmd of [
+    "git diff --name-only",
+    "git diff --cached --name-only",
+    "git ls-files --others --exclude-standard",
+  ]) {
+    try {
+      const o = execSync(cmd, { cwd: root, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+      parts.push(...o.trim().split("\n").filter(Boolean));
+    } catch {
+      /* ignore */
+    }
+  }
+  return [...new Set(parts)].sort();
+}
+
+/** Come scripts/update.sh: npm può aver alterato solo package-lock.json — ripristino da HEAD. */
+function tryRestorePackageLockOnly(root: string): boolean {
+  const dirty = listDirtyFiles(root);
+  const onlyLock =
+    dirty.length === 1 &&
+    (dirty[0] === "package-lock.json" || dirty[0].endsWith("/package-lock.json"));
+  if (!onlyLock) return false;
+  try {
+    execSync("git restore --source=HEAD --staged --worktree package-lock.json", {
+      cwd: root,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch {
+    try {
+      execSync("git checkout HEAD -- package-lock.json", { cwd: root, encoding: "utf-8" });
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+function getGitStatus(): { clean: boolean; branch: string; dirtyFiles: string[]; error?: string } {
   try {
     const root = getProjectRoot();
     const branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: root, encoding: "utf-8" }).trim();
-    const status = execSync("git status --porcelain", { cwd: root, encoding: "utf-8" }).trim();
-    return { clean: status === "", branch };
+    const dirtyFiles = listDirtyFiles(root);
+    return { clean: dirtyFiles.length === 0, branch, dirtyFiles };
   } catch (error) {
-    return { clean: false, branch: "unknown", error: String(error) };
+    return { clean: false, branch: "unknown", dirtyFiles: [], error: String(error) };
   }
 }
 
@@ -188,11 +228,12 @@ export async function GET(request: NextRequest) {
   const action = url.searchParams.get("action");
 
   if (action === "status") {
-    const gitStatus = checkGitStatus();
+    const gitStatus = getGitStatus();
     return NextResponse.json({
       currentVersion: getCurrentVersion(),
       gitBranch: gitStatus.branch,
       gitClean: gitStatus.clean,
+      dirtyFiles: gitStatus.dirtyFiles,
       projectRoot: getProjectRoot(),
     });
   }
@@ -258,11 +299,22 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "apply") {
-    const gitStatus = checkGitStatus();
-    
+    const root = getProjectRoot();
+    let gitStatus = getGitStatus();
     if (!gitStatus.clean) {
+      if (tryRestorePackageLockOnly(root)) {
+        gitStatus = getGitStatus();
+      }
+    }
+
+    if (!gitStatus.clean) {
+      const fileList = gitStatus.dirtyFiles.slice(0, 15).join(", ");
+      const more = gitStatus.dirtyFiles.length > 15 ? ` (+${gitStatus.dirtyFiles.length - 15} altri)` : "";
       return NextResponse.json({
-        error: "Ci sono modifiche locali non committate. Esegui commit o stash prima di aggiornare.",
+        error:
+          "Ci sono modifiche locali non committate. Esegui sul server (come root): git status, poi git stash, oppure git restore <file>, oppure elimina i file non tracciati se sicuro.",
+        dirtyFiles: gitStatus.dirtyFiles,
+        detail: `File modificati: ${fileList}${more}`,
         status: "error" as const,
       }, { status: 400 });
     }
@@ -275,7 +327,6 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const root = getProjectRoot();
       const steps: UpdateStatus[] = [];
 
       steps.push({ status: "downloading", message: "Scaricamento aggiornamenti da GitHub...", progress: 10 });

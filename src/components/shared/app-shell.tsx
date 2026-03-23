@@ -14,7 +14,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/onboarding/status")
+    const ac = new AbortController();
+    const slow = setTimeout(() => ac.abort(), 12_000);
+    const giveUp = setTimeout(() => {
+      if (!cancelled) setOnboardingGateReady(true);
+    }, 15_000);
+
+    fetch("/api/onboarding/status", { signal: ac.signal, credentials: "same-origin" })
       .then(async (r) => {
         if (r.status === 401 || r.status === 403) {
           router.replace("/login");
@@ -30,9 +36,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       })
       .catch(() => {
         if (!cancelled) setOnboardingGateReady(true);
+      })
+      .finally(() => {
+        clearTimeout(slow);
+        clearTimeout(giveUp);
       });
+
     return () => {
       cancelled = true;
+      clearTimeout(slow);
+      clearTimeout(giveUp);
+      ac.abort();
     };
   }, [router]);
 

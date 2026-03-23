@@ -128,7 +128,7 @@ export interface ScanHistory {
   id: number;
   host_id: number | null;
   network_id: number | null;
-  scan_type: "ping" | "snmp" | "nmap" | "arp" | "dns" | "windows" | "ssh" | "network_discovery" | "ipam_full";
+  scan_type: "ping" | "snmp" | "nmap" | "arp" | "dns" | "windows" | "ssh" | "network_discovery" | "ipam_full" | "credential_validate";
   status: string;
   ports_open: string | null;
   raw_output: string | null;

@@ -41,6 +41,7 @@ import {
   mergeOpenPortsJson,
   syncIpAssignmentsForNetwork,
   getAdRealm,
+  getCredentialCommunityString,
 } from "@/lib/db";
 import type { ScanProgress, DiscoveryResult, DeviceFingerprintSnapshot } from "@/types";
 import type { DnsResolution } from "./dns";
@@ -61,7 +62,7 @@ export function getScanProgress(id: string): ScanProgress | undefined {
 
 let scanIdCounter = Date.now();
 
-export type DiscoveryScanType = "ping" | "snmp" | "nmap" | "windows" | "ssh" | "network_discovery" | "ipam_full";
+export type DiscoveryScanType = "ping" | "snmp" | "nmap" | "windows" | "ssh" | "network_discovery" | "ipam_full" | "credential_validate";
 
 export type DiscoverNetworkOptions = {
   /** Se impostato, la scansione riguarda solo questi IP (devono appartenere alla subnet). */
@@ -1142,6 +1143,147 @@ async function runDiscovery(
       progress.scanned = Math.min(si + SNMP_BATCH, onlineIps.length);
       progress.phase = `SNMP (sessione unificata) — ${progress.scanned}/${onlineIps.length}`;
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // CREDENTIAL VALIDATE: fase dedicata che testa tutte le credenziali della subnet sugli host
+  // ═══════════════════════════════════════════════════════════════
+  if (scanType === "credential_validate") {
+    const { getNetworkCredentials, addHostCredential, getHostsByNetwork } = await import("@/lib/db");
+    const netCreds = getNetworkCredentials(networkId);
+    if (netCreds.length === 0) {
+      log("Nessuna credenziale configurata per questa subnet.");
+      progress.status = "completed";
+      progress.phase = "Completata — nessuna credenziale";
+      addScanHistory({
+        host_id: null,
+        network_id: networkId,
+        scan_type: "credential_validate",
+        status: "Nessuna credenziale configurata",
+        ports_open: null,
+        raw_output: null,
+        duration_ms: Date.now() - startTime,
+      });
+      setTimeout(() => getProgressMap().delete(scanId), 300000);
+      return { network_id: networkId, total_ips: ips.length, hosts_found: 0, hosts_online: 0, hosts_offline: ips.length, new_hosts: 0, duration_ms: Date.now() - startTime };
+    }
+
+    const existingHosts = getHostsByNetwork(networkId);
+    const inScope = new Set(ips);
+    const targetHosts = existingHosts.filter((h) => inScope.has(h.ip) && h.open_ports);
+
+    log(`Validazione credenziali: ${netCreds.length} credenziali × ${targetHosts.length} host con porte note`);
+    progress.total = targetHosts.length;
+    progress.scanned = 0;
+
+    let validated = 0;
+    const { Client } = await import("ssh2");
+    const { runWinrmCommand } = await import("@/lib/devices/winrm-run");
+
+    for (let i = 0; i < targetHosts.length; i++) {
+      const host = targetHosts[i];
+      const ip = host.ip;
+      let openPorts: Array<{ port: number; service?: string }> = [];
+      try { openPorts = JSON.parse(host.open_ports || "[]"); } catch { /* skip */ }
+
+      progress.phase = `Validazione — ${i + 1}/${targetHosts.length} (${ip})`;
+
+      for (const nc of netCreds) {
+        const credType = nc.credential_type.toLowerCase();
+        const credId = nc.credential_id;
+
+        // Match credenziale → porte aperte
+        if ((credType === "ssh" || credType === "linux") && openPorts.some((p) => p.port === 22 || p.service === "ssh")) {
+          const sshPort = openPorts.find((p) => p.port === 22 || p.service === "ssh")!.port;
+          const creds = getSshLinuxCredentialPair(credId);
+          if (!creds) continue;
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const conn = new Client();
+              const to = setTimeout(() => { conn.end(); reject(new Error("timeout")); }, 8000);
+              conn.on("ready", () => { clearTimeout(to); conn.end(); resolve(); });
+              conn.on("error", (err) => { clearTimeout(to); reject(err); });
+              conn.connect({
+                host: ip, port: sshPort, username: creds.username, password: creds.password, readyTimeout: 6000,
+                algorithms: { kex: ["curve25519-sha256", "curve25519-sha256@libssh.org", "ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521", "diffie-hellman-group-exchange-sha256", "diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"] },
+              });
+            });
+            addHostCredential(host.id, credId, "ssh", sshPort, { validated: true, auto_detected: true });
+            autoBindCredentialToDevice(ip, credId, "ssh", sshPort);
+            log(`✓ ${ip}:${sshPort} SSH cred#${credId} (${nc.credential_name})`);
+            validated++;
+          } catch (e) {
+            log(`✗ ${ip}:${sshPort} SSH cred#${credId}: ${(e as Error).message?.slice(0, 60)}`);
+          }
+        }
+
+        if (credType === "snmp") {
+          const com = getCredentialCommunityString(credId);
+          if (!com) continue;
+          try {
+            const r = await querySnmpInfoMultiCommunity(ip, [com], 161, { onLog: log });
+            if (r.sysName || r.sysDescr || r.sysObjectID) {
+              addHostCredential(host.id, credId, "snmp", 161, { validated: true, auto_detected: true });
+              autoBindCredentialToDevice(ip, credId, "snmp", 161);
+              log(`✓ ${ip}:161 SNMP cred#${credId} (${nc.credential_name})`);
+              validated++;
+            } else {
+              log(`✗ ${ip}:161 SNMP cred#${credId}: nessuna risposta`);
+            }
+          } catch (e) {
+            log(`✗ ${ip}:161 SNMP cred#${credId}: ${(e as Error).message?.slice(0, 60)}`);
+          }
+        }
+
+        if (credType === "windows" && openPorts.some((p) => [5985, 5986].includes(p.port))) {
+          const winrmPort = openPorts.find((p) => [5985, 5986].includes(p.port))!.port;
+          const creds = getCredentialLoginPair(credId, "windows");
+          if (!creds) continue;
+          try {
+            const adInfo = getAdRealm();
+            const hn = await runWinrmCommand(ip, winrmPort, creds.username, creds.password, "hostname", false, adInfo?.realm || "");
+            if (String(hn ?? "").trim()) {
+              addHostCredential(host.id, credId, "winrm", winrmPort, { validated: true, auto_detected: true });
+              autoBindCredentialToDevice(ip, credId, "winrm", winrmPort);
+              log(`✓ ${ip}:${winrmPort} WinRM cred#${credId} (${nc.credential_name})`);
+              validated++;
+            } else {
+              log(`✗ ${ip}:${winrmPort} WinRM cred#${credId}: risposta vuota`);
+            }
+          } catch (e) {
+            log(`✗ ${ip}:${winrmPort} WinRM cred#${credId}: ${(e as Error).message?.slice(0, 60)}`);
+          }
+        }
+
+        // API: porte 80/443/8080/8443
+        if (credType === "api" && openPorts.some((p) => [80, 443, 8080, 8443].includes(p.port))) {
+          const apiPort = openPorts.find((p) => [80, 443, 8080, 8443].includes(p.port))!.port;
+          addHostCredential(host.id, credId, "api", apiPort, { validated: false, auto_detected: true });
+          log(`⚙ ${ip}:${apiPort} API cred#${credId} (${nc.credential_name}) — aggiunta senza test`);
+        }
+      }
+
+      progress.scanned = i + 1;
+      progress.found = validated;
+    }
+
+    log(`Validazione completata: ${validated} credenziali validate su ${targetHosts.length} host`);
+    progress.status = "completed";
+    progress.phase = "Completata";
+    progress.found = validated;
+
+    addScanHistory({
+      host_id: null,
+      network_id: networkId,
+      scan_type: "credential_validate",
+      status: `${validated} credenziali validate su ${targetHosts.length} host`,
+      ports_open: null,
+      raw_output: null,
+      duration_ms: Date.now() - startTime,
+    });
+
+    setTimeout(() => getProgressMap().delete(scanId), 300000);
+    return { network_id: networkId, total_ips: ips.length, hosts_found: targetHosts.length, hosts_online: targetHosts.length, hosts_offline: 0, new_hosts: 0, duration_ms: Date.now() - startTime };
   }
 
   // ═══════════════════════════════════════════════════════════════

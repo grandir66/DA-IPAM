@@ -143,6 +143,7 @@ export const ScanTriggerSchema = z.object({
     "ssh",
     "dns",
     "ipam_full",
+    "credential_validate",
   ]),
   nmap_profile_id: z.coerce.number().int().positive().optional(),
   /** Per azioni manuali: limita agli host selezionati (vista lista). */

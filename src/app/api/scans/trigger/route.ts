@@ -108,7 +108,7 @@ export async function POST(request: Request) {
 
     const { id, progress } = await discoverNetwork(
       parsed.data.network_id,
-      parsed.data.scan_type as "ping" | "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "ipam_full",
+      parsed.data.scan_type as "ping" | "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "ipam_full" | "credential_validate",
       nmapArgs,
       snmpCommunity,
       discoverOpts

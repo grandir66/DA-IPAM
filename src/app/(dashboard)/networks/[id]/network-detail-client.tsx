@@ -882,178 +882,102 @@ export function NetworkDetailClient({
               Scansione e acquisizione dati
             </p>
             <div className="flex flex-wrap gap-2 items-start content-start">
-            {/* Fase 1 */}
-            <div
-              className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none sm:max-w-[min(100%,18rem)] shadow-sm"
-              title="ICMP, Nmap rapido, DNS, ARP router (passi 1.1–1.4)"
-            >
+            {/* Fase 1 — Scoperta rete */}
+            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,10rem)] flex-1 sm:flex-none shadow-sm">
               <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
                 Fase 1 — Scoperta rete
+              </p>
+              <Button
+                size="default"
+                variant="default"
+                className="w-full font-medium"
+                onClick={() => triggerScan("network_discovery")}
+                disabled={!!scanning}
+                title="Ping + Nmap rapido su porte diagnostiche"
+              >
+                <Play className="h-4 w-4 mr-1.5 shrink-0" />
+                Scoperta rete
+              </Button>
+            </div>
+
+            {/* Fase 2 — Nmap + SNMP */}
+            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,12rem)] flex-1 sm:flex-none shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
+                Fase 2 — Scansione profilo
               </p>
               <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5">
                 <Button
                   size="default"
                   variant="default"
                   className="font-medium"
-                  onClick={() => triggerScan("network_discovery")}
-                  disabled={!!scanning}
-                  title="Avvia scoperta rete completa"
+                  onClick={() => triggerScan("nmap")}
+                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
+                  title="Nmap profilo completo"
                 >
-                  <Play className="h-4 w-4 mr-1.5 shrink-0" />
-                  Scoperta rete
+                  <Scan className="h-4 w-4 mr-1.5 shrink-0" />
+                  Nmap
                 </Button>
-                <Link
-                  href="/monitoring/known-hosts"
-                  title="Monitoraggio continuo host conosciuti (1.5)"
-                  className={cn(
-                    buttonVariants({ variant: "outline", size: "default" }),
-                    "border-primary/30 bg-background font-medium"
-                  )}
+                <Button
+                  size="default"
+                  variant="outline"
+                  className="font-medium bg-background/90"
+                  onClick={() => triggerScan("snmp")}
+                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
+                  title="Query SNMP"
                 >
-                  <Monitor className="h-4 w-4 mr-1.5 shrink-0" />
-                  Host conosciuti
-                </Link>
+                  <Cpu className="h-4 w-4 mr-1.5 shrink-0" />
+                  SNMP
+                </Button>
               </div>
             </div>
 
-            {/* Dati subnet (non numerato) */}
-            <div
-              className="rounded-lg border border-border/80 bg-muted/40 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none sm:max-w-[min(100%,18rem)]"
-              title="ARP, DHCP, DNS su IP selezionati (vista lista)"
-            >
-              <p className="text-[11px] font-semibold text-foreground/90 leading-tight mb-1">
-                Dati su IP selezionati
+            {/* Fase 3 — Rilevamento e credenziali */}
+            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
+                Fase 3 — Rilevamento e credenziali
               </p>
               <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5">
                 <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={triggerArpPoll}
-                  disabled={arpPolling || !!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title={view !== "list" ? "Passa alla vista lista e seleziona gli IP" : "MAC dal router"}
+                  size="default"
+                  variant="default"
+                  className="font-medium"
+                  onClick={() => void triggerAdvancedDetection()}
+                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
+                  title="WinRM + SSH in sequenza"
                 >
-                  <NetworkIcon className="h-3.5 w-3.5 mr-1" />
+                  <Sparkles className="h-4 w-4 mr-1.5 shrink-0" />
+                  Rilevamento OS
+                </Button>
+                <Button
+                  size="default"
+                  variant="outline"
+                  className="font-medium bg-background/90"
+                  onClick={() => triggerScan("credential_validate")}
+                  disabled={!!scanning || networkCredentialIds.length === 0 || view !== "list" || selectedHostIds.size === 0}
+                  title={networkCredentialIds.length === 0 ? "Configura credenziali nella modifica rete" : "Valida credenziali subnet sugli IP selezionati"}
+                >
+                  <Key className="h-4 w-4 mr-1.5 shrink-0" />
+                  Credenziali
+                </Button>
+              </div>
+            </div>
+
+            {/* Azioni secondarie */}
+            <div className="rounded-lg border border-border/60 bg-muted/20 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,10rem)] flex-1 sm:flex-none">
+              <p className="text-[11px] font-semibold text-muted-foreground leading-tight mb-1">
+                Arricchimento
+              </p>
+              <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5">
+                <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={triggerArpPoll} disabled={arpPolling || !!scanning || view !== "list" || selectedHostIds.size === 0} title="MAC dal router">
                   {arpPolling ? "ARP…" : "ARP"}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={triggerDhcpPoll}
-                  disabled={!canDhcp || dhcpPolling || !!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title={canDhcp ? "Lease DHCP MikroTik" : "Richiede router MikroTik SSH"}
-                >
+                <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={triggerDhcpPoll} disabled={!canDhcp || dhcpPolling || !!scanning || view !== "list" || selectedHostIds.size === 0} title={canDhcp ? "DHCP MikroTik" : "Richiede router MikroTik"}>
                   {dhcpPolling ? "DHCP…" : "DHCP"}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => { void triggerDnsResolve(); }}
-                  disabled={dnsResolving || !!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="Risoluzione DNS"
-                >
+                <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => { void triggerDnsResolve(); }} disabled={dnsResolving || !!scanning || view !== "list" || selectedHostIds.size === 0} title="Risoluzione DNS">
                   {dnsResolving ? "DNS…" : "DNS"}
                 </Button>
               </div>
-            </div>
-
-            {/* Fase 2 */}
-            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,10rem)] flex-1 sm:flex-none shadow-sm">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
-                Fase 2 — Nmap
-              </p>
-              <Button
-                size="default"
-                variant="default"
-                className="w-full font-medium"
-                onClick={() => triggerScan("nmap")}
-                disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                title="Profilo Nmap dalle impostazioni"
-              >
-                <Scan className="h-4 w-4 mr-1.5 shrink-0" />
-                Nmap profilo
-              </Button>
-            </div>
-
-            {/* Fase 3 */}
-            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,10rem)] flex-1 sm:flex-none shadow-sm">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
-                Fase 3 — SNMP
-              </p>
-              <Button
-                size="default"
-                variant="default"
-                className="w-full font-medium"
-                onClick={() => triggerScan("snmp")}
-                disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                title="Query SNMP sugli host selezionati"
-              >
-                <Cpu className="h-4 w-4 mr-1.5 shrink-0" />
-                SNMP
-              </Button>
-            </div>
-
-            {/* Fase 4 — una sola riga pulsanti (nowrap + scroll orizzontale se serve) */}
-            <div
-              className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-0 w-full sm:min-w-[min(100%,18rem)] sm:max-w-[min(100%,26rem)] flex-1 sm:flex-none shadow-sm"
-              title="Sottovoci: avanzato (WinRM+SSH), oppure WinRM/SSH singoli"
-            >
-              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
-                Fase 4 — Rilevamento OS
-              </p>
-              <div className="flex flex-nowrap items-center gap-1 sm:gap-1.5 overflow-x-auto overscroll-x-contain pb-0.5 -mx-0.5 px-0.5 [scrollbar-width:thin]">
-                <Button
-                  size="sm"
-                  variant="default"
-                  className="shrink-0 font-medium h-8 text-xs sm:text-sm px-2 sm:px-3"
-                  onClick={() => void triggerAdvancedDetection()}
-                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="Sequenza WinRM poi SSH"
-                >
-                  <Sparkles className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 shrink-0" />
-                  <span className="hidden min-[420px]:inline">Rilevamento avanzato</span>
-                  <span className="min-[420px]:hidden">Avanzato</span>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0 bg-background/90 font-medium h-8"
-                  onClick={() => triggerScan("windows")}
-                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="Solo WinRM"
-                >
-                  <Server className="h-3.5 w-3.5 mr-1" />
-                  WinRM
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0 bg-background/90 font-medium h-8"
-                  onClick={() => triggerScan("ssh")}
-                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="Solo SSH"
-                >
-                  <Terminal className="h-3.5 w-3.5 mr-1" />
-                  SSH
-                </Button>
-              </div>
-            </div>
-
-            {/* Fase 5 — Validazione credenziali */}
-            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,12rem)] flex-1 sm:flex-none shadow-sm">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
-                Fase 5 — Credenziali
-              </p>
-              <Button
-                size="default"
-                variant="default"
-                className="w-full font-medium"
-                onClick={() => triggerScan("credential_validate")}
-                disabled={!!scanning || networkCredentialIds.length === 0 || view !== "list" || selectedHostIds.size === 0}
-                title={networkCredentialIds.length === 0 ? "Configura credenziali nella modifica rete" : view !== "list" || selectedHostIds.size === 0 ? "Seleziona IP dalla vista lista" : "Valida le credenziali sugli host selezionati"}
-              >
-                <Key className="h-4 w-4 mr-1.5 shrink-0" />
-                Valida credenziali
-              </Button>
             </div>
 
             {/* Classificazione */}

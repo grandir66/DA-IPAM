@@ -49,6 +49,7 @@ import {
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
+import { HostCredentialsDialog } from "@/components/shared/host-credentials-dialog";
 import {
   getDefaultNetworkDeviceVendorOptions,
   type NetworkDeviceVendorSelectOption,
@@ -160,6 +161,7 @@ export function NetworkDetailClient({
   const [networkCredentialIds, setNetworkCredentialIds] = useState<number[]>(initialCredentialIds);
   const [availableSources, setAvailableSources] = useState(initialAvailableSources);
   const [hostValidatedProtocols, setHostValidatedProtocols] = useState<Record<number, string[]>>(initialHostValidatedProtocols);
+  const [credDialogHost, setCredDialogHost] = useState<{ id: number; ip: string } | null>(null);
 
   useEffect(() => {
     setCredWindows(initialCredentialChains.windows);
@@ -361,6 +363,7 @@ export function NetworkDetailClient({
       if (bulkAddProductProfile) body.product_profile = bulkAddProductProfile;
       if (hasCred) body.credential_id = Number(bulkAddCredentialId);
       if (hasSnmpCred) body.snmp_credential_id = Number(bulkAddSnmpCredentialId);
+      body.inherit_host_credentials = true;
       const res = await fetch("/api/devices/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1499,8 +1502,11 @@ export function NetworkDetailClient({
                         </div>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <ProtocolBadges protocols={hostValidatedProtocols[host.id] || []} />
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <ProtocolBadges
+                        protocols={hostValidatedProtocols[host.id] || []}
+                        onClick={() => setCredDialogHost({ id: host.id, ip: host.ip })}
+                      />
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Switch
@@ -1676,6 +1682,17 @@ export function NetworkDetailClient({
         </Card>
       )}
 
+      {/* Dialog credenziali host */}
+      {credDialogHost && (
+        <HostCredentialsDialog
+          hostId={credDialogHost.id}
+          hostIp={credDialogHost.ip}
+          open={!!credDialogHost}
+          onOpenChange={(open) => { if (!open) setCredDialogHost(null); }}
+          availableCredentials={addDeviceCredentials}
+          onCredentialsChanged={() => void refreshHosts()}
+        />
+      )}
     </div>
   );
 }

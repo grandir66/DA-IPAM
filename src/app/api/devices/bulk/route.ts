@@ -9,6 +9,7 @@ import {
   updateNetworkDevice,
   ensureInventoryAssetForNetworkDevice,
   addDeviceCredentialBinding,
+  getHostCredentials,
 } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { z } from "zod";
@@ -63,6 +64,7 @@ const BulkDeviceSchema = z.object({
   port: z.coerce.number().int().min(1).max(65535).optional(),
   scan_target: z.enum(["proxmox", "vmware", "windows", "linux"]).optional().nullable(),
   product_profile: productProfileEnum.optional().nullable(),
+  inherit_host_credentials: z.boolean().optional(),
 });
 
 /**
@@ -83,7 +85,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { host_ids, classification, vendor, protocol, credential_id, snmp_credential_id, port, scan_target, product_profile } =
+    const { host_ids, classification, vendor, protocol, credential_id, snmp_credential_id, port, scan_target, product_profile, inherit_host_credentials } =
       parsed.data;
 
     const hasCred = credential_id && credential_id > 0;
@@ -160,6 +162,28 @@ export async function POST(request: Request) {
       }
       if (snmp_credential_id && snmp_credential_id > 0 && snmp_credential_id !== credential_id) {
         addDeviceCredentialBinding({ device_id: device.id, credential_id: snmp_credential_id, protocol_type: "snmp", port: 161 });
+      }
+
+      // Eredita credenziali validate dall'host
+      if (inherit_host_credentials) {
+        try {
+          const hostCreds = getHostCredentials(host.id);
+          for (const hc of hostCreds) {
+            if (!hc.validated) continue;
+            // Evita duplicati con credenziali già aggiunte sopra
+            if (hc.credential_id === credential_id && hc.protocol_type === protoType) continue;
+            if (hc.credential_id === snmp_credential_id && hc.protocol_type === "snmp") continue;
+            try {
+              addDeviceCredentialBinding({
+                device_id: device.id,
+                credential_id: hc.credential_id,
+                protocol_type: hc.protocol_type,
+                port: hc.port,
+                auto_detected: true,
+              });
+            } catch { /* duplicate binding, ignore */ }
+          }
+        } catch { /* ignore */ }
       }
 
       updateHost(host.id, { classification });

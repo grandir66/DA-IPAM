@@ -42,6 +42,7 @@ import {
   syncIpAssignmentsForNetwork,
   getAdRealm,
   getCredentialCommunityString,
+  addHostCredential,
 } from "@/lib/db";
 import type { ScanProgress, DiscoveryResult, DeviceFingerprintSnapshot } from "@/types";
 import type { DnsResolution } from "./dns";
@@ -422,6 +423,7 @@ async function runDiscovery(
               snmpHostname: hn,
             });
             setHostDetectCredential(host.id, "windows", credId);
+            addHostCredential(host.id, credId, "winrm", winrmPort, { validated: true, auto_detected: true });
             autoBindCredentialToDevice(ip, credId, "winrm", winrmPort);
             log(`✓ ${ip} → ${hn} (cred#${credId}, porta ${winrmPort})`);
             ok = true;
@@ -574,6 +576,7 @@ async function runDiscovery(
             snmpHostname: hn,
           });
           setHostDetectCredential(host.id, "linux", credId);
+          addHostCredential(host.id, credId, "ssh", 22, { validated: true, auto_detected: true });
           autoBindCredentialToDevice(ip, credId, "ssh", 22);
           if (boundSshForSave == null) {
             setHostDetectCredential(host.id, "ssh", credId);
@@ -825,6 +828,7 @@ async function runDiscovery(
             });
             if (hostId != null) {
               setHostDetectCredential(hostId, "linux", credId);
+              addHostCredential(hostId, credId, "ssh", 22, { validated: true, auto_detected: true });
               if (boundSsh == null) {
                 setHostDetectCredential(hostId, "ssh", credId);
               }

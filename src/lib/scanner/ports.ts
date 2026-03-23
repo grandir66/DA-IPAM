@@ -6,13 +6,14 @@
  *   1) -sT TCP (non richiede root) — il profilo utente personalizza solo questa fase
  *   2) -sU UDP (richiede root; fallisce in modo silenzioso se non disponibile) — porte da `buildUdpScanArgs()`
  *
- * Default allineato a profilo “infrastruttura” (servizi comuni + monitoring).
+ * Default allineato a profilo "infrastruttura" (servizi comuni + monitoring).
  */
 
 /** Porte TCP predefinite (scan -sT + -sV …; `--host-timeout` da `getNmapHostTimeoutSeconds()`, default 75s).
- *  Allineate a device fingerprinting (WinRM 5985, MikroTik API 8728, Stormshield 1300, IPMI 623 TCP). */
+ *  Allineate a device fingerprinting e product profile (WinRM 5985/5986, MikroTik API 8728/8729,
+ *  Stormshield 541/542/1300, IPMI 623, Cisco 4786, VMware 902/9443, Fortinet 10443). */
 export const NMAP_DEFAULT_TCP_PORTS =
-  "21,22,23,25,53,80,81,88,110,111,135,139,143,179,199,389,443,445,465,554,587,623,631,873,990,993,995,1300,1433,1514,1515,1720,1723,2049,2121,3000,3128,3306,3389,4899,5000,5001,5060,5061,5100,5432,5631,5666,5800,5900,5985,6000,6690,6789,7304,8000,8001,8006,8007,8080,8081,8291,8443,8554,8728,8880,8888,9000,9100,9999,10000,10050,10051,17988,17990,34567,37777,49152,49153,49154,49155,49156,49157,55000";
+  "21,22,23,25,53,80,81,88,110,111,135,139,143,179,199,389,443,445,465,541,542,554,587,623,631,873,902,990,993,995,1300,1433,1514,1515,1720,1723,2049,2121,3000,3128,3306,3389,4786,4899,5000,5001,5060,5061,5100,5432,5631,5666,5800,5900,5985,5986,5988,5989,6000,6690,6789,7304,8000,8001,8006,8007,8080,8081,8200,8291,8443,8554,8728,8729,8880,8888,9000,9100,9443,9999,10000,10050,10051,10443,17988,17990,34567,37777,49152,49153,49154,49155,49156,49157,55000";
 
 /** Porte UDP predefinite (sudo nmap -sU …) */
 export const NMAP_DEFAULT_UDP_PORTS =
@@ -32,17 +33,33 @@ export function getNmapHostTimeoutSeconds(): number {
 }
 
 /**
- * Porte TCP “quick” per scoperta rete dopo ICMP (SSH, HTTP/S, RDP, SMB, …).
- * Include **8291** (Winbox) e **8728** (API) MikroTik: la lista ridotta storica non le aveva e Nmap non le sondava
- * pur essendo in `NMAP_DEFAULT_TCP_PORTS` per lo scan profilo completo.
- * Include **88** (Kerberos), **139** (NetBIOS), **389** (LDAP), **636** (LDAPS) per Domain Controller / AD — altrimenti i DC
- * non mostrano LDAP in UI se si usa solo questa fase (network_discovery / ipam_full non rifanno lo scan TCP completo).
- * Include **5000/5001** (Synology DSM HTTP/HTTPS), **8006** (Proxmox pveproxy), **8080** (QNAP QTS),
- * **17988** (HPE iLO virtual media) — senza queste porte la quick scan non distingue NAS/hypervisor/iLO
- * e il classificatore si affida ai soli dati nmap OS-detection (spesso errati per device con SMB).
+ * Porte TCP "quick" per scoperta rete dopo ICMP (SSH, HTTP/S, RDP, SMB, …).
+ *
+ * Criteri: ogni porta serve per **identificare il tipo di device** (fingerprint / product profile).
+ *
+ * Networking & Router:
+ *   8291 (MikroTik Winbox), 8728/8729 (MikroTik API/API-SSL), 8200 (MikroTik ND),
+ *   4786 (Cisco Smart Install), 5985/5986 (WinRM — anche Cisco IOS XE),
+ *   8080/443 (UniFi / Stormshield / Fortinet WebUI), 8443 (UniFi HTTPS),
+ *   541/542 (Stormshield / Netasq mgmt), 10443 (Fortinet FortiGate admin HTTPS)
+ *
+ * Remote management & OOB:
+ *   623 (IPMI / BMC — HPE iLO, Dell iDRAC, Supermicro),
+ *   17988 (HPE iLO virtual media),
+ *   5900 (Dell iDRAC Virtual Console / VNC),
+ *   5988/5989 (CIM/WBEM HTTP/HTTPS — VMware, HP)
+ *
+ * Virtualizzazione:
+ *   8006 (Proxmox VE), 8007 (Proxmox Backup Server),
+ *   902 (VMware ESXi / vSphere agent), 9443 (VMware vCenter / Horizon View)
+ *
+ * NAS / Storage:
+ *   5000/5001 (Synology DSM HTTP/HTTPS), 8080 (QNAP QTS)
+ *
+ * AD / Domain Controller:
+ *   88 (Kerberos), 139 (NetBIOS), 389 (LDAP), 636 (LDAPS)
  */
-export const NETWORK_DISCOVERY_QUICK_TCP_PORTS =
-  "22,25,53,80,88,110,135,139,143,389,443,445,636,993,995,3389,5000,5001,8006,8080,8291,8728,17988";
+export const NETWORK_DISCOVERY_QUICK_TCP_PORTS = "22,25,53,80,88,110,135,139,143,389,443,445,541,542,623,636,902,993,995,3389,4786,5000,5001,5900,5985,5986,5988,5989,8006,8007,8080,8200,8291,8443,8728,8729,9443,10443,17988";
 
 /** Timeout Nmap interno per fase quick (s). L’host è già verificato con ICMP. */
 export function getNetworkDiscoveryQuickHostTimeoutSeconds(): number {
@@ -66,7 +83,7 @@ export function getNetworkDiscoveryQuickExecMs(): number {
 }
 
 /**
- * Profilo Nmap leggero: -Pn (già “up” da ICMP), TCP senza -sV, timing aggressivo.
+ * Profilo Nmap leggero: -Pn (già "up" da ICMP), TCP senza -sV, timing aggressivo.
  * Usato da `network_discovery`.
  */
 export function buildNetworkDiscoveryQuickTcpArgs(): string {
@@ -83,7 +100,7 @@ export function buildNetworkDiscoveryQuickTcpArgs(): string {
  * Build nmap args per scansione TCP.
  * @param customPorts - Porte TCP aggiuntive (legacy, merge con default)
  * @param explicitTcpPorts - Porte dal profilo Nmap (`tcp_ports`): vengono **unite** all’elenco predefinito
- *   (`NMAP_DEFAULT_TCP_PORTS`), non lo sostituiscono — così un profilo “ridotto” non esclude più servizi
+ *   (`NMAP_DEFAULT_TCP_PORTS`), non lo sostituiscono — così un profilo "ridotto" non esclude più servizi
  *   infrastrutturali (es. MikroTik 8291/8728 già nel default).
  */
 export function buildTcpScanArgs(customPorts?: string | null, explicitTcpPorts?: string | null): string {

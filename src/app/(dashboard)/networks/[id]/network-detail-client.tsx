@@ -528,7 +528,7 @@ export function NetworkDetailClient({
     const showStartToast = options?.showStartToast !== false;
     const refreshOnComplete = options?.refreshOnComplete !== false;
 
-    const noHostSelectionNeeded = scanType === "network_discovery" || scanType === "credential_validate";
+    const noHostSelectionNeeded = scanType === "network_discovery";
     if (!noHostSelectionNeeded && selectedHostIds.size === 0) {
       toast.error("Seleziona uno o più host nella vista lista (azioni manuali solo sugli IP selezionati)");
       return { ok: false, lastProgress: null };
@@ -1048,8 +1048,8 @@ export function NetworkDetailClient({
                 variant="default"
                 className="w-full font-medium"
                 onClick={() => triggerScan("credential_validate")}
-                disabled={!!scanning || networkCredentialIds.length === 0}
-                title={networkCredentialIds.length === 0 ? "Configura credenziali nella modifica rete" : "Valida le credenziali della subnet su tutti gli host con porte note"}
+                disabled={!!scanning || networkCredentialIds.length === 0 || view !== "list" || selectedHostIds.size === 0}
+                title={networkCredentialIds.length === 0 ? "Configura credenziali nella modifica rete" : view !== "list" || selectedHostIds.size === 0 ? "Seleziona IP dalla vista lista" : "Valida le credenziali sugli host selezionati"}
               >
                 <Key className="h-4 w-4 mr-1.5 shrink-0" />
                 Valida credenziali

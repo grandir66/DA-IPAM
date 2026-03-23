@@ -2153,6 +2153,7 @@ export function getHostById(id: number): HostDetail | undefined {
     recent_scans: recentScans,
     scan_types_used: scanTypesSeen,
     detect_credentials: getHostDetectCredentialsEnriched(id),
+    host_credentials: getHostCredentials(id),
     arp_source: arpSource || null,
     switch_port: switchPort || null,
     network_device: networkDevice ? { id: networkDevice.id, name: networkDevice.name, sysname: networkDevice.sysname, vendor: networkDevice.vendor, protocol: networkDevice.protocol } : null,

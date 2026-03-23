@@ -30,7 +30,7 @@ import { Switch } from "@/components/ui/switch";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import {
   ArrowLeft, Save, Router, Cable, Trash2, Server, ChevronRight,
-  ScanSearch, PlusCircle, Wifi, Cpu, HardDrive, Monitor, Globe, Activity,
+  ScanSearch, PlusCircle, Wifi, Cpu, HardDrive, Monitor, Globe, Activity, Key,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { DeviceFingerprintSnapshot, HostDetail, HostSnmpData } from "@/types";
@@ -367,7 +367,60 @@ export default function HostDetailPage() {
         </div>
       )}
 
-      {/* ════════════════ CREDENZIALI (tabella come devices) ════════════════ */}
+      {/* ════════════════ CREDENZIALI HOST (validate dalla scansione) ════════════════ */}
+      {host.host_credentials && host.host_credentials.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Key className="h-3.5 w-3.5" />Credenziali validate
+            </CardTitle>
+            <CardDescription className="text-xs">Credenziali testate con successo su questo host</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-16">Tipo</TableHead>
+                  <TableHead>Nome</TableHead>
+                  <TableHead className="w-14">Porta</TableHead>
+                  <TableHead className="w-16">Stato</TableHead>
+                  <TableHead className="w-28">Validata il</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {host.host_credentials.map((hc) => (
+                  <TableRow key={hc.id}>
+                    <TableCell>
+                      <Badge variant="outline" className={`text-[10px] ${
+                        hc.protocol_type === "ssh" ? "bg-emerald-500/15 text-emerald-600 border-emerald-300 dark:text-emerald-400" :
+                        hc.protocol_type === "snmp" ? "bg-purple-500/15 text-purple-600 border-purple-300 dark:text-purple-400" :
+                        hc.protocol_type === "winrm" ? "bg-blue-500/15 text-blue-600 border-blue-300 dark:text-blue-400" :
+                        "bg-amber-500/15 text-amber-600 border-amber-300 dark:text-amber-400"
+                      }`}>
+                        {hc.protocol_type === "ssh" ? "SSH" : hc.protocol_type === "snmp" ? "SNMP" : hc.protocol_type === "winrm" ? "WinRM" : "API"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm">{hc.credential_name}</TableCell>
+                    <TableCell className="font-mono text-xs">{hc.port}</TableCell>
+                    <TableCell>
+                      {hc.validated ? (
+                        <Badge variant="outline" className="text-[10px] bg-green-500/10 text-green-600 border-green-300">OK</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] text-muted-foreground">—</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {hc.validated_at ? new Date(hc.validated_at).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ════════════════ CREDENZIALI DEVICE (tabella come devices) ════════════════ */}
       {host.network_device && (
         <DeviceCredentialsTable deviceId={host.network_device.id} />
       )}

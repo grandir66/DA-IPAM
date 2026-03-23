@@ -489,8 +489,23 @@ export interface HostDetail extends Host {
   recent_scans: ScanHistory[];
   /** Tipi di scansione già eseguiti su questo host (deduplicati). */
   scan_types_used?: string[];
-  /** Credenziali archivio usate con successo per acquisizione (per ruolo). */
+  /** Credenziali archivio usate con successo per acquisizione (per ruolo). [Legacy] */
   detect_credentials?: HostDetectCredentialRow[];
+  /** Credenziali validate per questo host (sistema v2 — multi-protocollo). */
+  host_credentials?: Array<{
+    id: number;
+    host_id: number;
+    credential_id: number;
+    protocol_type: "ssh" | "snmp" | "winrm" | "api";
+    port: number;
+    validated: number;
+    validated_at: string | null;
+    sort_order: number;
+    auto_detected: number;
+    created_at: string;
+    credential_name: string;
+    credential_type: string;
+  }>;
   arp_source: {
     device_name: string;
     device_vendor: string;

@@ -32,7 +32,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash, Monitor, Users, Shield, Tags, ArrowUpCircle, RefreshCw, Sparkles } from "lucide-react";
+import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash, Monitor, Users, Shield, Tags, ArrowUpCircle, RefreshCw, Sparkles, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import { buildTcpScanArgs, buildUdpScanArgs } from "@/lib/scanner/ports";
 import {
@@ -144,6 +144,7 @@ export default function SettingsPage() {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [applyingUpdate, setApplyingUpdate] = useState(false);
   const [openingWizard, setOpeningWizard] = useState(false);
+  const [showManualUpdate, setShowManualUpdate] = useState(false);
 
   // Host credentials (Windows/Linux) - default per raccolta info da host
   const [credentials, setCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
@@ -951,6 +952,16 @@ export default function SettingsPage() {
                 Aggiorna da Git (main)
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs gap-1"
+              onClick={() => setShowManualUpdate((v) => !v)}
+              title="Mostra istruzioni per aggiornamento manuale da console SSH"
+            >
+              <Terminal className="h-3 w-3" />
+              {showManualUpdate ? "Nascondi console" : "Aggiornamento console"}
+            </Button>
           </div>
         )}
         {updateCheckError && appVersion && (
@@ -962,7 +973,9 @@ export default function SettingsPage() {
         )}
       </div>
 
-      <ManualUpdateInstructions className="max-w-3xl" />
+      {showManualUpdate && (
+        <ManualUpdateInstructions className="max-w-3xl" />
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border pb-0">

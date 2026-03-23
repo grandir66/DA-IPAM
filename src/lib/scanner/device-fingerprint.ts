@@ -224,7 +224,17 @@ function evaluateRules(
             const smbRpc = [135, 139, 445].filter((p) => ctx.openTcpSet.has(p)).length;
             const hasRdpOrWinrm = ctx.openTcpSet.has(3389) || ctx.openTcpSet.has(5985);
             const hasSmb = ctx.openTcpSet.has(445);
-            if (smbRpc >= 2 || (hasSmb && hasRdpOrWinrm)) {
+            // Porte NAS (Synology 5000/5001/6690, QNAP 8080) e hypervisor (Proxmox 8006):
+            // device con SMB (445) ma anche queste porte NON sono Windows — sono NAS/hypervisor
+            // con Samba attivo. Abbassare il punteggio sotto la soglia di classificazione (0.56).
+            const hasNasPorts = ctx.openTcpSet.has(5000) || ctx.openTcpSet.has(5001) ||
+              ctx.openTcpSet.has(6690) || ctx.openTcpSet.has(8080) || ctx.openTcpSet.has(8006);
+            const sysDescrSuggestsNonWindows = ctx.sysDescr &&
+              /\blinux\b|synology|diskstation|qnap|turbo\s*nas|proxmox|pve|freebsd|truenas/i.test(ctx.sysDescr);
+            if (hasNasPorts || sysDescrSuggestsNonWindows) {
+              // Forte indizio non-Windows: abbassare TTL score sotto soglia classificazione
+              ttlScore = hasSmb ? 0.35 : 0.2;
+            } else if (smbRpc >= 2 || (hasSmb && hasRdpOrWinrm)) {
               ttlScore = 0.68;
             } else if (smbRpc >= 1 || hasRdpOrWinrm || hasSmb) {
               ttlScore = 0.58;

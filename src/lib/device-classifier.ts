@@ -78,14 +78,20 @@ const TEXT_RULES: Array<{ pattern: RegExp; classification: DeviceClassification 
   { pattern: /esxi|vmware\s*esx|hyper-v|hyperv|proxmox|qemu|kvm|virtualbox|ovirt|xen\s*server/i, classification: "hypervisor" },
   // VM / container
   { pattern: /vmware\s*tools|vmtools|vmware\s*guest|virtual\s*machine|docker|containerd|podman|kvm\s*guest|qemu\s*guest/i, classification: "vm" },
+  // NAS / Storage — PRIMA di server_windows perché Synology/QNAP espongono SMB (445) e nmap
+  // spesso li identifica erroneamente come "Windows Server" tramite OS detection. Il keyword
+  // "synology"/"qnap" nel sysDescr/hostname deve vincere sulla stringa "Windows Server" in osInfo.
+  { pattern: /synology|diskstation|\bdsm\b|qnap|turbo\s*nas|\bqts\b|netapp|truenas|free\s*nas|drobo/i, classification: "storage" },
+  // Management server (iLO, iDRAC) — prima di server_windows: l'interfaccia di management non è un server Windows
+  { pattern: /\bilo\b|idrac|integrated\s*lights.?out|proliant\s*server/i, classification: "server" },
   // Server Windows
   { pattern: /windows\s*server|microsoft.*server|win\s*srv|win\s*server/i, classification: "server_windows" },
   // Server Linux
   { pattern: /linux\s*server|debian|ubuntu\s*server|centos|rhel|sles|red\s*hat\s*enterprise|alma\s*linux|rocky\s*linux|oracle\s*linux|fedora\s*server/i, classification: "server_linux" },
   // Server generico (fallback)
   { pattern: /server/i, classification: "server" },
-  // NAS / Storage (Synology e QNAP unificati sotto storage; il profilo vendor gestisce i comandi)
-  { pattern: /nas|synology|qnap|netapp|truenas|free nas|storage|drobo/i, classification: "storage" },
+  // NAS / Storage generico (keyword "nas", "storage" — meno specifici, dopo i server)
+  { pattern: /\bnas\b|\bstorage\b/i, classification: "storage" },
   // PC HP (prima delle stampanti: ProDesk, EliteBook, ProBook, ZBook, Pavilion, Omen, Envy, Compaq)
   { pattern: /prodesk|elitebook|probook|zbook|pavilion|omen|envy|compaq|hp\s*elite|hp\s*pro\s*\d|hp\s*z\s*workstation/i, classification: "workstation" },
   // Stampanti (laserjet, deskjet, ecc.; HP senza modello PC → OID/porte distinguono)
@@ -252,12 +258,41 @@ export function classifyDeviceDetailed(input: ClassifierInput): DeviceDetectionR
   const openPortSet = new Set((input.openPorts ?? []).map((p) => p.port));
   const sysDescrLower = (input.sysDescr ?? "").toLowerCase();
 
-  // 1. Porta TCP 8006 → Proxmox VE (pveproxy). Viene prima degli OID hardcoded perché Proxmox usa
-  //    net-snmp (OID 8072 = generico Linux) che altrimenti restituirebbe server_linux.
+  // 1. Porte infrastrutturali ad alta specificità — PRIMA degli OID hardcoded perché questi device
+  //    usano spesso net-snmp (OID 8072 = generico Linux) che altrimenti restituirebbe server_linux,
+  //    oppure hanno SMB aperto e nmap li marca come "Windows Server".
   //    Nota: le regole OID del DB (snmpFingerprintOidMatches) vengono applicate in discovery.ts
   //    PRIMA di chiamare classifyDevice, quindi qui gestiamo solo il fallback senza match DB.
+
+  // Proxmox VE (pveproxy su porta 8006)
   if (openPortSet.has(8006)) {
     return { classification: "hypervisor", confidence: "high", method: "port" };
+  }
+
+  // Synology DSM (porta 5000 HTTP o 5001 HTTPS): disambigua da "Windows Server" causato da
+  // SMB (445) aperto + nmap OS detection errato. sysDescr/hostname confermano se disponibili.
+  if ((openPortSet.has(5000) || openPortSet.has(5001)) && openPortSet.has(445)) {
+    const synCorpus = `${sysDescrLower} ${(input.hostname ?? "").toLowerCase()} ${(input.vendor ?? "").toLowerCase()}`;
+    if (/synology|diskstation|\bdsm\b|nas/i.test(synCorpus) || openPortSet.has(6690)) {
+      return { classification: "storage", confidence: "high", method: "port" };
+    }
+    // 5000+445 senza keyword NAS: potrebbe comunque essere un NAS — bassa confidenza
+    if (!openPortSet.has(3389) && !openPortSet.has(135)) {
+      return { classification: "storage", confidence: "medium", method: "port" };
+    }
+  }
+
+  // QNAP QTS (porta 8080 web UI): stesso problema di SMB + nmap Windows false positive
+  if (openPortSet.has(8080) && openPortSet.has(445)) {
+    const qnapCorpus = `${sysDescrLower} ${(input.hostname ?? "").toLowerCase()} ${(input.vendor ?? "").toLowerCase()}`;
+    if (/qnap|turbo\s*nas|\bqts\b|\bnas\b/i.test(qnapCorpus)) {
+      return { classification: "storage", confidence: "high", method: "port" };
+    }
+  }
+
+  // HPE iLO (porta 17988 virtual media): identifica interfacce di management server
+  if (openPortSet.has(17988)) {
+    return { classification: "server", confidence: "high", method: "port" };
   }
 
   // 2. sysObjectID hardcoded (per device con OID vendor specifico non presente nel DB fingerprint)
@@ -272,7 +307,11 @@ export function classifyDeviceDetailed(input: ClassifierInput): DeviceDetectionR
       if (/synology|diskstation|\bdsm\b/i.test(corpus)) {
         return { classification: "storage", confidence: "high", method: "oid" };
       }
-      if (/\bqnap\b|turbo\s*nas|\bqts\b/i.test(corpus)) {
+      if (/\bqnap\b|turbo\s*nas|\bqts\b|qnap\+/i.test(corpus)) {
+        return { classification: "storage", confidence: "high", method: "oid" };
+      }
+      // QNAP: kernel "Linux NAS" con kernel marker "-qnap" nel sysDescr
+      if (/linux\s+nas\b/i.test(sysDescrLower) && openPortSet.has(8080)) {
         return { classification: "storage", confidence: "high", method: "oid" };
       }
       if (/asustor|adm\s*\d|asus\s*nas/i.test(corpus)) {

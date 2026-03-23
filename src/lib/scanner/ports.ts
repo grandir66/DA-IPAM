@@ -37,9 +37,12 @@ export function getNmapHostTimeoutSeconds(): number {
  * pur essendo in `NMAP_DEFAULT_TCP_PORTS` per lo scan profilo completo.
  * Include **88** (Kerberos), **139** (NetBIOS), **389** (LDAP), **636** (LDAPS) per Domain Controller / AD — altrimenti i DC
  * non mostrano LDAP in UI se si usa solo questa fase (network_discovery / ipam_full non rifanno lo scan TCP completo).
+ * Include **5000/5001** (Synology DSM HTTP/HTTPS), **8006** (Proxmox pveproxy), **8080** (QNAP QTS),
+ * **17988** (HPE iLO virtual media) — senza queste porte la quick scan non distingue NAS/hypervisor/iLO
+ * e il classificatore si affida ai soli dati nmap OS-detection (spesso errati per device con SMB).
  */
 export const NETWORK_DISCOVERY_QUICK_TCP_PORTS =
-  "22,25,53,80,88,110,135,139,143,389,443,445,636,993,995,3389,8291,8728";
+  "22,25,53,80,88,110,135,139,143,389,443,445,636,993,995,3389,5000,5001,8006,8080,8291,8728,17988";
 
 /** Timeout Nmap interno per fase quick (s). L’host è già verificato con ICMP. */
 export function getNetworkDiscoveryQuickHostTimeoutSeconds(): number {

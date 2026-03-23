@@ -372,7 +372,7 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     name: "Ubiquiti UniFi Switch",
     category: "switch",
     enterpriseOidPrefixes: [],
-    identifyBySysDescr: /\busw[-\s]|\bus[-\s]\d|\buflex\b|\bunifi\s*switch\b|\bindustrial\b.*ubiquiti|ubiquiti.*\bindustrial\b/i,
+    identifyBySysDescr: /\busw[-\s]|\bus[-\s]\d|\buflex\b|\bunifi\s*switch\b|\bindustrial\b.*ubiquiti|ubiquiti.*\bindustrial\b|us-\d+-\d+|usl[-\s]|us\d+p/i,
     confidence: 0.96,
     fields: {
       model: ENTITY_MIB_OIDS.entPhysicalModelName,
@@ -433,6 +433,7 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     name: "Synology DSM",
     category: "storage",
     enterpriseOidPrefixes: ["1.3.6.1.4.1.6574"],
+    identifyBySysDescr: /synology|diskstation|\bdsm\b/i,
     confidence: 0.98,
     fields: {
       // SYNOLOGY-SYSTEM-MIB dsmInfo: modelName, serialNumber, version
@@ -450,6 +451,7 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     name: "QNAP QTS",
     category: "storage",
     enterpriseOidPrefixes: ["1.3.6.1.4.1.24681"],
+    identifyBySysDescr: /\bqnap\b|\bqts\b|turbo\s*nas/i,
     confidence: 0.98,
     fields: {
       model: "1.3.6.1.4.1.24681.1.2.1.0",
@@ -494,6 +496,7 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     name: "HPE iLO (ProLiant)",
     category: "server",
     enterpriseOidPrefixes: ["1.3.6.1.4.1.232"],
+    identifyBySysDescr: /\bilo\b|integrated\s*lights.?out|proliant/i,
     confidence: 0.97,
     fields: {
       model: "1.3.6.1.4.1.232.2.2.4.2.0",

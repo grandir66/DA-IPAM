@@ -28,4 +28,7 @@ if (fs.existsSync(lockPath)) {
   fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + "\n");
 }
 
+const versionFilePath = path.join(process.cwd(), "VERSION");
+fs.writeFileSync(versionFilePath, `${newVersion}\n`);
+
 console.log(`Version bumped: ${newVersion}`);

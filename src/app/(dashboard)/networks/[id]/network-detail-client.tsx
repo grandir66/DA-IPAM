@@ -47,7 +47,7 @@ import {
   sortClassificationsByDisplayLabel,
 } from "@/lib/device-classifications";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
-import { NetworkCredentialChains } from "@/components/shared/network-credential-chains";
+import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import {
   getDefaultNetworkDeviceVendorOptions,
   type NetworkDeviceVendorSelectOption,
@@ -813,7 +813,7 @@ export function NetworkDetailClient({
                     <p className="text-xs text-muted-foreground">Router per acquisizione tabella ARP di questa subnet</p>
                   </div>
                 </div>
-                <NetworkCredentialChains
+                <NetworkCredentialsTable
                   credentials={addDeviceCredentials}
                   windowsIds={credWindows}
                   linuxIds={credLinux}

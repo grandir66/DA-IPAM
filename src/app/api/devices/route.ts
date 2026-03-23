@@ -9,7 +9,7 @@ import {
   vendorSubtypeFromProductProfile,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const adminCheck = await requireAdmin();
+    const adminCheck = await requireAdminOrOnboarding();
     if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
     const parsed = NetworkDeviceSchema.safeParse(body);

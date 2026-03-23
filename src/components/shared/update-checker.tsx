@@ -175,12 +175,26 @@ export function UpdateChecker() {
     }
   };
 
-  if (!showBanner && !dialogOpen) {
+  const updateAvailable = !!updateInfo?.updateAvailable;
+  const showReopenFab = updateAvailable && dismissed && !showBanner && !dialogOpen;
+
+  if (!updateAvailable && !dialogOpen) {
     return null;
   }
 
   return (
     <>
+      {showReopenFab && (
+        <Button
+          type="button"
+          size="sm"
+          className="fixed bottom-4 right-4 z-50 shadow-lg gap-2"
+          onClick={() => setDialogOpen(true)}
+        >
+          <ArrowUpCircle className="h-4 w-4" />
+          Aggiornamento disponibile
+        </Button>
+      )}
       {showBanner && updateInfo?.updateAvailable && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-primary text-primary-foreground px-4 py-2 flex items-center justify-center gap-4 shadow-lg">
           <ArrowUpCircle className="h-5 w-5 animate-bounce" />

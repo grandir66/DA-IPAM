@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +32,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash, Monitor, Users, Shield, Tags, ArrowUpCircle, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash, Monitor, Users, Shield, Tags, ArrowUpCircle, RefreshCw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { buildTcpScanArgs, buildUdpScanArgs } from "@/lib/scanner/ports";
 import {
@@ -99,6 +101,9 @@ const INTERVAL_OPTIONS = [
 ];
 
 export default function SettingsPage() {
+  const router = useRouter();
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
   const [jobs, setJobs] = useState<ScheduledJob[]>([]);
   const [networks, setNetworks] = useState<NetworkWithStats[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -134,7 +139,10 @@ export default function SettingsPage() {
   // Version & Update
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [updateInfo, setUpdateInfo] = useState<{ remoteVersion: string; updateAvailable: boolean } | null>(null);
+  const [updateCheckError, setUpdateCheckError] = useState<string | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [applyingUpdate, setApplyingUpdate] = useState(false);
+  const [openingWizard, setOpeningWizard] = useState(false);
 
   // Host credentials (Windows/Linux) - default per raccolta info da host
   const [credentials, setCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
@@ -284,9 +292,22 @@ export default function SettingsPage() {
     fetch("/api/custom-oui").then((r) => r.json()).then((d: { content?: string }) => setCustomOui(d.content || ""));
     fetch("/api/credentials").then((r) => r.json()).then((creds: { id: number; name: string; credential_type: string }[]) => setCredentials(creds));
     fetch("/api/version").then((r) => r.json()).then((d: { version?: string }) => setAppVersion(d.version ?? null));
-    fetch("/api/system/update").then((r) => r.json()).then((d) => {
-      if (d.remoteVersion) setUpdateInfo({ remoteVersion: d.remoteVersion, updateAvailable: d.updateAvailable });
-    }).catch(() => {});
+    fetch("/api/system/update")
+      .then((r) => r.json())
+      .then((d: { remoteVersion?: string; updateAvailable?: boolean; error?: string }) => {
+        if (d.remoteVersion) {
+          setUpdateInfo({
+            remoteVersion: d.remoteVersion,
+            updateAvailable: !!d.updateAvailable,
+          });
+        } else {
+          setUpdateInfo(null);
+        }
+        setUpdateCheckError(typeof d.error === "string" ? d.error : null);
+      })
+      .catch(() => {
+        setUpdateCheckError("Impossibile contattare il server per il controllo versione.");
+      });
     fetch("/api/users").then((r) => r.json()).then(setUsers).catch(() => {});
     fetch("/api/tls").then((r) => r.json()).then(setTlsStatus).catch(() => {});
     fetch("/api/fingerprint-classification-map")
@@ -295,6 +316,116 @@ export default function SettingsPage() {
       .catch(() => {});
     loadFpRules();
   }, []);
+
+  async function runGitApplyUpdate(confirmMessage: string) {
+    if (!confirm(confirmMessage)) return;
+    setApplyingUpdate(true);
+    try {
+      const statusRes = await fetch("/api/system/update?action=status");
+      const status = await statusRes.json();
+      if (!status.gitClean) {
+        toast.error(
+          "Repository con modifiche locali non committate. Esegui commit o stash sul server, oppure usa lo script di aggiornamento manuale."
+        );
+        return;
+      }
+      const res = await fetch("/api/system/update?action=apply", { method: "POST" });
+      let data: { error?: string; requiresRestart?: boolean; message?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        toast.error("Risposta non valida dal server");
+        return;
+      }
+      if (!res.ok) {
+        toast.error(data.error || "Errore durante l'aggiornamento");
+        return;
+      }
+      toast.success(data.message || "Aggiornamento completato");
+      setUpdateCheckError(null);
+      if (data.requiresRestart) {
+        toast.info("Riavvio del servizio in corso…");
+        setTimeout(async () => {
+          try {
+            await fetch("/api/system/update?action=restart", { method: "POST" });
+          } catch {
+            /* ignore */
+          }
+          let attempts = 0;
+          const poll = setInterval(async () => {
+            attempts += 1;
+            try {
+              const hr = await fetch("/api/health", { cache: "no-store" });
+              if (hr.ok) {
+                clearInterval(poll);
+                window.location.reload();
+              }
+            } catch {
+              if (attempts > 40) {
+                clearInterval(poll);
+                toast.error("Il server non risponde. Ricarica la pagina o riavvia il servizio manualmente.");
+              }
+            }
+          }, 2000);
+        }, 1500);
+      } else {
+        fetch("/api/version")
+          .then((r) => r.json())
+          .then((d: { version?: string }) => setAppVersion(d.version ?? null));
+        fetch("/api/system/update")
+          .then((r) => r.json())
+          .then((d: { remoteVersion?: string; updateAvailable?: boolean; error?: string }) => {
+            if (d.remoteVersion) {
+              setUpdateInfo({ remoteVersion: d.remoteVersion, updateAvailable: !!d.updateAvailable });
+            }
+            setUpdateCheckError(typeof d.error === "string" ? d.error : null);
+          })
+          .catch(() => {});
+      }
+    } catch {
+      toast.error("Errore di rete durante l'aggiornamento");
+    } finally {
+      setApplyingUpdate(false);
+    }
+  }
+
+  async function handleApplySystemUpdate() {
+    if (!updateInfo?.remoteVersion || !updateInfo.updateAvailable) return;
+    await runGitApplyUpdate(
+      `Installare la versione ${updateInfo.remoteVersion}? Verranno eseguiti git pull, npm install e build; il servizio potrà essere riavviato.`
+    );
+  }
+
+  /** Aggiornamento anche se il controllo versione remota non ha funzionato (stesso flusso git pull del server). */
+  async function handleApplyGitPullManual() {
+    await runGitApplyUpdate(
+      "Scaricare e installare l'ultimo codice da origin/main (git pull, npm install, build)? Il servizio potrà essere riavviato."
+    );
+  }
+
+  async function handleOpenOnboardingWizard() {
+    if (
+      !confirm(
+        "Il wizard di configurazione guidata verrà riaperto. Reti, dispositivi e credenziali già inseriti restano nel database; potrai rivedere o aggiornare i passaggi. Continuare?"
+      )
+    ) {
+      return;
+    }
+    setOpeningWizard(true);
+    try {
+      const res = await fetch("/api/onboarding/reset", { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Operazione non riuscita");
+        return;
+      }
+      router.push("/onboarding");
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setOpeningWizard(false);
+    }
+  }
 
   // === Scheduled Jobs ===
 
@@ -752,29 +883,79 @@ export default function SettingsPage() {
                 setCheckingUpdate(true);
                 try {
                   const res = await fetch("/api/system/update");
-                  const data = await res.json();
+                  const data = (await res.json()) as {
+                    remoteVersion?: string;
+                    updateAvailable?: boolean;
+                    error?: string;
+                  };
                   if (data.remoteVersion) {
-                    setUpdateInfo({ remoteVersion: data.remoteVersion, updateAvailable: data.updateAvailable });
+                    setUpdateInfo({
+                      remoteVersion: data.remoteVersion,
+                      updateAvailable: !!data.updateAvailable,
+                    });
+                  } else {
+                    setUpdateInfo(null);
+                  }
+                  setUpdateCheckError(typeof data.error === "string" ? data.error : null);
+                  if (data.error) {
+                    toast.error(data.error);
+                  } else if (data.remoteVersion) {
                     if (data.updateAvailable) {
                       toast.info(`Nuova versione disponibile: ${data.remoteVersion}`);
                     } else {
                       toast.success("Il sistema è aggiornato");
                     }
-                  } else if (data.error) {
-                    toast.error(data.error);
                   }
                 } catch {
                   toast.error("Errore nel controllo aggiornamenti");
+                  setUpdateCheckError("Richiesta fallita");
                 } finally {
                   setCheckingUpdate(false);
                 }
               }}
-              disabled={checkingUpdate}
+              disabled={checkingUpdate || applyingUpdate}
             >
               <RefreshCw className={`h-3 w-3 ${checkingUpdate ? "animate-spin" : ""}`} />
               Controlla aggiornamenti
             </Button>
+            {updateInfo?.updateAvailable && isAdmin && (
+              <Button
+                variant="default"
+                size="sm"
+                className="h-6 text-xs gap-1"
+                onClick={() => void handleApplySystemUpdate()}
+                disabled={checkingUpdate || applyingUpdate}
+              >
+                <Download className={`h-3 w-3 ${applyingUpdate ? "animate-pulse" : ""}`} />
+                {applyingUpdate ? "Installazione…" : "Installa aggiornamento"}
+              </Button>
+            )}
+            {updateInfo?.updateAvailable && !isAdmin && (
+              <span className="text-xs text-muted-foreground max-w-[220px]">
+                Solo un amministratore può installare l&apos;aggiornamento da qui.
+              </span>
+            )}
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs gap-1"
+                onClick={() => void handleApplyGitPullManual()}
+                disabled={checkingUpdate || applyingUpdate}
+                title="Esegue git pull da main anche se il controllo versione non ha rilevato differenze"
+              >
+                <Download className="h-3 w-3" />
+                Aggiorna da Git (main)
+              </Button>
+            )}
           </div>
+        )}
+        {updateCheckError && appVersion && (
+          <p className="text-xs text-amber-600 dark:text-amber-500 mt-2 max-w-2xl">
+            Controllo remoto: {updateCheckError}
+            {" "}
+            Se sei amministratore puoi usare &quot;Aggiorna da Git (main)&quot; oppure <code className="text-[11px] bg-muted px-1 rounded">./scripts/update.sh --restart</code> sul server.
+          </p>
         )}
       </div>
 
@@ -832,6 +1013,33 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Wizard configurazione iniziale */}
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              <CardTitle className="text-base">Configurazione guidata</CardTitle>
+            </div>
+            <CardDescription>
+              Ripeti i passaggi del primo avvio (router, DNS, credenziali, Active Directory, prima subnet). I dati già salvati non vengono cancellati.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleOpenOnboardingWizard()}
+              disabled={openingWizard}
+              className="gap-2"
+            >
+              <Sparkles className={`h-4 w-4 ${openingWizard ? "animate-pulse" : ""}`} />
+              {openingWizard ? "Apertura in corso…" : "Apri wizard di configurazione"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Host Credentials (Windows/Linux) */}
       <Card>

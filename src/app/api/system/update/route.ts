@@ -11,6 +11,8 @@ import path from "path";
 import fs from "fs";
 
 const REPO_API_URL = "https://api.github.com/repos/grandir66/DA-IPAM";
+/** Fallback senza API GitHub (evita rate limit 403 e problemi di rete verso api.github.com) */
+const RAW_PACKAGE_JSON_URL = "https://raw.githubusercontent.com/grandir66/DA-IPAM/main/package.json";
 
 interface UpdateInfo {
   currentVersion: string;
@@ -43,47 +45,115 @@ function getCurrentVersion(): string {
 }
 
 async function getRemoteVersion(): Promise<{ version: string; changelog: string[] } | null> {
+  const changelog: string[] = [];
+  let version: string | null = null;
+
+  const parsePkg = (text: string): string => {
+    const pkg = JSON.parse(text) as { version?: string };
+    return pkg.version || "0.0.0";
+  };
+
+  // 1) raw.githubusercontent.com — di solito non è soggetto al rate limit dell'API REST
   try {
-    const response = await fetch(`${REPO_API_URL}/contents/package.json?ref=main`, {
-      headers: {
-        "Accept": "application/vnd.github.v3.raw",
-        "User-Agent": "DA-IPAM-Updater",
-      },
+    const rawRes = await fetch(RAW_PACKAGE_JSON_URL, {
+      headers: { "User-Agent": "DA-IPAM-Updater" },
       cache: "no-store",
     });
-
-    if (!response.ok) {
-      console.error("[Update] Failed to fetch remote package.json:", response.status);
-      return null;
+    if (rawRes.ok) {
+      version = parsePkg(await rawRes.text());
     }
+  } catch (e) {
+    console.warn("[Update] Raw package.json fetch failed:", e);
+  }
 
-    const content = await response.text();
-    const pkg = JSON.parse(content);
-    const version = pkg.version || "0.0.0";
-
-    const changelog: string[] = [];
+  // 2) API GitHub contents (stesso file, utile se raw è bloccato e API no)
+  if (!version) {
     try {
-      const commitsRes = await fetch(`${REPO_API_URL}/commits?per_page=10`, {
+      const response = await fetch(`${REPO_API_URL}/contents/package.json?ref=main`, {
         headers: {
-          "Accept": "application/vnd.github.v3+json",
+          Accept: "application/vnd.github.v3.raw",
           "User-Agent": "DA-IPAM-Updater",
         },
         cache: "no-store",
       });
-      if (commitsRes.ok) {
-        const commits = await commitsRes.json();
-        for (const commit of commits.slice(0, 5)) {
-          const msg = commit.commit?.message?.split("\n")[0] || "";
-          if (msg) changelog.push(msg);
-        }
+      if (response.ok) {
+        version = parsePkg(await response.text());
+      } else {
+        console.error("[Update] GitHub API package.json:", response.status);
       }
-    } catch { /* ignore changelog errors */ }
+    } catch (e) {
+      console.error("[Update] GitHub API package.json error:", e);
+    }
+  }
 
-    return { version, changelog };
-  } catch (error) {
-    console.error("[Update] Error fetching remote version:", error);
+  // 3) Git locale: utile su server (es. LAN) dove firewall/proxy bloccano HTTPS verso github.com
+  // ma git fetch verso lo stesso remote funziona, oppure refs già presenti dopo un pull manuale.
+  if (!version) {
+    const fromGit = getRemoteVersionFromGit();
+    if (fromGit) {
+      return fromGit;
+    }
     return null;
   }
+
+  try {
+    const commitsRes = await fetch(`${REPO_API_URL}/commits?per_page=10`, {
+      headers: {
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "DA-IPAM-Updater",
+      },
+      cache: "no-store",
+    });
+    if (commitsRes.ok) {
+      const commits = await commitsRes.json();
+      for (const commit of commits.slice(0, 5)) {
+        const msg = commit.commit?.message?.split("\n")[0] || "";
+        if (msg) changelog.push(msg);
+      }
+    }
+  } catch {
+    /* changelog opzionale */
+  }
+
+  return { version, changelog };
+}
+
+/**
+ * Legge package.json dal branch remoto tracciato (dopo git fetch). Nessuna chiamata HTTP a GitHub.
+ */
+function getRemoteVersionFromGit(): { version: string; changelog: string[] } | null {
+  const root = getProjectRoot();
+  if (!fs.existsSync(path.join(root, ".git"))) {
+    return null;
+  }
+  const changelog: string[] = [];
+  try {
+    execSync("git fetch origin --prune", {
+      cwd: root,
+      encoding: "utf-8",
+      timeout: 120000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (e) {
+    console.warn("[Update] git fetch origin fallito (si prova comunque con ref già presenti):", e);
+  }
+  const refs = ["origin/main", "origin/master"];
+  for (const ref of refs) {
+    try {
+      const json = execSync(`git show ${ref}:package.json`, {
+        cwd: root,
+        encoding: "utf-8",
+        timeout: 20000,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const pkg = JSON.parse(json) as { version?: string };
+      const v = pkg.version || "0.0.0";
+      return { version: v, changelog };
+    } catch {
+      /* prova ref successiva */
+    }
+  }
+  return null;
 }
 
 function compareVersions(v1: string, v2: string): number {
@@ -137,7 +207,10 @@ export async function GET(request: NextRequest) {
         remoteVersion: null,
         updateAvailable: false,
         lastCheck: new Date().toISOString(),
-        error: "Impossibile contattare il repository remoto",
+        error:
+          "Impossibile leggere la versione remota (HTTPS GitHub e git locale). " +
+          "Serve accesso in uscita a github.com oppure una cartella installazione con .git e remote origin; " +
+          "altrimenti usa «Aggiorna da Git» o ./scripts/update.sh sul server.",
       } satisfies UpdateInfo);
     }
 

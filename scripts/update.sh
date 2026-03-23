@@ -27,6 +27,13 @@ fi
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 echo ">>> Branch: $BRANCH"
 
+# In produzione `npm install` può riscrivere package-lock.json rispetto al commit;
+# git pull fallirebbe con "would be overwritten by merge". Ripristiniamo il lockfile da HEAD.
+if [ -n "$(git status --porcelain -- package-lock.json 2>/dev/null)" ]; then
+  echo ">>> package-lock.json modificato localmente: ripristino da Git prima del pull..."
+  git restore package-lock.json 2>/dev/null || git checkout -- package-lock.json
+fi
+
 # Pull
 echo ">>> git pull..."
 git pull origin "$BRANCH"

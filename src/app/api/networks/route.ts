@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getNetworks, getNetworksPaginated, createNetwork, setNetworkRouter, replaceNetworkHostCredentials } from "@/lib/db";
 import { NetworkCreateSchema } from "@/lib/validators";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
   try {
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const adminCheck = await requireAdmin();
+    const adminCheck = await requireAdminOrOnboarding();
     if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
     const parsed = NetworkCreateSchema.safeParse(body);

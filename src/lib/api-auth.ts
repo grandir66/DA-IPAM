@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
+import { isOnboardingCompleted } from "@/lib/db";
 
 interface AuthSession {
   user: { name?: string | null; email?: string | null; role?: string };
@@ -29,6 +30,29 @@ export async function requireAdmin(): Promise<AuthSession | NextResponse> {
     return NextResponse.json({ error: "Accesso riservato agli amministratori" }, { status: 403 });
   }
   return session as AuthSession;
+}
+
+/**
+ * Come requireAdmin, ma durante il wizard di prima configurazione (onboarding non completato)
+ * accetta sessioni autenticate anche se il JWT non espone ancora `role: "admin"` (caso tipico dopo il login post-setup).
+ * I viewer restano esclusi.
+ */
+export async function requireAdminOrOnboarding(): Promise<AuthSession | NextResponse> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
+  }
+  const role = (session.user as { role?: string }).role;
+  if (role === "viewer") {
+    return NextResponse.json({ error: "Accesso riservato agli amministratori" }, { status: 403 });
+  }
+  if (role === "admin") {
+    return session as AuthSession;
+  }
+  if (!isOnboardingCompleted()) {
+    return session as AuthSession;
+  }
+  return NextResponse.json({ error: "Accesso riservato agli amministratori" }, { status: 403 });
 }
 
 /**

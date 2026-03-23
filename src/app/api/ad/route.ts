@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, requireAuth } from "@/lib/api-auth";
+import { requireAdminOrOnboarding, requireAuth } from "@/lib/api-auth";
 import {
   getAdIntegrations,
   createAdIntegration,
@@ -36,7 +36,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAdmin();
+  const auth = await requireAdminOrOnboarding();
   if (auth instanceof NextResponse) return auth;
 
   try {

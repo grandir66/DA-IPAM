@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { signOut } from "next-auth/react";
+import { TenantSwitcher } from "./tenant-switcher";
 import {
   LayoutDashboard,
   Network,
@@ -80,6 +81,7 @@ export function Sidebar() {
         </div>
         <h1 className="text-xl font-bold text-primary mt-3">DA-INVENT</h1>
         <p className="text-xs text-sidebar-foreground/60 mt-0.5">IP Address Management</p>
+        <TenantSwitcher />
       </div>
       <nav className="flex-1 overflow-y-auto p-3 space-y-1 min-h-0">
         <Link

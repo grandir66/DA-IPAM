@@ -1,6 +1,6 @@
 {
   "name": "da-invent",
-  "version": "0.2.284",
+  "version": "0.2.285",
   "private": true,
   "description": "IPAM e inventario asset — progetto open source Domarc (domarc.it). Vedi LICENSE per attribuzione su fork.",
   "author": "Domarc (https://domarc.it)",
@@ -26,7 +26,8 @@
     "db:empty": "tsx scripts/generate-empty-db.ts",
     "version:bump": "node scripts/version-bump.js",
     "version:release": "node scripts/version-release.js",
-    "version:commit": "node scripts/version-release.js --no-bump"
+    "version:commit": "node scripts/version-release.js --no-bump",
+    "migrate:multitenant": "tsx scripts/migrate-to-multitenant.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

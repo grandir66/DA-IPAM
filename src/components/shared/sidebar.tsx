@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { TenantSwitcher } from "./tenant-switcher";
 import {
   LayoutDashboard,
@@ -25,6 +25,7 @@ import {
   User,
   FileKey,
   FolderTree,
+  Building2,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";

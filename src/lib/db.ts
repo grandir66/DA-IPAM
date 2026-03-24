@@ -1522,7 +1522,6 @@ export function getDb(): Database.Database {
 
 function seedBuiltinFingerprintRules(db: Database.Database): void {
   const count = (db.prepare("SELECT COUNT(*) as c FROM device_fingerprint_rules").get() as { c: number }).c;
-  if (count > 0) return;
   const ins = db.prepare(
     `INSERT OR IGNORE INTO device_fingerprint_rules
      (name, device_label, classification, priority, enabled, tcp_ports_key, tcp_ports_optional, min_key_ports,
@@ -1566,6 +1565,7 @@ function seedBuiltinFingerprintRules(db: Database.Database): void {
     { name: "HP ProCurve switch (OID)", label: "HP ProCurve", cls: "switch", pri: 5, oid: "1.3.6.1.4.1.11.2.3.7" },
     { name: "MikroTik (OID)", label: "MikroTik RouterOS", cls: "router", pri: 5, oid: "1.3.6.1.4.1.14988.1" },
     { name: "Ubiquiti AP (OID)", label: "UniFi/Ubiquiti", cls: "access_point", pri: 5, oid: "1.3.6.1.4.1.41112" },
+    { name: "Ruckus AP (OID)", label: "Ruckus AP", cls: "access_point", pri: 5, oid: "1.3.6.1.4.1.25053" },
     { name: "Hikvision (OID)", label: "Hikvision", cls: "telecamera", pri: 5, oid: "1.3.6.1.4.1.39165" },
     { name: "Synology (OID)", label: "Synology DSM", cls: "storage", pri: 5, oid: "1.3.6.1.4.1.6574" },
     { name: "QNAP (OID)", label: "QNAP QTS", cls: "storage", pri: 5, oid: "1.3.6.1.4.1.24681" },
@@ -1608,30 +1608,59 @@ function seedBuiltinFingerprintRules(db: Database.Database): void {
     // ── TTL ──
     { name: "TTL Windows", label: "Windows", cls: "workstation", pri: 95, ttlMin: 65, ttlMax: 128, note: "TTL 65-128 suggerisce Windows; bassa priorità" },
   ];
-  const t = db.transaction(() => {
-    for (const r of rules) {
-      ins.run(
-        r.name, r.label, r.cls, r.pri,
-        r.keyPorts ? JSON.stringify(r.keyPorts) : null,
-        r.optPorts ? JSON.stringify(r.optPorts) : null,
-        r.minKey ?? null,
-        r.oid ?? null,
-        r.sysDescr ?? null,
-        r.hostname ?? null,
-        r.macVendor ?? null,
-        r.banner ?? null,
-        r.ttlMin ?? null,
-        r.ttlMax ?? null,
-        r.note ?? null,
-      );
+  if (count === 0) {
+    const t = db.transaction(() => {
+      for (const r of rules) {
+        ins.run(
+          r.name, r.label, r.cls, r.pri,
+          r.keyPorts ? JSON.stringify(r.keyPorts) : null,
+          r.optPorts ? JSON.stringify(r.optPorts) : null,
+          r.minKey ?? null,
+          r.oid ?? null,
+          r.sysDescr ?? null,
+          r.hostname ?? null,
+          r.macVendor ?? null,
+          r.banner ?? null,
+          r.ttlMin ?? null,
+          r.ttlMax ?? null,
+          r.note ?? null,
+        );
+      }
+    });
+    t();
+  } else {
+    // Inserisci solo regole builtin mancanti (per aggiornamenti)
+    const existingNames = new Set(
+      (db.prepare("SELECT name FROM device_fingerprint_rules").all() as Array<{ name: string }>)
+        .map((r) => r.name)
+    );
+    const missing = rules.filter((r) => !existingNames.has(r.name));
+    if (missing.length > 0) {
+      const t = db.transaction(() => {
+        for (const r of missing) {
+          ins.run(
+            r.name, r.label, r.cls, r.pri,
+            r.keyPorts ? JSON.stringify(r.keyPorts) : null,
+            r.optPorts ? JSON.stringify(r.optPorts) : null,
+            r.minKey ?? null,
+            r.oid ?? null,
+            r.sysDescr ?? null,
+            r.hostname ?? null,
+            r.macVendor ?? null,
+            r.banner ?? null,
+            r.ttlMin ?? null,
+            r.ttlMax ?? null,
+            r.note ?? null,
+          );
+        }
+      });
+      t();
     }
-  });
-  t();
+  }
 }
 
 function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
   const count = (db.prepare("SELECT COUNT(*) as c FROM snmp_vendor_profiles").get() as { c: number }).c;
-  if (count > 0) return;
 
   const ins = db.prepare(`INSERT INTO snmp_vendor_profiles
     (profile_id, name, category, enterprise_oid_prefixes, sysdescr_pattern, fields, confidence, enabled, builtin)
@@ -1680,6 +1709,11 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
     // ACCESS POINT
     { id: "ubiquiti_unifi_ap", name: "Ubiquiti UniFi AP", cat: "access_point", oids: ["1.3.6.1.4.1.41112.1.6"], conf: 0.97,
       fields: { model: "1.3.6.1.4.1.41112.1.6.1.1.0", firmware: "1.3.6.1.4.1.41112.1.6.1.2.0", serial: "1.3.6.1.4.1.41112.1.6.1.3.0" } },
+    { id: "ruckus_ap", name: "Ruckus AP", cat: "access_point", oids: ["1.3.6.1.4.1.25053.3.1.4", "1.3.6.1.4.1.25053.3.1.5"], conf: 0.97,
+      sysDescr: "ruckus",
+      fields: { model: "1.3.6.1.4.1.25053.1.2.1.1.1.5.1.2.1", serial: "1.3.6.1.4.1.25053.1.2.1.1.1.5.1.3.1", firmware: "1.3.6.1.4.1.25053.1.2.1.1.1.5.1.7.1" } },
+    { id: "ruckus_controller", name: "Ruckus SmartZone", cat: "access_point", oids: ["1.3.6.1.4.1.25053.3.1.11", "1.3.6.1.4.1.25053.3.1.13"], conf: 0.96,
+      fields: { model: "1.3.6.1.4.1.25053.1.2.1.1.1.5.1.2.1", firmware: "1.3.6.1.4.1.25053.1.2.1.1.1.5.1.7.1" } },
     { id: "ubiquiti_airmax", name: "Ubiquiti AirMAX", cat: "access_point", oids: ["1.3.6.1.4.1.41112.1.2"], conf: 0.96, fields: {} },
     { id: "ubiquiti_generic", name: "Ubiquiti Device", cat: "access_point", oids: ["1.3.6.1.4.1.41112"], conf: 0.90,
       fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1" } },
@@ -1743,18 +1777,42 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       fields: { serial: "1.3.6.1.2.1.43.5.1.1.16.1" } },
   ];
 
-  const t = db.transaction(() => {
-    for (const p of profiles) {
-      ins.run(
-        p.id, p.name, p.cat,
-        JSON.stringify(p.oids),
-        p.sysDescr ?? null,
-        JSON.stringify(p.fields),
-        p.conf
-      );
+  // Se la tabella è vuota, inserisci tutti; altrimenti inserisci solo i profili builtin mancanti
+  if (count === 0) {
+    const t = db.transaction(() => {
+      for (const p of profiles) {
+        ins.run(
+          p.id, p.name, p.cat,
+          JSON.stringify(p.oids),
+          p.sysDescr ?? null,
+          JSON.stringify(p.fields),
+          p.conf
+        );
+      }
+    });
+    t();
+  } else {
+    // Inserisci solo profili builtin che non esistono ancora nel DB
+    const existingIds = new Set(
+      (db.prepare("SELECT profile_id FROM snmp_vendor_profiles").all() as Array<{ profile_id: string }>)
+        .map((r) => r.profile_id)
+    );
+    const missing = profiles.filter((p) => !existingIds.has(p.id));
+    if (missing.length > 0) {
+      const t = db.transaction(() => {
+        for (const p of missing) {
+          ins.run(
+            p.id, p.name, p.cat,
+            JSON.stringify(p.oids),
+            p.sysDescr ?? null,
+            JSON.stringify(p.fields),
+            p.conf
+          );
+        }
+      });
+      t();
     }
-  });
-  t();
+  }
 }
 
 // ========================

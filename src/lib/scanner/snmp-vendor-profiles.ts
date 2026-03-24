@@ -758,6 +758,32 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     },
   },
 
+  // ── RUCKUS / COMMSCOPE ──
+  {
+    id: "ruckus_ap",
+    name: "Ruckus AP",
+    category: "access_point",
+    enterpriseOidPrefixes: ["1.3.6.1.4.1.25053.3.1.4", "1.3.6.1.4.1.25053.3.1.5"],
+    identifyBySysDescr: /ruckus/i,
+    confidence: 0.97,
+    fields: {
+      model: "1.3.6.1.4.1.25053.1.2.1.1.1.5.1.2.1",
+      serial: "1.3.6.1.4.1.25053.1.2.1.1.1.5.1.3.1",
+      firmware: "1.3.6.1.4.1.25053.1.2.1.1.1.5.1.7.1",
+    },
+  },
+  {
+    id: "ruckus_controller",
+    name: "Ruckus SmartZone",
+    category: "access_point",
+    enterpriseOidPrefixes: ["1.3.6.1.4.1.25053.3.1.11", "1.3.6.1.4.1.25053.3.1.13"],
+    confidence: 0.96,
+    fields: {
+      model: "1.3.6.1.4.1.25053.1.2.1.1.1.5.1.2.1",
+      firmware: "1.3.6.1.4.1.25053.1.2.1.1.1.5.1.7.1",
+    },
+  },
+
   {
     id: "printer_generic",
     name: "Printer (RFC 3805)",
@@ -804,6 +830,7 @@ export const ENTERPRISE_VENDOR_MAP: Record<number, string> = {
   14823: "Aruba Networks",
   14988: "MikroTik",
   24681: "QNAP",
+  25053: "Ruckus / CommScope",
   25461: "Palo Alto",
   25506: "H3C/HP Comware",
   31746: "Grandstream",

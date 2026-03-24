@@ -164,6 +164,8 @@ const OID_RULES: Array<{ prefix: string; classification: DeviceClassification }>
   { prefix: "1.3.6.1.4.1.41112.1.2", classification: "access_point" },
   // NB: 41112 generico NON mappato qui — è ambiguo (AP, switch, gateway); la
   // disambiguazione avviene via vendor profile + hostname prefix in discovery.ts
+  // Ruckus / CommScope (enterprise 25053)
+  { prefix: "1.3.6.1.4.1.25053", classification: "access_point" },
   // Hikvision
   { prefix: "1.3.6.1.4.1.39165", classification: "telecamera" },
   // Dahua

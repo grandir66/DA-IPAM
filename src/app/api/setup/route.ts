@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
-import { getUserCount, createUser } from "@/lib/db";
+import { createUser, getTenantByCode, getUserCount, setUserTenantAccess } from "@/lib/db";
 import { SetupSchema } from "@/lib/validators";
 import fs from "fs";
 import path from "path";
@@ -27,6 +27,15 @@ export async function POST(request: Request) {
 
     const passwordHash = await bcrypt.hash(parsed.data.password, 12);
     const user = createUser(parsed.data.username, passwordHash, "admin");
+
+    const defaultTenant = getTenantByCode("DEFAULT");
+    if (defaultTenant) {
+      try {
+        setUserTenantAccess(user.id, defaultTenant.id, "admin");
+      } catch (e) {
+        console.error("Setup: impossibile associare l'utente al tenant DEFAULT:", e);
+      }
+    }
 
     // Generate encryption key if not exists
     const envPath = path.join(process.cwd(), ".env.local");

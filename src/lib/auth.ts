@@ -20,8 +20,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
-        const username = credentials.username as string;
+        const username = (credentials.username as string).trim();
         const password = credentials.password as string;
+        if (!username) {
+          return null;
+        }
 
         // Rate limiting: max 5 tentativi falliti per username ogni 15 minuti
         const { checkRateLimit, recordFailedAttempt } = await import("./rate-limit");

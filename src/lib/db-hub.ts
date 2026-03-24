@@ -609,7 +609,10 @@ export function deleteTenant(id: number): boolean {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function getUserByUsername(username: string): HubUser | undefined {
-  return getHubDb().prepare("SELECT * FROM users WHERE username = ?").get(username) as HubUser | undefined;
+  const u = username.trim();
+  if (!u) return undefined;
+  /** TRIM(username) allinea login e setup se nel DB sono rimasti spazi (es. copia-incolla al primo setup). */
+  return getHubDb().prepare("SELECT * FROM users WHERE TRIM(username) = ?").get(u) as HubUser | undefined;
 }
 
 export function getUserCount(): number {

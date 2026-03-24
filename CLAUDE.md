@@ -14,7 +14,57 @@ Versione attuale: vedi `package.json`.
 
 ## Project Overview
 
-DA-INVENT is a full-stack IP Address Management web application built with Next.js 16. It manages networks, scans hosts (ICMP ping, nmap), acquires MAC addresses from routers (ARP tables), maps switch ports, and provides scheduled monitoring with cron jobs.
+DA-INVENT is a full-stack IP Address Management **multi-tenant** web application built with Next.js 16. It manages networks, scans hosts (ICMP ping, nmap), acquires MAC addresses from routers (ARP tables), maps switch ports, and provides scheduled monitoring with cron jobs.
+
+## Architettura Multi-Tenant (Hub + Spoke)
+
+Il sistema usa **database SQLite separati** per ogni cliente (tenant):
+
+```
+data/
+  hub.db                    ← Utenti, tenant registry, settings globali, profili SNMP/nmap/fingerprint
+  tenants/
+    CLIENTE-001.db          ← Reti, host, device, credenziali, inventario, scansioni del cliente
+    CLIENTE-002.db
+    ...
+```
+
+### File chiave multi-tenant
+
+| File | Ruolo |
+|------|-------|
+| `src/lib/db-hub-schema.ts` | Schema hub DB (tenants, users, settings, profili) |
+| `src/lib/db-hub.ts` | Modulo hub: singleton + ~30 funzioni (CRUD tenant, utenti, settings, profili SNMP/fingerprint/nmap) |
+| `src/lib/db-tenant-schema.ts` | Schema tenant DB (35 tabelle operative) |
+| `src/lib/db-tenant.ts` | Modulo tenant: AsyncLocalStorage context + LRU cache connessioni + ~210 funzioni |
+| `src/lib/db.ts` | **Facade** backward-compatible: re-esporta da hub e tenant. `getDb()` usa il contesto tenant attivo o fallback a DEFAULT |
+| `src/lib/api-tenant.ts` | Helper `withTenantFromSession()` e `getTenantMode()` per le API routes |
+| `src/lib/auth.ts` | Login con tenant nel JWT: `tenantCode`, `tenants[]`, ruolo `superadmin` |
+
+### Contesto tenant nelle API
+
+Tutte le ~65 API routes tenant-scoped usano `withTenantFromSession()` che:
+1. Legge `tenantCode` dal JWT
+2. Imposta il contesto `AsyncLocalStorage` con `withTenant(code, fn)`
+3. Tutte le funzioni DB chiamano `db()` interno che usa il contesto per aprire il DB corretto
+
+### Ruoli utente
+
+| Ruolo | Scope |
+|-------|-------|
+| `superadmin` | Accede a tutti i tenant, gestisce clienti, tenantCode = `__ALL__` per vista aggregata |
+| `admin` | Accede solo al suo tenant assegnato |
+| `viewer` | Solo lettura nel suo tenant |
+
+### Utente di servizio Domarc
+
+Autenticazione via env var `DOMARC_USERNAME` + `DOMARC_PASSWORD` in `.env.local`. Accesso superadmin incondizionato, senza record nel DB.
+
+### Migrazione da single-tenant
+
+```bash
+npm run migrate:multitenant    # Crea hub.db + data/tenants/DEFAULT.db da ipam.db
+```
 
 ## Commands
 

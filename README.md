@@ -289,8 +289,18 @@ Come **root**, lo script installa tra gli altri: `ca-certificates`, `curl`, `git
 ## Primo avvio e configurazione
 
 1. Apri `http://<indirizzo-server>:3001`  
-2. Completa il **setup iniziale** dalla pagina `/setup` (primo utente amministratore)  
-3. Opzionale: copia `.env.example` in `.env.local` e adatta `PORT`, `WINRM_PYTHON`, TLS (vedi commenti in `.env.example`)
+2. Completa il **setup iniziale** dalla pagina `/setup` (primo utente amministratore — **username e password si impostano solo qui**, non dal wizard)  
+3. Dopo il login, la **configurazione guidata** (`/onboarding`) riguarda rete, DNS e dispositivi: **non** crea né modifica l’account di accesso  
+4. Opzionale: copia `.env.example` in `.env.local` e adatta `PORT`, `WINRM_PYTHON`, TLS (vedi commenti in `.env.example`)
+
+**Verifica utente / password nel database (debug su server):** dalla directory dell’installazione, con il servizio fermo non è obbligatorio:
+
+```bash
+npm run verify-auth-user
+npm run verify-auth-user -- --test admin "password-da-provare"
+```
+
+Legge `data/hub.db` (o `DA_IPAM_HUB_DB_PATH`) e, con `--test`, confronta la password con l’hash bcrypt come fa il login. Exit code `3` se la password non coincide.
 
 | Variabile | Descrizione |
 |-----------|-------------|

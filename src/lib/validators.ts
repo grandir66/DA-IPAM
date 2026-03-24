@@ -221,7 +221,8 @@ export const LoginSchema = z.object({
 });
 
 export const SetupSchema = z.object({
-  username: z.string().min(3, "Username minimo 3 caratteri").max(50),
+  /** Trim lato server: evita che spazi iniziali/finali salvati al setup impediscano il login. */
+  username: z.string().trim().min(3, "Username minimo 3 caratteri").max(50),
   password: z.string().min(8, "Password minimo 8 caratteri").max(100),
   confirm_password: z.string(),
 }).refine((data) => data.password === data.confirm_password, {

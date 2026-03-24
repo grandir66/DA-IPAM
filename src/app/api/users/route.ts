@@ -27,10 +27,11 @@ export async function POST(request: Request) {
     if (isAuthError(adminCheck)) return adminCheck;
 
     const body = await request.json();
-    const { username, password, role } = body as {
+    const { username, password, role, email } = body as {
       username?: string;
       password?: string;
       role?: string;
+      email?: string | null;
     };
 
     if (!username || !password) {
@@ -61,9 +62,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (role && role !== "admin" && role !== "viewer") {
+    if (role && role !== "superadmin" && role !== "admin" && role !== "viewer") {
       return NextResponse.json(
-        { error: "Il ruolo deve essere 'admin' o 'viewer'" },
+        { error: "Il ruolo deve essere 'superadmin', 'admin' o 'viewer'" },
         { status: 400 }
       );
     }
@@ -78,8 +79,8 @@ export async function POST(request: Request) {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const validRole = (role === "admin" || role === "viewer") ? role : "viewer";
-    const user = createUser(username, passwordHash, validRole);
+    const validRole = (role === "superadmin" || role === "admin" || role === "viewer") ? role : "viewer";
+    const user = createUser(username, passwordHash, validRole as "superadmin" | "admin" | "viewer", undefined, email);
 
     // Restituisci utente senza password_hash
     const { password_hash: _, ...safeUser } = user;

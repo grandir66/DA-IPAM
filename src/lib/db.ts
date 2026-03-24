@@ -1998,9 +1998,9 @@ export function getUserCount(): number {
   return row.count;
 }
 
-export function createUser(username: string, passwordHash: string, role: "admin" | "viewer" = "admin"): User {
+export function createUser(username: string, passwordHash: string, role: "superadmin" | "admin" | "viewer" = "admin", tenantId?: number | null, email?: string | null): User {
   const { createUser: hubCreateUser } = require("./db-hub");
-  return hubCreateUser(username, passwordHash, role) as User;
+  return hubCreateUser(username, passwordHash, role, tenantId, email) as User;
 }
 
 export function updateUserLastLogin(userId: number): void {

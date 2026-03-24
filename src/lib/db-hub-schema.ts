@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  email TEXT,
   role TEXT NOT NULL DEFAULT 'admin' CHECK(role IN ('superadmin', 'admin', 'viewer')),
   tenant_id INTEGER REFERENCES tenants(id) ON DELETE SET NULL,
   created_at TEXT DEFAULT (datetime('now')),

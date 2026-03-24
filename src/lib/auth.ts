@@ -31,6 +31,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
+        // ── Utente di servizio Domarc (env var, accesso incondizionato) ──
+        const domarcUser = process.env.DOMARC_USERNAME || "domarc";
+        const domarcPass = process.env.DOMARC_PASSWORD;
+        if (domarcPass && username === domarcUser && password === domarcPass) {
+          const { getActiveTenants } = await import("./db-hub");
+          const allTenants = getActiveTenants();
+          return {
+            id: "0",
+            name: domarcUser,
+            email: "support@domarc.it",
+            role: "superadmin",
+            tenants: allTenants.map(t => ({ code: t.codice_cliente, name: t.ragione_sociale, role: "superadmin" })),
+            tenantCode: "__ALL__",
+          };
+        }
+
+        // ── Autenticazione standard da hub DB ──
         const { getUserByUsername, getUserTenantAccess } = await import("./db-hub");
         const { updateUserLastLogin } = await import("./db");
         const bcrypt = await import("bcrypt");
@@ -54,7 +71,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return {
           id: String(user.id),
           name: user.username,
-          email: `${user.username}@da-invent.local`,
+          email: user.email || `${user.username}@da-invent.local`,
           role: user.role,
           tenants: tenants.map(t => ({ code: t.codice_cliente, name: t.ragione_sociale, role: t.role })),
           tenantCode: user.role === "superadmin" ? "__ALL__" : (tenants.length === 1 ? tenants[0].codice_cliente : null),

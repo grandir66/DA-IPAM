@@ -365,6 +365,13 @@ export function seedHubDefaults(db: Database.Database): void {
 function initializeHubDb(db: Database.Database): void {
   db.exec(HUB_SCHEMA_SQL);
   db.exec(HUB_INDEXES_SQL);
+  // Migrazione: aggiunge colonna email a users se mancante
+  try {
+    const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "email")) {
+      db.exec("ALTER TABLE users ADD COLUMN email TEXT");
+    }
+  } catch { /* ignore */ }
   seedHubDefaults(db);
 }
 
@@ -427,6 +434,7 @@ export interface HubUser {
   id: number;
   username: string;
   password_hash: string;
+  email: string | null;
   role: "superadmin" | "admin" | "viewer";
   tenant_id: number | null;
   created_at: string;
@@ -613,12 +621,13 @@ export function createUser(
   username: string,
   passwordHash: string,
   role: "superadmin" | "admin" | "viewer" = "admin",
-  tenantId?: number | null
+  tenantId?: number | null,
+  email?: string | null
 ): HubUser {
   const stmt = getHubDb().prepare(
-    "INSERT INTO users (username, password_hash, role, tenant_id) VALUES (?, ?, ?, ?)"
+    "INSERT INTO users (username, password_hash, email, role, tenant_id) VALUES (?, ?, ?, ?, ?)"
   );
-  const result = stmt.run(username, passwordHash, role, tenantId ?? null);
+  const result = stmt.run(username, passwordHash, email?.trim() || null, role, tenantId ?? null);
   return getHubDb().prepare("SELECT * FROM users WHERE id = ?").get(result.lastInsertRowid) as HubUser;
 }
 
@@ -631,7 +640,11 @@ export function updateUserPassword(userId: number, passwordHash: string): void {
 }
 
 export function getUsers(): Omit<HubUser, "password_hash">[] {
-  return getHubDb().prepare("SELECT id, username, role, tenant_id, created_at, last_login FROM users ORDER BY username").all() as Omit<HubUser, "password_hash">[];
+  return getHubDb().prepare("SELECT id, username, email, role, tenant_id, created_at, last_login FROM users ORDER BY username").all() as Omit<HubUser, "password_hash">[];
+}
+
+export function updateUserEmail(userId: number, email: string | null): boolean {
+  return getHubDb().prepare("UPDATE users SET email = ? WHERE id = ?").run(email?.trim() || null, userId).changes > 0;
 }
 
 export function getUserById(id: number): HubUser | undefined {

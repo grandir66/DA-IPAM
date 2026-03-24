@@ -412,8 +412,9 @@ export default function SettingsPage() {
   const [users, setUsers] = useState<{ id: number; username: string; role: string; created_at: string; last_login: string | null }[]>([]);
   const [newUserOpen, setNewUserOpen] = useState(false);
   const [newUsername, setNewUsername] = useState("");
+  const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
-  const [newUserRole, setNewUserRole] = useState<"admin" | "viewer">("viewer");
+  const [newUserRole, setNewUserRole] = useState<"superadmin" | "admin" | "viewer">("viewer");
   const [savingUser, setSavingUser] = useState(false);
 
   // TLS state
@@ -440,12 +441,12 @@ export default function SettingsPage() {
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: newUsername, password: newUserPassword, role: newUserRole }),
+        body: JSON.stringify({ username: newUsername, password: newUserPassword, role: newUserRole, email: newUserEmail || null }),
       });
       if (res.ok) {
         toast.success("Utente creato");
         setNewUserOpen(false);
-        setNewUsername(""); setNewUserPassword(""); setNewUserRole("viewer");
+        setNewUsername(""); setNewUserEmail(""); setNewUserPassword(""); setNewUserRole("viewer");
         const updated = await fetch("/api/users").then(r => r.json());
         setUsers(updated);
       } else {
@@ -863,14 +864,19 @@ export default function SettingsPage() {
                   <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} required minLength={3} placeholder="nome.cognome" />
                 </div>
                 <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input type="email" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} placeholder="utente@esempio.it (per reset password)" />
+                </div>
+                <div className="space-y-2">
                   <Label>Password</Label>
                   <Input type="password" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} required minLength={8} placeholder="Minimo 8 caratteri" />
                 </div>
                 <div className="space-y-2">
                   <Label>Ruolo</Label>
-                  <Select value={newUserRole} onValueChange={(v) => setNewUserRole(v as "admin" | "viewer")}>
+                  <Select value={newUserRole} onValueChange={(v) => setNewUserRole((v ?? newUserRole) as "superadmin" | "admin" | "viewer")}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="superadmin">Super Amministratore</SelectItem>
                       <SelectItem value="admin">Amministratore</SelectItem>
                       <SelectItem value="viewer">Solo lettura</SelectItem>
                     </SelectContent>
@@ -886,6 +892,7 @@ export default function SettingsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Username</TableHead>
+                <TableHead>Email</TableHead>
                 <TableHead>Ruolo</TableHead>
                 <TableHead>Creato il</TableHead>
                 <TableHead>Ultimo accesso</TableHead>
@@ -896,9 +903,10 @@ export default function SettingsPage() {
               {users.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.username}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{(user as Record<string, unknown>).email as string || "—"}</TableCell>
                   <TableCell>
-                    <Badge variant={user.role === "admin" ? "default" : "secondary"}>
-                      {user.role === "admin" ? "Amministratore" : "Solo lettura"}
+                    <Badge variant={user.role === "superadmin" ? "destructive" : user.role === "admin" ? "default" : "secondary"}>
+                      {user.role === "superadmin" ? "Super Admin" : user.role === "admin" ? "Amministratore" : "Solo lettura"}
                     </Badge>
                   </TableCell>
                   <TableCell>{new Date(user.created_at).toLocaleDateString("it-IT")}</TableCell>

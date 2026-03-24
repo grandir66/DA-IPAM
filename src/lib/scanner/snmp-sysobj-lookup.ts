@@ -45,6 +45,8 @@ const LOOKUP_TABLE: Array<{ oid: string; match: SysObjMatch }> = [
   { oid: "1.3.6.1.4.1.11.2.14.11.1.2.167.1.1", match: { vendor: "HPE", product: "ProCurve 2810 serie", category: "networking", enterpriseId: 11 } },
   { oid: "1.3.6.1.4.1.11.2.14.11.1.2.127.1.1", match: { vendor: "HPE", product: "ProCurve 2510 serie", category: "networking", enterpriseId: 11 } },
   { oid: "1.3.6.1.4.1.11.2.14.11.1.2.113.1.1", match: { vendor: "HPE", product: "ProCurve 2626 serie", category: "networking", enterpriseId: 11 } },
+  { oid: "1.3.6.1.4.1.11.2.3.7.11.136", match: { vendor: "HPE", product: "ProCurve 2530 serie", category: "networking", enterpriseId: 11 } },
+  { oid: "1.3.6.1.4.1.11.2.3.7.11", match: { vendor: "HPE", product: "ProCurve switch generico", category: "networking", enterpriseId: 11 } },
 
   // ── HPE Comware / H3C (25506) ──
   { oid: "1.3.6.1.4.1.25506.11.2.54", match: { vendor: "HPE", product: "HP 1920 serie (Comware)", category: "networking", enterpriseId: 25506 } },
@@ -58,6 +60,15 @@ const LOOKUP_TABLE: Array<{ oid: string; match: SysObjMatch }> = [
   { oid: "1.3.6.1.4.1.41112.1.6.1", match: { vendor: "Ubiquiti", product: "UniFi AP AC serie", category: "wireless", enterpriseId: 41112 } },
   { oid: "1.3.6.1.4.1.41112.1.6", match: { vendor: "Ubiquiti", product: "UniFi AP (UAP serie)", category: "wireless", enterpriseId: 41112 } },
   { oid: "1.3.6.1.4.1.41112.1.4", match: { vendor: "Ubiquiti", product: "UniFi Switch (USW serie)", category: "networking", enterpriseId: 41112 } },
+
+  // ── Ruckus / CommScope (25053) ──
+  { oid: "1.3.6.1.4.1.25053.3.1.11", match: { vendor: "Ruckus", product: "SmartZone controller", category: "wireless", enterpriseId: 25053 } },
+  { oid: "1.3.6.1.4.1.25053.3.1.13", match: { vendor: "Ruckus", product: "Virtual SmartZone (vSZ)", category: "wireless", enterpriseId: 25053 } },
+  { oid: "1.3.6.1.4.1.25053.3.1.5", match: { vendor: "Ruckus", product: "Unleashed AP", category: "wireless", enterpriseId: 25053 } },
+  { oid: "1.3.6.1.4.1.25053.3.1.4.114", match: { vendor: "Ruckus", product: "Ruckus R550 / R560", category: "wireless", enterpriseId: 25053 } },
+  { oid: "1.3.6.1.4.1.25053.3.1.4.92", match: { vendor: "Ruckus", product: "Ruckus R510", category: "wireless", enterpriseId: 25053 } },
+  { oid: "1.3.6.1.4.1.25053.3.1.4.89", match: { vendor: "Ruckus", product: "Ruckus R500", category: "wireless", enterpriseId: 25053 } },
+  { oid: "1.3.6.1.4.1.25053.3.1.4", match: { vendor: "Ruckus", product: "Ruckus AP generico", category: "wireless", enterpriseId: 25053 } },
 
   // ── TP-Link / Omada (11863) ──
   { oid: "1.3.6.1.4.1.11863.6.4", match: { vendor: "TP-Link", product: "Omada Switch (TL-SG serie)", category: "networking", enterpriseId: 11863 } },

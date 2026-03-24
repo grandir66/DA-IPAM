@@ -76,7 +76,7 @@ export function SysObjLookupTab() {
       const res = await fetch("/api/sysobj-lookup");
       if (res.ok) {
         const data = await res.json();
-        setRows(data.entries ?? data);
+        setRows(Array.isArray(data) ? data : Array.isArray(data?.entries) ? data.entries : []);
       }
     } catch { /* ignore */ }
     finally { setLoading(false); }

@@ -213,22 +213,40 @@ function NetworkCredentialsTableV2({
     if (!copySourceId) return;
     setCopying(true);
     try {
-      const res = await fetch(`/api/networks/${networkId}/credentials`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "copy", source_network_id: Number(copySourceId) }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(typeof data.error === "string" ? data.error : "Copia fallita");
-        return;
-      }
-      if (Array.isArray(data.credentials)) {
-        onCredentialIdsChange(data.credentials.map((c: { credential_id: number }) => c.credential_id));
+      if (networkId > 0) {
+        // Rete esistente: copia lato server
+        const res = await fetch(`/api/networks/${networkId}/credentials`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "copy", source_network_id: Number(copySourceId) }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(typeof data.error === "string" ? data.error : "Copia fallita");
+          return;
+        }
+        if (Array.isArray(data.credentials)) {
+          onCredentialIdsChange(data.credentials.map((c: { credential_id: number }) => c.credential_id));
+        }
+        toast.success(`${data.added ?? 0} credenziali importate`);
+      } else {
+        // Rete non ancora creata: fetch credenziali sorgente e merge locale
+        const res = await fetch(`/api/networks/${copySourceId}/credentials`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error("Impossibile leggere credenziali dalla subnet sorgente");
+          return;
+        }
+        const sourceIds = (data.credentials ?? []).map((c: { credential_id: number }) => c.credential_id) as number[];
+        const existing = new Set(credentialIds);
+        const toAdd = sourceIds.filter((id: number) => !existing.has(id));
+        if (toAdd.length > 0) {
+          onCredentialIdsChange([...credentialIds, ...toAdd]);
+        }
+        toast.success(`${toAdd.length} credenziali importate`);
       }
       setShowCopyDialog(false);
       setCopySourceId("");
-      toast.success(`${data.added ?? 0} credenziali importate`);
     } catch {
       toast.error("Errore di rete");
     } finally {

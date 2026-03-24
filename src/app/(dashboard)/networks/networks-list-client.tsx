@@ -100,10 +100,19 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
   const [quickRouterSaving, setQuickRouterSaving] = useState(false);
   const quickRouterFormRef = useRef<HTMLFormElement>(null);
   const [networkCredentialIds, setNetworkCredentialIds] = useState<number[]>([]);
+  const [credAvailableSources, setCredAvailableSources] = useState<Array<{ id: number; name: string; cidr: string; credential_count: number }>>([]);
 
   useEffect(() => {
     setRoutersList(initialRouters);
   }, [initialRouters]);
+
+  // Carica subnet con credenziali (per "Importa da altra subnet")
+  useEffect(() => {
+    fetch("/api/networks/with-credentials")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: Array<{ id: number; name: string; cidr: string; credential_count: number }>) => setCredAvailableSources(data))
+      .catch(() => {});
+  }, []);
 
   const refreshRoutersList = useCallback(async () => {
     try {
@@ -562,6 +571,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
                 onCredentialIdsChange={setNetworkCredentialIds}
                 onCredentialsRefresh={refreshCredentialsList}
                 networkId={0}
+                availableSources={credAvailableSources}
               />
               <Button type="submit" className="w-full">Crea Rete</Button>
             </form>

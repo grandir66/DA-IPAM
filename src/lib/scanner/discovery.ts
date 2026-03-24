@@ -355,59 +355,59 @@ async function runDiscovery(
 
     // ── SNMP sysObjectID quick probe: identifica vendor/prodotto con un singolo GET ──
     if (onlineIps.length > 0) {
-      const { lookupSysObjectId } = await import("./snmp-sysobj-lookup");
-      const { buildSnmpCommunitiesForNetwork } = await import("@/lib/db");
-      const communities = buildSnmpCommunitiesForNetwork(networkId, snmpCommunity ?? null);
-      const SNMP_BATCH = 24;
-      let identified = 0;
-      progress.phase = `SNMP sysObjectID — 0/${onlineIps.length}`;
-      log(`SNMP sysObjectID probe: ${onlineIps.length} host, community: ${communities.slice(0, 3).join(", ")}${communities.length > 3 ? "…" : ""}`);
+      try {
+        const { lookupSysObjectId } = await import("./snmp-sysobj-lookup");
+        const communities = buildSnmpCommunitiesForHost(networkId, null, snmpCommunity ?? null);
+        const SNMP_BATCH = 24;
+        let identified = 0;
+        progress.phase = `SNMP sysObjectID — 0/${onlineIps.length}`;
+        log(`SNMP sysObjectID probe: ${onlineIps.length} host, community: ${communities.slice(0, 3).join(", ")}${communities.length > 3 ? "…" : ""}`);
 
-      for (let si = 0; si < onlineIps.length; si += SNMP_BATCH) {
-        const batch = onlineIps.slice(si, si + SNMP_BATCH);
-        const results = await Promise.all(
-          batch.map(async (ip) => {
-            for (const community of communities) {
+        for (let si = 0; si < onlineIps.length; si += SNMP_BATCH) {
+          const batch = onlineIps.slice(si, si + SNMP_BATCH);
+          const batchResults = await Promise.all(
+            batch.map(async (ip) => {
               try {
-                const r = await querySnmpInfoMultiCommunity(ip, [community], 161, {});
+                const r = await querySnmpInfoMultiCommunity(ip, communities, 161, { onLog: log });
                 if (r.sysObjectID) {
                   return { ip, sysObjectID: r.sysObjectID, sysName: r.sysName ?? null, sysDescr: r.sysDescr ?? null };
                 }
-              } catch { /* next community */ }
+              } catch { /* ignore */ }
+              return null;
+            })
+          );
+          for (const r of batchResults) {
+            if (!r) continue;
+            const match = lookupSysObjectId(r.sysObjectID);
+            const prev = nmapResults.get(r.ip);
+            const ports = prev?.ports ? [...prev.ports] : [];
+            if (!ports.some((p) => p.port === 161 && p.protocol === "udp")) {
+              ports.push({ port: 161, protocol: "udp", service: "snmp", version: null });
             }
-            return null;
-          })
-        );
-        for (const r of results) {
-          if (!r) continue;
-          const match = lookupSysObjectId(r.sysObjectID);
-          const prev = nmapResults.get(r.ip);
-          // Aggiungi porta 161 UDP ai risultati se non presente
-          const ports = prev?.ports ? [...prev.ports] : [];
-          if (!ports.some((p) => p.port === 161 && p.protocol === "udp")) {
-            ports.push({ port: 161, protocol: "udp", service: "snmp", version: null });
+            nmapResults.set(r.ip, {
+              ...prev,
+              ports,
+              os: prev?.os ?? null,
+              mac: prev?.mac ?? null,
+              snmpHostname: r.sysName,
+              snmpSysDescr: r.sysDescr,
+              snmpSysObjectID: r.sysObjectID,
+              sysObjMatch: match ?? undefined,
+            });
+            if (match) {
+              identified++;
+              log(`✓ ${r.ip} → ${match.vendor} ${match.product} (${match.category})`);
+            } else {
+              log(`⚙ ${r.ip} sysObjectID=${r.sysObjectID} (non in tabella)`);
+            }
           }
-          nmapResults.set(r.ip, {
-            ...prev,
-            ports,
-            os: prev?.os ?? null,
-            mac: prev?.mac ?? null,
-            snmpHostname: r.sysName,
-            snmpSysDescr: r.sysDescr,
-            snmpSysObjectID: r.sysObjectID,
-            sysObjMatch: match ?? undefined,
-          });
-          if (match) {
-            identified++;
-            log(`✓ ${r.ip} → ${match.vendor} ${match.product} (${match.category})`);
-          } else {
-            log(`⚙ ${r.ip} sysObjectID=${r.sysObjectID} (non in tabella)`);
-          }
+          progress.scanned = Math.min(si + SNMP_BATCH, onlineIps.length);
+          progress.phase = `SNMP sysObjectID — ${progress.scanned}/${onlineIps.length}`;
         }
-        progress.scanned = Math.min(si + SNMP_BATCH, onlineIps.length);
-        progress.phase = `SNMP sysObjectID — ${progress.scanned}/${onlineIps.length}`;
+        log(`SNMP sysObjectID: ${identified} device identificati su ${onlineIps.length} host`);
+      } catch (snmpErr) {
+        log(`SNMP sysObjectID probe fallito: ${snmpErr instanceof Error ? snmpErr.message : "errore"}`);
       }
-      log(`SNMP sysObjectID: ${identified} device identificati su ${onlineIps.length} host`);
     }
   }
 

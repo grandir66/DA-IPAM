@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getNetworkById, getHostsByNetwork } from "@/lib/db";
 import { snmpDebugQuery } from "@/lib/scanner/snmp-debug";
+import { withTenantFromSession } from "@/lib/api-tenant";
 
 /**
  * GET /api/networks/[id]/test-snmp?ip=192.168.1.1&community=public
@@ -9,8 +10,9 @@ import { snmpDebugQuery } from "@/lib/scanner/snmp-debug";
  * Senza ?ip= testa i primi 5 host della rete.
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params;
+  return withTenantFromSession(async () => {
+    try {
+      const { id } = await params;
     const network = getNetworkById(Number(id));
     if (!network) {
       return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
@@ -58,10 +60,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         "5. Se il test da terminale funziona ma qui no, potrebbe essere un problema di routing/binding di net-snmp",
       ] : undefined,
     });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Errore" },
-      { status: 500 }
-    );
-  }
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Errore" },
+        { status: 500 }
+      );
+    }
+  });
 }

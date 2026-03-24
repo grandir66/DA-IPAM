@@ -6,11 +6,13 @@ import {
   countHostsInNetwork,
 } from "@/lib/db";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 
 export async function PATCH(request: Request) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
     const parsed = HostsBulkKnownSchema.safeParse(body);
     if (!parsed.success) {
@@ -27,16 +29,18 @@ export async function PATCH(request: Request) {
     }
     const changes = bulkUpdateHostsKnownHost(network_id, unique, known_host);
     return NextResponse.json({ success: true, updated: changes });
-  } catch (error) {
-    console.error("Hosts bulk PATCH error:", error);
-    return NextResponse.json({ error: "Errore nell'aggiornamento" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Hosts bulk PATCH error:", error);
+      return NextResponse.json({ error: "Errore nell'aggiornamento" }, { status: 500 });
+    }
+  });
 }
 
 export async function DELETE(request: Request) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
     const parsed = HostsBulkBaseSchema.safeParse(body);
     if (!parsed.success) {
@@ -53,8 +57,9 @@ export async function DELETE(request: Request) {
     }
     const changes = bulkDeleteHosts(network_id, unique);
     return NextResponse.json({ success: true, deleted: changes });
-  } catch (error) {
-    console.error("Hosts bulk DELETE error:", error);
-    return NextResponse.json({ error: "Errore nell'eliminazione" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Hosts bulk DELETE error:", error);
+      return NextResponse.json({ error: "Errore nell'eliminazione" }, { status: 500 });
+    }
+  });
 }

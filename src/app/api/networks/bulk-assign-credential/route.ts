@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getNetworkRouterId, updateNetworkDevice, getCredentialCommunityString } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 
 /**
  * Assegna credenziali (SSH e/o SNMP) ai router delle reti selezionate.
@@ -11,9 +12,10 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
  * credential_id = SSH (per ARP), snmp_credential_id = SNMP (per porte/LLDP/community).
  */
 export async function POST(request: Request) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
     const networkIds = Array.isArray(body.network_ids) ? body.network_ids.map(Number) : [];
     const credentialId = body.credential_id != null ? Number(body.credential_id) : undefined;
@@ -74,11 +76,12 @@ export async function POST(request: Request) {
       devices_updated: updated,
       message: `Credenziali assegnate a ${updated} router`,
     });
-  } catch (error) {
-    console.error("Bulk assign credential error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Errore nell'assegnazione" },
-      { status: 500 }
-    );
-  }
+    } catch (error) {
+      console.error("Bulk assign credential error:", error);
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Errore nell'assegnazione" },
+        { status: 500 }
+      );
+    }
+  });
 }

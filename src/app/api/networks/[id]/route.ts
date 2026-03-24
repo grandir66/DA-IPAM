@@ -14,10 +14,12 @@ import {
 } from "@/lib/db";
 import { NetworkUpdateSchema } from "@/lib/validators";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params;
+  return withTenantFromSession(async () => {
+    try {
+      const { id } = await params;
     const network = getNetworkById(Number(id));
     if (!network) {
       return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
@@ -46,16 +48,18 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       network_credentials,
       host_validated_protocols,
     });
-  } catch (error) {
-    console.error("Error fetching network:", error);
-    return NextResponse.json({ error: "Errore nel recupero della rete" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Error fetching network:", error);
+      return NextResponse.json({ error: "Errore nel recupero della rete" }, { status: 500 });
+    }
+  });
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const networkId = Number(id);
     const body = await request.json();
@@ -111,24 +115,27 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       ssh_credential_ids: getNetworkHostCredentialIds(networkId, "ssh"),
       snmp_credential_ids: getNetworkHostCredentialIds(networkId, "snmp"),
     });
-  } catch (error) {
-    console.error("Error updating network:", error);
-    return NextResponse.json({ error: "Errore nell'aggiornamento della rete" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Error updating network:", error);
+      return NextResponse.json({ error: "Errore nell'aggiornamento della rete" }, { status: 500 });
+    }
+  });
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
-    const { id } = await params;
-    const deleted = deleteNetwork(Number(id));
-    if (!deleted) {
-      return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
+      const { id } = await params;
+      const deleted = deleteNetwork(Number(id));
+      if (!deleted) {
+        return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
+      }
+      return NextResponse.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting network:", error);
+      return NextResponse.json({ error: "Errore nell'eliminazione della rete" }, { status: 500 });
     }
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting network:", error);
-    return NextResponse.json({ error: "Errore nell'eliminazione della rete" }, { status: 500 });
-  }
+  });
 }

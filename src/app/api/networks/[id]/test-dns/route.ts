@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getNetworkById, getHostsByNetwork } from "@/lib/db";
 import dns from "dns";
+import { withTenantFromSession } from "@/lib/api-tenant";
 
 /**
  * GET /api/networks/[id]/test-dns?ip=192.168.1.1
@@ -11,8 +12,9 @@ import dns from "dns";
  * Mostra: server DNS usato, risultato reverse, risultato forward, errori.
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params;
+  return withTenantFromSession(async () => {
+    try {
+      const { id } = await params;
     const network = getNetworkById(Number(id));
     if (!network) {
       return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
@@ -87,10 +89,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     return NextResponse.json({ config, results });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Errore" },
-      { status: 500 }
-    );
-  }
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Errore" },
+        { status: 500 }
+      );
+    }
+  });
 }

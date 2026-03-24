@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireAuth } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { getAdDhcpLeasesPaginated } from "@/lib/db";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, { params }: Params) {
-  const auth = await requireAuth();
-  if (auth instanceof NextResponse) return auth;
-
-  const { id } = await params;
+  return withTenantFromSession(async () => {
+    const { id } = await params;
   const numId = parseInt(id, 10);
   if (isNaN(numId)) {
     return NextResponse.json({ error: "ID non valido" }, { status: 400 });
@@ -21,4 +19,5 @@ export async function GET(request: Request, { params }: Params) {
 
   const result = getAdDhcpLeasesPaginated(numId, page, pageSize, search);
   return NextResponse.json(result);
+  });
 }

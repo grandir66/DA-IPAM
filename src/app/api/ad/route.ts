@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireAdminOrOnboarding, requireAuth } from "@/lib/api-auth";
+import { requireAdminOrOnboarding } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 import {
   getAdIntegrations,
   createAdIntegration,
@@ -21,25 +22,25 @@ const AdIntegrationSchema = z.object({
 });
 
 export async function GET() {
-  const auth = await requireAuth();
-  if (auth instanceof NextResponse) return auth;
-
-  const integrations = getAdIntegrations();
-  const masked = integrations.map((i) => ({
-    ...i,
-    encrypted_username: undefined,
-    encrypted_password: undefined,
-    username: "●●●●●●●●",
-    password: "●●●●●●●●",
-  }));
-  return NextResponse.json(masked);
+  return withTenantFromSession(async () => {
+    const integrations = getAdIntegrations();
+    const masked = integrations.map((i) => ({
+      ...i,
+      encrypted_username: undefined,
+      encrypted_password: undefined,
+      username: "●●●●●●●●",
+      password: "●●●●●●●●",
+    }));
+    return NextResponse.json(masked);
+  });
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAdminOrOnboarding();
-  if (auth instanceof NextResponse) return auth;
+  return withTenantFromSession(async () => {
+    const auth = await requireAdminOrOnboarding();
+    if (auth instanceof NextResponse) return auth;
 
-  try {
+    try {
     const body = await request.json();
     const parsed = AdIntegrationSchema.safeParse(body);
     if (!parsed.success) {
@@ -75,4 +76,5 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ error: msg }, { status: 500 });
   }
+  });
 }

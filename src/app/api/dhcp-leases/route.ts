@@ -5,7 +5,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 import {
   getDhcpLeasesPaginated,
   getDhcpLeaseStats,
@@ -18,10 +19,8 @@ import {
 import { createRouterClient } from "@/lib/devices/router-client";
 
 export async function GET(request: NextRequest) {
-  const authResult = await requireAuth();
-  if (isAuthError(authResult)) return authResult;
-
-  const url = new URL(request.url);
+  return withTenantFromSession(async () => {
+    const url = new URL(request.url);
   const action = url.searchParams.get("action");
 
   if (action === "stats") {
@@ -64,13 +63,15 @@ export async function GET(request: NextRequest) {
     pageSize,
     totalPages: Math.ceil(result.total / pageSize),
   });
+  });
 }
 
 export async function POST(request: NextRequest) {
-  const authResult = await requireAdmin();
-  if (isAuthError(authResult)) return authResult;
+  return withTenantFromSession(async () => {
+    const authResult = await requireAdmin();
+    if (isAuthError(authResult)) return authResult;
 
-  const url = new URL(request.url);
+    const url = new URL(request.url);
   const action = url.searchParams.get("action");
 
   if (action === "sync") {
@@ -216,4 +217,5 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ error: "Azione non supportata" }, { status: 400 });
+  });
 }

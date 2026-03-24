@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAuth, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { getEnabledSnmpVendorProfiles, getDistinctHostVendorHints } from "@/lib/db";
 import { buildNetworkDeviceVendorSelectOptionsFromData } from "@/lib/network-device-vendor-options";
 
@@ -7,10 +7,8 @@ import { buildNetworkDeviceVendorSelectOptionsFromData } from "@/lib/network-dev
  * GET: opzioni vendor per form dispositivi (profili SNMP abilitati + IPAM).
  */
 export async function GET() {
-  const authResult = await requireAuth();
-  if (isAuthError(authResult)) return authResult;
-
-  const snmpProfiles = getEnabledSnmpVendorProfiles();
+  return withTenantFromSession(async () => {
+    const snmpProfiles = getEnabledSnmpVendorProfiles();
   const hostVendorHints = getDistinctHostVendorHints();
   const options = buildNetworkDeviceVendorSelectOptionsFromData({
     snmpProfiles,
@@ -18,4 +16,5 @@ export async function GET() {
   });
 
   return NextResponse.json({ options });
+  });
 }

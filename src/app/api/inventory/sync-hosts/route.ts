@@ -6,6 +6,7 @@ import {
   syncInventoryFromHost,
 } from "@/lib/db";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 
 /**
  * Sincronizza gli host con l'inventario.
@@ -13,59 +14,61 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
  * e aggiorna tutti con i dati da host (IP, MAC, model, serial, classification).
  */
 export async function POST() {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
-    const allHosts = getAllHostsFlat();
-    const existingAssetHostIds = getHostIdsWithInventoryAsset();
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
+      const allHosts = getAllHostsFlat();
+      const existingAssetHostIds = getHostIdsWithInventoryAsset();
 
-    let created = 0;
-    let updated = 0;
+      let created = 0;
+      let updated = 0;
 
-    for (const host of allHosts) {
-      // Crea asset solo per host "conosciuti" o con dati utili (model, serial, hostname)
-      const hasUsefulData =
-        host.known_host === 1 ||
-        host.model != null ||
-        host.serial_number != null ||
-        (host.custom_name ?? host.hostname) != null;
+      for (const host of allHosts) {
+        // Crea asset solo per host "conosciuti" o con dati utili (model, serial, hostname)
+        const hasUsefulData =
+          host.known_host === 1 ||
+          host.model != null ||
+          host.serial_number != null ||
+          (host.custom_name ?? host.hostname) != null;
 
-      if (!hasUsefulData) continue;
+        if (!hasUsefulData) continue;
 
-      const hadAsset = existingAssetHostIds.has(host.id);
-      ensureInventoryAssetForHost(host);
-      if (!hadAsset) created++;
+        const hadAsset = existingAssetHostIds.has(host.id);
+        ensureInventoryAssetForHost(host);
+        if (!hadAsset) created++;
 
-      const synced = syncInventoryFromHost(host);
-      if (synced) updated++;
+        const synced = syncInventoryFromHost(host);
+        if (synced) updated++;
+      }
+
+      const parts: string[] = [];
+      if (created > 0) parts.push(`${created} host aggiunto${created !== 1 ? "i" : ""} all'inventario`);
+      if (updated > 0) parts.push(`${updated} aggiornato${updated !== 1 ? "i" : ""} con dati host`);
+
+      return NextResponse.json({
+        success: true,
+        total: allHosts.length,
+        processed: allHosts.filter(
+          (h) =>
+            h.known_host === 1 ||
+            h.model != null ||
+            h.serial_number != null ||
+            (h.custom_name ?? h.hostname) != null
+        ).length,
+        created,
+        updated,
+        message:
+          parts.length > 0
+            ? parts.join(", ")
+            : "Nessun host con dati sufficienti da sincronizzare (known_host, model, serial o hostname)",
+      });
+    } catch (error) {
+      console.error("Sync hosts to inventory:", error);
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Errore nella sincronizzazione" },
+        { status: 500 }
+      );
     }
-
-    const parts: string[] = [];
-    if (created > 0) parts.push(`${created} host aggiunto${created !== 1 ? "i" : ""} all'inventario`);
-    if (updated > 0) parts.push(`${updated} aggiornato${updated !== 1 ? "i" : ""} con dati host`);
-
-    return NextResponse.json({
-      success: true,
-      total: allHosts.length,
-      processed: allHosts.filter(
-        (h) =>
-          h.known_host === 1 ||
-          h.model != null ||
-          h.serial_number != null ||
-          (h.custom_name ?? h.hostname) != null
-      ).length,
-      created,
-      updated,
-      message:
-        parts.length > 0
-          ? parts.join(", ")
-          : "Nessun host con dati sufficienti da sincronizzare (known_host, model, serial o hostname)",
-    });
-  } catch (error) {
-    console.error("Sync hosts to inventory:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Errore nella sincronizzazione" },
-      { status: 500 }
-    );
-  }
+  });
 }

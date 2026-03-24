@@ -10,13 +10,13 @@ import {
   getNetworksWithCredentials,
 } from "@/lib/db";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 
 /** GET — lista credenziali assegnate alla subnet (ordinate). */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const authCheck = await requireAuth();
-    if (isAuthError(authCheck)) return authCheck;
-    const { id } = await params;
+  return withTenantFromSession(async () => {
+    try {
+      const { id } = await params;
     const networkId = Number(id);
     const network = getNetworkById(networkId);
     if (!network) {
@@ -25,10 +25,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const credentials = getNetworkCredentials(networkId);
     const networksWithCreds = getNetworksWithCredentials().filter((n) => n.id !== networkId);
     return NextResponse.json({ credentials, available_sources: networksWithCreds });
-  } catch (error) {
-    console.error("Error fetching network credentials:", error);
-    return NextResponse.json({ error: "Errore nel recupero credenziali" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Error fetching network credentials:", error);
+      return NextResponse.json({ error: "Errore nel recupero credenziali" }, { status: 500 });
+    }
+  });
 }
 
 const PutSchema = z.object({
@@ -37,9 +38,10 @@ const PutSchema = z.object({
 
 /** PUT — sostituisce la lista credenziali della subnet (ordine = posizione nell'array). */
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const networkId = Number(id);
     const network = getNetworkById(networkId);
@@ -54,10 +56,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     replaceNetworkCredentials(networkId, parsed.data.credential_ids);
     const credentials = getNetworkCredentials(networkId);
     return NextResponse.json({ credentials });
-  } catch (error) {
-    console.error("Error updating network credentials:", error);
-    return NextResponse.json({ error: "Errore nell'aggiornamento credenziali" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Error updating network credentials:", error);
+      return NextResponse.json({ error: "Errore nell'aggiornamento credenziali" }, { status: 500 });
+    }
+  });
 }
 
 const PostSchema = z.object({
@@ -68,9 +71,10 @@ const PostSchema = z.object({
 
 /** POST — azioni: add, remove, copy (da altra subnet). */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const networkId = Number(id);
     const network = getNetworkById(networkId);
@@ -109,8 +113,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const credentials = getNetworkCredentials(networkId);
     return NextResponse.json({ credentials });
-  } catch (error) {
-    console.error("Error managing network credentials:", error);
-    return NextResponse.json({ error: "Errore nella gestione credenziali" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Error managing network credentials:", error);
+      return NextResponse.json({ error: "Errore nella gestione credenziali" }, { status: 500 });
+    }
+  });
 }

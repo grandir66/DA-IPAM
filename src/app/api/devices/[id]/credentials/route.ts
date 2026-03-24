@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 import {
   getNetworkDeviceById,
   getDeviceCredentialBindings,
@@ -16,10 +17,9 @@ import { encrypt, decrypt } from "@/lib/crypto";
  * GET /api/devices/:id/credentials — lista bindings credenziali per device
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const authCheck = await requireAuth();
-    if (isAuthError(authCheck)) return authCheck;
-    const { id } = await params;
+  return withTenantFromSession(async () => {
+    try {
+      const { id } = await params;
     const device = getNetworkDeviceById(Number(id));
     if (!device) return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
 

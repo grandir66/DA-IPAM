@@ -6,21 +6,22 @@ import {
   removeHostCredential,
   setHostCredentialValidated,
 } from "@/lib/db";
-import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 
 /** GET — credenziali associate a un host. */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const authCheck = await requireAuth();
-    if (isAuthError(authCheck)) return authCheck;
-    const { id } = await params;
-    const hostId = Number(id);
-    const credentials = getHostCredentials(hostId);
-    return NextResponse.json({ credentials });
-  } catch (error) {
-    console.error("Error fetching host credentials:", error);
-    return NextResponse.json({ error: "Errore nel recupero credenziali host" }, { status: 500 });
-  }
+  return withTenantFromSession(async () => {
+    try {
+      const { id } = await params;
+      const hostId = Number(id);
+      const credentials = getHostCredentials(hostId);
+      return NextResponse.json({ credentials });
+    } catch (error) {
+      console.error("Error fetching host credentials:", error);
+      return NextResponse.json({ error: "Errore nel recupero credenziali host" }, { status: 500 });
+    }
+  });
 }
 
 const PostSchema = z.object({
@@ -32,9 +33,10 @@ const PostSchema = z.object({
 
 /** POST — aggiunge credenziale a un host. */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const hostId = Number(id);
     const body = await request.json();
@@ -46,10 +48,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     addHostCredential(hostId, credential_id, protocol_type, port, { validated });
     const credentials = getHostCredentials(hostId);
     return NextResponse.json({ credentials });
-  } catch (error) {
-    console.error("Error adding host credential:", error);
-    return NextResponse.json({ error: "Errore nell'aggiunta credenziale" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Error adding host credential:", error);
+      return NextResponse.json({ error: "Errore nell'aggiunta credenziale" }, { status: 500 });
+    }
+  });
 }
 
 const DeleteSchema = z.object({
@@ -58,9 +61,10 @@ const DeleteSchema = z.object({
 
 /** DELETE — rimuove credenziale da un host (per id binding). */
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const hostId = Number(id);
     const body = await request.json();
@@ -71,10 +75,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     removeHostCredential(parsed.data.binding_id);
     const credentials = getHostCredentials(hostId);
     return NextResponse.json({ credentials });
-  } catch (error) {
-    console.error("Error removing host credential:", error);
-    return NextResponse.json({ error: "Errore nella rimozione credenziale" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Error removing host credential:", error);
+      return NextResponse.json({ error: "Errore nella rimozione credenziale" }, { status: 500 });
+    }
+  });
 }
 
 const PatchSchema = z.object({
@@ -84,9 +89,10 @@ const PatchSchema = z.object({
 
 /** PATCH — aggiorna stato validazione. */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const hostId = Number(id);
     const body = await request.json();
@@ -97,8 +103,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     setHostCredentialValidated(parsed.data.binding_id, parsed.data.validated);
     const credentials = getHostCredentials(hostId);
     return NextResponse.json({ credentials });
-  } catch (error) {
-    console.error("Error updating host credential:", error);
-    return NextResponse.json({ error: "Errore nell'aggiornamento credenziale" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Error updating host credential:", error);
+      return NextResponse.json({ error: "Errore nell'aggiornamento credenziale" }, { status: 500 });
+    }
+  });
 }

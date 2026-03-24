@@ -5,7 +5,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { requireAuth, requireAdmin } from "@/lib/api-auth";
+import { requireAdmin } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { getAdRealm, getAdIntegrationById } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { execFile, spawn } from "child_process";
@@ -98,25 +99,25 @@ async function getKerberosStatus(): Promise<{
 }
 
 export async function GET() {
-  const auth = await requireAuth();
-  if (auth instanceof NextResponse) return auth;
-
-  try {
-    const status = await getKerberosStatus();
-    return NextResponse.json(status);
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Errore verifica Kerberos" },
-      { status: 500 }
-    );
-  }
+  return withTenantFromSession(async () => {
+    try {
+      const status = await getKerberosStatus();
+      return NextResponse.json(status);
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Errore verifica Kerberos" },
+        { status: 500 }
+      );
+    }
+  });
 }
 
 export async function POST(request: Request) {
-  const admin = await requireAdmin();
-  if (admin instanceof NextResponse) return admin;
+  return withTenantFromSession(async () => {
+    const admin = await requireAdmin();
+    if (admin instanceof NextResponse) return admin;
 
-  let body: Record<string, unknown>;
+    let body: Record<string, unknown>;
   try {
     body = await request.json() as Record<string, unknown>;
   } catch {
@@ -276,4 +277,5 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ error: `Azione non valida: ${action}` }, { status: 400 });
+  });
 }

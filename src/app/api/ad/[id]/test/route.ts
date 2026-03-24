@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { getAdIntegrationById } from "@/lib/db";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, { params }: Params) {
-  const auth = await requireAdmin();
-  if (auth instanceof NextResponse) return auth;
+  return withTenantFromSession(async () => {
+    const auth = await requireAdmin();
+    if (auth instanceof NextResponse) return auth;
 
-  const { id } = await params;
+    const { id } = await params;
   const numId = parseInt(id, 10);
   if (isNaN(numId)) {
     return NextResponse.json({ error: "ID non valido" }, { status: 400 });
@@ -27,4 +29,5 @@ export async function POST(request: Request, { params }: Params) {
     const msg = err instanceof Error ? err.message : "Errore sconosciuto";
     return NextResponse.json({ success: false, message: msg });
   }
+  });
 }

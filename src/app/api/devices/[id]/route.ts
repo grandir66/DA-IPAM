@@ -8,6 +8,7 @@ import {
 } from "@/lib/device-product-profiles";
 import { encrypt } from "@/lib/crypto";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -46,8 +47,9 @@ function parseProxmoxSummary(raw: string | null): ProxmoxSummary | null {
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params;
+  return withTenantFromSession(async () => {
+    try {
+      const { id } = await params;
     const device = getNetworkDeviceById(Number(id));
     if (!device) {
       return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
@@ -116,16 +118,18 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       },
       { headers: NO_CACHE_HEADERS }
     );
-  } catch (error) {
-    console.error("Error fetching device:", error);
-    return NextResponse.json({ error: "Errore nel recupero del dispositivo" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Error fetching device:", error);
+      return NextResponse.json({ error: "Errore nel recupero del dispositivo" }, { status: 500 });
+    }
+  });
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const existing = getNetworkDeviceById(Number(id));
     if (!existing) {
@@ -186,24 +190,27 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       community_string: device.community_string ? "●●●●●●●●" : null,
       api_token: device.api_token ? "●●●●●●●●" : null,
     });
-  } catch (error) {
-    console.error("Error updating device:", error);
-    return NextResponse.json({ error: "Errore nell'aggiornamento" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Error updating device:", error);
+      return NextResponse.json({ error: "Errore nell'aggiornamento" }, { status: 500 });
+    }
+  });
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
-    const { id } = await params;
-    const deleted = deleteNetworkDevice(Number(id));
-    if (!deleted) {
-      return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
+      const { id } = await params;
+      const deleted = deleteNetworkDevice(Number(id));
+      if (!deleted) {
+        return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
+      }
+      return NextResponse.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting device:", error);
+      return NextResponse.json({ error: "Errore nell'eliminazione" }, { status: 500 });
     }
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting device:", error);
-    return NextResponse.json({ error: "Errore nell'eliminazione" }, { status: 500 });
-  }
+  });
 }

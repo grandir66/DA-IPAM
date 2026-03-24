@@ -10,6 +10,7 @@ import {
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -32,8 +33,9 @@ function deviceCreateErrorMessage(err: unknown): string {
 const STORAGE_ALIASES = ["nas", "nas_synology", "nas_qnap"];
 
 export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
+  return withTenantFromSession(async () => {
+    try {
+      const { searchParams } = new URL(request.url);
     const type = searchParams.get("type") as "router" | "switch" | null;
     const rawClassification = searchParams.get("classification");
     const classification = rawClassification && STORAGE_ALIASES.includes(rawClassification) ? "storage" : rawClassification;
@@ -65,16 +67,18 @@ export async function GET(request: Request) {
       api_token: d.api_token ? "●●●●●●●●" : null,
     }));
     return NextResponse.json(masked, { headers: NO_CACHE_HEADERS });
-  } catch (error) {
-    console.error("Error fetching devices:", error);
-    return NextResponse.json({ error: "Errore nel recupero dei dispositivi" }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Error fetching devices:", error);
+      return NextResponse.json({ error: "Errore nel recupero dei dispositivi" }, { status: 500 });
+    }
+  });
 }
 
 export async function POST(request: Request) {
-  try {
-    const adminCheck = await requireAdminOrOnboarding();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdminOrOnboarding();
+      if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
     const parsed = NetworkDeviceSchema.safeParse(body);
     if (!parsed.success) {
@@ -143,8 +147,9 @@ export async function POST(request: Request) {
       community_string: device.community_string ? "●●●●●●●●" : null,
       api_token: device.api_token ? "●●●●●●●●" : null,
     }, { status: 201 });
-  } catch (error) {
-    console.error("Error creating device:", error);
-    return NextResponse.json({ error: deviceCreateErrorMessage(error) }, { status: 500 });
-  }
+    } catch (error) {
+      console.error("Error creating device:", error);
+      return NextResponse.json({ error: deviceCreateErrorMessage(error) }, { status: 500 });
+    }
+  });
 }

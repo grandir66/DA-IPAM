@@ -7,6 +7,7 @@ import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { upsertHost, getNetworks } from "@/lib/db";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 
 /**
  * Esegue la query (ARP/MAC/porte) sui router delle reti selezionate.
@@ -14,9 +15,10 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
  * Body: { network_ids: number[] }
  */
 export async function POST(request: Request) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
     const networkIds = Array.isArray(body.network_ids) ? body.network_ids.map(Number) : [];
 
@@ -279,11 +281,12 @@ export async function POST(request: Request) {
       results,
       message: `${successCount} dispositivi scansionati${failCount > 0 ? `, ${failCount} falliti` : ""}`,
     });
-  } catch (error) {
-    console.error("Bulk scan devices error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Errore nella scansione" },
-      { status: 500 }
-    );
-  }
+    } catch (error) {
+      console.error("Bulk scan devices error:", error);
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Errore nella scansione" },
+        { status: 500 }
+      );
+    }
+  });
 }

@@ -1,38 +1,39 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, requireAuth } from "@/lib/api-auth";
+import { requireAdmin } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { getAdIntegrationById } from "@/lib/db";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, { params }: Params) {
-  const auth = await requireAuth();
-  if (auth instanceof NextResponse) return auth;
+  return withTenantFromSession(async () => {
+    const { id } = await params;
+    const numId = parseInt(id, 10);
+    if (isNaN(numId)) {
+      return NextResponse.json({ error: "ID non valido" }, { status: 400 });
+    }
 
-  const { id } = await params;
-  const numId = parseInt(id, 10);
-  if (isNaN(numId)) {
-    return NextResponse.json({ error: "ID non valido" }, { status: 400 });
-  }
+    const integration = getAdIntegrationById(numId);
+    if (!integration) {
+      return NextResponse.json({ error: "Integrazione non trovata" }, { status: 404 });
+    }
 
-  const integration = getAdIntegrationById(numId);
-  if (!integration) {
-    return NextResponse.json({ error: "Integrazione non trovata" }, { status: 404 });
-  }
-
-  return NextResponse.json({
-    last_sync_at: integration.last_sync_at,
-    last_sync_status: integration.last_sync_status,
-    computers_count: integration.computers_count,
-    users_count: integration.users_count,
-    groups_count: integration.groups_count,
+    return NextResponse.json({
+      last_sync_at: integration.last_sync_at,
+      last_sync_status: integration.last_sync_status,
+      computers_count: integration.computers_count,
+      users_count: integration.users_count,
+      groups_count: integration.groups_count,
+    });
   });
 }
 
 export async function POST(request: Request, { params }: Params) {
-  const auth = await requireAdmin();
-  if (auth instanceof NextResponse) return auth;
+  return withTenantFromSession(async () => {
+    const auth = await requireAdmin();
+    if (auth instanceof NextResponse) return auth;
 
-  const { id } = await params;
+    const { id } = await params;
   const numId = parseInt(id, 10);
   if (isNaN(numId)) {
     return NextResponse.json({ error: "ID non valido" }, { status: 400 });
@@ -55,4 +56,5 @@ export async function POST(request: Request, { params }: Params) {
     const msg = err instanceof Error ? err.message : "Errore sconosciuto";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
+  });
 }

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getNetworkDeviceById, updateNetworkDevice, getCredentialById, syncInventoryFromDevice } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
+import { getNetworkDeviceById, updateNetworkDevice, getDeviceCredentials, syncInventoryFromDevice } from "@/lib/db";
 import { ProxmoxClient, resolveProxmoxApiPortOverride, type ProxmoxHostInfo, type ProxmoxVM } from "@/lib/proxmox/proxmox-client";
 import { extractProxmoxViaSsh } from "@/lib/proxmox/proxmox-ssh";
 import { mergeProxmoxExtractResults } from "@/lib/proxmox/proxmox-merge-results";
@@ -46,43 +45,15 @@ export async function POST(
       return NextResponse.json({ error: "Dispositivo disabilitato" }, { status: 400 });
     }
 
-    let username = "root";
-    let password = "";
-
-    if (device.credential_id) {
-      const cred = getCredentialById(device.credential_id);
-      if (cred) {
-        if (cred.encrypted_username) {
-          try {
-            username = decrypt(cred.encrypted_username);
-          } catch {
-            return NextResponse.json({ error: "Impossibile decifrare username" }, { status: 500 });
-          }
-        }
-        if (cred.encrypted_password) {
-          try {
-            password = decrypt(cred.encrypted_password);
-          } catch {
-            return NextResponse.json({ error: "Impossibile decifrare password" }, { status: 500 });
-          }
-        }
-      }
-    }
-    if (!password && device.encrypted_password) {
-      try {
-        password = decrypt(device.encrypted_password);
-        if (device.username?.trim()) username = device.username.trim();
-      } catch {
-        return NextResponse.json({ error: "Impossibile decifrare password sul dispositivo" }, { status: 500 });
-      }
-    }
-
-    if (!password) {
+    // Legge credenziali dal sistema bindings (v2) con fallback su campi legacy
+    const creds = getDeviceCredentials(device);
+    if (!creds) {
       return NextResponse.json(
         { error: "Configura le credenziali (SSH o API) per questo dispositivo. Per Proxmox usa root e password." },
         { status: 400 }
       );
     }
+    const { username, password } = creds;
 
     const targets = resolveProxmoxTargetIps(device);
     if (targets.length === 0) {

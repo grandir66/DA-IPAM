@@ -116,18 +116,7 @@ function buildDeviceFromProvisional(p: ProvisionalDevice): NetworkDevice {
 }
 
 function resolveCredentials(device: NetworkDevice): { username: string; password: string } | null {
-  if (device.credential_id) {
-    const cred = getCredentialById(device.credential_id);
-    if (cred) {
-      const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : null;
-      const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : null;
-      if (username && password) return { username, password };
-    }
-  }
-  if (device.username && device.encrypted_password) {
-    const password = safeDecrypt(device.encrypted_password);
-    if (password) return { username: device.username, password };
-  }
+  // Prima: sistema bindings v2 (cerca in device_credential_bindings + fallback legacy)
   const creds = getDeviceCredentials(device);
   if (creds?.username && creds?.password) return creds;
   return null;

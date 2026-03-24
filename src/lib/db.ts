@@ -2008,10 +2008,12 @@ export function getHostsByNetworkWithDevices(networkId: number): (Host & {
   device_id?: number;
   device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string };
   ad_dns_host_name?: string | null;
+  multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
 })[] {
   const hosts = getDb().prepare(
     `SELECT h.*, nd.id as _dev_id, nd.name as _dev_name, nd.sysname as _dev_sysname, nd.vendor as _dev_vendor, nd.protocol as _dev_protocol,
-            ac.ad_dns as _ad_dns
+            ac.ad_dns as _ad_dns,
+            ml.group_id as _mh_group, ml.match_type as _mh_type
      FROM hosts h
      LEFT JOIN network_devices nd ON nd.host = h.ip
      LEFT JOIN (
@@ -2020,16 +2022,44 @@ export function getHostsByNetworkWithDevices(networkId: number): (Host & {
        WHERE host_id IS NOT NULL
        GROUP BY host_id
      ) ac ON ac.host_id = h.id
+     LEFT JOIN multihomed_links ml ON ml.host_id = h.id
      WHERE h.network_id = ?`
-  ).all(networkId) as (Host & { _dev_id?: number; _dev_name?: string; _dev_sysname?: string | null; _dev_vendor?: string; _dev_protocol?: string; _ad_dns?: string | null })[];
+  ).all(networkId) as (Host & {
+    _dev_id?: number; _dev_name?: string; _dev_sysname?: string | null; _dev_vendor?: string; _dev_protocol?: string;
+    _ad_dns?: string | null; _mh_group?: string | null; _mh_type?: string | null;
+  })[];
+
+  // Carica peer multi-homed in batch (evita N+1)
+  const groupIds = new Set<string>();
+  for (const h of hosts) {
+    if (h._mh_group) groupIds.add(h._mh_group);
+  }
+  const peersByGroup = new Map<string, Array<{ ip: string; network_name: string; host_id: number }>>();
+  if (groupIds.size > 0) {
+    const placeholders = [...groupIds].map(() => "?").join(",");
+    const peers = getDb().prepare(
+      `SELECT ml.group_id, h.id as host_id, h.ip, n.name as network_name
+       FROM multihomed_links ml
+       JOIN hosts h ON h.id = ml.host_id
+       JOIN networks n ON n.id = h.network_id
+       WHERE ml.group_id IN (${placeholders}) AND h.network_id != ?`
+    ).all(...groupIds, networkId) as Array<{ group_id: string; host_id: number; ip: string; network_name: string }>;
+    for (const p of peers) {
+      if (!peersByGroup.has(p.group_id)) peersByGroup.set(p.group_id, []);
+      peersByGroup.get(p.group_id)!.push({ ip: p.ip, network_name: p.network_name, host_id: p.host_id });
+    }
+  }
 
   return hosts
     .sort((a, b) => ipToNum(a.ip) - ipToNum(b.ip))
-    .map(({ _dev_id, _dev_name, _dev_sysname, _dev_vendor, _dev_protocol, _ad_dns, ...h }) => ({
+    .map(({ _dev_id, _dev_name, _dev_sysname, _dev_vendor, _dev_protocol, _ad_dns, _mh_group, _mh_type, ...h }) => ({
       ...h,
       device_id: _dev_id ?? undefined,
       device: _dev_id ? { id: _dev_id, name: _dev_name!, sysname: _dev_sysname ?? null, vendor: _dev_vendor!, protocol: _dev_protocol! } : undefined,
       ad_dns_host_name: _ad_dns ?? undefined,
+      multihomed: _mh_group && peersByGroup.has(_mh_group)
+        ? { group_id: _mh_group, match_type: _mh_type ?? "hostname", peers: peersByGroup.get(_mh_group)! }
+        : null,
     }));
 }
 
@@ -5591,6 +5621,160 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
   })();
 
   return { linked, enriched };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MULTI-HOMED DETECTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Hostname da escludere dal matching multi-homed (troppo generici). */
+const MH_HOSTNAME_BLACKLIST = new Set([
+  "localhost", "router", "switch", "firewall", "gateway", "server",
+  "ap", "nas", "printer", "unknown", "default", "test",
+]);
+
+/**
+ * Ricalcola i link multi-homed: stesso dispositivo fisico con IP in subnet diverse.
+ * Match per: serial_number > sysName SNMP > hostname > AD dns_host_name.
+ * Solo gruppi con host in ≥2 reti diverse.
+ */
+export function recomputeMultihomedLinks(): { groups: number; hosts_linked: number } {
+  const db = getDb();
+
+  const hosts = db.prepare(`
+    SELECT h.id, h.network_id, h.ip, h.hostname, h.serial_number, h.snmp_data, h.custom_name,
+           nd.sysname AS dev_sysname, nd.serial_number AS dev_serial,
+           ac.dns_host_name AS ad_dns
+    FROM hosts h
+    LEFT JOIN network_devices nd ON nd.host = h.ip
+    LEFT JOIN (
+      SELECT host_id, MAX(dns_host_name) as dns_host_name
+      FROM ad_computers WHERE host_id IS NOT NULL
+      GROUP BY host_id
+    ) ac ON ac.host_id = h.id
+  `).all() as Array<{
+    id: number; network_id: number; ip: string;
+    hostname: string | null; serial_number: string | null;
+    snmp_data: string | null; custom_name: string | null;
+    dev_sysname: string | null; dev_serial: string | null;
+    ad_dns: string | null;
+  }>;
+
+  // Key → Set<host_id>
+  const buckets = new Map<string, Set<number>>();
+  const hostNet = new Map<number, number>();
+  const PRIORITY: Record<string, number> = { serial_number: 4, sysname: 3, hostname: 2, ad_dns: 1 };
+  const hostBest = new Map<number, { type: string; value: string; priority: number }>();
+
+  function addToBucket(key: string, hostId: number, type: string, value: string) {
+    if (!buckets.has(key)) buckets.set(key, new Set());
+    buckets.get(key)!.add(hostId);
+    const p = PRIORITY[type] ?? 0;
+    const cur = hostBest.get(hostId);
+    if (!cur || p > cur.priority) {
+      hostBest.set(hostId, { type, value, priority: p });
+    }
+  }
+
+  for (const h of hosts) {
+    hostNet.set(h.id, h.network_id);
+
+    // 1. Serial number (host o device)
+    const serial = (h.serial_number || h.dev_serial || "").trim().toUpperCase();
+    if (serial && serial.length >= 4) {
+      addToBucket(`serial:${serial}`, h.id, "serial_number", serial);
+    }
+
+    // 2. SNMP sysName
+    let sysName = h.dev_sysname ?? null;
+    if (!sysName && h.snmp_data) {
+      try { sysName = (JSON.parse(h.snmp_data) as { sysName?: string }).sysName ?? null; } catch { /* skip */ }
+    }
+    if (sysName?.trim() && !MH_HOSTNAME_BLACKLIST.has(sysName.trim().toLowerCase())) {
+      addToBucket(`sysname:${sysName.trim().toLowerCase()}`, h.id, "sysname", sysName.trim());
+    }
+
+    // 3. Hostname
+    const hn = (h.hostname ?? "").trim().toLowerCase();
+    if (hn && hn.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(hn)) {
+      // Usa short hostname (prima del primo punto) per matchare FQDN con short
+      const shortHn = hn.split(".")[0];
+      if (shortHn.length >= 3) {
+        addToBucket(`hostname:${shortHn}`, h.id, "hostname", h.hostname!.trim());
+      }
+    }
+
+    // 4. AD dns_host_name
+    const adDns = (h.ad_dns ?? "").trim().toLowerCase();
+    if (adDns && adDns.length >= 3) {
+      const shortAd = adDns.split(".")[0];
+      if (shortAd.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(shortAd)) {
+        addToBucket(`ad_dns:${shortAd}`, h.id, "ad_dns", h.ad_dns!.trim());
+      }
+    }
+  }
+
+  // Filtra: solo bucket con host in ≥2 reti diverse
+  // Union-find per unire bucket che condividono host
+  const parent = new Map<number, number>();
+  function find(x: number): number {
+    if (!parent.has(x)) parent.set(x, x);
+    if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!));
+    return parent.get(x)!;
+  }
+  function union(a: number, b: number) {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  }
+
+  for (const [, hostIds] of buckets) {
+    if (hostIds.size < 2) continue;
+    // Verifica che ci siano ≥2 reti diverse
+    const nets = new Set<number>();
+    for (const hid of hostIds) nets.add(hostNet.get(hid)!);
+    if (nets.size < 2) continue;
+    // Union tutti gli host del bucket
+    const arr = [...hostIds];
+    for (let i = 1; i < arr.length; i++) union(arr[0], arr[i]);
+  }
+
+  // Costruisci gruppi finali
+  const finalGroups = new Map<number, Set<number>>();
+  for (const [hid] of parent) {
+    const root = find(hid);
+    if (!finalGroups.has(root)) finalGroups.set(root, new Set());
+    finalGroups.get(root)!.add(hid);
+  }
+
+  // Filtra gruppi: ≥2 host in ≥2 reti diverse
+  let groupCount = 0;
+  let totalLinked = 0;
+
+  db.transaction(() => {
+    db.prepare("DELETE FROM multihomed_links").run();
+    const ins = db.prepare(
+      "INSERT OR IGNORE INTO multihomed_links (group_id, host_id, match_type, match_value) VALUES (?, ?, ?, ?)"
+    );
+
+    for (const [, members] of finalGroups) {
+      if (members.size < 2) continue;
+      const nets = new Set<number>();
+      for (const hid of members) nets.add(hostNet.get(hid)!);
+      if (nets.size < 2) continue;
+
+      const groupId = randomUUID();
+      groupCount++;
+      for (const hid of members) {
+        const best = hostBest.get(hid);
+        if (best) {
+          ins.run(groupId, hid, best.type, best.value);
+          totalLinked++;
+        }
+      }
+    }
+  })();
+
+  return { groups: groupCount, hosts_linked: totalLinked };
 }
 
 // AD Users

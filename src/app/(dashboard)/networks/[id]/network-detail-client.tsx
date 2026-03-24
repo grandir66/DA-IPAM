@@ -65,6 +65,7 @@ type HostWithDevice = Host & {
   device_id?: number;
   device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string };
   ad_dns_host_name?: string | null;
+  multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
 };
 
 const REFRESH_INTERVALS = [
@@ -1406,6 +1407,7 @@ export function NetworkDetailClient({
                 <TableHead>Classificazione</TableHead>
                 <TableHead title="Tipo dispositivo da fingerprint (porte, SNMP, banner)">Rilevato</TableHead>
                 <TableHead>Dispositivo</TableHead>
+                <TableHead title="Stesso device su più subnet" className="w-10 text-center">MH</TableHead>
                 <TableHead>Vendor</TableHead>
                 <TableHead>Note</TableHead>
                 <TableHead>Porte</TableHead>
@@ -1414,7 +1416,7 @@ export function NetworkDetailClient({
             <TableBody>
               {filteredHosts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={15} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={16} className="text-center text-muted-foreground py-8">
                     {hosts.length === 0
                       ? "Nessun host trovato. Avvia una scansione per scoprire i dispositivi."
                       : "Nessun host corrisponde ai filtri."}
@@ -1573,6 +1575,18 @@ export function NetworkDetailClient({
                       ) : (
                         "—"
                       )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {(host as HostWithDevice).multihomed ? (
+                        <span
+                          className="inline-flex items-center gap-0.5 cursor-help"
+                          title={`Multi-homed (${(host as HostWithDevice).multihomed!.match_type}): ${(host as HostWithDevice).multihomed!.peers.map((p) => `${p.ip} (${p.network_name})`).join(", ")}`}
+                        >
+                          <Badge variant="outline" className="text-[10px] px-1 py-0 bg-cyan-500/15 text-cyan-600 border-cyan-300 dark:text-cyan-400">
+                            {(host as HostWithDevice).multihomed!.peers.length + 1} IF
+                          </Badge>
+                        </span>
+                      ) : null}
                     </TableCell>
                     <TableCell className="text-sm">{host.vendor || "—"}</TableCell>
                     <TableCell

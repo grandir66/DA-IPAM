@@ -487,6 +487,19 @@ CREATE TABLE IF NOT EXISTS host_credentials (
 CREATE INDEX IF NOT EXISTS idx_host_credentials_host ON host_credentials(host_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_host_credentials_validated ON host_credentials(host_id, validated);
 
+-- Dispositivi multi-homed: stesso device fisico con IP in subnet diverse
+CREATE TABLE IF NOT EXISTS multihomed_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id TEXT NOT NULL,
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  match_type TEXT NOT NULL CHECK(match_type IN ('serial_number', 'sysname', 'hostname', 'ad_dns')),
+  match_value TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(host_id)
+);
+CREATE INDEX IF NOT EXISTS idx_multihomed_links_group ON multihomed_links(group_id);
+CREATE INDEX IF NOT EXISTS idx_multihomed_links_host ON multihomed_links(host_id);
+
 -- Mapping manuale: etichetta fingerprint (final_device) → classificazione host
 CREATE TABLE IF NOT EXISTS fingerprint_classification_map (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

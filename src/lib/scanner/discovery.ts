@@ -1843,6 +1843,22 @@ async function runDiscovery(
     log(`Assegnazione IP: ${assignErr instanceof Error ? assignErr.message : "errore"}`);
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // Post-scan: rileva dispositivi multi-homed (stesso device su più subnet)
+  // ═══════════════════════════════════════════════════════════════
+  if (scanType === "network_discovery" || scanType === "ipam_full" || scanType === "nmap") {
+    progress.phase = "Rilevamento dispositivi multi-homed";
+    try {
+      const { recomputeMultihomedLinks } = await import("@/lib/db");
+      const mhResult = recomputeMultihomedLinks();
+      if (mhResult.groups > 0) {
+        log(`Multi-homed: ${mhResult.groups} gruppi, ${mhResult.hosts_linked} host collegati tra subnet`);
+      }
+    } catch (mhErr) {
+      log(`Multi-homed: ${mhErr instanceof Error ? mhErr.message : "errore"}`);
+    }
+  }
+
   const totalPorts = Array.from(nmapResults.values()).reduce((sum, r) => sum + r.ports.length, 0);
   addScanHistory({
     host_id: null,

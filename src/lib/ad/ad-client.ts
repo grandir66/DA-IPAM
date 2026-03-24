@@ -621,7 +621,8 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
 
         const updates: Record<string, string> = {};
         if (osRaw && (!host.os_info || host.os_info === "unknown")) updates.os_info = osRaw;
-        if (!host.hostname) { updates.hostname = hostname; updates.hostname_source = "ad"; }
+        // AD è la fonte più affidabile per hostname: sovrascrive SEMPRE
+        if (hostname) { updates.hostname = hostname; updates.hostname_source = "ad"; }
         if (!host.classification || host.classification === "unknown") updates.classification = classification;
 
         if (Object.keys(updates).length > 0) {

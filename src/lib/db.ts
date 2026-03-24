@@ -5519,12 +5519,48 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
   const linkStmt = db.prepare(
     `UPDATE ad_computers SET host_id = ? WHERE integration_id = ? AND object_guid = ?`
   );
-  const enrichStmt = db.prepare(
-    `UPDATE hosts SET os_info = COALESCE(NULLIF(os_info, ''), NULLIF(os_info, 'unknown'), ?),
-                      classification = CASE WHEN classification IS NULL OR classification = 'unknown' THEN ? ELSE classification END,
-                      updated_at = datetime('now')
-     WHERE id = ?`
-  );
+
+  // Funzione di arricchimento: AD è fonte autoritativa per hostname
+  function enrichHost(hostId: number, comp: typeof unlinked[0], currentHost: typeof hosts[0]) {
+    const adHostname = comp.dns_host_name || comp.sam_account_name.replace(/\$$/, "");
+    const osRaw = comp.operating_system ?? "";
+    const osLower = osRaw.toLowerCase();
+    const classification = osLower.includes("server") ? "server_windows" : "workstation";
+
+    // AD è la fonte più affidabile: hostname viene SEMPRE sovrascritto
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+
+    // Hostname: AD vince sempre
+    if (adHostname) {
+      sets.push("hostname = ?", "hostname_source = 'ad'");
+      vals.push(adHostname);
+    }
+
+    // custom_name: se vuoto, usa il nome AD per dare un nome leggibile
+    if (adHostname && !currentHost.hostname) {
+      sets.push("custom_name = CASE WHEN custom_name IS NULL OR custom_name = '' THEN ? ELSE custom_name END");
+      vals.push(adHostname);
+    }
+
+    // OS: AD sovrascrive se l'host non ha OS o ha "unknown"
+    if (osRaw && (!currentHost.os_info || currentHost.os_info === "unknown")) {
+      sets.push("os_info = ?");
+      vals.push(osRaw);
+    }
+
+    // Classificazione: AD sovrascrive se l'host non ha classificazione o ha "unknown"
+    if (!currentHost.classification || currentHost.classification === "unknown") {
+      sets.push("classification = ?");
+      vals.push(classification);
+    }
+
+    if (sets.length > 0) {
+      sets.push("updated_at = datetime('now')");
+      db.prepare(`UPDATE hosts SET ${sets.join(", ")} WHERE id = ?`).run(...vals, hostId);
+      enriched++;
+    }
+  }
 
   db.transaction(() => {
     for (const comp of unlinked) {
@@ -5544,23 +5580,13 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
 
       if (!host) continue;
 
-      // Evita re-link se già collegato allo stesso host
-      if (comp.host_id === host.id) continue;
-
-      linkStmt.run(host.id, comp.integration_id, comp.object_guid);
-      linked++;
-
-      // Enrichment
-      const osRaw = comp.operating_system ?? "";
-      const osLower = osRaw.toLowerCase();
-      const classification = osLower.includes("server") ? "server_windows" : "workstation";
-      if (osRaw && (!host.os_info || host.os_info === "unknown")) {
-        enrichStmt.run(osRaw, classification, host.id);
-        enriched++;
-      } else if (!host.classification || host.classification === "unknown") {
-        enrichStmt.run(host.os_info, classification, host.id);
-        enriched++;
+      // Link + enrich (anche se già linkato allo stesso host, aggiorna hostname AD)
+      if (comp.host_id !== host.id) {
+        linkStmt.run(host.id, comp.integration_id, comp.object_guid);
+        linked++;
       }
+
+      enrichHost(host.id, comp, host);
     }
   })();
 

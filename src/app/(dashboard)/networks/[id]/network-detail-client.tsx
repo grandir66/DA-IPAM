@@ -1194,7 +1194,7 @@ export function NetworkDetailClient({
               idPrefix="network-bulk-add"
               showIdentificazione={false}
               showProfilo={true}
-              showCredenziali={true}
+              showCredenziali={false}
               classification={bulkAddClassification}
               vendor={bulkAddVendor}
               vendorSubtype={bulkAddVendorSubtype}
@@ -1223,6 +1223,34 @@ export function NetworkDetailClient({
               defaultVendor="other"
               defaultProtocol="ssh"
             />
+
+            {/* Credenziali: ereditate dagli host selezionati */}
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Key className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">Credenziali</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Le credenziali validate sugli host selezionati verranno ereditate automaticamente dal dispositivo.
+                Puoi gestirle dalla scheda del dispositivo dopo la creazione.
+              </p>
+              {(() => {
+                const protos = new Set<string>();
+                for (const hid of selectedHostIds) {
+                  for (const p of (hostValidatedProtocols[hid] || [])) protos.add(p);
+                }
+                return protos.size > 0 ? (
+                  <div className="flex gap-1 mt-1">
+                    <ProtocolBadges protocols={[...protos]} />
+                    <span className="text-xs text-muted-foreground ml-1">rilevate sugli host selezionati</span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                    Nessuna credenziale validata sugli host selezionati. Esegui prima &quot;Valida credenziali&quot; dalla Fase 3.
+                  </p>
+                );
+              })()}
+            </div>
             {bulkTestResult && (
               <div className={cn("text-sm px-3 py-2 rounded border", bulkTestResult.ok ? "border-green-500 bg-green-50 text-green-700" : "border-red-500 bg-red-50 text-red-700")}>
                 {bulkTestResult.message}

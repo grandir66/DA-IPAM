@@ -219,7 +219,7 @@ async function createSshClient(
           stream.on("close", () => { conn.end(); resolve(output); });
         });
       });
-      conn.on("error", reject);
+      conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
       conn.connect({
         host: device.host,
         port: device.port,
@@ -915,7 +915,7 @@ async function createGenericSshRouterClient(device: NetworkDevice, creds: Device
           });
         });
       });
-      conn.on("error", reject);
+      conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
       conn.connect({
         host: device.host,
         port: device.port || 22,

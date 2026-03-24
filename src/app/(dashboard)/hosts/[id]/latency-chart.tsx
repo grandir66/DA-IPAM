@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -100,24 +100,22 @@ export function LatencyChart({ hostId }: { hostId: number }) {
   const [data, setData] = useState<LatencyPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [hours, setHours] = useState(24);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/hosts/${hostId}/latency?hours=${hours}`);
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
-    } catch {
-      // silently fail
-    }
-    setLoading(false);
-  }, [hostId, hours]);
+  const fetchData = () => setRefreshKey((k) => k + 1);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    const controller = new AbortController();
+    setLoading(true);
+    fetch(`/api/hosts/${hostId}/latency?hours=${hours}`, { signal: controller.signal })
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error("fetch failed")))
+      .then(setData)
+      .catch((err) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [hostId, hours, refreshKey]);
 
   const stats = computeStats(data);
 

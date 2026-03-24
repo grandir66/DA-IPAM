@@ -206,7 +206,7 @@ async function createSshSwitchClient(
           stream.on("close", () => { conn.end(); resolve(output); });
         });
       });
-      conn.on("error", reject);
+      conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
       conn.connect({
         host: device.host,
         port: device.port,
@@ -419,7 +419,7 @@ async function createSshWithFallbackCommands(device: NetworkDevice, creds: Devic
           stream.on("close", () => { conn.end(); resolve(output); });
         });
       });
-      conn.on("error", reject);
+      conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
       conn.connect({
         host: device.host,
         port: device.port || 22,
@@ -470,7 +470,7 @@ async function createMikrotikSwitchClient(device: NetworkDevice, creds: DeviceCr
             stream.on("close", () => { conn.end(); resolve(output); });
           });
         });
-        conn.on("error", reject);
+        conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
         conn.connect({
           host: device.host,
           port: device.port,

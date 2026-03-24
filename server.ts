@@ -3,6 +3,14 @@ import { createServer as createSecureServer } from "https";
 import { readFileSync } from "fs";
 import next from "next";
 
+// ── Global error handlers — prevent silent crashes ──
+process.on("uncaughtException", (err) => {
+  console.error("FATAL uncaughtException — il processo continua ma potrebbe essere instabile:", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("WARN unhandledRejection:", reason);
+});
+
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "0.0.0.0";
 const port = parseInt(process.env.PORT || "3001", 10);

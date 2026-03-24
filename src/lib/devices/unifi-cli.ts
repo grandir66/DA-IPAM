@@ -101,7 +101,7 @@ export async function unifiCliExec(
         stream.on("close", () => { if (!finished) finish(buffer); });
       });
     });
-    conn.on("error", reject);
+    conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
     conn.connect({
       host: options.host,
       port: options.port ?? 22,

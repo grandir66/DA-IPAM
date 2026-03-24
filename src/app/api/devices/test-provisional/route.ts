@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 import {
   runProvisionalDeviceTest,
   isWindowsDevice,
@@ -31,10 +31,8 @@ const ProvisionalTestSchema = z.object({
  * Body: { host, vendor, protocol, port?, credential_id?, snmp_credential_id?, scan_target?, api_url? }
  */
 export async function POST(request: Request) {
+  const result = await withTenantFromSession(async () => {
   try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
-
     const body = await request.json();
     const parsed = ProvisionalTestSchema.safeParse(body);
     if (!parsed.success) {
@@ -77,4 +75,6 @@ export async function POST(request: Request) {
       { status: 200 }
     );
   }
+  });
+  return result;
 }

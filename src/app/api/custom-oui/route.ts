@@ -9,6 +9,9 @@ const CUSTOM_OUI_PATH = path.join(DATA_DIR, "custom_oui.txt");
 
 export async function GET() {
   try {
+    const { requireAuth, isAuthError } = await import("@/lib/api-auth");
+    const authCheck = await requireAuth();
+    if (isAuthError(authCheck)) return authCheck;
     if (!fs.existsSync(CUSTOM_OUI_PATH)) {
       return NextResponse.json({ content: "" });
     }

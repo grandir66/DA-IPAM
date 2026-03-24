@@ -6,6 +6,8 @@ import { runJob } from "./jobs";
 
 type ScheduledTask = ReturnType<typeof cron.schedule>;
 const activeTasks = new Map<string, ScheduledTask>();
+/** Guard: job keys currently running (prevents overlapping execution) */
+const runningJobs = new Set<string>();
 
 export function initializeScheduler(): void {
   console.info("[Scheduler] Inizializzazione scheduler multi-tenant...");
@@ -53,6 +55,11 @@ export function scheduleJob(
   const cronExpr = intervalToCron(intervalMinutes);
 
   const task = cron.schedule(cronExpr, async () => {
+    if (runningJobs.has(key)) {
+      console.warn(`[Scheduler] Job ${key} già in esecuzione, skip`);
+      return;
+    }
+    runningJobs.add(key);
     console.info(`[Scheduler] Esecuzione job ${key} (tenant: ${tenantCode})`);
     try {
       await withTenant(tenantCode, async () => {
@@ -62,6 +69,8 @@ export function scheduleJob(
       console.info(`[Scheduler] Job ${key} completato`);
     } catch (error) {
       console.error(`[Scheduler] Job ${key} fallito:`, error);
+    } finally {
+      runningJobs.delete(key);
     }
   });
 

@@ -40,7 +40,7 @@ export async function sshExec(options: SshOptions, command: string): Promise<Ssh
         });
       });
     });
-    conn.on("error", reject);
+    conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
     conn.connect({
       host: options.host,
       port: options.port ?? 22,
@@ -120,7 +120,7 @@ export async function sshExecViaShell(options: SshOptions, command: string): Pro
         }, 800);
       });
     });
-    conn.on("error", reject);
+    conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
     conn.connect({
       host: options.host,
       port: options.port ?? 22,

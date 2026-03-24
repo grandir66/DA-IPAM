@@ -408,7 +408,7 @@ function NetworkCredentialsTableV2({
 
       {/* Dialog Importa da altra subnet */}
       <Dialog open={showCopyDialog} onOpenChange={setShowCopyDialog}>
-        <DialogContent className={DIALOG_PANEL_COMPACT_CLASS}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Importa credenziali da altra subnet</DialogTitle>
           </DialogHeader>

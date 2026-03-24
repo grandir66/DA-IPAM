@@ -331,6 +331,32 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Salva il commit corrente per rollback sicuro
+    let previousCommit: string | null = null;
+    try {
+      previousCommit = execSync("git rev-parse HEAD", { cwd: root, encoding: "utf-8", timeout: 10000 }).trim();
+    } catch {
+      /* se non riesce, rollback non sarà possibile */
+    }
+
+    // Backup della directory .next per poter ripristinare in caso di fallimento build
+    const nextDir = path.join(root, ".next");
+    const nextBackup = path.join(root, ".next.bak");
+    let hasNextBackup = false;
+    try {
+      if (fs.existsSync(nextDir)) {
+        // Rimuovi backup precedente se esiste
+        if (fs.existsSync(nextBackup)) {
+          fs.rmSync(nextBackup, { recursive: true, force: true });
+        }
+        fs.renameSync(nextDir, nextBackup);
+        hasNextBackup = true;
+        console.log("[Update] Backup .next → .next.bak completato");
+      }
+    } catch (e) {
+      console.warn("[Update] Impossibile creare backup .next:", e);
+    }
+
     try {
       const steps: UpdateStatus[] = [];
 
@@ -346,6 +372,13 @@ export async function POST(request: NextRequest) {
       steps.push({ status: "installing", message: "Build applicazione...", progress: 70 });
       execSync("npm run build", { cwd: root, encoding: "utf-8", timeout: 600000 });
 
+      // Build riuscita: rimuovi backup
+      if (hasNextBackup && fs.existsSync(nextBackup)) {
+        try {
+          fs.rmSync(nextBackup, { recursive: true, force: true });
+        } catch { /* non critico */ }
+      }
+
       const newVersion = getCurrentVersion();
 
       return NextResponse.json({
@@ -358,20 +391,85 @@ export async function POST(request: NextRequest) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error("[Update] Error applying update:", errorMsg);
 
+      const rollbackErrors: string[] = [];
+
+      // 1. Ripristina il codice sorgente al commit precedente
+      if (previousCommit) {
+        try {
+          execSync(`git reset --hard ${previousCommit}`, { cwd: root, encoding: "utf-8", timeout: 30000 });
+        } catch (e) {
+          rollbackErrors.push(`git reset: ${e}`);
+        }
+      }
+
+      // 2. Ripristina node_modules per la versione precedente
       try {
-        execSync("git reset --hard HEAD~1", { cwd: getProjectRoot(), encoding: "utf-8" });
-      } catch { /* ignore rollback errors */ }
+        execSync("npm install --production=false", { cwd: root, encoding: "utf-8", timeout: 300000 });
+      } catch (e) {
+        rollbackErrors.push(`npm install rollback: ${e}`);
+      }
+
+      // 3. Ripristina la build precedente (.next.bak)
+      if (hasNextBackup && fs.existsSync(nextBackup)) {
+        try {
+          // Rimuovi la build corrotta/parziale
+          if (fs.existsSync(nextDir)) {
+            fs.rmSync(nextDir, { recursive: true, force: true });
+          }
+          fs.renameSync(nextBackup, nextDir);
+          console.log("[Update] Ripristinata .next da backup");
+        } catch (e) {
+          rollbackErrors.push(`ripristino .next: ${e}`);
+          // Ultimo tentativo: ricostruisci dalla versione precedente
+          try {
+            execSync("npm run build", { cwd: root, encoding: "utf-8", timeout: 600000 });
+            console.log("[Update] Rebuild dalla versione precedente completato");
+          } catch (e2) {
+            rollbackErrors.push(`rebuild fallback: ${e2}`);
+          }
+        }
+      } else {
+        // Nessun backup .next: prova a ricostruire
+        try {
+          execSync("npm run build", { cwd: root, encoding: "utf-8", timeout: 600000 });
+          console.log("[Update] Rebuild dalla versione precedente completato");
+        } catch (e) {
+          rollbackErrors.push(`rebuild: ${e}`);
+        }
+      }
+
+      const rollbackDetail = rollbackErrors.length > 0
+        ? ` Problemi durante il rollback: ${rollbackErrors.join("; ")}`
+        : "";
 
       return NextResponse.json({
         status: "error" as const,
         error: `Errore durante l'aggiornamento: ${errorMsg}`,
-        message: "L'aggiornamento è stato annullato. Il sistema è stato ripristinato.",
+        message: `L'aggiornamento è stato annullato e il sistema ripristinato.${rollbackDetail}`,
       }, { status: 500 });
     }
   }
 
   if (action === "restart") {
     try {
+      // Verifica che la build esista prima di riavviare
+      const nextDir = path.join(getProjectRoot(), ".next");
+      if (!fs.existsSync(nextDir)) {
+        return NextResponse.json({
+          status: "error" as const,
+          error: "La directory .next non esiste. Esegui npm run build prima di riavviare.",
+        }, { status: 400 });
+      }
+
+      // Verifica che la build contenga file essenziali
+      const buildManifest = path.join(nextDir, "BUILD_ID");
+      if (!fs.existsSync(buildManifest)) {
+        return NextResponse.json({
+          status: "error" as const,
+          error: "La build sembra incompleta (BUILD_ID mancante). Esegui npm run build sul server.",
+        }, { status: 400 });
+      }
+
       setTimeout(() => {
         process.exit(0);
       }, 1000);

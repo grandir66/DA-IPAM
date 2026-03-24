@@ -308,7 +308,40 @@ Archivio centralizzato (SSH, API, SNMP, Windows, Linux) con test connessione; as
 
 ### Impostazioni
 
-- Utenti, profili nmap, job schedulati, integrazioni (es. TLS), chiavi/custom OUI, credenziali Windows globali per host, ecc.
+Sette tab con tutto il necessario per configurare il sistema:
+
+| Tab | Contenuto |
+|-----|-----------|
+| **Generale** | Porta server, password, credenziali host globali (Windows/Linux), Custom OUI, versione e aggiornamenti |
+| **Utenti** | Gestione utenti e ruoli (admin/viewer) |
+| **HTTPS** | Certificati TLS, generazione self-signed, import certificato |
+| **Scansione** | Profilo Nmap (porte TCP/UDP, community SNMP — editabile), parametri Quick Scan (porte, concorrenza, timeout — editabili), variabili ambiente |
+| **Identificazione** | Pipeline completa di riconoscimento dispositivi: profili SNMP vendor, tabella sysObjectID lookup (CRUD), firme fingerprint (OID, porte, sysDescr, hostname, MAC, banner, TTL), regole classificazione |
+| **Job Pianificati** | Configurazione job cron per rete (ping sweep, nmap, ARP poll, DNS, monitoraggio, cleanup) |
+| **Gestione Dati** | Export/import DB, reset, backup |
+
+### Pipeline di identificazione dispositivi
+
+La scoperta rete (`network_discovery`, `ipam_full`) identifica automaticamente i dispositivi con questa cascata di priorità:
+
+1. **Profilo SNMP vendor** — match OID enterprise con profili vendor (MikroTik, Cisco, HP, Ruckus, Ubiquiti, Fortinet, ecc.). Confidenza ≥ 90%
+2. **Hostname prefix** — pattern admin (`SW-` → switch, `AP-` → access point, `FW-` → firewall)
+3. **sysObjectID Lookup** — tabella editabile con ~90 entry per match prodotto specifico (es. `1.3.6.1.4.1.25053.3.1.4.114` → Ruckus R550)
+4. **Fingerprint OID probe** — SNMP GETNEXT su prefissi OID dalle regole DB
+5. **Fingerprint snapshot** — mappa `final_device` → classificazione
+6. **Classificatore generico** — regole su sysDescr, porte TCP, hostname, MAC vendor
+
+La fase SNMP normalizza automaticamente gli OID simbolici (es. `enterprises.25053.3.1.4.114` → `1.3.6.1.4.1.25053.3.1.4.114`). Se la rete ha una community SNMP configurata, viene anche eseguita una **scoperta SNMP su IP che non rispondono a ICMP** (utile per AP e switch con ping disabilitato).
+
+### Aggiornamento automatico
+
+L'applicazione supporta l'aggiornamento dalla UI (Impostazioni → Generale → Aggiornamenti):
+
+1. **Controllo versione** automatico ogni ora (confronto con `package.json` su GitHub)
+2. **Applicazione update**: `git pull` → `npm install` → `npm run build` con rollback automatico in caso di errore (backup `.next`, ripristino commit, rebuild)
+3. **Riavvio** con verifica integrità build (`BUILD_ID`) prima di `process.exit(0)`
+
+In alternativa da CLI: `./scripts/update.sh --restart`
 
 ---
 

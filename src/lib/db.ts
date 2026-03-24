@@ -1164,6 +1164,26 @@ export function getDb(): Database.Database {
     seedBuiltinSnmpVendorProfiles(_db);
   } catch { /* exists */ }
 
+  // SysObjectID Lookup table
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS sysobj_lookup (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      oid TEXT NOT NULL UNIQUE,
+      vendor TEXT NOT NULL,
+      product TEXT NOT NULL,
+      category TEXT NOT NULL CHECK(category IN ('networking','wireless','firewall','server','storage')),
+      enterprise_id INTEGER NOT NULL,
+      builtin INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      note TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_oid ON sysobj_lookup(oid)`);
+    _db.exec(`CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_enabled ON sysobj_lookup(enabled)`);
+    seedBuiltinSysObjLookup(_db);
+  } catch { /* exists */ }
+
   // DHCP Leases table (unified)
   try {
     _db.exec(`CREATE TABLE IF NOT EXISTS dhcp_leases (
@@ -1813,6 +1833,111 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       t();
     }
   }
+}
+
+function seedBuiltinSysObjLookup(db: Database.Database): void {
+  const count = (db.prepare("SELECT COUNT(*) as c FROM sysobj_lookup").get() as { c: number }).c;
+
+  const ins = db.prepare(`INSERT OR IGNORE INTO sysobj_lookup
+    (oid, vendor, product, category, enterprise_id, builtin)
+    VALUES (?, ?, ?, ?, ?, 1)`);
+
+  // Import hardcoded lookup table
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { LOOKUP_TABLE } = require("@/lib/scanner/snmp-sysobj-lookup");
+  const entries: Array<{ oid: string; match: { vendor: string; product: string; category: string; enterpriseId: number } }> = LOOKUP_TABLE;
+
+  if (count === 0) {
+    const t = db.transaction(() => {
+      for (const e of entries) {
+        ins.run(e.oid, e.match.vendor, e.match.product, e.match.category, e.match.enterpriseId);
+      }
+    });
+    t();
+  } else {
+    // Inserisci solo entry builtin che non esistono ancora nel DB (per OID)
+    const existingOids = new Set(
+      (db.prepare("SELECT oid FROM sysobj_lookup").all() as Array<{ oid: string }>)
+        .map((r) => r.oid)
+    );
+    const missing = entries.filter((e) => !existingOids.has(e.oid));
+    if (missing.length > 0) {
+      const t = db.transaction(() => {
+        for (const e of missing) {
+          ins.run(e.oid, e.match.vendor, e.match.product, e.match.category, e.match.enterpriseId);
+        }
+      });
+      t();
+    }
+  }
+}
+
+// ========================
+// SysObjectID Lookup CRUD
+// ========================
+
+export interface SysObjLookupRow {
+  id: number;
+  oid: string;
+  vendor: string;
+  product: string;
+  category: string;
+  enterprise_id: number;
+  builtin: number;
+  enabled: number;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function getSysObjLookupEntries(): SysObjLookupRow[] {
+  return getDb()
+    .prepare("SELECT * FROM sysobj_lookup ORDER BY LENGTH(oid) DESC")
+    .all() as SysObjLookupRow[];
+}
+
+export function createSysObjLookupEntry(input: {
+  oid: string; vendor: string; product: string; category: string;
+  enterprise_id: number; enabled?: number; note?: string | null;
+}): SysObjLookupRow {
+  const result = getDb().prepare(
+    `INSERT INTO sysobj_lookup (oid, vendor, product, category, enterprise_id, builtin, enabled, note)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
+  ).run(
+    input.oid.trim(), input.vendor.trim(), input.product.trim(), input.category.trim(),
+    input.enterprise_id, input.enabled ?? 1, input.note?.trim() || null,
+  );
+  return getDb().prepare("SELECT * FROM sysobj_lookup WHERE id = ?").get(result.lastInsertRowid) as SysObjLookupRow;
+}
+
+export function updateSysObjLookupEntry(id: number, input: Partial<{
+  oid: string; vendor: string; product: string; category: string;
+  enterprise_id: number; enabled: number; note: string | null;
+}>): SysObjLookupRow | undefined {
+  const existing = getDb().prepare("SELECT id FROM sysobj_lookup WHERE id = ?").get(id) as { id: number } | undefined;
+  if (!existing) return undefined;
+  const sets: string[] = ["updated_at = datetime('now')"];
+  const vals: unknown[] = [];
+  const field = (col: string, val: unknown) => { sets.push(`${col} = ?`); vals.push(val); };
+  if (input.oid !== undefined) field("oid", input.oid.trim());
+  if (input.vendor !== undefined) field("vendor", input.vendor.trim());
+  if (input.product !== undefined) field("product", input.product.trim());
+  if (input.category !== undefined) field("category", input.category.trim());
+  if (input.enterprise_id !== undefined) field("enterprise_id", input.enterprise_id);
+  if (input.enabled !== undefined) field("enabled", input.enabled);
+  if (input.note !== undefined) field("note", input.note?.trim() || null);
+  vals.push(id);
+  getDb().prepare(`UPDATE sysobj_lookup SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getDb().prepare("SELECT * FROM sysobj_lookup WHERE id = ?").get(id) as SysObjLookupRow | undefined;
+}
+
+export function deleteSysObjLookupEntry(id: number): boolean {
+  return getDb().prepare("DELETE FROM sysobj_lookup WHERE id = ?").run(id).changes > 0;
+}
+
+export function resetBuiltinSysObjLookup(): void {
+  getDb().prepare("DELETE FROM sysobj_lookup WHERE builtin = 1").run();
+  seedBuiltinSysObjLookup(getDb());
 }
 
 // ========================

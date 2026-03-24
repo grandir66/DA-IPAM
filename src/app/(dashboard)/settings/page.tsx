@@ -32,7 +32,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash, Monitor, Users, Shield, Tags, ArrowUpCircle, RefreshCw, Sparkles, Terminal } from "lucide-react";
+import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash, Monitor, Users, Shield, Tags, ArrowUpCircle, RefreshCw, Sparkles, Terminal, Search } from "lucide-react";
 import { toast } from "sonner";
 import { buildTcpScanArgs, buildUdpScanArgs } from "@/lib/scanner/ports";
 import {
@@ -43,6 +43,8 @@ import {
 import type { ScheduledJob, NetworkWithStats } from "@/types";
 import Link from "next/link";
 import { ManualUpdateInstructions } from "@/components/shared/manual-update-instructions";
+import { SysObjLookupTab } from "@/components/settings/sysobj-lookup-tab";
+import { QuickScanTab } from "@/components/settings/quick-scan-tab";
 
 /** Anteprima solo con le porte che inserisci (nessun elenco nascosto). */
 function getNmapCommandForForm(form: { tcp_ports: string; udp_ports: string; snmp_community: string }): string {
@@ -849,7 +851,7 @@ export default function SettingsPage() {
   }
 
   const [activeTab, setActiveTab] = useState<
-    "generale" | "utenti" | "https" | "nmap" | "classificazione" | "firme" | "jobs" | "dati"
+    "generale" | "utenti" | "https" | "nmap" | "classificazione" | "firme" | "jobs" | "dati" | "sysobj" | "quickscan"
   >("generale");
 
   const tabs = [
@@ -857,6 +859,8 @@ export default function SettingsPage() {
     { key: "utenti" as const, label: "Utenti", icon: Users },
     { key: "https" as const, label: "HTTPS", icon: Shield },
     { key: "nmap" as const, label: "Profilo Nmap", icon: Radar },
+    { key: "quickscan" as const, label: "Scansione", icon: Sparkles },
+    { key: "sysobj" as const, label: "sysObjectID", icon: Search },
     { key: "firme" as const, label: "Firme dispositivi", icon: Monitor },
     { key: "classificazione" as const, label: "Classificazione", icon: Tags },
     { key: "jobs" as const, label: "Job Pianificati", icon: Clock },
@@ -1437,6 +1441,12 @@ export default function SettingsPage() {
       </Card>
 
       </>)}
+
+      {/* === Tab: Quick Scan === */}
+      {activeTab === "quickscan" && <QuickScanTab />}
+
+      {/* === Tab: sysObjectID Lookup === */}
+      {activeTab === "sysobj" && <SysObjLookupTab />}
 
       {/* === Tab: Firme dispositivi === */}
       {activeTab === "firme" && (<>

@@ -14,7 +14,7 @@ export interface SysObjMatch {
 }
 
 // Ordinate dal prefisso più lungo al più corto (per longest-prefix-match)
-const LOOKUP_TABLE: Array<{ oid: string; match: SysObjMatch }> = [
+export const LOOKUP_TABLE: Array<{ oid: string; match: SysObjMatch }> = [
   // ── MikroTik (14988) ──
   { oid: "1.3.6.1.4.1.14988.1.1.22", match: { vendor: "MikroTik", product: "RouterOS — CCR2216 / CCR2004-16G", category: "networking", enterpriseId: 14988 } },
   { oid: "1.3.6.1.4.1.14988.1.1.18", match: { vendor: "MikroTik", product: "RouterOS — CCR2004 / CCR2116", category: "networking", enterpriseId: 14988 } },
@@ -156,14 +156,69 @@ const LOOKUP_TABLE: Array<{ oid: string; match: SysObjMatch }> = [
   { oid: "1.3.6.1.4.1.8072.3.2.10", match: { vendor: "Linux", product: "Linux generico (Net-SNMP)", category: "server", enterpriseId: 8072 } },
 ];
 
+// ── Cache per le entry dal DB ──
+let _cachedEntries: Array<{ oid: string; match: SysObjMatch }> | null = null;
+let _cacheTimestamp = 0;
+const CACHE_TTL_MS = 60000;
+
+export function invalidateSysObjLookupCache(): void {
+  _cachedEntries = null;
+  _cacheTimestamp = 0;
+}
+
+/**
+ * Carica le entry dal DB (con cache 60s), fallback alla LOOKUP_TABLE hardcoded.
+ * Le entry sono ordinate per lunghezza OID decrescente (longest prefix first).
+ */
+function getEntriesFromDb(): Array<{ oid: string; match: SysObjMatch }> {
+  const now = Date.now();
+  if (_cachedEntries && now - _cacheTimestamp < CACHE_TTL_MS) {
+    return _cachedEntries;
+  }
+
+  try {
+    // Dynamic import per evitare circular dependency e problemi di build
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const db = require("@/lib/db");
+    const rows: Array<{
+      oid: string; vendor: string; product: string;
+      category: string; enterprise_id: number; enabled: number;
+    }> = db.getSysObjLookupEntries();
+    if (rows && rows.length > 0) {
+      // getSysObjLookupEntries() already orders by LENGTH(oid) DESC
+      _cachedEntries = rows
+        .filter((r) => r.enabled)
+        .map((r) => ({
+          oid: r.oid,
+          match: {
+            vendor: r.vendor,
+            product: r.product,
+            category: r.category as SysObjMatch["category"],
+            enterpriseId: r.enterprise_id,
+          },
+        }));
+      _cacheTimestamp = now;
+      return _cachedEntries;
+    }
+  } catch {
+    // DB non disponibile (build time, test, ecc.) - usa hardcoded
+  }
+
+  _cachedEntries = [...LOOKUP_TABLE];
+  _cacheTimestamp = now;
+  return _cachedEntries;
+}
+
 /**
  * Cerca nella tabella il match più specifico per un sysObjectID.
  * Usa longest-prefix-match: la tabella è ordinata dal più lungo al più corto.
+ * Carica le entry dal DB con cache; fallback alla LOOKUP_TABLE hardcoded.
  */
 export function lookupSysObjectId(sysObjectId: string): SysObjMatch | null {
   if (!sysObjectId) return null;
   const oid = sysObjectId.trim();
-  for (const entry of LOOKUP_TABLE) {
+  const entries = getEntriesFromDb();
+  for (const entry of entries) {
     if (oid === entry.oid || oid.startsWith(entry.oid + ".")) {
       return entry.match;
     }

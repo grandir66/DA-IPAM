@@ -217,7 +217,12 @@ function getEntriesFromDb(): Array<{ oid: string; match: SysObjMatch }> {
  */
 export function lookupSysObjectId(sysObjectId: string): SysObjMatch | null {
   if (!sysObjectId) return null;
-  const oid = sysObjectId.trim();
+  // Normalizza OID: "enterprises.25053.3.1.4.114" → "1.3.6.1.4.1.25053.3.1.4.114"
+  let oid = sysObjectId.trim().replace(/^\.+/, "");
+  oid = oid.replace(/^[A-Za-z0-9_-]+::/g, "").trim();
+  if (/^enterprises\b/i.test(oid)) oid = oid.replace(/^enterprises\.?/i, "1.3.6.1.4.1.");
+  if (/^iso\b/i.test(oid)) oid = oid.replace(/^iso\.?/i, "1.");
+  oid = oid.replace(/^\.+/, "").replace(/\.{2,}/g, ".").replace(/\.$/, "");
   const entries = getEntriesFromDb();
   for (const entry of entries) {
     if (oid === entry.oid || oid.startsWith(entry.oid + ".")) {

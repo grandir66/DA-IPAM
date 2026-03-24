@@ -136,10 +136,50 @@ function extractSnmpwalkValue(line: string): string | null {
 }
 
 /** Normalizza OID simbolico o numerico in stringa dotted. */
-function normalizeOidString(s: string): string | null {
-  const t = s.trim();
+/**
+ * Normalizza un sysObjectID da qualsiasi formato a OID numerico puro.
+ * Gestisce formati comuni restituiti da SNMP:
+ *   "enterprises.25053.3.1.4.114"          → "1.3.6.1.4.1.25053.3.1.4.114"
+ *   "SNMPv2-SMI::enterprises.25053.3.1.4"  → "1.3.6.1.4.1.25053.3.1.4"
+ *   "iso.3.6.1.4.1.11.2.3.7.11.136"       → "1.3.6.1.4.1.11.2.3.7.11.136"
+ *   ".1.3.6.1.4.1.25053.3.1.4.114"         → "1.3.6.1.4.1.25053.3.1.4.114"
+ *   "1.3.6.1.4.1.25053.3.1.4.114"          → (invariato)
+ */
+export function normalizeOidString(s: string): string | null {
+  let t = s.trim();
   if (!t) return null;
-  if (/^\d+\./.test(t)) return t;
+
+  // Rimuovi prefissi MIB comuni (SNMPv2-SMI::enterprises, SNMPv2-MIB::, ecc.)
+  t = t.replace(/^[A-Za-z0-9_-]+::/g, "").trim();
+
+  // "enterprises.X.Y.Z" → "1.3.6.1.4.1.X.Y.Z"
+  if (/^enterprises\b/i.test(t)) {
+    t = t.replace(/^enterprises\.?/i, "1.3.6.1.4.1.");
+  }
+
+  // "iso.3.6.1..." → "1.3.6.1..."
+  if (/^iso\b/i.test(t)) {
+    t = t.replace(/^iso\.?/i, "1.");
+  }
+
+  // "private.enterprises.X" → "1.3.6.1.4.1.X"
+  if (/^private\.enterprises\b/i.test(t)) {
+    t = t.replace(/^private\.enterprises\.?/i, "1.3.6.1.4.1.");
+  }
+
+  // Rimuovi punto iniziale: ".1.3.6..." → "1.3.6..."
+  t = t.replace(/^\.+/, "");
+
+  // Rimuovi punti doppi o finali
+  t = t.replace(/\.{2,}/g, ".").replace(/\.$/, "");
+
+  // Verifica che ora sia un OID numerico valido
+  if (/^\d+(\.\d+)*$/.test(t)) return t;
+
+  // Ultimo tentativo: prova a estrarre solo i numeri puntati
+  const match = t.match(/(\d+(?:\.\d+){2,})/);
+  if (match) return match[1];
+
   return t;
 }
 
@@ -492,13 +532,15 @@ export async function querySnmpInfo(ip: string, community: string, port: number 
       else if (oid === OID_SYSNAME) sysName = value;
       else if (oid === OID_SYSOBJECTID) {
         const v = vb.value;
-        if (typeof v === "string") sysObjectID = v.trim() || null;
-        else if (Array.isArray(v) && v.length > 0) sysObjectID = v.join(".");
+        let rawOid: string | null = null;
+        if (typeof v === "string") rawOid = v.trim() || null;
+        else if (Array.isArray(v) && v.length > 0) rawOid = v.join(".");
         else if (v != null && typeof v === "object" && "type" in v) {
           const obj = v as { type?: string; value?: string };
-          if (obj.type === "OID" && obj.value) sysObjectID = obj.value;
-          else sysObjectID = value;
-        } else sysObjectID = value;
+          if (obj.type === "OID" && obj.value) rawOid = obj.value;
+          else rawOid = value;
+        } else rawOid = value;
+        sysObjectID = rawOid ? normalizeOidString(rawOid) : null;
       }
     }
 

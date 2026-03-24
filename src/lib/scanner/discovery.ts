@@ -11,7 +11,7 @@ import {
 } from "./ports";
 import { readArpCache } from "./arp-cache";
 import { lookupVendor } from "./mac-vendor";
-import { querySnmpInfoMultiCommunity } from "./snmp-query";
+import { querySnmpInfoMultiCommunity, normalizeOidString } from "./snmp-query";
 import { classifyDevice } from "@/lib/device-classifier";
 import {
   getClassificationFromFingerprintSnapshot,
@@ -446,7 +446,7 @@ async function runDiscovery(
                     if (vb.type != null && [128, 129, 130].includes(vb.type)) continue;
                     const val = vb.value != null ? String(vb.value).trim() : null;
                     if (!val || val === "noSuchObject" || val === "noSuchInstance") continue;
-                    if (String(vb.oid).includes("1.2.0")) sysObjectID = val;
+                    if (String(vb.oid).includes("1.2.0")) sysObjectID = normalizeOidString(val);
                     else if (String(vb.oid).includes("1.5.0")) sysName = val;
                     else if (String(vb.oid).includes("1.1.0")) sysDescr = val;
                   }
@@ -880,7 +880,7 @@ async function runDiscovery(
                     if (vb.type != null && [128, 129, 130].includes(vb.type)) continue;
                     const val = vb.value != null ? String(vb.value).trim() : null;
                     if (!val || val === "noSuchObject" || val === "noSuchInstance") continue;
-                    if (String(vb.oid).includes("1.2.0")) sysObjectID = val;
+                    if (String(vb.oid).includes("1.2.0")) sysObjectID = normalizeOidString(val);
                     else if (String(vb.oid).includes("1.5.0")) sysName = val;
                     else if (String(vb.oid).includes("1.1.0")) sysDescr = val;
                   }

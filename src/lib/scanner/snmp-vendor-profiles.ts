@@ -862,7 +862,12 @@ export function extractEnterpriseNumber(sysObjectID: string | null): number | nu
  */
 function oidMatchesPrefix(oid: string | null, prefix: string): boolean {
   if (!oid || !prefix) return false;
-  const normOid = oid.replace(/^\./, "");
+  let normOid = oid.replace(/^\./, "");
+  // Normalizza nomi simbolici: "enterprises.X" → "1.3.6.1.4.1.X"
+  normOid = normOid.replace(/^[A-Za-z0-9_-]+::/g, "").trim();
+  if (/^enterprises\b/i.test(normOid)) normOid = normOid.replace(/^enterprises\.?/i, "1.3.6.1.4.1.");
+  if (/^iso\b/i.test(normOid)) normOid = normOid.replace(/^iso\.?/i, "1.");
+  normOid = normOid.replace(/^\.+/, "").replace(/\.{2,}/g, ".");
   const normPrefix = prefix.replace(/^\./, "");
   if (normOid === normPrefix) return true;
   if (normOid.startsWith(normPrefix + ".")) return true;

@@ -199,7 +199,8 @@ export async function snmpGet(
   timeoutMs: number = 3000
 ): Promise<Array<{ oid: string; value: unknown; type?: number }>> {
   const snmp = await import("net-snmp");
-  const session = snmp.createSession(ip, community, { port, timeout: Math.floor(timeoutMs * 0.6) });
+  // version: 1 = SNMPv2c (net-snmp default è 0 = v1, molti device moderni rispondono solo a v2c)
+  const session = snmp.createSession(ip, community, { port, timeout: Math.floor(timeoutMs * 0.6), version: 1 } as Record<string, unknown>);
 
   return new Promise((resolve) => {
     let done = false;
@@ -249,7 +250,7 @@ export async function snmpSubwalkLimited(
   maxRepetitions = 25
 ): Promise<Array<{ oid: string; value: unknown }>> {
   const snmp = await import("net-snmp");
-  const session = snmp.createSession(ip, community, { port, timeout: Math.floor(timeoutMs * 0.5) });
+  const session = snmp.createSession(ip, community, { port, timeout: Math.floor(timeoutMs * 0.5), version: 1 } as Record<string, unknown>);
   const rows: Array<{ oid: string; value: unknown }> = [];
 
   return new Promise((resolve) => {

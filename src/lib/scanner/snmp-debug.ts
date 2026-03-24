@@ -40,7 +40,8 @@ export async function snmpDebugQuery(ip: string, community: string, port: number
 
   try {
     const snmp = await import("net-snmp");
-    const session = snmp.createSession(ip, community, { port, timeout: 5000 });
+    // version: 1 = SNMPv2c
+    const session = snmp.createSession(ip, community, { port, timeout: 5000, version: 1 } as Record<string, unknown>);
     // Solo i 3 OID base per diagnostica
     const oids = [OID_SYSDESCR, OID_SYSNAME, OID_SYSOBJECTID];
 

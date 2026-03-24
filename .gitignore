@@ -60,3 +60,11 @@ config/snmp-oid-library/devices/*
 *.py[cod]
 .~lock.*
 
+
+# Tenant databases
+data/tenants/*.db
+data/tenants/*.db-wal
+data/tenants/*.db-shm
+data/hub.db
+data/hub.db-wal
+data/hub.db-shm

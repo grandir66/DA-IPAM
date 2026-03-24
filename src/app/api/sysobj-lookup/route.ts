@@ -8,7 +8,7 @@ const createSchema = z.object({
   oid: z.string().min(1, "OID è obbligatorio"),
   vendor: z.string().min(1, "Vendor è obbligatorio"),
   product: z.string().min(1, "Product è obbligatorio"),
-  category: z.enum(["networking", "wireless", "firewall", "server", "storage"]),
+  category: z.string().min(1, "Categoria è obbligatoria"),
   enterprise_id: z.number(),
   enabled: z.union([z.literal(0), z.literal(1)]).optional(),
   note: z.string().optional(),

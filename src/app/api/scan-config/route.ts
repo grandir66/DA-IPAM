@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
+import { getSetting } from "@/lib/db";
 import {
   NETWORK_DISCOVERY_QUICK_TCP_PORTS,
   NMAP_DEFAULT_TCP_PORTS,
@@ -11,6 +12,7 @@ import {
   getNmapHostTimeoutSeconds,
   buildTcpScanArgs,
   buildUdpScanArgs,
+  setGetSettingFn,
 } from "@/lib/scanner/ports";
 
 export async function GET() {
@@ -18,9 +20,14 @@ export async function GET() {
     const authCheck = await requireAuth();
     if (isAuthError(authCheck)) return authCheck;
 
+    // Inietta getSetting per leggere porte custom dal DB
+    setGetSettingFn(getSetting);
+
+    const customQuickPorts = getSetting("quick_scan_tcp_ports");
+
     return NextResponse.json({
       quickScan: {
-        tcpPorts: NETWORK_DISCOVERY_QUICK_TCP_PORTS,
+        tcpPorts: customQuickPorts?.trim() || NETWORK_DISCOVERY_QUICK_TCP_PORTS,
         hostTimeoutSeconds: getNetworkDiscoveryQuickHostTimeoutSeconds(),
         concurrency: getNetworkDiscoveryQuickConcurrency(),
         execLimitMs: getNetworkDiscoveryQuickExecMs(),

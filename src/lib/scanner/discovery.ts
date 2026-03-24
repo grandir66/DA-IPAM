@@ -7,6 +7,7 @@ import {
   getNmapHostTimeoutSeconds,
   getNetworkDiscoveryQuickConcurrency,
   getNetworkDiscoveryQuickExecMs,
+  setGetSettingFn,
 } from "./ports";
 import { readArpCache } from "./arp-cache";
 import { lookupVendor } from "./mac-vendor";
@@ -43,6 +44,7 @@ import {
   getAdRealm,
   getCredentialCommunityString,
   addHostCredential,
+  getSetting,
 } from "@/lib/db";
 import type { ScanProgress, DiscoveryResult, DeviceFingerprintSnapshot } from "@/types";
 import type { DnsResolution } from "./dns";
@@ -115,6 +117,9 @@ export async function discoverNetwork(
   snmpCommunity?: string | null,
   options?: DiscoverNetworkOptions
 ): Promise<{ id: string; progress: ScanProgress }> {
+  // Inietta getSetting per leggere porte custom dal DB (ports.ts è usato anche client-side)
+  try { setGetSettingFn(getSetting); } catch { /* ignore */ }
+
   const network = getNetworkById(networkId);
   if (!network) throw new Error("Rete non trovata");
 

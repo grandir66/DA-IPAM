@@ -141,6 +141,9 @@ export function ScanConfigTab() {
   const [quickExecLimitMs, setQuickExecLimitMs] = useState<number>(22000);
   const [savingQuick, setSavingQuick] = useState(false);
   const [quickDirty, setQuickDirty] = useState(false);
+  const [quickPorts, setQuickPorts] = useState<string>("");
+  const [quickPortsDirty, setQuickPortsDirty] = useState(false);
+  const [savingQuickPorts, setSavingQuickPorts] = useState(false);
 
   // --- Env vars collapsible ---
   const [envOpen, setEnvOpen] = useState(false);
@@ -203,6 +206,9 @@ export function ScanConfigTab() {
           savedSettings.quick_scan_exec_limit_ms
             ? parseInt(savedSettings.quick_scan_exec_limit_ms, 10)
             : sc.quickScan.execLimitMs
+        );
+        setQuickPorts(
+          savedSettings.quick_scan_tcp_ports || sc.quickScan.tcpPorts
         );
       }
     } catch {
@@ -294,6 +300,27 @@ export function ScanConfigTab() {
       toast.error(err instanceof Error ? err.message : "Errore di rete");
     } finally {
       setSavingQuick(false);
+    }
+  }
+
+  async function saveQuickPorts() {
+    setSavingQuickPorts(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "quick_scan_tcp_ports", value: quickPorts.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Errore");
+      }
+      toast.success("Porte quick scan salvate");
+      setQuickPortsDirty(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Errore di rete");
+    } finally {
+      setSavingQuickPorts(false);
     }
   }
 
@@ -410,10 +437,24 @@ export function ScanConfigTab() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <h4 className="text-sm font-medium mb-2">
-                Porte TCP quick scan ({config.quickScan.tcpPorts.split(",").length})
-              </h4>
-              <PortList ports={config.quickScan.tcpPorts} protocol="TCP" />
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium">
+                  Porte TCP quick scan ({quickPorts.split(",").filter(Boolean).length})
+                </h4>
+                {quickPortsDirty && (
+                  <Button size="sm" onClick={saveQuickPorts} disabled={savingQuickPorts}>
+                    {savingQuickPorts ? "Salvataggio…" : "Salva porte"}
+                  </Button>
+                )}
+              </div>
+              <Textarea
+                value={quickPorts}
+                onChange={(e) => { setQuickPorts(e.target.value); setQuickPortsDirty(true); }}
+                className="font-mono text-xs min-h-[60px]"
+                placeholder="22,53,80,161,443,445,..."
+              />
+              <p className="text-xs text-muted-foreground mt-1">Numeri di porta separati da virgola. Queste porte vengono testate su ogni host che risponde al ping ICMP.</p>
+              {quickPorts && <div className="mt-2"><PortList ports={quickPorts} protocol="TCP" /></div>}
             </div>
 
             {/* Editable metrics */}

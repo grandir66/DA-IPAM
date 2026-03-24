@@ -83,12 +83,30 @@ export function getNetworkDiscoveryQuickExecMs(): number {
 }
 
 /**
+ * Funzione iniettabile per leggere un setting dal DB.
+ * Viene impostata da discovery.ts (server-side only) prima di usare buildNetworkDiscoveryQuickTcpArgs().
+ * Questo evita di importare db.ts in un file usato anche client-side.
+ */
+let _getSettingFn: ((key: string) => string | null) | null = null;
+export function setGetSettingFn(fn: (key: string) => string | null): void { _getSettingFn = fn; }
+
+/** Restituisce le porte TCP quick scan: prima dal DB settings (se disponibile), poi dalla costante hardcoded. */
+export function getQuickScanTcpPorts(): string {
+  try {
+    const custom = _getSettingFn?.("quick_scan_tcp_ports");
+    if (custom?.trim()) return custom.trim();
+  } catch { /* fallback */ }
+  return NETWORK_DISCOVERY_QUICK_TCP_PORTS;
+}
+
+/**
  * Profilo Nmap leggero: -Pn (già "up" da ICMP), TCP senza -sV, timing aggressivo.
  * Usato da `network_discovery`.
  */
 export function buildNetworkDiscoveryQuickTcpArgs(): string {
   const ht = getNetworkDiscoveryQuickHostTimeoutSeconds();
-  return `-Pn -sT -p ${NETWORK_DISCOVERY_QUICK_TCP_PORTS} -T5 --max-retries 1 --min-rate 150 --host-timeout ${ht}s`;
+  const ports = getQuickScanTcpPorts();
+  return `-Pn -sT -p ${ports} -T5 --max-retries 1 --min-rate 150 --host-timeout ${ht}s`;
 }
 
 /**

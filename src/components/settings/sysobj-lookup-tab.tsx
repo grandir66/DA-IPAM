@@ -30,6 +30,11 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, Pencil, RotateCcw, Search, Filter } from "lucide-react";
 import { toast } from "sonner";
+import {
+  getClassificationLabel,
+  DEVICE_CLASSIFICATIONS_ORDERED,
+  sortClassificationsByDisplayLabel,
+} from "@/lib/device-classifications";
 
 interface SysObjRow {
   id: number;
@@ -43,19 +48,15 @@ interface SysObjRow {
   note: string | null;
 }
 
-const CATEGORIES = [
-  { value: "networking", label: "Networking", color: "text-blue-400" },
-  { value: "wireless", label: "Wireless", color: "text-purple-400" },
-  { value: "firewall", label: "Firewall", color: "text-red-400" },
-  { value: "server", label: "Server", color: "text-green-400" },
-  { value: "storage", label: "Storage", color: "text-yellow-400" },
-];
+/** Categorie legacy (dalla lookup table originale) + tutte le classificazioni device */
+const LEGACY_CATEGORIES = ["networking", "wireless"];
+const ALL_CATEGORIES = [...LEGACY_CATEGORIES, ...DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => !LEGACY_CATEGORIES.includes(c))];
 
 const emptyForm = {
   oid: "",
   vendor: "",
   product: "",
-  category: "networking",
+  category: "router",
   enterprise_id: 0,
   enabled: true,
   note: "",
@@ -182,8 +183,11 @@ export function SysObjLookupTab() {
     );
   });
 
-  const catLabel = (cat: string) => CATEGORIES.find((c) => c.value === cat)?.label ?? cat;
-  const catColor = (cat: string) => CATEGORIES.find((c) => c.value === cat)?.color ?? "";
+  const catLabel = (cat: string) => {
+    // Prova classificazione device, poi fallback al valore raw
+    const deviceLabel = getClassificationLabel(cat);
+    return deviceLabel !== cat ? deviceLabel : cat.charAt(0).toUpperCase() + cat.slice(1);
+  };
 
   if (loading) return <Card><CardContent className="py-12 text-center text-muted-foreground">Caricamento…</CardContent></Card>;
 
@@ -231,8 +235,8 @@ export function SysObjLookupTab() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Tutte le categorie</SelectItem>
-                {CATEGORIES.map((c) => (
-                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                {ALL_CATEGORIES.map((c) => (
+                  <SelectItem key={c} value={c}>{catLabel(c)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -272,7 +276,7 @@ export function SysObjLookupTab() {
                       <TableCell className="text-sm">{row.vendor}</TableCell>
                       <TableCell className="text-sm max-w-[200px] truncate" title={row.product}>{row.product}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={catColor(row.category)}>
+                        <Badge variant="outline">
                           {catLabel(row.category)}
                         </Badge>
                       </TableCell>
@@ -367,8 +371,8 @@ export function SysObjLookupTab() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CATEGORIES.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    {ALL_CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>{catLabel(c)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

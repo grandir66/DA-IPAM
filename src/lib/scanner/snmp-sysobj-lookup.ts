@@ -9,7 +9,8 @@
 export interface SysObjMatch {
   vendor: string;
   product: string;
-  category: "networking" | "wireless" | "firewall" | "server" | "storage";
+  /** Categoria libera: valori legacy (networking, wireless, firewall, server, storage) o classificazione device */
+  category: string;
   enterpriseId: number;
 }
 

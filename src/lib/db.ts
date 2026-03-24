@@ -1171,7 +1171,7 @@ export function getDb(): Database.Database {
       oid TEXT NOT NULL UNIQUE,
       vendor TEXT NOT NULL,
       product TEXT NOT NULL,
-      category TEXT NOT NULL CHECK(category IN ('networking','wireless','firewall','server','storage')),
+      category TEXT NOT NULL,
       enterprise_id INTEGER NOT NULL,
       builtin INTEGER NOT NULL DEFAULT 0,
       enabled INTEGER NOT NULL DEFAULT 1,

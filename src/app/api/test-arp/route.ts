@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getNetworkDeviceById, getRouters } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
+import { requireAuth, isAuthError } from "@/lib/api-auth";
 
 /**
  * Test ARP table retrieval from a router device.
@@ -8,6 +9,8 @@ import { createRouterClient } from "@/lib/devices/router-client";
  * GET /api/test-arp?device_id=DA_RTR  (cerca per nome)
  */
 export async function GET(request: Request) {
+  const authCheck = await requireAuth();
+  if (isAuthError(authCheck)) return authCheck;
   const { searchParams } = new URL(request.url);
   const deviceId = searchParams.get("device_id");
 

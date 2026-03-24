@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getNetworkDevices,
-  getInventoryAssetByNetworkDevice,
+  getDeviceIdsWithInventoryAsset,
   ensureInventoryAssetForNetworkDevice,
   syncInventoryFromDevice,
 } from "@/lib/db";
@@ -16,11 +16,12 @@ export async function POST() {
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
     const devices = getNetworkDevices();
+    const existingAssetDeviceIds = getDeviceIdsWithInventoryAsset();
     let created = 0;
     let updated = 0;
 
     for (const device of devices) {
-      const hadAsset = !!getInventoryAssetByNetworkDevice(device.id);
+      const hadAsset = existingAssetDeviceIds.has(device.id);
       ensureInventoryAssetForNetworkDevice(device);
       if (!hadAsset) created++;
 

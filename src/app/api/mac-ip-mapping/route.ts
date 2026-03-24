@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { getMacIpMappings } from "@/lib/db";
+import { requireAuth, isAuthError } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
   try {
+    const authCheck = await requireAuth();
+    if (isAuthError(authCheck)) return authCheck;
     const { searchParams } = new URL(request.url);
     const networkId = searchParams.get("network_id");
     const source = searchParams.get("source") as "arp" | "dhcp" | "host" | "switch" | null;

@@ -7,6 +7,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authCheck = await requireAdmin();
+    if (isAuthError(authCheck)) return authCheck;
     const { id } = await params;
     const location = getLocationById(Number(id));
     if (!location) {

@@ -5,6 +5,8 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET() {
   try {
+    const authCheck = await requireAdmin();
+    if (isAuthError(authCheck)) return authCheck;
     return NextResponse.json(getScheduledJobs());
   } catch (error) {
     console.error("Error fetching jobs:", error);

@@ -96,8 +96,14 @@ function isAccountEnabled(uac: string | number | undefined | null): number {
  * Connette a LDAP e restituisce il client.
  */
 async function connectLdap(integration: AdIntegration): Promise<Client> {
-  const username = decrypt(integration.encrypted_username);
-  const password = decrypt(integration.encrypted_password);
+  let username: string;
+  let password: string;
+  try {
+    username = decrypt(integration.encrypted_username);
+    password = decrypt(integration.encrypted_password);
+  } catch {
+    throw new Error("Impossibile decifrare le credenziali AD. Verificare ENCRYPTION_KEY e riconfigurare l'integrazione.");
+  }
 
   const protocol = integration.use_ssl ? "ldaps" : "ldap";
   const url = `${protocol}://${integration.dc_host}:${integration.port}`;
@@ -439,8 +445,14 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
   const cred = getCredentialById(integration.winrm_credential_id);
   if (!cred) throw new Error("Credenziale WinRM non trovata");
 
-  const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
+  let username: string;
+  let password: string;
+  try {
+    username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
+    password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
+  } catch {
+    throw new Error("Impossibile decifrare le credenziali WinRM. Verificare ENCRYPTION_KEY.");
+  }
   const host = integration.dc_host;
   const port = 5985;
   const realm = integration.domain || "";

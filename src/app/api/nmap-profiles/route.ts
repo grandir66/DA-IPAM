@@ -4,6 +4,8 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET() {
   try {
+    const authCheck = await requireAdmin();
+    if (isAuthError(authCheck)) return authCheck;
     const profiles = getNmapProfiles();
     return NextResponse.json(profiles);
   } catch (error) {

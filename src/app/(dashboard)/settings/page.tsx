@@ -101,16 +101,16 @@ export default function SettingsPage() {
   const [savingHostCreds, setSavingHostCreds] = useState(false);
 
   useEffect(() => {
-    fetch("/api/jobs").then((r) => r.json()).then(setJobs);
-    fetch("/api/networks").then((r) => r.json()).then(setNetworks);
+    fetch("/api/jobs").then((r) => r.json()).then(setJobs).catch(() => {});
+    fetch("/api/networks").then((r) => r.json()).then(setNetworks).catch(() => {});
     fetch("/api/settings").then((r) => r.json()).then((settings: Record<string, string>) => {
       if (settings.server_port) setServerPort(settings.server_port);
       if (settings.host_windows_credential_id !== undefined) setHostWindowsCredentialId(settings.host_windows_credential_id || "");
       if (settings.host_linux_credential_id !== undefined) setHostLinuxCredentialId(settings.host_linux_credential_id || "");
-    });
-    fetch("/api/custom-oui").then((r) => r.json()).then((d: { content?: string }) => setCustomOui(d.content || ""));
-    fetch("/api/credentials").then((r) => r.json()).then((creds: { id: number; name: string; credential_type: string }[]) => setCredentials(creds));
-    fetch("/api/version").then((r) => r.json()).then((d: { version?: string }) => setAppVersion(d.version ?? null));
+    }).catch(() => {});
+    fetch("/api/custom-oui").then((r) => r.json()).then((d: { content?: string }) => setCustomOui(d.content || "")).catch(() => {});
+    fetch("/api/credentials").then((r) => r.json()).then((creds: { id: number; name: string; credential_type: string }[]) => setCredentials(creds)).catch(() => {});
+    fetch("/api/version").then((r) => r.json()).then((d: { version?: string }) => setAppVersion(d.version ?? null)).catch(() => {});
     fetch("/api/system/update")
       .then((r) => r.json())
       .then((d: { remoteVersion?: string; updateAvailable?: boolean; error?: string }) => {

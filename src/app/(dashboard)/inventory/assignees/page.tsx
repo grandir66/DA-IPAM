@@ -34,7 +34,8 @@ export default function AssetAssigneesPage() {
   function loadAssignees() {
     fetch("/api/asset-assignees")
       .then((r) => (r.ok ? r.json() : []))
-      .then(setAssignees);
+      .then(setAssignees)
+      .catch(() => {});
   }
 
   useEffect(() => {

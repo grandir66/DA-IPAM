@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { SCHEMA_SQL } from "./db-schema";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
-import { decrypt } from "./crypto";
+import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
 
@@ -2199,6 +2199,11 @@ export function getHostsByNetwork(networkId: number): Host[] {
   return hosts.sort((a, b) => ipToNum(a.ip) - ipToNum(b.ip));
 }
 
+/** Tutti gli host di tutte le reti (senza ordinamento per rete). Per export CSV e sync inventario. */
+export function getAllHostsFlat(): Host[] {
+  return getDb().prepare("SELECT * FROM hosts").all() as Host[];
+}
+
 /** Tutti gli host (tutte le reti), per lista dispositivi unificata. limit opzionale (default 10000). */
 export function getAllHosts(limit: number = 10000): Host[] {
   const hosts = getDb()
@@ -2958,11 +2963,9 @@ export function getHostWindowsCredentials(): { username: string; password: strin
   if (isNaN(id)) return null;
   const cred = getCredentialById(id);
   if (!cred || String(cred.credential_type || "").toLowerCase() !== "windows") return null;
-  try {
-    const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
-    const password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
-    if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  } catch { /* ignore */ }
+  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
+  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
+  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
   return null;
 }
 
@@ -2974,11 +2977,9 @@ export function getHostLinuxCredentials(): { username: string; password: string 
   if (isNaN(id)) return null;
   const cred = getCredentialById(id);
   if (!cred || String(cred.credential_type || "").toLowerCase() !== "linux") return null;
-  try {
-    const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
-    const password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
-    if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  } catch { /* ignore */ }
+  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
+  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
+  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
   return null;
 }
 
@@ -2991,11 +2992,9 @@ export function getCredentialLoginPair(
   if (!cred) return null;
   const type = String(cred.credential_type || "").toLowerCase();
   if (type !== expectedType) return null;
-  try {
-    const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
-    const password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
-    if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  } catch { /* ignore */ }
+  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
+  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
+  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
   return null;
 }
 
@@ -3020,11 +3019,9 @@ export function getSshLinuxCredentialPair(credentialId: number): { username: str
   if (!cred) return null;
   const type = String(cred.credential_type || "").toLowerCase();
   if (type !== "ssh" && type !== "linux") return null;
-  try {
-    const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
-    const password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
-    if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  } catch { /* ignore */ }
+  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
+  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
+  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
   return null;
 }
 
@@ -3412,12 +3409,8 @@ export function getCredentialCommunityString(credentialId: number): string | nul
   if (type !== "snmp") return null;
   const enc = cred.encrypted_password || cred.encrypted_username;
   if (!enc) return null;
-  try {
-    const s = decrypt(enc);
-    return s && s.trim() ? s : null;
-  } catch {
-    return null;
-  }
+  const s = safeDecrypt(enc);
+  return s && s.trim() ? s : null;
 }
 
 /** Restituisce le credenziali SNMP v3 per un device (user name + auth key). Per v3 serve credential con username e password. */
@@ -3430,11 +3423,9 @@ export function getDeviceSnmpV3Credentials(device: NetworkDevice): { username: s
     if (!credId) continue;
     const cred = getCredentialById(credId);
     if (!cred || String(cred.credential_type || "").toLowerCase() !== "snmp") continue;
-    try {
-      const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
-      const authKey = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
-      if (username?.trim() && authKey?.trim()) return { username: username.trim(), authKey: authKey.trim() };
-    } catch { /* ignore */ }
+    const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
+    const authKey = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
+    if (username?.trim() && authKey?.trim()) return { username: username.trim(), authKey: authKey.trim() };
   }
   return null;
 }
@@ -3468,10 +3459,8 @@ export function getDeviceCommunityString(device: NetworkDevice): string {
       const fromCred = getCredentialCommunityString(snmpBinding.credential_id);
       if (fromCred) return fromCred;
     } else if (snmpBinding.inline_encrypted_password) {
-      try {
-        const s = decrypt(snmpBinding.inline_encrypted_password);
-        if (s?.trim()) return s;
-      } catch { /* fallthrough */ }
+      const s = safeDecrypt(snmpBinding.inline_encrypted_password);
+      if (s?.trim()) return s;
     }
   }
 
@@ -3486,12 +3475,10 @@ export function getDeviceCommunityString(device: NetworkDevice): string {
     if (fromCred) return fromCred;
   }
   if (device.community_string) {
-    try {
-      const s = decrypt(device.community_string);
-      if (s && s.trim()) return s;
-    } catch {
-      return typeof device.community_string === "string" ? device.community_string : "public";
-    }
+    const s = safeDecrypt(device.community_string);
+    if (s && s.trim()) return s;
+    // Se la decifratura fallisce, prova a usare il valore raw (legacy non cifrato)
+    if (typeof device.community_string === "string") return device.community_string;
   }
   return "public";
 }
@@ -3512,12 +3499,13 @@ export function getDeviceCredentials(device: NetworkDevice): { username: string;
     if (binding.credential_id) {
       const cred = getCredentialById(binding.credential_id);
       if (cred?.encrypted_username && cred?.encrypted_password) {
-        try { return { username: decrypt(cred.encrypted_username), password: decrypt(cred.encrypted_password) }; }
-        catch { /* fallthrough */ }
+        const u = safeDecrypt(cred.encrypted_username);
+        const p = safeDecrypt(cred.encrypted_password);
+        if (u && p) return { username: u, password: p };
       }
     } else if (binding.inline_username && binding.inline_encrypted_password) {
-      try { return { username: binding.inline_username, password: decrypt(binding.inline_encrypted_password) }; }
-      catch { /* fallthrough */ }
+      const p = safeDecrypt(binding.inline_encrypted_password);
+      if (p) return { username: binding.inline_username, password: p };
     }
   }
 
@@ -3525,25 +3513,16 @@ export function getDeviceCredentials(device: NetworkDevice): { username: string;
   if (device.credential_id) {
     const cred = getCredentialById(device.credential_id);
     if (cred?.encrypted_username && cred?.encrypted_password) {
-      try {
-        return {
-          username: decrypt(cred.encrypted_username),
-          password: decrypt(cred.encrypted_password),
-        };
-      } catch {
-        return null;
-      }
+      const u = safeDecrypt(cred.encrypted_username);
+      const p = safeDecrypt(cred.encrypted_password);
+      if (u && p) return { username: u, password: p };
+      return null;
     }
   }
   if (device.username && device.encrypted_password) {
-    try {
-      return {
-        username: device.username,
-        password: decrypt(device.encrypted_password),
-      };
-    } catch {
-      return null;
-    }
+    const p = safeDecrypt(device.encrypted_password);
+    if (p) return { username: device.username, password: p };
+    return null;
   }
   return null;
 }
@@ -3784,6 +3763,12 @@ export function getInventoryAssetByNetworkDevice(deviceId: number): import("@/ty
   return getDb().prepare("SELECT * FROM inventory_assets WHERE network_device_id = ?").get(deviceId) as import("@/types").InventoryAsset | undefined;
 }
 
+/** Set di device IDs che hanno già un asset inventario. Evita N+1 in sync-devices. */
+export function getDeviceIdsWithInventoryAsset(): Set<number> {
+  const rows = getDb().prepare("SELECT network_device_id FROM inventory_assets WHERE network_device_id IS NOT NULL").all() as { network_device_id: number }[];
+  return new Set(rows.map((r) => r.network_device_id));
+}
+
 /** Crea automaticamente un asset in inventario per un network device, se non esiste già. */
 export function ensureInventoryAssetForNetworkDevice(device: NetworkDevice): import("@/types").InventoryAsset {
   const existing = getInventoryAssetByNetworkDevice(device.id);
@@ -3949,6 +3934,12 @@ function mapVendorToMarca(vendor: string): string | null {
 
 export function getInventoryAssetByHost(hostId: number): import("@/types").InventoryAsset | undefined {
   return getDb().prepare("SELECT * FROM inventory_assets WHERE host_id = ?").get(hostId) as import("@/types").InventoryAsset | undefined;
+}
+
+/** Set di host IDs che hanno già un asset inventario. Evita N+1 in sync-hosts. */
+export function getHostIdsWithInventoryAsset(): Set<number> {
+  const rows = getDb().prepare("SELECT host_id FROM inventory_assets WHERE host_id IS NOT NULL").all() as { host_id: number }[];
+  return new Set(rows.map((r) => r.host_id));
 }
 
 /** Mappa classification host → categoria inventario (workstation→Desktop, notebook→Laptop, ecc.) */
@@ -4309,8 +4300,11 @@ export function updateLicense(id: number, input: Partial<Omit<import("@/types").
 }
 
 export function deleteLicense(id: number): boolean {
-  getDb().prepare("DELETE FROM license_seats WHERE license_id = ?").run(id);
-  return getDb().prepare("DELETE FROM licenses WHERE id = ?").run(id).changes > 0;
+  const del = getDb().transaction(() => {
+    getDb().prepare("DELETE FROM license_seats WHERE license_id = ?").run(id);
+    return getDb().prepare("DELETE FROM licenses WHERE id = ?").run(id).changes > 0;
+  });
+  return del();
 }
 
 // ========================

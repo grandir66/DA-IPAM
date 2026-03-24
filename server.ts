@@ -60,8 +60,9 @@ app.prepare().then(() => {
   function initCron() {
     import("./src/lib/cron/scheduler").then(({ initializeScheduler }) => {
       initializeScheduler();
+      console.log("> Cron scheduler initialized");
     }).catch((error) => {
-      console.error("Failed to initialize scheduler:", error);
+      console.error("CRITICAL: Failed to initialize scheduler — cron jobs will NOT run:", error);
     });
   }
 });

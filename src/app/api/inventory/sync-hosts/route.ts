@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import {
-  getNetworks,
-  getHostsByNetwork,
-  getInventoryAssetByHost,
+  getAllHostsFlat,
+  getHostIdsWithInventoryAsset,
   ensureInventoryAssetForHost,
   syncInventoryFromHost,
 } from "@/lib/db";
@@ -17,8 +16,8 @@ export async function POST() {
   try {
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
-    const networks = getNetworks();
-    const allHosts = networks.flatMap((n) => getHostsByNetwork(n.id));
+    const allHosts = getAllHostsFlat();
+    const existingAssetHostIds = getHostIdsWithInventoryAsset();
 
     let created = 0;
     let updated = 0;
@@ -33,7 +32,7 @@ export async function POST() {
 
       if (!hasUsefulData) continue;
 
-      const hadAsset = !!getInventoryAssetByHost(host.id);
+      const hadAsset = existingAssetHostIds.has(host.id);
       ensureInventoryAssetForHost(host);
       if (!hadAsset) created++;
 

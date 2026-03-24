@@ -22,7 +22,8 @@ export default function ScansPage() {
   useEffect(() => {
     fetch("/api/scans/history?limit=200")
       .then((r) => r.json())
-      .then((data) => { setHistory(data); setLoading(false); });
+      .then((data) => { setHistory(data); setLoading(false); })
+      .catch(() => { setLoading(false); });
   }, []);
 
   return (

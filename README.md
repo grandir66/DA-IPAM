@@ -302,6 +302,8 @@ npm run verify-auth-user -- --test admin "password-da-provare"
 
 Legge `data/hub.db` (o `DA_IPAM_HUB_DB_PATH`) e, con `--test`, confronta la password con l’hash bcrypt come fa il login. Exit code `3` se la password non coincide.
 
+Il login e il setup normalizzano gli **spazi** nello username (trim); la ricerca nel DB usa `TRIM(username)` così un account creato con spazi accidentali resta accessibile digitando lo username senza spazi.
+
 | Variabile | Descrizione |
 |-----------|-------------|
 | `DA_INVENT_SERVICE_USER` | Solo installer `--systemd`: utente del servizio (default **`root`**, consigliato per nmap UDP nel CT) |
@@ -462,6 +464,21 @@ I job (`ping_sweep`, `nmap_scan`, `arp_poll`, `dns_resolve`, `cleanup`, monitora
 - **HTTPS / reverse proxy**: es. `deploy/nginx-ssl.conf`  
 - **Backup DB**: `scripts/backup.sh`  
 - **Certificati**: `scripts/generate-cert.sh`  
+
+### Rimosione servizio e setup da zero
+
+Lo script [`scripts/uninstall-da-invent.sh`](scripts/uninstall-da-invent.sh) **ferma e disinstalla** l’unità systemd `da-invent` (nessuna cancellazione automatica della cartella applicazione).
+
+```bash
+sudo bash /opt/da-invent/scripts/uninstall-da-invent.sh
+```
+
+Poi, a scelta:
+
+- **Reinstallazione completa:** backup di `data/` e `.env.local`, `rm -rf /opt/da-invent`, nuovo `git clone` e `scripts/install.sh --systemd` (come in fase di installazione iniziale). Così elimini anche **`node_modules`** e la build.
+- **Solo nuovo primo utente (/setup):** con lo stesso clone, elimina i file SQLite in `data/` (`hub.db`, `ipam.db`, `tenants/*.db` e relativi `-wal`/`-shm`), assicurati che esista `data/ipam.empty.db` dal repo, poi `sudo ./scripts/install.sh --systemd` o `systemctl start da-invent` e apri **`/setup`**.
+
+Variabili opzionali: `DA_INVENT_SERVICE_NAME`, `DA_INVENT_DIR` se usi nomi o percorsi diversi dal default.
 
 ---
 

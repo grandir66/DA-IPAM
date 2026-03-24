@@ -1,3 +1,21 @@
+/**
+ * ⚠️  FACADE LEGACY — NON CONTIENE L'ARCHITETTURA REALE
+ *
+ * Questo file è un FACADE di backward-compatibility. L'architettura reale è MULTI-TENANT:
+ *
+ * - `db-hub.ts`          → Hub DB (utenti, tenant, settings, profili) — usa data/hub.db
+ * - `db-hub-schema.ts`   → Schema hub con tabella tenants, users (role: superadmin/admin/viewer)
+ * - `db-tenant.ts`       → Tenant DB (reti, host, device, credenziali) — usa data/tenants/<code>.db
+ * - `db-tenant-schema.ts`→ Schema tenant (35 tabelle operative)
+ * - `api-tenant.ts`      → Helper withTenantFromSession() per API routes
+ * - `auth.ts`            → JWT con tenantCode, tenants[], ruolo superadmin, utente Domarc
+ *
+ * Questo file (db.ts) mantiene le VECCHIE funzioni per compatibility con import esistenti.
+ * Le funzioni utente/settings delegano a db-hub.ts. Le funzioni dati delegano a db-tenant.ts
+ * tramite getDb() che usa AsyncLocalStorage per il contesto tenant.
+ *
+ * Per capire l'architettura: leggere CLAUDE.md sezione "Architettura Multi-Tenant"
+ */
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";

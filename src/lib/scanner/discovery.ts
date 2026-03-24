@@ -1233,7 +1233,15 @@ async function runDiscovery(
 
     const existingHosts = getHostsByNetwork(networkId);
     const inScope = new Set(ips);
-    const targetHosts = existingHosts.filter((h) => inScope.has(h.ip) && h.open_ports);
+    // Include host con porte note OPPURE con classificazione/OS che indica un tipo (da SNMP/AD)
+    const targetHosts = existingHosts.filter((h) => {
+      if (!inScope.has(h.ip)) return false;
+      if (h.open_ports) return true;
+      const cls = h.classification ?? "";
+      const os = (h.os_info ?? "").toLowerCase();
+      return cls.includes("windows") || cls === "workstation" || cls.includes("server") || cls.includes("linux")
+        || cls === "networking" || os.includes("windows") || os.includes("linux");
+    });
 
     log(`Validazione credenziali: ${netCreds.length} credenziali × ${targetHosts.length} host con porte note`);
     progress.total = targetHosts.length;
@@ -1251,13 +1259,30 @@ async function runDiscovery(
 
       progress.phase = `Validazione — ${i + 1}/${targetHosts.length} (${ip})`;
 
+      // Indicatori Windows: porte SMB/WinRM o classificazione/OS
+      const hasWinrmPort = openPorts.some((p) => [5985, 5986].includes(p.port));
+      const hasWindowsIndicator = hasWinrmPort
+        || openPorts.some((p) => [445, 135].includes(p.port))
+        || (host.classification ?? "").includes("windows")
+        || (host.classification ?? "") === "workstation"
+        || (host.os_info ?? "").toLowerCase().includes("windows");
+
       for (const nc of netCreds) {
         const credType = nc.credential_type.toLowerCase();
         const credId = nc.credential_id;
 
-        // Match credenziale → porte aperte
-        if ((credType === "ssh" || credType === "linux") && openPorts.some((p) => p.port === 22 || p.service === "ssh")) {
-          const sshPort = openPorts.find((p) => p.port === 22 || p.service === "ssh")!.port;
+        // Match credenziale → porte aperte (+ indicatori OS)
+        // SSH: porta esplicita oppure host Linux/networking/server senza indicatore Windows
+        const hasSshPort = openPorts.some((p) => p.port === 22 || p.service === "ssh");
+        const hasSshIndicator = hasSshPort
+          || (!hasWindowsIndicator && (
+            (host.classification ?? "").includes("server")
+            || (host.classification ?? "").includes("linux")
+            || (host.classification ?? "") === "networking"
+            || (host.os_info ?? "").toLowerCase().includes("linux")
+          ));
+        if ((credType === "ssh" || credType === "linux") && hasSshIndicator) {
+          const sshPort = openPorts.find((p) => p.port === 22 || p.service === "ssh")?.port ?? 22;
           const creds = getSshLinuxCredentialPair(credId);
           if (!creds) continue;
           try {
@@ -1298,8 +1323,9 @@ async function runDiscovery(
           }
         }
 
-        if (credType === "windows" && openPorts.some((p) => [5985, 5986].includes(p.port))) {
-          const winrmPort = openPorts.find((p) => [5985, 5986].includes(p.port))!.port;
+        if (credType === "windows" && hasWindowsIndicator) {
+          // Porta WinRM: preferisci porta esplicita, fallback a 5985
+          const winrmPort = openPorts.find((p) => [5985, 5986].includes(p.port))?.port ?? 5985;
           const creds = getCredentialLoginPair(credId, "windows");
           if (!creds) continue;
           try {

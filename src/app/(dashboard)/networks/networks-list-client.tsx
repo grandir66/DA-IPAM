@@ -75,7 +75,7 @@ const ROUTER_PROTOCOL_OPTIONS = [
 
 export function NetworksListClient({ initialNetworks, routers: initialRouters }: NetworksListClientProps) {
   const router = useRouter();
-  const [networks, setNetworks] = useState<NetworkWithRouter[]>(initialNetworks as NetworkWithRouter[]);
+  const [networks, setNetworks] = useState<NetworkWithRouter[]>((initialNetworks ?? []) as NetworkWithRouter[]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
@@ -153,9 +153,16 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
       const res = await fetch(`/api/networks?${params.toString()}`);
       if (res.ok) {
         const json = await res.json();
-        setNetworks(json.data);
-        setTotalPages(json.totalPages);
-        setPage(json.page);
+        // Supporta sia formato paginato {data, totalPages, page} che array diretto (modalità __ALL__)
+        if (Array.isArray(json)) {
+          setNetworks(json);
+          setTotalPages(1);
+          setPage(1);
+        } else {
+          setNetworks(json.data ?? []);
+          setTotalPages(json.totalPages ?? 1);
+          setPage(json.page ?? 1);
+        }
       }
     } catch {
       toast.error("Impossibile aggiornare l'elenco");

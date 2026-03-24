@@ -71,6 +71,51 @@ Gli script ufficiali presuppongono **Debian o Ubuntu** (apt). Il codice viene se
 | **2** | **VM o bare metal** — Linux **Debian/Ubuntu** come sistema operativo «principale», **senza** creare un CT in questa guida | Shell **root** (o `sudo`) **dentro la VM o sul server fisico** | `bootstrap-linux.sh` (una riga con `curl` da raw GitHub): installa il minimo, **clona** il repo in `/opt/da-invent`, lancia `install.sh --systemd` | `git clone https://github.com/grandir66/DA-IPAM.git /opt/da-invent` poi `chmod +x scripts/install.sh && sudo ./scripts/install.sh --systemd` |
 | **3** | **Container Linux** (stesso percorso dello scenario 2, ma **dentro** il CT) — es. CT già esistente, LXC su altro host, o ambiente containerizzato con OS Debian/Ubuntu | Shell **root** **dentro il container** | Stesso **`bootstrap-linux.sh`** da eseguire nel container (serve rete verso GitHub e NodeSource) | Stesso **`git clone`** + **`install.sh`** nel container |
 
+I comandi seguenti usano **caporiga reali** (blocco `bash`): copiali così com’è nella shell. L’installazione applicativa su VM, CT o container Linux è sempre sotto **`/opt/da-invent`** (salvo `DA_INVENT_BOOTSTRAP_DIR`).
+
+#### Scenario 1 — bootstrap sul **nodo** Proxmox (crea CT + opzionale install nel CT)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-proxmox.sh -o /tmp/da-invent-bootstrap.sh \
+  && bash /tmp/da-invent-bootstrap.sh
+```
+
+#### Scenario 1 — solo wizard **pct** sul nodo (repository già clonato)
+
+Directory predefinita del clone da `bootstrap-proxmox.sh`: **`/root/da-invent-install`**. Se hai clonato altrove, sostituisci il `cd`.
+
+```bash
+cd /root/da-invent-install
+chmod +x scripts/proxmox-lxc-install.sh
+./scripts/proxmox-lxc-install.sh
+```
+
+#### Scenari 2 e 3 — **dentro** VM, bare metal, CT o container Linux (Debian/Ubuntu)
+
+Installer con pipe (una riga che invoca lo script remoto):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-linux.sh | sudo bash
+```
+
+Stesso script salvato su disco (**due righe**, continuazione con `\`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/grandir66/DA-IPAM/main/scripts/bootstrap-linux.sh -o /tmp/da-invent-bootstrap-linux.sh \
+  && sudo bash /tmp/da-invent-bootstrap-linux.sh
+```
+
+#### Manuale — `git clone` in **`/opt/da-invent`** poi `install.sh` (VM, CT, Docker con volume)
+
+```bash
+git clone https://github.com/grandir66/DA-IPAM.git /opt/da-invent
+cd /opt/da-invent
+chmod +x scripts/install.sh
+sudo ./scripts/install.sh --systemd
+```
+
+**Docker / Podman:** usa un’immagine **Debian o Ubuntu**, entra nella shell del container come **root**, monta un volume su **`/opt/da-invent`** se il filesystem del container non è persistente, poi esegui gli stessi comandi della sezione «Manuale» o `bootstrap-linux.sh` come sopra.
+
 Note operative:
 
 - **Scenario 1 vs 3:** sul **nodo** Proxmox usi solo il **wizard** (`proxmox-lxc-install.sh`) per definire template, disco, rete e privilegi del CT. **Dopo** che il CT esiste, l’installazione dell’applicazione è **identica** allo scenario 3 (comandi **dentro** il CT): `bootstrap-linux.sh` oppure clone manuale + `install.sh`.
@@ -176,10 +221,10 @@ Se hai creato il CT con il wizard ma **senza** installare l’app, oppure entri 
 
 ### Solo wizard LXC dal nodo (nessun `bootstrap-proxmox`)
 
-Se il repository è già sul **nodo** Proxmox:
+Se il repository è già sul **nodo** Proxmox (es. clone predefinito **`/root/da-invent-install`**, oppure il percorso che usi tu):
 
 ```bash
-cd /percorso/DA-IPAM
+cd /root/da-invent-install
 chmod +x scripts/proxmox-lxc-install.sh
 ./scripts/proxmox-lxc-install.sh
 ```
@@ -472,7 +517,7 @@ Per **ripristinare** un backup locale:
 ## Aggiornamento
 
 ```bash
-cd /percorso/DA-IPAM
+cd /opt/da-invent
 ./scripts/update.sh
 ./scripts/update.sh --restart    # se usi systemd
 ```

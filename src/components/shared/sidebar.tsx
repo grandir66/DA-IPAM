@@ -26,7 +26,6 @@ import {
   FileKey,
   FolderTree,
   Building2,
-  BookOpen,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -53,7 +52,6 @@ const networkSubItems = [
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/active-directory", label: "Active Directory", icon: FolderTree },
-  { href: "/docs/installazione", label: "Installazione", icon: BookOpen },
   { href: "/settings", label: "Impostazioni", icon: Settings },
 ];
 

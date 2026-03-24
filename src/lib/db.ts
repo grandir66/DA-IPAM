@@ -72,6 +72,24 @@ export function closeDb(): void {
 }
 
 export function getDb(): Database.Database {
+  // Multi-tenant: se c'è un contesto tenant attivo, usa il tenant DB
+  try {
+    const { getCurrentTenantCode, getTenantDb } = require("./db-tenant");
+    const tenantCode = getCurrentTenantCode();
+    if (tenantCode) return getTenantDb(tenantCode);
+  } catch { /* db-tenant non disponibile (build-time) */ }
+
+  // Fallback: se esiste hub.db (multi-tenant attivo) ma nessun contesto, usa DEFAULT
+  const hubPath = path.join(DATA_DIR, "hub.db");
+  const defaultTenantPath = path.join(DATA_DIR, "tenants", "DEFAULT.db");
+  if (fs.existsSync(hubPath) && fs.existsSync(defaultTenantPath)) {
+    try {
+      const { getTenantDb } = require("./db-tenant");
+      return getTenantDb("DEFAULT");
+    } catch { /* fallback a legacy */ }
+  }
+
+  // Legacy single-tenant: apre ipam.db come prima
   if (_db) return _db;
 
   const dbDir = path.dirname(DB_PATH);

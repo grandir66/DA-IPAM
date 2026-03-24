@@ -1,3 +1,4 @@
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { NextResponse } from "next/server";
 import {
   createNetworkDevice,
@@ -73,6 +74,7 @@ const BulkDeviceSchema = z.object({
  * Body: { host_ids, device_type, vendor, protocol, credential_id?, community_string?, vendor_subtype?, port? }
  */
 export async function POST(request: Request) {
+  return withTenantFromSession(async () => {
   try {
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
@@ -209,14 +211,11 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+  });
 }
 
-/**
- * Aggiorna in blocco dispositivi e/o host (classificazione, protocollo, credenziali).
- * PATCH /api/devices/bulk
- * Body: { device_ids?, host_ids?, classification?, protocol?, vendor?, credential_id?, snmp_credential_id?, vendor_subtype? }
- */
 export async function PATCH(request: Request) {
+  return withTenantFromSession(async () => {
   try {
     const body = await request.json();
     const parsed = BulkUpdateSchema.safeParse(body);
@@ -295,4 +294,5 @@ export async function PATCH(request: Request) {
       { status: 500 }
     );
   }
+  });
 }

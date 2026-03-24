@@ -1,3 +1,4 @@
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { NextResponse } from "next/server";
 import { getNetworkDeviceById } from "@/lib/db";
 import { z } from "zod";
@@ -16,6 +17,7 @@ const BulkScanSchema = z.object({
  * Body: { device_ids: number[] }
  */
 export async function POST(request: Request) {
+  return withTenantFromSession(async () => {
   try {
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
@@ -110,4 +112,5 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+});
 }

@@ -1,3 +1,4 @@
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { NextResponse } from "next/server";
 import { getNetworkDeviceById, updateNetworkDevice, getDeviceCredentials, syncInventoryFromDevice } from "@/lib/db";
 import { ProxmoxClient, resolveProxmoxApiPortOverride, type ProxmoxHostInfo, type ProxmoxVM } from "@/lib/proxmox/proxmox-client";
@@ -15,6 +16,7 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  return withTenantFromSession(async () => {
   try {
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
@@ -138,4 +140,5 @@ export async function POST(
     console.error("Proxmox scan error:", error);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
+});
 }

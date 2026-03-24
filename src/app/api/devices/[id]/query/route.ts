@@ -1,3 +1,4 @@
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { NextResponse } from "next/server";
 import { getNetworkDeviceById, updateNetworkDevice, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, getInventoryAssetByNetworkDevice, updateInventoryAsset, syncDeviceToHost, trackDeviceInfoChanges, upsertNeighbors, upsertRoutes, getDeviceCommunityString } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
@@ -20,6 +21,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  return withTenantFromSession(async () => {
   try {
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
@@ -589,4 +591,5 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       { status: 500 }
     );
   }
+  });
 }

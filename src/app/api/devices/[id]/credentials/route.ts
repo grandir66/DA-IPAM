@@ -35,9 +35,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         : (b.inline_username ? `${b.inline_username} (inline)` : "Inline"),
     }));
     return NextResponse.json(safe);
-  } catch {
-    return NextResponse.json({ error: "Errore" }, { status: 500 });
-  }
+    } catch {
+      return NextResponse.json({ error: "Errore" }, { status: 500 });
+    }
+  });
 }
 
 const AddBindingSchema = z.object({
@@ -52,9 +53,10 @@ const AddBindingSchema = z.object({
  * POST /api/devices/:id/credentials — aggiunge un binding credenziale
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const device = getNetworkDeviceById(Number(id));
     if (!device) return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
@@ -77,9 +79,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
 
     return NextResponse.json(binding, { status: 201 });
-  } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Errore" }, { status: 500 });
-  }
+    } catch (err: unknown) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : "Errore" }, { status: 500 });
+    }
+  });
 }
 
 const UpdateBindingSchema = z.object({
@@ -99,9 +102,10 @@ const UpdateBindingSchema = z.object({
  * PUT /api/devices/:id/credentials — update, delete, reorder, test binding
  */
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
     const device = getNetworkDeviceById(Number(id));
     if (!device) return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
@@ -156,6 +160,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   } catch (err: unknown) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Errore" }, { status: 500 });
   }
+  });
 }
 
 /** Testa una singola credenziale binding su un host */

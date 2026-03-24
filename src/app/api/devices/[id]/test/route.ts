@@ -1,3 +1,4 @@
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { NextResponse } from "next/server";
 import { getNetworkDeviceById } from "@/lib/db";
 import {
@@ -15,8 +16,7 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authCheck = await requireAuth();
-  if (isAuthError(authCheck)) return authCheck;
+  return withTenantFromSession(async () => {
   const { id } = await params;
   try {
     const device = getNetworkDeviceById(Number(id));
@@ -39,4 +39,5 @@ export async function GET(
       { status: 200 }
     );
   }
+});
 }

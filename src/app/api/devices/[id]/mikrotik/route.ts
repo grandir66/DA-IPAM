@@ -1,3 +1,4 @@
+import { withTenantFromSession } from "@/lib/api-tenant";
 /**
  * API MikroTik - Download config, DHCP leases, servers, pools
  * GET /api/devices/[id]/mikrotik?action=config|dhcp|servers|pools|all
@@ -20,9 +21,7 @@ import { createRouterClient, type DhcpLeaseEntry } from "@/lib/devices/router-cl
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
-  const authResult = await requireAuth();
-  if (isAuthError(authResult)) return authResult;
-
+  return withTenantFromSession(async () => {
   const { id } = await params;
   const deviceId = parseInt(id, 10);
   if (isNaN(deviceId)) {
@@ -103,12 +102,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       error: `Errore connessione MikroTik: ${error instanceof Error ? error.message : String(error)}`,
     }, { status: 500 });
   }
+  });
 }
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
-  const authResult = await requireAuth();
-  if (isAuthError(authResult)) return authResult;
-
+  return withTenantFromSession(async () => {
   const { id } = await params;
   const deviceId = parseInt(id, 10);
   if (isNaN(deviceId)) {
@@ -245,4 +243,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 
   return NextResponse.json({ error: "Azione non supportata" }, { status: 400 });
+  });
 }

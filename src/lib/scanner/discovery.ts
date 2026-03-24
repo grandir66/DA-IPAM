@@ -409,6 +409,82 @@ async function runDiscovery(
         log(`SNMP sysObjectID probe fallito: ${snmpErr instanceof Error ? snmpErr.message : "errore"}`);
       }
     }
+
+    // ── SNMP discovery su IP che NON hanno risposto a ICMP ──
+    // Molti dispositivi (AP, switch managed) disabilitano ICMP ma rispondono a SNMP.
+    // Questa fase prova un rapido SNMP GET (sysObjectID) sugli IP offline, se la rete ha community configurata.
+    {
+      const communities = buildSnmpCommunitiesForHost(networkId, null, snmpCommunity ?? null);
+      // Esegui solo se c'è almeno una community non-default (segnale che l'utente ha configurato SNMP)
+      const hasCustomCommunity = communities.some((c) => c !== "public" && c !== "private");
+      const offlineIps = ips.filter((ip) => !onlineIps.includes(ip));
+      if (hasCustomCommunity && offlineIps.length > 0 && offlineIps.length <= 512) {
+        progress.phase = `SNMP discovery (no-ICMP) — 0/${offlineIps.length}`;
+        log(`SNMP discovery su ${offlineIps.length} IP non rispondenti a ICMP (community: ${communities[0]}…)`);
+        const SNMP_PROBE_BATCH = 32;
+        let snmpDiscovered = 0;
+        for (let si = 0; si < offlineIps.length; si += SNMP_PROBE_BATCH) {
+          const batch = offlineIps.slice(si, si + SNMP_PROBE_BATCH);
+          const batchResults = await Promise.all(
+            batch.map(async (ip) => {
+              try {
+                // Probe rapido: solo GET su sysObjectID + sysName + sysDescr con timeout corto
+                const { snmpGet } = await import("./snmp-query");
+                for (const community of communities) {
+                  const varbinds = await snmpGet(ip, community, 161,
+                    ["1.3.6.1.2.1.1.2.0", "1.3.6.1.2.1.1.5.0", "1.3.6.1.2.1.1.1.0"], 2500);
+                  if (varbinds.length === 0) continue;
+                  let sysObjectID: string | null = null;
+                  let sysName: string | null = null;
+                  let sysDescr: string | null = null;
+                  for (const vb of varbinds) {
+                    if (vb.type != null && [128, 129, 130].includes(vb.type)) continue;
+                    const val = vb.value != null ? String(vb.value).trim() : null;
+                    if (!val || val === "noSuchObject" || val === "noSuchInstance") continue;
+                    if (String(vb.oid).includes("1.2.0")) sysObjectID = val;
+                    else if (String(vb.oid).includes("1.5.0")) sysName = val;
+                    else if (String(vb.oid).includes("1.1.0")) sysDescr = val;
+                  }
+                  if (sysObjectID || sysName || sysDescr) {
+                    return { ip, sysObjectID, sysName, sysDescr, community };
+                  }
+                }
+              } catch { /* timeout/errore = IP non risponde neanche a SNMP */ }
+              return null;
+            })
+          );
+          for (const r of batchResults) {
+            if (!r) continue;
+            snmpDiscovered++;
+            // Aggiungi agli onlineIps (scoperto via SNMP)
+            if (!onlineIps.includes(r.ip)) {
+              onlineIps.push(r.ip);
+            }
+            const { lookupSysObjectId } = await import("./snmp-sysobj-lookup");
+            const match = r.sysObjectID ? lookupSysObjectId(r.sysObjectID) : null;
+            nmapResults.set(r.ip, {
+              ports: [{ port: 161, protocol: "udp", service: "snmp", version: null }],
+              os: null,
+              mac: null,
+              snmpHostname: r.sysName,
+              snmpSysDescr: r.sysDescr,
+              snmpSysObjectID: r.sysObjectID,
+              snmpCommunity: r.community,
+              sysObjMatch: match ?? undefined,
+            });
+            log(`✓ SNMP-only ${r.ip} → ${r.sysName || "—"} (${match ? `${match.vendor} ${match.product}` : r.sysObjectID || "sconosciuto"})`);
+          }
+          progress.scanned = Math.min(si + SNMP_PROBE_BATCH, offlineIps.length);
+          progress.phase = `SNMP discovery (no-ICMP) — ${progress.scanned}/${offlineIps.length}`;
+        }
+        if (snmpDiscovered > 0) {
+          log(`SNMP discovery: ${snmpDiscovered} device scoperti senza ICMP (totale online: ${onlineIps.length})`);
+          progress.found = onlineIps.length;
+        } else {
+          log(`SNMP discovery: nessun device aggiuntivo trovato`);
+        }
+      }
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -770,6 +846,73 @@ async function runDiscovery(
       }
       progress.scanned = Math.min(i + SNMP_BATCH, onlineIps.length);
       progress.phase = `IPAM [3/4] SNMP — ${progress.scanned}/${onlineIps.length}`;
+    }
+
+    // ── SNMP discovery su IP che NON hanno risposto a ICMP (stessa logica di network_discovery) ──
+    {
+      const communities = buildSnmpCommunitiesForHost(networkId, null, snmpCommunity ?? null);
+      const hasCustomCommunity = communities.some((c) => c !== "public" && c !== "private");
+      const offlineIps = ips.filter((ip) => !onlineIps.includes(ip));
+      if (hasCustomCommunity && offlineIps.length > 0 && offlineIps.length <= 512) {
+        progress.phase = `IPAM [3b/4] SNMP no-ICMP — 0/${offlineIps.length}`;
+        log(`SNMP discovery su ${offlineIps.length} IP non rispondenti a ICMP`);
+        const SNMP_PROBE_BATCH = 32;
+        let snmpDiscovered = 0;
+        for (let si = 0; si < offlineIps.length; si += SNMP_PROBE_BATCH) {
+          const batch = offlineIps.slice(si, si + SNMP_PROBE_BATCH);
+          const batchResults = await Promise.all(
+            batch.map(async (ip) => {
+              try {
+                const { snmpGet } = await import("./snmp-query");
+                for (const community of communities) {
+                  const varbinds = await snmpGet(ip, community, 161,
+                    ["1.3.6.1.2.1.1.2.0", "1.3.6.1.2.1.1.5.0", "1.3.6.1.2.1.1.1.0"], 2500);
+                  if (varbinds.length === 0) continue;
+                  let sysObjectID: string | null = null;
+                  let sysName: string | null = null;
+                  let sysDescr: string | null = null;
+                  for (const vb of varbinds) {
+                    if (vb.type != null && [128, 129, 130].includes(vb.type)) continue;
+                    const val = vb.value != null ? String(vb.value).trim() : null;
+                    if (!val || val === "noSuchObject" || val === "noSuchInstance") continue;
+                    if (String(vb.oid).includes("1.2.0")) sysObjectID = val;
+                    else if (String(vb.oid).includes("1.5.0")) sysName = val;
+                    else if (String(vb.oid).includes("1.1.0")) sysDescr = val;
+                  }
+                  if (sysObjectID || sysName || sysDescr) {
+                    return { ip, sysObjectID, sysName, sysDescr, community };
+                  }
+                }
+              } catch { /* IP non risponde neanche a SNMP */ }
+              return null;
+            })
+          );
+          for (const r of batchResults) {
+            if (!r) continue;
+            snmpDiscovered++;
+            if (!onlineIps.includes(r.ip)) onlineIps.push(r.ip);
+            const { lookupSysObjectId } = await import("./snmp-sysobj-lookup");
+            const match = r.sysObjectID ? lookupSysObjectId(r.sysObjectID) : null;
+            nmapResults.set(r.ip, {
+              ports: [{ port: 161, protocol: "udp", service: "snmp", version: null }],
+              os: null,
+              mac: null,
+              snmpHostname: r.sysName,
+              snmpSysDescr: r.sysDescr,
+              snmpSysObjectID: r.sysObjectID,
+              snmpCommunity: r.community,
+              sysObjMatch: match ?? undefined,
+            });
+            log(`✓ SNMP-only ${r.ip} → ${r.sysName || "—"} (${match ? `${match.vendor} ${match.product}` : r.sysObjectID || "?"})`);
+          }
+          progress.scanned = Math.min(si + SNMP_PROBE_BATCH, offlineIps.length);
+          progress.phase = `IPAM [3b/4] SNMP no-ICMP — ${progress.scanned}/${offlineIps.length}`;
+        }
+        if (snmpDiscovered > 0) {
+          log(`SNMP discovery: ${snmpDiscovered} device scoperti senza ICMP (totale online: ${onlineIps.length})`);
+          progress.found = onlineIps.length;
+        }
+      }
     }
 
     // Fase 4: SSH per host con porta 22 (senza 445)

@@ -38,7 +38,7 @@ function PreBlock({ children, className }: { children: string; className?: strin
   return (
     <pre
       className={cn(
-        "text-[11px] leading-relaxed overflow-x-auto rounded-md border bg-background px-3 py-2.5 font-mono whitespace-pre-wrap break-all sm:break-normal sm:whitespace-pre",
+        "text-[11px] leading-relaxed overflow-x-auto rounded-md border bg-background px-3 py-2.5 font-mono whitespace-pre",
         className
       )}
     >

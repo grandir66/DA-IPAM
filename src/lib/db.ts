@@ -1968,25 +1968,26 @@ export function resetBuiltinSysObjLookup(): void {
 // Users
 // ========================
 
+// ── User functions delegate to hub DB (multi-tenant) ──
 export function getUserByUsername(username: string): User | undefined {
-  return getDb().prepare("SELECT * FROM users WHERE username = ?").get(username) as User | undefined;
+  const { getUserByUsername: hubGetUser } = require("./db-hub");
+  return hubGetUser(username) as User | undefined;
 }
 
 export function getUserCount(): number {
-  const row = getDb().prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
+  const { getHubDb } = require("./db-hub");
+  const row = getHubDb().prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
   return row.count;
 }
 
 export function createUser(username: string, passwordHash: string, role: "admin" | "viewer" = "admin"): User {
-  const stmt = getDb().prepare(
-    "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)"
-  );
-  const result = stmt.run(username, passwordHash, role);
-  return getDb().prepare("SELECT * FROM users WHERE id = ?").get(result.lastInsertRowid) as User;
+  const { createUser: hubCreateUser } = require("./db-hub");
+  return hubCreateUser(username, passwordHash, role) as User;
 }
 
 export function updateUserLastLogin(userId: number): void {
-  getDb().prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(userId);
+  const { updateUserLastLogin: hubUpdate } = require("./db-hub");
+  hubUpdate(userId);
 }
 
 // ========================
@@ -4860,27 +4861,24 @@ export function getOnlineCountsOverTime(
 // Settings (key-value)
 // ========================
 
+// ── Settings functions delegate to hub DB (multi-tenant) ──
 export function getSetting(key: string): string | null {
-  const row = getDb().prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined;
-  return row?.value ?? null;
+  const hub = require("./db-hub");
+  return hub.getSetting(key);
 }
 
-/** Configurazione guidata iniziale completata (impostazione `onboarding_completed`). */
 export function isOnboardingCompleted(): boolean {
   return getSetting("onboarding_completed") === "1";
 }
 
 export function getAllSettings(): Record<string, string> {
-  const rows = getDb().prepare("SELECT key, value FROM settings").all() as { key: string; value: string }[];
-  const result: Record<string, string> = {};
-  for (const row of rows) result[row.key] = row.value;
-  return result;
+  const hub = require("./db-hub");
+  return hub.getAllSettings();
 }
 
 export function setSetting(key: string, value: string): void {
-  getDb().prepare(
-    "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')"
-  ).run(key, value);
+  const hub = require("./db-hub");
+  hub.setSetting(key, value);
 }
 
 // ========================
@@ -5189,30 +5187,30 @@ export function deleteNmapProfile(id: number): boolean {
   return getDb().prepare("DELETE FROM nmap_profiles WHERE id = ? AND is_default = 0").run(id).changes > 0;
 }
 
+// ── Remaining user functions delegate to hub DB ──
 export function updateUserPassword(userId: number, passwordHash: string): void {
-  getDb().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, userId);
+  const hub = require("./db-hub");
+  hub.updateUserPassword(userId, passwordHash);
 }
 
 export function getUsers(): Omit<User, "password_hash">[] {
-  return getDb().prepare("SELECT id, username, role, created_at, last_login FROM users ORDER BY username").all() as Omit<User, "password_hash">[];
+  const hub = require("./db-hub");
+  return hub.getUsers();
 }
 
 export function getUserById(id: number): User | undefined {
-  return getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as User | undefined;
+  const hub = require("./db-hub");
+  return hub.getUserById(id);
 }
 
 export function updateUserRole(userId: number, role: "admin" | "viewer"): boolean {
-  return getDb().prepare("UPDATE users SET role = ? WHERE id = ?").run(role, userId).changes > 0;
+  const hub = require("./db-hub");
+  return hub.updateUserRole(userId, role);
 }
 
 export function deleteUser(userId: number): boolean {
-  // Non permettere eliminazione dell'ultimo admin
-  const admins = getDb().prepare("SELECT COUNT(*) as c FROM users WHERE role = 'admin'").get() as { c: number };
-  const user = getDb().prepare("SELECT role FROM users WHERE id = ?").get(userId) as { role: string } | undefined;
-  if (user?.role === "admin" && admins.c <= 1) {
-    throw new Error("Impossibile eliminare l'ultimo amministratore");
-  }
-  return getDb().prepare("DELETE FROM users WHERE id = ?").run(userId).changes > 0;
+  const hub = require("./db-hub");
+  return hub.deleteUser(userId);
 }
 
 /** Reset all networks and devices for new client. Keeps nmap_profiles e regole fingerprint (vedi corpo transazione). */

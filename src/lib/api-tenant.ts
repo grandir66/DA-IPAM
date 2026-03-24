@@ -21,9 +21,10 @@ export async function withTenantFromSession<T>(
   if (!session?.user) {
     return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
   }
-  const tenantCode = session.user.tenantCode;
+  let tenantCode = session.user.tenantCode;
+  // Fallback per sessioni pre-migrazione (JWT senza tenantCode): usa DEFAULT
   if (!tenantCode) {
-    return NextResponse.json({ error: "Nessun cliente selezionato" }, { status: 400 });
+    tenantCode = "DEFAULT";
   }
   return withTenant(tenantCode, () => fn());
 }

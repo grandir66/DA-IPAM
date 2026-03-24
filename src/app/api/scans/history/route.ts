@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { getScanHistory } from "@/lib/db";
+import { requireAuth, isAuthError } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
   try {
+    const authCheck = await requireAuth();
+    if (isAuthError(authCheck)) return authCheck;
     const { searchParams } = new URL(request.url);
     const hostId = searchParams.get("host_id");
     const networkId = searchParams.get("network_id");

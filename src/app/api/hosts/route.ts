@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { getHostsByNetwork, getAllHosts, upsertHost } from "@/lib/db";
 import { HostSchema } from "@/lib/validators";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
   try {
+    const authCheck = await requireAuth();
+    if (isAuthError(authCheck)) return authCheck;
     const { searchParams } = new URL(request.url);
     const networkId = searchParams.get("network_id");
     const limitParam = searchParams.get("limit");

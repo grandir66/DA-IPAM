@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireAuth, isAuthError } from "@/lib/api-auth";
 
 /**
  * Test SNMP connectivity on a host.
  * GET /api/test-snmp?host=192.168.1.1&community=public
  */
 export async function GET(request: Request) {
+  const authCheck = await requireAuth();
+  if (isAuthError(authCheck)) return authCheck;
   const { searchParams } = new URL(request.url);
   const host = searchParams.get("host");
   const community = searchParams.get("community") || "public";

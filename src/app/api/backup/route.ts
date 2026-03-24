@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function GET() {
+  const adminCheck = await requireAdmin();
+  if (isAuthError(adminCheck)) return adminCheck;
   const dbPath = path.join(process.cwd(), "data", "ipam.db");
 
   if (!fs.existsSync(dbPath)) {

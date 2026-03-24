@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getHostsByNetwork, getNetworks } from "@/lib/db";
+import { requireAuth, isAuthError } from "@/lib/api-auth";
 import type { Host } from "@/types";
 
 export async function GET(request: NextRequest) {
+  const authCheck = await requireAuth();
+  if (isAuthError(authCheck)) return authCheck;
   const networkId = request.nextUrl.searchParams.get("network_id");
 
   let hosts: Host[];

@@ -35,7 +35,8 @@ export default function LicensesPage() {
   function loadLicenses() {
     fetch("/api/licenses")
       .then((r) => (r.ok ? r.json() : []))
-      .then(setLicenses);
+      .then(setLicenses)
+      .catch(() => {});
   }
 
   useEffect(() => {

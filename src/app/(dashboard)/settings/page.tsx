@@ -271,13 +271,13 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    fetch("/api/jobs").then((r) => r.json()).then(setJobs);
-    fetch("/api/networks").then((r) => r.json()).then(setNetworks);
+    fetch("/api/jobs").then((r) => r.json()).then(setJobs).catch(() => {});
+    fetch("/api/networks").then((r) => r.json()).then(setNetworks).catch(() => {});
     fetch("/api/settings").then((r) => r.json()).then((settings: Record<string, string>) => {
       if (settings.server_port) setServerPort(settings.server_port);
       if (settings.host_windows_credential_id !== undefined) setHostWindowsCredentialId(settings.host_windows_credential_id || "");
       if (settings.host_linux_credential_id !== undefined) setHostLinuxCredentialId(settings.host_linux_credential_id || "");
-    });
+    }).catch(() => {});
     fetch("/api/nmap-profiles").then((r) => r.json()).then((rows: NmapProfile[]) => {
       const profile = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
       setNmapProfile(profile);
@@ -290,10 +290,10 @@ export default function SettingsPage() {
           snmp_community: profile.snmp_community || "",
         });
       }
-    });
-    fetch("/api/custom-oui").then((r) => r.json()).then((d: { content?: string }) => setCustomOui(d.content || ""));
-    fetch("/api/credentials").then((r) => r.json()).then((creds: { id: number; name: string; credential_type: string }[]) => setCredentials(creds));
-    fetch("/api/version").then((r) => r.json()).then((d: { version?: string }) => setAppVersion(d.version ?? null));
+    }).catch(() => {});
+    fetch("/api/custom-oui").then((r) => r.json()).then((d: { content?: string }) => setCustomOui(d.content || "")).catch(() => {});
+    fetch("/api/credentials").then((r) => r.json()).then((creds: { id: number; name: string; credential_type: string }[]) => setCredentials(creds)).catch(() => {});
+    fetch("/api/version").then((r) => r.json()).then((d: { version?: string }) => setAppVersion(d.version ?? null)).catch(() => {});
     fetch("/api/system/update")
       .then((r) => r.json())
       .then((d: { remoteVersion?: string; updateAvailable?: boolean; error?: string }) => {

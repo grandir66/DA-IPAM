@@ -1,6 +1,6 @@
 import type { NetworkDevice } from "@/types";
 import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
+import { decrypt, safeDecrypt } from "@/lib/crypto";
 import type { PortInfo } from "./switch-client";
 import { getSnmpPortSchema } from "./snmp-port-schema";
 
@@ -279,6 +279,15 @@ async function createSnmpArpClient(
     return new Promise((resolve, reject) => {
       const session = createSession();
       const results: { oid: string; value: Buffer | string | number }[] = [];
+      let settled = false;
+
+      const timeout = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          try { session.close(); } catch { /* ignore */ }
+          reject(new Error(`SNMP walk timeout for OID ${oid}`));
+        }
+      }, 30000);
 
       session.subtree(
         oid,
@@ -288,6 +297,9 @@ async function createSnmpArpClient(
           }
         },
         (error: Error | undefined) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
           session.close();
           if (error) reject(error);
           else resolve(results);
@@ -835,7 +847,7 @@ function createOmadaClient(device: NetworkDevice): Promise<RouterClient> {
 }
 
 async function createOmadaApiClient(device: NetworkDevice): Promise<RouterClient> {
-  const apiToken = device.api_token ? decrypt(device.api_token) : "";
+  const apiToken = device.api_token ? (safeDecrypt(device.api_token) ?? "") : "";
   const baseUrl = device.api_url || `https://${device.host}`;
 
   return {

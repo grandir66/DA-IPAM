@@ -250,7 +250,10 @@ export async function runArpPoll(
         }
 
         // Schema porte e LLDP/CDP (SNMP)
-        const portInfos = await client.getPortSchema?.().catch(() => []) ?? [];
+        const portInfos = await client.getPortSchema?.().catch((err: unknown) => {
+          console.warn(`[ARP Poll] getPortSchema fallito per ${device.name}:`, err instanceof Error ? err.message : err);
+          return [];
+        }) ?? [];
         if (portInfos.length > 0) {
         const macsByPortByIndex = new Map<number, { macs: string[] }>();
         const macsByPortByName = new Map<string, { macs: string[] }>();

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getHostsByNetwork, getNetworks } from "@/lib/db";
+import { getHostsByNetwork, getAllHostsFlat } from "@/lib/db";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import type { Host } from "@/types";
 
@@ -12,8 +12,7 @@ export async function GET(request: NextRequest) {
   if (networkId) {
     hosts = getHostsByNetwork(Number(networkId));
   } else {
-    const networks = getNetworks();
-    hosts = networks.flatMap((n) => getHostsByNetwork(n.id));
+    hosts = getAllHostsFlat();
   }
 
   const headers = [

@@ -46,7 +46,9 @@ export async function pingSweep(
         const currentIndex = index++;
         active++;
 
-        pingHost(ips[currentIndex]).then((result) => {
+        pingHost(ips[currentIndex]).catch((): { ip: string; alive: boolean; latency_ms: null } => ({
+          ip: ips[currentIndex], alive: false, latency_ms: null,
+        })).then((result) => {
           results.push(result);
           active--;
           if (result.alive) found++;

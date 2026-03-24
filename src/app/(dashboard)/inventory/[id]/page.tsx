@@ -195,19 +195,19 @@ export default function InventoryAssetPage() {
   }, [id]);
 
   useEffect(() => {
-    fetch("/api/asset-assignees").then((r) => r.ok ? r.json() : []).then(setAssignees);
-    fetch("/api/locations").then((r) => r.ok ? r.json() : []).then(setLocations);
-    fetch("/api/licenses").then((r) => r.ok ? r.json() : []).then(setLicenses);
+    fetch("/api/asset-assignees").then((r) => r.ok ? r.json() : []).then(setAssignees).catch(() => {});
+    fetch("/api/locations").then((r) => r.ok ? r.json() : []).then(setLocations).catch(() => {});
+    fetch("/api/licenses").then((r) => r.ok ? r.json() : []).then(setLicenses).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (!/^\d+$/.test(id)) return;
-    fetch(`/api/inventory/${id}/audit`).then((r) => r.ok ? r.json() : []).then(setAuditLog);
+    fetch(`/api/inventory/${id}/audit`).then((r) => r.ok ? r.json() : []).then(setAuditLog).catch(() => {});
   }, [id]);
 
   const refreshAssetLicenses = () => {
     if (!/^\d+$/.test(id)) return;
-    fetch(`/api/inventory/${id}/licenses`).then((r) => r.ok ? r.json() : []).then(setAssetLicenses);
+    fetch(`/api/inventory/${id}/licenses`).then((r) => r.ok ? r.json() : []).then(setAssetLicenses).catch(() => {});
   };
 
   useEffect(() => {

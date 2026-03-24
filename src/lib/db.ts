@@ -1181,6 +1181,30 @@ export function getDb(): Database.Database {
     )`);
     _db.exec(`CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_oid ON sysobj_lookup(oid)`);
     _db.exec(`CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_enabled ON sysobj_lookup(enabled)`);
+    // Migrazione: rimuovi CHECK constraint su category (DB esistenti lo hanno, impedisce valori come "switch")
+    try {
+      const tableInfo = _db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='sysobj_lookup'").get() as { sql: string } | undefined;
+      if (tableInfo?.sql?.includes("CHECK")) {
+        _db.exec(`CREATE TABLE sysobj_lookup_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          oid TEXT NOT NULL UNIQUE,
+          vendor TEXT NOT NULL,
+          product TEXT NOT NULL,
+          category TEXT NOT NULL,
+          enterprise_id INTEGER NOT NULL,
+          builtin INTEGER NOT NULL DEFAULT 0,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          note TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        )`);
+        _db.exec(`INSERT INTO sysobj_lookup_new SELECT * FROM sysobj_lookup`);
+        _db.exec(`DROP TABLE sysobj_lookup`);
+        _db.exec(`ALTER TABLE sysobj_lookup_new RENAME TO sysobj_lookup`);
+        _db.exec(`CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_oid ON sysobj_lookup(oid)`);
+        _db.exec(`CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_enabled ON sysobj_lookup(enabled)`);
+      }
+    } catch { /* migrazione già eseguita o non necessaria */ }
     seedBuiltinSysObjLookup(_db);
   } catch { /* exists */ }
 

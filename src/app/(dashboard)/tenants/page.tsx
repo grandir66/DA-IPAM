@@ -27,7 +27,25 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Pencil, Trash2, Building2 } from "lucide-react";
 import { toast } from "sonner";
-import type { Tenant } from "@/lib/db-hub";
+
+interface Tenant {
+  id: number;
+  codice_cliente: string;
+  ragione_sociale: string;
+  indirizzo: string | null;
+  citta: string | null;
+  provincia: string | null;
+  cap: string | null;
+  telefono: string | null;
+  email: string | null;
+  piva: string | null;
+  cf: string | null;
+  referente: string | null;
+  note: string | null;
+  active: number;
+  created_at: string;
+  updated_at: string;
+}
 
 type TenantForm = {
   codice_cliente: string;

@@ -57,6 +57,8 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const isSuperadmin = (session?.user as { role?: string } | undefined)?.role === "superadmin";
   const [mobileOpen, setMobileOpen] = useState(false);
   const [networkOpen, setNetworkOpen] = useState(() =>
     networkSubItems.some((d) => pathname.startsWith(d.href))
@@ -183,6 +185,21 @@ export function Sidebar() {
             </div>
           )}
         </div>
+        {isSuperadmin && (
+          <Link
+            href="/tenants"
+            onClick={() => setMobileOpen(false)}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+              isActive("/tenants")
+                ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            )}
+          >
+            <Building2 className="h-4 w-4" />
+            Clienti
+          </Link>
+        )}
         {navItems.slice(1).map((item) => (
           <Link
             key={item.href}

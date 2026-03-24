@@ -143,21 +143,36 @@ setup_env() {
     echo ">>> Generazione .env.local..."
     local key=$(openssl rand -hex 32)
     local secret=$(openssl rand -hex 32)
+    # Password Domarc: 20 caratteri alfanumerici casuali
+    local domarc_pass=$(openssl rand -base64 20 | tr -dc 'A-Za-z0-9' | head -c 20)
     {
       echo "# DA-INVENT — generato dall'installer"
       echo "ENCRYPTION_KEY=$key"
       echo "AUTH_SECRET=$secret"
       echo "PORT=$PORT"
       echo "NODE_ENV=production"
+      echo ""
+      echo "# Utente di servizio Domarc (accesso superadmin incondizionato)"
+      echo "DOMARC_USERNAME=domarc"
+      echo "DOMARC_PASSWORD=$domarc_pass"
       if [ -n "$auth_url" ]; then
         echo "AUTH_URL=$auth_url"
       fi
     } > "$env_file"
     chmod 600 "$env_file"
+    echo ""
+    echo "    ╔══════════════════════════════════════════════════════════════╗"
+    echo "    ║  UTENTE DI SERVIZIO DOMARC                                 ║"
+    echo "    ║  Username: domarc                                          ║"
+    echo "    ║  Password: $domarc_pass                     ║"
+    echo "    ║                                                            ║"
+    echo "    ║  ANNOTARE QUESTA PASSWORD — non sarà più visualizzata.     ║"
+    echo "    ╚══════════════════════════════════════════════════════════════╝"
+    echo ""
     if [ -n "$auth_url" ]; then
-      echo "    .env.local creato (AUTH_URL=$auth_url per accesso da browser). Completare il setup dalla UI al primo avvio."
+      echo "    .env.local creato (AUTH_URL=$auth_url). Completare il setup dalla UI al primo avvio."
     else
-      echo "    .env.local creato (AUTH_URL non impostato: non rilevato IP LAN). Aggiungi AUTH_URL in .env.local se accedi via IP/hostname. Completare il setup dalla UI al primo avvio."
+      echo "    .env.local creato (AUTH_URL non impostato). Completare il setup dalla UI al primo avvio."
     fi
   else
     echo ">>> .env.local già presente."

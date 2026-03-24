@@ -34,7 +34,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
-import { NetworkCredentialChains } from "@/components/shared/network-credential-chains";
+import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { Pagination } from "@/components/shared/pagination";
 import { Plus, Trash2, Network, Key, Scan, X, Search, Router } from "lucide-react";
 import { toast } from "sonner";
@@ -99,10 +99,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
   const [quickRouterSnmpId, setQuickRouterSnmpId] = useState<string | null>(null);
   const [quickRouterSaving, setQuickRouterSaving] = useState(false);
   const quickRouterFormRef = useRef<HTMLFormElement>(null);
-  const [credWindows, setCredWindows] = useState<number[]>([]);
-  const [credLinux, setCredLinux] = useState<number[]>([]);
-  const [credSsh, setCredSsh] = useState<number[]>([]);
-  const [credSnmp, setCredSnmp] = useState<number[]>([]);
+  const [networkCredentialIds, setNetworkCredentialIds] = useState<number[]>([]);
 
   useEffect(() => {
     setRoutersList(initialRouters);
@@ -347,10 +344,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
       dns_server: formData.get("dns_server") || undefined,
       snmp_community: formData.get("snmp_community") || undefined,
       router_id: newNetworkRouterId && newNetworkRouterId !== "" ? Number(newNetworkRouterId) : undefined,
-      windows_credential_ids: credWindows,
-      linux_credential_ids: credLinux,
-      ssh_credential_ids: credSsh,
-      snmp_credential_ids: credSnmp,
+      credential_ids: networkCredentialIds,
     };
 
     const res = await fetch("/api/networks", {
@@ -368,10 +362,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
     toast.success("Rete creata con successo");
     setDialogOpen(false);
     setNewNetworkRouterId("");
-    setCredWindows([]);
-    setCredLinux([]);
-    setCredSsh([]);
-    setCredSnmp([]);
+    setNetworkCredentialIds([]);
     refreshNetworks();
   }
 
@@ -474,10 +465,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
             setDialogOpen(open);
             if (open) {
               setNewNetworkRouterId("");
-              setCredWindows([]);
-              setCredLinux([]);
-              setCredSsh([]);
-              setCredSnmp([]);
+              setNetworkCredentialIds([]);
             }
           }}
         >
@@ -568,17 +556,12 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
                   </p>
                 </div>
               </div>
-              <NetworkCredentialChains
+              <NetworkCredentialsTable
                 credentials={credentials}
-                windowsIds={credWindows}
-                linuxIds={credLinux}
-                sshIds={credSsh}
-                snmpIds={credSnmp}
-                onWindowsChange={setCredWindows}
-                onLinuxChange={setCredLinux}
-                onSshChange={setCredSsh}
-                onSnmpChange={setCredSnmp}
+                credentialIds={networkCredentialIds}
+                onCredentialIdsChange={setNetworkCredentialIds}
                 onCredentialsRefresh={refreshCredentialsList}
+                networkId={0}
               />
               <Button type="submit" className="w-full">Crea Rete</Button>
             </form>

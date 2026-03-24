@@ -28,6 +28,7 @@ export const NetworkSchema = z.object({
 
 /** Creazione rete + eventuali catene credenziali (stessa semantica della modifica). */
 export const NetworkCreateSchema = NetworkSchema.extend({
+  credential_ids: z.array(z.number().int().positive()).optional(),
   windows_credential_ids: z.array(z.number().int().positive()).optional(),
   linux_credential_ids: z.array(z.number().int().positive()).optional(),
   ssh_credential_ids: z.array(z.number().int().positive()).optional(),
@@ -36,6 +37,7 @@ export const NetworkCreateSchema = NetworkSchema.extend({
 
 /** Aggiornamento rete + credenziali detect (ordine = priorità tentativi, un solo accesso per credenziale in scan). */
 export const NetworkUpdateSchema = NetworkSchema.partial().extend({
+  credential_ids: z.array(z.number().int().positive()).optional(),
   windows_credential_ids: z.array(z.number().int().positive()).optional(),
   linux_credential_ids: z.array(z.number().int().positive()).optional(),
   ssh_credential_ids: z.array(z.number().int().positive()).optional(),

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getNetworks, getNetworksPaginated, createNetwork, setNetworkRouter, replaceNetworkHostCredentials } from "@/lib/db";
+import { getNetworks, getNetworksPaginated, createNetwork, setNetworkRouter, replaceNetworkHostCredentials, replaceNetworkCredentials } from "@/lib/db";
 import { NetworkCreateSchema } from "@/lib/validators";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 
@@ -40,6 +40,7 @@ export async function POST(request: Request) {
       linux_credential_ids,
       ssh_credential_ids,
       snmp_credential_ids,
+      credential_ids,
       ...networkData
     } = parsed.data;
     const network = createNetwork(networkData);
@@ -47,6 +48,11 @@ export async function POST(request: Request) {
       setNetworkRouter(network.id, router_id);
     }
     try {
+      // v2: lista unificata credenziali
+      if (credential_ids !== undefined && credential_ids.length > 0) {
+        replaceNetworkCredentials(network.id, credential_ids);
+      }
+      // Legacy: 4 catene separate (backward compat)
       if (windows_credential_ids !== undefined) {
         replaceNetworkHostCredentials(network.id, "windows", windows_credential_ids);
       }

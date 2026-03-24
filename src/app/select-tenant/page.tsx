@@ -22,16 +22,16 @@ export default function SelectTenantPage() {
   const role = (session?.user as Record<string, unknown>)?.role as string | undefined;
   const isSuperadmin = role === "superadmin";
 
-  // Se un solo tenant, redirect automatico
+  // Se un solo tenant e NON superadmin, redirect automatico
   useEffect(() => {
     if (status !== "authenticated") return;
-    if (tenants.length === 1) {
+    if (tenants.length === 1 && !isSuperadmin) {
       const code = tenants[0].code;
       update({ tenantCode: code }).then(() => {
         router.push("/");
       });
     }
-  }, [status, tenants, update, router]);
+  }, [status, tenants, isSuperadmin, update, router]);
 
   if (status === "loading") {
     return (

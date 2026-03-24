@@ -57,7 +57,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           email: `${user.username}@da-invent.local`,
           role: user.role,
           tenants: tenants.map(t => ({ code: t.codice_cliente, name: t.ragione_sociale, role: t.role })),
-          tenantCode: tenants.length === 1 ? tenants[0].codice_cliente : null,
+          tenantCode: user.role === "superadmin" ? "__ALL__" : (tenants.length === 1 ? tenants[0].codice_cliente : null),
         };
       },
     }),

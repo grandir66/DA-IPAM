@@ -31,7 +31,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
-        const { getUserByUsername, updateUserLastLogin } = await import("./db");
+        const { getUserByUsername, getUserTenantAccess } = await import("./db-hub");
+        const { updateUserLastLogin } = await import("./db");
         const bcrypt = await import("bcrypt");
 
         const user = getUserByUsername(username);
@@ -48,11 +49,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         updateUserLastLogin(user.id);
 
+        const tenants = getUserTenantAccess(user.id);
+
         return {
           id: String(user.id),
           name: user.username,
           email: `${user.username}@da-invent.local`,
           role: user.role,
+          tenants: tenants.map(t => ({ code: t.codice_cliente, name: t.ragione_sociale, role: t.role })),
+          tenantCode: tenants.length === 1 ? tenants[0].codice_cliente : null,
         };
       },
     }),

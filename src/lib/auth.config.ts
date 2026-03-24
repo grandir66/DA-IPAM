@@ -29,15 +29,23 @@ export const authConfig: NextAuthConfig = {
     signIn: "/login",
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.role = (user as { role?: string }).role || "viewer";
+        token.tenants = (user as Record<string, unknown>).tenants || [];
+        token.tenantCode = (user as Record<string, unknown>).tenantCode || null;
+      }
+      // Allow client-side tenant switch via session update
+      if (trigger === "update" && session?.tenantCode) {
+        token.tenantCode = session.tenantCode;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as { role?: string }).role = token.role as string;
+        (session.user as unknown as Record<string, unknown>).role = token.role as string;
+        (session.user as unknown as Record<string, unknown>).tenantCode = token.tenantCode as string | null;
+        (session.user as unknown as Record<string, unknown>).tenants = token.tenants || [];
       }
       return session;
     },
@@ -56,6 +64,10 @@ export const authConfig: NextAuthConfig = {
         pathname === "/api/test-arp"
       ) {
         return true;
+      }
+
+      if (pathname === "/select-tenant") {
+        return isLoggedIn;
       }
 
       if (pathname === "/login") {

@@ -3,7 +3,13 @@ import { NextResponse } from "next/server";
 import { isOnboardingCompleted } from "@/lib/db";
 
 interface AuthSession {
-  user: { name?: string | null; email?: string | null; role?: string };
+  user: {
+    name?: string | null;
+    email?: string | null;
+    role?: string;
+    tenantCode?: string | null;
+    tenants?: Array<{ code: string; name: string; role: string }>;
+  };
 }
 
 /**
@@ -26,10 +32,32 @@ export async function requireAdmin(): Promise<AuthSession | NextResponse> {
     return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
   }
   const role = (session.user as { role?: string }).role;
-  if (role !== "admin") {
-    return NextResponse.json({ error: "Accesso riservato agli amministratori" }, { status: 403 });
+  if (role !== "admin" && role !== "superadmin") {
+    return NextResponse.json({ error: "Richiesti privilegi di amministratore" }, { status: 403 });
   }
   return session as AuthSession;
+}
+
+/**
+ * Richiede ruolo superadmin. Ritorna la sessione o una Response 401/403.
+ */
+export async function requireSuperAdmin(): Promise<AuthSession | NextResponse> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
+  }
+  const role = (session.user as { role?: string }).role;
+  if (role !== "superadmin") {
+    return NextResponse.json({ error: "Richiesti privilegi di super amministratore" }, { status: 403 });
+  }
+  return session as AuthSession;
+}
+
+/**
+ * Helper per ottenere il codice tenant dalla sessione corrente.
+ */
+export function getTenantCodeFromSession(session: AuthSession): string | null {
+  return session.user?.tenantCode ?? null;
 }
 
 /**
@@ -46,7 +74,7 @@ export async function requireAdminOrOnboarding(): Promise<AuthSession | NextResp
   if (role === "viewer") {
     return NextResponse.json({ error: "Accesso riservato agli amministratori" }, { status: 403 });
   }
-  if (role === "admin") {
+  if (role === "admin" || role === "superadmin") {
     return session as AuthSession;
   }
   if (!isOnboardingCompleted()) {

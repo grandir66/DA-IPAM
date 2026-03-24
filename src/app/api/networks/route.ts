@@ -2,9 +2,27 @@ import { NextResponse } from "next/server";
 import { getNetworks, getNetworksPaginated, createNetwork, setNetworkRouter, replaceNetworkHostCredentials, replaceNetworkCredentials } from "@/lib/db";
 import { NetworkCreateSchema } from "@/lib/validators";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
-import { withTenantFromSession } from "@/lib/api-tenant";
+import { getTenantMode, withTenantFromSession } from "@/lib/api-tenant";
+import { queryAllTenants } from "@/lib/db-tenant";
 
 export async function GET(request: Request) {
+  const mode = await getTenantMode();
+  if (mode.mode === "unauthenticated") {
+    return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
+  }
+
+  if (mode.mode === "all") {
+    try {
+      const allNetworks = queryAllTenants(() => {
+        return getNetworks() as unknown as Record<string, unknown>[];
+      });
+      return NextResponse.json(allNetworks);
+    } catch (error) {
+      console.error("Error fetching networks (all tenants):", error);
+      return NextResponse.json({ error: "Errore nel recupero delle reti" }, { status: 500 });
+    }
+  }
+
   return withTenantFromSession(async () => {
     try {
       const { searchParams } = new URL(request.url);

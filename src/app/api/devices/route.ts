@@ -10,7 +10,8 @@ import {
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
-import { withTenantFromSession } from "@/lib/api-tenant";
+import { getTenantMode, withTenantFromSession } from "@/lib/api-tenant";
+import { queryAllTenants } from "@/lib/db-tenant";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -33,6 +34,44 @@ function deviceCreateErrorMessage(err: unknown): string {
 const STORAGE_ALIASES = ["nas", "nas_synology", "nas_qnap"];
 
 export async function GET(request: Request) {
+  const mode = await getTenantMode();
+  if (mode.mode === "unauthenticated") {
+    return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
+  }
+
+  if (mode.mode === "all") {
+    try {
+      const { searchParams } = new URL(request.url);
+      const type = searchParams.get("type") as "router" | "switch" | null;
+      const rawClassification = searchParams.get("classification");
+      const classification = rawClassification && STORAGE_ALIASES.includes(rawClassification) ? "storage" : rawClassification;
+
+      const allDevices = queryAllTenants(() => {
+        if (classification) {
+          return getDevicesByClassificationOrLegacy(classification) as unknown as Record<string, unknown>[];
+        }
+        const devices = type === "router"
+          ? getRouters()
+          : type === "switch"
+            ? getSwitches()
+            : getNetworkDevices();
+        return devices as unknown as Record<string, unknown>[];
+      });
+      const masked = allDevices.map((d) => ({
+        ...d,
+        source: "network_device" as const,
+        last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
+        encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,
+        community_string: d.community_string ? "●●●●●●●●" : null,
+        api_token: d.api_token ? "●●●●●●●●" : null,
+      }));
+      return NextResponse.json(masked, { headers: NO_CACHE_HEADERS });
+    } catch (error) {
+      console.error("Error fetching devices (all tenants):", error);
+      return NextResponse.json({ error: "Errore nel recupero dei dispositivi" }, { status: 500 });
+    }
+  }
+
   return withTenantFromSession(async () => {
     try {
       const { searchParams } = new URL(request.url);

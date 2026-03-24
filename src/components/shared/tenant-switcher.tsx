@@ -23,7 +23,11 @@ export function TenantSwitcher() {
 
   const tenants = ((session?.user as Record<string, unknown>)?.tenants ?? []) as TenantInfo[];
   const currentCode = (session?.user as Record<string, unknown>)?.tenantCode as string | null;
-  const currentTenant = tenants.find((t) => t.code === currentCode);
+  const role = (session?.user as Record<string, unknown>)?.role as string | undefined;
+  const isSuperadmin = role === "superadmin";
+  const currentTenant = currentCode === "__ALL__"
+    ? { code: "__ALL__", name: "Tutti i clienti", role: "superadmin" }
+    : tenants.find((t) => t.code === currentCode);
 
   if (tenants.length === 0) {
     return null;
@@ -72,6 +76,9 @@ export function TenantSwitcher() {
           </div>
         </SelectTrigger>
         <SelectContent>
+          {isSuperadmin && (
+            <SelectItem value="__ALL__">Tutti i clienti (aggregata)</SelectItem>
+          )}
           {tenants.map((tenant) => (
             <SelectItem key={tenant.code} value={tenant.code}>
               <div className="min-w-0">

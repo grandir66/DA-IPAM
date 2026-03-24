@@ -18,6 +18,7 @@ import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
+import { getActiveTenants } from "./db-hub";
 
 import type {
   Network,
@@ -3272,4 +3273,45 @@ export function getDistinctHostVendorHints(limit = 400): string[] {
     )
     .all(limit) as { v: string }[];
   return rows.map((r) => r.v);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CROSS-TENANT AGGREGATION (superadmin)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Esegue una query su TUTTI i tenant attivi e unisce i risultati.
+ * Ogni item viene annotato con _tenantCode e _tenantName.
+ */
+export function queryAllTenants<T extends Record<string, unknown>>(
+  fn: () => T[]
+): (T & { _tenantCode: string; _tenantName: string })[] {
+  const tenants = getActiveTenants();
+  const results: (T & { _tenantCode: string; _tenantName: string })[] = [];
+  for (const t of tenants) {
+    try {
+      const items = withTenant(t.codice_cliente, fn);
+      for (const item of items) {
+        results.push({ ...item, _tenantCode: t.codice_cliente, _tenantName: t.ragione_sociale });
+      }
+    } catch { /* skip tenant con errori */ }
+  }
+  return results;
+}
+
+/**
+ * Esegue una query scalare/aggregata su TUTTI i tenant attivi.
+ * Restituisce un array con il risultato per ogni tenant.
+ */
+export function queryAllTenantsScalar<T>(
+  fn: () => T
+): Array<{ tenant: { code: string; name: string }; data: T }> {
+  const tenants = getActiveTenants();
+  return tenants.map(t => {
+    try {
+      return { tenant: { code: t.codice_cliente, name: t.ragione_sociale }, data: withTenant(t.codice_cliente, fn) };
+    } catch {
+      return { tenant: { code: t.codice_cliente, name: t.ragione_sociale }, data: null as unknown as T };
+    }
+  });
 }

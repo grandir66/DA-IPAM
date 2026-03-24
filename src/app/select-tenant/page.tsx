@@ -20,6 +20,7 @@ export default function SelectTenantPage() {
 
   const tenants = ((session?.user as Record<string, unknown>)?.tenants ?? []) as TenantInfo[];
   const role = (session?.user as Record<string, unknown>)?.role as string | undefined;
+  const isSuperadmin = role === "superadmin";
 
   // Se un solo tenant, redirect automatico
   useEffect(() => {
@@ -117,6 +118,21 @@ export default function SelectTenantPage() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
+          {isSuperadmin && (
+            <Card
+              className="cursor-pointer transition-all border-2 border-primary/50 hover:ring-2 hover:ring-primary/50 hover:shadow-md hover:bg-primary/10"
+              onClick={() => handleSelect("__ALL__")}
+            >
+              <CardContent className="flex flex-col items-center gap-2 p-6 text-center">
+                <Building2 className="h-8 w-8 text-primary" />
+                <div>
+                  <p className="font-bold text-lg">Tutti i clienti</p>
+                  <p className="text-sm text-muted-foreground mt-1">Vista aggregata di tutti i tenant</p>
+                </div>
+                <Badge>superadmin</Badge>
+              </CardContent>
+            </Card>
+          )}
           {tenants.map((tenant) => (
             <Card
               key={tenant.code}

@@ -21,13 +21,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Codice cliente obbligatorio" }, { status: 400 });
     }
 
+    const role = (session.user as Record<string, unknown>).role as string;
+
+    // __ALL__: vista aggregata per superadmin
+    if (tenantCode === "__ALL__") {
+      if (role !== "superadmin") {
+        return NextResponse.json({ error: "Solo superadmin può vedere tutti i clienti" }, { status: 403 });
+      }
+      return NextResponse.json({ success: true, tenantCode: "__ALL__", ragione_sociale: "Tutti i clienti" });
+    }
+
     // Verifica che il tenant esista
     const tenant = getTenantByCode(tenantCode);
     if (!tenant) {
       return NextResponse.json({ error: "Cliente non trovato" }, { status: 404 });
     }
-
-    const role = (session.user as Record<string, unknown>).role as string;
 
     // Superadmin ha accesso a tutti i tenant
     if (role === "superadmin" || role === "admin") {

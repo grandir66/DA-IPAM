@@ -37,13 +37,28 @@ export async function POST(request: Request) {
       }
     }
 
-    // Generate encryption key if not exists
+    // Generate encryption key / AUTH_SECRET if not exists, and inject into process.env
+    // so the running process can use them immediately (without a restart)
     const envPath = path.join(process.cwd(), ".env.local");
-    if (!fs.existsSync(envPath) || !fs.readFileSync(envPath, "utf-8").includes("ENCRYPTION_KEY")) {
+    let envContent = "";
+    if (fs.existsSync(envPath)) {
+      envContent = fs.readFileSync(envPath, "utf-8");
+    }
+    let envDirty = false;
+    if (!envContent.includes("ENCRYPTION_KEY")) {
       const key = generateEncryptionKey();
+      envContent += `\nENCRYPTION_KEY=${key}\n`;
+      process.env.ENCRYPTION_KEY = key;
+      envDirty = true;
+    }
+    if (!envContent.includes("AUTH_SECRET")) {
       const authSecret = generateEncryptionKey();
-      const envContent = `ENCRYPTION_KEY=${key}\nAUTH_SECRET=${authSecret}\n`;
-      fs.appendFileSync(envPath, envContent);
+      envContent += `AUTH_SECRET=${authSecret}\n`;
+      process.env.AUTH_SECRET = authSecret;
+      envDirty = true;
+    }
+    if (envDirty) {
+      fs.writeFileSync(envPath, envContent.replace(/^\n+/, ""));
     }
 
     return NextResponse.json({ success: true, username: user.username });

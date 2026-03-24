@@ -5473,6 +5473,100 @@ export function linkAdComputerToHost(integrationId: number, objectGuid: string, 
   getDb().prepare("UPDATE ad_computers SET host_id = ? WHERE integration_id = ? AND object_guid = ?").run(hostId, integrationId, objectGuid);
 }
 
+/**
+ * Re-link AD computers ai host di una rete specifica.
+ * Usa hostname, IP e MAC per fare il matching. Non crea nuovi host.
+ * Chiamato dopo la scoperta rete per agganciare i dati AD già sincronizzati.
+ */
+export function relinkAdComputersForNetwork(networkId: number): { linked: number; enriched: number } {
+  const db = getDb();
+  let linked = 0;
+  let enriched = 0;
+
+  // Host della rete
+  const hosts = db.prepare(
+    `SELECT id, ip, mac, hostname, dns_forward, dns_reverse, os_info, classification FROM hosts WHERE network_id = ?`
+  ).all(networkId) as Array<{
+    id: number; ip: string; mac: string | null; hostname: string | null;
+    dns_forward: string | null; dns_reverse: string | null;
+    os_info: string | null; classification: string | null;
+  }>;
+  if (hosts.length === 0) return { linked: 0, enriched: 0 };
+
+  // Computer AD non ancora linkati (o linkati a host di altre reti)
+  const unlinked = db.prepare(
+    `SELECT ac.id, ac.integration_id, ac.object_guid, ac.dns_host_name, ac.sam_account_name,
+            ac.ip_address, ac.operating_system, ac.host_id
+     FROM ad_computers ac
+     WHERE ac.host_id IS NULL
+        OR ac.host_id IN (SELECT id FROM hosts WHERE network_id = ?)`
+  ).all(networkId) as Array<{
+    id: number; integration_id: number; object_guid: string;
+    dns_host_name: string | null; sam_account_name: string;
+    ip_address: string | null; operating_system: string | null;
+    host_id: number | null;
+  }>;
+
+  // Indici per lookup rapido
+  const hostByIp = new Map(hosts.map((h) => [h.ip, h]));
+  const hostByHostname = new Map<string, typeof hosts[0]>();
+  for (const h of hosts) {
+    if (h.hostname) hostByHostname.set(h.hostname.toLowerCase(), h);
+    if (h.dns_reverse) hostByHostname.set(h.dns_reverse.toLowerCase(), h);
+    if (h.dns_forward) hostByHostname.set(h.dns_forward.toLowerCase(), h);
+  }
+
+  const linkStmt = db.prepare(
+    `UPDATE ad_computers SET host_id = ? WHERE integration_id = ? AND object_guid = ?`
+  );
+  const enrichStmt = db.prepare(
+    `UPDATE hosts SET os_info = COALESCE(NULLIF(os_info, ''), NULLIF(os_info, 'unknown'), ?),
+                      classification = CASE WHEN classification IS NULL OR classification = 'unknown' THEN ? ELSE classification END,
+                      updated_at = datetime('now')
+     WHERE id = ?`
+  );
+
+  db.transaction(() => {
+    for (const comp of unlinked) {
+      const dnsHostName = comp.dns_host_name?.toLowerCase() ?? "";
+      const samName = comp.sam_account_name.replace(/\$$/, "").toLowerCase();
+      const shortDns = dnsHostName.split(".")[0];
+
+      // Match per hostname
+      let host = hostByHostname.get(dnsHostName)
+        ?? hostByHostname.get(samName)
+        ?? hostByHostname.get(shortDns);
+
+      // Match per IP
+      if (!host && comp.ip_address) {
+        host = hostByIp.get(comp.ip_address);
+      }
+
+      if (!host) continue;
+
+      // Evita re-link se già collegato allo stesso host
+      if (comp.host_id === host.id) continue;
+
+      linkStmt.run(host.id, comp.integration_id, comp.object_guid);
+      linked++;
+
+      // Enrichment
+      const osRaw = comp.operating_system ?? "";
+      const osLower = osRaw.toLowerCase();
+      const classification = osLower.includes("server") ? "server_windows" : "workstation";
+      if (osRaw && (!host.os_info || host.os_info === "unknown")) {
+        enrichStmt.run(osRaw, classification, host.id);
+        enriched++;
+      } else if (!host.classification || host.classification === "unknown") {
+        enrichStmt.run(host.os_info, classification, host.id);
+        enriched++;
+      }
+    }
+  })();
+
+  return { linked, enriched };
+}
+
 // AD Users
 export function getAdUsers(integrationId: number): AdUser[] {
   return getDb().prepare("SELECT * FROM ad_users WHERE integration_id = ? ORDER BY sam_account_name").all(integrationId) as AdUser[];

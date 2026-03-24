@@ -1813,6 +1813,25 @@ async function runDiscovery(
   }
 
   // ═══════════════════════════════════════════════════════════════
+  // Post-scan: collega computer Active Directory agli host scoperti
+  // (usa i dati AD già sincronizzati in DB — non fa sync LDAP)
+  // ═══════════════════════════════════════════════════════════════
+  if (scanType === "network_discovery" || scanType === "ipam_full" || scanType === "nmap") {
+    progress.phase = "Collegamento dati Active Directory";
+    try {
+      const { relinkAdComputersForNetwork } = await import("@/lib/db");
+      const adResult = relinkAdComputersForNetwork(networkId);
+      if (adResult.linked > 0 || adResult.enriched > 0) {
+        log(`Active Directory: ${adResult.linked} computer collegati, ${adResult.enriched} host arricchiti`);
+      } else {
+        log("Active Directory: nessun nuovo collegamento (dati già allineati o nessun computer AD)");
+      }
+    } catch (adErr) {
+      log(`Active Directory: ${adErr instanceof Error ? adErr.message : "errore"}`);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // Post-scan: sincronizza ip_assignment da DHCP leases + AD DHCP
   // (senza triggare sync DHCP/AD esterne — usa i dati già in DB)
   // ═══════════════════════════════════════════════════════════════

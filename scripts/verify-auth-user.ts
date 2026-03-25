@@ -4,7 +4,7 @@
  *
  * IMPORTANTE — Configurazione guidata (/onboarding):
  *   Il wizard NON crea l'utente né imposta la password. Configura solo router, DNS, credenziali, ecc.
- *   Il primo account amministratore viene creato SOLO dalla pagina /setup → POST /api/setup
+ *   Il primo account (superadmin) viene creato SOLO dalla pagina /setup → POST /api/setup
  *   (username ≥3 caratteri, password ≥8, bcrypt rounds 12).
  *
  * Uso (dalla directory dell'installazione, es. /opt/da-invent):

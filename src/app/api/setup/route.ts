@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
-import { createUser, getTenantByCode, getUserCount, setUserTenantAccess } from "@/lib/db";
+import { createUser, getUserCount } from "@/lib/db";
 import { SetupSchema } from "@/lib/validators";
 import fs from "fs";
 import path from "path";
@@ -26,16 +26,8 @@ export async function POST(request: Request) {
     }
 
     const passwordHash = await bcrypt.hash(parsed.data.password, 12);
-    const user = createUser(parsed.data.username, passwordHash, "admin");
-
-    const defaultTenant = getTenantByCode("DEFAULT");
-    if (defaultTenant) {
-      try {
-        setUserTenantAccess(user.id, defaultTenant.id, "admin");
-      } catch (e) {
-        console.error("Setup: impossibile associare l'utente al tenant DEFAULT:", e);
-      }
-    }
+    // Primo utente = superadmin: menu Clienti, accesso a tutti i tenant (JWT + getActiveTenants).
+    const user = createUser(parsed.data.username, passwordHash, "superadmin");
 
     // Generate encryption key / AUTH_SECRET if not exists, and inject into process.env
     // so the running process can use them immediately (without a restart)

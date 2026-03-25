@@ -9,8 +9,8 @@
  * 1. Checkpoint WAL su ipam.db e copia → data/tenants/DEFAULT.db
  * 2. Inserisce il tenant DEFAULT in hub (se manca)
  * 3. Collega gli utenti non-superadmin a DEFAULT in user_tenant_access
- * 4. Se non c’è ancora un superadmin, promuove il primo utente «admin» (per id) a superadmin
- *    così compare il menu «Clienti»
+ * 4. Se non c’è ancora un superadmin (installazioni vecchie con primo utente «admin»), promuove il primo
+ *    utente «admin» (per id) a superadmin così compare il menu «Clienti»
  * 5. Rinomina ipam.db in backup (i dati operativi restano solo nel tenant DEFAULT)
  *
  * Prerequisito: fermare il processo che tiene aperti i DB (es. systemctl stop da-invent).

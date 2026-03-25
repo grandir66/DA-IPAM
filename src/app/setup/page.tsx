@@ -63,7 +63,9 @@ export default function SetupPage() {
             <img src="/logo-color.png" alt="Logo" className="h-14 w-64 object-contain" />
           </div>
           <CardTitle className="text-2xl font-bold text-primary">DA-INVENT</CardTitle>
-          <CardDescription>Configurazione iniziale — Crea l&apos;account amministratore</CardDescription>
+          <CardDescription>
+            Configurazione iniziale — Crea l&apos;account super amministratore (gestione clienti e tenant)
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

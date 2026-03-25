@@ -200,7 +200,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           const client = await createRouterClient(device);
       const entries = await client.getArpTable();
 
-      upsertArpEntries(Number(id), entries);
+      try {
+        upsertArpEntries(Number(id), entries);
+      } catch (err) {
+        console.error(`[Device Query] upsertArpEntries fallito per device ${id}:`, err);
+        throw err;
+      }
 
       // Neighbors LLDP/CDP/MNDP
       if (client.getNeighbors) {
@@ -267,7 +272,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             dhcpNetworks.add(network.id);
           }
           for (const nid of dhcpNetworks) syncIpAssignmentsForNetwork(nid);
-        } catch { /* DHCP optional */ }
+        } catch (err) {
+          console.warn(`[Device Query] DHCP leases fallito per device ${id}:`, err);
+        }
       }
 
       const networks = getNetworks();
@@ -364,7 +371,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           };
         });
 
-        upsertSwitchPorts(deviceId, switchPorts);
+        try {
+          upsertSwitchPorts(deviceId, switchPorts);
+        } catch (err) {
+          console.error(`[Device Query] upsertSwitchPorts fallito per device ${id}:`, err);
+          throw err;
+        }
       }
 
       try {

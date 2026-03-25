@@ -13,6 +13,7 @@ import {
   resolveProxmoxTargetIps,
 } from "@/lib/proxmox/proxmox-targets";
 import type { NetworkDevice } from "@/types";
+import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import {
   getDefaultProductProfileForVendor,
   scanTargetHintFromProductProfile,
@@ -203,10 +204,14 @@ export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?:
       };
     }
 
-    if (device.device_type === "router") {
+    if (networkDeviceUsesArpPoll(device)) {
       const client = await createRouterClient(device);
       const ok = await client.testConnection();
-      return { success: ok, device_type: "router", message: ok ? "Connessione OK (router)" : undefined };
+      return {
+        success: ok,
+        device_type: device.device_type,
+        message: ok ? "Connessione OK (router/firewall)" : undefined,
+      };
     }
 
     if (isWindowsDevice(device)) {

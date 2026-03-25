@@ -49,6 +49,7 @@ import {
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
 import type { NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
+import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 
 interface Credential {
   id: number;
@@ -665,6 +666,7 @@ function DeviceDetailPage() {
   }, [device]);
 
   const isMikrotik = device?.vendor === "mikrotik" && device?.protocol === "ssh";
+  const showArpTab = Boolean(device && networkDeviceUsesArpPoll(device));
 
   const fetchMikrotikData = useCallback(async () => {
     if (!device || !isMikrotik) return;
@@ -1902,10 +1904,10 @@ function DeviceDetailPage() {
 
       <DeviceCredentialsTable deviceId={device.id} />
 
-      <Tabs defaultValue={isMikrotik ? "mikrotik" : device.device_type === "router" && totalPorts === 0 ? "arp" : "ports"}>
+      <Tabs defaultValue={isMikrotik ? "mikrotik" : showArpTab && totalPorts === 0 ? "arp" : "ports"}>
         <TabsList>
           {isMikrotik && <TabsTrigger value="mikrotik">MikroTik</TabsTrigger>}
-          {device.device_type === "router" && <TabsTrigger value="arp">Tabella ARP</TabsTrigger>}
+          {showArpTab && <TabsTrigger value="arp">Tabella ARP</TabsTrigger>}
           {totalPorts > 0 && <TabsTrigger value="ports">Schema Porte ({totalPorts})</TabsTrigger>}
           {device.device_type === "switch" && <TabsTrigger value="mac">MAC Table ({device.mac_port_entries?.length ?? 0})</TabsTrigger>}
           {(device.neighbors?.length ?? 0) > 0 && <TabsTrigger value="neighbors">Neighbors ({device.neighbors!.length})</TabsTrigger>}
@@ -2133,7 +2135,7 @@ function DeviceDetailPage() {
           </TabsContent>
         )}
 
-        {device.device_type === "router" && (
+        {showArpTab && (
           <TabsContent value="arp" className="mt-4">
             <Card>
               <CardHeader className="py-3">

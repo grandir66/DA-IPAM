@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getNetworkDeviceById, getRouters } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 
 /**
  * Test ARP table retrieval from a router device.
@@ -27,8 +28,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
   }
 
-  if (device.device_type !== "router") {
-    return NextResponse.json({ error: "Il dispositivo deve essere un router" }, { status: 400 });
+  if (!networkDeviceUsesArpPoll(device)) {
+    return NextResponse.json(
+      { error: "Il dispositivo deve essere un router o un firewall Stormshield (tabella ARP)" },
+      { status: 400 }
+    );
   }
 
   try {

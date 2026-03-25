@@ -8,6 +8,7 @@ import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { upsertHost, getNetworks } from "@/lib/db";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 
 const QUERY_TIMEOUT_MS = 120_000; // 2 min server-side (allineato al client)
 
@@ -195,7 +196,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           });
         }
 
-        if (device.device_type === "router") {
+        if (networkDeviceUsesArpPoll(device)) {
           const client = await createRouterClient(device);
       const entries = await client.getArpTable();
 

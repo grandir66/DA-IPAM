@@ -8,6 +8,7 @@ import { upsertHost, getNetworks } from "@/lib/db";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 
 /**
  * Esegue la query (ARP/MAC/porte) sui router delle reti selezionate.
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
       if (!device) continue;
 
       try {
-        if (device.device_type === "router") {
+        if (networkDeviceUsesArpPoll(device)) {
           const client = await createRouterClient(device);
           const entries = await client.getArpTable();
           upsertArpEntries(deviceId, entries);

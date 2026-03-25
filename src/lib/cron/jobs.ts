@@ -33,6 +33,7 @@ import { createSwitchClient } from "@/lib/devices/switch-client";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { classifyDevice } from "@/lib/device-classifier";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
+import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 
 export async function runJob(jobId: number): Promise<void> {
   const jobs = getScheduledJobs();
@@ -144,7 +145,10 @@ export async function runArpPoll(
   const enrichSet = options?.onlyEnrichIps?.length ? new Set(options.onlyEnrichIps) : null;
   let devices = getNetworkDevices()
     .filter((d) => d.enabled)
-    .sort((a, b) => (a.device_type === "router" ? 0 : 1) - (b.device_type === "router" ? 0 : 1));
+    .sort(
+      (a, b) =>
+        (networkDeviceUsesArpPoll(a) ? 0 : 1) - (networkDeviceUsesArpPoll(b) ? 0 : 1)
+    );
 
   if (networkId != null) {
     const routerId = getNetworkRouterId(networkId);
@@ -152,8 +156,11 @@ export async function runArpPoll(
       return { error: "Nessun router assegnato a questa rete. Assegna un router dalla pagina di modifica rete." };
     }
     const device = devices.find((d) => d.id === routerId);
-    if (!device || device.device_type !== "router") {
-      return { error: "Router non trovato o non abilitato" };
+    if (!device || !networkDeviceUsesArpPoll(device)) {
+      return {
+        error:
+          "Gateway non trovato o tipo non valido. Assegna un router o un firewall Stormshield (SNMP) come gateway della rete.",
+      };
     }
     devices = [device];
   }
@@ -163,7 +170,7 @@ export async function runArpPoll(
       if (device.device_type === "hypervisor") {
         continue;
       }
-      if (device.device_type === "router") {
+      if (networkDeviceUsesArpPoll(device)) {
         const client = await createRouterClient(device);
         const entries = await client.getArpTable();
 

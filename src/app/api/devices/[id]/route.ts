@@ -9,6 +9,7 @@ import {
 import { encrypt } from "@/lib/crypto";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -56,11 +57,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     }
 
     const isHypervisor = device.device_type === "hypervisor" || device.scan_target === "proxmox";
-    const arpEntries = device.device_type === "router" ? getArpEntriesByDevice(Number(id)) : [];
+    const arpCapable = networkDeviceUsesArpPoll(device);
+    const arpEntries = arpCapable ? getArpEntriesByDevice(Number(id)) : [];
     const macPortEntries = device.device_type === "switch" ? getMacPortEntriesByDevice(Number(id)) : [];
     const switchPorts = isHypervisor ? [] : getSwitchPortsByDevice(Number(id));
     const neighbors = getNeighborsByDevice(Number(id));
-    const routes = device.device_type === "router" ? getRoutesByDevice(Number(id)) : [];
+    const routes = arpCapable ? getRoutesByDevice(Number(id)) : [];
     const dhcp_leases = getDhcpLeasesByDevice(Number(id));
     const credential_bindings = getDeviceCredentialBindings(Number(id)).map((b) => ({
       ...b,

@@ -36,6 +36,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { Pagination } from "@/components/shared/pagination";
+import { SortableTableHead } from "@/components/shared/sortable-table-head";
+import type { SortDirection } from "@/lib/table-sort";
 import { Plus, Trash2, Network, Key, Scan, X, Search, Router, Download } from "lucide-react";
 import { toast } from "sonner";
 import type { NetworkWithStats } from "@/types";
@@ -90,6 +92,8 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const pageSize = 25;
+  const [sortColumn, setSortColumn] = useState<string | null>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   const [routersList, setRoutersList] = useState(initialRouters);
   const [newNetworkRouterId, setNewNetworkRouterId] = useState<string>("");
@@ -151,6 +155,10 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
     try {
       const params = new URLSearchParams({ page: String(currentPage), pageSize: String(pageSize) });
       if (currentSearch) params.set("search", currentSearch);
+      if (sortColumn) {
+        params.set("sortBy", sortColumn);
+        params.set("sortOrder", sortDirection);
+      }
       const res = await fetch(`/api/networks?${params.toString()}`);
       if (res.ok) {
         const json = await res.json();
@@ -168,12 +176,22 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
     } catch {
       toast.error("Impossibile aggiornare l'elenco");
     }
-  }, [page, search, pageSize]);
+  }, [page, search, pageSize, sortColumn, sortDirection]);
+
+  const handleSortColumn = useCallback((columnId: string) => {
+    if (sortColumn === columnId) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(columnId);
+      setSortDirection("asc");
+    }
+    setPage(1);
+  }, [sortColumn]);
 
   useEffect(() => {
     refreshNetworks(1, search);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [search, sortColumn, sortDirection]);
 
   const handlePageChange = useCallback((newPage: number) => {
     refreshNetworks(newPage, search);
@@ -743,14 +761,30 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
                     aria-label="Seleziona tutte"
                   />
                 </TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead>CIDR</TableHead>
-                <TableHead>VLAN</TableHead>
-                <TableHead>Posizione</TableHead>
-                <TableHead className="text-center">Host</TableHead>
-                <TableHead className="text-center">Online</TableHead>
-                <TableHead className="text-center">Offline</TableHead>
-                <TableHead>Ultima Scansione</TableHead>
+                <SortableTableHead columnId="name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                  Nome
+                </SortableTableHead>
+                <SortableTableHead columnId="cidr" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                  CIDR
+                </SortableTableHead>
+                <SortableTableHead columnId="vlan_id" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                  VLAN
+                </SortableTableHead>
+                <SortableTableHead columnId="location" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                  Posizione
+                </SortableTableHead>
+                <SortableTableHead columnId="total_hosts" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn} className="text-center">
+                  Host
+                </SortableTableHead>
+                <SortableTableHead columnId="online_count" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn} className="text-center">
+                  Online
+                </SortableTableHead>
+                <SortableTableHead columnId="offline_count" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn} className="text-center">
+                  Offline
+                </SortableTableHead>
+                <SortableTableHead columnId="last_scan" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                  Ultima Scansione
+                </SortableTableHead>
                 <TableHead className="w-12"></TableHead>
               </TableRow>
             </TableHeader>

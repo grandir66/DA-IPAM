@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -60,6 +60,8 @@ import {
   coerceScanTargetForVendor,
 } from "@/lib/vendor-device-profile";
 import { ipAssignmentShortLabel } from "@/lib/ip-assignment";
+import { SortableTableHead } from "@/components/shared/sortable-table-head";
+import { compareUnknown, type SortDirection } from "@/lib/table-sort";
 
 type HostWithDevice = Host & {
   device_id?: number;
@@ -130,6 +132,8 @@ export function NetworkDetailClient({
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [filterClassification, setFilterClassification] = useState<string>("");
   const [filterKnownOnly, setFilterKnownOnly] = useState(false);
+  const [listSortColumn, setListSortColumn] = useState<string | null>("ip");
+  const [listSortDir, setListSortDir] = useState<SortDirection>("asc");
   const [editingHostId, setEditingHostId] = useState<number | null>(null);
   const [editingField, setEditingField] = useState<"custom_name" | "notes" | "classification" | null>(null);
   const [arpPolling, setArpPolling] = useState(false);
@@ -329,6 +333,39 @@ export function NetworkDetailClient({
     return true;
   });
 
+  const displayHosts = useMemo(() => {
+    if (!listSortColumn) return filteredHosts;
+    const getVal = (h: HostWithDevice): unknown => {
+      switch (listSortColumn) {
+        case "ip":
+          return h.ip;
+        case "status":
+          return h.status;
+        case "name":
+          return h.custom_name || h.hostname || "";
+        case "classification":
+          return h.classification || "";
+        case "vendor":
+          return h.vendor || "";
+        default:
+          return "";
+      }
+    };
+    return [...filteredHosts].sort((a, b) => compareUnknown(getVal(a), getVal(b), listSortDir));
+  }, [filteredHosts, listSortColumn, listSortDir]);
+
+  const handleListSort = useCallback(
+    (columnId: string) => {
+      if (listSortColumn === columnId) {
+        setListSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      } else {
+        setListSortColumn(columnId);
+        setListSortDir("asc");
+      }
+    },
+    [listSortColumn]
+  );
+
   const toggleSelectHost = (id: number) => {
     setSelectedHostIds((prev) => {
       const next = new Set(prev);
@@ -339,10 +376,10 @@ export function NetworkDetailClient({
   };
 
   const toggleSelectAllHosts = () => {
-    if (selectedHostIds.size === filteredHosts.length) {
+    if (selectedHostIds.size === displayHosts.length) {
       setSelectedHostIds(new Set());
     } else {
-      setSelectedHostIds(new Set(filteredHosts.map((h) => h.id)));
+      setSelectedHostIds(new Set(displayHosts.map((h) => h.id)));
     }
   };
 
@@ -1391,30 +1428,40 @@ export function NetworkDetailClient({
               <TableRow>
                 <TableHead className="w-10">
                   <Checkbox
-                    checked={filteredHosts.length > 0 && selectedHostIds.size === filteredHosts.length}
+                    checked={displayHosts.length > 0 && selectedHostIds.size === displayHosts.length}
                     onCheckedChange={toggleSelectAllHosts}
                     aria-label="Seleziona tutti"
                   />
                 </TableHead>
                 <TableHead className="w-12 text-center" title="Apri scheda host">Dettagli</TableHead>
-                <TableHead>IP</TableHead>
-                <TableHead>Stato</TableHead>
+                <SortableTableHead columnId="ip" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
+                  IP
+                </SortableTableHead>
+                <SortableTableHead columnId="status" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
+                  Stato
+                </SortableTableHead>
                 <TableHead title="Credenziali validate">Cred.</TableHead>
                 <TableHead>Conosciuto</TableHead>
                 <TableHead>DHCP</TableHead>
                 <TableHead title="Presente in Active Directory" className="w-10 text-center">AD</TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead>Classificazione</TableHead>
+                <SortableTableHead columnId="name" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
+                  Nome
+                </SortableTableHead>
+                <SortableTableHead columnId="classification" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
+                  Classificazione
+                </SortableTableHead>
                 <TableHead title="Tipo dispositivo da fingerprint (porte, SNMP, banner)">Rilevato</TableHead>
                 <TableHead>Dispositivo</TableHead>
                 <TableHead title="Stesso device su più subnet" className="w-10 text-center">MH</TableHead>
-                <TableHead>Vendor</TableHead>
+                <SortableTableHead columnId="vendor" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
+                  Vendor
+                </SortableTableHead>
                 <TableHead>Note</TableHead>
                 <TableHead>Porte</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredHosts.length === 0 ? (
+              {displayHosts.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={16} className="text-center text-muted-foreground py-8">
                     {hosts.length === 0
@@ -1423,7 +1470,7 @@ export function NetworkDetailClient({
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredHosts.map((host) => (
+                displayHosts.map((host) => (
                   <TableRow key={host.id}>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox

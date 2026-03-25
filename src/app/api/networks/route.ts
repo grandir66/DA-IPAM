@@ -32,7 +32,12 @@ export async function GET(request: Request) {
       if (pageParam) {
         const page = Math.max(1, parseInt(pageParam, 10) || 1);
         const pageSize = Math.max(1, Math.min(100, parseInt(searchParams.get("pageSize") || "25", 10)));
-        const { data, total } = getNetworksPaginated(page, pageSize, search);
+        const sortBy = searchParams.get("sortBy") || undefined;
+        const sortOrder = searchParams.get("sortOrder") === "desc" ? "desc" : "asc";
+        const { data, total } = getNetworksPaginated(page, pageSize, search, {
+          key: sortBy,
+          dir: sortOrder,
+        });
         const totalPages = Math.ceil(total / pageSize);
         return NextResponse.json({ data, total, page, pageSize, totalPages });
       }

@@ -15,6 +15,7 @@ import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
+import { sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
@@ -228,7 +229,8 @@ export function getNetworks(): (NetworkWithStats & { router_id: number | null })
 export function getNetworksPaginated(
   page: number,
   pageSize: number,
-  search?: string
+  search?: string,
+  sort?: { key?: string; dir?: SortDirection }
 ): { data: (NetworkWithStats & { router_id: number | null })[]; total: number } {
   const offset = (page - 1) * pageSize;
   const conditions: string[] = [];
@@ -243,6 +245,8 @@ export function getNetworksPaginated(
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const total = (db().prepare(`SELECT COUNT(*) as cnt FROM networks n ${whereClause}`).get(...params) as { cnt: number }).cnt;
+
+  const orderSql = sqlOrderByNetworks(sort?.key, sort?.dir ?? "asc");
 
   const data = db().prepare(`
     SELECT
@@ -266,7 +270,7 @@ export function getNetworksPaginated(
       GROUP BY network_id
     ) h ON h.network_id = n.id
     ${whereClause}
-    ORDER BY n.name
+    ORDER BY ${orderSql}
     LIMIT ? OFFSET ?
   `).all(...params, pageSize, offset) as (NetworkWithStats & { router_id: number | null })[];
 
@@ -1702,12 +1706,8 @@ export function getDeviceSnmpV3Credentials(device: NetworkDevice): { username: s
   return null;
 }
 
-export function getEffectiveSnmpPort(device: NetworkDevice): number {
-  const p = device.port ?? 161;
-  if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") {
-    if (p === 22 || p === 2222) return 161;
-    return p;
-  }
+export function getEffectiveSnmpPort(_device: NetworkDevice): number {
+  // SNMP usa sempre porta standard 161, indipendentemente da device.port
   return 161;
 }
 
@@ -3144,7 +3144,18 @@ export function getDhcpLeases(): DhcpLeaseWithRelations[] {
   return db().prepare(`SELECT d.*, h.hostname as host_hostname, h.ip as host_ip, n.name as network_name, n.cidr as network_cidr, nd.name as device_name FROM dhcp_leases d LEFT JOIN hosts h ON h.id = d.host_id LEFT JOIN networks n ON n.id = d.network_id LEFT JOIN network_devices nd ON nd.id = d.source_device_id ORDER BY d.last_synced DESC`).all() as DhcpLeaseWithRelations[];
 }
 
-export function getDhcpLeasesPaginated(page: number, pageSize: number, filters?: { search?: string; sourceType?: string; sourceDeviceId?: number; networkId?: number }): { rows: DhcpLeaseWithRelations[]; total: number } {
+export function getDhcpLeasesPaginated(
+  page: number,
+  pageSize: number,
+  filters?: {
+    search?: string;
+    sourceType?: string;
+    sourceDeviceId?: number;
+    networkId?: number;
+    sortKey?: string;
+    sortDir?: SortDirection;
+  }
+): { rows: DhcpLeaseWithRelations[]; total: number } {
   const offset = (page - 1) * pageSize;
   const conditions: string[] = [];
   const params: unknown[] = [];
@@ -3154,7 +3165,8 @@ export function getDhcpLeasesPaginated(page: number, pageSize: number, filters?:
   if (filters?.networkId) { conditions.push("d.network_id = ?"); params.push(filters.networkId); }
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const total = (db().prepare(`SELECT COUNT(*) as c FROM dhcp_leases d ${whereClause}`).get(...params) as { c: number }).c;
-  const rows = db().prepare(`SELECT d.*, h.hostname as host_hostname, h.ip as host_ip, n.name as network_name, n.cidr as network_cidr, nd.name as device_name FROM dhcp_leases d LEFT JOIN hosts h ON h.id = d.host_id LEFT JOIN networks n ON n.id = d.network_id LEFT JOIN network_devices nd ON nd.id = d.source_device_id ${whereClause} ORDER BY d.last_synced DESC LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as DhcpLeaseWithRelations[];
+  const orderSql = sqlOrderByDhcpLeases(filters?.sortKey, filters?.sortDir ?? "desc");
+  const rows = db().prepare(`SELECT d.*, h.hostname as host_hostname, h.ip as host_ip, n.name as network_name, n.cidr as network_cidr, nd.name as device_name FROM dhcp_leases d LEFT JOIN hosts h ON h.id = d.host_id LEFT JOIN networks n ON n.id = d.network_id LEFT JOIN network_devices nd ON nd.id = d.source_device_id ${whereClause} ORDER BY ${orderSql} LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as DhcpLeaseWithRelations[];
   return { rows, total };
 }
 

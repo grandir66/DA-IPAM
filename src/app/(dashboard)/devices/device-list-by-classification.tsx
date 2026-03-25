@@ -42,6 +42,8 @@ import {
 } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Trash2, RefreshCw, Pencil, ArrowLeft, Link2, Server, ExternalLink, Settings2, ShieldCheck, Check, X, Database } from "lucide-react";
+import { useClientTableSort } from "@/hooks/use-table-sort";
+import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -673,6 +675,52 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     fetchDevices();
   }
 
+  const sortAccessors = useMemo(
+    () => ({
+      name: (d: DeviceOrHost) => d.name,
+      classification: (d: DeviceOrHost) => d.classification ?? "",
+      ip: (d: DeviceOrHost) => d.host,
+      network: (d: DeviceOrHost) =>
+        isHostItem(d) ? (d.network_name ?? "") : ((d as NetworkDevice & { network_name?: string }).network_name ?? ""),
+      last_scan: (d: DeviceOrHost) => {
+        if (isHostItem(d)) return 0;
+        const at = (d as NetworkDevice).last_proxmox_scan_at;
+        return at ? new Date(at).getTime() : 0;
+      },
+      vendor: (d: DeviceOrHost) => d.vendor ?? "",
+      profile: (d: DeviceOrHost) => {
+        if (isHostItem(d)) return "";
+        const pp = (d as NetworkDevice).product_profile;
+        return pp ? (PRODUCT_PROFILE_LABELS[pp as ProductProfileId] ?? pp) : "";
+      },
+      protocol: (d: DeviceOrHost) => (!isHostItem(d) ? (d as NetworkDevice).protocol : ""),
+      credentials: (d: DeviceOrHost) => {
+        if (isHostItem(d)) return 2;
+        const r = credentialTestResults.get(d.id);
+        if (!r) return 2;
+        return r.ok ? 0 : 1;
+      },
+      status: (d: DeviceOrHost) => {
+        if (isHostItem(d)) {
+          return d.status === "online" ? 0 : d.status === "offline" ? 1 : 2;
+        }
+        const s = (d as { status?: string }).status;
+        if (s === "online") return 0;
+        if (s === "offline") return 1;
+        if (s === "unknown") return 2;
+        return (d as NetworkDevice).enabled ? 3 : 4;
+      },
+    }),
+    [credentialTestResults]
+  );
+
+  const { sortedRows: sortedDevices, sortColumn, sortDirection, onSort } = useClientTableSort(
+    devices,
+    sortAccessors,
+    "name",
+    "asc"
+  );
+
   const SCANNABLE_CLASSIFICATIONS = ["router", "switch", "hypervisor", "server", "workstation", "notebook", "storage", "access_point", "firewall", "iot", "stampante", "telecamera", "voip", "vm"];
   const showAddButton = SCANNABLE_CLASSIFICATIONS.includes(effectiveClassification);
   const isHypervisor = effectiveClassification === "hypervisor";
@@ -828,25 +876,58 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     aria-label="Seleziona tutti"
                   />
                 </TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead>Classificazione</TableHead>
-                <TableHead>IP</TableHead>
-                {(devices.some(isHostItem) || devices.some((d) => (d as { network_name?: string }).network_name)) && <TableHead>Rete</TableHead>}
-                {isHypervisor && devices.some((d) => !isHostItem(d)) && <TableHead>Ultimo scan</TableHead>}
-                <TableHead>Vendor</TableHead>
-                {devices.some((d) => !isHostItem(d)) && <TableHead>Profilo</TableHead>}
-                {devices.some((d) => !isHostItem(d)) && <TableHead>Protocollo</TableHead>}
-                {devices.some((d) => !isHostItem(d)) && (
-                  <TableHead className="text-center" title="Risultato test credenziali (Testa credenziali)">
-                    Credenziali
-                  </TableHead>
+                <SortableTableHead columnId="name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                  Nome
+                </SortableTableHead>
+                <SortableTableHead columnId="classification" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                  Classificazione
+                </SortableTableHead>
+                <SortableTableHead columnId="ip" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                  IP
+                </SortableTableHead>
+                {(devices.some(isHostItem) || devices.some((d) => (d as { network_name?: string }).network_name)) && (
+                  <SortableTableHead columnId="network" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                    Rete
+                  </SortableTableHead>
                 )}
-                <TableHead>Stato</TableHead>
+                {isHypervisor && devices.some((d) => !isHostItem(d)) && (
+                  <SortableTableHead columnId="last_scan" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                    Ultimo scan
+                  </SortableTableHead>
+                )}
+                <SortableTableHead columnId="vendor" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                  Vendor
+                </SortableTableHead>
+                {devices.some((d) => !isHostItem(d)) && (
+                  <SortableTableHead columnId="profile" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                    Profilo
+                  </SortableTableHead>
+                )}
+                {devices.some((d) => !isHostItem(d)) && (
+                  <SortableTableHead columnId="protocol" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                    Protocollo
+                  </SortableTableHead>
+                )}
+                {devices.some((d) => !isHostItem(d)) && (
+                  <SortableTableHead
+                    columnId="credentials"
+                    sortColumn={sortColumn}
+                    sortDirection={sortDirection}
+                    onSort={onSort}
+                    className="text-center"
+                    title="Risultato test credenziali (Testa credenziali)"
+                  >
+                    Credenziali
+                  </SortableTableHead>
+                )}
+                <SortableTableHead columnId="status" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                  Stato
+                </SortableTableHead>
                 <TableHead className="w-40 min-w-[140px]">Azioni</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {devices.map((dev) => {
+              {sortedDevices.map((dev) => {
                 const key = getSelectionKey(dev);
                 return (
                 <TableRow

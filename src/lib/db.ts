@@ -21,6 +21,7 @@ import path from "path";
 import fs from "fs";
 import { SCHEMA_SQL } from "./db-schema";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
+import { sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
@@ -2059,7 +2060,8 @@ export function getNetworks(): (NetworkWithStats & { router_id: number | null })
 export function getNetworksPaginated(
   page: number,
   pageSize: number,
-  search?: string
+  search?: string,
+  sort?: { key?: string; dir?: SortDirection }
 ): { data: (NetworkWithStats & { router_id: number | null })[]; total: number } {
   const offset = (page - 1) * pageSize;
   const conditions: string[] = [];
@@ -2074,6 +2076,8 @@ export function getNetworksPaginated(
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const total = (getDb().prepare(`SELECT COUNT(*) as cnt FROM networks n ${whereClause}`).get(...params) as { cnt: number }).cnt;
+
+  const orderSql = sqlOrderByNetworks(sort?.key, sort?.dir ?? "asc");
 
   const data = getDb().prepare(`
     SELECT
@@ -2097,7 +2101,7 @@ export function getNetworksPaginated(
       GROUP BY network_id
     ) h ON h.network_id = n.id
     ${whereClause}
-    ORDER BY n.name
+    ORDER BY ${orderSql}
     LIMIT ? OFFSET ?
   `).all(...params, pageSize, offset) as (NetworkWithStats & { router_id: number | null })[];
 
@@ -3482,14 +3486,9 @@ export function getDeviceSnmpV3Credentials(device: NetworkDevice): { username: s
 }
 
 /**
- * Porta per sessioni SNMP: con protocollo principale SNMP, evita 22/2222 lasciati per errore da SSH.
+ * SNMP usa sempre porta standard 161, indipendentemente da device.port.
  */
-export function getEffectiveSnmpPort(device: NetworkDevice): number {
-  const p = device.port ?? 161;
-  if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") {
-    if (p === 22 || p === 2222) return 161;
-    return p;
-  }
+export function getEffectiveSnmpPort(_device: NetworkDevice): number {
   return 161;
 }
 
@@ -6344,6 +6343,8 @@ export function getDhcpLeasesPaginated(
     sourceType?: string;
     sourceDeviceId?: number;
     networkId?: number;
+    sortKey?: string;
+    sortDir?: SortDirection;
   }
 ): { rows: DhcpLeaseWithRelations[]; total: number } {
   const offset = (page - 1) * pageSize;
@@ -6371,6 +6372,7 @@ export function getDhcpLeasesPaginated(
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const total = (getDb().prepare(`SELECT COUNT(*) as c FROM dhcp_leases d ${whereClause}`).get(...params) as { c: number }).c;
+  const orderSql = sqlOrderByDhcpLeases(filters?.sortKey, filters?.sortDir ?? "desc");
   const rows = getDb().prepare(`
     SELECT 
       d.*,
@@ -6384,7 +6386,7 @@ export function getDhcpLeasesPaginated(
     LEFT JOIN networks n ON n.id = d.network_id
     LEFT JOIN network_devices nd ON nd.id = d.source_device_id
     ${whereClause}
-    ORDER BY d.last_synced DESC
+    ORDER BY ${orderSql}
     LIMIT ? OFFSET ?
   `).all(...params, pageSize, offset) as DhcpLeaseWithRelations[];
 

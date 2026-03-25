@@ -31,6 +31,8 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
+import { SortableTableHead } from "@/components/shared/sortable-table-head";
+import type { SortDirection } from "@/lib/table-sort";
 
 interface DhcpLease {
   id: number;
@@ -93,6 +95,8 @@ export default function DhcpPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [sourceTypeFilter, setSourceTypeFilter] = useState<string>("all");
   const [sourceDeviceFilter, setSourceDeviceFilter] = useState<string>("all");
+  const [sortColumn, setSortColumn] = useState<string | null>("last_synced");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   const fetchLeases = useCallback(async () => {
     try {
@@ -103,6 +107,10 @@ export default function DhcpPage() {
       if (searchTerm) params.set("search", searchTerm);
       if (sourceTypeFilter !== "all") params.set("sourceType", sourceTypeFilter);
       if (sourceDeviceFilter !== "all") params.set("sourceDeviceId", sourceDeviceFilter);
+      if (sortColumn) {
+        params.set("sortBy", sortColumn);
+        params.set("sortOrder", sortDirection);
+      }
 
       const res = await fetch(`/api/dhcp-leases?${params}`);
       if (!res.ok) throw new Error("Errore caricamento");
@@ -114,7 +122,7 @@ export default function DhcpPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, searchTerm, sourceTypeFilter, sourceDeviceFilter]);
+  }, [page, pageSize, searchTerm, sourceTypeFilter, sourceDeviceFilter, sortColumn, sortDirection]);
 
   const fetchSources = useCallback(async () => {
     try {
@@ -139,6 +147,19 @@ export default function DhcpPage() {
   useEffect(() => {
     fetchLeases();
   }, [fetchLeases]);
+
+  const handleSortColumn = useCallback(
+    (columnId: string) => {
+      if (sortColumn === columnId) {
+        setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+      } else {
+        setSortColumn(columnId);
+        setSortDirection(columnId === "last_synced" ? "desc" : "asc");
+      }
+      setPage(1);
+    },
+    [sortColumn]
+  );
 
   useEffect(() => {
     fetchSources();
@@ -344,14 +365,30 @@ export default function DhcpPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>IP</TableHead>
-                      <TableHead>MAC</TableHead>
-                      <TableHead className="w-14">Tipo</TableHead>
-                      <TableHead>Hostname</TableHead>
-                      <TableHead>Sorgente</TableHead>
-                      <TableHead>Rete</TableHead>
-                      <TableHead>Stato</TableHead>
-                      <TableHead>Ultimo sync</TableHead>
+                      <SortableTableHead columnId="ip_address" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                        IP
+                      </SortableTableHead>
+                      <SortableTableHead columnId="mac_address" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                        MAC
+                      </SortableTableHead>
+                      <SortableTableHead columnId="source_type" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn} className="w-14">
+                        Tipo
+                      </SortableTableHead>
+                      <SortableTableHead columnId="hostname" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                        Hostname
+                      </SortableTableHead>
+                      <SortableTableHead columnId="device_name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                        Sorgente
+                      </SortableTableHead>
+                      <SortableTableHead columnId="network_name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                        Rete
+                      </SortableTableHead>
+                      <SortableTableHead columnId="status" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                        Stato
+                      </SortableTableHead>
+                      <SortableTableHead columnId="last_synced" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                        Ultimo sync
+                      </SortableTableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

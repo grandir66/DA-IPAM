@@ -1,5 +1,5 @@
 import type { NetworkDevice } from "@/types";
-import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString, getEffectiveSnmpPort } from "@/lib/db";
+import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString } from "@/lib/db";
 import { decrypt, safeDecrypt } from "@/lib/crypto";
 import type { PortInfo } from "./switch-client";
 import { getSnmpPortSchema } from "./snmp-port-schema";
@@ -254,13 +254,8 @@ async function createSnmpArpClient(
   device: NetworkDevice
 ): Promise<RouterClient> {
   const snmp = await import("net-snmp");
-  // Risolvi porta SNMP: prima dal binding SNMP, poi getEffectiveSnmpPort (filtra porte SSH).
-  const { getDb } = await import("@/lib/db");
-  const snmpBinding = getDb().prepare(
-    "SELECT port FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'snmp' ORDER BY sort_order LIMIT 1"
-  ).get(device.id) as { port: number } | undefined;
-  const snmpPort = snmpBinding?.port || getEffectiveSnmpPort(device);
-  const opts = { port: snmpPort, timeout: 10000 };
+  // SNMP usa sempre porta 161 (standard)
+  const opts = { port: 161, timeout: 10000 };
 
   function createSession() {
     if (device.protocol === "snmp_v3") {

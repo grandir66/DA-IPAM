@@ -93,7 +93,7 @@ const CLASSIFICATION_ICONS: Record<string, typeof Router> = {
   unknown: Server,
 };
 
-type SortField = "name" | "ip" | "classification" | "vendor" | "status";
+type SortField = "name" | "ip" | "classification" | "vendor" | "profile" | "mac" | "status";
 type SortDirection = "asc" | "desc";
 
 export default function DevicesUnifiedPage() {
@@ -251,6 +251,20 @@ export default function DevicesUnifiedPage() {
           aVal = a.vendor || "zzz";
           bVal = b.vendor || "zzz";
           break;
+        case "profile":
+          aVal =
+            a.source === "device" && a.product_profile
+              ? PRODUCT_PROFILE_LABELS[a.product_profile as ProductProfileId] ?? a.product_profile
+              : "zzz";
+          bVal =
+            b.source === "device" && b.product_profile
+              ? PRODUCT_PROFILE_LABELS[b.product_profile as ProductProfileId] ?? b.product_profile
+              : "zzz";
+          break;
+        case "mac":
+          aVal = a.source === "host" ? (a.mac ?? "").toLowerCase() : "zzz";
+          bVal = b.source === "host" ? (b.mac ?? "").toLowerCase() : "zzz";
+          break;
         case "status":
           if (a.source === "device" && b.source === "device") {
             aVal = a.enabled ? 0 : 1;
@@ -401,7 +415,7 @@ export default function DevicesUnifiedPage() {
                 <SelectItem value="offline">Offline</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={vendorFilter} onValueChange={(v) => { v && setVendorFilter(v); setPage(1); }}>
+            <Select value={vendorFilter} onValueChange={(v) => { if (v) { setVendorFilter(v); setPage(1); } }}>
               <SelectTrigger className="w-[160px]">
                 <SelectValue placeholder="Vendor" />
               </SelectTrigger>
@@ -479,9 +493,19 @@ export default function DevicesUnifiedPage() {
                   >
                     <span className="flex items-center">Vendor <SortIcon field="vendor" /></span>
                   </TableHead>
-                  <TableHead>Profilo</TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:bg-muted/50 select-none"
+                    onClick={() => handleSort("profile")}
+                  >
+                    <span className="flex items-center">Profilo <SortIcon field="profile" /></span>
+                  </TableHead>
                   <TableHead className="w-[120px] whitespace-nowrap">Acquisizione</TableHead>
-                  <TableHead>MAC</TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:bg-muted/50 select-none"
+                    onClick={() => handleSort("mac")}
+                  >
+                    <span className="flex items-center">MAC <SortIcon field="mac" /></span>
+                  </TableHead>
                   <TableHead 
                     className="cursor-pointer hover:bg-muted/50 select-none"
                     onClick={() => handleSort("status")}

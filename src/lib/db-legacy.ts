@@ -3431,14 +3431,9 @@ export function getDeviceSnmpV3Credentials(device: NetworkDevice): { username: s
 }
 
 /**
- * Porta per sessioni SNMP: con protocollo principale SNMP, evita 22/2222 lasciati per errore da SSH.
+ * SNMP usa sempre porta standard 161, indipendentemente da device.port.
  */
-export function getEffectiveSnmpPort(device: NetworkDevice): number {
-  const p = device.port ?? 161;
-  if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") {
-    if (p === 22 || p === 2222) return 161;
-    return p;
-  }
+export function getEffectiveSnmpPort(_device: NetworkDevice): number {
   return 161;
 }
 

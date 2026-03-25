@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
@@ -23,6 +22,8 @@ import { ListOrdered, Search, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { MacIpMapping } from "@/types";
 import type { Network } from "@/types";
+import { useClientTableSort } from "@/hooks/use-table-sort";
+import { SortableTableHead } from "@/components/shared/sortable-table-head";
 
 const SOURCE_LABELS: Record<string, string> = {
   arp: "ARP",
@@ -79,6 +80,27 @@ export default function ArpTablePage() {
       hour: "2-digit",
       minute: "2-digit",
     });
+
+  const sortAccessors = useMemo(
+    () => ({
+      mac_display: (m: MacIpMapping) => m.mac_display,
+      ip: (m: MacIpMapping) => m.ip,
+      source: (m: MacIpMapping) => m.source,
+      network_name: (m: MacIpMapping) => m.network_name ?? "",
+      hostname: (m: MacIpMapping) => m.hostname ?? "",
+      vendor: (m: MacIpMapping) => m.vendor ?? "",
+      last_seen: (m: MacIpMapping) => new Date(m.last_seen).getTime(),
+      previous_ip: (m: MacIpMapping) => m.previous_ip ?? "",
+    }),
+    []
+  );
+
+  const { sortedRows: sortedMappings, sortColumn, sortDirection, onSort } = useClientTableSort(
+    mappings,
+    sortAccessors,
+    "last_seen",
+    "desc"
+  );
 
   return (
     <div className="space-y-6">
@@ -150,18 +172,34 @@ export default function ArpTablePage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>MAC</TableHead>
-                    <TableHead>IP</TableHead>
-                    <TableHead>Sorgente</TableHead>
-                    <TableHead>Rete</TableHead>
-                    <TableHead>Hostname</TableHead>
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Ultimo visto</TableHead>
-                    <TableHead>IP precedente</TableHead>
+                    <SortableTableHead columnId="mac_display" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                      MAC
+                    </SortableTableHead>
+                    <SortableTableHead columnId="ip" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                      IP
+                    </SortableTableHead>
+                    <SortableTableHead columnId="source" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                      Sorgente
+                    </SortableTableHead>
+                    <SortableTableHead columnId="network_name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                      Rete
+                    </SortableTableHead>
+                    <SortableTableHead columnId="hostname" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                      Hostname
+                    </SortableTableHead>
+                    <SortableTableHead columnId="vendor" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                      Vendor
+                    </SortableTableHead>
+                    <SortableTableHead columnId="last_seen" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                      Ultimo visto
+                    </SortableTableHead>
+                    <SortableTableHead columnId="previous_ip" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
+                      IP precedente
+                    </SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mappings.map((m) => (
+                  {sortedMappings.map((m) => (
                     <TableRow key={m.id}>
                       <TableCell className="font-mono text-sm">{m.mac_display}</TableCell>
                       <TableCell className="font-mono text-sm">{m.ip}</TableCell>

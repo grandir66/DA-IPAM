@@ -16,7 +16,7 @@ function resolveTargetIps(networkId: number, hostIds: number[] | undefined): str
   return ips.length ? ips : undefined;
 }
 
-const MANUAL_SCAN_TYPES = new Set<string>(["nmap", "snmp", "windows", "ssh", "dns", "arp_poll", "dhcp", "ipam_full", "credential_validate"]);
+const MANUAL_SCAN_TYPES = new Set<string>(["nmap", "snmp", "windows", "ssh", "dns", "ipam_full", "credential_validate"]);
 
 export async function POST(request: Request) {
   const result = await withTenantFromSession(async () => {

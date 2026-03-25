@@ -6,7 +6,7 @@ export interface User {
   id: number;
   username: string;
   password_hash: string;
-  role: "admin" | "viewer";
+  role: "superadmin" | "admin" | "viewer";
   created_at: string;
   last_login: string | null;
 }

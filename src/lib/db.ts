@@ -5141,7 +5141,7 @@ export function getUserById(id: number): User | undefined {
   return hub.getUserById(id);
 }
 
-export function updateUserRole(userId: number, role: "admin" | "viewer"): boolean {
+export function updateUserRole(userId: number, role: "superadmin" | "admin" | "viewer"): boolean {
   const hub = require("./db-hub");
   return hub.updateUserRole(userId, role);
 }

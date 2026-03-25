@@ -128,6 +128,9 @@ export default function SettingsPage() {
         setUpdateCheckError("Impossibile contattare il server per il controllo versione.");
       });
     fetch("/api/users").then((r) => r.json()).then(setUsers).catch(() => {});
+    fetch("/api/tenants").then((r) => r.json()).then((data: { id: number; codice_cliente: string; ragione_sociale: string }[]) => {
+      if (Array.isArray(data)) setTenantsList(data);
+    }).catch(() => {});
     fetch("/api/tls").then((r) => r.json()).then(setTlsStatus).catch(() => {});
   }, []);
 
@@ -409,13 +412,30 @@ export default function SettingsPage() {
   }
 
   // Users state
-  const [users, setUsers] = useState<{ id: number; username: string; role: string; created_at: string; last_login: string | null }[]>([]);
+  interface UserWithAccess {
+    id: number;
+    username: string;
+    email: string | null;
+    role: string;
+    created_at: string;
+    last_login: string | null;
+    tenant_access?: { tenant_id: number; codice_cliente: string; ragione_sociale: string; role: string }[];
+  }
+  const [users, setUsers] = useState<UserWithAccess[]>([]);
+  const [tenantsList, setTenantsList] = useState<{ id: number; codice_cliente: string; ragione_sociale: string }[]>([]);
   const [newUserOpen, setNewUserOpen] = useState(false);
   const [newUsername, setNewUsername] = useState("");
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState<"superadmin" | "admin" | "viewer">("viewer");
+  const [newUserTenantIds, setNewUserTenantIds] = useState<number[]>([]);
   const [savingUser, setSavingUser] = useState(false);
+  // Edit user dialog
+  const [editUserOpen, setEditUserOpen] = useState(false);
+  const [editUserId, setEditUserId] = useState<number | null>(null);
+  const [editUserRole, setEditUserRole] = useState<"superadmin" | "admin" | "viewer">("admin");
+  const [editUserTenantIds, setEditUserTenantIds] = useState<number[]>([]);
+  const [savingEditUser, setSavingEditUser] = useState(false);
 
   // TLS state
   const [tlsStatus, setTlsStatus] = useState<{
@@ -441,12 +461,18 @@ export default function SettingsPage() {
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: newUsername, password: newUserPassword, role: newUserRole, email: newUserEmail || null }),
+        body: JSON.stringify({
+          username: newUsername,
+          password: newUserPassword,
+          role: newUserRole,
+          email: newUserEmail || null,
+          tenant_ids: newUserRole !== "superadmin" ? newUserTenantIds : [],
+        }),
       });
       if (res.ok) {
         toast.success("Utente creato");
         setNewUserOpen(false);
-        setNewUsername(""); setNewUserEmail(""); setNewUserPassword(""); setNewUserRole("viewer");
+        setNewUsername(""); setNewUserEmail(""); setNewUserPassword(""); setNewUserRole("viewer"); setNewUserTenantIds([]);
         const updated = await fetch("/api/users").then(r => r.json());
         setUsers(updated);
       } else {
@@ -457,19 +483,37 @@ export default function SettingsPage() {
     finally { setSavingUser(false); }
   }
 
-  async function handleToggleUserRole(userId: number, newRole: string) {
-    const res = await fetch(`/api/users/${userId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role: newRole }),
-    });
-    if (res.ok) {
-      toast.success(`Ruolo aggiornato a ${newRole === "admin" ? "Amministratore" : "Solo lettura"}`);
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
-    } else {
-      const data = await res.json();
-      toast.error(data.error || "Errore");
-    }
+  function openEditUser(user: UserWithAccess) {
+    setEditUserId(user.id);
+    setEditUserRole(user.role as "superadmin" | "admin" | "viewer");
+    setEditUserTenantIds(user.tenant_access?.map(a => a.tenant_id) ?? []);
+    setEditUserOpen(true);
+  }
+
+  async function handleSaveEditUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (editUserId == null) return;
+    setSavingEditUser(true);
+    try {
+      const res = await fetch(`/api/users/${editUserId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: editUserRole,
+          tenant_ids: editUserRole !== "superadmin" ? editUserTenantIds : [],
+        }),
+      });
+      if (res.ok) {
+        toast.success("Utente aggiornato");
+        setEditUserOpen(false);
+        const updated = await fetch("/api/users").then(r => r.json());
+        setUsers(updated);
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Errore");
+      }
+    } catch { toast.error("Errore di rete"); }
+    finally { setSavingEditUser(false); }
   }
 
   async function handleDeleteUser(userId: number, username: string) {
@@ -873,7 +917,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Ruolo</Label>
-                  <Select value={newUserRole} onValueChange={(v) => setNewUserRole((v ?? newUserRole) as "superadmin" | "admin" | "viewer")}>
+                  <Select value={newUserRole} onValueChange={(v) => { setNewUserRole((v ?? newUserRole) as "superadmin" | "admin" | "viewer"); if (v === "superadmin") setNewUserTenantIds([]); }}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="superadmin">Super Amministratore</SelectItem>
@@ -882,7 +926,74 @@ export default function SettingsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                {newUserRole !== "superadmin" && tenantsList.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Clienti assegnati</Label>
+                    <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-1">
+                      {tenantsList.map(t => (
+                        <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                          <input
+                            type="checkbox"
+                            checked={newUserTenantIds.includes(t.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) setNewUserTenantIds(prev => [...prev, t.id]);
+                              else setNewUserTenantIds(prev => prev.filter(id => id !== t.id));
+                            }}
+                            className="rounded"
+                          />
+                          <span>{t.ragione_sociale || t.codice_cliente}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Le modifiche avranno effetto al prossimo accesso dell&apos;utente</p>
+                  </div>
+                )}
                 <Button type="submit" disabled={savingUser}>Crea Utente</Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Dialog modifica utente */}
+          <Dialog open={editUserOpen} onOpenChange={setEditUserOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Modifica Utente</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSaveEditUser} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Ruolo</Label>
+                  <Select value={editUserRole} onValueChange={(v) => { setEditUserRole((v ?? editUserRole) as "superadmin" | "admin" | "viewer"); if (v === "superadmin") setEditUserTenantIds([]); }}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="superadmin">Super Amministratore</SelectItem>
+                      <SelectItem value="admin">Amministratore</SelectItem>
+                      <SelectItem value="viewer">Solo lettura</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {editUserRole !== "superadmin" && tenantsList.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Clienti assegnati</Label>
+                    <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-1">
+                      {tenantsList.map(t => (
+                        <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                          <input
+                            type="checkbox"
+                            checked={editUserTenantIds.includes(t.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) setEditUserTenantIds(prev => [...prev, t.id]);
+                              else setEditUserTenantIds(prev => prev.filter(id => id !== t.id));
+                            }}
+                            className="rounded"
+                          />
+                          <span>{t.ragione_sociale || t.codice_cliente}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Le modifiche avranno effetto al prossimo accesso dell&apos;utente</p>
+                  </div>
+                )}
+                <Button type="submit" disabled={savingEditUser}>Salva</Button>
               </form>
             </DialogContent>
           </Dialog>
@@ -894,6 +1005,7 @@ export default function SettingsPage() {
                 <TableHead>Username</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Ruolo</TableHead>
+                <TableHead>Cliente</TableHead>
                 <TableHead>Creato il</TableHead>
                 <TableHead>Ultimo accesso</TableHead>
                 <TableHead className="w-[100px]">Azioni</TableHead>
@@ -903,11 +1015,26 @@ export default function SettingsPage() {
               {users.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.username}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{(user as Record<string, unknown>).email as string || "—"}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{user.email || "—"}</TableCell>
                   <TableCell>
                     <Badge variant={user.role === "superadmin" ? "destructive" : user.role === "admin" ? "default" : "secondary"}>
                       {user.role === "superadmin" ? "Super Admin" : user.role === "admin" ? "Amministratore" : "Solo lettura"}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {user.role === "superadmin" ? (
+                      <Badge variant="outline" className="text-xs">Tutti i clienti</Badge>
+                    ) : user.tenant_access && user.tenant_access.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {user.tenant_access.map(a => (
+                          <Badge key={a.tenant_id} variant="outline" className="text-xs">
+                            {a.ragione_sociale || a.codice_cliente}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Nessuno</span>
+                    )}
                   </TableCell>
                   <TableCell>{new Date(user.created_at).toLocaleDateString("it-IT")}</TableCell>
                   <TableCell>{user.last_login ? new Date(user.last_login).toLocaleString("it-IT") : "Mai"}</TableCell>
@@ -915,8 +1042,8 @@ export default function SettingsPage() {
                     <div className="flex gap-1">
                       <Button
                         size="sm" variant="ghost"
-                        onClick={() => handleToggleUserRole(user.id, user.role === "admin" ? "viewer" : "admin")}
-                        title={user.role === "admin" ? "Declassa a viewer" : "Promuovi ad admin"}
+                        onClick={() => openEditUser(user)}
+                        title="Modifica ruolo e tenant"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>

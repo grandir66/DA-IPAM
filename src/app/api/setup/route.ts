@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
-import { createUser, getUserCount } from "@/lib/db";
+import { createUser, getUserCount, getActiveTenants, setUserTenantAccess } from "@/lib/db";
 import { SetupSchema } from "@/lib/validators";
 import fs from "fs";
 import path from "path";
@@ -8,7 +8,12 @@ import { generateEncryptionKey } from "@/lib/crypto";
 
 export async function GET() {
   const count = getUserCount();
-  return NextResponse.json({ needsSetup: count === 0 });
+  const needsSetup = count === 0;
+  // Restituisci lista tenant solo durante il setup (nessun dato sensibile)
+  const tenants = needsSetup
+    ? getActiveTenants().map(t => ({ id: t.id, codice_cliente: t.codice_cliente, ragione_sociale: t.ragione_sociale }))
+    : [];
+  return NextResponse.json({ needsSetup, tenants });
 }
 
 export async function POST(request: Request) {
@@ -25,9 +30,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
-    const passwordHash = await bcrypt.hash(parsed.data.password, 12);
-    // Primo utente = superadmin: menu Clienti, accesso a tutti i tenant (JWT + getActiveTenants).
-    const user = createUser(parsed.data.username, passwordHash, "superadmin");
+    const { username, password, role, tenant_id } = parsed.data;
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    const user = createUser(
+      username,
+      passwordHash,
+      role ?? "superadmin",
+      role === "admin" && tenant_id ? tenant_id : undefined,
+    );
+
+    // Se admin, collega l'utente al tenant selezionato
+    if (role === "admin" && tenant_id) {
+      setUserTenantAccess(user.id, tenant_id, "admin");
+    }
 
     // Generate encryption key / AUTH_SECRET if not exists, and inject into process.env
     // so the running process can use them immediately (without a restart)

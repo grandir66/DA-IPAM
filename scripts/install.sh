@@ -214,7 +214,8 @@ EnvironmentFile=$APP_DIR/.env.local
 ExecStart=$(which node) $APP_DIR/node_modules/next/dist/bin/next start -p $PORT -H 0.0.0.0
 Restart=on-failure
 RestartSec=5
-PrivateTmp=true
+# No PrivateTmp: su molti LXC/Proxmox CT systemd fallisce con status=226/NAMESPACE
+# (mount namespace non applicabile o in conflitto con il CT).
 
 [Install]
 WantedBy=multi-user.target

@@ -15,6 +15,10 @@
 #   - Opzione container privilegiato (consigliato per nmap/ping)
 #   - Opzionale: clone repository e esecuzione di scripts/install.sh --systemd dentro al CT
 #
+# Variabili d'ambiente (opzionali):
+#   DA_INVENT_CT_NAMESERVERS   — elenco nameserver separati da spazio (default: 1.1.1.1 8.8.8.8) se serve fix DNS nel CT
+#   DA_INVENT_NO_CT_DNS_FIX=1  — non modificare /etc/resolv.conf nel CT (fallisce se il DNS non risolve già)
+#
 set -euo pipefail
 
 # Repository predefinito (modificabile durante il wizard)
@@ -157,6 +161,33 @@ list_templates_on_storage() {
   pveam list "$stor" 2>/dev/null | grep -v '^listing' | grep -E '\.(tar\.zst|tar\.gz|tar\.xz)(\s|$)' || true
 }
 
+# Rimuove codici colore ANSI (pveam available può usare colori in TTY).
+strip_ansi_line() {
+  printf '%s' "$1" | sed 's/\x1b\[[0-9;]*m//g'
+}
+
+# Dalla riga di "pveam available" estrae SOLO il nome file .tar.* (ultimo campo che termina così).
+# Non usare grep -oE su tutta la riga: può matchare sottostringhe errate (es. solo "standard_…_amd64.tar.zst").
+extract_template_filename_from_pveam_line() {
+  local raw="$1"
+  [[ -n "$raw" ]] || { echo ""; return; }
+  local line
+  line=$(strip_ansi_line "$raw")
+  local tname
+  tname=$(echo "$line" | awk '{
+    for (i = 1; i <= NF; i++) {
+      if ($i ~ /\.tar\.(zst|gz|xz)$/) fname = $i
+    }
+    END { print fname }
+  }')
+  if [[ -n "$tname" ]]; then
+    echo "$tname"
+    return
+  fi
+  # Fallback: ultimo token che assomiglia a un archivio template
+  echo "$line" | grep -oE '[^[:space:]]+\.(tar\.zst|tar\.gz|tar\.xz)' | tail -n 1
+}
+
 pick_template_storage() {
   pick_numbered_storage vztmpl "Storage per i template LXC (dove risiedono i .tar.zst / download pveam)"
 }
@@ -164,16 +195,19 @@ pick_template_storage() {
 # Se non ci sono template sullo storage: elenco da pveam available e scelta numerata → solo nome file .tar.*
 pick_available_template_filename() {
   info "Aggiornamento indice template (pveam update)…"
-  pveam update || true
+  if ! pveam update; then
+    warn "pveam update non è riuscito (rete/DNS?). L'indice template potrebbe essere obsoleto e il download fallire."
+  fi
   local avail
-  avail=$(pveam available --section system 2>/dev/null | grep -E '\.(tar\.zst|tar\.gz|tar\.xz)(\s|$)' || true)
+  avail=$(pveam available --section system 2>/dev/null | grep -E '\.(tar\.zst|tar\.gz|tar\.xz)' || true)
   if [[ -z "$(echo "$avail" | tr -d '[:space:]')" ]]; then
-    die "Nessun template in 'pveam available'. Verifica la connessione Internet del nodo Proxmox."
+    die "Nessun template in 'pveam available'. Verifica la connessione Internet del nodo Proxmox e che il nodo risolva download.proxmox.com."
   fi
   local filtered
   filtered=$(echo "$avail" | grep -iE 'debian|ubuntu' || echo "$avail")
   echo "" >&2
   echo "Template scaricabili (sezione system). Debian/Ubuntu consigliati per DA-INVENT:" >&2
+  echo " (Su Proxmox VE 7 alcuni template Ubuntu recenti possono mancare: in quel caso usa Debian 12 o aggiorna a PVE 8+.)" >&2
   echo "$filtered" | nl -w3 -s') ' >&2
   echo "" >&2
   read -r -p "Numero riga del template da scaricare [1]: " num
@@ -182,8 +216,12 @@ pick_available_template_filename() {
   line=$(echo "$filtered" | sed -n "${num}p")
   [[ -n "$line" ]] || die "Selezione template non valida."
   local tname
-  tname=$(echo "$line" | grep -oE '[a-zA-Z0-9._+-]+\.(tar\.zst|tar\.gz|tar\.xz)' | tail -1)
+  tname=$(extract_template_filename_from_pveam_line "$line")
   [[ -n "$tname" ]] || die "Impossibile ricavare il nome archivio dalla riga selezionata."
+  # Nome esatto atteso da pveam download (deve comparire in pveam available)
+  if ! echo "$avail" | grep -qF "$tname"; then
+    warn "Il nome estratto '$tname' non compare nell'elenco appena scaricato; potrebbe esserci un problema di formato. Riprova dopo 'pveam update'."
+  fi
   echo "$tname"
 }
 
@@ -198,7 +236,15 @@ pick_template() {
     local tname
     tname=$(pick_available_template_filename)
     info "Download su storage '$tpl_stor' (può richiedere alcuni minuti)…"
-    pveam download "$tpl_stor" "$tname" || die "Download template fallito."
+    info "Template: $tname"
+    if ! pveam download "$tpl_stor" "$tname"; then
+      echo "" >&2
+      warn "Download fallito (es. 400 'no such template'). Prova da shell:"
+      echo "    pveam update" >&2
+      echo "    pveam available --section system | grep -E 'ubuntu|debian'" >&2
+      echo "    pveam download $tpl_stor <copia-incolla del nome file .tar.zst dall'ultima colonna>" >&2
+      die "Download template fallito."
+    fi
     echo "$tpl_stor|$tname"
     return
   fi
@@ -240,6 +286,61 @@ build_net0() {
   echo "$net"
 }
 
+# True se il CT risolve almeno un mirror dei repository (apt).
+ct_dns_can_resolve_repos() {
+  local vmid="$1"
+  pct exec "$vmid" -- bash -c 'getent hosts archive.ubuntu.com >/dev/null 2>&1 || getent hosts deb.debian.org >/dev/null 2>&1'
+}
+
+# Sostituisce /etc/resolv.conf con nameserver espliciti (tipico fix LXC senza DNS funzionante).
+# NS da DA_INVENT_CT_NAMESERVERS o default Cloudflare + Google.
+apply_ct_dns_public_resolv() {
+  local vmid="$1"
+  local ns_list="${DA_INVENT_CT_NAMESERVERS:-1.1.1.1 8.8.8.8}"
+  pct exec "$vmid" -- env NS_LIST="$ns_list" bash -ce '
+set -e
+if getent hosts archive.ubuntu.com >/dev/null 2>&1; then exit 0; fi
+if getent hosts deb.debian.org >/dev/null 2>&1; then exit 0; fi
+if [[ -L /etc/resolv.conf ]]; then
+  rm -f /etc/resolv.conf
+elif [[ -f /etc/resolv.conf ]]; then
+  cp -a /etc/resolv.conf /etc/resolv.conf.da-invent-orig.bak 2>/dev/null || true
+fi
+: > /etc/resolv.conf
+for ns in $NS_LIST; do
+  printf "nameserver %s\n" "$ns" >> /etc/resolv.conf
+done
+chmod 644 /etc/resolv.conf
+'
+}
+
+# Prima di apt nel CT: verifica DNS; opzionalmente chiede e applica resolv.conf con DNS pubblici.
+ensure_ct_dns_for_apt() {
+  local vmid="$1"
+  if ct_dns_can_resolve_repos "$vmid"; then
+    return 0
+  fi
+  warn "Il container non risolve i nomi Internet (es. archive.ubuntu.com): apt non può scaricare i pacchetti."
+  warn "Spesso succede se manca il gateway, il bridge non ha accesso alla LAN o /etc/resolv.conf nel CT è vuoto/errato."
+  if [[ "${DA_INVENT_NO_CT_DNS_FIX:-}" == "1" ]]; then
+    die "DNS non funzionante nel CT e DA_INVENT_NO_CT_DNS_FIX=1 impedisce la correzione automatica. Entra con: pct enter $vmid — verifica ping al gateway, poi imposta nameserver (es. echo nameserver 1.1.1.1 >> /etc/resolv.conf) o usa il DNS della tua LAN."
+  fi
+  local fix="S"
+  if [[ -t 0 ]]; then
+    read -r -p "Impostare nel CT /etc/resolv.conf con DNS pubblici (${DA_INVENT_CT_NAMESERVERS:-1.1.1.1 8.8.8.8})? [S/n]: " fix
+    fix="${fix:-S}"
+  fi
+  if [[ "$fix" =~ ^[nN] ]]; then
+    die "Senza DNS risolvibile, apt fallirà. Correggi la rete del CT o rilancia accettando il fix DNS."
+  fi
+  info "Applicazione nameserver nel CT (backup in /etc/resolv.conf.da-invent-orig.bak se presente)…"
+  apply_ct_dns_public_resolv "$vmid"
+  if ! ct_dns_can_resolve_repos "$vmid"; then
+    die "DNS ancora non funzionante nel CT. Dal nodo verifica: ping al gateway dalla LAN, firewall, e 'pct exec $vmid -- ping -c1 1.1.1.1'. Se il ping a IP funziona ma non i nomi, controlla solo resolv.conf / systemd-resolved nel CT."
+  fi
+  info "DNS nel CT: OK (test archive.ubuntu.com / deb.debian.org)."
+}
+
 main() {
   require_root
   require_proxmox
@@ -253,6 +354,8 @@ main() {
   echo "  Il container si collega solo a un bridge Linux (vmbr0, vmbr1, …)."
   echo "  Se usi il Wi‑Fi sul Proxmox, deve essere già configurato come bridge"
   echo "  nel host (stesso nome che scegli qui). LXC non seleziona wlan direttamente."
+  echo "  Se dopo l'avvio apt nel CT segnala «Temporary failure resolving», è un problema"
+  echo "  DNS/rete nel container: lo script può proporre DNS pubblici in /etc/resolv.conf."
   echo ""
 
   # --- OS / template ---
@@ -369,6 +472,8 @@ main() {
       [[ "$n" -lt 120 ]] || { warn "Timeout: installa manualmente con pct enter $vmid"; exit 0; }
     done
     sleep 5
+
+    ensure_ct_dns_for_apt "$vmid"
 
     info "Aggiornamento pacchetti e strumenti minimi per il clone Git (apt completo in install.sh)..."
     pct exec "$vmid" -- bash -c "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq git curl ca-certificates"

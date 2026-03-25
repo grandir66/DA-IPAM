@@ -17,8 +17,7 @@ EnvironmentFile=/opt/da-invent/.env.local
 ExecStart=/opt/da-invent/node_modules/.bin/tsx /opt/da-invent/server.ts
 Restart=on-failure
 RestartSec=5
-
-PrivateTmp=true
+# No PrivateTmp: evita 226/NAMESPACE su LXC/Proxmox (vedi scripts/install.sh).
 
 [Install]
 WantedBy=multi-user.target

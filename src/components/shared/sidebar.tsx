@@ -26,6 +26,7 @@ import {
   FileKey,
   FolderTree,
   Building2,
+  ClipboardList,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -242,6 +243,21 @@ export function Sidebar() {
         >
           <FolderTree className="h-4 w-4" />
           Active Directory
+        </Link>
+
+        {/* Config Cliente */}
+        <Link
+          href="/client-config"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            isActive("/client-config")
+              ? "bg-sidebar-primary text-sidebar-primary-foreground"
+              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <ClipboardList className="h-4 w-4" />
+          Config Cliente
         </Link>
 
         {/* ═══ SEPARATORE SISTEMA ═══ */}

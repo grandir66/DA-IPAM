@@ -225,14 +225,20 @@ export const SetupSchema = z.object({
   username: z.string().trim().min(3, "Username minimo 3 caratteri").max(50),
   password: z.string().min(8, "Password minimo 8 caratteri").max(100),
   confirm_password: z.string(),
-  role: z.enum(["superadmin", "admin"]).default("superadmin"),
-  tenant_id: z.coerce.number().int().positive().nullable().optional(),
+  /** Modalità installazione: single = un cliente, multi = MSP/multi-tenant */
+  mode: z.enum(["single", "multi"]).default("single"),
+  /** Campi obbligatori in modalità single-tenant */
+  codice_cliente: z.string().trim().min(1, "Codice cliente obbligatorio").max(50).optional(),
+  ragione_sociale: z.string().trim().min(1, "Ragione sociale obbligatoria").max(200).optional(),
 }).refine((data) => data.password === data.confirm_password, {
   message: "Le password non corrispondono",
   path: ["confirm_password"],
-}).refine((data) => data.role !== "admin" || (data.tenant_id != null && data.tenant_id > 0), {
-  message: "Seleziona un cliente per il ruolo Amministratore",
-  path: ["tenant_id"],
+}).refine((data) => data.mode !== "single" || (data.codice_cliente && data.codice_cliente.length > 0), {
+  message: "Codice cliente obbligatorio per installazione singolo cliente",
+  path: ["codice_cliente"],
+}).refine((data) => data.mode !== "single" || (data.ragione_sociale && data.ragione_sociale.length > 0), {
+  message: "Ragione sociale obbligatoria per installazione singolo cliente",
+  path: ["ragione_sociale"],
 });
 
 const fingerprintClassEnum = z.enum(DEVICE_CLASSIFICATIONS as unknown as [string, ...string[]]);

@@ -161,11 +161,14 @@ export async function discoverNetwork(
 
   backgroundTask.catch(
     (error) => {
-      console.error("[Discovery] Fatal error:", error);
+      const msg = error instanceof Error ? error.message : "Errore sconosciuto";
+      const stack = error instanceof Error ? error.stack : "";
+      console.error(`[Discovery] Fatal error (tenant: ${tenantCode ?? "DEFAULT"}, network: ${networkId}):`, msg, stack);
       const p = getProgressMap().get(id);
       if (p) {
         p.status = "failed";
-        p.error = error instanceof Error ? error.message : "Errore sconosciuto";
+        p.error = msg;
+        p.logs = [...(p.logs ?? []), `[ERRORE] ${msg}`];
       }
     }
   );
@@ -260,6 +263,9 @@ async function runDiscovery(
   dnsServer?: string | null,
   discoverOpts?: DiscoverNetworkOptions
 ): Promise<DiscoveryResult> {
+  const tenantInBackground = getCurrentTenantCode();
+  console.info(`[Discovery] runDiscovery started — tenant context: ${tenantInBackground ?? "NONE (fallback to DEFAULT)"}, network: ${networkId}, scanType: ${scanType}`);
+
   const startTime = Date.now();
   const progressRef = getProgressMap().get(scanId);
   if (!progressRef) throw new Error(`Scan progress not found for ${scanId}`);

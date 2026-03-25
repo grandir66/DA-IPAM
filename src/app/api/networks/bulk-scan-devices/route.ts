@@ -159,8 +159,7 @@ export async function POST(request: Request) {
             if (community) {
               const { getSnmpStpInfo } = await import("@/lib/devices/snmp-stp-info");
               const snmpMod = await import("net-snmp");
-              const snmpPort = device.protocol === "snmp_v2" || device.protocol === "snmp_v3" ? (device.port || 161) : 161;
-              const session = snmpMod.createSession(device.host, community, { port: snmpPort, timeout: 8000 });
+              const session = snmpMod.createSession(device.host, community, { port: 161, timeout: 8000 });
               const snmpWalk = (oid: string) => new Promise<{ oid: string; value: Buffer | string | number }[]>((resolve, reject) => {
                 const results: { oid: string; value: Buffer | string | number }[] = [];
                 session.subtree(oid, (vbs: Array<{ oid: string; value: Buffer | string | number }>) => { for (const vb of vbs) results.push({ oid: vb.oid, value: vb.value }); }, (err: Error | undefined) => { session.close(); if (err) reject(err); else resolve(results); });

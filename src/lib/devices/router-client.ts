@@ -286,7 +286,7 @@ async function createSnmpArpClient(
           try { session.close(); } catch { /* ignore */ }
           reject(new Error(`SNMP walk timeout for OID ${oid}`));
         }
-      }, 30000);
+      }, 15000);
 
       session.subtree(
         oid,

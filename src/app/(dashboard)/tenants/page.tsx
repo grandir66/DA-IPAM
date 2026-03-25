@@ -25,7 +25,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Pencil, Trash2, Building2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface Tenant {
@@ -81,7 +81,7 @@ const emptyForm: TenantForm = {
 
 export default function TenantsPage() {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: session, update: updateSession } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role;
   const isSuperadmin = role === "superadmin";
 
@@ -212,6 +212,19 @@ export default function TenantsPage() {
       router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore nell'eliminazione");
+    }
+  };
+
+  const handleConfigure = async (tenant: Tenant) => {
+    try {
+      // Switch JWT al tenant selezionato
+      await updateSession({ tenantCode: tenant.codice_cliente });
+      // Reset onboarding flag per questo tenant
+      await fetch("/api/onboarding/reset", { method: "POST" });
+      // Naviga al wizard
+      router.push("/onboarding");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Errore nella configurazione");
     }
   };
 
@@ -450,6 +463,14 @@ export default function TenantsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleConfigure(tenant)}
+                            title="Configura cliente (wizard)"
+                          >
+                            <Settings2 className="h-4 w-4 text-primary" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"

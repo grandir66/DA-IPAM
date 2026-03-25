@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { isOnboardingCompleted } from "@/lib/db";
+import { isTenantOnboardingCompleted, isOnboardingCompleted } from "@/lib/db-hub";
 import { OnboardingWizard } from "./onboarding-wizard";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,13 @@ export default async function OnboardingPage() {
   if (!session) {
     redirect("/login");
   }
-  if (isOnboardingCompleted()) {
+  const tenantCode = (session.user as Record<string, unknown>)?.tenantCode as string | null;
+  // Superadmin aggregato: no wizard
+  if (!tenantCode || tenantCode === "__ALL__") {
+    redirect("/");
+  }
+  // Check per-tenant first, fallback to global
+  if (isTenantOnboardingCompleted(tenantCode) || isOnboardingCompleted()) {
     redirect("/");
   }
   return <OnboardingWizard />;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getInventoryAssets } from "@/lib/db";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { joinCsvRow } from "@/lib/csv-utils";
 
 /** Export inventario in CSV (campi essenziali per asset management) */
 export async function GET(request: NextRequest) {
@@ -46,20 +47,15 @@ export async function GET(request: NextRequest) {
     ];
 
     const csvRows = [
-      headers.join(","),
+      joinCsvRow(headers),
       ...assets.map((a) =>
-        headers
-          .map((key) => {
-            const val = String((a as unknown as Record<string, unknown>)[key] ?? "");
-            return val.includes(",") || val.includes('"') || val.includes("\n")
-              ? `"${val.replace(/"/g, '""')}"`
-              : val;
-          })
-          .join(",")
+        joinCsvRow(
+          headers.map((key) => String((a as unknown as Record<string, unknown>)[key] ?? ""))
+        )
       ),
     ];
 
-    return new NextResponse(csvRows.join("\n"), {
+    return new NextResponse("\uFEFF" + csvRows.join("\n"), {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="inventario-export-${new Date().toISOString().slice(0, 10)}.csv"`,

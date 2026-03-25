@@ -2134,6 +2134,20 @@ export function getNetworkById(id: number): Network | undefined {
   return getDb().prepare("SELECT * FROM networks WHERE id = ?").get(id) as Network | undefined;
 }
 
+/** Router ARP associato alla subnet (tabella network_router), se presente. */
+export function getNetworkRouterBinding(networkId: number): { id: number; name: string; host: string } | null {
+  const row = getDb()
+    .prepare(
+      `SELECT nd.id, nd.name, nd.host
+       FROM network_router nr
+       JOIN network_devices nd ON nd.id = nr.router_id
+       WHERE nr.network_id = ?
+       LIMIT 1`
+    )
+    .get(networkId) as { id: number; name: string; host: string } | undefined;
+  return row ?? null;
+}
+
 export function getNetworkContainingIp(ip: string): Network | undefined {
   const { isIpInCidr } = require("./utils") as { isIpInCidr: (ip: string, cidr: string) => boolean };
   const networks = getDb().prepare("SELECT * FROM networks").all() as Network[];

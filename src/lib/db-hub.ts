@@ -713,9 +713,19 @@ export function getSetting(key: string): string | null {
   return row?.value ?? null;
 }
 
-/** Configurazione guidata iniziale completata (impostazione `onboarding_completed`). */
+/** Configurazione guidata iniziale completata (globale — backward compat). */
 export function isOnboardingCompleted(): boolean {
   return getSetting("onboarding_completed") === "1";
+}
+
+/** Configurazione guidata completata per uno specifico tenant. */
+export function isTenantOnboardingCompleted(tenantCode: string): boolean {
+  return getSetting(`onboarding_completed:${tenantCode}`) === "1";
+}
+
+/** Imposta il flag onboarding completato per un tenant specifico. */
+export function setTenantOnboardingCompleted(tenantCode: string, completed: boolean): void {
+  setSetting(`onboarding_completed:${tenantCode}`, completed ? "1" : "0");
 }
 
 export function getAllSettings(): Record<string, string> {

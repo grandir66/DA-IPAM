@@ -36,7 +36,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CredentialAssignmentFields } from "@/components/shared/credential-assignment-fields";
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { Pagination } from "@/components/shared/pagination";
-import { Plus, Trash2, Network, Key, Scan, X, Search, Router } from "lucide-react";
+import { Plus, Trash2, Network, Key, Scan, X, Search, Router, Download } from "lucide-react";
 import { toast } from "sonner";
 import type { NetworkWithStats } from "@/types";
 
@@ -84,6 +84,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
   const [assignSnmpCredentialId, setAssignSnmpCredentialId] = useState<string | null>(null);
   const [assignSaving, setAssignSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
@@ -264,7 +265,48 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
       toast.error("Errore nella scansione");
     }
     setScanning(false);
-  };
+  }
+
+  async function handleExportCsv() {
+    if (selectedIds.size === 0) {
+      toast.error("Seleziona almeno una subnet");
+      return;
+    }
+    setExportingCsv(true);
+    try {
+      const res = await fetch("/api/networks/export-csv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network_ids: Array.from(selectedIds) }),
+      });
+      if (!res.ok) {
+        let msg = "Export non riuscito";
+        try {
+          const data = (await res.json()) as { error?: string };
+          if (data.error) msg = data.error;
+        } catch {
+          /* ignore */
+        }
+        toast.error(msg);
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition");
+      const m = cd?.match(/filename="([^"]+)"/);
+      const filename = m?.[1] ?? `subnet-hosts-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("CSV esportato");
+    } catch {
+      toast.error("Errore durante l'export");
+    } finally {
+      setExportingCsv(false);
+    }
+  }
 
   function resetQuickRouterForm() {
     setQuickRouterVendor("mikrotik");
@@ -415,6 +457,10 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
               <Button variant="outline" size="sm" onClick={handleBulkScan} disabled={scanning}>
                 <Scan className="h-4 w-4 mr-2" />
                 {scanning ? "Scansione..." : "Scansiona dispositivi"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={exportingCsv}>
+                <Download className="h-4 w-4 mr-2" />
+                {exportingCsv ? "Export…" : "Esporta CSV host"}
               </Button>
               <Button variant="ghost" size="icon" onClick={clearSelection}>
                 <X className="h-4 w-4" />

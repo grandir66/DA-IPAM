@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
-import { setSetting } from "@/lib/db";
+import { setTenantOnboardingCompleted } from "@/lib/db-hub";
+import { auth } from "@/lib/auth";
 
 /**
- * Reimposta il flag di completamento wizard così l'utente può tornare a /onboarding.
- * Solo amministratori (dopo la prima configurazione la sessione ha sempre ruolo admin).
+ * Reimposta il flag di completamento wizard per il tenant corrente.
+ * Solo amministratori.
  */
 export async function POST() {
   const adminCheck = await requireAdmin();
   if (isAuthError(adminCheck)) return adminCheck;
+  const session = await auth();
+  const tenantCode = (session?.user as Record<string, unknown>)?.tenantCode as string | null;
+  if (!tenantCode || tenantCode === "__ALL__") {
+    return NextResponse.json({ error: "Seleziona un tenant specifico" }, { status: 400 });
+  }
   try {
-    setSetting("onboarding_completed", "0");
+    setTenantOnboardingCompleted(tenantCode, false);
     return NextResponse.json({ success: true });
   } catch (e) {
     console.error("[onboarding/reset]", e);

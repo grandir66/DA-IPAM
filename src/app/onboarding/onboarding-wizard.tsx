@@ -90,7 +90,7 @@ export function OnboardingWizard() {
   const finishAndExit = useCallback(async () => {
     setBusy(true);
     try {
-      await putSetting("onboarding_completed", "1");
+      await fetch("/api/onboarding/complete", { method: "POST" });
       window.location.assign("/");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Errore");
@@ -269,7 +269,7 @@ export function OnboardingWizard() {
     }
     const net = (await res.json()) as { id: number };
     toast.success("Rete creata.");
-    await putSetting("onboarding_completed", "1");
+    await fetch("/api/onboarding/complete", { method: "POST" });
     window.location.assign(`/networks/${net.id}`);
   }, [
     netName,

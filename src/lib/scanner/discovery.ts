@@ -1,4 +1,5 @@
 import { getAllHostIps } from "@/lib/utils";
+import { getCurrentTenantCode, withTenant } from "@/lib/db-tenant";
 import { pingSweep } from "./ping";
 import { nmapDiscoverHosts, nmapPortScan, isNmapAvailable } from "./nmap";
 import {
@@ -148,7 +149,17 @@ export async function discoverNetwork(
 
   getProgressMap().set(id, progress);
 
-  runDiscovery(id, network.id, network.cidr, ips, scanType, nmapArgs, snmpCommunity, network.dns_server ?? null, options).catch(
+  // Cattura il contesto tenant corrente per preservarlo nel background task
+  const tenantCode = getCurrentTenantCode();
+
+  const runInBackground = () =>
+    runDiscovery(id, network.id, network.cidr, ips, scanType, nmapArgs, snmpCommunity, network.dns_server ?? null, options);
+
+  const backgroundTask = tenantCode
+    ? withTenant(tenantCode, runInBackground)
+    : runInBackground();
+
+  backgroundTask.catch(
     (error) => {
       console.error("[Discovery] Fatal error:", error);
       const p = getProgressMap().get(id);

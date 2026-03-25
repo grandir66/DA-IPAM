@@ -25,7 +25,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Pencil, Trash2, Building2, Settings2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface Tenant {
@@ -462,20 +462,21 @@ export default function TenantsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-2">
                           <Button
-                            variant="ghost"
-                            size="icon"
+                            variant="outline"
+                            size="sm"
                             onClick={() => handleConfigure(tenant)}
-                            title="Configura cliente (wizard)"
+                            className="text-primary border-primary/30 hover:bg-primary/10"
                           >
-                            <Settings2 className="h-4 w-4 text-primary" />
+                            <Wand2 className="h-3.5 w-3.5 mr-1.5" />
+                            Configura
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
                             onClick={() => openEdit(tenant)}
-                            title="Modifica"
+                            title="Modifica anagrafica"
                           >
                             <Pencil className="h-4 w-4" />
                           </Button>

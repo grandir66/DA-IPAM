@@ -5,21 +5,24 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Network, Monitor, Wifi, WifiOff, HelpCircle, Shield, AlertTriangle, Activity } from "lucide-react";
 import { DashboardClient } from "./dashboard-client";
+import { getServerTenantCode } from "@/lib/api-tenant";
+import { withTenant } from "@/lib/db-tenant";
 
 export const dynamic = "force-dynamic";
 
-export default function DashboardPage() {
-  // Redirect to setup if no users exist
+export default async function DashboardPage() {
+  // Redirect to setup if no users exist (hub DB, no tenant context needed)
   const userCount = getUserCount();
   if (userCount === 0) {
     redirect("/setup");
   }
 
-  const stats = getDashboardStats();
-  const networks = getNetworks();
-  const recentActivity = getRecentActivity(10);
-  const monitorStats = getKnownHostStats();
-  const offlineKnown = getOfflineKnownHosts();
+  const tenantCode = await getServerTenantCode();
+  const stats = withTenant(tenantCode, () => getDashboardStats());
+  const networks = withTenant(tenantCode, () => getNetworks());
+  const recentActivity = withTenant(tenantCode, () => getRecentActivity(10));
+  const monitorStats = withTenant(tenantCode, () => getKnownHostStats());
+  const offlineKnown = withTenant(tenantCode, () => getOfflineKnownHosts());
 
   return (
     <div className="space-y-4">

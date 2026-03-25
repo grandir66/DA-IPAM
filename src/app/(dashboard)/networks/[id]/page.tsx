@@ -10,6 +10,8 @@ import {
   getHostValidatedProtocolsByNetwork,
 } from "@/lib/db";
 import { NetworkDetailClient } from "./network-detail-client";
+import { getServerTenantCode } from "@/lib/api-tenant";
+import { withTenant } from "@/lib/db-tenant";
 
 export default async function NetworkDetailPage({
   params,
@@ -17,30 +19,31 @@ export default async function NetworkDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const network = getNetworkById(Number(id));
+  const tenantCode = await getServerTenantCode();
+  const network = withTenant(tenantCode, () => getNetworkById(Number(id)));
 
   if (!network) {
     notFound();
   }
 
   const nid = Number(id);
-  const hosts = getHostsByNetworkWithDevices(nid);
-  const routerId = getNetworkRouterId(nid);
-  const routers = getRouters();
-  const initialCredentialChains = {
+  const hosts = withTenant(tenantCode, () => getHostsByNetworkWithDevices(nid));
+  const routerId = withTenant(tenantCode, () => getNetworkRouterId(nid));
+  const routers = withTenant(tenantCode, () => getRouters());
+  const initialCredentialChains = withTenant(tenantCode, () => ({
     windows: getNetworkHostCredentialIds(nid, "windows"),
     linux: getNetworkHostCredentialIds(nid, "linux"),
     ssh: getNetworkHostCredentialIds(nid, "ssh"),
     snmp: getNetworkHostCredentialIds(nid, "snmp"),
-  };
+  }));
 
   // v2: lista unificata credenziali subnet
-  const networkCredentials = getNetworkCredentials(nid);
+  const networkCredentials = withTenant(tenantCode, () => getNetworkCredentials(nid));
   const initialCredentialIds = networkCredentials.map((c) => c.credential_id);
-  const availableSources = getNetworksWithCredentials().filter((n) => n.id !== nid);
+  const availableSources = withTenant(tenantCode, () => getNetworksWithCredentials()).filter((n) => n.id !== nid);
 
   // Badge: protocolli validati per host
-  const validatedMap = getHostValidatedProtocolsByNetwork(nid);
+  const validatedMap = withTenant(tenantCode, () => getHostValidatedProtocolsByNetwork(nid));
   const hostValidatedProtocols: Record<number, string[]> = {};
   for (const [hostId, protocols] of validatedMap) {
     hostValidatedProtocols[hostId] = protocols;

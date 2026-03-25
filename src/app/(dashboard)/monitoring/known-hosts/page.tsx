@@ -1,8 +1,11 @@
 import { getKnownHostsWithNetwork } from "@/lib/db";
 import { KnownHostsClient } from "./known-hosts-client";
+import { getServerTenantCode } from "@/lib/api-tenant";
+import { withTenant } from "@/lib/db-tenant";
 
-export default function KnownHostsMonitoringPage() {
-  const rows = getKnownHostsWithNetwork();
+export default async function KnownHostsMonitoringPage() {
+  const tenantCode = await getServerTenantCode();
+  const rows = withTenant(tenantCode, () => getKnownHostsWithNetwork());
   return (
     <div className="space-y-4">
       <div>

@@ -38,6 +38,18 @@ export const authConfig: NextAuthConfig = {
       // Allow client-side tenant switch via session update
       if (trigger === "update" && session?.tenantCode) {
         token.tenantCode = session.tenantCode;
+        // Ricarica lista tenant per superadmin (potrebbe aver creato nuovi clienti)
+        if (token.role === "superadmin") {
+          try {
+            const { getActiveTenants } = await import("./db-hub");
+            const allTenants = getActiveTenants();
+            token.tenants = allTenants.map((t: { codice_cliente: string; ragione_sociale: string }) => ({
+              code: t.codice_cliente,
+              name: t.ragione_sociale,
+              role: "superadmin",
+            }));
+          } catch { /* fallback: mantieni lista esistente */ }
+        }
       }
       return token;
     },

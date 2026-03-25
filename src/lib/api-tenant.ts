@@ -45,5 +45,17 @@ export async function withTenantFromSession<T>(
   return withTenant(tenantCode, () => fn());
 }
 
+/**
+ * Helper per Server Components: legge il tenantCode dalla sessione JWT.
+ * Restituisce il codice tenant da usare con withTenant().
+ * Se superadmin con __ALL__ o nessun tenant, fallback a DEFAULT.
+ */
+export async function getServerTenantCode(): Promise<string> {
+  const session = (await auth()) as TenantSession | null;
+  const code = session?.user?.tenantCode;
+  if (!code || code === "__ALL__") return "DEFAULT";
+  return code;
+}
+
 // Re-export for convenience
 export { queryAllTenants };

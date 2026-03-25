@@ -69,15 +69,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         updateUserLastLogin(user.id);
 
-        const tenants = getUserTenantAccess(user.id);
+        // Superadmin vede tutti i tenant attivi (come utente Domarc),
+        // gli altri solo quelli con accesso esplicito in user_tenant_access
+        let tenantList: Array<{ code: string; name: string; role: string }>;
+        if (user.role === "superadmin") {
+          const { getActiveTenants } = await import("./db-hub");
+          const allTenants = getActiveTenants();
+          tenantList = allTenants.map(t => ({ code: t.codice_cliente, name: t.ragione_sociale, role: "superadmin" }));
+        } else {
+          const tenants = getUserTenantAccess(user.id);
+          tenantList = tenants.map(t => ({ code: t.codice_cliente, name: t.ragione_sociale, role: t.role }));
+        }
 
         return {
           id: String(user.id),
           name: user.username,
           email: user.email || `${user.username}@da-invent.local`,
           role: user.role,
-          tenants: tenants.map(t => ({ code: t.codice_cliente, name: t.ragione_sociale, role: t.role })),
-          tenantCode: user.role === "superadmin" ? "__ALL__" : (tenants.length === 1 ? tenants[0].codice_cliente : null),
+          tenants: tenantList,
+          tenantCode: user.role === "superadmin" ? "__ALL__" : (tenantList.length === 1 ? tenantList[0].code : null),
         };
       },
     }),

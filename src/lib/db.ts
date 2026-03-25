@@ -4948,33 +4948,14 @@ export interface FingerprintClassificationMapRow {
 }
 
 export function getAllFingerprintClassificationMapRows(): FingerprintClassificationMapRow[] {
-  try {
-    return getDb()
-      .prepare(`SELECT * FROM fingerprint_classification_map ORDER BY priority ASC, id ASC`)
-      .all() as FingerprintClassificationMapRow[];
-  } catch {
-    return [];
-  }
+  const hub = require("./db-hub");
+  return hub.getAllFingerprintClassificationMapRows();
 }
 
 /** Regole attive per discovery/refresh (priorità crescente). */
 export function getFingerprintClassificationRulesForResolve(): FingerprintUserRule[] {
-  try {
-    const rows = getDb()
-      .prepare(
-        `SELECT match_kind, pattern, classification, priority FROM fingerprint_classification_map WHERE enabled = 1 ORDER BY priority ASC, id ASC`
-      )
-      .all() as { match_kind: string; pattern: string; classification: string; priority: number }[];
-    return rows.map((r) => ({
-      match_kind: r.match_kind as "exact" | "contains",
-      pattern: r.pattern,
-      classification: r.classification,
-      priority: r.priority,
-      enabled: true,
-    }));
-  } catch {
-    return [];
-  }
+  const hub = require("./db-hub");
+  return hub.getFingerprintClassificationRulesForResolve();
 }
 
 export function createFingerprintClassificationMapRow(input: {
@@ -4985,23 +4966,8 @@ export function createFingerprintClassificationMapRow(input: {
   enabled: boolean;
   note?: string | null;
 }): FingerprintClassificationMapRow {
-  const result = getDb()
-    .prepare(
-      `INSERT INTO fingerprint_classification_map (match_kind, pattern, classification, priority, enabled, note, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`
-    )
-    .run(
-      input.match_kind,
-      input.pattern.trim(),
-      input.classification.trim(),
-      input.priority,
-      input.enabled ? 1 : 0,
-      input.note?.trim() || null
-    );
-  const id = Number(result.lastInsertRowid);
-  const row = getDb().prepare("SELECT * FROM fingerprint_classification_map WHERE id = ?").get(id) as FingerprintClassificationMapRow | undefined;
-  if (!row) throw new Error("Inserimento regola fallito");
-  return row;
+  const hub = require("./db-hub");
+  return hub.createFingerprintClassificationMapRow(input);
 }
 
 export function updateFingerprintClassificationMapRow(
@@ -5015,41 +4981,13 @@ export function updateFingerprintClassificationMapRow(
     note?: string | null;
   }
 ): FingerprintClassificationMapRow | undefined {
-  const existing = getDb().prepare("SELECT id FROM fingerprint_classification_map WHERE id = ?").get(id) as { id: number } | undefined;
-  if (!existing) return undefined;
-  const sets: string[] = ["updated_at = datetime('now')"];
-  const vals: unknown[] = [];
-  if (input.match_kind !== undefined) {
-    sets.push("match_kind = ?");
-    vals.push(input.match_kind);
-  }
-  if (input.pattern !== undefined) {
-    sets.push("pattern = ?");
-    vals.push(input.pattern.trim());
-  }
-  if (input.classification !== undefined) {
-    sets.push("classification = ?");
-    vals.push(input.classification.trim());
-  }
-  if (input.priority !== undefined) {
-    sets.push("priority = ?");
-    vals.push(input.priority);
-  }
-  if (input.enabled !== undefined) {
-    sets.push("enabled = ?");
-    vals.push(input.enabled ? 1 : 0);
-  }
-  if (input.note !== undefined) {
-    sets.push("note = ?");
-    vals.push(input.note?.trim() || null);
-  }
-  vals.push(id);
-  getDb().prepare(`UPDATE fingerprint_classification_map SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
-  return getDb().prepare("SELECT * FROM fingerprint_classification_map WHERE id = ?").get(id) as FingerprintClassificationMapRow | undefined;
+  const hub = require("./db-hub");
+  return hub.updateFingerprintClassificationMapRow(id, input);
 }
 
 export function deleteFingerprintClassificationMapRow(id: number): boolean {
-  return getDb().prepare("DELETE FROM fingerprint_classification_map WHERE id = ?").run(id).changes > 0;
+  const hub = require("./db-hub");
+  return hub.deleteFingerprintClassificationMapRow(id);
 }
 
 // ========================
@@ -5080,15 +5018,13 @@ export interface DeviceFingerprintRuleRow {
 }
 
 export function getDeviceFingerprintRules(): DeviceFingerprintRuleRow[] {
-  return getDb()
-    .prepare("SELECT * FROM device_fingerprint_rules ORDER BY priority ASC, id ASC")
-    .all() as DeviceFingerprintRuleRow[];
+  const hub = require("./db-hub");
+  return hub.getDeviceFingerprintRules();
 }
 
 export function getEnabledDeviceFingerprintRules(): DeviceFingerprintRuleRow[] {
-  return getDb()
-    .prepare("SELECT * FROM device_fingerprint_rules WHERE enabled = 1 ORDER BY priority ASC, id ASC")
-    .all() as DeviceFingerprintRuleRow[];
+  const hub = require("./db-hub");
+  return hub.getEnabledDeviceFingerprintRules();
 }
 
 export function createDeviceFingerprintRule(input: {
@@ -5098,21 +5034,8 @@ export function createDeviceFingerprintRule(input: {
   mac_vendor_pattern?: string | null; banner_pattern?: string | null;
   ttl_min?: number | null; ttl_max?: number | null; note?: string | null; enabled?: boolean;
 }): DeviceFingerprintRuleRow {
-  const result = getDb().prepare(
-    `INSERT INTO device_fingerprint_rules
-     (name, device_label, classification, priority, enabled, tcp_ports_key, tcp_ports_optional, min_key_ports,
-      oid_prefix, sysdescr_pattern, hostname_pattern, mac_vendor_pattern, banner_pattern, ttl_min, ttl_max, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    input.name.trim(), input.device_label.trim(), input.classification.trim(),
-    input.priority ?? 100, input.enabled !== false ? 1 : 0,
-    input.tcp_ports_key ?? null, input.tcp_ports_optional ?? null, input.min_key_ports ?? null,
-    input.oid_prefix?.trim() || null, input.sysdescr_pattern?.trim() || null,
-    input.hostname_pattern?.trim() || null, input.mac_vendor_pattern?.trim() || null,
-    input.banner_pattern?.trim() || null, input.ttl_min ?? null, input.ttl_max ?? null,
-    input.note?.trim() || null,
-  );
-  return getDb().prepare("SELECT * FROM device_fingerprint_rules WHERE id = ?").get(result.lastInsertRowid) as DeviceFingerprintRuleRow;
+  const hub = require("./db-hub");
+  return hub.createDeviceFingerprintRule(input);
 }
 
 export function updateDeviceFingerprintRule(id: number, input: Partial<{
@@ -5122,39 +5045,18 @@ export function updateDeviceFingerprintRule(id: number, input: Partial<{
   mac_vendor_pattern: string | null; banner_pattern: string | null;
   ttl_min: number | null; ttl_max: number | null; note: string | null;
 }>): DeviceFingerprintRuleRow | undefined {
-  const existing = getDb().prepare("SELECT id FROM device_fingerprint_rules WHERE id = ?").get(id) as { id: number } | undefined;
-  if (!existing) return undefined;
-  const sets: string[] = ["updated_at = datetime('now')"];
-  const vals: unknown[] = [];
-  const field = (col: string, val: unknown) => { sets.push(`${col} = ?`); vals.push(val); };
-  if (input.name !== undefined) field("name", input.name.trim());
-  if (input.device_label !== undefined) field("device_label", input.device_label.trim());
-  if (input.classification !== undefined) field("classification", input.classification.trim());
-  if (input.priority !== undefined) field("priority", input.priority);
-  if (input.enabled !== undefined) field("enabled", input.enabled ? 1 : 0);
-  if (input.tcp_ports_key !== undefined) field("tcp_ports_key", input.tcp_ports_key);
-  if (input.tcp_ports_optional !== undefined) field("tcp_ports_optional", input.tcp_ports_optional);
-  if (input.min_key_ports !== undefined) field("min_key_ports", input.min_key_ports);
-  if (input.oid_prefix !== undefined) field("oid_prefix", input.oid_prefix?.trim() || null);
-  if (input.sysdescr_pattern !== undefined) field("sysdescr_pattern", input.sysdescr_pattern?.trim() || null);
-  if (input.hostname_pattern !== undefined) field("hostname_pattern", input.hostname_pattern?.trim() || null);
-  if (input.mac_vendor_pattern !== undefined) field("mac_vendor_pattern", input.mac_vendor_pattern?.trim() || null);
-  if (input.banner_pattern !== undefined) field("banner_pattern", input.banner_pattern?.trim() || null);
-  if (input.ttl_min !== undefined) field("ttl_min", input.ttl_min);
-  if (input.ttl_max !== undefined) field("ttl_max", input.ttl_max);
-  if (input.note !== undefined) field("note", input.note?.trim() || null);
-  vals.push(id);
-  getDb().prepare(`UPDATE device_fingerprint_rules SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
-  return getDb().prepare("SELECT * FROM device_fingerprint_rules WHERE id = ?").get(id) as DeviceFingerprintRuleRow | undefined;
+  const hub = require("./db-hub");
+  return hub.updateDeviceFingerprintRule(id, input);
 }
 
 export function deleteDeviceFingerprintRule(id: number): boolean {
-  return getDb().prepare("DELETE FROM device_fingerprint_rules WHERE id = ?").run(id).changes > 0;
+  const hub = require("./db-hub");
+  return hub.deleteDeviceFingerprintRule(id);
 }
 
 export function resetBuiltinFingerprintRules(): void {
-  getDb().prepare("DELETE FROM device_fingerprint_rules WHERE builtin = 1").run();
-  seedBuiltinFingerprintRules(getDb());
+  const hub = require("./db-hub");
+  hub.resetBuiltinFingerprintRules();
 }
 
 // ========================
@@ -5178,24 +5080,18 @@ export interface NmapProfileRow {
 }
 
 export function getNmapProfiles(): NmapProfileRow[] {
-  return getDb().prepare("SELECT * FROM nmap_profiles ORDER BY is_default DESC, name ASC").all() as NmapProfileRow[];
+  const hub = require("./db-hub");
+  return hub.getNmapProfiles();
 }
 
 export function getNmapProfileById(id: number): NmapProfileRow | undefined {
-  return getDb().prepare("SELECT * FROM nmap_profiles WHERE id = ?").get(id) as NmapProfileRow | undefined;
+  const hub = require("./db-hub");
+  return hub.getNmapProfileById(id);
 }
 
-/**
- * Profilo usato da scansioni Nmap (trigger, job) quando non si passa `nmap_profile_id`.
- * Deve essere il profilo **predefinito** (`is_default = 1`), come quello modificabile in Impostazioni
- * — non l’ultimo aggiornato per qualsiasi profilo (evita porte/argomenti da un altro profilo).
- */
 export function getActiveNmapProfile(): NmapProfileRow | undefined {
-  const byDefault = getDb()
-    .prepare("SELECT * FROM nmap_profiles WHERE is_default = 1 ORDER BY id ASC LIMIT 1")
-    .get() as NmapProfileRow | undefined;
-  if (byDefault) return byDefault;
-  return getDb().prepare("SELECT * FROM nmap_profiles ORDER BY updated_at DESC LIMIT 1").get() as NmapProfileRow | undefined;
+  const hub = require("./db-hub");
+  return hub.getActiveNmapProfile();
 }
 
 export function createNmapProfile(
@@ -5207,14 +5103,8 @@ export function createNmapProfile(
   tcpPorts?: string | null,
   udpPorts?: string | null
 ): NmapProfileRow {
-  const count = (getDb().prepare("SELECT COUNT(*) as c FROM nmap_profiles").get() as { c: number }).c;
-  if (count > 0) {
-    throw new Error("È consentito un solo profilo Nmap: modifica quello esistente dalle Impostazioni.");
-  }
-  const result = getDb().prepare(
-    "INSERT INTO nmap_profiles (name, description, args, snmp_community, custom_ports, tcp_ports, udp_ports, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, 1)"
-  ).run(name, description, args, snmpCommunity || null, customPorts ?? null, tcpPorts ?? null, udpPorts ?? null);
-  return getDb().prepare("SELECT * FROM nmap_profiles WHERE id = ?").get(result.lastInsertRowid) as NmapProfileRow;
+  const hub = require("./db-hub");
+  return hub.createNmapProfile(name, description, args, snmpCommunity, customPorts, tcpPorts, udpPorts);
 }
 
 export function updateNmapProfile(
@@ -5227,14 +5117,13 @@ export function updateNmapProfile(
   tcpPorts?: string | null,
   udpPorts?: string | null
 ): NmapProfileRow | undefined {
-  getDb().prepare(
-    "UPDATE nmap_profiles SET name = ?, description = ?, args = ?, snmp_community = ?, custom_ports = ?, tcp_ports = ?, udp_ports = ?, updated_at = datetime('now') WHERE id = ?"
-  ).run(name, description, args, snmpCommunity ?? null, customPorts ?? null, tcpPorts ?? null, udpPorts ?? null, id);
-  return getNmapProfileById(id);
+  const hub = require("./db-hub");
+  return hub.updateNmapProfile(id, name, description, args, snmpCommunity, customPorts, tcpPorts, udpPorts);
 }
 
 export function deleteNmapProfile(id: number): boolean {
-  return getDb().prepare("DELETE FROM nmap_profiles WHERE id = ? AND is_default = 0").run(id).changes > 0;
+  const hub = require("./db-hub");
+  return hub.deleteNmapProfile(id);
 }
 
 // ── Remaining user functions delegate to hub DB ──
@@ -6232,11 +6121,13 @@ export interface SnmpVendorProfileRow {
 }
 
 export function getSnmpVendorProfiles(): SnmpVendorProfileRow[] {
-  return getDb().prepare("SELECT * FROM snmp_vendor_profiles ORDER BY category, name").all() as SnmpVendorProfileRow[];
+  const hub = require("./db-hub");
+  return hub.getSnmpVendorProfiles();
 }
 
 export function getEnabledSnmpVendorProfiles(): SnmpVendorProfileRow[] {
-  return getDb().prepare("SELECT * FROM snmp_vendor_profiles WHERE enabled = 1 ORDER BY confidence DESC, name").all() as SnmpVendorProfileRow[];
+  const hub = require("./db-hub");
+  return hub.getEnabledSnmpVendorProfiles();
 }
 
 /**

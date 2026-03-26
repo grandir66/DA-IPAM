@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { ScanProgress } from "@/components/shared/scan-progress";
+import type { ScanProgress as ScanProgressType } from "@/types";
 import { DeviceListByClassification } from "../device-list-by-classification";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -581,6 +583,13 @@ function DeviceDetailPage() {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
   const [querying, setQuerying] = useState(false);
+  const [queryProgress, setQueryProgress] = useState<ScanProgressType | null>(null);
+  const queryPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => { if (queryPollRef.current) clearInterval(queryPollRef.current); };
+  }, []);
   const [testingConnection, setTestingConnection] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editVendor, setEditVendor] = useState("");
@@ -726,45 +735,55 @@ function DeviceDetailPage() {
       toast.info("Scansione VMware non ancora implementata (API vCenter). Usa SSH sul singolo ESXi se configurato come dispositivo Linux.");
       return;
     }
-    const isWinrm = target === "windows" || device.protocol === "winrm" || device.vendor === "windows";
     const useProxmox = target === "proxmox" || (device.device_type === "hypervisor" && !target);
     const endpoint = useProxmox
       ? `/api/devices/${params.id}/proxmox-scan`
-      : isWinrm
-        ? `/api/devices/${params.id}/query`
-        : `/api/devices/${params.id}/query`;
+      : `/api/devices/${params.id}/query`;
 
     setQuerying(true);
-    const controller = new AbortController();
-    let timedOut = false;
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-      setQuerying(false);
-      toast.error("Timeout: la scansione ha superato i 2 minuti. Verifica connettività del dispositivo.");
-    }, 120_000);
     try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (timedOut) return;
+      const res = await fetch(endpoint, { method: "POST" });
       const data = await res.json();
-      if (res.ok) {
+      if (!res.ok) {
+        toast.error(data.error);
+        setQuerying(false);
+        return;
+      }
+
+      // Se l'endpoint ritorna progress con id → polling asincrono
+      if (data.id && data.progress) {
+        setQueryProgress(data.progress as ScanProgressType);
+
+        // Polling ogni secondo
+        if (queryPollRef.current) clearInterval(queryPollRef.current);
+        queryPollRef.current = setInterval(async () => {
+          try {
+            const progressRes = await fetch(`/api/scans/progress/${data.id}`);
+            if (!progressRes.ok) return;
+            const prog = await progressRes.json() as ScanProgressType;
+            setQueryProgress(prog);
+            if (prog.status === "completed" || prog.status === "failed") {
+              if (queryPollRef.current) { clearInterval(queryPollRef.current); queryPollRef.current = null; }
+              setQuerying(false);
+              fetchDevice();
+              if (prog.status === "completed") {
+                toast.success(prog.phase);
+              } else {
+                toast.error(prog.phase || "Errore nella scansione");
+              }
+            }
+          } catch { /* ignore poll errors */ }
+        }, 1000);
+      } else {
+        // Risposta sincrona (Proxmox o legacy)
         const msg = useProxmox ? "Scan Proxmox completato" : data.message;
         toast.success(msg);
         fetchDevice();
-      } else {
-        toast.error(data.error);
-        if (data.stack) console.error("[Device Query Stack]", data.stack);
+        setQuerying(false);
       }
     } catch (err) {
-      clearTimeout(timeoutId);
-      if (timedOut) return;
       toast.error(err instanceof Error ? err.message : "Errore nella scansione");
-    } finally {
-      if (!timedOut) setQuerying(false);
+      setQuerying(false);
     }
   }
 
@@ -2581,6 +2600,14 @@ function DeviceDetailPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Modale progresso scansione device */}
+      {queryProgress && (
+        <ScanProgress
+          progress={queryProgress}
+          onClose={() => setQueryProgress(null)}
+        />
       )}
     </div>
   );

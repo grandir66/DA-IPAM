@@ -41,6 +41,21 @@ data/
 | `src/lib/api-tenant.ts` | Helper `withTenantFromSession()` e `getTenantMode()` per le API routes |
 | `src/lib/auth.ts` | Login con tenant nel JWT: `tenantCode`, `tenants[]`, ruolo `superadmin` |
 
+### Regola di separazione Hub vs Tenant
+
+**Principio fondamentale:** ogni dato specifico del cliente va nel DB tenant, il DB hub contiene solo dati condivisi tra tutti i tenant.
+
+| Hub DB (`hub.db`) | Tenant DB (`CLIENTE.db`) |
+|---|---|
+| Utenti e autenticazione | Reti, host, scan history |
+| Registro tenant | Network devices, credenziali |
+| Settings globali | ARP entries, MAC port entries |
+| Profili SNMP/nmap/fingerprint (template) | DHCP leases, inventario |
+| | Scheduled jobs, status history |
+| | Tutti i dati operativi del cliente |
+
+**Attenzione alla duplicazione:** `db.ts` è una facade backward-compatible che contiene **copie** delle funzioni di `db-tenant.ts` per il codice legacy. Quando si modifica una funzione DB, verificare se esiste in **tutti e 3** i file: `db-tenant.ts`, `db.ts`, `db-legacy.ts`. Le funzioni in `db.ts` usano `getDb()` (che fa fallback a DEFAULT), quelle in `db-tenant.ts` usano `db()` via AsyncLocalStorage.
+
 ### Contesto tenant nelle API
 
 Tutte le ~65 API routes tenant-scoped usano `withTenantFromSession()` che:

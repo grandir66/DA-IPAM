@@ -245,20 +245,14 @@ export function Sidebar() {
           Active Directory
         </Link>
 
-        {/* Config Cliente */}
-        <Link
-          href="/client-config"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            isActive("/client-config")
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
+        {/* Config Cliente — disabilitato, da rifare con UX guidata */}
+        <div
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/40 cursor-not-allowed"
+          title="In arrivo"
         >
           <ClipboardList className="h-4 w-4" />
           Config Cliente
-        </Link>
+        </div>
 
         {/* ═══ SEPARATORE SISTEMA ═══ */}
         <div className="pt-3 px-3">

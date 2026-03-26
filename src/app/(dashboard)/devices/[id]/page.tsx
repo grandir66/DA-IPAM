@@ -757,6 +757,7 @@ function DeviceDetailPage() {
         fetchDevice();
       } else {
         toast.error(data.error);
+        if (data.stack) console.error("[Device Query Stack]", data.stack);
       }
     } catch (err) {
       clearTimeout(timeoutId);

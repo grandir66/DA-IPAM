@@ -3638,6 +3638,24 @@ export function deleteNetworkDevice(id: number): boolean {
 }
 
 // ========================
+// Cleanup FK orfani (una tantum)
+// ========================
+
+let _fkCleaned = false;
+
+/** Pulisce riferimenti FK orfani in mac_ip_mapping (causati da migrazioni con foreign_keys=OFF). */
+export function cleanOrphanedForeignKeys(): void {
+  if (_fkCleaned) return;
+  const db = getDb();
+  db.prepare("UPDATE mac_ip_mapping SET source_device_id = NULL WHERE source_device_id IS NOT NULL AND source_device_id NOT IN (SELECT id FROM network_devices)").run();
+  db.prepare("UPDATE mac_ip_mapping SET network_id = NULL WHERE network_id IS NOT NULL AND network_id NOT IN (SELECT id FROM networks)").run();
+  db.prepare("UPDATE mac_ip_mapping SET host_id = NULL WHERE host_id IS NOT NULL AND host_id NOT IN (SELECT id FROM hosts)").run();
+  db.prepare("UPDATE dhcp_leases SET host_id = NULL WHERE host_id IS NOT NULL AND host_id NOT IN (SELECT id FROM hosts)").run();
+  db.prepare("UPDATE dhcp_leases SET network_id = NULL WHERE network_id IS NOT NULL AND network_id NOT IN (SELECT id FROM networks)").run();
+  _fkCleaned = true;
+}
+
+// ========================
 // ARP Entries
 // ========================
 
@@ -3646,6 +3664,7 @@ export function upsertArpEntries(
   entries: { mac: string; ip: string | null; interface_name: string | null }[],
   getNetworkIdForIp?: (ip: string) => number | null
 ): void {
+  cleanOrphanedForeignKeys();
   const db = getDb();
 
   const stmt = db.prepare(
@@ -4457,6 +4476,10 @@ export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types"
   const db = getDb();
   db.prepare("DELETE FROM switch_ports WHERE device_id = ?").run(deviceId);
 
+  // Valida FK prima dell'inserimento: host_id e trunk_primary_device_id potrebbero essere stale
+  const hostExists = db.prepare("SELECT id FROM hosts WHERE id = ?");
+  const deviceExists = db.prepare("SELECT id FROM network_devices WHERE id = ?");
+
   const stmt = db.prepare(
     `INSERT INTO switch_ports (device_id, port_index, port_name, status, speed, duplex, vlan, poe_status, poe_power_mw, mac_count, is_trunk, single_mac, single_mac_vendor, single_mac_ip, single_mac_hostname, host_id, trunk_neighbor_name, trunk_neighbor_port, trunk_primary_device_id, trunk_primary_name, stp_state)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -4464,7 +4487,9 @@ export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types"
 
   const insertMany = db.transaction((items: typeof ports) => {
     for (const p of items) {
-      stmt.run(deviceId, p.port_index, p.port_name, p.status, p.speed, p.duplex, p.vlan, p.poe_status, p.poe_power_mw, p.mac_count, p.is_trunk, p.single_mac, p.single_mac_vendor, p.single_mac_ip, p.single_mac_hostname, p.host_id ?? null, p.trunk_neighbor_name ?? null, p.trunk_neighbor_port ?? null, p.trunk_primary_device_id ?? null, p.trunk_primary_name ?? null, p.stp_state ?? null);
+      const hostId = p.host_id != null && hostExists.get(p.host_id) ? p.host_id : null;
+      const trunkDeviceId = p.trunk_primary_device_id != null && deviceExists.get(p.trunk_primary_device_id) ? p.trunk_primary_device_id : null;
+      stmt.run(deviceId, p.port_index, p.port_name, p.status, p.speed, p.duplex, p.vlan, p.poe_status, p.poe_power_mw, p.mac_count, p.is_trunk, p.single_mac, p.single_mac_vendor, p.single_mac_ip, p.single_mac_hostname, hostId, p.trunk_neighbor_name ?? null, p.trunk_neighbor_port ?? null, trunkDeviceId, trunkDeviceId ? (p.trunk_primary_name ?? null) : null, p.stp_state ?? null);
     }
   });
 
@@ -6415,8 +6440,9 @@ export function upsertDhcpLease(input: {
   network_id?: number | null;
   dynamic_lease?: number | null;
 }): void {
+  const db = getDb();
   const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
-  getDb().prepare(`INSERT INTO dhcp_leases
+  db.prepare(`INSERT INTO dhcp_leases
     (source_type, source_device_id, source_name, server_name, scope_id, scope_name,
      ip_address, mac_address, hostname, status, lease_start, lease_expires, description,
      dynamic_lease, host_id, network_id, last_synced)

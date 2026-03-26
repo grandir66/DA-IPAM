@@ -1810,13 +1810,28 @@ export function upsertArpEntries(
       stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name);
       if (entry.ip && entry.mac) {
         const networkId = getNetworkIdForIp?.(entry.ip) ?? null;
-        upsertMacIpMapping({
-          mac: entry.mac,
-          ip: entry.ip,
-          source: "arp",
-          source_device_id: deviceId,
-          network_id: networkId,
-        });
+        try {
+          upsertMacIpMapping({
+            mac: entry.mac,
+            ip: entry.ip,
+            source: "arp",
+            source_device_id: deviceId,
+            network_id: networkId,
+          });
+        } catch (err) {
+          // Diagnostica FK: dump valori e stato FK esistenti
+          const macHex = macToHex(entry.mac);
+          const existingMapping = d.prepare("SELECT source_device_id, network_id, host_id FROM mac_ip_mapping WHERE mac_normalized = ?").get(macHex) as { source_device_id: number | null; network_id: number | null; host_id: number | null } | undefined;
+          const deviceOk = d.prepare("SELECT id FROM network_devices WHERE id = ?").get(deviceId);
+          console.error(`[upsertArpEntries] FK error per MAC ${entry.mac} IP ${entry.ip}:`, {
+            deviceId,
+            deviceExists: !!deviceOk,
+            networkId,
+            existingMapping,
+            error: err instanceof Error ? err.message : err,
+          });
+          // Non propagare: skippa questa entry e continua
+        }
       }
     }
   });
@@ -1851,15 +1866,13 @@ export function upsertMacIpMapping(input: {
 
   if (existing) {
     const ipChanged = existing.ip !== input.ip;
-    // COALESCE con validazione FK: i valori esistenti potrebbero essere orfani
-    // se un host/device/network è stato cancellato con foreign_keys=OFF (migrazioni)
     d.prepare(`
       UPDATE mac_ip_mapping SET
         ip = ?,
         source = ?,
-        source_device_id = COALESCE(?, CASE WHEN source_device_id IS NOT NULL AND EXISTS (SELECT 1 FROM network_devices WHERE id = source_device_id) THEN source_device_id ELSE NULL END),
-        network_id = COALESCE(?, CASE WHEN network_id IS NOT NULL AND EXISTS (SELECT 1 FROM networks WHERE id = network_id) THEN network_id ELSE NULL END),
-        host_id = COALESCE(?, CASE WHEN host_id IS NOT NULL AND EXISTS (SELECT 1 FROM hosts WHERE id = host_id) THEN host_id ELSE NULL END),
+        source_device_id = COALESCE(?, source_device_id),
+        network_id = COALESCE(?, network_id),
+        host_id = COALESCE(?, host_id),
         vendor = COALESCE(?, vendor),
         hostname = COALESCE(?, hostname),
         last_seen = ?,
@@ -3185,10 +3198,7 @@ export function getDhcpLeasesByDevice(deviceId: number): DhcpLease[] {
 export function upsertDhcpLease(input: { source_type: "mikrotik" | "windows" | "cisco" | "other"; source_device_id: number; source_name?: string | null; server_name?: string | null; scope_id?: string | null; scope_name?: string | null; ip_address: string; mac_address: string; hostname?: string | null; status?: string | null; lease_start?: string | null; lease_expires?: string | null; description?: string | null; host_id?: number | null; network_id?: number | null; dynamic_lease?: number | null }): void {
   const d = db();
   const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
-  // Valida FK: host_id e network_id potrebbero essere stale
-  const hostId = input.host_id != null && d.prepare("SELECT id FROM hosts WHERE id = ?").get(input.host_id) ? input.host_id : null;
-  const networkId = input.network_id != null && d.prepare("SELECT id FROM networks WHERE id = ?").get(input.network_id) ? input.network_id : null;
-  d.prepare(`INSERT INTO dhcp_leases (source_type, source_device_id, source_name, server_name, scope_id, scope_name, ip_address, mac_address, hostname, status, lease_start, lease_expires, description, dynamic_lease, host_id, network_id, last_synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(source_device_id, ip_address) DO UPDATE SET source_name = excluded.source_name, server_name = excluded.server_name, scope_id = excluded.scope_id, scope_name = excluded.scope_name, mac_address = excluded.mac_address, hostname = excluded.hostname, status = excluded.status, lease_start = excluded.lease_start, lease_expires = excluded.lease_expires, description = excluded.description, dynamic_lease = COALESCE(excluded.dynamic_lease, dhcp_leases.dynamic_lease), host_id = COALESCE(excluded.host_id, dhcp_leases.host_id), network_id = COALESCE(excluded.network_id, dhcp_leases.network_id), last_synced = datetime('now')`).run(input.source_type, input.source_device_id, input.source_name ?? null, input.server_name ?? null, input.scope_id ?? null, input.scope_name ?? null, input.ip_address, macNorm, input.hostname ?? null, input.status ?? null, input.lease_start ?? null, input.lease_expires ?? null, input.description ?? null, input.dynamic_lease ?? null, hostId, networkId);
+  d.prepare(`INSERT INTO dhcp_leases (source_type, source_device_id, source_name, server_name, scope_id, scope_name, ip_address, mac_address, hostname, status, lease_start, lease_expires, description, dynamic_lease, host_id, network_id, last_synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(source_device_id, ip_address) DO UPDATE SET source_name = excluded.source_name, server_name = excluded.server_name, scope_id = excluded.scope_id, scope_name = excluded.scope_name, mac_address = excluded.mac_address, hostname = excluded.hostname, status = excluded.status, lease_start = excluded.lease_start, lease_expires = excluded.lease_expires, description = excluded.description, dynamic_lease = COALESCE(excluded.dynamic_lease, dhcp_leases.dynamic_lease), host_id = COALESCE(excluded.host_id, dhcp_leases.host_id), network_id = COALESCE(excluded.network_id, dhcp_leases.network_id), last_synced = datetime('now')`).run(input.source_type, input.source_device_id, input.source_name ?? null, input.server_name ?? null, input.scope_id ?? null, input.scope_name ?? null, input.ip_address, macNorm, input.hostname ?? null, input.status ?? null, input.lease_start ?? null, input.lease_expires ?? null, input.description ?? null, input.dynamic_lease ?? null, input.host_id ?? null, input.network_id ?? null);
 }
 
 export function syncIpAssignmentsForNetwork(networkId: number): number {

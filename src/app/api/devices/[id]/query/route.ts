@@ -197,21 +197,24 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         }
 
         if (networkDeviceUsesArpPoll(device)) {
-          const client = await createRouterClient(device);
-      const entries = await client.getArpTable();
+      const t0 = Date.now();
+      const log = (phase: string) => console.log(`[Device Query ${id}] ${phase} +${Date.now() - t0}ms`);
 
-      try {
-        upsertArpEntries(Number(id), entries);
-      } catch (err) {
-        console.error(`[Device Query] upsertArpEntries fallito per device ${id}:`, err);
-        throw err;
-      }
+      const client = await createRouterClient(device);
+      log("createRouterClient");
+
+      const entries = await client.getArpTable();
+      log(`getArpTable (${entries.length} entries)`);
+
+      upsertArpEntries(Number(id), entries);
+      log("upsertArpEntries");
 
       // Neighbors LLDP/CDP/MNDP
       if (client.getNeighbors) {
         try {
           const neighbors = await client.getNeighbors();
           if (neighbors.length > 0) upsertNeighbors(Number(id), neighbors);
+          log(`neighbors (${neighbors.length})`);
         } catch { /* optional */ }
       }
 
@@ -220,6 +223,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         try {
           const routes = await client.getRoutingTable();
           if (routes.length > 0) upsertRoutes(Number(id), routes);
+          log(`routes (${routes.length})`);
         } catch { /* optional */ }
       }
 
@@ -228,6 +232,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         try {
           const { upsertDhcpLease, upsertMacIpMapping, syncIpAssignmentsForNetwork } = await import("@/lib/db");
           const leases = await client.getDhcpLeases();
+          log(`getDhcpLeases (${leases.length})`);
           const dhcpNetworks = new Set<number>();
           const nets = getNetworks();
           for (const lease of leases) {
@@ -272,12 +277,14 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
             dhcpNetworks.add(network.id);
           }
           for (const nid of dhcpNetworks) syncIpAssignmentsForNetwork(nid);
+          log("dhcp upsert done");
         } catch (err) {
           console.warn(`[Device Query] DHCP leases fallito per device ${id}:`, err);
         }
       }
 
       const networks = getNetworks();
+      log("getNetworks for ARP hosts");
       for (const entry of entries) {
         if (!entry.ip || !entry.mac) continue;
         const network = networks.find((n) => isIpInCidr(entry.ip!, n.cidr));
@@ -290,9 +297,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           vendor: vendor || undefined,
         });
       }
+      log("upsertHost ARP entries");
 
       // Schema porte e LLDP/CDP (SNMP)
       const portInfos = await client.getPortSchema?.().catch(() => []) ?? [];
+      log(`getPortSchema (${portInfos.length} ports)`);
       if (portInfos.length > 0) {
         const macsByPortByIndex = new Map<number, { macs: string[] }>();
         const macsByPortByName = new Map<string, { macs: string[] }>();
@@ -373,6 +382,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
         try {
           upsertSwitchPorts(deviceId, switchPorts);
+          log("upsertSwitchPorts");
         } catch (err) {
           console.error(`[Device Query] upsertSwitchPorts fallito per device ${id}:`, err);
           throw err;
@@ -381,6 +391,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
       try {
         const info = await getDeviceInfo(device);
+        log("getDeviceInfo");
         const now = new Date().toISOString();
         const hasInfo = info.sysname || info.sysdescr || info.model || info.firmware || info.serial_number || info.part_number;
         if (hasInfo) {
@@ -426,10 +437,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         const { getSnmpStpInfo } = await import("@/lib/devices/snmp-stp-info");
         const snmpMod = await import("net-snmp");
         const community = getDeviceCommunityString(device);
-        const session = snmpMod.createSession(device.host, community, { port: 161, timeout: 8000 });
+        const session = snmpMod.createSession(device.host, community, { port: 161, timeout: 5000 });
+        let sessionClosed = false;
+        const safeClose = () => { if (!sessionClosed) { sessionClosed = true; try { session.close(); } catch { /* ignore */ } } };
         const snmpWalk = (oid: string) => new Promise<{ oid: string; value: Buffer | string | number }[]>((resolve, reject) => {
           const results: { oid: string; value: Buffer | string | number }[] = [];
-          session.subtree(oid, (vbs: Array<{ oid: string; value: Buffer | string | number }>) => { for (const vb of vbs) results.push({ oid: vb.oid, value: vb.value }); }, (err: Error | undefined) => { session.close(); if (err) reject(err); else resolve(results); });
+          const timer = setTimeout(() => { safeClose(); resolve(results); }, 10_000);
+          session.subtree(oid, (vbs: Array<{ oid: string; value: Buffer | string | number }>) => { for (const vb of vbs) results.push({ oid: vb.oid, value: vb.value }); }, (err: Error | undefined) => { clearTimeout(timer); safeClose(); if (err) resolve([]); else resolve(results); });
         });
         const stpInfo = await getSnmpStpInfo(snmpWalk);
         if (stpInfo) {
@@ -597,9 +611,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
     return result;
   } catch (error) {
+    const stack = error instanceof Error ? error.stack : undefined;
     console.error("Device query error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Errore nella query" },
+      { error: error instanceof Error ? error.message : "Errore nella query", stack },
       { status: 500 }
     );
   }

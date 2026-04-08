@@ -67,7 +67,8 @@ export class LibreNMSClient {
     hostname: string;
     snmp_disable?: boolean;
     community?: string;
-    version?: "v1" | "v2c" | "v3";
+    /** LibreNMS usa "snmpver": "v1" | "v2c" | "v3" */
+    snmpver?: "v1" | "v2c" | "v3";
     port?: number;
     transport?: "udp" | "tcp";
     os?: string;

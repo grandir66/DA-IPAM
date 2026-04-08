@@ -17,6 +17,7 @@ import {
   DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { Pagination } from "@/components/shared/pagination";
 import { useClientTableSort } from "@/hooks/use-table-sort";
@@ -80,6 +81,7 @@ const COLUMNS: ColumnDef[] = [
   { id: "os_info",         label: "OS",              defaultVisible: false, group: "rilevamento" },
   { id: "open_ports",      label: "Porte aperte",    defaultVisible: false, group: "rilevamento" },
   { id: "response_time",   label: "RTT (ms)",        defaultVisible: false, group: "rilevamento" },
+  { id: "fp_confidence",   label: "Conf.",           defaultVisible: false, group: "rilevamento" },
 
   // Dettaglio
   { id: "model",           label: "Modello",         defaultVisible: false, group: "dettaglio" },
@@ -141,6 +143,24 @@ function parsePorts(json: string | null): string {
     return arr.slice(0, 12).map((p) => p.protocol === "udp" ? `${p.port}/u` : String(p.port)).join(", ")
       + (arr.length > 12 ? ` +${arr.length - 12}` : "");
   } catch { return ""; }
+}
+
+function getFpConfidence(h: EnrichedHost): number {
+  const raw = (h as unknown as { detection_json?: string | null }).detection_json;
+  if (!raw) return 0;
+  try {
+    const snap = JSON.parse(raw) as { final_confidence?: number; final_device?: string };
+    return snap.final_confidence ?? 0;
+  } catch { return 0; }
+}
+
+function getFpDevice(h: EnrichedHost): string | null {
+  const raw = (h as unknown as { detection_json?: string | null }).detection_json;
+  if (!raw) return null;
+  try {
+    const snap = JSON.parse(raw) as { final_device?: string };
+    return snap.final_device ?? null;
+  } catch { return null; }
 }
 
 /** Produttore effettivo: device_manufacturer se presente, altrimenti MAC vendor come fallback */
@@ -231,6 +251,7 @@ export default function DiscoveryPage() {
     firmware:            (h: EnrichedHost) => h.firmware ?? "",
     last_seen:           (h: EnrichedHost) => h.last_seen ? new Date(h.last_seen).getTime() : 0,
     first_seen:          (h: EnrichedHost) => h.first_seen ? new Date(h.first_seen).getTime() : 0,
+    fp_confidence:       (h: EnrichedHost) => getFpConfidence(h),
   }), []);
 
   const { sortedRows, sortColumn, sortDirection, onSort } = useClientTableSort(
@@ -315,6 +336,10 @@ export default function DiscoveryPage() {
       case "firmware": return h.firmware ?? "";
       case "last_seen": return formatDate(h.last_seen);
       case "first_seen": return formatDate(h.first_seen);
+      case "fp_confidence": {
+        const c = getFpConfidence(h);
+        return c > 0 ? `${Math.round(c * 100)}%` : "";
+      }
       default: return "";
     }
   }
@@ -396,6 +421,13 @@ export default function DiscoveryPage() {
         return <span className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(h.last_seen)}</span>;
       case "first_seen":
         return <span className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(h.first_seen)}</span>;
+      case "fp_confidence": {
+        const conf = getFpConfidence(h);
+        const device = getFpDevice(h);
+        return conf > 0
+          ? <FingerprintConfidenceBadge confidence={conf} deviceLabel={device} />
+          : <span className="text-muted-foreground text-xs">—</span>;
+      }
       default:
         return null;
     }

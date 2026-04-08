@@ -30,7 +30,7 @@ import {
   Radar,
   AlertTriangle,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 
 const inventorySubItems = [
@@ -69,6 +69,22 @@ export function Sidebar() {
   const [inventoryOpen, setInventoryOpen] = useState(() =>
     inventorySubItems.some((d) => pathname.startsWith(d.href))
   );
+  const [unackedAnomalies, setUnackedAnomalies] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const fetchUnacked = () => {
+      fetch("/api/analytics/anomalies?acknowledged=false&limit=1")
+        .then((r) => r.ok ? r.json() : null)
+        .then((data: { unacked?: number } | null) => {
+          if (data?.unacked != null) setUnackedAnomalies(data.unacked);
+        })
+        .catch(() => { /* non critico */ });
+    };
+    fetchUnacked();
+    intervalRef.current = setInterval(fetchUnacked, 60_000);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, []);
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
@@ -245,7 +261,12 @@ export function Sidebar() {
           )}
         >
           <AlertTriangle className="h-4 w-4" />
-          Anomalie
+          <span className="flex-1">Anomalie</span>
+          {unackedAnomalies > 0 && (
+            <span className="ml-auto inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] px-1">
+              {unackedAnomalies > 99 ? "99+" : unackedAnomalies}
+            </span>
+          )}
         </Link>
 
         {/* Active Directory */}

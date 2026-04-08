@@ -21,6 +21,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
+import { FingerprintExplanationPanel } from "@/components/shared/fingerprint-explanation-panel";
 import { formatPortsDisplay } from "@/lib/utils";
 import {
   DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel, sortClassificationsByDisplayLabel,
@@ -33,7 +35,7 @@ import {
   ScanSearch, PlusCircle, Wifi, Cpu, HardDrive, Monitor, Globe, Activity, Key,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { DeviceFingerprintSnapshot, HostDetail, HostSnmpData } from "@/types";
+import type { DeviceFingerprintSnapshot, FingerprintExplanation, HostDetail, HostSnmpData } from "@/types";
 import { getDefaultNetworkDeviceVendorOptions } from "@/lib/network-device-vendor-options";
 import { LatencyChart } from "./latency-chart";
 
@@ -109,6 +111,8 @@ export default function HostDetailPage() {
     custom_name: "", classification: "", inventory_code: "",
     notes: "", known_host: 0 as 0 | 1, monitor_ports: "",
   });
+  const [originalClassification, setOriginalClassification] = useState("");
+  const [fpExplanation, setFpExplanation] = useState<FingerprintExplanation | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [createDeviceOpen, setCreateDeviceOpen] = useState(false);
@@ -138,10 +142,20 @@ export default function HostDetailPage() {
       inventory_code: data.inventory_code || "", notes: data.notes || "",
       known_host: (data.known_host ?? 0) ? 1 : 0, monitor_ports: monitorPortsStr,
     });
+    setOriginalClassification(data.classification || "");
     setLoading(false);
   }, [params.id, router]);
 
   useEffect(() => { fetchHost(); }, [fetchHost]);
+
+  useEffect(() => {
+    const id = params.id;
+    if (!id || typeof id !== "string") return;
+    fetch(`/api/hosts/${id}/fingerprint-explanation`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: FingerprintExplanation | null) => { if (data) setFpExplanation(data); })
+      .catch(() => { /* non critico */ });
+  }, [params.id]);
 
   async function handleSave() {
     setSaving(true);
@@ -155,8 +169,27 @@ export default function HostDetailPage() {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...rest, known_host, monitor_ports: monitorPortsJson }),
     });
-    if (res.ok) { toast.success("Host aggiornato"); fetchHost(); }
-    else toast.error("Errore nell'aggiornamento");
+    if (res.ok) {
+      // Se la classificazione è cambiata manualmente, registra il feedback
+      if (form.classification && form.classification !== originalClassification) {
+        let fp: DeviceFingerprintSnapshot | null = null;
+        try { if (host?.detection_json) fp = JSON.parse(host.detection_json) as DeviceFingerprintSnapshot; } catch { /* ignore */ }
+        await fetch("/api/analytics/classification/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            host_id: Number(params.id),
+            corrected_classification: form.classification,
+            previous_classification: originalClassification || null,
+            fingerprint_device_label: fp?.final_device ?? null,
+            fingerprint_confidence: fp?.final_confidence ?? null,
+          }),
+        });
+        setOriginalClassification(form.classification);
+      }
+      toast.success("Host aggiornato");
+      fetchHost();
+    } else toast.error("Errore nell'aggiornamento");
     setSaving(false);
   }
 
@@ -237,10 +270,13 @@ export default function HostDetailPage() {
             <StatusBadge status={host.status} />
             {host.known_host === 1 && <Badge variant="secondary" className="text-xs">Conosciuto</Badge>}
             {fp?.final_device && (
-              <Badge variant="outline" className="text-xs">
-                {fp.final_device}
-                {fp.final_confidence != null && ` ${(fp.final_confidence * 100).toFixed(0)}%`}
-              </Badge>
+              <Badge variant="outline" className="text-xs">{fp.final_device}</Badge>
+            )}
+            {fp?.final_confidence != null && fp.final_confidence > 0 && (
+              <FingerprintConfidenceBadge
+                confidence={fp.final_confidence}
+                deviceLabel={fp.final_device ?? null}
+              />
             )}
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
@@ -464,6 +500,9 @@ export default function HostDetailPage() {
                   </div>
                 )}
               </div>
+            )}
+            {fpExplanation && (
+              <FingerprintExplanationPanel explanation={fpExplanation} />
             )}
             <details className="text-xs">
               <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Dati grezzi</summary>

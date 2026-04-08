@@ -268,11 +268,15 @@ export function IntegrationCard({ component, title, description, dockerAvailable
 
           {!isDisabled && (
             <div className="col-span-2">
-              <Label className="text-xs text-muted-foreground">URL</Label>
+              <Label className="text-xs text-muted-foreground">
+                URL{isManaged ? <span className="ml-1 text-muted-foreground/60">(auto)</span> : ""}
+              </Label>
               <Input
                 className="mt-1"
                 placeholder="http://localhost:8090"
                 value={localConfig.url}
+                readOnly={isManaged}
+                disabled={isManaged && !!localConfig.url}
                 onChange={(e) => setLocalConfig((c) => ({ ...c, url: e.target.value }))}
               />
             </div>
@@ -281,20 +285,27 @@ export function IntegrationCard({ component, title, description, dockerAvailable
 
         {!isDisabled && (
           <>
-            {/* API Token */}
-            <div>
-              <Label className="text-xs text-muted-foreground">API Token</Label>
-              <Input
-                className="mt-1"
-                type="password"
-                placeholder="Token o chiave API"
-                value={localConfig.apiToken}
-                onChange={(e) => setLocalConfig((c) => ({ ...c, apiToken: e.target.value }))}
-              />
-            </div>
+            {/* API Token — solo per modalità external; in managed è auto-configurato */}
+            {isExternal ? (
+              <div>
+                <Label className="text-xs text-muted-foreground">API Token</Label>
+                <Input
+                  className="mt-1"
+                  type="password"
+                  placeholder="Token o chiave API"
+                  value={localConfig.apiToken}
+                  onChange={(e) => setLocalConfig((c) => ({ ...c, apiToken: e.target.value }))}
+                />
+              </div>
+            ) : isManaged && localConfig.apiToken ? (
+              <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                API token configurato automaticamente
+              </div>
+            ) : null}
 
-            {/* Graylog extra fields */}
-            {component === "graylog" && (
+            {/* Graylog extra fields — solo external */}
+            {component === "graylog" && isExternal && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs text-muted-foreground">Username</Label>

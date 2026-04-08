@@ -121,6 +121,48 @@ export async function installGraylog(jobId: string, containerName: string): Prom
   }
 }
 
+/**
+ * Crea un API token in Graylog via REST con credenziali admin.
+ * Endpoint: POST /api/users/{username}/tokens/{tokenName}
+ */
+async function generateGraylogToken(
+  baseUrl: string,
+  username: string,
+  password: string,
+  log: (l: string) => void
+): Promise<string | null> {
+  const tokenName = `da-invent-${Date.now()}`;
+  const url = `${baseUrl}/api/users/${encodeURIComponent(username)}/tokens/${encodeURIComponent(tokenName)}`;
+  const deadline = Date.now() + 60_000;
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Authorization": "Basic " + Buffer.from(`${username}:${password}`).toString("base64"),
+          "Accept": "application/json",
+          "X-Requested-By": "DA-INVENT",
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { token?: string };
+        if (data.token) {
+          log(`[token] Token Graylog generato.`);
+          return data.token;
+        }
+      }
+      log(`[token] Risposta HTTP ${res.status} — retry tra 10s...`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`[token] ${msg.substring(0, 80)} — retry tra 10s...`);
+    }
+    await new Promise((r) => setTimeout(r, 10_000));
+  }
+  return null;
+}
+
 async function waitForHttp(url: string, maxSeconds: number, log: (l: string) => void): Promise<void> {
   const deadline = Date.now() + maxSeconds * 1000;
   let attempt = 0;

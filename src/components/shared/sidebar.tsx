@@ -41,7 +41,7 @@ const inventorySubItems = [
 
 const networkSubItems = [
   { href: "/networks", label: "Subnet", icon: Network },
-  { href: "/discovery", label: "Inventario", icon: Radar },
+  { href: "/discovery", label: "Discovery", icon: Radar },
   { href: "/devices/router", label: "Router", icon: Router },
   { href: "/devices/switch", label: "Switch", icon: Cable },
   { href: "/devices/firewall", label: "Firewall", icon: Shield },

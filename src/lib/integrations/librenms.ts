@@ -137,9 +137,7 @@ export async function installLibreNMS(jobId: string, containerName: string): Pro
 }
 
 /**
- * Esegue un comando arbitrario dentro il container via `docker exec`,
- * senza lanciare eccezione in caso di exit code != 0.
- * Utile per comandi che potrebbero fallire legittimamente.
+ * Esegue un comando dentro un container Docker senza lanciare eccezione.
  */
 async function dockerExecSafe(
   containerName: string,
@@ -151,7 +149,7 @@ async function dockerExecSafe(
   try {
     const r = await execFile("docker", ["exec", containerName, ...cmd], {
       timeout: 30_000,
-      maxBuffer: 1 * 1024 * 1024,
+      maxBuffer: 2 * 1024 * 1024,
     });
     return { stdout: r.stdout, stderr: r.stderr, ok: true };
   } catch (err: unknown) {
@@ -161,23 +159,12 @@ async function dockerExecSafe(
 }
 
 /**
- * Estrae un token hex da una stringa di output.
- * LibreNMS stampa qualcosa come: "API Token: <token>" oppure solo "<token>"
- */
-function extractToken(output: string): string | null {
-  const combined = output.replace(/\s+/g, " ");
-  // Cerca stringa hex di almeno 32 caratteri
-  const match = combined.match(/\b([a-f0-9]{32,})\b/i);
-  return match ? match[1] : null;
-}
-
-/**
- * Genera un API token per l'utente "admin" dentro il container LibreNMS.
+ * Genera un API token per LibreNMS inserendolo direttamente nel DB MariaDB.
  *
- * Strategia:
- *  1. Crea utente admin (se non esiste) via `lnms user:add`
- *  2. Genera token via `lnms user:api-token` (prova path multipli)
- *  3. Fallback: inserimento diretto nel DB MariaDB
+ * Flusso:
+ *  1. Attende che MariaDB abbia applicato le migrazioni (tabella users esiste)
+ *  2. Crea utente admin se non esiste (con hash bcrypt)
+ *  3. Genera token random e lo inserisce in api_tokens
  */
 async function generateLibreNMSToken(
   containerName: string,
@@ -185,93 +172,93 @@ async function generateLibreNMSToken(
 ): Promise<string | null> {
   const dbContainer = `${containerName}-db`;
 
-  // Attende che il container sia effettivamente pronto (lnms potrebbe non rispondere subito)
-  await new Promise((r) => setTimeout(r, 5_000));
-
-  // Candidate commands for lnms (different paths used in different image versions)
-  const lnmsCandidates = [
-    ["/opt/librenms/lnms"],
-    ["lnms"],
-    ["php", "/opt/librenms/artisan"],
-  ];
-
-  // ── Step 1: crea utente admin se non esiste ──────────────────────────────
-  log("[token] Verifica/creazione utente admin...");
-  for (const lnms of lnmsCandidates) {
-    const r = await dockerExecSafe(containerName, [
-      ...lnms, "user:add", "admin", "--role=admin", "--password=admin",
+  // ── Attende che le migrazioni DB siano complete ───────────────────────────
+  log("[token] Attesa completamento migrazioni DB (max 3 min)...");
+  const migrateDeadline = Date.now() + 180_000;
+  let migrationsDone = false;
+  while (Date.now() < migrateDeadline) {
+    const check = await dockerExecSafe(dbContainer, [
+      "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
+      "-se", "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='librenms' AND table_name='api_tokens';",
     ]);
-    if (r.ok || r.stdout.includes("already exists") || r.stderr.includes("already exists")) {
-      log("[token] Utente admin pronto.");
+    if (check.stdout.trim() === "1") {
+      log("[token] Schema DB pronto.");
+      migrationsDone = true;
       break;
     }
+    log("[token] Schema non ancora pronto, attesa 10s...");
+    await new Promise((r) => setTimeout(r, 10_000));
+  }
+  if (!migrationsDone) {
+    log("[token] Timeout attesa schema DB.");
+    return null;
   }
 
-  // ── Step 2: genera token via lnms ────────────────────────────────────────
-  log("[token] Generazione token via lnms...");
-  for (const lnms of lnmsCandidates) {
-    const r = await dockerExecSafe(containerName, [
-      ...lnms, "user:api-token", "admin",
-    ]);
-    const combined = r.stdout + " " + r.stderr;
-    const token = extractToken(combined);
-    if (token) {
-      log(`[token] Token ottenuto via ${lnms.join(" ")}: ${token.substring(0, 8)}...`);
-      return token;
-    }
-    if (r.ok || r.stdout.trim()) {
-      log(`[token] Output ${lnms[0]}: ${combined.trim().substring(0, 100)}`);
-    }
-  }
+  // ── Verifica/crea utente admin ────────────────────────────────────────────
+  const uidCheck = await dockerExecSafe(dbContainer, [
+    "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
+    "-se", "SELECT user_id FROM users WHERE username='admin' LIMIT 1;",
+  ]);
+  let userId = uidCheck.stdout.trim();
 
-  // ── Step 3: fallback — inserimento diretto nel DB ─────────────────────────
-  log("[token] Fallback: inserimento token direttamente nel database...");
-  try {
-    const crypto = await import("crypto");
-    const token = crypto.randomBytes(20).toString("hex"); // 40 char hex
-
-    // Recupera user_id di admin
-    const uidRes = await dockerExecSafe(dbContainer, [
-      "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
-      "-se", "SELECT user_id FROM users WHERE username='admin' LIMIT 1;",
-    ]);
-    const userId = uidRes.stdout.trim();
-
-    if (!userId || isNaN(Number(userId))) {
-      // Crea utente admin direttamente nel DB (hash bcrypt di "admin")
-      // LibreNMS usa bcrypt con cost=10; usiamo una hash precomputata
+  if (!userId || isNaN(Number(userId))) {
+    log("[token] Utente admin non trovato, creazione...");
+    try {
+      // LibreNMS usa Laravel bcrypt (cost 10). Usa il modulo bcrypt già presente nell'app.
       const bcrypt = await import("bcrypt");
       const hash = await bcrypt.hash("admin", 10);
-      await dockerExecSafe(dbContainer, [
+      // auth_type='mysql', level=10 = superadmin LibreNMS, auth_id='' (local auth)
+      const insertUser = await dockerExecSafe(dbContainer, [
         "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
-        "-e", `INSERT IGNORE INTO users (username, password, level, realname, email) VALUES ('admin', '${hash}', 10, 'Administrator', 'admin@localhost');`,
+        "-e",
+        `INSERT IGNORE INTO users (username, password, level, realname, email, auth_type, auth_id, enabled)
+         VALUES ('admin', '${hash}', 10, 'Administrator', 'admin@localhost', 'mysql', '', 1);`,
       ]);
-      // Riprova userId
+      if (!insertUser.ok) {
+        log(`[token] Creazione utente: ${(insertUser.stderr || insertUser.stdout).trim().substring(0, 120)}`);
+      }
+      // Rilegge user_id
       const uid2 = await dockerExecSafe(dbContainer, [
         "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
         "-se", "SELECT user_id FROM users WHERE username='admin' LIMIT 1;",
       ]);
-      const uid = uid2.stdout.trim();
-      if (!uid || isNaN(Number(uid))) throw new Error("utente admin non trovato nel DB");
-
-      await dockerExecSafe(dbContainer, [
-        "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
-        "-e", `INSERT INTO api_tokens (user_id, token_hash, description) VALUES (${uid}, '${token}', 'DA-INVENT auto');`,
-      ]);
-    } else {
-      await dockerExecSafe(dbContainer, [
-        "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
-        "-e", `INSERT INTO api_tokens (user_id, token_hash, description) VALUES (${userId}, '${token}', 'DA-INVENT auto');`,
-      ]);
+      userId = uid2.stdout.trim();
+      if (!userId || isNaN(Number(userId))) {
+        log("[token] Impossibile creare utente admin nel DB.");
+        return null;
+      }
+      log(`[token] Utente admin creato (user_id=${userId}, password=admin).`);
+    } catch (err) {
+      log(`[token] Errore creazione utente: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
     }
-
-    log(`[token] Token inserito nel DB: ${token.substring(0, 8)}...`);
-    return token;
-  } catch (err) {
-    log(`[token] Fallback DB fallito: ${err instanceof Error ? err.message : String(err)}`);
+  } else {
+    log(`[token] Utente admin esistente (user_id=${userId}).`);
   }
 
-  return null;
+  // ── Inserisce token in api_tokens ─────────────────────────────────────────
+  try {
+    const crypto = await import("crypto");
+    const token = crypto.randomBytes(20).toString("hex"); // 40 char hex
+
+    const ins = await dockerExecSafe(dbContainer, [
+      "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
+      "-e",
+      `INSERT INTO api_tokens (user_id, token_hash, description, disabled)
+       VALUES (${userId}, '${token}', 'DA-INVENT auto', 0);`,
+    ]);
+
+    if (!ins.ok) {
+      log(`[token] Inserimento token: ${(ins.stderr || ins.stdout).trim().substring(0, 120)}`);
+      return null;
+    }
+
+    log(`[token] Token inserito: ${token.substring(0, 8)}...`);
+    return token;
+  } catch (err) {
+    log(`[token] Errore inserimento token: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
 }
 
 async function waitForHttp(url: string, maxSeconds: number, log: (l: string) => void): Promise<void> {

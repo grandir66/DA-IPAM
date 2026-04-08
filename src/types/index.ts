@@ -573,6 +573,8 @@ export interface HostUpdate {
   known_host?: 0 | 1;
   status?: "online" | "offline" | "unknown";
   monitor_ports?: string | null;
+  device_manufacturer?: string | null;
+  ip_assignment?: "dynamic" | "static" | "reserved" | "unknown";
 }
 
 export interface NetworkDeviceInput {

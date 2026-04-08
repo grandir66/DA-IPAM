@@ -80,6 +80,7 @@ const COLUMNS: ColumnDef[] = [
   { id: "device_manufacturer", label: "Produttore",  defaultVisible: true,  group: "base" },
   { id: "vendor",          label: "Vendor",          defaultVisible: false, group: "base" },
   { id: "classification",  label: "Classificazione", defaultVisible: true,  group: "base" },
+  { id: "fp_confidence",   label: "Conf.",           defaultVisible: true,  group: "base" },
   { id: "known_host",      label: "Conosciuto",      defaultVisible: false, group: "base" },
   { id: "ip_assignment",   label: "DHCP",            defaultVisible: false, group: "base" },
   { id: "notes",           label: "Note",            defaultVisible: false, group: "base" },
@@ -96,7 +97,6 @@ const COLUMNS: ColumnDef[] = [
   { id: "os_info",         label: "OS",              defaultVisible: false, group: "rilevamento" },
   { id: "open_ports",      label: "Porte aperte",    defaultVisible: false, group: "rilevamento" },
   { id: "response_time",   label: "RTT (ms)",        defaultVisible: false, group: "rilevamento" },
-  { id: "fp_confidence",   label: "Conf.",           defaultVisible: false, group: "rilevamento" },
 
   // Dettaglio
   { id: "model",           label: "Modello",         defaultVisible: false, group: "dettaglio" },
@@ -197,15 +197,27 @@ interface BulkField<T> {
 
 interface DiscoveryBulkForm {
   classification: BulkField<string>;
+  device_manufacturer: BulkField<string | null>;
+  ip_assignment: BulkField<string>;
+  custom_name: BulkField<string | null>;
   known_host: BulkField<0 | 1>;
   notes: BulkField<string | null>;
+  credential_id: BulkField<number | null>;
+  credential_protocol: BulkField<string>;
+  credential_port: BulkField<number>;
 }
 
 function emptyBulkForm(): DiscoveryBulkForm {
   return {
     classification: { enabled: false, value: "" },
+    device_manufacturer: { enabled: false, value: null },
+    ip_assignment: { enabled: false, value: "static" },
+    custom_name: { enabled: false, value: null },
     known_host: { enabled: false, value: 1 },
     notes: { enabled: false, value: null },
+    credential_id: { enabled: false, value: null },
+    credential_protocol: { enabled: false, value: "ssh" },
+    credential_port: { enabled: false, value: 22 },
   };
 }
 
@@ -216,6 +228,7 @@ function emptyBulkForm(): DiscoveryBulkForm {
 export default function DiscoveryPage() {
   const [hosts, setHosts] = useState<EnrichedHost[]>([]);
   const [librenmsMap, setLibrenmsMap] = useState<Map<string, LibreNMSHostMap>>(new Map());
+  const [credentials, setCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -280,6 +293,13 @@ export default function DiscoveryPage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Carica credenziali per il dialog bulk
+  useEffect(() => {
+    fetch("/api/credentials").then((r) => r.json()).then((data: { id: number; name: string; credential_type: string }[]) => {
+      if (Array.isArray(data)) setCredentials(data);
+    }).catch(() => {});
+  }, []);
 
   // ---------- derived lists for filter dropdowns ----------
   const classifications = useMemo(() => {
@@ -400,11 +420,20 @@ export default function DiscoveryPage() {
     };
 
     let hasField = false;
-    for (const [key, field] of Object.entries(bulkForm)) {
+    // Campi host standard
+    for (const key of ["classification", "device_manufacturer", "ip_assignment", "custom_name", "known_host", "notes"] as const) {
+      const field = bulkForm[key];
       if (field.enabled) {
         payload[key] = field.value;
         hasField = true;
       }
+    }
+    // Credenziali (credential_protocol e credential_port seguono credential_id)
+    if (bulkForm.credential_id.enabled && bulkForm.credential_id.value != null && bulkForm.credential_id.value > 0) {
+      payload.credential_id = bulkForm.credential_id.value;
+      payload.credential_protocol = bulkForm.credential_protocol.value;
+      payload.credential_port = bulkForm.credential_port.value;
+      hasField = true;
     }
 
     if (!hasField) {

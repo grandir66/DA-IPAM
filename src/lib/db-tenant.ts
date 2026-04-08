@@ -859,6 +859,8 @@ export function updateHost(id: number, input: HostUpdate): Host | undefined {
   if (input.mac !== undefined) { fields.push("mac = ?"); values.push(normalizeMacForStorage(input.mac) ?? null); }
   if (input.known_host !== undefined) { fields.push("known_host = ?"); values.push(input.known_host); }
   if (input.monitor_ports !== undefined) { fields.push("monitor_ports = ?"); values.push(input.monitor_ports); }
+  if (input.device_manufacturer !== undefined) { fields.push("device_manufacturer = ?"); values.push(input.device_manufacturer); }
+  if (input.ip_assignment !== undefined) { fields.push("ip_assignment = ?"); values.push(input.ip_assignment); }
   if (input.status !== undefined) {
     fields.push("status = ?");
     values.push(input.status);

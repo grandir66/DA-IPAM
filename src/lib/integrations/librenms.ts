@@ -207,16 +207,45 @@ async function generateLibreNMSToken(
       // LibreNMS usa Laravel bcrypt (cost 10). Usa il modulo bcrypt già presente nell'app.
       const bcrypt = await import("bcrypt");
       const hash = await bcrypt.hash("admin", 10);
-      // auth_type='mysql', level=10 = superadmin LibreNMS, auth_id='' (local auth)
-      const insertUser = await dockerExecSafe(dbContainer, [
+
+      // Legge le colonne effettive della tabella users per costruire un INSERT compatibile
+      const colsRes = await dockerExecSafe(dbContainer, [
         "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
-        "-e",
-        `INSERT IGNORE INTO users (username, password, level, realname, email, auth_type, auth_id, enabled)
-         VALUES ('admin', '${hash}', 10, 'Administrator', 'admin@localhost', 'mysql', '', 1);`,
+        "-se", "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='librenms' AND TABLE_NAME='users' ORDER BY ORDINAL_POSITION;",
+      ]);
+      const existingCols = new Set(colsRes.stdout.trim().split("\n").map((c) => c.trim()).filter(Boolean));
+      log(`[token] Colonne users: ${[...existingCols].join(", ")}`);
+
+      // Costruisce INSERT con solo le colonne effettivamente presenti
+      const colDefs: Array<[string, string]> = [
+        ["username",  "'admin'"],
+        ["password",  `'${hash}'`],
+        ["level",     "10"],
+        ["realname",  "'Administrator'"],
+        ["email",     "'admin@localhost'"],
+        ["enabled",   "1"],
+      ];
+      const optional: Array<[string, string]> = [
+        ["auth_type",          "'mysql'"],
+        ["auth_id",            "''"],
+        ["can_modify_passwd",  "1"],
+      ];
+      for (const [col, val] of optional) {
+        if (existingCols.has(col)) colDefs.push([col, val]);
+      }
+
+      const cols   = colDefs.map(([c]) => c).join(", ");
+      const values = colDefs.map(([, v]) => v).join(", ");
+      const sql    = `INSERT IGNORE INTO users (${cols}) VALUES (${values});`;
+
+      const insertUser = await dockerExecSafe(dbContainer, [
+        "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms", "-e", sql,
       ]);
       if (!insertUser.ok) {
-        log(`[token] Creazione utente: ${(insertUser.stderr || insertUser.stdout).trim().substring(0, 120)}`);
+        const errOut = (insertUser.stderr || insertUser.stdout).trim().substring(0, 400);
+        log(`[token] INSERT utente fallito: ${errOut}`);
       }
+
       // Rilegge user_id
       const uid2 = await dockerExecSafe(dbContainer, [
         "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
@@ -249,7 +278,7 @@ async function generateLibreNMSToken(
     ]);
 
     if (!ins.ok) {
-      log(`[token] Inserimento token: ${(ins.stderr || ins.stdout).trim().substring(0, 120)}`);
+      log(`[token] Inserimento token: ${(ins.stderr || ins.stdout).trim().substring(0, 400)}`);
       return null;
     }
 

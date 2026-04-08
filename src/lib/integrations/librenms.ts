@@ -100,10 +100,6 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
         "-e", `REDIS_HOST=${redisContainer}`,
         "-e", "REDIS_PORT=6379",
         "-e", `BASE_URL=${serverUrl}`,
-        // Utente admin: il container lo crea via lnms user:add (evita SQL diretto)
-        "-e", "LIBRENMS_ADMIN_USER=admin",
-        "-e", `LIBRENMS_ADMIN_PASS=${adminPassword}`,
-        "-e", "LIBRENMS_ADMIN_EMAIL=admin@localhost",
         LIBRENMS_IMAGE,
       ],
       log
@@ -152,17 +148,20 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
 
 /**
  * Esegue un comando dentro un container Docker senza lanciare eccezione.
+ * @param asUser  Se impostato, aggiunge --user <asUser> al docker exec
  */
 async function dockerExecSafe(
   containerName: string,
-  cmd: string[]
+  cmd: string[],
+  { asUser, timeout = 30_000 }: { asUser?: string; timeout?: number } = {}
 ): Promise<{ stdout: string; stderr: string; ok: boolean }> {
   const { execFile: _execFile } = await import("child_process");
   const { promisify } = await import("util");
   const execFile = promisify(_execFile);
+  const userArgs = asUser ? ["--user", asUser] : [];
   try {
-    const r = await execFile("docker", ["exec", containerName, ...cmd], {
-      timeout: 30_000,
+    const r = await execFile("docker", ["exec", ...userArgs, containerName, ...cmd], {
+      timeout,
       maxBuffer: 2 * 1024 * 1024,
     });
     return { stdout: r.stdout, stderr: r.stderr, ok: true };
@@ -209,27 +208,47 @@ async function generateLibreNMSToken(
     return null;
   }
 
-  // ── Attende che il container abbia creato l'utente admin (via LIBRENMS_ADMIN_USER env) ──
-  log("[token] Attesa creazione utente admin da entrypoint container (max 3 min)...");
-  const userDeadline = Date.now() + 180_000;
-  let userId = "";
-  while (Date.now() < userDeadline) {
-    const uidCheck = await dockerExecSafe(dbContainer, [
+  // ── Crea utente admin via lnms user:add (metodo ufficiale LibreNMS) ─────
+  log("[token] Creazione utente admin via lnms user:add...");
+  const addUser = await dockerExecSafe(
+    containerName,
+    ["lnms", "user:add", "--no-interaction", "-p", adminPassword, "-r", "admin", "admin"],
+    { asUser: "librenms", timeout: 60_000 }
+  );
+  const addOut = (addUser.stdout + addUser.stderr).trim();
+  if (addOut) log(`[token] lnms user:add: ${addOut.substring(0, 200)}`);
+
+  // Legge user_id dal DB
+  const uidCheck = await dockerExecSafe(dbContainer, [
+    "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
+    "-se", "SELECT user_id FROM users WHERE username='admin' LIMIT 1;",
+  ]);
+  let userId = uidCheck.stdout.trim();
+
+  if (!userId || isNaN(Number(userId))) {
+    log("[token] Utente non trovato dopo lnms user:add, tentativo diretto via adduser.php...");
+    // Fallback: adduser.php (metodo legacy, disponibile nelle versioni precedenti)
+    const addLegacy = await dockerExecSafe(
+      containerName,
+      ["php", "/opt/librenms/adduser.php", "admin", adminPassword, "10", "admin@localhost"],
+      { asUser: "librenms", timeout: 30_000 }
+    );
+    const legOut = (addLegacy.stdout + addLegacy.stderr).trim();
+    if (legOut) log(`[token] adduser.php: ${legOut.substring(0, 200)}`);
+
+    // Rilegge
+    const uid2 = await dockerExecSafe(dbContainer, [
       "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
       "-se", "SELECT user_id FROM users WHERE username='admin' LIMIT 1;",
     ]);
-    userId = uidCheck.stdout.trim();
-    if (userId && !isNaN(Number(userId))) {
-      log(`[token] Utente admin pronto (user_id=${userId}).`);
-      break;
-    }
-    log("[token] Utente non ancora presente, attesa 10s...");
-    await new Promise((r) => setTimeout(r, 10_000));
+    userId = uid2.stdout.trim();
   }
+
   if (!userId || isNaN(Number(userId))) {
-    log("[token] Timeout: utente admin non trovato nel DB.");
+    log("[token] Impossibile creare utente admin.");
     return null;
   }
+  log(`[token] Utente admin pronto (user_id=${userId}).`);
 
   // ── Inserisce token in api_tokens ─────────────────────────────────────────
   try {

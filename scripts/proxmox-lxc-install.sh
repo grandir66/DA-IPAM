@@ -34,6 +34,21 @@ die() { echo -e "${RED}Errore:${NC} $*" >&2; exit 1; }
 info() { echo -e "${GREEN}==>${NC} $*" >&2; }
 warn() { echo -e "${YELLOW}Attenzione:${NC} $*" >&2; }
 
+# Bridge Linux sul nodo (vmbr0, …)
+bridge_exists() {
+  [[ -n "${1:-}" ]] && ip link show "$1" >/dev/null 2>&1
+}
+
+# Validazione leggera IPv4 + CIDR (es. 192.168.1.10/24)
+valid_ipv4_cidr() {
+  [[ "$1" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]
+}
+
+# IPv4 senza maschera
+valid_ipv4_addr() {
+  [[ "$1" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]
+}
+
 # pveam list stampa la prima colonna come "local:vztmpl/debian-12-standard_….tar.zst".
 # pct create vuole "<storage>:vztmpl/<solo-nome-file>": estraiamo solo il nome archivio.
 normalize_template_filename() {
@@ -73,17 +88,21 @@ pick_numbered_storage() {
   if [[ -z "$(echo "$raw" | tr -d '[:space:]')" ]]; then
     die "Nessuno storage con contenuto '$content'. Aggiungine uno in Datacenter → Storage (es. local per vztmpl, local-lvm per rootdir)."
   fi
-  echo "" >&2
-  echo "$title" >&2
-  echo "(tipo contenuto Proxmox: $content)" >&2
-  echo "$raw" | nl -w2 -s') ' >&2
-  local num
-  read -r -p "Numero storage [1]: " num
-  num="${num:-1}"
-  local name
-  name=$(echo "$raw" | sed -n "${num}p" | awk '{print $1}')
-  [[ -n "$name" ]] || die "Selezione storage non valida."
-  echo "$name"
+  while true; do
+    echo "" >&2
+    echo "$title" >&2
+    echo "(tipo contenuto Proxmox: $content)" >&2
+    echo "$raw" | nl -w2 -s') ' >&2
+    local num name
+    read -r -p "Numero storage [1]: " num
+    num="${num:-1}"
+    name=$(echo "$raw" | sed -n "${num}p" | awk '{print $1}')
+    if [[ -n "$name" ]]; then
+      echo "$name"
+      return 0
+    fi
+    warn "Selezione non valida: scegli un numero dall'elenco."
+  done
 }
 
 prompt() {
@@ -97,14 +116,25 @@ prompt() {
 
 prompt_secret() {
   local msg="$1"
-  local s1 s2
-  read -r -s -p "$msg: " s1
-  echo ""
-  read -r -s -p "Ripeti la password: " s2
-  echo ""
-  [[ "$s1" == "$s2" ]] || die "Le password non coincidono."
-  [[ -n "$s1" ]] || die "Password vuota non consentita."
-  echo "$s1"
+  local attempt max=12
+  for ((attempt = 1; attempt <= max; attempt++)); do
+    local s1 s2
+    read -r -s -p "$msg: " s1
+    echo ""
+    read -r -s -p "Ripeti la password: " s2
+    echo ""
+    if [[ -z "$s1" ]]; then
+      warn "Password vuota. Riprova ($attempt/$max)."
+      continue
+    fi
+    if [[ "$s1" != "$s2" ]]; then
+      warn "Le password non coincidono. Riprova ($attempt/$max)."
+      continue
+    fi
+    echo "$s1"
+    return 0
+  done
+  die "Troppi tentativi errati sulla password root. Rilancia lo script quando vuoi."
 }
 
 get_bridge_names() {
@@ -122,24 +152,31 @@ pick_bridge() {
     echo "$bridge"
     return
   fi
-  echo "" >&2
-  echo "Bridge di rete rilevati (scegli quello collegato a LAN o Wi‑Fi bridge-ato sul host):" >&2
-  echo "$raw" | nl -w2 -s') ' >&2
-  echo " 0) Inserisci manualmente il nome del bridge (es. vmbr0)" >&2
-  echo "" >&2
-  local num
-  read -r -p "Numero bridge [1] (0 = manuale): " num
-  num="${num:-1}"
-  if [[ "$num" == "0" ]]; then
-    read -r -p "Nome bridge: " name
-    [[ -n "${name:-}" ]] || die "Nome bridge obbligatorio."
-    echo "$name"
-    return
-  fi
-  local name
-  name=$(echo "$raw" | sed -n "${num}p")
-  [[ -n "$name" ]] || die "Selezione bridge non valida."
-  echo "$name"
+  while true; do
+    echo "" >&2
+    echo "Bridge di rete rilevati (scegli quello collegato a LAN o Wi‑Fi bridge-ato sul host):" >&2
+    echo "$raw" | nl -w2 -s') ' >&2
+    echo " 0) Inserisci manualmente il nome del bridge (es. vmbr0)" >&2
+    echo "" >&2
+    local num name
+    read -r -p "Numero bridge [1] (0 = manuale): " num
+    num="${num:-1}"
+    if [[ "$num" == "0" ]]; then
+      read -r -p "Nome bridge: " name
+      if [[ -z "${name:-}" ]]; then
+        warn "Nome bridge obbligatorio."
+        continue
+      fi
+      echo "$name"
+      return 0
+    fi
+    name=$(echo "$raw" | sed -n "${num}p")
+    if [[ -n "$name" ]]; then
+      echo "$name"
+      return 0
+    fi
+    warn "Selezione non valida: scegli un numero dall'elenco o 0 per inserimento manuale."
+  done
 }
 
 ctid_in_use() {
@@ -210,19 +247,26 @@ pick_available_template_filename() {
   echo " (Su Proxmox VE 7 alcuni template Ubuntu recenti possono mancare: in quel caso usa Debian 12 o aggiorna a PVE 8+.)" >&2
   echo "$filtered" | nl -w3 -s') ' >&2
   echo "" >&2
-  read -r -p "Numero riga del template da scaricare [1]: " num
-  num="${num:-1}"
-  local line
-  line=$(echo "$filtered" | sed -n "${num}p")
-  [[ -n "$line" ]] || die "Selezione template non valida."
-  local tname
-  tname=$(extract_template_filename_from_pveam_line "$line")
-  [[ -n "$tname" ]] || die "Impossibile ricavare il nome archivio dalla riga selezionata."
-  # Nome esatto atteso da pveam download (deve comparire in pveam available)
-  if ! echo "$avail" | grep -qF "$tname"; then
-    warn "Il nome estratto '$tname' non compare nell'elenco appena scaricato; potrebbe esserci un problema di formato. Riprova dopo 'pveam update'."
-  fi
-  echo "$tname"
+  while true; do
+    local num line tname
+    read -r -p "Numero riga del template da scaricare [1]: " num
+    num="${num:-1}"
+    line=$(echo "$filtered" | sed -n "${num}p")
+    if [[ -z "$line" ]]; then
+      warn "Selezione non valida: nessuna riga corrispondente. Riprova."
+      continue
+    fi
+    tname=$(extract_template_filename_from_pveam_line "$line")
+    if [[ -z "$tname" ]]; then
+      warn "Impossibile ricavare il nome file .tar.* dalla riga. Scegli un altro numero."
+      continue
+    fi
+    if ! echo "$avail" | grep -qF "$tname"; then
+      warn "Nome estratto '$tname' insolito rispetto al catalogo; potresti aver scelto la riga sbagliata."
+    fi
+    echo "$tname"
+    return 0
+  done
 }
 
 pick_template() {
@@ -233,32 +277,42 @@ pick_template() {
   lines=$(list_templates_on_storage "$tpl_stor")
   if [[ -z "$(echo "$lines" | tr -d '[:space:]')" ]]; then
     warn "Nessun template sullo storage '$tpl_stor'. Scelta da catalogo e download."
-    local tname
-    tname=$(pick_available_template_filename)
-    info "Download su storage '$tpl_stor' (può richiedere alcuni minuti)…"
-    info "Template: $tname"
-    if ! pveam download "$tpl_stor" "$tname"; then
+    while true; do
+      local tname
+      tname=$(pick_available_template_filename)
+      info "Download su storage '$tpl_stor' (può richiedere alcuni minuti)…"
+      info "Template: $tname"
+      if pveam download "$tpl_stor" "$tname"; then
+        echo "$tpl_stor|$tname"
+        return 0
+      fi
       echo "" >&2
-      warn "Download fallito (es. 400 'no such template'). Prova da shell:"
-      echo "    pveam update" >&2
-      echo "    pveam available --section system | grep -E 'ubuntu|debian'" >&2
-      echo "    pveam download $tpl_stor <copia-incolla del nome file .tar.zst dall'ultima colonna>" >&2
-      die "Download template fallito."
-    fi
-    echo "$tpl_stor|$tname"
-    return
+      warn "Download fallito (nome errato, rete, o template non più sul mirror)."
+      echo "    Suggerimento: pveam update && pveam available --section system | grep -E 'debian|ubuntu'" >&2
+      local again
+      read -r -p "Riprova con un altro template dalla lista? (S/n): " again
+      [[ "$again" =~ ^[nN] ]] && die "Download template annullato. Rilancia lo script quando preferisci."
+    done
   fi
 
-  echo "$lines" | nl -w2 -s') ' >&2
-  local num
-  read -r -p "Numero riga del template da usare [1]: " num
-  num="${num:-1}"
-  local file
-  file=$(echo "$lines" | sed -n "${num}p" | awk '{print $1}')
-  [[ -n "$file" ]] || die "Selezione template non valida."
-  file=$(normalize_template_filename "$file")
-  [[ -n "$file" ]] || die "Nome template non valido dopo normalizzazione."
-  echo "$tpl_stor|$file"
+  while true; do
+    echo "$lines" | nl -w2 -s') ' >&2
+    local num file
+    read -r -p "Numero riga del template da usare [1]: " num
+    num="${num:-1}"
+    file=$(echo "$lines" | sed -n "${num}p" | awk '{print $1}')
+    if [[ -z "$file" ]]; then
+      warn "Selezione non valida. Riprova."
+      continue
+    fi
+    file=$(normalize_template_filename "$file")
+    if [[ -z "$file" ]]; then
+      warn "Nome template non valido dopo normalizzazione. Riprova."
+      continue
+    fi
+    echo "$tpl_stor|$file"
+    return 0
+  done
 }
 
 pick_storage() {
@@ -341,6 +395,128 @@ ensure_ct_dns_for_apt() {
   info "DNS nel CT: OK (test archive.ubuntu.com / deb.debian.org)."
 }
 
+# --- Wizard: input ripetuti fino a validazione (senza uscire dallo script) ---
+
+wizard_ask_identity() {
+  local def_id
+  def_id=$(suggest_ctid)
+  while true; do
+    read -r -p "2) ID numerico del container (VMID / CTID) [${def_id}]: " vmid
+    vmid="${vmid:-$def_id}"
+    if ! [[ "$vmid" =~ ^[0-9]+$ ]]; then
+      warn "L'ID deve contenere solo cifre."
+      continue
+    fi
+    if ctid_in_use "$vmid"; then
+      warn "L'ID $vmid è già in uso da un altro CT/VM. VMID libero suggerito: $(suggest_ctid)"
+      continue
+    fi
+    break
+  done
+  while true; do
+    read -r -p "3) Hostname del container [da-invent]: " hostname
+    hostname="${hostname:-da-invent}"
+    if [[ "$hostname" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]]; then
+      break
+    fi
+    warn "Hostname non valido (lettere, cifre, trattino; lunghezza DNS)."
+  done
+}
+
+wizard_ask_resources() {
+  while true; do
+    cores=$(prompt "2" "4) Numero di core CPU")
+    [[ "$cores" =~ ^[0-9]+$ ]] && [[ "$cores" -ge 1 ]] && break
+    warn "Indica un numero intero ≥ 1."
+  done
+  while true; do
+    mem=$(prompt "2048" "5) RAM (MiB)")
+    [[ "$mem" =~ ^[0-9]+$ ]] && [[ "$mem" -ge 128 ]] && break
+    warn "RAM: numero intero ≥ 128 (MiB)."
+  done
+  while true; do
+    disk=$(prompt "16" "6) Disco root (GB)")
+    [[ "$disk" =~ ^[0-9]+$ ]] && [[ "$disk" -ge 4 ]] && break
+    warn "Disco: numero intero ≥ 4 (GB)."
+  done
+  storage=$(pick_storage)
+}
+
+wizard_ask_network() {
+  info "7) Rete — bridge (menu numerato)"
+  while true; do
+    bridge=$(pick_bridge)
+    if bridge_exists "$bridge"; then
+      break
+    fi
+    warn "Interfaccia bridge '$bridge' non trovata su questo nodo (verifica con: ip link). Riprova la scelta."
+  done
+
+  while true; do
+    vlan_ask=$(prompt "" "   VLAN tag (opzionale, Invio = nessuna)")
+    vlan=""
+    if [[ -z "$vlan_ask" ]]; then
+      break
+    fi
+    if [[ "$vlan_ask" =~ ^[0-9]+$ ]]; then
+      vlan="$vlan_ask"
+      break
+    fi
+    warn "VLAN deve essere un numero o vuoto."
+  done
+
+  while true; do
+    echo ""
+    echo "   Modalità indirizzo IP:"
+    echo "     1) DHCP"
+    echo "     2) Statico"
+    read -r -p "   Scelta [1]: " ipmode
+    ipmode="${ipmode:-1}"
+    static_ip=""
+    static_gw=""
+    if [[ "$ipmode" == "2" ]]; then
+      while true; do
+        read -r -p "   Indirizzo IPv4 con CIDR (es. 192.168.1.50/24): " static_ip
+        if valid_ipv4_cidr "$static_ip"; then
+          break
+        fi
+        warn "Formato atteso: x.x.x.x/nn (es. 192.168.1.50/24)."
+      done
+      while true; do
+        read -r -p "   Gateway (es. 192.168.1.1, Invio = nessuno): " static_gw
+        if [[ -z "$static_gw" ]]; then
+          break
+        fi
+        if valid_ipv4_addr "$static_gw"; then
+          break
+        fi
+        warn "Gateway deve essere un IPv4 valido o vuoto."
+      done
+    elif [[ "$ipmode" == "1" ]]; then
+      break
+    else
+      warn "Scelta non valida: usa 1 (DHCP) o 2 (statico)."
+      continue
+    fi
+    break
+  done
+
+  net0=$(build_net0 "$bridge" "$vlan" "$([[ "$ipmode" == "2" ]] && echo static || echo dhcp)" "$static_ip" "$static_gw")
+}
+
+wizard_ask_privileged() {
+  echo ""
+  warn "Per scansioni nmap/ping affidabili, un container privilegiato è spesso necessario."
+  read -r -p "8) Container privilegiato? (s/n) [s]: " priv
+  priv="${priv:-s}"
+  unpriv_flag="--unprivileged 1"
+  priv_label="no (unprivileged)"
+  if [[ "$priv" =~ ^[sSyY] ]]; then
+    unpriv_flag="--unprivileged 0"
+    priv_label="sì (consigliato per nmap)"
+  fi
+}
+
 main() {
   require_root
   require_proxmox
@@ -358,103 +534,131 @@ main() {
   echo "  DNS/rete nel container: lo script può proporre DNS pubblici in /etc/resolv.conf."
   echo ""
 
-  # --- OS / template ---
+  # --- OS / template + parametri CT (con ripetizione se pct create fallisce) ---
   info "1) Sistema operativo (template LXC)"
   warn "L'installer DA-INVENT nello script install.sh supporta Debian/Ubuntu (apt)."
   local tpl_pick tpl_storage ostemplate
+  local vmid hostname cores mem disk storage net0 unpriv_flag priv_label rootpw
+  local wiz_retry=full
+
   tpl_pick=$(pick_template)
   [[ "$tpl_pick" == *"|"* ]] || die "Selezione template non valida."
   tpl_storage="${tpl_pick%%|*}"
   ostemplate="${tpl_pick#*|}"
   [[ -n "$ostemplate" ]] || die "Nome file template vuoto."
 
-  # --- CT ID ---
-  local def_id
-  def_id=$(suggest_ctid)
-  local vmid
-  vmid=$(prompt "$def_id" "2) ID numerico del container (VMID / CTID)")
-  [[ "$vmid" =~ ^[0-9]+$ ]] || die "L'ID deve essere numerico."
-  ctid_in_use "$vmid" && die "L'ID $vmid è già in uso."
+  while true; do
+    case $wiz_retry in
+      full)
+        wizard_ask_identity
+        wizard_ask_resources
+        wizard_ask_network
+        wizard_ask_privileged
+        echo ""
+        info "9) Password utente root nel container"
+        rootpw=$(prompt_secret "Password root")
+        ;;
+      v)
+        wizard_ask_identity
+        echo ""
+        info "Password root (nuova o conferma)"
+        rootpw=$(prompt_secret "Password root")
+        ;;
+      r)
+        wizard_ask_network
+        ;;
+      t)
+        tpl_pick=$(pick_template)
+        [[ "$tpl_pick" == *"|"* ]] || { warn "Selezione template non valida."; wiz_retry=full; continue; }
+        tpl_storage="${tpl_pick%%|*}"
+        ostemplate="${tpl_pick#*|}"
+        ;;
+      w)
+        wizard_ask_resources
+        ;;
+      p)
+        wizard_ask_privileged
+        ;;
+      a)
+        tpl_pick=$(pick_template)
+        [[ "$tpl_pick" == *"|"* ]] || { warn "Selezione template non valida."; wiz_retry=full; continue; }
+        tpl_storage="${tpl_pick%%|*}"
+        ostemplate="${tpl_pick#*|}"
+        wizard_ask_identity
+        wizard_ask_resources
+        wizard_ask_network
+        wizard_ask_privileged
+        echo ""
+        info "9) Password utente root nel container"
+        rootpw=$(prompt_secret "Password root")
+        ;;
+      *)
+        warn "Scelta non valida: ripetizione completa dei parametri."
+        wiz_retry=full
+        continue
+        ;;
+    esac
 
-  # --- Hostname ---
-  local hostname
-  hostname=$(prompt "da-invent" "3) Hostname del container")
-  [[ "$hostname" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] || die "Hostname non valido."
+    echo ""
+    echo "--- Riepilogo ---"
+    echo "  VMID:      $vmid"
+    echo "  Hostname:  $hostname"
+    echo "  Template:  ${tpl_storage}:vztmpl/${ostemplate}"
+    echo "  Risorse:   $cores core, ${mem} MiB RAM, ${disk} GB su storage $storage"
+    echo "  Rete:      $net0"
+    echo "  Privilegi: $priv_label"
+    echo ""
+    local ok_sum
+    read -r -p "Confermi e procedi con pct create? (S/n): " ok_sum
+    ok_sum="${ok_sum:-S}"
+    if [[ "$ok_sum" =~ ^[nN] ]]; then
+      read -r -p "Cosa modificare? v=VMID/host  r=rete  t=template  w=risorse  p=privilegi  a=tutto  Invio=tutto: " wiz_retry
+      wiz_retry="${wiz_retry:-full}"
+      wiz_retry=$(printf '%s' "$wiz_retry" | tr '[:upper:]' '[:lower:]')
+      continue
+    fi
 
-  # --- Resources ---
-  local cores mem disk
-  cores=$(prompt "2" "4) Numero di core CPU")
-  mem=$(prompt "2048" "5) RAM (MiB)")
-  disk=$(prompt "16" "6) Disco root (GB)")
-
-  local storage
-  storage=$(pick_storage)
-
-  # --- Network ---
-  info "7) Rete — bridge (menu numerato)"
-  local bridge
-  bridge=$(pick_bridge)
-
-  local vlan_ask
-  vlan_ask=$(prompt "" "   VLAN tag (opzionale, Invio = nessuna)")
-  local vlan=""
-  if [[ -n "$vlan_ask" ]]; then
-    [[ "$vlan_ask" =~ ^[0-9]+$ ]] || die "VLAN deve essere numerica."
-    vlan="$vlan_ask"
-  fi
-
-  local ipmode
-  echo ""
-  echo "   Modalità indirizzo IP:"
-  echo "     1) DHCP"
-  echo "     2) Statico"
-  read -r -p "   Scelta [1]: " ipmode
-  ipmode="${ipmode:-1}"
-  local static_ip="" static_gw=""
-  if [[ "$ipmode" == "2" ]]; then
-    read -r -p "   Indirizzo IPv4 con CIDR (es. 192.168.1.50/24): " static_ip
-    read -r -p "   Gateway (es. 192.168.1.1): " static_gw
-  fi
-  local net0
-  net0=$(build_net0 "$bridge" "$vlan" "$([[ "$ipmode" == "2" ]] && echo static || echo dhcp)" "$static_ip" "$static_gw")
-
-  # --- Privileged (nmap) ---
-  echo ""
-  warn "Per scansioni nmap/ping affidabili, un container privilegiato è spesso necessario."
-  local priv
-  read -r -p "8) Container privilegiato? (s/n) [s]: " priv
-  priv="${priv:-s}"
-  local unpriv_flag="--unprivileged 1"
-  local priv_label="no (unprivileged)"
-  if [[ "$priv" =~ ^[sSyY] ]]; then
-    unpriv_flag="--unprivileged 0"
-    priv_label="sì (consigliato per nmap)"
-  fi
-
-  # --- Password ---
-  echo ""
-  info "9) Password utente root nel container"
-  local rootpw
-  rootpw=$(prompt_secret "Password root")
-
-  # --- Create ---
-  info "Creazione container $vmid (template ${tpl_storage}:vztmpl/${ostemplate})..."
-  pct create "$vmid" "${tpl_storage}:vztmpl/${ostemplate}" \
-    --hostname "$hostname" \
-    --memory "$mem" \
-    --cores "$cores" \
-    --rootfs "${storage}:${disk}" \
-    --net0 "$net0" \
-    --onboot 1 \
-    $unpriv_flag \
-    --password "$rootpw"
-
-  info "Avvio container..."
-  pct start "$vmid"
-
-  echo ""
-  info "Container $vmid avviato (hostname: $hostname)."
-  echo ""
+    info "Creazione container $vmid (template ${tpl_storage}:vztmpl/${ostemplate})..."
+    local pct_log
+    pct_log=$(mktemp)
+    set +e
+    pct create "$vmid" "${tpl_storage}:vztmpl/${ostemplate}" \
+      --hostname "$hostname" \
+      --memory "$mem" \
+      --cores "$cores" \
+      --rootfs "${storage}:${disk}" \
+      --net0 "$net0" \
+      --onboot 1 \
+      $unpriv_flag \
+      --password "$rootpw" >"$pct_log" 2>&1
+    local pec=$?
+    set -e
+    if [[ $pec -eq 0 ]]; then
+      rm -f "$pct_log"
+      info "Avvio container..."
+      pct start "$vmid"
+      echo ""
+      info "Container $vmid avviato (hostname: $hostname)."
+      echo ""
+      break
+    fi
+    warn "pct create fallito (codice $pec):"
+    cat "$pct_log" >&2 || true
+    rm -f "$pct_log"
+    echo ""
+    echo "Correggi i parametri e riprova (nessun CT creato):" >&2
+    echo "  v = VMID / hostname      r = rete (bridge, VLAN, DHCP/static)" >&2
+    echo "  t = altro template       w = core, RAM, disco, storage" >&2
+    echo "  p = container privilegiato / unprivileged" >&2
+    echo "  a = ricomincia da template + tutti i passi" >&2
+    echo "  q = esci senza creare" >&2
+    read -r -p "Scelta [v]: " wiz_retry
+    wiz_retry="${wiz_retry:-v}"
+    wiz_retry=$(printf '%s' "$wiz_retry" | tr '[:upper:]' '[:lower:]')
+    if [[ "$wiz_retry" == "q" ]]; then
+      exit 1
+    fi
+  done
 
   # --- Optional DA-INVENT install ---
   local do_install

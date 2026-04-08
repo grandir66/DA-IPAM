@@ -434,7 +434,7 @@ export interface SwitchPort {
 export interface ScheduledJob {
   id: number;
   network_id: number | null;
-  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync";
+  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check";
   interval_minutes: number;
   last_run: string | null;
   next_run: string | null;
@@ -601,7 +601,7 @@ export interface CredentialInput {
 
 export interface ScheduledJobInput {
   network_id?: number | null;
-  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync";
+  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check";
   interval_minutes: number;
   config?: Record<string, unknown>;
 }
@@ -660,4 +660,101 @@ export interface DiscoveryResult {
   hosts_offline: number;
   new_hosts: number;
   duration_ms: number;
+}
+
+// ── Analytics: Anomaly Detection ─────────────────────────────────────────────
+
+export type AnomalyType =
+  | "mac_flip"
+  | "new_unknown_host"
+  | "port_change"
+  | "uptime_anomaly"
+  | "latency_anomaly";
+
+export type AnomalySeverity = "low" | "medium" | "high";
+
+export interface AnomalyEvent {
+  id: number;
+  host_id: number | null;
+  network_id: number | null;
+  anomaly_type: AnomalyType;
+  severity: AnomalySeverity;
+  description: string;
+  detail_json: string | null;
+  acknowledged: number; // 0 | 1 (SQLite boolean)
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
+  detected_at: string;
+  resolved_at: string | null;
+}
+
+export interface MacFlipDetail {
+  ip: string;
+  old_mac: string;
+  new_mac: string;
+  old_vendor: string | null;
+  new_vendor: string | null;
+}
+
+export interface PortChangeDetail {
+  ip: string;
+  ports_added: number[];
+  ports_removed: number[];
+  baseline_ports: number[];
+  current_ports: number[];
+}
+
+export interface UptimeAnomalyDetail {
+  ip: string;
+  offline_rate_recent: number;
+  offline_rate_baseline: number;
+  check_window_hours: number;
+}
+
+export interface LatencyAnomalyDetail {
+  ip: string;
+  current_ms: number;
+  baseline_mean_ms: number;
+  baseline_stddev_ms: number;
+  z_score: number;
+}
+
+// ── Analytics: Classificazione Migliorata ────────────────────────────────────
+
+export type FeatureSource =
+  | "ports"
+  | "snmp_oid"
+  | "snmp_sysdescr"
+  | "banner_http"
+  | "banner_ssh"
+  | "hostname"
+  | "mac_vendor"
+  | "ttl"
+  | "nmap_os";
+
+export interface ClassificationFeature {
+  source: FeatureSource;
+  label: string;        // es. "Porta 8006 (Proxmox web)"
+  value: string;        // es. "8006" oppure "Linux 3.x"
+  contribution: number; // 0.0 – 1.0
+}
+
+export interface FingerprintExplanation {
+  final_device: string | null;
+  final_confidence: number;
+  classification: string;
+  features: ClassificationFeature[];
+  unmatched_signals: { source: FeatureSource; value: string }[];
+}
+
+export interface ClassificationFeedback {
+  id: number;
+  host_id: number;
+  corrected_classification: string;
+  previous_classification: string | null;
+  feature_snapshot_json: string | null;
+  fingerprint_device_label: string | null;
+  fingerprint_confidence: number | null;
+  corrected_by: string | null;
+  created_at: string;
 }

@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS switch_ports (
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'cleanup', 'known_host_check', 'ad_sync')),
+  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check')),
   interval_minutes INTEGER NOT NULL DEFAULT 60,
   last_run TEXT,
   next_run TEXT,
@@ -538,6 +538,35 @@ CREATE TABLE IF NOT EXISTS dhcp_leases (
   UNIQUE(source_device_id, ip_address)
 );
 
+-- Analytics: eventi anomalia rilevati automaticamente
+CREATE TABLE IF NOT EXISTS anomaly_events (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id         INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
+  network_id      INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+  anomaly_type    TEXT NOT NULL CHECK(anomaly_type IN ('mac_flip','new_unknown_host','port_change','uptime_anomaly','latency_anomaly')),
+  severity        TEXT NOT NULL DEFAULT 'medium' CHECK(severity IN ('low','medium','high')),
+  description     TEXT NOT NULL,
+  detail_json     TEXT,
+  acknowledged    INTEGER NOT NULL DEFAULT 0,
+  acknowledged_at TEXT,
+  acknowledged_by TEXT,
+  detected_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at     TEXT
+);
+
+-- Analytics: feedback correzione classificazione dispositivi
+CREATE TABLE IF NOT EXISTS classification_feedback (
+  id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id                  INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  corrected_classification TEXT NOT NULL,
+  previous_classification  TEXT,
+  feature_snapshot_json    TEXT,
+  fingerprint_device_label TEXT,
+  fingerprint_confidence   REAL,
+  corrected_by             TEXT,
+  created_at               TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Neighbors LLDP/CDP/MNDP
 CREATE TABLE IF NOT EXISTS device_neighbors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -684,6 +713,18 @@ CREATE INDEX IF NOT EXISTS idx_dhcp_leases_mac ON dhcp_leases(mac_address);
 CREATE INDEX IF NOT EXISTS idx_dhcp_leases_ip ON dhcp_leases(ip_address);
 CREATE INDEX IF NOT EXISTS idx_dhcp_leases_host ON dhcp_leases(host_id);
 CREATE INDEX IF NOT EXISTS idx_dhcp_leases_network ON dhcp_leases(network_id);
+
+-- Anomaly Events
+CREATE INDEX IF NOT EXISTS idx_anomaly_events_host     ON anomaly_events(host_id);
+CREATE INDEX IF NOT EXISTS idx_anomaly_events_network  ON anomaly_events(network_id);
+CREATE INDEX IF NOT EXISTS idx_anomaly_events_type     ON anomaly_events(anomaly_type);
+CREATE INDEX IF NOT EXISTS idx_anomaly_events_detected ON anomaly_events(detected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_anomaly_events_ack      ON anomaly_events(acknowledged, detected_at DESC);
+
+-- Classification Feedback
+CREATE INDEX IF NOT EXISTS idx_classification_feedback_host    ON classification_feedback(host_id);
+CREATE INDEX IF NOT EXISTS idx_classification_feedback_class   ON classification_feedback(corrected_classification);
+CREATE INDEX IF NOT EXISTS idx_classification_feedback_created ON classification_feedback(created_at DESC);
 
 -- Neighbors / Routes
 CREATE INDEX IF NOT EXISTS idx_device_neighbors_device ON device_neighbors(device_id);

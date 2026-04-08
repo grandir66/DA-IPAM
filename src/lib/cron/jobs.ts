@@ -34,6 +34,26 @@ import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { classifyDevice } from "@/lib/device-classifier";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
+import {
+  checkMacFlip,
+  checkNewUnknownHosts,
+  checkPortChanges,
+  checkUptimeAnomaly,
+  checkLatencyAnomaly,
+  type HostForAnomaly,
+  type ScanHistoryForAnomaly,
+  type StatusHistoryEntry,
+} from "@/lib/analytics/anomaly";
+import {
+  insertAnomalyEvent,
+  hasOpenAnomaly,
+} from "@/lib/analytics/anomaly-db";
+import {
+  getAllHostsFlat,
+  getStatusHistory,
+  getHostLatencyHistory,
+  getScanHistory,
+} from "@/lib/db-tenant";
 
 export async function runJob(jobId: number): Promise<void> {
   const jobs = getScheduledJobs();
@@ -64,6 +84,9 @@ export async function runJob(jobId: number): Promise<void> {
       break;
     case "ad_sync":
       await runAdSync(job.config);
+      break;
+    case "anomaly_check":
+      await runAnomalyCheck(job.network_id);
       break;
   }
 }
@@ -699,5 +722,117 @@ async function syncSingleAdIntegration(integrationId: number): Promise<void> {
   } catch (err) {
     console.error(`[AD Sync] Errore integrazione #${integrationId}:`, err);
   }
+}
+
+// ── Anomaly Check ─────────────────────────────────────────────────────────────
+
+async function runAnomalyCheck(networkId: number | null): Promise<void> {
+  console.info(`[Anomaly] Avvio check anomalie${networkId ? ` rete #${networkId}` : " (tutte le reti)"}`);
+  const start = Date.now();
+  let created = 0;
+
+  const allHosts = getAllHostsFlat();
+  const hosts: HostForAnomaly[] = allHosts
+    .filter((h) => !networkId || h.network_id === networkId)
+    .map((h) => ({
+      id: h.id,
+      ip: h.ip,
+      mac: h.mac ?? null,
+      vendor: h.vendor ?? null,
+      network_id: h.network_id,
+      known_host: h.known_host ?? 0,
+      first_seen: h.first_seen ?? null,
+      status: h.status ?? "unknown",
+      open_ports: (h as unknown as { open_ports?: string }).open_ports ?? null,
+    }));
+
+  if (hosts.length === 0) {
+    console.info("[Anomaly] Nessun host da analizzare");
+    return;
+  }
+
+  // 1. MAC flip — usa ARP entries recenti (ultimi 2h)
+  try {
+    const db = getDb();
+    const recentArp = db.prepare(
+      `SELECT host_id, mac, ip, timestamp FROM arp_entries
+       WHERE timestamp >= datetime('now', '-2 hours')
+       ORDER BY timestamp DESC`
+    ).all() as { host_id: number | null; mac: string; ip: string | null; timestamp: string }[];
+
+    const macFlipEvents = checkMacFlip(hosts, recentArp);
+    for (const ev of macFlipEvents) {
+      if (ev.host_id && hasOpenAnomaly(ev.host_id, "mac_flip", 24)) continue;
+      insertAnomalyEvent(ev);
+      created++;
+    }
+  } catch (err) {
+    console.error("[Anomaly] Errore check mac_flip:", err);
+  }
+
+  // 2. Nuovi host non censiti
+  try {
+    const newHostEvents = checkNewUnknownHosts(hosts);
+    for (const ev of newHostEvents) {
+      if (ev.host_id && hasOpenAnomaly(ev.host_id, "new_unknown_host", 4)) continue;
+      insertAnomalyEvent(ev);
+      created++;
+    }
+  } catch (err) {
+    console.error("[Anomaly] Errore check new_unknown_host:", err);
+  }
+
+  // 3. Port changes — legge ultimi 3 scan per host con ports_open valorizzato
+  try {
+    const hostScans = new Map<number, ScanHistoryForAnomaly[]>();
+    const hostsInScope = hosts.filter((h) => h.known_host === 1);
+
+    for (const host of hostsInScope) {
+      const scans = getScanHistory({ host_id: host.id, limit: 3 });
+      const withPorts = scans
+        .filter((s) => s.ports_open != null)
+        .map((s) => ({ host_id: host.id, ports_open: s.ports_open, timestamp: s.timestamp }));
+      if (withPorts.length >= 2) hostScans.set(host.id, withPorts);
+    }
+
+    const portChangeEvents = checkPortChanges(hostScans, hosts);
+    for (const ev of portChangeEvents) {
+      if (ev.host_id && hasOpenAnomaly(ev.host_id, "port_change", 12)) continue;
+      insertAnomalyEvent(ev);
+      created++;
+    }
+  } catch (err) {
+    console.error("[Anomaly] Errore check port_change:", err);
+  }
+
+  // 4+5. Uptime e latency anomaly — solo known_host per limitare il carico
+  const knownHosts = hosts.filter((h) => h.known_host === 1);
+  for (const host of knownHosts) {
+    // Uptime anomaly
+    try {
+      const history = getStatusHistory(host.id, 500) as StatusHistoryEntry[];
+      const ev = checkUptimeAnomaly(host.id, host.network_id, host.ip, history);
+      if (ev && !hasOpenAnomaly(host.id, "uptime_anomaly", 24)) {
+        insertAnomalyEvent(ev);
+        created++;
+      }
+    } catch (err) {
+      console.error(`[Anomaly] Errore uptime_anomaly host #${host.id}:`, err);
+    }
+
+    // Latency anomaly
+    try {
+      const latHistory = getHostLatencyHistory(host.id, 72);
+      const ev = checkLatencyAnomaly(host.id, host.network_id, host.ip, latHistory);
+      if (ev && !hasOpenAnomaly(host.id, "latency_anomaly", 6)) {
+        insertAnomalyEvent(ev);
+        created++;
+      }
+    } catch (err) {
+      console.error(`[Anomaly] Errore latency_anomaly host #${host.id}:`, err);
+    }
+  }
+
+  console.info(`[Anomaly] Completato in ${Date.now() - start}ms — ${created} nuovi eventi`);
 }
 

@@ -28,6 +28,7 @@ import {
   Building2,
   ClipboardList,
   Radar,
+  AlertTriangle,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -231,6 +232,21 @@ export function Sidebar() {
             </div>
           )}
         </div>
+
+        {/* Anomalie */}
+        <Link
+          href="/analytics"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            isActive("/analytics")
+              ? "bg-sidebar-primary text-sidebar-primary-foreground"
+              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <AlertTriangle className="h-4 w-4" />
+          Anomalie
+        </Link>
 
         {/* Active Directory */}
         <Link

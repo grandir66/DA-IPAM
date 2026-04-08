@@ -34,9 +34,11 @@ export interface ComponentConfig {
   mode: IntegrationMode;
   url: string;
   apiToken: string;
-  /** solo per graylog */
+  /** solo per graylog external */
   username?: string;
   password?: string;
+  /** password admin salvata dopo l'installazione managed (librenms, graylog) */
+  adminPassword?: string;
   /** nome container Docker (se managed) */
   containerName?: string;
 }

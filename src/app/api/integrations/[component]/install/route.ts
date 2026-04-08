@@ -38,6 +38,14 @@ export async function POST(
   const cfg = getIntegrationConfig(component);
   const containerName = cfg.containerName ?? `da-${component}`;
 
+  let adminPassword = "admin";
+  try {
+    const body = await req.json() as { adminPassword?: string };
+    if (body.adminPassword && typeof body.adminPassword === "string" && body.adminPassword.trim().length >= 6) {
+      adminPassword = body.adminPassword.trim();
+    }
+  } catch { /* body vuoto ok */ }
+
   const jobId = randomUUID();
   createJob({
     id: jobId,
@@ -49,9 +57,9 @@ export async function POST(
 
   // Avvia in background
   const runners: Record<IntegrationComponent, () => Promise<void>> = {
-    librenms: () => installLibreNMS(jobId, containerName),
+    librenms: () => installLibreNMS(jobId, containerName, adminPassword),
     loki: () => installLoki(jobId, containerName),
-    graylog: () => installGraylog(jobId, containerName),
+    graylog: () => installGraylog(jobId, containerName, adminPassword),
   };
 
   runners[component]().catch(() => {

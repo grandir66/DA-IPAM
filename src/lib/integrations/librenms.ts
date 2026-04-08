@@ -12,7 +12,7 @@ const APP_KEY = "base64:TGGLpPFMtGHB2I3SFUevQCkIHkrmbXR6b+x5W7jf8jA=";
 // --security-opt apparmor=unconfined bypassa problemi AppArmor su Ubuntu/Debian
 const SEC_OPT = ["--security-opt", "apparmor=unconfined"];
 
-export async function installLibreNMS(jobId: string, containerName: string): Promise<void> {
+export async function installLibreNMS(jobId: string, containerName: string, adminPassword = "admin"): Promise<void> {
   const log = (line: string) => appendLog(jobId, line);
   const dbContainer = `${containerName}-db`;
   const redisContainer = `${containerName}-redis`;
@@ -104,19 +104,22 @@ export async function installLibreNMS(jobId: string, containerName: string): Pro
     );
 
     // ── WAIT ─────────────────────────────────────────────────────────────────
-    // LibreNMS fa migrazioni DB al primo avvio → può richiedere 3-5 minuti
+    // LibreNMS fa migrazioni DB al primo avvio → può richiedere 3-5 minuti.
+    // waitForHttp si ferma appena nginx risponde (può essere ancora in setup),
+    // per questo usiamo waitForLibreNMSReady che verifica l'API reale.
     updateJob(jobId, { phase: "waiting" });
-    log("[wait] Attesa avvio LibreNMS (max 5 minuti — prime migrazioni DB richiedono tempo)...");
-    await waitForHttp("http://localhost:8090", 300, log);
+    log("[wait] Attesa avvio LibreNMS — prime migrazioni DB richiedono 3-5 minuti...");
+    await waitForLibreNMSReady("http://localhost:8090", 360, log);
 
     // ── API TOKEN AUTOMATICO ─────────────────────────────────────────────────
     log("[token] Generazione API token automatica via docker exec...");
-    const apiToken = await generateLibreNMSToken(containerName, log);
+    const apiToken = await generateLibreNMSToken(containerName, log, adminPassword);
 
     setIntegrationConfig("librenms", {
       mode: "managed",
       url: "http://localhost:8090",
       apiToken: apiToken ?? "",
+      adminPassword,
       containerName,
     });
 
@@ -128,7 +131,7 @@ export async function installLibreNMS(jobId: string, containerName: string): Pro
       log("[done] LibreNMS installato su http://localhost:8090");
       log("[warn] Generazione token automatica fallita. Vai in LibreNMS → Impostazioni → API Token per creare un token manualmente.");
     }
-    log("[done] Credenziali default: admin / admin (cambiarle subito)");
+    log(`[done] Credenziali: utente=admin  password=${adminPassword}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     updateJob(jobId, { phase: "error", error: msg, finishedAt: new Date().toISOString() });
@@ -168,7 +171,8 @@ async function dockerExecSafe(
  */
 async function generateLibreNMSToken(
   containerName: string,
-  log: (l: string) => void
+  log: (l: string) => void,
+  adminPassword = "admin"
 ): Promise<string | null> {
   const dbContainer = `${containerName}-db`;
 
@@ -206,7 +210,7 @@ async function generateLibreNMSToken(
     try {
       // LibreNMS usa Laravel bcrypt (cost 10). Usa il modulo bcrypt già presente nell'app.
       const bcrypt = await import("bcrypt");
-      const hash = await bcrypt.hash("admin", 10);
+      const hash = await bcrypt.hash(adminPassword, 10);
 
       // Legge le colonne effettive della tabella users per costruire un INSERT compatibile
       const colsRes = await dockerExecSafe(dbContainer, [
@@ -309,22 +313,34 @@ async function generateLibreNMSToken(
   }
 }
 
-async function waitForHttp(url: string, maxSeconds: number, log: (l: string) => void): Promise<void> {
+/**
+ * Attende che LibreNMS sia completamente pronto (migrazioni DB incluse).
+ * Controlla l'endpoint /api/v0/ che ritorna JSON solo quando l'app è operativa
+ * (401 Unauthorized = pronto; 200 con JSON = pronto; 502/503 = ancora in avvio).
+ */
+async function waitForLibreNMSReady(baseUrl: string, maxSeconds: number, log: (l: string) => void): Promise<void> {
   const deadline = Date.now() + maxSeconds * 1000;
   let attempt = 0;
   while (Date.now() < deadline) {
     attempt++;
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (res.ok || (res.status >= 200 && res.status < 500)) {
-        log(`[wait] Servizio raggiungibile (tentativo ${attempt})`);
+      const res = await fetch(`${baseUrl}/api/v0/`, { signal: AbortSignal.timeout(6000) });
+      // 401 = l'app risponde ma richiede autenticazione → pronta
+      // 200 = risponde con dati JSON → pronta
+      if (res.status === 401 || res.status === 200) {
+        log(`[wait] LibreNMS pronto (tentativo ${attempt}, HTTP ${res.status})`);
         return;
       }
+      // 302 verso /login = nginx su, app forse pronta — accetta anche questo
+      if (res.status === 302 || res.status === 301) {
+        log(`[wait] LibreNMS pronto (tentativo ${attempt}, redirect login)`);
+        return;
+      }
+      log(`[wait] Tentativo ${attempt} — HTTP ${res.status}, attesa 15s...`);
     } catch {
-      // non ancora pronto
+      log(`[wait] Tentativo ${attempt} — non raggiungibile, attesa 15s...`);
     }
-    log(`[wait] Tentativo ${attempt}... attesa 10s`);
-    await new Promise((r) => setTimeout(r, 10_000));
+    await new Promise((r) => setTimeout(r, 15_000));
   }
-  throw new Error(`Servizio non raggiungibile dopo ${maxSeconds}s`);
+  throw new Error(`LibreNMS non raggiungibile dopo ${maxSeconds}s`);
 }

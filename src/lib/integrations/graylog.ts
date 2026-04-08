@@ -7,7 +7,7 @@ const OPENSEARCH_IMAGE = "opensearchproject/opensearch:2.12.0";
 const MONGODB_IMAGE = "mongo:6.0";
 const SEC_OPT = ["--security-opt", "apparmor=unconfined"];
 
-export async function installGraylog(jobId: string, containerName: string): Promise<void> {
+export async function installGraylog(jobId: string, containerName: string, adminPassword = "admin"): Promise<void> {
   const log = (line: string) => appendLog(jobId, line);
   const network = "da-graylog-net";
 
@@ -65,8 +65,9 @@ export async function installGraylog(jobId: string, containerName: string): Prom
     try { await execDockerCommand(["rm", "-f", containerName]); } catch { /* ok */ }
     log("[create] Avvio Graylog...");
     const passwordSecret = "somepasswordpepper1234567890abcdef12345678";
-    // SHA-256 di "admin" — usato come default, cambiare dopo il primo accesso
-    const rootPasswordSha2 = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918";
+    // SHA-256 della password scelta dall'utente
+    const { createHash } = await import("crypto");
+    const rootPasswordSha2 = createHash("sha256").update(adminPassword).digest("hex");
 
     await spawnDockerStream(
       [
@@ -94,13 +95,14 @@ export async function installGraylog(jobId: string, containerName: string): Prom
 
     // ── API TOKEN AUTOMATICO ─────────────────────────────────────────────────
     log("[token] Generazione API token automatica...");
-    const apiToken = await generateGraylogToken("http://localhost:9000", "admin", "admin", log);
+    const apiToken = await generateGraylogToken("http://localhost:9000", "admin", adminPassword, log);
 
     setIntegrationConfig("graylog", {
       mode: "managed",
       url: "http://localhost:9000",
       username: "admin",
-      password: "admin",
+      password: adminPassword,
+      adminPassword,
       apiToken: apiToken ?? "",
       containerName,
     });
@@ -113,7 +115,7 @@ export async function installGraylog(jobId: string, containerName: string): Prom
       log("[done] Graylog installato su http://localhost:9000");
       log("[warn] Token automatico fallito. Crea un token in Graylog → System → Users → admin → API Tokens.");
     }
-    log("[done] Credenziali default: admin / admin (cambiarle subito)");
+    log(`[done] Credenziali: utente=admin  password=${adminPassword}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     updateJob(jobId, { phase: "error", error: msg, finishedAt: new Date().toISOString() });

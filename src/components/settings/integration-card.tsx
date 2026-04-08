@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff, RefreshCw } from "lucide-react";
+import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff, RefreshCw, Eye, EyeOff } from "lucide-react";
 import type { IntegrationComponent, IntegrationMode, ComponentConfig, InstallJob, ContainerStatus } from "@/lib/integrations/types";
 
 interface Props {
@@ -41,6 +41,8 @@ export function IntegrationCard({ component, title, description, dockerAvailable
     password: "",
   });
 
+  const [adminPassword, setAdminPassword] = useState("admin");
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [activeJob, setActiveJob] = useState<InstallJob | null>(null);
   const [installing, setInstalling] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -96,7 +98,11 @@ export function IntegrationCard({ component, title, description, dockerAvailable
     setInstalling(true);
     setActiveJob(null);
     try {
-      const res = await fetch(`/api/integrations/${component}/install`, { method: "POST" });
+      const res = await fetch(`/api/integrations/${component}/install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminPassword }),
+      });
       const data = (await res.json()) as { jobId?: string; error?: string };
       if (!res.ok || !data.jobId) {
         toast.error(data.error ?? "Errore avvio installazione");
@@ -341,6 +347,38 @@ export function IntegrationCard({ component, title, description, dockerAvailable
                   value={localConfig.containerName ?? ""}
                   onChange={(e) => setLocalConfig((c) => ({ ...c, containerName: e.target.value }))}
                 />
+              </div>
+            )}
+
+            {/* Password admin (managed, librenms o graylog) — impostata prima dell'installazione */}
+            {isManaged && (component === "librenms" || component === "graylog") && (
+              <div>
+                <Label className="text-xs text-muted-foreground">
+                  Password admin{localConfig.adminPassword ? <span className="ml-1 text-green-600 dark:text-green-400">(impostata)</span> : <span className="ml-1 text-muted-foreground/60">(usata al prossimo install)</span>}
+                </Label>
+                <div className="relative mt-1">
+                  <Input
+                    type={showAdminPassword ? "text" : "password"}
+                    value={localConfig.adminPassword ?? adminPassword}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (localConfig.adminPassword) {
+                        setLocalConfig((c) => ({ ...c, adminPassword: v }));
+                      } else {
+                        setAdminPassword(v);
+                      }
+                    }}
+                    placeholder="min. 6 caratteri"
+                    className="pr-8"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowAdminPassword((v) => !v)}
+                  >
+                    {showAdminPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
               </div>
             )}
           </>

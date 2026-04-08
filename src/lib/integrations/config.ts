@@ -42,6 +42,10 @@ export function getIntegrationConfig(component: IntegrationComponent): Component
     base.password = getSetting("integration_graylog_password") ?? "";
   }
 
+  // Password admin salvata dopo installazione managed (librenms, graylog)
+  const adminPassword = getSetting(`integration_${component}_admin_password`) ?? "";
+  if (adminPassword) base.adminPassword = adminPassword;
+
   return base;
 }
 
@@ -50,6 +54,7 @@ export function setIntegrationConfig(component: IntegrationComponent, cfg: Parti
   if (cfg.url !== undefined) setSetting(`integration_${component}_url`, cfg.url);
   if (cfg.apiToken !== undefined) setSetting(`integration_${component}_api_token`, cfg.apiToken);
   if (cfg.containerName !== undefined) setSetting(`integration_${component}_container_name`, cfg.containerName);
+  if (cfg.adminPassword !== undefined) setSetting(`integration_${component}_admin_password`, cfg.adminPassword);
   if (component === "graylog") {
     if (cfg.username !== undefined) setSetting("integration_graylog_username", cfg.username);
     if (cfg.password !== undefined) setSetting("integration_graylog_password", cfg.password);

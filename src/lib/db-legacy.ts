@@ -1747,7 +1747,7 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
     // ROUTER
     { id: "mikrotik", name: "MikroTik RouterOS", cat: "router", oids: ["1.3.6.1.4.1.14988"], conf: 0.98,
-      fields: { model: "1.3.6.1.4.1.14988.1.1.7.1.0", serial: "1.3.6.1.4.1.14988.1.1.7.3.0", firmware: "1.3.6.1.4.1.14988.1.1.7.4.0" } },
+      fields: { model: "1.3.6.1.4.1.14988.1.1.7.1.0", serial: "1.3.6.1.4.1.14988.1.1.7.3.0", firmware: "1.3.6.1.4.1.14988.1.1.7.7.0" } },
     { id: "ubiquiti_edgerouter", name: "Ubiquiti EdgeRouter", cat: "router", oids: ["1.3.6.1.4.1.41112.1.5"], sysDescr: "edgeos", conf: 0.95,
       fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1" } },
     // ACCESS POINT
@@ -5321,20 +5321,45 @@ export function syncDeviceToHost(deviceId: number): void {
   const device = getNetworkDeviceById(deviceId);
   if (!device) return;
 
-  const host = getDb().prepare("SELECT id, network_id FROM hosts WHERE ip = ? LIMIT 1").get(device.host) as { id: number; network_id: number } | undefined;
+  const host = getDb().prepare("SELECT id, vendor, device_manufacturer FROM hosts WHERE ip = ? LIMIT 1")
+    .get(device.host) as { id: number; vendor: string | null; device_manufacturer: string | null } | undefined;
   if (!host) return;
+
+  let extInfo: Record<string, unknown> = {};
+  if (device.last_device_info_json) {
+    try { extInfo = JSON.parse(device.last_device_info_json); } catch { /* ignore */ }
+  }
 
   const updates: string[] = ["updated_at = datetime('now')"];
   const values: unknown[] = [];
 
   if (device.model) { updates.push("model = ?"); values.push(device.model); }
   if (device.serial_number) { updates.push("serial_number = ?"); values.push(device.serial_number); }
+  if (device.firmware) { updates.push("firmware = ?"); values.push(device.firmware); }
   if (device.sysname && !device.sysname.match(/^[\d.]+$/)) {
-    // Sync sysname come hostname con source "snmp" (solo se non è solo un IP)
     updates.push("hostname = ?"); values.push(device.sysname);
     updates.push("hostname_source = ?"); values.push("snmp");
   }
-  if (device.sysdescr) { updates.push("os_info = ?"); values.push(device.sysdescr); }
+
+  const osName = typeof extInfo.os_name === "string" ? extInfo.os_name : null;
+  const osVersion = typeof extInfo.os_version === "string" ? extInfo.os_version : null;
+  if (osName) {
+    updates.push("os_info = ?");
+    values.push(osVersion ? `${osName} ${osVersion}` : osName);
+  } else if (device.sysdescr) {
+    updates.push("os_info = ?");
+    values.push(device.sysdescr);
+  }
+
+  const mfr = typeof extInfo.manufacturer === "string" ? extInfo.manufacturer : null;
+  const manufacturer = mfr || host.vendor || null;
+  if (manufacturer && !host.device_manufacturer) {
+    updates.push("device_manufacturer = ?");
+    values.push(manufacturer);
+  } else if (mfr) {
+    updates.push("device_manufacturer = ?");
+    values.push(mfr);
+  }
 
   if (values.length > 0) {
     values.push(host.id);

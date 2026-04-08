@@ -27,6 +27,7 @@ import {
   FolderTree,
   Building2,
   ClipboardList,
+  Radar,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ const inventorySubItems = [
 
 const networkSubItems = [
   { href: "/networks", label: "Subnet", icon: Network },
+  { href: "/discovery", label: "Inventario", icon: Radar },
   { href: "/devices/router", label: "Router", icon: Router },
   { href: "/devices/switch", label: "Switch", icon: Cable },
   { href: "/devices/firewall", label: "Firewall", icon: Shield },

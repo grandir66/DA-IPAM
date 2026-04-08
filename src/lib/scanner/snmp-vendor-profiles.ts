@@ -342,8 +342,8 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     fields: {
       model: "1.3.6.1.4.1.14988.1.1.7.1.0",
       serial: "1.3.6.1.4.1.14988.1.1.7.3.0",
-      firmware: "1.3.6.1.4.1.14988.1.1.7.4.0",
-      licenseLevel: "1.3.6.1.4.1.14988.1.1.7.7.0",
+      firmware: "1.3.6.1.4.1.14988.1.1.7.7.0",
+      upgradeFirmware: "1.3.6.1.4.1.14988.1.1.7.4.0",
       licenseVersion: "1.3.6.1.4.1.14988.1.1.7.8.0",
       temperature: "1.3.6.1.4.1.14988.1.1.3.1.0",
       voltage: "1.3.6.1.4.1.14988.1.1.3.11.0",

@@ -202,7 +202,7 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
     // ROUTER
     { id: "mikrotik", name: "MikroTik RouterOS", cat: "router", oids: ["1.3.6.1.4.1.14988"], conf: 0.98,
-      fields: { model: "1.3.6.1.4.1.14988.1.1.7.1.0", serial: "1.3.6.1.4.1.14988.1.1.7.3.0", firmware: "1.3.6.1.4.1.14988.1.1.7.4.0" } },
+      fields: { model: "1.3.6.1.4.1.14988.1.1.7.1.0", serial: "1.3.6.1.4.1.14988.1.1.7.3.0", firmware: "1.3.6.1.4.1.14988.1.1.7.7.0" } },
     { id: "ubiquiti_edgerouter", name: "Ubiquiti EdgeRouter", cat: "router", oids: ["1.3.6.1.4.1.41112.1.5"], sysDescr: "edgeos", conf: 0.95,
       fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1" } },
     // ACCESS POINT

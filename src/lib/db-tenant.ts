@@ -404,6 +404,71 @@ export function getAllHosts(limit: number = 10000): Host[] {
   });
 }
 
+/** Tutti gli host arricchiti con nome rete, device associato, porta switch, AD. Per pagina Discovery. */
+export function getAllHostsEnriched(limit = 5000): Array<Host & {
+  network_name: string;
+  network_cidr: string;
+  vlan_id: number | null;
+  location: string;
+  device_id?: number;
+  device_name?: string;
+  device_vendor?: string;
+  device_type?: string;
+  switch_port?: string;
+  switch_device_name?: string;
+  ad_dns_host_name?: string | null;
+}> {
+  const rows = db().prepare(`
+    SELECT h.*,
+           n.name  AS _net_name,
+           n.cidr  AS _net_cidr,
+           n.vlan_id AS _net_vlan,
+           COALESCE(n.location, '') AS _net_location,
+           nd.id   AS _dev_id,
+           nd.name AS _dev_name,
+           nd.vendor AS _dev_vendor,
+           nd.device_type AS _dev_type,
+           mpe.port_name AS _sw_port,
+           sw.name AS _sw_name,
+           ac.ad_dns AS _ad_dns
+    FROM hosts h
+    JOIN networks n ON n.id = h.network_id
+    LEFT JOIN network_devices nd ON nd.host = h.ip
+    LEFT JOIN (
+      SELECT mac, port_name, device_id,
+             ROW_NUMBER() OVER (PARTITION BY mac ORDER BY timestamp DESC) AS rn
+      FROM mac_port_entries
+    ) mpe ON mpe.mac = h.mac AND mpe.rn = 1
+    LEFT JOIN network_devices sw ON sw.id = mpe.device_id
+    LEFT JOIN (
+      SELECT host_id, MAX(dns_host_name) AS ad_dns
+      FROM ad_computers WHERE host_id IS NOT NULL
+      GROUP BY host_id
+    ) ac ON ac.host_id = h.id
+    ORDER BY h.network_id, h.ip
+    LIMIT ?
+  `).all(limit) as Array<Host & {
+    _net_name: string; _net_cidr: string; _net_vlan: number | null; _net_location: string;
+    _dev_id?: number; _dev_name?: string; _dev_vendor?: string; _dev_type?: string;
+    _sw_port?: string; _sw_name?: string; _ad_dns?: string | null;
+  }>;
+
+  return rows.map(({ _net_name, _net_cidr, _net_vlan, _net_location, _dev_id, _dev_name, _dev_vendor, _dev_type, _sw_port, _sw_name, _ad_dns, ...h }) => ({
+    ...h,
+    network_name: _net_name,
+    network_cidr: _net_cidr,
+    vlan_id: _net_vlan,
+    location: _net_location,
+    device_id: _dev_id ?? undefined,
+    device_name: _dev_name ?? undefined,
+    device_vendor: _dev_vendor ?? undefined,
+    device_type: _dev_type ?? undefined,
+    switch_port: _sw_port ?? undefined,
+    switch_device_name: _sw_name ?? undefined,
+    ad_dns_host_name: _ad_dns ?? undefined,
+  }));
+}
+
 export function getHostsByNetworkWithDevices(networkId: number): (Host & {
   device_id?: number;
   device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string };
@@ -1103,19 +1168,49 @@ export function syncDeviceToHost(deviceId: number): void {
   const device = getNetworkDeviceById(deviceId);
   if (!device) return;
 
-  const host = db().prepare("SELECT id, network_id FROM hosts WHERE ip = ? LIMIT 1").get(device.host) as { id: number; network_id: number } | undefined;
+  const host = db().prepare("SELECT id, vendor, device_manufacturer FROM hosts WHERE ip = ? LIMIT 1")
+    .get(device.host) as { id: number; vendor: string | null; device_manufacturer: string | null } | undefined;
   if (!host) return;
+
+  // Parse last_device_info_json per campi estesi (manufacturer, os_name, os_version)
+  let extInfo: Record<string, unknown> = {};
+  if (device.last_device_info_json) {
+    try { extInfo = JSON.parse(device.last_device_info_json); } catch { /* ignore */ }
+  }
 
   const updates: string[] = ["updated_at = datetime('now')"];
   const values: unknown[] = [];
 
   if (device.model) { updates.push("model = ?"); values.push(device.model); }
   if (device.serial_number) { updates.push("serial_number = ?"); values.push(device.serial_number); }
+  if (device.firmware) { updates.push("firmware = ?"); values.push(device.firmware); }
   if (device.sysname && !device.sysname.match(/^[\d.]+$/)) {
     updates.push("hostname = ?"); values.push(device.sysname);
     updates.push("hostname_source = ?"); values.push("snmp");
   }
-  if (device.sysdescr) { updates.push("os_info = ?"); values.push(device.sysdescr); }
+
+  // OS info: preferisci os_name+os_version (WinRM/SSH) se presenti, altrimenti sysdescr
+  const osName = typeof extInfo.os_name === "string" ? extInfo.os_name : null;
+  const osVersion = typeof extInfo.os_version === "string" ? extInfo.os_version : null;
+  if (osName) {
+    updates.push("os_info = ?");
+    values.push(osVersion ? `${osName} ${osVersion}` : osName);
+  } else if (device.sysdescr) {
+    updates.push("os_info = ?");
+    values.push(device.sysdescr);
+  }
+
+  // Produttore: da device info > da SNMP manufacturer > fallback MAC vendor dell'host
+  const mfr = typeof extInfo.manufacturer === "string" ? extInfo.manufacturer : null;
+  const manufacturer = mfr || host.vendor || null;
+  if (manufacturer && !host.device_manufacturer) {
+    updates.push("device_manufacturer = ?");
+    values.push(manufacturer);
+  } else if (mfr) {
+    // Se abbiamo un produttore specifico da SNMP/SSH/WinRM, sovrascrive sempre
+    updates.push("device_manufacturer = ?");
+    values.push(mfr);
+  }
 
   if (values.length > 0) {
     values.push(host.id);

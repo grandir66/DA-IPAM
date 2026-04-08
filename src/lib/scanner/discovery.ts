@@ -1932,10 +1932,10 @@ async function runDiscovery(
       serial_number: hostSerial,
       // preserve_existing: scan nmap/network_discovery/ipam_full non sovrascrivono dati già rilevati
       preserve_existing: scanType === "nmap" || scanType === "network_discovery" || scanType === "ipam_full",
-      ...(finalFirmware !== undefined || hostManufacturer !== undefined
+      ...(finalFirmware !== undefined || hostManufacturer !== undefined || vendor
         ? {
             firmware: finalFirmware ?? null,
-            device_manufacturer: hostManufacturer ?? null,
+            device_manufacturer: hostManufacturer ?? vendor ?? null,
           }
         : {}),
       ...(detectionJson !== undefined ? { detection_json: detectionJson } : {}),

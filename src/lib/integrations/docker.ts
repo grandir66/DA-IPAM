@@ -33,18 +33,28 @@ export async function execDockerCommand(args: string[]): Promise<ExecResult> {
  * Esegue un comando docker in streaming, invocando onLine per ogni riga di output.
  * Risolve con il codice di uscita.
  */
+/**
+ * Esegue un comando docker in streaming, invocando onLine per ogni riga di output.
+ * Lancia un errore se il processo esce con codice != 0 (a meno che throwOnError=false).
+ */
 export function spawnDockerStream(
   args: string[],
-  onLine: (line: string) => void
+  onLine: (line: string) => void,
+  throwOnError = true
 ): Promise<number> {
   return new Promise((resolve, reject) => {
     const proc = spawn("docker", args, { stdio: ["ignore", "pipe", "pipe"] });
+
+    const outputLines: string[] = [];
 
     const handleData = (data: Buffer) => {
       const text = data.toString();
       text.split("\n").forEach((l) => {
         const trimmed = l.trim();
-        if (trimmed) onLine(trimmed);
+        if (trimmed) {
+          onLine(trimmed);
+          outputLines.push(trimmed);
+        }
       });
     };
 
@@ -52,7 +62,15 @@ export function spawnDockerStream(
     proc.stderr.on("data", handleData);
 
     proc.on("error", reject);
-    proc.on("close", (code) => resolve(code ?? 0));
+    proc.on("close", (code) => {
+      const exitCode = code ?? 0;
+      if (throwOnError && exitCode !== 0) {
+        const lastLines = outputLines.slice(-5).join(" | ");
+        reject(new Error(`docker ${args[0]} uscito con codice ${exitCode}: ${lastLines}`));
+      } else {
+        resolve(exitCode);
+      }
+    });
   });
 }
 

@@ -5,6 +5,7 @@ import { setIntegrationConfig } from "./config";
 const GRAYLOG_IMAGE = "graylog/graylog:6.0";
 const OPENSEARCH_IMAGE = "opensearchproject/opensearch:2.12.0";
 const MONGODB_IMAGE = "mongo:6.0";
+const SEC_OPT = ["--security-opt", "apparmor=unconfined"];
 
 export async function installGraylog(jobId: string, containerName: string): Promise<void> {
   const log = (line: string) => appendLog(jobId, line);
@@ -13,9 +14,9 @@ export async function installGraylog(jobId: string, containerName: string): Prom
   try {
     updateJob(jobId, { phase: "pulling" });
     log(`[pull] Scaricamento immagini Graylog (OpenSearch + MongoDB + Graylog)...`);
-    await spawnDockerStream(["pull", OPENSEARCH_IMAGE], log);
-    await spawnDockerStream(["pull", MONGODB_IMAGE], log);
-    await spawnDockerStream(["pull", GRAYLOG_IMAGE], log);
+    await spawnDockerStream(["pull", OPENSEARCH_IMAGE], log, false);
+    await spawnDockerStream(["pull", MONGODB_IMAGE], log, false);
+    await spawnDockerStream(["pull", GRAYLOG_IMAGE], log, false);
 
     updateJob(jobId, { phase: "creating" });
 
@@ -36,6 +37,7 @@ export async function installGraylog(jobId: string, containerName: string): Prom
         "--name", "da-graylog-opensearch",
         "--network", network,
         "--restart", "unless-stopped",
+        ...SEC_OPT,
         "-e", "discovery.type=single-node",
         "-e", "plugins.security.disabled=true",
         "-e", "action.auto_create_index=false",
@@ -53,6 +55,7 @@ export async function installGraylog(jobId: string, containerName: string): Prom
         "--name", "da-graylog-mongo",
         "--network", network,
         "--restart", "unless-stopped",
+        ...SEC_OPT,
         MONGODB_IMAGE,
       ],
       log
@@ -61,7 +64,6 @@ export async function installGraylog(jobId: string, containerName: string): Prom
     // Graylog
     try { await execDockerCommand(["rm", "-f", containerName]); } catch { /* ok */ }
     log("[create] Avvio Graylog...");
-    // Password secret e root password hash
     const passwordSecret = "somepasswordpepper1234567890abcdef12345678";
     // SHA-256 di "admin" — usato come default, cambiare dopo il primo accesso
     const rootPasswordSha2 = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918";
@@ -75,6 +77,7 @@ export async function installGraylog(jobId: string, containerName: string): Prom
         "-p", "9000:9000",
         "-p", "12201:12201/udp",
         "-p", "514:514/udp",
+        ...SEC_OPT,
         "-e", `GRAYLOG_PASSWORD_SECRET=${passwordSecret}`,
         "-e", `GRAYLOG_ROOT_PASSWORD_SHA2=${rootPasswordSha2}`,
         "-e", "GRAYLOG_HTTP_EXTERNAL_URI=http://localhost:9000/",

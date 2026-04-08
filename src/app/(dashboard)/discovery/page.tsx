@@ -4,27 +4,42 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
-  Table, TableBody, TableCell, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader,
+  DialogScrollableArea, DialogTitle, DIALOG_PANEL_WIDE_CLASS,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup,
   DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
+import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { Pagination } from "@/components/shared/pagination";
 import { useClientTableSort } from "@/hooks/use-table-sort";
 import {
+  DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel, sortClassificationsByDisplayLabel,
+} from "@/lib/device-classifications";
+import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
+  Pencil, X, Loader2, Save, PlusCircle, Sparkles,
 } from "lucide-react";
-import type { Host, LibreNMSHostMap } from "@/types";
+import { toast } from "sonner";
+import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
+
+const SORTED_CLASSIFICATIONS = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -172,6 +187,29 @@ function getManufacturer(h: EnrichedHost): { text: string; fromVendor: boolean }
 }
 
 // ---------------------------------------------------------------------------
+// Bulk edit form types
+// ---------------------------------------------------------------------------
+
+interface BulkField<T> {
+  enabled: boolean;
+  value: T;
+}
+
+interface DiscoveryBulkForm {
+  classification: BulkField<string>;
+  known_host: BulkField<0 | 1>;
+  notes: BulkField<string | null>;
+}
+
+function emptyBulkForm(): DiscoveryBulkForm {
+  return {
+    classification: { enabled: false, value: "" },
+    known_host: { enabled: false, value: 1 },
+    notes: { enabled: false, value: null },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -185,6 +223,28 @@ export default function DiscoveryPage() {
   const [networkFilter, setNetworkFilter] = useState("");
   const [page, setPage] = useState(1);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(loadVisibleColumns);
+
+  // ─── Selezione e bulk edit ────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkForm, setBulkForm] = useState<DiscoveryBulkForm>(emptyBulkForm);
+
+  // ─── Creazione regola fingerprint ─────────────────────────
+  const [createRuleOpen, setCreateRuleOpen] = useState(false);
+  const [ruleHost, setRuleHost] = useState<EnrichedHost | null>(null);
+
+  function openCreateRule(h: EnrichedHost) {
+    setRuleHost(h);
+    setCreateRuleOpen(true);
+  }
+
+  function getRuleFingerprint(): DeviceFingerprintSnapshot | null {
+    if (!ruleHost) return null;
+    const raw = (ruleHost as unknown as { detection_json?: string | null }).detection_json;
+    if (!raw) return null;
+    try { return JSON.parse(raw) as DeviceFingerprintSnapshot; } catch { return null; }
+  }
 
   // ---------- fetch ----------
   const fetchData = useCallback(async () => {
@@ -213,7 +273,10 @@ export default function DiscoveryPage() {
         setLibrenmsMap(m);
       } else setHosts([]);
     } catch { setHosts([]); }
-    finally { setLoading(false); }
+    finally {
+      setLoading(false);
+      setSelectedIds(new Set());
+    }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -289,6 +352,88 @@ export default function DiscoveryPage() {
 
   // reset page on filter change
   useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, networkFilter]);
+
+  // ---------- selection helpers ----------
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllPage() {
+    const pageIds = pagedRows.map((h) => h.id);
+    const allSelected = pageIds.every((id) => selectedIds.has(id));
+    if (allSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of pageIds) next.delete(id);
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of pageIds) next.add(id);
+        return next;
+      });
+    }
+  }
+
+  // ---------- bulk edit ----------
+  function openBulkEdit() {
+    setBulkForm(emptyBulkForm());
+    setBulkEditOpen(true);
+  }
+
+  function updateBulkField<K extends keyof DiscoveryBulkForm>(key: K, patch: Partial<BulkField<unknown>>) {
+    setBulkForm((prev) => ({
+      ...prev,
+      [key]: { ...prev[key], ...patch },
+    }));
+  }
+
+  async function handleBulkSave() {
+    const payload: Record<string, unknown> = {
+      host_ids: Array.from(selectedIds),
+    };
+
+    let hasField = false;
+    for (const [key, field] of Object.entries(bulkForm)) {
+      if (field.enabled) {
+        payload[key] = field.value;
+        hasField = true;
+      }
+    }
+
+    if (!hasField) {
+      toast.error("Abilitare almeno un campo da modificare");
+      return;
+    }
+
+    setBulkSaving(true);
+    try {
+      const res = await fetch("/api/hosts/bulk-update", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        setBulkEditOpen(false);
+        setSelectedIds(new Set());
+        fetchData();
+      } else {
+        toast.error(data.error ?? "Errore nell'aggiornamento");
+      }
+    } catch {
+      toast.error("Errore nell'aggiornamento");
+    } finally {
+      setBulkSaving(false);
+    }
+  }
 
   // ---------- column toggle ----------
   const toggleCol = (id: string) => {
@@ -450,7 +595,20 @@ export default function DiscoveryPage() {
         const conf = getFpConfidence(h);
         const device = getFpDevice(h);
         return conf > 0
-          ? <FingerprintConfidenceBadge confidence={conf} deviceLabel={device} />
+          ? (
+            <span className="inline-flex items-center gap-1">
+              <FingerprintConfidenceBadge confidence={conf} deviceLabel={device} />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5 shrink-0"
+                title="Crea regola da fingerprint"
+                onClick={(e) => { e.stopPropagation(); openCreateRule(h); }}
+              >
+                <Sparkles className="h-3 w-3" />
+              </Button>
+            </span>
+          )
           : <span className="text-muted-foreground text-xs">—</span>;
       }
       case "librenms_id": {
@@ -472,11 +630,13 @@ export default function DiscoveryPage() {
   const offline = filtered.filter((h) => h.status === "offline").length;
   const unknown = filtered.length - online - offline;
 
+  const pageAllSelected = pagedRows.length > 0 && pagedRows.every((h) => selectedIds.has(h.id));
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Inventario</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Discovery</h1>
         <p className="text-muted-foreground mt-1">
           Vista unificata di tutti gli host rilevati nelle subnet, arricchiti con dati di scansione.
         </p>
@@ -613,6 +773,23 @@ export default function DiscoveryPage() {
         </CardHeader>
 
         <CardContent className="p-0">
+          {/* ── Barra selezione ── */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2 bg-primary/5 border-b">
+              <span className="text-sm font-medium">
+                {selectedIds.size} host selezionat{selectedIds.size === 1 ? "o" : "i"}
+              </span>
+              <Button size="sm" variant="default" className="gap-1.5" onClick={openBulkEdit}>
+                <Pencil className="h-3.5 w-3.5" />
+                Modifica multipla
+              </Button>
+              <Button size="sm" variant="ghost" className="gap-1" onClick={() => setSelectedIds(new Set())}>
+                <X className="h-3.5 w-3.5" />
+                Deseleziona
+              </Button>
+            </div>
+          )}
+
           {loading ? (
             <div className="py-16 text-center text-muted-foreground">Caricamento...</div>
           ) : hosts.length === 0 ? (
@@ -628,6 +805,12 @@ export default function DiscoveryPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={pageAllSelected}
+                        onCheckedChange={toggleSelectAllPage}
+                      />
+                    </TableHead>
                     {COLUMNS.filter((c) => isVisible(c.id)).map((col) => (
                       <SortableTableHead
                         key={col.id}
@@ -644,7 +827,13 @@ export default function DiscoveryPage() {
                 </TableHeader>
                 <TableBody>
                   {pagedRows.map((h) => (
-                    <TableRow key={h.id} className="hover:bg-muted/40">
+                    <TableRow key={h.id} className={`hover:bg-muted/40 ${selectedIds.has(h.id) ? "bg-primary/5" : ""}`}>
+                      <TableCell className="py-2">
+                        <Checkbox
+                          checked={selectedIds.has(h.id)}
+                          onCheckedChange={() => toggleSelect(h.id)}
+                        />
+                      </TableCell>
                       {COLUMNS.filter((c) => isVisible(c.id)).map((col) => (
                         <TableCell key={col.id} className="py-2">
                           {renderCell(h, col.id)}
@@ -660,6 +849,118 @@ export default function DiscoveryPage() {
       </Card>
 
       <Pagination page={safeP} totalPages={totalPages} onPageChange={setPage} />
+
+      {/* ════════════════ DIALOG MODIFICA MULTIPLA HOST ════════════════ */}
+      <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>
+        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+          <DialogHeader>
+            <DialogTitle>Modifica {selectedIds.size} host</DialogTitle>
+          </DialogHeader>
+          <DialogScrollableArea className="max-h-[70vh]">
+            <div className="space-y-3 p-1">
+              <p className="text-xs text-muted-foreground">
+                Abilita i campi da modificare. Solo i campi abilitati verranno applicati a tutti gli host selezionati.
+              </p>
+
+              {/* Classificazione */}
+              <BulkFieldRow
+                label="Classificazione"
+                enabled={bulkForm.classification.enabled}
+                onToggle={(v) => updateBulkField("classification", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.classification.value || "__empty__"}
+                  onValueChange={(v) => updateBulkField("classification", { value: v === "__empty__" ? "" : (v ?? "") })}
+                  disabled={!bulkForm.classification.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Seleziona —</SelectItem>
+                    {SORTED_CLASSIFICATIONS.map((c) => (
+                      <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+
+              {/* Conosciuto */}
+              <BulkFieldRow
+                label="Host conosciuto"
+                enabled={bulkForm.known_host.enabled}
+                onToggle={(v) => updateBulkField("known_host", { enabled: v })}
+              >
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={bulkForm.known_host.value === 1}
+                    onCheckedChange={(v) => updateBulkField("known_host", { value: v ? 1 : 0 })}
+                    disabled={!bulkForm.known_host.enabled}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {bulkForm.known_host.value === 1 ? "Si" : "No"}
+                  </span>
+                </div>
+              </BulkFieldRow>
+
+              {/* Note */}
+              <BulkFieldRow
+                label="Note"
+                enabled={bulkForm.notes.enabled}
+                onToggle={(v) => updateBulkField("notes", { enabled: v })}
+              >
+                <Input
+                  value={bulkForm.notes.value ?? ""}
+                  onChange={(e) => updateBulkField("notes", { value: e.target.value || null })}
+                  placeholder="Note da applicare a tutti gli host..."
+                  disabled={!bulkForm.notes.enabled}
+                />
+              </BulkFieldRow>
+            </div>
+          </DialogScrollableArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkEditOpen(false)} disabled={bulkSaving}>
+              Annulla
+            </Button>
+            <Button onClick={handleBulkSave} disabled={bulkSaving} className="gap-2">
+              {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Applica a {selectedIds.size} host
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════ DIALOG CREA REGOLA FINGERPRINT ════════════════ */}
+      {ruleHost && getRuleFingerprint() && (
+        <CreateFingerprintRuleDialog
+          open={createRuleOpen}
+          onOpenChange={setCreateRuleOpen}
+          fingerprint={getRuleFingerprint()!}
+          currentClassification={ruleHost.classification}
+          hostIp={ruleHost.ip}
+          hostname={ruleHost.hostname}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Riga campo bulk con checkbox abilita/disabilita + controllo. */
+function BulkFieldRow({
+  label, enabled, onToggle, children,
+}: {
+  label: string;
+  enabled: boolean;
+  onToggle: (v: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`flex items-start gap-3 rounded-lg border p-3 transition-opacity ${enabled ? "" : "opacity-50"}`}>
+      <div className="pt-0.5">
+        <Checkbox checked={enabled} onCheckedChange={onToggle} />
+      </div>
+      <div className="flex-1 space-y-1">
+        <Label className="text-xs font-medium">{label}</Label>
+        {children}
+      </div>
     </div>
   );
 }

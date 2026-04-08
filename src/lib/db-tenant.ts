@@ -1768,6 +1768,17 @@ export function removeHostCredential(id: number): void {
   db().prepare(`DELETE FROM host_credentials WHERE id = ?`).run(id);
 }
 
+/** Riordina credenziali host assegnando sort_order sequenziale. */
+export function reorderHostCredentials(hostId: number, bindingIds: number[]): void {
+  const d = db();
+  const stmt = d.prepare(`UPDATE host_credentials SET sort_order = ? WHERE id = ? AND host_id = ?`);
+  d.transaction(() => {
+    for (let i = 0; i < bindingIds.length; i++) {
+      stmt.run(i, bindingIds[i], hostId);
+    }
+  })();
+}
+
 export function setHostCredentialValidated(id: number, validated: boolean): void {
   db()
     .prepare(
@@ -2256,6 +2267,24 @@ export function getDeviceCredentialBindings(deviceId: number): DeviceCredentialB
     WHERE dcb.device_id = ?
     ORDER BY dcb.sort_order, dcb.id
   `).all(deviceId) as DeviceCredentialBinding[];
+}
+
+/** Protocolli credenziali con test_status='success' per tutti i device (batch, no N+1) */
+export function getDeviceCredentialProtocolsSummary(): Map<number, string[]> {
+  const rows = db().prepare(
+    `SELECT device_id, protocol_type
+     FROM device_credential_bindings
+     WHERE test_status = 'success'
+     GROUP BY device_id, protocol_type
+     ORDER BY device_id`
+  ).all() as Array<{ device_id: number; protocol_type: string }>;
+  const map = new Map<number, string[]>();
+  for (const r of rows) {
+    const arr = map.get(r.device_id) || [];
+    arr.push(r.protocol_type);
+    map.set(r.device_id, arr);
+  }
+  return map;
 }
 
 export function addDeviceCredentialBinding(input: {

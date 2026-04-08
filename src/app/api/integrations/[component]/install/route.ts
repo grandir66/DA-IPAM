@@ -7,6 +7,20 @@ import { installGraylog } from "@/lib/integrations/graylog";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import type { IntegrationComponent } from "@/lib/integrations/types";
 import { randomUUID } from "crypto";
+import { networkInterfaces } from "os";
+
+/** Rileva il primo IP non-loopback del server (es. 192.168.1.10) */
+function detectServerIp(): string {
+  const nets = networkInterfaces();
+  for (const ifaces of Object.values(nets)) {
+    for (const iface of ifaces ?? []) {
+      if (iface.family === "IPv4" && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return "localhost";
+}
 
 const VALID_COMPONENTS: IntegrationComponent[] = ["librenms", "loki", "graylog"];
 
@@ -39,12 +53,23 @@ export async function POST(
   const containerName = cfg.containerName ?? `da-${component}`;
 
   let adminPassword = "admin";
+  let serverUrl = "";
   try {
-    const body = await req.json() as { adminPassword?: string };
+    const body = await req.json() as { adminPassword?: string; serverUrl?: string };
     if (body.adminPassword && typeof body.adminPassword === "string" && body.adminPassword.trim().length >= 6) {
       adminPassword = body.adminPassword.trim();
     }
+    if (body.serverUrl && typeof body.serverUrl === "string" && body.serverUrl.trim()) {
+      serverUrl = body.serverUrl.trim().replace(/\/$/, "");
+    }
   } catch { /* body vuoto ok */ }
+
+  // Se l'utente non ha specificato un URL, lo rileva automaticamente
+  if (!serverUrl) {
+    const ip = detectServerIp();
+    const defaultPorts: Record<IntegrationComponent, number> = { librenms: 8090, graylog: 9000, loki: 3100 };
+    serverUrl = `http://${ip}:${defaultPorts[component]}`;
+  }
 
   const jobId = randomUUID();
   createJob({
@@ -57,9 +82,9 @@ export async function POST(
 
   // Avvia in background
   const runners: Record<IntegrationComponent, () => Promise<void>> = {
-    librenms: () => installLibreNMS(jobId, containerName, adminPassword),
+    librenms: () => installLibreNMS(jobId, containerName, adminPassword, serverUrl),
     loki: () => installLoki(jobId, containerName),
-    graylog: () => installGraylog(jobId, containerName, adminPassword),
+    graylog: () => installGraylog(jobId, containerName, adminPassword, serverUrl),
   };
 
   runners[component]().catch(() => {

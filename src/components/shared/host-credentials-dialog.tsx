@@ -26,7 +26,7 @@ import {
   DialogTitle,
   DIALOG_PANEL_COMPACT_CLASS,
 } from "@/components/ui/dialog";
-import { Key, Plus, Trash2, CheckCircle2, XCircle, Archive } from "lucide-react";
+import { Key, Plus, Trash2, CheckCircle2, XCircle, Archive, ArrowUp, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 
 const PROTOCOL_LABELS: Record<string, string> = {
@@ -163,6 +163,31 @@ export function HostCredentialsDialog({
     }
   };
 
+  const handleMove = async (index: number, direction: "up" | "down") => {
+    const newIdx = direction === "up" ? index - 1 : index + 1;
+    if (newIdx < 0 || newIdx >= credentials.length) return;
+    const reordered = [...credentials];
+    [reordered[index], reordered[newIdx]] = [reordered[newIdx], reordered[index]];
+    setCredentials(reordered);
+    try {
+      const res = await fetch(`/api/hosts/${hostId}/credentials`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reorder",
+          binding_ids: reordered.map((c) => c.id),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCredentials(data.credentials ?? reordered);
+        onCredentialsChanged?.();
+      }
+    } catch {
+      toast.error("Errore nel riordino");
+    }
+  };
+
   const existingCredIds = new Set(credentials.map((c) => c.credential_id));
   const availableForAdd = availableCredentials.filter((c) => !existingCredIds.has(c.id));
 
@@ -184,6 +209,7 @@ export function HostCredentialsDialog({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-14">Ordine</TableHead>
                   <TableHead className="w-16">Tipo</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead className="w-14">Porta</TableHead>
@@ -192,8 +218,34 @@ export function HostCredentialsDialog({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {credentials.map((c) => (
+                {credentials.map((c, idx) => (
                   <TableRow key={c.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-0.5">
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6"
+                          disabled={idx === 0}
+                          onClick={() => void handleMove(idx, "up")}
+                          title="Sposta su"
+                        >
+                          <ArrowUp className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6"
+                          disabled={idx === credentials.length - 1}
+                          onClick={() => void handleMove(idx, "down")}
+                          title="Sposta giù"
+                        >
+                          <ArrowDown className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={`text-[10px] ${PROTOCOL_COLORS[c.protocol_type] || ""}`}>
                         {PROTOCOL_LABELS[c.protocol_type] || c.protocol_type}

@@ -43,6 +43,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
 
   const [adminPassword, setAdminPassword] = useState("admin");
   const [showAdminPassword, setShowAdminPassword] = useState(false);
+  const [installUrl, setInstallUrl] = useState("");
   const [activeJob, setActiveJob] = useState<InstallJob | null>(null);
   const [installing, setInstalling] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -101,7 +102,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
       const res = await fetch(`/api/integrations/${component}/install`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adminPassword }),
+        body: JSON.stringify({ adminPassword, serverUrl: installUrl || undefined }),
       });
       const data = (await res.json()) as { jobId?: string; error?: string };
       if (!res.ok || !data.jobId) {
@@ -346,6 +347,21 @@ export function IntegrationCard({ component, title, description, dockerAvailable
                   className="mt-1"
                   value={localConfig.containerName ?? ""}
                   onChange={(e) => setLocalConfig((c) => ({ ...c, containerName: e.target.value }))}
+                />
+              </div>
+            )}
+
+            {/* URL di accesso per il prossimo install (managed, librenms/graylog) */}
+            {isManaged && !containerRunning && !localConfig.apiToken && (component === "librenms" || component === "graylog") && (
+              <div>
+                <Label className="text-xs text-muted-foreground">
+                  URL di accesso <span className="text-muted-foreground/60">(rilevato automaticamente se vuoto)</span>
+                </Label>
+                <Input
+                  className="mt-1 font-mono text-xs"
+                  placeholder={component === "librenms" ? "http://192.168.x.x:8090" : "http://192.168.x.x:9000"}
+                  value={installUrl}
+                  onChange={(e) => setInstallUrl(e.target.value)}
                 />
               </div>
             )}

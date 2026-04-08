@@ -12,10 +12,12 @@ const APP_KEY = "base64:TGGLpPFMtGHB2I3SFUevQCkIHkrmbXR6b+x5W7jf8jA=";
 // --security-opt apparmor=unconfined bypassa problemi AppArmor su Ubuntu/Debian
 const SEC_OPT = ["--security-opt", "apparmor=unconfined"];
 
-export async function installLibreNMS(jobId: string, containerName: string, adminPassword = "admin"): Promise<void> {
+export async function installLibreNMS(jobId: string, containerName: string, adminPassword = "admin", serverUrl = "http://localhost:8090"): Promise<void> {
   const log = (line: string) => appendLog(jobId, line);
   const dbContainer = `${containerName}-db`;
   const redisContainer = `${containerName}-redis`;
+  // Porta host ricavata dall'URL (es. http://192.168.1.10:8090 → 8090)
+  const hostPort = (() => { try { return new URL(serverUrl).port || "8090"; } catch { return "8090"; } })();
 
   try {
     // ── PULL ──────────────────────────────────────────────────────────────────
@@ -87,7 +89,7 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
         "--name", containerName,
         "--network", NETWORK,
         "--restart", "unless-stopped",
-        "-p", "8090:8000",
+        "-p", `${hostPort}:8000`,
         ...SEC_OPT,
         "-e", `APP_KEY=${APP_KEY}`,
         "-e", `DB_HOST=${dbContainer}`,
@@ -97,7 +99,7 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
         "-e", "DB_NAME=librenms",
         "-e", `REDIS_HOST=${redisContainer}`,
         "-e", "REDIS_PORT=6379",
-        "-e", "BASE_URL=http://localhost:8090",
+        "-e", `BASE_URL=${serverUrl}`,
         LIBRENMS_IMAGE,
       ],
       log
@@ -109,7 +111,9 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
     // per questo usiamo waitForLibreNMSReady che verifica l'API reale.
     updateJob(jobId, { phase: "waiting" });
     log("[wait] Attesa avvio LibreNMS — prime migrazioni DB richiedono 3-5 minuti...");
-    await waitForLibreNMSReady("http://localhost:8090", 360, log);
+    // Il check interno usa sempre localhost (dal server stesso)
+    const internalUrl = `http://localhost:${hostPort}`;
+    await waitForLibreNMSReady(internalUrl, 360, log);
 
     // ── API TOKEN AUTOMATICO ─────────────────────────────────────────────────
     log("[token] Generazione API token automatica via docker exec...");
@@ -117,7 +121,7 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
 
     setIntegrationConfig("librenms", {
       mode: "managed",
-      url: "http://localhost:8090",
+      url: serverUrl,
       apiToken: apiToken ?? "",
       adminPassword,
       containerName,
@@ -125,10 +129,10 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
 
     updateJob(jobId, { phase: "done", finishedAt: new Date().toISOString() });
     if (apiToken) {
-      log("[done] LibreNMS installato e configurato automaticamente su http://localhost:8090");
+      log(`[done] LibreNMS installato e configurato automaticamente su ${serverUrl}`);
       log("[done] API token generato e salvato — nessuna configurazione manuale necessaria.");
     } else {
-      log("[done] LibreNMS installato su http://localhost:8090");
+      log(`[done] LibreNMS installato su ${serverUrl}`);
       log("[warn] Generazione token automatica fallita. Vai in LibreNMS → Impostazioni → API Token per creare un token manualmente.");
     }
     log(`[done] Credenziali: utente=admin  password=${adminPassword}`);

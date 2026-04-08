@@ -7,9 +7,10 @@ const OPENSEARCH_IMAGE = "opensearchproject/opensearch:2.12.0";
 const MONGODB_IMAGE = "mongo:6.0";
 const SEC_OPT = ["--security-opt", "apparmor=unconfined"];
 
-export async function installGraylog(jobId: string, containerName: string, adminPassword = "admin"): Promise<void> {
+export async function installGraylog(jobId: string, containerName: string, adminPassword = "admin", serverUrl = "http://localhost:9000"): Promise<void> {
   const log = (line: string) => appendLog(jobId, line);
   const network = "da-graylog-net";
+  const hostPort = (() => { try { return new URL(serverUrl).port || "9000"; } catch { return "9000"; } })();
 
   try {
     updateJob(jobId, { phase: "pulling" });
@@ -75,13 +76,13 @@ export async function installGraylog(jobId: string, containerName: string, admin
         "--name", containerName,
         "--network", network,
         "--restart", "unless-stopped",
-        "-p", "9000:9000",
+        "-p", `${hostPort}:9000`,
         "-p", "12201:12201/udp",
         "-p", "514:514/udp",
         ...SEC_OPT,
         "-e", `GRAYLOG_PASSWORD_SECRET=${passwordSecret}`,
         "-e", `GRAYLOG_ROOT_PASSWORD_SHA2=${rootPasswordSha2}`,
-        "-e", "GRAYLOG_HTTP_EXTERNAL_URI=http://localhost:9000/",
+        "-e", `GRAYLOG_HTTP_EXTERNAL_URI=${serverUrl}/`,
         "-e", "GRAYLOG_ELASTICSEARCH_HOSTS=http://da-graylog-opensearch:9200",
         "-e", "GRAYLOG_MONGODB_URI=mongodb://da-graylog-mongo:27017/graylog",
         GRAYLOG_IMAGE,
@@ -95,11 +96,12 @@ export async function installGraylog(jobId: string, containerName: string, admin
 
     // ── API TOKEN AUTOMATICO ─────────────────────────────────────────────────
     log("[token] Generazione API token automatica...");
-    const apiToken = await generateGraylogToken("http://localhost:9000", "admin", adminPassword, log);
+    const internalUrl = `http://localhost:${hostPort}`;
+    const apiToken = await generateGraylogToken(internalUrl, "admin", adminPassword, log);
 
     setIntegrationConfig("graylog", {
       mode: "managed",
-      url: "http://localhost:9000",
+      url: serverUrl,
       username: "admin",
       password: adminPassword,
       adminPassword,
@@ -109,10 +111,10 @@ export async function installGraylog(jobId: string, containerName: string, admin
 
     updateJob(jobId, { phase: "done", finishedAt: new Date().toISOString() });
     if (apiToken) {
-      log("[done] Graylog installato e configurato automaticamente su http://localhost:9000");
+      log(`[done] Graylog installato e configurato automaticamente su ${serverUrl}`);
       log("[done] API token generato e salvato — nessuna configurazione manuale necessaria.");
     } else {
-      log("[done] Graylog installato su http://localhost:9000");
+      log(`[done] Graylog installato su ${serverUrl}`);
       log("[warn] Token automatico fallito. Crea un token in Graylog → System → Users → admin → API Tokens.");
     }
     log(`[done] Credenziali: utente=admin  password=${adminPassword}`);

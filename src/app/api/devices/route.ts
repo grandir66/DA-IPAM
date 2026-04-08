@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getNetworkDevices, getRouters, getSwitches, getDevicesByClassificationOrLegacy, createNetworkDevice, getHostByIp, updateHost, ensureInventoryAssetForNetworkDevice, addDeviceCredentialBinding } from "@/lib/db";
+import { getNetworkDevices, getRouters, getSwitches, getDevicesByClassificationOrLegacy, createNetworkDevice, getHostByIp, updateHost, ensureInventoryAssetForNetworkDevice, addDeviceCredentialBinding, getDeviceCredentialProtocolsSummary } from "@/lib/db";
 import { NetworkDeviceSchema } from "@/lib/validators";
 import { encrypt } from "@/lib/crypto";
 import {
@@ -55,11 +55,24 @@ export async function GET(request: Request) {
           : type === "switch"
             ? getSwitches()
             : getNetworkDevices();
-        return devices as unknown as Record<string, unknown>[];
+        return devices as unknown as (Record<string, unknown> & { last_proxmox_scan_result?: unknown; encrypted_password?: unknown; community_string?: unknown; api_token?: unknown })[];
       });
+      const credProtoMap = queryAllTenants(() => {
+        const credMap = getDeviceCredentialProtocolsSummary();
+        return Array.from(credMap.entries()).map(([device_id, protocols]) => ({
+          device_id,
+          protocols,
+        } as unknown as Record<string, unknown>));
+      });
+      const credLookup = new Map<string, string[]>();
+      for (const entry of credProtoMap) {
+        const key = `${entry._tenantCode}:${entry.device_id}`;
+        credLookup.set(key, entry.protocols as unknown as string[]);
+      }
       const masked = allDevices.map((d) => ({
         ...d,
         source: "network_device" as const,
+        credential_protocols: credLookup.get(`${d._tenantCode}:${d.id}`) || [],
         last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
         encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,
         community_string: d.community_string ? "●●●●●●●●" : null,
@@ -79,11 +92,14 @@ export async function GET(request: Request) {
     const rawClassification = searchParams.get("classification");
     const classification = rawClassification && STORAGE_ALIASES.includes(rawClassification) ? "storage" : rawClassification;
 
+    const credMap = getDeviceCredentialProtocolsSummary();
+
     if (classification) {
       const networkDevices = getDevicesByClassificationOrLegacy(classification);
       const maskedDevices = networkDevices.map((d) => ({
         ...d,
         source: "network_device" as const,
+        credential_protocols: credMap.get(d.id) || [],
         last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
         encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,
         community_string: d.community_string ? "●●●●●●●●" : null,
@@ -100,6 +116,7 @@ export async function GET(request: Request) {
     const masked = devices.map((d) => ({
       ...d,
       source: "network_device" as const,
+      credential_protocols: credMap.get(d.id) || [],
       last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
       encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,
       community_string: d.community_string ? "●●●●●●●●" : null,

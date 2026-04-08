@@ -55,6 +55,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { getClassificationLabel } from "@/lib/device-classifications";
@@ -506,12 +507,13 @@ export default function DevicesUnifiedPage() {
                   >
                     <span className="flex items-center">MAC <SortIcon field="mac" /></span>
                   </TableHead>
-                  <TableHead 
+                  <TableHead
                     className="cursor-pointer hover:bg-muted/50 select-none"
                     onClick={() => handleSort("status")}
                   >
                     <span className="flex items-center">Stato <SortIcon field="status" /></span>
                   </TableHead>
+                  <TableHead title="Credenziali attive">Cred.</TableHead>
                   <TableHead className="w-24">Azioni</TableHead>
                 </TableRow>
               </TableHeader>
@@ -583,6 +585,9 @@ export default function DevicesUnifiedPage() {
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={status} />
+                      </TableCell>
+                      <TableCell>
+                        <ProtocolBadges protocols={(item as unknown as { credential_protocols?: string[] }).credential_protocols || []} />
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>

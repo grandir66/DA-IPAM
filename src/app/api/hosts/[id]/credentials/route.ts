@@ -5,6 +5,7 @@ import {
   addHostCredential,
   removeHostCredential,
   setHostCredentialValidated,
+  reorderHostCredentials,
 } from "@/lib/db";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -106,6 +107,34 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     } catch (error) {
       console.error("Error updating host credential:", error);
       return NextResponse.json({ error: "Errore nell'aggiornamento credenziale" }, { status: 500 });
+    }
+  });
+}
+
+const PutSchema = z.object({
+  action: z.literal("reorder"),
+  binding_ids: z.array(z.number().int().positive()),
+});
+
+/** PUT — riordina credenziali host. */
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  return withTenantFromSession(async () => {
+    try {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
+      const { id } = await params;
+      const hostId = Number(id);
+      const body = await request.json();
+      const parsed = PutSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      }
+      reorderHostCredentials(hostId, parsed.data.binding_ids);
+      const credentials = getHostCredentials(hostId);
+      return NextResponse.json({ credentials });
+    } catch (error) {
+      console.error("Error reordering host credentials:", error);
+      return NextResponse.json({ error: "Errore nel riordino credenziali" }, { status: 500 });
     }
   });
 }

@@ -19,11 +19,20 @@ import {
 } from "./librenms-db";
 import type { LibreNMSSyncResult, HostSnmpData } from "@/types";
 
-/** Determina quale nome/IP passare a LibreNMS come hostname principale */
-function pickHostname(ip: string, hostname?: string | null, customName?: string | null): string {
+/**
+ * LibreNMS usa "hostname" come indirizzo di polling SNMP/ICMP.
+ * Usiamo sempre l'IP per garantire raggiungibilità,
+ * il nome DNS/custom va in sysName come attributo descrittivo.
+ */
+function pickHostname(ip: string): string {
+  return ip;
+}
+
+/** Ritorna il sysName da passare a LibreNMS come nome visualizzato */
+function pickSysName(hostname?: string | null, customName?: string | null): string | undefined {
   if (hostname && hostname.trim()) return hostname.trim();
   if (customName && customName.trim()) return customName.trim();
-  return ip;
+  return undefined;
 }
 
 /** Parsa il JSON snmp_data in modo sicuro */
@@ -120,41 +129,50 @@ export async function syncNetworkToLibreNMS(networkId: number): Promise<LibreNMS
     try {
       const snmpData   = parseSnmpData(host.snmp_data)!;
       const snmpParams = resolveSnmpParams(snmpData, networkCommunity)!;
-      const hostname   = pickHostname(host.ip, host.hostname, host.custom_name);
+      const hostname   = pickHostname(host.ip);  // sempre IP per polling affidabile
+      const sysName    = pickSysName(host.hostname, host.custom_name);
       const existing   = getLibreNMSMapByIp(networkId, host.ip);
 
       if (existing) {
-        // Aggiorna parametri se cambiati (hostname, hardware, serial, community)
-        const updateFields: Record<string, unknown> = {};
-        if (host.hostname && host.hostname !== existing.librenms_hostname) {
-          updateFields.sysName = host.hostname;
-        }
-        if (host.model)         updateFields.hardware  = host.model;
-        if (host.serial_number) updateFields.serial    = host.serial_number;
-        // community non è aggiornabile via PATCH, ma se cambia è necessario aggiungere di nuovo
+        // Aggiorna parametri SNMP + metadati (community aggiornabile via PATCH)
+        const updateFields: Record<string, unknown> = {
+          community: snmpParams.community,
+          snmpver:   snmpParams.snmpver,
+          port:      snmpParams.port,
+          snmp_disable: false,
+        };
+        if (sysName)            updateFields.sysName  = sysName;
+        if (host.model)         updateFields.hardware = host.model;
+        if (host.serial_number) updateFields.serial   = host.serial_number;
 
-        if (Object.keys(updateFields).length > 0) {
-          await client.updateDevice(existing.librenms_device_id, updateFields);
-        }
-
+        await client.updateDevice(existing.librenms_device_id, updateFields);
         upsertLibreNMSMap(networkId, host.ip, existing.librenms_device_id, hostname, host.status ?? null);
         result.updated++;
       } else {
-        const existingId = existingLibreNMSDevices.get(host.ip) ?? existingLibreNMSDevices.get(hostname);
+        const existingId = existingLibreNMSDevices.get(host.ip);
 
         let deviceId: number;
         if (existingId != null) {
-          // Device già presente in LibreNMS, aggiorna solo il mapping locale
+          // Device già in LibreNMS (aggiunto manualmente): aggiorna le credenziali SNMP
           deviceId = existingId;
+          await client.updateDevice(deviceId, {
+            community:    snmpParams.community,
+            snmpver:      snmpParams.snmpver,
+            port:         snmpParams.port,
+            snmp_disable: false,
+            ...(sysName            ? { sysName }            : {}),
+            ...(host.model         ? { hardware: host.model }         : {}),
+            ...(host.serial_number ? { serial: host.serial_number } : {}),
+          });
         } else {
           deviceId = await client.addDevice({
             hostname,
             ...snmpParams,          // community, snmpver, port
             snmp_disable: false,
             force_add: true,
-            sysName:  host.hostname      ?? undefined,
-            hardware: host.model         ?? undefined,
-            serial:   host.serial_number ?? undefined,
+            sysName:  sysName              ?? undefined,
+            hardware: host.model           ?? undefined,
+            serial:   host.serial_number   ?? undefined,
           });
         }
 

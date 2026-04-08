@@ -43,14 +43,29 @@ async function waitForMongo(name: string, maxMs: number, log: (l: string) => voi
   throw new Error("MongoDB non pronto dopo il timeout.");
 }
 
-/** Attende che OpenSearch risponda su :9200 (verificato via docker exec curl). */
+/**
+ * Attende che OpenSearch sia pronto controllando i log del container dal host.
+ * L'immagine OpenSearch (Amazon Linux 2023) non include curl/wget,
+ * quindi evitiamo docker exec e leggiamo i log direttamente.
+ */
 async function waitForOpenSearch(name: string, maxMs: number, log: (l: string) => void): Promise<void> {
+  const { execFile: _ef } = await import("child_process");
+  const { promisify } = await import("util");
+  const execFile = promisify(_ef);
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
-    const { ok } = await containerExec(name, [
-      "curl", "-sf", "http://localhost:9200",
-    ], 10_000);
-    if (ok) { log("[wait] OpenSearch pronto."); return; }
+    try {
+      const r = await execFile("docker", ["logs", "--tail", "200", name], {
+        timeout: 10_000,
+        maxBuffer: 2 * 1024 * 1024,
+      });
+      const output = r.stdout + r.stderr;
+      // OpenSearch scrive "publish_address" quando il nodo HTTP è legato alla porta
+      if (output.includes("publish_address") || output.includes("bound_addresses")) {
+        log("[wait] OpenSearch pronto.");
+        return;
+      }
+    } catch { /* container non ancora avviato */ }
     log("[wait] OpenSearch non ancora pronto, attesa 10s...");
     await new Promise((r) => setTimeout(r, 10_000));
   }

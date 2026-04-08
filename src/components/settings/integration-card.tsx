@@ -110,8 +110,9 @@ export function IntegrationCard({ component, title, description, dockerAvailable
     }
   };
 
-  const handleAction = async (action: "start" | "stop" | "restart" | "remove") => {
+  const handleAction = async (action: "start" | "stop" | "restart" | "remove" | "remove-all") => {
     if (action === "remove" && !confirm(`Rimuovere il container Docker di ${title}?`)) return;
+    if (action === "remove-all" && !confirm(`Eliminare tutti i container Docker di ${title} (incluse dipendenze come database e cache)? I dati non saranno conservati.`)) return;
     try {
       const res = await fetch(`/api/integrations/${component}/action`, {
         method: "POST",
@@ -120,7 +121,11 @@ export function IntegrationCard({ component, title, description, dockerAvailable
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (res.ok) {
-        toast.success(`Azione '${action}' eseguita`);
+        toast.success(action === "remove-all" ? "Container eliminati — pronto per una nuova installazione" : `Azione '${action}' eseguita`);
+        if (action === "remove-all") {
+          // Reset config locale: mode rimane managed ma url/token vengono svuotati
+          setLocalConfig((c) => ({ ...c, url: "", apiToken: "" }));
+        }
         await load();
       } else {
         toast.error(data.error ?? "Errore");
@@ -410,11 +415,19 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             </Button>
           )}
 
-          {isManaged && state?.containerStatus !== null && !installing && (
-            <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600" onClick={() => handleAction("remove")}>
-              <Trash2 className="h-3.5 w-3.5 mr-1" />
-              Rimuovi container
-            </Button>
+          {isManaged && !installing && (
+            <>
+              {state?.containerStatus !== null && (
+                <Button size="sm" variant="ghost" className="text-red-400 hover:text-red-500" onClick={() => handleAction("remove")}>
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  Rimuovi container
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" className="text-red-600 hover:text-red-700 font-medium" onClick={() => handleAction("remove-all")}>
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                Elimina tutto e ricrea
+              </Button>
+            </>
           )}
 
           {showSyncButton && !isDisabled && (

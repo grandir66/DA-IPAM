@@ -14,8 +14,19 @@ function parseComponent(raw: string): IntegrationComponent | null {
 }
 
 const ActionSchema = z.object({
-  action: z.enum(["start", "stop", "restart", "remove"]),
+  action: z.enum(["start", "stop", "restart", "remove", "remove-all"]),
 });
+
+/** Tutti i container da rimuovere per ogni componente (principale + dipendenze) */
+function getAllContainers(component: IntegrationComponent, containerName: string): string[] {
+  if (component === "librenms") {
+    return [containerName, `${containerName}-db`, `${containerName}-redis`];
+  }
+  if (component === "graylog") {
+    return [containerName, "da-graylog-opensearch", "da-graylog-mongo"];
+  }
+  return [containerName]; // loki: solo un container
+}
 
 export async function POST(
   req: Request,
@@ -57,6 +68,19 @@ export async function POST(
       await execDockerCommand(["restart", containerName]);
     } else if (action === "remove") {
       await execDockerCommand(["rm", "-f", containerName]);
+    } else if (action === "remove-all") {
+      // Rimuove tutti i container + rete Docker associata
+      const all = getAllContainers(component, containerName);
+      for (const c of all) {
+        try { await execDockerCommand(["rm", "-f", c]); } catch { /* già rimosso */ }
+      }
+      // Rimuovi anche la rete Docker dedicata se esiste
+      const network = component === "librenms" ? "da-librenms-net"
+                    : component === "graylog"  ? "da-graylog-net"
+                    : null;
+      if (network) {
+        try { await execDockerCommand(["network", "rm", network]); } catch { /* non esisteva */ }
+      }
     }
     return NextResponse.json({ ok: true });
   } catch (err) {

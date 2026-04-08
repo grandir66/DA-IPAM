@@ -4,9 +4,9 @@ import { authConfig } from "./auth.config";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
-  // LAN / IP / container senza AUTH_URL: Auth.js v5 altrimenti risponde
-  // "Server error — problem with the server configuration" (UntrustedHost).
-  // Imposta AUTH_TRUST_HOST=false solo dietro reverse proxy con host fisso.
+  // LAN / IP variabile / container DHCP: con trustHost le richieste usano l'Host della richiesta.
+  // Non serve AUTH_URL fisso salvo deployment con URL pubblico unico (allora opz. AUTH_URL + AUTH_TRUST_HOST=false).
+  // AUTH_TRUST_HOST=false solo se serve vincolare a un solo host (es. dietro proxy con nome DNS fisso).
   trustHost: process.env.AUTH_TRUST_HOST !== "false",
   providers: [
     Credentials({

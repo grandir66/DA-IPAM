@@ -114,30 +114,21 @@ build_app() {
   echo "    Build completata."
 }
 
-# URL per Auth.js (evita callback con 0.0.0.0 quando il servizio ascolta su tutte le interfacce).
-# Override: DA_INVENT_AUTH_URL=https://esempio.it  —  altrimenti prima IPv4 non-loopback rilevata.
-compute_auth_url() {
+# Auth.js: senza AUTH_URL fisso l'app accetta qualsiasi Host (IP LAN, DHCP, hostname).
+# trustHost è già true in codice; AUTH_TRUST_HOST=true nel .env rende esplicito il comportamento.
+# Solo per URL pubblico canonico (es. https://invent.esempio.it dietro proxy): export DA_INVENT_AUTH_URL=...
+# Non impostiamo più AUTH_URL dall'IP rilevato — con IP dinamico i cookie/callback andavano fuori sync.
+fixed_auth_url_from_env() {
   if [ -n "${DA_INVENT_AUTH_URL:-}" ]; then
     echo "$DA_INVENT_AUTH_URL"
-    return
   fi
-  local ip=""
-  ip=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' | grep -v '^127\.' | head -1)
-  if [ -z "$ip" ]; then
-    ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i=="src") { print $(i+1); exit }}')
-  fi
-  if [ -z "$ip" ] || [ "$ip" = "127.0.0.1" ]; then
-    echo ""
-    return
-  fi
-  echo "http://${ip}:${PORT}"
 }
 
 # Crea .env.local se non esiste
 setup_env() {
   local env_file="$APP_DIR/.env.local"
   local auth_url
-  auth_url="$(compute_auth_url)"
+  auth_url="$(fixed_auth_url_from_env)"
 
   if [ ! -f "$env_file" ] || ! grep -q "ENCRYPTION_KEY" "$env_file" 2>/dev/null; then
     echo ">>> Generazione .env.local..."
@@ -151,6 +142,9 @@ setup_env() {
       echo "AUTH_SECRET=$secret"
       echo "PORT=$PORT"
       echo "NODE_ENV=production"
+      echo ""
+      echo "# Auth.js: accesso da qualsiasi IP/hostname (LAN, container DHCP). Opzionale URL fisso: DA_INVENT_AUTH_URL=..."
+      echo "AUTH_TRUST_HOST=true"
       echo ""
       echo "# Utente di servizio Domarc (accesso superadmin incondizionato)"
       echo "DOMARC_USERNAME=domarc"
@@ -170,16 +164,16 @@ setup_env() {
     echo "    ╚══════════════════════════════════════════════════════════════╝"
     echo ""
     if [ -n "$auth_url" ]; then
-      echo "    .env.local creato (AUTH_URL=$auth_url). Completare il setup dalla UI al primo avvio."
+      echo "    .env.local creato (AUTH_TRUST_HOST=true, AUTH_URL=$auth_url da DA_INVENT_AUTH_URL). Completare il setup dalla UI al primo avvio."
     else
-      echo "    .env.local creato (AUTH_URL non impostato). Completare il setup dalla UI al primo avvio."
+      echo "    .env.local creato (AUTH_TRUST_HOST=true, nessun AUTH_URL fisso — ok con IP dinamico). Completare il setup dalla UI al primo avvio."
     fi
   else
     echo ">>> .env.local già presente."
-    if [ -n "$auth_url" ] && ! grep -qE '^[[:space:]]*AUTH_URL=' "$env_file" 2>/dev/null; then
-      echo "AUTH_URL=$auth_url" >> "$env_file"
+    if ! grep -qE '^[[:space:]]*AUTH_TRUST_HOST=' "$env_file" 2>/dev/null; then
+      echo "AUTH_TRUST_HOST=true" >> "$env_file"
       chmod 600 "$env_file"
-      echo "    Aggiunto AUTH_URL=$auth_url (accesso da rete)."
+      echo "    Aggiunto AUTH_TRUST_HOST=true (accesso da qualsiasi host/IP; rimuovi o aggiorna AUTH_URL se era legato a un IP vecchio)."
     fi
   fi
 }

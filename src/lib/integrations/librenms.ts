@@ -217,19 +217,22 @@ async function generateLibreNMSToken(
       log(`[token] Colonne users: ${[...existingCols].join(", ")}`);
 
       // Costruisce INSERT con solo le colonne effettivamente presenti
-      const colDefs: Array<[string, string]> = [
-        ["username",  "'admin'"],
-        ["password",  `'${hash}'`],
-        ["level",     "10"],
-        ["realname",  "'Administrator'"],
-        ["email",     "'admin@localhost'"],
-        ["enabled",   "1"],
+      // "level" è stato rimosso nelle versioni moderne di LibreNMS (sostituito dal sistema roles)
+      const required: Array<[string, string]> = [
+        ["username", "'admin'"],
+        ["password", `'${hash}'`],
+        ["realname", "'Administrator'"],
+        ["email",    "'admin@localhost'"],
+        ["enabled",  "1"],
       ];
       const optional: Array<[string, string]> = [
-        ["auth_type",          "'mysql'"],
-        ["auth_id",            "''"],
-        ["can_modify_passwd",  "1"],
+        ["level",             "10"],   // versioni legacy
+        ["auth_type",         "'mysql'"],
+        ["auth_id",           "''"],
+        ["can_modify_passwd", "1"],
+        ["descr",             "'DA-INVENT auto'"],
       ];
+      const colDefs: Array<[string, string]> = [...required];
       for (const [col, val] of optional) {
         if (existingCols.has(col)) colDefs.push([col, val]);
       }
@@ -257,6 +260,22 @@ async function generateLibreNMSToken(
         return null;
       }
       log(`[token] Utente admin creato (user_id=${userId}, password=admin).`);
+
+      // ── Assegna ruolo admin (sistema Laravel Spatie Permissions) ──────────
+      // Nelle versioni moderne di LibreNMS il livello è gestito tramite roles/model_has_roles
+      const roleAssign = await dockerExecSafe(dbContainer, [
+        "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
+        "-e",
+        `INSERT IGNORE INTO model_has_roles (role_id, model_type, model_id)
+         SELECT r.id, 'App\\\\Models\\\\User', ${userId}
+         FROM roles r WHERE r.name IN ('admin','superadmin','Administrator') LIMIT 1;`,
+      ]);
+      if (roleAssign.ok) {
+        log("[token] Ruolo admin assegnato via model_has_roles.");
+      } else {
+        // Tabella non presente (versione legacy con colonna level) — non critico
+        log("[token] model_has_roles non disponibile (versione legacy), level già impostato.");
+      }
     } catch (err) {
       log(`[token] Errore creazione utente: ${err instanceof Error ? err.message : String(err)}`);
       return null;

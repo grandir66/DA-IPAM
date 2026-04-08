@@ -89,19 +89,31 @@ export async function installGraylog(jobId: string, containerName: string): Prom
     );
 
     updateJob(jobId, { phase: "waiting" });
-    log("[wait] Attesa avvio Graylog (max 120s)...");
-    await waitForHttp("http://localhost:9000/api/", 120, log);
+    log("[wait] Attesa avvio Graylog (max 180s)...");
+    await waitForHttp("http://localhost:9000/api/", 180, log);
+
+    // ── API TOKEN AUTOMATICO ─────────────────────────────────────────────────
+    log("[token] Generazione API token automatica...");
+    const apiToken = await generateGraylogToken("http://localhost:9000", "admin", "admin", log);
 
     setIntegrationConfig("graylog", {
       mode: "managed",
       url: "http://localhost:9000",
       username: "admin",
       password: "admin",
+      apiToken: apiToken ?? "",
       containerName,
     });
 
     updateJob(jobId, { phase: "done", finishedAt: new Date().toISOString() });
-    log("[done] Graylog installato su http://localhost:9000 (user: admin / password: admin — cambiare subito)");
+    if (apiToken) {
+      log("[done] Graylog installato e configurato automaticamente su http://localhost:9000");
+      log("[done] API token generato e salvato — nessuna configurazione manuale necessaria.");
+    } else {
+      log("[done] Graylog installato su http://localhost:9000");
+      log("[warn] Token automatico fallito. Crea un token in Graylog → System → Users → admin → API Tokens.");
+    }
+    log("[done] Credenziali default: admin / admin (cambiarle subito)");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     updateJob(jobId, { phase: "error", error: msg, finishedAt: new Date().toISOString() });

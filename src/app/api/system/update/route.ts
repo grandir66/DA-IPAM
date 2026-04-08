@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
-import { execSync } from "child_process";
+import { execSync, spawn } from "child_process";
 import path from "path";
 import fs from "fs";
 
@@ -470,7 +470,59 @@ export async function POST(request: NextRequest) {
         }, { status: 400 });
       }
 
+      // Strategia di riavvio:
+      // 1. Se systemd è disponibile, usa systemctl restart (più affidabile)
+      // 2. Altrimenti self-restart: spawna un nuovo processo e poi esce
       setTimeout(() => {
+        const projectRoot = getProjectRoot();
+
+        // Tentativo 1: systemd (produzione tipica)
+        try {
+          execSync("systemctl is-active da-invent", { timeout: 3000, stdio: "pipe" });
+          // Il servizio systemd esiste ed è attivo → usa systemctl restart
+          const restarter = spawn("systemctl", ["restart", "da-invent"], {
+            detached: true,
+            stdio: "ignore",
+            cwd: projectRoot,
+          });
+          restarter.unref();
+          process.exit(0);
+          return;
+        } catch {
+          // systemd non disponibile o servizio non registrato → self-restart
+        }
+
+        // Tentativo 2: PM2
+        try {
+          const pm2Name = execSync("pm2 id da-invent 2>/dev/null || true", {
+            timeout: 3000, encoding: "utf-8",
+          }).trim();
+          if (pm2Name && pm2Name !== "[]") {
+            const restarter = spawn("pm2", ["restart", "da-invent"], {
+              detached: true,
+              stdio: "ignore",
+              cwd: projectRoot,
+            });
+            restarter.unref();
+            process.exit(0);
+            return;
+          }
+        } catch {
+          // PM2 non disponibile
+        }
+
+        // Tentativo 3: self-restart — spawna un nuovo processo Node.js identico
+        const isDev = process.env.NODE_ENV !== "production";
+        const cmd = isDev ? "npx" : "npx";
+        const args = isDev ? ["tsx", "watch", "server.ts"] : ["tsx", "server.ts"];
+
+        const child = spawn(cmd, args, {
+          detached: true,
+          stdio: "ignore",
+          cwd: projectRoot,
+          env: { ...process.env },
+        });
+        child.unref();
         process.exit(0);
       }, 1000);
 

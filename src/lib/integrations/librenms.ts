@@ -106,23 +106,77 @@ export async function installLibreNMS(jobId: string, containerName: string): Pro
     // ── WAIT ─────────────────────────────────────────────────────────────────
     // LibreNMS fa migrazioni DB al primo avvio → può richiedere 3-5 minuti
     updateJob(jobId, { phase: "waiting" });
-    log("[wait] Attesa avvio LibreNMS (max 5 minuti, le prime migrazioni DB richiedono tempo)...");
+    log("[wait] Attesa avvio LibreNMS (max 5 minuti — prime migrazioni DB richiedono tempo)...");
     await waitForHttp("http://localhost:8090", 300, log);
+
+    // ── API TOKEN AUTOMATICO ─────────────────────────────────────────────────
+    log("[token] Generazione API token automatica via docker exec...");
+    const apiToken = await generateLibreNMSToken(containerName, log);
 
     setIntegrationConfig("librenms", {
       mode: "managed",
       url: "http://localhost:8090",
+      apiToken: apiToken ?? "",
       containerName,
     });
 
     updateJob(jobId, { phase: "done", finishedAt: new Date().toISOString() });
-    log("[done] LibreNMS installato correttamente su http://localhost:8090");
+    if (apiToken) {
+      log("[done] LibreNMS installato e configurato automaticamente su http://localhost:8090");
+      log("[done] API token generato e salvato — nessuna configurazione manuale necessaria.");
+    } else {
+      log("[done] LibreNMS installato su http://localhost:8090");
+      log("[warn] Generazione token automatica fallita. Vai in LibreNMS → Impostazioni → API Token per creare un token manualmente.");
+    }
     log("[done] Credenziali default: admin / admin (cambiarle subito)");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     updateJob(jobId, { phase: "error", error: msg, finishedAt: new Date().toISOString() });
     log(`[error] ${msg}`);
   }
+}
+
+/**
+ * Genera un API token per l'utente "admin" via `docker exec lnms user:api-token`.
+ * Ritorna il token oppure null se il comando fallisce.
+ */
+async function generateLibreNMSToken(
+  containerName: string,
+  log: (l: string) => void
+): Promise<string | null> {
+  const { execDockerCommand } = await import("./docker");
+
+  // Ritenta per max 60s nel caso il container non sia ancora del tutto pronto
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    try {
+      const { stdout } = await execDockerCommand([
+        "exec", containerName,
+        "lnms", "user:api-token", "admin",
+      ]);
+      // Output atteso: "API Token: <token>" oppure solo "<token>"
+      const match = stdout.match(/([a-f0-9]{32,})/i);
+      if (match) {
+        log(`[token] Token generato con successo.`);
+        return match[1];
+      }
+      // se l'output contiene già un token precedente
+      const lines = stdout.trim().split("\n");
+      const last = lines[lines.length - 1].trim();
+      if (last.length > 20) {
+        log(`[token] Token ottenuto: ${last.substring(0, 8)}...`);
+        return last;
+      }
+      log(`[token] Output inatteso: ${stdout.trim().substring(0, 80)}`);
+      return null;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`[token] Tentativo fallito: ${msg.substring(0, 80)} — nuovo tentativo tra 10s...`);
+      await new Promise((r) => setTimeout(r, 10_000));
+    }
+  }
+  log("[token] Impossibile generare il token automaticamente.");
+  return null;
 }
 
 async function waitForHttp(url: string, maxSeconds: number, log: (l: string) => void): Promise<void> {

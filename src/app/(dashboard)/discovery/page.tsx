@@ -24,7 +24,7 @@ import { useClientTableSort } from "@/hooks/use-table-sort";
 import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
 } from "lucide-react";
-import type { Host } from "@/types";
+import type { Host, LibreNMSHostMap } from "@/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,6 +87,7 @@ const COLUMNS: ColumnDef[] = [
   { id: "model",           label: "Modello",         defaultVisible: false, group: "dettaglio" },
   { id: "serial_number",   label: "Seriale",         defaultVisible: false, group: "dettaglio" },
   { id: "firmware",        label: "Firmware",         defaultVisible: false, group: "dettaglio" },
+  { id: "librenms_id",     label: "LibreNMS",         defaultVisible: false, group: "dettaglio" },
 
   // Temporali
   { id: "last_seen",       label: "Ultimo visto",    defaultVisible: true,  group: "base" },
@@ -176,6 +177,7 @@ function getManufacturer(h: EnrichedHost): { text: string; fromVendor: boolean }
 
 export default function DiscoveryPage() {
   const [hosts, setHosts] = useState<EnrichedHost[]>([]);
+  const [librenmsMap, setLibrenmsMap] = useState<Map<string, LibreNMSHostMap>>(new Map());
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -189,8 +191,27 @@ export default function DiscoveryPage() {
     setLoading(true);
     try {
       const res = await fetch("/api/hosts/discovery");
-      if (res.ok) setHosts(await res.json());
-      else setHosts([]);
+      if (res.ok) {
+        const data: EnrichedHost[] = await res.json();
+        setHosts(data);
+        // Carica librenms map per le reti presenti
+        const networkIds = [...new Set(data.map((h) => h.network_id))];
+        const maps: LibreNMSHostMap[] = [];
+        await Promise.all(
+          networkIds.map(async (nid) => {
+            try {
+              const r = await fetch(`/api/integrations/librenms/sync?network_id=${nid}`);
+              if (r.ok) {
+                const rows = (await r.json()) as LibreNMSHostMap[];
+                maps.push(...rows);
+              }
+            } catch { /* non critico */ }
+          })
+        );
+        const m = new Map<string, LibreNMSHostMap>();
+        for (const row of maps) m.set(`${row.network_id}:${row.host_ip}`, row);
+        setLibrenmsMap(m);
+      } else setHosts([]);
     } catch { setHosts([]); }
     finally { setLoading(false); }
   }, []);
@@ -340,6 +361,10 @@ export default function DiscoveryPage() {
         const c = getFpConfidence(h);
         return c > 0 ? `${Math.round(c * 100)}%` : "";
       }
+      case "librenms_id": {
+        const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
+        return lnms ? String(lnms.librenms_device_id) : "";
+      }
       default: return "";
     }
   }
@@ -427,6 +452,15 @@ export default function DiscoveryPage() {
         return conf > 0
           ? <FingerprintConfidenceBadge confidence={conf} deviceLabel={device} />
           : <span className="text-muted-foreground text-xs">—</span>;
+      }
+      case "librenms_id": {
+        const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
+        if (!lnms) return <span className="text-muted-foreground text-xs">—</span>;
+        return (
+          <Badge variant="outline" className="font-mono text-xs">
+            #{lnms.librenms_device_id}
+          </Badge>
+        );
       }
       default:
         return null;

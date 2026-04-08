@@ -34,9 +34,10 @@ import { DeviceCredentialsTable } from "@/components/shared/device-credentials-t
 import {
   ArrowLeft, Save, Router, Cable, Trash2, Server, ChevronRight,
   ScanSearch, PlusCircle, Wifi, Cpu, HardDrive, Monitor, Globe, Activity, Key,
+  ExternalLink, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { DeviceFingerprintSnapshot, FingerprintExplanation, HostDetail, HostSnmpData } from "@/types";
+import type { DeviceFingerprintSnapshot, FingerprintExplanation, HostDetail, HostSnmpData, LibreNMSDevice } from "@/types";
 import { getDefaultNetworkDeviceVendorOptions } from "@/lib/network-device-vendor-options";
 import { LatencyChart } from "./latency-chart";
 
@@ -114,6 +115,15 @@ export default function HostDetailPage() {
   });
   const [originalClassification, setOriginalClassification] = useState("");
   const [fpExplanation, setFpExplanation] = useState<FingerprintExplanation | null>(null);
+  const [libreNMSData, setLibreNMSData] = useState<{
+    configured: boolean;
+    mapped?: boolean;
+    librenmsDeviceId?: number;
+    librenmsHostname?: string | null;
+    lastSyncedAt?: string;
+    device?: LibreNMSDevice | null;
+    librenmsUrl?: string;
+  } | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [createDeviceOpen, setCreateDeviceOpen] = useState(false);
@@ -157,6 +167,16 @@ export default function HostDetailPage() {
       .then((r) => r.ok ? r.json() : null)
       .then((data: FingerprintExplanation | null) => { if (data) setFpExplanation(data); })
       .catch(() => { /* non critico */ });
+  }, [params.id]);
+
+  useEffect(() => {
+    const id = params.id;
+    if (!id || typeof id !== "string") return;
+    fetch(`/api/hosts/${id}/librenms`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: typeof libreNMSData) => { if (data) setLibreNMSData(data); })
+      .catch(() => { /* non critico */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id]);
 
   async function handleSave() {
@@ -595,6 +615,78 @@ export default function HostDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ════════════════ LIBRENMS ════════════════ */}
+      {libreNMSData?.configured && (
+        <Card>
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" />
+              LibreNMS
+            </CardTitle>
+            {libreNMSData.mapped && libreNMSData.librenmsUrl && libreNMSData.librenmsDeviceId && (
+              <a
+                href={`${libreNMSData.librenmsUrl}/device/device=${libreNMSData.librenmsDeviceId}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Apri in LibreNMS
+              </a>
+            )}
+          </CardHeader>
+          <CardContent>
+            {!libreNMSData.mapped ? (
+              <p className="text-sm text-muted-foreground">
+                Host non ancora sincronizzato con LibreNMS.
+                Avvia una sincronizzazione dalla pagina <strong>Impostazioni → Integrazioni</strong> o crea un job pianificato di tipo &quot;Sincronizzazione LibreNMS&quot;.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Device ID</p>
+                  <p className="font-mono">{libreNMSData.librenmsDeviceId}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Hostname (LNMs)</p>
+                  <p className="font-mono truncate">{libreNMSData.librenmsHostname ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Stato</p>
+                  {libreNMSData.device ? (
+                    <span className={`font-medium ${libreNMSData.device.status === 1 ? "text-green-600" : "text-red-500"}`}>
+                      {libreNMSData.device.status === 1 ? "Online" : "Offline"}
+                    </span>
+                  ) : <span className="text-muted-foreground">—</span>}
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Ultimo poll</p>
+                  <p className="text-xs">
+                    {libreNMSData.device?.last_polled
+                      ? new Date(libreNMSData.device.last_polled).toLocaleString("it-IT")
+                      : libreNMSData.lastSyncedAt
+                        ? new Date(libreNMSData.lastSyncedAt).toLocaleString("it-IT")
+                        : "—"}
+                  </p>
+                </div>
+                {libreNMSData.device?.uptime != null && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Uptime</p>
+                    <p className="text-xs">{Math.floor(libreNMSData.device.uptime / 86400)}d {Math.floor((libreNMSData.device.uptime % 86400) / 3600)}h</p>
+                  </div>
+                )}
+                {libreNMSData.device?.os && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">OS (LibreNMS)</p>
+                    <p className="text-xs">{libreNMSData.device.os}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* ════════════════ STORICO SCANSIONI ════════════════ */}
       {host.recent_scans.length > 0 && (

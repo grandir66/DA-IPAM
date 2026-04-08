@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff } from "lucide-react";
+import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff, RefreshCw } from "lucide-react";
 import type { IntegrationComponent, IntegrationMode, ComponentConfig, InstallJob, ContainerStatus } from "@/lib/integrations/types";
 
 interface Props {
@@ -16,6 +16,8 @@ interface Props {
   title: string;
   description: string;
   dockerAvailable: boolean;
+  /** Mostra bottone "Sincronizza inventario" (solo LibreNMS) */
+  showSyncButton?: boolean;
 }
 
 interface ApiState {
@@ -23,7 +25,7 @@ interface ApiState {
   containerStatus: ContainerStatus | null;
 }
 
-export function IntegrationCard({ component, title, description, dockerAvailable }: Props) {
+export function IntegrationCard({ component, title, description, dockerAvailable, showSyncButton }: Props) {
   const [state, setState] = useState<ApiState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -41,6 +43,8 @@ export function IntegrationCard({ component, title, description, dockerAvailable
 
   const [activeJob, setActiveJob] = useState<InstallJob | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSyncResult, setLastSyncResult] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = async () => {
@@ -149,6 +153,36 @@ export function IntegrationCard({ component, title, description, dockerAvailable
     }
   };
 
+  const handleSyncInventory = async () => {
+    setSyncing(true);
+    setLastSyncResult(null);
+    try {
+      const res = await fetch("/api/integrations/librenms/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = (await res.json()) as Array<{ networkId: number; added: number; updated: number; skipped: number; errors: string[] }>;
+      if (!res.ok) {
+        const errData = data as unknown as { error?: string };
+        toast.error((errData as { error?: string }).error ?? "Errore sync");
+        return;
+      }
+      const results = Array.isArray(data) ? data : [data];
+      const added = results.reduce((s, r) => s + (r.added ?? 0), 0);
+      const updated = results.reduce((s, r) => s + (r.updated ?? 0), 0);
+      const errors = results.flatMap((r) => r.errors ?? []);
+      const msg = `Sync completato: ${added} aggiunti, ${updated} aggiornati${errors.length > 0 ? `, ${errors.length} errori` : ""}`;
+      setLastSyncResult(msg);
+      if (errors.length > 0) toast.error(msg);
+      else toast.success(msg);
+    } catch {
+      toast.error("Errore di rete durante la sincronizzazione");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleTest = async () => {
     setTesting(true);
     setReachable(null);
@@ -224,7 +258,9 @@ export function IntegrationCard({ component, title, description, dockerAvailable
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="disabled">Disabilitato</SelectItem>
-                {dockerAvailable && <SelectItem value="managed">Docker locale</SelectItem>}
+                <SelectItem value="managed" disabled={!dockerAvailable}>
+                  Docker locale{!dockerAvailable ? " (Docker non disponibile)" : ""}
+                </SelectItem>
                 <SelectItem value="external">Istanza esterna</SelectItem>
               </SelectContent>
             </Select>
@@ -311,6 +347,11 @@ export function IntegrationCard({ component, title, description, dockerAvailable
           </div>
         )}
 
+        {/* Ultimo risultato sync */}
+        {lastSyncResult && (
+          <p className="text-xs text-muted-foreground pt-1">{lastSyncResult}</p>
+        )}
+
         {/* Azioni */}
         <div className="flex flex-wrap gap-2 pt-1">
           <Button size="sm" onClick={handleSave} disabled={saving}>
@@ -362,6 +403,15 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600" onClick={() => handleAction("remove")}>
               <Trash2 className="h-3.5 w-3.5 mr-1" />
               Rimuovi container
+            </Button>
+          )}
+
+          {showSyncButton && !isDisabled && (
+            <Button size="sm" variant="outline" onClick={handleSyncInventory} disabled={syncing}>
+              {syncing
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
+              Sincronizza inventario
             </Button>
           )}
 

@@ -912,6 +912,55 @@ export default function DiscoveryPage() {
                 </Select>
               </BulkFieldRow>
 
+              {/* Produttore */}
+              <BulkFieldRow
+                label="Produttore"
+                enabled={bulkForm.device_manufacturer.enabled}
+                onToggle={(v) => updateBulkField("device_manufacturer", { enabled: v })}
+              >
+                <Input
+                  value={bulkForm.device_manufacturer.value ?? ""}
+                  onChange={(e) => updateBulkField("device_manufacturer", { value: e.target.value || null })}
+                  placeholder="Es: HP, Cisco, Ubiquiti..."
+                  disabled={!bulkForm.device_manufacturer.enabled}
+                />
+              </BulkFieldRow>
+
+              {/* Nome personalizzato */}
+              <BulkFieldRow
+                label="Nome personalizzato"
+                enabled={bulkForm.custom_name.enabled}
+                onToggle={(v) => updateBulkField("custom_name", { enabled: v })}
+              >
+                <Input
+                  value={bulkForm.custom_name.value ?? ""}
+                  onChange={(e) => updateBulkField("custom_name", { value: e.target.value || null })}
+                  placeholder="Nome da assegnare..."
+                  disabled={!bulkForm.custom_name.enabled}
+                />
+              </BulkFieldRow>
+
+              {/* Tipo assegnazione IP */}
+              <BulkFieldRow
+                label="Assegnazione IP"
+                enabled={bulkForm.ip_assignment.enabled}
+                onToggle={(v) => updateBulkField("ip_assignment", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.ip_assignment.value}
+                  onValueChange={(v) => updateBulkField("ip_assignment", { value: v ?? "static" })}
+                  disabled={!bulkForm.ip_assignment.enabled}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="static">Statico</SelectItem>
+                    <SelectItem value="dynamic">DHCP</SelectItem>
+                    <SelectItem value="reserved">Riservato</SelectItem>
+                    <SelectItem value="unknown">Sconosciuto</SelectItem>
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+
               {/* Conosciuto */}
               <BulkFieldRow
                 label="Host conosciuto"
@@ -942,6 +991,63 @@ export default function DiscoveryPage() {
                   placeholder="Note da applicare a tutti gli host..."
                   disabled={!bulkForm.notes.enabled}
                 />
+              </BulkFieldRow>
+
+              {/* Credenziali */}
+              <BulkFieldRow
+                label="Assegna credenziale"
+                enabled={bulkForm.credential_id.enabled}
+                onToggle={(v) => updateBulkField("credential_id", { enabled: v })}
+              >
+                <div className="space-y-2">
+                  <Select
+                    value={bulkForm.credential_id.value != null ? String(bulkForm.credential_id.value) : "__empty__"}
+                    onValueChange={(v) => updateBulkField("credential_id", { value: v === "__empty__" ? null : Number(v) })}
+                    disabled={!bulkForm.credential_id.enabled}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Seleziona credenziale..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__empty__">— Seleziona —</SelectItem>
+                      {credentials.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          {c.name} ({c.credential_type})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <Label className="text-[10px] text-muted-foreground">Protocollo</Label>
+                      <Select
+                        value={bulkForm.credential_protocol.value}
+                        onValueChange={(v) => {
+                          const port = v === "snmp" ? 161 : v === "winrm" ? 5985 : v === "api" ? 443 : 22;
+                          updateBulkField("credential_protocol", { value: v ?? "ssh" });
+                          updateBulkField("credential_port", { value: port });
+                        }}
+                        disabled={!bulkForm.credential_id.enabled}
+                      >
+                        <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ssh">SSH</SelectItem>
+                          <SelectItem value="snmp">SNMP</SelectItem>
+                          <SelectItem value="winrm">WinRM</SelectItem>
+                          <SelectItem value="api">API</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="w-20">
+                      <Label className="text-[10px] text-muted-foreground">Porta</Label>
+                      <Input
+                        type="number" min={1} max={65535}
+                        value={bulkForm.credential_port.value}
+                        onChange={(e) => updateBulkField("credential_port", { value: Number(e.target.value) || 22 })}
+                        className="h-8"
+                        disabled={!bulkForm.credential_id.enabled}
+                      />
+                    </div>
+                  </div>
+                </div>
               </BulkFieldRow>
             </div>
           </DialogScrollableArea>

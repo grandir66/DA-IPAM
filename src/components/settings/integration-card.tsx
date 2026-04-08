@@ -199,10 +199,10 @@ export function IntegrationCard({ component, title, description, dockerAvailable
     }
   };
 
-  const handleShowLogs = async () => {
+  const handleShowLogs = async (source: "docker" | "app" = "docker") => {
     setLoadingLogs(true);
     try {
-      const res = await fetch(`/api/integrations/${component}/logs?lines=200`);
+      const res = await fetch(`/api/integrations/${component}/logs?lines=200&source=${source}`);
       const d = (await res.json()) as { logs?: string };
       setContainerLogs(d.logs ?? "(nessun output)");
       setTimeout(() => { logsRef.current?.scrollTo(0, logsRef.current.scrollHeight); }, 50);
@@ -475,10 +475,18 @@ export function IntegrationCard({ component, title, description, dockerAvailable
           )}
 
           {isManaged && containerRunning && (
-            <Button size="sm" variant="outline" onClick={handleShowLogs} disabled={loadingLogs}>
-              {loadingLogs ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Terminal className="h-3.5 w-3.5 mr-1" />}
-              Log
-            </Button>
+            <>
+              <Button size="sm" variant="outline" onClick={() => handleShowLogs("docker")} disabled={loadingLogs}>
+                {loadingLogs ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Terminal className="h-3.5 w-3.5 mr-1" />}
+                Log container
+              </Button>
+              {component === "librenms" && (
+                <Button size="sm" variant="outline" onClick={() => handleShowLogs("app")} disabled={loadingLogs}>
+                  {loadingLogs ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Terminal className="h-3.5 w-3.5 mr-1" />}
+                  librenms.log
+                </Button>
+              )}
+            </>
           )}
 
           {isManaged && dockerAvailable && !installing && !containerRunning && (

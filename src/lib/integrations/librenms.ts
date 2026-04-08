@@ -100,6 +100,10 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
         "-e", `REDIS_HOST=${redisContainer}`,
         "-e", "REDIS_PORT=6379",
         "-e", `BASE_URL=${serverUrl}`,
+        // Utente admin: il container lo crea via lnms user:add (evita SQL diretto)
+        "-e", "LIBRENMS_ADMIN_USER=admin",
+        "-e", `LIBRENMS_ADMIN_PASS=${adminPassword}`,
+        "-e", "LIBRENMS_ADMIN_EMAIL=admin@localhost",
         LIBRENMS_IMAGE,
       ],
       log
@@ -205,97 +209,26 @@ async function generateLibreNMSToken(
     return null;
   }
 
-  // ── Verifica/crea utente admin ────────────────────────────────────────────
-  const uidCheck = await dockerExecSafe(dbContainer, [
-    "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
-    "-se", "SELECT user_id FROM users WHERE username='admin' LIMIT 1;",
-  ]);
-  let userId = uidCheck.stdout.trim();
-
-  if (!userId || isNaN(Number(userId))) {
-    log("[token] Utente admin non trovato, creazione...");
-    try {
-      // LibreNMS usa Laravel bcrypt (cost 10). Usa il modulo bcrypt già presente nell'app.
-      const bcrypt = await import("bcrypt");
-      const hash = await bcrypt.hash(adminPassword, 10);
-
-      // Legge le colonne effettive della tabella users per costruire un INSERT compatibile
-      const colsRes = await dockerExecSafe(dbContainer, [
-        "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
-        "-se", "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='librenms' AND TABLE_NAME='users' ORDER BY ORDINAL_POSITION;",
-      ]);
-      const existingCols = new Set(colsRes.stdout.trim().split("\n").map((c) => c.trim()).filter(Boolean));
-      log(`[token] Colonne users: ${[...existingCols].join(", ")}`);
-
-      // Costruisce INSERT con solo le colonne effettivamente presenti
-      // "level" è stato rimosso nelle versioni moderne di LibreNMS (sostituito dal sistema roles)
-      const required: Array<[string, string]> = [
-        ["username", "'admin'"],
-        ["password", `'${hash}'`],
-        ["realname", "'Administrator'"],
-        ["email",    "'admin@localhost'"],
-        ["enabled",  "1"],
-      ];
-      const optional: Array<[string, string]> = [
-        ["level",             "10"],            // versioni legacy
-        ["auth_type",         "'mysql'"],
-        ["auth_id",           "''"],
-        ["can_modify_passwd", "1"],
-        ["descr",             "'DA-INVENT auto'"],
-        // Laravel timestamps — NULL causa eccezioni nel modello User
-        ["created_at",        "NOW()"],
-        ["updated_at",        "NOW()"],
-      ];
-      const colDefs: Array<[string, string]> = [...required];
-      for (const [col, val] of optional) {
-        if (existingCols.has(col)) colDefs.push([col, val]);
-      }
-
-      const cols   = colDefs.map(([c]) => c).join(", ");
-      const values = colDefs.map(([, v]) => v).join(", ");
-      const sql    = `INSERT IGNORE INTO users (${cols}) VALUES (${values});`;
-
-      const insertUser = await dockerExecSafe(dbContainer, [
-        "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms", "-e", sql,
-      ]);
-      if (!insertUser.ok) {
-        const errOut = (insertUser.stderr || insertUser.stdout).trim().substring(0, 400);
-        log(`[token] INSERT utente fallito: ${errOut}`);
-      }
-
-      // Rilegge user_id
-      const uid2 = await dockerExecSafe(dbContainer, [
-        "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
-        "-se", "SELECT user_id FROM users WHERE username='admin' LIMIT 1;",
-      ]);
-      userId = uid2.stdout.trim();
-      if (!userId || isNaN(Number(userId))) {
-        log("[token] Impossibile creare utente admin nel DB.");
-        return null;
-      }
-      log(`[token] Utente admin creato (user_id=${userId}, password=admin).`);
-
-      // ── Assegna ruolo admin (sistema Laravel Spatie Permissions) ──────────
-      // Nelle versioni moderne di LibreNMS il livello è gestito tramite roles/model_has_roles
-      const roleAssign = await dockerExecSafe(dbContainer, [
-        "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
-        "-e",
-        `INSERT IGNORE INTO model_has_roles (role_id, model_type, model_id)
-         SELECT r.id, 'App\\\\Models\\\\User', ${userId}
-         FROM roles r WHERE r.name IN ('admin','superadmin','Administrator') LIMIT 1;`,
-      ]);
-      if (roleAssign.ok) {
-        log("[token] Ruolo admin assegnato via model_has_roles.");
-      } else {
-        // Tabella non presente (versione legacy con colonna level) — non critico
-        log("[token] model_has_roles non disponibile (versione legacy), level già impostato.");
-      }
-    } catch (err) {
-      log(`[token] Errore creazione utente: ${err instanceof Error ? err.message : String(err)}`);
-      return null;
+  // ── Attende che il container abbia creato l'utente admin (via LIBRENMS_ADMIN_USER env) ──
+  log("[token] Attesa creazione utente admin da entrypoint container (max 3 min)...");
+  const userDeadline = Date.now() + 180_000;
+  let userId = "";
+  while (Date.now() < userDeadline) {
+    const uidCheck = await dockerExecSafe(dbContainer, [
+      "mysql", "-ulibrenms", `-p${DB_PASSWORD}`, "librenms",
+      "-se", "SELECT user_id FROM users WHERE username='admin' LIMIT 1;",
+    ]);
+    userId = uidCheck.stdout.trim();
+    if (userId && !isNaN(Number(userId))) {
+      log(`[token] Utente admin pronto (user_id=${userId}).`);
+      break;
     }
-  } else {
-    log(`[token] Utente admin esistente (user_id=${userId}).`);
+    log("[token] Utente non ancora presente, attesa 10s...");
+    await new Promise((r) => setTimeout(r, 10_000));
+  }
+  if (!userId || isNaN(Number(userId))) {
+    log("[token] Timeout: utente admin non trovato nel DB.");
+    return null;
   }
 
   // ── Inserisce token in api_tokens ─────────────────────────────────────────

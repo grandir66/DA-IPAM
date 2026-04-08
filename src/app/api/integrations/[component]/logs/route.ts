@@ -8,6 +8,21 @@ import type { IntegrationComponent } from "@/lib/integrations/types";
 const execFileAsync = promisify(execFile);
 const VALID_COMPONENTS: IntegrationComponent[] = ["librenms", "loki", "graylog"];
 
+/** Percorsi dei file di log applicativi per componente */
+const APP_LOG_PATHS: Partial<Record<IntegrationComponent, string>> = {
+  librenms: "/opt/librenms/logs/librenms.log",
+};
+
+async function tryExec(cmd: string, args: string[]): Promise<string> {
+  try {
+    const r = await execFileAsync(cmd, args, { timeout: 15_000, maxBuffer: 4 * 1024 * 1024 });
+    return (r.stderr || r.stdout || "").trim();
+  } catch (err) {
+    const e = err as { stderr?: string; stdout?: string; message?: string };
+    return (e.stderr || e.stdout || e.message || "").trim();
+  }
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ component: string }> }
@@ -23,22 +38,25 @@ export async function GET(
 
   const url = new URL(req.url);
   const lines = Math.min(parseInt(url.searchParams.get("lines") ?? "200"), 500);
+  const source = url.searchParams.get("source") ?? "docker"; // "docker" | "app"
 
   const cfg = getIntegrationConfig(component);
   const containerName = cfg.containerName ?? `da-${component}`;
 
-  try {
-    const { stdout, stderr } = await execFileAsync(
-      "docker",
-      ["logs", "--tail", String(lines), containerName],
-      { timeout: 15_000, maxBuffer: 2 * 1024 * 1024 }
-    );
-    // docker logs scrive su stderr per design
-    const output = (stderr || stdout || "").trim();
-    return NextResponse.json({ logs: output, containerName });
-  } catch (err) {
-    const e = err as { stderr?: string; stdout?: string; message?: string };
-    const output = (e.stderr || e.stdout || e.message || "Errore").trim();
-    return NextResponse.json({ logs: output, containerName }, { status: 200 });
+  let output = "";
+
+  if (source === "app" && APP_LOG_PATHS[component]) {
+    // Legge il log applicativo direttamente dal container
+    output = await tryExec("docker", [
+      "exec", containerName,
+      "tail", "-n", String(lines), APP_LOG_PATHS[component]!,
+    ]);
+    if (!output) output = "(log applicativo vuoto o non ancora creato)";
+  } else {
+    // Log container Docker (stdout+stderr)
+    output = await tryExec("docker", ["logs", "--tail", String(lines), containerName]);
+    if (!output) output = "(nessun output dal container)";
   }
+
+  return NextResponse.json({ logs: output, containerName, source });
 }

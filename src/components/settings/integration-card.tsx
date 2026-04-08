@@ -41,7 +41,8 @@ export function IntegrationCard({ component, title, description, dockerAvailable
     password: "",
   });
 
-  const [adminPassword, setAdminPassword] = useState("admin");
+  // Password per il PROSSIMO install (separata da localConfig che riflette l'installazione salvata)
+  const [installAdminPassword, setInstallAdminPassword] = useState("admin");
   const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [installUrl, setInstallUrl] = useState("");
   const [containerLogs, setContainerLogs] = useState<string | null>(null);
@@ -105,7 +106,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
       const res = await fetch(`/api/integrations/${component}/install`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adminPassword, serverUrl: installUrl || undefined }),
+        body: JSON.stringify({ adminPassword: installAdminPassword, serverUrl: installUrl || undefined }),
       });
       const data = (await res.json()) as { jobId?: string; error?: string };
       if (!res.ok || !data.jobId) {
@@ -383,24 +384,22 @@ export function IntegrationCard({ component, title, description, dockerAvailable
               </div>
             )}
 
-            {/* Password admin (managed, librenms o graylog) — impostata prima dell'installazione */}
+            {/* Password admin (managed, librenms o graylog) */}
             {isManaged && (component === "librenms" || component === "graylog") && (
               <div>
                 <Label className="text-xs text-muted-foreground">
-                  Password admin{localConfig.adminPassword ? <span className="ml-1 text-green-600 dark:text-green-400">(impostata)</span> : <span className="ml-1 text-muted-foreground/60">(usata al prossimo install)</span>}
+                  Password admin — prossimo install
+                  {localConfig.adminPassword && (
+                    <span className="ml-2 text-green-600 dark:text-green-400">
+                      (attuale: {localConfig.adminPassword})
+                    </span>
+                  )}
                 </Label>
                 <div className="relative mt-1">
                   <Input
                     type={showAdminPassword ? "text" : "password"}
-                    value={localConfig.adminPassword ?? adminPassword}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (localConfig.adminPassword) {
-                        setLocalConfig((c) => ({ ...c, adminPassword: v }));
-                      } else {
-                        setAdminPassword(v);
-                      }
-                    }}
+                    value={installAdminPassword}
+                    onChange={(e) => setInstallAdminPassword(e.target.value)}
                     placeholder="min. 6 caratteri"
                     className="pr-8"
                   />

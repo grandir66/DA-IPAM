@@ -237,11 +237,14 @@ async function generateLibreNMSToken(
         ["enabled",  "1"],
       ];
       const optional: Array<[string, string]> = [
-        ["level",             "10"],   // versioni legacy
+        ["level",             "10"],            // versioni legacy
         ["auth_type",         "'mysql'"],
         ["auth_id",           "''"],
         ["can_modify_passwd", "1"],
         ["descr",             "'DA-INVENT auto'"],
+        // Laravel timestamps — NULL causa eccezioni nel modello User
+        ["created_at",        "NOW()"],
+        ["updated_at",        "NOW()"],
       ];
       const colDefs: Array<[string, string]> = [...required];
       for (const [col, val] of optional) {

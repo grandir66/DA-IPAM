@@ -48,6 +48,26 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT OR IGNORE INTO settings (key, value) VALUES ('server_port', '3000');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('onboarding_completed', '0');
 
+-- Integration settings (LibreNMS)
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_mode', 'disabled');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_url', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_api_token', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_container_name', 'da-librenms');
+
+-- Integration settings (Loki)
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_loki_mode', 'disabled');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_loki_url', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_loki_api_token', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_loki_container_name', 'da-loki');
+
+-- Integration settings (Graylog)
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_graylog_mode', 'disabled');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_graylog_url', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_graylog_api_token', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_graylog_container_name', 'da-graylog');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_graylog_username', 'admin');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_graylog_password', '');
+
 CREATE TABLE IF NOT EXISTS nmap_profiles (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,

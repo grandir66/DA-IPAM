@@ -40,6 +40,7 @@ import Link from "next/link";
 import { ManualUpdateInstructions } from "@/components/shared/manual-update-instructions";
 import { ScanConfigTab } from "@/components/settings/scan-config-tab";
 import { DeviceIdentificationTab } from "@/components/settings/device-identification-tab";
+import { IntegrationsTab } from "@/components/settings/integrations-tab";
 
 const JOB_TYPE_LABELS: Record<string, string> = {
   ping_sweep: "Scoperta rete (ICMP + Nmap quick + DNS + ARP)",
@@ -572,7 +573,7 @@ export default function SettingsPage() {
   }
 
   const [activeTab, setActiveTab] = useState<
-    "generale" | "utenti" | "https" | "scansione" | "identificazione" | "jobs" | "dati"
+    "generale" | "utenti" | "https" | "scansione" | "identificazione" | "jobs" | "dati" | "integrazioni"
   >("generale");
 
   const tabs = [
@@ -582,6 +583,7 @@ export default function SettingsPage() {
     { key: "scansione" as const, label: "Scansione", icon: Radar },
     { key: "identificazione" as const, label: "Identificazione", icon: Fingerprint },
     { key: "jobs" as const, label: "Job Pianificati", icon: Clock },
+    { key: "integrazioni" as const, label: "Integrazioni", icon: Tags },
     { key: "dati" as const, label: "Gestione Dati", icon: Database },
   ];
 
@@ -1141,6 +1143,10 @@ export default function SettingsPage() {
 
       {/* === Tab: Identificazione dispositivi (Pipeline + sysObjID + Firme + Classificazione) === */}
       {activeTab === "identificazione" && <DeviceIdentificationTab />}
+
+      {/* === Tab: Integrazioni (LibreNMS, Loki, Graylog) === */}
+      {activeTab === "integrazioni" && <IntegrationsTab />}
+
       {/* === Tab: Job Pianificati === */}
       {activeTab === "jobs" && (<>
 

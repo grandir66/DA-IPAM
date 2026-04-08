@@ -1,0 +1,383 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
+import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff } from "lucide-react";
+import type { IntegrationComponent, IntegrationMode, ComponentConfig, InstallJob, ContainerStatus } from "@/lib/integrations/types";
+
+interface Props {
+  component: IntegrationComponent;
+  title: string;
+  description: string;
+  dockerAvailable: boolean;
+}
+
+interface ApiState {
+  config: ComponentConfig;
+  containerStatus: ContainerStatus | null;
+}
+
+export function IntegrationCard({ component, title, description, dockerAvailable }: Props) {
+  const [state, setState] = useState<ApiState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [reachable, setReachable] = useState<boolean | null>(null);
+
+  const [localConfig, setLocalConfig] = useState<ComponentConfig>({
+    mode: "disabled",
+    url: "",
+    apiToken: "",
+    containerName: `da-${component}`,
+    username: "admin",
+    password: "",
+  });
+
+  const [activeJob, setActiveJob] = useState<InstallJob | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const load = async () => {
+    try {
+      const res = await fetch(`/api/integrations/${component}`);
+      if (!res.ok) return;
+      const data = (await res.json()) as ApiState;
+      setState(data);
+      setLocalConfig({ ...data.config });
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startJobPolling = (jobId: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/integrations/install-progress/${jobId}`);
+        if (!res.ok) return;
+        const job = (await res.json()) as InstallJob;
+        setActiveJob(job);
+        if (job.phase === "done" || job.phase === "error") {
+          clearInterval(pollRef.current!);
+          setInstalling(false);
+          if (job.phase === "done") {
+            toast.success(`${title} installato correttamente`);
+            await load();
+          } else {
+            toast.error(`Errore installazione: ${job.error ?? "sconosciuto"}`);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }, 1500);
+  };
+
+  const handleInstall = async () => {
+    if (!confirm(`Avviare l'installazione Docker di ${title}? Potrebbe richiedere alcuni minuti.`)) return;
+    setInstalling(true);
+    setActiveJob(null);
+    try {
+      const res = await fetch(`/api/integrations/${component}/install`, { method: "POST" });
+      const data = (await res.json()) as { jobId?: string; error?: string };
+      if (!res.ok || !data.jobId) {
+        toast.error(data.error ?? "Errore avvio installazione");
+        setInstalling(false);
+        return;
+      }
+      startJobPolling(data.jobId);
+    } catch {
+      toast.error("Errore di rete");
+      setInstalling(false);
+    }
+  };
+
+  const handleAction = async (action: "start" | "stop" | "restart" | "remove") => {
+    if (action === "remove" && !confirm(`Rimuovere il container Docker di ${title}?`)) return;
+    try {
+      const res = await fetch(`/api/integrations/${component}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (res.ok) {
+        toast.success(`Azione '${action}' eseguita`);
+        await load();
+      } else {
+        toast.error(data.error ?? "Errore");
+      }
+    } catch {
+      toast.error("Errore di rete");
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/integrations/${component}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(localConfig),
+      });
+      if (res.ok) {
+        toast.success("Configurazione salvata");
+        await load();
+        setReachable(null);
+      } else {
+        const d = (await res.json()) as { error?: string };
+        toast.error(d.error ?? "Errore");
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setReachable(null);
+    try {
+      const res = await fetch(`/api/integrations/${component}/test-connection`);
+      const d = (await res.json()) as { reachable: boolean; error?: string };
+      setReachable(d.reachable);
+      if (d.reachable) toast.success("Connessione riuscita");
+      else toast.error(`Non raggiungibile${d.error ? ": " + d.error : ""}`);
+    } catch {
+      setReachable(false);
+      toast.error("Errore di rete");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const containerRunning = state?.containerStatus?.running ?? false;
+  const isManaged = localConfig.mode === "managed";
+  const isExternal = localConfig.mode === "external";
+  const isDisabled = localConfig.mode === "disabled";
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
+        <CardContent><Loader2 className="h-4 w-4 animate-spin" /></CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              {title}
+              {!isDisabled && (
+                reachable === true
+                  ? <Wifi className="h-4 w-4 text-green-500" />
+                  : reachable === false
+                    ? <WifiOff className="h-4 w-4 text-red-500" />
+                    : null
+              )}
+            </CardTitle>
+            <CardDescription className="mt-1">{description}</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            {isManaged && containerRunning && (
+              <Badge variant="default" className="bg-green-500 text-white">In esecuzione</Badge>
+            )}
+            {isManaged && !containerRunning && state?.containerStatus !== null && (
+              <Badge variant="secondary">Fermo</Badge>
+            )}
+            {isExternal && <Badge variant="outline">Esterno</Badge>}
+            {isDisabled && <Badge variant="secondary">Disabilitato</Badge>}
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {/* Modalità */}
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <Label className="text-xs text-muted-foreground">Modalità</Label>
+            <Select
+              value={localConfig.mode}
+              onValueChange={(v) => setLocalConfig((c) => ({ ...c, mode: v as IntegrationMode }))}
+            >
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="disabled">Disabilitato</SelectItem>
+                {dockerAvailable && <SelectItem value="managed">Docker locale</SelectItem>}
+                <SelectItem value="external">Istanza esterna</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {!isDisabled && (
+            <div className="col-span-2">
+              <Label className="text-xs text-muted-foreground">URL</Label>
+              <Input
+                className="mt-1"
+                placeholder="http://localhost:8090"
+                value={localConfig.url}
+                onChange={(e) => setLocalConfig((c) => ({ ...c, url: e.target.value }))}
+              />
+            </div>
+          )}
+        </div>
+
+        {!isDisabled && (
+          <>
+            {/* API Token */}
+            <div>
+              <Label className="text-xs text-muted-foreground">API Token</Label>
+              <Input
+                className="mt-1"
+                type="password"
+                placeholder="Token o chiave API"
+                value={localConfig.apiToken}
+                onChange={(e) => setLocalConfig((c) => ({ ...c, apiToken: e.target.value }))}
+              />
+            </div>
+
+            {/* Graylog extra fields */}
+            {component === "graylog" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Username</Label>
+                  <Input
+                    className="mt-1"
+                    value={localConfig.username ?? ""}
+                    onChange={(e) => setLocalConfig((c) => ({ ...c, username: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Password</Label>
+                  <Input
+                    className="mt-1"
+                    type="password"
+                    value={localConfig.password ?? ""}
+                    onChange={(e) => setLocalConfig((c) => ({ ...c, password: e.target.value }))}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Container name (managed) */}
+            {isManaged && (
+              <div>
+                <Label className="text-xs text-muted-foreground">Nome container Docker</Label>
+                <Input
+                  className="mt-1"
+                  value={localConfig.containerName ?? ""}
+                  onChange={(e) => setLocalConfig((c) => ({ ...c, containerName: e.target.value }))}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Log installazione */}
+        {activeJob && (
+          <div className="rounded-md bg-black/90 text-green-400 font-mono text-xs p-3 max-h-40 overflow-y-auto space-y-0.5">
+            <div className="flex items-center gap-2 mb-2 text-white/60">
+              {(activeJob.phase !== "done" && activeJob.phase !== "error") && (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              )}
+              {activeJob.phase === "done" && <CheckCircle2 className="h-3 w-3 text-green-400" />}
+              {activeJob.phase === "error" && <XCircle className="h-3 w-3 text-red-400" />}
+              <span className="capitalize">{activeJob.phase}</span>
+            </div>
+            {activeJob.log.map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
+          </div>
+        )}
+
+        {/* Azioni */}
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+            Salva
+          </Button>
+
+          {!isDisabled && (
+            <Button size="sm" variant="outline" onClick={handleTest} disabled={testing}>
+              {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+              Test connessione
+            </Button>
+          )}
+
+          {isManaged && dockerAvailable && !installing && !containerRunning && (
+            <Button size="sm" variant="outline" onClick={handleInstall}>
+              Installa / Reinstalla
+            </Button>
+          )}
+
+          {isManaged && installing && (
+            <Button size="sm" variant="outline" disabled>
+              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+              Installazione in corso...
+            </Button>
+          )}
+
+          {isManaged && containerRunning && (
+            <>
+              <Button size="sm" variant="outline" onClick={() => handleAction("stop")}>
+                <Square className="h-3.5 w-3.5 mr-1" />
+                Stop
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => handleAction("restart")}>
+                <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                Restart
+              </Button>
+            </>
+          )}
+
+          {isManaged && !containerRunning && state?.containerStatus !== null && !installing && (
+            <Button size="sm" variant="outline" onClick={() => handleAction("start")}>
+              <Play className="h-3.5 w-3.5 mr-1" />
+              Avvia
+            </Button>
+          )}
+
+          {isManaged && state?.containerStatus !== null && !installing && (
+            <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600" onClick={() => handleAction("remove")}>
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              Rimuovi container
+            </Button>
+          )}
+
+          {!isDisabled && localConfig.url && (
+            <a
+              href={localConfig.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Apri
+            </a>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

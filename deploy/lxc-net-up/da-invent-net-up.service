@@ -1,0 +1,14 @@
+[Unit]
+Description=DA-INVENT: attiva interfaccia di rete principale (LXC)
+Documentation=https://github.com/grandir66/DA-IPAM
+DefaultDependencies=no
+After=local-fs.target
+Before=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/da-invent-ensure-net-up.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=network-pre.target

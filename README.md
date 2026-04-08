@@ -139,7 +139,8 @@ Cosa fa `bootstrap-proxmox.sh`:
 
 1. Installa `git`, `curl`, `ca-certificates` con `apt` se assenti  
 2. Clona il repository (default: `https://github.com/grandir66/DA-IPAM.git`, branch `main`)  
-3. Avvia il wizard `scripts/proxmox-lxc-install.sh`: **storage template** e **storage root** da menu numerati (`pvesm`), **template OS** da elenco o da catalogo numerato per il download; CTID, hostname, risorse, **bridge** da menu numerato (`ip link type bridge`, opzione 0 = nome manuale), VLAN, DHCP o statico, privilegi, password root, installazione opzionale di DA-INVENT nel CT
+3. Avvia il wizard `scripts/proxmox-lxc-install.sh`: **storage template** e **storage root** da menu numerati (`pvesm`), **template OS** da elenco o da catalogo numerato per il download; CTID, hostname, risorse, **bridge** da menu numerato (`ip link type bridge`, opzione 0 = nome manuale), VLAN, DHCP o statico, privilegi, password root, installazione opzionale di DA-INVENT nel CT  
+4. Dopo `pct start`, attivazione immediata della NIC e installazione **permanente** via systemd (`da-invent-net-up.service`, file in `deploy/lxc-net-up/`). Su un CT già creato: dal nodo, `./scripts/pct-install-net-up-service.sh <VMID>`. Se la rete non parte: `pct exec <VMID> -- ip -br link` e verifica bridge sul host.
 
 **Variabili d’ambiente (opzionali):**
 
@@ -245,6 +246,7 @@ Script **interattivo** (template, storage, rete, privilegi, install opzionale ne
 | [`scripts/install.sh`](scripts/install.sh) | Dipendenze di sistema, Node 20, npm, build, `.env.local`, opzione systemd |
 | [`scripts/update.sh`](scripts/update.sh) | `git pull`, `npm install`, `build`; `--restart` per `systemctl restart da-invent` |
 | [`scripts/pct-update.sh`](scripts/pct-update.sh) | Dal **nodo** Proxmox: `pct exec <VMID>` → `update.sh` nella directory dell’app |
+| [`scripts/pct-install-net-up-service.sh`](scripts/pct-install-net-up-service.sh) | Dal **nodo** Proxmox: installa nel CT l’unità systemd **permanente** per alzare la NIC a ogni boot (`deploy/lxc-net-up/`) |
 
 ### Variabili — bootstrap Proxmox (`bootstrap-proxmox.sh`)
 

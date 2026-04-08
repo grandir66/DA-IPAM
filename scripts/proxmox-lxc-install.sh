@@ -14,6 +14,8 @@
 #   - IP statico o DHCP
 #   - Opzione container privilegiato (consigliato per nmap/ping)
 #   - Opzionale: clone repository e esecuzione di scripts/install.sh --systemd dentro al CT
+#   - Dopo pct start: attivazione immediata della NIC + installazione permanente via systemd
+#     (unità da-invent-net-up.service: ip link set … up a ogni boot).
 #
 # Variabili d'ambiente (opzionali):
 #   DA_INVENT_CT_NAMESERVERS   — elenco nameserver separati da spazio (default: 1.1.1.1 8.8.8.8) se serve fix DNS nel CT
@@ -317,6 +319,74 @@ pick_template() {
 
 pick_storage() {
   pick_numbered_storage rootdir "Storage per il disco root del container"
+}
+
+# Dopo pct start: alza l'interfaccia nel CT (Proxmox espone di solito eth0; altri template: ens3, enp0s3).
+ensure_ct_network_up() {
+  local id="$1"
+  local w=0
+  while [[ $w -lt 40 ]]; do
+    if pct exec "$id" -- test -x /sbin/ip 2>/dev/null || pct exec "$id" -- test -x /bin/ip 2>/dev/null; then
+      break
+    fi
+    sleep 1
+    w=$((w + 1))
+  done
+  set +e
+  pct exec "$id" -- bash -ce '
+    command -v ip >/dev/null 2>&1 || exit 0
+    for dev in eth0 ens3 enp0s3; do
+      if ip link show "$dev" &>/dev/null; then
+        ip link set "$dev" up 2>/dev/null || true
+        break
+      fi
+    done
+  ' 2>/dev/null
+  set -e
+}
+
+# Installa nel CT script + unità systemd (attivazione NIC a ogni riavvio).
+# File sorgente: deploy/lxc-net-up/ (stesso set usabile a mano su CT già esistenti).
+install_ct_network_up_persistent() {
+  local id="$1"
+  local w=0
+  while [[ $w -lt 90 ]]; do
+    if pct exec "$id" -- bash -c 'command -v systemctl >/dev/null 2>&1' 2>/dev/null; then
+      break
+    fi
+    sleep 1
+    w=$((w + 1))
+  done
+  if ! pct exec "$id" -- bash -c 'command -v systemctl >/dev/null 2>&1' 2>/dev/null; then
+    warn "systemd non disponibile nel CT: salto installazione unità rete permanente (configura rete nel guest a mano)."
+    return 0
+  fi
+  local script_dir repo_root scr unit
+  script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  repo_root=$(cd "$script_dir/.." && pwd)
+  scr="$repo_root/deploy/lxc-net-up/da-invent-ensure-net-up.sh"
+  unit="$repo_root/deploy/lxc-net-up/da-invent-net-up.service"
+  if [[ ! -f "$scr" || ! -f "$unit" ]]; then
+    warn "File deploy non trovati ($scr): salto unità rete permanente."
+    return 0
+  fi
+  set +e
+  pct exec "$id" -- install -d /usr/local/sbin /etc/systemd/system
+  pct exec "$id" -- bash -c 'cat > /usr/local/sbin/da-invent-ensure-net-up.sh' < "$scr"
+  local rc1=$?
+  pct exec "$id" -- chmod 755 /usr/local/sbin/da-invent-ensure-net-up.sh
+  pct exec "$id" -- bash -c 'cat > /etc/systemd/system/da-invent-net-up.service' < "$unit"
+  local rc2=$?
+  pct exec "$id" -- systemctl daemon-reload
+  pct exec "$id" -- systemctl enable da-invent-net-up.service
+  pct exec "$id" -- systemctl start da-invent-net-up.service
+  local rc3=$?
+  set -e
+  if [[ $rc1 -ne 0 ]] || [[ $rc2 -ne 0 ]] || [[ $rc3 -ne 0 ]]; then
+    warn "Installazione da-invent-net-up.service nel CT incompleta (rc file=$rc1 unit=$rc2 systemctl=$rc3). pct enter $id"
+    return 0
+  fi
+  info "Rete: unità systemd **da-invent-net-up.service** installata e abilitata (persistente dopo reboot)."
 }
 
 build_net0() {
@@ -637,6 +707,10 @@ main() {
       rm -f "$pct_log"
       info "Avvio container..."
       pct start "$vmid"
+      info "Attivazione interfaccia di rete nel CT (eth0 / equivalente)…"
+      ensure_ct_network_up "$vmid"
+      info "Configurazione permanente (systemd, ogni avvio)…"
+      install_ct_network_up_persistent "$vmid"
       echo ""
       info "Container $vmid avviato (hostname: $hostname)."
       echo ""
@@ -705,6 +779,11 @@ main() {
   echo "Comandi utili:"
   echo "  pct enter $vmid              # shell root nel container"
   echo "  pct console $vmid            # console se necessario"
+  echo "  Rete: unità systemd da-invent-net-up.service (NIC su a ogni boot; script /usr/local/sbin/da-invent-ensure-net-up.sh)"
+  echo "    Disattiva: pct exec $vmid -- systemctl disable --now da-invent-net-up.service"
+  echo "  Rete (debug se ancora DOWN):"
+  echo "    pct exec $vmid -- ip -br link"
+  echo "    pct exec $vmid -- ip link set eth0 up    # oppure ens3 / enp0s3 da ip -br link"
   echo "  ip del CT:   pct exec $vmid -- hostname -I"
   echo "  Aggiorna app: dal clone sul nodo: ./scripts/pct-update.sh $vmid"
   echo ""

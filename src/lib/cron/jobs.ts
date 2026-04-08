@@ -54,6 +54,7 @@ import {
   getHostLatencyHistory,
   getScanHistory,
 } from "@/lib/db-tenant";
+import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 
 export async function runJob(jobId: number): Promise<void> {
   const jobs = getScheduledJobs();
@@ -87,6 +88,13 @@ export async function runJob(jobId: number): Promise<void> {
       break;
     case "anomaly_check":
       await runAnomalyCheck(job.network_id);
+      break;
+    case "librenms_sync":
+      if (job.network_id) {
+        await syncNetworkToLibreNMS(job.network_id);
+      } else {
+        await syncAllNetworksToLibreNMS();
+      }
       break;
   }
 }

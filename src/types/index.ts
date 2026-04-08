@@ -434,7 +434,7 @@ export interface SwitchPort {
 export interface ScheduledJob {
   id: number;
   network_id: number | null;
-  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check";
+  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check" | "librenms_sync";
   interval_minutes: number;
   last_run: string | null;
   next_run: string | null;
@@ -601,7 +601,7 @@ export interface CredentialInput {
 
 export interface ScheduledJobInput {
   network_id?: number | null;
-  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check";
+  job_type: "ping_sweep" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check" | "librenms_sync";
   interval_minutes: number;
   config?: Record<string, unknown>;
 }
@@ -757,4 +757,42 @@ export interface ClassificationFeedback {
   fingerprint_confidence: number | null;
   corrected_by: string | null;
   created_at: string;
+}
+
+// ═══════════════════════════════════════════════════════════
+// LibreNMS integration
+// ═══════════════════════════════════════════════════════════
+
+export interface LibreNMSHostMap {
+  id: number;
+  network_id: number;
+  host_ip: string;
+  librenms_device_id: number;
+  librenms_hostname: string | null;
+  last_synced_at: string;
+  last_status: string | null;
+}
+
+export interface LibreNMSDevice {
+  device_id: number;
+  hostname: string;
+  ip?: string;
+  sysName?: string;
+  sysDescr?: string;
+  os?: string;
+  status: number; // 1=up, 0=down
+  status_reason?: string;
+  uptime?: number;
+  last_polled?: string;
+  hardware?: string;
+  serial?: string;
+  type?: string;
+}
+
+export interface LibreNMSSyncResult {
+  networkId: number;
+  added: number;
+  updated: number;
+  skipped: number;
+  errors: string[];
 }

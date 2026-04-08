@@ -23,6 +23,7 @@ import {
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
 import { FingerprintExplanationPanel } from "@/components/shared/fingerprint-explanation-panel";
+import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
 import { formatPortsDisplay } from "@/lib/utils";
 import {
   DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel, sortClassificationsByDisplayLabel,
@@ -117,6 +118,7 @@ export default function HostDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [createDeviceOpen, setCreateDeviceOpen] = useState(false);
   const [creatingDevice, setCreatingDevice] = useState(false);
+  const [createRuleOpen, setCreateRuleOpen] = useState(false);
   const [deviceForm, setDeviceForm] = useState({
     name: "", vendor: "other", protocol: "ssh",
     device_type: "hypervisor" as "router" | "switch" | "hypervisor",
@@ -504,12 +506,30 @@ export default function HostDetailPage() {
             {fpExplanation && (
               <FingerprintExplanationPanel explanation={fpExplanation} />
             )}
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setCreateRuleOpen(true)} className="gap-1.5">
+                <PlusCircle className="h-3.5 w-3.5" />
+                Crea regola da fingerprint
+              </Button>
+            </div>
             <details className="text-xs">
               <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Dati grezzi</summary>
               <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 font-mono text-[10px]">{JSON.stringify(fp, null, 2)}</pre>
             </details>
           </CardContent>
         </Card>
+      )}
+
+      {/* Dialog creazione regola fingerprint */}
+      {fp && (
+        <CreateFingerprintRuleDialog
+          open={createRuleOpen}
+          onOpenChange={setCreateRuleOpen}
+          fingerprint={fp}
+          currentClassification={host.classification}
+          hostIp={host.ip}
+          hostname={host.hostname}
+        />
       )}
 
       {/* ════════════════ CAMPI PERSONALIZZATI ════════════════ */}

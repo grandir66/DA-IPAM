@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS switch_ports (
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check')),
+  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync')),
   interval_minutes INTEGER NOT NULL DEFAULT 60,
   last_run TEXT,
   next_run TEXT,
@@ -596,6 +596,17 @@ CREATE TABLE IF NOT EXISTS routing_table (
   timestamp TEXT DEFAULT (datetime('now')),
   UNIQUE(device_id, destination, gateway, interface_name)
 );
+
+CREATE TABLE IF NOT EXISTS librenms_host_map (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+  host_ip TEXT NOT NULL,
+  librenms_device_id INTEGER NOT NULL,
+  librenms_hostname TEXT,
+  last_synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_status TEXT,
+  UNIQUE(network_id, host_ip)
+);
 `;
 
 export const TENANT_INDEXES_SQL = `
@@ -731,4 +742,8 @@ CREATE INDEX IF NOT EXISTS idx_device_neighbors_device ON device_neighbors(devic
 CREATE INDEX IF NOT EXISTS idx_device_neighbors_remote ON device_neighbors(remote_device_name);
 CREATE INDEX IF NOT EXISTS idx_routing_table_device ON routing_table(device_id);
 CREATE INDEX IF NOT EXISTS idx_routing_table_dest ON routing_table(destination);
+
+-- LibreNMS host map
+CREATE INDEX IF NOT EXISTS idx_librenms_host_map_network ON librenms_host_map(network_id);
+CREATE INDEX IF NOT EXISTS idx_librenms_host_map_ip ON librenms_host_map(host_ip);
 `;

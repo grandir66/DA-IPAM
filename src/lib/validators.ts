@@ -215,6 +215,23 @@ export const InventoryAssetSchema = z.object({
   technical_data: z.string().max(50000).optional().nullable(),
 });
 
+export const InventoryBulkUpdateSchema = z.object({
+  asset_ids: z.array(z.coerce.number().int().positive()).min(1, "Selezionare almeno un asset"),
+  categoria: inventoryCategoria,
+  marca: z.string().max(100).optional().nullable(),
+  stato: inventoryStato,
+  classificazione_dati: inventoryClassificazioneDati,
+  sede: z.string().max(200).optional().nullable(),
+  reparto: z.string().max(100).optional().nullable(),
+  location_id: z.coerce.number().int().positive().optional().nullable(),
+  posizione_fisica: z.string().max(200).optional().nullable(),
+  asset_assignee_id: z.coerce.number().int().positive().optional().nullable(),
+  fornitore: z.string().max(200).optional().nullable(),
+  antivirus: z.string().max(100).optional().nullable(),
+  in_scope_gdpr: z.coerce.number().int().min(0).max(1).optional(),
+  in_scope_nis2: z.coerce.number().int().min(0).max(1).optional(),
+});
+
 export const LoginSchema = z.object({
   username: z.string().min(1, "Username richiesto"),
   password: z.string().min(1, "Password richiesta"),

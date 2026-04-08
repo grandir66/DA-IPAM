@@ -50,6 +50,8 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   dns_resolve: "DNS Resolve",
   known_host_check: "Monitoraggio host conosciuti",
   cleanup: "Pulizia Host",
+  anomaly_check: "Rilevamento anomalie",
+  librenms_sync: "Sincronizzazione LibreNMS",
 };
 
 const INTERVAL_OPTIONS = [

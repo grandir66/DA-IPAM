@@ -4,6 +4,9 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -19,6 +22,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader,
+  DialogScrollableArea, DialogTitle, DIALOG_PANEL_WIDE_CLASS,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,7 +34,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Package, Search, Pencil, ExternalLink, RefreshCw, Download, ChevronDown } from "lucide-react";
+import { Package, Search, Pencil, ExternalLink, RefreshCw, Download, ChevronDown, X, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import type { InventoryAsset } from "@/types";
 
@@ -38,6 +45,43 @@ const CATEGORIE: (InventoryAsset["categoria"])[] = [
 const STATI: (InventoryAsset["stato"])[] = [
   "Attivo", "In magazzino", "In riparazione", "Dismesso", "Rubato",
 ];
+const CLASSIFICAZIONI_DATI = ["Pubblico", "Interno", "Confidenziale", "Riservato"] as const;
+
+// ─── Tipi per il form bulk edit ─────────────────────────────
+interface BulkField<T> {
+  enabled: boolean;
+  value: T;
+}
+
+interface BulkEditForm {
+  categoria: BulkField<string | null>;
+  stato: BulkField<string | null>;
+  marca: BulkField<string | null>;
+  classificazione_dati: BulkField<string | null>;
+  sede: BulkField<string | null>;
+  reparto: BulkField<string | null>;
+  posizione_fisica: BulkField<string | null>;
+  fornitore: BulkField<string | null>;
+  antivirus: BulkField<string | null>;
+  in_scope_gdpr: BulkField<number>;
+  in_scope_nis2: BulkField<number>;
+}
+
+function emptyBulkForm(): BulkEditForm {
+  return {
+    categoria: { enabled: false, value: null },
+    stato: { enabled: false, value: null },
+    marca: { enabled: false, value: null },
+    classificazione_dati: { enabled: false, value: null },
+    sede: { enabled: false, value: null },
+    reparto: { enabled: false, value: null },
+    posizione_fisica: { enabled: false, value: null },
+    fornitore: { enabled: false, value: null },
+    antivirus: { enabled: false, value: null },
+    in_scope_gdpr: { enabled: false, value: 0 },
+    in_scope_nis2: { enabled: false, value: 0 },
+  };
+}
 
 export default function InventoryPage() {
   const [assets, setAssets] = useState<(InventoryAsset & { network_device_name?: string; host_ip?: string })[]>([]);
@@ -47,6 +91,12 @@ export default function InventoryPage() {
   const [stato, setStato] = useState<string>("");
   const [syncingDevices, setSyncingDevices] = useState(false);
   const [syncingHosts, setSyncingHosts] = useState(false);
+
+  // ─── Selezione e bulk edit ────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkForm, setBulkForm] = useState<BulkEditForm>(emptyBulkForm);
 
   const fetchAssets = useCallback(async () => {
     setLoading(true);
@@ -63,6 +113,7 @@ export default function InventoryPage() {
       setAssets([]);
     } finally {
       setLoading(false);
+      setSelectedIds(new Set());
     }
   }, [q, categoria, stato]);
 
@@ -72,6 +123,80 @@ export default function InventoryPage() {
   }, [fetchAssets, q]);
 
   const formatDate = (d: string | null) => d ? new Date(d).toLocaleDateString("it-IT") : "—";
+
+  // ─── Selezione helpers ────────────────────────────────
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === assets.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(assets.map((a) => a.id)));
+    }
+  }
+
+  // ─── Bulk edit ────────────────────────────────
+  function openBulkEdit() {
+    setBulkForm(emptyBulkForm());
+    setBulkEditOpen(true);
+  }
+
+  function updateBulkField<K extends keyof BulkEditForm>(key: K, patch: Partial<BulkField<unknown>>) {
+    setBulkForm((prev) => ({
+      ...prev,
+      [key]: { ...prev[key], ...patch },
+    }));
+  }
+
+  async function handleBulkSave() {
+    const payload: Record<string, unknown> = {
+      asset_ids: Array.from(selectedIds),
+    };
+
+    let hasField = false;
+    for (const [key, field] of Object.entries(bulkForm)) {
+      if (field.enabled) {
+        payload[key] = field.value;
+        hasField = true;
+      }
+    }
+
+    if (!hasField) {
+      toast.error("Abilitare almeno un campo da modificare");
+      return;
+    }
+
+    setBulkSaving(true);
+    try {
+      const res = await fetch("/api/inventory/bulk", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        setBulkEditOpen(false);
+        setSelectedIds(new Set());
+        fetchAssets();
+      } else {
+        toast.error(data.error ?? "Errore nell'aggiornamento");
+      }
+    } catch {
+      toast.error("Errore nell'aggiornamento");
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
+  // ─── Sync & export ────────────────────────────────
 
   async function handleSyncDevices() {
     setSyncingDevices(true);
@@ -194,6 +319,23 @@ export default function InventoryPage() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
+          {/* ── Barra selezione ── */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2 bg-primary/5 border-b">
+              <span className="text-sm font-medium">
+                {selectedIds.size} asset selezionat{selectedIds.size === 1 ? "o" : "i"}
+              </span>
+              <Button size="sm" variant="default" className="gap-1.5" onClick={openBulkEdit}>
+                <Pencil className="h-3.5 w-3.5" />
+                Modifica multipla
+              </Button>
+              <Button size="sm" variant="ghost" className="gap-1" onClick={() => setSelectedIds(new Set())}>
+                <X className="h-3.5 w-3.5" />
+                Deseleziona
+              </Button>
+            </div>
+          )}
+
           {loading ? (
             <div className="py-12 text-center text-muted-foreground">Caricamento...</div>
           ) : assets.length === 0 ? (
@@ -205,6 +347,12 @@ export default function InventoryPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={assets.length > 0 && selectedIds.size === assets.length}
+                        onCheckedChange={toggleSelectAll}
+                      />
+                    </TableHead>
                     <TableHead>Asset Tag</TableHead>
                     <TableHead>S/N</TableHead>
                     <TableHead>Prodotto</TableHead>
@@ -217,7 +365,13 @@ export default function InventoryPage() {
                 </TableHeader>
                 <TableBody>
                   {assets.map((a) => (
-                    <TableRow key={a.id}>
+                    <TableRow key={a.id} className={selectedIds.has(a.id) ? "bg-primary/5" : undefined}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedIds.has(a.id)}
+                          onCheckedChange={() => toggleSelect(a.id)}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">{a.asset_tag ?? "—"}</TableCell>
                       <TableCell className="font-mono text-sm">{a.serial_number ?? "—"}</TableCell>
                       <TableCell>{a.nome_prodotto ?? a.marca ?? "—"}</TableCell>
@@ -256,6 +410,236 @@ export default function InventoryPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* ════════════════ DIALOG MODIFICA MULTIPLA ════════════════ */}
+      <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>
+        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+          <DialogHeader>
+            <DialogTitle>Modifica {selectedIds.size} asset</DialogTitle>
+          </DialogHeader>
+          <DialogScrollableArea className="max-h-[70vh]">
+            <div className="space-y-3 p-1">
+              <p className="text-xs text-muted-foreground">
+                Abilita i campi da modificare. Solo i campi abilitati verranno applicati a tutti gli asset selezionati.
+              </p>
+
+              {/* Categoria */}
+              <BulkFieldRow
+                label="Categoria"
+                enabled={bulkForm.categoria.enabled}
+                onToggle={(v) => updateBulkField("categoria", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.categoria.value ?? "__empty__"}
+                  onValueChange={(v) => updateBulkField("categoria", { value: v === "__empty__" ? null : v })}
+                  disabled={!bulkForm.categoria.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Nessuna —</SelectItem>
+                    {CATEGORIE.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+
+              {/* Stato */}
+              <BulkFieldRow
+                label="Stato"
+                enabled={bulkForm.stato.enabled}
+                onToggle={(v) => updateBulkField("stato", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.stato.value ?? "__empty__"}
+                  onValueChange={(v) => updateBulkField("stato", { value: v === "__empty__" ? null : v })}
+                  disabled={!bulkForm.stato.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Nessuno —</SelectItem>
+                    {STATI.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+
+              {/* Marca/Produttore */}
+              <BulkFieldRow
+                label="Marca / Produttore"
+                enabled={bulkForm.marca.enabled}
+                onToggle={(v) => updateBulkField("marca", { enabled: v })}
+              >
+                <Input
+                  value={bulkForm.marca.value ?? ""}
+                  onChange={(e) => updateBulkField("marca", { value: e.target.value || null })}
+                  placeholder="Es: HP, Dell, Cisco..."
+                  disabled={!bulkForm.marca.enabled}
+                />
+              </BulkFieldRow>
+
+              {/* Classificazione dati */}
+              <BulkFieldRow
+                label="Classificazione dati"
+                enabled={bulkForm.classificazione_dati.enabled}
+                onToggle={(v) => updateBulkField("classificazione_dati", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.classificazione_dati.value ?? "__empty__"}
+                  onValueChange={(v) => updateBulkField("classificazione_dati", { value: v === "__empty__" ? null : v })}
+                  disabled={!bulkForm.classificazione_dati.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Nessuna —</SelectItem>
+                    {CLASSIFICAZIONI_DATI.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+
+              {/* Sede */}
+              <BulkFieldRow
+                label="Sede"
+                enabled={bulkForm.sede.enabled}
+                onToggle={(v) => updateBulkField("sede", { enabled: v })}
+              >
+                <Input
+                  value={bulkForm.sede.value ?? ""}
+                  onChange={(e) => updateBulkField("sede", { value: e.target.value || null })}
+                  placeholder="Es: Sede centrale, Filiale Nord..."
+                  disabled={!bulkForm.sede.enabled}
+                />
+              </BulkFieldRow>
+
+              {/* Reparto */}
+              <BulkFieldRow
+                label="Reparto"
+                enabled={bulkForm.reparto.enabled}
+                onToggle={(v) => updateBulkField("reparto", { enabled: v })}
+              >
+                <Input
+                  value={bulkForm.reparto.value ?? ""}
+                  onChange={(e) => updateBulkField("reparto", { value: e.target.value || null })}
+                  placeholder="Es: IT, Amministrazione..."
+                  disabled={!bulkForm.reparto.enabled}
+                />
+              </BulkFieldRow>
+
+              {/* Posizione fisica */}
+              <BulkFieldRow
+                label="Posizione fisica"
+                enabled={bulkForm.posizione_fisica.enabled}
+                onToggle={(v) => updateBulkField("posizione_fisica", { enabled: v })}
+              >
+                <Input
+                  value={bulkForm.posizione_fisica.value ?? ""}
+                  onChange={(e) => updateBulkField("posizione_fisica", { value: e.target.value || null })}
+                  placeholder="Es: Rack A1, Ufficio 301..."
+                  disabled={!bulkForm.posizione_fisica.enabled}
+                />
+              </BulkFieldRow>
+
+              {/* Fornitore */}
+              <BulkFieldRow
+                label="Fornitore"
+                enabled={bulkForm.fornitore.enabled}
+                onToggle={(v) => updateBulkField("fornitore", { enabled: v })}
+              >
+                <Input
+                  value={bulkForm.fornitore.value ?? ""}
+                  onChange={(e) => updateBulkField("fornitore", { value: e.target.value || null })}
+                  placeholder="Es: TechStore SRL..."
+                  disabled={!bulkForm.fornitore.enabled}
+                />
+              </BulkFieldRow>
+
+              {/* Antivirus */}
+              <BulkFieldRow
+                label="Antivirus"
+                enabled={bulkForm.antivirus.enabled}
+                onToggle={(v) => updateBulkField("antivirus", { enabled: v })}
+              >
+                <Input
+                  value={bulkForm.antivirus.value ?? ""}
+                  onChange={(e) => updateBulkField("antivirus", { value: e.target.value || null })}
+                  placeholder="Es: SentinelOne, CrowdStrike..."
+                  disabled={!bulkForm.antivirus.enabled}
+                />
+              </BulkFieldRow>
+
+              {/* In scope GDPR */}
+              <BulkFieldRow
+                label="In scope GDPR"
+                enabled={bulkForm.in_scope_gdpr.enabled}
+                onToggle={(v) => updateBulkField("in_scope_gdpr", { enabled: v })}
+              >
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={bulkForm.in_scope_gdpr.value === 1}
+                    onCheckedChange={(v) => updateBulkField("in_scope_gdpr", { value: v ? 1 : 0 })}
+                    disabled={!bulkForm.in_scope_gdpr.enabled}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {bulkForm.in_scope_gdpr.value === 1 ? "Si" : "No"}
+                  </span>
+                </div>
+              </BulkFieldRow>
+
+              {/* In scope NIS2 */}
+              <BulkFieldRow
+                label="In scope NIS2"
+                enabled={bulkForm.in_scope_nis2.enabled}
+                onToggle={(v) => updateBulkField("in_scope_nis2", { enabled: v })}
+              >
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={bulkForm.in_scope_nis2.value === 1}
+                    onCheckedChange={(v) => updateBulkField("in_scope_nis2", { value: v ? 1 : 0 })}
+                    disabled={!bulkForm.in_scope_nis2.enabled}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {bulkForm.in_scope_nis2.value === 1 ? "Si" : "No"}
+                  </span>
+                </div>
+              </BulkFieldRow>
+            </div>
+          </DialogScrollableArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkEditOpen(false)} disabled={bulkSaving}>
+              Annulla
+            </Button>
+            <Button onClick={handleBulkSave} disabled={bulkSaving} className="gap-2">
+              {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Applica a {selectedIds.size} asset
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/** Riga campo bulk con switch abilita/disabilita + controllo. */
+function BulkFieldRow({
+  label, enabled, onToggle, children,
+}: {
+  label: string;
+  enabled: boolean;
+  onToggle: (v: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`flex items-start gap-3 rounded-lg border p-3 transition-opacity ${enabled ? "" : "opacity-50"}`}>
+      <div className="pt-0.5">
+        <Checkbox checked={enabled} onCheckedChange={onToggle} />
+      </div>
+      <div className="flex-1 space-y-1">
+        <Label className="text-xs font-medium">{label}</Label>
+        {children}
+      </div>
     </div>
   );
 }

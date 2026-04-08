@@ -114,6 +114,9 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
     // Il check interno usa sempre localhost (dal server stesso)
     const internalUrl = `http://localhost:${hostPort}`;
     await waitForLibreNMSReady(internalUrl, 360, log);
+    // Extra attesa: l'API risponde prima che il web layer (sessioni/cache) sia pronto
+    log("[wait] Warm-up aggiuntivo 30s per sessioni e cache...");
+    await new Promise((r) => setTimeout(r, 30_000));
 
     // ── API TOKEN AUTOMATICO ─────────────────────────────────────────────────
     log("[token] Generazione API token automatica via docker exec...");

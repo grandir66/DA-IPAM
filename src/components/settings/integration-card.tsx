@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff, RefreshCw, Eye, EyeOff } from "lucide-react";
+import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Terminal } from "lucide-react";
 import type { IntegrationComponent, IntegrationMode, ComponentConfig, InstallJob, ContainerStatus } from "@/lib/integrations/types";
 
 interface Props {
@@ -44,6 +44,9 @@ export function IntegrationCard({ component, title, description, dockerAvailable
   const [adminPassword, setAdminPassword] = useState("admin");
   const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [installUrl, setInstallUrl] = useState("");
+  const [containerLogs, setContainerLogs] = useState<string | null>(null);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const logsRef = useRef<HTMLDivElement>(null);
   const [activeJob, setActiveJob] = useState<InstallJob | null>(null);
   const [installing, setInstalling] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -192,6 +195,20 @@ export function IntegrationCard({ component, title, description, dockerAvailable
       toast.error("Errore di rete durante la sincronizzazione");
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleShowLogs = async () => {
+    setLoadingLogs(true);
+    try {
+      const res = await fetch(`/api/integrations/${component}/logs?lines=200`);
+      const d = (await res.json()) as { logs?: string };
+      setContainerLogs(d.logs ?? "(nessun output)");
+      setTimeout(() => { logsRef.current?.scrollTo(0, logsRef.current.scrollHeight); }, 50);
+    } catch {
+      setContainerLogs("Errore durante il recupero dei log.");
+    } finally {
+      setLoadingLogs(false);
     }
   };
 
@@ -417,6 +434,28 @@ export function IntegrationCard({ component, title, description, dockerAvailable
           </div>
         )}
 
+        {/* Log container Docker */}
+        {containerLogs !== null && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground font-medium">Log container</span>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setContainerLogs(null)}
+              >
+                Chiudi
+              </button>
+            </div>
+            <div
+              ref={logsRef}
+              className="rounded-md bg-black/90 text-green-400 font-mono text-[10px] p-3 max-h-60 overflow-y-auto whitespace-pre-wrap break-all"
+            >
+              {containerLogs}
+            </div>
+          </div>
+        )}
+
         {/* Ultimo risultato sync */}
         {lastSyncResult && (
           <p className="text-xs text-muted-foreground pt-1">{lastSyncResult}</p>
@@ -433,6 +472,13 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             <Button size="sm" variant="outline" onClick={handleTest} disabled={testing}>
               {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
               Test connessione
+            </Button>
+          )}
+
+          {isManaged && containerRunning && (
+            <Button size="sm" variant="outline" onClick={handleShowLogs} disabled={loadingLogs}>
+              {loadingLogs ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Terminal className="h-3.5 w-3.5 mr-1" />}
+              Log
             </Button>
           )}
 

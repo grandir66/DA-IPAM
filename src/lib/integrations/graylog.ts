@@ -291,7 +291,8 @@ export async function installGraylog(
 
 /**
  * Crea un API token in Graylog via REST API con credenziali admin (Basic Auth).
- * Endpoint ufficiale: POST /api/users/{username}/tokens/{tokenName}
+ * Graylog 6.x usa "local:admin" come userId per l'utente admin built-in.
+ * Endpoint: POST /api/users/{userId}/tokens/{tokenName}
  */
 async function generateGraylogToken(
   baseUrl: string,
@@ -300,32 +301,41 @@ async function generateGraylogToken(
   log: (l: string) => void
 ): Promise<string | null> {
   const tokenName = `da-invent-${Date.now()}`;
-  const url = `${baseUrl}/api/users/${encodeURIComponent(username)}/tokens/${encodeURIComponent(tokenName)}`;
-  const deadline = Date.now() + 120_000; // 2 min per ottenere il token
+  const deadline = Date.now() + 120_000;
+
+  // Graylog 6.x usa "local:admin" come ID utente nell'endpoint token
+  // Le versioni precedenti usano il semplice username (es. "admin")
+  const userIds = [`local:${username}`, username];
 
   while (Date.now() < deadline) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Authorization": "Basic " + Buffer.from(`${username}:${password}`).toString("base64"),
-          "Accept": "application/json",
-          "X-Requested-By": "DA-INVENT",
-        },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (res.ok) {
-        const data = (await res.json()) as { token?: string };
-        if (data.token) {
-          log("[token] Token Graylog generato.");
-          return data.token;
+    for (const userId of userIds) {
+      try {
+        const url = `${baseUrl}/api/users/${encodeURIComponent(userId)}/tokens/${encodeURIComponent(tokenName)}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Authorization": "Basic " + Buffer.from(`${username}:${password}`).toString("base64"),
+            "Accept": "application/json",
+            "X-Requested-By": "DA-INVENT",
+          },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { token?: string };
+          if (data.token) {
+            log(`[token] Token Graylog generato (userId=${userId}).`);
+            return data.token;
+          }
         }
+        if (res.status !== 404) {
+          log(`[token] userId=${userId} → HTTP ${res.status}`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log(`[token] ${msg.substring(0, 80)}`);
       }
-      log(`[token] HTTP ${res.status} — retry tra 10s...`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log(`[token] ${msg.substring(0, 80)} — retry tra 10s...`);
     }
+    log("[token] Retry tra 10s...");
     await new Promise((r) => setTimeout(r, 10_000));
   }
   return null;

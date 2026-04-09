@@ -52,6 +52,9 @@ import {
   Trash2,
   Filter,
   CheckCircle2,
+  Activity,
+  PlusCircle,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -103,6 +106,10 @@ export default function DevicesUnifiedPage() {
   const [loading, setLoading] = useState(true);
   const [counts, setCounts] = useState<ClassificationCount[]>([]);
 
+  // ─── LibreNMS: mapping IP → device_id per NetworkDevice ───
+  const [librenmsMap, setLibrenmsMap] = useState<Map<string, number>>(new Map());
+  const [librenmsAdding, setLibrenmsAdding] = useState<Set<number>>(new Set());
+
   // Filtri
   const [search, setSearch] = useState("");
   const [classificationFilter, setClassificationFilter] = useState<string>("all");
@@ -153,6 +160,40 @@ export default function DevicesUnifiedPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    fetch("/api/integrations/librenms/device")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: { host_ip: string; librenms_device_id: number }[]) => {
+        const m = new Map<string, number>();
+        for (const row of rows) m.set(row.host_ip, row.librenms_device_id);
+        setLibrenmsMap(m);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function addDeviceToLibreNMS(item: DeviceOrHost) {
+    if (item.source !== "device") return;
+    setLibrenmsAdding((prev) => new Set(prev).add(item.id));
+    try {
+      const res = await fetch("/api/integrations/librenms/device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ device_id: item.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`${item.host} aggiunto a LibreNMS (#${data.librenms_device_id})`);
+        setLibrenmsMap((prev) => new Map(prev).set(item.host, data.librenms_device_id));
+      } else {
+        toast.error(data.error ?? "Errore aggiunta a LibreNMS");
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setLibrenmsAdding((prev) => { const next = new Set(prev); next.delete(item.id); return next; });
+    }
+  }
 
   const vendors = useMemo(() => {
     const set = new Set<string>();
@@ -514,6 +555,7 @@ export default function DevicesUnifiedPage() {
                     <span className="flex items-center">Stato <SortIcon field="status" /></span>
                   </TableHead>
                   <TableHead title="Credenziali attive">Cred.</TableHead>
+                  <TableHead title="LibreNMS NMS">LibreNMS</TableHead>
                   <TableHead className="w-24">Azioni</TableHead>
                 </TableRow>
               </TableHeader>
@@ -588,6 +630,34 @@ export default function DevicesUnifiedPage() {
                       </TableCell>
                       <TableCell>
                         <ProtocolBadges protocols={(item as unknown as { credential_protocols?: string[] }).credential_protocols || []} />
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        {item.source === "device" && (() => {
+                          const deviceIp = item.host;
+                          const lnmsId = librenmsMap.get(deviceIp);
+                          const isAdding = librenmsAdding.has(item.id);
+                          if (lnmsId != null) {
+                            return (
+                              <span className="inline-flex items-center gap-1">
+                                <Activity className="h-3 w-3 text-success shrink-0" />
+                                <Badge variant="outline" className="font-mono text-xs">#{lnmsId}</Badge>
+                              </span>
+                            );
+                          }
+                          return (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2 text-xs gap-1"
+                              disabled={isAdding}
+                              onClick={() => addDeviceToLibreNMS(item)}
+                              title={item.community_string ? "Aggiungi a LibreNMS con SNMP" : "Aggiungi a LibreNMS (ping-only)"}
+                            >
+                              {isAdding ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
+                              Aggiungi
+                            </Button>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>

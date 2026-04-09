@@ -58,3 +58,19 @@ export function updateLibreNMSStatus(librenmsDeviceId: number, lastStatus: strin
     "UPDATE librenms_host_map SET last_status = ?, last_synced_at = datetime('now') WHERE librenms_device_id = ?"
   ).run(lastStatus, librenmsDeviceId);
 }
+
+/**
+ * Recupera il mapping per tutti i NetworkDevice (router/switch).
+ * Usa network_id = 0 come sentinella per distinguerli dagli Host.
+ */
+export function getLibreNMSMapForNetworkDevices(): LibreNMSHostMap[] {
+  return db().prepare(
+    "SELECT * FROM librenms_host_map WHERE network_id = 0 ORDER BY host_ip"
+  ).all() as LibreNMSHostMap[];
+}
+
+export function getLibreNMSMapByDeviceIp(ip: string): LibreNMSHostMap | null {
+  return db().prepare(
+    "SELECT * FROM librenms_host_map WHERE network_id = 0 AND host_ip = ?"
+  ).get(ip) as LibreNMSHostMap | null;
+}

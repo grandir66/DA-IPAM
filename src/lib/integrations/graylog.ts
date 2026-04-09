@@ -206,7 +206,10 @@ export async function installGraylog(
       "--ulimit", "nofile=65536:65536",
       ...SEC_OPT,
       "-e", "discovery.type=single-node",
-      "-e", "plugins.security.disabled=true",
+      // OpenSearch 2.12+: disabilita il plugin security e lo script di configurazione demo
+      // (altrimenti richiede OPENSEARCH_INITIAL_ADMIN_PASSWORD e non si avvia)
+      "-e", "DISABLE_SECURITY_PLUGIN=true",
+      "-e", "DISABLE_INSTALL_DEMO_CONFIG=true",
       "-e", "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g",
       OPENSEARCH_IMAGE,
     ], log);

@@ -257,7 +257,8 @@ export default function DiscoveryPage() {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkForm, setBulkForm] = useState<DiscoveryBulkForm>(emptyBulkForm);
 
-  // ─── LibreNMS: aggiunta singolo host ─────────────────────
+  // ─── LibreNMS: URL base e aggiunta singolo host ─────────
+  const [librenmsUrl, setLibrenmsUrl] = useState("");
   const [librenmsAdding, setLibrenmsAdding] = useState<Set<number>>(new Set());
 
   async function addHostToLibreNMS(h: EnrichedHost) {
@@ -346,10 +347,13 @@ export default function DiscoveryPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Carica credenziali per il dialog bulk
+  // Carica credenziali per il dialog bulk + URL LibreNMS
   useEffect(() => {
     fetch("/api/credentials").then((r) => r.json()).then((data: { id: number; name: string; credential_type: string }[]) => {
       if (Array.isArray(data)) setCredentials(data);
+    }).catch(() => {});
+    fetch("/api/integrations/active").then((r) => r.json()).then((data: Record<string, { enabled: boolean; url: string }>) => {
+      if (data?.librenms?.enabled && data.librenms.url) setLibrenmsUrl(data.librenms.url.replace(/\/+$/, ""));
     }).catch(() => {});
   }, []);
 
@@ -699,12 +703,29 @@ export default function DiscoveryPage() {
         const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
         const isAdding = librenmsAdding.has(h.id);
         if (lnms) {
+          const deviceLink = librenmsUrl ? `${librenmsUrl}/device/device=${lnms.librenms_device_id}/` : null;
           return (
             <span className="inline-flex items-center gap-1">
               <Activity className="h-3 w-3 text-success shrink-0" />
-              <Badge variant="outline" className="font-mono text-xs">
-                #{lnms.librenms_device_id}
-              </Badge>
+              {deviceLink ? (
+                <a
+                  href={deviceLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                  title="Apri in LibreNMS"
+                >
+                  <Badge variant="outline" className="font-mono text-xs">
+                    #{lnms.librenms_device_id}
+                  </Badge>
+                  <ExternalLink className="h-3 w-3 opacity-50" />
+                </a>
+              ) : (
+                <Badge variant="outline" className="font-mono text-xs">
+                  #{lnms.librenms_device_id}
+                </Badge>
+              )}
             </span>
           );
         }

@@ -87,6 +87,41 @@ async function waitForOpenSearch(name: string, maxMs: number, log: (l: string) =
   throw new Error("OpenSearch non pronto dopo il timeout.");
 }
 
+/**
+ * Verifica che vm.max_map_count sia ≥ 262144 (requisito OpenSearch).
+ * Se è troppo basso, prova a impostarlo con sysctl (richiede privilegi root sul server).
+ * Se non riesce, lancia un'eccezione con le istruzioni.
+ */
+async function ensureMaxMapCount(log: (l: string) => void): Promise<void> {
+  const { readFile } = await import("fs/promises");
+  let current = 0;
+  try {
+    const raw = await readFile("/proc/sys/vm/max_map_count", "utf8");
+    current = parseInt(raw.trim(), 10);
+  } catch {
+    // Non siamo su Linux (es. macOS/Docker Desktop): OpenSearch gestisce da solo
+    log("[sysctl] Impossibile leggere /proc/sys/vm/max_map_count — skip check (non Linux).");
+    return;
+  }
+
+  if (current >= 262144) {
+    log(`[sysctl] vm.max_map_count=${current} — OK.`);
+    return;
+  }
+
+  log(`[sysctl] vm.max_map_count=${current} troppo basso (minimo 262144). Tentativo di impostazione...`);
+  try {
+    await execFileAsync("sysctl", ["-w", "vm.max_map_count=262144"], { timeout: 10_000 });
+    log("[sysctl] vm.max_map_count=262144 impostato.");
+  } catch {
+    throw new Error(
+      `vm.max_map_count=${current} è troppo basso per OpenSearch. ` +
+      `Esegui sul server (come root): sysctl -w vm.max_map_count=262144 ` +
+      `Per renderlo permanente aggiungi "vm.max_map_count=262144" in /etc/sysctl.conf`
+    );
+  }
+}
+
 /** Attende che Graylog risponda su /api/system/liveness (endpoint ufficiale health check). */
 async function waitForGraylog(internalUrl: string, maxMs: number, log: (l: string) => void): Promise<void> {
   const deadline = Date.now() + maxMs;
@@ -154,6 +189,11 @@ export async function installGraylog(
       MONGODB_IMAGE,
     ], log);
 
+    // ── vm.max_map_count — requisito OpenSearch ───────────────────────────────
+    // --sysctl vm.max_map_count non è consentito dal Docker daemon standard.
+    // Leggiamo il valore dall'host e proviamo a impostarlo via sysctl se troppo basso.
+    await ensureMaxMapCount(log);
+
     // ── OpenSearch ────────────────────────────────────────────────────────────
     log("[create] Avvio OpenSearch...");
     await spawnDockerStream([
@@ -161,8 +201,6 @@ export async function installGraylog(
       "--name", "da-graylog-opensearch",
       "--network", network,
       "--restart", "unless-stopped",
-      // vm.max_map_count richiesto da OpenSearch (impostato per il singolo container)
-      "--sysctl", "vm.max_map_count=262144",
       // ulimit richiesto da OpenSearch per prestazioni ottimali
       "--ulimit", "memlock=-1:-1",
       "--ulimit", "nofile=65536:65536",

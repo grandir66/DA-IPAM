@@ -78,13 +78,32 @@ export class LibreNMSClient {
     /** forza l'aggiunta anche se il device non risponde a ping */
     force_add?: boolean;
   }): Promise<number> {
-    const data = await this.request<{ id: string[] | number[]; message?: string }>("POST", "/devices", {
+    const data = await this.request<Record<string, unknown>>("POST", "/devices", {
       ...payload,
       force_add: payload.force_add ?? true,
     });
-    const id = data.id?.[0];
-    if (id == null) throw new Error("LibreNMS non ha restituito device_id");
-    return Number(id);
+    // LibreNMS può restituire il device_id in diversi formati a seconda della versione:
+    // - { id: [123] }            — array numerico
+    // - { id: ["123"] }          — array di stringhe
+    // - { devices: [{ device_id: 123 }] }
+    // - { device_id: 123 }
+    const idArr = data.id as (string | number)[] | undefined;
+    if (Array.isArray(idArr) && idArr.length > 0 && idArr[0] != null) {
+      return Number(idArr[0]);
+    }
+    const devArr = data.devices as Array<{ device_id?: number }> | undefined;
+    if (Array.isArray(devArr) && devArr.length > 0 && devArr[0]?.device_id != null) {
+      return devArr[0].device_id;
+    }
+    if (typeof data.device_id === "number") {
+      return data.device_id;
+    }
+    // Fallback: cerca il device appena aggiunto per hostname
+    try {
+      const found = await this.getDeviceByHostname(payload.hostname);
+      if (found) return found.device_id;
+    } catch { /* ignore */ }
+    throw new Error(`LibreNMS non ha restituito device_id (risposta: ${JSON.stringify(data).slice(0, 300)})`);
   }
 
   /** Aggiorna attributi di un device esistente */

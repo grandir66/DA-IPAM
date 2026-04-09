@@ -258,6 +258,9 @@ export async function installGraylog(
     // ── Attende Graylog ────────────────────────────────────────────────────────
     log("[wait] Attesa Graylog pronto — primo avvio può richiedere 2-4 min...");
     await waitForGraylog(internalUrl, 300_000, log);
+    // Warm-up: l'HTTP server risponde prima che l'API interna (auth, users) sia pronta
+    log("[wait] Warm-up 20s per completare inizializzazione API...");
+    await new Promise((r) => setTimeout(r, 20_000));
 
     // ── API Token ─────────────────────────────────────────────────────────────
     log("[token] Generazione API token...");
@@ -316,6 +319,7 @@ async function generateGraylogToken(
           headers: {
             "Authorization": "Basic " + Buffer.from(`${username}:${password}`).toString("base64"),
             "Accept": "application/json",
+            "Content-Type": "application/json",
             "X-Requested-By": "DA-INVENT",
           },
           signal: AbortSignal.timeout(10_000),

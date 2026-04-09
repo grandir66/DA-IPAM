@@ -108,7 +108,16 @@ export class LibreNMSClient {
 
   /** Aggiorna attributi di un device esistente */
   async updateDevice(deviceId: number, fields: Record<string, unknown>): Promise<void> {
-    await this.request("PATCH", `/devices/${deviceId}`, fields);
+    // Filtra campi undefined/null
+    const entries = Object.entries(fields).filter(([, v]) => v !== undefined && v !== null);
+    if (entries.length === 0) return;
+    // LibreNMS PATCH richiede { field: [...], data: [...] }
+    const fieldNames = entries.map(([k]) => k);
+    const fieldData = entries.map(([, v]) => v);
+    await this.request("PATCH", `/devices/${deviceId}`, {
+      field: fieldNames,
+      data: fieldData,
+    });
   }
 
   /** Rimuove un device da LibreNMS */

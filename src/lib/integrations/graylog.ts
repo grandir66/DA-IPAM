@@ -45,8 +45,7 @@ async function waitForMongo(name: string, maxMs: number, log: (l: string) => voi
 
 /**
  * Attende che OpenSearch sia pronto controllando i log del container dal host.
- * L'immagine OpenSearch (Amazon Linux 2023) non include curl/wget,
- * quindi evitiamo docker exec e leggiamo i log direttamente.
+ * L'immagine OpenSearch 2.12.0 (Amazon Linux 2023) non include curl/wget.
  */
 async function waitForOpenSearch(name: string, maxMs: number, log: (l: string) => void): Promise<void> {
   const { execFile: _ef } = await import("child_process");
@@ -55,17 +54,33 @@ async function waitForOpenSearch(name: string, maxMs: number, log: (l: string) =
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
     try {
-      const r = await execFile("docker", ["logs", "--tail", "200", name], {
+      const r = await execFile("docker", ["logs", "--tail", "300", name], {
         timeout: 10_000,
-        maxBuffer: 2 * 1024 * 1024,
+        maxBuffer: 4 * 1024 * 1024,
       });
       const output = r.stdout + r.stderr;
-      // OpenSearch scrive "publish_address" quando il nodo HTTP è legato alla porta
-      if (output.includes("publish_address") || output.includes("bound_addresses")) {
+
+      // Fail-fast: vm.max_map_count troppo basso → OpenSearch si chiude subito
+      if (output.includes("max virtual memory areas vm.max_map_count")) {
+        throw new Error(
+          "OpenSearch non può avviarsi: vm.max_map_count troppo basso sul server. " +
+          "Esegui: sysctl -w vm.max_map_count=262144  (e aggiungi in /etc/sysctl.conf per renderlo permanente)"
+        );
+      }
+
+      // OpenSearch scrive "publish_address" o "bound_addresses" quando l'HTTP layer è attivo
+      if (
+        output.includes("publish_address") ||
+        output.includes("bound_addresses") ||
+        output.includes("started") && output.includes("9200")
+      ) {
         log("[wait] OpenSearch pronto.");
         return;
       }
-    } catch { /* container non ancora avviato */ }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("vm.max_map_count")) throw err;
+      /* container non ancora avviato — continua */
+    }
     log("[wait] OpenSearch non ancora pronto, attesa 10s...");
     await new Promise((r) => setTimeout(r, 10_000));
   }
@@ -141,12 +156,13 @@ export async function installGraylog(
 
     // ── OpenSearch ────────────────────────────────────────────────────────────
     log("[create] Avvio OpenSearch...");
-    log("[warn] Se OpenSearch non parte, esegui sul server: sysctl -w vm.max_map_count=262144");
     await spawnDockerStream([
       "run", "-d",
       "--name", "da-graylog-opensearch",
       "--network", network,
       "--restart", "unless-stopped",
+      // vm.max_map_count richiesto da OpenSearch (impostato per il singolo container)
+      "--sysctl", "vm.max_map_count=262144",
       // ulimit richiesto da OpenSearch per prestazioni ottimali
       "--ulimit", "memlock=-1:-1",
       "--ulimit", "nofile=65536:65536",

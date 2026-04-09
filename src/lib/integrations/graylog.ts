@@ -122,24 +122,34 @@ async function ensureMaxMapCount(log: (l: string) => void): Promise<void> {
   }
 }
 
-/** Attende che Graylog risponda su /api/system/liveness (endpoint ufficiale health check). */
+/**
+ * Attende che Graylog sia operativo provando più endpoint.
+ * Graylog 6.x non espone /api/system/liveness — usiamo /api/ e la root.
+ * Pronto = qualsiasi risposta non-5xx (200, 401, 302, 404 sulla root = nginx up + app up).
+ */
 async function waitForGraylog(internalUrl: string, maxMs: number, log: (l: string) => void): Promise<void> {
   const deadline = Date.now() + maxMs;
   let attempt = 0;
+  const endpoints = ["/api/", "/"];
   while (Date.now() < deadline) {
     attempt++;
-    try {
-      const res = await fetch(`${internalUrl}/api/system/liveness`, {
-        signal: AbortSignal.timeout(6000),
-      });
-      if (res.ok) {
-        log(`[wait] Graylog pronto (tentativo ${attempt}).`);
-        return;
+    for (const path of endpoints) {
+      try {
+        const res = await fetch(`${internalUrl}${path}`, {
+          signal: AbortSignal.timeout(6000),
+          redirect: "manual",   // non seguire redirect — 302 = Graylog pronto
+        });
+        // Qualsiasi risposta non-5xx indica che Graylog è su e risponde
+        if (res.status < 500) {
+          log(`[wait] Graylog pronto (tentativo ${attempt}, ${path} → HTTP ${res.status}).`);
+          return;
+        }
+        log(`[wait] Tentativo ${attempt} ${path} — HTTP ${res.status}, attesa 10s...`);
+      } catch {
+        /* non ancora raggiungibile */
       }
-      log(`[wait] Tentativo ${attempt} — HTTP ${res.status}, attesa 10s...`);
-    } catch {
-      log(`[wait] Tentativo ${attempt} — non raggiungibile, attesa 10s...`);
     }
+    log(`[wait] Tentativo ${attempt} — Graylog non ancora raggiungibile, attesa 10s...`);
     await new Promise((r) => setTimeout(r, 10_000));
   }
   throw new Error(`Graylog non raggiungibile dopo ${maxMs / 1000}s`);

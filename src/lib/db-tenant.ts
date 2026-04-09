@@ -1739,6 +1739,67 @@ export function getHostValidatedProtocolsByNetwork(networkId: number): Map<numbe
   return map;
 }
 
+/** Mappa batch: per TUTTI gli host, i protocol_type validati. Per pagina Discovery. */
+export function getAllHostValidatedProtocols(): Map<number, string[]> {
+  const rows = db()
+    .prepare(
+      `SELECT hc.host_id, hc.protocol_type
+       FROM host_credentials hc
+       WHERE hc.validated = 1
+       ORDER BY hc.host_id, hc.protocol_type`
+    )
+    .all() as Array<{ host_id: number; protocol_type: string }>;
+  const map = new Map<number, string[]>();
+  for (const r of rows) {
+    const arr = map.get(r.host_id) || [];
+    if (!arr.includes(r.protocol_type)) arr.push(r.protocol_type);
+    map.set(r.host_id, arr);
+  }
+  return map;
+}
+
+/** Tutti i link multihomed con i peer, per la pagina Discovery. */
+export function getAllMultihomedLinks(): Map<number, { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> }> {
+  const rows = db().prepare(
+    `SELECT ml.host_id, ml.group_id, ml.match_type
+     FROM multihomed_links ml`
+  ).all() as Array<{ host_id: number; group_id: string; match_type: string }>;
+
+  const groupIds = new Set<string>();
+  const hostToGroup = new Map<number, { group_id: string; match_type: string }>();
+  for (const r of rows) {
+    groupIds.add(r.group_id);
+    hostToGroup.set(r.host_id, { group_id: r.group_id, match_type: r.match_type });
+  }
+  if (groupIds.size === 0) return new Map();
+
+  const placeholders = [...groupIds].map(() => "?").join(",");
+  const peers = db().prepare(
+    `SELECT ml.group_id, ml.host_id, h.ip, n.name AS network_name
+     FROM multihomed_links ml
+     JOIN hosts h ON h.id = ml.host_id
+     JOIN networks n ON n.id = h.network_id
+     WHERE ml.group_id IN (${placeholders})`
+  ).all(...groupIds) as Array<{ group_id: string; host_id: number; ip: string; network_name: string }>;
+
+  const peersByGroup = new Map<string, Array<{ ip: string; network_name: string; host_id: number }>>();
+  for (const p of peers) {
+    const arr = peersByGroup.get(p.group_id) || [];
+    arr.push({ ip: p.ip, network_name: p.network_name, host_id: p.host_id });
+    peersByGroup.set(p.group_id, arr);
+  }
+
+  const result = new Map<number, { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> }>();
+  for (const [hostId, { group_id, match_type }] of hostToGroup) {
+    const allPeers = peersByGroup.get(group_id) || [];
+    const otherPeers = allPeers.filter((p) => p.host_id !== hostId);
+    if (otherPeers.length > 0) {
+      result.set(hostId, { group_id, match_type, peers: otherPeers });
+    }
+  }
+  return result;
+}
+
 export function addHostCredential(
   hostId: number,
   credentialId: number,

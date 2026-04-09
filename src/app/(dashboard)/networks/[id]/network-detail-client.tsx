@@ -37,7 +37,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { IpGrid } from "@/components/shared/ip-grid";
 import { ScanProgress } from "@/components/shared/scan-progress";
-import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Monitor, Terminal, Key } from "lucide-react";
+import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Monitor, Terminal, Key, PlusCircle, Loader2, Activity } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
@@ -167,6 +167,43 @@ export function NetworkDetailClient({
   const [availableSources, setAvailableSources] = useState(initialAvailableSources);
   const [hostValidatedProtocols, setHostValidatedProtocols] = useState<Record<number, string[]>>(initialHostValidatedProtocols);
   const [credDialogHost, setCredDialogHost] = useState<{ id: number; ip: string } | null>(null);
+
+  // ─── LibreNMS: mapping host_ip → device_id ───────────────
+  const [librenmsMap, setLibrenmsMap] = useState<Map<string, number>>(new Map());
+  const [librenmsAdding, setLibrenmsAdding] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    fetch(`/api/integrations/librenms/sync?network_id=${network.id}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: { host_ip: string; librenms_device_id: number }[]) => {
+        const m = new Map<string, number>();
+        for (const row of rows) m.set(row.host_ip, row.librenms_device_id);
+        setLibrenmsMap(m);
+      })
+      .catch(() => {});
+  }, [network.id]);
+
+  async function addHostToLibreNMS(host: HostWithDevice) {
+    setLibrenmsAdding((prev) => new Set(prev).add(host.id));
+    try {
+      const res = await fetch("/api/integrations/librenms/host", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host_id: host.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`${host.ip} aggiunto a LibreNMS (#${data.librenms_device_id})`);
+        setLibrenmsMap((prev) => new Map(prev).set(host.ip, data.librenms_device_id));
+      } else {
+        toast.error(data.error ?? "Errore aggiunta a LibreNMS");
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setLibrenmsAdding((prev) => { const next = new Set(prev); next.delete(host.id); return next; });
+    }
+  }
 
   useEffect(() => {
     setCredWindows(initialCredentialChains.windows);
@@ -1458,12 +1495,13 @@ export function NetworkDetailClient({
                 </SortableTableHead>
                 <TableHead>Note</TableHead>
                 <TableHead>Porte</TableHead>
+                <TableHead title="LibreNMS NMS">LibreNMS</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {displayHosts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={16} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={17} className="text-center text-muted-foreground py-8">
                     {hosts.length === 0
                       ? "Nessun host trovato. Avvia una scansione per scoprire i dispositivi."
                       : "Nessun host corrisponde ai filtri."}
@@ -1686,6 +1724,34 @@ export function NetworkDetailClient({
                           );
                         } catch { return "—"; }
                       })() : "—"}
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {(() => {
+                        const deviceId = librenmsMap.get(host.ip);
+                        const isAdding = librenmsAdding.has(host.id);
+                        if (deviceId != null) {
+                          return (
+                            <span className="inline-flex items-center gap-1">
+                              <Activity className="h-3 w-3 text-success shrink-0" />
+                              <Badge variant="outline" className="font-mono text-xs">#{deviceId}</Badge>
+                            </span>
+                          );
+                        }
+                        if (!host.snmp_data) return <span className="text-muted-foreground text-xs">—</span>;
+                        return (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2 text-xs gap-1"
+                            disabled={isAdding}
+                            onClick={() => addHostToLibreNMS(host)}
+                            title="Aggiungi a LibreNMS"
+                          >
+                            {isAdding ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
+                            Aggiungi
+                          </Button>
+                        );
+                      })()}
                     </TableCell>
                   </TableRow>
                 ))

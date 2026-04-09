@@ -8,7 +8,7 @@
  * - Gli host senza SNMP vengono ignorati (non aggiunti, non rimossi)
  * - Gli host rimossi dall'inventario locale vengono rimossi anche da LibreNMS
  */
-import { getHostsByNetwork, getNetworkById } from "../db-tenant";
+import { getHostsByNetwork, getNetworkById, getHostById } from "../db-tenant";
 import { getIntegrationConfig } from "./config";
 import { createLibreNMSClient } from "./librenms-api";
 import {
@@ -203,6 +203,83 @@ export async function syncNetworkToLibreNMS(networkId: number): Promise<LibreNMS
   }
 
   return result;
+}
+
+/**
+ * Aggiunge o aggiorna un singolo host in LibreNMS.
+ * Ritorna il device_id LibreNMS assegnato.
+ * Lancia eccezione in caso di errore (SNMP non disponibile, LibreNMS non raggiungibile, ecc.).
+ */
+export async function addSingleHostToLibreNMS(
+  hostId: number
+): Promise<{ librenms_device_id: number; added: boolean }> {
+  const cfg = getIntegrationConfig("librenms");
+  if (cfg.mode === "disabled" || !cfg.url || !cfg.apiToken) {
+    throw new Error("LibreNMS non configurato o disabilitato");
+  }
+
+  const host = getHostById(hostId);
+  if (!host) throw new Error("Host non trovato");
+
+  const network = getNetworkById(host.network_id);
+  const networkCommunity = network?.snmp_community ?? null;
+
+  const snmpData = parseSnmpData(host.snmp_data ?? null);
+  const snmpParams = resolveSnmpParams(snmpData, networkCommunity);
+  if (!snmpParams) {
+    throw new Error("Host senza dati SNMP. Esegui prima una scansione SNMP.");
+  }
+
+  const client = createLibreNMSClient(cfg.url, cfg.apiToken);
+  const alive = await client.ping();
+  if (!alive) throw new Error(`LibreNMS non raggiungibile a ${cfg.url}`);
+
+  const hostname = pickHostname(host.ip);
+  const sysName  = pickSysName(host.hostname, host.custom_name);
+  const existing = getLibreNMSMapByIp(host.network_id, host.ip);
+
+  if (existing) {
+    await client.updateDevice(existing.librenms_device_id, {
+      community:    snmpParams.community,
+      snmpver:      snmpParams.snmpver,
+      port:         snmpParams.port,
+      snmp_disable: false,
+      ...(sysName            ? { sysName }                        : {}),
+      ...(host.model         ? { hardware: host.model }           : {}),
+      ...(host.serial_number ? { serial: host.serial_number }     : {}),
+    });
+    upsertLibreNMSMap(host.network_id, host.ip, existing.librenms_device_id, hostname, host.status ?? null);
+    return { librenms_device_id: existing.librenms_device_id, added: false };
+  }
+
+  // Controlla se il device è già in LibreNMS per IP
+  const existingDevice = await client.getDeviceByHostname(host.ip);
+  let deviceId: number;
+  if (existingDevice) {
+    deviceId = existingDevice.device_id;
+    await client.updateDevice(deviceId, {
+      community:    snmpParams.community,
+      snmpver:      snmpParams.snmpver,
+      port:         snmpParams.port,
+      snmp_disable: false,
+      ...(sysName            ? { sysName }                        : {}),
+      ...(host.model         ? { hardware: host.model }           : {}),
+      ...(host.serial_number ? { serial: host.serial_number }     : {}),
+    });
+  } else {
+    deviceId = await client.addDevice({
+      hostname,
+      ...snmpParams,
+      snmp_disable: false,
+      force_add:    true,
+      sysName:      sysName            ?? undefined,
+      hardware:     host.model         ?? undefined,
+      serial:       host.serial_number ?? undefined,
+    });
+  }
+
+  upsertLibreNMSMap(host.network_id, host.ip, deviceId, hostname, host.status ?? null);
+  return { librenms_device_id: deviceId, added: !existingDevice };
 }
 
 /**

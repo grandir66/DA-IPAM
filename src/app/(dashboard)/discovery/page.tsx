@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
+import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { Pagination } from "@/components/shared/pagination";
@@ -32,9 +33,10 @@ import { useClientTableSort } from "@/hooks/use-table-sort";
 import {
   DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel, sortClassificationsByDisplayLabel,
 } from "@/lib/device-classifications";
+import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
-  Pencil, X, Loader2, Save, PlusCircle, Sparkles,
+  Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
@@ -57,6 +59,8 @@ type EnrichedHost = Host & {
   switch_port?: string;
   switch_device_name?: string;
   ad_dns_host_name?: string | null;
+  validated_protocols?: string[];
+  multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -81,8 +85,10 @@ const COLUMNS: ColumnDef[] = [
   { id: "vendor",          label: "Vendor",          defaultVisible: false, group: "base" },
   { id: "classification",  label: "Classificazione", defaultVisible: true,  group: "base" },
   { id: "fp_confidence",   label: "Conf.",           defaultVisible: true,  group: "base" },
+  { id: "validated_creds", label: "Cred.",            defaultVisible: false, group: "base" },
   { id: "known_host",      label: "Conosciuto",      defaultVisible: false, group: "base" },
   { id: "ip_assignment",   label: "DHCP",            defaultVisible: false, group: "base" },
+  { id: "detected",        label: "Rilevato",        defaultVisible: false, group: "rilevamento" },
   { id: "notes",           label: "Note",            defaultVisible: false, group: "base" },
 
   // Rete
@@ -92,6 +98,7 @@ const COLUMNS: ColumnDef[] = [
   { id: "device_name",     label: "Dispositivo",     defaultVisible: false, group: "rete" },
   { id: "switch_port",     label: "Porta switch",    defaultVisible: false, group: "rete" },
   { id: "ad_dns",          label: "AD",              defaultVisible: false, group: "rete" },
+  { id: "multihomed",      label: "MH",              defaultVisible: false, group: "rete" },
 
   // Rilevamento
   { id: "os_info",         label: "OS",              defaultVisible: false, group: "rilevamento" },
@@ -102,7 +109,7 @@ const COLUMNS: ColumnDef[] = [
   { id: "model",           label: "Modello",         defaultVisible: false, group: "dettaglio" },
   { id: "serial_number",   label: "Seriale",         defaultVisible: false, group: "dettaglio" },
   { id: "firmware",        label: "Firmware",         defaultVisible: false, group: "dettaglio" },
-  { id: "librenms_id",     label: "LibreNMS",         defaultVisible: false, group: "dettaglio" },
+  { id: "librenms_id",     label: "LibreNMS",         defaultVisible: true,  group: "dettaglio" },
 
   // Temporali
   { id: "last_seen",       label: "Ultimo visto",    defaultVisible: true,  group: "base" },
@@ -243,6 +250,44 @@ export default function DiscoveryPage() {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkForm, setBulkForm] = useState<DiscoveryBulkForm>(emptyBulkForm);
 
+  // ─── LibreNMS: aggiunta singolo host ─────────────────────
+  const [librenmsAdding, setLibrenmsAdding] = useState<Set<number>>(new Set());
+
+  async function addHostToLibreNMS(h: EnrichedHost) {
+    setLibrenmsAdding((prev) => new Set(prev).add(h.id));
+    try {
+      const res = await fetch("/api/integrations/librenms/host", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host_id: h.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`${h.ip} aggiunto a LibreNMS (#${data.librenms_device_id})`);
+        // Aggiorna la librenms map localmente
+        setLibrenmsMap((prev) => {
+          const next = new Map(prev);
+          next.set(`${h.network_id}:${h.ip}`, {
+            id: 0,
+            network_id: h.network_id,
+            host_ip: h.ip,
+            librenms_device_id: data.librenms_device_id,
+            librenms_hostname: h.ip,
+            last_status: h.status ?? null,
+            last_synced_at: new Date().toISOString(),
+          });
+          return next;
+        });
+      } else {
+        toast.error(data.error ?? "Errore aggiunta a LibreNMS");
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setLibrenmsAdding((prev) => { const next = new Set(prev); next.delete(h.id); return next; });
+    }
+  }
+
   // ─── Creazione regola fingerprint ─────────────────────────
   const [createRuleOpen, setCreateRuleOpen] = useState(false);
   const [ruleHost, setRuleHost] = useState<EnrichedHost | null>(null);
@@ -356,6 +401,9 @@ export default function DiscoveryPage() {
     last_seen:           (h: EnrichedHost) => h.last_seen ? new Date(h.last_seen).getTime() : 0,
     first_seen:          (h: EnrichedHost) => h.first_seen ? new Date(h.first_seen).getTime() : 0,
     fp_confidence:       (h: EnrichedHost) => getFpConfidence(h),
+    validated_creds:     (h: EnrichedHost) => (h.validated_protocols || []).length,
+    detected:            (h: EnrichedHost) => { const d = parseDetectedDeviceFromDetectionJson(h.detection_json); return d?.label ?? ""; },
+    multihomed:          (h: EnrichedHost) => h.multihomed ? h.multihomed.peers.length + 1 : 0,
   }), []);
 
   const { sortedRows, sortColumn, sortDirection, onSort } = useClientTableSort(
@@ -642,13 +690,52 @@ export default function DiscoveryPage() {
       }
       case "librenms_id": {
         const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
-        if (!lnms) return <span className="text-muted-foreground text-xs">—</span>;
+        const hasSnmp = !!h.snmp_data;
+        const isAdding = librenmsAdding.has(h.id);
+        if (lnms) {
+          return (
+            <span className="inline-flex items-center gap-1">
+              <Activity className="h-3 w-3 text-success shrink-0" />
+              <Badge variant="outline" className="font-mono text-xs">
+                #{lnms.librenms_device_id}
+              </Badge>
+            </span>
+          );
+        }
+        if (!hasSnmp) return <span className="text-muted-foreground text-xs">—</span>;
         return (
-          <Badge variant="outline" className="font-mono text-xs">
-            #{lnms.librenms_device_id}
-          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-xs gap-1"
+            disabled={isAdding}
+            onClick={(e) => { e.stopPropagation(); addHostToLibreNMS(h); }}
+            title="Aggiungi a LibreNMS"
+          >
+            {isAdding ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
+            LibreNMS
+          </Button>
         );
       }
+      case "validated_creds":
+        return <ProtocolBadges protocols={h.validated_protocols || []} />;
+      case "detected": {
+        const det = parseDetectedDeviceFromDetectionJson(h.detection_json);
+        if (!det) return <span className="text-muted-foreground text-xs">—</span>;
+        const pct = det.confidence != null ? `${Math.round(det.confidence * 100)}%` : null;
+        return (
+          <span className="text-sm truncate max-w-[180px] block" title={pct ? `Confidenza: ${pct}` : "Fingerprint"}>
+            {det.label}
+            {pct ? <span className="text-muted-foreground text-xs ml-1">({pct})</span> : null}
+          </span>
+        );
+      }
+      case "multihomed":
+        return h.multihomed ? (
+          <Badge variant="outline" className="text-[10px] px-1 py-0 bg-cyan-500/15 text-cyan-600 border-cyan-300 dark:text-cyan-400">
+            {h.multihomed.peers.length + 1} IF
+          </Badge>
+        ) : <span className="text-muted-foreground text-xs">—</span>;
       default:
         return null;
     }

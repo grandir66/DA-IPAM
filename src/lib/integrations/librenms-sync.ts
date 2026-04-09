@@ -224,11 +224,9 @@ export async function addSingleHostToLibreNMS(
   const network = getNetworkById(host.network_id);
   const networkCommunity = network?.snmp_community ?? null;
 
-  const snmpData = parseSnmpData(host.snmp_data ?? null);
+  const snmpData   = parseSnmpData(host.snmp_data ?? null);
   const snmpParams = resolveSnmpParams(snmpData, networkCommunity);
-  if (!snmpParams) {
-    throw new Error("Host senza dati SNMP. Esegui prima una scansione SNMP.");
-  }
+  // snmpParams può essere null: in quel caso aggiungiamo a LibreNMS in modalità ping-only
 
   const client = createLibreNMSClient(cfg.url, cfg.apiToken);
   const alive = await client.ping();
@@ -238,12 +236,14 @@ export async function addSingleHostToLibreNMS(
   const sysName  = pickSysName(host.hostname, host.custom_name);
   const existing = getLibreNMSMapByIp(host.network_id, host.ip);
 
+  // Campi SNMP da aggiornare/inviare (vuoto se ping-only)
+  const snmpFields: Record<string, unknown> = snmpParams
+    ? { community: snmpParams.community, snmpver: snmpParams.snmpver, port: snmpParams.port, snmp_disable: false }
+    : { snmp_disable: true };
+
   if (existing) {
     await client.updateDevice(existing.librenms_device_id, {
-      community:    snmpParams.community,
-      snmpver:      snmpParams.snmpver,
-      port:         snmpParams.port,
-      snmp_disable: false,
+      ...snmpFields,
       ...(sysName            ? { sysName }                        : {}),
       ...(host.model         ? { hardware: host.model }           : {}),
       ...(host.serial_number ? { serial: host.serial_number }     : {}),
@@ -258,10 +258,7 @@ export async function addSingleHostToLibreNMS(
   if (existingDevice) {
     deviceId = existingDevice.device_id;
     await client.updateDevice(deviceId, {
-      community:    snmpParams.community,
-      snmpver:      snmpParams.snmpver,
-      port:         snmpParams.port,
-      snmp_disable: false,
+      ...snmpFields,
       ...(sysName            ? { sysName }                        : {}),
       ...(host.model         ? { hardware: host.model }           : {}),
       ...(host.serial_number ? { serial: host.serial_number }     : {}),
@@ -269,8 +266,8 @@ export async function addSingleHostToLibreNMS(
   } else {
     deviceId = await client.addDevice({
       hostname,
-      ...snmpParams,
-      snmp_disable: false,
+      ...(snmpParams ?? {}),        // community, snmpver, port se disponibili
+      snmp_disable: !snmpParams,    // true = ping-only se senza SNMP
       force_add:    true,
       sysName:      sysName            ?? undefined,
       hardware:     host.model         ?? undefined,

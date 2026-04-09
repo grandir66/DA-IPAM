@@ -126,13 +126,20 @@ const GROUP_LABELS: Record<string, string> = {
 const STORAGE_KEY = "discovery-columns";
 const PAGE_SIZE = 50;
 
+// Colonne che devono essere sempre visibili indipendentemente dal localStorage
+const ALWAYS_VISIBLE = new Set(["librenms_id"]);
+
 function loadVisibleColumns(): Set<string> {
   if (typeof window === "undefined") return new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id));
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const arr = JSON.parse(raw) as string[];
-      if (Array.isArray(arr) && arr.length > 0) return new Set(arr);
+      if (Array.isArray(arr) && arr.length > 0) {
+        const set = new Set(arr);
+        for (const id of ALWAYS_VISIBLE) set.add(id); // garantisce sempre visibile
+        return set;
+      }
     }
   } catch { /* ignore */ }
   return new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id));
@@ -690,7 +697,6 @@ export default function DiscoveryPage() {
       }
       case "librenms_id": {
         const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
-        const hasSnmp = !!h.snmp_data;
         const isAdding = librenmsAdding.has(h.id);
         if (lnms) {
           return (
@@ -702,7 +708,6 @@ export default function DiscoveryPage() {
             </span>
           );
         }
-        if (!hasSnmp) return <span className="text-muted-foreground text-xs">—</span>;
         return (
           <Button
             variant="outline"
@@ -710,7 +715,7 @@ export default function DiscoveryPage() {
             className="h-6 px-2 text-xs gap-1"
             disabled={isAdding}
             onClick={(e) => { e.stopPropagation(); addHostToLibreNMS(h); }}
-            title="Aggiungi a LibreNMS"
+            title={h.snmp_data ? "Aggiungi a LibreNMS con SNMP" : "Aggiungi a LibreNMS (ping-only, senza SNMP)"}
           >
             {isAdding ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
             LibreNMS

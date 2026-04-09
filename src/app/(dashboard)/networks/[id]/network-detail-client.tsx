@@ -1737,7 +1737,6 @@ export function NetworkDetailClient({
                             </span>
                           );
                         }
-                        if (!host.snmp_data) return <span className="text-muted-foreground text-xs">—</span>;
                         return (
                           <Button
                             variant="outline"
@@ -1745,7 +1744,7 @@ export function NetworkDetailClient({
                             className="h-6 px-2 text-xs gap-1"
                             disabled={isAdding}
                             onClick={() => addHostToLibreNMS(host)}
-                            title="Aggiungi a LibreNMS"
+                            title={host.snmp_data ? "Aggiungi a LibreNMS con SNMP" : "Aggiungi a LibreNMS (ping-only)"}
                           >
                             {isAdding ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
                             Aggiungi

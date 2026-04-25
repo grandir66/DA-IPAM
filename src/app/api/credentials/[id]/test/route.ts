@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCredentialById, getCredentialCommunityString } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
+import { safeDecrypt } from "@/lib/crypto";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
@@ -65,8 +65,11 @@ export async function POST(
       }
 
       if (type === "ssh" || type === "linux") {
-        const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
-        const password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
+        const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
+        const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
+        if (username === null || password === null) {
+          return NextResponse.json({ success: false, error: "Credenziale corrotta: rigenerare la password" });
+        }
         if (!username || !password) {
           return NextResponse.json({ success: false, error: "Username e password richiesti" });
         }
@@ -101,8 +104,11 @@ export async function POST(
       }
 
       if (type === "windows") {
-        const username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
-        const password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
+        const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
+        const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
+        if (username === null || password === null) {
+          return NextResponse.json({ success: false, error: "Credenziale corrotta: rigenerare la password" });
+        }
         if (!username || !password) {
           return NextResponse.json({ success: false, error: "Username e password richiesti" });
         }

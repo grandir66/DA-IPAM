@@ -4453,20 +4453,20 @@ export function getArpEntriesByDevice(deviceId: number): (ArpEntry & { host_ip?:
 
 export function upsertMacPortEntries(deviceId: number, entries: { mac: string; port_name: string; vlan: number | null; port_status: "up" | "down" | null; speed: string | null }[]): void {
   const db = getDb();
-  db.prepare("DELETE FROM mac_port_entries WHERE device_id = ?").run(deviceId);
-
+  const deleteStmt = db.prepare("DELETE FROM mac_port_entries WHERE device_id = ?");
   const stmt = db.prepare(
     `INSERT INTO mac_port_entries (device_id, mac, port_name, vlan, port_status, speed)
      VALUES (?, ?, ?, ?, ?, ?)`
   );
 
-  const insertMany = db.transaction((items: typeof entries) => {
+  const replaceAll = db.transaction((items: typeof entries) => {
+    deleteStmt.run(deviceId);
     for (const entry of items) {
       stmt.run(deviceId, entry.mac, entry.port_name, entry.vlan, entry.port_status, entry.speed);
     }
   });
 
-  insertMany(entries);
+  replaceAll(entries);
 }
 
 export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { host_ip?: string; host_name?: string })[] {
@@ -4487,7 +4487,7 @@ export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { h
 
 export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types").SwitchPort, "id" | "device_id" | "timestamp">[]): void {
   const db = getDb();
-  db.prepare("DELETE FROM switch_ports WHERE device_id = ?").run(deviceId);
+  const deleteStmt = db.prepare("DELETE FROM switch_ports WHERE device_id = ?");
 
   // Valida FK prima dell'inserimento: host_id e trunk_primary_device_id potrebbero essere stale
   const hostExists = db.prepare("SELECT id FROM hosts WHERE id = ?");
@@ -4498,7 +4498,8 @@ export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types"
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
-  const insertMany = db.transaction((items: typeof ports) => {
+  const replaceAll = db.transaction((items: typeof ports) => {
+    deleteStmt.run(deviceId);
     for (const p of items) {
       const hostId = p.host_id != null && hostExists.get(p.host_id) ? p.host_id : null;
       const trunkDeviceId = p.trunk_primary_device_id != null && deviceExists.get(p.trunk_primary_device_id) ? p.trunk_primary_device_id : null;
@@ -4506,7 +4507,7 @@ export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types"
     }
   });
 
-  insertMany(ports);
+  replaceAll(ports);
 }
 
 export function getSwitchPortsByDevice(deviceId: number): import("@/types").SwitchPort[] {

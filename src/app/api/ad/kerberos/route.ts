@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getAdRealm, getAdIntegrationById } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
+import { safeDecrypt } from "@/lib/crypto";
 import { execFile, spawn } from "child_process";
 import { promisify } from "util";
 import fs from "fs";
@@ -192,8 +192,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Integrazione non trovata" }, { status: 404 });
     }
 
-    const username = decrypt(integration.encrypted_username);
-    const password = decrypt(integration.encrypted_password);
+    const username = safeDecrypt(integration.encrypted_username);
+    const password = safeDecrypt(integration.encrypted_password);
+    if (username === null || password === null) {
+      return NextResponse.json({ success: false, error: "Credenziale AD corrotta: rigenerare la password integrazione" }, { status: 400 });
+    }
     const realm = integration.domain.toUpperCase();
 
     // Costruisci principal
@@ -256,8 +259,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Integrazione non trovata" }, { status: 404 });
     }
 
-    const username = decrypt(integration.encrypted_username);
-    const password = decrypt(integration.encrypted_password);
+    const username = safeDecrypt(integration.encrypted_username);
+    const password = safeDecrypt(integration.encrypted_password);
+    if (username === null || password === null) {
+      return NextResponse.json({ success: false, error: "Credenziale AD corrotta: rigenerare la password integrazione" }, { status: 400 });
+    }
     const port = typeof body.port === "number" ? body.port : 5985;
 
     try {

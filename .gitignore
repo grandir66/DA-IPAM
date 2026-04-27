@@ -68,3 +68,4 @@ data/tenants/*.db-shm
 data/hub.db
 data/hub.db-wal
 data/hub.db-shm
+.claude/worktrees/

@@ -62,8 +62,12 @@ install_system_deps() {
     sqlite3 \
     libssl-dev \
     libsqlite3-dev \
-    libsnmp-dev
-  echo "    Dipendenze installate (toolchain, SNMP client, nmap, ping; librerie per build npm)."
+    libsnmp-dev \
+    libkrb5-dev \
+    krb5-config \
+    krb5-user \
+    libffi-dev
+  echo "    Dipendenze installate (toolchain, SNMP client, nmap, ping, Kerberos; librerie per build npm e gssapi)."
 }
 
 # Installa Node.js 20 LTS se non presente
@@ -92,16 +96,33 @@ install_node() {
   echo "    Node.js $(node -v) installato."
 }
 
-# Setup Python venv per WinRM (opzionale)
+# Setup Python venv per WinRM (pywinrm + Kerberos via gssapi)
+# Richiede pacchetti di sistema: libkrb5-dev, krb5-config, libffi-dev, build-essential, python3-dev
+# (installati da install_system_deps).
 setup_winrm_venv() {
   local venv_dir="$HOME/.da-invent-venv"
   if [ ! -f "$venv_dir/bin/python3" ]; then
-    echo ">>> Creazione venv Python per WinRM (opzionale)..."
-    python3 -m venv "$venv_dir" 2>/dev/null || true
-    if [ -f "$venv_dir/bin/pip" ]; then
-      "$venv_dir/bin/pip" install --quiet pywinrm requests-ntlm requests-credssp gssapi 2>/dev/null || true
-      echo "    Venv WinRM creato in $venv_dir"
-    fi
+    echo ">>> Creazione venv Python per WinRM..."
+    python3 -m venv "$venv_dir" || {
+      echo "    Errore: creazione venv fallita. Installa python3-venv (apt-get install python3-venv)."
+      return 1
+    }
+  fi
+  if [ ! -f "$venv_dir/bin/pip" ]; then
+    echo "    Errore: pip non disponibile nel venv $venv_dir."
+    return 1
+  fi
+  echo ">>> Installazione pywinrm + dipendenze Kerberos nel venv..."
+  "$venv_dir/bin/pip" install --quiet --upgrade pip
+  if "$venv_dir/bin/pip" install --quiet pywinrm requests-ntlm requests-credssp gssapi; then
+    echo "    Venv WinRM pronto in $venv_dir (pywinrm + gssapi/Kerberos)."
+  else
+    echo "    Avviso: build di gssapi fallita. WinRM funziona via NTLM/CredSSP, ma Kerberos non è disponibile."
+    echo "    Per abilitare Kerberos: apt-get install libkrb5-dev krb5-config krb5-user libffi-dev e rilancia l'installer."
+    "$venv_dir/bin/pip" install --quiet pywinrm requests-ntlm requests-credssp || {
+      echo "    Errore: anche l'install minimale di pywinrm è fallita."
+      return 1
+    }
   fi
 }
 
@@ -261,7 +282,8 @@ echo ""
 echo "Accedi a: http://<indirizzo-ip>:$PORT"
 echo "Al primo avvio completa il setup dalla pagina /setup"
 echo ""
-echo "WinRM verso host Windows: richiede Python + pywinrm sul server (venv in \$HOME/.da-invent-venv)."
-echo "Se la scansione WinRM fallisce: verifica che il venv esista o esegui"
-echo "  python3 -m venv ~/.da-invent-venv && ~/.da-invent-venv/bin/pip install pywinrm requests-ntlm requests-credssp gssapi"
+echo "WinRM verso host Windows: venv pywinrm in \$HOME/.da-invent-venv (Kerberos via gssapi se libkrb5-dev presente)."
+echo "Se la scansione WinRM fallisce, ricrea il venv:"
+echo "  rm -rf ~/.da-invent-venv && python3 -m venv ~/.da-invent-venv && \\"
+echo "    ~/.da-invent-venv/bin/pip install pywinrm requests-ntlm requests-credssp gssapi"
 echo ""

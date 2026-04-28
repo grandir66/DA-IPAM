@@ -153,6 +153,25 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       const testResult = await testBinding(device.host, binding);
       updateBindingTestStatus(data.binding_id, testResult.success ? "success" : "failed", testResult.message);
+      // Promuovi il binding validato anche su host_credentials dell'host con stesso IP,
+      // così la credenziale resta associata anche se il device viene rimosso/ricreato.
+      if (testResult.success && binding.credential_id) {
+        try {
+          const { getHostByIp, setHostCredentialValidatedByKey } = await import("@/lib/db");
+          const h = getHostByIp(device.host);
+          if (h?.id) {
+            setHostCredentialValidatedByKey(
+              h.id,
+              binding.credential_id,
+              binding.protocol_type as "ssh" | "snmp" | "winrm" | "api",
+              binding.port,
+              { auto_detected: false }
+            );
+          }
+        } catch (e) {
+          console.warn("[devices/credentials/test] persistValidatedBinding failed:", e);
+        }
+      }
       return NextResponse.json(testResult);
     }
 

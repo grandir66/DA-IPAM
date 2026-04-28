@@ -166,8 +166,8 @@ export async function POST(request: Request) {
         addDeviceCredentialBinding({ device_id: device.id, credential_id: snmp_credential_id, protocol_type: "snmp", port: 161 });
       }
 
-      // Eredita credenziali validate dall'host
-      if (inherit_host_credentials) {
+      // Eredita credenziali validate dall'host (default true: l'utente può opt-out con false)
+      if (inherit_host_credentials !== false) {
         try {
           const hostCreds = getHostCredentials(host.id);
           for (const hc of hostCreds) {

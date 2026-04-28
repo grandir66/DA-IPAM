@@ -3469,6 +3469,36 @@ export function setHostCredentialValidated(id: number, validated: boolean): void
     .run(validated ? 1 : 0, id);
 }
 
+/** Upsert idempotente: marca un binding (host, cred, proto, port) come validato.
+ * Crea il record se manca, altrimenti aggiorna validated/validated_at.
+ * Chiamata dai test endpoint al successo per memorizzare cosa funziona contro un host. */
+export function setHostCredentialValidatedByKey(
+  hostId: number,
+  credentialId: number,
+  protocolType: "ssh" | "snmp" | "winrm" | "api",
+  port: number,
+  options?: { auto_detected?: boolean }
+): void {
+  const db = getDb();
+  const max = db.prepare(
+    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
+  ).get(hostId) as { m: number };
+  db.prepare(
+    `INSERT INTO host_credentials (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected)
+     VALUES (?, ?, ?, ?, 1, datetime('now'), ?, ?)
+     ON CONFLICT(host_id, credential_id, protocol_type, port) DO UPDATE SET
+       validated = 1,
+       validated_at = datetime('now')`
+  ).run(
+    hostId,
+    credentialId,
+    protocolType,
+    port,
+    max.m + 1,
+    options?.auto_detected ? 1 : 0
+  );
+}
+
 /** Restituisce la community string decifrata per una credenziale SNMP. */
 export function getCredentialCommunityString(credentialId: number): string | null {
   const cred = getCredentialById(credentialId);

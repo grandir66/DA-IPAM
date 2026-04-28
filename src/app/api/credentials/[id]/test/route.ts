@@ -1,10 +1,27 @@
 import { NextResponse } from "next/server";
-import { getCredentialById, getCredentialCommunityString } from "@/lib/db";
+import { getCredentialById, getCredentialCommunityString, getHostByIp, setHostCredentialValidatedByKey } from "@/lib/db";
 import { safeDecrypt } from "@/lib/crypto";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
 const TEST_TIMEOUT_MS = 25000;
+
+/** Memorizza che (credenziale, protocollo, porta) funziona contro l'host con quell'IP.
+ * Best-effort: se l'host non esiste in DB (test estemporaneo) o l'upsert fallisce, ignora. */
+function persistValidatedBinding(
+  ip: string,
+  credentialId: number,
+  protocolType: "ssh" | "snmp" | "winrm" | "api",
+  port: number
+): void {
+  try {
+    const host = getHostByIp(ip);
+    if (!host?.id) return;
+    setHostCredentialValidatedByKey(host.id, credentialId, protocolType, port, { auto_detected: false });
+  } catch (e) {
+    console.warn("[credentials/test] persistValidatedBinding failed:", e);
+  }
+}
 
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   const timeout = new Promise<never>((_, reject) =>
@@ -55,6 +72,7 @@ export async function POST(
             }),
             TEST_TIMEOUT_MS
           );
+          persistValidatedBinding(host, Number(id), "snmp", port);
           return NextResponse.json({ success: true, message: "Connessione SNMP riuscita" });
         } catch (e) {
           return NextResponse.json({
@@ -94,6 +112,7 @@ export async function POST(
             }),
             TEST_TIMEOUT_MS
           );
+          persistValidatedBinding(host, Number(id), "ssh", port);
           return NextResponse.json({ success: true, message: "Connessione SSH riuscita" });
         } catch (e) {
           return NextResponse.json({
@@ -121,6 +140,7 @@ export async function POST(
             runWinrmCommand(host, port, username, password, "echo test", false, adInfo?.realm || ""),
             TEST_TIMEOUT_MS
           );
+          persistValidatedBinding(host, Number(id), "winrm", port);
           return NextResponse.json({ success: true, message: "Connessione WinRM riuscita" });
         } catch (e) {
           return NextResponse.json({

@@ -1,4 +1,4 @@
-import { getCredentialById, getDeviceCredentials, getCredentialCommunityString } from "@/lib/db";
+import { getCredentialById, getDeviceCredentials, getCredentialCommunityString, getHostByIp, getHostCredentials } from "@/lib/db";
 import { decrypt, safeDecrypt } from "@/lib/crypto";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
@@ -120,7 +120,25 @@ function resolveCredentials(device: NetworkDevice): { username: string; password
   // Prima: sistema bindings v2 (cerca in device_credential_bindings + fallback legacy)
   const creds = getDeviceCredentials(device);
   if (creds?.username && creds?.password) return creds;
-  return null;
+
+  // Fallback: se il device non ha binding ma l'host con stesso IP ha credenziali validate,
+  // riusale invece di far fallire il test. Match per protocollo del device.
+  const protoType = device.protocol === "winrm" ? "winrm"
+    : device.protocol === "api" ? "api"
+    : device.protocol?.startsWith("snmp") ? "snmp"
+    : "ssh";
+  const host = getHostByIp(device.host);
+  if (!host?.id) return null;
+  const candidate = getHostCredentials(host.id)
+    .filter(hc => hc.validated && hc.protocol_type === protoType)
+    .sort((a, b) => a.sort_order - b.sort_order)[0];
+  if (!candidate) return null;
+  const cred = getCredentialById(candidate.credential_id);
+  if (!cred?.encrypted_username || !cred?.encrypted_password) return null;
+  const u = safeDecrypt(cred.encrypted_username);
+  const p = safeDecrypt(cred.encrypted_password);
+  if (!u || !p) return null;
+  return { username: u, password: p };
 }
 
 export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?: number): Promise<DeviceTestResult> {

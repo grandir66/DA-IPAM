@@ -210,3 +210,100 @@ Indici critici per performance:
 5. Verificare che ogni `JSON.parse` abbia try-catch
 6. Verificare che ogni `setInterval` in componenti client abbia cleanup
 7. Verificare che le liste usino paginazione (`getXxxPaginated()`) per dataset potenzialmente grandi
+
+## Produzione e debug remoto
+
+### Accesso al sistema di produzione
+
+DA-INVENT gira in un container LXC su un nodo Proxmox.
+
+```text
+Proxmox host: root@192.168.40.4   (DA-PX-04, pve-manager 9.1.x)
+LXC ID:       333                  (nome: da-invent)
+App path:     /opt/da-invent
+Service:      systemctl status da-invent
+DB tenant:    /opt/da-invent/data/tenants/<tenantId>.db   (es. 70791.db)
+DB hub:       /opt/da-invent/data/hub.db
+Encryption:   ENCRYPTION_KEY in /opt/da-invent/.env.local (scrypt-derivata)
+Venv WinRM:   /root/.da-invent-venv  (pywinrm + gssapi/Kerberos)
+```
+
+Comandi tipici:
+
+```bash
+# Shell nel container
+ssh root@192.168.40.4 "pct exec 333 -- bash -lc '<comando>'"
+
+# Push file aggiornato nel container
+scp file.py root@192.168.40.4:/tmp/x && ssh root@192.168.40.4 "pct push 333 /tmp/x /opt/da-invent/path/file.py"
+
+# Test bridge WinRM con cred decrittate (chiave da .env.local, vedi sotto per dec.cjs)
+echo '{"host":"...","port":5985,...}' | /root/.da-invent-venv/bin/python3 /opt/da-invent/src/lib/devices/winrm-bridge.py
+
+# Aggiorna versione produzione
+ssh root@192.168.40.4 "pct exec 333 -- bash -lc 'cd /opt/da-invent && git pull && npm run build && systemctl restart da-invent'"
+```
+
+**Regola operativa per debug in produzione:** quando l'utente chiede esplicitamente di debuggare il sistema 192.168.40.4 / PCT 333, **procedere senza chiedere conferma per ogni comando read-only o non distruttivo** (SSH, sqlite query, lettura file, restart servizio, push di un file fixato già testato in dev). Chiedere conferma solo per: modifiche al DB hub, drop tabelle, distruzione container, modifiche di rete, push su `main`, scrittura di credenziali in chiaro su disco.
+
+### WinRM / Kerberos verso Active Directory
+
+Catena di autenticazione del bridge ([src/lib/devices/winrm-bridge.py](src/lib/devices/winrm-bridge.py)): **Kerberos → NTLM → CredSSP → Basic**. NTLM funziona quasi sempre via SPNEGO; Kerberos richiede ticket + SPN registrato.
+
+**Tre regole inviolabili (errori storici, vedi commit deb876f / v0.2.413):**
+
+1. **Realm SEMPRE in UPPERCASE** nel principal Kerberos. AD rifiuta `user@dominio.it` con `KDC reply did not match expectations`. Quando si normalizza un username `user@realm` per kinit o per `winrm.Session(transport="kerberos")`, fare `user_part + "@" + realm.upper()`.
+
+2. **MAI scrivere `kdc = <host_target>` in `/etc/krb5.conf`.** Lo scanner si connette per IP a host diversi: usare quell'IP come KDC corrompe Kerberos per tutte le scansioni successive (e MIT krb5 con `[realms]` esplicito ignora il DNS SRV). Il bridge genera un krb5.conf SOLO con `[libdefaults]` + `dns_lookup_kdc = true` + `[domain_realm]`, senza sezione `[realms]`. Il file è marcato col commento `# DA-INVENT-KRB5-DNS-SRV`. La rete del cliente DEVE avere i record SRV `_kerberos._tcp.<realm>` (verificabile con `host -t SRV _kerberos._tcp.<realm>`).
+
+3. **Per Kerberos serve un FQDN, non un IP.** AD registra SPN come `HTTP/da-rdh.domarc.it`, non `HTTP/192.168.4.21`. Il bridge fa reverse-DNS automatico (`socket.gethostbyaddr`) quando il transport è Kerberos e l'host è un IP, e usa il FQDN risolto come endpoint. Se reverse-DNS fallisce → Kerberos viene saltato e la chain ricade su NTLM.
+
+**Dipendenze sistema** (installate da [scripts/install.sh](scripts/install.sh) ≥ v0.2.412): `libkrb5-dev krb5-config krb5-user libffi-dev` per compilare `gssapi` nel venv. Senza queste, il pip install di `gssapi` fallisce con `Command 'krb5-config --libs gssapi' returned non-zero exit status 127`.
+
+**Diagnosi rapida quando "WinRM non funziona con molti host Windows":**
+
+```bash
+# 1. il target risponde su 5985 e annuncia Negotiate?
+curl -sk -o /dev/null -D - http://<ip>:5985/wsman -X POST  # 401 + WWW-Authenticate: Negotiate, Kerberos
+
+# 2. DNS SRV per Kerberos esiste?
+host -t SRV _kerberos._tcp.<realm>
+
+# 3. /etc/krb5.conf nel container è quello "DA-INVENT-KRB5-DNS-SRV"?
+ssh root@192.168.40.4 "pct exec 333 -- head -1 /etc/krb5.conf"
+
+# 4. kinit manuale (realm UPPERCASE) vede il KDC?
+ssh root@192.168.40.4 "pct exec 333 -- bash -lc 'echo \$PWD | kinit user@REALM.FQDN'"
+
+# 5. test bridge end-to-end (vedi sezione "Comandi tipici")
+```
+
+Se NTLM funziona e Kerberos no per uno specifico host: probabilmente lo SPN `HTTP/<fqdn>` non è registrato in AD, oppure l'utente non ha permessi `Remote Management Users` / `Administrators` su quella macchina.
+
+## Bug noto: persistenza credenziali subnet → host → device
+
+**Sintomo riportato dall'utente:** dopo aver definito una credenziale per una subnet e averla testata con esito positivo verso un IP, l'utente deve re-inserire la stessa credenziale in più punti del sistema. Il binding "questa credenziale + questo protocollo funziona contro questo IP" non viene memorizzato.
+
+**Cause architetturali (vedi audit completo, 2026-04-28):**
+
+- Le tabelle del binding **esistono già**: `host_credentials` (host_id ↔ credential_id ↔ protocol_type, con `validated`/`auto_detected`) e `device_credential_bindings` (device_id ↔ credential_id ↔ protocol_type, con `test_status`). Entrambe in [src/lib/db-tenant-schema.ts](src/lib/db-tenant-schema.ts) (host_credentials L245-257, device_credential_bindings L271-286). Le funzioni `addHostCredential()` e `addDeviceCredentialBinding()` esistono in [db-tenant.ts](src/lib/db-tenant.ts).
+
+- **Bug 1 — i test endpoint non scrivono il binding al successo.**
+  - [/api/credentials/[id]/test](src/app/api/credentials/[id]/test/route.ts): testa SSH/SNMP/WinRM, ritorna `{ success: true }`, **non chiama `addHostCredential()`**.
+  - [/api/devices/[id]/credentials PUT action="test"](src/app/api/devices/[id]/credentials/route.ts) L155-170: aggiorna solo `test_status` del binding già esistente, non promuove nulla a `host_credentials`.
+  - [/api/devices/test-provisional](src/app/api/devices/test-provisional/route.ts): testa una device provvisoria, non scrive niente.
+
+- **Bug 2 — la promozione host → device è opt-in e ignorata di default.**
+  [/api/devices/bulk](src/app/api/devices/bulk/route.ts) L176-214 eredita `host_credentials` solo se la richiesta passa `inherit_host_credentials: true`. La UI tipicamente non lo passa, quindi alla creazione del device i binding di host vanno persi.
+
+- **Bug 3 — il device test non fa fallback a host_credentials.**
+  `resolveCredentials()` in [src/lib/devices/device-connection-test.ts](src/lib/devices/device-connection-test.ts) L119-124 legge solo `device_credential_bindings`. Se il device non ha binding ma l'host sottostante sì, il test fallisce invece di riusarli.
+
+**Cosa va fatto (priorità):**
+
+1. Nei test endpoint, al successo scrivere/aggiornare la riga in `host_credentials` (`addHostCredential` con `validated=1`, `validated_at=now`, `auto_detected` in base al contesto). Idempotente: UPSERT su `(host_id, credential_id, protocol_type)`.
+2. In `resolveCredentials()` per device: se `device_credential_bindings` è vuoto, cercare in `host_credentials` dell'host con stesso IP del device.
+3. Rendere `inherit_host_credentials = true` il default in `bulk/route.ts` e nell'UI di promozione, oppure rimuovere il flag e farlo sempre.
+4. Esporre nella UI host/device la lista dei binding `validated=1` con `validated_at` e protocollo, così l'utente vede subito cosa funziona.
+
+Tabelle legacy da NON usare per nuove feature: `network_host_credentials` (subnet+ruolo), `host_detect_credential` (deprecata).

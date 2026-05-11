@@ -79,10 +79,26 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
     python3.12 python3.12-venv python3-pip \
-    nmap snmp iputils-ping openssh-client \
+    nmap snmp iputils-ping openssh-client libcap2-bin \
     libkrb5-dev krb5-config krb5-user libffi-dev \
     git rsync >/dev/null
 ok "APT deps OK"
+
+# File capabilities su nmap (best-effort: nmap 7.94 su Ubuntu 24.04 ignora
+# i caps per -sU/-sS e hard-checka euid==0, vedi sudoers sotto).
+if command -v setcap >/dev/null 2>&1 && [ -x /usr/bin/nmap ]; then
+    setcap cap_net_raw,cap_net_admin,cap_net_bind_service=eip /usr/bin/nmap || true
+fi
+
+# Sudoers fragment: permette all'agent di invocare ``sudo -n /usr/bin/nmap``
+# senza password. Necessario per UDP scan (-sU) e SYN scan (-sS).
+SUDOERS_FRAG=/etc/sudoers.d/da-invent-agent
+cat > "$SUDOERS_FRAG" <<EOF
+${AGENT_USER:-da-invent-agent} ALL=(root) NOPASSWD: /usr/bin/nmap
+EOF
+chmod 440 "$SUDOERS_FRAG"
+visudo -cf "$SUDOERS_FRAG" >/dev/null
+ok "sudoers fragment $SUDOERS_FRAG"
 
 # ─── Utente di servizio ──────────────────────────────────────────────────────
 

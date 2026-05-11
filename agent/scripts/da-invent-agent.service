@@ -18,13 +18,21 @@ ProtectSystem=strict
 ReadWritePaths=/var/log/da-invent-agent
 ProtectHome=true
 PrivateTmp=true
-NoNewPrivileges=true
-AmbientCapabilities=CAP_NET_RAW CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_RAW CAP_NET_BIND_SERVICE
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+# NoNewPrivileges=true viene OMESSO di proposito: nmap -sU/-sS verifica
+# euid==0 e — anche con AmbientCapabilities — rifiuta se le file capabilities
+# di /usr/bin/nmap non sono effettive. NoNewPrivileges spegne le file caps.
+# Mitigation: l'agente gira come utente non-root `da-invent-agent`, le caps
+# concesse sono solo CAP_NET_RAW/CAP_NET_ADMIN/CAP_NET_BIND_SERVICE.
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+# CapabilityBoundingSet=... viene OMESSO di proposito: limiterebbe le caps
+# di processi figli (es. sudo) impedendo a sudo di ottenere CAP_SETUID per
+# elevare a root. Per UDP scan abbiamo bisogno di "sudo -n /usr/bin/nmap"
+# (configurato via /etc/sudoers.d/da-invent-agent).
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK AF_PACKET
 RestrictNamespaces=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+# MemoryDenyWriteExecute=true viene OMESSO: alcuni runtime Python/JIT lo
+# violano e crashano. Riconsiderare in fase di hardening Phase 7.
 
 [Install]
 WantedBy=multi-user.target

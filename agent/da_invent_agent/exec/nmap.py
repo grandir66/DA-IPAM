@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shlex
+import shutil
 from typing import Iterable
 from xml.etree import ElementTree as ET
 
@@ -20,11 +22,25 @@ from ..models import NmapPort, NmapResult
 log = logging.getLogger(__name__)
 
 
-async def _run_nmap_xml(args: Iterable[str], timeout_ms: int) -> str | None:
+def _nmap_cmd(args: list[str], need_root: bool) -> list[str]:
+    """Costruisce il comando nmap, anteponendo ``sudo -n`` se serve root.
+
+    Su Ubuntu 24.04 nmap 7.94SVN rifiuta ``-sU``/``-sS`` come non-root anche
+    con file capabilities (``cap_net_raw=eip``) e ambient capabilities: hard-
+    checka ``euid==0``. Per i path che richiedono root (UDP scan) usiamo
+    sudo con NOPASSWD limitato a ``/usr/bin/nmap`` (configurato dall'installer
+    via ``/etc/sudoers.d/da-invent-agent``).
+    """
+    if need_root and os.geteuid() != 0 and shutil.which("sudo"):
+        return ["sudo", "-n", "/usr/bin/nmap", *args]
+    return ["nmap", *args]
+
+
+async def _run_nmap_xml(args: list[str], timeout_ms: int, need_root: bool = False) -> str | None:
     timeout_s = max(1.0, timeout_ms / 1000)
+    cmd = _nmap_cmd(args, need_root)
     proc = await asyncio.create_subprocess_exec(
-        "nmap",
-        *args,
+        *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -165,7 +181,7 @@ async def port_scan(
     if skip_udp:
         return tcp_result
 
-    udp_xml = await _run_nmap_xml([*_udp_args(udp_ports), "-oX", "-", ip], timeout_ms)
+    udp_xml = await _run_nmap_xml([*_udp_args(udp_ports), "-oX", "-", ip], timeout_ms, need_root=True)
     udp_result = _parse_xml(udp_xml)[0] if udp_xml else None
 
     if tcp_result is None and udp_result is None:

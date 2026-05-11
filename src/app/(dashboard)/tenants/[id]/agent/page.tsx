@@ -59,22 +59,35 @@ export default function TenantAgentPage() {
   const [importToken, setImportToken] = useState("");
   const [importing, setImporting] = useState(false);
   const [tenantInfo, setTenantInfo] = useState<TenantInfo | null>(null);
+  const [tailscaleAuthKey, setTailscaleAuthKey] = useState("");
 
   const loadConfig = useCallback(async () => {
     if (!tenantId) return;
     try {
-      const res = await fetch(`/api/tenants/${tenantId}/agent`);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Errore" }));
+      // Parallel: agent config + tenant info (per codice_cliente nel comando install)
+      const [agentRes, tenantRes] = await Promise.all([
+        fetch(`/api/tenants/${tenantId}/agent`),
+        fetch(`/api/tenants/${tenantId}`),
+      ]);
+      if (!agentRes.ok) {
+        const err = await agentRes.json().catch(() => ({ error: "Errore" }));
         toast.error(err.error || "Impossibile caricare la configurazione agente");
         setLoading(false);
         return;
       }
-      const data = (await res.json()) as AgentConfigResponse;
+      const data = (await agentRes.json()) as AgentConfigResponse;
       setConfig(data);
       setMode(data.agent_mode);
       setHostname(data.agent_hostname ?? "");
       setPort(data.agent_port ?? 8443);
+
+      if (tenantRes.ok) {
+        const tInfo = (await tenantRes.json()) as TenantInfo;
+        setTenantInfo({
+          codice_cliente: tInfo.codice_cliente,
+          ragione_sociale: tInfo.ragione_sociale,
+        });
+      }
     } catch (e) {
       console.error(e);
       toast.error("Errore di rete nel caricamento configurazione");
@@ -467,7 +480,7 @@ export default function TenantAgentPage() {
       </Card>
 
       {/* Box "Comando di install" — visibile solo subito dopo generazione */}
-      {newToken && mode === "remote" && (
+      {newToken && mode === "remote" && tenantInfo && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -475,23 +488,48 @@ export default function TenantAgentPage() {
               Comando di install / aggiornamento agente
             </CardTitle>
             <CardDescription>
-              Esegui questo one-liner come <code>root</code> sull&apos;host dove vive (o vivrà) l&apos;agent
-              Python. Idempotente: rieseguibile per upgrade o rotazione token.
-              Tailscale deve essere già installato e attivo (<code>tailscale up</code>).
+              Esegui questo one-liner come <code>root</code> (o con <code>sudo</code>) sull&apos;host
+              Ubuntu/Debian dove vive (o vivrà) l&apos;agent. Lo script installa <strong>tutto</strong>:
+              dipendenze APT, Python venv, Tailscale (se mancante), agent Python,
+              systemd unit, sudoers. Idempotente — rieseguibile per upgrade/rotazione token.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <pre className="bg-muted p-3 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all">
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="tskey" className="text-sm">
+                Auth-key Tailscale (opzionale — per install fully-automated)
+              </Label>
+              <Input
+                id="tskey"
+                type="password"
+                placeholder="tskey-auth-... (lascia vuoto per login interattivo)"
+                value={tailscaleAuthKey}
+                onChange={(e) => setTailscaleAuthKey(e.target.value)}
+                className="font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                Genera una reusable auth-key dalla console Tailscale. Senza, lo script
+                stamperà un URL durante l&apos;install e ti chiederà di autenticare il nodo
+                manualmente dal browser.
+              </p>
+            </div>
+
+            <div>
+              <Label className="text-sm">One-liner da copiare</Label>
+              <pre className="bg-muted p-3 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all mt-2">
 {`curl -fsSL ${typeof window !== "undefined" ? window.location.origin : "<HUB_URL>"}/agent-install.sh \\
-  | TENANT_CODE='${config?.has_token ? "REPLACE_WITH_CODICE_CLIENTE" : "REPLACE_WITH_CODICE_CLIENTE"}' \\
+  | TENANT_CODE='${tenantInfo.codice_cliente}' \\
     HUB_URL='${typeof window !== "undefined" ? window.location.origin : "<HUB_URL>"}' \\
     AGENT_TOKEN='${newToken}' \\
-    AGENT_PORT='${port}' \\
+    AGENT_PORT='${port}' \\${tailscaleAuthKey ? `\n    TAILSCALE_AUTH_KEY='${tailscaleAuthKey}' \\` : ""}
     bash`}
-            </pre>
-            <p className="text-xs text-muted-foreground mt-2">
-              Sostituisci <code>REPLACE_WITH_CODICE_CLIENTE</code> con il codice cliente del tenant (lo trovi nella lista clienti).
-            </p>
+              </pre>
+              <p className="text-xs text-muted-foreground mt-2">
+                Codice cliente: <code>{tenantInfo.codice_cliente}</code> (
+                <em>{tenantInfo.ragione_sociale}</em>) — inserito automaticamente sopra.
+                Il token è visibile in chiaro solo finché resti su questa pagina.
+              </p>
+            </div>
           </CardContent>
         </Card>
       )}

@@ -119,17 +119,67 @@ def _tcp_args_from_custom(custom: str | None) -> list[str]:
     return parts
 
 
+_DEFAULT_UDP_PORTS = "53,67,68,69,123,137,138,161,162,500,514,520,1900,4500,5060,5353"
+
+
+def _udp_args(udp_ports: str | None) -> list[str]:
+    """Args per nmap UDP. ``-sU`` richiede CAP_NET_RAW (la systemd unit lo concede)."""
+    ports = (udp_ports or _DEFAULT_UDP_PORTS).strip() or _DEFAULT_UDP_PORTS
+    return ["-sU", "-T4", "--max-retries", "1", "-p", ports]
+
+
+def _merge_ports(a: list[NmapPort], b: list[NmapPort]) -> list[NmapPort]:
+    """Unione TCP+UDP senza duplicati su (port, protocol)."""
+    seen: set[tuple[int, str]] = set()
+    out: list[NmapPort] = []
+    for p in (*a, *b):
+        key = (p.port, p.protocol)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return sorted(out, key=lambda p: (p.protocol, p.port))
+
+
 async def port_scan(
     ip: str,
     custom_args: str | None = None,
     timeout_ms: int = 280_000,
-    skip_udp: bool = False,  # noqa: ARG001 (riservato per Phase 3)
-    udp_ports: str | None = None,  # noqa: ARG001 (riservato per Phase 3)
+    skip_udp: bool = False,
+    udp_ports: str | None = None,
 ) -> NmapResult | None:
+    """Scansione TCP (sempre) + UDP (se ``skip_udp=False``).
+
+    TCP e UDP sono **due processi nmap separati**: alcuni profili/ambienti
+    falliscono se vengono fusi in un comando solo. Il timeout passato si
+    applica a ciascuna fase singolarmente.
+
+    Se UDP fallisce per mancanza di privilegi viene degradato a warning: il
+    chiamante riceve comunque i risultati TCP.
+    """
+
     tcp_args = _tcp_args_from_custom(custom_args)
-    args = [*tcp_args, "-oX", "-", ip]
-    xml = await _run_nmap_xml(args, timeout_ms)
-    if xml is None:
+    tcp_xml = await _run_nmap_xml([*tcp_args, "-oX", "-", ip], timeout_ms)
+    tcp_result = _parse_xml(tcp_xml)[0] if tcp_xml else None
+
+    if skip_udp:
+        return tcp_result
+
+    udp_xml = await _run_nmap_xml([*_udp_args(udp_ports), "-oX", "-", ip], timeout_ms)
+    udp_result = _parse_xml(udp_xml)[0] if udp_xml else None
+
+    if tcp_result is None and udp_result is None:
         return None
-    results = _parse_xml(xml)
-    return results[0] if results else None
+
+    merged_ports = _merge_ports(
+        tcp_result.ports if tcp_result else [],
+        udp_result.ports if udp_result else [],
+    )
+
+    return NmapResult(
+        ip=ip,
+        alive=True,
+        ports=merged_ports,
+        os=(tcp_result.os if tcp_result else None) or (udp_result.os if udp_result else None),
+        mac=(tcp_result.mac if tcp_result else None) or (udp_result.mac if udp_result else None),
+    )

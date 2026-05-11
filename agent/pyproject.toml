@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "da-invent-agent"
-version = "0.2.1"
+version = "0.2.2"
 description = "DA-INVENT remote agent: esegue ping/nmap/DNS/SNMP/SSH/WinRM sulla rete del cliente, invocato via Tailscale dall'hub DA-IPAM."
 readme = "README.md"
 requires-python = ">=3.11"

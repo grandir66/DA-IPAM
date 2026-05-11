@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, KeyRound, Save, ServerCog, Copy, ShieldAlert } from "lucide-react";
+import { ArrowLeft, KeyRound, Save, ServerCog, Copy, ShieldAlert, PlugZap, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 
 interface AgentConfigResponse {
@@ -19,6 +19,17 @@ interface AgentConfigResponse {
   agent_last_seen_at: string | null;
   has_token: boolean;
 }
+
+type TestResult =
+  | { ok: true; latency_ms: number; label: string; scopes: string[]; tenant_code: string }
+  | {
+      ok: false;
+      latency_ms: number;
+      error_code: string;
+      error_message: string;
+      status?: number;
+      retriable?: boolean;
+    };
 
 export default function TenantAgentPage() {
   const params = useParams<{ id: string }>();
@@ -37,6 +48,8 @@ export default function TenantAgentPage() {
   const [port, setPort] = useState<number>(8443);
   const [config, setConfig] = useState<AgentConfigResponse | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   const loadConfig = useCallback(async () => {
     if (!tenantId) return;
@@ -116,6 +129,32 @@ export default function TenantAgentPage() {
       toast.error("Errore di rete nella generazione del token");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (!tenantId) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`/api/tenants/${tenantId}/agent/test`, { method: "POST" });
+      const data = (await res.json()) as TestResult | { error?: string };
+      if ("error" in data && data.error) {
+        toast.error(data.error);
+        return;
+      }
+      const result = data as TestResult;
+      setTestResult(result);
+      if (result.ok) {
+        toast.success(`Agente raggiungibile (${result.latency_ms} ms)`);
+      } else {
+        toast.error(`Test fallito: ${result.error_message}`);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Errore di rete durante il test");
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -223,12 +262,64 @@ export default function TenantAgentPage() {
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex justify-between items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleTestConnection}
+              disabled={testing || mode !== "remote" || !config?.has_token || !hostname.trim()}
+              title={
+                mode !== "remote"
+                  ? "Solo modalità remote"
+                  : !config?.has_token
+                    ? "Manca il token bearer"
+                    : !hostname.trim()
+                      ? "Manca l'hostname"
+                      : "Esegue GET /whoami sull'agente via Tailscale"
+              }
+            >
+              <PlugZap className="h-4 w-4 mr-1.5" />
+              {testing ? "Testando…" : "Testa connessione"}
+            </Button>
             <Button onClick={handleSave} disabled={!canEdit || saving}>
               <Save className="h-4 w-4 mr-1.5" />
               {saving ? "Salvataggio…" : "Salva configurazione"}
             </Button>
           </div>
+
+          {testResult && (
+            <div
+              className={`rounded border p-3 text-sm space-y-1 ${
+                testResult.ok
+                  ? "border-green-500/40 bg-green-50 dark:bg-green-950/30"
+                  : "border-destructive/40 bg-destructive/5"
+              }`}
+            >
+              <div className="flex items-center gap-2 font-medium">
+                {testResult.ok ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 text-green-700 dark:text-green-300" />
+                    <span>Agente raggiungibile</span>
+                    <Badge variant="outline" className="ml-2">{testResult.latency_ms} ms</Badge>
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="h-4 w-4 text-destructive" />
+                    <span>Test fallito</span>
+                    <Badge variant="outline" className="ml-2">{testResult.error_code}</Badge>
+                  </>
+                )}
+              </div>
+              {testResult.ok ? (
+                <>
+                  <p>Token label: <code>{testResult.label}</code></p>
+                  <p>Scopes: <code>{testResult.scopes.join(", ") || "—"}</code></p>
+                  <p>Tenant code dell&apos;agente: <code>{testResult.tenant_code || "—"}</code></p>
+                </>
+              ) : (
+                <p className="text-muted-foreground">{testResult.error_message}</p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

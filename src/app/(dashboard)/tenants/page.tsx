@@ -43,6 +43,11 @@ interface Tenant {
   referente: string | null;
   note: string | null;
   active: number;
+  agent_mode?: "local" | "remote";
+  agent_hostname?: string | null;
+  agent_port?: number;
+  agent_version?: string | null;
+  agent_last_seen_at?: string | null;
   created_at: string;
   updated_at: string;
 }

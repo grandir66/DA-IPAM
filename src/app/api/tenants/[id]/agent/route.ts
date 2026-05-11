@@ -3,9 +3,27 @@ import { getTenantById, updateTenantAgentConfig } from "@/lib/db-hub";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { z } from "zod";
 
+/**
+ * Hostname Tailscale: short name MagicDNS (es. "agent-cliente001") oppure
+ * FQDN (es. "agent-cliente001.tailnet.ts.net") oppure IP CGNAT (100.x).
+ * Vietati: schemi URL (http://), path (/), query string.
+ */
+const HOSTNAME_RE = /^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*$/;
+
 const AgentConfigSchema = z.object({
   agent_mode: z.enum(["local", "remote"]).optional(),
-  agent_hostname: z.string().trim().nullable().optional(),
+  agent_hostname: z
+    .string()
+    .trim()
+    .nullable()
+    .optional()
+    .refine(
+      (v) => v === null || v === undefined || v === "" || HOSTNAME_RE.test(v),
+      {
+        message:
+          "Hostname non valido. Usa il short name Tailscale (es. 'agent-cliente001') o l'IP CGNAT (100.x.x.x). Niente 'http://' o path.",
+      },
+    ),
   agent_port: z.number().int().min(1).max(65535).optional(),
 });
 

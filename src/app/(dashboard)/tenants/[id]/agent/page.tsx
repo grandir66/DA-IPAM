@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, KeyRound, Save, ServerCog, Copy, ShieldAlert, PlugZap, CheckCircle2, XCircle } from "lucide-react";
+import { ArrowLeft, KeyRound, Save, ServerCog, Copy, ShieldAlert, PlugZap, CheckCircle2, XCircle, Terminal, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 interface AgentConfigResponse {
@@ -18,6 +18,11 @@ interface AgentConfigResponse {
   agent_version: string | null;
   agent_last_seen_at: string | null;
   has_token: boolean;
+}
+
+interface TenantInfo {
+  codice_cliente: string;
+  ragione_sociale: string;
 }
 
 type TestResult =
@@ -50,6 +55,10 @@ export default function TenantAgentPage() {
   const [newToken, setNewToken] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [tokenMode, setTokenMode] = useState<"generate" | "import">("generate");
+  const [importToken, setImportToken] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [tenantInfo, setTenantInfo] = useState<TenantInfo | null>(null);
 
   const loadConfig = useCallback(async () => {
     if (!tenantId) return;
@@ -129,6 +138,40 @@ export default function TenantAgentPage() {
       toast.error("Errore di rete nella generazione del token");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleImportToken = async () => {
+    if (!tenantId) return;
+    const trimmed = importToken.trim();
+    if (trimmed.length < 16) {
+      toast.error("Token troppo corto (almeno 16 caratteri).");
+      return;
+    }
+    if (!confirm("Importare questo token? Sovrascriverà l'hash esistente. L'agente deve già avere il suo hash bcrypt corrispondente.")) {
+      return;
+    }
+    setImporting(true);
+    try {
+      const res = await fetch(`/api/tenants/${tenantId}/agent/token/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: trimmed }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Errore" }));
+        toast.error(err.error || "Errore nell'import");
+        return;
+      }
+      setImportToken("");
+      setNewToken(null);
+      await loadConfig();
+      toast.success("Token importato. Verifica con Testa connessione.");
+    } catch (e) {
+      console.error(e);
+      toast.error("Errore di rete nell'import");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -228,8 +271,9 @@ export default function TenantAgentPage() {
             </div>
             {mode === "remote" && (
               <p className="text-xs text-muted-foreground">
-                In Phase 1 la modalità remote richiede ancora il <code>RemoteExecutor</code> (Phase 3).
-                Le scansioni resteranno disattivate fino a quando non sarà disponibile.
+                Le scansioni di rete (ping, nmap discover, nmap port-scan TCP+UDP) verranno
+                instradate via Tailscale all&apos;agente Python del cliente. Salva la
+                configurazione, poi premi <em>Testa connessione</em> per verificare.
               </p>
             )}
           </div>
@@ -335,17 +379,70 @@ export default function TenantAgentPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <Badge variant={config?.has_token ? "default" : "secondary"}>
               {config?.has_token ? "Token configurato" : "Nessun token"}
             </Badge>
             {canEdit && (
+              <div className="flex gap-2 items-center">
+                <Button
+                  variant={tokenMode === "generate" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setTokenMode("generate")}
+                >
+                  Genera nuovo
+                </Button>
+                <Button
+                  variant={tokenMode === "import" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setTokenMode("import")}
+                >
+                  Importa esistente
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {canEdit && tokenMode === "generate" && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Genera un nuovo token plaintext. L&apos;hub ne salva hash bcrypt + ciphertext;
+                il plaintext lo vedi una volta sola sotto.
+              </p>
               <Button variant="outline" onClick={handleGenerateToken} disabled={generating}>
                 <KeyRound className="h-4 w-4 mr-1.5" />
                 {generating ? "Generazione…" : "Genera nuovo token"}
               </Button>
-            )}
-          </div>
+            </div>
+          )}
+
+          {canEdit && tokenMode === "import" && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Incolla un token plaintext esistente (es. quello già configurato lato agent
+                in <code>/etc/da-invent-agent/config.yml</code>). L&apos;hub lo cifra e ne calcola
+                l&apos;hash, ma <strong>non aggiorna l&apos;agent</strong>: assicurati che l&apos;agent abbia
+                già lo stesso hash.
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="password"
+                  placeholder="Incolla qui il token plaintext (min 16 caratteri)"
+                  value={importToken}
+                  onChange={(e) => setImportToken(e.target.value)}
+                  className="font-mono text-xs"
+                />
+                <Button
+                  variant="outline"
+                  onClick={handleImportToken}
+                  disabled={importing || importToken.trim().length < 16}
+                >
+                  <Upload className="h-4 w-4 mr-1.5" />
+                  {importing ? "Import…" : "Importa"}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {newToken && (
             <div className="rounded border border-yellow-500/40 bg-yellow-50 dark:bg-yellow-950/30 p-3 space-y-2">
@@ -368,6 +465,36 @@ export default function TenantAgentPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Box "Comando di install" — visibile solo subito dopo generazione */}
+      {newToken && mode === "remote" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Terminal className="h-5 w-5" />
+              Comando di install / aggiornamento agente
+            </CardTitle>
+            <CardDescription>
+              Esegui questo one-liner come <code>root</code> sull&apos;host dove vive (o vivrà) l&apos;agent
+              Python. Idempotente: rieseguibile per upgrade o rotazione token.
+              Tailscale deve essere già installato e attivo (<code>tailscale up</code>).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <pre className="bg-muted p-3 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all">
+{`curl -fsSL ${typeof window !== "undefined" ? window.location.origin : "<HUB_URL>"}/agent-install.sh \\
+  | TENANT_CODE='${config?.has_token ? "REPLACE_WITH_CODICE_CLIENTE" : "REPLACE_WITH_CODICE_CLIENTE"}' \\
+    HUB_URL='${typeof window !== "undefined" ? window.location.origin : "<HUB_URL>"}' \\
+    AGENT_TOKEN='${newToken}' \\
+    AGENT_PORT='${port}' \\
+    bash`}
+            </pre>
+            <p className="text-xs text-muted-foreground mt-2">
+              Sostituisci <code>REPLACE_WITH_CODICE_CLIENTE</code> con il codice cliente del tenant (lo trovi nella lista clienti).
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

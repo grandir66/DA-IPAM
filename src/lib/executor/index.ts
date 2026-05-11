@@ -9,7 +9,9 @@
  */
 
 import { getTenantByCode } from "@/lib/db-hub";
+import { safeDecrypt } from "@/lib/crypto";
 import { LocalExecutor } from "./local";
+import { RemoteExecutor } from "./remote";
 import type {
   DnsBatchCallbacks,
   DnsResolution,
@@ -65,13 +67,31 @@ export function getExecutor(tenantCode: string): Executor {
   const mode: ExecutorMode = tenant.agent_mode === "remote" ? "remote" : "local";
 
   if (mode === "remote") {
-    // Phase 3: qui verrà istanziato `RemoteExecutor` con (hostname, port, token).
-    // Per ora segnaliamo lo stato non implementato in modo che i call site
-    // possano essere refactorati gradualmente senza rompere i tenant `local`.
-    throw new ExecutorNotConfiguredError(
+    if (!tenant.agent_hostname) {
+      throw new ExecutorNotConfiguredError(
+        tenantCode,
+        `Tenant '${tenantCode}' è 'remote' ma manca agent_hostname. Configura da /tenants/${tenant.id}/agent.`,
+      );
+    }
+    if (!tenant.agent_token_encrypted) {
+      throw new ExecutorNotConfiguredError(
+        tenantCode,
+        `Tenant '${tenantCode}' è 'remote' ma manca il token. Generane uno da /tenants/${tenant.id}/agent.`,
+      );
+    }
+    const token = safeDecrypt(tenant.agent_token_encrypted);
+    if (!token) {
+      throw new ExecutorNotConfiguredError(
+        tenantCode,
+        `Decifratura token fallita per il tenant '${tenantCode}'. Rigenera il token.`,
+      );
+    }
+    return new RemoteExecutor({
+      hostname: tenant.agent_hostname,
+      port: tenant.agent_port,
+      token,
       tenantCode,
-      `Tenant '${tenantCode}' configurato come 'remote' ma RemoteExecutor non è ancora attivo (Phase 3).`,
-    );
+    });
   }
 
   return new LocalExecutor();

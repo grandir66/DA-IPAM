@@ -1,7 +1,7 @@
 import { getAllHostIps } from "@/lib/utils";
 import { getCurrentTenantCode, withTenant } from "@/lib/db-tenant";
 import { pingSweep as _localPingSweep } from "./ping";
-import { nmapDiscoverHosts as _localNmapDiscoverHosts, nmapPortScan as _localNmapPortScan, isNmapAvailable } from "./nmap";
+import { nmapDiscoverHosts as _localNmapDiscoverHosts, nmapPortScan as _localNmapPortScan, isNmapAvailable as _localIsNmapAvailable } from "./nmap";
 import type { Executor } from "@/lib/executor";
 import { getExecutor } from "@/lib/executor";
 import {
@@ -309,6 +309,12 @@ async function runDiscovery(
           opts?.onLog ? { onLog: opts.onLog } : undefined,
         )
     : _localNmapPortScan;
+  // Per executor remoto saltiamo il check locale di nmap (sul hub nmap può
+  // mancare): ci fidiamo dell'agente. Per executor locale usiamo il check
+  // originale (subprocess `nmap --version`).
+  const isNmapAvailable: () => Promise<boolean> = _exec && _exec.mode === "remote"
+    ? async () => true
+    : _localIsNmapAvailable;
 
   const startTime = Date.now();
   const progressRef = getProgressMap().get(scanId);

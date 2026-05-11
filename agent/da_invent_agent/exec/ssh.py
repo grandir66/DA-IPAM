@@ -55,9 +55,11 @@ async def ssh_exec(
         "port": port,
         "username": user,
         "known_hosts": None,             # Phase 3: TOFU. In Phase 4+ consideriamo pinning.
-        "client_keys_load_path": None,
+        # Disabilita pickup automatico delle chiavi da ~/.ssh dell'utente che
+        # esegue l'agente: l'autenticazione deve essere ESCLUSIVAMENTE quella
+        # passata in `auth`. Override poi se auth.type == "key".
+        "client_keys": [],
     }
-    client_keys: list[Any] | None = None
 
     if auth_type == "password":
         password = auth.get("password")
@@ -72,8 +74,7 @@ async def ssh_exec(
             key_obj = asyncssh.import_private_key(pem, passphrase=auth.get("passphrase"))
         except (asyncssh.KeyImportError, asyncssh.KeyEncryptionError) as exc:
             raise AgentException(ErrorCode.INVALID_INPUT, f"Chiave privata non valida: {exc}") from exc
-        client_keys = [key_obj]
-        kwargs["client_keys"] = client_keys
+        kwargs["client_keys"] = [key_obj]
     else:
         raise AgentException(ErrorCode.INVALID_INPUT, f"auth.type non supportato: {auth_type!r}")
 

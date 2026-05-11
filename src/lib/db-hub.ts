@@ -372,6 +372,32 @@ function initializeHubDb(db: Database.Database): void {
       db.exec("ALTER TABLE users ADD COLUMN email TEXT");
     }
   } catch { /* ignore */ }
+  // Migrazione: aggiunge colonne agent_* a tenants se mancanti (architettura hub + agent remoti)
+  try {
+    const tcols = db.prepare("PRAGMA table_info(tenants)").all() as { name: string }[];
+    const tnames = new Set(tcols.map((c) => c.name));
+    if (!tnames.has("agent_mode")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN agent_mode TEXT NOT NULL DEFAULT 'local'");
+    }
+    if (!tnames.has("agent_hostname")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN agent_hostname TEXT");
+    }
+    if (!tnames.has("agent_port")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN agent_port INTEGER NOT NULL DEFAULT 8443");
+    }
+    if (!tnames.has("agent_token_hash")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN agent_token_hash TEXT");
+    }
+    if (!tnames.has("agent_token_encrypted")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN agent_token_encrypted TEXT");
+    }
+    if (!tnames.has("agent_version")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN agent_version TEXT");
+    }
+    if (!tnames.has("agent_last_seen_at")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN agent_last_seen_at TEXT");
+    }
+  } catch { /* ignore */ }
   seedHubDefaults(db);
 }
 
@@ -426,6 +452,13 @@ export interface Tenant {
   referente: string | null;
   note: string | null;
   active: number;
+  agent_mode: "local" | "remote";
+  agent_hostname: string | null;
+  agent_port: number;
+  agent_token_hash: string | null;
+  agent_token_encrypted: string | null;
+  agent_version: string | null;
+  agent_last_seen_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -542,7 +575,12 @@ export function getTenantByCode(code: string): Tenant | undefined {
   return getHubDb().prepare("SELECT * FROM tenants WHERE codice_cliente = ?").get(code) as Tenant | undefined;
 }
 
-export function createTenant(input: Omit<Tenant, "id" | "created_at" | "updated_at">): Tenant {
+export type CreateTenantInput = Omit<
+  Tenant,
+  "id" | "created_at" | "updated_at" | "agent_mode" | "agent_hostname" | "agent_port" | "agent_token_hash" | "agent_token_encrypted" | "agent_version" | "agent_last_seen_at"
+> & Partial<Pick<Tenant, "agent_mode" | "agent_hostname" | "agent_port">>;
+
+export function createTenant(input: CreateTenantInput): Tenant {
   const cols: string[] = [];
   const placeholders: string[] = [];
   const vals: unknown[] = [];
@@ -573,7 +611,10 @@ export function createTenant(input: Omit<Tenant, "id" | "created_at" | "updated_
   return getHubDb().prepare("SELECT * FROM tenants WHERE id = ?").get(result.lastInsertRowid) as Tenant;
 }
 
-export function updateTenant(id: number, input: Partial<Omit<Tenant, "id" | "created_at" | "updated_at">>): Tenant | undefined {
+export function updateTenant(
+  id: number,
+  input: Partial<Omit<Tenant, "id" | "created_at" | "updated_at" | "agent_token_hash" | "agent_token_encrypted" | "agent_version" | "agent_last_seen_at">>,
+): Tenant | undefined {
   const existing = getHubDb().prepare("SELECT id FROM tenants WHERE id = ?").get(id) as { id: number } | undefined;
   if (!existing) return undefined;
 
@@ -602,6 +643,58 @@ export function updateTenant(id: number, input: Partial<Omit<Tenant, "id" | "cre
 
 export function deleteTenant(id: number): boolean {
   return getHubDb().prepare("DELETE FROM tenants WHERE id = ?").run(id).changes > 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tenant agent (architettura hub + agenti remoti via Tailscale)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface TenantAgentConfigInput {
+  agent_mode?: "local" | "remote";
+  agent_hostname?: string | null;
+  agent_port?: number;
+}
+
+/**
+ * Aggiorna la configurazione dell'agente per un tenant (mode, hostname, port).
+ * Non modifica token né dati di heartbeat — quelli hanno setter dedicati.
+ */
+export function updateTenantAgentConfig(id: number, input: TenantAgentConfigInput): Tenant | undefined {
+  const existing = getHubDb().prepare("SELECT id FROM tenants WHERE id = ?").get(id) as { id: number } | undefined;
+  if (!existing) return undefined;
+
+  const sets: string[] = ["updated_at = datetime('now')"];
+  const vals: unknown[] = [];
+  const field = (col: string, val: unknown) => { sets.push(`${col} = ?`); vals.push(val); };
+
+  if (input.agent_mode !== undefined) field("agent_mode", input.agent_mode);
+  if (input.agent_hostname !== undefined) field("agent_hostname", input.agent_hostname);
+  if (input.agent_port !== undefined) field("agent_port", input.agent_port);
+
+  if (sets.length === 1) return getTenantById(id);
+
+  vals.push(id);
+  getHubDb().prepare(`UPDATE tenants SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getTenantById(id);
+}
+
+/**
+ * Salva un nuovo token agente: hash bcrypt per verifica rapida + ciphertext per uso interno dell'hub.
+ * Il plaintext NON viene mai persistito.
+ */
+export function setTenantAgentToken(id: number, tokenHash: string, tokenEncrypted: string): boolean {
+  return getHubDb().prepare(
+    "UPDATE tenants SET agent_token_hash = ?, agent_token_encrypted = ?, updated_at = datetime('now') WHERE id = ?"
+  ).run(tokenHash, tokenEncrypted, id).changes > 0;
+}
+
+/**
+ * Aggiorna i dati di heartbeat di un tenant. Chiamato dall'endpoint di heartbeat (Phase 6).
+ */
+export function updateTenantAgentHeartbeat(id: number, version: string): boolean {
+  return getHubDb().prepare(
+    "UPDATE tenants SET agent_version = ?, agent_last_seen_at = datetime('now') WHERE id = ?"
+  ).run(version, id).changes > 0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

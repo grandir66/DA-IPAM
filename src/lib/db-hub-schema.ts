@@ -14,6 +14,13 @@ CREATE TABLE IF NOT EXISTS tenants (
   referente TEXT,
   note TEXT,
   active INTEGER NOT NULL DEFAULT 1,
+  agent_mode TEXT NOT NULL DEFAULT 'local' CHECK(agent_mode IN ('local', 'remote')),
+  agent_hostname TEXT,
+  agent_port INTEGER NOT NULL DEFAULT 8443,
+  agent_token_hash TEXT,
+  agent_token_encrypted TEXT,
+  agent_version TEXT,
+  agent_last_seen_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

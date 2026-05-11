@@ -25,7 +25,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Pencil, Trash2, Building2, Wand2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, Wand2, Server } from "lucide-react";
 import { toast } from "sonner";
 
 interface Tenant {
@@ -471,6 +471,14 @@ export default function TenantsPage() {
                           >
                             <Wand2 className="h-3.5 w-3.5 mr-1.5" />
                             Configura
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => router.push(`/tenants/${tenant.id}/agent`)}
+                            title="Configura agente remoto"
+                          >
+                            <Server className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="ghost"

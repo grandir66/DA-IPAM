@@ -1,0 +1,307 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, KeyRound, Save, ServerCog, Copy, ShieldAlert } from "lucide-react";
+import { toast } from "sonner";
+
+interface AgentConfigResponse {
+  agent_mode: "local" | "remote";
+  agent_hostname: string | null;
+  agent_port: number;
+  agent_version: string | null;
+  agent_last_seen_at: string | null;
+  has_token: boolean;
+}
+
+export default function TenantAgentPage() {
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string } | undefined)?.role;
+  const canEdit = role === "admin" || role === "superadmin";
+
+  const tenantId = params?.id;
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [mode, setMode] = useState<"local" | "remote">("local");
+  const [hostname, setHostname] = useState("");
+  const [port, setPort] = useState<number>(8443);
+  const [config, setConfig] = useState<AgentConfigResponse | null>(null);
+  const [newToken, setNewToken] = useState<string | null>(null);
+
+  const loadConfig = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      const res = await fetch(`/api/tenants/${tenantId}/agent`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Errore" }));
+        toast.error(err.error || "Impossibile caricare la configurazione agente");
+        setLoading(false);
+        return;
+      }
+      const data = (await res.json()) as AgentConfigResponse;
+      setConfig(data);
+      setMode(data.agent_mode);
+      setHostname(data.agent_hostname ?? "");
+      setPort(data.agent_port ?? 8443);
+    } catch (e) {
+      console.error(e);
+      toast.error("Errore di rete nel caricamento configurazione");
+    } finally {
+      setLoading(false);
+    }
+  }, [tenantId]);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
+
+  const handleSave = async () => {
+    if (!tenantId) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/tenants/${tenantId}/agent`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent_mode: mode,
+          agent_hostname: hostname.trim() || null,
+          agent_port: port,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Errore" }));
+        toast.error(err.error || "Errore nel salvataggio");
+        return;
+      }
+      const data = (await res.json()) as AgentConfigResponse;
+      setConfig(data);
+      toast.success("Configurazione agente salvata");
+    } catch (e) {
+      console.error(e);
+      toast.error("Errore di rete nel salvataggio");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleGenerateToken = async () => {
+    if (!tenantId) return;
+    if (!confirm("Generare un nuovo token? Il token precedente verrà invalidato al prossimo deploy della config sull'agente.")) {
+      return;
+    }
+    setGenerating(true);
+    try {
+      const res = await fetch(`/api/tenants/${tenantId}/agent/token`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Errore" }));
+        toast.error(err.error || "Errore nella generazione del token");
+        return;
+      }
+      const data = (await res.json()) as { token: string };
+      setNewToken(data.token);
+      await loadConfig();
+      toast.success("Nuovo token generato. Copialo ora.");
+    } catch (e) {
+      console.error(e);
+      toast.error("Errore di rete nella generazione del token");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const copyToken = async () => {
+    if (!newToken) return;
+    try {
+      await navigator.clipboard.writeText(newToken);
+      toast.success("Token copiato negli appunti");
+    } catch {
+      toast.error("Impossibile copiare automaticamente: selezionalo manualmente");
+    }
+  };
+
+  const formatLastSeen = (iso: string | null): string => {
+    if (!iso) return "—";
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString("it-IT");
+    } catch {
+      return iso;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="container mx-auto p-6">
+        <p className="text-muted-foreground">Caricamento configurazione…</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto p-6 space-y-6 max-w-3xl">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={() => router.push("/tenants")}>
+          <ArrowLeft className="h-4 w-4 mr-1.5" />
+          Clienti
+        </Button>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ServerCog className="h-5 w-5" />
+            Agente remoto
+          </CardTitle>
+          <CardDescription>
+            Modalità di esecuzione delle operazioni di rete per questo cliente. In modalità{" "}
+            <code>local</code> tutto gira sull&apos;hub. In modalità <code>remote</code> le richieste vengono
+            inoltrate a un agente Python installato presso il cliente, raggiunto via Tailscale.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-3">
+            <Label>Modalità</Label>
+            <div className="flex gap-3">
+              <Button
+                variant={mode === "local" ? "default" : "outline"}
+                onClick={() => setMode("local")}
+                disabled={!canEdit}
+              >
+                Local (hub)
+              </Button>
+              <Button
+                variant={mode === "remote" ? "default" : "outline"}
+                onClick={() => setMode("remote")}
+                disabled={!canEdit}
+              >
+                Remote (agente Tailscale)
+              </Button>
+            </div>
+            {mode === "remote" && (
+              <p className="text-xs text-muted-foreground">
+                In Phase 1 la modalità remote richiede ancora il <code>RemoteExecutor</code> (Phase 3).
+                Le scansioni resteranno disattivate fino a quando non sarà disponibile.
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-2 space-y-2">
+              <Label htmlFor="hostname">Hostname Tailscale (MagicDNS)</Label>
+              <Input
+                id="hostname"
+                placeholder="es. agent-cliente-001"
+                value={hostname}
+                onChange={(e) => setHostname(e.target.value)}
+                disabled={!canEdit}
+              />
+              <p className="text-xs text-muted-foreground">
+                Nome breve del nodo Tailscale dove gira l&apos;agente. Solo MagicDNS short name, senza dominio.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="port">Porta</Label>
+              <Input
+                id="port"
+                type="number"
+                min={1}
+                max={65535}
+                value={port}
+                onChange={(e) => setPort(Number(e.target.value) || 8443)}
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <Button onClick={handleSave} disabled={!canEdit || saving}>
+              <Save className="h-4 w-4 mr-1.5" />
+              {saving ? "Salvataggio…" : "Salva configurazione"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <KeyRound className="h-5 w-5" />
+            Token bearer
+          </CardTitle>
+          <CardDescription>
+            Token usato dall&apos;hub per autenticarsi all&apos;agente. La generazione di un nuovo
+            token sovrascrive il precedente. Il plaintext viene mostrato una sola volta.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Badge variant={config?.has_token ? "default" : "secondary"}>
+              {config?.has_token ? "Token configurato" : "Nessun token"}
+            </Badge>
+            {canEdit && (
+              <Button variant="outline" onClick={handleGenerateToken} disabled={generating}>
+                <KeyRound className="h-4 w-4 mr-1.5" />
+                {generating ? "Generazione…" : "Genera nuovo token"}
+              </Button>
+            )}
+          </div>
+
+          {newToken && (
+            <div className="rounded border border-yellow-500/40 bg-yellow-50 dark:bg-yellow-950/30 p-3 space-y-2">
+              <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
+                <ShieldAlert className="h-4 w-4" />
+                <span className="font-medium text-sm">Salva il token ora — non sarà più visibile.</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  readOnly
+                  value={newToken}
+                  className="font-mono text-xs"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <Button variant="outline" size="icon" onClick={copyToken} title="Copia">
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Stato</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div>
+              <Label className="text-muted-foreground">Versione agente</Label>
+              <p className="font-mono">{config?.agent_version ?? "—"}</p>
+            </div>
+            <div>
+              <Label className="text-muted-foreground">Ultimo heartbeat</Label>
+              <p>{formatLastSeen(config?.agent_last_seen_at ?? null)}</p>
+            </div>
+            <div>
+              <Label className="text-muted-foreground">Modalità attiva</Label>
+              <p className="font-mono">{config?.agent_mode ?? "—"}</p>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-4">
+            Versione e heartbeat saranno popolati a partire da Phase 6 (osservabilità). In Phase 1 risultano sempre vuoti.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

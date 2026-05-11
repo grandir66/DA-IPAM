@@ -8,7 +8,7 @@
  * dal `RemoteExecutor`.
  */
 
-import { getTenantByCode } from "@/lib/db-hub";
+import { getTenantByCode, getFirstTenantAgent } from "@/lib/db-hub";
 import { safeDecrypt } from "@/lib/crypto";
 import { LocalExecutor } from "./local";
 import { RemoteExecutor } from "./remote";
@@ -67,28 +67,31 @@ export function getExecutor(tenantCode: string): Executor {
   const mode: ExecutorMode = tenant.agent_mode === "remote" ? "remote" : "local";
 
   if (mode === "remote") {
-    if (!tenant.agent_hostname) {
+    // Fonte di verità: tabella tenant_agents (N agent per tenant). Phase 7+
+    // sceglierà l'agent giusto in base a subnet_match; per ora usiamo il primo.
+    const agent = getFirstTenantAgent(tenant.id);
+    if (!agent) {
       throw new ExecutorNotConfiguredError(
         tenantCode,
-        `Tenant '${tenantCode}' è 'remote' ma manca agent_hostname. Configura da /tenants/${tenant.id}/agent.`,
+        `Tenant '${tenantCode}' è 'remote' ma non ha agenti configurati. Aggiungine uno da /agents.`,
       );
     }
-    if (!tenant.agent_token_encrypted) {
+    if (!agent.token_encrypted) {
       throw new ExecutorNotConfiguredError(
         tenantCode,
-        `Tenant '${tenantCode}' è 'remote' ma manca il token. Generane uno da /tenants/${tenant.id}/agent.`,
+        `Agente '${agent.label}' del tenant '${tenantCode}' senza token. Generane uno da /agents.`,
       );
     }
-    const token = safeDecrypt(tenant.agent_token_encrypted);
+    const token = safeDecrypt(agent.token_encrypted);
     if (!token) {
       throw new ExecutorNotConfiguredError(
         tenantCode,
-        `Decifratura token fallita per il tenant '${tenantCode}'. Rigenera il token.`,
+        `Decifratura token fallita per agente '${agent.label}'. Rigenera il token.`,
       );
     }
     return new RemoteExecutor({
-      hostname: tenant.agent_hostname,
-      port: tenant.agent_port,
+      hostname: agent.hostname,
+      port: agent.port,
       token,
       tenantCode,
     });

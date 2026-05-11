@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getTenantById, getFirstTenantAgent } from "@/lib/db-hub";
+import { getTenantAgentById } from "@/lib/db-hub";
 import { safeDecrypt } from "@/lib/crypto";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
@@ -11,38 +11,40 @@ type AgentErr = { error?: { code?: string; message?: string; retriable?: boolean
 const TIMEOUT_MS = 5_000;
 
 /**
- * Back-compat: testa il PRIMO agente del tenant. Per nuove integrazioni
- * usare /api/tenant-agents/[agentId]/test.
+ * POST /api/tenant-agents/[id]/test
+ * Decrypta il token salvato per l'agente specifico e chiama /whoami sul
+ * remoto via Tailscale. Ritorna risultato strutturato (ok/error_code/latency).
  */
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
     const { id } = await params;
-    const tenant = getTenantById(Number(id));
-    if (!tenant) return NextResponse.json({ error: "Cliente non trovato" }, { status: 404 });
+    const agent = getTenantAgentById(Number(id));
+    if (!agent) return NextResponse.json({ error: "Agente non trovato" }, { status: 404 });
 
-    if (tenant.agent_mode !== "remote") {
-      return NextResponse.json({ ok: false, latency_ms: 0, error_code: "not_remote", error_message: "Tenant in modalità local" } as TestError);
-    }
-    const agent = getFirstTenantAgent(tenant.id);
-    if (!agent) {
-      return NextResponse.json({ ok: false, latency_ms: 0, error_code: "no_agent", error_message: "Nessun agente configurato per il tenant" } as TestError);
+    if (!agent.hostname) {
+      return NextResponse.json({ ok: false, latency_ms: 0, error_code: "no_hostname", error_message: "Hostname agente non configurato" } as TestError);
     }
     if (!agent.token_encrypted) {
-      return NextResponse.json({ ok: false, latency_ms: 0, error_code: "no_token", error_message: "Token agente non configurato" } as TestError);
+      return NextResponse.json({ ok: false, latency_ms: 0, error_code: "no_token", error_message: "Token non configurato. Genera o importa un token." } as TestError);
     }
+
     const token = safeDecrypt(agent.token_encrypted);
     if (!token) {
-      return NextResponse.json({ ok: false, latency_ms: 0, error_code: "decrypt_failed", error_message: "Decifratura token fallita" } as TestError);
+      return NextResponse.json({ ok: false, latency_ms: 0, error_code: "decrypt_failed", error_message: "Decifratura token fallita (ENCRYPTION_KEY cambiata?)" } as TestError);
     }
 
     const url = `http://${agent.hostname}:${agent.port}/whoami`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     const started = Date.now();
+
     try {
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      });
       const latency_ms = Date.now() - started;
       const body = (await res.json().catch(() => ({}))) as WhoamiBody & AgentErr;
       if (!res.ok) {
@@ -66,13 +68,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({
         ok: false, latency_ms,
         error_code: isAbort ? "timeout" : "network_error",
-        error_message: isAbort ? `Timeout ${TIMEOUT_MS}ms` : (err?.message ?? "errore di rete"),
+        error_message: isAbort ? `Timeout dopo ${TIMEOUT_MS} ms — agent non raggiungibile?` : (err?.message ?? "errore di rete"),
       } as TestError);
     } finally {
       clearTimeout(timer);
     }
   } catch (e) {
-    console.error("Errore test back-compat:", e);
+    console.error("Errore test agente:", e);
     return NextResponse.json({ error: "Errore" }, { status: 500 });
   }
 }

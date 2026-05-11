@@ -159,6 +159,22 @@ CREATE TABLE IF NOT EXISTS sysobj_lookup (
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS tenant_agents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  hostname TEXT NOT NULL,
+  port INTEGER NOT NULL DEFAULT 8443,
+  token_hash TEXT,
+  token_encrypted TEXT,
+  version TEXT,
+  last_seen_at TEXT,
+  subnet_match TEXT,  -- CSV di CIDR per routing per-subnet (Phase 7+), per ora informativo
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(tenant_id, label)
+);
 `;
 
 export const HUB_INDEXES_SQL = `
@@ -173,4 +189,5 @@ CREATE INDEX IF NOT EXISTS idx_device_fp_rules_pri ON device_fingerprint_rules(e
 CREATE INDEX IF NOT EXISTS idx_fingerprint_class_map_pri ON fingerprint_classification_map(enabled, priority ASC, id ASC);
 CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_oid ON sysobj_lookup(oid);
 CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_enabled ON sysobj_lookup(enabled);
+CREATE INDEX IF NOT EXISTS idx_tenant_agents_tenant ON tenant_agents(tenant_id);
 `;

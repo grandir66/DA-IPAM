@@ -398,6 +398,43 @@ function initializeHubDb(db: Database.Database): void {
       db.exec("ALTER TABLE tenants ADD COLUMN agent_last_seen_at TEXT");
     }
   } catch { /* ignore */ }
+  // Migrazione 1->N agent: per ogni tenant con agent_hostname configurato,
+  // crea una riga in tenant_agents se non già esistente. Idempotente.
+  try {
+    const rows = db.prepare(`
+      SELECT id, agent_hostname, agent_port, agent_token_hash,
+             agent_token_encrypted, agent_version, agent_last_seen_at
+      FROM tenants
+      WHERE agent_hostname IS NOT NULL AND agent_hostname != ''
+    `).all() as Array<{
+      id: number;
+      agent_hostname: string;
+      agent_port: number;
+      agent_token_hash: string | null;
+      agent_token_encrypted: string | null;
+      agent_version: string | null;
+      agent_last_seen_at: string | null;
+    }>;
+    const existsStmt = db.prepare("SELECT 1 FROM tenant_agents WHERE tenant_id = ? LIMIT 1");
+    const insertStmt = db.prepare(`
+      INSERT INTO tenant_agents (tenant_id, label, hostname, port, token_hash, token_encrypted, version, last_seen_at)
+      VALUES (?, 'Sede principale', ?, ?, ?, ?, ?, ?)
+    `);
+    for (const r of rows) {
+      if (existsStmt.get(r.id)) continue; // tenant ha già un agent migrato
+      insertStmt.run(
+        r.id,
+        r.agent_hostname,
+        r.agent_port ?? 8443,
+        r.agent_token_hash,
+        r.agent_token_encrypted,
+        r.agent_version,
+        r.agent_last_seen_at,
+      );
+    }
+  } catch (e) {
+    console.error("[db-hub] Migrazione tenants→tenant_agents fallita (non blocca):", e);
+  }
   seedHubDefaults(db);
 }
 
@@ -695,6 +732,116 @@ export function updateTenantAgentHeartbeat(id: number, version: string): boolean
   return getHubDb().prepare(
     "UPDATE tenants SET agent_version = ?, agent_last_seen_at = datetime('now') WHERE id = ?"
   ).run(version, id).changes > 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tenant agents (N agent per tenant — sedi diverse dello stesso cliente)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface TenantAgent {
+  id: number;
+  tenant_id: number;
+  label: string;
+  hostname: string;
+  port: number;
+  token_hash: string | null;
+  token_encrypted: string | null;
+  version: string | null;
+  last_seen_at: string | null;
+  subnet_match: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantAgentWithTenantInfo extends TenantAgent {
+  codice_cliente: string;
+  ragione_sociale: string;
+}
+
+export function getTenantAgents(tenantId: number): TenantAgent[] {
+  return getHubDb()
+    .prepare("SELECT * FROM tenant_agents WHERE tenant_id = ? ORDER BY id ASC")
+    .all(tenantId) as TenantAgent[];
+}
+
+export function getTenantAgentById(agentId: number): TenantAgent | undefined {
+  return getHubDb()
+    .prepare("SELECT * FROM tenant_agents WHERE id = ?")
+    .get(agentId) as TenantAgent | undefined;
+}
+
+export function getAllTenantAgentsWithInfo(): TenantAgentWithTenantInfo[] {
+  return getHubDb().prepare(`
+    SELECT ta.*, t.codice_cliente, t.ragione_sociale
+    FROM tenant_agents ta
+    JOIN tenants t ON t.id = ta.tenant_id
+    ORDER BY t.codice_cliente, ta.label
+  `).all() as TenantAgentWithTenantInfo[];
+}
+
+export function getFirstTenantAgent(tenantId: number): TenantAgent | undefined {
+  return getHubDb()
+    .prepare("SELECT * FROM tenant_agents WHERE tenant_id = ? ORDER BY id ASC LIMIT 1")
+    .get(tenantId) as TenantAgent | undefined;
+}
+
+export interface CreateTenantAgentInput {
+  tenant_id: number;
+  label: string;
+  hostname: string;
+  port?: number;
+  subnet_match?: string | null;
+}
+
+export function createTenantAgent(input: CreateTenantAgentInput): TenantAgent {
+  const port = input.port ?? 8443;
+  const result = getHubDb().prepare(`
+    INSERT INTO tenant_agents (tenant_id, label, hostname, port, subnet_match)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(input.tenant_id, input.label, input.hostname, port, input.subnet_match ?? null);
+  return getTenantAgentById(Number(result.lastInsertRowid))!;
+}
+
+export interface UpdateTenantAgentInput {
+  label?: string;
+  hostname?: string;
+  port?: number;
+  subnet_match?: string | null;
+}
+
+export function updateTenantAgent(agentId: number, input: UpdateTenantAgentInput): TenantAgent | undefined {
+  const existing = getTenantAgentById(agentId);
+  if (!existing) return undefined;
+
+  const sets: string[] = ["updated_at = datetime('now')"];
+  const vals: unknown[] = [];
+  const field = (col: string, val: unknown) => { sets.push(`${col} = ?`); vals.push(val); };
+
+  if (input.label !== undefined) field("label", input.label);
+  if (input.hostname !== undefined) field("hostname", input.hostname);
+  if (input.port !== undefined) field("port", input.port);
+  if (input.subnet_match !== undefined) field("subnet_match", input.subnet_match);
+
+  if (sets.length === 1) return existing;
+  vals.push(agentId);
+  getHubDb().prepare(`UPDATE tenant_agents SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getTenantAgentById(agentId);
+}
+
+export function deleteTenantAgent(agentId: number): boolean {
+  return getHubDb().prepare("DELETE FROM tenant_agents WHERE id = ?").run(agentId).changes > 0;
+}
+
+export function setTenantAgentTokenById(agentId: number, tokenHash: string, tokenEncrypted: string): boolean {
+  return getHubDb().prepare(
+    "UPDATE tenant_agents SET token_hash = ?, token_encrypted = ?, updated_at = datetime('now') WHERE id = ?"
+  ).run(tokenHash, tokenEncrypted, agentId).changes > 0;
+}
+
+export function updateTenantAgentHeartbeatById(agentId: number, version: string): boolean {
+  return getHubDb().prepare(
+    "UPDATE tenant_agents SET version = ?, last_seen_at = datetime('now') WHERE id = ?"
+  ).run(version, agentId).changes > 0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

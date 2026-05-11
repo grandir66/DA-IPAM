@@ -11,19 +11,22 @@
 #       bash
 #
 # Variabili obbligatorie:
-#   TENANT_CODE   codice cliente DA-IPAM (es. "BRIDGE-DOMARC-OVH")
-#   HUB_URL       URL hub DA-INVENT (es. "https://da-invent")
+#   TENANT_CODE   codice cliente DA-IPAM (es. "70791a")
+#   HUB_URL       URL hub DA-INVENT (es. "https://192.168.4.8")
 #   AGENT_TOKEN   token plaintext (generato dall'UI hub)
 #
 # Variabili opzionali:
-#   AGENT_PORT    porta bind (default 8443)
-#   AGENT_VERSION ref git da clonare (default: branch feature/remote-agents)
-#   AGENT_REPO    URL del repo (default: https://github.com/grandir66/DA-IPAM.git)
+#   AGENT_PORT          porta bind (default 8443)
+#   AGENT_VERSION       ref git da clonare (default: feature/remote-agents)
+#   AGENT_REPO          URL del repo (default: github grandir66/DA-IPAM)
+#   TAILSCALE_AUTH_KEY  reusable auth-key Tailscale (se assente: login interattivo)
+#   TAILSCALE_HOSTNAME  hostname Tailscale del nodo (default: $(hostname))
 #
 # Vincoli:
 #   - Idempotente: rieseguilo per upgrade o rotazione token.
-#   - Richiede Tailscale già installato e autenticato (NON gestito dallo
-#     script per scelta: tu fai `tailscale up` separatamente).
+#   - Installa anche Tailscale se mancante (script ufficiale tailscale.com).
+#   - Senza TAILSCALE_AUTH_KEY il primo `tailscale up` è interattivo:
+#     stampa un URL da aprire nel browser per autenticare il nodo.
 #   - Ubuntu 22.04+ / Debian 12+ con apt.
 
 set -euo pipefail
@@ -60,16 +63,44 @@ ok()  { printf '  ✓ %s\n' "$*"; }
 
 # ─── Verifica Tailscale ──────────────────────────────────────────────────────
 
-log "Verifica Tailscale"
+log "Tailscale: install + up (idempotente)"
 if ! command -v tailscale >/dev/null 2>&1; then
-    echo "ERROR: tailscale non trovato. Installa Tailscale e fai 'tailscale up' prima di rieseguire." >&2
-    exit 2
+    ok "Tailscale assente, installo (script ufficiale tailscale.com)"
+    curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1 || {
+        echo "ERROR: install Tailscale fallito. Verifica connessione internet o installa manualmente." >&2
+        exit 2
+    }
+else
+    ok "Tailscale già installato ($(tailscale version | head -1))"
 fi
+
+systemctl enable --now tailscaled >/dev/null 2>&1 || true
+
 if ! tailscale status >/dev/null 2>&1; then
-    echo "ERROR: Tailscale non attivo. Esegui 'tailscale up' prima di rieseguire." >&2
+    TS_HOSTNAME="${TAILSCALE_HOSTNAME:-$(hostname)}"
+    if [ -n "${TAILSCALE_AUTH_KEY:-}" ]; then
+        ok "tailscale up con auth-key"
+        tailscale up --authkey="$TAILSCALE_AUTH_KEY" --hostname="$TS_HOSTNAME" >/dev/null 2>&1 || {
+            echo "ERROR: tailscale up con auth-key fallito (key scaduta o revocata?)" >&2
+            exit 2
+        }
+    else
+        echo ""
+        echo "  >>> AUTENTICAZIONE TAILSCALE — APRI L'URL CHE APPARE QUI SOTTO <<<"
+        echo "  >>> dopo l'auth lo script proseguirà automaticamente            <<<"
+        echo ""
+        tailscale up --hostname="$TS_HOSTNAME" || {
+            echo "ERROR: tailscale up interattivo fallito o annullato." >&2
+            exit 2
+        }
+    fi
+fi
+
+TS_IP="$(tailscale ip -4 2>/dev/null | head -1)"
+if [ -z "$TS_IP" ]; then
+    echo "ERROR: Tailscale up ma nessun IP IPv4 assegnato (?)" >&2
     exit 2
 fi
-TS_IP="$(tailscale ip -4 | head -1)"
 ok "Tailscale OK — IP: $TS_IP"
 
 # ─── Dipendenze sistema ──────────────────────────────────────────────────────

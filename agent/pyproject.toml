@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "da-invent-agent"
-version = "0.1.0"
-description = "DA-INVENT remote agent: esegue ping/nmap/DNS sulla rete del cliente, invocato via Tailscale dall'hub DA-IPAM."
+version = "0.2.0"
+description = "DA-INVENT remote agent: esegue ping/nmap/DNS/SNMP/SSH/WinRM sulla rete del cliente, invocato via Tailscale dall'hub DA-IPAM."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
@@ -19,6 +19,8 @@ dependencies = [
     "pyyaml>=6.0,<7.0",
     "bcrypt>=4.2,<5.0",
     "psutil>=6.0,<7.0",
+    "asyncssh>=2.18,<3.0",
+    "pywinrm[kerberos]>=0.5,<1.0",
 ]
 
 [project.optional-dependencies]

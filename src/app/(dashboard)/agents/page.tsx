@@ -106,17 +106,29 @@ export default function AgentsOverviewPage() {
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [tailscaleAuthKey, setTailscaleAuthKey] = useState("");
 
+  // Hub URL pubblico — letto da /api/settings/hub-url. Usato per costruire
+  // il one-liner di install. `source === 'none'` significa che gli admin non
+  // hanno configurato un URL pubblico: ricadiamo su window.location.origin con
+  // warning visivo, perché potrebbe essere un IP interno irraggiungibile dal
+  // cliente che esegue il curl.
+  const [hubUrlInfo, setHubUrlInfo] = useState<{ effective_url: string | null; source: "public_hub_url" | "tailnet_hostname" | "none" }>({ effective_url: null, source: "none" });
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [agentsRes, tenantsRes] = await Promise.all([
+      const [agentsRes, tenantsRes, hubUrlRes] = await Promise.all([
         fetch("/api/agents"),
         fetch("/api/tenants"),
+        fetch("/api/settings/hub-url"),
       ]);
       if (agentsRes.ok) setAgents((await agentsRes.json()) as AgentRow[]);
       if (tenantsRes.ok) {
         const tlist = (await tenantsRes.json()) as Array<TenantBrief & { active?: number }>;
         setTenants(tlist.filter((t) => (t.active ?? 1) === 1));
+      }
+      if (hubUrlRes.ok) {
+        const info = (await hubUrlRes.json()) as { effective_url: string | null; source: "public_hub_url" | "tailnet_hostname" | "none" };
+        setHubUrlInfo(info);
       }
       setRowState({});
     } catch (e) {
@@ -266,7 +278,8 @@ export default function AgentsOverviewPage() {
 
   const installCommand = useMemo(() => {
     if (!createdToken || !createdTenant) return "";
-    const hubOrigin = typeof window !== "undefined" ? window.location.origin : "<HUB_URL>";
+    const browserOrigin = typeof window !== "undefined" ? window.location.origin : "<HUB_URL>";
+    const hubOrigin = hubUrlInfo.effective_url ?? browserOrigin;
     const tsLine = tailscaleAuthKey.trim() ? `\n    TAILSCALE_AUTH_KEY='${tailscaleAuthKey.trim()}' \\` : "";
     return `curl -fsSL ${hubOrigin}/agent-install.sh \\
   | TENANT_CODE='${createdTenant.codice_cliente}' \\
@@ -274,7 +287,7 @@ export default function AgentsOverviewPage() {
     AGENT_TOKEN='${createdToken}' \\
     AGENT_PORT='${agentPort}' \\${tsLine}
     bash`;
-  }, [createdToken, createdTenant, agentPort, tailscaleAuthKey]);
+  }, [createdToken, createdTenant, agentPort, tailscaleAuthKey, hubUrlInfo.effective_url]);
 
   const copyInstall = async () => {
     if (!installCommand) return;
@@ -538,6 +551,24 @@ export default function AgentsOverviewPage() {
                 <p className="text-xs text-muted-foreground">Senza auth-key, lo script stamperà un URL durante l&apos;install che dovrai aprire dal browser per autenticare il nodo Tailscale.</p>
               </div>
 
+              {hubUrlInfo.source === "none" && (
+                <div className="rounded border border-orange-500/40 bg-orange-50 dark:bg-orange-950/30 p-3 text-xs text-orange-800 dark:text-orange-200">
+                  <p className="font-medium mb-1">⚠️ Hub URL non configurato</p>
+                  <p>
+                    Il comando sotto usa <code className="font-mono">{typeof window !== "undefined" ? window.location.origin : "?"}</code>
+                    {" "}come HUB_URL. Se stai accedendo a questa UI da rete interna, il cliente
+                    non riuscirà a raggiungerlo. Imposta <em>Hub URL pubblico</em> o
+                    <em> Hostname Tailscale</em> in <a href="/settings" className="underline">Impostazioni</a>{" "}
+                    prima di eseguire l&apos;install, oppure apri questa UI via MagicDNS tailnet.
+                  </p>
+                </div>
+              )}
+              {hubUrlInfo.source !== "none" && hubUrlInfo.effective_url && (
+                <p className="text-xs text-muted-foreground">
+                  Hub URL: <span className="font-mono">{hubUrlInfo.effective_url}</span>
+                  {" "}<span className="text-[10px] uppercase tracking-wide">({hubUrlInfo.source === "public_hub_url" ? "pubblico" : "tailnet"})</span>
+                </p>
+              )}
               <div>
                 <Label className="text-sm">Comando di install (esegui su Ubuntu/Debian come root)</Label>
                 <div className="flex gap-2 mt-2">

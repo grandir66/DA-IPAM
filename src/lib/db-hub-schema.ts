@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT OR IGNORE INTO settings (key, value) VALUES ('server_port', '3000');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('onboarding_completed', '0');
 
+-- Hub URL pubblico (consumato da chi installa l'agent o riceve callback).
+-- Lasciare vuoti per usare l'origin del browser come fallback.
+INSERT OR IGNORE INTO settings (key, value) VALUES ('public_hub_url', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('hub_tailnet_hostname', '');
+
 -- Integration settings (LibreNMS)
 INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_mode', 'disabled');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_url', '');

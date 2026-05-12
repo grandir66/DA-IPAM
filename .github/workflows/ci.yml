@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feature/**, bugfix/**]
+  pull_request:
+    branches: [main]
+
+# Annulla esecuzioni precedenti su stessa branch quando arriva un nuovo push.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hub:
+    name: Hub (Next.js + TS)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Lint è advisory: il repo ha debito storico (~900 issues).
+      # Il job non fallisce su lint per non bloccare il flow,
+      # ma l'output resta visibile nel log per chi vuole correggere.
+      - name: Lint (advisory)
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build production
+        run: npm run build
+        env:
+          # Stub per evitare crash al build di Next.js su moduli che
+          # leggono env in fase di SSG. Valori reali sono in prod.
+          ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+          AUTH_SECRET: "0000000000000000000000000000000000000000000000000000000000000000"
+
+  agent:
+    name: Agent (Python/FastAPI)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install agent (editable + dev)
+        working-directory: agent
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+
+      - name: Run pytest
+        working-directory: agent
+        run: pytest -v
+
+      - name: Verify OpenAPI fresh
+        working-directory: agent
+        run: |
+          python scripts/dump_openapi.py
+          if ! diff -q openapi.json <(git show HEAD:agent/openapi.json) >/dev/null 2>&1; then
+            echo "ERROR: agent/openapi.json non aggiornato. Rigenera con:"
+            echo "  python agent/scripts/dump_openapi.py"
+            exit 1
+          fi

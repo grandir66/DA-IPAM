@@ -31,6 +31,240 @@
 
 set -euo pipefail
 
+# ─── Sub-comandi: precheck / verify / help ────────────────────────────────────
+# Disponibili PRIMA del check root e PRIMA del require di TENANT_CODE/HUB_URL/
+# AGENT_TOKEN — così uno può lanciare:
+#   bash install.sh --precheck    # verifica sistema, niente install niente env
+#   bash install.sh --verify      # post-install: service attivo, /whoami risponde
+#   bash install.sh --help        # this
+
+_c_red()    { printf '\033[1;31m%s\033[0m\n' "$*"; }
+_c_green()  { printf '\033[1;32m%s\033[0m\n' "$*"; }
+_c_yellow() { printf '\033[1;33m%s\033[0m\n' "$*"; }
+_c_cyan()   { printf '\033[1;36m%s\033[0m\n' "$*"; }
+_ok()       { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
+_warn()     { printf '  \033[1;33m○\033[0m %s\n' "$*"; }
+_fail()     { printf '  \033[1;31m✗\033[0m %s\n' "$*"; }
+
+show_help() {
+    sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+    exit 0
+}
+
+run_precheck() {
+    _c_cyan "DA-INVENT agent installer — pre-check (solo lettura)"
+    echo
+    local errors=0
+    local warnings=0
+
+    # OS check (Ubuntu 22.04+ o Debian 12+)
+    if command -v lsb_release >/dev/null 2>&1; then
+        local dist; dist="$(lsb_release -is 2>/dev/null)"
+        local rel;  rel="$(lsb_release -rs 2>/dev/null)"
+        case "$dist" in
+            Ubuntu)
+                if [ "${rel%%.*}" -ge 22 ] 2>/dev/null; then
+                    _ok "OS: Ubuntu $rel"
+                else
+                    _fail "OS: Ubuntu $rel — richiesto 22.04+"; errors=$((errors+1))
+                fi
+                ;;
+            Debian)
+                if [ "${rel%%.*}" -ge 12 ] 2>/dev/null; then
+                    _ok "OS: Debian $rel"
+                else
+                    _fail "OS: Debian $rel — richiesto 12+"; errors=$((errors+1))
+                fi
+                ;;
+            *)
+                _warn "OS: $dist $rel — non testato (Ubuntu 22+/Debian 12+ consigliati)"; warnings=$((warnings+1))
+                ;;
+        esac
+    else
+        _warn "lsb_release mancante — impossibile verificare OS"; warnings=$((warnings+1))
+    fi
+
+    # Privilegi (per install serve root)
+    if [ "$(id -u)" -eq 0 ]; then
+        _ok "Eseguito come root"
+    else
+        _warn "Non-root: per l'install reale lancia con sudo. Precheck procede comunque."; warnings=$((warnings+1))
+    fi
+
+    # Connettività out
+    if getent hosts github.com >/dev/null 2>&1; then
+        _ok "DNS risolve github.com"
+    else
+        _fail "DNS non funziona — apt e clone repo falliranno"; errors=$((errors+1))
+    fi
+    if command -v curl >/dev/null 2>&1; then
+        if curl -fsS --max-time 5 -o /dev/null https://github.com 2>/dev/null; then
+            _ok "HTTPS verso github.com raggiungibile"
+        else
+            _warn "HTTPS verso github.com non risponde — clone repo potrebbe fallire"; warnings=$((warnings+1))
+        fi
+        if curl -fsS --max-time 5 -o /dev/null https://tailscale.com 2>/dev/null; then
+            _ok "HTTPS verso tailscale.com raggiungibile (per installer ufficiale)"
+        else
+            _warn "tailscale.com non risponde — install Tailscale offline non supportato"; warnings=$((warnings+1))
+        fi
+    else
+        _warn "curl mancante — sarà installato"; warnings=$((warnings+1))
+    fi
+
+    # HUB_URL raggiungibile (se fornito)
+    if [ -n "${HUB_URL:-}" ]; then
+        if curl -fsS -k --max-time 5 -o /dev/null "$HUB_URL" 2>/dev/null; then
+            _ok "HUB_URL=$HUB_URL raggiungibile"
+        else
+            _warn "HUB_URL=$HUB_URL non risponde — verifica connettività hub (potrebbe essere in tailnet, in tal caso ok dopo tailscale up)"; warnings=$((warnings+1))
+        fi
+    else
+        _warn "HUB_URL non impostato (env var) — sarà obbligatoria all'install"; warnings=$((warnings+1))
+    fi
+
+    # Stato Tailscale (informativo)
+    if command -v tailscale >/dev/null 2>&1; then
+        if tailscale status --json 2>/dev/null | grep -q '"BackendState":"Running"'; then
+            local ts_ip; ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
+            _ok "Tailscale già connesso (IP ${ts_ip:-?})"
+        else
+            _warn "Tailscale installato ma non running — installer eseguirà tailscale up"; warnings=$((warnings+1))
+        fi
+    else
+        _warn "Tailscale non installato — installer lo installerà da tailscale.com"; warnings=$((warnings+1))
+    fi
+
+    # Strumenti già presenti vs da installare
+    for t in python3.12 nmap snmpwalk ping; do
+        if command -v "$t" >/dev/null 2>&1; then
+            _ok "$t presente ($(command -v "$t"))"
+        else
+            _warn "$t mancante — sarà installato da apt"; warnings=$((warnings+1))
+        fi
+    done
+
+    # Disco libero in /opt (≥1 GB per code+venv)
+    if command -v df >/dev/null 2>&1; then
+        local mb; mb="$(df -BM --output=avail /opt 2>/dev/null | tail -1 | tr -dc '0-9')"
+        if [ "${mb:-0}" -ge 1024 ]; then
+            _ok "Disco /opt disponibile: ${mb} MB (≥1024)"
+        else
+            _fail "Disco /opt: ${mb} MB — troppo poco (min 1024)"; errors=$((errors+1))
+        fi
+    fi
+
+    # Conflitti porta 8443
+    if command -v ss >/dev/null 2>&1 && ss -lntH 2>/dev/null | awk '{print $4}' | grep -qE ":${AGENT_PORT:-8443}$"; then
+        local who; who="$(ss -lntp 2>/dev/null | awk -v p=":${AGENT_PORT:-8443}" '$4 ~ p {print $NF}' | head -1)"
+        _warn "Porta ${AGENT_PORT:-8443} già in uso ($who) — l'agent fallirà bind a meno di cambio porta"; warnings=$((warnings+1))
+    else
+        _ok "Porta ${AGENT_PORT:-8443} libera"
+    fi
+
+    echo
+    if [ $errors -eq 0 ] && [ $warnings -eq 0 ]; then
+        _c_green "Tutto verde: pronto per l'install reale."
+        return 0
+    elif [ $errors -eq 0 ]; then
+        _c_yellow "$warnings warning (non bloccanti). Procedi pure con l'install."
+        return 0
+    else
+        _c_red "$errors errori, $warnings warning. Risolvi gli errori prima dell'install."
+        return 1
+    fi
+}
+
+run_verify() {
+    _c_cyan "DA-INVENT agent — post-install verify"
+    echo
+    local errors=0
+    local warnings=0
+
+    # Service systemd
+    if systemctl is-active --quiet da-invent-agent 2>/dev/null; then
+        _ok "service da-invent-agent attivo"
+    else
+        _fail "service da-invent-agent NON attivo (systemctl status da-invent-agent)"; errors=$((errors+1))
+    fi
+
+    # File essenziali
+    for f in /etc/da-invent-agent/config.yml /etc/systemd/system/da-invent-agent.service; do
+        if [ -f "$f" ]; then
+            _ok "presente: $f"
+        else
+            _fail "manca: $f"; errors=$((errors+1))
+        fi
+    done
+
+    # Sudoers fragment (per UDP scan nmap)
+    if [ -f /etc/sudoers.d/da-invent-agent ]; then
+        _ok "/etc/sudoers.d/da-invent-agent presente"
+        if visudo -cf /etc/sudoers.d/da-invent-agent >/dev/null 2>&1; then
+            _ok "sudoers fragment sintatticamente valido"
+        else
+            _fail "sudoers fragment INVALIDO — visudo -cf fallisce"; errors=$((errors+1))
+        fi
+    else
+        _warn "manca /etc/sudoers.d/da-invent-agent (UDP scan potrebbe fallire)"; warnings=$((warnings+1))
+    fi
+
+    # Tailscale
+    if command -v tailscale >/dev/null 2>&1 && tailscale status --json 2>/dev/null | grep -q '"BackendState":"Running"'; then
+        local ts_ip; ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
+        _ok "Tailscale connesso (IP ${ts_ip:-?})"
+    else
+        _fail "Tailscale non running"; errors=$((errors+1))
+    fi
+
+    # Porta agent in listen
+    local port; port="$(awk '/^port:/ {print $2}' /etc/da-invent-agent/config.yml 2>/dev/null || echo 8443)"
+    if command -v ss >/dev/null 2>&1 && ss -lntH 2>/dev/null | awk '{print $4}' | grep -qE ":${port}$"; then
+        _ok "agent in ascolto :${port}"
+    else
+        _fail "agent NON in ascolto su :${port}"; errors=$((errors+1))
+    fi
+
+    # /healthz risponde (no auth)
+    if curl -fsS --max-time 3 "http://127.0.0.1:${port}/healthz" >/dev/null 2>&1; then
+        local resp; resp="$(curl -fsS --max-time 3 "http://127.0.0.1:${port}/healthz")"
+        _ok "/healthz risponde: $resp"
+    else
+        _fail "/healthz non risponde su 127.0.0.1:${port}"; errors=$((errors+1))
+    fi
+
+    # /whoami con token (se config legibile)
+    if [ -r /etc/da-invent-agent/config.yml ]; then
+        # config.yml ha bcrypt hash, non plaintext — non possiamo testare /whoami senza il plaintext.
+        # Verifichiamo solo che ci sia almeno un token configurato.
+        if grep -q "token_hash:" /etc/da-invent-agent/config.yml; then
+            _ok "almeno un token configurato in config.yml"
+        else
+            _fail "nessun token in config.yml — agent rifiuterà tutte le richieste protette"; errors=$((errors+1))
+        fi
+    fi
+
+    echo
+    if [ $errors -eq 0 ] && [ $warnings -eq 0 ]; then
+        _c_green "Tutto verde: l'agent è operativo."
+        return 0
+    elif [ $errors -eq 0 ]; then
+        _c_yellow "$warnings warning. Verifica i punti flaggati."
+        return 0
+    else
+        _c_red "$errors errori. Investiga journalctl -u da-invent-agent -n 50."
+        return 1
+    fi
+}
+
+case "${1:-}" in
+    --help|-h)  show_help ;;
+    --precheck) run_precheck; exit $? ;;
+    --verify)   run_verify;   exit $? ;;
+    "")         : ;;  # flow normale install
+    *)          _c_red "Argomento non riconosciuto: $1"; echo "Usa --help"; exit 2 ;;
+esac
+
 # ─── Pre-flight ───────────────────────────────────────────────────────────────
 
 if [ "$(id -u)" -ne 0 ]; then

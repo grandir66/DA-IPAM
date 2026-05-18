@@ -120,8 +120,9 @@ export async function POST(request: Request) {
           key_path: keyPath,
         });
       } catch (err) {
+        const detail = opensslErrorDetail(err);
         return NextResponse.json(
-          { error: `Errore generazione certificato: ${(err as Error).message}` },
+          { error: `Errore generazione certificato: ${detail}` },
           { status: 500 }
         );
       }
@@ -169,7 +170,7 @@ export async function POST(request: Request) {
         });
       } catch (err) {
         return NextResponse.json(
-          { error: `Certificato non valido: ${(err as Error).message}` },
+          { error: `Certificato non valido: ${opensslErrorDetail(err)}` },
           { status: 500 }
         );
       }
@@ -186,6 +187,23 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Estrae il messaggio d'errore reale da un fallimento di `execSync(openssl ...)`.
+ * `execSync` con `stdio:"pipe"` scarta lo stderr nel solo `.message`; qui lo
+ * recuperiamo da `.stderr`/`.stdout` così la UI mostra la causa vera invece di
+ * un generico "Command failed". Riconosce anche openssl non installato/non in PATH.
+ */
+function opensslErrorDetail(err: unknown): string {
+  const e = err as { message?: string; stderr?: Buffer | string; stdout?: Buffer | string; code?: string };
+  const stderr = e?.stderr ? Buffer.from(e.stderr).toString("utf-8").trim() : "";
+  const stdout = e?.stdout ? Buffer.from(e.stdout).toString("utf-8").trim() : "";
+  const base = e?.message || "Errore sconosciuto";
+  if (e?.code === "ENOENT" || /not found|command not found|ENOENT/i.test(base)) {
+    return "binario 'openssl' non trovato sul server. Installalo (apt-get install -y openssl) o importa un certificato esistente.";
+  }
+  return stderr || stdout || base;
 }
 
 /** Aggiorna le variabili TLS_CERT e TLS_KEY nel file .env.local */

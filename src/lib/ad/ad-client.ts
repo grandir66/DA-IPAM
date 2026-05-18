@@ -117,6 +117,20 @@ async function connectLdap(integration: AdIntegration): Promise<Client> {
     timeout: 60000,
   });
 
+  // AD moderno (default da Windows Server 2019/2022 + patch LDAP signing /
+  // channel binding) rifiuta i simple bind in chiaro con LDAP error 0x8
+  // ("requires binds to turn on integrity checking"). Su connessione non-SSL
+  // proviamo StartTLS per portare cifratura/integrità sul canale prima del
+  // bind. Se il DC non espone un listener TLS/certificato, StartTLS fallisce e
+  // si procede col bind in chiaro (comportamento legacy, compatibilità).
+  if (!integration.use_ssl) {
+    try {
+      await client.startTLS({ rejectUnauthorized: false });
+    } catch {
+      // DC senza TLS/cert: fallback a bind in chiaro
+    }
+  }
+
   await client.bind(username, password);
   return client;
 }
@@ -758,6 +772,21 @@ export async function testAdConnection(integrationId: number): Promise<{ success
     }
     if (msg.includes("data 532") || msg.includes("532:")) {
       return { success: false, message: "Password scaduta per l'account di servizio. Reimposta la password sul DC." };
+    }
+
+    // Diagnosi LDAP signing / channel binding (error 0x8 strongerAuthRequired):
+    // il DC rifiuta i bind in chiaro e richiede SSL/TLS sul canale.
+    if (
+      msg.includes("requires binds to turn on integrity checking") ||
+      msg.includes("DSID-0C09035C") ||
+      msg.includes("0000202B") ||
+      /\bCode:\s*0x8\b/.test(msg)
+    ) {
+      return {
+        success: false,
+        message:
+          "Il Domain Controller richiede LDAP signing/channel binding e rifiuta i bind in chiaro. Abilita SSL (LDAPS, porta 636) per questa integrazione. In alternativa l'app tenta automaticamente StartTLS sulla porta 389, ma serve comunque un certificato LDAPS valido sul DC (AD Certificate Services).",
+      };
     }
 
     return { success: false, message: msg };

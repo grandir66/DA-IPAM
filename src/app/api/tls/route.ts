@@ -18,6 +18,12 @@ function sanitizeDomain(domain: string): string | null {
   return sanitized;
 }
 
+/** True se la stringa è un indirizzo IPv4 (per scegliere SAN IP: vs DNS:). */
+function isIpAddress(s: string): boolean {
+  const m = s.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  return !!m && m.slice(1).every((o) => Number(o) <= 255);
+}
+
 export async function GET() {
   try {
     const adminCheck = await requireAdminOrOnboarding();
@@ -86,14 +92,25 @@ export async function POST(request: Request) {
     };
 
     if (body.action === "generate") {
-      const rawDomain = body.domain || "localhost";
-      const domain = sanitizeDomain(rawDomain);
-      if (!domain) {
+      // Accetta uno o più host separati da virgola (es. "ipam.azienda.local,10.0.0.5").
+      // Ogni token: se è un IP → SAN IP:, altrimenti DNS:. Sempre aggiunti
+      // localhost/127.0.0.1 così l'accesso locale resta valido.
+      const rawTokens = String(body.domain || "localhost")
+        .split(",")
+        .map((t) => sanitizeDomain(t))
+        .filter((t): t is string => !!t);
+      if (rawTokens.length === 0) {
         return NextResponse.json(
-          { error: "Dominio non valido: sono ammessi solo caratteri alfanumerici, punti e trattini" },
+          { error: "Host non valido: ammessi alfanumerici, punti e trattini; più host separati da virgola" },
           { status: 400 }
         );
       }
+      const cn = rawTokens[0];
+      const sanSet = new Set<string>();
+      for (const t of [...rawTokens, "localhost", "127.0.0.1"]) {
+        sanSet.add(`${isIpAddress(t) ? "IP" : "DNS"}:${t}`);
+      }
+      const san = [...sanSet].join(",");
 
       const days = Math.max(1, Math.min(body.days || 365, 3650));
       const certDir = path.join(process.cwd(), "data", "certs");
@@ -104,7 +121,7 @@ export async function POST(request: Request) {
 
       try {
         execSync(
-          `openssl req -x509 -newkey rsa:4096 -keyout "${keyPath}" -out "${certPath}" -days ${days} -nodes -subj "/CN=${domain}" -addext "subjectAltName=DNS:${domain},IP:127.0.0.1"`,
+          `openssl req -x509 -newkey rsa:4096 -keyout "${keyPath}" -out "${certPath}" -days ${days} -nodes -subj "/CN=${cn}" -addext "subjectAltName=${san}"`,
           { stdio: "pipe" }
         );
         chmodSync(keyPath, 0o600);
@@ -115,7 +132,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
           success: true,
-          message: `Certificato generato per ${domain} (valido ${days} giorni). Riavvia il server per attivare HTTPS.`,
+          message: `Certificato generato (CN=${cn}, SAN=${san}, valido ${days} giorni). Riavvia il server per attivare HTTPS.`,
           cert_path: certPath,
           key_path: keyPath,
         });

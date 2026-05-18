@@ -760,13 +760,15 @@ main() {
     pct exec "$vmid" -- bash -c "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq git curl ca-certificates"
 
     info "Clone, build e servizio systemd (può richiedere diversi minuti)..."
-    pct exec "$vmid" -- env DA_INV_REPO="$giturl" bash -ce '
+    # Appliance sealed client → HTTPS sulla 443 standard (gira come root nel CT,
+    # quindi può bindare <1024). Override con env DA_INVENT_PORT.
+    pct exec "$vmid" -- env DA_INV_REPO="$giturl" DA_INVENT_PORT="${DA_INVENT_PORT:-443}" bash -ce '
       set -e
       rm -rf /opt/da-invent
       git clone --depth 1 "$DA_INV_REPO" /opt/da-invent
       cd /opt/da-invent
       chmod +x scripts/install.sh
-      ./scripts/install.sh --systemd
+      PORT="$DA_INVENT_PORT" ./scripts/install.sh --systemd
     ' || die "Installazione automatica fallita. Entra con: pct enter $vmid"
 
     info "Servizio systemd (se installato): pct exec $vmid -- systemctl status da-invent"

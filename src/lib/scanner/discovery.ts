@@ -1,7 +1,9 @@
 import { getAllHostIps } from "@/lib/utils";
 import { getCurrentTenantCode, withTenant } from "@/lib/db-tenant";
-import { pingSweep } from "./ping";
-import { nmapDiscoverHosts, nmapPortScan, isNmapAvailable } from "./nmap";
+import { pingSweep as _localPingSweep } from "./ping";
+import { nmapDiscoverHosts as _localNmapDiscoverHosts, nmapPortScan as _localNmapPortScan, isNmapAvailable as _localIsNmapAvailable } from "./nmap";
+import type { Executor } from "@/lib/executor";
+import { getExecutor } from "@/lib/executor";
 import {
   buildTcpScanArgs,
   buildNetworkDiscoveryQuickTcpArgs,
@@ -265,6 +267,54 @@ async function runDiscovery(
 ): Promise<DiscoveryResult> {
   const tenantInBackground = getCurrentTenantCode();
   console.info(`[Discovery] runDiscovery started — tenant context: ${tenantInBackground ?? "NONE (fallback to DEFAULT)"}, network: ${networkId}, scanType: ${scanType}`);
+
+  /* ─── Executor dispatch (Phase 3.5) ──────────────────────────────────────
+   * Risolve l'Executor del tenant corrente: LocalExecutor per tenant local
+   * (comportamento pre-Phase 3.5 invariato), RemoteExecutor per tenant con
+   * agent configurato. Gli alias `pingSweep`, `nmapDiscoverHosts`,
+   * `nmapPortScan` shadowano gli import top-level: tutti i call site
+   * sottostanti li usano automaticamente senza modifiche.
+   *
+   * Se getExecutor fallisce (tenant remote senza hostname/token), facciamo
+   * fallback al LOCAL per non spaccare l'utente: la scansione girerà
+   * sull'hub e troverà nulla (visibile in UI), ma il job non crasha.
+   */
+  let _exec: Executor | null = null;
+  if (tenantInBackground) {
+    try {
+      _exec = getExecutor(tenantInBackground);
+      console.info(`[Discovery] Executor mode: ${_exec.mode}`);
+    } catch (e) {
+      console.warn(`[Discovery] getExecutor("${tenantInBackground}") fallito — fallback local: ${(e as Error).message}`);
+      _exec = null;
+    }
+  }
+  const pingSweep = _exec
+    ? (ips: string[], concurrency: number = 50, onProgress?: (scanned: number, found: number) => void) =>
+        _exec!.pingSweep(ips, concurrency, onProgress ? { onProgress } : undefined)
+    : _localPingSweep;
+  const nmapDiscoverHosts = _exec
+    ? (target: string, timeoutMs?: number) => _exec!.nmapDiscoverHosts(target, timeoutMs)
+    : _localNmapDiscoverHosts;
+  const nmapPortScan = _exec
+    ? (
+        ip: string,
+        customArgs?: string,
+        timeoutMs?: number,
+        opts?: { skipUdp?: boolean; onLog?: (msg: string) => void; udpPorts?: string | null },
+      ) =>
+        _exec!.nmapPortScan(
+          ip,
+          { customArgs, timeoutMs, skipUdp: opts?.skipUdp, udpPorts: opts?.udpPorts },
+          opts?.onLog ? { onLog: opts.onLog } : undefined,
+        )
+    : _localNmapPortScan;
+  // Per executor remoto saltiamo il check locale di nmap (sul hub nmap può
+  // mancare): ci fidiamo dell'agente. Per executor locale usiamo il check
+  // originale (subprocess `nmap --version`).
+  const isNmapAvailable: () => Promise<boolean> = _exec && _exec.mode === "remote"
+    ? async () => true
+    : _localIsNmapAvailable;
 
   const startTime = Date.now();
   const progressRef = getProgressMap().get(scanId);

@@ -75,6 +75,14 @@ export default function SettingsPage() {
   const [serverPort, setServerPort] = useState("3000");
   const [savingPort, setSavingPort] = useState(false);
 
+  // Hub URL pubblico / Tailnet hostname — usati dal wizard "Nuovo agente" per
+  // generare il one-liner di install che sarà eseguito su una rete diversa
+  // da quella dell'hub. Senza questi valori, il wizard ricade su
+  // window.location.origin e mostra un warning.
+  const [publicHubUrl, setPublicHubUrl] = useState("");
+  const [hubTailnetHostname, setHubTailnetHostname] = useState("");
+  const [savingHubUrl, setSavingHubUrl] = useState(false);
+
   // Password change state
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -110,6 +118,8 @@ export default function SettingsPage() {
       if (settings.server_port) setServerPort(settings.server_port);
       if (settings.host_windows_credential_id !== undefined) setHostWindowsCredentialId(settings.host_windows_credential_id || "");
       if (settings.host_linux_credential_id !== undefined) setHostLinuxCredentialId(settings.host_linux_credential_id || "");
+      if (settings.public_hub_url !== undefined) setPublicHubUrl(settings.public_hub_url || "");
+      if (settings.hub_tailnet_hostname !== undefined) setHubTailnetHostname(settings.hub_tailnet_hostname || "");
     }).catch(() => {});
     fetch("/api/custom-oui").then((r) => r.json()).then((d: { content?: string }) => setCustomOui(d.content || "")).catch(() => {});
     fetch("/api/credentials").then((r) => r.json()).then((creds: { id: number; name: string; credential_type: string }[]) => setCredentials(creds)).catch(() => {});
@@ -339,6 +349,39 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleSaveHubUrl() {
+    const url = publicHubUrl.trim();
+    const host = hubTailnetHostname.trim();
+    if (url && !/^https?:\/\/[^\s]+$/i.test(url)) {
+      toast.error("URL pubblico non valido (atteso https://host[:port])");
+      return;
+    }
+    if (host && !/^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$/.test(host)) {
+      toast.error("Hostname Tailscale non valido (solo short MagicDNS, niente schemi né punti)");
+      return;
+    }
+    setSavingHubUrl(true);
+    try {
+      const r1 = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "public_hub_url", value: url }),
+      });
+      const r2 = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "hub_tailnet_hostname", value: host }),
+      });
+      if (r1.ok && r2.ok) {
+        toast.success("Hub URL salvato. Useranno il nuovo valore i prossimi one-liner di install agent.");
+      } else {
+        toast.error("Errore nel salvataggio");
+      }
+    } finally {
+      setSavingHubUrl(false);
+    }
+  }
+
   // === Password Change ===
 
   async function handleChangePassword(e: React.FormEvent) {
@@ -541,15 +584,15 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "generate", domain: tlsDomain, days: parseInt(tlsDays) || 365 }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (res.ok) {
-        toast.success(data.message);
-        const updated = await fetch("/api/tls").then(r => r.json());
-        setTlsStatus(updated);
+        toast.success(data?.message ?? "Certificato generato");
+        const updated = await fetch("/api/tls").then(r => r.json()).catch(() => null);
+        if (updated) setTlsStatus(updated);
       } else {
-        toast.error(data.error);
+        toast.error(data?.error ?? `Errore ${res.status}: la pagina certificato non è accessibile (probabile sessione non admin o onboarding).`);
       }
-    } catch { toast.error("Errore di rete"); }
+    } catch { toast.error("Errore di rete verso /api/tls"); }
     finally { setGeneratingCert(false); }
   }
 
@@ -561,16 +604,16 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "import", cert: importCert, key: importKey }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (res.ok) {
-        toast.success(data.message);
+        toast.success(data?.message ?? "Certificato importato");
         setImportCert(""); setImportKey("");
-        const updated = await fetch("/api/tls").then(r => r.json());
-        setTlsStatus(updated);
+        const updated = await fetch("/api/tls").then(r => r.json()).catch(() => null);
+        if (updated) setTlsStatus(updated);
       } else {
-        toast.error(data.error);
+        toast.error(data?.error ?? `Errore ${res.status}: la pagina certificato non è accessibile (probabile sessione non admin o onboarding).`);
       }
-    } catch { toast.error("Errore di rete"); }
+    } catch { toast.error("Errore di rete verso /api/tls"); }
     finally { setImportingCert(false); }
   }
 
@@ -755,6 +798,51 @@ export default function SettingsPage() {
               Salva
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Server className="h-5 w-5 text-primary" />
+            <CardTitle className="text-base">Hub URL pubblico (per agenti remoti)</CardTitle>
+          </div>
+          <CardDescription>
+            Indirizzo con cui i client cliente raggiungono questo hub: usato dal wizard
+            <em> Nuovo agente</em> nel one-liner di install. Se vuoti, il wizard ricade su
+            l&apos;origin del browser e mostra un warning.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 max-w-2xl">
+          <div className="space-y-2">
+            <Label htmlFor="public-hub-url">URL pubblico (preferito)</Label>
+            <Input
+              id="public-hub-url"
+              placeholder="es. https://da-invent.tailc091fb.ts.net"
+              value={publicHubUrl}
+              onChange={(e) => setPublicHubUrl(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Schema + host + (eventuale porta). Funziona da qualunque rete raggiunga l&apos;URL.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="hub-tailnet-host">Hostname Tailscale (fallback)</Label>
+            <Input
+              id="hub-tailnet-host"
+              placeholder="es. da-invent"
+              value={hubTailnetHostname}
+              onChange={(e) => setHubTailnetHostname(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              MagicDNS short. Se l&apos;URL pubblico è vuoto, viene usato come <code className="font-mono">https://&lt;hostname&gt;</code>.
+              Sopravvive al cambio tailnet se nominato in modo stabile.
+            </p>
+          </div>
+          <Button onClick={handleSaveHubUrl} disabled={savingHubUrl}>
+            <Save className="h-4 w-4 mr-2" />
+            Salva
+          </Button>
         </CardContent>
       </Card>
 

@@ -1,0 +1,38 @@
+[Unit]
+Description=DA-INVENT Remote Agent
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=da-invent-agent
+Group=da-invent-agent
+WorkingDirectory=/opt/da-invent-agent
+Environment=DA_INVENT_AGENT_CONFIG=/etc/da-invent-agent/config.yml
+ExecStart=/opt/da-invent-agent/venv/bin/da-invent-agent
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+ProtectSystem=strict
+ReadWritePaths=/var/log/da-invent-agent
+ProtectHome=true
+PrivateTmp=true
+# NoNewPrivileges=true viene OMESSO di proposito: nmap -sU/-sS verifica
+# euid==0 e — anche con AmbientCapabilities — rifiuta se le file capabilities
+# di /usr/bin/nmap non sono effettive. NoNewPrivileges spegne le file caps.
+# Mitigation: l'agente gira come utente non-root `da-invent-agent`, le caps
+# concesse sono solo CAP_NET_RAW/CAP_NET_ADMIN/CAP_NET_BIND_SERVICE.
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+# CapabilityBoundingSet=... viene OMESSO di proposito: limiterebbe le caps
+# di processi figli (es. sudo) impedendo a sudo di ottenere CAP_SETUID per
+# elevare a root. Per UDP scan abbiamo bisogno di "sudo -n /usr/bin/nmap"
+# (configurato via /etc/sudoers.d/da-invent-agent).
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK AF_PACKET
+RestrictNamespaces=true
+LockPersonality=true
+# MemoryDenyWriteExecute=true viene OMESSO: alcuni runtime Python/JIT lo
+# violano e crashano. Riconsiderare in fase di hardening Phase 7.
+
+[Install]
+WantedBy=multi-user.target

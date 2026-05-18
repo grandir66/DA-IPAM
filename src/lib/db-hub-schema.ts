@@ -14,6 +14,13 @@ CREATE TABLE IF NOT EXISTS tenants (
   referente TEXT,
   note TEXT,
   active INTEGER NOT NULL DEFAULT 1,
+  agent_mode TEXT NOT NULL DEFAULT 'local' CHECK(agent_mode IN ('local', 'remote')),
+  agent_hostname TEXT,
+  agent_port INTEGER NOT NULL DEFAULT 8443,
+  agent_token_hash TEXT,
+  agent_token_encrypted TEXT,
+  agent_version TEXT,
+  agent_last_seen_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -47,6 +54,11 @@ CREATE TABLE IF NOT EXISTS settings (
 -- Default settings
 INSERT OR IGNORE INTO settings (key, value) VALUES ('server_port', '3000');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('onboarding_completed', '0');
+
+-- Hub URL pubblico (consumato da chi installa l'agent o riceve callback).
+-- Lasciare vuoti per usare l'origin del browser come fallback.
+INSERT OR IGNORE INTO settings (key, value) VALUES ('public_hub_url', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('hub_tailnet_hostname', '');
 
 -- Integration settings (LibreNMS)
 INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_mode', 'disabled');
@@ -152,6 +164,22 @@ CREATE TABLE IF NOT EXISTS sysobj_lookup (
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS tenant_agents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  hostname TEXT NOT NULL,
+  port INTEGER NOT NULL DEFAULT 8443,
+  token_hash TEXT,
+  token_encrypted TEXT,
+  version TEXT,
+  last_seen_at TEXT,
+  subnet_match TEXT,  -- CSV di CIDR per routing per-subnet (Phase 7+), per ora informativo
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(tenant_id, label)
+);
 `;
 
 export const HUB_INDEXES_SQL = `
@@ -166,4 +194,5 @@ CREATE INDEX IF NOT EXISTS idx_device_fp_rules_pri ON device_fingerprint_rules(e
 CREATE INDEX IF NOT EXISTS idx_fingerprint_class_map_pri ON fingerprint_classification_map(enabled, priority ASC, id ASC);
 CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_oid ON sysobj_lookup(oid);
 CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_enabled ON sysobj_lookup(enabled);
+CREATE INDEX IF NOT EXISTS idx_tenant_agents_tenant ON tenant_agents(tenant_id);
 `;

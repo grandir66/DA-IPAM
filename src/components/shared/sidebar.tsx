@@ -13,6 +13,7 @@ import {
   Cable,
   Key,
   Settings,
+  ServerCog,
   LogOut,
   Menu,
   X,
@@ -134,6 +135,19 @@ export function Sidebar() {
             >
               <Building2 className="h-4 w-4" />
               Clienti
+            </Link>
+            <Link
+              href="/agents"
+              onClick={() => setMobileOpen(false)}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                isActive("/agents")
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              )}
+            >
+              <ServerCog className="h-4 w-4" />
+              Agenti remoti
             </Link>
           </>
         )}

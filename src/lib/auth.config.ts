@@ -65,7 +65,9 @@ export const authConfig: NextAuthConfig = {
       const isLoggedIn = !!auth?.user;
       const pathname = nextUrl.pathname;
 
-      // Allow auth API, setup, login, and debug test APIs
+      // Allow auth API, setup, login, debug test APIs, e installer agent.
+      // `/agent-install.sh` deve essere raggiungibile da macchine senza
+      // sessione (l'host del cliente che fa `curl|bash` per provisioning).
       if (
         pathname.startsWith("/api/auth") ||
         pathname === "/setup" ||
@@ -73,7 +75,8 @@ export const authConfig: NextAuthConfig = {
         pathname === "/api/health" ||
         pathname === "/api/version" ||
         pathname === "/api/test-snmp" ||
-        pathname === "/api/test-arp"
+        pathname === "/api/test-arp" ||
+        pathname === "/agent-install.sh"
       ) {
         return true;
       }

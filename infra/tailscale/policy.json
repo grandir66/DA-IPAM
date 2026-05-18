@@ -1,0 +1,139 @@
+// Tailscale ACL policy — Domarc infrastructure (DA-IPAM + DA-Vul-can + bridge agent).
+//
+// Questa policy è scritta per essere TAILNET-AGNOSTIC: nessun riferimento
+// a IP CGNAT specifici o subdomain *.ts.net. Funziona identica sul tailnet
+// personale (`grandir66@gmail.com`) e su quello aziendale Domarc futuro.
+//
+// File pensato per essere copiato 1:1 nel pannello admin Tailscale:
+//   https://login.tailscale.com/admin/acls
+// Tailscale parserà i commenti `//` (HuJSON).
+//
+// Strategia tag:
+//   tag:da-hub      — istanze hub Next.js (DA-IPAM hub, DA-Vul-can hub).
+//                     Servono UI + API agli operatori; ricevono callback dagli agent.
+//   tag:da-bridge   — VM bridge presso cliente. Ospitano Greenbone/OpenVAS,
+//                     da-invent-agent (Python), eventuali strumenti SNMP/SSH.
+//                     Sono cattle, non pets: ognuna serve un singolo cliente.
+//   tag:da-admin    — workstation operatori Domarc (Mac/Linux personali).
+//                     Possono fare SSH ai bridge + accesso UI hub.
+//   tag:da-monitor  — riservato per futuri sistemi di monitoring (LibreNMS,
+//                     Graylog) che si connettono ai bridge. Per ora vuoto.
+//
+// Principi:
+//   1. da-admin → tutto (operatori hanno accesso pieno)
+//   2. da-hub → da-bridge (gli hub chiamano gli agent sui bridge via HTTPS 8443)
+//   3. da-bridge → da-hub (gli agent possono fare callback al loro hub, futuro
+//      heartbeat Phase 6) ma SOLO su HTTPS 443 (UI/API hub)
+//   4. da-bridge ↔ da-bridge: DENY (i bridge non si parlano fra loro;
+//      cliente A non deve mai toccare cliente B)
+//   5. * → * su porta 0: DENY (nessun device anonymous può collegarsi)
+{
+  // ===========================================================================
+  // tagOwners: chi può assegnare tag ai nodi.
+  // ===========================================================================
+  // group:admins è il gruppo degli operatori Domarc. Su tailnet aziendale,
+  // includere tutti gli account @domarc.it abilitati al deploy.
+  // Su tailnet personale resta solo l'utente owner.
+  "tagOwners": {
+    "tag:da-hub":     ["group:admins"],
+    "tag:da-bridge":  ["group:admins"],
+    "tag:da-admin":   ["group:admins"],
+    "tag:da-monitor": ["group:admins"],
+  },
+
+  "groups": {
+    // Owner attuale: aggiornare con email/account aziendali al cambio tailnet.
+    "group:admins": ["riccardo.grandi@gmail.com"],
+  },
+
+  // ===========================================================================
+  // ACLs: chi può parlare con chi e su quale porta.
+  // ===========================================================================
+  "acls": [
+    // (1) Operatori → tutto. Ssh ai bridge, UI hub, debug.
+    {
+      "action": "accept",
+      "src":    ["tag:da-admin"],
+      "dst":    ["tag:da-hub:*", "tag:da-bridge:*", "tag:da-monitor:*"],
+    },
+
+    // (2) Hub → Bridge agent. Le hub chiamano gli agent sulla porta agent.
+    //     Porta 8443 default (sovrascrivibile in tenant_agents.port).
+    //     Range esteso 8000-9999 per sicurezza futura senza re-apply ACL.
+    {
+      "action": "accept",
+      "src":    ["tag:da-hub"],
+      "dst":    ["tag:da-bridge:8000-9999"],
+    },
+
+    // (3) Bridge agent → Hub. Callback futuri (heartbeat Phase 6, telemetria).
+    //     Solo porte HTTPS standard.
+    {
+      "action": "accept",
+      "src":    ["tag:da-bridge"],
+      "dst":    ["tag:da-hub:443", "tag:da-hub:8443"],
+    },
+
+    // (4) Monitor → Bridge agent. Quando arriverà LibreNMS/Graylog interno,
+    //     potrà raccogliere metriche dai bridge (SNMP 161, syslog 514).
+    {
+      "action": "accept",
+      "src":    ["tag:da-monitor"],
+      "dst":    ["tag:da-bridge:161", "tag:da-bridge:514", "tag:da-bridge:5353"],
+    },
+
+    // NOTA: Bridge ↔ Bridge NON ha regola di accept = DENY implicito.
+    // Nessun cross-talk tra clienti diversi.
+  ],
+
+  // ===========================================================================
+  // SSH ACL: chi può fare SSH (via Tailscale SSH) e su quali nodi.
+  // ===========================================================================
+  // Tailscale SSH bypassa OpenSSH classico — pratico per debug ai bridge.
+  "ssh": [
+    // Operatori → SSH a hub e bridge come root o utente non-privilegiato.
+    {
+      "action": "accept",
+      "src":    ["tag:da-admin"],
+      "dst":    ["tag:da-hub", "tag:da-bridge"],
+      "users":  ["autogroup:nonroot", "root"],
+    },
+  ],
+
+  // ===========================================================================
+  // Node attributes: pre-autorizzazioni automatiche.
+  // ===========================================================================
+  // I nodi con tag:da-bridge sono cattle: vogliamo che join automatico funzioni
+  // con auth-key reusable senza approval manuale dell'admin Tailscale.
+  "autoApprovers": {
+    // Subnet routes: i bridge possono advertisare subnet del cliente
+    // (es. 192.168.51.0/24) senza approvazione admin per ogni nuova subnet.
+    "routes": {
+      "0.0.0.0/0": ["tag:da-bridge"],
+      "::/0":      ["tag:da-bridge"],
+    },
+    // Exit node: nessun bridge è autorizzato come exit node (sicurezza).
+    "exitNode": [],
+  },
+
+  // ===========================================================================
+  // Test ACL — verifiche automatiche al deploy del policy.
+  // ===========================================================================
+  // Tailscale rifiuta il deploy se uno qualunque di questi test fallisce.
+  "tests": [
+    {
+      "src":    "tag:da-hub",
+      "accept": ["tag:da-bridge:8443"],
+      "deny":   ["tag:da-bridge:22"],  // hub NON deve fare ssh diretto al bridge
+    },
+    {
+      "src":    "tag:da-bridge",
+      "accept": ["tag:da-hub:443"],
+      "deny":   ["tag:da-bridge:8443"],  // bridge non parla con altri bridge
+    },
+    {
+      "src":    "tag:da-admin",
+      "accept": ["tag:da-bridge:22", "tag:da-hub:443"],
+    },
+  ],
+}

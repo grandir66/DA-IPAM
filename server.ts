@@ -109,5 +109,14 @@ app.prepare().then(() => {
     }).catch((error) => {
       console.error("CRITICAL: Failed to initialize scheduler — cron jobs will NOT run:", error);
     });
+
+    // Backup scheduler hub-level (separato dal scheduler per-tenant sopra).
+    // Nightly snapshot di hub.db + tenant DBs. Vedi src/lib/backup/scheduler.ts.
+    import("./src/lib/backup/scheduler").then(({ initializeBackupScheduler }) => {
+      initializeBackupScheduler();
+      console.log("> Backup scheduler initialized");
+    }).catch((error) => {
+      console.error("WARNING: Backup scheduler init failed (backup nightly NON attivo):", error);
+    });
   }
 });

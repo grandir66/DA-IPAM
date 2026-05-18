@@ -1,0 +1,1949 @@
+{
+  "components": {
+    "schemas": {
+      "ArpEntry": {
+        "properties": {
+          "ip": {
+            "title": "Ip",
+            "type": "string"
+          },
+          "mac": {
+            "title": "Mac",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ip",
+          "mac"
+        ],
+        "title": "ArpEntry",
+        "type": "object"
+      },
+      "ArpPollRequest": {
+        "properties": {
+          "community": {
+            "format": "password",
+            "title": "Community",
+            "type": "string",
+            "writeOnly": true
+          },
+          "router_ip": {
+            "title": "Router Ip",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "default": 10000,
+            "maximum": 120000.0,
+            "minimum": 500.0,
+            "title": "Timeout Ms",
+            "type": "integer"
+          },
+          "version": {
+            "default": "2c",
+            "enum": [
+              "1",
+              "2c",
+              "3"
+            ],
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "router_ip",
+          "community"
+        ],
+        "title": "ArpPollRequest",
+        "type": "object"
+      },
+      "ArpPollResponse": {
+        "properties": {
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ArpEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "raw_lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Raw Lines",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries",
+          "raw_lines",
+          "duration_ms"
+        ],
+        "title": "ArpPollResponse",
+        "type": "object"
+      },
+      "DnsBatchEntry": {
+        "properties": {
+          "ip": {
+            "title": "Ip",
+            "type": "string"
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/DnsResolution"
+          }
+        },
+        "required": [
+          "ip",
+          "resolution"
+        ],
+        "title": "DnsBatchEntry",
+        "type": "object"
+      },
+      "DnsBatchRequest": {
+        "properties": {
+          "concurrency": {
+            "default": 16,
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Concurrency",
+            "type": "integer"
+          },
+          "dns_server": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dns Server"
+          },
+          "ips": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Ips",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ips"
+        ],
+        "title": "DnsBatchRequest",
+        "type": "object"
+      },
+      "DnsForwardRequest": {
+        "properties": {
+          "dns_server": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dns Server"
+          },
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "default": 2500,
+            "maximum": 30000.0,
+            "minimum": 200.0,
+            "title": "Timeout Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hostname"
+        ],
+        "title": "DnsForwardRequest",
+        "type": "object"
+      },
+      "DnsResolution": {
+        "properties": {
+          "forward": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forward"
+          },
+          "reverse": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reverse"
+          }
+        },
+        "title": "DnsResolution",
+        "type": "object"
+      },
+      "DnsReverseRequest": {
+        "properties": {
+          "dns_server": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dns Server"
+          },
+          "ip": {
+            "title": "Ip",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "default": 2500,
+            "maximum": 30000.0,
+            "minimum": 200.0,
+            "title": "Timeout Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ip"
+        ],
+        "title": "DnsReverseRequest",
+        "type": "object"
+      },
+      "ExecResult": {
+        "properties": {
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "exit_code": {
+            "title": "Exit Code",
+            "type": "integer"
+          },
+          "stderr": {
+            "title": "Stderr",
+            "type": "string"
+          },
+          "stdout": {
+            "title": "Stdout",
+            "type": "string"
+          },
+          "truncated": {
+            "$ref": "#/components/schemas/TruncatedFlags"
+          }
+        },
+        "required": [
+          "stdout",
+          "stderr",
+          "exit_code",
+          "duration_ms",
+          "truncated"
+        ],
+        "title": "ExecResult",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthCheckResult": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "mode": {
+            "default": "remote",
+            "enum": [
+              "local",
+              "remote"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "network": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetworkStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolsAvailability"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "HealthCheckResult",
+        "type": "object"
+      },
+      "NetworkStatus": {
+        "properties": {
+          "tailscale": {
+            "title": "Tailscale",
+            "type": "boolean"
+          },
+          "tailscale_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tailscale Ip"
+          }
+        },
+        "required": [
+          "tailscale"
+        ],
+        "title": "NetworkStatus",
+        "type": "object"
+      },
+      "NmapDiscoverHostsRequest": {
+        "properties": {
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "default": 90000,
+            "maximum": 900000.0,
+            "minimum": 1000.0,
+            "title": "Timeout Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "NmapDiscoverHostsRequest",
+        "type": "object"
+      },
+      "NmapPort": {
+        "properties": {
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "product": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product"
+          },
+          "protocol": {
+            "title": "Protocol",
+            "type": "string"
+          },
+          "service": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "port",
+          "protocol",
+          "state"
+        ],
+        "title": "NmapPort",
+        "type": "object"
+      },
+      "NmapPortScanRequest": {
+        "properties": {
+          "custom_args": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Args"
+          },
+          "ip": {
+            "title": "Ip",
+            "type": "string"
+          },
+          "skip_udp": {
+            "default": false,
+            "title": "Skip Udp",
+            "type": "boolean"
+          },
+          "timeout_ms": {
+            "default": 280000,
+            "maximum": 900000.0,
+            "minimum": 1000.0,
+            "title": "Timeout Ms",
+            "type": "integer"
+          },
+          "udp_ports": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Udp Ports"
+          }
+        },
+        "required": [
+          "ip"
+        ],
+        "title": "NmapPortScanRequest",
+        "type": "object"
+      },
+      "NmapResult": {
+        "properties": {
+          "alive": {
+            "title": "Alive",
+            "type": "boolean"
+          },
+          "ip": {
+            "title": "Ip",
+            "type": "string"
+          },
+          "mac": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mac"
+          },
+          "os": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os"
+          },
+          "ports": {
+            "items": {
+              "$ref": "#/components/schemas/NmapPort"
+            },
+            "title": "Ports",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ip",
+          "alive"
+        ],
+        "title": "NmapResult",
+        "type": "object"
+      },
+      "PingRequest": {
+        "properties": {
+          "ip": {
+            "title": "Ip",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "default": 2000,
+            "maximum": 60000.0,
+            "minimum": 100.0,
+            "title": "Timeout Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ip"
+        ],
+        "title": "PingRequest",
+        "type": "object"
+      },
+      "PingResult": {
+        "properties": {
+          "alive": {
+            "title": "Alive",
+            "type": "boolean"
+          },
+          "ip": {
+            "title": "Ip",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "ttl": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttl"
+          }
+        },
+        "required": [
+          "ip",
+          "alive"
+        ],
+        "title": "PingResult",
+        "type": "object"
+      },
+      "PingSweepRequest": {
+        "properties": {
+          "concurrency": {
+            "default": 50,
+            "maximum": 256.0,
+            "minimum": 1.0,
+            "title": "Concurrency",
+            "type": "integer"
+          },
+          "ips": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Ips",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ips"
+        ],
+        "title": "PingSweepRequest",
+        "type": "object"
+      },
+      "SnmpRoute": {
+        "properties": {
+          "cidr": {
+            "title": "Cidr",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "ipAddrTable",
+              "ipCidrRouteTable"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cidr",
+          "source"
+        ],
+        "title": "SnmpRoute",
+        "type": "object"
+      },
+      "SnmpRoutesRequest": {
+        "properties": {
+          "community": {
+            "format": "password",
+            "title": "Community",
+            "type": "string",
+            "writeOnly": true
+          },
+          "router_ip": {
+            "title": "Router Ip",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "default": 15000,
+            "maximum": 120000.0,
+            "minimum": 500.0,
+            "title": "Timeout Ms",
+            "type": "integer"
+          },
+          "version": {
+            "default": "2c",
+            "enum": [
+              "1",
+              "2c",
+              "3"
+            ],
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "router_ip",
+          "community"
+        ],
+        "title": "SnmpRoutesRequest",
+        "type": "object"
+      },
+      "SnmpV3Credentials": {
+        "properties": {
+          "auth_password": {
+            "anyOf": [
+              {
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Password"
+          },
+          "auth_protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Protocol"
+          },
+          "priv_password": {
+            "anyOf": [
+              {
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priv Password"
+          },
+          "priv_protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priv Protocol"
+          },
+          "security_name": {
+            "title": "Security Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "security_name"
+        ],
+        "title": "SnmpV3Credentials",
+        "type": "object"
+      },
+      "SnmpWalkRequest": {
+        "properties": {
+          "community": {
+            "anyOf": [
+              {
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "oid": {
+            "title": "Oid",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "default": 10000,
+            "maximum": 120000.0,
+            "minimum": 500.0,
+            "title": "Timeout Ms",
+            "type": "integer"
+          },
+          "v3": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnmpV3Credentials"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "default": "2c",
+            "enum": [
+              "1",
+              "2c",
+              "3"
+            ],
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "oid"
+        ],
+        "title": "SnmpWalkRequest",
+        "type": "object"
+      },
+      "SnmpWalkRow": {
+        "properties": {
+          "oid": {
+            "title": "Oid",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "oid",
+          "type",
+          "value"
+        ],
+        "title": "SnmpWalkRow",
+        "type": "object"
+      },
+      "SshExecRequest": {
+        "properties": {
+          "auth": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SshPasswordAuth"
+              },
+              {
+                "$ref": "#/components/schemas/SshKeyAuth"
+              }
+            ],
+            "title": "Auth"
+          },
+          "command": {
+            "title": "Command",
+            "type": "string"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "port": {
+            "default": 22,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "timeout_ms": {
+            "default": 30000,
+            "maximum": 600000.0,
+            "minimum": 500.0,
+            "title": "Timeout Ms",
+            "type": "integer"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "user",
+          "auth",
+          "command"
+        ],
+        "title": "SshExecRequest",
+        "type": "object"
+      },
+      "SshKeyAuth": {
+        "properties": {
+          "passphrase": {
+            "anyOf": [
+              {
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passphrase"
+          },
+          "private_key_pem": {
+            "format": "password",
+            "title": "Private Key Pem",
+            "type": "string",
+            "writeOnly": true
+          },
+          "type": {
+            "const": "key",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "private_key_pem"
+        ],
+        "title": "SshKeyAuth",
+        "type": "object"
+      },
+      "SshPasswordAuth": {
+        "properties": {
+          "password": {
+            "format": "password",
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "type": {
+            "const": "password",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "password"
+        ],
+        "title": "SshPasswordAuth",
+        "type": "object"
+      },
+      "ToolsAvailability": {
+        "properties": {
+          "nmap": {
+            "title": "Nmap",
+            "type": "boolean"
+          },
+          "ping": {
+            "title": "Ping",
+            "type": "boolean"
+          },
+          "snmpwalk": {
+            "title": "Snmpwalk",
+            "type": "boolean"
+          },
+          "ssh": {
+            "title": "Ssh",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "nmap",
+          "snmpwalk",
+          "ping",
+          "ssh"
+        ],
+        "title": "ToolsAvailability",
+        "type": "object"
+      },
+      "TruncatedFlags": {
+        "properties": {
+          "stderr": {
+            "default": false,
+            "title": "Stderr",
+            "type": "boolean"
+          },
+          "stdout": {
+            "default": false,
+            "title": "Stdout",
+            "type": "boolean"
+          }
+        },
+        "title": "TruncatedFlags",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WhoamiResponse": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "tenant_code": {
+            "title": "Tenant Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "scopes",
+          "tenant_code"
+        ],
+        "title": "WhoamiResponse",
+        "type": "object"
+      },
+      "WinrmExecRequest": {
+        "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/SshPasswordAuth"
+          },
+          "command": {
+            "title": "Command",
+            "type": "string"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "realm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realm"
+          },
+          "timeout_ms": {
+            "default": 60000,
+            "maximum": 900000.0,
+            "minimum": 1000.0,
+            "title": "Timeout Ms",
+            "type": "integer"
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "kerberos",
+                  "ntlm",
+                  "credssp",
+                  "basic"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transport"
+          },
+          "use_powershell": {
+            "default": true,
+            "title": "Use Powershell",
+            "type": "boolean"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "user",
+          "auth",
+          "command"
+        ],
+        "title": "WinrmExecRequest",
+        "type": "object"
+      },
+      "WinrmExecResult": {
+        "properties": {
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "exit_code": {
+            "title": "Exit Code",
+            "type": "integer"
+          },
+          "stderr": {
+            "title": "Stderr",
+            "type": "string"
+          },
+          "stdout": {
+            "title": "Stdout",
+            "type": "string"
+          },
+          "transport_used": {
+            "title": "Transport Used",
+            "type": "string"
+          },
+          "truncated": {
+            "$ref": "#/components/schemas/TruncatedFlags"
+          }
+        },
+        "required": [
+          "stdout",
+          "stderr",
+          "exit_code",
+          "duration_ms",
+          "truncated",
+          "transport_used"
+        ],
+        "title": "WinrmExecResult",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "DA-INVENT Agent",
+    "version": "0.2.4"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/exec/arp-poll": {
+      "post": {
+        "operationId": "exec_arp_poll_exec_arp_poll_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArpPollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArpPollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exec Arp Poll"
+      }
+    },
+    "/exec/dns-batch": {
+      "post": {
+        "operationId": "exec_dns_batch_exec_dns_batch_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DnsBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DnsBatchEntry"
+                  },
+                  "title": "Response Exec Dns Batch Exec Dns Batch Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exec Dns Batch"
+      }
+    },
+    "/exec/dns-forward": {
+      "post": {
+        "operationId": "exec_dns_forward_exec_dns_forward_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DnsForwardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Exec Dns Forward Exec Dns Forward Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exec Dns Forward"
+      }
+    },
+    "/exec/dns-reverse": {
+      "post": {
+        "operationId": "exec_dns_reverse_exec_dns_reverse_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DnsReverseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DnsResolution"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exec Dns Reverse"
+      }
+    },
+    "/exec/nmap-discover": {
+      "post": {
+        "operationId": "exec_nmap_discover_exec_nmap_discover_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NmapDiscoverHostsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NmapResult"
+                  },
+                  "title": "Response Exec Nmap Discover Exec Nmap Discover Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exec Nmap Discover"
+      }
+    },
+    "/exec/nmap-port-scan": {
+      "post": {
+        "operationId": "exec_nmap_port_scan_exec_nmap_port_scan_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NmapPortScanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/NmapResult"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Exec Nmap Port Scan Exec Nmap Port Scan Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exec Nmap Port Scan"
+      }
+    },
+    "/exec/ping": {
+      "post": {
+        "operationId": "exec_ping_one_exec_ping_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PingResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exec Ping One"
+      }
+    },
+    "/exec/ping-sweep": {
+      "post": {
+        "operationId": "exec_ping_sweep_exec_ping_sweep_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PingSweepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PingResult"
+                  },
+                  "title": "Response Exec Ping Sweep Exec Ping Sweep Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exec Ping Sweep"
+      }
+    },
+    "/exec/snmp-routes": {
+      "post": {
+        "operationId": "exec_snmp_routes_exec_snmp_routes_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnmpRoutesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SnmpRoute"
+                  },
+                  "title": "Response Exec Snmp Routes Exec Snmp Routes Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exec Snmp Routes"
+      }
+    },
+    "/exec/snmp-walk": {
+      "post": {
+        "operationId": "exec_snmp_walk_exec_snmp_walk_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnmpWalkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SnmpWalkRow"
+                  },
+                  "title": "Response Exec Snmp Walk Exec Snmp Walk Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exec Snmp Walk"
+      }
+    },
+    "/exec/ssh-exec": {
+      "post": {
+        "operationId": "exec_ssh_run_exec_ssh_exec_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SshExecRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exec Ssh Run"
+      }
+    },
+    "/exec/winrm-exec": {
+      "post": {
+        "operationId": "exec_winrm_run_exec_winrm_exec_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WinrmExecRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WinrmExecResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exec Winrm Run"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheckResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthz"
+      }
+    },
+    "/version": {
+      "get": {
+        "operationId": "version_version_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Version Version Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Version"
+      }
+    },
+    "/whoami": {
+      "get": {
+        "operationId": "whoami_whoami_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhoamiResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Whoami"
+      }
+    }
+  }
+}

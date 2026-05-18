@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c 'import sys,json;print(json.load(sys.stdin).get(\"file_path\",\"\"))' 2>/dev/null); if echo \"$FILE\" | grep -qE '\\.(ts|tsx)$' && ! echo \"$FILE\" | grep -qE '(\\.test\\.|\\.spec\\.|node_modules/|\\.next/|tsconfig\\.tsbuildinfo)'; then cd /Users/riccardo/Progetti/DA-IPAM && timeout 30 npx --no-install tsc --noEmit -p tsconfig.json 2>&1 | grep -E \"^${FILE}:\" | head -10; fi"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CMD=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c 'import sys,json;print(json.load(sys.stdin).get(\"command\",\"\"))' 2>/dev/null); if echo \"$CMD\" | grep -qE 'git push.*--force.*\\b(main|master)\\b|git push -f.*\\b(main|master)\\b'; then echo 'BLOCKED: force-push su main/master vietato (CLAUDE.md regola anti-regressione 1)'; exit 2; fi; if echo \"$CMD\" | grep -qE 'git commit.*--no-verify'; then echo 'BLOCKED: --no-verify vietato (CLAUDE.md)'; exit 2; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

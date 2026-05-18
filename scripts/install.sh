@@ -245,6 +245,41 @@ EOF
   # enable = avvio al boot; --now = avvia anche subito (evita stato inactive fino al primo reboot)
   systemctl enable --now "$APP_NAME"
   echo "    Servizio installato, abilitato al boot e avviato (systemctl enable --now)."
+
+  # ── Auto-update: timer systemd giornaliero (no-op se già aggiornato) ──────
+  echo ">>> Installazione auto-update (timer systemd)..."
+  cat > "/etc/systemd/system/${APP_NAME}-update.service" << EOF
+[Unit]
+Description=DA-INVENT auto-update (git pull + build + restart se ci sono novità)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=$SERVICE_USER
+Group=$SERVICE_GROUP
+WorkingDirectory=$APP_DIR
+EnvironmentFile=-$APP_DIR/.env.local
+ExecStart=/bin/bash $APP_DIR/scripts/auto-update.sh
+TimeoutStartSec=1800
+EOF
+  cat > "/etc/systemd/system/${APP_NAME}-update.timer" << EOF
+[Unit]
+Description=DA-INVENT auto-update giornaliero
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=900
+Persistent=true
+Unit=${APP_NAME}-update.service
+
+[Install]
+WantedBy=timers.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now "${APP_NAME}-update.timer"
+  echo "    Auto-update attivo: ogni notte ~04:00 (Persistent). Build/restart SOLO se origin ha commit nuovi."
+  echo "    Forzare ora:  systemctl start ${APP_NAME}-update.service && journalctl -u ${APP_NAME}-update -f"
 }
 
 # Main

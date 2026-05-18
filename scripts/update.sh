@@ -10,7 +10,11 @@ for arg in "$@"; do
   [[ "$arg" == "--restart" ]] && RESTART=true
 done
 
-APP_DIR="${DA_INVENT_DIR:-$(pwd)}"
+# Risolve la root del repo dalla posizione dello script (scripts/..), così
+# `update.sh` funziona anche invocato per path assoluto via `pct exec` (CWD=/root)
+# o da qualsiasi directory. Override esplicito con DA_INVENT_DIR.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+APP_DIR="${DA_INVENT_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 cd "$APP_DIR"
 
 echo "=== DA-INVENT Update ==="
@@ -19,7 +23,9 @@ echo ""
 
 # Verifica che sia un repo git
 if [ ! -d .git ]; then
-  echo "Errore: non è un repository Git."
+  echo "Errore: '$APP_DIR' non è un repository Git."
+  echo "       L'app non è stata installata via 'git clone'. Recupero possibile:"
+  echo "       cd $APP_DIR && git init && git remote add origin https://github.com/grandir66/DA-IPAM.git && git fetch origin main && git reset --hard origin/main"
   exit 1
 fi
 

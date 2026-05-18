@@ -1,0 +1,13 @@
+[Unit]
+Description=DA-INVENT auto-update (git pull + build + restart se ci sono novità)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/da-invent
+EnvironmentFile=-/opt/da-invent/.env.local
+ExecStart=/bin/bash /opt/da-invent/scripts/auto-update.sh
+TimeoutStartSec=1800

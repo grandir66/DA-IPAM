@@ -217,8 +217,8 @@ extract_template_filename_from_pveam_line() {
     for (i = 1; i <= NF; i++) {
       if ($i ~ /\.tar\.(zst|gz|xz)$/) fname = $i
     }
-    END { print fname }
-  }')
+  }
+  END { print fname }')
   if [[ -n "$tname" ]]; then
     echo "$tname"
     return
@@ -234,7 +234,9 @@ pick_template_storage() {
 # Se non ci sono template sullo storage: elenco da pveam available e scelta numerata → solo nome file .tar.*
 pick_available_template_filename() {
   info "Aggiornamento indice template (pveam update)…"
-  if ! pveam update; then
+  # NB: pveam update scrive "update successful" su stdout. Questa funzione è
+  # catturata con $( ), quindi va rediretto a stderr o inquina $tname.
+  if ! pveam update >&2; then
     warn "pveam update non è riuscito (rete/DNS?). L'indice template potrebbe essere obsoleto e il download fallire."
   fi
   local avail
@@ -284,7 +286,8 @@ pick_template() {
       tname=$(pick_available_template_filename)
       info "Download su storage '$tpl_stor' (può richiedere alcuni minuti)…"
       info "Template: $tname"
-      if pveam download "$tpl_stor" "$tname"; then
+      # pick_template è catturata con $( ): l'output di pveam download va su stderr.
+      if pveam download "$tpl_stor" "$tname" >&2; then
         echo "$tpl_stor|$tname"
         return 0
       fi

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "fs";
 import { execSync } from "child_process";
 import path from "path";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -20,7 +20,7 @@ function sanitizeDomain(domain: string): string | null {
 
 export async function GET() {
   try {
-    const adminCheck = await requireAdmin();
+    const adminCheck = await requireAdminOrOnboarding();
     if (isAuthError(adminCheck)) return adminCheck;
 
     const certPath = process.env.TLS_CERT;
@@ -74,7 +74,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const adminCheck = await requireAdmin();
+    const adminCheck = await requireAdminOrOnboarding();
     if (isAuthError(adminCheck)) return adminCheck;
 
     const body = await request.json() as {

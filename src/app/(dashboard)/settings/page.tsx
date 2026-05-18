@@ -584,15 +584,15 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "generate", domain: tlsDomain, days: parseInt(tlsDays) || 365 }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (res.ok) {
-        toast.success(data.message);
-        const updated = await fetch("/api/tls").then(r => r.json());
-        setTlsStatus(updated);
+        toast.success(data?.message ?? "Certificato generato");
+        const updated = await fetch("/api/tls").then(r => r.json()).catch(() => null);
+        if (updated) setTlsStatus(updated);
       } else {
-        toast.error(data.error);
+        toast.error(data?.error ?? `Errore ${res.status}: la pagina certificato non è accessibile (probabile sessione non admin o onboarding).`);
       }
-    } catch { toast.error("Errore di rete"); }
+    } catch { toast.error("Errore di rete verso /api/tls"); }
     finally { setGeneratingCert(false); }
   }
 
@@ -604,16 +604,16 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "import", cert: importCert, key: importKey }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (res.ok) {
-        toast.success(data.message);
+        toast.success(data?.message ?? "Certificato importato");
         setImportCert(""); setImportKey("");
-        const updated = await fetch("/api/tls").then(r => r.json());
-        setTlsStatus(updated);
+        const updated = await fetch("/api/tls").then(r => r.json()).catch(() => null);
+        if (updated) setTlsStatus(updated);
       } else {
-        toast.error(data.error);
+        toast.error(data?.error ?? `Errore ${res.status}: la pagina certificato non è accessibile (probabile sessione non admin o onboarding).`);
       }
-    } catch { toast.error("Errore di rete"); }
+    } catch { toast.error("Errore di rete verso /api/tls"); }
     finally { setImportingCert(false); }
   }
 

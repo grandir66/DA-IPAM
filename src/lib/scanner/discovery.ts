@@ -68,7 +68,7 @@ export function getScanProgress(id: string): ScanProgress | undefined {
 
 let scanIdCounter = Date.now();
 
-export type DiscoveryScanType = "ping" | "snmp" | "nmap" | "windows" | "ssh" | "network_discovery" | "ipam_full" | "credential_validate";
+export type DiscoveryScanType = "ping" | "fast" | "snmp" | "nmap" | "windows" | "ssh" | "network_discovery" | "ipam_full" | "credential_validate";
 
 export type DiscoverNetworkOptions = {
   /** Se impostato, la scansione riguarda solo questi IP (devono appartenere alla subnet). */
@@ -368,6 +368,70 @@ async function runDiscovery(
       progress.found = found;
     });
     onlineIps = results.filter((r) => r.alive).map((r) => r.ip);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FAST: presenza rapida — nmap -sn sull'intero CIDR (fallback ping sweep ad
+  // alta concorrenza) + ARP/DHCP dal router associato. Nessun port scan, niente
+  // fingerprint, niente SNMP per-host. Additiva: NON marca offline i non
+  // rispondenti (è una fotografia di presenza, non autoritativa).
+  // ═══════════════════════════════════════════════════════════════
+  else if (scanType === "fast") {
+    progress.phase = "Sweep rapido (nmap -sn)";
+    let nmapOk = false;
+    try {
+      if (await isNmapAvailable()) {
+        const aliveResults = await nmapDiscoverHosts(cidr, 180000);
+        const upHosts = aliveResults.filter((r) => r.alive);
+        onlineIps = upHosts.map((r) => r.ip);
+        // MAC dallo sweep ARP nmap (solo stessa L2): persiste subito così
+        // l'ARP-poll del router sotto non deve riscoprirli.
+        for (const r of upHosts) {
+          if (r.mac) {
+            try {
+              upsertHost({
+                network_id: networkId,
+                ip: r.ip,
+                mac: r.mac,
+                status: "online",
+                hostname_source: "scan",
+              });
+            } catch { /* upsert singolo host non blocca lo sweep */ }
+          }
+        }
+        progress.scanned = ips.length;
+        progress.found = onlineIps.length;
+        nmapOk = true;
+        log(`nmap -sn: ${onlineIps.length} host vivi su ${ips.length} IP del CIDR`);
+      }
+    } catch (e) {
+      log(`nmap -sn fallito (${e instanceof Error ? e.message : "errore"}): fallback ping sweep…`);
+    }
+    if (!nmapOk) {
+      progress.phase = "Ping sweep (fallback)";
+      const results = await pingSweep(ips, 128, (scanned, found) => {
+        progress.scanned = scanned;
+        progress.found = found;
+      });
+      onlineIps = results.filter((r) => r.alive).map((r) => r.ip);
+      log(`ping sweep: ${onlineIps.length}/${ips.length} host vivi`);
+    }
+    // ARP + DHCP dal router associato (se configurato): aggiunge IP che ora
+    // non rispondono ma che il router ha in tabella ARP/lease. Poll completo
+    // (niente onlyEnrichIps, niente skipDhcpLeases) — è il valore aggiunto
+    // rispetto al solo ICMP sweep su reti grandi.
+    progress.phase = "ARP/DHCP dal router…";
+    try {
+      const { runArpPoll } = await import("@/lib/cron/jobs");
+      const arpResult = await runArpPoll(networkId);
+      if (arpResult.error) {
+        log(`ARP/DHCP router: ${arpResult.error}`);
+      } else {
+        log(`ARP/DHCP router: ${arpResult.phase ?? "completato"}`);
+      }
+    } catch (arpErr) {
+      log(`ARP/DHCP router: ${arpErr instanceof Error ? arpErr.message : "errore"}`);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -2048,7 +2112,7 @@ async function runDiscovery(
     progress.phase = "Annotazione host non rispondenti";
     noteHostsNonResponding(networkId, onlineIps, ips, scanType);
     log(`Host non rispondenti (${ips.length - onlineIps.length}): annotati nelle note per revisione`);
-  } else if (scanType !== "snmp") {
+  } else if (scanType !== "snmp" && scanType !== "fast") {
     progress.phase = "Aggiornamento host offline";
     markHostsOffline(networkId, onlineIps, ips);
   }

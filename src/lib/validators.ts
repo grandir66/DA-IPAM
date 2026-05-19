@@ -136,6 +136,7 @@ export const ScanTriggerSchema = z.object({
   network_id: z.coerce.number().int().positive(),
   scan_type: z.enum([
     "ping",
+    "fast",
     "network_discovery",
     "snmp",
     "nmap",

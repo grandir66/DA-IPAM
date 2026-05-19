@@ -37,7 +37,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { IpGrid } from "@/components/shared/ip-grid";
 import { ScanProgress } from "@/components/shared/scan-progress";
-import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Monitor, Terminal, Key, PlusCircle, Loader2, Activity } from "lucide-react";
+import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Monitor, Terminal, Key, PlusCircle, Loader2, Activity, Zap } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
@@ -585,9 +585,10 @@ export function NetworkDetailClient({
   }
 
   const SCAN_LABELS: Record<
-    "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "credential_validate",
+    "fast" | "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "credential_validate",
     string
   > = {
+    fast: "Scansione veloce",
     network_discovery: "Scoperta rete",
     snmp: "SNMP",
     nmap: "Nmap",
@@ -597,13 +598,13 @@ export function NetworkDetailClient({
   };
 
   async function runScanJob(
-    scanType: "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "credential_validate",
+    scanType: "fast" | "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "credential_validate",
     options?: { showStartToast?: boolean; refreshOnComplete?: boolean }
   ): Promise<{ ok: boolean; lastProgress: ScanProgressType | null }> {
     const showStartToast = options?.showStartToast !== false;
     const refreshOnComplete = options?.refreshOnComplete !== false;
 
-    const noHostSelectionNeeded = scanType === "network_discovery";
+    const noHostSelectionNeeded = scanType === "network_discovery" || scanType === "fast";
     if (!noHostSelectionNeeded && selectedHostIds.size === 0) {
       toast.error("Seleziona uno o più host nella vista lista (azioni manuali solo sugli IP selezionati)");
       return { ok: false, lastProgress: null };
@@ -668,7 +669,7 @@ export function NetworkDetailClient({
     });
   }
 
-  async function triggerScan(scanType: "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "credential_validate") {
+  async function triggerScan(scanType: "fast" | "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "credential_validate") {
     await runScanJob(scanType);
   }
 
@@ -957,6 +958,24 @@ export function NetworkDetailClient({
               Scansione e acquisizione dati
             </p>
             <div className="flex flex-wrap gap-2 items-start content-start">
+            {/* Fase 0 — Scansione veloce (presenza rapida, no port scan) */}
+            <div className="rounded-lg border-2 border-amber-500/60 bg-amber-500/10 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,10rem)] flex-1 sm:flex-none shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 leading-tight mb-1">
+                Fase 0 — Veloce
+              </p>
+              <Button
+                size="default"
+                variant="default"
+                className="w-full font-medium bg-amber-500 hover:bg-amber-600 text-white"
+                onClick={() => triggerScan("fast")}
+                disabled={!!scanning}
+                title="ICMP sweep dell'intero CIDR (nmap -sn) + ARP/DHCP dal router associato. Nessun port scan, niente fingerprint. Da usare prima di tutto il resto su reti grandi."
+              >
+                <Zap className="h-4 w-4 mr-1.5 shrink-0" />
+                Scansione veloce
+              </Button>
+            </div>
+
             {/* Fase 1 — Scoperta rete */}
             <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,10rem)] flex-1 sm:flex-none shadow-sm">
               <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">

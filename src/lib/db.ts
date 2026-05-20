@@ -280,6 +280,32 @@ export function getDb(): Database.Database {
     _db.exec("DROP TABLE scheduled_jobs");
     _db.exec("ALTER TABLE scheduled_jobs_new RENAME TO scheduled_jobs");
   } catch { /* migration already applied */ }
+  // Migrazione: scheduled_jobs.job_type CHECK include 'fast_scan' (schedulazione "Scansione veloce" per-subnet)
+  {
+    const schema = _db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as { sql: string } | undefined;
+    if (schema?.sql && !schema.sql.includes("'fast_scan'")) {
+      _db.pragma("foreign_keys = OFF");
+      try {
+        _db.exec("DROP TABLE IF EXISTS scheduled_jobs_v2");
+        _db.exec(`CREATE TABLE scheduled_jobs_v2 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+          job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'fast_scan', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'cleanup', 'known_host_check', 'ad_sync')),
+          interval_minutes INTEGER NOT NULL DEFAULT 60,
+          last_run TEXT,
+          next_run TEXT,
+          enabled INTEGER DEFAULT 1,
+          config TEXT DEFAULT '{}',
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        )`);
+        _db.exec("INSERT INTO scheduled_jobs_v2 SELECT * FROM scheduled_jobs");
+        _db.exec("DROP TABLE scheduled_jobs");
+        _db.exec("ALTER TABLE scheduled_jobs_v2 RENAME TO scheduled_jobs");
+      } catch { /* already migrated */ }
+      _db.pragma("foreign_keys = ON");
+    }
+  }
   try {
     _db.exec("DROP TABLE IF EXISTS scan_history_new");
     _db.exec(`CREATE TABLE scan_history_new (
@@ -4839,6 +4865,12 @@ export function updateJobLastRun(id: number): void {
 
 export function toggleJob(id: number, enabled: boolean): void {
   getDb().prepare("UPDATE scheduled_jobs SET enabled = ?, updated_at = datetime('now') WHERE id = ?").run(enabled ? 1 : 0, id);
+}
+
+export function updateScheduledJobInterval(id: number, intervalMinutes: number): void {
+  getDb().prepare(
+    `UPDATE scheduled_jobs SET interval_minutes = ?, next_run = datetime('now', '+' || ? || ' minutes'), updated_at = datetime('now') WHERE id = ?`
+  ).run(intervalMinutes, intervalMinutes, id);
 }
 
 export function deleteScheduledJob(id: number): boolean {

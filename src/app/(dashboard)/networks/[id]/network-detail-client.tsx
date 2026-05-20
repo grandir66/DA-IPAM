@@ -37,6 +37,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { IpGrid } from "@/components/shared/ip-grid";
 import { ScanProgress } from "@/components/shared/scan-progress";
+import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
 import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Monitor, Terminal, Key, PlusCircle, Loader2, Activity, Zap } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
@@ -1107,6 +1108,8 @@ export function NetworkDetailClient({
             </div>
             </div>
           </div>
+
+          <SubnetScheduleCard networkId={network.id} />
 
           {/* Barra unica: azioni bulk a sinistra, refresh live a destra (niente toolbar dedicata sotto) */}
           <div

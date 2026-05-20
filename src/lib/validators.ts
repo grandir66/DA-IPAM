@@ -127,7 +127,7 @@ export const CredentialSchema = z.object({
 
 export const ScheduledJobSchema = z.object({
   network_id: z.coerce.number().int().positive().optional().nullable(),
-  job_type: z.enum(["ping_sweep", "snmp_scan", "nmap_scan", "arp_poll", "dns_resolve", "cleanup", "known_host_check"]),
+  job_type: z.enum(["ping_sweep", "fast_scan", "snmp_scan", "nmap_scan", "arp_poll", "dns_resolve", "cleanup", "known_host_check"]),
   interval_minutes: z.coerce.number().int().min(1).max(10080), // max 1 week
   config: z.record(z.string(), z.unknown()).optional(),
 });

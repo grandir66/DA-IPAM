@@ -65,6 +65,9 @@ export async function runJob(jobId: number): Promise<void> {
     case "ping_sweep":
       await runPingSweep(job.network_id);
       break;
+    case "fast_scan":
+      await runFastScan(job.network_id);
+      break;
     case "snmp_scan":
       await runSnmpScan(job.network_id);
       break;
@@ -106,6 +109,19 @@ async function runPingSweep(networkId: number | null): Promise<void> {
     const networks = getNetworks();
     for (const net of networks) {
       await discoverNetwork(net.id, "network_discovery");
+    }
+  }
+}
+
+async function runFastScan(networkId: number | null): Promise<void> {
+  // Scansione veloce schedulata: ICMP ping sweep + ARP/DHCP router (vedi discovery.ts blocco "fast").
+  // Non fa port scan, non marca offline i non rispondenti: è una fotografia di presenza.
+  if (networkId) {
+    await discoverNetwork(networkId, "fast");
+  } else {
+    const networks = getNetworks();
+    for (const net of networks) {
+      await discoverNetwork(net.id, "fast");
     }
   }
 }

@@ -29,8 +29,16 @@ if [ ! -d .git ]; then
   exit 1
 fi
 
-# Salva branch corrente
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
+# Target branch dell'appliance (default: main). Override con DA_INVENT_BRANCH.
+# Se il branch corrente è diverso, allinea (auto-update.sh fa già il checkout
+# preventivo, ma update.sh può essere invocato a mano e va comunque convergere).
+BRANCH="${DA_INVENT_BRANCH:-main}"
+CURRENT=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+if [ "$CURRENT" != "$BRANCH" ]; then
+  echo ">>> Branch corrente '$CURRENT' != target '$BRANCH': allineo..."
+  git fetch origin "$BRANCH"
+  git checkout -B "$BRANCH" "origin/$BRANCH"
+fi
 echo ">>> Branch: $BRANCH"
 
 # In produzione npm install/version:bump possono modificare file gestiti da Git

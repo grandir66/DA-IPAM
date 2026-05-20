@@ -1,9 +1,13 @@
 [Unit]
-Description=DA-INVENT auto-update giornaliero
+Description=DA-INVENT auto-update (ogni 15 min, no-op se già allineato)
 
 [Timer]
-OnCalendar=*-*-* 04:00:00
-RandomizedDelaySec=900
+# Cadenza fitta: il check è quasi gratis (git fetch + rev-parse) e l'update
+# avviene SOLO se c'è un commit nuovo su origin/main. Così le release pushate
+# su main sono visibili in produzione entro ~15 minuti senza intervento manuale.
+OnBootSec=2min
+OnUnitActiveSec=15min
+RandomizedDelaySec=60
 Persistent=true
 Unit=da-invent-update.service
 

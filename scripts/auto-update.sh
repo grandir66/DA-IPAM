@@ -1,11 +1,14 @@
 #!/bin/bash
 # DA-INVENT — Auto-update guidato da timer systemd.
 #
-# Invocato da da-invent-update.timer. Strategia "no-op se già aggiornato":
-#   1. git fetch del branch corrente
-#   2. se HEAD locale == origin/<branch> → esci 0 (NESSUN build, NESSUN restart:
-#      zero downtime quando non c'è nulla di nuovo)
-#   3. altrimenti → delega a update.sh --restart (pull + npm install + build + restart)
+# Strategia "appliance sempre allineata a main, no-op se già in pari":
+#   1. forza il branch target (default: main, override DA_INVENT_BRANCH)
+#      — se la working tree è su un altro branch, checkout
+#      — se ci sono modifiche locali su tracked files, reset --hard (appliance
+#        immutable: i file tracked non vanno modificati a mano)
+#   2. git fetch + confronto con origin/<branch>
+#   3. se HEAD locale == origin/<branch> → esci 0 (NESSUN build, NESSUN restart)
+#   4. altrimenti → delega a update.sh --restart (pull + npm install + build + restart)
 #
 # Lock con flock per evitare run sovrapposti. Output → journald (systemd).
 # Override branch con DA_INVENT_BRANCH; directory con DA_INVENT_DIR.
@@ -29,9 +32,24 @@ if ! flock -n 9; then
   exit 0
 fi
 
-BRANCH="${DA_INVENT_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
-echo "[auto-update] $(date -Is) — branch $BRANCH, fetch origin..."
+BRANCH="${DA_INVENT_BRANCH:-main}"
+CURRENT="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+
+# Fetch sempre, così abbiamo origin/<branch> disponibile per checkout
 git fetch --quiet origin "$BRANCH" || { echo "[auto-update] git fetch fallito, riprovo al prossimo tick."; exit 0; }
+
+if [ "$CURRENT" != "$BRANCH" ]; then
+  echo "[auto-update] branch corrente '$CURRENT' != target '$BRANCH': checkout in corso..."
+  # Drift su tracked files: hard-reset (le appliance non devono avere mod locali;
+  # data/, .env.local, tenants/ sono in .gitignore e non vengono toccati)
+  if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    echo "[auto-update] modifiche locali su tracked files: reset --hard per allineare l'appliance."
+    git reset --hard HEAD
+  fi
+  git checkout -B "$BRANCH" "origin/$BRANCH"
+fi
+
+echo "[auto-update] $(date -Is) — branch $BRANCH"
 
 LOCAL="$(git rev-parse HEAD)"
 REMOTE="$(git rev-parse "origin/$BRANCH")"

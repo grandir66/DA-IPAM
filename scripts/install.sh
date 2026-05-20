@@ -246,11 +246,11 @@ EOF
   systemctl enable --now "$APP_NAME"
   echo "    Servizio installato, abilitato al boot e avviato (systemctl enable --now)."
 
-  # ── Auto-update: timer systemd giornaliero (no-op se già aggiornato) ──────
+  # ── Auto-update: timer systemd ogni 15 min (no-op se già allineato) ───────
   echo ">>> Installazione auto-update (timer systemd)..."
   cat > "/etc/systemd/system/${APP_NAME}-update.service" << EOF
 [Unit]
-Description=DA-INVENT auto-update (git pull + build + restart se ci sono novità)
+Description=DA-INVENT auto-update (enforce branch=main + git pull + build + restart se ci sono novità)
 After=network-online.target
 Wants=network-online.target
 
@@ -265,11 +265,15 @@ TimeoutStartSec=1800
 EOF
   cat > "/etc/systemd/system/${APP_NAME}-update.timer" << EOF
 [Unit]
-Description=DA-INVENT auto-update giornaliero
+Description=DA-INVENT auto-update (ogni 15 min, no-op se già allineato)
 
 [Timer]
-OnCalendar=*-*-* 04:00:00
-RandomizedDelaySec=900
+# Cadenza fitta: il check è quasi gratis (git fetch + rev-parse). Build/restart
+# avvengono SOLO se origin/main ha un commit nuovo, quindi le release pushate
+# su main arrivano in produzione entro ~15 minuti senza intervento manuale.
+OnBootSec=2min
+OnUnitActiveSec=15min
+RandomizedDelaySec=60
 Persistent=true
 Unit=${APP_NAME}-update.service
 
@@ -278,7 +282,7 @@ WantedBy=timers.target
 EOF
   systemctl daemon-reload
   systemctl enable --now "${APP_NAME}-update.timer"
-  echo "    Auto-update attivo: ogni notte ~04:00 (Persistent). Build/restart SOLO se origin ha commit nuovi."
+  echo "    Auto-update attivo: ogni 15 min, branch=main forzato. Build/restart SOLO se origin ha commit nuovi."
   echo "    Forzare ora:  systemctl start ${APP_NAME}-update.service && journalctl -u ${APP_NAME}-update -f"
 }
 

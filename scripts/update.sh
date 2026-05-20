@@ -55,9 +55,12 @@ done
 echo ">>> git pull..."
 git pull origin "$BRANCH"
 
-# npm install
-echo ">>> npm install..."
-npm install
+# npm install: --include=dev forza l'installazione delle devDependencies
+# anche con NODE_ENV=production (presente in .env.local del service). Servono
+# comunque al build successivo (TypeScript/tailwind) e a `patch-package`, che
+# gira come postinstall per patchare httpntlm.
+echo ">>> npm install --include=dev..."
+npm install --include=dev
 
 # Venv Python WinRM (stesso set di install.sh): aggiorna dopo git pull
 if [ -f "${HOME}/.da-invent-venv/bin/pip" ]; then

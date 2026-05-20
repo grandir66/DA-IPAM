@@ -384,20 +384,19 @@ async function runDiscovery(
         const aliveResults = await nmapDiscoverHosts(cidr, 180000);
         const upHosts = aliveResults.filter((r) => r.alive);
         onlineIps = upHosts.map((r) => r.ip);
-        // MAC dallo sweep ARP nmap (solo stessa L2): persiste subito così
-        // l'ARP-poll del router sotto non deve riscoprirli.
+        // Persiste TUTTI gli host vivi (con o senza MAC). Cross-subnet nmap non
+        // ottiene MAC perché ARP scan è limitato alla stessa L2: senza questo
+        // upsert gli host risponderebbero a ICMP ma non finirebbero in DB.
         for (const r of upHosts) {
-          if (r.mac) {
-            try {
-              upsertHost({
-                network_id: networkId,
-                ip: r.ip,
-                mac: r.mac,
-                status: "online",
-                hostname_source: "scan",
-              });
-            } catch { /* upsert singolo host non blocca lo sweep */ }
-          }
+          try {
+            upsertHost({
+              network_id: networkId,
+              ip: r.ip,
+              mac: r.mac ?? undefined,
+              status: "online",
+              hostname_source: "scan",
+            });
+          } catch { /* upsert singolo host non blocca lo sweep */ }
         }
         progress.scanned = ips.length;
         progress.found = onlineIps.length;

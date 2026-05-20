@@ -105,6 +105,35 @@ export function getTenantDb(tenantCode: string): Database.Database {
   newDb.exec(TENANT_SCHEMA_SQL);
   newDb.exec(TENANT_INDEXES_SQL);
 
+  // Migrazione runtime: scheduled_jobs.job_type CHECK include 'fast_scan' (schedulazione per-subnet)
+  // I tenant DB esistenti non hanno questo valore: rigeneriamo la tabella in-place.
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as { sql?: string } | undefined;
+    if (row?.sql && !row.sql.includes("'fast_scan'")) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS scheduled_jobs_v2");
+      newDb.exec(`CREATE TABLE scheduled_jobs_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync')),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      newDb.exec("INSERT INTO scheduled_jobs_v2 SELECT * FROM scheduled_jobs");
+      newDb.exec("DROP TABLE scheduled_jobs");
+      newDb.exec("ALTER TABLE scheduled_jobs_v2 RENAME TO scheduled_jobs");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'fast_scan'`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione fast_scan fallita:`, e);
+  }
+
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
   return newDb;
 }

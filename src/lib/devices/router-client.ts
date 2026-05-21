@@ -185,7 +185,16 @@ async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds):
       return createHpClient(device, creds);
     case "omada":
       return createOmadaClient(device);
-    case "stormshield":
+    case "stormshield": {
+      // Stormshield SNS ha CLI custom (NS-BSD): i comandi POSIX/Cisco non funzionano e
+      // l'auth password viene spesso rifiutata. Se c'è community SNMP usiamola direttamente,
+      // così niente errore "All configured authentication methods failed" e la tabella ARP arriva via IP-MIB.
+      const hasSnmp = !!(device.community_string || device.snmp_credential_id || device.credential_id);
+      if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3" || hasSnmp) {
+        return createSnmpArpClient(device);
+      }
+      return createGenericSshRouterClient(device, creds);
+    }
     case "other":
       if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") {
         return createSnmpArpClient(device);

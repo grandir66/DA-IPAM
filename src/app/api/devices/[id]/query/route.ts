@@ -460,8 +460,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       let scanLabel: string;
       if (isWindows) { scanType = "windows"; scanLabel = "WinRM"; }
       else if (isSshScannable) { scanType = "ssh"; scanLabel = nasKindRoute != null ? "Storage" : "Linux/SSH"; }
-      else if (isSnmpInfoDevice) { scanType = "snmp"; scanLabel = "SNMP"; }
+      // I device router/firewall con capability ARP (Stormshield, Mikrotik, ...) vanno in arp_poll
+      // anche se hanno community SNMP, altrimenti runInfoQuery raccoglie solo sysname/descr e non la tabella ARP.
       else if (networkDeviceUsesArpPoll(device)) { scanType = "arp_poll"; scanLabel = "Router"; }
+      else if (isSnmpInfoDevice) { scanType = "snmp"; scanLabel = "SNMP"; }
       else { scanType = "switch"; scanLabel = "Switch"; }
 
       // Crea progress e lancia task in background
@@ -472,10 +474,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
       const runTask = async () => {
         try {
-          if (isWindows || isSshScannable || isSnmpInfoDevice) {
+          if (isWindows || isSshScannable) {
             await runInfoQuery(deviceId, device as Parameters<typeof getDeviceInfo>[0], scanLabel, progress);
           } else if (networkDeviceUsesArpPoll(device)) {
             await runRouterQuery(deviceId, device as Parameters<typeof createRouterClient>[0], progress);
+          } else if (isSnmpInfoDevice) {
+            await runInfoQuery(deviceId, device as Parameters<typeof getDeviceInfo>[0], scanLabel, progress);
           } else {
             await runSwitchQuery(deviceId, device as Parameters<typeof createSwitchClient>[0], progress);
           }

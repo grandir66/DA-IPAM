@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -206,11 +206,19 @@ export default function InventoryAssetPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  useEffect(() => {
-    fetch("/api/asset-assignees").then((r) => r.ok ? r.json() : []).then(setAssignees).catch(() => {});
-    fetch("/api/locations").then((r) => r.ok ? r.json() : []).then(setLocations).catch(() => {});
-    fetch("/api/licenses").then((r) => r.ok ? r.json() : []).then(setLicenses).catch(() => {});
+  const refetchAssignees = useCallback(async () => {
+    const r = await fetch("/api/asset-assignees", { cache: "no-store" });
+    if (r.ok) setAssignees(await r.json());
   }, []);
+  const refetchLocations = useCallback(async () => {
+    const r = await fetch("/api/locations", { cache: "no-store" });
+    if (r.ok) setLocations(await r.json());
+  }, []);
+  useEffect(() => {
+    refetchAssignees().catch(() => {});
+    refetchLocations().catch(() => {});
+    fetch("/api/licenses").then((r) => r.ok ? r.json() : []).then(setLicenses).catch(() => {});
+  }, [refetchAssignees, refetchLocations]);
 
   useEffect(() => {
     if (!/^\d+$/.test(id)) return;
@@ -387,7 +395,7 @@ export default function InventoryAssetPage() {
 
           {isNis2View && (
             <TabsContent value="nis2">
-              <InventoryNis2Scheda form={form} setForm={setForm} assignees={assignees} locations={locations} />
+              <InventoryNis2Scheda form={form} setForm={setForm} assignees={assignees} locations={locations} refetchAssignees={refetchAssignees} refetchLocations={refetchLocations} />
               {(asset as { technical_data?: string | null }).technical_data && (
                 <div className="mt-4">
                   <TechnicalDataCard data={(asset as { technical_data?: string | null }).technical_data!} />

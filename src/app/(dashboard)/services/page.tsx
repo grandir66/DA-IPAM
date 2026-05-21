@@ -32,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Workflow, Plus, ExternalLink, Search, Shield } from "lucide-react";
 import { toast } from "sonner";
 import type { ServiceWithDeps, ServiceInput, AssetAssignee } from "@/types";
+import { AddableSelect } from "@/components/shared/addable-select";
 
 const CRITICITA = [
   { value: "bassa", label: "Bassa" },
@@ -76,9 +77,11 @@ export default function ServicesPage() {
     } finally { setLoading(false); }
   }, [q, stato, scopeNis2]);
 
-  useEffect(() => {
-    fetch("/api/asset-assignees").then((r) => r.ok ? r.json() : []).then((d) => setAssignees(Array.isArray(d) ? d : []));
+  const refetchAssignees = useCallback(async () => {
+    const r = await fetch("/api/asset-assignees", { cache: "no-store" });
+    if (r.ok) setAssignees(await r.json());
   }, []);
+  useEffect(() => { refetchAssignees().catch(() => {}); }, [refetchAssignees]);
   useEffect(() => {
     const t = setTimeout(fetchAll, q ? 300 : 0);
     return () => clearTimeout(t);
@@ -274,23 +277,27 @@ export default function ServicesPage() {
               </div>
               <div>
                 <Label>Business owner</Label>
-                <Select value={form.business_owner_id != null ? String(form.business_owner_id) : "none"} onValueChange={(v) => setForm((f) => ({ ...f, business_owner_id: v === "none" ? null : Number(v) }))}>
-                  <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">— Nessuno</SelectItem>
-                    {assignees.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <AddableSelect
+                  value={form.business_owner_id ?? null}
+                  onChange={(v) => setForm((f) => ({ ...f, business_owner_id: v }))}
+                  options={assignees.map((a) => ({ id: a.id, label: a.name, extra: a.email ?? undefined }))}
+                  entityLabel="assegnatario"
+                  createApiUrl="/api/asset-assignees"
+                  extraFields={[{ key: "email", label: "Email", placeholder: "nome@dominio.it", type: "email" }, { key: "phone", label: "Telefono" }]}
+                  onCreated={() => refetchAssignees()}
+                />
               </div>
               <div>
                 <Label>Technical owner</Label>
-                <Select value={form.technical_owner_id != null ? String(form.technical_owner_id) : "none"} onValueChange={(v) => setForm((f) => ({ ...f, technical_owner_id: v === "none" ? null : Number(v) }))}>
-                  <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">— Nessuno</SelectItem>
-                    {assignees.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <AddableSelect
+                  value={form.technical_owner_id ?? null}
+                  onChange={(v) => setForm((f) => ({ ...f, technical_owner_id: v }))}
+                  options={assignees.map((a) => ({ id: a.id, label: a.name, extra: a.email ?? undefined }))}
+                  entityLabel="assegnatario"
+                  createApiUrl="/api/asset-assignees"
+                  extraFields={[{ key: "email", label: "Email", placeholder: "nome@dominio.it", type: "email" }, { key: "phone", label: "Telefono" }]}
+                  onCreated={() => refetchAssignees()}
+                />
               </div>
               <div className="col-span-2">
                 <Label>URL SLA</Label>

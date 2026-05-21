@@ -280,9 +280,9 @@ export default function DiscoveryPage() {
   // ─── Add to devices (bulk promote host → device) ──────────
   const [addDevicesOpen, setAddDevicesOpen] = useState(false);
   const [addDevicesSaving, setAddDevicesSaving] = useState(false);
-  const [addClassification, setAddClassification] = useState<string>("workstation");
-  const [addVendor, setAddVendor] = useState<string>("windows");
-  const [addProtocol, setAddProtocol] = useState<string>("winrm");
+  const [addClassification, setAddClassification] = useState<string>("server");
+  const [addVendor, setAddVendor] = useState<string>("other");
+  const [addProtocol, setAddProtocol] = useState<string>("ssh");
   const [addVendorSubtype, setAddVendorSubtype] = useState<string | null>(null);
   const [addProductProfile, setAddProductProfile] = useState<string | null>(null);
   const [addScanTarget, setAddScanTarget] = useState<string | null>(null);
@@ -1320,21 +1320,21 @@ export default function DiscoveryPage() {
                 onSnmpCredentialIdChange={setAddSnmpCredentialId}
                 onProductProfileChange={(v) => setAddProductProfile(v)}
                 onUseForArpPollChange={setAddUseForArpPoll}
-                defaultClassification="workstation"
-                defaultVendor="windows"
-                defaultProtocol="winrm"
+                defaultClassification="server"
+                defaultVendor="other"
+                defaultProtocol="ssh"
               />
 
               {(() => {
                 const credMap = credTypeForProtocol(addProtocol);
-                const primaryOpts = addCredentials.filter((c) => credMap.allowedPrimary.includes(c.credential_type));
+                const primaryOpts = addCredentials.filter((c) => c.credential_type !== "snmp");
                 const snmpOpts = addCredentials.filter((c) => c.credential_type === "snmp");
                 return (
                   <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
                     <div className="text-sm font-medium">Credenziali</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Credenziale principale ({credMap.primary})</Label>
+                        <Label className="text-xs">Credenziale principale</Label>
                         <AddableSelect
                           value={addCredentialId && addCredentialId !== "none" ? Number(addCredentialId) : null}
                           onChange={(v) => setAddCredentialId(v != null ? String(v) : null)}

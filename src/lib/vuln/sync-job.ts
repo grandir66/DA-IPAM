@@ -79,11 +79,15 @@ export async function runVulnSync(): Promise<{
   try {
     const scans: EdgeScan[] = await listScans(scanner, since);
 
+    // network_id qui resta NULL: l'ID arrivato dall'edge è dello *suo*
+    // namespace e non corrisponde a `networks.id` lato IPAM. Il match host
+    // viene fatto per IP a valle (vedi matchHostId). Eventuale mapping
+    // per CIDR è ottimizzazione futura.
     const insertScanRun = db.prepare(
       `INSERT OR IGNORE INTO vuln_scan_runs
         (scanner_id, edge_scan_id, network_id, started_at, finished_at,
          finding_count, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, NULL, ?, ?, ?, ?)`,
     );
     const findScanRun = db.prepare(
       "SELECT id FROM vuln_scan_runs WHERE scanner_id = ? AND edge_scan_id = ?",
@@ -94,7 +98,6 @@ export async function runVulnSync(): Promise<{
       const info = insertScanRun.run(
         scanner.id,
         s.id,
-        s.network_id,
         s.started_at,
         s.finished_at,
         s.finding_count,
@@ -102,6 +105,9 @@ export async function runVulnSync(): Promise<{
       );
       const row = findScanRun.get(scanner.id, s.id) as { id: number } | undefined;
       if (row) {
+        // networkId qui mantengo come arriva dall'edge perché serve solo
+        // come hint per matchHostId (lookup hosts per ip+network_id IPAM
+        // se conosciuto). Per IPAM è informativo, non FK.
         scanRunByEdgeId.set(s.id, { runId: row.id, networkId: s.network_id });
         if (info.changes > 0) newScans++;
       }

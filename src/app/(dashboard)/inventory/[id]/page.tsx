@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,9 +25,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Save, Shield, User, FileKey, History, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, Shield, User, FileKey, History, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { InventoryAsset, InventoryAssetInput, AssetAssignee, Location, License, LicenseSeat, InventoryAuditLog } from "@/types";
+import { InventoryViewToggle } from "@/components/inventory/inventory-view-toggle";
+import { InventoryNis2Scheda } from "@/components/inventory/inventory-nis2-scheda";
+import { useInventoryViewMode } from "@/lib/inventory/inventory-view-mode";
 
 const CATEGORIE = ["Desktop", "Laptop", "Server", "Switch", "Firewall", "NAS", "Stampante", "VM", "Licenza", "Access Point", "Router", "Other"];
 const STATI = ["Attivo", "In magazzino", "In riparazione", "Dismesso", "Rubato"];
@@ -131,8 +134,8 @@ function TechnicalDataCard({ data }: { data: string }) {
 
 export default function InventoryAssetPage() {
   const params = useParams();
-  const router = useRouter();
   const id = params.id as string;
+  const { viewMode, setViewMode, isNis2View, hydrated } = useInventoryViewMode();
   const [asset, setAsset] = useState<InventoryAsset | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -172,17 +175,24 @@ export default function InventoryAssetPage() {
             ultimo_audit: data.ultimo_audit,
             posizione_fisica: data.posizione_fisica,
             stato: data.stato,
+            data_acquisto: data.data_acquisto,
+            data_installazione: data.data_installazione,
+            data_dismissione: data.data_dismissione,
             fine_garanzia: data.fine_garanzia,
             fine_supporto: data.fine_supporto,
             firmware_version: data.firmware_version,
             sistema_operativo: data.sistema_operativo,
             versione_os: data.versione_os,
+            vlan: data.vlan,
             cpu: data.cpu,
             ram_gb: data.ram_gb,
             storage_gb: data.storage_gb,
             storage_tipo: data.storage_tipo,
             mac_address: data.mac_address,
             ip_address: data.ip_address,
+            crittografia_disco: data.crittografia_disco,
+            antivirus: data.antivirus,
+            gestito_da_mdr: data.gestito_da_mdr,
             prezzo_acquisto: data.prezzo_acquisto,
             fornitore: data.fornitore,
             contratto_supporto: data.contratto_supporto,
@@ -279,31 +289,59 @@ export default function InventoryAssetPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/inventory">
-          <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold">{asset.asset_tag ?? asset.nome_prodotto ?? `Asset #${asset.id}`}</h1>
-          <p className="text-muted-foreground text-sm">{asset.asset_id}</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-center gap-4">
+          <Link href="/inventory">
+            <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold">{asset.asset_tag ?? asset.nome_prodotto ?? `Asset #${asset.id}`}</h1>
+            <p className="text-muted-foreground text-sm">{asset.asset_id}</p>
+          </div>
         </div>
+        {hydrated && (
+          <InventoryViewToggle viewMode={viewMode} onViewModeChange={setViewMode} compact />
+        )}
       </div>
 
       <form onSubmit={handleSave}>
-        <Tabs defaultValue="identificazione">
+        <Tabs defaultValue={isNis2View ? "nis2" : "identificazione"} key={viewMode}>
           <TabsList className="flex flex-wrap gap-1">
-            <TabsTrigger value="identificazione">Identificazione</TabsTrigger>
-            <TabsTrigger value="ubicazione">Ubicazione</TabsTrigger>
-            <TabsTrigger value="responsabilita"><User className="h-3.5 w-3.5 mr-1" />Responsabilità</TabsTrigger>
-            <TabsTrigger value="ciclo">Ciclo vita</TabsTrigger>
-            <TabsTrigger value="tecnico">Tecnico</TabsTrigger>
-            <TabsTrigger value="compliance"><Shield className="h-3.5 w-3.5 mr-1" />Compliance</TabsTrigger>
-            <TabsTrigger value="licenze"><FileKey className="h-3.5 w-3.5 mr-1" />Licenze</TabsTrigger>
-            <TabsTrigger value="storico"><History className="h-3.5 w-3.5 mr-1" />Storico</TabsTrigger>
-            <TabsTrigger value="economico">Economico</TabsTrigger>
-            <TabsTrigger value="supporto">Supporto</TabsTrigger>
+            {isNis2View ? (
+              <>
+                <TabsTrigger value="nis2"><Shield className="h-3.5 w-3.5 mr-1" />Scheda NIS2</TabsTrigger>
+                <TabsTrigger value="licenze"><FileKey className="h-3.5 w-3.5 mr-1" />Licenze</TabsTrigger>
+                <TabsTrigger value="storico"><History className="h-3.5 w-3.5 mr-1" />Storico</TabsTrigger>
+              </>
+            ) : (
+              <>
+                <TabsTrigger value="identificazione">Identificazione</TabsTrigger>
+                <TabsTrigger value="ubicazione">Ubicazione</TabsTrigger>
+                <TabsTrigger value="responsabilita"><User className="h-3.5 w-3.5 mr-1" />Responsabilità</TabsTrigger>
+                <TabsTrigger value="ciclo">Ciclo vita</TabsTrigger>
+                <TabsTrigger value="tecnico">Tecnico</TabsTrigger>
+                <TabsTrigger value="compliance"><Shield className="h-3.5 w-3.5 mr-1" />Compliance</TabsTrigger>
+                <TabsTrigger value="licenze"><FileKey className="h-3.5 w-3.5 mr-1" />Licenze</TabsTrigger>
+                <TabsTrigger value="storico"><History className="h-3.5 w-3.5 mr-1" />Storico</TabsTrigger>
+                <TabsTrigger value="economico">Economico</TabsTrigger>
+                <TabsTrigger value="supporto">Supporto</TabsTrigger>
+              </>
+            )}
           </TabsList>
 
+          {isNis2View && (
+            <TabsContent value="nis2">
+              <InventoryNis2Scheda form={form} setForm={setForm} assignees={assignees} locations={locations} />
+              {(asset as { technical_data?: string | null }).technical_data && (
+                <div className="mt-4">
+                  <TechnicalDataCard data={(asset as { technical_data?: string | null }).technical_data!} />
+                </div>
+              )}
+            </TabsContent>
+          )}
+
+          {!isNis2View && (
+          <>
           <TabsContent value="identificazione">
             <Card>
               <CardHeader><CardTitle>Identificazione asset</CardTitle></CardHeader>
@@ -454,6 +492,33 @@ export default function InventoryAssetPage() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="economico">
+            <Card>
+              <CardHeader><CardTitle>Dati economici</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div><Label>Prezzo acquisto (€)</Label><Input type="number" step="0.01" value={form.prezzo_acquisto ?? ""} onChange={(e) => setForm((f) => ({ ...f, prezzo_acquisto: e.target.value ? Number(e.target.value) : null }))} /></div>
+                  <div><Label>Fornitore</Label><Input value={form.fornitore ?? ""} onChange={(e) => setForm((f) => ({ ...f, fornitore: e.target.value || null }))} /></div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="supporto">
+            <Card>
+              <CardHeader><CardTitle>Manutenzione & supporto</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div><Label>Contratto supporto</Label><Input value={form.contratto_supporto ?? ""} onChange={(e) => setForm((f) => ({ ...f, contratto_supporto: e.target.value || null }))} /></div>
+                  <div><Label>Contatto supporto</Label><Input value={form.contatto_supporto ?? ""} onChange={(e) => setForm((f) => ({ ...f, contatto_supporto: e.target.value || null }))} /></div>
+                  <div className="col-span-2"><Label>Note tecniche</Label><Textarea rows={4} value={form.note_tecniche ?? ""} onChange={(e) => setForm((f) => ({ ...f, note_tecniche: e.target.value || null }))} /></div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          </>
+          )}
+
           <TabsContent value="licenze">
             <Card>
               <CardHeader>
@@ -534,31 +599,6 @@ export default function InventoryAssetPage() {
                     </TableBody>
                   </Table>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="economico">
-            <Card>
-              <CardHeader><CardTitle>Dati economici</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div><Label>Prezzo acquisto (€)</Label><Input type="number" step="0.01" value={form.prezzo_acquisto ?? ""} onChange={(e) => setForm((f) => ({ ...f, prezzo_acquisto: e.target.value ? Number(e.target.value) : null }))} /></div>
-                  <div><Label>Fornitore</Label><Input value={form.fornitore ?? ""} onChange={(e) => setForm((f) => ({ ...f, fornitore: e.target.value || null }))} /></div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="supporto">
-            <Card>
-              <CardHeader><CardTitle>Manutenzione & supporto</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div><Label>Contratto supporto</Label><Input value={form.contratto_supporto ?? ""} onChange={(e) => setForm((f) => ({ ...f, contratto_supporto: e.target.value || null }))} /></div>
-                  <div><Label>Contatto supporto</Label><Input value={form.contatto_supporto ?? ""} onChange={(e) => setForm((f) => ({ ...f, contatto_supporto: e.target.value || null }))} /></div>
-                  <div className="col-span-2"><Label>Note tecniche</Label><Textarea rows={4} value={form.note_tecniche ?? ""} onChange={(e) => setForm((f) => ({ ...f, note_tecniche: e.target.value || null }))} /></div>
-                </div>
               </CardContent>
             </Card>
           </TabsContent>

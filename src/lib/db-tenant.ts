@@ -2954,13 +2954,15 @@ export function syncInventoryFromHost(host: Host): import("@/types").InventoryAs
 }
 
 export function getInventoryAssets(opts?: {
-  network_device_id?: number; host_id?: number; stato?: string; categoria?: string; q?: string; limit?: number;
-}): (import("@/types").InventoryAsset & { network_device_name?: string; host_ip?: string })[] {
+  network_device_id?: number; host_id?: number; stato?: string; categoria?: string;
+  in_scope_nis2?: number; q?: string; limit?: number;
+}): (import("@/types").InventoryAsset & { network_device_name?: string; host_ip?: string; assignee_name?: string })[] {
   let sql = `
-    SELECT a.*, nd.name as network_device_name, h.ip as host_ip
+    SELECT a.*, nd.name as network_device_name, h.ip as host_ip, aa.name as assignee_name
     FROM inventory_assets a
     LEFT JOIN network_devices nd ON nd.id = a.network_device_id
     LEFT JOIN hosts h ON h.id = a.host_id
+    LEFT JOIN asset_assignees aa ON aa.id = a.asset_assignee_id
     WHERE 1=1
   `;
   const params: unknown[] = [];
@@ -2968,6 +2970,7 @@ export function getInventoryAssets(opts?: {
   if (opts?.host_id) { sql += " AND a.host_id = ?"; params.push(opts.host_id); }
   if (opts?.stato) { sql += " AND a.stato = ?"; params.push(opts.stato); }
   if (opts?.categoria) { sql += " AND a.categoria = ?"; params.push(opts.categoria); }
+  if (opts?.in_scope_nis2 != null) { sql += " AND a.in_scope_nis2 = ?"; params.push(opts.in_scope_nis2); }
   if (opts?.q?.trim()) {
     const q = `%${opts.q.trim()}%`;
     sql += " AND (a.asset_tag LIKE ? OR a.serial_number LIKE ? OR a.hostname LIKE ? OR a.nome_prodotto LIKE ? OR a.marca LIKE ? OR a.modello LIKE ?)";
@@ -2975,7 +2978,7 @@ export function getInventoryAssets(opts?: {
   }
   sql += " ORDER BY a.updated_at DESC";
   if (opts?.limit) { sql += " LIMIT ?"; params.push(opts.limit); }
-  return db().prepare(sql).all(...params) as (import("@/types").InventoryAsset & { network_device_name?: string; host_ip?: string })[];
+  return db().prepare(sql).all(...params) as (import("@/types").InventoryAsset & { network_device_name?: string; host_ip?: string; assignee_name?: string })[];
 }
 
 export function createInventoryAsset(input: import("@/types").InventoryAssetInput): import("@/types").InventoryAsset {

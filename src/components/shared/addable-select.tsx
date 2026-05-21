@@ -26,26 +26,40 @@ export interface AddableOption {
   extra?: string;
 }
 
+export type AddableExtraFieldType = "text" | "email" | "password" | "select";
+
+export interface AddableExtraField {
+  key: string;
+  label: string;
+  placeholder?: string;
+  type?: AddableExtraFieldType;
+  /** Solo per `type: "select"`. */
+  options?: Array<{ value: string; label: string }>;
+  /** Valore di default (testo o opzione select). */
+  defaultValue?: string;
+  required?: boolean;
+}
+
 interface AddableSelectProps {
   value: number | null;
   onChange: (id: number | null) => void;
   options: AddableOption[];
   placeholder?: string;
   disabled?: boolean;
-  /** Etichetta dell'entità che si sta creando (es. "ubicazione", "assegnatario"). */
+  /** Etichetta dell'entità che si sta creando (es. "ubicazione", "credenziale"). */
   entityLabel: string;
-  /** Endpoint API POST. Body inviato: { name, ...extraFields }. Risposta deve essere l'oggetto creato (con .id e .name). */
+  /** Endpoint API POST. Body inviato: { name, ...extraFields }. La risposta deve contenere `.id` e `.name`. */
   createApiUrl: string;
   /** Campi opzionali da raccogliere nel dialog di quick-create. */
-  extraFields?: Array<{ key: string; label: string; placeholder?: string; type?: "text" | "email" }>;
-  /** Chiamato dopo creazione riuscita per ricaricare la lista. */
+  extraFields?: AddableExtraField[];
+  /** Chiamato dopo creazione riuscita per ricaricare la lista del parent. */
   onCreated: () => void | Promise<void>;
 }
 
 /**
- * Select con opzione "+ Aggiungi ${entityLabel}" che apre un dialog di
- * quick-create. Utile per popolare al volo lookup tables (locations,
- * asset_assignees, ecc.) senza lasciare il form corrente.
+ * Select con opzione "+ Aggiungi" che apre un dialog di quick-create.
+ * Supporta extraFields di tipo text / email / password / select per coprire
+ * lookup table eterogenee (locations, assignees, credentials, ecc.).
  */
 export function AddableSelect({
   value,
@@ -61,16 +75,24 @@ export function AddableSelect({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
-  const [extraValues, setExtraValues] = useState<Record<string, string>>({});
+  const [extraValues, setExtraValues] = useState<Record<string, string>>(
+    () => Object.fromEntries(extraFields.map((f) => [f.key, f.defaultValue ?? ""])),
+  );
 
   function reset() {
     setName("");
-    setExtraValues({});
+    setExtraValues(Object.fromEntries(extraFields.map((f) => [f.key, f.defaultValue ?? ""])));
   }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) { toast.error("Nome richiesto"); return; }
+    for (const f of extraFields) {
+      if (f.required && !extraValues[f.key]?.trim()) {
+        toast.error(`Campo richiesto: ${f.label}`);
+        return;
+      }
+    }
     setSaving(true);
     try {
       const body: Record<string, string | null> = { name: name.trim() };
@@ -141,13 +163,25 @@ export function AddableSelect({
             </div>
             {extraFields.map((f) => (
               <div key={f.key}>
-                <Label>{f.label}</Label>
-                <Input
-                  type={f.type ?? "text"}
-                  value={extraValues[f.key] ?? ""}
-                  onChange={(e) => setExtraValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                  placeholder={f.placeholder}
-                />
+                <Label>{f.label}{f.required ? " *" : ""}</Label>
+                {f.type === "select" && f.options ? (
+                  <select
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+                    value={extraValues[f.key] ?? ""}
+                    onChange={(e) => setExtraValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  >
+                    {!f.required && <option value="">—</option>}
+                    {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                ) : (
+                  <Input
+                    type={f.type === "password" ? "password" : f.type === "email" ? "email" : "text"}
+                    value={extraValues[f.key] ?? ""}
+                    onChange={(e) => setExtraValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                    autoComplete={f.type === "password" ? "new-password" : undefined}
+                  />
+                )}
               </div>
             ))}
             <div className="flex justify-end gap-2 pt-2">

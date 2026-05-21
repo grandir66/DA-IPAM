@@ -2922,6 +2922,19 @@ export function getRouters(): NetworkDevice[] {
   return getDb().prepare("SELECT * FROM network_devices WHERE device_type = 'router' ORDER BY name").all() as NetworkDevice[];
 }
 
+/** Sorgenti ARP utilizzabili come "Router ARP default" di una subnet:
+ *  qualsiasi device con use_for_arp_poll=1 (router, firewall, switch L3, ...).
+ *  Fallback per record legacy: device_type='router' o vendor='stormshield'. */
+export function getArpSourceDevices(): NetworkDevice[] {
+  return getDb().prepare(
+    `SELECT * FROM network_devices
+     WHERE use_for_arp_poll = 1
+        OR device_type IN ('router', 'firewall')
+        OR vendor = 'stormshield'
+     ORDER BY name`
+  ).all() as NetworkDevice[];
+}
+
 export function getSwitches(): NetworkDevice[] {
   return getDb().prepare("SELECT * FROM network_devices WHERE device_type = 'switch' ORDER BY name").all() as NetworkDevice[];
 }

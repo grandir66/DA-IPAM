@@ -33,6 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Plus, Trash2, ExternalLink, Save, Shield, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import type { Service, ServiceInput, ServiceAssetDependency, AssetAssignee, InventoryAsset } from "@/types";
+import { AddableSelect } from "@/components/shared/addable-select";
 
 type ServiceDetail = Service & {
   business_owner_name?: string | null;
@@ -91,10 +92,14 @@ export default function ServiceDetailPage() {
   }, [id]);
 
   useEffect(() => { fetchService(); }, [fetchService]);
-  useEffect(() => {
-    fetch("/api/asset-assignees").then((r) => r.ok ? r.json() : []).then((d) => setAssignees(Array.isArray(d) ? d : []));
-    fetch("/api/inventory?limit=1000").then((r) => r.ok ? r.json() : []).then((d) => setAssets(Array.isArray(d) ? d : []));
+  const refetchAssignees = useCallback(async () => {
+    const r = await fetch("/api/asset-assignees", { cache: "no-store" });
+    if (r.ok) setAssignees(await r.json());
   }, []);
+  useEffect(() => {
+    refetchAssignees().catch(() => {});
+    fetch("/api/inventory?limit=1000").then((r) => r.ok ? r.json() : []).then((d) => setAssets(Array.isArray(d) ? d : []));
+  }, [refetchAssignees]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -214,17 +219,27 @@ export default function ServiceDetailPage() {
             <div><Label>RPO (min)</Label><Input type="number" min={0} value={form.rpo_minutes ?? ""} onChange={(e) => setForm((f) => ({ ...f, rpo_minutes: e.target.value ? Number(e.target.value) : null }))} /></div>
             <div>
               <Label>Business owner</Label>
-              <Select value={form.business_owner_id != null ? String(form.business_owner_id) : "none"} onValueChange={(v) => setForm((f) => ({ ...f, business_owner_id: v === "none" ? null : Number(v) }))}>
-                <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
-                <SelectContent><SelectItem value="none">— Nessuno</SelectItem>{assignees.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}</SelectContent>
-              </Select>
+              <AddableSelect
+                value={form.business_owner_id ?? null}
+                onChange={(v) => setForm((f) => ({ ...f, business_owner_id: v }))}
+                options={assignees.map((a) => ({ id: a.id, label: a.name, extra: a.email ?? undefined }))}
+                entityLabel="assegnatario"
+                createApiUrl="/api/asset-assignees"
+                extraFields={[{ key: "email", label: "Email", placeholder: "nome@dominio.it", type: "email" }, { key: "phone", label: "Telefono" }]}
+                onCreated={() => refetchAssignees()}
+              />
             </div>
             <div>
               <Label>Technical owner</Label>
-              <Select value={form.technical_owner_id != null ? String(form.technical_owner_id) : "none"} onValueChange={(v) => setForm((f) => ({ ...f, technical_owner_id: v === "none" ? null : Number(v) }))}>
-                <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
-                <SelectContent><SelectItem value="none">— Nessuno</SelectItem>{assignees.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}</SelectContent>
-              </Select>
+              <AddableSelect
+                value={form.technical_owner_id ?? null}
+                onChange={(v) => setForm((f) => ({ ...f, technical_owner_id: v }))}
+                options={assignees.map((a) => ({ id: a.id, label: a.name, extra: a.email ?? undefined }))}
+                entityLabel="assegnatario"
+                createApiUrl="/api/asset-assignees"
+                extraFields={[{ key: "email", label: "Email", placeholder: "nome@dominio.it", type: "email" }, { key: "phone", label: "Telefono" }]}
+                onCreated={() => refetchAssignees()}
+              />
             </div>
             <div className="col-span-2"><Label>URL SLA</Label><Input value={form.sla_url ?? ""} onChange={(e) => setForm((f) => ({ ...f, sla_url: e.target.value || null }))} placeholder="https://..." /></div>
             <div className="col-span-2"><Label>Note</Label><Textarea rows={2} value={form.note ?? ""} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value || null }))} /></div>

@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { InventoryAsset, InventoryAssetInput, AssetAssignee, Location } from "@/types";
+import { AddableSelect } from "@/components/shared/addable-select";
 
 const CATEGORIE = ["Desktop", "Laptop", "Server", "Switch", "Firewall", "NAS", "Stampante", "VM", "Licenza", "Access Point", "Router", "Other"];
 const STATI = ["Attivo", "In magazzino", "In riparazione", "Dismesso", "Rubato"];
@@ -52,10 +53,12 @@ interface InventoryNis2SchedaProps {
   setForm: React.Dispatch<React.SetStateAction<Partial<InventoryAssetInput>>>;
   assignees: AssetAssignee[];
   locations: Location[];
+  refetchAssignees?: () => void | Promise<void>;
+  refetchLocations?: () => void | Promise<void>;
 }
 
 /** Scheda unica NIS2: tutti i campi rilevanti per compliance. */
-export function InventoryNis2Scheda({ form, setForm, assignees, locations }: InventoryNis2SchedaProps) {
+export function InventoryNis2Scheda({ form, setForm, assignees, locations, refetchAssignees, refetchLocations }: InventoryNis2SchedaProps) {
   return (
     <div className="space-y-4">
       <Card>
@@ -85,13 +88,15 @@ export function InventoryNis2Scheda({ form, setForm, assignees, locations }: Inv
           <div><Label>Sede</Label><Input value={form.sede ?? ""} onChange={(e) => setForm((f) => ({ ...f, sede: e.target.value || null }))} /></div>
           <div><Label>Reparto</Label><Input value={form.reparto ?? ""} onChange={(e) => setForm((f) => ({ ...f, reparto: e.target.value || null }))} /></div>
           <div><Label>Ubicazione</Label>
-            <Select value={form.location_id != null ? String(form.location_id) : "none"} onValueChange={(v) => setForm((f) => ({ ...f, location_id: v === "none" ? null : Number(v) }))}>
-              <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">—</SelectItem>
-                {locations.map((loc) => <SelectItem key={loc.id} value={String(loc.id)}>{loc.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <AddableSelect
+              value={form.location_id ?? null}
+              onChange={(v) => setForm((f) => ({ ...f, location_id: v }))}
+              options={locations.map((loc) => ({ id: loc.id, label: loc.name, extra: loc.address ?? undefined }))}
+              entityLabel="ubicazione"
+              createApiUrl="/api/locations"
+              extraFields={[{ key: "address", label: "Indirizzo", placeholder: "Via X, Città" }]}
+              onCreated={() => refetchLocations?.()}
+            />
           </div>
           <div><Label>Posizione fisica</Label><Input value={form.posizione_fisica ?? ""} onChange={(e) => setForm((f) => ({ ...f, posizione_fisica: e.target.value || null }))} /></div>
           <div><Label>IP</Label><Input value={form.ip_address ?? ""} onChange={(e) => setForm((f) => ({ ...f, ip_address: e.target.value || null }))} /></div>
@@ -103,34 +108,40 @@ export function InventoryNis2Scheda({ form, setForm, assignees, locations }: Inv
         <CardHeader><CardTitle>Responsabilità</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-4">
           <div><Label>Business owner</Label>
-            <Select value={form.business_owner_id != null ? String(form.business_owner_id) : "none"} onValueChange={(v) => setForm((f) => ({ ...f, business_owner_id: v === "none" ? null : Number(v) }))}>
-              <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">— Nessuno</SelectItem>
-                {assignees.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}{a.email ? ` (${a.email})` : ""}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <AddableSelect
+              value={form.business_owner_id ?? null}
+              onChange={(v) => setForm((f) => ({ ...f, business_owner_id: v }))}
+              options={assignees.map((a) => ({ id: a.id, label: a.name, extra: a.email ?? undefined }))}
+              entityLabel="assegnatario"
+              createApiUrl="/api/asset-assignees"
+              extraFields={[{ key: "email", label: "Email", placeholder: "nome@dominio.it", type: "email" }, { key: "phone", label: "Telefono" }]}
+              onCreated={() => refetchAssignees?.()}
+            />
             <p className="text-[11px] text-muted-foreground mt-1">Chi ha la responsabilità decisionale (business).</p>
           </div>
           <div><Label>Technical owner</Label>
-            <Select value={form.technical_owner_id != null ? String(form.technical_owner_id) : "none"} onValueChange={(v) => setForm((f) => ({ ...f, technical_owner_id: v === "none" ? null : Number(v) }))}>
-              <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">— Nessuno</SelectItem>
-                {assignees.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}{a.email ? ` (${a.email})` : ""}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <AddableSelect
+              value={form.technical_owner_id ?? null}
+              onChange={(v) => setForm((f) => ({ ...f, technical_owner_id: v }))}
+              options={assignees.map((a) => ({ id: a.id, label: a.name, extra: a.email ?? undefined }))}
+              entityLabel="assegnatario"
+              createApiUrl="/api/asset-assignees"
+              extraFields={[{ key: "email", label: "Email", placeholder: "nome@dominio.it", type: "email" }, { key: "phone", label: "Telefono" }]}
+              onCreated={() => refetchAssignees?.()}
+            />
             <p className="text-[11px] text-muted-foreground mt-1">Chi gestisce tecnicamente l&apos;asset (IT/sysadmin).</p>
           </div>
           <div className="col-span-2 pt-2 border-t">
             <Label className="text-xs text-muted-foreground">Proprietario business (legacy / pre-NIS2)</Label>
-            <Select value={form.asset_assignee_id != null ? String(form.asset_assignee_id) : "none"} onValueChange={(v) => setForm((f) => ({ ...f, asset_assignee_id: v === "none" ? null : Number(v) }))}>
-              <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">— Nessuno</SelectItem>
-                {assignees.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}{a.email ? ` (${a.email})` : ""}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <AddableSelect
+              value={form.asset_assignee_id ?? null}
+              onChange={(v) => setForm((f) => ({ ...f, asset_assignee_id: v }))}
+              options={assignees.map((a) => ({ id: a.id, label: a.name, extra: a.email ?? undefined }))}
+              entityLabel="assegnatario"
+              createApiUrl="/api/asset-assignees"
+              extraFields={[{ key: "email", label: "Email", placeholder: "nome@dominio.it", type: "email" }, { key: "phone", label: "Telefono" }]}
+              onCreated={() => refetchAssignees?.()}
+            />
           </div>
         </CardContent>
       </Card>

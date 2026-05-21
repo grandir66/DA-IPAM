@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 const inventorySubItems = [
   { href: "/inventory", label: "Asset", icon: Package },
   { href: "/inventory/assignees", label: "Assegnatari", icon: User },
+  { href: "/inventory/locations", label: "Ubicazioni", icon: FolderTree },
   { href: "/inventory/licenses", label: "Licenze", icon: FileKey },
   { href: "/services", label: "Servizi NIS2", icon: Workflow },
 ] as const;

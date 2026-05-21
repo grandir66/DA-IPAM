@@ -391,6 +391,38 @@ CREATE TABLE IF NOT EXISTS inventory_assets (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+
+-- ── NIS2 Fase 4: catalogo servizi e dipendenze su asset (art. 21, §12.4.2a) ──
+CREATE TABLE IF NOT EXISTS services (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  stato TEXT NOT NULL DEFAULT 'attivo' CHECK(stato IN ('attivo', 'in_dismissione', 'dismesso')),
+  criticita_servizio TEXT CHECK(criticita_servizio IN ('bassa', 'media', 'alta', 'critica') OR criticita_servizio IS NULL),
+  in_scope_nis2 INTEGER NOT NULL DEFAULT 0,
+  rto_minutes INTEGER,
+  rpo_minutes INTEGER,
+  business_owner_id INTEGER REFERENCES asset_assignees(id) ON DELETE SET NULL,
+  technical_owner_id INTEGER REFERENCES asset_assignees(id) ON DELETE SET NULL,
+  sla_url TEXT,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS service_asset_dependencies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+  asset_id INTEGER NOT NULL REFERENCES inventory_assets(id) ON DELETE CASCADE,
+  dependency_type TEXT NOT NULL DEFAULT 'primario' CHECK(dependency_type IN ('primario', 'secondario', 'supporto')),
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(service_id, asset_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_service_asset_deps_service ON service_asset_dependencies(service_id);
+CREATE INDEX IF NOT EXISTS idx_service_asset_deps_asset ON service_asset_dependencies(asset_id);
+
 -- Licenze software
 CREATE TABLE IF NOT EXISTS licenses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

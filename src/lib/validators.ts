@@ -268,6 +268,28 @@ export const InventoryBulkUpdateSchema = z.object({
   incident_response_documentata: z.coerce.number().int().min(0).max(1).optional(),
 });
 
+
+// ── NIS2 Fase 4: validatori Service ──
+export const ServiceSchema = z.object({
+  name: z.string().min(1, "Nome richiesto").max(200),
+  description: z.string().max(2000).optional().nullable(),
+  stato: z.enum(["attivo", "in_dismissione", "dismesso"]).optional(),
+  criticita_servizio: z.preprocess((v) => (v === "" ? null : v), z.enum(["bassa", "media", "alta", "critica"]).optional().nullable()),
+  in_scope_nis2: z.coerce.number().int().min(0).max(1).optional(),
+  rto_minutes: z.preprocess((v) => (v === "" || v === null ? null : v), z.coerce.number().int().min(0).optional().nullable()),
+  rpo_minutes: z.preprocess((v) => (v === "" || v === null ? null : v), z.coerce.number().int().min(0).optional().nullable()),
+  business_owner_id: z.preprocess((v) => (v === "" || v === null ? null : v), z.coerce.number().int().positive().optional().nullable()),
+  technical_owner_id: z.preprocess((v) => (v === "" || v === null ? null : v), z.coerce.number().int().positive().optional().nullable()),
+  sla_url: z.string().max(500).optional().nullable(),
+  note: z.string().max(5000).optional().nullable(),
+});
+
+export const ServiceAssetDependencySchema = z.object({
+  asset_id: z.coerce.number().int().positive(),
+  dependency_type: z.enum(["primario", "secondario", "supporto"]).optional(),
+  note: z.string().max(500).optional().nullable(),
+});
+
 export const LoginSchema = z.object({
   username: z.string().min(1, "Username richiesto"),
   password: z.string().min(1, "Password richiesta"),

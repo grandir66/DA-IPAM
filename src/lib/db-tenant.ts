@@ -3091,6 +3091,122 @@ export function syncInventoryAssetsBulk(
   return { results, total_updated: results.filter((r) => r.updated).length };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// NIS2 Fase 4 — SERVICES + DIPENDENZE
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SERVICE_FIELDS = [
+  "name", "description", "stato", "criticita_servizio", "in_scope_nis2",
+  "rto_minutes", "rpo_minutes", "business_owner_id", "technical_owner_id",
+  "sla_url", "note",
+] as const;
+
+export function getServices(opts?: { in_scope_nis2?: number; stato?: string; q?: string; limit?: number }): import("@/types").ServiceWithDeps[] {
+  let sql = `
+    SELECT s.*,
+      bo.name AS business_owner_name,
+      to_.name AS technical_owner_name,
+      COUNT(d.id) AS n_assets,
+      SUM(CASE WHEN d.dependency_type = 'primario' THEN 1 ELSE 0 END) AS n_assets_primario
+    FROM services s
+    LEFT JOIN asset_assignees bo ON bo.id = s.business_owner_id
+    LEFT JOIN asset_assignees to_ ON to_.id = s.technical_owner_id
+    LEFT JOIN service_asset_dependencies d ON d.service_id = s.id
+    WHERE 1=1
+  `;
+  const params: unknown[] = [];
+  if (opts?.in_scope_nis2 != null) { sql += " AND s.in_scope_nis2 = ?"; params.push(opts.in_scope_nis2); }
+  if (opts?.stato) { sql += " AND s.stato = ?"; params.push(opts.stato); }
+  if (opts?.q?.trim()) {
+    sql += " AND (s.name LIKE ? OR s.description LIKE ?)";
+    const q = `%${opts.q.trim()}%`;
+    params.push(q, q);
+  }
+  sql += " GROUP BY s.id ORDER BY s.name";
+  if (opts?.limit) { sql += " LIMIT ?"; params.push(opts.limit); }
+  return db().prepare(sql).all(...params) as import("@/types").ServiceWithDeps[];
+}
+
+export function getServiceById(id: number): import("@/types").ServiceWithDeps | undefined {
+  return db().prepare(`
+    SELECT s.*,
+      bo.name AS business_owner_name,
+      to_.name AS technical_owner_name
+    FROM services s
+    LEFT JOIN asset_assignees bo ON bo.id = s.business_owner_id
+    LEFT JOIN asset_assignees to_ ON to_.id = s.technical_owner_id
+    WHERE s.id = ?
+  `).get(id) as import("@/types").ServiceWithDeps | undefined;
+}
+
+export function createService(input: import("@/types").ServiceInput): import("@/types").Service {
+  const cols = SERVICE_FIELDS.filter((k) => input[k as keyof import("@/types").ServiceInput] !== undefined);
+  const sql = `INSERT INTO services (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`;
+  const values = cols.map((k) => {
+    const v = input[k as keyof import("@/types").ServiceInput];
+    if (k === "in_scope_nis2") return v ? 1 : 0;
+    return v ?? null;
+  });
+  const result = db().prepare(sql).run(...values);
+  return db().prepare("SELECT * FROM services WHERE id = ?").get(result.lastInsertRowid as number) as import("@/types").Service;
+}
+
+export function updateService(id: number, input: Partial<import("@/types").ServiceInput>): import("@/types").Service | undefined {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  for (const k of SERVICE_FIELDS) {
+    const v = input[k as keyof import("@/types").ServiceInput];
+    if (v !== undefined) {
+      fields.push(`${k} = ?`);
+      values.push(k === "in_scope_nis2" ? (v ? 1 : 0) : v);
+    }
+  }
+  if (fields.length === 0) return db().prepare("SELECT * FROM services WHERE id = ?").get(id) as import("@/types").Service | undefined;
+  fields.push("updated_at = datetime('now')");
+  values.push(id);
+  db().prepare(`UPDATE services SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  return db().prepare("SELECT * FROM services WHERE id = ?").get(id) as import("@/types").Service | undefined;
+}
+
+export function deleteService(id: number): boolean {
+  return db().prepare("DELETE FROM services WHERE id = ?").run(id).changes > 0;
+}
+
+export function getServiceAssetDependencies(serviceId: number): Array<import("@/types").ServiceAssetDependency & { asset_tag: string | null; hostname: string | null; nome_prodotto: string | null; criticita_nis2: string | null }> {
+  return db().prepare(`
+    SELECT d.*, a.asset_tag, a.hostname, a.nome_prodotto, a.criticita_nis2
+    FROM service_asset_dependencies d
+    JOIN inventory_assets a ON a.id = d.asset_id
+    WHERE d.service_id = ?
+    ORDER BY d.dependency_type, COALESCE(a.hostname, a.asset_tag, a.nome_prodotto)
+  `).all(serviceId) as Array<import("@/types").ServiceAssetDependency & { asset_tag: string | null; hostname: string | null; nome_prodotto: string | null; criticita_nis2: string | null }>;
+}
+
+export function getServicesByAsset(assetId: number): Array<import("@/types").Service & { dependency_type: string }> {
+  return db().prepare(`
+    SELECT s.*, d.dependency_type
+    FROM service_asset_dependencies d
+    JOIN services s ON s.id = d.service_id
+    WHERE d.asset_id = ?
+    ORDER BY s.name
+  `).all(assetId) as Array<import("@/types").Service & { dependency_type: string }>;
+}
+
+export function attachAssetToService(serviceId: number, input: { asset_id: number; dependency_type?: string; note?: string | null }): import("@/types").ServiceAssetDependency {
+  db().prepare(`
+    INSERT INTO service_asset_dependencies (service_id, asset_id, dependency_type, note)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(service_id, asset_id) DO UPDATE SET
+      dependency_type = excluded.dependency_type,
+      note = excluded.note
+  `).run(serviceId, input.asset_id, input.dependency_type ?? "primario", input.note ?? null);
+  return db().prepare("SELECT * FROM service_asset_dependencies WHERE service_id = ? AND asset_id = ?").get(serviceId, input.asset_id) as import("@/types").ServiceAssetDependency;
+}
+
+export function detachAssetFromService(serviceId: number, assetId: number): boolean {
+  return db().prepare("DELETE FROM service_asset_dependencies WHERE service_id = ? AND asset_id = ?").run(serviceId, assetId).changes > 0;
+}
+
 export function getInventoryAssets(opts?: {
   network_device_id?: number; host_id?: number; stato?: string; categoria?: string;
   in_scope_nis2?: number; q?: string; limit?: number;

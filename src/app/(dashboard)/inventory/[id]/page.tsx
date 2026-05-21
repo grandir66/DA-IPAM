@@ -25,7 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Save, Shield, User, FileKey, History, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, Shield, User, FileKey, History, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import type { InventoryAsset, InventoryAssetInput, AssetAssignee, Location, License, LicenseSeat, InventoryAuditLog } from "@/types";
 import { InventoryViewToggle } from "@/components/inventory/inventory-view-toggle";
@@ -139,6 +139,7 @@ export default function InventoryAssetPage() {
   const [asset, setAsset] = useState<InventoryAsset | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [form, setForm] = useState<Partial<InventoryAssetInput>>({});
   const [assignees, setAssignees] = useState<AssetAssignee[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -284,6 +285,35 @@ export default function InventoryAssetPage() {
     }
   }
 
+  async function handleSyncDiscovery(force: boolean) {
+    if (!asset) return;
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/inventory/${asset.id}/sync-discovery${force ? "?force=1" : ""}`, { method: "POST" });
+      const data = await res.json() as { updated: boolean; fields_updated: string[]; skipped_reason?: string; source: string | null };
+      if (!res.ok) {
+        toast.error("Sync da discovery fallito");
+        return;
+      }
+      if (data.skipped_reason === "auto_sync_disabled") {
+        toast.info("Sync disabilitato per questo asset (auto_sync_discovery=0). Usa Force per sovrascrivere.");
+      } else if (data.skipped_reason === "no_source") {
+        toast.info("Nessun host/device collegato all'asset: niente da sincronizzare.");
+      } else if (data.updated) {
+        toast.success(`Aggiornati ${data.fields_updated.length} campi: ${data.fields_updated.join(", ")}`);
+        // reload asset
+        const r = await fetch(`/api/inventory/${asset.id}`, { cache: "no-store" });
+        if (r.ok) setAsset(await r.json());
+      } else {
+        toast.info(`Nessun cambiamento. Sorgente: ${data.source ?? "—"}`);
+      }
+    } catch {
+      toast.error("Errore di rete durante il sync");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   if (loading) return <div className="text-muted-foreground py-8">Caricamento...</div>;
   if (!asset) return <div className="text-muted-foreground py-8">Asset non trovato</div>;
 
@@ -300,7 +330,30 @@ export default function InventoryAssetPage() {
           </div>
         </div>
         {hydrated && (
-          <InventoryViewToggle viewMode={viewMode} onViewModeChange={setViewMode} compact />
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleSyncDiscovery(false)}
+              disabled={syncing || (!asset?.host_id && !asset?.network_device_id)}
+              title="Aggiorna i campi vuoti con i dati dall'host/device collegato"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
+              Sync da discovery
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => handleSyncDiscovery(true)}
+              disabled={syncing || (!asset?.host_id && !asset?.network_device_id)}
+              title="Sovrascrive anche i valori già impostati"
+            >
+              Force
+            </Button>
+            <InventoryViewToggle viewMode={viewMode} onViewModeChange={setViewMode} compact />
+          </div>
         )}
       </div>
 

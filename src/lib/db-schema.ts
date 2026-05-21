@@ -335,6 +335,10 @@ CREATE TABLE IF NOT EXISTS inventory_assets (
   gestito_da_mdr INTEGER DEFAULT 0,
   classificazione_dati TEXT CHECK(classificazione_dati IN ('Pubblico', 'Interno', 'Confidenziale', 'Riservato') OR classificazione_dati IS NULL),
   in_scope_gdpr INTEGER DEFAULT 0,
+  -- ── NIS2 Fase 3: tracking sync automatico da host/discovery ──
+  auto_sync_discovery INTEGER DEFAULT 1,
+  last_sync_at TEXT,
+  last_sync_source TEXT,
   -- ── NIS2 Fase 2: checklist protezione (art. 21 Misure tecniche e organizzative) ──
   backup_configurato INTEGER DEFAULT 0,
   backup_ultimo_test TEXT,

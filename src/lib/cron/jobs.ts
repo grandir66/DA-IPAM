@@ -99,6 +99,11 @@ export async function runJob(jobId: number): Promise<void> {
         await syncAllNetworksToLibreNMS();
       }
       break;
+    case "vuln_sync": {
+      const { runVulnSync } = await import("@/lib/vuln/sync-job");
+      await runVulnSync();
+      break;
+    }
   }
 }
 

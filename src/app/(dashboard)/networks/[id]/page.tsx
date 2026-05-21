@@ -3,7 +3,7 @@ import {
   getNetworkById,
   getHostsByNetworkWithDevices,
   getNetworkRouterId,
-  getRouters,
+  getArpSourceDevices,
   getNetworkHostCredentialIds,
   getNetworkCredentials,
   getNetworksWithCredentials,
@@ -29,7 +29,7 @@ export default async function NetworkDetailPage({
   const nid = Number(id);
   const hosts = withTenant(tenantCode, () => getHostsByNetworkWithDevices(nid));
   const routerId = withTenant(tenantCode, () => getNetworkRouterId(nid));
-  const routers = withTenant(tenantCode, () => getRouters());
+  const routers = withTenant(tenantCode, () => getArpSourceDevices());
   const initialCredentialChains = withTenant(tenantCode, () => ({
     windows: getNetworkHostCredentialIds(nid, "windows"),
     linux: getNetworkHostCredentialIds(nid, "linux"),

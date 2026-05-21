@@ -116,16 +116,17 @@ export async function createRouterClient(device: NetworkDevice): Promise<RouterC
     client = { ...primary, getPortSchema: () => snmpClient.getPortSchema!() };
   }
 
-  // Fallback SSH → SNMP: se SSH fallisce (es. credenziali mancanti), prova SNMP
+  // Fallback SSH → SNMP: se SSH lancia errore, fallisce auth, oppure restituisce
+  // una tabella vuota (es. CLI custom di Stormshield SNS senza "show arp"), prova SNMP.
   if (device.protocol === "ssh" && hasSnmpCommunity) {
     const snmpClient = await createSnmpArpClient(device);
     return {
       async getArpTable() {
         try {
-          return await client.getArpTable();
-        } catch {
-          return snmpClient.getArpTable();
-        }
+          const sshEntries = await client.getArpTable();
+          if (sshEntries.length > 0) return sshEntries;
+        } catch { /* SSH fallito: cadiamo su SNMP */ }
+        return snmpClient.getArpTable();
       },
       async getPortSchema() {
         try {

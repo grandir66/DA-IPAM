@@ -233,6 +233,46 @@ export function InventoryNis2Scheda({ form, setForm, assignees, locations }: Inv
       </Card>
 
       <Card>
+        <CardHeader>
+          <CardTitle>Checklist protezione (NIS2 art. 21)</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-4">
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="nis2_backup" checked={!!form.backup_configurato} onChange={(e) => setForm((f) => ({ ...f, backup_configurato: e.target.checked ? 1 : 0 }))} className="rounded" />
+            <Label htmlFor="nis2_backup">Backup configurato</Label>
+          </div>
+          <div>
+            <Label className="text-xs">Ultimo test restore</Label>
+            <Input type="date" value={form.backup_ultimo_test ?? ""} onChange={(e) => setForm((f) => ({ ...f, backup_ultimo_test: e.target.value || null }))} />
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="nis2_patching" checked={!!form.patching_automatico} onChange={(e) => setForm((f) => ({ ...f, patching_automatico: e.target.checked ? 1 : 0 }))} className="rounded" />
+            <Label htmlFor="nis2_patching">Patching automatico</Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="nis2_mfa" checked={!!form.mfa_admin} onChange={(e) => setForm((f) => ({ ...f, mfa_admin: e.target.checked ? 1 : 0 }))} className="rounded" />
+            <Label htmlFor="nis2_mfa">MFA su accessi admin</Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="nis2_log" checked={!!form.log_centralizzati} onChange={(e) => setForm((f) => ({ ...f, log_centralizzati: e.target.checked ? 1 : 0 }))} className="rounded" />
+            <Label htmlFor="nis2_log">Log centralizzati (SIEM)</Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="nis2_hardening" checked={!!form.hardening_baseline} onChange={(e) => setForm((f) => ({ ...f, hardening_baseline: e.target.checked ? 1 : 0 }))} className="rounded" />
+            <Label htmlFor="nis2_hardening">Hardening baseline applicato</Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="nis2_dr" checked={!!form.dr_plan_documentato} onChange={(e) => setForm((f) => ({ ...f, dr_plan_documentato: e.target.checked ? 1 : 0 }))} className="rounded" />
+            <Label htmlFor="nis2_dr">Disaster recovery plan documentato</Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="nis2_ir" checked={!!form.incident_response_documentata} onChange={(e) => setForm((f) => ({ ...f, incident_response_documentata: e.target.checked ? 1 : 0 }))} className="rounded" />
+            <Label htmlFor="nis2_ir">Incident response procedurato</Label>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader><CardTitle>Note e remediation</CardTitle></CardHeader>
         <CardContent>
           <Textarea rows={4} value={form.note_tecniche ?? ""} onChange={(e) => setForm((f) => ({ ...f, note_tecniche: e.target.value || null }))} placeholder="Eccezioni, rischio residuo, piano di remediation..." />

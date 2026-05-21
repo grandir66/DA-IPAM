@@ -335,6 +335,15 @@ CREATE TABLE IF NOT EXISTS inventory_assets (
   gestito_da_mdr INTEGER DEFAULT 0,
   classificazione_dati TEXT CHECK(classificazione_dati IN ('Pubblico', 'Interno', 'Confidenziale', 'Riservato') OR classificazione_dati IS NULL),
   in_scope_gdpr INTEGER DEFAULT 0,
+  -- ── NIS2 Fase 2: checklist protezione (art. 21 Misure tecniche e organizzative) ──
+  backup_configurato INTEGER DEFAULT 0,
+  backup_ultimo_test TEXT,
+  patching_automatico INTEGER DEFAULT 0,
+  mfa_admin INTEGER DEFAULT 0,
+  log_centralizzati INTEGER DEFAULT 0,
+  hardening_baseline INTEGER DEFAULT 0,
+  dr_plan_documentato INTEGER DEFAULT 0,
+  incident_response_documentata INTEGER DEFAULT 0,
   -- ── NIS2 Fase 1: categoria normativa, dual ownership, criticità, dati trattati ──
   categoria_nis2 TEXT CHECK(categoria_nis2 IN ('workstation', 'server', 'rete', 'storage', 'mobile', 'iot', 'supporto_rimovibile', 'servizio_cloud', 'applicazione', 'altro') OR categoria_nis2 IS NULL),
   business_owner_id INTEGER REFERENCES asset_assignees(id) ON DELETE SET NULL,

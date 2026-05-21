@@ -311,6 +311,15 @@ export interface InventoryAsset {
   dati_trattati: InventoryDatiTrattati | null;
   supporto_rimovibile: number;
   data_review_nis2: string | null;
+  // NIS2 Fase 2 — Checklist protezione (art. 21)
+  backup_configurato: number;
+  backup_ultimo_test: string | null;
+  patching_automatico: number;
+  mfa_admin: number;
+  log_centralizzati: number;
+  hardening_baseline: number;
+  dr_plan_documentato: number;
+  incident_response_documentata: number;
   in_scope_nis2: number;
   ultimo_audit: string | null;
   contratto_supporto: string | null;
@@ -379,6 +388,15 @@ export interface InventoryAssetInput {
   dati_trattati?: InventoryDatiTrattati | null;
   supporto_rimovibile?: number;
   data_review_nis2?: string | null;
+  // NIS2 Fase 2 — Checklist protezione (art. 21)
+  backup_configurato?: number;
+  backup_ultimo_test?: string | null;
+  patching_automatico?: number;
+  mfa_admin?: number;
+  log_centralizzati?: number;
+  hardening_baseline?: number;
+  dr_plan_documentato?: number;
+  incident_response_documentata?: number;
   in_scope_nis2?: number;
   ultimo_audit?: string | null;
   contratto_supporto?: string | null;

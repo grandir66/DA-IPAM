@@ -34,9 +34,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Package, Search, Pencil, ExternalLink, RefreshCw, Download, ChevronDown, X, Loader2, Save } from "lucide-react";
+import { Package, Search, Pencil, ExternalLink, RefreshCw, Download, ChevronDown, X, Loader2, Save, Shield } from "lucide-react";
 import { toast } from "sonner";
 import type { InventoryAsset } from "@/types";
+import { InventoryViewToggle } from "@/components/inventory/inventory-view-toggle";
+import { useInventoryViewMode } from "@/lib/inventory/inventory-view-mode";
 
 const CATEGORIE: (InventoryAsset["categoria"])[] = [
   "Desktop", "Laptop", "Server", "Switch", "Firewall", "NAS", "Stampante",
@@ -84,11 +86,13 @@ function emptyBulkForm(): BulkEditForm {
 }
 
 export default function InventoryPage() {
-  const [assets, setAssets] = useState<(InventoryAsset & { network_device_name?: string; host_ip?: string })[]>([]);
+  const { viewMode, setViewMode, isNis2View, hydrated } = useInventoryViewMode();
+  const [assets, setAssets] = useState<(InventoryAsset & { network_device_name?: string; host_ip?: string; assignee_name?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [categoria, setCategoria] = useState<string>("");
   const [stato, setStato] = useState<string>("");
+  const [scopeNis2, setScopeNis2] = useState<string>("");
   const [syncingDevices, setSyncingDevices] = useState(false);
   const [syncingHosts, setSyncingHosts] = useState(false);
 
@@ -105,6 +109,7 @@ export default function InventoryPage() {
       if (q.trim()) params.set("q", q.trim());
       if (categoria) params.set("categoria", categoria);
       if (stato) params.set("stato", stato);
+      if (scopeNis2) params.set("in_scope_nis2", scopeNis2);
       params.set("limit", "200");
       const res = await fetch(`/api/inventory?${params}`, { cache: "no-store" });
       if (res.ok) setAssets(await res.json());
@@ -115,7 +120,7 @@ export default function InventoryPage() {
       setLoading(false);
       setSelectedIds(new Set());
     }
-  }, [q, categoria, stato]);
+  }, [q, categoria, stato, scopeNis2]);
 
   useEffect(() => {
     const t = setTimeout(fetchAssets, q ? 300 : 0);
@@ -238,17 +243,26 @@ export default function InventoryPage() {
     const params = new URLSearchParams();
     if (categoria) params.set("categoria", categoria);
     if (stato) params.set("stato", stato);
+    if (scopeNis2) params.set("in_scope_nis2", scopeNis2);
     params.set("limit", "2000");
+    params.set("format", isNis2View ? "nis2" : "itam");
     window.open(`/api/inventory/export?${params}`, "_blank");
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Inventario asset</h1>
-        <p className="text-muted-foreground mt-1">
-          Gestione dati di inventario per device di rete e host. Molti campi sono opzionali.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Inventario asset</h1>
+          <p className="text-muted-foreground mt-1">
+            {isNis2View
+              ? "Vista NIS2: solo i campi rilevanti per compliance e audit."
+              : "Vista completa ITAM con tutti i campi operativi e finanziari."}
+          </p>
+        </div>
+        {hydrated && (
+          <InventoryViewToggle viewMode={viewMode} onViewModeChange={setViewMode} />
+        )}
       </div>
 
       <Card>
@@ -278,7 +292,7 @@ export default function InventoryPage() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button variant="outline" size="icon" onClick={handleExport} title="Esporta CSV">
+              <Button variant="outline" size="icon" onClick={handleExport} title={isNis2View ? "Esporta CSV NIS2" : "Esporta CSV ITAM"}>
                 <Download className="h-4 w-4" />
               </Button>
               <div className="relative">
@@ -301,6 +315,18 @@ export default function InventoryPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {isNis2View && (
+                <Select value={scopeNis2} onValueChange={(v) => setScopeNis2(v ?? "")}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="Scope NIS2" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Tutti</SelectItem>
+                    <SelectItem value="1">In scope NIS2</SelectItem>
+                    <SelectItem value="0">Fuori scope</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
               <Select value={stato} onValueChange={(v) => setStato(v ?? "")}>
                 <SelectTrigger className="w-36">
                   <SelectValue placeholder="Stato" />
@@ -353,13 +379,28 @@ export default function InventoryPage() {
                         onCheckedChange={toggleSelectAll}
                       />
                     </TableHead>
-                    <TableHead>Asset Tag</TableHead>
-                    <TableHead>S/N</TableHead>
-                    <TableHead>Prodotto</TableHead>
-                    <TableHead>Categoria</TableHead>
-                    <TableHead>Collegato a</TableHead>
-                    <TableHead>Stato</TableHead>
-                    <TableHead>Fine garanzia</TableHead>
+                    {isNis2View ? (
+                      <>
+                        <TableHead>Asset Tag</TableHead>
+                        <TableHead>Prodotto</TableHead>
+                        <TableHead>Categoria</TableHead>
+                        <TableHead>Proprietario</TableHead>
+                        <TableHead>Classificazione</TableHead>
+                        <TableHead>Scope</TableHead>
+                        <TableHead>Stato</TableHead>
+                        <TableHead>EOL</TableHead>
+                      </>
+                    ) : (
+                      <>
+                        <TableHead>Asset Tag</TableHead>
+                        <TableHead>S/N</TableHead>
+                        <TableHead>Prodotto</TableHead>
+                        <TableHead>Categoria</TableHead>
+                        <TableHead>Collegato a</TableHead>
+                        <TableHead>Stato</TableHead>
+                        <TableHead>Fine garanzia</TableHead>
+                      </>
+                    )}
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -372,31 +413,56 @@ export default function InventoryPage() {
                           onCheckedChange={() => toggleSelect(a.id)}
                         />
                       </TableCell>
-                      <TableCell className="font-medium">{a.asset_tag ?? "—"}</TableCell>
-                      <TableCell className="font-mono text-sm">{a.serial_number ?? "—"}</TableCell>
-                      <TableCell>{a.nome_prodotto ?? a.marca ?? "—"}</TableCell>
-                      <TableCell>
-                        {a.categoria ? <Badge variant="outline">{a.categoria}</Badge> : "—"}
-                      </TableCell>
-                      <TableCell>
-                        {a.network_device_id ? (
-                          <Link href={`/devices/${a.network_device_id}`} className="text-primary hover:underline flex items-center gap-1">
-                            {a.network_device_name ?? `Device #${a.network_device_id}`}
-                            <ExternalLink className="h-3 w-3" />
-                          </Link>
-                        ) : a.host_id ? (
-                          <Link href={`/hosts/${a.host_id}`} className="text-primary hover:underline flex items-center gap-1">
-                            {a.host_ip ?? `Host #${a.host_id}`}
-                            <ExternalLink className="h-3 w-3" />
-                          </Link>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {a.stato ? <Badge variant={a.stato === "Attivo" ? "default" : "secondary"}>{a.stato}</Badge> : "—"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{formatDate(a.fine_garanzia)}</TableCell>
+                      {isNis2View ? (
+                        <>
+                          <TableCell className="font-medium">{a.asset_tag ?? "—"}</TableCell>
+                          <TableCell>{a.nome_prodotto ?? a.hostname ?? a.marca ?? "—"}</TableCell>
+                          <TableCell>
+                            {a.categoria ? <Badge variant="outline">{a.categoria}</Badge> : "—"}
+                          </TableCell>
+                          <TableCell className="text-sm">{a.assignee_name ?? "—"}</TableCell>
+                          <TableCell className="text-sm">{a.classificazione_dati ?? "—"}</TableCell>
+                          <TableCell>
+                            {a.in_scope_nis2 ? (
+                              <Badge className="gap-1"><Shield className="h-3 w-3" />NIS2</Badge>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {a.stato ? <Badge variant={a.stato === "Attivo" ? "default" : "secondary"}>{a.stato}</Badge> : "—"}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{formatDate(a.fine_supporto)}</TableCell>
+                        </>
+                      ) : (
+                        <>
+                          <TableCell className="font-medium">{a.asset_tag ?? "—"}</TableCell>
+                          <TableCell className="font-mono text-sm">{a.serial_number ?? "—"}</TableCell>
+                          <TableCell>{a.nome_prodotto ?? a.marca ?? "—"}</TableCell>
+                          <TableCell>
+                            {a.categoria ? <Badge variant="outline">{a.categoria}</Badge> : "—"}
+                          </TableCell>
+                          <TableCell>
+                            {a.network_device_id ? (
+                              <Link href={`/devices/${a.network_device_id}`} className="text-primary hover:underline flex items-center gap-1">
+                                {a.network_device_name ?? `Device #${a.network_device_id}`}
+                                <ExternalLink className="h-3 w-3" />
+                              </Link>
+                            ) : a.host_id ? (
+                              <Link href={`/hosts/${a.host_id}`} className="text-primary hover:underline flex items-center gap-1">
+                                {a.host_ip ?? `Host #${a.host_id}`}
+                                <ExternalLink className="h-3 w-3" />
+                              </Link>
+                            ) : (
+                              "—"
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {a.stato ? <Badge variant={a.stato === "Attivo" ? "default" : "secondary"}>{a.stato}</Badge> : "—"}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{formatDate(a.fine_garanzia)}</TableCell>
+                        </>
+                      )}
                       <TableCell>
                         <Link href={`/inventory/${a.id}`}>
                           <Button variant="ghost" size="icon"><Pencil className="h-4 w-4" /></Button>
@@ -542,7 +608,8 @@ export default function InventoryPage() {
                 />
               </BulkFieldRow>
 
-              {/* Fornitore */}
+              {/* Fornitore — solo vista ITAM completa */}
+              {!isNis2View && (
               <BulkFieldRow
                 label="Fornitore"
                 enabled={bulkForm.fornitore.enabled}
@@ -555,6 +622,7 @@ export default function InventoryPage() {
                   disabled={!bulkForm.fornitore.enabled}
                 />
               </BulkFieldRow>
+              )}
 
               {/* Antivirus */}
               <BulkFieldRow
@@ -570,7 +638,8 @@ export default function InventoryPage() {
                 />
               </BulkFieldRow>
 
-              {/* In scope GDPR */}
+              {/* In scope GDPR — solo vista ITAM completa */}
+              {!isNis2View && (
               <BulkFieldRow
                 label="In scope GDPR"
                 enabled={bulkForm.in_scope_gdpr.enabled}
@@ -587,6 +656,7 @@ export default function InventoryPage() {
                   </span>
                 </div>
               </BulkFieldRow>
+              )}
 
               {/* In scope NIS2 */}
               <BulkFieldRow

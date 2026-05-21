@@ -18,6 +18,7 @@ export async function GET(request: Request) {
       const hostId = searchParams.get("host_id");
       const stato = searchParams.get("stato");
       const categoria = searchParams.get("categoria");
+      const inScopeNis2 = searchParams.get("in_scope_nis2");
       const q = searchParams.get("q");
       const limit = searchParams.get("limit");
 
@@ -26,6 +27,8 @@ export async function GET(request: Request) {
         ...(hostId && { host_id: Number(hostId) }),
         ...(stato && { stato }),
         ...(categoria && { categoria }),
+        ...(inScopeNis2 === "1" && { in_scope_nis2: 1 }),
+        ...(inScopeNis2 === "0" && { in_scope_nis2: 0 }),
         ...(q && { q }),
         ...(limit && { limit: Math.min(Number(limit) || 500, 1000) }),
       });

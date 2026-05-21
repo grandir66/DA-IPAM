@@ -3932,7 +3932,7 @@ export function ensureInventoryAssetForNetworkDevice(device: NetworkDevice): imp
   const existing = getInventoryAssetByNetworkDevice(device.id);
   if (existing) return existing;
 
-  const categoria = mapClassificationToInventoryCategoria(device.classification, device.device_type);
+  const categoria = mapClassificationToInventoryCategoria(device.classification, device.device_type, device.vendor);
   const marca = mapVendorToMarca(device.vendor);
 
   return createInventoryAsset({
@@ -4019,7 +4019,7 @@ export function syncInventoryFromDevice(device: NetworkDevice): import("@/types"
   if (!asset) return null;
 
   const marca = mapVendorToMarca(device.vendor);
-  const categoria = mapClassificationToInventoryCategoria(device.classification, device.device_type);
+  const categoria = mapClassificationToInventoryCategoria(device.classification, device.device_type, device.vendor);
 
   const base: Partial<import("@/types").InventoryAssetInput> = {
     hostname: device.name,
@@ -4061,16 +4061,48 @@ export function syncInventoryFromDevice(device: NetworkDevice): import("@/types"
   return updated ?? null;
 }
 
-function mapClassificationToInventoryCategoria(classification: string | null, deviceType: string): import("@/types").InventoryAssetCategoria | null {
-  const c = (classification ?? deviceType ?? "").toLowerCase();
-  if (["firewall"].includes(c)) return "Firewall";
-  if (["access_point"].includes(c)) return "Access Point";
+function mapClassificationToInventoryCategoria(classification: string | null, deviceType: string, vendor?: string | null): import("@/types").InventoryAssetCategoria | null {
+  const c = (classification ?? "").toLowerCase().trim();
+  const dt = (deviceType ?? "").toLowerCase().trim();
+  const v = (vendor ?? "").toLowerCase().trim();
+
+  // 1) Classification (fonte primaria, esplicita dall'utente o dal classifier)
+  if (c === "firewall") return "Firewall";
+  if (c === "access_point") return "Access Point";
   if (["router", "load_balancer", "vpn_gateway"].includes(c)) return "Router";
-  if (["switch"].includes(c)) return "Switch";
-  if (["server", "hypervisor"].includes(c)) return "Server";
+  if (c === "switch") return "Switch";
+  if (["server", "web_server", "database_server", "mail_server", "backup_server", "nfs_server", "linux_server", "windows_server", "server_linux", "server_windows"].includes(c)) return "Server";
+  if (c === "hypervisor") return "Server";
+  if (["workstation", "desktop", "pc"].includes(c)) return "Desktop";
+  if (["notebook", "laptop"].includes(c)) return "Laptop";
+  if (c === "vm") return "VM";
   if (["nas", "nas_synology", "nas_qnap", "storage"].includes(c)) return "NAS";
   if (["stampante", "scanner", "fotocopiatrice", "multifunzione"].includes(c)) return "Stampante";
-  return deviceType === "router" ? "Router" : "Switch";
+  if (["telecamera", "voip", "iot"].includes(c)) return "Other";
+
+  // 2) device_type fallback — ma attenzione: device_type='switch' è un WORKAROUND
+  //    di schema per host non-router (firewall, server Linux, ecc.). Usarlo da
+  //    solo per assegnare "Switch" produce errori (vedi Linux server).
+  if (dt === "router") return "Router";
+  if (dt === "firewall") return "Firewall";
+  if (dt === "hypervisor") return "Server";
+  if (dt === "switch") {
+    // device_type=switch può nascondere un server/NAS: usa vendor come hint
+    if (["linux", "windows"].includes(v)) return "Server";
+    if (["proxmox", "vmware"].includes(v)) return "Server";
+    if (["synology", "qnap"].includes(v)) return "NAS";
+    if (v === "stormshield") return "Firewall";
+    // Solo qui è un vero switch (vendor di rete: cisco, hp, ubiquiti, ecc.)
+    return "Switch";
+  }
+
+  // 3) vendor come ultimo indizio se manca tutto il resto
+  if (["linux", "windows"].includes(v)) return "Server";
+  if (["proxmox", "vmware"].includes(v)) return "Server";
+  if (["synology", "qnap"].includes(v)) return "NAS";
+
+  // 4) Fallback safe: NON inventare "Switch". Lascia che l'utente classifichi.
+  return "Other";
 }
 
 function mapVendorToMarca(vendor: string): string | null {

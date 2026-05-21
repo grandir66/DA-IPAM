@@ -204,6 +204,34 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione device_type firewall fallita:`, e);
   }
 
+  // Migrazione runtime: inventory_assets — colonne NIS2 Fase 2 (checklist protezione art. 21)
+  try {
+    const cols2 = newDb.prepare("PRAGMA table_info(inventory_assets)").all() as Array<{ name: string }>;
+    const colNames2 = new Set(cols2.map((c) => c.name));
+    const f2 = [
+      { sql: "backup_configurato INTEGER DEFAULT 0", name: "backup_configurato" },
+      { sql: "backup_ultimo_test TEXT", name: "backup_ultimo_test" },
+      { sql: "patching_automatico INTEGER DEFAULT 0", name: "patching_automatico" },
+      { sql: "mfa_admin INTEGER DEFAULT 0", name: "mfa_admin" },
+      { sql: "log_centralizzati INTEGER DEFAULT 0", name: "log_centralizzati" },
+      { sql: "hardening_baseline INTEGER DEFAULT 0", name: "hardening_baseline" },
+      { sql: "dr_plan_documentato INTEGER DEFAULT 0", name: "dr_plan_documentato" },
+      { sql: "incident_response_documentata INTEGER DEFAULT 0", name: "incident_response_documentata" },
+    ];
+    const added2: string[] = [];
+    for (const c of f2) {
+      if (!colNames2.has(c.name)) {
+        newDb.exec(`ALTER TABLE inventory_assets ADD COLUMN ${c.sql}`);
+        added2.push(c.name);
+      }
+    }
+    if (added2.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: inventory_assets +${added2.length} colonne NIS2 Fase 2 (${added2.join(", ")})`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione NIS2 Fase 2 fallita:`, e);
+  }
+
   // Migrazione runtime: inventory_assets — colonne NIS2 Fase 1
   // categoria_nis2, business/technical owner, criticita_nis2, dati_trattati, supporto_rimovibile, data_review_nis2
   try {
@@ -2813,7 +2841,7 @@ const INVENTORY_COLUMNS = [
   "fine_supporto", "vita_utile_prevista", "sistema_operativo", "versione_os", "cpu", "ram_gb", "storage_gb",
   "storage_tipo", "mac_address", "ip_address", "vlan", "firmware_version", "prezzo_acquisto", "fornitore",
   "numero_ordine", "numero_fattura", "valore_attuale", "metodo_ammortamento", "centro_di_costo",
-  "crittografia_disco", "antivirus", "gestito_da_mdr", "classificazione_dati", "in_scope_gdpr", "categoria_nis2", "business_owner_id", "technical_owner_id", "criticita_nis2", "dati_trattati", "supporto_rimovibile", "data_review_nis2", "in_scope_nis2",
+  "crittografia_disco", "antivirus", "gestito_da_mdr", "classificazione_dati", "in_scope_gdpr", "categoria_nis2", "business_owner_id", "technical_owner_id", "criticita_nis2", "dati_trattati", "supporto_rimovibile", "data_review_nis2", "backup_configurato", "backup_ultimo_test", "patching_automatico", "mfa_admin", "log_centralizzati", "hardening_baseline", "dr_plan_documentato", "incident_response_documentata", "in_scope_nis2",
   "ultimo_audit", "contratto_supporto", "tipo_garanzia", "contatto_supporto", "ultimo_intervento",
   "prossima_manutenzione", "note_tecniche", "technical_data",
 ];
@@ -3033,6 +3061,10 @@ export function createInventoryAsset(input: import("@/types").InventoryAssetInpu
     input.criticita_nis2 ?? null, input.dati_trattati ?? null,
     input.supporto_rimovibile ? 1 : 0,
     input.data_review_nis2 ?? null,
+    input.backup_configurato ? 1 : 0, input.backup_ultimo_test ?? null,
+    input.patching_automatico ? 1 : 0, input.mfa_admin ? 1 : 0,
+    input.log_centralizzati ? 1 : 0, input.hardening_baseline ? 1 : 0,
+    input.dr_plan_documentato ? 1 : 0, input.incident_response_documentata ? 1 : 0,
     input.in_scope_nis2 ?? 0, input.ultimo_audit ?? null,
     input.contratto_supporto ?? null, input.tipo_garanzia ?? null, input.contatto_supporto ?? null,
     input.ultimo_intervento ?? null, input.prossima_manutenzione ?? null, input.note_tecniche ?? null,
@@ -3051,7 +3083,7 @@ export function updateInventoryAsset(id: number, input: import("@/types").Invent
     const key = col as keyof import("@/types").InventoryAssetInput;
     if (input[key] !== undefined) {
       fields.push(`${col} = ?`);
-      values.push(key === "crittografia_disco" || key === "gestito_da_mdr" || key === "in_scope_gdpr" || key === "in_scope_nis2" || key === "supporto_rimovibile"
+      values.push(key === "crittografia_disco" || key === "gestito_da_mdr" || key === "in_scope_gdpr" || key === "in_scope_nis2" || key === "supporto_rimovibile" || key === "backup_configurato" || key === "patching_automatico" || key === "mfa_admin" || key === "log_centralizzati" || key === "hardening_baseline" || key === "dr_plan_documentato" || key === "incident_response_documentata"
         ? (input[key] ? 1 : 0) : input[key]);
     }
   }

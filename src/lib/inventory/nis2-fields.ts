@@ -83,6 +83,15 @@ export const INVENTORY_FIELD_CATALOG: InventoryFieldMeta[] = [
   { key: "crittografia_disco", label: "Crittografia disco", scope: "nis2", section: "protezione", exportNis2: true },
   { key: "gestito_da_mdr", label: "Gestito da MDR", scope: "nis2", section: "protezione", exportNis2: true },
   { key: "supporto_rimovibile", label: "Supporto rimovibile (USB/SD)", scope: "nis2", section: "protezione", exportNis2: true },
+  // NIS2 Fase 2 — Checklist art. 21
+  { key: "backup_configurato", label: "Backup configurato", scope: "nis2", section: "protezione", exportNis2: true },
+  { key: "backup_ultimo_test", label: "Ultimo test restore", scope: "nis2", section: "protezione", exportNis2: true },
+  { key: "patching_automatico", label: "Patching automatico", scope: "nis2", section: "protezione", exportNis2: true },
+  { key: "mfa_admin", label: "MFA su admin", scope: "nis2", section: "protezione", exportNis2: true },
+  { key: "log_centralizzati", label: "Log centralizzati (SIEM)", scope: "nis2", section: "protezione", exportNis2: true },
+  { key: "hardening_baseline", label: "Hardening baseline", scope: "nis2", section: "protezione", exportNis2: true },
+  { key: "dr_plan_documentato", label: "DR plan documentato", scope: "nis2", section: "protezione", exportNis2: true },
+  { key: "incident_response_documentata", label: "Incident response", scope: "nis2", section: "protezione", exportNis2: true },
 
   { key: "note_tecniche", label: "Note / remediation", scope: "nis2", section: "note", exportNis2: true },
 

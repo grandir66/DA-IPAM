@@ -95,6 +95,9 @@ export default function InventoryPage() {
   const [scopeNis2, setScopeNis2] = useState<string>("");
   const [syncingDevices, setSyncingDevices] = useState(false);
   const [syncingHosts, setSyncingHosts] = useState(false);
+  const [onlyWithGaps, setOnlyWithGaps] = useState(false);
+  const [gapSummary, setGapSummary] = useState<{ total_in_scope: number; total_with_gaps: number; avg_conformance_score: number; by_severity: Record<string, number> } | null>(null);
+  const [gapAssetIds, setGapAssetIds] = useState<Set<number>>(new Set());
 
   // ─── Selezione e bulk edit ────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -122,10 +125,24 @@ export default function InventoryPage() {
     }
   }, [q, categoria, stato, scopeNis2]);
 
+  const fetchGaps = useCallback(async () => {
+    try {
+      const res = await fetch("/api/inventory/gaps", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json() as { summary: { total_in_scope: number; total_with_gaps: number; avg_conformance_score: number; by_severity: Record<string, number> }; reports: Array<{ asset_id: number; gaps: unknown[] }> };
+      setGapSummary(data.summary);
+      setGapAssetIds(new Set(data.reports.filter((r) => r.gaps.length > 0).map((r) => r.asset_id)));
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     const t = setTimeout(fetchAssets, q ? 300 : 0);
     return () => clearTimeout(t);
   }, [fetchAssets, q]);
+
+  useEffect(() => {
+    fetchGaps();
+  }, [fetchGaps, assets.length]);
 
   const formatDate = (d: string | null) => d ? new Date(d).toLocaleDateString("it-IT") : "—";
 
@@ -264,6 +281,46 @@ export default function InventoryPage() {
           <InventoryViewToggle viewMode={viewMode} onViewModeChange={setViewMode} />
         )}
       </div>
+
+      {isNis2View && gapSummary && gapSummary.total_in_scope > 0 && (
+        <div className={`rounded-md border p-3 ${gapSummary.total_with_gaps > 0 ? "bg-amber-500/10 border-amber-500/40" : "bg-emerald-500/10 border-emerald-500/40"}`}>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+            <span className="font-semibold">
+              Compliance NIS2: {gapSummary.avg_conformance_score}/100
+            </span>
+            <span>
+              <b>{gapSummary.total_with_gaps}</b> di <b>{gapSummary.total_in_scope}</b> asset in scope con gap
+            </span>
+            {gapSummary.by_severity.critico > 0 && (
+              <span className="text-red-700 dark:text-red-400 font-medium">
+                {gapSummary.by_severity.critico} critici
+              </span>
+            )}
+            {gapSummary.by_severity.alto > 0 && (
+              <span className="text-orange-700 dark:text-orange-400">
+                {gapSummary.by_severity.alto} alti
+              </span>
+            )}
+            {gapSummary.by_severity.medio > 0 && (
+              <span className="text-yellow-700 dark:text-yellow-400">
+                {gapSummary.by_severity.medio} medi
+              </span>
+            )}
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setOnlyWithGaps((v) => !v)}>
+              {onlyWithGaps ? "Mostra tutti" : "Solo con gap"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              const params = new URLSearchParams();
+              params.set("format", "nis2-audit");
+              params.set("in_scope_nis2", "1");
+              params.set("limit", "2000");
+              window.open(`/api/inventory/export?${params}`, "_blank");
+            }}>
+              Export audit
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -405,7 +462,7 @@ export default function InventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {assets.map((a) => (
+                  {(onlyWithGaps ? assets.filter((a) => gapAssetIds.has(a.id)) : assets).map((a) => (
                     <TableRow key={a.id} className={selectedIds.has(a.id) ? "bg-primary/5" : undefined}>
                       <TableCell>
                         <Checkbox

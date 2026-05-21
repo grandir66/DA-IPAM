@@ -1326,7 +1326,7 @@ export function NetworkDetailClient({
             {/* Credenziali: scelta esplicita + creazione inline ─ con badge eredità automatica */}
             {(() => {
               const credMap = credTypeForProtocol(bulkAddProtocol);
-              const primaryOpts = addDeviceCredentials.filter((c) => credMap.allowedPrimary.includes(c.credential_type));
+              const primaryOpts = addDeviceCredentials.filter((c) => c.credential_type !== "snmp");
               const snmpOpts = addDeviceCredentials.filter((c) => c.credential_type === "snmp");
               const protos = new Set<string>();
               for (const hid of selectedHostIds) {
@@ -1340,7 +1340,7 @@ export function NetworkDetailClient({
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Credenziale principale ({credMap.primary})</Label>
+                      <Label className="text-xs">Credenziale principale</Label>
                       <AddableSelect
                         value={bulkAddCredentialId && bulkAddCredentialId !== "none" ? Number(bulkAddCredentialId) : null}
                         onChange={(v) => setBulkAddCredentialId(v != null ? String(v) : null)}

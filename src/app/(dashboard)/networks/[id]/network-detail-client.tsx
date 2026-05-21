@@ -1291,7 +1291,7 @@ export function NetworkDetailClient({
               idPrefix="network-bulk-add"
               showIdentificazione={false}
               showProfilo={true}
-              showCredenziali={false}
+              showCredenziali={true}
               classification={bulkAddClassification}
               vendor={bulkAddVendor}
               vendorSubtype={bulkAddVendorSubtype}

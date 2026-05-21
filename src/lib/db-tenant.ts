@@ -134,6 +134,76 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione fast_scan fallita:`, e);
   }
 
+  // Migrazione runtime: network_devices.use_for_arp_poll (flag "Usa per polling ARP/MAC")
+  // Permette di usare come sorgente ARP qualsiasi device (router, firewall, switch L3) indipendentemente dalla classification.
+  try {
+    const cols = newDb.prepare("PRAGMA table_info(network_devices)").all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === "use_for_arp_poll")) {
+      newDb.exec("ALTER TABLE network_devices ADD COLUMN use_for_arp_poll INTEGER NOT NULL DEFAULT 0");
+      // Backfill: router e stormshield (logica storica di networkDeviceUsesArpPoll) → use_for_arp_poll=1
+      newDb.exec("UPDATE network_devices SET use_for_arp_poll = 1 WHERE device_type = 'router' OR vendor = 'stormshield'");
+      console.info(`[db-tenant] ${tenantCode}: network_devices.use_for_arp_poll aggiunto + backfill router/stormshield`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione use_for_arp_poll fallita:`, e);
+  }
+
+  // Migrazione runtime: network_devices.device_type CHECK include 'firewall'
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='network_devices'").get() as { sql?: string } | undefined;
+    if (row?.sql && !row.sql.includes("'firewall'") && row.sql.includes("device_type")) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS network_devices_v2");
+      // CREATE TABLE con nuovo CHECK (compresi firewall e use_for_arp_poll). Copiamo la definizione completa.
+      newDb.exec(`CREATE TABLE network_devices_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        host TEXT NOT NULL,
+        device_type TEXT NOT NULL CHECK(device_type IN ('router', 'switch', 'firewall', 'hypervisor')),
+        vendor TEXT NOT NULL CHECK(vendor IN ('mikrotik', 'ubiquiti', 'hp', 'cisco', 'omada', 'stormshield', 'proxmox', 'vmware', 'linux', 'windows', 'synology', 'qnap', 'other')),
+        vendor_subtype TEXT CHECK(vendor_subtype IN ('procurve', 'comware')),
+        protocol TEXT NOT NULL CHECK(protocol IN ('ssh', 'snmp_v2', 'snmp_v3', 'api', 'winrm')),
+        credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+        snmp_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+        username TEXT,
+        encrypted_password TEXT,
+        community_string TEXT,
+        api_token TEXT,
+        api_url TEXT,
+        port INTEGER DEFAULT 22,
+        enabled INTEGER DEFAULT 1,
+        classification TEXT,
+        sysname TEXT,
+        sysdescr TEXT,
+        model TEXT,
+        firmware TEXT,
+        serial_number TEXT,
+        part_number TEXT,
+        last_info_update TEXT,
+        last_device_info_json TEXT,
+        stp_info TEXT,
+        last_proxmox_scan_at TEXT,
+        last_proxmox_scan_result TEXT,
+        scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux')),
+        product_profile TEXT,
+        use_for_arp_poll INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      // INSERT mantiene tutte le colonne esistenti (use_for_arp_poll esiste già dopo la migrazione precedente)
+      const existingCols = (newDb.prepare("PRAGMA table_info(network_devices)").all() as Array<{ name: string }>).map((c) => c.name);
+      const v2Cols = (newDb.prepare("PRAGMA table_info(network_devices_v2)").all() as Array<{ name: string }>).map((c) => c.name);
+      const sharedCols = existingCols.filter((c) => v2Cols.includes(c));
+      newDb.exec(`INSERT INTO network_devices_v2 (${sharedCols.join(", ")}) SELECT ${sharedCols.join(", ")} FROM network_devices`);
+      newDb.exec("DROP TABLE network_devices");
+      newDb.exec("ALTER TABLE network_devices_v2 RENAME TO network_devices");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: network_devices CHECK device_type aggiornato con 'firewall'`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione device_type firewall fallita:`, e);
+  }
+
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
   return newDb;
 }
@@ -1067,8 +1137,14 @@ export function getDevicesByClassification(classification: string): NetworkDevic
 
 export function getDevicesByClassificationOrLegacy(classification: string): NetworkDevice[] {
   if (classification === "router") {
+    // "Router" come pagina unificata di sorgenti ARP: include router, firewall e qualsiasi device
+    // (anche switch L3) con use_for_arp_poll=1. Più i legacy device_type='router' senza classification.
     return db().prepare(
-      "SELECT * FROM network_devices WHERE classification = 'router' OR (device_type = 'router' AND (classification IS NULL OR classification = '')) ORDER BY name"
+      `SELECT * FROM network_devices
+       WHERE classification IN ('router', 'firewall')
+          OR use_for_arp_poll = 1
+          OR (device_type = 'router' AND (classification IS NULL OR classification = ''))
+       ORDER BY name`
     ).all() as NetworkDevice[];
   }
   if (classification === "switch") {
@@ -1121,16 +1197,17 @@ export function getNetworkDeviceByHost(ip: string): NetworkDevice | undefined {
   return db().prepare("SELECT * FROM network_devices WHERE host = ?").get(ip) as NetworkDevice | undefined;
 }
 
-type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile"> & {
+type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll"> & {
   classification?: string | null;
   scan_target?: string | null;
   product_profile?: string | null;
+  use_for_arp_poll?: number | boolean | null;
 };
 
 export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
   const stmt = db().prepare(
-    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name, input.host, input.device_type, input.vendor,
@@ -1140,7 +1217,8 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     input.community_string, input.api_token, input.api_url, input.port, input.enabled,
     (input as { classification?: string | null }).classification ?? null,
     (input as { scan_target?: string | null }).scan_target ?? null,
-    (input as { product_profile?: string | null }).product_profile ?? null
+    (input as { product_profile?: string | null }).product_profile ?? null,
+    (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === 1 || (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === true ? 1 : 0
   );
   return db().prepare("SELECT * FROM network_devices WHERE id = ?").get(result.lastInsertRowid) as NetworkDevice;
 }
@@ -1149,7 +1227,7 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile"] as const;
+  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll"] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);

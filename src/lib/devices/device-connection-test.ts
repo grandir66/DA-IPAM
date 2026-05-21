@@ -70,7 +70,7 @@ function buildDeviceFromProvisional(p: ProvisionalDevice): NetworkDevice {
   const fromProfile = suggestDeviceTypeFromProductProfile(profileId);
   const effectiveScan =
     (p.scan_target ?? scanTargetHintFromProductProfile(profileId)) as NetworkDevice["scan_target"] | null;
-  const deviceType: "router" | "switch" | "hypervisor" =
+  const deviceType: "router" | "switch" | "firewall" | "hypervisor" =
     isProxmoxDevice({
       ...p,
       device_type: fromProfile,
@@ -111,6 +111,7 @@ function buildDeviceFromProvisional(p: ProvisionalDevice): NetworkDevice {
     last_proxmox_scan_result: null,
     scan_target: effectiveScan,
     product_profile: profileId,
+    use_for_arp_poll: 0,
     created_at: "",
     updated_at: "",
   };

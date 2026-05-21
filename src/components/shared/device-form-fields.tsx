@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback, type ReactNode } from "react";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -146,6 +147,10 @@ export interface DeviceFormFieldsProps {
   showApiUrl?: boolean;
   /** Opzioni vendor (es. test). Se omesso, caricamento da GET /api/device-vendor-options */
   vendorOptions?: NetworkDeviceVendorSelectOption[];
+  /** Flag "Usa come sorgente ARP/MAC" (router, firewall, switch L3 con routing) */
+  useForArpPoll?: boolean;
+  onUseForArpPollChange?: (v: boolean) => void;
+  defaultUseForArpPoll?: boolean;
 }
 
 /**
@@ -188,6 +193,9 @@ export function DeviceFormFields({
   defaultProtocol = "ssh",
   showApiUrl = false,
   vendorOptions: vendorOptionsProp,
+  useForArpPoll,
+  onUseForArpPollChange,
+  defaultUseForArpPoll,
 }: DeviceFormFieldsProps) {
   const isBulk = mode === "bulk";
   const noChange = isBulk ? "Non modificare" : "";
@@ -515,6 +523,25 @@ export function DeviceFormFields({
               </SelectContent>
             </Select>
           </div>
+        </div>
+      )}
+
+      {(mode === "create" || mode === "edit") && (
+        <div className="space-y-1.5 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={`${idPrefix}-use-arp`}
+              checked={useForArpPoll ?? defaultUseForArpPoll ?? false}
+              onCheckedChange={(v) => onUseForArpPollChange?.(v === true)}
+            />
+            <Label htmlFor={`${idPrefix}-use-arp`} className="text-sm font-medium cursor-pointer">
+              Usa come sorgente ARP/MAC
+            </Label>
+          </div>
+          <p className="text-[11px] text-muted-foreground leading-snug">
+            Spunta per router, firewall e switch con routing L3 attivo: lo schedule del polling ARP
+            interrogherà questo dispositivo per popolare la mappa MAC↔IP della rete.
+          </p>
         </div>
       )}
 

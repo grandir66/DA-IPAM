@@ -2940,8 +2940,13 @@ export function getDevicesByClassification(classification: string): NetworkDevic
 /** Dispositivi per classificazione, includendo legacy (device_type senza classification) per router/switch */
 export function getDevicesByClassificationOrLegacy(classification: string): NetworkDevice[] {
   if (classification === "router") {
+    // Pagina "Router" unificata: include router, firewall e device con use_for_arp_poll=1 (es. switch L3).
     return getDb().prepare(
-      "SELECT * FROM network_devices WHERE classification = 'router' OR (device_type = 'router' AND (classification IS NULL OR classification = '')) ORDER BY name"
+      `SELECT * FROM network_devices
+       WHERE classification IN ('router', 'firewall')
+          OR use_for_arp_poll = 1
+          OR (device_type = 'router' AND (classification IS NULL OR classification = ''))
+       ORDER BY name`
     ).all() as NetworkDevice[];
   }
   if (classification === "switch") {
@@ -3658,16 +3663,17 @@ export function getNetworkDeviceByHost(ip: string): NetworkDevice | undefined {
   return getDb().prepare("SELECT * FROM network_devices WHERE host = ?").get(ip) as NetworkDevice | undefined;
 }
 
-type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile"> & {
+type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll"> & {
   classification?: string | null;
   scan_target?: string | null;
   product_profile?: string | null;
+  use_for_arp_poll?: number | boolean | null;
 };
 
 export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
   const stmt = getDb().prepare(
-    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name, input.host, input.device_type, input.vendor,
@@ -3677,7 +3683,8 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     input.community_string, input.api_token, input.api_url, input.port, input.enabled,
     (input as { classification?: string | null }).classification ?? null,
     (input as { scan_target?: string | null }).scan_target ?? null,
-    (input as { product_profile?: string | null }).product_profile ?? null
+    (input as { product_profile?: string | null }).product_profile ?? null,
+    (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === 1 || (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === true ? 1 : 0
   );
   return getDb().prepare("SELECT * FROM network_devices WHERE id = ?").get(result.lastInsertRowid) as NetworkDevice;
 }
@@ -3686,7 +3693,7 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile"] as const;
+  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll"] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);

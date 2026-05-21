@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS network_devices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   host TEXT NOT NULL,
-  device_type TEXT NOT NULL CHECK(device_type IN ('router', 'switch', 'hypervisor')),
+  device_type TEXT NOT NULL CHECK(device_type IN ('router', 'switch', 'firewall', 'hypervisor')),
   vendor TEXT NOT NULL CHECK(vendor IN ('mikrotik', 'ubiquiti', 'hp', 'cisco', 'omada', 'stormshield', 'proxmox', 'vmware', 'linux', 'windows', 'synology', 'qnap', 'other')),
   vendor_subtype TEXT CHECK(vendor_subtype IN ('procurve', 'comware')),
   protocol TEXT NOT NULL CHECK(protocol IN ('ssh', 'snmp_v2', 'snmp_v3', 'api', 'winrm')),
@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS network_devices (
   last_proxmox_scan_result TEXT,
   scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux')),
   product_profile TEXT,
+  use_for_arp_poll INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

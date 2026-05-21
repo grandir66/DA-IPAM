@@ -85,9 +85,9 @@ const COLUMNS: ColumnDef[] = [
   { id: "vendor",          label: "Vendor",          defaultVisible: false, group: "base" },
   { id: "classification",  label: "Classificazione", defaultVisible: true,  group: "base" },
   { id: "fp_confidence",   label: "Conf.",           defaultVisible: true,  group: "base" },
-  { id: "validated_creds", label: "Cred.",            defaultVisible: false, group: "base" },
+  { id: "validated_creds", label: "Cred.",            defaultVisible: true,  group: "base" },
   { id: "known_host",      label: "Conosciuto",      defaultVisible: false, group: "base" },
-  { id: "ip_assignment",   label: "DHCP",            defaultVisible: false, group: "base" },
+  { id: "ip_assignment",   label: "DHCP",            defaultVisible: true,  group: "base" },
   { id: "detected",        label: "Rilevato",        defaultVisible: false, group: "rilevamento" },
   { id: "notes",           label: "Note",            defaultVisible: false, group: "base" },
 
@@ -97,12 +97,15 @@ const COLUMNS: ColumnDef[] = [
   { id: "location",        label: "Sede",            defaultVisible: false, group: "rete" },
   { id: "device_name",     label: "Dispositivo",     defaultVisible: false, group: "rete" },
   { id: "switch_port",     label: "Porta switch",    defaultVisible: false, group: "rete" },
-  { id: "ad_dns",          label: "AD",              defaultVisible: false, group: "rete" },
+  { id: "ad_dns",          label: "AD DNS",          defaultVisible: false, group: "rete" },
+  { id: "in_ad",           label: "AD",              defaultVisible: true,  group: "rete" },
   { id: "multihomed",      label: "MH",              defaultVisible: false, group: "rete" },
 
   // Rilevamento
   { id: "os_info",         label: "OS",              defaultVisible: false, group: "rilevamento" },
   { id: "open_ports",      label: "Porte aperte",    defaultVisible: false, group: "rilevamento" },
+  { id: "open_ports_tcp",  label: "Porte TCP",       defaultVisible: true,  group: "rilevamento" },
+  { id: "open_ports_udp",  label: "Porte UDP",       defaultVisible: true,  group: "rilevamento" },
   { id: "response_time",   label: "RTT (ms)",        defaultVisible: false, group: "rilevamento" },
 
   // Dettaglio
@@ -172,6 +175,20 @@ function parsePorts(json: string | null): string {
     if (!Array.isArray(arr)) return "";
     return arr.slice(0, 12).map((p) => p.protocol === "udp" ? `${p.port}/u` : String(p.port)).join(", ")
       + (arr.length > 12 ? ` +${arr.length - 12}` : "");
+  } catch { return ""; }
+}
+
+/** Lista completa porte separate per protocollo (no troncamento). Usata in CSV/export
+ *  e per le colonne dedicate "Porte TCP" / "Porte UDP". */
+function parsePortsByProtocol(json: string | null, protocol: "tcp" | "udp"): string {
+  if (!json) return "";
+  try {
+    const arr = JSON.parse(json) as Array<{ port: number; protocol?: string }>;
+    if (!Array.isArray(arr)) return "";
+    return arr
+      .filter((p) => (p.protocol ?? "tcp") === protocol)
+      .map((p) => String(p.port))
+      .join(", ");
   } catch { return ""; }
 }
 
@@ -415,6 +432,9 @@ export default function DiscoveryPage() {
     validated_creds:     (h: EnrichedHost) => (h.validated_protocols || []).length,
     detected:            (h: EnrichedHost) => { const d = parseDetectedDeviceFromDetectionJson(h.detection_json); return d?.label ?? ""; },
     multihomed:          (h: EnrichedHost) => h.multihomed ? h.multihomed.peers.length + 1 : 0,
+    open_ports_tcp:      (h: EnrichedHost) => parsePortsByProtocol(h.open_ports, "tcp"),
+    open_ports_udp:      (h: EnrichedHost) => parsePortsByProtocol(h.open_ports, "udp"),
+    in_ad:               (h: EnrichedHost) => h.ad_dns_host_name ? 1 : 0,
   }), []);
 
   const { sortedRows, sortColumn, sortDirection, onSort } = useClientTableSort(
@@ -583,6 +603,12 @@ export default function DiscoveryPage() {
       case "ad_dns": return h.ad_dns_host_name ?? "";
       case "os_info": return h.os_info ?? "";
       case "open_ports": return parsePorts(h.open_ports);
+      case "open_ports_tcp": return parsePortsByProtocol(h.open_ports, "tcp");
+      case "open_ports_udp": return parsePortsByProtocol(h.open_ports, "udp");
+      case "validated_creds": return (h.validated_protocols ?? []).join(", ");
+      case "detected": { const d = parseDetectedDeviceFromDetectionJson(h.detection_json); return d?.label ?? ""; }
+      case "multihomed": return h.multihomed ? `${h.multihomed.peers.length + 1} IF` : "";
+      case "in_ad": return h.ad_dns_host_name ? "Si" : "No";
       case "response_time": return h.last_response_time_ms != null ? String(h.last_response_time_ms) : "";
       case "device_manufacturer": return getManufacturer(h).text;
       case "model": return h.model ?? "";
@@ -762,6 +788,18 @@ export default function DiscoveryPage() {
             {h.multihomed.peers.length + 1} IF
           </Badge>
         ) : <span className="text-muted-foreground text-xs">—</span>;
+      case "open_ports_tcp": {
+        const txt = parsePortsByProtocol(h.open_ports, "tcp");
+        return txt ? <span className="font-mono text-xs truncate max-w-[180px] block" title={txt}>{txt}</span> : <span className="text-muted-foreground text-xs">—</span>;
+      }
+      case "open_ports_udp": {
+        const txt = parsePortsByProtocol(h.open_ports, "udp");
+        return txt ? <span className="font-mono text-xs truncate max-w-[180px] block" title={txt}>{txt}</span> : <span className="text-muted-foreground text-xs">—</span>;
+      }
+      case "in_ad":
+        return h.ad_dns_host_name
+          ? <Badge className="bg-blue-500/15 text-blue-700 border-blue-300/40 dark:text-blue-400 text-xs">Si</Badge>
+          : <span className="text-muted-foreground text-xs">No</span>;
       default:
         return null;
     }

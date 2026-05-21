@@ -124,11 +124,26 @@ export async function runVulnSync(): Promise<{
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
+    // Lookup riusabile: per finding il cui edge_scan_id non era nello
+    // snapshot di listScans(since), cerca in vuln_scan_runs già esistente.
+    // Tipico col backfill retroattivo: i findings nuovi puntano a scan
+    // run già importati in passi precedenti.
+    const findRunByEdgeId = db.prepare(
+      "SELECT id, network_id FROM vuln_scan_runs WHERE scanner_id = ? AND edge_scan_id = ?",
+    );
+
     // Transaction wrapper per bulk insert
     const insertMany = db.transaction((findings: EdgeFinding[]) => {
       for (const f of findings) {
-        const runRef = scanRunByEdgeId.get(f.scan_id);
-        if (!runRef) continue; // scan non tracciato (raro: skip)
+        let runRef = scanRunByEdgeId.get(f.scan_id);
+        if (!runRef) {
+          const r = findRunByEdgeId.get(scanner.id, f.scan_id) as
+            | { id: number; network_id: number | null }
+            | undefined;
+          if (!r) continue;
+          runRef = { runId: r.id, networkId: r.network_id };
+          scanRunByEdgeId.set(f.scan_id, runRef);
+        }
         const hostId = matchHostId(db, f.ip, f.network_id ?? runRef.networkId);
         insertFinding.run(
           hostId,

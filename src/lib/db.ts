@@ -3908,7 +3908,7 @@ const INVENTORY_COLUMNS = [
   "fine_supporto", "vita_utile_prevista", "sistema_operativo", "versione_os", "cpu", "ram_gb", "storage_gb",
   "storage_tipo", "mac_address", "ip_address", "vlan", "firmware_version", "prezzo_acquisto", "fornitore",
   "numero_ordine", "numero_fattura", "valore_attuale", "metodo_ammortamento", "centro_di_costo",
-  "crittografia_disco", "antivirus", "gestito_da_mdr", "classificazione_dati", "in_scope_gdpr", "in_scope_nis2",
+  "crittografia_disco", "antivirus", "gestito_da_mdr", "classificazione_dati", "in_scope_gdpr", "categoria_nis2", "business_owner_id", "technical_owner_id", "criticita_nis2", "dati_trattati", "supporto_rimovibile", "data_review_nis2", "in_scope_nis2",
   "ultimo_audit", "contratto_supporto", "tipo_garanzia", "contatto_supporto", "ultimo_intervento",
   "prossima_manutenzione", "note_tecniche", "technical_data",
 ];
@@ -4248,6 +4248,13 @@ export function createInventoryAsset(input: import("@/types").InventoryAssetInpu
     input.gestito_da_mdr ?? 0,
     input.classificazione_dati ?? null,
     input.in_scope_gdpr ?? 0,
+    input.categoria_nis2 ?? null,
+    input.business_owner_id ?? null,
+    input.technical_owner_id ?? null,
+    input.criticita_nis2 ?? null,
+    input.dati_trattati ?? null,
+    input.supporto_rimovibile ? 1 : 0,
+    input.data_review_nis2 ?? null,
     input.in_scope_nis2 ?? 0,
     input.ultimo_audit ?? null,
     input.contratto_supporto ?? null,
@@ -4273,7 +4280,7 @@ export function updateInventoryAsset(id: number, input: import("@/types").Invent
     const key = col as keyof import("@/types").InventoryAssetInput;
     if (input[key] !== undefined) {
       fields.push(`${col} = ?`);
-      values.push(key === "crittografia_disco" || key === "gestito_da_mdr" || key === "in_scope_gdpr" || key === "in_scope_nis2"
+      values.push(key === "crittografia_disco" || key === "gestito_da_mdr" || key === "in_scope_gdpr" || key === "in_scope_nis2" || key === "supporto_rimovibile"
         ? (input[key] ? 1 : 0) : input[key]);
     }
   }

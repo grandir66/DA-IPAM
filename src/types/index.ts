@@ -230,6 +230,30 @@ export type InventoryAssetStato =
 export type InventoryAssetStorageTipo = "SSD" | "HDD" | "NVMe";
 export type InventoryAssetClassificazioneDati = "Pubblico" | "Interno" | "Confidenziale" | "Riservato";
 
+
+export type InventoryCategoriaNis2 =
+  | "workstation"
+  | "server"
+  | "rete"
+  | "storage"
+  | "mobile"
+  | "iot"
+  | "supporto_rimovibile"
+  | "servizio_cloud"
+  | "applicazione"
+  | "altro";
+
+export type InventoryCriticitaNis2 = "bassa" | "media" | "alta" | "critica";
+
+export type InventoryDatiTrattati =
+  | "nessuno"
+  | "personali"
+  | "sensibili"
+  | "finanziari"
+  | "sanitari"
+  | "infrastruttura_critica"
+  | "altro";
+
 export interface InventoryAsset {
   id: number;
   asset_id: string | null;
@@ -279,6 +303,14 @@ export interface InventoryAsset {
   gestito_da_mdr: number;
   classificazione_dati: InventoryAssetClassificazioneDati | null;
   in_scope_gdpr: number;
+  // NIS2 Fase 1
+  categoria_nis2: InventoryCategoriaNis2 | null;
+  business_owner_id: number | null;
+  technical_owner_id: number | null;
+  criticita_nis2: InventoryCriticitaNis2 | null;
+  dati_trattati: InventoryDatiTrattati | null;
+  supporto_rimovibile: number;
+  data_review_nis2: string | null;
   in_scope_nis2: number;
   ultimo_audit: string | null;
   contratto_supporto: string | null;
@@ -339,6 +371,14 @@ export interface InventoryAssetInput {
   gestito_da_mdr?: number;
   classificazione_dati?: InventoryAssetClassificazioneDati | null;
   in_scope_gdpr?: number;
+  // NIS2 Fase 1
+  categoria_nis2?: InventoryCategoriaNis2 | null;
+  business_owner_id?: number | null;
+  technical_owner_id?: number | null;
+  criticita_nis2?: InventoryCriticitaNis2 | null;
+  dati_trattati?: InventoryDatiTrattati | null;
+  supporto_rimovibile?: number;
+  data_review_nis2?: string | null;
   in_scope_nis2?: number;
   ultimo_audit?: string | null;
   contratto_supporto?: string | null;

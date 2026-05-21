@@ -17,6 +17,36 @@ const CATEGORIE = ["Desktop", "Laptop", "Server", "Switch", "Firewall", "NAS", "
 const STATI = ["Attivo", "In magazzino", "In riparazione", "Dismesso", "Rubato"];
 const CLASSIFICAZIONI = ["Pubblico", "Interno", "Confidenziale", "Riservato"];
 
+const NIS2_CATEGORIE: { value: string; label: string }[] = [
+  { value: "workstation", label: "Workstation utente" },
+  { value: "server", label: "Server" },
+  { value: "rete", label: "Apparato di rete" },
+  { value: "storage", label: "Storage" },
+  { value: "mobile", label: "Dispositivo mobile" },
+  { value: "iot", label: "IoT / OT" },
+  { value: "supporto_rimovibile", label: "Supporto rimovibile" },
+  { value: "servizio_cloud", label: "Servizio cloud" },
+  { value: "applicazione", label: "Applicazione" },
+  { value: "altro", label: "Altro" },
+];
+
+const NIS2_CRITICITA: { value: string; label: string }[] = [
+  { value: "bassa", label: "Bassa" },
+  { value: "media", label: "Media" },
+  { value: "alta", label: "Alta" },
+  { value: "critica", label: "Critica" },
+];
+
+const NIS2_DATI_TRATTATI: { value: string; label: string }[] = [
+  { value: "nessuno", label: "Nessuno" },
+  { value: "personali", label: "Personali" },
+  { value: "sensibili", label: "Sensibili (art. 9 GDPR)" },
+  { value: "finanziari", label: "Finanziari" },
+  { value: "sanitari", label: "Sanitari" },
+  { value: "infrastruttura_critica", label: "Infrastruttura critica" },
+  { value: "altro", label: "Altro" },
+];
+
 interface InventoryNis2SchedaProps {
   form: Partial<InventoryAssetInput>;
   setForm: React.Dispatch<React.SetStateAction<Partial<InventoryAssetInput>>>;
@@ -71,8 +101,29 @@ export function InventoryNis2Scheda({ form, setForm, assignees, locations }: Inv
 
       <Card>
         <CardHeader><CardTitle>Responsabilità</CardTitle></CardHeader>
-        <CardContent>
-          <div><Label>Proprietario business</Label>
+        <CardContent className="grid grid-cols-2 gap-4">
+          <div><Label>Business owner</Label>
+            <Select value={form.business_owner_id != null ? String(form.business_owner_id) : "none"} onValueChange={(v) => setForm((f) => ({ ...f, business_owner_id: v === "none" ? null : Number(v) }))}>
+              <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">— Nessuno</SelectItem>
+                {assignees.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}{a.email ? ` (${a.email})` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground mt-1">Chi ha la responsabilità decisionale (business).</p>
+          </div>
+          <div><Label>Technical owner</Label>
+            <Select value={form.technical_owner_id != null ? String(form.technical_owner_id) : "none"} onValueChange={(v) => setForm((f) => ({ ...f, technical_owner_id: v === "none" ? null : Number(v) }))}>
+              <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">— Nessuno</SelectItem>
+                {assignees.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}{a.email ? ` (${a.email})` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground mt-1">Chi gestisce tecnicamente l&apos;asset (IT/sysadmin).</p>
+          </div>
+          <div className="col-span-2 pt-2 border-t">
+            <Label className="text-xs text-muted-foreground">Proprietario business (legacy / pre-NIS2)</Label>
             <Select value={form.asset_assignee_id != null ? String(form.asset_assignee_id) : "none"} onValueChange={(v) => setForm((f) => ({ ...f, asset_assignee_id: v === "none" ? null : Number(v) }))}>
               <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
               <SelectContent>
@@ -120,6 +171,34 @@ export function InventoryNis2Scheda({ form, setForm, assignees, locations }: Inv
             <input type="checkbox" id="nis2_in_scope" checked={!!form.in_scope_nis2} onChange={(e) => setForm((f) => ({ ...f, in_scope_nis2: e.target.checked ? 1 : 0 }))} className="rounded" />
             <Label htmlFor="nis2_in_scope">In scope NIS2</Label>
           </div>
+          <div><Label>Categoria NIS2</Label>
+            <Select value={form.categoria_nis2 ?? ""} onValueChange={(v) => setForm((f) => ({ ...f, categoria_nis2: (v || null) as InventoryAsset["categoria_nis2"] }))}>
+              <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">—</SelectItem>
+                {NIS2_CATEGORIE.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div><Label>Criticità</Label>
+            <Select value={form.criticita_nis2 ?? ""} onValueChange={(v) => setForm((f) => ({ ...f, criticita_nis2: (v || null) as InventoryAsset["criticita_nis2"] }))}>
+              <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">—</SelectItem>
+                {NIS2_CRITICITA.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground mt-1">Impatto in caso di compromissione.</p>
+          </div>
+          <div><Label>Dati trattati</Label>
+            <Select value={form.dati_trattati ?? ""} onValueChange={(v) => setForm((f) => ({ ...f, dati_trattati: (v || null) as InventoryAsset["dati_trattati"] }))}>
+              <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">—</SelectItem>
+                {NIS2_DATI_TRATTATI.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           <div><Label>Classificazione dati</Label>
             <Select value={form.classificazione_dati ?? ""} onValueChange={(v) => setForm((f) => ({ ...f, classificazione_dati: (v || null) as InventoryAsset["classificazione_dati"] }))}>
               <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
@@ -130,6 +209,7 @@ export function InventoryNis2Scheda({ form, setForm, assignees, locations }: Inv
             </Select>
           </div>
           <div><Label>Ultimo audit</Label><Input type="date" value={form.ultimo_audit ?? ""} onChange={(e) => setForm((f) => ({ ...f, ultimo_audit: e.target.value || null }))} /></div>
+          <div><Label>Ultima review NIS2</Label><Input type="date" value={form.data_review_nis2 ?? ""} onChange={(e) => setForm((f) => ({ ...f, data_review_nis2: e.target.value || null }))} /></div>
         </CardContent>
       </Card>
 
@@ -144,6 +224,10 @@ export function InventoryNis2Scheda({ form, setForm, assignees, locations }: Inv
           <div className="flex items-center gap-2">
             <input type="checkbox" id="nis2_mdr" checked={!!form.gestito_da_mdr} onChange={(e) => setForm((f) => ({ ...f, gestito_da_mdr: e.target.checked ? 1 : 0 }))} className="rounded" />
             <Label htmlFor="nis2_mdr">Gestito da MDR</Label>
+          </div>
+          <div className="flex items-center gap-2 col-span-2">
+            <input type="checkbox" id="nis2_supporto_rimovibile" checked={!!form.supporto_rimovibile} onChange={(e) => setForm((f) => ({ ...f, supporto_rimovibile: e.target.checked ? 1 : 0 }))} className="rounded" />
+            <Label htmlFor="nis2_supporto_rimovibile">Supporto rimovibile (USB / SD / disco esterno)</Label>
           </div>
         </CardContent>
       </Card>

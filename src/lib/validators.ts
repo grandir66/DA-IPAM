@@ -206,6 +206,14 @@ export const InventoryAssetSchema = z.object({
   gestito_da_mdr: z.coerce.number().int().min(0).max(1).optional(),
   classificazione_dati: inventoryClassificazioneDati,
   in_scope_gdpr: z.coerce.number().int().min(0).max(1).optional(),
+  // NIS2 Fase 1
+  categoria_nis2: z.preprocess(emptyToUndefined, z.enum(["workstation", "server", "rete", "storage", "mobile", "iot", "supporto_rimovibile", "servizio_cloud", "applicazione", "altro"]).optional().nullable()),
+  business_owner_id: z.preprocess((v) => (v === "" || v === null ? null : v), z.coerce.number().int().positive().optional().nullable()),
+  technical_owner_id: z.preprocess((v) => (v === "" || v === null ? null : v), z.coerce.number().int().positive().optional().nullable()),
+  criticita_nis2: z.preprocess(emptyToUndefined, z.enum(["bassa", "media", "alta", "critica"]).optional().nullable()),
+  dati_trattati: z.preprocess(emptyToUndefined, z.enum(["nessuno", "personali", "sensibili", "finanziari", "sanitari", "infrastruttura_critica", "altro"]).optional().nullable()),
+  supporto_rimovibile: z.coerce.number().int().min(0).max(1).optional(),
+  data_review_nis2: z.string().max(20).optional().nullable(),
   in_scope_nis2: z.coerce.number().int().min(0).max(1).optional(),
   ultimo_audit: z.string().max(20).optional().nullable(),
   contratto_supporto: z.string().max(200).optional().nullable(),
@@ -232,6 +240,12 @@ export const InventoryBulkUpdateSchema = z.object({
   antivirus: z.string().max(100).optional().nullable(),
   in_scope_gdpr: z.coerce.number().int().min(0).max(1).optional(),
   in_scope_nis2: z.coerce.number().int().min(0).max(1).optional(),
+  categoria_nis2: z.preprocess(emptyToUndefined, z.enum(["workstation", "server", "rete", "storage", "mobile", "iot", "supporto_rimovibile", "servizio_cloud", "applicazione", "altro"]).optional().nullable()),
+  business_owner_id: z.preprocess((v) => (v === "" || v === null ? null : v), z.coerce.number().int().positive().optional().nullable()),
+  technical_owner_id: z.preprocess((v) => (v === "" || v === null ? null : v), z.coerce.number().int().positive().optional().nullable()),
+  criticita_nis2: z.preprocess(emptyToUndefined, z.enum(["bassa", "media", "alta", "critica"]).optional().nullable()),
+  dati_trattati: z.preprocess(emptyToUndefined, z.enum(["nessuno", "personali", "sensibili", "finanziari", "sanitari", "infrastruttura_critica", "altro"]).optional().nullable()),
+  supporto_rimovibile: z.coerce.number().int().min(0).max(1).optional(),
 });
 
 export const LoginSchema = z.object({

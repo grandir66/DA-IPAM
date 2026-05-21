@@ -70,3 +70,4 @@ data/hub.db-wal
 data/hub.db-shm
 .claude/worktrees/
 .claude/scheduled_tasks.lock
+backups/

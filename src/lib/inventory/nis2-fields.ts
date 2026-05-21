@@ -48,7 +48,9 @@ export const INVENTORY_FIELD_CATALOG: InventoryFieldMeta[] = [
   { key: "vlan", label: "VLAN", scope: "nis2", section: "ubicazione", exportNis2: true },
   { key: "mac_address", label: "MAC", scope: "nis2", section: "tecnico", exportNis2: true },
 
-  { key: "asset_assignee_id", label: "Proprietario business", scope: "nis2", section: "responsabilita", exportNis2: true },
+  { key: "asset_assignee_id", label: "Proprietario business (legacy)", scope: "nis2", section: "responsabilita", exportNis2: false },
+  { key: "business_owner_id", label: "Business owner", scope: "nis2", section: "responsabilita", exportNis2: true },
+  { key: "technical_owner_id", label: "Technical owner", scope: "nis2", section: "responsabilita", exportNis2: true },
   { key: "utente_assegnatario_id", label: "Utente sistema", scope: "itam", section: "responsabilita", exportNis2: false },
   { key: "data_assegnazione", label: "Data assegnazione", scope: "itam", section: "responsabilita", exportNis2: false },
 
@@ -68,6 +70,10 @@ export const INVENTORY_FIELD_CATALOG: InventoryFieldMeta[] = [
   { key: "storage_gb", label: "Storage (GB)", scope: "itam", section: "tecnico", exportNis2: false },
   { key: "storage_tipo", label: "Tipo storage", scope: "itam", section: "tecnico", exportNis2: false },
 
+  { key: "categoria_nis2", label: "Categoria NIS2", scope: "nis2", section: "compliance", exportNis2: true },
+  { key: "criticita_nis2", label: "Criticità", scope: "nis2", section: "compliance", exportNis2: true },
+  { key: "dati_trattati", label: "Dati trattati", scope: "nis2", section: "compliance", exportNis2: true },
+  { key: "data_review_nis2", label: "Ultima review NIS2", scope: "nis2", section: "compliance", exportNis2: true },
   { key: "in_scope_nis2", label: "In scope NIS2", scope: "nis2", section: "compliance", exportNis2: true },
   { key: "classificazione_dati", label: "Classificazione dati", scope: "nis2", section: "compliance", exportNis2: true },
   { key: "ultimo_audit", label: "Ultimo audit", scope: "nis2", section: "compliance", exportNis2: true },
@@ -76,6 +82,7 @@ export const INVENTORY_FIELD_CATALOG: InventoryFieldMeta[] = [
   { key: "antivirus", label: "Antivirus / EDR", scope: "nis2", section: "protezione", exportNis2: true },
   { key: "crittografia_disco", label: "Crittografia disco", scope: "nis2", section: "protezione", exportNis2: true },
   { key: "gestito_da_mdr", label: "Gestito da MDR", scope: "nis2", section: "protezione", exportNis2: true },
+  { key: "supporto_rimovibile", label: "Supporto rimovibile (USB/SD)", scope: "nis2", section: "protezione", exportNis2: true },
 
   { key: "note_tecniche", label: "Note / remediation", scope: "nis2", section: "note", exportNis2: true },
 

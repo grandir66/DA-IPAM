@@ -50,6 +50,8 @@ import {
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
+import { AddableSelect } from "@/components/shared/addable-select";
+import { credTypeForProtocol, CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
 import { HostCredentialsDialog } from "@/components/shared/host-credentials-dialog";
 import {
   getDefaultNetworkDeviceVendorOptions,
@@ -1291,7 +1293,7 @@ export function NetworkDetailClient({
               idPrefix="network-bulk-add"
               showIdentificazione={false}
               showProfilo={true}
-              showCredenziali={true}
+              showCredenziali={false}
               classification={bulkAddClassification}
               vendor={bulkAddVendor}
               vendorSubtype={bulkAddVendorSubtype}
@@ -1321,33 +1323,68 @@ export function NetworkDetailClient({
               defaultProtocol="ssh"
             />
 
-            {/* Credenziali: ereditate dagli host selezionati */}
-            <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <Key className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium">Credenziali</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Le credenziali validate sugli host selezionati verranno ereditate automaticamente dal dispositivo.
-                Puoi gestirle dalla scheda del dispositivo dopo la creazione.
-              </p>
-              {(() => {
-                const protos = new Set<string>();
-                for (const hid of selectedHostIds) {
-                  for (const p of (hostValidatedProtocols[hid] || [])) protos.add(p);
-                }
-                return protos.size > 0 ? (
-                  <div className="flex gap-1 mt-1">
-                    <ProtocolBadges protocols={[...protos]} />
-                    <span className="text-xs text-muted-foreground ml-1">rilevate sugli host selezionati</span>
+            {/* Credenziali: scelta esplicita + creazione inline ─ con badge eredità automatica */}
+            {(() => {
+              const credMap = credTypeForProtocol(bulkAddProtocol);
+              const primaryOpts = addDeviceCredentials.filter((c) => credMap.allowedPrimary.includes(c.credential_type));
+              const snmpOpts = addDeviceCredentials.filter((c) => c.credential_type === "snmp");
+              const protos = new Set<string>();
+              for (const hid of selectedHostIds) {
+                for (const p of (hostValidatedProtocols[hid] || [])) protos.add(p);
+              }
+              return (
+                <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Key className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Credenziali</span>
                   </div>
-                ) : (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                    Nessuna credenziale validata sugli host selezionati. Esegui prima &quot;Valida credenziali&quot; dalla Fase 3.
-                  </p>
-                );
-              })()}
-            </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Credenziale principale ({credMap.primary})</Label>
+                      <AddableSelect
+                        value={bulkAddCredentialId && bulkAddCredentialId !== "none" ? Number(bulkAddCredentialId) : null}
+                        onChange={(v) => setBulkAddCredentialId(v != null ? String(v) : null)}
+                        options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: c.credential_type }))}
+                        entityLabel="credenziale"
+                        createApiUrl="/api/credentials"
+                        extraFields={[
+                          { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: credMap.primary, options: CRED_TYPE_OPTIONS },
+                          { key: "username", label: "Username", placeholder: "admin" },
+                          { key: "password", label: "Password / Community", type: "password", required: true },
+                        ]}
+                        onCreated={refreshCredentialsList}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Credenziale SNMP (opzionale)</Label>
+                      <AddableSelect
+                        value={bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none" ? Number(bulkAddSnmpCredentialId) : null}
+                        onChange={(v) => setBulkAddSnmpCredentialId(v != null ? String(v) : null)}
+                        options={snmpOpts.map((c) => ({ id: c.id, label: c.name }))}
+                        entityLabel="credenziale SNMP"
+                        createApiUrl="/api/credentials"
+                        extraFields={[
+                          { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: "snmp", options: [{ value: "snmp", label: "SNMP" }] },
+                          { key: "password", label: "Community string", type: "password", required: true, placeholder: "public" },
+                        ]}
+                        onCreated={refreshCredentialsList}
+                      />
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground border-t border-border/60 pt-2">
+                    {protos.size > 0 ? (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span>Protocolli già validati sugli host:</span>
+                        <ProtocolBadges protocols={[...protos]} />
+                        <span className="text-[11px] opacity-75">(verranno ereditati come fallback se non assegni qui sopra)</span>
+                      </div>
+                    ) : (
+                      <span className="text-amber-600 dark:text-amber-400">Nessuna credenziale validata sugli host: assegnane una qui sopra.</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
             {bulkTestResult && (
               <div className={cn("text-sm px-3 py-2 rounded border", bulkTestResult.ok ? "border-green-500 bg-green-50 text-green-700" : "border-red-500 bg-red-50 text-red-700")}>
                 {bulkTestResult.message}

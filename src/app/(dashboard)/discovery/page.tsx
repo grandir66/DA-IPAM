@@ -27,6 +27,8 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
+import { AddableSelect } from "@/components/shared/addable-select";
+import { credTypeForProtocol, CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { Pagination } from "@/components/shared/pagination";
@@ -288,6 +290,13 @@ export default function DiscoveryPage() {
   const [addSnmpCredentialId, setAddSnmpCredentialId] = useState<string | null>(null);
   const [addUseForArpPoll, setAddUseForArpPoll] = useState<boolean>(false);
   const [addCredentials, setAddCredentials] = useState<Array<{ id: number; name: string; credential_type: string }>>([]);
+
+  const refreshCredentials = async () => {
+    try {
+      const r = await fetch("/api/credentials", { cache: "no-store" });
+      if (r.ok) setAddCredentials(await r.json());
+    } catch { /* ignore */ }
+  };
 
   // ─── LibreNMS: URL base e aggiunta singolo host ─────────
   const [librenmsUrl, setLibrenmsUrl] = useState("");
@@ -1292,7 +1301,7 @@ export default function DiscoveryPage() {
                 idPrefix="discovery-add-devices"
                 showIdentificazione={false}
                 showProfilo={true}
-                showCredenziali={true}
+                showCredenziali={false}
                 classification={addClassification}
                 vendor={addVendor}
                 vendorSubtype={addVendorSubtype}
@@ -1315,6 +1324,53 @@ export default function DiscoveryPage() {
                 defaultVendor="windows"
                 defaultProtocol="winrm"
               />
+
+              {(() => {
+                const credMap = credTypeForProtocol(addProtocol);
+                const primaryOpts = addCredentials.filter((c) => credMap.allowedPrimary.includes(c.credential_type));
+                const snmpOpts = addCredentials.filter((c) => c.credential_type === "snmp");
+                return (
+                  <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
+                    <div className="text-sm font-medium">Credenziali</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Credenziale principale ({credMap.primary})</Label>
+                        <AddableSelect
+                          value={addCredentialId && addCredentialId !== "none" ? Number(addCredentialId) : null}
+                          onChange={(v) => setAddCredentialId(v != null ? String(v) : null)}
+                          options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: c.credential_type }))}
+                          entityLabel="credenziale"
+                          createApiUrl="/api/credentials"
+                          extraFields={[
+                            { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: credMap.primary, options: CRED_TYPE_OPTIONS },
+                            { key: "username", label: "Username", placeholder: "admin" },
+                            { key: "password", label: "Password / Community", type: "password", required: true },
+                          ]}
+                          onCreated={refreshCredentials}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Credenziale SNMP (opzionale)</Label>
+                        <AddableSelect
+                          value={addSnmpCredentialId && addSnmpCredentialId !== "none" ? Number(addSnmpCredentialId) : null}
+                          onChange={(v) => setAddSnmpCredentialId(v != null ? String(v) : null)}
+                          options={snmpOpts.map((c) => ({ id: c.id, label: c.name }))}
+                          entityLabel="credenziale SNMP"
+                          createApiUrl="/api/credentials"
+                          extraFields={[
+                            { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: "snmp", options: [{ value: "snmp", label: "SNMP" }] },
+                            { key: "password", label: "Community string", type: "password", required: true, placeholder: "public" },
+                          ]}
+                          onCreated={refreshCredentials}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground border-t border-border/60 pt-2">
+                      Le credenziali validate sugli host saranno ereditate come fallback. Imposta qui per forzare credenziali specifiche.
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
           </DialogScrollableArea>
           <DialogFooter className="border-t border-border/50 px-4 py-3">

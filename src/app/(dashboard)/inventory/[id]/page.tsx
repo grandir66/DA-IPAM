@@ -25,11 +25,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Save, Shield, User, FileKey, History, Trash2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Save, Shield, User, FileKey, History, Trash2, RefreshCw, Workflow } from "lucide-react";
 import { toast } from "sonner";
 import type { InventoryAsset, InventoryAssetInput, AssetAssignee, Location, License, LicenseSeat, InventoryAuditLog } from "@/types";
 import { InventoryViewToggle } from "@/components/inventory/inventory-view-toggle";
 import { InventoryNis2Scheda } from "@/components/inventory/inventory-nis2-scheda";
+import { AssetServicesPanel } from "@/components/inventory/asset-services-panel";
 import { useInventoryViewMode } from "@/lib/inventory/inventory-view-mode";
 
 const CATEGORIE = ["Desktop", "Laptop", "Server", "Switch", "Firewall", "NAS", "Stampante", "VM", "Licenza", "Access Point", "Router", "Other"];
@@ -363,6 +364,7 @@ export default function InventoryAssetPage() {
             {isNis2View ? (
               <>
                 <TabsTrigger value="nis2"><Shield className="h-3.5 w-3.5 mr-1" />Scheda NIS2</TabsTrigger>
+                <TabsTrigger value="servizi"><Workflow className="h-3.5 w-3.5 mr-1" />Servizi</TabsTrigger>
                 <TabsTrigger value="licenze"><FileKey className="h-3.5 w-3.5 mr-1" />Licenze</TabsTrigger>
                 <TabsTrigger value="storico"><History className="h-3.5 w-3.5 mr-1" />Storico</TabsTrigger>
               </>
@@ -374,6 +376,7 @@ export default function InventoryAssetPage() {
                 <TabsTrigger value="ciclo">Ciclo vita</TabsTrigger>
                 <TabsTrigger value="tecnico">Tecnico</TabsTrigger>
                 <TabsTrigger value="compliance"><Shield className="h-3.5 w-3.5 mr-1" />Compliance</TabsTrigger>
+                <TabsTrigger value="servizi"><Workflow className="h-3.5 w-3.5 mr-1" />Servizi</TabsTrigger>
                 <TabsTrigger value="licenze"><FileKey className="h-3.5 w-3.5 mr-1" />Licenze</TabsTrigger>
                 <TabsTrigger value="storico"><History className="h-3.5 w-3.5 mr-1" />Storico</TabsTrigger>
                 <TabsTrigger value="economico">Economico</TabsTrigger>
@@ -571,6 +574,10 @@ export default function InventoryAssetPage() {
           </TabsContent>
           </>
           )}
+          <TabsContent value="servizi">
+            <AssetServicesPanel assetId={asset.id} />
+          </TabsContent>
+
 
           <TabsContent value="licenze">
             <Card>

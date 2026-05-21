@@ -436,6 +436,58 @@ export interface Location {
   updated_at: string;
 }
 
+
+// ── NIS2 Fase 4: servizi + dipendenze ──
+export type ServiceStato = "attivo" | "in_dismissione" | "dismesso";
+export type ServiceDependencyType = "primario" | "secondario" | "supporto";
+
+export interface Service {
+  id: number;
+  name: string;
+  description: string | null;
+  stato: ServiceStato;
+  criticita_servizio: InventoryCriticitaNis2 | null;
+  in_scope_nis2: number;
+  rto_minutes: number | null;
+  rpo_minutes: number | null;
+  business_owner_id: number | null;
+  technical_owner_id: number | null;
+  sla_url: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceInput {
+  name: string;
+  description?: string | null;
+  stato?: ServiceStato;
+  criticita_servizio?: InventoryCriticitaNis2 | null;
+  in_scope_nis2?: number;
+  rto_minutes?: number | null;
+  rpo_minutes?: number | null;
+  business_owner_id?: number | null;
+  technical_owner_id?: number | null;
+  sla_url?: string | null;
+  note?: string | null;
+}
+
+export interface ServiceAssetDependency {
+  id: number;
+  service_id: number;
+  asset_id: number;
+  dependency_type: ServiceDependencyType;
+  note: string | null;
+  created_at: string;
+}
+
+export interface ServiceWithDeps extends Service {
+  business_owner_name?: string | null;
+  technical_owner_name?: string | null;
+  n_assets?: number;
+  n_assets_primario?: number;
+}
+
 export interface License {
   id: number;
   name: string;

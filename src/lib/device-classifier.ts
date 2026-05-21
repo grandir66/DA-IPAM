@@ -241,7 +241,8 @@ const HOSTNAME_RULES: Array<{ pattern: RegExp; classification: DeviceClassificat
 /** MAC vendor → classificazione (OUI lookup). HP Inc/Hewlett prima come workstation (PC) perché le stampanti HP hanno OID/porte specifici. */
 const VENDOR_RULES: Array<{ pattern: RegExp; classification: DeviceClassification }> = [
   // NB: "ubiquiti" rimosso — Ubiquiti produce switch, AP, gateway; il vendor MAC da solo non basta
-  { pattern: /cisco|arista|juniper|mikrotik|netgear|d-link|tp-link|hp\s*networks|hpe\s*aruba|stormshield/i, classification: "router" },
+  { pattern: /stormshield|fortinet|sonicwall|watchguard|palo\s*alto|checkpoint|sophos/i, classification: "firewall" },
+  { pattern: /cisco|arista|juniper|mikrotik|netgear|d-link|tp-link|hp\s*networks|hpe\s*aruba/i, classification: "router" },
   { pattern: /hikvision|dahua|axis|vivotek|foscam|reolink|annke|uniview/i, classification: "telecamera" },
   { pattern: /yealink|polycom|grandstream|cisco\s*systems.*phone|snom|avaya|mitel|fanvil/i, classification: "voip" },
   { pattern: /apple|dell|lenovo|hp\s*inc|hewlett|asus|acer|msi|microsoft\s*surface/i, classification: "workstation" },

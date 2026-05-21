@@ -94,7 +94,7 @@ const emptyToUndefined = (v: unknown) => (v === "" ? undefined : v);
 export const NetworkDeviceSchema = z.object({
   name: z.string().min(1, "Nome richiesto").max(100),
   host: z.string().min(1, "Host richiesto").max(2000),
-  device_type: z.enum(["router", "switch", "hypervisor"]),
+  device_type: z.enum(["router", "switch", "firewall", "hypervisor"]),
   classification: z.preprocess(emptyToUndefined, z.string().max(100).optional().nullable()),
   vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"]),
   vendor_subtype: z.preprocess(emptyToUndefined, z.enum(["procurve", "comware"]).optional().nullable()),
@@ -116,6 +116,7 @@ export const NetworkDeviceSchema = z.object({
   api_url: z.preprocess(emptyToUndefined, z.string().url().optional()),
   port: z.coerce.number().int().min(1).max(65535).optional(),
   scan_target: z.preprocess(emptyToUndefined, z.enum(["proxmox", "vmware", "windows", "linux"]).optional().nullable()),
+  use_for_arp_poll: z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : v === true || v === 1 || v === "1" || v === "true" ? 1 : 0), z.union([z.literal(0), z.literal(1)]).optional()),
 });
 
 export const CredentialSchema = z.object({

@@ -146,6 +146,8 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   const [createSnmpCredentialId, setCreateSnmpCredentialId] = useState<string | null>(null);
   const [createVendorSubtype, setCreateVendorSubtype] = useState<string | null>(null);
   const [createProductProfile, setCreateProductProfile] = useState<string | null>(null);
+  const [createUseForArpPoll, setCreateUseForArpPoll] = useState<boolean>(() => effectiveClassification === "router" || effectiveClassification === "firewall");
+  const [editUseForArpPoll, setEditUseForArpPoll] = useState<boolean>(false);
   const [editVendor, setEditVendor] = useState<string>("mikrotik");
   const [editProtocol, setEditProtocol] = useState<string>("ssh");
   const [editCredentialId, setEditCredentialId] = useState<string | null>(null);
@@ -203,6 +205,8 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
       setEditVendorSubtype("vendor_subtype" in editingDevice ? editingDevice.vendor_subtype ?? null : null);
       setEditScanTarget((editingDevice as { scan_target?: string | null }).scan_target ?? null);
       setEditClassification((editingDevice as { classification?: string | null }).classification ?? effectiveClassification);
+      const existing = (editingDevice as { use_for_arp_poll?: number | boolean | null });
+      setEditUseForArpPoll(existing.use_for_arp_poll === 1 || existing.use_for_arp_poll === true);
       if ((editingDevice as { source?: string }).source !== "host") {
         const nd = editingDevice as NetworkDevice;
         setEditProductProfile(
@@ -578,6 +582,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
       vendor_subtype: createVendor === "hp" && createVendorSubtype ? createVendorSubtype : null,
     };
     if (createProductProfile) body.product_profile = createProductProfile;
+    body.use_for_arp_poll = createUseForArpPoll ? 1 : 0;
     if (SCANNABLE_CLASSIFICATIONS.includes(effectiveClassification) && effectiveClassification !== "router" && effectiveClassification !== "switch" && effectiveClassification !== "hypervisor") {
       body.classification = effectiveClassification;
     }
@@ -643,6 +648,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     };
     if (editProductProfile) body.product_profile = editProductProfile;
     if (editClassification) body.classification = editClassification;
+    body.use_for_arp_poll = editUseForArpPoll ? 1 : 0;
     formData.forEach((val, key) => {
       if (key === "password" || key === "community_string") {
         if (val && String(val).trim()) body[key] = val;
@@ -789,6 +795,9 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     setCreateProductProfile(v);
                     setCreateVendorSubtype(vendorSubtypeFromProductProfile(v as ProductProfileId));
                   }}
+                  useForArpPoll={createUseForArpPoll}
+                  onUseForArpPollChange={setCreateUseForArpPoll}
+                  defaultUseForArpPoll={effectiveClassification === "router" || effectiveClassification === "firewall"}
                 />
                 <Button type="submit" className="w-full">Aggiungi {isHypervisor ? "Proxmox" : meta.title}</Button>
               </form>
@@ -1500,6 +1509,8 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                       setEditProductProfile(v);
                       setEditVendorSubtype(vendorSubtypeFromProductProfile(v as ProductProfileId));
                     }}
+                    useForArpPoll={editUseForArpPoll}
+                    onUseForArpPollChange={setEditUseForArpPoll}
                   />
                 )}
                 {editingDevice && !isHostItem(editingDevice) && typeof editingDevice.id === "number" && (

@@ -11,6 +11,7 @@
 
 import Database from "better-sqlite3";
 import path from "path";
+import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
@@ -202,6 +203,29 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione device_type firewall fallita:`, e);
+  }
+
+  // Migrazione runtime: inventory_assets — colonne NIS2 Fase 3 (sync metadata da discovery)
+  try {
+    const cols3 = newDb.prepare("PRAGMA table_info(inventory_assets)").all() as Array<{ name: string }>;
+    const colNames3 = new Set(cols3.map((c) => c.name));
+    const f3 = [
+      { sql: "auto_sync_discovery INTEGER DEFAULT 1", name: "auto_sync_discovery" },
+      { sql: "last_sync_at TEXT", name: "last_sync_at" },
+      { sql: "last_sync_source TEXT", name: "last_sync_source" },
+    ];
+    const added3: string[] = [];
+    for (const c of f3) {
+      if (!colNames3.has(c.name)) {
+        newDb.exec(`ALTER TABLE inventory_assets ADD COLUMN ${c.sql}`);
+        added3.push(c.name);
+      }
+    }
+    if (added3.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: inventory_assets +${added3.length} colonne NIS2 Fase 3 (${added3.join(", ")})`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione NIS2 Fase 3 fallita:`, e);
   }
 
   // Migrazione runtime: inventory_assets — colonne NIS2 Fase 2 (checklist protezione art. 21)
@@ -2841,7 +2865,7 @@ const INVENTORY_COLUMNS = [
   "fine_supporto", "vita_utile_prevista", "sistema_operativo", "versione_os", "cpu", "ram_gb", "storage_gb",
   "storage_tipo", "mac_address", "ip_address", "vlan", "firmware_version", "prezzo_acquisto", "fornitore",
   "numero_ordine", "numero_fattura", "valore_attuale", "metodo_ammortamento", "centro_di_costo",
-  "crittografia_disco", "antivirus", "gestito_da_mdr", "classificazione_dati", "in_scope_gdpr", "categoria_nis2", "business_owner_id", "technical_owner_id", "criticita_nis2", "dati_trattati", "supporto_rimovibile", "data_review_nis2", "backup_configurato", "backup_ultimo_test", "patching_automatico", "mfa_admin", "log_centralizzati", "hardening_baseline", "dr_plan_documentato", "incident_response_documentata", "in_scope_nis2",
+  "crittografia_disco", "antivirus", "gestito_da_mdr", "classificazione_dati", "in_scope_gdpr", "categoria_nis2", "business_owner_id", "technical_owner_id", "criticita_nis2", "dati_trattati", "supporto_rimovibile", "data_review_nis2", "auto_sync_discovery", "last_sync_at", "last_sync_source", "backup_configurato", "backup_ultimo_test", "patching_automatico", "mfa_admin", "log_centralizzati", "hardening_baseline", "dr_plan_documentato", "incident_response_documentata", "in_scope_nis2",
   "ultimo_audit", "contratto_supporto", "tipo_garanzia", "contatto_supporto", "ultimo_intervento",
   "prossima_manutenzione", "note_tecniche", "technical_data",
 ];
@@ -3009,6 +3033,64 @@ export function syncInventoryFromHost(host: Host): import("@/types").InventoryAs
   return updateInventoryAsset(asset.id, merged) ?? null;
 }
 
+/**
+ * NIS2 Fase 3 — Sync inventory da discovery (host + network_device collegati).
+ *
+ * Aggiorna i campi tecnici dell'asset a partire dai dati raccolti dagli scanner.
+ * Per default sovrascrive SOLO i campi vuoti nell'asset (`force=false`).
+ * Se `auto_sync_discovery=0` l'asset viene saltato (valori curati manualmente).
+ *
+ * Aggiorna `last_sync_at` e `last_sync_source` per audit.
+ */
+export function syncInventoryAssetFromDiscovery(
+  assetId: number,
+  opts?: { force?: boolean },
+): import("./inventory/discovery-sync").SyncResult {
+  const asset = getInventoryAssetById(assetId);
+  if (!asset) {
+    return { asset_id: assetId, updated: false, fields_updated: [], skipped_reason: "no_source", source: null };
+  }
+  const force = opts?.force === true;
+  // auto_sync_discovery=0 → asset bloccato (a meno di force)
+  if (!force && asset.auto_sync_discovery === 0) {
+    return { asset_id: assetId, updated: false, fields_updated: [], skipped_reason: "auto_sync_disabled", source: null };
+  }
+  // Carica le sorgenti
+  // helpers importati staticamente in cima al modulo
+  const patches: Array<Partial<import("@/types").InventoryAssetInput>> = [];
+  let hostId: number | null = null;
+  let deviceId: number | null = null;
+  if (asset.network_device_id != null) {
+    const dev = getNetworkDeviceById(asset.network_device_id);
+    if (dev) { patches.push(buildPatchFromDevice(dev)); deviceId = dev.id; }
+  }
+  if (asset.host_id != null) {
+    const host = getHostById(asset.host_id);
+    if (host) { patches.push(buildPatchFromHost(host)); hostId = host.id; }
+  }
+  if (patches.length === 0) {
+    return { asset_id: assetId, updated: false, fields_updated: [], skipped_reason: "no_source", source: null };
+  }
+  const source = buildSourceLabel(hostId, deviceId);
+  const { merge, updated } = buildSyncMerge(asset, patches, force);
+  if (updated.length === 0) {
+    // niente da aggiornare: aggiorno solo il timestamp di check
+    updateInventoryAsset(assetId, { last_sync_at: new Date().toISOString(), last_sync_source: source });
+    return { asset_id: assetId, updated: false, fields_updated: [], source };
+  }
+  updateInventoryAsset(assetId, { ...merge, last_sync_at: new Date().toISOString(), last_sync_source: source });
+  return { asset_id: assetId, updated: true, fields_updated: updated, source };
+}
+
+/** Versione bulk: applica syncInventoryAssetFromDiscovery a una lista di asset_id. */
+export function syncInventoryAssetsBulk(
+  assetIds: number[],
+  opts?: { force?: boolean },
+): { results: import("./inventory/discovery-sync").SyncResult[]; total_updated: number } {
+  const results = assetIds.map((id) => syncInventoryAssetFromDiscovery(id, opts));
+  return { results, total_updated: results.filter((r) => r.updated).length };
+}
+
 export function getInventoryAssets(opts?: {
   network_device_id?: number; host_id?: number; stato?: string; categoria?: string;
   in_scope_nis2?: number; q?: string; limit?: number;
@@ -3061,6 +3143,8 @@ export function createInventoryAsset(input: import("@/types").InventoryAssetInpu
     input.criticita_nis2 ?? null, input.dati_trattati ?? null,
     input.supporto_rimovibile ? 1 : 0,
     input.data_review_nis2 ?? null,
+    input.auto_sync_discovery !== undefined ? (input.auto_sync_discovery ? 1 : 0) : 1,
+    input.last_sync_at ?? null, input.last_sync_source ?? null,
     input.backup_configurato ? 1 : 0, input.backup_ultimo_test ?? null,
     input.patching_automatico ? 1 : 0, input.mfa_admin ? 1 : 0,
     input.log_centralizzati ? 1 : 0, input.hardening_baseline ? 1 : 0,
@@ -3083,7 +3167,7 @@ export function updateInventoryAsset(id: number, input: import("@/types").Invent
     const key = col as keyof import("@/types").InventoryAssetInput;
     if (input[key] !== undefined) {
       fields.push(`${col} = ?`);
-      values.push(key === "crittografia_disco" || key === "gestito_da_mdr" || key === "in_scope_gdpr" || key === "in_scope_nis2" || key === "supporto_rimovibile" || key === "backup_configurato" || key === "patching_automatico" || key === "mfa_admin" || key === "log_centralizzati" || key === "hardening_baseline" || key === "dr_plan_documentato" || key === "incident_response_documentata"
+      values.push(key === "crittografia_disco" || key === "gestito_da_mdr" || key === "in_scope_gdpr" || key === "in_scope_nis2" || key === "supporto_rimovibile" || key === "backup_configurato" || key === "patching_automatico" || key === "mfa_admin" || key === "log_centralizzati" || key === "hardening_baseline" || key === "dr_plan_documentato" || key === "incident_response_documentata" || key === "auto_sync_discovery"
         ? (input[key] ? 1 : 0) : input[key]);
     }
   }

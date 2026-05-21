@@ -214,6 +214,10 @@ export const InventoryAssetSchema = z.object({
   dati_trattati: z.preprocess(emptyToUndefined, z.enum(["nessuno", "personali", "sensibili", "finanziari", "sanitari", "infrastruttura_critica", "altro"]).optional().nullable()),
   supporto_rimovibile: z.coerce.number().int().min(0).max(1).optional(),
   data_review_nis2: z.string().max(20).optional().nullable(),
+  // NIS2 Fase 3 — sync da discovery
+  auto_sync_discovery: z.coerce.number().int().min(0).max(1).optional(),
+  last_sync_at: z.string().max(40).optional().nullable(),
+  last_sync_source: z.string().max(200).optional().nullable(),
   // NIS2 Fase 2 — Checklist protezione
   backup_configurato: z.coerce.number().int().min(0).max(1).optional(),
   backup_ultimo_test: z.string().max(20).optional().nullable(),

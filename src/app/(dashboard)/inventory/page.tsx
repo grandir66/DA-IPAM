@@ -103,6 +103,7 @@ export default function InventoryPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkSyncing, setBulkSyncing] = useState(false);
   const [bulkForm, setBulkForm] = useState<BulkEditForm>(emptyBulkForm);
 
   const fetchAssets = useCallback(async () => {
@@ -154,6 +155,31 @@ export default function InventoryPage() {
       else next.add(id);
       return next;
     });
+  }
+
+  async function handleBulkSyncDiscovery(force: boolean) {
+    if (selectedIds.size === 0) return;
+    setBulkSyncing(true);
+    try {
+      const res = await fetch("/api/inventory/sync-discovery-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asset_ids: Array.from(selectedIds), force }),
+      });
+      if (!res.ok) {
+        toast.error("Sync bulk fallito");
+        return;
+      }
+      const data = await res.json() as { total_updated: number; results: Array<{ asset_id: number; skipped_reason?: string }> };
+      const skipped = data.results.filter((r) => r.skipped_reason).length;
+      toast.success(`${data.total_updated} asset aggiornati${skipped > 0 ? ` (${skipped} saltati)` : ""}`);
+      fetchAssets();
+      fetchGaps();
+    } catch {
+      toast.error("Errore di rete durante il sync");
+    } finally {
+      setBulkSyncing(false);
+    }
   }
 
   function toggleSelectAll() {
@@ -411,6 +437,10 @@ export default function InventoryPage() {
               <Button size="sm" variant="default" className="gap-1.5" onClick={openBulkEdit}>
                 <Pencil className="h-3.5 w-3.5" />
                 Modifica multipla
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => handleBulkSyncDiscovery(false)} disabled={bulkSyncing}>
+                <RefreshCw className={`h-3.5 w-3.5 ${bulkSyncing ? "animate-spin" : ""}`} />
+                Sync da discovery
               </Button>
               <Button size="sm" variant="ghost" className="gap-1" onClick={() => setSelectedIds(new Set())}>
                 <X className="h-3.5 w-3.5" />

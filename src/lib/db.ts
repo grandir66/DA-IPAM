@@ -3908,7 +3908,7 @@ const INVENTORY_COLUMNS = [
   "fine_supporto", "vita_utile_prevista", "sistema_operativo", "versione_os", "cpu", "ram_gb", "storage_gb",
   "storage_tipo", "mac_address", "ip_address", "vlan", "firmware_version", "prezzo_acquisto", "fornitore",
   "numero_ordine", "numero_fattura", "valore_attuale", "metodo_ammortamento", "centro_di_costo",
-  "crittografia_disco", "antivirus", "gestito_da_mdr", "classificazione_dati", "in_scope_gdpr", "categoria_nis2", "business_owner_id", "technical_owner_id", "criticita_nis2", "dati_trattati", "supporto_rimovibile", "data_review_nis2", "backup_configurato", "backup_ultimo_test", "patching_automatico", "mfa_admin", "log_centralizzati", "hardening_baseline", "dr_plan_documentato", "incident_response_documentata", "in_scope_nis2",
+  "crittografia_disco", "antivirus", "gestito_da_mdr", "classificazione_dati", "in_scope_gdpr", "categoria_nis2", "business_owner_id", "technical_owner_id", "criticita_nis2", "dati_trattati", "supporto_rimovibile", "data_review_nis2", "auto_sync_discovery", "last_sync_at", "last_sync_source", "backup_configurato", "backup_ultimo_test", "patching_automatico", "mfa_admin", "log_centralizzati", "hardening_baseline", "dr_plan_documentato", "incident_response_documentata", "in_scope_nis2",
   "ultimo_audit", "contratto_supporto", "tipo_garanzia", "contatto_supporto", "ultimo_intervento",
   "prossima_manutenzione", "note_tecniche", "technical_data",
 ];
@@ -4255,6 +4255,9 @@ export function createInventoryAsset(input: import("@/types").InventoryAssetInpu
     input.dati_trattati ?? null,
     input.supporto_rimovibile ? 1 : 0,
     input.data_review_nis2 ?? null,
+    input.auto_sync_discovery !== undefined ? (input.auto_sync_discovery ? 1 : 0) : 1,
+    input.last_sync_at ?? null,
+    input.last_sync_source ?? null,
     input.backup_configurato ? 1 : 0,
     input.backup_ultimo_test ?? null,
     input.patching_automatico ? 1 : 0,
@@ -4288,7 +4291,7 @@ export function updateInventoryAsset(id: number, input: import("@/types").Invent
     const key = col as keyof import("@/types").InventoryAssetInput;
     if (input[key] !== undefined) {
       fields.push(`${col} = ?`);
-      values.push(key === "crittografia_disco" || key === "gestito_da_mdr" || key === "in_scope_gdpr" || key === "in_scope_nis2" || key === "supporto_rimovibile" || key === "backup_configurato" || key === "patching_automatico" || key === "mfa_admin" || key === "log_centralizzati" || key === "hardening_baseline" || key === "dr_plan_documentato" || key === "incident_response_documentata"
+      values.push(key === "crittografia_disco" || key === "gestito_da_mdr" || key === "in_scope_gdpr" || key === "in_scope_nis2" || key === "supporto_rimovibile" || key === "backup_configurato" || key === "patching_automatico" || key === "mfa_admin" || key === "log_centralizzati" || key === "hardening_baseline" || key === "dr_plan_documentato" || key === "incident_response_documentata" || key === "auto_sync_discovery"
         ? (input[key] ? 1 : 0) : input[key]);
     }
   }

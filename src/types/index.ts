@@ -311,6 +311,10 @@ export interface InventoryAsset {
   dati_trattati: InventoryDatiTrattati | null;
   supporto_rimovibile: number;
   data_review_nis2: string | null;
+  // NIS2 Fase 3 — sync da discovery
+  auto_sync_discovery: number;
+  last_sync_at: string | null;
+  last_sync_source: string | null;
   // NIS2 Fase 2 — Checklist protezione (art. 21)
   backup_configurato: number;
   backup_ultimo_test: string | null;
@@ -388,6 +392,10 @@ export interface InventoryAssetInput {
   dati_trattati?: InventoryDatiTrattati | null;
   supporto_rimovibile?: number;
   data_review_nis2?: string | null;
+  // NIS2 Fase 3 — sync da discovery
+  auto_sync_discovery?: number;
+  last_sync_at?: string | null;
+  last_sync_source?: string | null;
   // NIS2 Fase 2 — Checklist protezione (art. 21)
   backup_configurato?: number;
   backup_ultimo_test?: string | null;

@@ -26,6 +26,7 @@ import {
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
+import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { Pagination } from "@/components/shared/pagination";
@@ -36,7 +37,7 @@ import {
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
-  Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity,
+  Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
@@ -274,6 +275,20 @@ export default function DiscoveryPage() {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkForm, setBulkForm] = useState<DiscoveryBulkForm>(emptyBulkForm);
 
+  // ─── Add to devices (bulk promote host → device) ──────────
+  const [addDevicesOpen, setAddDevicesOpen] = useState(false);
+  const [addDevicesSaving, setAddDevicesSaving] = useState(false);
+  const [addClassification, setAddClassification] = useState<string>("workstation");
+  const [addVendor, setAddVendor] = useState<string>("windows");
+  const [addProtocol, setAddProtocol] = useState<string>("winrm");
+  const [addVendorSubtype, setAddVendorSubtype] = useState<string | null>(null);
+  const [addProductProfile, setAddProductProfile] = useState<string | null>(null);
+  const [addScanTarget, setAddScanTarget] = useState<string | null>(null);
+  const [addCredentialId, setAddCredentialId] = useState<string | null>(null);
+  const [addSnmpCredentialId, setAddSnmpCredentialId] = useState<string | null>(null);
+  const [addUseForArpPoll, setAddUseForArpPoll] = useState<boolean>(false);
+  const [addCredentials, setAddCredentials] = useState<Array<{ id: number; name: string; credential_type: string }>>([]);
+
   // ─── LibreNMS: URL base e aggiunta singolo host ─────────
   const [librenmsUrl, setLibrenmsUrl] = useState("");
   const [librenmsAdding, setLibrenmsAdding] = useState<Set<number>>(new Set());
@@ -367,6 +382,7 @@ export default function DiscoveryPage() {
   // Carica credenziali per il dialog bulk + URL LibreNMS
   useEffect(() => {
     fetch("/api/credentials").then((r) => r.json()).then((data: { id: number; name: string; credential_type: string }[]) => {
+      setAddCredentials(data);
       if (Array.isArray(data)) setCredentials(data);
     }).catch(() => {});
     fetch("/api/integrations/active").then((r) => r.json()).then((data: Record<string, { enabled: boolean; url: string }>) => {
@@ -481,6 +497,43 @@ export default function DiscoveryPage() {
   }
 
   // ---------- bulk edit ----------
+  async function handleBulkAddToDevices() {
+    if (selectedIds.size === 0) return;
+    setAddDevicesSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        host_ids: Array.from(selectedIds),
+        classification: addClassification,
+        vendor: addVendor,
+        protocol: addProtocol,
+        scan_target: addScanTarget,
+        inherit_host_credentials: true,
+      };
+      if (addProductProfile) body.product_profile = addProductProfile;
+      if (addVendorSubtype) body.vendor_subtype = addVendorSubtype;
+      if (addCredentialId && addCredentialId !== "none") body.credential_id = Number(addCredentialId);
+      if (addSnmpCredentialId && addSnmpCredentialId !== "none") body.snmp_credential_id = Number(addSnmpCredentialId);
+      const res = await fetch("/api/devices/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message ?? `${selectedIds.size} dispositivi creati`);
+        setAddDevicesOpen(false);
+        setSelectedIds(new Set());
+        fetchData();
+      } else {
+        toast.error(data.error || "Errore nella creazione dispositivi");
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setAddDevicesSaving(false);
+    }
+  }
+
   function openBulkEdit() {
     setBulkForm(emptyBulkForm());
     setBulkEditOpen(true);
@@ -963,6 +1016,10 @@ export default function DiscoveryPage() {
                 <Pencil className="h-3.5 w-3.5" />
                 Modifica multipla
               </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddDevicesOpen(true)}>
+                <PackagePlus className="h-3.5 w-3.5" />
+                Aggiungi a dispositivi
+              </Button>
               <Button size="sm" variant="ghost" className="gap-1" onClick={() => setSelectedIds(new Set())}>
                 <X className="h-3.5 w-3.5" />
                 Deseleziona
@@ -1209,6 +1266,63 @@ export default function DiscoveryPage() {
             <Button onClick={handleBulkSave} disabled={bulkSaving} className="gap-2">
               {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Applica a {selectedIds.size} host
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════ DIALOG AGGIUNGI A DISPOSITIVI ════════════════ */}
+      <Dialog open={addDevicesOpen} onOpenChange={setAddDevicesOpen}>
+        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+          <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
+            <DialogTitle className="flex items-center gap-2">
+              <PackagePlus className="h-5 w-5" />
+              Aggiungi {selectedIds.size} host a dispositivi
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Promuove gli host selezionati a network device. Imposta profilo, vendor, protocollo e credenziali.
+              Le credenziali già validate sull&apos;host verranno comunque ereditate.
+            </p>
+          </DialogHeader>
+          <DialogScrollableArea className="px-4 py-3">
+            <div className="space-y-4">
+              <DeviceFormFields
+                mode="bulk"
+                credentials={addCredentials}
+                idPrefix="discovery-add-devices"
+                showIdentificazione={false}
+                showProfilo={true}
+                showCredenziali={true}
+                classification={addClassification}
+                vendor={addVendor}
+                vendorSubtype={addVendorSubtype}
+                protocol={addProtocol}
+                scanTarget={addScanTarget}
+                productProfile={addProductProfile}
+                credentialId={addCredentialId}
+                snmpCredentialId={addSnmpCredentialId}
+                useForArpPoll={addUseForArpPoll}
+                onClassificationChange={(v) => setAddClassification(v)}
+                onVendorChange={(v) => { setAddVendor(v); if (v !== "hp") setAddVendorSubtype(null); }}
+                onVendorSubtypeChange={setAddVendorSubtype}
+                onProtocolChange={(v) => setAddProtocol(v)}
+                onScanTargetChange={setAddScanTarget}
+                onCredentialIdChange={setAddCredentialId}
+                onSnmpCredentialIdChange={setAddSnmpCredentialId}
+                onProductProfileChange={(v) => setAddProductProfile(v)}
+                onUseForArpPollChange={setAddUseForArpPoll}
+                defaultClassification="workstation"
+                defaultVendor="windows"
+                defaultProtocol="winrm"
+              />
+            </div>
+          </DialogScrollableArea>
+          <DialogFooter className="border-t border-border/50 px-4 py-3">
+            <Button variant="ghost" onClick={() => setAddDevicesOpen(false)} disabled={addDevicesSaving}>
+              Annulla
+            </Button>
+            <Button onClick={handleBulkAddToDevices} disabled={addDevicesSaving || selectedIds.size === 0}>
+              {addDevicesSaving ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Creazione...</> : <><Server className="h-4 w-4 mr-1.5" />Crea {selectedIds.size} dispositivi</>}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -53,9 +53,9 @@ const networkSubItems: readonly NetworkItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
   { href: "/active-directory", label: "Active Directory", icon: FolderTree },
+  { href: "/credentials", label: "Credenziali", icon: Key },
   { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered, divider: "Diagnostica" },
   { href: "/dhcp", label: "Tabella DHCP", icon: Server },
-  { href: "/credentials", label: "Credenziali", icon: Key },
   { href: "/scans", label: "Scansioni", icon: Scan },
 ] as const;
 

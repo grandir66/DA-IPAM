@@ -173,20 +173,47 @@ function rawRequest(
     }
 
     let pinVerified = false;
+    let tlsSocket: TLSSocket | null = null;
+    let capturedCertRaw: Buffer | null = null;
     const req = requestFn(reqOpts, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (c: Buffer) => chunks.push(c));
       res.on("end", () => {
         if (isHttps && opts.expectedPin && !pinVerified) {
-          // Salvaguardia: se secureConnect non ha verificato il pin
-          // (es. listener registrato dopo l'evento, race), rifiuta.
-          reject(
-            new EdgeClientError(
-              0,
-              "pin verify non eseguito — socket state inatteso",
-            ),
-          );
-          return;
+          // Fallback: il listener `secureConnect` può essere stato
+          // registrato dopo l'emit dell'evento (race con keep-alive).
+          // Usiamo il cert.raw catturato dentro `verify()` come ultima
+          // difesa — è stato preso quando il socket era ancora "caldo".
+          if (capturedCertRaw && capturedCertRaw.length > 0) {
+            try {
+              const got = spkiPinFromDer(capturedCertRaw);
+              if (got === opts.expectedPin) {
+                pinVerified = true;
+              } else {
+                reject(
+                  new EdgeClientError(
+                    0,
+                    `SPKI pin mismatch (post-end): atteso ${opts.expectedPin}, ricevuto ${got}.`,
+                  ),
+                );
+                return;
+              }
+            } catch (e) {
+              reject(
+                new EdgeClientError(0, `pin calc fallback failed: ${(e as Error).message}`),
+              );
+              return;
+            }
+          }
+          if (!pinVerified) {
+            reject(
+              new EdgeClientError(
+                0,
+                "pin verify non eseguito — cert non catturato durante handshake",
+              ),
+            );
+            return;
+          }
         }
         const body = Buffer.concat(chunks).toString("utf-8");
         resolve({
@@ -207,6 +234,8 @@ function rawRequest(
           socket.once("secureConnect", () => verify(socket));
           return;
         }
+        // Salva raw per fallback post-end (socket può perdere cert dopo close)
+        capturedCertRaw = cert.raw;
         if (!opts.expectedPin) {
           // TOFU: accetta senza verifica
           pinVerified = true;
@@ -232,7 +261,10 @@ function rawRequest(
         }
         pinVerified = true;
       };
-      req.on("socket", (socket: TLSSocket) => verify(socket));
+      req.on("socket", (socket: TLSSocket) => {
+        tlsSocket = socket;
+        verify(socket);
+      });
     }
     req.on("error", (e) => reject(new EdgeClientError(0, `network: ${e.message}`)));
     req.setTimeout(opts.timeoutMs ?? 15000, () => {

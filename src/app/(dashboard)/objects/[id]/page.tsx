@@ -21,7 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
-import { DeviceSoftwareCard, HostSoftwareCard } from "@/components/hosts/host-software-card";
+import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
 import {
   ArrowLeft,
   RefreshCw,
@@ -486,9 +486,6 @@ export default function ObjectDetailPage() {
       {/* Spazio in fondo per scroll comodo */}
       <div className="h-8" />
 
-      {/* HostSoftwareCard non viene mai mostrata: lasciamo l'import per coerenza
-          (l'unico path di scan ora è via DeviceSoftwareCard sopra) */}
-      {false && <HostSoftwareCard hostId={host.id} />}
     </div>
   );
 }

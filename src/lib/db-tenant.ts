@@ -673,7 +673,13 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
            nd.device_type AS _dev_type,
            mpe.port_name AS _sw_port,
            sw.name AS _sw_name,
-           ac.ad_dns AS _ad_dns
+           ac.ad_dns AS _ad_dns,
+           ia.id AS _asset_id,
+           ia.asset_tag AS _asset_tag,
+           ia.categoria AS _asset_categoria,
+           ssw.id AS _sw_scan_id,
+           ssw.apps_count AS _sw_apps_count,
+           ssw.started_at AS _sw_scan_at
     FROM hosts h
     JOIN networks n ON n.id = h.network_id
     LEFT JOIN network_devices nd ON nd.host = h.ip
@@ -688,15 +694,32 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
       FROM ad_computers WHERE host_id IS NOT NULL
       GROUP BY host_id
     ) ac ON ac.host_id = h.id
+    LEFT JOIN (
+      SELECT host_id, MAX(id) AS id, MAX(asset_tag) AS asset_tag, MAX(categoria) AS categoria
+      FROM inventory_assets WHERE host_id IS NOT NULL
+      GROUP BY host_id
+    ) ia ON ia.host_id = h.id
+    LEFT JOIN (
+      SELECT s.host_id, s.id, s.apps_count, s.started_at
+      FROM software_scans s
+      JOIN (
+        SELECT host_id, MAX(started_at) AS max_at
+        FROM software_scans
+        WHERE host_id IS NOT NULL AND status = 'ok'
+        GROUP BY host_id
+      ) latest ON latest.host_id = s.host_id AND latest.max_at = s.started_at
+    ) ssw ON ssw.host_id = h.id
     ORDER BY h.network_id, h.ip
     LIMIT ?
   `).all(limit) as Array<Host & {
     _net_name: string; _net_cidr: string; _net_vlan: number | null; _net_location: string;
     _dev_id?: number; _dev_name?: string; _dev_vendor?: string; _dev_type?: string;
     _sw_port?: string; _sw_name?: string; _ad_dns?: string | null;
+    _asset_id?: number | null; _asset_tag?: string | null; _asset_categoria?: string | null;
+    _sw_scan_id?: number | null; _sw_apps_count?: number | null; _sw_scan_at?: string | null;
   }>;
 
-  return rows.map(({ _net_name, _net_cidr, _net_vlan, _net_location, _dev_id, _dev_name, _dev_vendor, _dev_type, _sw_port, _sw_name, _ad_dns, ...h }) => ({
+  return rows.map(({ _net_name, _net_cidr, _net_vlan, _net_location, _dev_id, _dev_name, _dev_vendor, _dev_type, _sw_port, _sw_name, _ad_dns, _asset_id, _asset_tag, _asset_categoria, _sw_scan_id, _sw_apps_count, _sw_scan_at, ...h }) => ({
     ...h,
     network_name: _net_name,
     network_cidr: _net_cidr,
@@ -709,6 +732,12 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
     switch_port: _sw_port ?? undefined,
     switch_device_name: _sw_name ?? undefined,
     ad_dns_host_name: _ad_dns ?? undefined,
+    asset_id: _asset_id ?? undefined,
+    asset_tag: _asset_tag ?? undefined,
+    asset_categoria: _asset_categoria ?? undefined,
+    last_software_scan_id: _sw_scan_id ?? undefined,
+    last_software_scan_apps: _sw_apps_count ?? undefined,
+    last_software_scan_at: _sw_scan_at ?? undefined,
   }));
 }
 

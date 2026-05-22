@@ -40,6 +40,7 @@ import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-c
 import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
+  Wrench, Package, Boxes,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
@@ -71,6 +72,14 @@ type EnrichedHost = Host & {
     medium: number;
     total: number;
   } | null;
+  /** Stato di evoluzione: linkato a `inventory_assets` (NIS2, lifecycle, finanziari). */
+  asset_id?: number;
+  asset_tag?: string;
+  asset_categoria?: string;
+  /** Ultimo scan software con esito ok (se presente). */
+  last_software_scan_id?: number;
+  last_software_scan_apps?: number;
+  last_software_scan_at?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -87,6 +96,7 @@ interface ColumnDef {
 
 const COLUMNS: ColumnDef[] = [
   // Base
+  { id: "profilo",         label: "Profilo",         defaultVisible: true,  group: "base" },
   { id: "ip",              label: "IP",              defaultVisible: true,  group: "base" },
   { id: "hostname",        label: "Nome",            defaultVisible: true,  group: "base" },
   { id: "status",          label: "Stato",           defaultVisible: true,  group: "base" },
@@ -123,6 +133,8 @@ const COLUMNS: ColumnDef[] = [
   { id: "serial_number",   label: "Seriale",         defaultVisible: false, group: "dettaglio" },
   { id: "firmware",        label: "Firmware",         defaultVisible: false, group: "dettaglio" },
   { id: "librenms_id",     label: "LibreNMS",         defaultVisible: true,  group: "dettaglio" },
+  { id: "asset_tag",       label: "Asset tag",       defaultVisible: false, group: "dettaglio" },
+  { id: "software_scan",   label: "App scansionate", defaultVisible: false, group: "dettaglio" },
 
   // Temporali
   { id: "last_seen",       label: "Ultimo visto",    defaultVisible: true,  group: "base" },
@@ -709,6 +721,16 @@ export default function DiscoveryPage() {
       case "vuln_max_severity": return h.vuln?.max_severity ?? "";
       case "vuln_counts":
         return h.vuln ? `${h.vuln.critical}/${h.vuln.high}` : "";
+      case "profilo": {
+        // Score per sort: numero di "promozioni" raggiunte (discovery=1, +device=2, +asset=4 → max 7)
+        let score = 1;
+        if (h.device_id) score += 2;
+        if (h.asset_id) score += 4;
+        return String(score);
+      }
+      case "asset_tag": return h.asset_tag ?? "";
+      case "software_scan":
+        return h.last_software_scan_apps != null ? String(h.last_software_scan_apps) : "";
       default: return "";
     }
   }
@@ -919,6 +941,48 @@ export default function DiscoveryPage() {
           </span>
         );
       }
+      case "profilo": {
+        // Stati di evoluzione cumulativi: Discovery (sempre), Managed (network_device), Asset (inventory_asset).
+        const isManaged = !!h.device_id;
+        const isAsset = !!h.asset_id;
+        const titleParts = ["Rilevato (Discovery)"];
+        if (isManaged) titleParts.push(`Gestito → ${h.device_name}`);
+        if (isAsset) titleParts.push(`Asset${h.asset_tag ? ` ${h.asset_tag}` : ""}`);
+        return (
+          <span className="inline-flex items-center gap-1" title={titleParts.join(" • ")}>
+            <Boxes className="h-3.5 w-3.5 text-muted-foreground" aria-label="Discovery" />
+            <Wrench
+              className={`h-3.5 w-3.5 ${isManaged ? "text-blue-600" : "text-muted-foreground/30"}`}
+              aria-label={isManaged ? "Gestito" : "Non gestito"}
+            />
+            <Package
+              className={`h-3.5 w-3.5 ${isAsset ? "text-emerald-600" : "text-muted-foreground/30"}`}
+              aria-label={isAsset ? "Asset registrato" : "Non in inventario asset"}
+            />
+          </span>
+        );
+      }
+      case "asset_tag":
+        return h.asset_id ? (
+          <Link
+            href={`/inventory/${h.asset_id}`}
+            className="font-mono text-xs text-primary hover:underline"
+            title={h.asset_categoria ?? ""}
+          >
+            {h.asset_tag ?? `#${h.asset_id}`}
+          </Link>
+        ) : (
+          <span className="text-muted-foreground text-xs">—</span>
+        );
+      case "software_scan":
+        if (!h.last_software_scan_id || h.last_software_scan_apps == null) {
+          return <span className="text-muted-foreground text-xs">—</span>;
+        }
+        return (
+          <span className="text-xs whitespace-nowrap" title={h.last_software_scan_at ?? ""}>
+            {h.last_software_scan_apps} app
+          </span>
+        );
       default:
         return null;
     }

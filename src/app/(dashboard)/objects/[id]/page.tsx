@@ -22,6 +22,8 @@ import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
+import { UptimeTimeline } from "@/components/shared/uptime-timeline";
+import { LatencyChart } from "@/app/(dashboard)/hosts/[id]/latency-chart";
 import {
   ArrowLeft,
   RefreshCw,
@@ -76,6 +78,17 @@ interface DeviceExtras {
     interface_name?: string | null;
     distance?: number | null;
     protocol?: string | null;
+  }>;
+  dhcp_leases?: Array<{
+    id?: number;
+    ip: string;
+    mac: string;
+    hostname?: string | null;
+    status?: string | null;
+    server?: string | null;
+    expires_at?: string | null;
+    lease_type?: string | null;
+    updated_at?: string | null;
   }>;
 }
 
@@ -356,6 +369,22 @@ export default function ObjectDetailPage() {
   const [host, setHost] = useState<HostDetail | null>(null);
   const [device, setDevice] = useState<DeviceFull | null>(null);
   const [asset, setAsset] = useState<InventoryAsset | null>(null);
+  const [librenms, setLibrenms] = useState<{
+    configured: boolean;
+    mapped?: boolean;
+    librenmsDeviceId?: number;
+    librenmsHostname?: string | null;
+    lastSyncedAt?: string;
+    device?: {
+      status?: number | string;
+      uptime_seconds?: number;
+      os?: string;
+      hardware?: string;
+      sysname?: string;
+      lastpolled?: string;
+    } | null;
+    librenmsUrl?: string;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -384,6 +413,14 @@ export default function ObjectDetailPage() {
         const list = (await aRes.json()) as InventoryAsset[];
         if (Array.isArray(list) && list.length > 0) setAsset(list[0]);
       }
+      // LibreNMS integration (se configurata)
+      try {
+        const lnms = await fetch(`/api/hosts/${hostId}/librenms`);
+        if (lnms.ok) {
+          const data = await lnms.json();
+          if (data) setLibrenms(data);
+        }
+      } catch { /* non critico */ }
     } finally {
       setLoading(false);
     }
@@ -552,6 +589,7 @@ export default function ObjectDetailPage() {
           <InfoRow label="MAC" value={host.mac} mono />
           <InfoRow label="Hostname" value={host.hostname} />
           <InfoRow label="DNS reverse" value={host.dns_reverse} />
+          <InfoRow label="DNS forward" value={host.dns_forward} />
           <InfoRow label="Vendor (MAC OUI)" value={host.vendor} />
           <InfoRow label="Manufacturer" value={host.device_manufacturer} />
           <InfoRow label="OS" value={host.os_info} />
@@ -577,6 +615,82 @@ export default function ObjectDetailPage() {
             value={host.arp_source ? `${host.arp_source.device_name} (${host.arp_source.device_vendor})` : null}
           />
         </dl>
+
+        {/* Multihomed peers (host con stesso MAC su altre network) */}
+        {host.multihomed && host.multihomed.peers && host.multihomed.peers.length > 0 && (
+          <div className="mt-3 pt-3 border-t">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
+              Multihomed ({host.multihomed.peers.length + 1} interfacce) · match {host.multihomed.match_type}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {host.multihomed.peers.map((p) => (
+                <Link
+                  key={p.host_id}
+                  href={`/objects/${p.host_id}`}
+                  className="inline-flex items-center gap-1.5 text-xs border rounded px-2 py-1 hover:bg-muted/50"
+                >
+                  <span className="font-mono">{p.ip}</span>
+                  <span className="text-muted-foreground">· {p.network_name}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {/* ─── LibreNMS (se configurato) ─── */}
+      {librenms?.configured && (
+        <Section icon={<Activity className="h-4 w-4" />} title="LibreNMS"
+          badge={
+            librenms.mapped
+              ? <Badge variant="outline" className="ml-2 text-[10px] border-emerald-400 text-emerald-700 bg-emerald-50">mappato</Badge>
+              : <Badge variant="outline" className="ml-2 text-[10px] text-muted-foreground">non mappato</Badge>
+          }>
+          {librenms.mapped && librenms.device ? (
+            <>
+              <dl className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <InfoRow label="Status" value={librenms.device.status === 1 || librenms.device.status === "1" ? "Online" : "Offline"} />
+                <InfoRow label="LibreNMS ID" value={librenms.librenmsDeviceId != null ? String(librenms.librenmsDeviceId) : null} />
+                <InfoRow label="Hostname" value={librenms.librenmsHostname ?? librenms.device.sysname ?? null} />
+                <InfoRow label="OS" value={librenms.device.os ?? null} />
+                <InfoRow label="Hardware" value={librenms.device.hardware ?? null} />
+                <InfoRow label="Uptime" value={librenms.device.uptime_seconds ? `${Math.floor(librenms.device.uptime_seconds / 86400)} giorni` : null} />
+                <InfoRow label="Ultimo poll" value={librenms.device.lastpolled ?? null} />
+                <InfoRow label="Ultimo sync" value={librenms.lastSyncedAt ?? null} />
+              </dl>
+              {librenms.librenmsUrl && librenms.librenmsDeviceId && (
+                <div className="mt-3">
+                  <a
+                    href={`${librenms.librenmsUrl}/device/device=${librenms.librenmsDeviceId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                  >
+                    Apri in LibreNMS <Activity className="h-3 w-3" />
+                  </a>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              LibreNMS configurato ma questo host non è ancora mappato.
+            </p>
+          )}
+        </Section>
+      )}
+
+      {/* ─── Latency chart + Uptime timeline (storico ping) ─── */}
+      <Section icon={<Activity className="h-4 w-4" />} title="Disponibilità">
+        <div className="space-y-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Uptime nel tempo</div>
+            <UptimeTimeline hostId={host.id} />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Latenza (ms)</div>
+            <LatencyChart hostId={host.id} />
+          </div>
+        </div>
       </Section>
 
       {/* ─── 3. Sistema operativo (Windows/Linux server) ─── */}
@@ -1418,6 +1532,50 @@ export default function ObjectDetailPage() {
             </table>
             {device.routes.length > 200 && (
               <p className="text-[10px] text-muted-foreground mt-2">Mostrate prime 200 di {device.routes.length}</p>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* ─── 3e-bis. DHCP leases (router/firewall) ─── */}
+      {device?.dhcp_leases && device.dhcp_leases.length > 0 && (
+        <Section icon={<TableIcon className="h-4 w-4" />} title="DHCP leases"
+          badge={<Badge variant="outline" className="ml-2 text-[10px]">{device.dhcp_leases.length}</Badge>}>
+          <div className="overflow-x-auto max-h-96">
+            <table className="w-full text-xs">
+              <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b sticky top-0 bg-background">
+                <tr>
+                  <th className="text-left py-1.5 pr-3">IP</th>
+                  <th className="text-left pr-3">MAC</th>
+                  <th className="text-left pr-3">Hostname</th>
+                  <th className="text-left pr-3">Status</th>
+                  <th className="text-left pr-3">Server</th>
+                  <th className="text-left pr-3">Tipo</th>
+                  <th className="text-left">Scade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {device.dhcp_leases.slice(0, 200).map((l, i) => (
+                  <tr key={l.id ?? i} className="border-b border-border/30 last:border-0">
+                    <td className="py-1 pr-3 font-mono">{l.ip}</td>
+                    <td className="pr-3 font-mono">{l.mac}</td>
+                    <td className="pr-3">{l.hostname ?? "—"}</td>
+                    <td className="pr-3">
+                      {l.status && (
+                        <Badge variant="outline" className={`text-[10px] ${l.status === "bound" || l.status === "active" ? "border-emerald-400 text-emerald-700 bg-emerald-50" : "text-muted-foreground"}`}>
+                          {l.status}
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="pr-3 text-[10px] text-muted-foreground">{l.server ?? "—"}</td>
+                    <td className="pr-3 text-[10px]">{l.lease_type ?? "—"}</td>
+                    <td className="text-[10px]">{l.expires_at ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {device.dhcp_leases.length > 200 && (
+              <p className="text-[10px] text-muted-foreground mt-2">Mostrate prime 200 di {device.dhcp_leases.length}</p>
             )}
           </div>
         </Section>

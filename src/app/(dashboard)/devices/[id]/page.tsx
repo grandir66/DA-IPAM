@@ -44,6 +44,7 @@ import {
 } from "@/components/shared/credential-assignment-fields";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
+import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
 import {
   inferProductProfileFromLegacy,
   PRODUCT_PROFILE_LABELS,
@@ -728,12 +729,17 @@ function DeviceDetailPage() {
     toast.success("Configurazione scaricata");
   };
 
-  async function handleQuery() {
-    if (!device) return;
+  /**
+   * Lancia query/scan completa sul device.
+   * Se onAfter è passato, viene chiamato dopo successful completion (per concatenare azioni come software scan).
+   * Ritorna una Promise che si risolve a true=ok, false=fallita/errore.
+   */
+  async function handleQuery(onAfter?: () => Promise<void>): Promise<boolean> {
+    if (!device) return false;
     const target = (device as { scan_target?: string | null }).scan_target;
     if (target === "vmware") {
       toast.info("Scansione VMware non ancora implementata (API vCenter). Usa SSH sul singolo ESXi se configurato come dispositivo Linux.");
-      return;
+      return false;
     }
     const useProxmox = target === "proxmox" || (device.device_type === "hypervisor" && !target);
     const endpoint = useProxmox
@@ -747,44 +753,78 @@ function DeviceDetailPage() {
       if (!res.ok) {
         toast.error(data.error);
         setQuerying(false);
-        return;
+        return false;
       }
 
-      // Se l'endpoint ritorna progress con id → polling asincrono
+      // Se l'endpoint ritorna progress con id → polling asincrono, attende completamento via Promise
       if (data.id && data.progress) {
         setQueryProgress(data.progress as ScanProgressType);
-
-        // Polling ogni secondo
-        if (queryPollRef.current) clearInterval(queryPollRef.current);
-        queryPollRef.current = setInterval(async () => {
-          try {
-            const progressRes = await fetch(`/api/scans/progress/${data.id}`);
-            if (!progressRes.ok) return;
-            const prog = await progressRes.json() as ScanProgressType;
-            setQueryProgress(prog);
-            if (prog.status === "completed" || prog.status === "failed") {
-              if (queryPollRef.current) { clearInterval(queryPollRef.current); queryPollRef.current = null; }
-              setQuerying(false);
-              fetchDevice();
-              if (prog.status === "completed") {
-                toast.success(prog.phase);
-              } else {
-                toast.error(prog.phase || "Errore nella scansione");
+        const ok: boolean = await new Promise<boolean>((resolve) => {
+          if (queryPollRef.current) clearInterval(queryPollRef.current);
+          queryPollRef.current = setInterval(async () => {
+            try {
+              const progressRes = await fetch(`/api/scans/progress/${data.id}`);
+              if (!progressRes.ok) return;
+              const prog = await progressRes.json() as ScanProgressType;
+              setQueryProgress(prog);
+              if (prog.status === "completed" || prog.status === "failed") {
+                if (queryPollRef.current) { clearInterval(queryPollRef.current); queryPollRef.current = null; }
+                if (prog.status === "completed") {
+                  toast.success(prog.phase);
+                  resolve(true);
+                } else {
+                  toast.error(prog.phase || "Errore nella scansione");
+                  resolve(false);
+                }
               }
-            }
-          } catch { /* ignore poll errors */ }
-        }, 1000);
+            } catch { /* ignore poll errors */ }
+          }, 1000);
+        });
+        fetchDevice();
+        if (ok && onAfter) await onAfter();
+        setQuerying(false);
+        return ok;
       } else {
         // Risposta sincrona (Proxmox o legacy)
         const msg = useProxmox ? "Scan Proxmox completato" : data.message;
         toast.success(msg);
         fetchDevice();
+        if (onAfter) await onAfter();
         setQuerying(false);
+        return true;
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore nella scansione");
       setQuerying(false);
+      return false;
     }
+  }
+
+  /**
+   * Workflow "Aggiorna tutto": esegue in sequenza query/scan completa + software inventory
+   * (solo per device vendor=windows|linux). Sostituisce i bottoni separati con UN solo click.
+   */
+  async function handleUpdateAll() {
+    if (!device) return;
+    await handleQuery(async () => {
+      if (device.vendor !== "windows" && device.vendor !== "linux") return;
+      toast.info("Inventario software in corso...");
+      try {
+        const r = await fetch(`/api/devices/${device.id}/software-scan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        const data = await r.json();
+        if (r.ok && data.status === "ok") {
+          toast.success(`Software inventario: ${data.appsCount} applicazioni`);
+        } else {
+          toast.error(data.error ?? data.errorMessage ?? "Software inventario fallito");
+        }
+      } catch (e) {
+        toast.error(`Errore software inventario: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    });
   }
 
   async function handleTestConnection() {
@@ -932,9 +972,9 @@ function DeviceDetailPage() {
             <Pencil className="h-4 w-4 mr-2" />
             Modifica
           </Button>
-          <Button onClick={handleQuery} disabled={querying} className="bg-primary hover:bg-primary/90">
+          <Button onClick={handleUpdateAll} disabled={querying} className="bg-primary hover:bg-primary/90" title="Esegue test connettività, query SNMP/ARP/porte e (per Windows/Linux) inventario software">
             <RefreshCw className={`h-4 w-4 mr-2 ${querying ? "animate-spin" : ""}`} />
-            {querying ? "Acquisizione..." : "Aggiorna Dati"}
+            {querying ? "Aggiornamento..." : "Aggiorna tutto"}
           </Button>
         </div>
       </div>
@@ -2600,6 +2640,11 @@ function DeviceDetailPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Inventario software (solo macchine Windows/Linux con credenziali) */}
+      {device && (device.vendor === "windows" || device.vendor === "linux") && (
+        <DeviceSoftwareCard deviceId={device.id} osHint={device.vendor} />
       )}
 
       {/* Modale progresso scansione device */}

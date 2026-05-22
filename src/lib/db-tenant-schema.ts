@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS switch_ports (
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync')),
+  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync', 'vuln_sync')),
   interval_minutes INTEGER NOT NULL DEFAULT 60,
   last_run TEXT,
   next_run TEXT,
@@ -661,6 +661,117 @@ CREATE TABLE IF NOT EXISTS librenms_host_map (
   last_status TEXT,
   UNIQUE(network_id, host_ip)
 );
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Integrazione Scanner-Edge (DA-Vul-can) — singleton applicativo per tenant.
+-- DA-IPAM consuma /api/v1/cve dello scanner-edge sulla stessa LAN cliente,
+-- archivia findings storici per match con hosts via IP. Token cifrato AES-GCM.
+-- ───────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS vuln_scanners (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  token_encrypted TEXT NOT NULL,
+  enabled INTEGER DEFAULT 1,
+  last_sync_at TEXT,
+  last_error TEXT,
+  -- SPKI pin (TOFU) formato RFC 7469 "sha256/<base64>". Quando settato
+  -- ogni chiamata HTTPS verifica che il cert presentato abbia lo stesso
+  -- pin. NULL = primo contatto non ancora avvenuto OR edge in HTTP legacy.
+  cert_pin TEXT,
+  -- Fingerprint sha256 del cert intero (DER). Solo UI diagnostica.
+  cert_fingerprint TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS vuln_scan_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scanner_id INTEGER NOT NULL REFERENCES vuln_scanners(id) ON DELETE CASCADE,
+  edge_scan_id INTEGER,
+  network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  finding_count INTEGER DEFAULT 0,
+  status TEXT,
+  pulled_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(scanner_id, edge_scan_id)
+);
+
+CREATE TABLE IF NOT EXISTS vuln_findings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+  scan_run_id INTEGER NOT NULL REFERENCES vuln_scan_runs(id) ON DELETE CASCADE,
+  ip TEXT NOT NULL,
+  mac TEXT,
+  hostname TEXT,
+  port TEXT,
+  service TEXT,
+  cve_id TEXT,
+  cvss_score REAL,
+  cvss_vector TEXT,
+  severity TEXT,
+  nvt_oid TEXT,
+  nvt_name TEXT,
+  description TEXT,
+  scanned_at TEXT NOT NULL
+);
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Tenant settings (key/value) — config per-tenant (retention, soglie, ecc.)
+-- ───────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tenant_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Software Inventory — scan applicativo on-demand per host (Windows/Linux).
+-- Snapshot immutabili: ogni scan = righe nuove. Diff ricostruito a query time.
+-- Vedi docs/plans/software-inventory.md.
+-- ───────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS software_scans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
+  device_id INTEGER REFERENCES network_devices(id) ON DELETE CASCADE,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  status TEXT NOT NULL CHECK(status IN ('running','ok','error','timeout','cancelled')),
+  os_family TEXT NOT NULL CHECK(os_family IN ('windows','linux')),
+  probe TEXT NOT NULL,
+  apps_count INTEGER DEFAULT 0,
+  timeout_ms INTEGER NOT NULL DEFAULT 60000,
+  attempt INTEGER NOT NULL DEFAULT 1,
+  triggered_by_user_id INTEGER,
+  triggered_by TEXT NOT NULL DEFAULT 'manual',
+  error_message TEXT,
+  credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+  CHECK ((host_id IS NOT NULL AND device_id IS NULL) OR (host_id IS NULL AND device_id IS NOT NULL))
+);
+
+CREATE TABLE IF NOT EXISTS software_inventory (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scan_id INTEGER NOT NULL REFERENCES software_scans(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  version TEXT,
+  publisher TEXT,
+  install_date TEXT,
+  install_location TEXT,
+  source TEXT NOT NULL,
+  architecture TEXT,
+  size_bytes INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS software_scan_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scan_id INTEGER NOT NULL REFERENCES software_scans(id) ON DELETE CASCADE,
+  ts TEXT NOT NULL,
+  level TEXT NOT NULL CHECK(level IN ('info','warn','error','debug')),
+  step TEXT,
+  message TEXT NOT NULL,
+  details TEXT
+);
 `;
 
 export const TENANT_INDEXES_SQL = `
@@ -800,4 +911,19 @@ CREATE INDEX IF NOT EXISTS idx_routing_table_dest ON routing_table(destination);
 -- LibreNMS host map
 CREATE INDEX IF NOT EXISTS idx_librenms_host_map_network ON librenms_host_map(network_id);
 CREATE INDEX IF NOT EXISTS idx_librenms_host_map_ip ON librenms_host_map(host_ip);
+
+-- Vulnerability findings (scanner-edge integration)
+CREATE INDEX IF NOT EXISTS idx_vuln_findings_host ON vuln_findings(host_id, scanned_at DESC);
+CREATE INDEX IF NOT EXISTS idx_vuln_findings_ip ON vuln_findings(ip, scanned_at DESC);
+CREATE INDEX IF NOT EXISTS idx_vuln_findings_severity ON vuln_findings(severity);
+CREATE INDEX IF NOT EXISTS idx_vuln_findings_cve ON vuln_findings(cve_id);
+CREATE INDEX IF NOT EXISTS idx_vuln_scan_runs_scanner ON vuln_scan_runs(scanner_id, finished_at DESC);
+
+-- Software Inventory
+CREATE INDEX IF NOT EXISTS idx_software_scans_host ON software_scans(host_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_software_scans_device ON software_scans(device_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_software_scans_status ON software_scans(status);
+CREATE INDEX IF NOT EXISTS idx_software_inventory_scan ON software_inventory(scan_id);
+CREATE INDEX IF NOT EXISTS idx_software_inventory_name_version ON software_inventory(name, version);
+CREATE INDEX IF NOT EXISTS idx_software_scan_logs_scan ON software_scan_logs(scan_id, ts);
 `;

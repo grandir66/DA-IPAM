@@ -40,6 +40,7 @@ import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-c
 import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
+  Wrench, Package, Boxes,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
@@ -64,6 +65,21 @@ type EnrichedHost = Host & {
   ad_dns_host_name?: string | null;
   validated_protocols?: string[];
   multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
+  vuln?: {
+    max_severity: "Critical" | "High" | "Medium" | "Low";
+    critical: number;
+    high: number;
+    medium: number;
+    total: number;
+  } | null;
+  /** Stato di evoluzione: linkato a `inventory_assets` (NIS2, lifecycle, finanziari). */
+  asset_id?: number;
+  asset_tag?: string;
+  asset_categoria?: string;
+  /** Ultimo scan software con esito ok (se presente). */
+  last_software_scan_id?: number;
+  last_software_scan_apps?: number;
+  last_software_scan_at?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -80,6 +96,7 @@ interface ColumnDef {
 
 const COLUMNS: ColumnDef[] = [
   // Base
+  { id: "profilo",         label: "Profilo",         defaultVisible: true,  group: "base" },
   { id: "ip",              label: "IP",              defaultVisible: true,  group: "base" },
   { id: "hostname",        label: "Nome",            defaultVisible: true,  group: "base" },
   { id: "status",          label: "Stato",           defaultVisible: true,  group: "base" },
@@ -116,10 +133,16 @@ const COLUMNS: ColumnDef[] = [
   { id: "serial_number",   label: "Seriale",         defaultVisible: false, group: "dettaglio" },
   { id: "firmware",        label: "Firmware",         defaultVisible: false, group: "dettaglio" },
   { id: "librenms_id",     label: "LibreNMS",         defaultVisible: true,  group: "dettaglio" },
+  { id: "asset_tag",       label: "Asset tag",       defaultVisible: false, group: "dettaglio" },
+  { id: "software_scan",   label: "App scansionate", defaultVisible: false, group: "dettaglio" },
 
   // Temporali
   { id: "last_seen",       label: "Ultimo visto",    defaultVisible: true,  group: "base" },
   { id: "first_seen",      label: "Primo visto",     defaultVisible: false, group: "base" },
+
+  // Vulnerabilità (scanner-edge)
+  { id: "vuln_max_severity", label: "CVE max", defaultVisible: true, group: "rilevamento" },
+  { id: "vuln_counts",       label: "CVE C/H/M", defaultVisible: true, group: "rilevamento" },
 ];
 
 const GROUP_LABELS: Record<string, string> = {
@@ -230,15 +253,23 @@ interface BulkField<T> {
 }
 
 interface DiscoveryBulkForm {
+  // Campi su `hosts` (sempre applicabili)
   classification: BulkField<string>;
   device_manufacturer: BulkField<string | null>;
   ip_assignment: BulkField<string>;
-  custom_name: BulkField<string | null>;
   known_host: BulkField<0 | 1>;
   notes: BulkField<string | null>;
+  // Credenziale: viene aggiunta in `host_credentials` e propagata a network_devices/bindings
   credential_id: BulkField<number | null>;
   credential_protocol: BulkField<string>;
   credential_port: BulkField<number>;
+  // Campi su `network_devices` (applicati solo agli host già promossi a device)
+  device_type: BulkField<string>;
+  vendor: BulkField<string>;
+  scan_target: BulkField<string>;
+  // Campi NIS2 su `inventory_assets` (applicati solo agli host con asset linkato)
+  asset_categoria_nis2: BulkField<string>;
+  asset_criticita_nis2: BulkField<string>;
 }
 
 function emptyBulkForm(): DiscoveryBulkForm {
@@ -246,12 +277,16 @@ function emptyBulkForm(): DiscoveryBulkForm {
     classification: { enabled: false, value: "" },
     device_manufacturer: { enabled: false, value: null },
     ip_assignment: { enabled: false, value: "static" },
-    custom_name: { enabled: false, value: null },
     known_host: { enabled: false, value: 1 },
     notes: { enabled: false, value: null },
     credential_id: { enabled: false, value: null },
     credential_protocol: { enabled: false, value: "ssh" },
     credential_port: { enabled: false, value: 22 },
+    device_type: { enabled: false, value: "" },
+    vendor: { enabled: false, value: "" },
+    scan_target: { enabled: false, value: "" },
+    asset_categoria_nis2: { enabled: false, value: "" },
+    asset_criticita_nis2: { enabled: false, value: "" },
   };
 }
 
@@ -268,6 +303,7 @@ export default function DiscoveryPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [networkFilter, setNetworkFilter] = useState("");
+  const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
   const [page, setPage] = useState(1);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(loadVisibleColumns);
 
@@ -276,6 +312,20 @@ export default function DiscoveryPage() {
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkForm, setBulkForm] = useState<DiscoveryBulkForm>(emptyBulkForm);
+  // Bulk "Aggiorna selezionati" e "Crea asset NIS2"
+  const [bulkScanRunning, setBulkScanRunning] = useState(false);
+  const [bulkScanProgress, setBulkScanProgress] = useState<{ current: number; total: number; label: string } | null>(null);
+  const [bulkScanResults, setBulkScanResults] = useState<Array<{
+    host_id: number;
+    ip: string;
+    name: string;
+    query_status: "ok" | "error" | "skipped";
+    query_message: string;
+    software_status: "ok" | "error" | "skipped" | "not-applicable";
+    software_message: string;
+  }>>([]);
+  const [bulkScanResultsOpen, setBulkScanResultsOpen] = useState(false);
+  const [bulkAssetRunning, setBulkAssetRunning] = useState(false);
 
   // ─── Add to devices (bulk promote host → device) ──────────
   const [addDevicesOpen, setAddDevicesOpen] = useState(false);
@@ -419,13 +469,16 @@ export default function DiscoveryPage() {
       if (statusFilter && h.status !== statusFilter) return false;
       if (classFilter && h.classification !== classFilter) return false;
       if (networkFilter && h.network_name !== networkFilter) return false;
+      if (vulnFilter === "critical_high" && !(h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0))) return false;
+      if (vulnFilter === "critical" && !(h.vuln && h.vuln.critical > 0)) return false;
+      if (vulnFilter === "with_findings" && !(h.vuln && h.vuln.total > 0)) return false;
       if (lower) {
         const hay = [h.ip, h.mac, displayName(h), h.vendor, h.network_name, h.network_cidr, h.notes, h.os_info, h.device_manufacturer].filter(Boolean).join(" ").toLowerCase();
         if (!hay.includes(lower)) return false;
       }
       return true;
     });
-  }, [hosts, q, statusFilter, classFilter, networkFilter]);
+  }, [hosts, q, statusFilter, classFilter, networkFilter, vulnFilter]);
 
   // ---------- sort ----------
   const sortAccessors = useMemo(() => ({
@@ -460,6 +513,11 @@ export default function DiscoveryPage() {
     open_ports_tcp:      (h: EnrichedHost) => parsePortsByProtocol(h.open_ports, "tcp"),
     open_ports_udp:      (h: EnrichedHost) => parsePortsByProtocol(h.open_ports, "udp"),
     in_ad:               (h: EnrichedHost) => h.ad_dns_host_name ? 1 : 0,
+    vuln_max_severity:   (h: EnrichedHost) => {
+      const rank: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3, Log: 4 };
+      return h.vuln ? (rank[h.vuln.max_severity] ?? 9) : 99;
+    },
+    vuln_counts:         (h: EnrichedHost) => h.vuln ? (h.vuln.critical * 1000 + h.vuln.high) : -1,
   }), []);
 
   const { sortedRows, sortColumn, sortDirection, onSort } = useClientTableSort(
@@ -555,14 +613,145 @@ export default function DiscoveryPage() {
     }));
   }
 
+  /**
+   * Bulk "Aggiorna selezionati": cicla sui device promossi e per ciascuno esegue
+   * /query + (se vendor=windows|linux) /software-scan. Sequenziale per non
+   * sovraccaricare la rete cliente. Mostra progress incrementale via toast.
+   */
+  async function handleBulkUpdateAll() {
+    if (selectedIds.size === 0) return;
+    const targets = hosts.filter((h) => selectedIds.has(h.id) && h.device_id);
+    if (targets.length === 0) {
+      toast.error("Nessuno degli host selezionati è promosso a device. Usa 'Aggiungi a dispositivi' prima.");
+      return;
+    }
+    const skipped = selectedIds.size - targets.length;
+    if (skipped > 0) {
+      toast.info(`${skipped} host senza device linkato verranno saltati`);
+    }
+    setBulkScanRunning(true);
+    const results: typeof bulkScanResults = [];
+    for (let i = 0; i < targets.length; i++) {
+      const h = targets[i];
+      const row: (typeof results)[number] = {
+        host_id: h.id,
+        ip: h.ip,
+        name: displayName(h) || h.ip,
+        query_status: "skipped",
+        query_message: "",
+        software_status: "not-applicable",
+        software_message: "",
+      };
+      setBulkScanProgress({ current: i + 1, total: targets.length, label: `${h.ip} — query` });
+      // Query
+      try {
+        const qr = await fetch(`/api/devices/${h.device_id}/query`, { method: "POST" });
+        const qd = (await qr.json()) as { id?: string; progress?: unknown; error?: string; message?: string };
+        if (!qr.ok) {
+          row.query_status = "error";
+          row.query_message = qd.error ?? `HTTP ${qr.status}`;
+        } else if (qd.id) {
+          // polling fino a completion
+          const finalPhase = await new Promise<{ status: string; phase: string }>((resolve) => {
+            const poll = setInterval(async () => {
+              try {
+                const pr = await fetch(`/api/scans/progress/${qd.id}`);
+                if (!pr.ok) return;
+                const pd = (await pr.json()) as { status: string; phase: string };
+                if (pd.status === "completed" || pd.status === "failed") {
+                  clearInterval(poll);
+                  resolve(pd);
+                }
+              } catch { /* ignore */ }
+            }, 1500);
+          });
+          if (finalPhase.status === "completed") {
+            row.query_status = "ok";
+            row.query_message = finalPhase.phase || "completato";
+          } else {
+            row.query_status = "error";
+            row.query_message = finalPhase.phase || "scansione fallita";
+          }
+        } else {
+          // Risposta sincrona (Proxmox/legacy)
+          row.query_status = "ok";
+          row.query_message = qd.message ?? "completato";
+        }
+      } catch (e) {
+        row.query_status = "error";
+        row.query_message = e instanceof Error ? e.message : String(e);
+      }
+      // Software scan se vendor=windows|linux
+      if (h.device_vendor === "windows" || h.device_vendor === "linux") {
+        setBulkScanProgress({ current: i + 1, total: targets.length, label: `${h.ip} — software` });
+        try {
+          const sr = await fetch(`/api/devices/${h.device_id}/software-scan`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+          });
+          const sd = (await sr.json()) as {
+            status?: string;
+            appsCount?: number;
+            errorMessage?: string;
+            error?: string;
+          };
+          if (sr.ok && sd.status === "ok") {
+            row.software_status = "ok";
+            row.software_message = `${sd.appsCount ?? 0} applicazioni`;
+          } else {
+            row.software_status = "error";
+            row.software_message = sd.errorMessage ?? sd.error ?? "scan fallito";
+          }
+        } catch (e) {
+          row.software_status = "error";
+          row.software_message = e instanceof Error ? e.message : String(e);
+        }
+      }
+      results.push(row);
+    }
+    setBulkScanRunning(false);
+    setBulkScanProgress(null);
+    setBulkScanResults(results);
+    setBulkScanResultsOpen(true);
+    await fetchData();
+  }
+
+  /**
+   * Bulk "Crea asset NIS2": chiama /api/inventory/bulk-from-hosts che usa
+   * ensureInventoryAssetForHost (idempotente, skip se asset esiste).
+   */
+  async function handleBulkCreateAssets() {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Creare/aggiornare asset NIS2 per ${selectedIds.size} host selezionati?`)) return;
+    setBulkAssetRunning(true);
+    try {
+      const r = await fetch("/api/inventory/bulk-from-hosts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host_ids: Array.from(selectedIds) }),
+      });
+      const data = (await r.json()) as { message?: string; error?: string };
+      if (r.ok) {
+        toast.success(data.message ?? "Asset NIS2 aggiornati");
+        await fetchData();
+        setSelectedIds(new Set());
+      } else {
+        toast.error(data.error ?? "Errore creazione asset");
+      }
+    } finally {
+      setBulkAssetRunning(false);
+    }
+  }
+
   async function handleBulkSave() {
     const payload: Record<string, unknown> = {
       host_ids: Array.from(selectedIds),
     };
 
     let hasField = false;
-    // Campi host standard
-    for (const key of ["classification", "device_manufacturer", "ip_assignment", "custom_name", "known_host", "notes"] as const) {
+    // Campi su `hosts`
+    for (const key of ["classification", "device_manufacturer", "ip_assignment", "known_host", "notes"] as const) {
       const field = bulkForm[key];
       if (field.enabled) {
         payload[key] = field.value;
@@ -575,6 +764,22 @@ export default function DiscoveryPage() {
       payload.credential_protocol = bulkForm.credential_protocol.value;
       payload.credential_port = bulkForm.credential_port.value;
       hasField = true;
+    }
+    // Campi su `network_devices` (applicati solo a host già promossi a device)
+    for (const key of ["device_type", "vendor", "scan_target"] as const) {
+      const field = bulkForm[key];
+      if (field.enabled && field.value) {
+        payload[key] = field.value;
+        hasField = true;
+      }
+    }
+    // Campi su `inventory_assets` (applicati solo a host con asset linkato)
+    for (const key of ["asset_categoria_nis2", "asset_criticita_nis2"] as const) {
+      const field = bulkForm[key];
+      if (field.enabled && field.value) {
+        payload[key] = field.value;
+        hasField = true;
+      }
     }
 
     if (!hasField) {
@@ -686,6 +891,19 @@ export default function DiscoveryPage() {
         const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
         return lnms ? String(lnms.librenms_device_id) : "";
       }
+      case "vuln_max_severity": return h.vuln?.max_severity ?? "";
+      case "vuln_counts":
+        return h.vuln ? `${h.vuln.critical}/${h.vuln.high}` : "";
+      case "profilo": {
+        // Score per sort: numero di "promozioni" raggiunte (discovery=1, +device=2, +asset=4 → max 7)
+        let score = 1;
+        if (h.device_id) score += 2;
+        if (h.asset_id) score += 4;
+        return String(score);
+      }
+      case "asset_tag": return h.asset_tag ?? "";
+      case "software_scan":
+        return h.last_software_scan_apps != null ? String(h.last_software_scan_apps) : "";
       default: return "";
     }
   }
@@ -694,7 +912,7 @@ export default function DiscoveryPage() {
     switch (colId) {
       case "ip":
         return (
-          <Link href={`/hosts/${h.id}`} className="font-mono text-sm text-primary hover:underline inline-flex items-center gap-1">
+          <Link href={`/objects/${h.id}`} className="font-mono text-sm text-primary hover:underline inline-flex items-center gap-1">
             {h.ip} <ExternalLink className="h-3 w-3 opacity-50" />
           </Link>
         );
@@ -862,6 +1080,82 @@ export default function DiscoveryPage() {
         return h.ad_dns_host_name
           ? <Badge className="bg-blue-500/15 text-blue-700 border-blue-300/40 dark:text-blue-400 text-xs">Si</Badge>
           : <span className="text-muted-foreground text-xs">No</span>;
+      case "vuln_max_severity": {
+        if (!h.vuln) return <span className="text-muted-foreground text-xs">—</span>;
+        const sev = h.vuln.max_severity;
+        const styles: Record<string, string> = {
+          Critical: "bg-red-600 text-white border-red-700",
+          High: "bg-orange-500 text-white border-orange-600",
+          Medium: "bg-yellow-500 text-black border-yellow-600",
+          Low: "bg-blue-500 text-white border-blue-600",
+          Log: "bg-muted text-muted-foreground",
+        };
+        return (
+          <Link href={`/hosts/${h.id}`} className="inline-block">
+            <Badge className={`text-xs ${styles[sev] ?? ""}`} title={`${h.vuln.total} findings totali`}>
+              {sev}
+            </Badge>
+          </Link>
+        );
+      }
+      case "vuln_counts": {
+        if (!h.vuln) return <span className="text-muted-foreground text-xs">—</span>;
+        const { critical, high, medium } = h.vuln;
+        if (critical === 0 && high === 0 && medium === 0)
+          return <span className="text-muted-foreground text-xs">—</span>;
+        const sep = <span className="text-muted-foreground">/</span>;
+        return (
+          <span className="text-xs font-mono whitespace-nowrap" title="Critical / High / Medium">
+            <span className={critical > 0 ? "text-red-600 font-semibold" : "text-muted-foreground"}>{critical}</span>
+            {sep}
+            <span className={high > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}>{high}</span>
+            {sep}
+            <span className={medium > 0 ? "text-yellow-600 font-semibold" : "text-muted-foreground"}>{medium}</span>
+          </span>
+        );
+      }
+      case "profilo": {
+        // Stati di evoluzione cumulativi: Discovery (sempre), Managed (network_device), Asset (inventory_asset).
+        const isManaged = !!h.device_id;
+        const isAsset = !!h.asset_id;
+        const titleParts = ["Rilevato (Discovery)"];
+        if (isManaged) titleParts.push(`Gestito → ${h.device_name}`);
+        if (isAsset) titleParts.push(`Asset${h.asset_tag ? ` ${h.asset_tag}` : ""}`);
+        return (
+          <span className="inline-flex items-center gap-1" title={titleParts.join(" • ")}>
+            <Boxes className="h-3.5 w-3.5 text-muted-foreground" aria-label="Discovery" />
+            <Wrench
+              className={`h-3.5 w-3.5 ${isManaged ? "text-blue-600" : "text-muted-foreground/30"}`}
+              aria-label={isManaged ? "Gestito" : "Non gestito"}
+            />
+            <Package
+              className={`h-3.5 w-3.5 ${isAsset ? "text-emerald-600" : "text-muted-foreground/30"}`}
+              aria-label={isAsset ? "Asset registrato" : "Non in inventario asset"}
+            />
+          </span>
+        );
+      }
+      case "asset_tag":
+        return h.asset_id ? (
+          <Link
+            href={`/inventory/${h.asset_id}`}
+            className="font-mono text-xs text-primary hover:underline"
+            title={h.asset_categoria ?? ""}
+          >
+            {h.asset_tag ?? `#${h.asset_id}`}
+          </Link>
+        ) : (
+          <span className="text-muted-foreground text-xs">—</span>
+        );
+      case "software_scan":
+        if (!h.last_software_scan_id || h.last_software_scan_apps == null) {
+          return <span className="text-muted-foreground text-xs">—</span>;
+        }
+        return (
+          <span className="text-xs whitespace-nowrap" title={h.last_software_scan_at ?? ""}>
+            {h.last_software_scan_apps} app
+          </span>
+        );
       default:
         return null;
     }
@@ -967,6 +1261,19 @@ export default function DiscoveryPage() {
                 </SelectContent>
               </Select>
 
+              {/* Vulnerability filter */}
+              <Select value={vulnFilter} onValueChange={(v) => setVulnFilter((v ?? "") as "" | "critical_high" | "critical" | "with_findings")}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Vulnerabilità" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Tutti gli host</SelectItem>
+                  <SelectItem value="critical">Con CVE Critical</SelectItem>
+                  <SelectItem value="critical_high">Con CVE Critical o High</SelectItem>
+                  <SelectItem value="with_findings">Con qualsiasi finding</SelectItem>
+                </SelectContent>
+              </Select>
+
               {/* Column picker */}
               <DropdownMenu>
                 <DropdownMenuTrigger>
@@ -1028,6 +1335,30 @@ export default function DiscoveryPage() {
               <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddDevicesOpen(true)}>
                 <PackagePlus className="h-3.5 w-3.5" />
                 Aggiungi a dispositivi
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={handleBulkUpdateAll}
+                disabled={bulkScanRunning}
+                title="Esegue query SNMP/ARP + inventario software sui device gia` promossi"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${bulkScanRunning ? "animate-spin" : ""}`} />
+                {bulkScanRunning && bulkScanProgress
+                  ? `${bulkScanProgress.current}/${bulkScanProgress.total} · ${bulkScanProgress.label}`
+                  : "Aggiorna selezionati"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={handleBulkCreateAssets}
+                disabled={bulkAssetRunning}
+                title="Crea/aggiorna asset NIS2 per gli host selezionati"
+              >
+                {bulkAssetRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Boxes className="h-3.5 w-3.5" />}
+                Crea asset NIS2
               </Button>
               <Button size="sm" variant="ghost" className="gap-1" onClick={() => setSelectedIds(new Set())}>
                 <X className="h-3.5 w-3.5" />
@@ -1098,15 +1429,25 @@ export default function DiscoveryPage() {
 
       {/* ════════════════ DIALOG MODIFICA MULTIPLA HOST ════════════════ */}
       <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>
-        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
-          <DialogHeader>
-            <DialogTitle>Modifica {selectedIds.size} host</DialogTitle>
+        <DialogContent className={`${DIALOG_PANEL_WIDE_CLASS} border-2 border-primary/30 shadow-2xl`}>
+          <DialogHeader className="shrink-0 border-b border-border px-5 pt-5 pb-3 bg-muted/30">
+            <DialogTitle className="text-lg flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-primary" />
+              Modifica {selectedIds.size} host{selectedIds.size === 1 ? "" : ""}
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Solo i campi <strong className="text-primary">attivi</strong> (riquadrati in blu) saranno applicati ai {selectedIds.size} host selezionati. Spunta la casella per attivare un campo.
+            </p>
           </DialogHeader>
-          <DialogScrollableArea className="max-h-[70vh]">
-            <div className="space-y-3 p-1">
-              <p className="text-xs text-muted-foreground">
-                Abilita i campi da modificare. Solo i campi abilitati verranno applicati a tutti gli host selezionati.
-              </p>
+          <DialogScrollableArea className="max-h-[70vh] px-5 py-4">
+            <div className="space-y-5">
+              {/* ═══ Sezione 1: Campi host ═══ */}
+              <div>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <div className="h-5 w-1 bg-primary rounded-full" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider">Campi sull&apos;host</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
 
               {/* Classificazione */}
               <BulkFieldRow
@@ -1140,20 +1481,6 @@ export default function DiscoveryPage() {
                   onChange={(e) => updateBulkField("device_manufacturer", { value: e.target.value || null })}
                   placeholder="Es: HP, Cisco, Ubiquiti..."
                   disabled={!bulkForm.device_manufacturer.enabled}
-                />
-              </BulkFieldRow>
-
-              {/* Nome personalizzato */}
-              <BulkFieldRow
-                label="Nome personalizzato"
-                enabled={bulkForm.custom_name.enabled}
-                onToggle={(v) => updateBulkField("custom_name", { enabled: v })}
-              >
-                <Input
-                  value={bulkForm.custom_name.value ?? ""}
-                  onChange={(e) => updateBulkField("custom_name", { value: e.target.value || null })}
-                  placeholder="Nome da assegnare..."
-                  disabled={!bulkForm.custom_name.enabled}
                 />
               </BulkFieldRow>
 
@@ -1266,15 +1593,254 @@ export default function DiscoveryPage() {
                   </div>
                 </div>
               </BulkFieldRow>
+                </div>
+              </div>
+
+              {/* ═══ Sezione 2: Device gestiti ═══ */}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="h-5 w-1 bg-blue-500 rounded-full" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider">Device gestiti</h3>
+                </div>
+                <p className="text-[10px] text-muted-foreground mb-2.5 pl-3">
+                  Applicato solo agli host gia` promossi a network_device (linkati via IP).
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+
+              <BulkFieldRow
+                label="Tipologia device"
+                enabled={bulkForm.device_type.enabled}
+                onToggle={(v) => updateBulkField("device_type", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.device_type.value || "__empty__"}
+                  onValueChange={(v) => updateBulkField("device_type", { value: v === "__empty__" ? "" : v })}
+                  disabled={!bulkForm.device_type.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona tipologia..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Seleziona —</SelectItem>
+                    <SelectItem value="router">Router</SelectItem>
+                    <SelectItem value="switch">Switch</SelectItem>
+                    <SelectItem value="firewall">Firewall</SelectItem>
+                    <SelectItem value="hypervisor">Hypervisor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+
+              <BulkFieldRow
+                label="Vendor / Produttore"
+                enabled={bulkForm.vendor.enabled}
+                onToggle={(v) => updateBulkField("vendor", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.vendor.value || "__empty__"}
+                  onValueChange={(v) => updateBulkField("vendor", { value: v === "__empty__" ? "" : v })}
+                  disabled={!bulkForm.vendor.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona vendor..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Seleziona —</SelectItem>
+                    <SelectItem value="mikrotik">Mikrotik</SelectItem>
+                    <SelectItem value="ubiquiti">Ubiquiti</SelectItem>
+                    <SelectItem value="hp">HP</SelectItem>
+                    <SelectItem value="cisco">Cisco</SelectItem>
+                    <SelectItem value="omada">Omada</SelectItem>
+                    <SelectItem value="stormshield">Stormshield</SelectItem>
+                    <SelectItem value="proxmox">Proxmox</SelectItem>
+                    <SelectItem value="vmware">VMware</SelectItem>
+                    <SelectItem value="linux">Linux</SelectItem>
+                    <SelectItem value="windows">Windows</SelectItem>
+                    <SelectItem value="synology">Synology</SelectItem>
+                    <SelectItem value="qnap">QNAP</SelectItem>
+                    <SelectItem value="other">Altro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+
+              <BulkFieldRow
+                label="Target scan"
+                enabled={bulkForm.scan_target.enabled}
+                onToggle={(v) => updateBulkField("scan_target", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.scan_target.value || "__empty__"}
+                  onValueChange={(v) => updateBulkField("scan_target", { value: v === "__empty__" ? "" : v })}
+                  disabled={!bulkForm.scan_target.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona target..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Seleziona —</SelectItem>
+                    <SelectItem value="windows">Windows</SelectItem>
+                    <SelectItem value="linux">Linux</SelectItem>
+                    <SelectItem value="proxmox">Proxmox</SelectItem>
+                    <SelectItem value="vmware">VMware</SelectItem>
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+                </div>
+              </div>
+
+              {/* ═══ Sezione 3: Asset NIS2 ═══ */}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="h-5 w-1 bg-emerald-500 rounded-full" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider">Asset NIS2</h3>
+                </div>
+                <p className="text-[10px] text-muted-foreground mb-2.5 pl-3">
+                  Applicato solo agli host con un inventory_asset linkato.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+
+              <BulkFieldRow
+                label="Categoria NIS2"
+                enabled={bulkForm.asset_categoria_nis2.enabled}
+                onToggle={(v) => updateBulkField("asset_categoria_nis2", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.asset_categoria_nis2.value || "__empty__"}
+                  onValueChange={(v) => updateBulkField("asset_categoria_nis2", { value: v === "__empty__" ? "" : v })}
+                  disabled={!bulkForm.asset_categoria_nis2.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona categoria..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Seleziona —</SelectItem>
+                    <SelectItem value="server_dominio">Server di dominio</SelectItem>
+                    <SelectItem value="server_applicativo">Server applicativo</SelectItem>
+                    <SelectItem value="server_database">Server database</SelectItem>
+                    <SelectItem value="server_backup">Server backup</SelectItem>
+                    <SelectItem value="server_file">File server</SelectItem>
+                    <SelectItem value="server_email">Server email</SelectItem>
+                    <SelectItem value="endpoint_critico">Endpoint critico</SelectItem>
+                    <SelectItem value="apparato_di_rete">Apparato di rete</SelectItem>
+                    <SelectItem value="dispositivo_sicurezza">Dispositivo di sicurezza</SelectItem>
+                    <SelectItem value="altro">Altro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+
+              <BulkFieldRow
+                label="Criticità NIS2"
+                enabled={bulkForm.asset_criticita_nis2.enabled}
+                onToggle={(v) => updateBulkField("asset_criticita_nis2", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.asset_criticita_nis2.value || "__empty__"}
+                  onValueChange={(v) => updateBulkField("asset_criticita_nis2", { value: v === "__empty__" ? "" : v })}
+                  disabled={!bulkForm.asset_criticita_nis2.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona criticità..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Seleziona —</SelectItem>
+                    <SelectItem value="critica">Critica</SelectItem>
+                    <SelectItem value="alta">Alta</SelectItem>
+                    <SelectItem value="media">Media</SelectItem>
+                    <SelectItem value="bassa">Bassa</SelectItem>
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+                </div>
+              </div>
             </div>
           </DialogScrollableArea>
-          <DialogFooter>
+          <DialogFooter className="border-t border-border px-5 py-3 bg-muted/30">
             <Button variant="outline" onClick={() => setBulkEditOpen(false)} disabled={bulkSaving}>
               Annulla
             </Button>
             <Button onClick={handleBulkSave} disabled={bulkSaving} className="gap-2">
               {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Applica a {selectedIds.size} host
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════ DIALOG RIEPILOGO BULK SCAN ════════════════ */}
+      <Dialog open={bulkScanResultsOpen} onOpenChange={setBulkScanResultsOpen}>
+        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+          <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
+            <DialogTitle>Riepilogo aggiornamento bulk</DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              {bulkScanResults.length} host processati ·{" "}
+              <span className="text-emerald-600 font-medium">
+                {bulkScanResults.filter((r) => r.query_status === "ok").length} query OK
+              </span>{" "}·{" "}
+              <span className="text-red-600 font-medium">
+                {bulkScanResults.filter((r) => r.query_status === "error").length} query errore
+              </span>{" "}·{" "}
+              <span className="text-blue-600 font-medium">
+                {bulkScanResults.filter((r) => r.software_status === "ok").length} software OK
+              </span>{" "}·{" "}
+              <span className="text-amber-600 font-medium">
+                {bulkScanResults.filter((r) => r.software_status === "error").length} software errore
+              </span>
+            </p>
+          </DialogHeader>
+          <DialogScrollableArea>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Host</TableHead>
+                  <TableHead>Query</TableHead>
+                  <TableHead>Software</TableHead>
+                  <TableHead>Dettaglio</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {bulkScanResults.map((r) => (
+                  <TableRow key={r.host_id}>
+                    <TableCell className="font-mono text-xs">
+                      <Link href={`/hosts/${r.host_id}`} className="text-primary hover:underline">
+                        {r.ip}
+                      </Link>
+                      <div className="text-[10px] text-muted-foreground">{r.name}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={
+                        r.query_status === "ok"
+                          ? "border-emerald-400 text-emerald-700 bg-emerald-50"
+                          : r.query_status === "error"
+                            ? "border-red-400 text-red-700 bg-red-50"
+                            : "border-muted text-muted-foreground"
+                      }>
+                        {r.query_status === "ok" ? "OK" : r.query_status === "error" ? "Errore" : "Skip"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={
+                        r.software_status === "ok"
+                          ? "border-blue-400 text-blue-700 bg-blue-50"
+                          : r.software_status === "error"
+                            ? "border-amber-400 text-amber-700 bg-amber-50"
+                            : "border-muted text-muted-foreground"
+                      }>
+                        {r.software_status === "ok" ? "OK"
+                          : r.software_status === "error" ? "Errore"
+                            : r.software_status === "not-applicable" ? "n/a" : "—"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs max-w-md">
+                      {r.query_status === "error" && (
+                        <div className="text-red-700 break-words">Query: {r.query_message}</div>
+                      )}
+                      {r.software_status === "error" && (
+                        <div className="text-amber-700 break-words mt-0.5">Software: {r.software_message}</div>
+                      )}
+                      {r.query_status === "ok" && r.software_status === "ok" && (
+                        <div className="text-muted-foreground">{r.software_message}</div>
+                      )}
+                      {r.query_status === "ok" && r.software_status === "not-applicable" && (
+                        <div className="text-muted-foreground">{r.query_message}</div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DialogScrollableArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkScanResultsOpen(false)}>
+              Chiudi
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1399,24 +1965,40 @@ export default function DiscoveryPage() {
   );
 }
 
-/** Riga campo bulk con checkbox abilita/disabilita + controllo. */
+/** Riga campo bulk con checkbox abilita/disabilita + controllo.
+ * Quando abilitata mostra accent border + background leggero per evidenziare i
+ * campi attivi nel batch. Quando disabilitata mantiene label leggibile (no grigio
+ * spento) ma riduce contrasto del controllo. */
 function BulkFieldRow({
-  label, enabled, onToggle, children,
+  label, enabled, onToggle, children, hint,
 }: {
   label: string;
   enabled: boolean;
   onToggle: (v: boolean) => void;
   children: React.ReactNode;
+  hint?: string;
 }) {
   return (
-    <div className={`flex items-start gap-3 rounded-lg border p-3 transition-opacity ${enabled ? "" : "opacity-50"}`}>
-      <div className="pt-0.5">
-        <Checkbox checked={enabled} onCheckedChange={onToggle} />
+    <label
+      className={`relative flex items-start gap-3 rounded-lg border p-3 transition-all cursor-pointer ${
+        enabled
+          ? "border-primary/60 bg-primary/5 shadow-sm"
+          : "border-border bg-background hover:border-muted-foreground/40"
+      }`}
+    >
+      <div className="pt-0.5 shrink-0">
+        <Checkbox checked={enabled} onCheckedChange={onToggle} className={enabled ? "border-primary" : ""} />
       </div>
-      <div className="flex-1 space-y-1">
-        <Label className="text-xs font-medium">{label}</Label>
-        {children}
+      <div className={`flex-1 space-y-1 min-w-0 ${enabled ? "" : "opacity-70"}`}>
+        <div className="flex items-center gap-2">
+          <Label className={`text-xs font-semibold cursor-pointer ${enabled ? "text-foreground" : "text-foreground/80"}`}>{label}</Label>
+          {enabled && <Badge variant="outline" className="text-[9px] py-0 border-primary/60 text-primary">attivo</Badge>}
+        </div>
+        {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
+        <div className={enabled ? "" : "pointer-events-none"}>
+          {children}
+        </div>
       </div>
-    </div>
+    </label>
   );
 }

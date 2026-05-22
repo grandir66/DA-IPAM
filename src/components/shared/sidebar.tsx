@@ -9,8 +9,6 @@ import {
   LayoutDashboard,
   Network,
   Scan,
-  Router,
-  Cable,
   Key,
   Settings,
   ServerCog,
@@ -20,7 +18,6 @@ import {
   ChevronDown,
   ChevronRight,
   Server,
-  Shield,
   ListOrdered,
   Package,
   User,
@@ -44,13 +41,19 @@ const inventorySubItems = [
   { href: "/services", label: "Servizi NIS2", icon: Workflow },
 ] as const;
 
-const networkSubItems = [
+type NetworkItem = {
+  href: string;
+  label: string;
+  icon: typeof Network;
+  /** Inserisce un separatore visivo "Diagnostica" PRIMA di questa voce. */
+  divider?: string;
+};
+
+const networkSubItems: readonly NetworkItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
-  { href: "/devices/router", label: "Router", icon: Router },
-  { href: "/devices/switch", label: "Switch", icon: Cable },
-  { href: "/devices/firewall", label: "Firewall", icon: Shield },
-  { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered },
+  { href: "/active-directory", label: "Active Directory", icon: FolderTree },
+  { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered, divider: "Diagnostica" },
   { href: "/dhcp", label: "Tabella DHCP", icon: Server },
   { href: "/credentials", label: "Credenziali", icon: Key },
   { href: "/scans", label: "Scansioni", icon: Scan },
@@ -205,39 +208,39 @@ export function Sidebar() {
           {networkOpen && (
             <div className="ml-4 mt-1 space-y-0.5 border-l border-sidebar-border pl-2">
               {networkSubItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={cn(
-                    "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
-                    isActive(item.href)
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                <div key={item.href}>
+                  {item.divider && (
+                    <div className="pt-2 pb-1 px-2.5">
+                      <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
+                        {item.divider}
+                      </p>
+                    </div>
                   )}
-                >
-                  <item.icon className="h-3.5 w-3.5" />
-                  {item.label}
-                </Link>
+                  <Link
+                    href={item.href}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
+                      isActive(item.href)
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    )}
+                  >
+                    <item.icon className="h-3.5 w-3.5" />
+                    {item.label}
+                  </Link>
+                </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Dispositivi */}
-        <Link
-          href="/devices"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname === "/devices" || (pathname.startsWith("/devices/") && !networkSubItems.some((n) => pathname.startsWith(n.href)))
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <Cable className="h-4 w-4" />
-          Dispositivi
-        </Link>
+        {/*
+          Voce "Dispositivi" non in sidebar: l'entrypoint unico per host/device
+          è Discovery (filtri rapidi per Server/Hypervisor/Client/Router/Switch/Firewall
+          previsti in Fase 2). Le pagine /devices/[classification] restano per ora
+          come gestione dettagliata; verranno sostituite da azioni inline in Fase 3.
+        */}
 
         {/* Inventario collapsible */}
         <div className="pt-1">
@@ -297,20 +300,7 @@ export function Sidebar() {
           )}
         </Link>
 
-        {/* Active Directory */}
-        <Link
-          href="/active-directory"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            isActive("/active-directory")
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <FolderTree className="h-4 w-4" />
-          Active Directory
-        </Link>
+        {/* Active Directory: spostato come voce di Network */}
 
         {/* Config Cliente — disabilitato, da rifare con UX guidata */}
         <div

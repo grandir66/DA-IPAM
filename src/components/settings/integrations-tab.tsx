@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { IntegrationCard } from "./integration-card";
+import { ScannerEdgeCard } from "./scanner-edge-card";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -120,6 +121,8 @@ export function IntegrationsTab() {
           <span>Docker disponibile — l&apos;installazione automatizzata è abilitata.</span>
         </div>
       )}
+
+      <ScannerEdgeCard />
 
       <IntegrationCard
         component="librenms"

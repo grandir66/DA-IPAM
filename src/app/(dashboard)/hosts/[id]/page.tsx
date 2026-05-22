@@ -29,6 +29,7 @@ import {
   DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel, sortClassificationsByDisplayLabel,
 } from "@/lib/device-classifications";
 import { UptimeTimeline } from "@/components/shared/uptime-timeline";
+import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { Switch } from "@/components/ui/switch";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import {
@@ -615,6 +616,12 @@ export default function HostDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ════════════════ VULNERABILITÀ (scanner-edge) ════════════════ */}
+      <HostVulnerabilitiesCard hostId={Number(params.id)} />
+
+      {/* Software inventory: non disponibile a livello host (manca credenziale gestita).
+          Per scansionare il software, promuovere l'host a network_device e usare /devices/[id]. */}
 
       {/* ════════════════ LIBRENMS ════════════════ */}
       {libreNMSData?.configured && (

@@ -40,6 +40,16 @@ import type {
   HostUpdate,
   ScheduledJobInput,
   CredentialInput,
+  SoftwareScan,
+  SoftwareScanTarget,
+  SoftwareScanStatus,
+  SoftwareOsFamily,
+  SoftwareProbe,
+  SoftwareScanTrigger,
+  SoftwareLogLevel,
+  SoftwarePackage,
+  SoftwareInventoryRow,
+  SoftwareScanLog,
 } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -104,6 +114,32 @@ export function getTenantDb(tenantCode: string): Database.Database {
 
   // Create schema if needed
   newDb.exec(TENANT_SCHEMA_SQL);
+
+  // Migrazione runtime (PRIMA degli indici): software_scans con device_id + host_id nullable.
+  // Deve girare prima di TENANT_INDEXES_SQL perché tale blocco contiene
+  // CREATE INDEX su software_scans(device_id, ...) e fallirebbe se la colonna manca.
+  try {
+    const cols = newDb.prepare("PRAGMA table_info(software_scans)").all() as Array<{ name: string; notnull: number }>;
+    const hasDeviceId = cols.some((c) => c.name === "device_id");
+    const hostIdNotNull = cols.find((c) => c.name === "host_id")?.notnull === 1;
+    if (cols.length > 0 && (!hasDeviceId || hostIdNotNull)) {
+      const count = (newDb.prepare("SELECT COUNT(*) AS n FROM software_scans").get() as { n: number }).n;
+      if (count === 0) {
+        newDb.pragma("foreign_keys = OFF");
+        newDb.exec("DROP TABLE IF EXISTS software_scan_logs");
+        newDb.exec("DROP TABLE IF EXISTS software_inventory");
+        newDb.exec("DROP TABLE IF EXISTS software_scans");
+        newDb.exec(TENANT_SCHEMA_SQL);
+        newDb.pragma("foreign_keys = ON");
+        console.info(`[db-tenant] ${tenantCode}: software_scans schema rigenerato (host_id nullable + device_id)`);
+      } else {
+        console.warn(`[db-tenant] ${tenantCode}: software_scans ha ${count} righe, schema NON aggiornato (richiede migrazione dati manuale)`);
+      }
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione software_scans device_id fallita:`, e);
+  }
+
   newDb.exec(TENANT_INDEXES_SQL);
 
   // Migrazione runtime: scheduled_jobs.job_type CHECK include 'fast_scan' (schedulazione per-subnet)
@@ -133,6 +169,53 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione fast_scan fallita:`, e);
+  }
+
+  // Migrazione runtime: scheduled_jobs.job_type CHECK include 'vuln_sync' (sync findings da scanner-edge).
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as { sql?: string } | undefined;
+    if (row?.sql && !row.sql.includes("'vuln_sync'")) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS scheduled_jobs_v3");
+      newDb.exec(`CREATE TABLE scheduled_jobs_v3 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync', 'vuln_sync')),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      newDb.exec("INSERT INTO scheduled_jobs_v3 SELECT * FROM scheduled_jobs");
+      newDb.exec("DROP TABLE scheduled_jobs");
+      newDb.exec("ALTER TABLE scheduled_jobs_v3 RENAME TO scheduled_jobs");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'vuln_sync'`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione vuln_sync fallita:`, e);
+  }
+
+  // Migrazione runtime: vuln_scanners.{cert_pin,cert_fingerprint} per
+  // TOFU pinning HTTPS sull'edge. Additivo (ALTER ADD COLUMN).
+  try {
+    const tbl = newDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vuln_scanners'").get();
+    if (tbl) {
+      const cols = newDb.prepare("PRAGMA table_info(vuln_scanners)").all() as Array<{ name: string }>;
+      if (!cols.some((c) => c.name === "cert_pin")) {
+        newDb.exec("ALTER TABLE vuln_scanners ADD COLUMN cert_pin TEXT");
+        console.info(`[db-tenant] ${tenantCode}: vuln_scanners.cert_pin aggiunto`);
+      }
+      if (!cols.some((c) => c.name === "cert_fingerprint")) {
+        newDb.exec("ALTER TABLE vuln_scanners ADD COLUMN cert_fingerprint TEXT");
+        console.info(`[db-tenant] ${tenantCode}: vuln_scanners.cert_fingerprint aggiunto`);
+      }
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione cert_pin fallita:`, e);
   }
 
   // Migrazione runtime: network_devices.use_for_arp_poll (flag "Usa per polling ARP/MAC")
@@ -609,7 +692,13 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
            nd.device_type AS _dev_type,
            mpe.port_name AS _sw_port,
            sw.name AS _sw_name,
-           ac.ad_dns AS _ad_dns
+           ac.ad_dns AS _ad_dns,
+           ia.id AS _asset_id,
+           ia.asset_tag AS _asset_tag,
+           ia.categoria AS _asset_categoria,
+           ssw.id AS _sw_scan_id,
+           ssw.apps_count AS _sw_apps_count,
+           ssw.started_at AS _sw_scan_at
     FROM hosts h
     JOIN networks n ON n.id = h.network_id
     LEFT JOIN network_devices nd ON nd.host = h.ip
@@ -624,15 +713,32 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
       FROM ad_computers WHERE host_id IS NOT NULL
       GROUP BY host_id
     ) ac ON ac.host_id = h.id
+    LEFT JOIN (
+      SELECT host_id, MAX(id) AS id, MAX(asset_tag) AS asset_tag, MAX(categoria) AS categoria
+      FROM inventory_assets WHERE host_id IS NOT NULL
+      GROUP BY host_id
+    ) ia ON ia.host_id = h.id
+    LEFT JOIN (
+      SELECT s.host_id, s.id, s.apps_count, s.started_at
+      FROM software_scans s
+      JOIN (
+        SELECT host_id, MAX(started_at) AS max_at
+        FROM software_scans
+        WHERE host_id IS NOT NULL AND status = 'ok'
+        GROUP BY host_id
+      ) latest ON latest.host_id = s.host_id AND latest.max_at = s.started_at
+    ) ssw ON ssw.host_id = h.id
     ORDER BY h.network_id, h.ip
     LIMIT ?
   `).all(limit) as Array<Host & {
     _net_name: string; _net_cidr: string; _net_vlan: number | null; _net_location: string;
     _dev_id?: number; _dev_name?: string; _dev_vendor?: string; _dev_type?: string;
     _sw_port?: string; _sw_name?: string; _ad_dns?: string | null;
+    _asset_id?: number | null; _asset_tag?: string | null; _asset_categoria?: string | null;
+    _sw_scan_id?: number | null; _sw_apps_count?: number | null; _sw_scan_at?: string | null;
   }>;
 
-  return rows.map(({ _net_name, _net_cidr, _net_vlan, _net_location, _dev_id, _dev_name, _dev_vendor, _dev_type, _sw_port, _sw_name, _ad_dns, ...h }) => ({
+  return rows.map(({ _net_name, _net_cidr, _net_vlan, _net_location, _dev_id, _dev_name, _dev_vendor, _dev_type, _sw_port, _sw_name, _ad_dns, _asset_id, _asset_tag, _asset_categoria, _sw_scan_id, _sw_apps_count, _sw_scan_at, ...h }) => ({
     ...h,
     network_name: _net_name,
     network_cidr: _net_cidr,
@@ -645,6 +751,12 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
     switch_port: _sw_port ?? undefined,
     switch_device_name: _sw_name ?? undefined,
     ad_dns_host_name: _ad_dns ?? undefined,
+    asset_id: _asset_id ?? undefined,
+    asset_tag: _asset_tag ?? undefined,
+    asset_categoria: _asset_categoria ?? undefined,
+    last_software_scan_id: _sw_scan_id ?? undefined,
+    last_software_scan_apps: _sw_apps_count ?? undefined,
+    last_software_scan_at: _sw_scan_at ?? undefined,
   }));
 }
 
@@ -3999,4 +4111,464 @@ export function queryAllTenantsScalar<T>(
       return { tenant: { code: t.codice_cliente, name: t.ragione_sociale }, data: null as unknown as T };
     }
   });
+}
+
+
+/**
+ * Per ogni host con findings CVE archiviati: severità peggiore + conteggi
+ * Critical/High/Medium dell'ultima scan_run su quell'host.
+ *
+ * Usato in /discovery per la colonna "Vulnerabilità". O(N) con index su
+ * vuln_findings(host_id, scanned_at DESC) — già presente.
+ */
+export interface HostVulnSummary {
+  max_severity: "Critical" | "High" | "Medium" | "Low";
+  critical: number;
+  high: number;
+  medium: number;
+  total: number;
+}
+
+export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
+  // Aggregazione SU TUTTE le scan_run: per ogni host conta findings
+  // per severità. Esclude 'Log' (info-only, non vulnerabilità). Senza
+  // filtro temporale: per discovery interessa "ha mai avuto CVE
+  // Critical/High" non "ne ha ora".
+  const rows = db()
+    .prepare(
+      `SELECT host_id, severity, COUNT(*) AS n
+         FROM vuln_findings
+        WHERE host_id IS NOT NULL
+          AND severity IN ('Critical','High','Medium','Low')
+        GROUP BY host_id, severity`
+    )
+    .all() as Array<{ host_id: number; severity: string; n: number }>;
+
+  const rank: Record<string, number> = {
+    Critical: 0, High: 1, Medium: 2, Low: 3, Unknown: 5,
+  };
+  const map = new Map<number, HostVulnSummary>();
+  for (const r of rows) {
+    const cur = map.get(r.host_id) ?? {
+      max_severity: "Low" as HostVulnSummary["max_severity"],
+      critical: 0, high: 0, medium: 0, total: 0,
+    };
+    if (r.severity === "Critical") cur.critical = r.n;
+    else if (r.severity === "High") cur.high = r.n;
+    else if (r.severity === "Medium") cur.medium = r.n;
+    cur.total += r.n;
+    // max_severity = il più alto (rank più basso) tra quelli osservati
+    const curRank = rank[cur.max_severity] ?? 5;
+    const newRank = rank[r.severity] ?? 5;
+    if (newRank < curRank) {
+      cur.max_severity = r.severity as HostVulnSummary["max_severity"];
+    }
+    map.set(r.host_id, cur);
+  }
+  return map;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TENANT SETTINGS (key/value)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getTenantSetting(key: string): string | null {
+  const row = db()
+    .prepare("SELECT value FROM tenant_settings WHERE key = ?")
+    .get(key) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+export function setTenantSetting(key: string, value: string): void {
+  db()
+    .prepare(
+      `INSERT INTO tenant_settings (key, value, updated_at)
+       VALUES (?, ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+    )
+    .run(key, value);
+}
+
+export function getAllTenantSettings(): Record<string, string> {
+  const rows = db()
+    .prepare("SELECT key, value FROM tenant_settings")
+    .all() as { key: string; value: string }[];
+  const out: Record<string, string> = {};
+  for (const r of rows) out[r.key] = r.value;
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SOFTWARE INVENTORY — scan / inventory / logs (tenant-scoped)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SOFTWARE_RETENTION_KEY = "software_scan_retention_per_host";
+const SOFTWARE_RETENTION_DEFAULT = 12;
+const SOFTWARE_RETENTION_MIN = 1;
+const SOFTWARE_RETENTION_MAX = 999;
+
+export function getSoftwareScanRetention(): number {
+  const raw = getTenantSetting(SOFTWARE_RETENTION_KEY);
+  if (!raw) return SOFTWARE_RETENTION_DEFAULT;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return SOFTWARE_RETENTION_DEFAULT;
+  if (n < SOFTWARE_RETENTION_MIN) return SOFTWARE_RETENTION_MIN;
+  if (n > SOFTWARE_RETENTION_MAX) return SOFTWARE_RETENTION_MAX;
+  return n;
+}
+
+export function setSoftwareScanRetention(value: number): number {
+  let v = Math.trunc(value);
+  if (!Number.isFinite(v)) v = SOFTWARE_RETENTION_DEFAULT;
+  if (v < SOFTWARE_RETENTION_MIN) v = SOFTWARE_RETENTION_MIN;
+  if (v > SOFTWARE_RETENTION_MAX) v = SOFTWARE_RETENTION_MAX;
+  setTenantSetting(SOFTWARE_RETENTION_KEY, String(v));
+  return v;
+}
+
+export interface CreateSoftwareScanInput {
+  target: SoftwareScanTarget;
+  os_family: SoftwareOsFamily;
+  probe: SoftwareProbe;
+  timeout_ms: number;
+  triggered_by: SoftwareScanTrigger;
+  triggered_by_user_id?: number | null;
+  credential_id?: number | null;
+}
+
+export function createSoftwareScan(input: CreateSoftwareScanInput): number {
+  const hostId = input.target.kind === "host" ? input.target.hostId : null;
+  const deviceId = input.target.kind === "device" ? input.target.deviceId : null;
+  const stmt = db().prepare(
+    `INSERT INTO software_scans
+       (host_id, device_id, started_at, status, os_family, probe, timeout_ms,
+        triggered_by, triggered_by_user_id, credential_id)
+     VALUES (?, ?, datetime('now'), 'running', ?, ?, ?, ?, ?, ?)`
+  );
+  const info = stmt.run(
+    hostId,
+    deviceId,
+    input.os_family,
+    input.probe,
+    input.timeout_ms,
+    input.triggered_by,
+    input.triggered_by_user_id ?? null,
+    input.credential_id ?? null
+  );
+  return Number(info.lastInsertRowid);
+}
+
+export interface UpdateSoftwareScanInput {
+  status: SoftwareScanStatus;
+  apps_count?: number;
+  error_message?: string | null;
+  probe?: SoftwareProbe;
+}
+
+export function updateSoftwareScanFinish(
+  scanId: number,
+  input: UpdateSoftwareScanInput
+): void {
+  db()
+    .prepare(
+      `UPDATE software_scans
+          SET status = ?,
+              finished_at = datetime('now'),
+              apps_count = COALESCE(?, apps_count),
+              error_message = ?,
+              probe = COALESCE(?, probe)
+        WHERE id = ?`
+    )
+    .run(
+      input.status,
+      input.apps_count ?? null,
+      input.error_message ?? null,
+      input.probe ?? null,
+      scanId
+    );
+}
+
+export function insertSoftwareInventoryBulk(
+  scanId: number,
+  packages: SoftwarePackage[]
+): number {
+  if (packages.length === 0) return 0;
+  const stmt = db().prepare(
+    `INSERT INTO software_inventory
+       (scan_id, name, version, publisher, install_date, install_location,
+        source, architecture, size_bytes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const tx = db().transaction((rows: SoftwarePackage[]) => {
+    for (const p of rows) {
+      stmt.run(
+        scanId,
+        p.name,
+        p.version,
+        p.publisher,
+        p.install_date,
+        p.install_location,
+        p.source,
+        p.architecture,
+        p.size_bytes
+      );
+    }
+  });
+  tx(packages);
+  return packages.length;
+}
+
+export function insertSoftwareScanLog(
+  scanId: number,
+  level: SoftwareLogLevel,
+  step: string | null,
+  message: string,
+  details?: unknown
+): void {
+  let detailsJson: string | null = null;
+  if (details !== undefined && details !== null) {
+    try {
+      detailsJson = JSON.stringify(details);
+    } catch {
+      detailsJson = null;
+    }
+  }
+  db()
+    .prepare(
+      `INSERT INTO software_scan_logs (scan_id, ts, level, step, message, details)
+       VALUES (?, datetime('now'), ?, ?, ?, ?)`
+    )
+    .run(scanId, level, step, message, detailsJson);
+}
+
+export function cleanupOldSoftwareScansForHost(
+  hostId: number,
+  keep: number
+): number {
+  if (!Number.isFinite(keep) || keep < 1) return 0;
+  const info = db()
+    .prepare(
+      `DELETE FROM software_scans
+        WHERE host_id = ?
+          AND status != 'running'
+          AND id NOT IN (
+            SELECT id FROM software_scans
+             WHERE host_id = ? AND status != 'running'
+             ORDER BY started_at DESC
+             LIMIT ?
+          )`
+    )
+    .run(hostId, hostId, keep);
+  return Number(info.changes);
+}
+
+export function cleanupOldSoftwareScansForDevice(
+  deviceId: number,
+  keep: number
+): number {
+  if (!Number.isFinite(keep) || keep < 1) return 0;
+  const info = db()
+    .prepare(
+      `DELETE FROM software_scans
+        WHERE device_id = ?
+          AND status != 'running'
+          AND id NOT IN (
+            SELECT id FROM software_scans
+             WHERE device_id = ? AND status != 'running'
+             ORDER BY started_at DESC
+             LIMIT ?
+          )`
+    )
+    .run(deviceId, deviceId, keep);
+  return Number(info.changes);
+}
+
+export function cleanupOldSoftwareScansForTarget(
+  target: SoftwareScanTarget,
+  keep: number
+): number {
+  return target.kind === "host"
+    ? cleanupOldSoftwareScansForHost(target.hostId, keep)
+    : cleanupOldSoftwareScansForDevice(target.deviceId, keep);
+}
+
+export function getSoftwareScanById(scanId: number): SoftwareScan | undefined {
+  return db()
+    .prepare("SELECT * FROM software_scans WHERE id = ?")
+    .get(scanId) as SoftwareScan | undefined;
+}
+
+export function getSoftwareScansForHost(
+  hostId: number,
+  limit: number = 20,
+  offset: number = 0
+): SoftwareScan[] {
+  const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), 200);
+  const safeOffset = Math.max(0, Math.trunc(offset));
+  return db()
+    .prepare(
+      `SELECT * FROM software_scans
+        WHERE host_id = ?
+        ORDER BY started_at DESC
+        LIMIT ? OFFSET ?`
+    )
+    .all(hostId, safeLimit, safeOffset) as SoftwareScan[];
+}
+
+export function getSoftwareInventoryForScan(
+  scanId: number
+): SoftwareInventoryRow[] {
+  return db()
+    .prepare(
+      `SELECT * FROM software_inventory
+        WHERE scan_id = ?
+        ORDER BY LOWER(name) ASC, version ASC`
+    )
+    .all(scanId) as SoftwareInventoryRow[];
+}
+
+export function getSoftwareScanLogs(
+  scanId: number,
+  limit: number = 500
+): SoftwareScanLog[] {
+  const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), 5000);
+  return db()
+    .prepare(
+      `SELECT * FROM software_scan_logs
+        WHERE scan_id = ?
+        ORDER BY ts ASC, id ASC
+        LIMIT ?`
+    )
+    .all(scanId, safeLimit) as SoftwareScanLog[];
+}
+
+export function getLatestOkSoftwareScanForHost(
+  hostId: number
+): SoftwareScan | undefined {
+  return db()
+    .prepare(
+      `SELECT * FROM software_scans
+        WHERE host_id = ? AND status = 'ok'
+        ORDER BY started_at DESC
+        LIMIT 1`
+    )
+    .get(hostId) as SoftwareScan | undefined;
+}
+
+export function getSoftwareScansForDevice(
+  deviceId: number,
+  limit: number = 20,
+  offset: number = 0
+): SoftwareScan[] {
+  const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), 200);
+  const safeOffset = Math.max(0, Math.trunc(offset));
+  return db()
+    .prepare(
+      `SELECT * FROM software_scans
+        WHERE device_id = ?
+        ORDER BY started_at DESC
+        LIMIT ? OFFSET ?`
+    )
+    .all(deviceId, safeLimit, safeOffset) as SoftwareScan[];
+}
+
+/**
+ * Trova la credenziale "migliore" linkata a un device per uno specifico protocollo.
+ * Priorità (DESC):
+ *  1. test_status='success'
+ *  2. auto_detected=1
+ *  3. sort_order ASC (più bassa = preferita)
+ *  4. id più recente
+ * Ritorna null se nessuna binding presente per quel device+protocollo.
+ */
+export function getBestCredentialBindingForDevice(
+  deviceId: number,
+  protocolType: "winrm" | "ssh" | "snmp" | "api"
+): { credential_id: number; port: number; test_status: string; auto_detected: number } | null {
+  const row = db()
+    .prepare(
+      `SELECT credential_id, port, test_status, auto_detected
+         FROM device_credential_bindings
+        WHERE device_id = ? AND protocol_type = ? AND credential_id IS NOT NULL
+        ORDER BY (test_status = 'success') DESC,
+                 auto_detected DESC,
+                 sort_order ASC,
+                 id DESC
+        LIMIT 1`
+    )
+    .get(deviceId, protocolType) as
+    | { credential_id: number; port: number; test_status: string; auto_detected: number }
+    | undefined;
+  return row ?? null;
+}
+
+/**
+ * Trova il network_device linkato a un host via IP (network_devices.host = hosts.ip).
+ * Ritorna il primo (i casi multi-device per stesso IP sono rari, non gestiti qui).
+ */
+export function getNetworkDeviceByIp(ip: string): NetworkDevice | undefined {
+  return db()
+    .prepare("SELECT * FROM network_devices WHERE host = ? LIMIT 1")
+    .get(ip) as NetworkDevice | undefined;
+}
+
+/**
+ * Aggiorna campi di `network_devices` legati a un host via IP (network_devices.host = hosts.ip).
+ * Ritorna il numero di righe modificate. Usato dal bulk-update di /discovery.
+ * Whitelist dei campi accettati per sicurezza.
+ */
+const ALLOWED_NETWORK_DEVICE_BULK_FIELDS = new Set([
+  "device_type", "vendor", "vendor_subtype", "scan_target", "classification",
+]);
+
+export function bulkUpdateNetworkDeviceByHostId(
+  hostId: number,
+  fields: Record<string, unknown>
+): number {
+  const entries = Object.entries(fields).filter(([k]) => ALLOWED_NETWORK_DEVICE_BULK_FIELDS.has(k));
+  if (entries.length === 0) return 0;
+  const sets = entries.map(([k]) => `${k} = ?`).join(", ");
+  const vals = entries.map(([, v]) => v);
+  const r = db()
+    .prepare(
+      `UPDATE network_devices SET ${sets}, updated_at = datetime('now')
+        WHERE host IN (SELECT ip FROM hosts WHERE id = ?)`
+    )
+    .run(...vals, hostId);
+  return Number(r.changes);
+}
+
+const ALLOWED_INVENTORY_ASSET_BULK_FIELDS = new Set([
+  "categoria_nis2", "criticita_nis2", "categoria", "stato",
+  "business_owner_id", "technical_owner_id", "location_id",
+]);
+
+export function bulkUpdateInventoryAssetByHostId(
+  hostId: number,
+  fields: Record<string, unknown>
+): number {
+  const entries = Object.entries(fields).filter(([k]) => ALLOWED_INVENTORY_ASSET_BULK_FIELDS.has(k));
+  if (entries.length === 0) return 0;
+  const sets = entries.map(([k]) => `${k} = ?`).join(", ");
+  const vals = entries.map(([, v]) => v);
+  const r = db()
+    .prepare(
+      `UPDATE inventory_assets SET ${sets}, updated_at = datetime('now')
+        WHERE host_id = ?`
+    )
+    .run(...vals, hostId);
+  return Number(r.changes);
+}
+
+export function getLatestOkSoftwareScanForDevice(
+  deviceId: number
+): SoftwareScan | undefined {
+  return db()
+    .prepare(
+      `SELECT * FROM software_scans
+        WHERE device_id = ? AND status = 'ok'
+        ORDER BY started_at DESC
+        LIMIT 1`
+    )
+    .get(deviceId) as SoftwareScan | undefined;
 }

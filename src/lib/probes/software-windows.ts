@@ -177,20 +177,78 @@ export interface WindowsSoftwareProbeInput {
 }
 
 /**
- * Esegue lo scan applicativo via WinRM e ritorna i pacchetti normalizzati.
+ * Errori "host non raggiungibile" su WinRM (TCP refused / no route / connection reset).
+ * Su questi tentiamo fallback HTTP 5985 se la richiesta era HTTPS 5986.
+ */
+function isUnreachableError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    /no route to host/i.test(msg) ||
+    /connection refused/i.test(msg) ||
+    /max retries exceeded/i.test(msg) ||
+    /ECONNREFUSED/i.test(msg) ||
+    /EHOSTUNREACH/i.test(msg) ||
+    /failed to establish/i.test(msg)
+  );
+}
+
+/** Riformula errori pywinrm/HTTP in messaggio breve e azionabile per l'utente. */
+function userFriendlyError(host: string, port: number, err: unknown): Error {
+  const original = err instanceof Error ? err.message : String(err);
+  let hint = "";
+  if (isUnreachableError(err)) {
+    hint =
+      port === 5986
+        ? `Verifica sul target: 'Enable-PSRemoting' e che WinRM HTTPS (5986) sia configurato con cert (winrm quickconfig -transport:https). In alternativa abilita HTTP 5985 e ripeti scegliendo porta 5985 dal form.`
+        : `Verifica sul target: 'Enable-PSRemoting' e che il firewall consenta la porta ${port}.`;
+  } else if (/401|unauthorized|access[ _]?denied/i.test(original)) {
+    hint = `Credenziale rifiutata. Verifica username (DOMAIN\\user oppure user@realm), password e che l'utente sia in 'Remote Management Users' o admin sul target.`;
+  } else if (/ssl|certificate|cert_verify/i.test(original)) {
+    hint = `Problema TLS: cert WinRM 5986 non valido o autofirmato. Sul DC: 'winrm quickconfig -transport:https' con cert firmato dalla CA aziendale, oppure usa HTTP 5985.`;
+  } else if (/kerberos|gssapi/i.test(original)) {
+    hint = `Kerberos fallito. Specifica il 'realm' nel form (es. DOMINIO.LOCAL maiuscolo) oppure usa NTLM passando username come DOMINIO\\\\user.`;
+  }
+  return new Error(hint ? `${hint}\nDettaglio tecnico: ${original}` : original);
+}
+
+/**
+ * Esegue lo scan applicativo via WinRM con fallback automatico HTTPS 5986 → HTTP 5985
+ * quando l'host non è raggiungibile su 5986. Ritorna i pacchetti normalizzati.
  * Il chiamante è responsabile di catturare errori e mapparli su `status='error'`.
  */
 export async function runWindowsSoftwareProbe(
   input: WindowsSoftwareProbeInput
 ): Promise<SoftwarePackage[]> {
-  const stdout = await runWinrmCommand(
-    input.host,
-    input.port,
-    input.username,
-    input.password,
-    PS_SCRIPT,
-    true,
-    input.realm
-  );
-  return parseWindowsSoftwareJson(stdout);
+  try {
+    const stdout = await runWinrmCommand(
+      input.host,
+      input.port,
+      input.username,
+      input.password,
+      PS_SCRIPT,
+      true,
+      input.realm
+    );
+    return parseWindowsSoftwareJson(stdout);
+  } catch (firstErr) {
+    // Fallback automatico: se 5986 HTTPS unreachable, riproviamo 5985 HTTP
+    if (input.port === 5986 && isUnreachableError(firstErr)) {
+      try {
+        const stdout = await runWinrmCommand(
+          input.host,
+          5985,
+          input.username,
+          input.password,
+          PS_SCRIPT,
+          true,
+          input.realm
+        );
+        return parseWindowsSoftwareJson(stdout);
+      } catch (secondErr) {
+        // Entrambi falliti: messaggio utile sull'ultimo
+        throw userFriendlyError(input.host, 5985, secondErr);
+      }
+    }
+    throw userFriendlyError(input.host, input.port, firstErr);
+  }
 }

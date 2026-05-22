@@ -22,7 +22,7 @@
 import { X509Certificate, createHash } from "node:crypto";
 import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
-import type { PeerCertificate } from "node:tls";
+import type { TLSSocket } from "node:tls";
 import { URL } from "node:url";
 import { safeDecrypt } from "@/lib/crypto";
 
@@ -165,31 +165,11 @@ function rawRequest(
       },
     };
     if (isHttps) {
-      // Self-signed: niente CA validation, ci affidiamo SOLO al pin.
+      // Self-signed: niente CA validation. ATTENZIONE: con
+      // `rejectUnauthorized=false`, Node ignora `checkServerIdentity`,
+      // quindi la verifica del pin va fatta MANUALMENTE dopo
+      // `secureConnect` su socket.getPeerCertificate().
       (reqOpts as { rejectUnauthorized?: boolean }).rejectUnauthorized = false;
-      // checkServerIdentity custom: valida l'SPKI pin se atteso.
-      (reqOpts as { checkServerIdentity?: (h: string, c: PeerCertificate) => Error | undefined })
-        .checkServerIdentity = (_hostname, cert) => {
-          if (!opts.expectedPin) return undefined; // TOFU: accept
-          const raw = (cert as unknown as { raw?: Buffer }).raw;
-          if (!raw) {
-            return new Error("cert senza raw DER (lib bug?)");
-          }
-          let got: string;
-          try {
-            got = spkiPinFromDer(raw);
-          } catch (e) {
-            return new Error(`pin calc failed: ${(e as Error).message}`);
-          }
-          if (got !== opts.expectedPin) {
-            return new Error(
-              `SPKI pin mismatch: atteso ${opts.expectedPin}, ricevuto ${got}. ` +
-                "L'edge potrebbe essere stato sostituito o sotto attacco MITM. " +
-                "Rimuovi l'integrazione e ri-aggiungila per accettare il nuovo cert.",
-            );
-          }
-          return undefined;
-        };
     }
 
     const req = requestFn(reqOpts, (res) => {

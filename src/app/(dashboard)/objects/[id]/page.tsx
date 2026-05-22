@@ -296,11 +296,9 @@ export default function ObjectDetailPage() {
                 Crea asset NIS2
               </Button>
             )}
-            <Button variant="outline" asChild>
-              <Link href={`/hosts/${host.id}`}>
-                <Pencil className="h-4 w-4 mr-2" />
-                Modifica
-              </Link>
+            <Button variant="outline" nativeButton={false} render={<Link href={`/hosts/${host.id}`} />}>
+              <Pencil className="h-4 w-4 mr-2" />
+              Modifica
             </Button>
           </div>
         </div>
@@ -383,10 +381,8 @@ export default function ObjectDetailPage() {
             <InfoRow label="Asset tag" value={asset.asset_tag ?? null} mono />
           </dl>
           <div className="mt-3">
-            <Button variant="link" size="sm" asChild>
-              <Link href={`/inventory/${asset.id}`}>
-                Apri dettaglio asset completo →
-              </Link>
+            <Button variant="link" size="sm" nativeButton={false} render={<Link href={`/inventory/${asset.id}`} />}>
+              Apri dettaglio asset completo →
             </Button>
           </div>
         </Section>
@@ -422,10 +418,8 @@ export default function ObjectDetailPage() {
             </>
           )}
           <div className="mt-3">
-            <Button variant="link" size="sm" asChild>
-              <Link href={`/devices/${device.id}`}>
-                Apri dettaglio device completo →
-              </Link>
+            <Button variant="link" size="sm" nativeButton={false} render={<Link href={`/devices/${device.id}`} />}>
+              Apri dettaglio device completo →
             </Button>
           </div>
         </Section>

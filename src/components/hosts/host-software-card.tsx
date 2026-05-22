@@ -680,13 +680,31 @@ function SoftwareScanCard({ target }: InternalProps) {
                   <SelectValue placeholder="Seleziona credenziale" />
                 </SelectTrigger>
                 <SelectContent>
-                  {credentialOptions.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>
-                      {c.name} ({c.credential_type})
-                    </SelectItem>
-                  ))}
+                  {credentialOptions.map((c) => {
+                    const isWin = c.credential_type === "windows";
+                    return (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        <span className="inline-flex items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className={
+                              isWin
+                                ? "border-blue-400 text-blue-700 bg-blue-50 dark:bg-blue-950"
+                                : "border-orange-400 text-orange-700 bg-orange-50 dark:bg-orange-950"
+                            }
+                          >
+                            {isWin ? "Windows" : "Linux"}
+                          </Badge>
+                          <span>{c.name}</span>
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Il badge indica il protocollo: <span className="text-blue-700 dark:text-blue-300">Windows → WinRM 5986</span>, <span className="text-orange-700 dark:text-orange-300">Linux → SSH 22</span>.
+              </p>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Timeout (secondi)</Label>

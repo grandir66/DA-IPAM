@@ -30,6 +30,7 @@ import {
 } from "@/lib/device-classifications";
 import { UptimeTimeline } from "@/components/shared/uptime-timeline";
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
+import { HostSoftwareCard } from "@/components/hosts/host-software-card";
 import { Switch } from "@/components/ui/switch";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import {
@@ -619,6 +620,9 @@ export default function HostDetailPage() {
 
       {/* ════════════════ VULNERABILITÀ (scanner-edge) ════════════════ */}
       <HostVulnerabilitiesCard hostId={Number(params.id)} />
+
+      {/* ════════════════ SOFTWARE INSTALLATO ════════════════ */}
+      <HostSoftwareCard hostId={Number(params.id)} />
 
       {/* ════════════════ LIBRENMS ════════════════ */}
       {libreNMSData?.configured && (

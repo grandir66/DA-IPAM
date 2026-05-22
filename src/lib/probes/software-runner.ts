@@ -24,6 +24,7 @@ import {
 } from "@/lib/db-tenant";
 import { safeDecrypt } from "@/lib/crypto";
 import { runWindowsSoftwareProbe } from "@/lib/probes/software-windows";
+import { runLinuxSoftwareScan } from "@/lib/probes/software-linux";
 import type {
   SoftwareOsFamily,
   SoftwarePackage,
@@ -39,6 +40,9 @@ export const DEFAULT_TIMEOUT_MS = 60_000;
 
 /** Default port WinRM HTTPS. */
 const WINRM_DEFAULT_PORT = 5986;
+
+/** Default port SSH. */
+const SSH_DEFAULT_PORT = 22;
 
 export interface SoftwareScanOptions {
   hostId: number;
@@ -157,6 +161,7 @@ export async function runSoftwareScan(
   let packages: SoftwarePackage[] = [];
   let finalStatus: "ok" | "error" | "timeout" = "ok";
   let errorMessage: string | null = null;
+  let resolvedProbe: SoftwareProbe = probe;
 
   try {
     if (osFamily === "windows") {
@@ -195,10 +200,62 @@ export async function runSoftwareScan(
         "WinRM software probe"
       );
     } else {
-      // Linux: probe non ancora implementato in questa fase
-      throw new Error(
-        "Probe Linux non ancora implementato (fase 4 del plan). Usa una credenziale Windows."
+      // Linux via SSH (paramiko bridge)
+      const username = cred.encrypted_username
+        ? safeDecrypt(cred.encrypted_username)
+        : null;
+      const password = cred.encrypted_password
+        ? safeDecrypt(cred.encrypted_password)
+        : null;
+      if (!username || !password) {
+        throw new Error(
+          "Credenziale Linux priva di username o password (decifrazione fallita o campo vuoto)"
+        );
+      }
+
+      const port =
+        opts.port && Number.isFinite(opts.port) && opts.port > 0
+          ? Math.trunc(opts.port)
+          : SSH_DEFAULT_PORT;
+
+      insertSoftwareScanLog(scanId, "info", "connect", "Avvio connessione SSH", {
+        host: host.ip,
+        port,
+        username,
+      });
+
+      const timeoutSec = Math.max(5, Math.ceil(timeoutMs / 1000));
+      const linuxResult = await withTimeout(
+        runLinuxSoftwareScan({
+          host: host.ip,
+          port,
+          username,
+          password,
+          timeoutSec,
+        }),
+        timeoutMs,
+        "SSH software probe"
       );
+
+      packages = linuxResult.packages;
+      resolvedProbe = linuxResult.probe;
+
+      insertSoftwareScanLog(
+        scanId,
+        "info",
+        "parse",
+        `Distro rilevata: ${linuxResult.distro.prettyName ?? linuxResult.distro.id} (family=${linuxResult.distro.family})`,
+        {
+          id: linuxResult.distro.id,
+          id_like: linuxResult.distro.idLike,
+          family: linuxResult.distro.family,
+          probe: linuxResult.probe,
+        }
+      );
+
+      for (const w of linuxResult.warnings) {
+        insertSoftwareScanLog(scanId, "warn", "parse", w);
+      }
     }
 
     insertSoftwareScanLog(
@@ -206,7 +263,7 @@ export async function runSoftwareScan(
       "info",
       "parse",
       `Probe ha restituito ${packages.length} applicazioni`,
-      { count: packages.length }
+      { count: packages.length, probe: resolvedProbe }
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -286,6 +343,7 @@ export async function runSoftwareScan(
     status: "ok",
     apps_count: packages.length,
     error_message: finalErrorMessage,
+    probe: resolvedProbe,
   });
 
   // ── 6. Cleanup retention (ON DELETE CASCADE pulisce inventory + logs) ──

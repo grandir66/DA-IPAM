@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { getAllHostsEnriched, getAllHostValidatedProtocols, getAllMultihomedLinks } from "@/lib/db-tenant";
+import {
+  getAllHostsEnriched,
+  getAllHostValidatedProtocols,
+  getAllMultihomedLinks,
+  getAllHostsVulnSummary,
+} from "@/lib/db-tenant";
 
 export async function GET() {
   const session = await requireAuth();
@@ -12,11 +17,13 @@ export async function GET() {
       const hosts = getAllHostsEnriched(10000);
       const credMap = getAllHostValidatedProtocols();
       const mhMap = getAllMultihomedLinks();
+      const vulnMap = getAllHostsVulnSummary();
 
       const enriched = hosts.map((h) => ({
         ...h,
         validated_protocols: credMap.get(h.id) || [],
         multihomed: mhMap.get(h.id) ?? null,
+        vuln: vulnMap.get(h.id) ?? null,
       }));
 
       return NextResponse.json(enriched);

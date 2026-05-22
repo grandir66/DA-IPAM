@@ -4028,3 +4028,57 @@ export function queryAllTenantsScalar<T>(
     }
   });
 }
+
+
+/**
+ * Per ogni host con findings CVE archiviati: severità peggiore + conteggi
+ * Critical/High/Medium dell'ultima scan_run su quell'host.
+ *
+ * Usato in /discovery per la colonna "Vulnerabilità". O(N) con index su
+ * vuln_findings(host_id, scanned_at DESC) — già presente.
+ */
+export interface HostVulnSummary {
+  max_severity: "Critical" | "High" | "Medium" | "Low" | "Log";
+  critical: number;
+  high: number;
+  medium: number;
+  total: number;
+}
+
+export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
+  // Aggregazione SU TUTTE le scan_run: per ogni host conta findings per
+  // severity. Niente filtro temporale (per discovery interessa "ha mai
+  // avuto vuln Critical/High" non "ne ha ora"). Se serve "ultima scan
+  // solo" si aggiunge un WHERE su scan_run_id più recente.
+  const rows = db()
+    .prepare(
+      `SELECT host_id, severity, COUNT(*) AS n
+         FROM vuln_findings
+        WHERE host_id IS NOT NULL
+        GROUP BY host_id, severity`
+    )
+    .all() as Array<{ host_id: number; severity: string; n: number }>;
+
+  const rank: Record<string, number> = {
+    Critical: 0, High: 1, Medium: 2, Low: 3, Log: 4, Unknown: 5,
+  };
+  const map = new Map<number, HostVulnSummary>();
+  for (const r of rows) {
+    const cur = map.get(r.host_id) ?? {
+      max_severity: "Log" as HostVulnSummary["max_severity"],
+      critical: 0, high: 0, medium: 0, total: 0,
+    };
+    if (r.severity === "Critical") cur.critical = r.n;
+    else if (r.severity === "High") cur.high = r.n;
+    else if (r.severity === "Medium") cur.medium = r.n;
+    cur.total += r.n;
+    // max_severity = il più alto (rank più basso) tra quelli osservati
+    const curRank = rank[cur.max_severity] ?? 5;
+    const newRank = rank[r.severity] ?? 5;
+    if (newRank < curRank) {
+      cur.max_severity = r.severity as HostVulnSummary["max_severity"];
+    }
+    map.set(r.host_id, cur);
+  }
+  return map;
+}

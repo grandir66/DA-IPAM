@@ -64,6 +64,13 @@ type EnrichedHost = Host & {
   ad_dns_host_name?: string | null;
   validated_protocols?: string[];
   multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
+  vuln?: {
+    max_severity: "Critical" | "High" | "Medium" | "Low" | "Log";
+    critical: number;
+    high: number;
+    medium: number;
+    total: number;
+  } | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -120,6 +127,10 @@ const COLUMNS: ColumnDef[] = [
   // Temporali
   { id: "last_seen",       label: "Ultimo visto",    defaultVisible: true,  group: "base" },
   { id: "first_seen",      label: "Primo visto",     defaultVisible: false, group: "base" },
+
+  // Vulnerabilità (scanner-edge)
+  { id: "vuln_max_severity", label: "CVE max", defaultVisible: true, group: "rilevamento" },
+  { id: "vuln_counts",       label: "CVE C/H", defaultVisible: true, group: "rilevamento" },
 ];
 
 const GROUP_LABELS: Record<string, string> = {
@@ -268,6 +279,7 @@ export default function DiscoveryPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [networkFilter, setNetworkFilter] = useState("");
+  const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
   const [page, setPage] = useState(1);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(loadVisibleColumns);
 
@@ -419,13 +431,16 @@ export default function DiscoveryPage() {
       if (statusFilter && h.status !== statusFilter) return false;
       if (classFilter && h.classification !== classFilter) return false;
       if (networkFilter && h.network_name !== networkFilter) return false;
+      if (vulnFilter === "critical_high" && !(h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0))) return false;
+      if (vulnFilter === "critical" && !(h.vuln && h.vuln.critical > 0)) return false;
+      if (vulnFilter === "with_findings" && !(h.vuln && h.vuln.total > 0)) return false;
       if (lower) {
         const hay = [h.ip, h.mac, displayName(h), h.vendor, h.network_name, h.network_cidr, h.notes, h.os_info, h.device_manufacturer].filter(Boolean).join(" ").toLowerCase();
         if (!hay.includes(lower)) return false;
       }
       return true;
     });
-  }, [hosts, q, statusFilter, classFilter, networkFilter]);
+  }, [hosts, q, statusFilter, classFilter, networkFilter, vulnFilter]);
 
   // ---------- sort ----------
   const sortAccessors = useMemo(() => ({
@@ -460,6 +475,11 @@ export default function DiscoveryPage() {
     open_ports_tcp:      (h: EnrichedHost) => parsePortsByProtocol(h.open_ports, "tcp"),
     open_ports_udp:      (h: EnrichedHost) => parsePortsByProtocol(h.open_ports, "udp"),
     in_ad:               (h: EnrichedHost) => h.ad_dns_host_name ? 1 : 0,
+    vuln_max_severity:   (h: EnrichedHost) => {
+      const rank: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3, Log: 4 };
+      return h.vuln ? (rank[h.vuln.max_severity] ?? 9) : 99;
+    },
+    vuln_counts:         (h: EnrichedHost) => h.vuln ? (h.vuln.critical * 1000 + h.vuln.high) : -1,
   }), []);
 
   const { sortedRows, sortColumn, sortDirection, onSort } = useClientTableSort(
@@ -686,6 +706,9 @@ export default function DiscoveryPage() {
         const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
         return lnms ? String(lnms.librenms_device_id) : "";
       }
+      case "vuln_max_severity": return h.vuln?.max_severity ?? "";
+      case "vuln_counts":
+        return h.vuln ? `${h.vuln.critical}/${h.vuln.high}` : "";
       default: return "";
     }
   }
@@ -862,6 +885,36 @@ export default function DiscoveryPage() {
         return h.ad_dns_host_name
           ? <Badge className="bg-blue-500/15 text-blue-700 border-blue-300/40 dark:text-blue-400 text-xs">Si</Badge>
           : <span className="text-muted-foreground text-xs">No</span>;
+      case "vuln_max_severity": {
+        if (!h.vuln) return <span className="text-muted-foreground text-xs">—</span>;
+        const sev = h.vuln.max_severity;
+        const styles: Record<string, string> = {
+          Critical: "bg-red-600 text-white border-red-700",
+          High: "bg-orange-500 text-white border-orange-600",
+          Medium: "bg-yellow-500 text-black border-yellow-600",
+          Low: "bg-blue-500 text-white border-blue-600",
+          Log: "bg-muted text-muted-foreground",
+        };
+        return (
+          <Link href={`/hosts/${h.id}`} className="inline-block">
+            <Badge className={`text-xs ${styles[sev] ?? ""}`} title={`${h.vuln.total} findings totali`}>
+              {sev}
+            </Badge>
+          </Link>
+        );
+      }
+      case "vuln_counts": {
+        if (!h.vuln) return <span className="text-muted-foreground text-xs">—</span>;
+        const { critical, high } = h.vuln;
+        if (critical === 0 && high === 0) return <span className="text-muted-foreground text-xs">—</span>;
+        return (
+          <span className="text-xs font-mono whitespace-nowrap" title="Critical / High">
+            {critical > 0 && <span className="text-red-600 font-semibold">{critical}</span>}
+            {critical > 0 && high > 0 && <span className="text-muted-foreground">/</span>}
+            {high > 0 && <span className="text-orange-600 font-semibold">{high}</span>}
+          </span>
+        );
+      }
       default:
         return null;
     }
@@ -964,6 +1017,19 @@ export default function DiscoveryPage() {
                   {networks.map(([name, cidr]) => (
                     <SelectItem key={name} value={name}>{name} ({cidr})</SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+
+              {/* Vulnerability filter */}
+              <Select value={vulnFilter} onValueChange={(v) => setVulnFilter((v ?? "") as "" | "critical_high" | "critical" | "with_findings")}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Vulnerabilità" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Tutti gli host</SelectItem>
+                  <SelectItem value="critical">Con CVE Critical</SelectItem>
+                  <SelectItem value="critical_high">Con CVE Critical o High</SelectItem>
+                  <SelectItem value="with_findings">Con qualsiasi finding</SelectItem>
                 </SelectContent>
               </Select>
 

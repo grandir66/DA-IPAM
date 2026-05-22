@@ -36,7 +36,9 @@ import {
   HardDrive,
   Activity,
   KeyRound,
-  Server,
+  Users,
+  ServerCog,
+  Disc,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { HostDetail, InventoryAsset, NetworkDevice } from "@/types";
@@ -63,6 +65,33 @@ function parsePorts(jsonStr: string | null | undefined): string[] {
     if (Array.isArray(arr)) return arr.map(String);
   } catch { /* ignore */ }
   return [];
+}
+
+/**
+ * Subset dei dati di `network_devices.last_device_info_json` rilevanti per la
+ * pagina oggetto: utenti, servizi, dischi (logici + fisici).
+ */
+interface DeviceInfoJson {
+  disks?: Array<{ device?: string; size_gb?: number; free_gb?: number; filesystem?: string; label?: string }>;
+  physical_disks?: Array<{ device?: string; model?: string; size_gb?: number; serial?: string; interface_type?: string; vendor?: string }>;
+  important_services?: Array<{ name?: string; display_name?: string; state?: string; start_mode?: string }>;
+  local_users?: Array<{ name?: string; full_name?: string; disabled?: boolean }>;
+  logged_on_users?: Array<{ username?: string; session_type?: string; logon_time?: string }>;
+}
+
+function parseDeviceInfo(json: string | null | undefined): DeviceInfoJson | null {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json);
+    if (parsed && typeof parsed === "object") return parsed as DeviceInfoJson;
+  } catch { /* ignore */ }
+  return null;
+}
+
+function formatGb(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  if (n >= 1024) return `${(n / 1024).toFixed(1)} TB`;
+  return `${Math.round(n)} GB`;
 }
 
 interface InfoRowProps {
@@ -338,7 +367,139 @@ export default function ObjectDetailPage() {
         </dl>
       </Section>
 
-      {/* ─── 3. Vulnerabilità (sempre, anche se vuoto) ─── */}
+      {/* ─── 3. Hardware e sistema (solo se device gestito ha dati JSON) ─── */}
+      {(() => {
+        const di = parseDeviceInfo(device?.last_device_info_json ?? null);
+        if (!di) return null;
+        const hasContent = !!(
+          di.disks?.length || di.physical_disks?.length ||
+          di.important_services?.length || di.local_users?.length || di.logged_on_users?.length
+        );
+        if (!hasContent) return null;
+        return (
+          <Section icon={<ServerCog className="h-4 w-4" />} title="Hardware e sistema">
+            <div className="space-y-4">
+              {/* Dischi logici */}
+              {di.disks && di.disks.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
+                    <HardDrive className="h-3 w-3" /> Filesystem ({di.disks.length})
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {di.disks.map((d, i) => {
+                      const usedPct = d.size_gb && d.free_gb != null
+                        ? Math.round(((d.size_gb - d.free_gb) / d.size_gb) * 100)
+                        : null;
+                      return (
+                        <div key={i} className="text-xs border rounded px-2 py-1.5 flex items-center justify-between gap-2">
+                          <div className="font-mono truncate">
+                            {d.device ?? "—"}
+                            {d.label && <span className="text-muted-foreground"> · {d.label}</span>}
+                          </div>
+                          <div className="shrink-0 text-muted-foreground">
+                            {formatGb(d.free_gb)} / {formatGb(d.size_gb)}
+                            {usedPct != null && (
+                              <span className={`ml-1 ${usedPct >= 90 ? "text-red-600 font-semibold" : usedPct >= 75 ? "text-amber-600" : ""}`}>
+                                · {usedPct}% usato
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Dischi fisici */}
+              {di.physical_disks && di.physical_disks.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
+                    <Disc className="h-3 w-3" /> Dischi fisici ({di.physical_disks.length})
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {di.physical_disks.map((d, i) => (
+                      <div key={i} className="text-xs border rounded px-2 py-1.5">
+                        <div className="font-mono">{d.device ?? "—"}</div>
+                        <div className="text-muted-foreground text-[11px] mt-0.5">
+                          {d.model ?? "—"}{d.vendor && ` · ${d.vendor}`} · {formatGb(d.size_gb)}
+                          {d.interface_type && ` · ${d.interface_type}`}
+                          {d.serial && <span className="font-mono"> · {d.serial}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Servizi importanti */}
+              {di.important_services && di.important_services.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
+                    Servizi rilevanti ({di.important_services.length})
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {di.important_services.map((s, i) => {
+                      const running = s.state?.toLowerCase() === "running";
+                      return (
+                        <Badge
+                          key={i}
+                          variant="outline"
+                          className={`text-[10px] ${running ? "border-emerald-400 text-emerald-700 bg-emerald-50" : "text-muted-foreground"}`}
+                          title={`${s.display_name ?? s.name ?? ""} · ${s.start_mode ?? ""}`}
+                        >
+                          {s.name ?? "?"} · {s.state ?? "?"}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Utenti locali */}
+              {di.local_users && di.local_users.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
+                    <Users className="h-3 w-3" /> Utenti locali ({di.local_users.length})
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {di.local_users.map((u, i) => (
+                      <Badge
+                        key={i}
+                        variant="outline"
+                        className={`text-[10px] ${u.disabled ? "text-muted-foreground line-through" : ""}`}
+                        title={u.full_name ?? u.name ?? ""}
+                      >
+                        {u.name ?? "?"}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Utenti loggati */}
+              {di.logged_on_users && di.logged_on_users.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
+                    <Users className="h-3 w-3 text-emerald-600" /> Utenti attualmente connessi ({di.logged_on_users.length})
+                  </div>
+                  <div className="space-y-1">
+                    {di.logged_on_users.map((u, i) => (
+                      <div key={i} className="text-xs flex items-center gap-3 font-mono">
+                        <span className="font-medium">{u.username ?? "?"}</span>
+                        {u.session_type && <Badge variant="outline" className="text-[10px]">{u.session_type}</Badge>}
+                        {u.logon_time && <span className="text-muted-foreground">{u.logon_time}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Section>
+        );
+      })()}
+
+      {/* ─── 4. Vulnerabilità (sempre, anche se vuoto) ─── */}
       <Section icon={<Shield className="h-4 w-4" />} title="Vulnerabilità">
         <HostVulnerabilitiesCard hostId={host.id} />
       </Section>

@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup,
-  DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator,
+  DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
@@ -41,7 +41,7 @@ import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, HardDrive, Monitor,
-  Lock, KeyRound, Trash2,
+  Lock, KeyRound, Trash2, ShieldCheck, MoreHorizontal,
 } from "lucide-react";
 
 /**
@@ -165,6 +165,10 @@ const COLUMNS: ColumnDef[] = [
   { id: "last_seen",       label: "Ultimo visto",    defaultVisible: true,  group: "base" },
   { id: "first_seen",      label: "Primo visto",     defaultVisible: false, group: "base" },
 
+  // Nota: la colonna "Azioni" è hardcoded fuori da COLUMNS (vedi TableHead /
+  // TableCell dedicati nel render della tabella) perché è sempre visibile e
+  // non sortable. Tier 1 ha esteso quella cella con Test cred / Riscansiona /
+  // Modifica device / Elimina device per host promossi a network_device.
 ];
 
 const GROUP_LABELS: Record<string, string> = {
@@ -328,6 +332,9 @@ export default function DiscoveryPage() {
   const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
   const [page, setPage] = useState(1);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(loadVisibleColumns);
+
+  // ─── Tier 1 row actions: state per disabilitare il bottone durante l'azione ─
+  const [rowActionBusy, setRowActionBusy] = useState<{ id: number; kind: "test" | "query" | "delete" } | null>(null);
 
   // ─── Selezione e bulk edit ────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -533,6 +540,79 @@ export default function DiscoveryPage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ─── Tier 1 row actions: handler condivisi col device-list-by-classification ──
+  // Stesse API esistenti (no nuovo backend). fetchData() a fine azione riallinea
+  // la tabella con lo stato DB aggiornato.
+  const handleRowTestCred = useCallback(async (deviceId: number) => {
+    setRowActionBusy({ id: deviceId, kind: "test" });
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/test`, { cache: "no-store" });
+      const data = await res.json();
+      if (data?.success) toast.success("Credenziali verificate");
+      else toast.error(data?.error ?? "Test credenziali fallito");
+    } catch {
+      toast.error("Errore di connessione al device");
+    } finally {
+      setRowActionBusy(null);
+    }
+  }, []);
+
+  const handleRowRescan = useCallback(async (deviceId: number) => {
+    setRowActionBusy({ id: deviceId, kind: "query" });
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/query`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data?.message ?? "Riscansione completata");
+        fetchData();
+      } else {
+        toast.error(data?.error ?? "Errore nella riscansione");
+      }
+    } catch {
+      toast.error("Errore di connessione al device");
+    } finally {
+      setRowActionBusy(null);
+    }
+  }, [fetchData]);
+
+  const handleRowDeleteDevice = useCallback(async (deviceId: number, name: string) => {
+    if (!confirm(`Eliminare il dispositivo "${name}"? L'host resta nel database.`)) return;
+    setRowActionBusy({ id: deviceId, kind: "delete" });
+    try {
+      const res = await fetch(`/api/devices/${deviceId}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Dispositivo eliminato");
+        fetchData();
+      } else {
+        const data = await res.json().catch(() => null);
+        toast.error(data?.error ?? "Errore nell'eliminazione");
+      }
+    } catch {
+      toast.error("Errore di connessione");
+    } finally {
+      setRowActionBusy(null);
+    }
+  }, [fetchData]);
+
+  const handleRowDeleteHost = useCallback(async (hostId: number, label: string) => {
+    if (!confirm(`Eliminare l'host "${label}"? Sarà rimosso dal database (verrà ricreato al prossimo scan se ancora rilevato).`)) return;
+    setRowActionBusy({ id: hostId, kind: "delete" });
+    try {
+      const res = await fetch(`/api/hosts/${hostId}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Host eliminato");
+        fetchData();
+      } else {
+        const data = await res.json().catch(() => null);
+        toast.error(data?.error ?? "Errore nell'eliminazione");
+      }
+    } catch {
+      toast.error("Errore di connessione");
+    } finally {
+      setRowActionBusy(null);
+    }
+  }, [fetchData]);
 
   // Carica credenziali per il dialog bulk + URL LibreNMS
   useEffect(() => {
@@ -1534,6 +1614,7 @@ export default function DiscoveryPage() {
                         onCheckedChange={toggleSelectAllPage}
                       />
                     </TableHead>
+                    <TableHead className="w-[88px] whitespace-nowrap">Azioni</TableHead>
                     {COLUMNS.filter((c) => isVisible(c.id)).map((col) => (
                       <SortableTableHead
                         key={col.id}
@@ -1546,7 +1627,6 @@ export default function DiscoveryPage() {
                         {col.label}
                       </SortableTableHead>
                     ))}
-                    <TableHead className="w-[110px] text-right whitespace-nowrap">Azioni</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1558,38 +1638,83 @@ export default function DiscoveryPage() {
                           onCheckedChange={() => toggleSelect(h.id)}
                         />
                       </TableCell>
+                      <TableCell className="py-2">
+                        {/* Tier 1: per host promossi a network_device aggiungo
+                            Test cred device + Riscansiona device. Le azioni
+                            host-level (modifica host, test cred host, elimina
+                            host) restano sempre disponibili. */}
+                        {(() => {
+                          const isDev = h.device_id != null;
+                          const busyHere = isDev && rowActionBusy?.id === h.device_id;
+                          const label = h.hostname || h.ip;
+                          return (
+                            <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                              <Link
+                                href={isDev ? `/devices/${h.device_id}` : `/hosts/${h.id}`}
+                                title={isDev ? "Modifica dispositivo" : "Modifica host"}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Link>
+                              {isDev && (
+                                <>
+                                  <button
+                                    type="button"
+                                    title="Testa credenziali device"
+                                    disabled={busyHere}
+                                    onClick={() => handleRowTestCred(h.device_id!)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                                  >
+                                    <ShieldCheck className={`h-3.5 w-3.5 ${rowActionBusy?.kind === "test" && busyHere ? "animate-pulse" : ""}`} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="Riscansiona dispositivo (query SNMP/SSH/API)"
+                                    disabled={busyHere}
+                                    onClick={() => handleRowRescan(h.device_id!)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                                  >
+                                    <RefreshCw className={`h-3.5 w-3.5 ${rowActionBusy?.kind === "query" && busyHere ? "animate-spin" : ""}`} />
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                title="Test credenziali su questo host (probe diretto)"
+                                onClick={() => openTestForRow(h)}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                              >
+                                <KeyRound className="h-3.5 w-3.5" />
+                              </button>
+                              {isDev ? (
+                                <button
+                                  type="button"
+                                  title="Elimina dispositivo (l'host resta in DB)"
+                                  disabled={busyHere}
+                                  onClick={() => handleRowDeleteDevice(h.device_id!, label)}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  title="Elimina host"
+                                  onClick={() => setDeleteHostRow(h)}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </TableCell>
                       {COLUMNS.filter((c) => isVisible(c.id)).map((col) => (
                         <TableCell key={col.id} className="py-2">
                           {renderCell(h, col.id)}
                         </TableCell>
                       ))}
-                      <TableCell className="py-2">
-                        <div className="flex items-center justify-end gap-0.5">
-                          <Link
-                            href={`/hosts/${h.id}`}
-                            title="Modifica host"
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Link>
-                          <button
-                            type="button"
-                            title="Test credenziali su questo host"
-                            onClick={() => openTestForRow(h)}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                          >
-                            <KeyRound className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            title="Elimina host"
-                            onClick={() => setDeleteHostRow(h)}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

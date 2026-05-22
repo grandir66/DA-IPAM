@@ -234,12 +234,17 @@ export async function runArpPoll(
           if (!network) continue;
           const vendor = await lookupVendor(entry.mac);
           const classification = classifyDevice({ hostname: null, vendor: vendor ?? null });
+          // NON forziamo status='online' da arp_poll: i router tengono entry
+          // ARP per ore (Cisco 4h default) e la presenza non prova reachability
+          // attuale — l'host potrebbe essere spento da settimane ma ricomparire
+          // "online" ad ogni ciclo. network_discovery (ICMP + TCP fallback) è
+          // l'unica fonte autoritativa per lo status. Per host nuovi insert-a
+          // come 'unknown'; per esistenti preserva lo status corrente.
           upsertHost({
             network_id: network.id,
             ip: entry.ip,
             mac: entry.mac,
             vendor: vendor || undefined,
-            status: "online",
             hostname_source: "arp",
             ...(classification && { classification }),
           });
@@ -263,11 +268,14 @@ export async function runArpPoll(
                 hostname: lease.hostname ?? null,
                 vendor: vendor ?? null,
               });
+              // Vedi commento in arp_poll: i DHCP server tengono lease per
+              // ore/giorni dopo che il device si spegne, quindi un lease
+              // attivo non prova che l'host stia rispondendo ORA. Lasciamo
+              // status al probe (network_discovery).
               const host = upsertHost({
                 network_id: network.id,
                 ip: lease.ip,
                 mac: lease.mac,
-                status: "online",
                 ...(lease.hostname && { hostname: lease.hostname }),
                 hostname_source: "dhcp",
                 vendor: vendor || undefined,

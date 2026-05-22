@@ -160,8 +160,11 @@ async function runRouterQuery(deviceId: number, device: Parameters<typeof create
           const network = nets.find((n) => isIpInCidr(lease.ip, n.cidr));
           if (!network) continue;
           const vendor = await lookupVendor(lease.mac);
+          // Niente status='online' qui: un lease DHCP non prova reachability
+          // (server tiene lease per giorni dopo lo spegnimento del client).
+          // Lo status lo decide network_discovery (ICMP + TCP fallback).
           const host = upsertHost({
-            network_id: network.id, ip: lease.ip, mac: lease.mac, status: "online",
+            network_id: network.id, ip: lease.ip, mac: lease.mac,
             ...(lease.hostname && { hostname: lease.hostname }),
             hostname_source: "dhcp", vendor: vendor || undefined,
           });

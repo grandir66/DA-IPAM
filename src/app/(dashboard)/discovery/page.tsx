@@ -40,8 +40,30 @@ import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-c
 import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
-  Wrench, Package, Boxes,
+  Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, HardDrive, Monitor,
 } from "lucide-react";
+
+/**
+ * Preset rapidi per filtrare per macro-categoria di device.
+ * - "group:<key>" copre più classificazioni (Server raggruppa server/server_linux/server_windows).
+ * - I singoletti (router/switch/firewall/hypervisor) usano direttamente la classificazione,
+ *   così la chip e l'opzione del dropdown classFilter restano allineate.
+ */
+const CLASS_PRESETS: Array<{
+  /** Valore impostato in classFilter quando la chip è attiva. */
+  filter: string;
+  label: string;
+  icon: typeof Server;
+  /** Classificazioni che soddisfano il preset (usato per espansione filtro group:*). */
+  match: readonly string[];
+}> = [
+  { filter: "group:server", label: "Server", icon: Server, match: ["server", "server_linux", "server_windows"] },
+  { filter: "group:client", label: "Client", icon: Monitor, match: ["workstation", "notebook"] },
+  { filter: "hypervisor", label: "Hypervisor", icon: HardDrive, match: ["hypervisor"] },
+  { filter: "router", label: "Router", icon: RouterIcon, match: ["router"] },
+  { filter: "switch", label: "Switch", icon: Cable, match: ["switch"] },
+  { filter: "firewall", label: "Firewall", icon: Shield, match: ["firewall"] },
+];
 import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
 
@@ -467,7 +489,14 @@ export default function DiscoveryPage() {
     const lower = q.toLowerCase().trim();
     return hosts.filter((h) => {
       if (statusFilter && h.status !== statusFilter) return false;
-      if (classFilter && h.classification !== classFilter) return false;
+      if (classFilter) {
+        if (classFilter.startsWith("group:")) {
+          const preset = CLASS_PRESETS.find((p) => p.filter === classFilter);
+          if (preset && !preset.match.includes(h.classification ?? "")) return false;
+        } else if (h.classification !== classFilter) {
+          return false;
+        }
+      }
       if (networkFilter && h.network_name !== networkFilter) return false;
       if (vulnFilter === "critical_high" && !(h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0))) return false;
       if (vulnFilter === "critical" && !(h.vuln && h.vuln.critical > 0)) return false;
@@ -1318,6 +1347,38 @@ export default function DiscoveryPage() {
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
             </div>
+          </div>
+
+          {/* Preset chips: filtro rapido per macro-categoria. Cliccando una chip
+              attiva imposta classFilter al preset; il dropdown "Classificazione"
+              resta utilizzabile per scelte fini. */}
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            <Button
+              variant={classFilter === "" ? "default" : "outline"}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setClassFilter("")}
+            >
+              Tutti
+            </Button>
+            {CLASS_PRESETS.map((preset) => {
+              const Icon = preset.icon;
+              const active = classFilter === preset.filter;
+              const count = hosts.filter((h) => preset.match.includes(h.classification ?? "")).length;
+              return (
+                <Button
+                  key={preset.filter}
+                  variant={active ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs gap-1.5"
+                  onClick={() => setClassFilter(active ? "" : preset.filter)}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {preset.label}
+                  <span className="text-muted-foreground/80">({count})</span>
+                </Button>
+              );
+            })}
           </div>
         </CardHeader>
 

@@ -39,9 +39,39 @@ import {
   Users,
   ServerCog,
   Disc,
+  Cable,
+  Route,
+  Radio,
+  Table as TableIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { HostDetail, InventoryAsset, NetworkDevice } from "@/types";
+import type { HostDetail, InventoryAsset, NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
+
+/** Dati addizionali ritornati da GET /api/devices/[id] oltre al NetworkDevice base. */
+interface DeviceExtras {
+  arp_entries?: Array<ArpEntry & { hostname?: string | null }>;
+  mac_port_entries?: MacPortEntry[];
+  switch_ports?: SwitchPort[];
+  neighbors?: Array<{
+    id?: number;
+    interface_name?: string | null;
+    neighbor_name?: string | null;
+    neighbor_port?: string | null;
+    neighbor_platform?: string | null;
+    neighbor_address?: string | null;
+    protocol?: string | null;
+  }>;
+  routes?: Array<{
+    id?: number;
+    destination?: string;
+    gateway?: string | null;
+    interface_name?: string | null;
+    distance?: number | null;
+    protocol?: string | null;
+  }>;
+}
+
+type DeviceFull = NetworkDevice & DeviceExtras;
 import { getClassificationLabel } from "@/lib/device-classifications";
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -142,7 +172,7 @@ export default function ObjectDetailPage() {
   const hostId = typeof params.id === "string" ? Number(params.id) : NaN;
 
   const [host, setHost] = useState<HostDetail | null>(null);
-  const [device, setDevice] = useState<NetworkDevice | null>(null);
+  const [device, setDevice] = useState<DeviceFull | null>(null);
   const [asset, setAsset] = useState<InventoryAsset | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -164,7 +194,7 @@ export default function ObjectDetailPage() {
       // Device linkato (per IP)
       if (h.network_device?.id) {
         const dRes = await fetch(`/api/devices/${h.network_device.id}`);
-        if (dRes.ok) setDevice((await dRes.json()) as NetworkDevice);
+        if (dRes.ok) setDevice((await dRes.json()) as DeviceFull);
       }
       // Asset linkato (per host_id)
       const aRes = await fetch(`/api/inventory?host_id=${hostId}`);
@@ -498,6 +528,147 @@ export default function ObjectDetailPage() {
           </Section>
         );
       })()}
+
+      {/* ─── 3b. Porte switch (solo per switch) ─── */}
+      {device?.switch_ports && device.switch_ports.length > 0 && (
+        <Section icon={<Cable className="h-4 w-4" />} title="Porte switch"
+          badge={<Badge variant="outline" className="ml-2 text-[10px]">{device.switch_ports.length}</Badge>}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b">
+                <tr><th className="text-left py-1.5 pr-3">Porta</th><th className="text-left pr-3">VLAN</th><th className="text-left pr-3">Status</th><th className="text-left">Host linkato</th></tr>
+              </thead>
+              <tbody>
+                {device.switch_ports.slice(0, 100).map((p) => (
+                  <tr key={p.id} className="border-b border-border/30 last:border-0">
+                    <td className="py-1 pr-3 font-mono">{p.port_name}</td>
+                    <td className="pr-3">{p.vlan ?? "—"}</td>
+                    <td className="pr-3">
+                      {p.status && (
+                        <Badge variant="outline" className={`text-[10px] ${p.status === "up" ? "border-emerald-400 text-emerald-700 bg-emerald-50" : "text-muted-foreground"}`}>
+                          {p.status}
+                        </Badge>
+                      )}
+                      {p.speed && <span className="text-[10px] text-muted-foreground ml-1.5">{p.speed}</span>}
+                    </td>
+                    <td className="font-mono">{p.host_id ? <Link href={`/objects/${p.host_id}`} className="text-primary hover:underline">#{p.host_id}</Link> : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {device.switch_ports.length > 100 && (
+              <p className="text-[10px] text-muted-foreground mt-2">Mostrate prime 100 di {device.switch_ports.length}</p>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* ─── 3c. MAC port table (switch) ─── */}
+      {device?.mac_port_entries && device.mac_port_entries.length > 0 && (
+        <Section icon={<TableIcon className="h-4 w-4" />} title="MAC table (switch)"
+          badge={<Badge variant="outline" className="ml-2 text-[10px]">{device.mac_port_entries.length}</Badge>}>
+          <div className="overflow-x-auto max-h-96">
+            <table className="w-full text-xs">
+              <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b sticky top-0 bg-background">
+                <tr><th className="text-left py-1.5 pr-3">MAC</th><th className="text-left pr-3">Porta</th><th className="text-left">VLAN</th></tr>
+              </thead>
+              <tbody>
+                {device.mac_port_entries.slice(0, 200).map((m) => (
+                  <tr key={m.id} className="border-b border-border/30 last:border-0">
+                    <td className="py-1 pr-3 font-mono">{m.mac}</td>
+                    <td className="pr-3 font-mono">{m.port_name}</td>
+                    <td>{m.vlan ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {device.mac_port_entries.length > 200 && (
+              <p className="text-[10px] text-muted-foreground mt-2">Mostrate prime 200 di {device.mac_port_entries.length}</p>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* ─── 3d. ARP table (router) ─── */}
+      {device?.arp_entries && device.arp_entries.length > 0 && (
+        <Section icon={<TableIcon className="h-4 w-4" />} title="ARP table (router)"
+          badge={<Badge variant="outline" className="ml-2 text-[10px]">{device.arp_entries.length}</Badge>}>
+          <div className="overflow-x-auto max-h-96">
+            <table className="w-full text-xs">
+              <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b sticky top-0 bg-background">
+                <tr><th className="text-left py-1.5 pr-3">IP</th><th className="text-left pr-3">MAC</th><th className="text-left pr-3">Interfaccia</th><th className="text-left">Hostname</th></tr>
+              </thead>
+              <tbody>
+                {device.arp_entries.slice(0, 200).map((a) => (
+                  <tr key={a.id} className="border-b border-border/30 last:border-0">
+                    <td className="py-1 pr-3 font-mono">{a.ip ?? "—"}</td>
+                    <td className="pr-3 font-mono">{a.mac}</td>
+                    <td className="pr-3">{a.interface_name ?? "—"}</td>
+                    <td>{a.hostname ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {device.arp_entries.length > 200 && (
+              <p className="text-[10px] text-muted-foreground mt-2">Mostrate prime 200 di {device.arp_entries.length}</p>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* ─── 3e. Routing table (router) ─── */}
+      {device?.routes && device.routes.length > 0 && (
+        <Section icon={<Route className="h-4 w-4" />} title="Routing table"
+          badge={<Badge variant="outline" className="ml-2 text-[10px]">{device.routes.length}</Badge>}>
+          <div className="overflow-x-auto max-h-96">
+            <table className="w-full text-xs">
+              <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b sticky top-0 bg-background">
+                <tr><th className="text-left py-1.5 pr-3">Destinazione</th><th className="text-left pr-3">Gateway</th><th className="text-left pr-3">Interfaccia</th><th className="text-left pr-3">Protocollo</th><th className="text-left">Distanza</th></tr>
+              </thead>
+              <tbody>
+                {device.routes.slice(0, 200).map((r, i) => (
+                  <tr key={r.id ?? i} className="border-b border-border/30 last:border-0">
+                    <td className="py-1 pr-3 font-mono">{r.destination ?? "—"}</td>
+                    <td className="pr-3 font-mono">{r.gateway ?? "—"}</td>
+                    <td className="pr-3">{r.interface_name ?? "—"}</td>
+                    <td className="pr-3">{r.protocol ?? "—"}</td>
+                    <td>{r.distance ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {device.routes.length > 200 && (
+              <p className="text-[10px] text-muted-foreground mt-2">Mostrate prime 200 di {device.routes.length}</p>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* ─── 3f. Neighbors LLDP/CDP ─── */}
+      {device?.neighbors && device.neighbors.length > 0 && (
+        <Section icon={<Radio className="h-4 w-4" />} title="Neighbors LLDP/CDP"
+          badge={<Badge variant="outline" className="ml-2 text-[10px]">{device.neighbors.length}</Badge>}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {device.neighbors.map((n, i) => (
+              <div key={n.id ?? i} className="text-xs border rounded px-2 py-1.5">
+                <div className="font-mono font-medium">{n.neighbor_name ?? n.neighbor_address ?? "?"}</div>
+                <div className="text-muted-foreground text-[11px] mt-0.5">
+                  {n.interface_name && `Locale: ${n.interface_name}`}
+                  {n.neighbor_port && ` → Remoto: ${n.neighbor_port}`}
+                  {n.protocol && (
+                    <Badge variant="outline" className="ml-1.5 text-[9px] py-0">{n.protocol}</Badge>
+                  )}
+                </div>
+                {n.neighbor_platform && (
+                  <div className="text-muted-foreground text-[11px] truncate" title={n.neighbor_platform}>
+                    {n.neighbor_platform}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
 
       {/* ─── 4. Vulnerabilità (sempre, anche se vuoto) ─── */}
       <Section icon={<Shield className="h-4 w-4" />} title="Vulnerabilità">

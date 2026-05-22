@@ -416,10 +416,49 @@ async function runDiscovery(
       onlineIps = results.filter((r) => r.alive).map((r) => r.ip);
       log(`ping sweep: ${onlineIps.length}/${ips.length} host vivi`);
     }
-    // ARP + DHCP dal router associato (se configurato): aggiunge IP che ora
-    // non rispondono ma che il router ha in tabella ARP/lease. Poll completo
-    // (niente onlyEnrichIps, niente skipDhcpLeases) — è il valore aggiunto
-    // rispetto al solo ICMP sweep su reti grandi.
+    // Second-pass TCP per host già visti online ma silenziosi a ICMP/nmap-sn.
+    // Stessa logica di network_discovery: previene falsi offline per device
+    // che bloccano ICMP (Windows firewall, stampanti, IoT) ma rispondono su
+    // porte TCP comuni.
+    {
+      const onlineSet = new Set(onlineIps);
+      const dbHosts = getHostsByNetwork(networkId);
+      const tcpCandidates = dbHosts
+        .filter((h) => h.status === "online" && !onlineSet.has(h.ip))
+        .map((h) => h.ip);
+      if (tcpCandidates.length > 0) {
+        progress.phase = `Second-pass TCP — 0/${tcpCandidates.length}`;
+        log(`fast: ${tcpCandidates.length} host già online non rilevati, tento TCP su ${FALLBACK_TCP_PORTS.join("/")}`);
+        const TCP_BATCH = 32;
+        let recovered = 0;
+        let scanned = 0;
+        for (let i = 0; i < tcpCandidates.length; i += TCP_BATCH) {
+          const batch = tcpCandidates.slice(i, i + TCP_BATCH);
+          const probed = await Promise.all(
+            batch.map(async (ip) => {
+              for (const port of FALLBACK_TCP_PORTS) {
+                if (await tcpConnect(ip, port, 2000)) return ip;
+              }
+              return null;
+            })
+          );
+          for (const ip of probed) {
+            scanned++;
+            if (ip) {
+              onlineIps.push(ip);
+              recovered++;
+            }
+          }
+          progress.phase = `Second-pass TCP — ${scanned}/${tcpCandidates.length}`;
+        }
+        log(`Second-pass TCP: recuperati ${recovered}/${tcpCandidates.length} host (silenziosi a ICMP, attivi su TCP)`);
+      }
+    }
+
+    // ARP + DHCP dal router associato (se configurato): poll completo per
+    // arricchire MAC/vendor/hostname. Dopo v0.2.492 NON tocca più lo status
+    // degli host esistenti (vedi nota in cron/jobs.ts arp_poll), quindi è
+    // sicuro chiamarlo prima del flip offline.
     progress.phase = "ARP/DHCP dal router…";
     try {
       const { runArpPoll } = await import("@/lib/cron/jobs");
@@ -2146,15 +2185,15 @@ async function runDiscovery(
 
   // ═══════════════════════════════════════════════════════════════
   // Phase 4: Gestione host non rispondenti
-  // - network_discovery: dopo ICMP + second-pass TCP, marca offline (policy P1
-  //   strict). Lo scan è abbastanza completo per essere autoritativo: chi non
-  //   risponde a ICMP NÉ a TCP è davvero spento/rimosso, non un device
-  //   ICMP-mute. Aggiunge anche la nota per traccia diagnostica.
+  // - network_discovery / fast: dopo ICMP + second-pass TCP, marca offline
+  //   (policy P1 strict). Entrambi gli scan ora hanno fallback TCP, quindi
+  //   sono autoritativi: chi non risponde a ICMP NÉ a TCP è davvero spento.
+  //   Aggiunge anche la nota per traccia diagnostica.
   // - nmap / ipam_full: restano additivi → annotano nelle note, non flippano
   //   (scan manuali, l'utente può avere visioni parziali su CIDR grandi).
   // - ping: marca offline (solo ICMP, comportamento classico).
   // ═══════════════════════════════════════════════════════════════
-  if (scanType === "network_discovery") {
+  if (scanType === "network_discovery" || scanType === "fast") {
     progress.phase = "Aggiornamento host offline";
     noteHostsNonResponding(networkId, onlineIps, ips, scanType);
     markHostsOffline(networkId, onlineIps, ips);
@@ -2163,7 +2202,7 @@ async function runDiscovery(
     progress.phase = "Annotazione host non rispondenti";
     noteHostsNonResponding(networkId, onlineIps, ips, scanType);
     log(`Host non rispondenti (${ips.length - onlineIps.length}): annotati nelle note per revisione`);
-  } else if (scanType !== "snmp" && scanType !== "fast") {
+  } else if (scanType !== "snmp") {
     progress.phase = "Aggiornamento host offline";
     markHostsOffline(networkId, onlineIps, ips);
   }

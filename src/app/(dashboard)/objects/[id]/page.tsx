@@ -43,6 +43,8 @@ import {
   Route,
   Radio,
   Table as TableIcon,
+  Server,
+  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { HostDetail, InventoryAsset, NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
@@ -114,6 +116,79 @@ function parseDeviceInfo(json: string | null | undefined): DeviceInfoJson | null
   try {
     const parsed = JSON.parse(json);
     if (parsed && typeof parsed === "object") return parsed as DeviceInfoJson;
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** STP info salvata in `network_devices.stp_info` come JSON. */
+interface StpInfo {
+  bridge_id?: string | null;
+  root_bridge_id?: string | null;
+  priority?: number | null;
+  root_cost?: number | null;
+  root_port?: string | null;
+  hello_time_s?: number | null;
+  forward_delay_s?: number | null;
+  max_age_s?: number | null;
+  is_root_bridge?: boolean;
+  protocol?: "stp" | "rstp" | null;
+}
+
+function parseStpInfo(json: string | null | undefined): StpInfo | null {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json);
+    if (parsed && typeof parsed === "object") return parsed as StpInfo;
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** Payload da `network_devices.last_proxmox_scan_result`. */
+interface ProxmoxScanViewModel {
+  hosts?: Array<{
+    hostname: string;
+    status: string;
+    cpu_model?: string | null;
+    cpu_total_cores?: number | null;
+    cpu_sockets?: number | null;
+    memory_total_gb?: number | null;
+    memory_usage_percent?: number | null;
+    proxmox_version?: string | null;
+    kernel_version?: string | null;
+    uptime_human?: string | null;
+    rootfs_total_gb?: number | null;
+    rootfs_used_gb?: number | null;
+    hardware_serial?: string | null;
+    hardware_model?: string | null;
+    hardware_manufacturer?: string | null;
+    subscription?: {
+      status?: string;
+      productname?: string;
+      level?: string;
+      nextduedate?: string;
+    } | null;
+  }>;
+  vms?: Array<{
+    node: string;
+    vmid: number;
+    name: string;
+    type: string;
+    status?: string;
+    maxcpu: number;
+    memory_mb: number;
+    disk_gb: number;
+    ip_addresses: string[];
+  }>;
+  scanned_at?: string;
+  _truncated?: boolean;
+  _total_vm_rows?: number;
+}
+
+function parseProxmoxScan(json: string | null | undefined): ProxmoxScanViewModel | null {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json);
+    if (parsed && typeof parsed === "object") return parsed as ProxmoxScanViewModel;
   } catch { /* ignore */ }
   return null;
 }
@@ -525,6 +600,151 @@ export default function ObjectDetailPage() {
                 </div>
               )}
             </div>
+          </Section>
+        );
+      })()}
+
+      {/* ─── 3a. Proxmox (host + VM + subscription) ─── */}
+      {(() => {
+        const px = parseProxmoxScan(device?.last_proxmox_scan_result ?? null);
+        if (!px || (!px.hosts?.length && !px.vms?.length)) return null;
+        return (
+          <Section icon={<Server className="h-4 w-4" />} title="Proxmox VE"
+            badge={px.scanned_at && (
+              <span className="ml-2 text-[10px] text-muted-foreground">
+                scan {new Date(px.scanned_at).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}>
+            <div className="space-y-4">
+              {/* Hosts cluster */}
+              {px.hosts && px.hosts.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
+                    Host del cluster ({px.hosts.length})
+                  </div>
+                  <div className="space-y-2">
+                    {px.hosts.map((h, i) => {
+                      const subStatus = h.subscription?.status?.toLowerCase();
+                      const subActive = subStatus === "active" || subStatus === "active/valid";
+                      return (
+                        <div key={i} className="border rounded p-3">
+                          <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
+                            <div className="font-mono font-semibold text-sm">{h.hostname}</div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className={`text-[10px] ${h.status === "online" ? "border-emerald-400 text-emerald-700 bg-emerald-50" : "text-muted-foreground"}`}>
+                                {h.status}
+                              </Badge>
+                              {h.proxmox_version && <Badge variant="outline" className="text-[10px]">PVE {h.proxmox_version}</Badge>}
+                              {h.subscription?.productname && (
+                                <Badge variant="outline" className={`text-[10px] ${subActive ? "border-emerald-400 text-emerald-700 bg-emerald-50" : "border-amber-400 text-amber-700 bg-amber-50"}`}>
+                                  {h.subscription.productname}{h.subscription.level && ` (${h.subscription.level})`}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          <dl className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <InfoRow label="CPU" value={h.cpu_model ?? null} />
+                            <InfoRow label="Core / Socket" value={h.cpu_total_cores ? `${h.cpu_total_cores} core${h.cpu_sockets ? ` · ${h.cpu_sockets} socket` : ""}` : null} />
+                            <InfoRow label="RAM" value={h.memory_total_gb ? `${h.memory_total_gb.toFixed(1)} GB${h.memory_usage_percent != null ? ` · ${Math.round(h.memory_usage_percent)}% usato` : ""}` : null} />
+                            <InfoRow label="Uptime" value={h.uptime_human ?? null} />
+                            <InfoRow label="Kernel" value={h.kernel_version ?? null} />
+                            <InfoRow
+                              label="Root FS"
+                              value={h.rootfs_total_gb ? `${formatGb(h.rootfs_used_gb)} / ${formatGb(h.rootfs_total_gb)}` : null}
+                            />
+                            <InfoRow label="Hardware" value={h.hardware_manufacturer || h.hardware_model ? `${h.hardware_manufacturer ?? ""} ${h.hardware_model ?? ""}`.trim() : null} />
+                            <InfoRow label="Serial" value={h.hardware_serial ?? null} mono />
+                          </dl>
+                          {h.subscription?.nextduedate && (
+                            <p className="text-[10px] text-muted-foreground mt-2">
+                              Subscription scade il {h.subscription.nextduedate}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* VM e CT */}
+              {px.vms && px.vms.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
+                    <Layers className="h-3 w-3" />
+                    VM e Container ({px._total_vm_rows ?? px.vms.length})
+                    {px._truncated && (
+                      <span className="text-[10px] text-amber-600">· mostrate prime {px.vms.length}</span>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto max-h-96">
+                    <table className="w-full text-xs">
+                      <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b sticky top-0 bg-background">
+                        <tr>
+                          <th className="text-left py-1.5 pr-3">VMID</th>
+                          <th className="text-left pr-3">Nome</th>
+                          <th className="text-left pr-3">Tipo</th>
+                          <th className="text-left pr-3">Node</th>
+                          <th className="text-left pr-3">CPU</th>
+                          <th className="text-left pr-3">RAM</th>
+                          <th className="text-left pr-3">Disco</th>
+                          <th className="text-left">IP</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {px.vms.map((vm) => (
+                          <tr key={`${vm.node}-${vm.vmid}`} className="border-b border-border/30 last:border-0">
+                            <td className="py-1 pr-3 font-mono">{vm.vmid}</td>
+                            <td className="pr-3 font-medium">{vm.name}</td>
+                            <td className="pr-3">
+                              <Badge variant="outline" className="text-[10px] uppercase">{vm.type}</Badge>
+                              {vm.status && (
+                                <Badge variant="outline" className={`ml-1 text-[10px] ${vm.status === "running" ? "border-emerald-400 text-emerald-700 bg-emerald-50" : "text-muted-foreground"}`}>
+                                  {vm.status}
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="pr-3">{vm.node}</td>
+                            <td className="pr-3 font-mono">{vm.maxcpu}</td>
+                            <td className="pr-3 font-mono">{vm.memory_mb ? `${(vm.memory_mb / 1024).toFixed(1)} GB` : "—"}</td>
+                            <td className="pr-3 font-mono">{vm.disk_gb ? `${vm.disk_gb} GB` : "—"}</td>
+                            <td className="font-mono text-[10px]">
+                              {vm.ip_addresses && vm.ip_addresses.length > 0 ? vm.ip_addresses.join(", ") : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Section>
+        );
+      })()}
+
+      {/* ─── 3a-bis. Spanning Tree Protocol (STP) — solo switch ─── */}
+      {(() => {
+        const stp = parseStpInfo((device as { stp_info?: string | null } | null)?.stp_info ?? null);
+        if (!stp) return null;
+        return (
+          <Section icon={<Radio className="h-4 w-4" />} title="Spanning Tree Protocol"
+            badge={
+              <span className="ml-2 inline-flex gap-1.5">
+                {stp.is_root_bridge && <Badge variant="outline" className="text-[10px] border-emerald-400 text-emerald-700 bg-emerald-50">ROOT BRIDGE</Badge>}
+                {stp.protocol && <Badge variant="outline" className="text-[10px]">{stp.protocol.toUpperCase()}</Badge>}
+              </span>
+            }>
+            <dl className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <InfoRow label="Bridge ID" value={stp.bridge_id ?? null} mono />
+              <InfoRow label="Root Bridge ID" value={stp.root_bridge_id ?? null} mono />
+              <InfoRow label="Priority" value={stp.priority != null ? String(stp.priority) : null} />
+              <InfoRow label="Root cost" value={stp.root_cost != null ? String(stp.root_cost) : null} />
+              <InfoRow label="Root port" value={stp.root_port ?? null} />
+              <InfoRow label="Hello time" value={stp.hello_time_s != null ? `${stp.hello_time_s}s` : null} />
+              <InfoRow label="Forward delay" value={stp.forward_delay_s != null ? `${stp.forward_delay_s}s` : null} />
+              <InfoRow label="Max age" value={stp.max_age_s != null ? `${stp.max_age_s}s` : null} />
+            </dl>
           </Section>
         );
       })()}

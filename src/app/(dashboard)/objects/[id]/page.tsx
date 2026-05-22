@@ -51,8 +51,8 @@ import type { HostDetail, InventoryAsset, NetworkDevice, ArpEntry, MacPortEntry,
 
 /** Dati addizionali ritornati da GET /api/devices/[id] oltre al NetworkDevice base. */
 interface DeviceExtras {
-  arp_entries?: Array<ArpEntry & { hostname?: string | null }>;
-  mac_port_entries?: MacPortEntry[];
+  arp_entries?: Array<ArpEntry & { hostname?: string | null; host_ip?: string | null; host_name?: string | null }>;
+  mac_port_entries?: Array<MacPortEntry & { host_ip?: string | null; host_name?: string | null }>;
   switch_ports?: SwitchPort[];
   neighbors?: Array<{
     id?: number;
@@ -151,11 +151,16 @@ interface ProxmoxScanViewModel {
     cpu_model?: string | null;
     cpu_total_cores?: number | null;
     cpu_sockets?: number | null;
+    cpu_cores?: number | null;
+    cpu_mhz?: number | null;
     memory_total_gb?: number | null;
+    memory_used_gb?: number | null;
+    memory_free_gb?: number | null;
     memory_usage_percent?: number | null;
     proxmox_version?: string | null;
     kernel_version?: string | null;
     uptime_human?: string | null;
+    uptime_seconds?: number | null;
     rootfs_total_gb?: number | null;
     rootfs_used_gb?: number | null;
     hardware_serial?: string | null;
@@ -165,8 +170,30 @@ interface ProxmoxScanViewModel {
       status?: string;
       productname?: string;
       level?: string;
+      key?: string;
+      regdate?: string;
       nextduedate?: string;
+      sockets?: number;
+      serverid?: string;
     } | null;
+    storage?: Array<{
+      name: string;
+      type?: string;
+      status?: string;
+      total_gb?: number;
+      used_gb?: number;
+      available_gb?: number;
+      content?: string;
+    }>;
+    network_interfaces?: Array<{
+      name: string;
+      type?: string;
+      state?: string;
+      mac_address?: string | null;
+      ip_addresses?: string | null;
+      bridge?: string | null;
+      speed_mbps?: number | null;
+    }>;
   }>;
   vms?: Array<{
     node: string;
@@ -175,9 +202,17 @@ interface ProxmoxScanViewModel {
     type: string;
     status?: string;
     maxcpu: number;
+    cores?: number;
+    sockets?: number;
     memory_mb: number;
+    maxmem?: number;
     disk_gb: number;
+    maxdisk?: number;
     ip_addresses: string[];
+    disks_details?: Array<{ id?: string; storage?: string; size?: string }>;
+    networks_details?: Array<{ id?: string; model?: string; mac?: string; bridge?: string; vlan?: string }>;
+    bios?: string;
+    agent?: number;
   }>;
   scanned_at?: string;
   _truncated?: boolean;
@@ -644,8 +679,11 @@ export default function ObjectDetailPage() {
                           </div>
                           <dl className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             <InfoRow label="CPU" value={h.cpu_model ?? null} />
-                            <InfoRow label="Core / Socket" value={h.cpu_total_cores ? `${h.cpu_total_cores} core${h.cpu_sockets ? ` · ${h.cpu_sockets} socket` : ""}` : null} />
-                            <InfoRow label="RAM" value={h.memory_total_gb ? `${h.memory_total_gb.toFixed(1)} GB${h.memory_usage_percent != null ? ` · ${Math.round(h.memory_usage_percent)}% usato` : ""}` : null} />
+                            <InfoRow label="Core / Socket" value={h.cpu_total_cores ? `${h.cpu_total_cores} core${h.cpu_sockets ? ` · ${h.cpu_sockets} socket` : ""}${h.cpu_cores ? ` (${h.cpu_cores}/socket)` : ""}` : null} />
+                            <InfoRow label="CPU MHz" value={h.cpu_mhz ? `${Math.round(h.cpu_mhz)} MHz` : null} />
+                            <InfoRow label="RAM totale" value={h.memory_total_gb ? `${h.memory_total_gb.toFixed(1)} GB` : null} />
+                            <InfoRow label="RAM usata" value={h.memory_used_gb != null ? `${h.memory_used_gb.toFixed(1)} GB${h.memory_usage_percent != null ? ` · ${Math.round(h.memory_usage_percent)}%` : ""}` : null} />
+                            <InfoRow label="RAM libera" value={h.memory_free_gb != null ? `${h.memory_free_gb.toFixed(1)} GB` : null} />
                             <InfoRow label="Uptime" value={h.uptime_human ?? null} />
                             <InfoRow label="Kernel" value={h.kernel_version ?? null} />
                             <InfoRow
@@ -653,12 +691,112 @@ export default function ObjectDetailPage() {
                               value={h.rootfs_total_gb ? `${formatGb(h.rootfs_used_gb)} / ${formatGb(h.rootfs_total_gb)}` : null}
                             />
                             <InfoRow label="Hardware" value={h.hardware_manufacturer || h.hardware_model ? `${h.hardware_manufacturer ?? ""} ${h.hardware_model ?? ""}`.trim() : null} />
-                            <InfoRow label="Serial" value={h.hardware_serial ?? null} mono />
+                            <InfoRow label="Serial HW" value={h.hardware_serial ?? null} mono />
                           </dl>
-                          {h.subscription?.nextduedate && (
-                            <p className="text-[10px] text-muted-foreground mt-2">
-                              Subscription scade il {h.subscription.nextduedate}
-                            </p>
+
+                          {/* Subscription dettagliata */}
+                          {h.subscription && (
+                            <div className="mt-3 p-2 bg-muted/30 rounded">
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Subscription</div>
+                              <dl className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <InfoRow label="Status" value={h.subscription.status ?? null} />
+                                <InfoRow label="Prodotto" value={h.subscription.productname ?? null} />
+                                <InfoRow label="Level" value={h.subscription.level ?? null} />
+                                <InfoRow label="Key" value={h.subscription.key ?? null} mono />
+                                <InfoRow label="Registrata il" value={h.subscription.regdate ?? null} />
+                                <InfoRow label="Scade il" value={h.subscription.nextduedate ?? null} />
+                                <InfoRow label="Socket" value={h.subscription.sockets != null ? String(h.subscription.sockets) : null} />
+                                <InfoRow label="Server ID" value={h.subscription.serverid ?? null} mono />
+                              </dl>
+                            </div>
+                          )}
+
+                          {/* Storage pools host */}
+                          {h.storage && h.storage.length > 0 && (
+                            <div className="mt-3">
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
+                                <HardDrive className="h-3 w-3" />
+                                Storage ({h.storage.length})
+                              </div>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                  <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b">
+                                    <tr>
+                                      <th className="text-left py-1.5 pr-3">Nome</th>
+                                      <th className="text-left pr-3">Tipo</th>
+                                      <th className="text-left pr-3">Contenuto</th>
+                                      <th className="text-left pr-3">Usato</th>
+                                      <th className="text-left pr-3">Disponibile</th>
+                                      <th className="text-left">Totale</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {h.storage.map((s, j) => {
+                                      const usedPct = s.total_gb && s.used_gb != null ? Math.round((s.used_gb / s.total_gb) * 100) : null;
+                                      return (
+                                        <tr key={j} className="border-b border-border/30 last:border-0">
+                                          <td className="py-1 pr-3 font-mono">{s.name}</td>
+                                          <td className="pr-3"><Badge variant="outline" className="text-[10px]">{s.type ?? "?"}</Badge></td>
+                                          <td className="pr-3 text-[10px] text-muted-foreground">{s.content ?? "—"}</td>
+                                          <td className="pr-3">
+                                            {formatGb(s.used_gb)}
+                                            {usedPct != null && (
+                                              <span className={`ml-1 text-[10px] ${usedPct >= 90 ? "text-red-600 font-semibold" : usedPct >= 75 ? "text-amber-600" : "text-muted-foreground"}`}>
+                                                ({usedPct}%)
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className="pr-3">{formatGb(s.available_gb)}</td>
+                                          <td>{formatGb(s.total_gb)}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Network interfaces host */}
+                          {h.network_interfaces && h.network_interfaces.length > 0 && (
+                            <div className="mt-3">
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
+                                <Network className="h-3 w-3" />
+                                Interfacce di rete ({h.network_interfaces.length})
+                              </div>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                  <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b">
+                                    <tr>
+                                      <th className="text-left py-1.5 pr-3">Nome</th>
+                                      <th className="text-left pr-3">Tipo</th>
+                                      <th className="text-left pr-3">Stato</th>
+                                      <th className="text-left pr-3">MAC</th>
+                                      <th className="text-left pr-3">IP</th>
+                                      <th className="text-left pr-3">Bridge</th>
+                                      <th className="text-left">Speed</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {h.network_interfaces.map((nic, j) => (
+                                      <tr key={j} className="border-b border-border/30 last:border-0">
+                                        <td className="py-1 pr-3 font-mono">{nic.name}</td>
+                                        <td className="pr-3"><Badge variant="outline" className="text-[10px]">{nic.type ?? "?"}</Badge></td>
+                                        <td className="pr-3">
+                                          <Badge variant="outline" className={`text-[10px] ${nic.state === "up" ? "border-emerald-400 text-emerald-700 bg-emerald-50" : "text-muted-foreground"}`}>
+                                            {nic.state ?? "?"}
+                                          </Badge>
+                                        </td>
+                                        <td className="pr-3 font-mono">{nic.mac_address ?? "—"}</td>
+                                        <td className="pr-3 font-mono">{nic.ip_addresses ?? "—"}</td>
+                                        <td className="pr-3 font-mono">{nic.bridge ?? "—"}</td>
+                                        <td>{nic.speed_mbps ? `${nic.speed_mbps} Mb/s` : "—"}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
                           )}
                         </div>
                       );
@@ -677,42 +815,82 @@ export default function ObjectDetailPage() {
                       <span className="text-[10px] text-amber-600">· mostrate prime {px.vms.length}</span>
                     )}
                   </div>
-                  <div className="overflow-x-auto max-h-96">
+                  <div className="overflow-x-auto max-h-[600px]">
                     <table className="w-full text-xs">
                       <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b sticky top-0 bg-background">
                         <tr>
                           <th className="text-left py-1.5 pr-3">VMID</th>
                           <th className="text-left pr-3">Nome</th>
                           <th className="text-left pr-3">Tipo</th>
-                          <th className="text-left pr-3">Node</th>
                           <th className="text-left pr-3">CPU</th>
                           <th className="text-left pr-3">RAM</th>
-                          <th className="text-left pr-3">Disco</th>
+                          <th className="text-left pr-3">Dischi</th>
+                          <th className="text-left pr-3">Reti</th>
+                          <th className="text-left pr-3">BIOS</th>
                           <th className="text-left">IP</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {px.vms.map((vm) => (
-                          <tr key={`${vm.node}-${vm.vmid}`} className="border-b border-border/30 last:border-0">
-                            <td className="py-1 pr-3 font-mono">{vm.vmid}</td>
-                            <td className="pr-3 font-medium">{vm.name}</td>
-                            <td className="pr-3">
-                              <Badge variant="outline" className="text-[10px] uppercase">{vm.type}</Badge>
-                              {vm.status && (
-                                <Badge variant="outline" className={`ml-1 text-[10px] ${vm.status === "running" ? "border-emerald-400 text-emerald-700 bg-emerald-50" : "text-muted-foreground"}`}>
-                                  {vm.status}
-                                </Badge>
-                              )}
-                            </td>
-                            <td className="pr-3">{vm.node}</td>
-                            <td className="pr-3 font-mono">{vm.maxcpu}</td>
-                            <td className="pr-3 font-mono">{vm.memory_mb ? `${(vm.memory_mb / 1024).toFixed(1)} GB` : "—"}</td>
-                            <td className="pr-3 font-mono">{vm.disk_gb ? `${vm.disk_gb} GB` : "—"}</td>
-                            <td className="font-mono text-[10px]">
-                              {vm.ip_addresses && vm.ip_addresses.length > 0 ? vm.ip_addresses.join(", ") : "—"}
-                            </td>
-                          </tr>
-                        ))}
+                        {px.vms.map((vm) => {
+                          const disksDetail = vm.disks_details?.filter((d) => d.id && d.size) ?? [];
+                          const netsDetail = vm.networks_details ?? [];
+                          return (
+                            <tr key={`${vm.node}-${vm.vmid}`} className="border-b border-border/30 last:border-0 align-top">
+                              <td className="py-1 pr-3 font-mono">{vm.vmid}</td>
+                              <td className="pr-3 font-medium">
+                                {vm.name}
+                                <div className="text-[10px] text-muted-foreground font-normal">{vm.node}</div>
+                              </td>
+                              <td className="pr-3">
+                                <Badge variant="outline" className="text-[10px] uppercase">{vm.type}</Badge>
+                                {vm.status && (
+                                  <Badge variant="outline" className={`ml-1 text-[10px] ${vm.status === "running" ? "border-emerald-400 text-emerald-700 bg-emerald-50" : "text-muted-foreground"}`}>
+                                    {vm.status}
+                                  </Badge>
+                                )}
+                                {vm.agent === 1 && (
+                                  <Badge variant="outline" className="ml-1 text-[10px] border-blue-400 text-blue-700 bg-blue-50" title="QEMU guest agent attivo">agent</Badge>
+                                )}
+                              </td>
+                              <td className="pr-3 font-mono">
+                                {vm.maxcpu}
+                                {vm.cores && vm.sockets && <div className="text-[10px] text-muted-foreground">{vm.sockets}s·{vm.cores}c</div>}
+                              </td>
+                              <td className="pr-3 font-mono">{vm.memory_mb ? `${(vm.memory_mb / 1024).toFixed(1)} GB` : "—"}</td>
+                              <td className="pr-3">
+                                {disksDetail.length > 0 ? (
+                                  <div className="space-y-0.5">
+                                    {disksDetail.map((d, j) => (
+                                      <div key={j} className="text-[10px] font-mono">
+                                        <span className="text-muted-foreground">{d.id}:</span> {d.size}
+                                        {d.storage && d.storage !== "N/A" && <span className="text-muted-foreground"> @ {d.storage}</span>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : vm.disk_gb ? (
+                                  <span className="font-mono">{vm.disk_gb} GB</span>
+                                ) : "—"}
+                              </td>
+                              <td className="pr-3">
+                                {netsDetail.length > 0 ? (
+                                  <div className="space-y-0.5">
+                                    {netsDetail.map((n, j) => (
+                                      <div key={j} className="text-[10px] font-mono">
+                                        <span className="text-muted-foreground">{n.id}:</span> {n.bridge ?? "?"}
+                                        {n.vlan && <Badge variant="outline" className="ml-1 text-[9px] py-0">v{n.vlan}</Badge>}
+                                        {n.mac && <span className="text-muted-foreground block">{n.mac}</span>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : "—"}
+                              </td>
+                              <td className="pr-3 text-[10px] font-mono">{vm.bios ?? "—"}</td>
+                              <td className="font-mono text-[10px]">
+                                {vm.ip_addresses && vm.ip_addresses.length > 0 ? vm.ip_addresses.join(", ") : "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -790,14 +968,29 @@ export default function ObjectDetailPage() {
           <div className="overflow-x-auto max-h-96">
             <table className="w-full text-xs">
               <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b sticky top-0 bg-background">
-                <tr><th className="text-left py-1.5 pr-3">MAC</th><th className="text-left pr-3">Porta</th><th className="text-left">VLAN</th></tr>
+                <tr>
+                  <th className="text-left py-1.5 pr-3">MAC</th>
+                  <th className="text-left pr-3">Porta</th>
+                  <th className="text-left pr-3">VLAN</th>
+                  <th className="text-left">Host collegato</th>
+                </tr>
               </thead>
               <tbody>
                 {device.mac_port_entries.slice(0, 200).map((m) => (
                   <tr key={m.id} className="border-b border-border/30 last:border-0">
                     <td className="py-1 pr-3 font-mono">{m.mac}</td>
                     <td className="pr-3 font-mono">{m.port_name}</td>
-                    <td>{m.vlan ?? "—"}</td>
+                    <td className="pr-3">{m.vlan ?? "—"}</td>
+                    <td className="text-xs">
+                      {m.host_ip || m.host_name ? (
+                        <span>
+                          <span className="font-mono">{m.host_ip ?? ""}</span>
+                          {m.host_name && <span className="text-muted-foreground ml-1">· {m.host_name}</span>}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

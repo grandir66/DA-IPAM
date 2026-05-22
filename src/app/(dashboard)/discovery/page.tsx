@@ -948,7 +948,7 @@ export default function DiscoveryPage() {
       case "hostname":
         return <span className="font-medium truncate max-w-[200px] block" title={displayName(h)}>{displayName(h) || "—"}</span>;
       case "status":
-        return <StatusBadge status={h.status} />;
+        return <StatusBadge status={h.status} lastSeen={h.last_seen} />;
       case "mac":
         return <span className="font-mono text-xs">{h.mac ?? "—"}</span>;
       case "vendor":

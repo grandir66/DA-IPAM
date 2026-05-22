@@ -1023,10 +1023,14 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                   )}
                   <TableCell>
                     {isHostItem(dev) ? (
-                      <StatusBadge status={dev.status as "online" | "offline" | "unknown"} />
+                      <StatusBadge
+                        status={dev.status as "online" | "offline" | "unknown"}
+                        lastSeen={(dev as { last_seen?: string | null }).last_seen ?? null}
+                      />
                     ) : (() => {
                       const s = (dev as { status?: string }).status;
-                      return s ? <StatusBadge status={s as "online" | "offline" | "unknown"} /> : null;
+                      const ls = (dev as { last_seen?: string | null }).last_seen ?? null;
+                      return s ? <StatusBadge status={s as "online" | "offline" | "unknown"} lastSeen={ls} /> : null;
                     })() ?? (
                       <Badge variant={dev.enabled ? "outline" : "secondary"}>
                         {dev.enabled ? "Attivo" : "Disabilitato"}

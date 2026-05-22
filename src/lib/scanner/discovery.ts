@@ -2,6 +2,7 @@ import { getAllHostIps } from "@/lib/utils";
 import { getCurrentTenantCode, withTenant } from "@/lib/db-tenant";
 import { pingSweep as _localPingSweep } from "./ping";
 import { nmapDiscoverHosts as _localNmapDiscoverHosts, nmapPortScan as _localNmapPortScan, isNmapAvailable as _localIsNmapAvailable } from "./nmap";
+import { tcpConnect, FALLBACK_TCP_PORTS } from "./tcp-check";
 import type { Executor } from "@/lib/executor";
 import { getExecutor } from "@/lib/executor";
 import {
@@ -443,6 +444,47 @@ async function runDiscovery(
       progress.found = found;
     });
     onlineIps = results.filter((r) => r.alive).map((r) => r.ip);
+
+    // Second-pass TCP per host già visti come online ma silenziosi a ICMP.
+    // Molti device (Windows con firewall default, stampanti, IoT) bloccano ICMP
+    // ma rispondono su porte TCP comuni; senza questo recupero finiscono nella
+    // colonna "non rispondenti" e l'utente li vede sparire dalla rete.
+    const onlineSet = new Set(onlineIps);
+    const dbHosts = getHostsByNetwork(networkId);
+    const tcpCandidates = dbHosts
+      .filter((h) => h.status === "online" && !onlineSet.has(h.ip))
+      .map((h) => h.ip);
+    if (tcpCandidates.length > 0) {
+      progress.phase = `Second-pass TCP — 0/${tcpCandidates.length}`;
+      log(`ICMP miss: ${tcpCandidates.length} host noti come online non hanno risposto, tento TCP su ${FALLBACK_TCP_PORTS.join("/")}`);
+      const TCP_BATCH = 32;
+      let recovered = 0;
+      let scanned = 0;
+      for (let i = 0; i < tcpCandidates.length; i += TCP_BATCH) {
+        const batch = tcpCandidates.slice(i, i + TCP_BATCH);
+        const probed = await Promise.all(
+          batch.map(async (ip) => {
+            for (const port of FALLBACK_TCP_PORTS) {
+              if (await tcpConnect(ip, port, 2000)) return ip;
+            }
+            return null;
+          })
+        );
+        for (const ip of probed) {
+          scanned++;
+          if (ip) {
+            onlineIps.push(ip);
+            recovered++;
+          }
+        }
+        progress.phase = `Second-pass TCP — ${scanned}/${tcpCandidates.length}`;
+      }
+      if (recovered > 0) {
+        log(`Second-pass TCP: recuperati ${recovered}/${tcpCandidates.length} host (silenziosi a ICMP, attivi su TCP)`);
+      } else {
+        log(`Second-pass TCP: nessun recupero (${tcpCandidates.length} host davvero offline o porte TCP filtrate)`);
+      }
+    }
 
     const nmapAvailable = await isNmapAvailable();
     const quickArgs = buildNetworkDiscoveryQuickTcpArgs();

@@ -584,12 +584,35 @@ export default function ObjectDetailPage() {
       </div>
 
       <Tabs defaultValue="generale" className="space-y-4">
-        <TabsList className="w-full justify-start overflow-x-auto">
-          <TabsTrigger value="generale">Generale</TabsTrigger>
-          <TabsTrigger value="sistema">Sistema</TabsTrigger>
-          <TabsTrigger value="network">Rete avanzata</TabsTrigger>
-          <TabsTrigger value="sicurezza">Sicurezza & Asset</TabsTrigger>
-          <TabsTrigger value="storico">Storico</TabsTrigger>
+        <TabsList className="!h-10 p-1 gap-1 bg-muted border border-border flex-wrap">
+          <TabsTrigger value="generale" className="px-3 py-1.5 text-sm">
+            <Boxes className="h-4 w-4 mr-1.5" />
+            Generale
+          </TabsTrigger>
+          <TabsTrigger value="sistema" className="px-3 py-1.5 text-sm">
+            <ServerCog className="h-4 w-4 mr-1.5" />
+            Sistema
+          </TabsTrigger>
+          <TabsTrigger value="network" className="px-3 py-1.5 text-sm">
+            <Network className="h-4 w-4 mr-1.5" />
+            Rete
+          </TabsTrigger>
+          <TabsTrigger value="vulnerabilita" className="px-3 py-1.5 text-sm">
+            <Shield className="h-4 w-4 mr-1.5" />
+            Vulnerabilità
+          </TabsTrigger>
+          <TabsTrigger value="software" className="px-3 py-1.5 text-sm">
+            <HardDrive className="h-4 w-4 mr-1.5" />
+            Software
+          </TabsTrigger>
+          <TabsTrigger value="asset" className="px-3 py-1.5 text-sm">
+            <PackagePlus className="h-4 w-4 mr-1.5" />
+            Asset & Credenziali
+          </TabsTrigger>
+          <TabsTrigger value="storico" className="px-3 py-1.5 text-sm">
+            <Activity className="h-4 w-4 mr-1.5" />
+            Storico
+          </TabsTrigger>
         </TabsList>
 
         {/* ═══════════════ TAB: GENERALE ═══════════════ */}
@@ -1159,7 +1182,17 @@ export default function ObjectDetailPage() {
                 scan {new Date(px.scanned_at).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
               </span>
             )}>
-            <div className="space-y-4">
+            <Tabs defaultValue="px-host" className="space-y-3">
+              <TabsList className="!h-9 p-0.5 gap-0.5">
+                <TabsTrigger value="px-host" className="px-3 py-1 text-xs">
+                  Host cluster {px.hosts?.length ? `(${px.hosts.length})` : ""}
+                </TabsTrigger>
+                <TabsTrigger value="px-vms" className="px-3 py-1 text-xs">
+                  VM e Container {px._total_vm_rows ?? px.vms?.length ?? 0 > 0 ? `(${px._total_vm_rows ?? px.vms?.length})` : ""}
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="px-host" className="space-y-4">
               {/* Hosts cluster */}
               {px.hosts && px.hosts.length > 0 && (
                 <div>
@@ -1314,6 +1347,9 @@ export default function ObjectDetailPage() {
                 </div>
               )}
 
+              </TabsContent>
+
+              <TabsContent value="px-vms" className="space-y-4">
               {/* VM e CT */}
               {px.vms && px.vms.length > 0 && (
                 <div>
@@ -1405,7 +1441,8 @@ export default function ObjectDetailPage() {
                   </div>
                 </div>
               )}
-            </div>
+              </TabsContent>
+            </Tabs>
           </Section>
         );
       })()}
@@ -1639,12 +1676,17 @@ export default function ObjectDetailPage() {
         </TabsContent>
 
         {/* ═══════════════ TAB: SICUREZZA & ASSET ═══════════════ */}
-        <TabsContent value="sicurezza" className="space-y-4">
+        <TabsContent value="vulnerabilita" className="space-y-4">
 
       {/* ─── 4. Vulnerabilità (sempre, anche se vuoto) ─── */}
       <Section icon={<Shield className="h-4 w-4" />} title="Vulnerabilità">
         <HostVulnerabilitiesCard hostId={host.id} />
       </Section>
+
+        </TabsContent>
+
+        {/* ═══════════════ TAB: SOFTWARE ═══════════════ */}
+        <TabsContent value="software" className="space-y-4">
 
       {/* ─── 4. Software inventory (solo se device + windows/linux) ─── */}
       {isManaged && isWindowsOrLinux && device && (
@@ -1668,6 +1710,11 @@ export default function ObjectDetailPage() {
           </p>
         </Section>
       )}
+
+        </TabsContent>
+
+        {/* ═══════════════ TAB: ASSET & CREDENZIALI ═══════════════ */}
+        <TabsContent value="asset" className="space-y-4">
 
       {/* ─── 5. Asset NIS2 (solo se asset linkato) ─── */}
       {isAsset && asset && (

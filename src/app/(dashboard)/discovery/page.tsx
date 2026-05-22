@@ -41,6 +41,7 @@ import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, HardDrive, Monitor,
+  Lock,
 } from "lucide-react";
 
 /**
@@ -128,7 +129,9 @@ const COLUMNS: ColumnDef[] = [
   { id: "classification",  label: "Classificazione", defaultVisible: true,  group: "base" },
   { id: "fp_confidence",   label: "Conf.",           defaultVisible: true,  group: "base" },
   { id: "validated_creds", label: "Cred.",            defaultVisible: true,  group: "base" },
-  { id: "known_host",      label: "Conosciuto",      defaultVisible: false, group: "base" },
+  { id: "vuln_max_severity", label: "CVE max",       defaultVisible: true,  group: "rilevamento" },
+  { id: "vuln_counts",       label: "CVE C/H/M",     defaultVisible: true,  group: "rilevamento" },
+  { id: "known_host",      label: "Manuale",         defaultVisible: false, group: "base" },
   { id: "ip_assignment",   label: "DHCP",            defaultVisible: true,  group: "base" },
   { id: "detected",        label: "Rilevato",        defaultVisible: false, group: "rilevamento" },
   { id: "notes",           label: "Note",            defaultVisible: false, group: "base" },
@@ -162,9 +165,6 @@ const COLUMNS: ColumnDef[] = [
   { id: "last_seen",       label: "Ultimo visto",    defaultVisible: true,  group: "base" },
   { id: "first_seen",      label: "Primo visto",     defaultVisible: false, group: "base" },
 
-  // Vulnerabilità (scanner-edge)
-  { id: "vuln_max_severity", label: "CVE max", defaultVisible: true, group: "rilevamento" },
-  { id: "vuln_counts",       label: "CVE C/H/M", defaultVisible: true, group: "rilevamento" },
 ];
 
 const GROUP_LABELS: Record<string, string> = {
@@ -959,8 +959,8 @@ export default function DiscoveryPage() {
           : <span className="text-muted-foreground text-xs">—</span>;
       case "known_host":
         return h.known_host
-          ? <Badge className="bg-success/15 text-success border-success/30 text-xs">Si</Badge>
-          : <span className="text-muted-foreground text-xs">No</span>;
+          ? <span title="Configurazione manuale: non aggiornata automaticamente dagli scan" className="inline-flex items-center justify-center text-primary"><Lock className="h-3.5 w-3.5" /></span>
+          : <span className="text-muted-foreground text-xs">—</span>;
       case "ip_assignment": {
         const labels: Record<string, string> = { dynamic: "DHCP", static: "Statico", reserved: "Riservato", unknown: "—" };
         const colors: Record<string, string> = { dynamic: "bg-blue-500/10 text-blue-600 border-blue-300/40", static: "bg-amber-500/10 text-amber-600 border-amber-300/40", reserved: "bg-purple-500/10 text-purple-600 border-purple-300/40" };
@@ -971,14 +971,25 @@ export default function DiscoveryPage() {
       case "notes":
         return <span className="text-xs text-muted-foreground truncate max-w-[150px] block" title={h.notes}>{h.notes || "—"}</span>;
       case "network_name":
-        return <span className="text-sm">{h.network_name} <span className="text-muted-foreground text-xs">({h.network_cidr})</span></span>;
+        return <span className="text-sm" title={h.network_cidr}>{h.network_name}</span>;
       case "vlan_id":
         return <span className="text-sm">{h.vlan_id != null ? h.vlan_id : "—"}</span>;
       case "location":
         return <span className="text-sm">{h.location || "—"}</span>;
       case "device_name":
         return h.device_id
-          ? <Link href={`/devices/${h.device_id}`} className="text-sm text-primary hover:underline">{h.device_name}</Link>
+          ? (
+            <Link
+              href={`/devices/${h.device_id}`}
+              title={h.device_name ?? "Apri dispositivo"}
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+            >
+              <Badge variant="outline" className="text-xs gap-1 px-1.5 py-0 border-primary/40 text-primary">
+                <Server className="h-3 w-3" />
+                <ExternalLink className="h-3 w-3" />
+              </Badge>
+            </Link>
+          )
           : <span className="text-muted-foreground text-xs">—</span>;
       case "switch_port":
         return h.switch_port

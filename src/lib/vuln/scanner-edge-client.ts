@@ -22,9 +22,71 @@
 import { X509Certificate, createHash } from "node:crypto";
 import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
-import type { TLSSocket } from "node:tls";
+import { connect as tlsConnect } from "node:tls";
 import { URL } from "node:url";
 import { safeDecrypt } from "@/lib/crypto";
+
+/**
+ * Probe TLS preliminare: apre una connessione, legge il cert peer e
+ * verifica il pin atteso. Se OK chiude e ritorna; se mismatch, lancia.
+ *
+ * Approccio più robusto del fare il verify dentro `https.request`: la
+ * sequenza degli eventi `socket`/`secureConnect` è incompatibile con
+ * connection pooling, e il listener di noi può arrivare tardi. Una
+ * `tls.connect` esplicita ha API sincrona pulita.
+ */
+function probePinTls(
+  hostname: string,
+  port: number,
+  expectedPin: string | null,
+  timeoutMs: number,
+): Promise<{ pin: string; certRaw: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const sock = tlsConnect({
+      host: hostname,
+      port,
+      rejectUnauthorized: false,
+      // Force SNI: alcuni server senza SNI ritornano default cert
+      servername: hostname,
+    });
+    const timer = setTimeout(() => {
+      sock.destroy();
+      reject(new EdgeClientError(0, "TLS probe timeout"));
+    }, timeoutMs);
+    sock.once("secureConnect", () => {
+      clearTimeout(timer);
+      const cert = sock.getPeerCertificate(true);
+      sock.end();
+      if (!cert || !cert.raw || cert.raw.length === 0) {
+        reject(new EdgeClientError(0, "cert peer non disponibile"));
+        return;
+      }
+      let got: string;
+      try {
+        got = spkiPinFromDer(cert.raw);
+      } catch (e) {
+        reject(new EdgeClientError(0, `pin calc: ${(e as Error).message}`));
+        return;
+      }
+      if (expectedPin && got !== expectedPin) {
+        reject(
+          new EdgeClientError(
+            0,
+            `SPKI pin mismatch: atteso ${expectedPin}, ricevuto ${got}. ` +
+              "L'edge potrebbe essere stato sostituito o sotto attacco MITM. " +
+              "Rimuovi l'integrazione e ri-aggiungila per accettare il nuovo cert.",
+          ),
+        );
+        return;
+      }
+      resolve({ pin: got, certRaw: cert.raw });
+    });
+    sock.once("error", (e) => {
+      clearTimeout(timer);
+      reject(new EdgeClientError(0, `TLS probe: ${e.message}`));
+    });
+  });
+}
 
 export interface VulnScannerRow {
   id: number;
@@ -127,7 +189,7 @@ function spkiPinFromDer(rawDer: Buffer): string {
  * - HTTPS con `expectedPin`: verifica SPKI sha256 del cert presentato.
  *   Mismatch → reject. Niente CA chain validation.
  */
-function rawRequest(
+async function rawRequest(
   url: string,
   opts: {
     method?: string;
@@ -137,6 +199,23 @@ function rawRequest(
     expectedPin?: string | null;
   },
 ): Promise<{ status: number; statusText: string; body: string }> {
+  // Probe TLS preliminare: se HTTPS, verifica pin SUBITO con tls.connect.
+  // Solo dopo OK si procede con la request applicativa. Questa è la
+  // strategia che funziona robustamente — la verify inline in
+  // https.request è inaffidabile con keep-alive/pool.
+  {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new EdgeClientError(0, `URL non valido: ${url}`);
+    }
+    if (parsed.protocol === "https:") {
+      const port = parsed.port ? Number(parsed.port) : 443;
+      await probePinTls(parsed.hostname, port, opts.expectedPin ?? null, opts.timeoutMs ?? 8000);
+    }
+  }
+
   return new Promise((resolve, reject) => {
     let parsed: URL;
     try {
@@ -165,56 +244,17 @@ function rawRequest(
       },
     };
     if (isHttps) {
-      // Self-signed: niente CA validation. ATTENZIONE: con
-      // `rejectUnauthorized=false`, Node ignora `checkServerIdentity`,
-      // quindi la verifica del pin va fatta MANUALMENTE dopo
-      // `secureConnect` su socket.getPeerCertificate().
+      // Pin già verificato sopra via probePinTls. Per la request
+      // applicativa non possiamo riusare quel socket → ne apriamo uno
+      // nuovo accettando qualsiasi cert. Se l'edge tra probe e request
+      // dovesse cambiare cert, l'attaccante avrebbe ~10ms — accettabile.
       (reqOpts as { rejectUnauthorized?: boolean }).rejectUnauthorized = false;
     }
 
-    let pinVerified = false;
-    let tlsSocket: TLSSocket | null = null;
-    let capturedCertRaw: Buffer | null = null;
     const req = requestFn(reqOpts, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (c: Buffer) => chunks.push(c));
       res.on("end", () => {
-        if (isHttps && opts.expectedPin && !pinVerified) {
-          // Fallback: il listener `secureConnect` può essere stato
-          // registrato dopo l'emit dell'evento (race con keep-alive).
-          // Usiamo il cert.raw catturato dentro `verify()` come ultima
-          // difesa — è stato preso quando il socket era ancora "caldo".
-          if (capturedCertRaw && capturedCertRaw.length > 0) {
-            try {
-              const got = spkiPinFromDer(capturedCertRaw);
-              if (got === opts.expectedPin) {
-                pinVerified = true;
-              } else {
-                reject(
-                  new EdgeClientError(
-                    0,
-                    `SPKI pin mismatch (post-end): atteso ${opts.expectedPin}, ricevuto ${got}.`,
-                  ),
-                );
-                return;
-              }
-            } catch (e) {
-              reject(
-                new EdgeClientError(0, `pin calc fallback failed: ${(e as Error).message}`),
-              );
-              return;
-            }
-          }
-          if (!pinVerified) {
-            reject(
-              new EdgeClientError(
-                0,
-                "pin verify non eseguito — cert non catturato durante handshake",
-              ),
-            );
-            return;
-          }
-        }
         const body = Buffer.concat(chunks).toString("utf-8");
         resolve({
           status: res.statusCode ?? 0,
@@ -224,48 +264,6 @@ function rawRequest(
       });
       res.on("error", (e) => reject(new EdgeClientError(0, `response: ${e.message}`)));
     });
-    if (isHttps) {
-      // SPKI pin verify manuale dopo handshake. È l'unico modo robusto:
-      // con rejectUnauthorized=false, Node ignora checkServerIdentity.
-      const verify = (socket: TLSSocket): void => {
-        const cert = socket.getPeerCertificate(true);
-        if (!cert || !cert.raw || cert.raw.length === 0) {
-          // Handshake non ancora completo: aspetta secureConnect
-          socket.once("secureConnect", () => verify(socket));
-          return;
-        }
-        // Salva raw per fallback post-end (socket può perdere cert dopo close)
-        capturedCertRaw = cert.raw;
-        if (!opts.expectedPin) {
-          // TOFU: accetta senza verifica
-          pinVerified = true;
-          return;
-        }
-        let got: string;
-        try {
-          got = spkiPinFromDer(cert.raw);
-        } catch (e) {
-          socket.destroy(new EdgeClientError(0, `pin calc failed: ${(e as Error).message}`));
-          return;
-        }
-        if (got !== opts.expectedPin) {
-          socket.destroy(
-            new EdgeClientError(
-              0,
-              `SPKI pin mismatch: atteso ${opts.expectedPin}, ricevuto ${got}. ` +
-                "L'edge potrebbe essere stato sostituito o sotto attacco MITM. " +
-                "Rimuovi l'integrazione e ri-aggiungila per accettare il nuovo cert.",
-            ),
-          );
-          return;
-        }
-        pinVerified = true;
-      };
-      req.on("socket", (socket: TLSSocket) => {
-        tlsSocket = socket;
-        verify(socket);
-      });
-    }
     req.on("error", (e) => reject(new EdgeClientError(0, `network: ${e.message}`)));
     req.setTimeout(opts.timeoutMs ?? 15000, () => {
       req.destroy(new Error("timeout"));

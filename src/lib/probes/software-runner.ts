@@ -20,6 +20,7 @@
 import {
   cleanupOldSoftwareScansForTarget,
   createSoftwareScan,
+  getBestCredentialBindingForDevice,
   getCredentialById,
   getHostById,
   getNetworkDeviceById,
@@ -178,10 +179,23 @@ function resolveTarget(opts: SoftwareScanOptions): ResolvedTarget {
     );
   }
 
-  const credentialId = opts.credentialId ?? device.credential_id ?? null;
+  // Cerca credenziale in priorità:
+  //   1. opts.credentialId esplicito (se passato dal POST)
+  //   2. network_devices.credential_id (legacy, single)
+  //   3. device_credential_bindings (riusa quelle scoperte da auto-detect subnet)
+  let credentialId: number | null = opts.credentialId ?? device.credential_id ?? null;
+  let bindingPort: number | null = null;
+  if (!credentialId) {
+    const bindingProtocol = osFamily === "windows" ? "winrm" : "ssh";
+    const binding = getBestCredentialBindingForDevice(device.id, bindingProtocol);
+    if (binding) {
+      credentialId = binding.credential_id;
+      bindingPort = binding.port;
+    }
+  }
   if (!credentialId) {
     throw new Error(
-      `Device '${device.name}' non ha credenziali linkate. Imposta una credenziale sul device o passa credentialId esplicito.`
+      `Device '${device.name}' non ha credenziali ${osFamily === "windows" ? "WinRM" : "SSH"} linkate. Vai sul device → Credenziali e abbinane una, oppure lancia l'auto-detect dalla pagina della subnet.`
     );
   }
   const cred = getCredentialById(credentialId);
@@ -189,14 +203,22 @@ function resolveTarget(opts: SoftwareScanOptions): ResolvedTarget {
     throw new Error(`Credenziale ${credentialId} non trovata`);
   }
 
-  // Porta default: ottieni dal device se valida per il protocollo, altrimenti default standard
+  // Porta default: priorità binding > device.port valido > default standard
   let defaultPort: number;
   if (osFamily === "windows") {
-    defaultPort = device.port && (device.port === 5985 || device.port === 5986)
-      ? device.port
-      : WINRM_DEFAULT_PORT;
+    if (bindingPort && (bindingPort === 5985 || bindingPort === 5986)) {
+      defaultPort = bindingPort;
+    } else if (device.port && (device.port === 5985 || device.port === 5986)) {
+      defaultPort = device.port;
+    } else {
+      defaultPort = WINRM_DEFAULT_PORT;
+    }
   } else {
-    defaultPort = device.port && device.port > 0 ? device.port : SSH_DEFAULT_PORT;
+    defaultPort = bindingPort && bindingPort > 0
+      ? bindingPort
+      : device.port && device.port > 0
+        ? device.port
+        : SSH_DEFAULT_PORT;
   }
 
   return {

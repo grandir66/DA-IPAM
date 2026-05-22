@@ -253,15 +253,23 @@ interface BulkField<T> {
 }
 
 interface DiscoveryBulkForm {
+  // Campi su `hosts` (sempre applicabili)
   classification: BulkField<string>;
   device_manufacturer: BulkField<string | null>;
   ip_assignment: BulkField<string>;
-  custom_name: BulkField<string | null>;
   known_host: BulkField<0 | 1>;
   notes: BulkField<string | null>;
+  // Credenziale: viene aggiunta in `host_credentials` e propagata a network_devices/bindings
   credential_id: BulkField<number | null>;
   credential_protocol: BulkField<string>;
   credential_port: BulkField<number>;
+  // Campi su `network_devices` (applicati solo agli host già promossi a device)
+  device_type: BulkField<string>;
+  vendor: BulkField<string>;
+  scan_target: BulkField<string>;
+  // Campi NIS2 su `inventory_assets` (applicati solo agli host con asset linkato)
+  asset_categoria_nis2: BulkField<string>;
+  asset_criticita_nis2: BulkField<string>;
 }
 
 function emptyBulkForm(): DiscoveryBulkForm {
@@ -269,12 +277,16 @@ function emptyBulkForm(): DiscoveryBulkForm {
     classification: { enabled: false, value: "" },
     device_manufacturer: { enabled: false, value: null },
     ip_assignment: { enabled: false, value: "static" },
-    custom_name: { enabled: false, value: null },
     known_host: { enabled: false, value: 1 },
     notes: { enabled: false, value: null },
     credential_id: { enabled: false, value: null },
     credential_protocol: { enabled: false, value: "ssh" },
     credential_port: { enabled: false, value: 22 },
+    device_type: { enabled: false, value: "" },
+    vendor: { enabled: false, value: "" },
+    scan_target: { enabled: false, value: "" },
+    asset_categoria_nis2: { enabled: false, value: "" },
+    asset_criticita_nis2: { enabled: false, value: "" },
   };
 }
 
@@ -300,6 +312,10 @@ export default function DiscoveryPage() {
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkForm, setBulkForm] = useState<DiscoveryBulkForm>(emptyBulkForm);
+  // Bulk "Aggiorna selezionati" e "Crea asset NIS2"
+  const [bulkScanRunning, setBulkScanRunning] = useState(false);
+  const [bulkScanProgress, setBulkScanProgress] = useState<{ current: number; total: number; label: string } | null>(null);
+  const [bulkAssetRunning, setBulkAssetRunning] = useState(false);
 
   // ─── Add to devices (bulk promote host → device) ──────────
   const [addDevicesOpen, setAddDevicesOpen] = useState(false);
@@ -587,14 +603,108 @@ export default function DiscoveryPage() {
     }));
   }
 
+  /**
+   * Bulk "Aggiorna selezionati": cicla sui device promossi e per ciascuno esegue
+   * /query + (se vendor=windows|linux) /software-scan. Sequenziale per non
+   * sovraccaricare la rete cliente. Mostra progress incrementale via toast.
+   */
+  async function handleBulkUpdateAll() {
+    if (selectedIds.size === 0) return;
+    const targets = hosts.filter((h) => selectedIds.has(h.id) && h.device_id);
+    if (targets.length === 0) {
+      toast.error("Nessuno degli host selezionati è promosso a device. Usa 'Aggiungi a dispositivi' prima.");
+      return;
+    }
+    const skipped = selectedIds.size - targets.length;
+    if (skipped > 0) {
+      toast.info(`${skipped} host senza device linkato verranno saltati`);
+    }
+    setBulkScanRunning(true);
+    let ok = 0;
+    let err = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const h = targets[i];
+      setBulkScanProgress({ current: i + 1, total: targets.length, label: `${h.ip} — query` });
+      try {
+        const qr = await fetch(`/api/devices/${h.device_id}/query`, { method: "POST" });
+        const qd = (await qr.json()) as { id?: string; progress?: unknown; error?: string };
+        if (!qr.ok) {
+          err++;
+          continue;
+        }
+        if (qd.id) {
+          // polling fino a completion
+          await new Promise<void>((resolve) => {
+            const poll = setInterval(async () => {
+              try {
+                const pr = await fetch(`/api/scans/progress/${qd.id}`);
+                if (!pr.ok) return;
+                const pd = (await pr.json()) as { status: string };
+                if (pd.status === "completed" || pd.status === "failed") {
+                  clearInterval(poll);
+                  resolve();
+                }
+              } catch {
+                /* ignore */
+              }
+            }, 1500);
+          });
+        }
+        // Software scan se vendor=windows|linux
+        if (h.device_vendor === "windows" || h.device_vendor === "linux") {
+          setBulkScanProgress({ current: i + 1, total: targets.length, label: `${h.ip} — software` });
+          await fetch(`/api/devices/${h.device_id}/software-scan`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+          });
+        }
+        ok++;
+      } catch {
+        err++;
+      }
+    }
+    setBulkScanRunning(false);
+    setBulkScanProgress(null);
+    toast.success(`Aggiornamento completato: ${ok} OK${err > 0 ? `, ${err} errori` : ""}${skipped > 0 ? `, ${skipped} saltati` : ""}`);
+    await fetchData();
+  }
+
+  /**
+   * Bulk "Crea asset NIS2": chiama /api/inventory/bulk-from-hosts che usa
+   * ensureInventoryAssetForHost (idempotente, skip se asset esiste).
+   */
+  async function handleBulkCreateAssets() {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Creare/aggiornare asset NIS2 per ${selectedIds.size} host selezionati?`)) return;
+    setBulkAssetRunning(true);
+    try {
+      const r = await fetch("/api/inventory/bulk-from-hosts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host_ids: Array.from(selectedIds) }),
+      });
+      const data = (await r.json()) as { message?: string; error?: string };
+      if (r.ok) {
+        toast.success(data.message ?? "Asset NIS2 aggiornati");
+        await fetchData();
+        setSelectedIds(new Set());
+      } else {
+        toast.error(data.error ?? "Errore creazione asset");
+      }
+    } finally {
+      setBulkAssetRunning(false);
+    }
+  }
+
   async function handleBulkSave() {
     const payload: Record<string, unknown> = {
       host_ids: Array.from(selectedIds),
     };
 
     let hasField = false;
-    // Campi host standard
-    for (const key of ["classification", "device_manufacturer", "ip_assignment", "custom_name", "known_host", "notes"] as const) {
+    // Campi su `hosts`
+    for (const key of ["classification", "device_manufacturer", "ip_assignment", "known_host", "notes"] as const) {
       const field = bulkForm[key];
       if (field.enabled) {
         payload[key] = field.value;
@@ -607,6 +717,22 @@ export default function DiscoveryPage() {
       payload.credential_protocol = bulkForm.credential_protocol.value;
       payload.credential_port = bulkForm.credential_port.value;
       hasField = true;
+    }
+    // Campi su `network_devices` (applicati solo a host già promossi a device)
+    for (const key of ["device_type", "vendor", "scan_target"] as const) {
+      const field = bulkForm[key];
+      if (field.enabled && field.value) {
+        payload[key] = field.value;
+        hasField = true;
+      }
+    }
+    // Campi su `inventory_assets` (applicati solo a host con asset linkato)
+    for (const key of ["asset_categoria_nis2", "asset_criticita_nis2"] as const) {
+      const field = bulkForm[key];
+      if (field.enabled && field.value) {
+        payload[key] = field.value;
+        hasField = true;
+      }
     }
 
     if (!hasField) {
@@ -1167,6 +1293,30 @@ export default function DiscoveryPage() {
                 <PackagePlus className="h-3.5 w-3.5" />
                 Aggiungi a dispositivi
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={handleBulkUpdateAll}
+                disabled={bulkScanRunning}
+                title="Esegue query SNMP/ARP + inventario software sui device gia` promossi"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${bulkScanRunning ? "animate-spin" : ""}`} />
+                {bulkScanRunning && bulkScanProgress
+                  ? `${bulkScanProgress.current}/${bulkScanProgress.total} · ${bulkScanProgress.label}`
+                  : "Aggiorna selezionati"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={handleBulkCreateAssets}
+                disabled={bulkAssetRunning}
+                title="Crea/aggiorna asset NIS2 per gli host selezionati"
+              >
+                {bulkAssetRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Boxes className="h-3.5 w-3.5" />}
+                Crea asset NIS2
+              </Button>
               <Button size="sm" variant="ghost" className="gap-1" onClick={() => setSelectedIds(new Set())}>
                 <X className="h-3.5 w-3.5" />
                 Deseleziona
@@ -1281,20 +1431,6 @@ export default function DiscoveryPage() {
                 />
               </BulkFieldRow>
 
-              {/* Nome personalizzato */}
-              <BulkFieldRow
-                label="Nome personalizzato"
-                enabled={bulkForm.custom_name.enabled}
-                onToggle={(v) => updateBulkField("custom_name", { enabled: v })}
-              >
-                <Input
-                  value={bulkForm.custom_name.value ?? ""}
-                  onChange={(e) => updateBulkField("custom_name", { value: e.target.value || null })}
-                  placeholder="Nome da assegnare..."
-                  disabled={!bulkForm.custom_name.enabled}
-                />
-              </BulkFieldRow>
-
               {/* Tipo assegnazione IP */}
               <BulkFieldRow
                 label="Assegnazione IP"
@@ -1403,6 +1539,140 @@ export default function DiscoveryPage() {
                     </div>
                   </div>
                 </div>
+              </BulkFieldRow>
+
+              {/* ─── Campi sui device gestiti (network_devices) ─── */}
+              <div className="pt-3 border-t">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  Device gestiti (applicato solo se gia` promossi a device)
+                </p>
+              </div>
+
+              <BulkFieldRow
+                label="Tipologia device"
+                enabled={bulkForm.device_type.enabled}
+                onToggle={(v) => updateBulkField("device_type", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.device_type.value || "__empty__"}
+                  onValueChange={(v) => updateBulkField("device_type", { value: v === "__empty__" ? "" : v })}
+                  disabled={!bulkForm.device_type.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona tipologia..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Seleziona —</SelectItem>
+                    <SelectItem value="router">Router</SelectItem>
+                    <SelectItem value="switch">Switch</SelectItem>
+                    <SelectItem value="firewall">Firewall</SelectItem>
+                    <SelectItem value="hypervisor">Hypervisor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+
+              <BulkFieldRow
+                label="Vendor / Produttore"
+                enabled={bulkForm.vendor.enabled}
+                onToggle={(v) => updateBulkField("vendor", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.vendor.value || "__empty__"}
+                  onValueChange={(v) => updateBulkField("vendor", { value: v === "__empty__" ? "" : v })}
+                  disabled={!bulkForm.vendor.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona vendor..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Seleziona —</SelectItem>
+                    <SelectItem value="mikrotik">Mikrotik</SelectItem>
+                    <SelectItem value="ubiquiti">Ubiquiti</SelectItem>
+                    <SelectItem value="hp">HP</SelectItem>
+                    <SelectItem value="cisco">Cisco</SelectItem>
+                    <SelectItem value="omada">Omada</SelectItem>
+                    <SelectItem value="stormshield">Stormshield</SelectItem>
+                    <SelectItem value="proxmox">Proxmox</SelectItem>
+                    <SelectItem value="vmware">VMware</SelectItem>
+                    <SelectItem value="linux">Linux</SelectItem>
+                    <SelectItem value="windows">Windows</SelectItem>
+                    <SelectItem value="synology">Synology</SelectItem>
+                    <SelectItem value="qnap">QNAP</SelectItem>
+                    <SelectItem value="other">Altro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+
+              <BulkFieldRow
+                label="Target scan"
+                enabled={bulkForm.scan_target.enabled}
+                onToggle={(v) => updateBulkField("scan_target", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.scan_target.value || "__empty__"}
+                  onValueChange={(v) => updateBulkField("scan_target", { value: v === "__empty__" ? "" : v })}
+                  disabled={!bulkForm.scan_target.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona target..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Seleziona —</SelectItem>
+                    <SelectItem value="windows">Windows</SelectItem>
+                    <SelectItem value="linux">Linux</SelectItem>
+                    <SelectItem value="proxmox">Proxmox</SelectItem>
+                    <SelectItem value="vmware">VMware</SelectItem>
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+
+              {/* ─── Asset NIS2 (inventory_assets) ─── */}
+              <div className="pt-3 border-t">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  Asset NIS2 (applicato solo agli host con asset linkato)
+                </p>
+              </div>
+
+              <BulkFieldRow
+                label="Categoria NIS2"
+                enabled={bulkForm.asset_categoria_nis2.enabled}
+                onToggle={(v) => updateBulkField("asset_categoria_nis2", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.asset_categoria_nis2.value || "__empty__"}
+                  onValueChange={(v) => updateBulkField("asset_categoria_nis2", { value: v === "__empty__" ? "" : v })}
+                  disabled={!bulkForm.asset_categoria_nis2.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona categoria..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Seleziona —</SelectItem>
+                    <SelectItem value="server_dominio">Server di dominio</SelectItem>
+                    <SelectItem value="server_applicativo">Server applicativo</SelectItem>
+                    <SelectItem value="server_database">Server database</SelectItem>
+                    <SelectItem value="server_backup">Server backup</SelectItem>
+                    <SelectItem value="server_file">File server</SelectItem>
+                    <SelectItem value="server_email">Server email</SelectItem>
+                    <SelectItem value="endpoint_critico">Endpoint critico</SelectItem>
+                    <SelectItem value="apparato_di_rete">Apparato di rete</SelectItem>
+                    <SelectItem value="dispositivo_sicurezza">Dispositivo di sicurezza</SelectItem>
+                    <SelectItem value="altro">Altro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </BulkFieldRow>
+
+              <BulkFieldRow
+                label="Criticità NIS2"
+                enabled={bulkForm.asset_criticita_nis2.enabled}
+                onToggle={(v) => updateBulkField("asset_criticita_nis2", { enabled: v })}
+              >
+                <Select
+                  value={bulkForm.asset_criticita_nis2.value || "__empty__"}
+                  onValueChange={(v) => updateBulkField("asset_criticita_nis2", { value: v === "__empty__" ? "" : v })}
+                  disabled={!bulkForm.asset_criticita_nis2.enabled}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleziona criticità..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">— Seleziona —</SelectItem>
+                    <SelectItem value="critica">Critica</SelectItem>
+                    <SelectItem value="alta">Alta</SelectItem>
+                    <SelectItem value="media">Media</SelectItem>
+                    <SelectItem value="bassa">Bassa</SelectItem>
+                  </SelectContent>
+                </Select>
               </BulkFieldRow>
             </div>
           </DialogScrollableArea>

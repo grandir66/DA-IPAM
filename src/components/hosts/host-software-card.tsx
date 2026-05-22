@@ -204,7 +204,9 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [scanDialogOpen, setScanDialogOpen] = useState(false);
   const [scanForm, setScanForm] = useState({
-    credentialId: "",
+    // Per device: default "auto" (backend usa device_credential_bindings).
+    // Per host: vuoto, l'utente deve scegliere.
+    credentialId: target.kind === "device" ? "auto" : "",
     timeoutSec: 60,
   });
   const [running, setRunning] = useState<{
@@ -335,8 +337,10 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
   }, [running, refreshDetail, refreshCurrent, refreshHistory]);
 
   const handleStartScan = useCallback(async () => {
-    const credId = Number(scanForm.credentialId);
-    if (!Number.isFinite(credId) || credId <= 0) {
+    const credIdRaw = scanForm.credentialId.trim();
+    // Per target=device, credenziale opzionale: se vuota → backend usa device_credential_bindings
+    const credId = credIdRaw ? Number(credIdRaw) : 0;
+    if (target.kind === "host" && (!Number.isFinite(credId) || credId <= 0)) {
       toast.error("Seleziona una credenziale");
       return;
     }
@@ -344,10 +348,12 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
     setScanDialogOpen(false);
     setSubmitting(true);
     try {
+      const body: { timeoutMs: number; credentialId?: number } = { timeoutMs };
+      if (Number.isFinite(credId) && credId > 0) body.credentialId = credId;
       const r = await fetch(`${apiBase}/software-scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credentialId: credId, timeoutMs }),
+        body: JSON.stringify(body),
       });
       if (!r.ok) {
         const err = (await r.json().catch(() => null)) as { error?: string } | null;
@@ -373,6 +379,7 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
     }
   }, [
     apiBase,
+    target.kind,
     scanForm.credentialId,
     scanForm.timeoutSec,
     refreshCurrent,
@@ -414,8 +421,13 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
   const credentialOptions = osHint
     ? credentials.filter((c) => c.credential_type === osHint)
     : credentials;
+  // Su device il bottone resta cliccabile anche senza credenziali nel dropdown:
+  // il backend usera` device_credential_bindings (selezione automatica).
   const noCompatCredentials = credentialOptions.length === 0;
   const isRunning = running !== null || submitting;
+  const disableScanButton = target.kind === "device"
+    ? isRunning
+    : isRunning || noCompatCredentials;
 
   return (
     <>
@@ -450,7 +462,7 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
             <Button
               size="sm"
               onClick={() => setScanDialogOpen(true)}
-              disabled={isRunning || noCompatCredentials}
+              disabled={disableScanButton}
               className="gap-1.5"
             >
               <ScanSearch className="h-3.5 w-3.5" />
@@ -459,7 +471,7 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {noCompatCredentials && (
+          {noCompatCredentials && target.kind === "host" && (
             <p className="text-xs text-amber-600">
               Nessuna credenziale Windows o Linux configurata. Aggiungila da
               Impostazioni → Credenziali.
@@ -674,12 +686,16 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
           <DialogHeader>
             <DialogTitle>Scansiona software</DialogTitle>
             <DialogDescription>
-              Seleziona una credenziale Windows o Linux e avvia lo scan inventario.
+              {target.kind === "device"
+                ? "La credenziale del device verrà usata automaticamente. Cambia solo se vuoi forzare un'altra credenziale."
+                : "Seleziona una credenziale Windows o Linux e avvia lo scan inventario."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label className="text-xs">Credenziale</Label>
+              <Label className="text-xs">
+                Credenziale{target.kind === "device" ? " (opzionale)" : ""}
+              </Label>
               <Select
                 value={scanForm.credentialId}
                 onValueChange={(v) =>
@@ -687,9 +703,20 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Seleziona credenziale" />
+                  <SelectValue
+                    placeholder={
+                      target.kind === "device"
+                        ? "Auto (usa quella del device)"
+                        : "Seleziona credenziale"
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
+                  {target.kind === "device" && (
+                    <SelectItem value="auto">
+                      <span className="text-muted-foreground">Auto (usa quella linkata al device)</span>
+                    </SelectItem>
+                  )}
                   {credentialOptions.map((c) => {
                     const isWin = c.credential_type === "windows";
                     return (

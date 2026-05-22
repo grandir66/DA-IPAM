@@ -4453,6 +4453,84 @@ export function getSoftwareScansForDevice(
     .all(deviceId, safeLimit, safeOffset) as SoftwareScan[];
 }
 
+/**
+ * Trova la credenziale "migliore" linkata a un device per uno specifico protocollo.
+ * Priorità (DESC):
+ *  1. test_status='success'
+ *  2. auto_detected=1
+ *  3. sort_order ASC (più bassa = preferita)
+ *  4. id più recente
+ * Ritorna null se nessuna binding presente per quel device+protocollo.
+ */
+export function getBestCredentialBindingForDevice(
+  deviceId: number,
+  protocolType: "winrm" | "ssh" | "snmp" | "api"
+): { credential_id: number; port: number; test_status: string; auto_detected: number } | null {
+  const row = db()
+    .prepare(
+      `SELECT credential_id, port, test_status, auto_detected
+         FROM device_credential_bindings
+        WHERE device_id = ? AND protocol_type = ? AND credential_id IS NOT NULL
+        ORDER BY (test_status = 'success') DESC,
+                 auto_detected DESC,
+                 sort_order ASC,
+                 id DESC
+        LIMIT 1`
+    )
+    .get(deviceId, protocolType) as
+    | { credential_id: number; port: number; test_status: string; auto_detected: number }
+    | undefined;
+  return row ?? null;
+}
+
+/**
+ * Aggiorna campi di `network_devices` legati a un host via IP (network_devices.host = hosts.ip).
+ * Ritorna il numero di righe modificate. Usato dal bulk-update di /discovery.
+ * Whitelist dei campi accettati per sicurezza.
+ */
+const ALLOWED_NETWORK_DEVICE_BULK_FIELDS = new Set([
+  "device_type", "vendor", "vendor_subtype", "scan_target", "classification",
+]);
+
+export function bulkUpdateNetworkDeviceByHostId(
+  hostId: number,
+  fields: Record<string, unknown>
+): number {
+  const entries = Object.entries(fields).filter(([k]) => ALLOWED_NETWORK_DEVICE_BULK_FIELDS.has(k));
+  if (entries.length === 0) return 0;
+  const sets = entries.map(([k]) => `${k} = ?`).join(", ");
+  const vals = entries.map(([, v]) => v);
+  const r = db()
+    .prepare(
+      `UPDATE network_devices SET ${sets}, updated_at = datetime('now')
+        WHERE host IN (SELECT ip FROM hosts WHERE id = ?)`
+    )
+    .run(...vals, hostId);
+  return Number(r.changes);
+}
+
+const ALLOWED_INVENTORY_ASSET_BULK_FIELDS = new Set([
+  "categoria_nis2", "criticita_nis2", "categoria", "stato",
+  "business_owner_id", "technical_owner_id", "location_id",
+]);
+
+export function bulkUpdateInventoryAssetByHostId(
+  hostId: number,
+  fields: Record<string, unknown>
+): number {
+  const entries = Object.entries(fields).filter(([k]) => ALLOWED_INVENTORY_ASSET_BULK_FIELDS.has(k));
+  if (entries.length === 0) return 0;
+  const sets = entries.map(([k]) => `${k} = ?`).join(", ");
+  const vals = entries.map(([, v]) => v);
+  const r = db()
+    .prepare(
+      `UPDATE inventory_assets SET ${sets}, updated_at = datetime('now')
+        WHERE host_id = ?`
+    )
+    .run(...vals, hostId);
+  return Number(r.changes);
+}
+
 export function getLatestOkSoftwareScanForDevice(
   deviceId: number
 ): SoftwareScan | undefined {

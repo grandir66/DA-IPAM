@@ -44,6 +44,7 @@ import {
 } from "@/components/shared/credential-assignment-fields";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
+import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
 import {
   inferProductProfileFromLegacy,
   PRODUCT_PROFILE_LABELS,
@@ -2600,6 +2601,11 @@ function DeviceDetailPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Inventario software (solo macchine Windows/Linux con credenziali) */}
+      {device && (device.vendor === "windows" || device.vendor === "linux") && (
+        <DeviceSoftwareCard deviceId={device.id} />
       )}
 
       {/* Modale progresso scansione device */}

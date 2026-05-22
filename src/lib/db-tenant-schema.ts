@@ -727,7 +727,8 @@ CREATE TABLE IF NOT EXISTS tenant_settings (
 -- ───────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS software_scans (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
+  device_id INTEGER REFERENCES network_devices(id) ON DELETE CASCADE,
   started_at TEXT NOT NULL,
   finished_at TEXT,
   status TEXT NOT NULL CHECK(status IN ('running','ok','error','timeout','cancelled')),
@@ -739,7 +740,8 @@ CREATE TABLE IF NOT EXISTS software_scans (
   triggered_by_user_id INTEGER,
   triggered_by TEXT NOT NULL DEFAULT 'manual',
   error_message TEXT,
-  credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL
+  credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+  CHECK ((host_id IS NOT NULL AND device_id IS NULL) OR (host_id IS NULL AND device_id IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS software_inventory (
@@ -913,6 +915,7 @@ CREATE INDEX IF NOT EXISTS idx_vuln_scan_runs_scanner ON vuln_scan_runs(scanner_
 
 -- Software Inventory
 CREATE INDEX IF NOT EXISTS idx_software_scans_host ON software_scans(host_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_software_scans_device ON software_scans(device_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_software_scans_status ON software_scans(status);
 CREATE INDEX IF NOT EXISTS idx_software_inventory_scan ON software_inventory(scan_id);
 CREATE INDEX IF NOT EXISTS idx_software_inventory_name_version ON software_inventory(name, version);

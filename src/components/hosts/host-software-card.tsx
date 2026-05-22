@@ -1,11 +1,15 @@
 "use client";
 
 /**
- * Tab "Software" sulla pagina dettaglio host. Card auto-contenuta:
+ * Card "Software" sulla pagina dettaglio host o device.
  *   - header con stato ultimo scan
  *   - bottone "Scansiona ora" → dialog (credenziale + timeout)
  *   - sub-tabs: Applicazioni / Storico / Log
  *   - polling /api/software-scans/{id}?withLogs=true durante un run
+ *
+ * Wrapper esportati:
+ *   - HostSoftwareCard({ hostId })   → target /api/hosts/[id]/...
+ *   - DeviceSoftwareCard({ deviceId }) → target /api/devices/[id]/...
  *
  * Stringhe italiane. Nessun `any`. Cleanup intervalli con useRef + useEffect.
  */
@@ -49,8 +53,19 @@ import type {
   SoftwareScanLog,
 } from "@/types";
 
-interface Props {
+/** Target del componente: host (entry di rete) o device (managed network_device). */
+type CardTarget = { kind: "host"; id: number } | { kind: "device"; id: number };
+
+interface InternalProps {
+  target: CardTarget;
+}
+
+interface HostProps {
   hostId: number;
+}
+
+interface DeviceProps {
+  deviceId: number;
 }
 
 interface CurrentResponse {
@@ -131,7 +146,7 @@ function csvEscape(v: string | number | null | undefined): string {
   return s;
 }
 
-function exportInventoryCsv(host: number, scanId: number, rows: SoftwareInventoryRow[]) {
+function exportInventoryCsv(label: string, scanId: number, rows: SoftwareInventoryRow[]) {
   const header = [
     "name",
     "version",
@@ -162,14 +177,19 @@ function exportInventoryCsv(host: number, scanId: number, rows: SoftwareInventor
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `host-${host}-software-scan-${scanId}.csv`;
+  a.download = `${label}-software-scan-${scanId}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
-export function HostSoftwareCard({ hostId }: Props) {
+function SoftwareScanCard({ target }: InternalProps) {
+  const apiBase =
+    target.kind === "host"
+      ? `/api/hosts/${target.id}`
+      : `/api/devices/${target.id}`;
+  const csvLabel = target.kind === "host" ? `host-${target.id}` : `device-${target.id}`;
   const [current, setCurrent] = useState<CurrentResponse | null>(null);
   const [history, setHistory] = useState<SoftwareScan[]>([]);
   const [selectedScanId, setSelectedScanId] = useState<number | null>(null);
@@ -191,7 +211,7 @@ export function HostSoftwareCard({ hostId }: Props) {
 
   const refreshCurrent = useCallback(async () => {
     try {
-      const r = await fetch(`/api/hosts/${hostId}/software-current`);
+      const r = await fetch(`${apiBase}/software-current`);
       if (!r.ok) {
         setCurrent({ scan: null, inventory: [] });
         return;
@@ -203,11 +223,11 @@ export function HostSoftwareCard({ hostId }: Props) {
     } finally {
       setLoadingCurrent(false);
     }
-  }, [hostId]);
+  }, [apiBase]);
 
   const refreshHistory = useCallback(async () => {
     try {
-      const r = await fetch(`/api/hosts/${hostId}/software-scans?limit=50`);
+      const r = await fetch(`${apiBase}/software-scans?limit=50`);
       if (!r.ok) {
         setHistory([]);
         return;
@@ -217,7 +237,7 @@ export function HostSoftwareCard({ hostId }: Props) {
     } catch {
       setHistory([]);
     }
-  }, [hostId]);
+  }, [apiBase]);
 
   const refreshDetail = useCallback(
     async (scanId: number, withLogs: boolean) => {
@@ -318,7 +338,7 @@ export function HostSoftwareCard({ hostId }: Props) {
     setScanDialogOpen(false);
     setSubmitting(true);
     try {
-      const r = await fetch(`/api/hosts/${hostId}/software-scan`, {
+      const r = await fetch(`${apiBase}/software-scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ credentialId: credId, timeoutMs }),
@@ -346,7 +366,7 @@ export function HostSoftwareCard({ hostId }: Props) {
       setSubmitting(false);
     }
   }, [
-    hostId,
+    apiBase,
     scanForm.credentialId,
     scanForm.timeoutSec,
     refreshCurrent,
@@ -491,7 +511,7 @@ export function HostSoftwareCard({ hostId }: Props) {
                       variant="outline"
                       size="sm"
                       onClick={() =>
-                        exportInventoryCsv(hostId, detail.scan.id, filteredInventory)
+                        exportInventoryCsv(csvLabel, detail.scan.id, filteredInventory)
                       }
                       className="gap-1.5 shrink-0"
                     >
@@ -694,4 +714,14 @@ export function HostSoftwareCard({ hostId }: Props) {
       </Dialog>
     </>
   );
+}
+
+/** Wrapper: card software per pagina dettaglio host. */
+export function HostSoftwareCard({ hostId }: HostProps) {
+  return <SoftwareScanCard target={{ kind: "host", id: hostId }} />;
+}
+
+/** Wrapper: card software per pagina dettaglio device (network_devices). */
+export function DeviceSoftwareCard({ deviceId }: DeviceProps) {
+  return <SoftwareScanCard target={{ kind: "device", id: deviceId }} />;
 }

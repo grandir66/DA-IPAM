@@ -41,6 +41,7 @@ import type {
   ScheduledJobInput,
   CredentialInput,
   SoftwareScan,
+  SoftwareScanTarget,
   SoftwareScanStatus,
   SoftwareOsFamily,
   SoftwareProbe,
@@ -319,6 +320,32 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione NIS2 Fase 1 fallita:`, e);
+  }
+
+  // Migrazione runtime: software_scans supporta sia host_id sia device_id (mutuamente esclusivi).
+  // SQLite non rilassa NOT NULL via ALTER, quindi se rilevato lo schema vecchio si droppa e ricrea.
+  // Sicuro perché la feature è stata appena introdotta: in caso di righe presenti si registra warning e si salta.
+  try {
+    const cols = newDb.prepare("PRAGMA table_info(software_scans)").all() as Array<{ name: string; notnull: number }>;
+    const hasDeviceId = cols.some((c) => c.name === "device_id");
+    const hostIdNotNull = cols.find((c) => c.name === "host_id")?.notnull === 1;
+    if (cols.length > 0 && (!hasDeviceId || hostIdNotNull)) {
+      const count = (newDb.prepare("SELECT COUNT(*) AS n FROM software_scans").get() as { n: number }).n;
+      if (count === 0) {
+        newDb.pragma("foreign_keys = OFF");
+        newDb.exec("DROP TABLE IF EXISTS software_scan_logs");
+        newDb.exec("DROP TABLE IF EXISTS software_inventory");
+        newDb.exec("DROP TABLE IF EXISTS software_scans");
+        newDb.exec(TENANT_SCHEMA_SQL);
+        newDb.exec(TENANT_INDEXES_SQL);
+        newDb.pragma("foreign_keys = ON");
+        console.info(`[db-tenant] ${tenantCode}: software_scans schema rigenerato (host_id nullable + device_id)`);
+      } else {
+        console.warn(`[db-tenant] ${tenantCode}: software_scans ha ${count} righe, schema NON aggiornato (richiede migrazione dati manuale)`);
+      }
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione software_scans device_id fallita:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -4152,7 +4179,7 @@ export function setSoftwareScanRetention(value: number): number {
 }
 
 export interface CreateSoftwareScanInput {
-  host_id: number;
+  target: SoftwareScanTarget;
   os_family: SoftwareOsFamily;
   probe: SoftwareProbe;
   timeout_ms: number;
@@ -4162,14 +4189,17 @@ export interface CreateSoftwareScanInput {
 }
 
 export function createSoftwareScan(input: CreateSoftwareScanInput): number {
+  const hostId = input.target.kind === "host" ? input.target.hostId : null;
+  const deviceId = input.target.kind === "device" ? input.target.deviceId : null;
   const stmt = db().prepare(
     `INSERT INTO software_scans
-       (host_id, started_at, status, os_family, probe, timeout_ms,
+       (host_id, device_id, started_at, status, os_family, probe, timeout_ms,
         triggered_by, triggered_by_user_id, credential_id)
-     VALUES (?, datetime('now'), 'running', ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, datetime('now'), 'running', ?, ?, ?, ?, ?, ?)`
   );
   const info = stmt.run(
-    input.host_id,
+    hostId,
+    deviceId,
     input.os_family,
     input.probe,
     input.timeout_ms,
@@ -4284,6 +4314,36 @@ export function cleanupOldSoftwareScansForHost(
   return Number(info.changes);
 }
 
+export function cleanupOldSoftwareScansForDevice(
+  deviceId: number,
+  keep: number
+): number {
+  if (!Number.isFinite(keep) || keep < 1) return 0;
+  const info = db()
+    .prepare(
+      `DELETE FROM software_scans
+        WHERE device_id = ?
+          AND status != 'running'
+          AND id NOT IN (
+            SELECT id FROM software_scans
+             WHERE device_id = ? AND status != 'running'
+             ORDER BY started_at DESC
+             LIMIT ?
+          )`
+    )
+    .run(deviceId, deviceId, keep);
+  return Number(info.changes);
+}
+
+export function cleanupOldSoftwareScansForTarget(
+  target: SoftwareScanTarget,
+  keep: number
+): number {
+  return target.kind === "host"
+    ? cleanupOldSoftwareScansForHost(target.hostId, keep)
+    : cleanupOldSoftwareScansForDevice(target.deviceId, keep);
+}
+
 export function getSoftwareScanById(scanId: number): SoftwareScan | undefined {
   return db()
     .prepare("SELECT * FROM software_scans WHERE id = ?")
@@ -4345,4 +4405,34 @@ export function getLatestOkSoftwareScanForHost(
         LIMIT 1`
     )
     .get(hostId) as SoftwareScan | undefined;
+}
+
+export function getSoftwareScansForDevice(
+  deviceId: number,
+  limit: number = 20,
+  offset: number = 0
+): SoftwareScan[] {
+  const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), 200);
+  const safeOffset = Math.max(0, Math.trunc(offset));
+  return db()
+    .prepare(
+      `SELECT * FROM software_scans
+        WHERE device_id = ?
+        ORDER BY started_at DESC
+        LIMIT ? OFFSET ?`
+    )
+    .all(deviceId, safeLimit, safeOffset) as SoftwareScan[];
+}
+
+export function getLatestOkSoftwareScanForDevice(
+  deviceId: number
+): SoftwareScan | undefined {
+  return db()
+    .prepare(
+      `SELECT * FROM software_scans
+        WHERE device_id = ? AND status = 'ok'
+        ORDER BY started_at DESC
+        LIMIT 1`
+    )
+    .get(deviceId) as SoftwareScan | undefined;
 }

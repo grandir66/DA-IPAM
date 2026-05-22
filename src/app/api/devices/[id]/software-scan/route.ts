@@ -1,12 +1,15 @@
 /**
- * POST /api/hosts/[id]/software-scan
+ * POST /api/devices/[id]/software-scan
  *
- * Avvia uno scan inventario software per l'host. Body:
- *   { credentialId: number, timeoutMs?: number, port?: number, realm?: string }
+ * Avvia uno scan inventario software per un network_device gestito.
+ * Body opzionale:
+ *   { credentialId?: number, timeoutMs?: number, port?: number, realm?: string }
+ *
+ * Se `credentialId` non è specificato, viene usata la credenziale linkata al
+ * device (`network_devices.credential_id`). Il device deve avere
+ * `vendor IN ('windows','linux')`, altrimenti l'endpoint risponde 400.
  *
  * Esecuzione INLINE (oggi): la response arriva quando il probe ha finito.
- * In futuro l'endpoint potrà passare a coda asincrona senza cambiare contratto
- * (ritorna sempre `{ scanId, status, appsCount, errorMessage? }`).
  */
 
 import { NextResponse } from "next/server";
@@ -17,7 +20,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { runSoftwareScan } from "@/lib/probes/software-runner";
 
 const Body = z.object({
-  credentialId: z.number().int().positive(),
+  credentialId: z.number().int().positive().optional(),
   timeoutMs: z.number().int().positive().max(600_000).optional(),
   port: z.number().int().min(1).max(65535).optional(),
   realm: z.string().min(1).max(255).optional(),
@@ -32,19 +35,22 @@ export async function POST(
     if (isAuthError(adminCheck)) return adminCheck;
 
     const { id } = await params;
-    const hostId = Number(id);
-    if (!Number.isFinite(hostId) || hostId <= 0) {
-      return NextResponse.json({ error: "id host non valido" }, { status: 400 });
+    const deviceId = Number(id);
+    if (!Number.isFinite(deviceId) || deviceId <= 0) {
+      return NextResponse.json({ error: "id device non valido" }, { status: 400 });
     }
 
-    let body: unknown = null;
-    try {
-      body = await request.json();
-    } catch {
-      return NextResponse.json(
-        { error: "Body non valido (JSON atteso)" },
-        { status: 400 }
-      );
+    let body: unknown = {};
+    if (request.headers.get("content-length") !== "0") {
+      try {
+        const raw = await request.text();
+        if (raw.length > 0) body = JSON.parse(raw);
+      } catch {
+        return NextResponse.json(
+          { error: "Body non valido (JSON atteso)" },
+          { status: 400 }
+        );
+      }
     }
     const parsed = Body.safeParse(body);
     if (!parsed.success) {
@@ -59,7 +65,7 @@ export async function POST(
 
     try {
       const result = await runSoftwareScan({
-        target: { kind: "host", hostId },
+        target: { kind: "device", deviceId },
         credentialId: parsed.data.credentialId,
         timeoutMs: parsed.data.timeoutMs,
         port: parsed.data.port,
@@ -70,7 +76,7 @@ export async function POST(
       return NextResponse.json(result);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      console.error("Errore software scan:", msg);
+      console.error("Errore software scan device:", msg);
       return NextResponse.json({ error: msg }, { status: 500 });
     }
   });

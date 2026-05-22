@@ -8,15 +8,21 @@
  * Multi-tenancy: il chiamante deve essere dentro `withTenant(tenantCode, ...)`
  * (es. via `withTenantFromSession()`). Il runner non sa nulla del tenant code.
  *
- * Detection OS: automatica da `credentials.credential_type` ('windows' | 'linux').
- * Mismatch → error con messaggio chiaro all'utente.
+ * Target di scan: host (entry di rete in `hosts`) o device (`network_devices`).
+ * Per device la credenziale di default è quella linkata (device.credential_id).
+ *
+ * Detection OS:
+ *   - host: da `credentials.credential_type` ('windows' | 'linux')
+ *   - device: da `network_devices.vendor` ('windows' | 'linux') — gli appliance
+ *     di rete (router/switch/firewall/hypervisor) sono rifiutati con errore.
  */
 
 import {
-  cleanupOldSoftwareScansForHost,
+  cleanupOldSoftwareScansForTarget,
   createSoftwareScan,
   getCredentialById,
   getHostById,
+  getNetworkDeviceById,
   getSoftwareScanRetention,
   insertSoftwareInventoryBulk,
   insertSoftwareScanLog,
@@ -29,6 +35,7 @@ import type {
   SoftwareOsFamily,
   SoftwarePackage,
   SoftwareProbe,
+  SoftwareScanTarget,
   SoftwareScanTrigger,
 } from "@/types";
 
@@ -45,12 +52,17 @@ const WINRM_DEFAULT_PORT = 5986;
 const SSH_DEFAULT_PORT = 22;
 
 export interface SoftwareScanOptions {
-  hostId: number;
-  credentialId: number;
+  /** Target di scan: host (entry di rete) o device (managed network_device). */
+  target: SoftwareScanTarget;
+  /**
+   * ID credenziale. Per `host` è obbligatorio. Per `device` se omesso si usa
+   * la credenziale linkata al device (`network_devices.credential_id`).
+   */
+  credentialId?: number;
   timeoutMs?: number;
   triggeredByUserId?: number | null;
   triggeredBy?: SoftwareScanTrigger;
-  /** Override porta WinRM (default 5986). Ignorato per Linux/SSH. */
+  /** Override porta WinRM/SSH. Se omesso usa device.port o default. */
   port?: number;
   /** Override realm AD per Kerberos. Ignorato per Linux/SSH. */
   realm?: string;
@@ -92,6 +104,119 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   });
 }
 
+/** Tutto ciò che serve per eseguire il probe, risolto da host o device. */
+interface ResolvedTarget {
+  ip: string;
+  label: string;
+  osFamily: SoftwareOsFamily;
+  initialProbe: SoftwareProbe;
+  credentialId: number;
+  defaultPort: number;
+  identification: Record<string, unknown>;
+}
+
+function resolveTarget(opts: SoftwareScanOptions): ResolvedTarget {
+  if (opts.target.kind === "host") {
+    const host = getHostById(opts.target.hostId);
+    if (!host) {
+      throw new Error(`Host ${opts.target.hostId} non trovato`);
+    }
+    if (!opts.credentialId) {
+      throw new Error("credentialId obbligatorio per scan su host");
+    }
+    const cred = getCredentialById(opts.credentialId);
+    if (!cred) {
+      throw new Error(`Credenziale ${opts.credentialId} non trovata`);
+    }
+    const credType = String(cred.credential_type || "").toLowerCase();
+    let osFamily: SoftwareOsFamily;
+    let initialProbe: SoftwareProbe;
+    if (credType === "windows") {
+      osFamily = "windows";
+      initialProbe = "winrm";
+    } else if (credType === "linux") {
+      osFamily = "linux";
+      initialProbe = "ssh-mixed";
+    } else {
+      throw new Error(
+        `Tipo credenziale non supportato per software scan: '${cred.credential_type}'. Usa una credenziale 'windows' o 'linux'.`
+      );
+    }
+    return {
+      ip: host.ip,
+      label: host.hostname ?? host.custom_name ?? host.ip,
+      osFamily,
+      initialProbe,
+      credentialId: opts.credentialId,
+      defaultPort: osFamily === "windows" ? WINRM_DEFAULT_PORT : SSH_DEFAULT_PORT,
+      identification: {
+        target_kind: "host",
+        host_id: opts.target.hostId,
+        host_ip: host.ip,
+        host_hostname: host.hostname ?? null,
+      },
+    };
+  }
+
+  // device
+  const device = getNetworkDeviceById(opts.target.deviceId);
+  if (!device) {
+    throw new Error(`Device ${opts.target.deviceId} non trovato`);
+  }
+
+  let osFamily: SoftwareOsFamily;
+  let initialProbe: SoftwareProbe;
+  if (device.vendor === "windows") {
+    osFamily = "windows";
+    initialProbe = "winrm";
+  } else if (device.vendor === "linux") {
+    osFamily = "linux";
+    initialProbe = "ssh-mixed";
+  } else {
+    throw new Error(
+      `Device '${device.name}' ha vendor '${device.vendor}': software inventory supporta solo vendor 'windows' o 'linux'. Per appliance di rete usare gli scan dedicati.`
+    );
+  }
+
+  const credentialId = opts.credentialId ?? device.credential_id ?? null;
+  if (!credentialId) {
+    throw new Error(
+      `Device '${device.name}' non ha credenziali linkate. Imposta una credenziale sul device o passa credentialId esplicito.`
+    );
+  }
+  const cred = getCredentialById(credentialId);
+  if (!cred) {
+    throw new Error(`Credenziale ${credentialId} non trovata`);
+  }
+
+  // Porta default: ottieni dal device se valida per il protocollo, altrimenti default standard
+  let defaultPort: number;
+  if (osFamily === "windows") {
+    defaultPort = device.port && (device.port === 5985 || device.port === 5986)
+      ? device.port
+      : WINRM_DEFAULT_PORT;
+  } else {
+    defaultPort = device.port && device.port > 0 ? device.port : SSH_DEFAULT_PORT;
+  }
+
+  return {
+    ip: device.host,
+    label: device.name || device.host,
+    osFamily,
+    initialProbe,
+    credentialId,
+    defaultPort,
+    identification: {
+      target_kind: "device",
+      device_id: device.id,
+      device_name: device.name,
+      device_host: device.host,
+      device_vendor: device.vendor,
+      device_protocol: device.protocol,
+    },
+  };
+}
+
 /**
  * Esegue uno scan applicativo end-to-end.
  *
@@ -109,50 +234,31 @@ export async function runSoftwareScan(
       : DEFAULT_TIMEOUT_MS;
   const triggeredBy = opts.triggeredBy ?? "manual";
 
-  // ── 1. Risolvi host + credential prima di creare lo scan ───────────────
-  const host = getHostById(opts.hostId);
-  if (!host) {
-    throw new Error(`Host ${opts.hostId} non trovato`);
-  }
-  const cred = getCredentialById(opts.credentialId);
+  // ── 1. Risolvi target + credential prima di creare lo scan ─────────────
+  const resolved = resolveTarget(opts);
+  const cred = getCredentialById(resolved.credentialId);
   if (!cred) {
-    throw new Error(`Credenziale ${opts.credentialId} non trovata`);
-  }
-
-  const credType = String(cred.credential_type || "").toLowerCase();
-  let osFamily: SoftwareOsFamily;
-  let probe: SoftwareProbe;
-  if (credType === "windows") {
-    osFamily = "windows";
-    probe = "winrm";
-  } else if (credType === "linux") {
-    osFamily = "linux";
-    probe = "ssh-mixed";
-  } else {
-    throw new Error(
-      `Tipo credenziale non supportato per software scan: '${cred.credential_type}'. Usa una credenziale 'windows' o 'linux'.`
-    );
+    // Difensivo: già verificato in resolveTarget, ma ricontroliamo dopo l'INSERT
+    throw new Error(`Credenziale ${resolved.credentialId} non trovata`);
   }
 
   // ── 2. Crea record scan ────────────────────────────────────────────────
   const scanId = createSoftwareScan({
-    host_id: opts.hostId,
-    os_family: osFamily,
-    probe,
+    target: opts.target,
+    os_family: resolved.osFamily,
+    probe: resolved.initialProbe,
     timeout_ms: timeoutMs,
     triggered_by: triggeredBy,
     triggered_by_user_id: opts.triggeredByUserId ?? null,
-    credential_id: opts.credentialId,
+    credential_id: resolved.credentialId,
   });
 
   insertSoftwareScanLog(scanId, "info", "init", "Scan creato", {
-    host_id: opts.hostId,
-    host_ip: host.ip,
-    host_hostname: host.hostname ?? null,
-    credential_id: opts.credentialId,
-    credential_type: credType,
-    os_family: osFamily,
-    probe,
+    ...resolved.identification,
+    credential_id: resolved.credentialId,
+    credential_type: cred.credential_type,
+    os_family: resolved.osFamily,
+    probe: resolved.initialProbe,
     timeout_ms: timeoutMs,
     triggered_by: triggeredBy,
   });
@@ -161,36 +267,36 @@ export async function runSoftwareScan(
   let packages: SoftwarePackage[] = [];
   let finalStatus: "ok" | "error" | "timeout" = "ok";
   let errorMessage: string | null = null;
-  let resolvedProbe: SoftwareProbe = probe;
+  let resolvedProbe: SoftwareProbe = resolved.initialProbe;
 
   try {
-    if (osFamily === "windows") {
-      const username = cred.encrypted_username
-        ? safeDecrypt(cred.encrypted_username)
-        : null;
-      const password = cred.encrypted_password
-        ? safeDecrypt(cred.encrypted_password)
-        : null;
-      if (!username || !password) {
-        throw new Error(
-          "Credenziale Windows priva di username o password (decifrazione fallita o campo vuoto)"
-        );
-      }
+    const username = cred.encrypted_username
+      ? safeDecrypt(cred.encrypted_username)
+      : null;
+    const password = cred.encrypted_password
+      ? safeDecrypt(cred.encrypted_password)
+      : null;
+    if (!username || !password) {
+      throw new Error(
+        `Credenziale ${resolved.osFamily} priva di username o password (decifrazione fallita o campo vuoto)`
+      );
+    }
 
-      const port =
-        opts.port && Number.isFinite(opts.port) && opts.port > 0
-          ? Math.trunc(opts.port)
-          : WINRM_DEFAULT_PORT;
+    const port =
+      opts.port && Number.isFinite(opts.port) && opts.port > 0
+        ? Math.trunc(opts.port)
+        : resolved.defaultPort;
 
+    if (resolved.osFamily === "windows") {
       insertSoftwareScanLog(scanId, "info", "connect", "Avvio probe WinRM", {
-        host: host.ip,
+        host: resolved.ip,
         port,
         username,
       });
 
       packages = await withTimeout(
         runWindowsSoftwareProbe({
-          host: host.ip,
+          host: resolved.ip,
           port,
           username,
           password,
@@ -200,26 +306,8 @@ export async function runSoftwareScan(
         "WinRM software probe"
       );
     } else {
-      // Linux via SSH (paramiko bridge)
-      const username = cred.encrypted_username
-        ? safeDecrypt(cred.encrypted_username)
-        : null;
-      const password = cred.encrypted_password
-        ? safeDecrypt(cred.encrypted_password)
-        : null;
-      if (!username || !password) {
-        throw new Error(
-          "Credenziale Linux priva di username o password (decifrazione fallita o campo vuoto)"
-        );
-      }
-
-      const port =
-        opts.port && Number.isFinite(opts.port) && opts.port > 0
-          ? Math.trunc(opts.port)
-          : SSH_DEFAULT_PORT;
-
       insertSoftwareScanLog(scanId, "info", "connect", "Avvio connessione SSH", {
-        host: host.ip,
+        host: resolved.ip,
         port,
         username,
       });
@@ -227,7 +315,7 @@ export async function runSoftwareScan(
       const timeoutSec = Math.max(5, Math.ceil(timeoutMs / 1000));
       const linuxResult = await withTimeout(
         runLinuxSoftwareScan({
-          host: host.ip,
+          host: resolved.ip,
           port,
           username,
           password,
@@ -349,7 +437,7 @@ export async function runSoftwareScan(
   // ── 6. Cleanup retention (ON DELETE CASCADE pulisce inventory + logs) ──
   try {
     const keep = getSoftwareScanRetention();
-    const deleted = cleanupOldSoftwareScansForHost(opts.hostId, keep);
+    const deleted = cleanupOldSoftwareScansForTarget(opts.target, keep);
     if (deleted > 0) {
       insertSoftwareScanLog(
         scanId,

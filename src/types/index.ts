@@ -953,9 +953,18 @@ export interface SoftwarePackage {
   size_bytes: number | null;
 }
 
+/**
+ * Target di uno scan software: o un host (entry di rete in `hosts`) o un device gestito (`network_devices`).
+ * Mutuamente esclusivi a livello DB (CHECK constraint).
+ */
+export type SoftwareScanTarget =
+  | { kind: "host"; hostId: number }
+  | { kind: "device"; deviceId: number };
+
 export interface SoftwareScan {
   id: number;
-  host_id: number;
+  host_id: number | null;
+  device_id: number | null;
   started_at: string;
   finished_at: string | null;
   status: SoftwareScanStatus;

@@ -253,7 +253,7 @@ export default function ObjectDetailPage() {
             </div>
             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
               <span className="inline-flex items-center gap-1.5">
-                <Boxes className="h-3.5 w-3.5" title="Rilevato in Discovery" />
+                <Boxes className="h-3.5 w-3.5" aria-label="Rilevato in Discovery" />
                 <span>Discovery</span>
               </span>
               <Wrench className={`h-3.5 w-3.5 ${isManaged ? "text-blue-600" : "text-muted-foreground/30"}`} />

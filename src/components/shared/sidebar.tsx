@@ -224,20 +224,13 @@ export function Sidebar() {
           )}
         </div>
 
-        {/* Dispositivi */}
-        <Link
-          href="/devices"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname === "/devices" || (pathname.startsWith("/devices/") && !networkSubItems.some((n) => pathname.startsWith(n.href)))
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <Cable className="h-4 w-4" />
-          Dispositivi
-        </Link>
+        {/*
+          Voce "Dispositivi" nascosta dalla sidebar (v0.2.468):
+          il punto di entrata unico per host/device è ora "Discovery". La pagina
+          /devices/[id] resta raggiungibile cliccando dal Discovery sugli host
+          promossi a network_device (link "ip" punta a /devices/[id] se
+          device_id presente, altrimenti /hosts/[id]).
+        */}
 
         {/* Inventario collapsible */}
         <div className="pt-1">

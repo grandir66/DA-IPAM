@@ -737,12 +737,16 @@ export default function DiscoveryPage() {
 
   function renderCell(h: EnrichedHost, colId: string) {
     switch (colId) {
-      case "ip":
+      case "ip": {
+        // Se l'host è promosso a network_device, vai direttamente al dettaglio device
+        // (pagina con credenziali, scansioni, software inventory). Altrimenti pagina host.
+        const target = h.device_id ? `/devices/${h.device_id}` : `/hosts/${h.id}`;
         return (
-          <Link href={`/hosts/${h.id}`} className="font-mono text-sm text-primary hover:underline inline-flex items-center gap-1">
+          <Link href={target} className="font-mono text-sm text-primary hover:underline inline-flex items-center gap-1">
             {h.ip} <ExternalLink className="h-3 w-3 opacity-50" />
           </Link>
         );
+      }
       case "hostname":
         return <span className="font-medium truncate max-w-[200px] block" title={displayName(h)}>{displayName(h) || "—"}</span>;
       case "status":

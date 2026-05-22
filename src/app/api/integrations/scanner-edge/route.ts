@@ -22,6 +22,11 @@ const PostSchema = z.object({
   name: z.string().min(1).max(120).default("Scanner-Edge"),
   base_url: z.string().min(1),
   token: z.string().min(8),
+  // SPKI pin (TOFU) — opzionale: se l'edge è HTTPS lo si passa al Salva
+  // dopo averlo confermato nel Test connessione. NULL = legacy HTTP o
+  // edge senza /api/v1/cert/info (pre-v0.1.176).
+  cert_pin: z.string().nullable().optional(),
+  cert_fingerprint: z.string().nullable().optional(),
 });
 
 interface ScannerRowRedacted {
@@ -33,6 +38,8 @@ interface ScannerRowRedacted {
   last_error: string | null;
   created_at: string;
   finding_count: number;
+  cert_pin: string | null;
+  cert_fingerprint: string | null;
 }
 
 function readScanner(): ScannerRowRedacted | null {
@@ -41,7 +48,7 @@ function readScanner(): ScannerRowRedacted | null {
   const row = db
     .prepare(
       `SELECT s.id, s.name, s.base_url, s.enabled, s.last_sync_at,
-              s.last_error, s.created_at,
+              s.last_error, s.created_at, s.cert_pin, s.cert_fingerprint,
               (SELECT COUNT(*) FROM vuln_findings f
                  JOIN vuln_scan_runs r ON r.id = f.scan_run_id
                  WHERE r.scanner_id = s.id) AS finding_count
@@ -100,9 +107,16 @@ export async function POST(req: Request) {
     }
     const enc = encrypt(parsed.data.token);
     db.prepare(
-      `INSERT INTO vuln_scanners (name, base_url, token_encrypted, enabled)
-       VALUES (?, ?, ?, 1)`,
-    ).run(parsed.data.name, parsed.data.base_url.replace(/\/$/, ""), enc);
+      `INSERT INTO vuln_scanners
+         (name, base_url, token_encrypted, enabled, cert_pin, cert_fingerprint)
+       VALUES (?, ?, ?, 1, ?, ?)`,
+    ).run(
+      parsed.data.name,
+      parsed.data.base_url.replace(/\/$/, ""),
+      enc,
+      parsed.data.cert_pin ?? null,
+      parsed.data.cert_fingerprint ?? null,
+    );
 
     // Registra il job vuln_sync se non esiste (30 min default).
     const existingJob = db

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, ShieldCheck, ShieldAlert, Trash2 } from "lucide-react";
 
 interface ScannerRow {
   id: number;
@@ -14,6 +14,8 @@ interface ScannerRow {
   last_error: string | null;
   created_at: string;
   finding_count: number;
+  cert_pin: string | null;
+  cert_fingerprint: string | null;
 }
 
 export function ScannerEdgeCard() {
@@ -24,6 +26,11 @@ export function ScannerEdgeCard() {
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [tested, setTested] = useState(false);
+  // SPKI pin del cert dell'edge, raccolto dal Test connessione e
+  // mostrato all'utente per conferma esplicita prima del Salva.
+  const [pendingPin, setPendingPin] = useState<string | null>(null);
+  const [pendingFingerprint, setPendingFingerprint] = useState<string | null>(null);
+  const [testWarning, setTestWarning] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -54,13 +61,30 @@ export function ScannerEdgeCard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ base_url: form.base_url, token: form.token }),
       });
-      const d = (await r.json()) as { ok: boolean; error?: string; health?: { version: string; scanner_id: string } };
+      const d = (await r.json()) as {
+        ok: boolean;
+        error?: string;
+        warning?: string;
+        health?: {
+          version: string;
+          scanner_id: string;
+          tls_enabled?: boolean;
+          cert_pin?: string | null;
+          cert_fingerprint?: string | null;
+        };
+      };
       if (r.ok && d.ok) {
         toast.success(`Connessione OK — edge ${d.health?.scanner_id} v${d.health?.version}`);
         setTested(true);
+        setPendingPin(d.health?.cert_pin ?? null);
+        setPendingFingerprint(d.health?.cert_fingerprint ?? null);
+        setTestWarning(d.warning ?? null);
       } else {
         toast.error(d.error || "Test connessione fallito");
         setTested(false);
+        setPendingPin(null);
+        setPendingFingerprint(null);
+        setTestWarning(null);
       }
     } catch (e) {
       toast.error(`Errore rete: ${(e as Error).message}`);
@@ -80,16 +104,27 @@ export function ScannerEdgeCard() {
       const r = await fetch("/api/integrations/scanner-edge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          cert_pin: pendingPin,
+          cert_fingerprint: pendingFingerprint,
+        }),
       });
       if (!r.ok) {
         const d = (await r.json()) as { error?: string };
         toast.error(d.error || "Salvataggio fallito");
         return;
       }
-      toast.success("Scanner-edge configurato. Sync schedulato ogni 30 min.");
+      toast.success(
+        pendingPin
+          ? "Scanner-edge configurato in HTTPS con SPKI pin. Sync ogni 30 min."
+          : "Scanner-edge configurato. Sync schedulato ogni 30 min.",
+      );
       setForm({ name: "Scanner-Edge", base_url: "", token: "" });
       setTested(false);
+      setPendingPin(null);
+      setPendingFingerprint(null);
+      setTestWarning(null);
       await load();
     } finally {
       setSaving(false);
@@ -151,6 +186,28 @@ export function ScannerEdgeCard() {
             <div><span className="text-muted-foreground">Ultimo sync:</span> {scanner.last_sync_at || "—"}</div>
             <div><span className="text-muted-foreground">Findings totali:</span> {scanner.finding_count}</div>
           </div>
+          {/* Stato TLS / pinning */}
+          {scanner.base_url.startsWith("https://") && scanner.cert_pin ? (
+            <div className="rounded-md border border-green-300 bg-green-50 dark:bg-green-950/20 px-3 py-1.5 text-xs">
+              <div className="flex items-center gap-1.5 text-green-800 dark:text-green-300">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Connessione cifrata + SPKI pin attivo
+              </div>
+              <div className="font-mono text-[10px] break-all text-green-700 dark:text-green-400 mt-0.5" title="SPKI sha256 pin (RFC 7469)">
+                {scanner.cert_pin}
+              </div>
+            </div>
+          ) : scanner.base_url.startsWith("https://") ? (
+            <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-1.5 text-xs text-amber-900 dark:text-amber-300">
+              <ShieldAlert className="h-3.5 w-3.5 inline mr-1" />
+              HTTPS senza pin: nessuna protezione anti-MITM. Rimuovi e riconfigura su edge ≥ v0.1.176.
+            </div>
+          ) : (
+            <div className="rounded-md border border-red-300 bg-red-50 dark:bg-red-950/20 px-3 py-1.5 text-xs text-red-800 dark:text-red-300">
+              <ShieldAlert className="h-3.5 w-3.5 inline mr-1" />
+              Connessione in HTTP plaintext (token e findings non cifrati). Aggiorna l&apos;edge a HTTPS.
+            </div>
+          )}
           {scanner.last_error && (
             <div className="rounded-md border border-red-300 bg-red-50 dark:bg-red-950/20 px-3 py-2 text-sm text-red-800 dark:text-red-300">
               <span className="font-semibold">Ultimo errore:</span> {scanner.last_error}
@@ -208,6 +265,37 @@ export function ScannerEdgeCard() {
               Salva
             </Button>
           </div>
+
+          {/* TOFU pin: mostrato dopo Test, da confermare con il Salva */}
+          {tested && pendingPin && (
+            <div className="rounded-md border border-green-300 bg-green-50 dark:bg-green-950/20 px-3 py-2 text-xs space-y-1">
+              <div className="flex items-center gap-1.5 font-medium text-green-800 dark:text-green-300">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Certificato HTTPS dell&apos;edge rilevato (TOFU pairing)
+              </div>
+              <div className="font-mono text-[11px] break-all text-green-700 dark:text-green-400">
+                {pendingPin}
+              </div>
+              <p className="text-green-700 dark:text-green-400">
+                Salvando, DA-IPAM si <strong>pinna</strong> a questo certificato.
+                Una rotazione cert futura richiederà un nuovo pairing manuale.
+              </p>
+            </div>
+          )}
+          {tested && !pendingPin && form.base_url.startsWith("https://") && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-900 dark:text-amber-300">
+              <ShieldAlert className="h-3.5 w-3.5 inline mr-1" />
+              HTTPS rilevato ma <code>/api/v1/cert/info</code> non risponde — edge pre-v0.1.176.
+              La connessione funziona ma SENZA pinning (nessuna garanzia anti-MITM).
+            </div>
+          )}
+          {testWarning && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-900 dark:text-amber-300">
+              <ShieldAlert className="h-3.5 w-3.5 inline mr-1" />
+              {testWarning}
+            </div>
+          )}
+
           <p className="text-xs text-muted-foreground">
             Per generare il token: vai sull&apos;edge → Impostazioni → <em>API Lettura CVE (DA-IPAM)</em> →
             abilita il toggle → <strong>Genera token</strong>. Copia il valore mostrato (visibile una sola volta).

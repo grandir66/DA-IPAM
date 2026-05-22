@@ -37,8 +37,14 @@ export async function POST(req: Request) {
   }
 
   try {
+    // pingEdge ritorna anche `cert_pin` se l'edge è HTTPS e ha
+    // /api/v1/cert/info — la UI lo userà per pre-popolare il TOFU.
     const health = await pingEdge(parsed.data.base_url, parsed.data.token);
-    return NextResponse.json({ ok: true, health });
+    return NextResponse.json({
+      ok: true,
+      health,
+      warning: "warning" in urlCheck ? urlCheck.warning : undefined,
+    });
   } catch (e) {
     const status = e instanceof EdgeClientError ? e.status : 0;
     const message = (e as Error).message || "errore sconosciuto";

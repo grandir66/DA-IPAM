@@ -199,6 +199,25 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione vuln_sync fallita:`, e);
   }
 
+  // Migrazione runtime: vuln_scanners.{cert_pin,cert_fingerprint} per
+  // TOFU pinning HTTPS sull'edge. Additivo (ALTER ADD COLUMN).
+  try {
+    const tbl = newDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vuln_scanners'").get();
+    if (tbl) {
+      const cols = newDb.prepare("PRAGMA table_info(vuln_scanners)").all() as Array<{ name: string }>;
+      if (!cols.some((c) => c.name === "cert_pin")) {
+        newDb.exec("ALTER TABLE vuln_scanners ADD COLUMN cert_pin TEXT");
+        console.info(`[db-tenant] ${tenantCode}: vuln_scanners.cert_pin aggiunto`);
+      }
+      if (!cols.some((c) => c.name === "cert_fingerprint")) {
+        newDb.exec("ALTER TABLE vuln_scanners ADD COLUMN cert_fingerprint TEXT");
+        console.info(`[db-tenant] ${tenantCode}: vuln_scanners.cert_fingerprint aggiunto`);
+      }
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione cert_pin fallita:`, e);
+  }
+
   // Migrazione runtime: network_devices.use_for_arp_poll (flag "Usa per polling ARP/MAC")
   // Permette di usare come sorgente ARP qualsiasi device (router, firewall, switch L3) indipendentemente dalla classification.
   try {

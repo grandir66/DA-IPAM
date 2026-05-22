@@ -470,7 +470,7 @@ export default function ObjectDetailPage() {
           <div className="space-y-1.5">
             {host.recent_scans.slice(0, 10).map((s) => (
               <div key={s.id} className="text-xs flex items-center gap-3 font-mono">
-                <span className="text-muted-foreground">{formatDate(s.scan_date)}</span>
+                <span className="text-muted-foreground">{formatDate(s.timestamp)}</span>
                 <Badge variant="outline" className="text-[10px]">{s.scan_type}</Badge>
                 <span className={s.status === "online" ? "text-emerald-600" : "text-muted-foreground"}>
                   {s.status}

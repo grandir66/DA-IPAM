@@ -172,10 +172,22 @@ function rawRequest(
       (reqOpts as { rejectUnauthorized?: boolean }).rejectUnauthorized = false;
     }
 
+    let pinVerified = false;
     const req = requestFn(reqOpts, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (c: Buffer) => chunks.push(c));
       res.on("end", () => {
+        if (isHttps && opts.expectedPin && !pinVerified) {
+          // Salvaguardia: se secureConnect non ha verificato il pin
+          // (es. listener registrato dopo l'evento, race), rifiuta.
+          reject(
+            new EdgeClientError(
+              0,
+              "pin verify non eseguito — socket state inatteso",
+            ),
+          );
+          return;
+        }
         const body = Buffer.concat(chunks).toString("utf-8");
         resolve({
           status: res.statusCode ?? 0,
@@ -185,6 +197,43 @@ function rawRequest(
       });
       res.on("error", (e) => reject(new EdgeClientError(0, `response: ${e.message}`)));
     });
+    if (isHttps) {
+      // SPKI pin verify manuale dopo handshake. È l'unico modo robusto:
+      // con rejectUnauthorized=false, Node ignora checkServerIdentity.
+      const verify = (socket: TLSSocket): void => {
+        const cert = socket.getPeerCertificate(true);
+        if (!cert || !cert.raw || cert.raw.length === 0) {
+          // Handshake non ancora completo: aspetta secureConnect
+          socket.once("secureConnect", () => verify(socket));
+          return;
+        }
+        if (!opts.expectedPin) {
+          // TOFU: accetta senza verifica
+          pinVerified = true;
+          return;
+        }
+        let got: string;
+        try {
+          got = spkiPinFromDer(cert.raw);
+        } catch (e) {
+          socket.destroy(new EdgeClientError(0, `pin calc failed: ${(e as Error).message}`));
+          return;
+        }
+        if (got !== opts.expectedPin) {
+          socket.destroy(
+            new EdgeClientError(
+              0,
+              `SPKI pin mismatch: atteso ${opts.expectedPin}, ricevuto ${got}. ` +
+                "L'edge potrebbe essere stato sostituito o sotto attacco MITM. " +
+                "Rimuovi l'integrazione e ri-aggiungila per accettare il nuovo cert.",
+            ),
+          );
+          return;
+        }
+        pinVerified = true;
+      };
+      req.on("socket", (socket: TLSSocket) => verify(socket));
+    }
     req.on("error", (e) => reject(new EdgeClientError(0, `network: ${e.message}`)));
     req.setTimeout(opts.timeoutMs ?? 15000, () => {
       req.destroy(new Error("timeout"));

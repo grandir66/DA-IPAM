@@ -617,25 +617,31 @@ export default function ObjectDetailPage() {
         </dl>
 
         {/* Multihomed peers (host con stesso MAC su altre network) */}
-        {host.multihomed && host.multihomed.peers && host.multihomed.peers.length > 0 && (
-          <div className="mt-3 pt-3 border-t">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
-              Multihomed ({host.multihomed.peers.length + 1} interfacce) · match {host.multihomed.match_type}
+        {(() => {
+          const mh = (host as HostDetail & {
+            multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
+          }).multihomed;
+          if (!mh?.peers || mh.peers.length === 0) return null;
+          return (
+            <div className="mt-3 pt-3 border-t">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
+                Multihomed ({mh.peers.length + 1} interfacce) · match {mh.match_type}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {mh.peers.map((p) => (
+                  <Link
+                    key={p.host_id}
+                    href={`/objects/${p.host_id}`}
+                    className="inline-flex items-center gap-1.5 text-xs border rounded px-2 py-1 hover:bg-muted/50"
+                  >
+                    <span className="font-mono">{p.ip}</span>
+                    <span className="text-muted-foreground">· {p.network_name}</span>
+                  </Link>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {host.multihomed.peers.map((p) => (
-                <Link
-                  key={p.host_id}
-                  href={`/objects/${p.host_id}`}
-                  className="inline-flex items-center gap-1.5 text-xs border rounded px-2 py-1 hover:bg-muted/50"
-                >
-                  <span className="font-mono">{p.ip}</span>
-                  <span className="text-muted-foreground">· {p.network_name}</span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+          );
+        })()}
       </Section>
 
       {/* ─── LibreNMS (se configurato) ─── */}

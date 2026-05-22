@@ -710,6 +710,60 @@ CREATE TABLE IF NOT EXISTS vuln_findings (
   description TEXT,
   scanned_at TEXT NOT NULL
 );
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Tenant settings (key/value) — config per-tenant (retention, soglie, ecc.)
+-- ───────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tenant_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Software Inventory — scan applicativo on-demand per host (Windows/Linux).
+-- Snapshot immutabili: ogni scan = righe nuove. Diff ricostruito a query time.
+-- Vedi docs/plans/software-inventory.md.
+-- ───────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS software_scans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  status TEXT NOT NULL CHECK(status IN ('running','ok','error','timeout','cancelled')),
+  os_family TEXT NOT NULL CHECK(os_family IN ('windows','linux')),
+  probe TEXT NOT NULL,
+  apps_count INTEGER DEFAULT 0,
+  timeout_ms INTEGER NOT NULL DEFAULT 60000,
+  attempt INTEGER NOT NULL DEFAULT 1,
+  triggered_by_user_id INTEGER,
+  triggered_by TEXT NOT NULL DEFAULT 'manual',
+  error_message TEXT,
+  credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS software_inventory (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scan_id INTEGER NOT NULL REFERENCES software_scans(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  version TEXT,
+  publisher TEXT,
+  install_date TEXT,
+  install_location TEXT,
+  source TEXT NOT NULL,
+  architecture TEXT,
+  size_bytes INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS software_scan_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scan_id INTEGER NOT NULL REFERENCES software_scans(id) ON DELETE CASCADE,
+  ts TEXT NOT NULL,
+  level TEXT NOT NULL CHECK(level IN ('info','warn','error','debug')),
+  step TEXT,
+  message TEXT NOT NULL,
+  details TEXT
+);
 `;
 
 export const TENANT_INDEXES_SQL = `
@@ -856,4 +910,11 @@ CREATE INDEX IF NOT EXISTS idx_vuln_findings_ip ON vuln_findings(ip, scanned_at 
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_severity ON vuln_findings(severity);
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_cve ON vuln_findings(cve_id);
 CREATE INDEX IF NOT EXISTS idx_vuln_scan_runs_scanner ON vuln_scan_runs(scanner_id, finished_at DESC);
+
+-- Software Inventory
+CREATE INDEX IF NOT EXISTS idx_software_scans_host ON software_scans(host_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_software_scans_status ON software_scans(status);
+CREATE INDEX IF NOT EXISTS idx_software_inventory_scan ON software_inventory(scan_id);
+CREATE INDEX IF NOT EXISTS idx_software_inventory_name_version ON software_inventory(name, version);
+CREATE INDEX IF NOT EXISTS idx_software_scan_logs_scan ON software_scan_logs(scan_id, ts);
 `;

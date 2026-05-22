@@ -918,3 +918,69 @@ export interface LibreNMSSyncResult {
   skipped: number;
   errors: string[];
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SOFTWARE INVENTORY
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type SoftwareScanStatus = "running" | "ok" | "error" | "timeout" | "cancelled";
+export type SoftwareOsFamily = "windows" | "linux";
+export type SoftwareProbe =
+  | "winrm"
+  | "ssh-dpkg"
+  | "ssh-rpm"
+  | "ssh-apk"
+  | "ssh-mixed";
+export type SoftwareSource =
+  | "registry"
+  | "registry-user"
+  | "dpkg"
+  | "rpm"
+  | "snap"
+  | "flatpak"
+  | "apk";
+export type SoftwareLogLevel = "info" | "warn" | "error" | "debug";
+export type SoftwareScanTrigger = "manual" | "scheduled" | "api";
+
+export interface SoftwarePackage {
+  name: string;
+  version: string | null;
+  publisher: string | null;
+  install_date: string | null;
+  install_location: string | null;
+  source: SoftwareSource;
+  architecture: string | null;
+  size_bytes: number | null;
+}
+
+export interface SoftwareScan {
+  id: number;
+  host_id: number;
+  started_at: string;
+  finished_at: string | null;
+  status: SoftwareScanStatus;
+  os_family: SoftwareOsFamily;
+  probe: SoftwareProbe;
+  apps_count: number;
+  timeout_ms: number;
+  attempt: number;
+  triggered_by_user_id: number | null;
+  triggered_by: SoftwareScanTrigger;
+  error_message: string | null;
+  credential_id: number | null;
+}
+
+export interface SoftwareInventoryRow extends SoftwarePackage {
+  id: number;
+  scan_id: number;
+}
+
+export interface SoftwareScanLog {
+  id: number;
+  scan_id: number;
+  ts: string;
+  level: SoftwareLogLevel;
+  step: string | null;
+  message: string;
+  details: string | null;
+}

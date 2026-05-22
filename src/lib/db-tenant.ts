@@ -40,6 +40,15 @@ import type {
   HostUpdate,
   ScheduledJobInput,
   CredentialInput,
+  SoftwareScan,
+  SoftwareScanStatus,
+  SoftwareOsFamily,
+  SoftwareProbe,
+  SoftwareScanTrigger,
+  SoftwareLogLevel,
+  SoftwarePackage,
+  SoftwareInventoryRow,
+  SoftwareScanLog,
 } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4082,4 +4091,258 @@ export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
     map.set(r.host_id, cur);
   }
   return map;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TENANT SETTINGS (key/value)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getTenantSetting(key: string): string | null {
+  const row = db()
+    .prepare("SELECT value FROM tenant_settings WHERE key = ?")
+    .get(key) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+export function setTenantSetting(key: string, value: string): void {
+  db()
+    .prepare(
+      `INSERT INTO tenant_settings (key, value, updated_at)
+       VALUES (?, ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+    )
+    .run(key, value);
+}
+
+export function getAllTenantSettings(): Record<string, string> {
+  const rows = db()
+    .prepare("SELECT key, value FROM tenant_settings")
+    .all() as { key: string; value: string }[];
+  const out: Record<string, string> = {};
+  for (const r of rows) out[r.key] = r.value;
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SOFTWARE INVENTORY — scan / inventory / logs (tenant-scoped)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SOFTWARE_RETENTION_KEY = "software_scan_retention_per_host";
+const SOFTWARE_RETENTION_DEFAULT = 12;
+const SOFTWARE_RETENTION_MIN = 1;
+const SOFTWARE_RETENTION_MAX = 999;
+
+export function getSoftwareScanRetention(): number {
+  const raw = getTenantSetting(SOFTWARE_RETENTION_KEY);
+  if (!raw) return SOFTWARE_RETENTION_DEFAULT;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return SOFTWARE_RETENTION_DEFAULT;
+  if (n < SOFTWARE_RETENTION_MIN) return SOFTWARE_RETENTION_MIN;
+  if (n > SOFTWARE_RETENTION_MAX) return SOFTWARE_RETENTION_MAX;
+  return n;
+}
+
+export function setSoftwareScanRetention(value: number): number {
+  let v = Math.trunc(value);
+  if (!Number.isFinite(v)) v = SOFTWARE_RETENTION_DEFAULT;
+  if (v < SOFTWARE_RETENTION_MIN) v = SOFTWARE_RETENTION_MIN;
+  if (v > SOFTWARE_RETENTION_MAX) v = SOFTWARE_RETENTION_MAX;
+  setTenantSetting(SOFTWARE_RETENTION_KEY, String(v));
+  return v;
+}
+
+export interface CreateSoftwareScanInput {
+  host_id: number;
+  os_family: SoftwareOsFamily;
+  probe: SoftwareProbe;
+  timeout_ms: number;
+  triggered_by: SoftwareScanTrigger;
+  triggered_by_user_id?: number | null;
+  credential_id?: number | null;
+}
+
+export function createSoftwareScan(input: CreateSoftwareScanInput): number {
+  const stmt = db().prepare(
+    `INSERT INTO software_scans
+       (host_id, started_at, status, os_family, probe, timeout_ms,
+        triggered_by, triggered_by_user_id, credential_id)
+     VALUES (?, datetime('now'), 'running', ?, ?, ?, ?, ?, ?)`
+  );
+  const info = stmt.run(
+    input.host_id,
+    input.os_family,
+    input.probe,
+    input.timeout_ms,
+    input.triggered_by,
+    input.triggered_by_user_id ?? null,
+    input.credential_id ?? null
+  );
+  return Number(info.lastInsertRowid);
+}
+
+export interface UpdateSoftwareScanInput {
+  status: SoftwareScanStatus;
+  apps_count?: number;
+  error_message?: string | null;
+  probe?: SoftwareProbe;
+}
+
+export function updateSoftwareScanFinish(
+  scanId: number,
+  input: UpdateSoftwareScanInput
+): void {
+  db()
+    .prepare(
+      `UPDATE software_scans
+          SET status = ?,
+              finished_at = datetime('now'),
+              apps_count = COALESCE(?, apps_count),
+              error_message = ?,
+              probe = COALESCE(?, probe)
+        WHERE id = ?`
+    )
+    .run(
+      input.status,
+      input.apps_count ?? null,
+      input.error_message ?? null,
+      input.probe ?? null,
+      scanId
+    );
+}
+
+export function insertSoftwareInventoryBulk(
+  scanId: number,
+  packages: SoftwarePackage[]
+): number {
+  if (packages.length === 0) return 0;
+  const stmt = db().prepare(
+    `INSERT INTO software_inventory
+       (scan_id, name, version, publisher, install_date, install_location,
+        source, architecture, size_bytes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const tx = db().transaction((rows: SoftwarePackage[]) => {
+    for (const p of rows) {
+      stmt.run(
+        scanId,
+        p.name,
+        p.version,
+        p.publisher,
+        p.install_date,
+        p.install_location,
+        p.source,
+        p.architecture,
+        p.size_bytes
+      );
+    }
+  });
+  tx(packages);
+  return packages.length;
+}
+
+export function insertSoftwareScanLog(
+  scanId: number,
+  level: SoftwareLogLevel,
+  step: string | null,
+  message: string,
+  details?: unknown
+): void {
+  let detailsJson: string | null = null;
+  if (details !== undefined && details !== null) {
+    try {
+      detailsJson = JSON.stringify(details);
+    } catch {
+      detailsJson = null;
+    }
+  }
+  db()
+    .prepare(
+      `INSERT INTO software_scan_logs (scan_id, ts, level, step, message, details)
+       VALUES (?, datetime('now'), ?, ?, ?, ?)`
+    )
+    .run(scanId, level, step, message, detailsJson);
+}
+
+export function cleanupOldSoftwareScansForHost(
+  hostId: number,
+  keep: number
+): number {
+  if (!Number.isFinite(keep) || keep < 1) return 0;
+  const info = db()
+    .prepare(
+      `DELETE FROM software_scans
+        WHERE host_id = ?
+          AND status != 'running'
+          AND id NOT IN (
+            SELECT id FROM software_scans
+             WHERE host_id = ? AND status != 'running'
+             ORDER BY started_at DESC
+             LIMIT ?
+          )`
+    )
+    .run(hostId, hostId, keep);
+  return Number(info.changes);
+}
+
+export function getSoftwareScanById(scanId: number): SoftwareScan | undefined {
+  return db()
+    .prepare("SELECT * FROM software_scans WHERE id = ?")
+    .get(scanId) as SoftwareScan | undefined;
+}
+
+export function getSoftwareScansForHost(
+  hostId: number,
+  limit: number = 20,
+  offset: number = 0
+): SoftwareScan[] {
+  const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), 200);
+  const safeOffset = Math.max(0, Math.trunc(offset));
+  return db()
+    .prepare(
+      `SELECT * FROM software_scans
+        WHERE host_id = ?
+        ORDER BY started_at DESC
+        LIMIT ? OFFSET ?`
+    )
+    .all(hostId, safeLimit, safeOffset) as SoftwareScan[];
+}
+
+export function getSoftwareInventoryForScan(
+  scanId: number
+): SoftwareInventoryRow[] {
+  return db()
+    .prepare(
+      `SELECT * FROM software_inventory
+        WHERE scan_id = ?
+        ORDER BY LOWER(name) ASC, version ASC`
+    )
+    .all(scanId) as SoftwareInventoryRow[];
+}
+
+export function getSoftwareScanLogs(
+  scanId: number,
+  limit: number = 500
+): SoftwareScanLog[] {
+  const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), 5000);
+  return db()
+    .prepare(
+      `SELECT * FROM software_scan_logs
+        WHERE scan_id = ?
+        ORDER BY ts ASC, id ASC
+        LIMIT ?`
+    )
+    .all(scanId, safeLimit) as SoftwareScanLog[];
+}
+
+export function getLatestOkSoftwareScanForHost(
+  hostId: number
+): SoftwareScan | undefined {
+  return db()
+    .prepare(
+      `SELECT * FROM software_scans
+        WHERE host_id = ? AND status = 'ok'
+        ORDER BY started_at DESC
+        LIMIT 1`
+    )
+    .get(hostId) as SoftwareScan | undefined;
 }

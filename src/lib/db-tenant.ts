@@ -114,6 +114,32 @@ export function getTenantDb(tenantCode: string): Database.Database {
 
   // Create schema if needed
   newDb.exec(TENANT_SCHEMA_SQL);
+
+  // Migrazione runtime (PRIMA degli indici): software_scans con device_id + host_id nullable.
+  // Deve girare prima di TENANT_INDEXES_SQL perché tale blocco contiene
+  // CREATE INDEX su software_scans(device_id, ...) e fallirebbe se la colonna manca.
+  try {
+    const cols = newDb.prepare("PRAGMA table_info(software_scans)").all() as Array<{ name: string; notnull: number }>;
+    const hasDeviceId = cols.some((c) => c.name === "device_id");
+    const hostIdNotNull = cols.find((c) => c.name === "host_id")?.notnull === 1;
+    if (cols.length > 0 && (!hasDeviceId || hostIdNotNull)) {
+      const count = (newDb.prepare("SELECT COUNT(*) AS n FROM software_scans").get() as { n: number }).n;
+      if (count === 0) {
+        newDb.pragma("foreign_keys = OFF");
+        newDb.exec("DROP TABLE IF EXISTS software_scan_logs");
+        newDb.exec("DROP TABLE IF EXISTS software_inventory");
+        newDb.exec("DROP TABLE IF EXISTS software_scans");
+        newDb.exec(TENANT_SCHEMA_SQL);
+        newDb.pragma("foreign_keys = ON");
+        console.info(`[db-tenant] ${tenantCode}: software_scans schema rigenerato (host_id nullable + device_id)`);
+      } else {
+        console.warn(`[db-tenant] ${tenantCode}: software_scans ha ${count} righe, schema NON aggiornato (richiede migrazione dati manuale)`);
+      }
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione software_scans device_id fallita:`, e);
+  }
+
   newDb.exec(TENANT_INDEXES_SQL);
 
   // Migrazione runtime: scheduled_jobs.job_type CHECK include 'fast_scan' (schedulazione per-subnet)
@@ -320,32 +346,6 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione NIS2 Fase 1 fallita:`, e);
-  }
-
-  // Migrazione runtime: software_scans supporta sia host_id sia device_id (mutuamente esclusivi).
-  // SQLite non rilassa NOT NULL via ALTER, quindi se rilevato lo schema vecchio si droppa e ricrea.
-  // Sicuro perché la feature è stata appena introdotta: in caso di righe presenti si registra warning e si salta.
-  try {
-    const cols = newDb.prepare("PRAGMA table_info(software_scans)").all() as Array<{ name: string; notnull: number }>;
-    const hasDeviceId = cols.some((c) => c.name === "device_id");
-    const hostIdNotNull = cols.find((c) => c.name === "host_id")?.notnull === 1;
-    if (cols.length > 0 && (!hasDeviceId || hostIdNotNull)) {
-      const count = (newDb.prepare("SELECT COUNT(*) AS n FROM software_scans").get() as { n: number }).n;
-      if (count === 0) {
-        newDb.pragma("foreign_keys = OFF");
-        newDb.exec("DROP TABLE IF EXISTS software_scan_logs");
-        newDb.exec("DROP TABLE IF EXISTS software_inventory");
-        newDb.exec("DROP TABLE IF EXISTS software_scans");
-        newDb.exec(TENANT_SCHEMA_SQL);
-        newDb.exec(TENANT_INDEXES_SQL);
-        newDb.pragma("foreign_keys = ON");
-        console.info(`[db-tenant] ${tenantCode}: software_scans schema rigenerato (host_id nullable + device_id)`);
-      } else {
-        console.warn(`[db-tenant] ${tenantCode}: software_scans ha ${count} righe, schema NON aggiornato (richiede migrazione dati manuale)`);
-      }
-    }
-  } catch (e) {
-    console.error(`[db-tenant] ${tenantCode}: migrazione software_scans device_id fallita:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });

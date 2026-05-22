@@ -44,13 +44,19 @@ const inventorySubItems = [
   { href: "/services", label: "Servizi NIS2", icon: Workflow },
 ] as const;
 
-const networkSubItems = [
+type NetworkItem = {
+  href: string;
+  label: string;
+  icon: typeof Network;
+  /** Inserisce un separatore visivo "Diagnostica" PRIMA di questa voce. */
+  divider?: string;
+};
+
+const networkSubItems: readonly NetworkItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
-  { href: "/devices/router", label: "Router", icon: Router },
-  { href: "/devices/switch", label: "Switch", icon: Cable },
-  { href: "/devices/firewall", label: "Firewall", icon: Shield },
-  { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered },
+  { href: "/active-directory", label: "Active Directory", icon: FolderTree },
+  { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered, divider: "Diagnostica" },
   { href: "/dhcp", label: "Tabella DHCP", icon: Server },
   { href: "/credentials", label: "Credenziali", icon: Key },
   { href: "/scans", label: "Scansioni", icon: Scan },
@@ -205,6 +211,52 @@ export function Sidebar() {
           {networkOpen && (
             <div className="ml-4 mt-1 space-y-0.5 border-l border-sidebar-border pl-2">
               {networkSubItems.map((item) => (
+                <div key={item.href}>
+                  {item.divider && (
+                    <div className="pt-2 pb-1 px-2.5">
+                      <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
+                        {item.divider}
+                      </p>
+                    </div>
+                  )}
+                  <Link
+                    href={item.href}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
+                      isActive(item.href)
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    )}
+                  >
+                    <item.icon className="h-3.5 w-3.5" />
+                    {item.label}
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Devices collapsible */}
+        <div className="pt-1">
+          <button
+            type="button"
+            onClick={() => setDevicesOpen((o) => !o)}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full",
+              devicesSubItems.some((d) => pathname.startsWith(d.href))
+                ? "bg-sidebar-primary/20 text-sidebar-foreground"
+                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            )}
+          >
+            {devicesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            <Server className="h-4 w-4" />
+            Devices
+          </button>
+          {devicesOpen && (
+            <div className="ml-4 mt-1 space-y-0.5 border-l border-sidebar-border pl-2">
+              {devicesSubItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -223,14 +275,6 @@ export function Sidebar() {
             </div>
           )}
         </div>
-
-        {/*
-          Voce "Dispositivi" nascosta dalla sidebar (v0.2.468):
-          il punto di entrata unico per host/device è ora "Discovery". La pagina
-          /devices/[id] resta raggiungibile cliccando dal Discovery sugli host
-          promossi a network_device (link "ip" punta a /devices/[id] se
-          device_id presente, altrimenti /hosts/[id]).
-        */}
 
         {/* Inventario collapsible */}
         <div className="pt-1">

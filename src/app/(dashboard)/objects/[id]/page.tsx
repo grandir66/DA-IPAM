@@ -106,15 +106,81 @@ function parsePorts(jsonStr: string | null | undefined): string[] {
 }
 
 /**
- * Subset dei dati di `network_devices.last_device_info_json` rilevanti per la
- * pagina oggetto: utenti, servizi, dischi (logici + fisici).
+ * Subset esteso dei dati di `network_devices.last_device_info_json`.
+ * Campi rilevati da audit Windows + Linux server (chiavi del DB reale).
  */
 interface DeviceInfoJson {
-  disks?: Array<{ device?: string; size_gb?: number; free_gb?: number; filesystem?: string; label?: string }>;
-  physical_disks?: Array<{ device?: string; model?: string; size_gb?: number; serial?: string; interface_type?: string; vendor?: string }>;
+  // OS / Identità
+  hostname?: string;
+  domain?: string;
+  domain_role?: string;
+  is_domain_controller?: boolean;
+  is_server?: boolean;
+  is_virtual?: boolean;
+  virtualization?: string;
+  os_name?: string;
+  os_version?: string;
+  os_build?: string;
+  os_serial?: string;
+  kernel_version?: string;
+  architecture?: string;
+  uptime_days?: number;
+  uptime?: string;
+  last_boot?: string;
+  install_date?: string;
+  registered_user?: string;
+  organization?: string;
+  load_average?: string;
+  // Hardware
+  manufacturer?: string;
+  model?: string;
+  system_type?: string;
+  serial_number?: string;
+  bios_manufacturer?: string;
+  bios_version?: string;
+  cpu_model?: string;
+  cpu_manufacturer?: string;
+  cpu_cores?: number;
+  cpu_threads?: number;
+  cpu_speed_mhz?: number;
+  processor_count?: number;
+  ram_total_gb?: number;
+  ram_total_mb?: number;
+  ram_free_mb?: number;
+  gpu?: Array<{ name?: string; vram_mb?: number; driver?: string }> | string;
+  memory_modules?: Array<{ size_gb?: number; speed_mhz?: number; manufacturer?: string; locator?: string }>;
+  // Storage
+  disks?: Array<{ device?: string; size_gb?: number; free_gb?: number; filesystem?: string; label?: string; mountpoint?: string }>;
+  physical_disks?: Array<{ device?: string; model?: string; size_gb?: number; serial?: string; interface_type?: string; vendor?: string; rotational?: boolean }>;
+  disk_total_gb?: number;
+  disk_free_gb?: number;
+  // Network adapters
+  network_adapters?: Array<{ name?: string; ips?: string[] | string; mac?: string; mac_address?: string; dhcp?: boolean; speed_mbps?: number; status?: string }>;
+  // Sicurezza Windows
+  license_name?: string;
+  license_status?: string;
+  license_partial_key?: string;
+  antivirus?: Array<{ name?: string; status?: string } | string>;
+  firewall_active?: boolean;
+  firewall_type?: string;
+  firewall_rules_count?: number;
+  // Aggiornamenti
+  installed_hotfixes?: Array<{ id?: string; installed_on?: string }>;
+  pending_updates_count?: number;
+  // Servizi & ruoli
+  server_roles?: string[];
   important_services?: Array<{ name?: string; display_name?: string; state?: string; start_mode?: string }>;
+  // Linux processi
+  listening_ports?: Array<{ protocol?: string; port?: number; process?: string }>;
+  cron_jobs?: Array<{ user?: string; schedule?: string; command?: string }>;
+  // Utenti
   local_users?: Array<{ name?: string; full_name?: string; disabled?: boolean }>;
   logged_on_users?: Array<{ username?: string; session_type?: string; logon_time?: string }>;
+  // Software
+  installed_software_count?: number;
+  packages_count?: number;
+  // Metadata
+  scanned_at?: string;
 }
 
 function parseDeviceInfo(json: string | null | undefined): DeviceInfoJson | null {
@@ -513,7 +579,301 @@ export default function ObjectDetailPage() {
         </dl>
       </Section>
 
-      {/* ─── 3. Hardware e sistema (solo se device gestito ha dati JSON) ─── */}
+      {/* ─── 3. Sistema operativo (Windows/Linux server) ─── */}
+      {(() => {
+        const di = device?.device_info ?? null;
+        if (!di) return null;
+        const hasOsContent = !!(
+          di.hostname || di.os_name || di.os_version || di.domain ||
+          di.kernel_version || di.uptime || di.uptime_days != null ||
+          di.last_boot || di.registered_user
+        );
+        if (!hasOsContent) return null;
+        return (
+          <Section icon={<ServerCog className="h-4 w-4" />} title="Sistema operativo"
+            badge={
+              <span className="ml-2 inline-flex gap-1.5">
+                {di.is_domain_controller && <Badge variant="outline" className="text-[10px] border-purple-400 text-purple-700 bg-purple-50">Domain Controller</Badge>}
+                {di.is_server && !di.is_domain_controller && <Badge variant="outline" className="text-[10px]">Server</Badge>}
+                {di.is_virtual && di.virtualization && <Badge variant="outline" className="text-[10px]">{di.virtualization}</Badge>}
+              </span>
+            }>
+            <dl className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <InfoRow label="Hostname" value={di.hostname ?? null} />
+              <InfoRow label="Dominio" value={di.domain ?? null} />
+              <InfoRow label="OS" value={di.os_name ?? null} />
+              <InfoRow label="Versione" value={di.os_version ?? null} />
+              <InfoRow label="Build" value={di.os_build ?? null} />
+              <InfoRow label="Kernel" value={di.kernel_version ?? null} />
+              <InfoRow label="Architettura" value={di.architecture ?? null} />
+              <InfoRow label="Domain role" value={di.domain_role ?? null} />
+              <InfoRow label="Uptime" value={di.uptime ?? (di.uptime_days ? `${di.uptime_days} giorni` : null)} />
+              <InfoRow label="Ultimo boot" value={di.last_boot ?? null} />
+              <InfoRow label="Data install" value={di.install_date ?? null} />
+              <InfoRow label="Load avg" value={di.load_average ?? null} />
+              <InfoRow label="Utente registrato" value={di.registered_user ?? null} />
+              <InfoRow label="Organizzazione" value={di.organization ?? null} />
+            </dl>
+          </Section>
+        );
+      })()}
+
+      {/* ─── 3.1 Hardware ─── */}
+      {(() => {
+        const di = device?.device_info ?? null;
+        if (!di) return null;
+        const hasContent = !!(
+          di.cpu_model || di.ram_total_gb != null || di.bios_version ||
+          di.gpu || di.memory_modules?.length || di.physical_disks?.length ||
+          di.manufacturer || di.model
+        );
+        if (!hasContent) return null;
+        const gpuList = Array.isArray(di.gpu) ? di.gpu : (di.gpu ? [{ name: di.gpu }] : []);
+        return (
+          <Section icon={<Cpu className="h-4 w-4" />} title="Hardware">
+            <dl className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+              <InfoRow label="Produttore" value={di.manufacturer ?? null} />
+              <InfoRow label="Modello" value={di.model ?? null} />
+              <InfoRow label="System type" value={di.system_type ?? null} />
+              <InfoRow label="Serial" value={di.serial_number ?? null} mono />
+              <InfoRow label="CPU" value={di.cpu_model ?? null} />
+              <InfoRow label="CPU produttore" value={di.cpu_manufacturer ?? null} />
+              <InfoRow label="Core / Thread" value={di.cpu_cores ? `${di.cpu_cores} core${di.cpu_threads ? ` / ${di.cpu_threads} thread` : ""}` : null} />
+              <InfoRow label="Frequenza" value={di.cpu_speed_mhz ? `${di.cpu_speed_mhz} MHz` : null} />
+              <InfoRow label="Processor count" value={di.processor_count != null ? String(di.processor_count) : null} />
+              <InfoRow label="RAM" value={di.ram_total_gb ? `${di.ram_total_gb.toFixed(1)} GB` : null} />
+              <InfoRow label="RAM libera" value={di.ram_free_mb != null ? `${(di.ram_free_mb / 1024).toFixed(1)} GB` : null} />
+              <InfoRow label="BIOS" value={di.bios_manufacturer || di.bios_version ? `${di.bios_manufacturer ?? ""} ${di.bios_version ?? ""}`.trim() : null} />
+            </dl>
+
+            {/* GPU */}
+            {gpuList.length > 0 && (
+              <div className="mb-3">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">GPU</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {gpuList.map((g, i) => (
+                    <Badge key={i} variant="outline" className="text-[10px]">
+                      {g.name ?? "?"}
+                      {g.vram_mb && ` · ${(g.vram_mb / 1024).toFixed(1)} GB`}
+                      {g.driver && <span className="text-muted-foreground"> · {g.driver}</span>}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Memory modules */}
+            {di.memory_modules && di.memory_modules.length > 0 && (
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
+                  Memory modules ({di.memory_modules.length})
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {di.memory_modules.map((m, i) => (
+                    <Badge key={i} variant="outline" className="text-[10px] font-mono">
+                      {m.locator ?? `Slot${i}`}: {m.size_gb ? `${m.size_gb} GB` : "?"}
+                      {m.speed_mhz && ` @ ${m.speed_mhz} MHz`}
+                      {m.manufacturer && <span className="text-muted-foreground"> · {m.manufacturer}</span>}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Section>
+        );
+      })()}
+
+      {/* ─── 3.2 Schede di rete del sistema ─── */}
+      {(() => {
+        const di = device?.device_info ?? null;
+        const nics = di?.network_adapters ?? [];
+        if (nics.length === 0) return null;
+        return (
+          <Section icon={<Network className="h-4 w-4" />} title="Schede di rete del sistema"
+            badge={<Badge variant="outline" className="ml-2 text-[10px]">{nics.length}</Badge>}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b">
+                  <tr>
+                    <th className="text-left py-1.5 pr-3">Interfaccia</th>
+                    <th className="text-left pr-3">MAC</th>
+                    <th className="text-left pr-3">IP</th>
+                    <th className="text-left pr-3">DHCP</th>
+                    <th className="text-left pr-3">Speed</th>
+                    <th className="text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nics.map((n, i) => {
+                    const ips = Array.isArray(n.ips) ? n.ips.join(", ") : (n.ips ?? "");
+                    const mac = n.mac ?? n.mac_address ?? "";
+                    return (
+                      <tr key={i} className="border-b border-border/30 last:border-0">
+                        <td className="py-1 pr-3 font-mono">{n.name ?? "—"}</td>
+                        <td className="pr-3 font-mono">{mac || "—"}</td>
+                        <td className="pr-3 font-mono">{ips || "—"}</td>
+                        <td className="pr-3">{n.dhcp === true ? <Badge variant="outline" className="text-[10px]">DHCP</Badge> : n.dhcp === false ? <Badge variant="outline" className="text-[10px]">Statico</Badge> : "—"}</td>
+                        <td className="pr-3 font-mono text-[10px]">{n.speed_mbps ? `${n.speed_mbps} Mb/s` : "—"}</td>
+                        <td>{n.status ?? "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+        );
+      })()}
+
+      {/* ─── 3.3 Sicurezza e licenza (Windows) ─── */}
+      {(() => {
+        const di = device?.device_info ?? null;
+        if (!di) return null;
+        const hasContent = !!(
+          di.license_status || di.license_name || di.antivirus ||
+          di.firewall_active != null || di.firewall_type || di.server_roles?.length
+        );
+        if (!hasContent) return null;
+        const avList: Array<{ name?: string; status?: string }> = Array.isArray(di.antivirus)
+          ? di.antivirus.map((a) => typeof a === "string" ? { name: a } : a)
+          : [];
+        return (
+          <Section icon={<Shield className="h-4 w-4" />} title="Sicurezza e licenza">
+            <div className="space-y-3">
+              {/* Licenza Windows */}
+              {(di.license_status || di.license_name) && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Licenza</div>
+                  <dl className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <InfoRow label="Status" value={di.license_status ?? null} />
+                    <InfoRow label="Edition" value={di.license_name ?? null} />
+                    <InfoRow label="Product key" value={di.license_partial_key ?? null} mono />
+                    <InfoRow label="OS Serial" value={di.os_serial ?? null} mono />
+                  </dl>
+                </div>
+              )}
+
+              {/* Antivirus */}
+              {avList.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Antivirus ({avList.length})</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {avList.map((a, i) => (
+                      <Badge key={i} variant="outline" className="text-[10px]">
+                        {a.name ?? "?"}{a.status && <span className="text-muted-foreground"> · {a.status}</span>}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Firewall */}
+              {(di.firewall_active != null || di.firewall_type) && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Firewall</div>
+                  <div className="flex items-center gap-2 text-xs">
+                    {di.firewall_active === true && <Badge variant="outline" className="text-[10px] border-emerald-400 text-emerald-700 bg-emerald-50">Attivo</Badge>}
+                    {di.firewall_active === false && <Badge variant="outline" className="text-[10px] border-red-400 text-red-700 bg-red-50">Disattivo</Badge>}
+                    {di.firewall_type && <span className="font-mono text-muted-foreground">{di.firewall_type}</span>}
+                    {di.firewall_rules_count != null && <span className="text-muted-foreground">{di.firewall_rules_count} regole</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* Server roles */}
+              {di.server_roles && di.server_roles.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Server roles ({di.server_roles.length})</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {di.server_roles.map((r, i) => (
+                      <Badge key={i} variant="outline" className="text-[10px] border-blue-400 text-blue-700 bg-blue-50">{r}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Section>
+        );
+      })()}
+
+      {/* ─── 3.4 Aggiornamenti Windows (hotfixes) ─── */}
+      {(() => {
+        const di = device?.device_info ?? null;
+        const hf = di?.installed_hotfixes ?? [];
+        if (hf.length === 0 && (di?.pending_updates_count ?? 0) === 0) return null;
+        return (
+          <Section icon={<Activity className="h-4 w-4" />} title="Aggiornamenti Windows"
+            badge={
+              <span className="ml-2 inline-flex gap-1.5">
+                <Badge variant="outline" className="text-[10px]">{hf.length} installati</Badge>
+                {(di?.pending_updates_count ?? 0) > 0 && (
+                  <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700 bg-amber-50">{di?.pending_updates_count} pending</Badge>
+                )}
+              </span>
+            }>
+            {hf.length > 0 && (
+              <div className="max-h-64 overflow-y-auto">
+                <div className="flex flex-wrap gap-1.5">
+                  {hf.slice(0, 50).map((h, i) => (
+                    <Badge key={i} variant="outline" className="text-[10px] font-mono">
+                      {h.id ?? "?"}{h.installed_on && <span className="text-muted-foreground"> · {h.installed_on}</span>}
+                    </Badge>
+                  ))}
+                  {hf.length > 50 && <Badge variant="outline" className="text-[10px]">+{hf.length - 50} altri</Badge>}
+                </div>
+              </div>
+            )}
+          </Section>
+        );
+      })()}
+
+      {/* ─── 3.5 Linux: listening ports + cron ─── */}
+      {(() => {
+        const di = device?.device_info ?? null;
+        const lp = di?.listening_ports ?? [];
+        const cj = di?.cron_jobs ?? [];
+        if (lp.length === 0 && cj.length === 0) return null;
+        return (
+          <Section icon={<TableIcon className="h-4 w-4" />} title="Processi e schedulazioni">
+            <div className="space-y-3">
+              {lp.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
+                    Porte in ascolto ({lp.length})
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto">
+                    {lp.slice(0, 50).map((p, i) => (
+                      <Badge key={i} variant="outline" className="text-[10px] font-mono">
+                        {p.protocol ?? "?"}:{p.port ?? "?"}{p.process && <span className="text-muted-foreground"> · {p.process}</span>}
+                      </Badge>
+                    ))}
+                    {lp.length > 50 && <Badge variant="outline" className="text-[10px]">+{lp.length - 50} altre</Badge>}
+                  </div>
+                </div>
+              )}
+              {cj.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
+                    Cron jobs ({cj.length})
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {cj.slice(0, 15).map((c, i) => (
+                      <div key={i} className="text-xs font-mono flex items-baseline gap-3">
+                        <Badge variant="outline" className="text-[10px] shrink-0">{c.user ?? "?"}</Badge>
+                        <span className="text-muted-foreground shrink-0">{c.schedule ?? ""}</span>
+                        <span className="truncate" title={c.command ?? ""}>{c.command ?? ""}</span>
+                      </div>
+                    ))}
+                    {cj.length > 15 && <p className="text-[10px] text-muted-foreground">+{cj.length - 15} altri</p>}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Section>
+        );
+      })()}
+
+      {/* ─── 3.6 Storage / Filesystem (logici + fisici) ─── */}
       {(() => {
         const di = device?.device_info ?? null;
         if (!di) return null;
@@ -523,7 +883,7 @@ export default function ObjectDetailPage() {
         );
         if (!hasContent) return null;
         return (
-          <Section icon={<ServerCog className="h-4 w-4" />} title="Hardware e sistema">
+          <Section icon={<HardDrive className="h-4 w-4" />} title="Storage, servizi e utenti">
             <div className="space-y-4">
               {/* Dischi logici */}
               {di.disks && di.disks.length > 0 && (

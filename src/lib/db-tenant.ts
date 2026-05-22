@@ -710,6 +710,9 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
   switch_port?: string;
   switch_device_name?: string;
   ad_dns_host_name?: string | null;
+  /** Frequenza dello scan attivo più rapido sulla rete (per derivare la soglia
+   *  "unreachable = 4 cicli" in UI). Null se nessun job scan abilitato. */
+  scan_interval_minutes?: number | null;
 }> {
   const rows = db().prepare(`
     SELECT h.*,
@@ -729,9 +732,18 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
            ia.categoria AS _asset_categoria,
            ssw.id AS _sw_scan_id,
            ssw.apps_count AS _sw_apps_count,
-           ssw.started_at AS _sw_scan_at
+           ssw.started_at AS _sw_scan_at,
+           sj.min_interval AS _scan_interval
     FROM hosts h
     JOIN networks n ON n.id = h.network_id
+    LEFT JOIN (
+      SELECT network_id, MIN(interval_minutes) AS min_interval
+      FROM scheduled_jobs
+      WHERE enabled = 1
+        AND job_type IN ('fast_scan', 'network_discovery', 'ping_sweep')
+        AND network_id IS NOT NULL
+      GROUP BY network_id
+    ) sj ON sj.network_id = h.network_id
     LEFT JOIN network_devices nd ON nd.host = h.ip
     LEFT JOIN (
       SELECT mac, port_name, device_id,
@@ -767,9 +779,10 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
     _sw_port?: string; _sw_name?: string; _ad_dns?: string | null;
     _asset_id?: number | null; _asset_tag?: string | null; _asset_categoria?: string | null;
     _sw_scan_id?: number | null; _sw_apps_count?: number | null; _sw_scan_at?: string | null;
+    _scan_interval?: number | null;
   }>;
 
-  return rows.map(({ _net_name, _net_cidr, _net_vlan, _net_location, _dev_id, _dev_name, _dev_vendor, _dev_type, _sw_port, _sw_name, _ad_dns, _asset_id, _asset_tag, _asset_categoria, _sw_scan_id, _sw_apps_count, _sw_scan_at, ...h }) => ({
+  return rows.map(({ _net_name, _net_cidr, _net_vlan, _net_location, _dev_id, _dev_name, _dev_vendor, _dev_type, _sw_port, _sw_name, _ad_dns, _asset_id, _asset_tag, _asset_categoria, _sw_scan_id, _sw_apps_count, _sw_scan_at, _scan_interval, ...h }) => ({
     ...h,
     network_name: _net_name,
     network_cidr: _net_cidr,
@@ -788,6 +801,7 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
     last_software_scan_id: _sw_scan_id ?? undefined,
     last_software_scan_apps: _sw_apps_count ?? undefined,
     last_software_scan_at: _sw_scan_at ?? undefined,
+    scan_interval_minutes: _scan_interval ?? null,
   }));
 }
 

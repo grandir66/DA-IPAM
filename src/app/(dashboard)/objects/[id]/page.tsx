@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
@@ -582,6 +583,18 @@ export default function ObjectDetailPage() {
         </div>
       </div>
 
+      <Tabs defaultValue="generale" className="space-y-4">
+        <TabsList className="w-full justify-start overflow-x-auto">
+          <TabsTrigger value="generale">Generale</TabsTrigger>
+          <TabsTrigger value="sistema">Sistema</TabsTrigger>
+          <TabsTrigger value="network">Rete avanzata</TabsTrigger>
+          <TabsTrigger value="sicurezza">Sicurezza & Asset</TabsTrigger>
+          <TabsTrigger value="storico">Storico</TabsTrigger>
+        </TabsList>
+
+        {/* ═══════════════ TAB: GENERALE ═══════════════ */}
+        <TabsContent value="generale" className="space-y-4">
+
       {/* ─── 1. Identità ─── */}
       <Section icon={<Cpu className="h-4 w-4" />} title="Identità">
         <dl className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -698,6 +711,11 @@ export default function ObjectDetailPage() {
           </div>
         </div>
       </Section>
+
+        </TabsContent>
+
+        {/* ═══════════════ TAB: SISTEMA ═══════════════ */}
+        <TabsContent value="sistema" className="space-y-4">
 
       {/* ─── 3. Sistema operativo (Windows/Linux server) ─── */}
       {(() => {
@@ -1124,6 +1142,11 @@ export default function ObjectDetailPage() {
           </Section>
         );
       })()}
+
+        </TabsContent>
+
+        {/* ═══════════════ TAB: RETE AVANZATA ═══════════════ */}
+        <TabsContent value="network" className="space-y-4">
 
       {/* ─── 3a. Proxmox (host + VM + subscription) ─── */}
       {(() => {
@@ -1613,6 +1636,11 @@ export default function ObjectDetailPage() {
         </Section>
       )}
 
+        </TabsContent>
+
+        {/* ═══════════════ TAB: SICUREZZA & ASSET ═══════════════ */}
+        <TabsContent value="sicurezza" className="space-y-4">
+
       {/* ─── 4. Vulnerabilità (sempre, anche se vuoto) ─── */}
       <Section icon={<Shield className="h-4 w-4" />} title="Vulnerabilità">
         <HostVulnerabilitiesCard hostId={host.id} />
@@ -1709,6 +1737,11 @@ export default function ObjectDetailPage() {
         </Section>
       )}
 
+        </TabsContent>
+
+        {/* ═══════════════ TAB: STORICO ═══════════════ */}
+        <TabsContent value="storico" className="space-y-4">
+
       {/* ─── 7. Discovery ─── */}
       <Section icon={<ScanSearch className="h-4 w-4" />} title="Discovery">
         <dl className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
@@ -1757,6 +1790,9 @@ export default function ObjectDetailPage() {
           <p className="text-sm text-muted-foreground">Nessuna scansione registrata.</p>
         )}
       </Section>
+
+        </TabsContent>
+      </Tabs>
 
       {/* Spazio in fondo per scroll comodo */}
       <div className="h-8" />

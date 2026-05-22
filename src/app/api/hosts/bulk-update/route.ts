@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { updateHost, addHostCredential, getHostCredentials } from "@/lib/db";
-import { bulkUpdateNetworkDeviceByHostId, bulkUpdateInventoryAssetByHostId } from "@/lib/db-tenant";
+import {
+  bulkUpdateNetworkDeviceByHostId,
+  bulkUpdateInventoryAssetByHostId,
+  addDeviceCredentialBinding,
+  getNetworkDeviceByIp,
+  getDeviceCredentialBindings,
+  getHostById,
+} from "@/lib/db-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { z } from "zod";
@@ -111,7 +118,9 @@ export async function PATCH(request: Request) {
           if (result) updated++;
         }
 
-        // Assegna credenziale (se specificata e non già presente)
+        // Assegna credenziale: aggiunge a host_credentials (marcata validated=1 perché
+        // è una scelta utente esplicita, deve apparire subito nel discovery) e propaga
+        // a device_credential_bindings se l'host ha network_device linkato.
         if (credential_id != null && credential_id > 0) {
           const proto = credential_protocol ?? "ssh";
           const port = credential_port ?? (proto === "snmp" ? 161 : proto === "winrm" ? 5985 : proto === "api" ? 443 : 22);
@@ -121,8 +130,28 @@ export async function PATCH(request: Request) {
               (hc) => hc.credential_id === credential_id && hc.protocol_type === proto,
             );
             if (!alreadyBound) {
-              addHostCredential(id, credential_id, proto, port);
+              addHostCredential(id, credential_id, proto, port, { validated: true });
               credentialsAdded++;
+            }
+            // Propaga al device linkato (network_devices.host = hosts.ip)
+            const host = getHostById(id);
+            if (host) {
+              const device = getNetworkDeviceByIp(host.ip);
+              if (device && (proto === "ssh" || proto === "snmp" || proto === "winrm" || proto === "api")) {
+                const dcb = getDeviceCredentialBindings(device.id);
+                const dcbExists = dcb.some(
+                  (b) => b.credential_id === credential_id && b.protocol_type === proto && b.port === port,
+                );
+                if (!dcbExists) {
+                  addDeviceCredentialBinding({
+                    device_id: device.id,
+                    credential_id,
+                    protocol_type: proto,
+                    port,
+                    auto_detected: false,
+                  });
+                }
+              }
             }
           } catch {
             // Host non trovato o errore DB — skip

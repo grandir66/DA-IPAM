@@ -315,6 +315,16 @@ export default function DiscoveryPage() {
   // Bulk "Aggiorna selezionati" e "Crea asset NIS2"
   const [bulkScanRunning, setBulkScanRunning] = useState(false);
   const [bulkScanProgress, setBulkScanProgress] = useState<{ current: number; total: number; label: string } | null>(null);
+  const [bulkScanResults, setBulkScanResults] = useState<Array<{
+    host_id: number;
+    ip: string;
+    name: string;
+    query_status: "ok" | "error" | "skipped";
+    query_message: string;
+    software_status: "ok" | "error" | "skipped" | "not-applicable";
+    software_message: string;
+  }>>([]);
+  const [bulkScanResultsOpen, setBulkScanResultsOpen] = useState(false);
   const [bulkAssetRunning, setBulkAssetRunning] = useState(false);
 
   // ─── Add to devices (bulk promote host → device) ──────────
@@ -620,53 +630,90 @@ export default function DiscoveryPage() {
       toast.info(`${skipped} host senza device linkato verranno saltati`);
     }
     setBulkScanRunning(true);
-    let ok = 0;
-    let err = 0;
+    const results: typeof bulkScanResults = [];
     for (let i = 0; i < targets.length; i++) {
       const h = targets[i];
+      const row: (typeof results)[number] = {
+        host_id: h.id,
+        ip: h.ip,
+        name: displayName(h) || h.ip,
+        query_status: "skipped",
+        query_message: "",
+        software_status: "not-applicable",
+        software_message: "",
+      };
       setBulkScanProgress({ current: i + 1, total: targets.length, label: `${h.ip} — query` });
+      // Query
       try {
         const qr = await fetch(`/api/devices/${h.device_id}/query`, { method: "POST" });
-        const qd = (await qr.json()) as { id?: string; progress?: unknown; error?: string };
+        const qd = (await qr.json()) as { id?: string; progress?: unknown; error?: string; message?: string };
         if (!qr.ok) {
-          err++;
-          continue;
-        }
-        if (qd.id) {
+          row.query_status = "error";
+          row.query_message = qd.error ?? `HTTP ${qr.status}`;
+        } else if (qd.id) {
           // polling fino a completion
-          await new Promise<void>((resolve) => {
+          const finalPhase = await new Promise<{ status: string; phase: string }>((resolve) => {
             const poll = setInterval(async () => {
               try {
                 const pr = await fetch(`/api/scans/progress/${qd.id}`);
                 if (!pr.ok) return;
-                const pd = (await pr.json()) as { status: string };
+                const pd = (await pr.json()) as { status: string; phase: string };
                 if (pd.status === "completed" || pd.status === "failed") {
                   clearInterval(poll);
-                  resolve();
+                  resolve(pd);
                 }
-              } catch {
-                /* ignore */
-              }
+              } catch { /* ignore */ }
             }, 1500);
           });
+          if (finalPhase.status === "completed") {
+            row.query_status = "ok";
+            row.query_message = finalPhase.phase || "completato";
+          } else {
+            row.query_status = "error";
+            row.query_message = finalPhase.phase || "scansione fallita";
+          }
+        } else {
+          // Risposta sincrona (Proxmox/legacy)
+          row.query_status = "ok";
+          row.query_message = qd.message ?? "completato";
         }
-        // Software scan se vendor=windows|linux
-        if (h.device_vendor === "windows" || h.device_vendor === "linux") {
-          setBulkScanProgress({ current: i + 1, total: targets.length, label: `${h.ip} — software` });
-          await fetch(`/api/devices/${h.device_id}/software-scan`, {
+      } catch (e) {
+        row.query_status = "error";
+        row.query_message = e instanceof Error ? e.message : String(e);
+      }
+      // Software scan se vendor=windows|linux
+      if (h.device_vendor === "windows" || h.device_vendor === "linux") {
+        setBulkScanProgress({ current: i + 1, total: targets.length, label: `${h.ip} — software` });
+        try {
+          const sr = await fetch(`/api/devices/${h.device_id}/software-scan`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: "{}",
           });
+          const sd = (await sr.json()) as {
+            status?: string;
+            appsCount?: number;
+            errorMessage?: string;
+            error?: string;
+          };
+          if (sr.ok && sd.status === "ok") {
+            row.software_status = "ok";
+            row.software_message = `${sd.appsCount ?? 0} applicazioni`;
+          } else {
+            row.software_status = "error";
+            row.software_message = sd.errorMessage ?? sd.error ?? "scan fallito";
+          }
+        } catch (e) {
+          row.software_status = "error";
+          row.software_message = e instanceof Error ? e.message : String(e);
         }
-        ok++;
-      } catch {
-        err++;
       }
+      results.push(row);
     }
     setBulkScanRunning(false);
     setBulkScanProgress(null);
-    toast.success(`Aggiornamento completato: ${ok} OK${err > 0 ? `, ${err} errori` : ""}${skipped > 0 ? `, ${skipped} saltati` : ""}`);
+    setBulkScanResults(results);
+    setBulkScanResultsOpen(true);
     await fetchData();
   }
 
@@ -1683,6 +1730,97 @@ export default function DiscoveryPage() {
             <Button onClick={handleBulkSave} disabled={bulkSaving} className="gap-2">
               {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Applica a {selectedIds.size} host
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════ DIALOG RIEPILOGO BULK SCAN ════════════════ */}
+      <Dialog open={bulkScanResultsOpen} onOpenChange={setBulkScanResultsOpen}>
+        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+          <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
+            <DialogTitle>Riepilogo aggiornamento bulk</DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              {bulkScanResults.length} host processati ·{" "}
+              <span className="text-emerald-600 font-medium">
+                {bulkScanResults.filter((r) => r.query_status === "ok").length} query OK
+              </span>{" "}·{" "}
+              <span className="text-red-600 font-medium">
+                {bulkScanResults.filter((r) => r.query_status === "error").length} query errore
+              </span>{" "}·{" "}
+              <span className="text-blue-600 font-medium">
+                {bulkScanResults.filter((r) => r.software_status === "ok").length} software OK
+              </span>{" "}·{" "}
+              <span className="text-amber-600 font-medium">
+                {bulkScanResults.filter((r) => r.software_status === "error").length} software errore
+              </span>
+            </p>
+          </DialogHeader>
+          <DialogScrollableArea>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Host</TableHead>
+                  <TableHead>Query</TableHead>
+                  <TableHead>Software</TableHead>
+                  <TableHead>Dettaglio</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {bulkScanResults.map((r) => (
+                  <TableRow key={r.host_id}>
+                    <TableCell className="font-mono text-xs">
+                      <Link href={`/hosts/${r.host_id}`} className="text-primary hover:underline">
+                        {r.ip}
+                      </Link>
+                      <div className="text-[10px] text-muted-foreground">{r.name}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={
+                        r.query_status === "ok"
+                          ? "border-emerald-400 text-emerald-700 bg-emerald-50"
+                          : r.query_status === "error"
+                            ? "border-red-400 text-red-700 bg-red-50"
+                            : "border-muted text-muted-foreground"
+                      }>
+                        {r.query_status === "ok" ? "OK" : r.query_status === "error" ? "Errore" : "—"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={
+                        r.software_status === "ok"
+                          ? "border-blue-400 text-blue-700 bg-blue-50"
+                          : r.software_status === "error"
+                            ? "border-amber-400 text-amber-700 bg-amber-50"
+                            : "border-muted text-muted-foreground"
+                      }>
+                        {r.software_status === "ok" ? "OK"
+                          : r.software_status === "error" ? "Errore"
+                            : r.software_status === "not-applicable" ? "n/a" : "—"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs max-w-md">
+                      {r.query_status === "error" && (
+                        <div className="text-red-700 break-words">Query: {r.query_message}</div>
+                      )}
+                      {r.software_status === "error" && (
+                        <div className="text-amber-700 break-words mt-0.5">Software: {r.software_message}</div>
+                      )}
+                      {r.query_status === "ok" && r.software_status === "ok" && (
+                        <div className="text-muted-foreground">{r.software_message}</div>
+                      )}
+                      {r.query_status === "ok" && r.software_status === "not-applicable" && (
+                        <div className="text-muted-foreground">{r.query_message}</div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DialogScrollableArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkScanResultsOpen(false)}>
+              Chiudi
             </Button>
           </DialogFooter>
         </DialogContent>

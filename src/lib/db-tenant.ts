@@ -4484,6 +4484,16 @@ export function getBestCredentialBindingForDevice(
 }
 
 /**
+ * Trova il network_device linkato a un host via IP (network_devices.host = hosts.ip).
+ * Ritorna il primo (i casi multi-device per stesso IP sono rari, non gestiti qui).
+ */
+export function getNetworkDeviceByIp(ip: string): NetworkDevice | undefined {
+  return db()
+    .prepare("SELECT * FROM network_devices WHERE host = ? LIMIT 1")
+    .get(ip) as NetworkDevice | undefined;
+}
+
+/**
  * Aggiorna campi di `network_devices` legati a un host via IP (network_devices.host = hosts.ip).
  * Ritorna il numero di righe modificate. Usato dal bulk-update di /discovery.
  * Whitelist dei campi accettati per sicurezza.

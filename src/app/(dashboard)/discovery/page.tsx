@@ -1783,7 +1783,7 @@ export default function DiscoveryPage() {
                             ? "border-red-400 text-red-700 bg-red-50"
                             : "border-muted text-muted-foreground"
                       }>
-                        {r.query_status === "ok" ? "OK" : r.query_status === "error" ? "Errore" : "—"}
+                        {r.query_status === "ok" ? "OK" : r.query_status === "error" ? "Errore" : "Skip"}
                       </Badge>
                     </TableCell>
                     <TableCell>

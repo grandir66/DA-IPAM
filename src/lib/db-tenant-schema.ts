@@ -675,6 +675,12 @@ CREATE TABLE IF NOT EXISTS vuln_scanners (
   enabled INTEGER DEFAULT 1,
   last_sync_at TEXT,
   last_error TEXT,
+  -- SPKI pin (TOFU) formato RFC 7469 "sha256/<base64>". Quando settato
+  -- ogni chiamata HTTPS verifica che il cert presentato abbia lo stesso
+  -- pin. NULL = primo contatto non ancora avvenuto OR edge in HTTP legacy.
+  cert_pin TEXT,
+  -- Fingerprint sha256 del cert intero (DER). Solo UI diagnostica.
+  cert_fingerprint TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

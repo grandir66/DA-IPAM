@@ -51,6 +51,12 @@ import type { HostDetail, InventoryAsset, NetworkDevice, ArpEntry, MacPortEntry,
 
 /** Dati addizionali ritornati da GET /api/devices/[id] oltre al NetworkDevice base. */
 interface DeviceExtras {
+  /** L'API ritorna già parsato (campo proxmox_data); last_proxmox_scan_result viene nullificato. */
+  proxmox_data?: ProxmoxScanViewModel | null;
+  /** L'API ritorna già parsato (campo device_info); last_device_info_json viene rimosso. */
+  device_info?: DeviceInfoJson | null;
+  /** stp_info è già oggetto, non stringa. */
+  stp_info?: StpInfo | null;
   arp_entries?: Array<ArpEntry & { hostname?: string | null; host_ip?: string | null; host_name?: string | null }>;
   mac_port_entries?: Array<MacPortEntry & { host_ip?: string | null; host_name?: string | null }>;
   switch_ports?: SwitchPort[];
@@ -509,7 +515,7 @@ export default function ObjectDetailPage() {
 
       {/* ─── 3. Hardware e sistema (solo se device gestito ha dati JSON) ─── */}
       {(() => {
-        const di = parseDeviceInfo(device?.last_device_info_json ?? null);
+        const di = device?.device_info ?? null;
         if (!di) return null;
         const hasContent = !!(
           di.disks?.length || di.physical_disks?.length ||
@@ -641,7 +647,7 @@ export default function ObjectDetailPage() {
 
       {/* ─── 3a. Proxmox (host + VM + subscription) ─── */}
       {(() => {
-        const px = parseProxmoxScan(device?.last_proxmox_scan_result ?? null);
+        const px = device?.proxmox_data ?? null;
         if (!px || (!px.hosts?.length && !px.vms?.length)) return null;
         return (
           <Section icon={<Server className="h-4 w-4" />} title="Proxmox VE"
@@ -903,7 +909,7 @@ export default function ObjectDetailPage() {
 
       {/* ─── 3a-bis. Spanning Tree Protocol (STP) — solo switch ─── */}
       {(() => {
-        const stp = parseStpInfo((device as { stp_info?: string | null } | null)?.stp_info ?? null);
+        const stp = device?.stp_info ?? null;
         if (!stp) return null;
         return (
           <Section icon={<Radio className="h-4 w-4" />} title="Spanning Tree Protocol"

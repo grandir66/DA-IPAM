@@ -1429,15 +1429,25 @@ export default function DiscoveryPage() {
 
       {/* ════════════════ DIALOG MODIFICA MULTIPLA HOST ════════════════ */}
       <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>
-        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
-          <DialogHeader>
-            <DialogTitle>Modifica {selectedIds.size} host</DialogTitle>
+        <DialogContent className={`${DIALOG_PANEL_WIDE_CLASS} border-2 border-primary/30 shadow-2xl`}>
+          <DialogHeader className="shrink-0 border-b border-border px-5 pt-5 pb-3 bg-muted/30">
+            <DialogTitle className="text-lg flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-primary" />
+              Modifica {selectedIds.size} host{selectedIds.size === 1 ? "" : ""}
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Solo i campi <strong className="text-primary">attivi</strong> (riquadrati in blu) saranno applicati ai {selectedIds.size} host selezionati. Spunta la casella per attivare un campo.
+            </p>
           </DialogHeader>
-          <DialogScrollableArea className="max-h-[70vh]">
-            <div className="space-y-3 p-1">
-              <p className="text-xs text-muted-foreground">
-                Abilita i campi da modificare. Solo i campi abilitati verranno applicati a tutti gli host selezionati.
-              </p>
+          <DialogScrollableArea className="max-h-[70vh] px-5 py-4">
+            <div className="space-y-5">
+              {/* ═══ Sezione 1: Campi host ═══ */}
+              <div>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <div className="h-5 w-1 bg-primary rounded-full" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider">Campi sull&apos;host</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
 
               {/* Classificazione */}
               <BulkFieldRow
@@ -1583,13 +1593,19 @@ export default function DiscoveryPage() {
                   </div>
                 </div>
               </BulkFieldRow>
-
-              {/* ─── Campi sui device gestiti (network_devices) ─── */}
-              <div className="pt-3 border-t">
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                  Device gestiti (applicato solo se gia` promossi a device)
-                </p>
+                </div>
               </div>
+
+              {/* ═══ Sezione 2: Device gestiti ═══ */}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="h-5 w-1 bg-blue-500 rounded-full" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider">Device gestiti</h3>
+                </div>
+                <p className="text-[10px] text-muted-foreground mb-2.5 pl-3">
+                  Applicato solo agli host gia` promossi a network_device (linkati via IP).
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
 
               <BulkFieldRow
                 label="Tipologia device"
@@ -1662,13 +1678,19 @@ export default function DiscoveryPage() {
                   </SelectContent>
                 </Select>
               </BulkFieldRow>
-
-              {/* ─── Asset NIS2 (inventory_assets) ─── */}
-              <div className="pt-3 border-t">
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                  Asset NIS2 (applicato solo agli host con asset linkato)
-                </p>
+                </div>
               </div>
+
+              {/* ═══ Sezione 3: Asset NIS2 ═══ */}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="h-5 w-1 bg-emerald-500 rounded-full" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider">Asset NIS2</h3>
+                </div>
+                <p className="text-[10px] text-muted-foreground mb-2.5 pl-3">
+                  Applicato solo agli host con un inventory_asset linkato.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
 
               <BulkFieldRow
                 label="Categoria NIS2"
@@ -1717,9 +1739,11 @@ export default function DiscoveryPage() {
                   </SelectContent>
                 </Select>
               </BulkFieldRow>
+                </div>
+              </div>
             </div>
           </DialogScrollableArea>
-          <DialogFooter>
+          <DialogFooter className="border-t border-border px-5 py-3 bg-muted/30">
             <Button variant="outline" onClick={() => setBulkEditOpen(false)} disabled={bulkSaving}>
               Annulla
             </Button>
@@ -1941,24 +1965,40 @@ export default function DiscoveryPage() {
   );
 }
 
-/** Riga campo bulk con checkbox abilita/disabilita + controllo. */
+/** Riga campo bulk con checkbox abilita/disabilita + controllo.
+ * Quando abilitata mostra accent border + background leggero per evidenziare i
+ * campi attivi nel batch. Quando disabilitata mantiene label leggibile (no grigio
+ * spento) ma riduce contrasto del controllo. */
 function BulkFieldRow({
-  label, enabled, onToggle, children,
+  label, enabled, onToggle, children, hint,
 }: {
   label: string;
   enabled: boolean;
   onToggle: (v: boolean) => void;
   children: React.ReactNode;
+  hint?: string;
 }) {
   return (
-    <div className={`flex items-start gap-3 rounded-lg border p-3 transition-opacity ${enabled ? "" : "opacity-50"}`}>
-      <div className="pt-0.5">
-        <Checkbox checked={enabled} onCheckedChange={onToggle} />
+    <label
+      className={`relative flex items-start gap-3 rounded-lg border p-3 transition-all cursor-pointer ${
+        enabled
+          ? "border-primary/60 bg-primary/5 shadow-sm"
+          : "border-border bg-background hover:border-muted-foreground/40"
+      }`}
+    >
+      <div className="pt-0.5 shrink-0">
+        <Checkbox checked={enabled} onCheckedChange={onToggle} className={enabled ? "border-primary" : ""} />
       </div>
-      <div className="flex-1 space-y-1">
-        <Label className="text-xs font-medium">{label}</Label>
-        {children}
+      <div className={`flex-1 space-y-1 min-w-0 ${enabled ? "" : "opacity-70"}`}>
+        <div className="flex items-center gap-2">
+          <Label className={`text-xs font-semibold cursor-pointer ${enabled ? "text-foreground" : "text-foreground/80"}`}>{label}</Label>
+          {enabled && <Badge variant="outline" className="text-[9px] py-0 border-primary/60 text-primary">attivo</Badge>}
+        </div>
+        {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
+        <div className={enabled ? "" : "pointer-events-none"}>
+          {children}
+        </div>
       </div>
-    </div>
+    </label>
   );
 }

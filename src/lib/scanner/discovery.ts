@@ -2146,10 +2146,20 @@ async function runDiscovery(
 
   // ═══════════════════════════════════════════════════════════════
   // Phase 4: Gestione host non rispondenti
-  // - nmap / network_discovery: additivi → annotano nelle note, non marcano offline
-  // - ping: comportamento classico → marca offline (la scansione ha solo ICMP, nessun dato parziale)
+  // - network_discovery: dopo ICMP + second-pass TCP, marca offline (policy P1
+  //   strict). Lo scan è abbastanza completo per essere autoritativo: chi non
+  //   risponde a ICMP NÉ a TCP è davvero spento/rimosso, non un device
+  //   ICMP-mute. Aggiunge anche la nota per traccia diagnostica.
+  // - nmap / ipam_full: restano additivi → annotano nelle note, non flippano
+  //   (scan manuali, l'utente può avere visioni parziali su CIDR grandi).
+  // - ping: marca offline (solo ICMP, comportamento classico).
   // ═══════════════════════════════════════════════════════════════
-  if (scanType === "nmap" || scanType === "network_discovery" || scanType === "ipam_full") {
+  if (scanType === "network_discovery") {
+    progress.phase = "Aggiornamento host offline";
+    noteHostsNonResponding(networkId, onlineIps, ips, scanType);
+    markHostsOffline(networkId, onlineIps, ips);
+    log(`Host non rispondenti (${ips.length - onlineIps.length}): marcati offline dopo ICMP + TCP fallback`);
+  } else if (scanType === "nmap" || scanType === "ipam_full") {
     progress.phase = "Annotazione host non rispondenti";
     noteHostsNonResponding(networkId, onlineIps, ips, scanType);
     log(`Host non rispondenti (${ips.length - onlineIps.length}): annotati nelle note per revisione`);

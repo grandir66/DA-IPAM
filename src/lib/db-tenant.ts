@@ -171,6 +171,37 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione fast_scan fallita:`, e);
   }
 
+  // Migrazione runtime: scan_history.scan_type CHECK include 'fast' e 'ipam_full'.
+  // Senza questi due valori il fast_scan crasha a metà (CHECK constraint failed)
+  // e il flip-offline di Phase 4 non viene mai raggiunto → host fantasma.
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scan_history'").get() as { sql?: string } | undefined;
+    if (row?.sql && (!row.sql.includes("'fast'") || !row.sql.includes("'ipam_full'"))) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS scan_history_v2");
+      newDb.exec(`CREATE TABLE scan_history_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full')),
+        status TEXT NOT NULL,
+        ports_open TEXT,
+        raw_output TEXT,
+        duration_ms INTEGER,
+        timestamp TEXT DEFAULT (datetime('now'))
+      )`);
+      newDb.exec("INSERT INTO scan_history_v2 SELECT * FROM scan_history");
+      newDb.exec("DROP TABLE scan_history");
+      newDb.exec("ALTER TABLE scan_history_v2 RENAME TO scan_history");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_host ON scan_history(host_id)");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_network ON scan_history(network_id)");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: scan_history CHECK aggiornato con 'fast' e 'ipam_full'`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione scan_history CHECK fallita:`, e);
+  }
+
   // Migrazione runtime: scheduled_jobs.job_type CHECK include 'vuln_sync' (sync findings da scanner-edge).
   try {
     const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as { sql?: string } | undefined;

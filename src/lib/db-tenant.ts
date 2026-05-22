@@ -4038,7 +4038,7 @@ export function queryAllTenantsScalar<T>(
  * vuln_findings(host_id, scanned_at DESC) — già presente.
  */
 export interface HostVulnSummary {
-  max_severity: "Critical" | "High" | "Medium" | "Low" | "Log";
+  max_severity: "Critical" | "High" | "Medium" | "Low";
   critical: number;
   high: number;
   medium: number;
@@ -4046,26 +4046,27 @@ export interface HostVulnSummary {
 }
 
 export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
-  // Aggregazione SU TUTTE le scan_run: per ogni host conta findings per
-  // severity. Niente filtro temporale (per discovery interessa "ha mai
-  // avuto vuln Critical/High" non "ne ha ora"). Se serve "ultima scan
-  // solo" si aggiunge un WHERE su scan_run_id più recente.
+  // Aggregazione SU TUTTE le scan_run: per ogni host conta findings
+  // per severità. Esclude 'Log' (info-only, non vulnerabilità). Senza
+  // filtro temporale: per discovery interessa "ha mai avuto CVE
+  // Critical/High" non "ne ha ora".
   const rows = db()
     .prepare(
       `SELECT host_id, severity, COUNT(*) AS n
          FROM vuln_findings
         WHERE host_id IS NOT NULL
+          AND severity IN ('Critical','High','Medium','Low')
         GROUP BY host_id, severity`
     )
     .all() as Array<{ host_id: number; severity: string; n: number }>;
 
   const rank: Record<string, number> = {
-    Critical: 0, High: 1, Medium: 2, Low: 3, Log: 4, Unknown: 5,
+    Critical: 0, High: 1, Medium: 2, Low: 3, Unknown: 5,
   };
   const map = new Map<number, HostVulnSummary>();
   for (const r of rows) {
     const cur = map.get(r.host_id) ?? {
-      max_severity: "Log" as HostVulnSummary["max_severity"],
+      max_severity: "Low" as HostVulnSummary["max_severity"],
       critical: 0, high: 0, medium: 0, total: 0,
     };
     if (r.severity === "Critical") cur.critical = r.n;

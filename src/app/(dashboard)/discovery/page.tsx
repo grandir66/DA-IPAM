@@ -65,7 +65,7 @@ type EnrichedHost = Host & {
   validated_protocols?: string[];
   multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
   vuln?: {
-    max_severity: "Critical" | "High" | "Medium" | "Low" | "Log";
+    max_severity: "Critical" | "High" | "Medium" | "Low";
     critical: number;
     high: number;
     medium: number;
@@ -130,7 +130,7 @@ const COLUMNS: ColumnDef[] = [
 
   // Vulnerabilità (scanner-edge)
   { id: "vuln_max_severity", label: "CVE max", defaultVisible: true, group: "rilevamento" },
-  { id: "vuln_counts",       label: "CVE C/H", defaultVisible: true, group: "rilevamento" },
+  { id: "vuln_counts",       label: "CVE C/H/M", defaultVisible: true, group: "rilevamento" },
 ];
 
 const GROUP_LABELS: Record<string, string> = {
@@ -905,13 +905,17 @@ export default function DiscoveryPage() {
       }
       case "vuln_counts": {
         if (!h.vuln) return <span className="text-muted-foreground text-xs">—</span>;
-        const { critical, high } = h.vuln;
-        if (critical === 0 && high === 0) return <span className="text-muted-foreground text-xs">—</span>;
+        const { critical, high, medium } = h.vuln;
+        if (critical === 0 && high === 0 && medium === 0)
+          return <span className="text-muted-foreground text-xs">—</span>;
+        const sep = <span className="text-muted-foreground">/</span>;
         return (
-          <span className="text-xs font-mono whitespace-nowrap" title="Critical / High">
-            {critical > 0 && <span className="text-red-600 font-semibold">{critical}</span>}
-            {critical > 0 && high > 0 && <span className="text-muted-foreground">/</span>}
-            {high > 0 && <span className="text-orange-600 font-semibold">{high}</span>}
+          <span className="text-xs font-mono whitespace-nowrap" title="Critical / High / Medium">
+            <span className={critical > 0 ? "text-red-600 font-semibold" : "text-muted-foreground"}>{critical}</span>
+            {sep}
+            <span className={high > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}>{high}</span>
+            {sep}
+            <span className={medium > 0 ? "text-yellow-600 font-semibold" : "text-muted-foreground"}>{medium}</span>
           </span>
         );
       }

@@ -39,7 +39,6 @@ const SEVERITY_STYLE: Record<string, string> = {
   High: "bg-orange-500 text-white",
   Medium: "bg-yellow-500 text-black",
   Low: "bg-blue-500 text-white",
-  Log: "bg-muted text-muted-foreground",
 };
 
 export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
@@ -115,7 +114,7 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
         ) : (
           <>
             <div className="flex flex-wrap gap-2 mb-3 text-xs">
-              {(["Critical", "High", "Medium", "Low", "Log"] as const).map((sev) => (
+              {(["Critical", "High", "Medium", "Low"] as const).map((sev) => (
                 <Badge key={sev} className={SEVERITY_STYLE[sev]}>
                   {sev}: {data.severity_rollup[sev]}
                 </Badge>

@@ -53,10 +53,12 @@ export async function GET(
     const rollup: SeverityRollup = { ...EMPTY };
     let lastRunFindings: number = 0;
     if (lastRun) {
+      // Esclude 'Log' (info-only) sia dai conteggi rollup che dal totale.
       const rows = db
         .prepare(
           `SELECT severity, COUNT(*) AS n FROM vuln_findings
             WHERE host_id = ? AND scan_run_id = ?
+              AND severity IN ('Critical','High','Medium','Low')
             GROUP BY severity`,
         )
         .all(hostId, lastRun.id) as Array<{ severity: keyof SeverityRollup; n: number }>;
@@ -66,6 +68,7 @@ export async function GET(
       }
     }
 
+    // Findings: esclude Log, ordina per severità decrescente.
     const findings = db
       .prepare(
         `SELECT id, scan_run_id, ip, mac, hostname, port, service,
@@ -73,7 +76,15 @@ export async function GET(
                 nvt_oid, nvt_name, description, scanned_at
            FROM vuln_findings
           WHERE host_id = ?
-          ORDER BY scanned_at DESC, id DESC LIMIT 100`,
+            AND severity IN ('Critical','High','Medium','Low')
+          ORDER BY
+            CASE severity
+              WHEN 'Critical' THEN 0
+              WHEN 'High'     THEN 1
+              WHEN 'Medium'   THEN 2
+              WHEN 'Low'      THEN 3
+              ELSE 5 END,
+            scanned_at DESC, id DESC LIMIT 100`,
       )
       .all(hostId);
 

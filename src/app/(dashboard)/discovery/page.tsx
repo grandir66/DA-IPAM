@@ -41,7 +41,7 @@ import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, HardDrive, Monitor,
-  Lock,
+  Lock, KeyRound, Trash2,
 } from "lucide-react";
 
 /**
@@ -423,6 +423,80 @@ export default function DiscoveryPage() {
     const raw = (ruleHost as unknown as { detection_json?: string | null }).detection_json;
     if (!raw) return null;
     try { return JSON.parse(raw) as DeviceFingerprintSnapshot; } catch { return null; }
+  }
+
+  // ─── Azioni per riga: elimina + test credenziali ──────────
+  const [deleteHostRow, setDeleteHostRow] = useState<EnrichedHost | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [testHostRow, setTestHostRow] = useState<EnrichedHost | null>(null);
+  const [testRowCredId, setTestRowCredId] = useState<string>("");
+  const [testRowPort, setTestRowPort] = useState<string>("");
+  const [testRowRunning, setTestRowRunning] = useState(false);
+
+  function openTestForRow(h: EnrichedHost) {
+    setTestHostRow(h);
+    setTestRowCredId("");
+    setTestRowPort("");
+  }
+
+  function defaultPortFor(type: string): string {
+    const t = (type || "").toLowerCase();
+    if (t === "ssh" || t === "linux") return "22";
+    if (t === "windows" || t === "winrm") return "5985";
+    if (t === "snmp") return "161";
+    return "";
+  }
+
+  async function handleDeleteHost() {
+    if (!deleteHostRow) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/hosts/${deleteHostRow.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success(`Host ${deleteHostRow.ip} eliminato`);
+        const removedId = deleteHostRow.id;
+        setDeleteHostRow(null);
+        setSelectedIds((prev) => { const next = new Set(prev); next.delete(removedId); return next; });
+        fetchData();
+      } else {
+        toast.error(data?.error ?? "Errore nell'eliminazione");
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleTestRowCredential() {
+    if (!testHostRow || !testRowCredId) {
+      toast.error("Seleziona una credenziale");
+      return;
+    }
+    setTestRowRunning(true);
+    try {
+      const body: { host: string; port?: number } = { host: testHostRow.ip };
+      const portNum = parseInt(testRowPort, 10);
+      if (!isNaN(portNum) && portNum > 0) body.port = portNum;
+      const res = await fetch(`/api/credentials/${testRowCredId}/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(data.message || "Test credenziale riuscito");
+        setTestHostRow(null);
+        fetchData();
+      } else {
+        toast.error(data.error || "Test credenziale fallito");
+      }
+    } catch {
+      toast.error("Errore nel test");
+    } finally {
+      setTestRowRunning(false);
+    }
   }
 
   // ---------- fetch ----------
@@ -1472,6 +1546,7 @@ export default function DiscoveryPage() {
                         {col.label}
                       </SortableTableHead>
                     ))}
+                    <TableHead className="w-[110px] text-right whitespace-nowrap">Azioni</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1488,6 +1563,33 @@ export default function DiscoveryPage() {
                           {renderCell(h, col.id)}
                         </TableCell>
                       ))}
+                      <TableCell className="py-2">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Link
+                            href={`/hosts/${h.id}`}
+                            title="Modifica host"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Link>
+                          <button
+                            type="button"
+                            title="Test credenziali su questo host"
+                            onClick={() => openTestForRow(h)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Elimina host"
+                            onClick={() => setDeleteHostRow(h)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -2033,6 +2135,92 @@ export default function DiscoveryPage() {
           hostname={ruleHost.hostname}
         />
       )}
+
+      {/* ════════════════ DIALOG ELIMINA HOST ════════════════ */}
+      <Dialog open={deleteHostRow !== null} onOpenChange={(o) => { if (!o) setDeleteHostRow(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Elimina host
+            </DialogTitle>
+          </DialogHeader>
+          {deleteHostRow && (
+            <div className="space-y-2 text-sm">
+              <p>
+                Eliminare definitivamente l&apos;host <strong className="font-mono">{deleteHostRow.ip}</strong>
+                {displayName(deleteHostRow) && <> (<span className="font-mono">{displayName(deleteHostRow)}</span>)</>}?
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Rimuove anche credenziali associate e binding. Operazione non reversibile.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleteHostRow(null)} disabled={deleting}>Annulla</Button>
+            <Button variant="destructive" onClick={handleDeleteHost} disabled={deleting}>
+              {deleting ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Eliminazione...</> : <><Trash2 className="h-4 w-4 mr-1.5" />Elimina</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════ DIALOG TEST CREDENZIALI SU HOST ════════════════ */}
+      <Dialog open={testHostRow !== null} onOpenChange={(o) => { if (!o) setTestHostRow(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-primary" />
+              Test credenziali
+            </DialogTitle>
+          </DialogHeader>
+          {testHostRow && (
+            <div className="space-y-3">
+              <div className="text-sm">
+                Host: <strong className="font-mono">{testHostRow.ip}</strong>
+              </div>
+              <div>
+                <Label className="text-xs">Credenziale</Label>
+                <Select
+                  value={testRowCredId}
+                  onValueChange={(v) => {
+                    const val = v ?? "";
+                    setTestRowCredId(val);
+                    const cred = credentials.find((c) => String(c.id) === val);
+                    if (cred) setTestRowPort(defaultPortFor(cred.credential_type));
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Seleziona credenziale" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {credentials.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name} <span className="text-muted-foreground text-xs">({c.credential_type})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Porta (opzionale)</Label>
+                <Input
+                  className="mt-1"
+                  value={testRowPort}
+                  onChange={(e) => setTestRowPort(e.target.value)}
+                  placeholder="es. 22, 161, 5985"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setTestHostRow(null)} disabled={testRowRunning}>Annulla</Button>
+            <Button onClick={handleTestRowCredential} disabled={testRowRunning || !testRowCredId}>
+              {testRowRunning ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Test in corso...</> : <><Activity className="h-4 w-4 mr-1.5" />Esegui test</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1534,6 +1534,7 @@ export default function DiscoveryPage() {
                         onCheckedChange={toggleSelectAllPage}
                       />
                     </TableHead>
+                    <TableHead className="w-[88px] whitespace-nowrap">Azioni</TableHead>
                     {COLUMNS.filter((c) => isVisible(c.id)).map((col) => (
                       <SortableTableHead
                         key={col.id}
@@ -1546,7 +1547,6 @@ export default function DiscoveryPage() {
                         {col.label}
                       </SortableTableHead>
                     ))}
-                    <TableHead className="w-[110px] text-right whitespace-nowrap">Azioni</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1558,13 +1558,8 @@ export default function DiscoveryPage() {
                           onCheckedChange={() => toggleSelect(h.id)}
                         />
                       </TableCell>
-                      {COLUMNS.filter((c) => isVisible(c.id)).map((col) => (
-                        <TableCell key={col.id} className="py-2">
-                          {renderCell(h, col.id)}
-                        </TableCell>
-                      ))}
                       <TableCell className="py-2">
-                        <div className="flex items-center justify-end gap-0.5">
+                        <div className="flex items-center gap-0.5">
                           <Link
                             href={`/hosts/${h.id}`}
                             title="Modifica host"
@@ -1590,6 +1585,11 @@ export default function DiscoveryPage() {
                           </button>
                         </div>
                       </TableCell>
+                      {COLUMNS.filter((c) => isVisible(c.id)).map((col) => (
+                        <TableCell key={col.id} className="py-2">
+                          {renderCell(h, col.id)}
+                        </TableCell>
+                      ))}
                     </TableRow>
                   ))}
                 </TableBody>

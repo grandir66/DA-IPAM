@@ -2605,7 +2605,7 @@ function DeviceDetailPage() {
 
       {/* Inventario software (solo macchine Windows/Linux con credenziali) */}
       {device && (device.vendor === "windows" || device.vendor === "linux") && (
-        <DeviceSoftwareCard deviceId={device.id} />
+        <DeviceSoftwareCard deviceId={device.id} osHint={device.vendor} />
       )}
 
       {/* Modale progresso scansione device */}

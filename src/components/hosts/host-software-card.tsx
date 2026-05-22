@@ -56,16 +56,22 @@ import type {
 /** Target del componente: host (entry di rete) o device (managed network_device). */
 type CardTarget = { kind: "host"; id: number } | { kind: "device"; id: number };
 
+/** Hint OS opzionale per filtrare il dropdown credenziali. */
+type OsHint = "windows" | "linux" | undefined;
+
 interface InternalProps {
   target: CardTarget;
+  osHint?: OsHint;
 }
 
 interface HostProps {
   hostId: number;
+  osHint?: OsHint;
 }
 
 interface DeviceProps {
   deviceId: number;
+  osHint?: OsHint;
 }
 
 interface CurrentResponse {
@@ -184,7 +190,7 @@ function exportInventoryCsv(label: string, scanId: number, rows: SoftwareInvento
   URL.revokeObjectURL(url);
 }
 
-function SoftwareScanCard({ target }: InternalProps) {
+function SoftwareScanCard({ target, osHint }: InternalProps) {
   const apiBase =
     target.kind === "host"
       ? `/api/hosts/${target.id}`
@@ -403,7 +409,11 @@ function SoftwareScanCard({ target }: InternalProps) {
   }
 
   const lastScan = current?.scan ?? null;
-  const credentialOptions = credentials;
+  // Se sappiamo l'OS del target (hint da device.vendor), filtra il dropdown
+  // mostrando solo le credenziali del tipo compatibile. Senza hint mostra tutte (host).
+  const credentialOptions = osHint
+    ? credentials.filter((c) => c.credential_type === osHint)
+    : credentials;
   const noCompatCredentials = credentialOptions.length === 0;
   const isRunning = running !== null || submitting;
 
@@ -735,11 +745,11 @@ function SoftwareScanCard({ target }: InternalProps) {
 }
 
 /** Wrapper: card software per pagina dettaglio host. */
-export function HostSoftwareCard({ hostId }: HostProps) {
-  return <SoftwareScanCard target={{ kind: "host", id: hostId }} />;
+export function HostSoftwareCard({ hostId, osHint }: HostProps) {
+  return <SoftwareScanCard target={{ kind: "host", id: hostId }} osHint={osHint} />;
 }
 
 /** Wrapper: card software per pagina dettaglio device (network_devices). */
-export function DeviceSoftwareCard({ deviceId }: DeviceProps) {
-  return <SoftwareScanCard target={{ kind: "device", id: deviceId }} />;
+export function DeviceSoftwareCard({ deviceId, osHint }: DeviceProps) {
+  return <SoftwareScanCard target={{ kind: "device", id: deviceId }} osHint={osHint} />;
 }

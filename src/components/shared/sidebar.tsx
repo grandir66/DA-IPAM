@@ -9,8 +9,6 @@ import {
   LayoutDashboard,
   Network,
   Scan,
-  Router,
-  Cable,
   Key,
   Settings,
   ServerCog,
@@ -20,7 +18,6 @@ import {
   ChevronDown,
   ChevronRight,
   Server,
-  Shield,
   ListOrdered,
   Package,
   User,
@@ -238,43 +235,12 @@ export function Sidebar() {
           )}
         </div>
 
-        {/* Devices collapsible */}
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={() => setDevicesOpen((o) => !o)}
-            className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full",
-              devicesSubItems.some((d) => pathname.startsWith(d.href))
-                ? "bg-sidebar-primary/20 text-sidebar-foreground"
-                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            )}
-          >
-            {devicesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            <Server className="h-4 w-4" />
-            Devices
-          </button>
-          {devicesOpen && (
-            <div className="ml-4 mt-1 space-y-0.5 border-l border-sidebar-border pl-2">
-              {devicesSubItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={cn(
-                    "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
-                    isActive(item.href)
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                  )}
-                >
-                  <item.icon className="h-3.5 w-3.5" />
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+        {/*
+          Voce "Dispositivi" non in sidebar: l'entrypoint unico per host/device
+          è Discovery (filtri rapidi per Server/Hypervisor/Client/Router/Switch/Firewall
+          previsti in Fase 2). Le pagine /devices/[classification] restano per ora
+          come gestione dettagliata; verranno sostituite da azioni inline in Fase 3.
+        */}
 
         {/* Inventario collapsible */}
         <div className="pt-1">
@@ -334,20 +300,7 @@ export function Sidebar() {
           )}
         </Link>
 
-        {/* Active Directory */}
-        <Link
-          href="/active-directory"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            isActive("/active-directory")
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <FolderTree className="h-4 w-4" />
-          Active Directory
-        </Link>
+        {/* Active Directory: spostato come voce di Network */}
 
         {/* Config Cliente — disabilitato, da rifare con UX guidata */}
         <div

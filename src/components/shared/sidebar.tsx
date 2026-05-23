@@ -29,6 +29,7 @@ import {
   AlertTriangle,
   PlugZap,
   Workflow,
+  BookOpen,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -327,6 +328,21 @@ export function Sidebar() {
             Integrazioni
           </Link>
         )}
+
+        {/* Manuale in-app: viewer markdown dei doc in /docs */}
+        <Link
+          href="/manual"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            isActive("/manual")
+              ? "bg-sidebar-primary text-sidebar-primary-foreground"
+              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <BookOpen className="h-4 w-4" />
+          Manuale
+        </Link>
 
         {/* ═══ SEPARATORE SISTEMA ═══ */}
         <div className="pt-3 px-3">

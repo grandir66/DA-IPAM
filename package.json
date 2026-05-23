@@ -1,6 +1,6 @@
 {
   "name": "da-invent",
-  "version": "0.2.498",
+  "version": "0.2.499",
   "private": true,
   "description": "IPAM e inventario asset — progetto open source Domarc (domarc.it). Vedi LICENSE per attribuzione su fork.",
   "author": "Domarc (https://domarc.it)",
@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
+    "@tailwindcss/typography": "^0.5.19",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.8.0",
     "class-variance-authority": "^0.7.1",
@@ -50,7 +51,9 @@
     "oui": "^13.1.5",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
     "recharts": "^3.8.0",
+    "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
     "ssh2": "^1.17.0",
     "tailwind-merge": "^3.5.0",

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, RefreshCw, Shield, Trash2, BookOpen, Copy, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, Shield, Trash2, BookOpen, Copy, ChevronDown, ChevronRight, AlertTriangle, ExternalLink } from "lucide-react";
 
 interface WazuhConfig {
   enabled: boolean;
@@ -246,6 +246,16 @@ export function WazuhCard() {
               {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
               Sincronizza ora
             </Button>
+            {cfg!.url && (
+              <a
+                href={cfg!.url.replace(/:55000(\/.*)?$/, "")}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-md border px-3 py-1 text-sm hover:bg-accent"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Apri Dashboard Wazuh
+              </a>
+            )}
             <Button size="sm" variant="outline" onClick={() => setEditMode(true)}>
               Modifica credenziali
             </Button>

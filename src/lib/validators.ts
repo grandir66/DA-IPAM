@@ -157,6 +157,8 @@ export const ScanTriggerSchema = z.object({
   nmap_profile_id: z.coerce.number().int().positive().optional(),
   /** Per azioni manuali: limita agli host selezionati (vista lista). */
   host_ids: z.array(z.coerce.number().int().positive()).optional(),
+  /** Solo scan_enrich: forza un sync LDAP fresco prima del relink (più lento). */
+  fresh_sync: z.boolean().optional(),
 });
 
 const inventoryCategoria = z.enum(["Desktop", "Laptop", "Server", "Switch", "Firewall", "NAS", "Stampante", "VM", "Licenza", "Access Point", "Router", "Other"]).optional().nullable();

@@ -91,35 +91,25 @@ export async function POST(
         if (!username || !password) {
           return NextResponse.json({ success: false, error: "Username e password richiesti" });
         }
-        try {
-          const { Client } = await import("ssh2");
-          const port = typeof body.port === "number" ? body.port : 22;
-          await withTimeout(
-            new Promise<void>((resolve, reject) => {
-              const conn = new Client();
-              conn.on("ready", () => {
-                conn.end();
-                resolve();
-              });
-              conn.on("error", reject);
-              conn.connect({
-                host,
-                port,
-                username,
-                password,
-                readyTimeout: 15000,
-              });
-            }),
-            TEST_TIMEOUT_MS
-          );
+        const { sshTryConnect } = await import("@/lib/devices/ssh-transport");
+        const port = typeof body.port === "number" ? body.port : 22;
+        const result = await withTimeout(
+          sshTryConnect({ host, port, username, password, timeout: 15000, credentialName: cred.name }),
+          TEST_TIMEOUT_MS
+        );
+        if (result.ok) {
           persistValidatedBinding(host, Number(id), "ssh", port);
           return NextResponse.json({ success: true, message: "Connessione SSH riuscita" });
-        } catch (e) {
-          return NextResponse.json({
-            success: false,
-            error: e instanceof Error ? e.message : "Connessione SSH fallita",
-          });
         }
+        const err = result.error;
+        return NextResponse.json({
+          success: false,
+          error: err.message,
+          hint: err.hint,
+          kind: err.kind,
+          methodsOffered: err.methodsOffered,
+          methodsTried: err.methodsTried,
+        });
       }
 
       if (type === "windows") {

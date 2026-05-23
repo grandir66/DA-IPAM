@@ -183,10 +183,19 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 /** Testa una singola credenziale binding su un host */
+/** Esito test binding: i campi extra (`kind`, `hint`, `methodsOffered`, `methodsTried`)
+ *  sono presenti solo per failure SSH e servono al pannello "Diagnostica" in UI. */
 async function testBinding(
   host: string,
   binding: { protocol_type: string; port: number; credential_id: number | null; inline_username: string | null; inline_encrypted_password: string | null; credential_type?: string | null }
-): Promise<{ success: boolean; message: string }> {
+): Promise<{
+  success: boolean;
+  message: string;
+  kind?: string;
+  hint?: string;
+  methodsOffered?: string[];
+  methodsTried?: string[];
+}> {
   try {
     if (binding.protocol_type === "ssh") {
       let username: string | undefined;
@@ -201,19 +210,28 @@ async function testBinding(
         password = binding.inline_encrypted_password ? decrypt(binding.inline_encrypted_password) : undefined;
       }
       if (!username) return { success: false, message: "Username mancante" };
+      if (!password) return { success: false, message: "Password mancante" };
 
-      const { Client } = await import("ssh2");
-      return new Promise((resolve) => {
-        const conn = new Client();
-        const timer = setTimeout(() => { conn.end(); resolve({ success: false, message: "Timeout SSH" }); }, 10000);
-        conn.on("ready", () => { clearTimeout(timer); conn.end(); resolve({ success: true, message: "Connessione SSH riuscita" }); });
-        conn.on("error", (err) => { clearTimeout(timer); resolve({ success: false, message: `SSH: ${err.message}` }); });
-        conn.connect({
-          host, port: binding.port, username, password,
-          readyTimeout: 10000,
-          algorithms: { kex: ["curve25519-sha256", "curve25519-sha256@libssh.org", "ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521", "diffie-hellman-group-exchange-sha256", "diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"] },
-        });
+      const { sshTryConnect } = await import("@/lib/devices/ssh-transport");
+      const result = await sshTryConnect({
+        host,
+        port: binding.port,
+        username,
+        password,
+        timeout: 10000,
+        credentialName: binding.credential_id ? `cred#${binding.credential_id}` : "inline",
       });
+      if (result.ok) return { success: true, message: "Connessione SSH riuscita" };
+      const err = result.error;
+      const detail = err.hint ? `${err.message} ${err.hint}` : err.message;
+      return {
+        success: false,
+        message: `[${err.kind}] ${detail}`,
+        kind: err.kind,
+        hint: err.hint,
+        methodsOffered: err.methodsOffered,
+        methodsTried: err.methodsTried,
+      };
     }
 
     if (binding.protocol_type === "snmp") {

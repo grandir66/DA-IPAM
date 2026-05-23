@@ -11,45 +11,28 @@ import type { ArpTableEntry } from "../router-client";
 import type { AcquisitionHandler, DeviceInfo } from "./registry";
 import { registerHandler } from "./registry";
 import { getDeviceCredentials } from "@/lib/db";
+import { sshExec } from "../ssh-transport";
 
 async function sshExecMikrotik(
   device: NetworkDevice,
   command: string
 ): Promise<string> {
   const creds = getDeviceCredentials(device);
-  const { Client } = await import("ssh2");
-
-  return new Promise((resolve, reject) => {
-    const conn = new Client();
-    conn.on("ready", () => {
-      conn.exec(command, (err, stream) => {
-        if (err) {
-          conn.end();
-          reject(err);
-          return;
-        }
-        let output = "";
-        stream.on("data", (data: Buffer) => {
-          output += data.toString();
-        });
-        stream.stderr.on("data", (data: Buffer) => {
-          output += data.toString();
-        });
-        stream.on("close", () => {
-          conn.end();
-          resolve(output);
-        });
-      });
-    });
-    conn.on("error", reject);
-    conn.connect({
+  const username = creds?.username ?? device.username ?? undefined;
+  if (!username || !creds?.password) {
+    throw new Error(`Credenziali SSH mancanti per Mikrotik ${device.name} (${device.host})`);
+  }
+  const res = await sshExec(
+    {
       host: device.host,
       port: device.port || 22,
-      username: creds?.username ?? device.username ?? undefined,
-      password: creds?.password,
-      readyTimeout: 10000,
-    });
-  });
+      username,
+      password: creds.password,
+      timeout: 10000,
+    },
+    command
+  );
+  return res.stdout + res.stderr;
 }
 
 function parseMikrotikMacTable(output: string): MacTableEntry[] {

@@ -1,8 +1,10 @@
 import type { NetworkDevice } from "@/types";
-import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString } from "@/lib/db";
-import { decrypt, safeDecrypt } from "@/lib/crypto";
+import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString, getDb } from "@/lib/db";
+import { safeDecrypt } from "@/lib/crypto";
 import type { PortInfo } from "./switch-client";
 import { getSnmpPortSchema } from "./snmp-port-schema";
+import { sshExec as transportSshExec } from "./ssh-transport";
+import type { SshOptions } from "./ssh-transport";
 
 export interface ArpTableEntry {
   mac: string;
@@ -94,22 +96,34 @@ export interface RouterClient {
   getRoutingTable?(): Promise<RouteEntry[]>;
 }
 
+/**
+ * True se il device ha una credenziale/community SNMP risolvibile via uno dei tre
+ * percorsi: `device_credential_bindings.protocol_type='snmp'`, campi legacy
+ * (`snmp_credential_id`, `credential_id`) con community valida, oppure `community_string`
+ * inline. Usato sia dal fallback SNMP del router-client sia dal branch Stormshield
+ * per decidere se evitare l'SSH a vuoto.
+ */
+function deviceHasSnmpCredential(device: NetworkDevice): boolean {
+  if (device.community_string) return true;
+  if (device.snmp_credential_id && getCredentialCommunityString(device.snmp_credential_id)) return true;
+  if (device.credential_id && getCredentialCommunityString(device.credential_id)) return true;
+  const hasBinding = !!getDb().prepare(
+    "SELECT 1 FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'snmp' LIMIT 1"
+  ).get(device.id);
+  return hasBinding;
+}
+
 export async function createRouterClient(device: NetworkDevice): Promise<RouterClient> {
   const creds = getDeviceCredentials(device);
   const username = creds?.username ?? device.username ?? undefined;
   const password = creds?.password;
   const primary = await getVendorRouterClient(device, { username, password });
 
-  // Se il client primario non ha getPortSchema ma il device ha SNMP (community_string, credential, o binding SNMP),
-  // aggiungi fallback per acquisire porte e LLDP/CDP
-  const { getDb } = await import("@/lib/db");
-  const hasSnmpBinding = !!(getDb().prepare(
-    "SELECT 1 FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'snmp' LIMIT 1"
-  ).get(device.id));
-  const hasSnmpCommunity = device.community_string
-    || (device.snmp_credential_id ? !!getCredentialCommunityString(device.snmp_credential_id) : false)
-    || (device.credential_id ? !!getCredentialCommunityString(device.credential_id) : false)
-    || hasSnmpBinding;
+  // Fallback SNMP per porte/LLDP/CDP — include anche i binding v2
+  // (`device_credential_bindings`): fix anti-regressione perché in precedenza
+  // `hasSnmpCommunity` leggeva solo i campi legacy del NetworkDevice e i device
+  // configurati solo via binding nuovo perdevano il fallback.
+  const hasSnmpCommunity = deviceHasSnmpCredential(device);
   let client: RouterClient = primary;
   if (!primary.getPortSchema && hasSnmpCommunity) {
     const snmpClient = await createSnmpArpClient(device);
@@ -186,11 +200,11 @@ async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds):
     case "omada":
       return createOmadaClient(device);
     case "stormshield": {
-      // Stormshield SNS ha CLI custom (NS-BSD): i comandi POSIX/Cisco non funzionano e
-      // l'auth password viene spesso rifiutata. Se c'è community SNMP usiamola direttamente,
-      // così niente errore "All configured authentication methods failed" e la tabella ARP arriva via IP-MIB.
-      const hasSnmp = !!(device.community_string || device.snmp_credential_id || device.credential_id);
-      if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3" || hasSnmp) {
+      // Stormshield SNS ha CLI custom (NS-BSD) e accetta solo `keyboard-interactive`.
+      // Strategia: se c'è community/credenziale SNMP (binding v2 incluso), prendi SNMP
+      // come transport — restituisce la tabella ARP via IP-MIB senza dipendere da
+      // particolarità dell'auth SSH della CLI custom.
+      if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3" || deviceHasSnmpCredential(device)) {
         return createSnmpArpClient(device);
       }
       return createGenericSshRouterClient(device, creds);
@@ -208,6 +222,27 @@ async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds):
   }
 }
 
+/** Helper interno: opzioni transport SSH per un NetworkDevice, con fallback su username device. */
+function buildDeviceSshOptions(device: NetworkDevice, creds: DeviceCreds): SshOptions | null {
+  const username = creds.username || device.username || undefined;
+  if (!username || !creds.password) return null;
+  return {
+    host: device.host,
+    port: device.port || 22,
+    username,
+    password: creds.password,
+    timeout: 10000,
+  };
+}
+
+async function execDeviceCommand(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs?: number): Promise<string> {
+  const opts = buildDeviceSshOptions(device, creds);
+  if (!opts) throw new Error(`Credenziali SSH mancanti per il device ${device.name} (${device.host})`);
+  if (timeoutMs) opts.timeout = timeoutMs;
+  const res = await transportSshExec(opts, cmd);
+  return res.stdout + res.stderr;
+}
+
 // SSH-based client factory
 async function createSshClient(
   device: NetworkDevice,
@@ -215,42 +250,14 @@ async function createSshClient(
   command: string,
   parser: (output: string) => ArpTableEntry[]
 ): Promise<RouterClient> {
-  const { Client } = await import("ssh2");
-
-  function execCommand(cmd: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const conn = new Client();
-      conn.on("ready", () => {
-        conn.exec(cmd, (err, stream) => {
-          if (err) { conn.end(); reject(err); return; }
-          let output = "";
-          stream.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.on("close", () => { conn.end(); resolve(output); });
-        });
-      });
-      conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
-      conn.connect({
-        host: device.host,
-        port: device.port,
-        username: creds.username || device.username || undefined,
-        password: creds.password,
-        readyTimeout: 10000,
-        algorithms: {
-          kex: ["curve25519-sha256", "curve25519-sha256@libssh.org", "ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521", "diffie-hellman-group-exchange-sha256", "diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1"],
-        },
-      });
-    });
-  }
-
   return {
     async getArpTable() {
-      const output = await execCommand(command);
+      const output = await execDeviceCommand(device, creds, command);
       return parser(output);
     },
     async testConnection() {
       try {
-        await execCommand("echo test");
+        await execDeviceCommand(device, creds, "echo test");
         return true;
       } catch {
         return false;
@@ -593,38 +600,8 @@ async function createMikrotikClient(device: NetworkDevice, creds: DeviceCreds): 
   if (device.protocol !== "ssh") {
     return createSnmpArpClient(device);
   }
-  const { Client } = await import("ssh2");
 
-  function execCommand(cmd: string, timeoutMs = 30000): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const conn = new Client();
-      const timeout = setTimeout(() => {
-        conn.end();
-        reject(new Error("Timeout"));
-      }, timeoutMs);
-
-      conn.on("ready", () => {
-        conn.exec(cmd, (err, stream) => {
-          if (err) { clearTimeout(timeout); conn.end(); reject(err); return; }
-          let output = "";
-          stream.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.on("close", () => { clearTimeout(timeout); conn.end(); resolve(output); });
-        });
-      });
-      conn.on("error", (err) => { clearTimeout(timeout); reject(err); });
-      conn.connect({
-        host: device.host,
-        port: device.port,
-        username: creds.username || device.username || undefined,
-        password: creds.password,
-        readyTimeout: 10000,
-        algorithms: {
-          kex: ["curve25519-sha256", "curve25519-sha256@libssh.org", "ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521", "diffie-hellman-group-exchange-sha256", "diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1"],
-        },
-      });
-    });
-  }
+  const execCommand = (cmd: string, timeoutMs = 30000) => execDeviceCommand(device, creds, cmd, timeoutMs);
 
   return {
     async getArpTable() {
@@ -698,30 +675,7 @@ async function createMikrotikClient(device: NetworkDevice, creds: DeviceCreds): 
 async function createCiscoClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
   if (device.protocol !== "ssh") return createSnmpArpClient(device);
   const base = await createSshClient(device, creds, "show ip arp", parseCiscoArp);
-  const { Client } = await import("ssh2");
-
-  function execCisco(cmd: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const conn = new Client();
-      const timeout = setTimeout(() => { conn.end(); reject(new Error("Timeout")); }, 15000);
-      conn.on("ready", () => {
-        conn.exec(cmd, (err, stream) => {
-          if (err) { clearTimeout(timeout); conn.end(); reject(err); return; }
-          let output = "";
-          stream.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.on("close", () => { clearTimeout(timeout); conn.end(); resolve(output); });
-        });
-      });
-      conn.on("error", (err) => { clearTimeout(timeout); reject(err); });
-      conn.connect({
-        host: device.host, port: device.port,
-        username: creds.username || device.username || undefined, password: creds.password,
-        readyTimeout: 10000,
-        algorithms: { kex: ["curve25519-sha256", "curve25519-sha256@libssh.org", "ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521", "diffie-hellman-group-exchange-sha256", "diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"] },
-      });
-    });
-  }
+  const execCisco = (cmd: string) => execDeviceCommand(device, creds, cmd, 15000);
 
   return {
     ...base,
@@ -751,30 +705,7 @@ async function createCiscoClient(device: NetworkDevice, creds: DeviceCreds): Pro
 async function createUbiquitiClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
   if (device.protocol !== "ssh") return createSnmpArpClient(device);
   const base = await createSshClient(device, creds, "show arp", parseGenericArp);
-  const { Client } = await import("ssh2");
-
-  function execUbnt(cmd: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const conn = new Client();
-      const timeout = setTimeout(() => { conn.end(); reject(new Error("Timeout")); }, 15000);
-      conn.on("ready", () => {
-        conn.exec(cmd, (err, stream) => {
-          if (err) { clearTimeout(timeout); conn.end(); reject(err); return; }
-          let output = "";
-          stream.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.on("close", () => { clearTimeout(timeout); conn.end(); resolve(output); });
-        });
-      });
-      conn.on("error", (err) => { clearTimeout(timeout); reject(err); });
-      conn.connect({
-        host: device.host, port: device.port,
-        username: creds.username || device.username || undefined, password: creds.password,
-        readyTimeout: 10000,
-        algorithms: { kex: ["curve25519-sha256", "curve25519-sha256@libssh.org", "ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521", "diffie-hellman-group-exchange-sha256", "diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"] },
-      });
-    });
-  }
+  const execUbnt = (cmd: string) => execDeviceCommand(device, creds, cmd, 15000);
 
   return {
     ...base,
@@ -804,30 +735,7 @@ async function createUbiquitiClient(device: NetworkDevice, creds: DeviceCreds): 
 async function createHpClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
   if (device.protocol !== "ssh") return createSnmpArpClient(device);
   const base = await createSshClient(device, creds, "show arp", parseGenericArp);
-  const { Client } = await import("ssh2");
-
-  function execHp(cmd: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const conn = new Client();
-      const timeout = setTimeout(() => { conn.end(); reject(new Error("Timeout")); }, 15000);
-      conn.on("ready", () => {
-        conn.exec(cmd, (err, stream) => {
-          if (err) { clearTimeout(timeout); conn.end(); reject(err); return; }
-          let output = "";
-          stream.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.on("close", () => { clearTimeout(timeout); conn.end(); resolve(output); });
-        });
-      });
-      conn.on("error", (err) => { clearTimeout(timeout); reject(err); });
-      conn.connect({
-        host: device.host, port: device.port,
-        username: creds.username || device.username || undefined, password: creds.password,
-        readyTimeout: 10000,
-        algorithms: { kex: ["curve25519-sha256", "curve25519-sha256@libssh.org", "ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521", "diffie-hellman-group-exchange-sha256", "diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"] },
-      });
-    });
-  }
+  const execHp = (cmd: string) => execDeviceCommand(device, creds, cmd, 15000);
 
   return {
     ...base,
@@ -899,44 +807,7 @@ async function createGenericSshRouterClient(device: NetworkDevice, creds: Device
     { cmd: "cat /proc/net/arp", parser: parseLinuxProcArp },
   ];
 
-  const { Client } = await import("ssh2");
-
-  function execCmd(cmd: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const conn = new Client();
-      conn.on("ready", () => {
-        conn.exec(cmd, (err, stream) => {
-          if (err) {
-            conn.end();
-            reject(err);
-            return;
-          }
-          let output = "";
-          stream.on("data", (data: Buffer) => {
-            output += data.toString();
-          });
-          stream.stderr.on("data", (data: Buffer) => {
-            output += data.toString();
-          });
-          stream.on("close", () => {
-            conn.end();
-            resolve(output);
-          });
-        });
-      });
-      conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
-      conn.connect({
-        host: device.host,
-        port: device.port || 22,
-        username: creds.username || device.username || undefined,
-        password: creds.password,
-        readyTimeout: 10000,
-        algorithms: {
-          kex: ["curve25519-sha256", "curve25519-sha256@libssh.org", "ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521", "diffie-hellman-group-exchange-sha256", "diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"],
-        },
-      });
-    });
-  }
+  const execCmd = (cmd: string) => execDeviceCommand(device, creds, cmd, 10000);
 
   return {
     async getArpTable() {

@@ -69,11 +69,14 @@ export async function POST(request: Request) {
         });
       }
 
-      // scan_enrich (fase 1.4): ARP + DHCP + AD relink in sequenza, additivo.
+      // scan_enrich (fase 1.4): ARP + DHCP + AD (sync fresco opzionale + relink).
       // Non passa per discoverNetwork — è solo arricchimento dati esistenti.
+      // Con fresh_sync=true esegue una query LDAP fresca prima del relink:
+      // utile quando la cache AD è vecchia o vuota, ma più lento (10-60s).
       if (parsed.data.scan_type === "scan_enrich") {
         const phases: string[] = [];
         const errors: string[] = [];
+        const freshSync = parsed.data.fresh_sync === true;
 
         const arpResult = await runArpPoll(parsed.data.network_id, targetIps ? { onlyEnrichIps: targetIps } : undefined);
         if (arpResult.error) errors.push(`ARP: ${arpResult.error}`);
@@ -88,10 +91,36 @@ export async function POST(request: Request) {
         }
 
         try {
-          const adResult = relinkAdComputersForNetwork(parsed.data.network_id);
-          phases.push(`AD: ${adResult.linked} linkati, ${adResult.enriched} arricchiti`);
+          const dnsResult = await runDnsResolve(parsed.data.network_id, parsed.data.host_ids);
+          phases.push(`DNS: ${dnsResult.resolved}/${dnsResult.total} risolti`);
         } catch (e) {
-          errors.push(`AD: ${e instanceof Error ? e.message : "errore"}`);
+          errors.push(`DNS: ${e instanceof Error ? e.message : "errore"}`);
+        }
+
+        // Fresh sync LDAP opzionale (unica AD attiva — se 0 o >1 → skip)
+        if (freshSync) {
+          try {
+            const { getAdIntegrations } = await import("@/lib/db");
+            const enabled = getAdIntegrations().filter((i) => i.enabled);
+            if (enabled.length === 0) {
+              phases.push("AD sync: nessuna integrazione abilitata");
+            } else if (enabled.length > 1) {
+              phases.push(`AD sync: ${enabled.length} integrazioni attive (skip, abilitarne solo una)`);
+            } else {
+              const { syncActiveDirectory } = await import("@/lib/ad/ad-client");
+              const r = await syncActiveDirectory(enabled[0].id);
+              phases.push(`AD sync: ${r.computers} computer, ${r.users} utenti, ${r.linked_hosts} host linkati (${r.duration_ms}ms)`);
+            }
+          } catch (e) {
+            errors.push(`AD sync: ${e instanceof Error ? e.message : "errore"}`);
+          }
+        }
+
+        try {
+          const adResult = relinkAdComputersForNetwork(parsed.data.network_id);
+          phases.push(`AD relink: ${adResult.linked} linkati, ${adResult.enriched} arricchiti`);
+        } catch (e) {
+          errors.push(`AD relink: ${e instanceof Error ? e.message : "errore"}`);
         }
 
         const phaseMsg = phases.length > 0 ? phases.join(" · ") : "Enrich completato";

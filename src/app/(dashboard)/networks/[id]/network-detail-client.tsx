@@ -140,9 +140,6 @@ export function NetworkDetailClient({
   const [listSortDir, setListSortDir] = useState<SortDirection>("asc");
   const [editingHostId, setEditingHostId] = useState<number | null>(null);
   const [editingField, setEditingField] = useState<"custom_name" | "notes" | "classification" | null>(null);
-  const [arpPolling, setArpPolling] = useState(false);
-  const [dhcpPolling, setDhcpPolling] = useState(false);
-  const [dnsResolving, setDnsResolving] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [classifyOpen, setClassifyOpen] = useState(false);
   const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
@@ -698,15 +695,16 @@ export function NetworkDetailClient({
     await runScanJob(scanType);
   }
 
-  // scan_enrich non passa per discoverNetwork: chiama direttamente l'endpoint
-  // dedicato che esegue ARP + DHCP + AD relink in sequenza.
-  async function triggerEnrich() {
+  // scan_enrich non passa per discoverNetwork: chiama l'endpoint dedicato che
+  // esegue ARP + DHCP + DNS + AD relink. Con fresh_sync=true esegue prima un
+  // sync LDAP fresco (più lento, ma utile se la cache AD è obsoleta).
+  async function triggerEnrich(freshSync = false) {
     setEnriching(true);
     try {
       const res = await fetch("/api/scans/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ network_id: network.id, scan_type: "scan_enrich" }),
+        body: JSON.stringify({ network_id: network.id, scan_type: "scan_enrich", fresh_sync: freshSync }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -752,111 +750,6 @@ export function NetworkDetailClient({
     }
     toast.success("Rilevamento avanzato completato (WinRM + SSH)");
     setScanning(null);
-  }
-
-  async function triggerArpPoll() {
-    if (selectedHostIds.size === 0) {
-      toast.error("Seleziona uno o più host nella lista (ARP manuale solo su IP selezionati)");
-      return;
-    }
-    setArpPolling(true);
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 60000);
-      const res = await fetch("/api/scans/trigger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          network_id: network.id,
-          scan_type: "arp_poll",
-          host_ids: Array.from(selectedHostIds),
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (res.ok) {
-        const data = await res.json();
-        toast.success(data.progress?.phase ?? "MAC recuperati dai router");
-        await refreshHosts();
-      } else {
-        const data = await res.json();
-        toast.error(data.error || "Errore nel recupero MAC");
-      }
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        toast.error("Timeout: il router non ha risposto entro 60 secondi");
-      } else {
-        toast.error("Errore nel recupero MAC");
-      }
-    } finally {
-      setArpPolling(false);
-    }
-  }
-
-  async function triggerDnsResolve() {
-    if (selectedHostIds.size === 0) {
-      toast.error("Seleziona uno o più host nella lista (DNS manuale solo su IP selezionati)");
-      return;
-    }
-    setDnsResolving(true);
-    try {
-      const res = await fetch("/api/scans/trigger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          network_id: network.id,
-          scan_type: "dns",
-          host_ids: Array.from(selectedHostIds),
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.progress?.phase || "DNS completato");
-        refreshHosts();
-        router.refresh();
-      } else {
-        toast.error(data.error || "Errore DNS");
-      }
-    } catch {
-      toast.error("Errore di rete");
-    } finally {
-      setDnsResolving(false);
-    }
-  }
-
-
-  const currentRouter = routerId ? routers.find((r) => r.id === routerId) : null;
-  const canDhcp = currentRouter?.vendor === "mikrotik" && currentRouter?.protocol === "ssh";
-
-  async function triggerDhcpPoll() {
-    if (!canDhcp) return;
-    if (selectedHostIds.size === 0) {
-      toast.error("Seleziona uno o più host nella lista (DHCP manuale solo su IP selezionati)");
-      return;
-    }
-    setDhcpPolling(true);
-    try {
-      const res = await fetch("/api/scans/trigger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          network_id: network.id,
-          scan_type: "dhcp",
-          host_ids: Array.from(selectedHostIds),
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.progress?.phase ?? "Host aggiornati da DHCP");
-        await refreshHosts();
-      } else {
-        toast.error(data.error || "Errore nel recupero DHCP");
-      }
-    } catch {
-      toast.error("Errore nel recupero DHCP");
-    } finally {
-      setDhcpPolling(false);
-    }
   }
 
   const onlineCount = hosts.filter((h) => h.status === "online").length;
@@ -1041,12 +934,23 @@ export function NetworkDetailClient({
                     size="sm"
                     variant="outline"
                     className="h-7 text-xs px-2 bg-background/90"
-                    onClick={() => void triggerEnrich()}
+                    onClick={() => void triggerEnrich(false)}
                     disabled={!!scanning || enriching}
-                    title="1.4 — ARP router + DHCP MikroTik + AD relink"
+                    title="1.4 — ARP router + DHCP MikroTik + DNS + AD relink (cache)"
                   >
                     <Layers className="h-3.5 w-3.5 mr-1 shrink-0" />
                     {enriching ? "Enrich…" : "Enrich"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs px-2 bg-background/90"
+                    onClick={() => void triggerEnrich(true)}
+                    disabled={!!scanning || enriching}
+                    title="1.4 + sync LDAP fresco dall'AD prima del relink (più lento, 10-60s)"
+                  >
+                    <Wifi className="h-3.5 w-3.5 mr-1 shrink-0" />
+                    Enrich + AD sync
                   </Button>
                 </div>
               </div>
@@ -1112,25 +1016,6 @@ export function NetworkDetailClient({
                 <Key className="h-4 w-4 mr-1.5 shrink-0" />
                 Verifica SSH/WinRM
               </Button>
-            </div>
-
-            {/* ─── ARRICCHIMENTO MIRATO — host selezionati ──────────── */}
-            <div className="rounded-lg border border-border/60 bg-muted/20 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,10rem)] flex-1 sm:flex-none">
-              <p className="text-[11px] font-semibold text-muted-foreground leading-tight mb-1">
-                Arricchimento mirato
-              </p>
-              <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5">
-                <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={triggerArpPoll} disabled={arpPolling || !!scanning || view !== "list" || selectedHostIds.size === 0} title="MAC dal router ARP">
-                  <Wifi className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  {arpPolling ? "ARP…" : "ARP"}
-                </Button>
-                <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={triggerDhcpPoll} disabled={!canDhcp || dhcpPolling || !!scanning || view !== "list" || selectedHostIds.size === 0} title={canDhcp ? "DHCP MikroTik" : "Richiede router MikroTik"}>
-                  {dhcpPolling ? "DHCP…" : "DHCP"}
-                </Button>
-                <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => { void triggerDnsResolve(); }} disabled={dnsResolving || !!scanning || view !== "list" || selectedHostIds.size === 0} title="Risoluzione DNS reverse/forward">
-                  {dnsResolving ? "DNS…" : "DNS"}
-                </Button>
-              </div>
             </div>
 
             {/* ─── CLASSIFICAZIONE ──────────────────────────────────── */}

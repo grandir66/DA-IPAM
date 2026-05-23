@@ -1,9 +1,9 @@
-import { getCredentialById, getDeviceCredentials, getCredentialCommunityString, getHostByIp, getHostCredentials } from "@/lib/db";
-import { decrypt, safeDecrypt } from "@/lib/crypto";
+import { getCredentialById, getDeviceCredentials, getHostByIp, getHostCredentials } from "@/lib/db";
+import { safeDecrypt } from "@/lib/crypto";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { createWinrmClient } from "@/lib/devices/winrm-client";
-import { sshExec } from "@/lib/devices/ssh-helper";
+import { sshExec, SshError } from "@/lib/devices/ssh-helper";
 import { ProxmoxClient, resolveProxmoxApiPortOverride } from "@/lib/proxmox/proxmox-client";
 import { testProxmoxSsh } from "@/lib/proxmox/proxmox-ssh";
 import {
@@ -245,12 +245,20 @@ export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?:
         throw new Error("Credenziali mancanti. Assegna una credenziale di tipo Linux (SSH) al dispositivo.");
       }
       const host = device.host.replace(/^https?:\/\//i, "").split(":")[0];
-      const res = await sshExec(
-        { host, port: device.port ?? 22, username: creds.username, password: creds.password, timeout: 15000 },
-        "hostname 2>/dev/null || echo ok"
-      );
       const dtype = device.vendor === "synology" || device.vendor === "qnap" ? "storage" : "linux";
-      return { success: res.code === 0, device_type: dtype, message: res.code === 0 ? `Connessione SSH OK` : undefined };
+      try {
+        const res = await sshExec(
+          { host, port: device.port ?? 22, username: creds.username, password: creds.password, timeout: 15000 },
+          "hostname 2>/dev/null || echo ok"
+        );
+        return { success: res.code === 0, device_type: dtype, message: res.code === 0 ? `Connessione SSH OK` : undefined };
+      } catch (e) {
+        if (e instanceof SshError) {
+          const detail = e.hint ? `${e.message} ${e.hint}` : e.message;
+          throw new Error(`[${e.kind}] ${detail}`);
+        }
+        throw e;
+      }
     }
 
     const client = await createSwitchClient(device);

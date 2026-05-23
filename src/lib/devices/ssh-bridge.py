@@ -71,23 +71,53 @@ def main() -> None:
             allow_agent=False,
             look_for_keys=False,
         )
-    except Exception as e:
-        try:
-            client.close()
-        except Exception:
-            pass
+    except paramiko.BadAuthenticationType as e:
+        # Il server espone metodi auth che paramiko non sa gestire (es. solo publickey).
+        try: client.close()
+        except Exception: pass
+        allowed = ", ".join(getattr(e, "allowed_types", []) or [])
+        _err(
+            f"[auth_method_unsupported] {host}:{port} per utente '{username}': "
+            f"il server SSH non accetta password (metodi offerti: {allowed or 'sconosciuti'}). "
+            f"Verifica sshd_config (PasswordAuthentication, KbdInteractiveAuthentication) o usa una chiave."
+        )
+        return
+    except paramiko.AuthenticationException as e:
+        try: client.close()
+        except Exception: pass
+        _err(
+            f"[auth_failed] {host}:{port} per utente '{username}': credenziali rifiutate. "
+            f"Verifica username/password e che l'utente sia abilitato a SSH. Dettaglio: {e}"
+        )
+        return
+    except paramiko.SSHException as e:
+        try: client.close()
+        except Exception: pass
         msg = str(e)
         low = msg.lower()
-        if "authentication failed" in low or "no authentication" in low:
-            _err(f"Credenziali SSH rifiutate da {host}:{port}: {msg}")
-        elif "timed out" in low or "timeout" in low:
-            _err(f"Timeout connessione SSH a {host}:{port}: {msg}")
-        elif "refused" in low or "econnrefused" in low:
-            _err(f"Connessione SSH rifiutata da {host}:{port}: {msg}")
-        elif "no route" in low or "unreachable" in low:
-            _err(f"Host SSH non raggiungibile {host}:{port}: {msg}")
+        if "no authentication methods available" in low or "no acceptable kex" in low or "no acceptable" in low:
+            _err(
+                f"[protocol_error] {host}:{port}: negoziazione SSH fallita ({msg}). "
+                f"Il dispositivo potrebbe richiedere algoritmi legacy: aggiorna firmware o usa un client compatibile."
+            )
         else:
-            _err(f"Errore connessione SSH ({host}:{port}): {msg}")
+            _err(f"[protocol_error] {host}:{port}: errore SSH ({msg}).")
+        return
+    except Exception as e:
+        try: client.close()
+        except Exception: pass
+        msg = str(e)
+        low = msg.lower()
+        if "timed out" in low or "timeout" in low:
+            _err(f"[connect_timeout] {host}:{port}: timeout connessione SSH. Verifica raggiungibilità e firewall.")
+        elif "refused" in low or "econnrefused" in low:
+            _err(f"[connect_refused] {host}:{port}: connessione rifiutata. Servizio SSH attivo?")
+        elif "no route" in low or "unreachable" in low:
+            _err(f"[unreachable] {host}:{port}: host non raggiungibile (no route).")
+        elif "name or service not known" in low or "getaddrinfo" in low:
+            _err(f"[unreachable] hostname '{host}' non risolto. Usa IP statico o verifica DNS.")
+        else:
+            _err(f"[unknown] {host}:{port}: errore SSH ({msg}).")
         return
 
     try:

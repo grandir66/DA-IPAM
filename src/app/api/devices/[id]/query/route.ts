@@ -299,7 +299,40 @@ async function runRouterQuery(deviceId: number, device: Parameters<typeof create
   } catch { /* STP opzionale */ }
 
   const portsMsg = portInfos.length > 0 ? `, ${portInfos.length} porte` : "";
+
+  // Fase 1+2 aggregazione: probe interfacce + identity resolver (best-effort).
+  await runInterfacesProbeAndResolve(deviceId, p);
+
   finishProgress(p, "completed", `Completata: ${entries.length} ARP${portsMsg}`);
+}
+
+/**
+ * Probe interfacce SNMP IP-MIB + risoluzione physical_device + auto-promote hosts.
+ * Best-effort: errori loggati ma non bloccano il flusso chiamante.
+ */
+async function runInterfacesProbeAndResolve(deviceId: number, p: ScanProgress): Promise<void> {
+  try {
+    const { probeDeviceInterfaces } = await import("@/lib/devices/interface-probe");
+    const { resolvePhysicalDevice } = await import("@/lib/devices/identity-resolver");
+    const { getNetworkDeviceById } = await import("@/lib/db");
+    const fresh = getNetworkDeviceById(deviceId);
+    if (!fresh) return;
+    const probeOutcome = await probeDeviceInterfaces(fresh);
+    if (probeOutcome.source === "none") return; // SNMP non configurato: skip silenzioso
+    if (probeOutcome.interfaces.length === 0) {
+      plog(p, `⚠ Probe interfacce: 0 risultati (${probeOutcome.warnings.slice(0, 2).join("; ") || "no warnings"})`);
+      return;
+    }
+    const resolved = resolvePhysicalDevice(fresh, probeOutcome);
+    plog(p,
+      `✓ Aggregazione: physical_device #${resolved.physical_device_id} ` +
+      `(${resolved.created ? "creato" : "match " + resolved.identity_anchor + " score=" + resolved.identity_confidence}), ` +
+      `${resolved.interfaces_upserted} interfacce, ${resolved.addresses_upserted} IP, ` +
+      `${resolved.promoted_hosts.filter((h) => h.created).length} host promossi`
+    );
+  } catch (err) {
+    plog(p, `⚠ Probe interfacce fallito: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -433,6 +466,9 @@ async function runInfoQuery(deviceId: number, device: Parameters<typeof getDevic
   const fields = Object.keys(info).filter(k => info[k as keyof typeof info] != null);
   p.scanned = 1;
   plog(p, `✓ ${fields.length} campi acquisiti: ${fields.join(", ")}`);
+
+  await runInterfacesProbeAndResolve(deviceId, p);
+
   finishProgress(p, "completed", `${scanLabel}: ${fields.length} campi acquisiti`);
 }
 

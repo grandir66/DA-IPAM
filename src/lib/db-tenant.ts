@@ -418,6 +418,81 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione multihomed_links.is_primary fallita:`, e);
   }
 
+  // Migrazione runtime: physical_devices + device_interfaces + device_interface_addresses
+  // (aggregazione device cross-subnet, vedi docs/adr/0002 se presente).
+  // Le tabelle sono createIfNotExists dentro TENANT_SCHEMA_SQL ma su DB esistenti
+  // serve anche aggiungere le FK su network_devices.physical_device_id e
+  // hosts.physical_device_id + hosts.host_source.
+  try {
+    newDb.exec(`
+      CREATE TABLE IF NOT EXISTS physical_devices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vendor TEXT,
+        model TEXT,
+        serial_number TEXT,
+        primary_mac TEXT,
+        sys_object_id TEXT,
+        sysname TEXT,
+        manufacturer TEXT,
+        identity_confidence INTEGER NOT NULL DEFAULT 0,
+        identity_anchor TEXT,
+        first_seen TEXT DEFAULT (datetime('now')),
+        last_seen TEXT DEFAULT (datetime('now')),
+        notes TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_physical_devices_serial ON physical_devices(serial_number) WHERE serial_number IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_physical_devices_mac ON physical_devices(primary_mac) WHERE primary_mac IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_physical_devices_sysname ON physical_devices(sysname) WHERE sysname IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS device_interfaces (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        physical_device_id INTEGER NOT NULL REFERENCES physical_devices(id) ON DELETE CASCADE,
+        ifname TEXT NOT NULL,
+        ifindex INTEGER,
+        mac TEXT,
+        status TEXT CHECK(status IN ('up','down','unknown')) DEFAULT 'unknown',
+        speed_mbps INTEGER,
+        type TEXT,
+        is_virtual_mac INTEGER NOT NULL DEFAULT 0,
+        alias TEXT,
+        updated_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(physical_device_id, ifname)
+      );
+      CREATE INDEX IF NOT EXISTS idx_device_interfaces_device ON device_interfaces(physical_device_id);
+      CREATE INDEX IF NOT EXISTS idx_device_interfaces_mac ON device_interfaces(mac) WHERE mac IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS device_interface_addresses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        interface_id INTEGER NOT NULL REFERENCES device_interfaces(id) ON DELETE CASCADE,
+        ip TEXT NOT NULL,
+        prefix INTEGER,
+        family INTEGER NOT NULL DEFAULT 4 CHECK(family IN (4,6)),
+        scope TEXT CHECK(scope IN ('global','link','host','unknown')) DEFAULT 'global',
+        updated_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(interface_id, ip)
+      );
+      CREATE INDEX IF NOT EXISTS idx_device_interface_addresses_iface ON device_interface_addresses(interface_id);
+      CREATE INDEX IF NOT EXISTS idx_device_interface_addresses_ip ON device_interface_addresses(ip);
+    `);
+
+    const ndCols = newDb.prepare("PRAGMA table_info(network_devices)").all() as Array<{ name: string }>;
+    if (!ndCols.some((c) => c.name === "physical_device_id")) {
+      newDb.exec("ALTER TABLE network_devices ADD COLUMN physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL");
+      console.info(`[db-tenant] ${tenantCode}: network_devices.physical_device_id aggiunto`);
+    }
+    const hCols = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
+    if (!hCols.some((c) => c.name === "physical_device_id")) {
+      newDb.exec("ALTER TABLE hosts ADD COLUMN physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL");
+      console.info(`[db-tenant] ${tenantCode}: hosts.physical_device_id aggiunto`);
+    }
+    if (!hCols.some((c) => c.name === "host_source")) {
+      newDb.exec("ALTER TABLE hosts ADD COLUMN host_source TEXT DEFAULT 'scan'");
+      console.info(`[db-tenant] ${tenantCode}: hosts.host_source aggiunto`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione physical_devices fallita:`, e);
+  }
+
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
   return newDb;
 }

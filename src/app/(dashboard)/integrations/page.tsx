@@ -13,6 +13,7 @@ interface ActiveIntegrations {
   librenms?: IntegrationInfo;
   graylog?: IntegrationInfo;
   loki?: IntegrationInfo;
+  wazuh?: IntegrationInfo;
 }
 
 export default function IntegrationsPage() {

@@ -62,6 +62,10 @@ export interface Host {
   conflict_flags: string | null;
   last_seen: string | null;
   first_seen: string | null;
+  /** Aggregazione: punta a physical_devices.id quando l'IP coincide con un'interfaccia di un device noto. */
+  physical_device_id?: number | null;
+  /** Sorgente di scoperta: 'scan' (default, ARP/Nmap), 'device_interface' (promosso da probe interfacce). */
+  host_source?: "scan" | "device_interface" | string | null;
   created_at: string;
   updated_at: string;
 }
@@ -191,7 +195,52 @@ export interface NetworkDevice {
   /** Profilo prodotto (marca + tipologia), assegnazione manuale per scan e inventario dedicati */
   product_profile: string | null;
   use_for_arp_poll: number;
+  /** Aggregazione cross-subnet: punta a physical_devices.id. Nullable: assegnato solo dopo interface probe + identity resolver. */
+  physical_device_id: number | null;
   created_at: string;
+  updated_at: string;
+}
+
+/** Entità fisica (chassis) — aggrega N network_devices/hosts che rappresentano lo stesso hardware visibile in subnet diverse. */
+export interface PhysicalDevice {
+  id: number;
+  vendor: string | null;
+  model: string | null;
+  serial_number: string | null;
+  primary_mac: string | null;
+  sys_object_id: string | null;
+  sysname: string | null;
+  manufacturer: string | null;
+  identity_confidence: number;
+  /** Anchor che ha vinto il match: "serial_number" | "primary_mac" | "mac_set" | "sys_object_id_sysname" | "sysname" | null per nuovo. */
+  identity_anchor: string | null;
+  first_seen: string;
+  last_seen: string;
+  notes: string | null;
+}
+
+export interface DeviceInterface {
+  id: number;
+  physical_device_id: number;
+  ifname: string;
+  ifindex: number | null;
+  mac: string | null;
+  status: "up" | "down" | "unknown";
+  speed_mbps: number | null;
+  type: string | null;
+  /** MAC virtuale (VRRP/HSRP/CARP/bond) → ESCLUSO dal matching identità. */
+  is_virtual_mac: number;
+  alias: string | null;
+  updated_at: string;
+}
+
+export interface DeviceInterfaceAddress {
+  id: number;
+  interface_id: number;
+  ip: string;
+  prefix: number | null;
+  family: 4 | 6;
+  scope: "global" | "link" | "host" | "unknown";
   updated_at: string;
 }
 

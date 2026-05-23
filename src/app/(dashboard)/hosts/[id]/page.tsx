@@ -30,6 +30,7 @@ import {
 } from "@/lib/device-classifications";
 import { UptimeTimeline } from "@/components/shared/uptime-timeline";
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
+import { HostWazuhCard } from "@/components/hosts/host-wazuh-card";
 import { Switch } from "@/components/ui/switch";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import {
@@ -619,6 +620,9 @@ export default function HostDetailPage() {
 
       {/* ════════════════ VULNERABILITÀ (scanner-edge) ════════════════ */}
       <HostVulnerabilitiesCard hostId={Number(params.id)} />
+
+      {/* ════════════════ WAZUH (HW/OS/software + CVE) ════════════════ */}
+      <HostWazuhCard hostId={Number(params.id)} />
 
       {/* Software inventory: non disponibile a livello host (manca credenziale gestita).
           Per scansionare il software, promuovere l'host a network_device e usare /devices/[id]. */}

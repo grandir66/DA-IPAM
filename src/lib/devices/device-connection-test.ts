@@ -112,6 +112,7 @@ function buildDeviceFromProvisional(p: ProvisionalDevice): NetworkDevice {
     scan_target: effectiveScan,
     product_profile: profileId,
     use_for_arp_poll: 0,
+    physical_device_id: null,
     created_at: "",
     updated_at: "",
   };

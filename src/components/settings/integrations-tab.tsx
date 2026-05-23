@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { IntegrationCard } from "./integration-card";
 import { ScannerEdgeCard } from "./scanner-edge-card";
+import { WazuhCard } from "./wazuh-card";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -123,6 +124,8 @@ export function IntegrationsTab() {
       )}
 
       <ScannerEdgeCard />
+
+      <WazuhCard />
 
       <IntegrationCard
         component="librenms"

@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS hosts (
   ip_assignment TEXT DEFAULT 'unknown',
   last_seen TEXT,
   first_seen TEXT,
+  physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL,
+  host_source TEXT DEFAULT 'scan',
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   UNIQUE(network_id, ip)
@@ -119,9 +121,64 @@ CREATE TABLE IF NOT EXISTS network_devices (
   scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux')),
   product_profile TEXT,
   use_for_arp_poll INTEGER NOT NULL DEFAULT 0,
+  physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
+
+-- Identità fisica di un device. Aggrega N network_devices/hosts visibili in subnet diverse
+-- ma che rappresentano lo stesso chassis. Anchor: serial_number > primary_mac > sys_object_id+sysname > sysname.
+CREATE TABLE IF NOT EXISTS physical_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  vendor TEXT,
+  model TEXT,
+  serial_number TEXT,
+  primary_mac TEXT,
+  sys_object_id TEXT,
+  sysname TEXT,
+  manufacturer TEXT,
+  identity_confidence INTEGER NOT NULL DEFAULT 0,
+  identity_anchor TEXT,
+  first_seen TEXT DEFAULT (datetime('now')),
+  last_seen TEXT DEFAULT (datetime('now')),
+  notes TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_physical_devices_serial ON physical_devices(serial_number) WHERE serial_number IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_physical_devices_mac ON physical_devices(primary_mac) WHERE primary_mac IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_physical_devices_sysname ON physical_devices(sysname) WHERE sysname IS NOT NULL;
+
+-- Interfacce fisiche/logiche di un physical_device. MAC è il discriminante principale.
+-- is_virtual_mac=1 per VRRP/HSRP/CARP (00:00:5E:00:01:xx, etc) — escluso dal matching identità.
+CREATE TABLE IF NOT EXISTS device_interfaces (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  physical_device_id INTEGER NOT NULL REFERENCES physical_devices(id) ON DELETE CASCADE,
+  ifname TEXT NOT NULL,
+  ifindex INTEGER,
+  mac TEXT,
+  status TEXT CHECK(status IN ('up','down','unknown')) DEFAULT 'unknown',
+  speed_mbps INTEGER,
+  type TEXT,
+  is_virtual_mac INTEGER NOT NULL DEFAULT 0,
+  alias TEXT,
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(physical_device_id, ifname)
+);
+CREATE INDEX IF NOT EXISTS idx_device_interfaces_device ON device_interfaces(physical_device_id);
+CREATE INDEX IF NOT EXISTS idx_device_interfaces_mac ON device_interfaces(mac) WHERE mac IS NOT NULL;
+
+-- IP assegnati a un'interfaccia. IPv4+IPv6 (family). scope per scartare link-local/host dal multihomed.
+CREATE TABLE IF NOT EXISTS device_interface_addresses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  interface_id INTEGER NOT NULL REFERENCES device_interfaces(id) ON DELETE CASCADE,
+  ip TEXT NOT NULL,
+  prefix INTEGER,
+  family INTEGER NOT NULL DEFAULT 4 CHECK(family IN (4,6)),
+  scope TEXT CHECK(scope IN ('global','link','host','unknown')) DEFAULT 'global',
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(interface_id, ip)
+);
+CREATE INDEX IF NOT EXISTS idx_device_interface_addresses_iface ON device_interface_addresses(interface_id);
+CREATE INDEX IF NOT EXISTS idx_device_interface_addresses_ip ON device_interface_addresses(ip);
 
 CREATE TABLE IF NOT EXISTS network_router (
   network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
@@ -668,6 +725,102 @@ CREATE TABLE IF NOT EXISTS librenms_host_map (
 );
 
 -- ───────────────────────────────────────────────────────────────────────────
+-- Integrazione Wazuh (da-wazuh.domarc.it) — singleton hub-side, ma i dati
+-- vengono mirrorati nel tenant DB filtrati per match con gli host del tenant.
+-- Match agent ↔ host avviene per IP (preferito), mac normalizzato, hostname.
+-- Tabelle additive: nessun ALTER, ogni sync upserta per agent_id.
+-- ───────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS wazuh_agent (
+  agent_id TEXT PRIMARY KEY,             -- Wazuh agent id (es. "001", "042")
+  host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+  name TEXT,                             -- Wazuh agent name (di solito hostname)
+  ip TEXT,                               -- IP di registrazione lato Wazuh
+  mac TEXT,                              -- MAC normalizzato lowercase aa:bb:cc:dd:ee:ff (da syscollector)
+  hostname TEXT,                         -- hostname riportato da syscollector/os
+  os_platform TEXT,                      -- "windows"|"ubuntu"|"centos"|"darwin"|...
+  os_name TEXT,                          -- nome OS leggibile
+  os_version TEXT,
+  os_arch TEXT,
+  agent_version TEXT,                    -- es. "Wazuh v4.7.5"
+  status TEXT,                           -- active|disconnected|pending|never_connected
+  node_name TEXT,                        -- manager node
+  manager_host TEXT,
+  last_keep_alive TEXT,
+  registered_at TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS wazuh_hw (
+  agent_id TEXT PRIMARY KEY REFERENCES wazuh_agent(agent_id) ON DELETE CASCADE,
+  board_serial TEXT,
+  board_vendor TEXT,
+  board_product TEXT,
+  cpu_name TEXT,
+  cpu_cores INTEGER,
+  cpu_mhz REAL,
+  ram_total_kb INTEGER,
+  ram_free_kb INTEGER,
+  scan_time TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS wazuh_os (
+  agent_id TEXT PRIMARY KEY REFERENCES wazuh_agent(agent_id) ON DELETE CASCADE,
+  hostname TEXT,
+  architecture TEXT,
+  os_name TEXT,
+  os_version TEXT,
+  os_codename TEXT,
+  os_major TEXT,
+  os_minor TEXT,
+  os_build TEXT,
+  os_platform TEXT,
+  sysname TEXT,
+  release TEXT,
+  version_full TEXT,
+  scan_time TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS wazuh_software (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL REFERENCES wazuh_agent(agent_id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  version TEXT,
+  vendor TEXT,
+  architecture TEXT,
+  format TEXT,                           -- "deb"|"rpm"|"win"|"pkg"|...
+  source TEXT,
+  install_time TEXT,
+  description TEXT,
+  scan_time TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(agent_id, name, version, architecture)
+);
+
+CREATE TABLE IF NOT EXISTS wazuh_vuln (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL REFERENCES wazuh_agent(agent_id) ON DELETE CASCADE,
+  cve TEXT NOT NULL,
+  severity TEXT,                         -- Low|Medium|High|Critical|Untriaged
+  cvss2_score REAL,
+  cvss3_score REAL,
+  package_name TEXT,
+  package_version TEXT,
+  package_architecture TEXT,
+  status TEXT,                           -- VALID|PENDING|SOLVED|OBSOLETE
+  detection_time TEXT,
+  published TEXT,
+  updated TEXT,
+  condition_ TEXT,
+  title TEXT,
+  external_references TEXT,
+  scan_time TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(agent_id, cve, package_name, package_version)
+);
+
+-- ───────────────────────────────────────────────────────────────────────────
 -- Integrazione Scanner-Edge (DA-Vul-can) — singleton applicativo per tenant.
 -- DA-IPAM consuma /api/v1/cve dello scanner-edge sulla stessa LAN cliente,
 -- archivia findings storici per match con hosts via IP. Token cifrato AES-GCM.
@@ -916,6 +1069,17 @@ CREATE INDEX IF NOT EXISTS idx_routing_table_dest ON routing_table(destination);
 -- LibreNMS host map
 CREATE INDEX IF NOT EXISTS idx_librenms_host_map_network ON librenms_host_map(network_id);
 CREATE INDEX IF NOT EXISTS idx_librenms_host_map_ip ON librenms_host_map(host_ip);
+
+-- Wazuh
+CREATE INDEX IF NOT EXISTS idx_wazuh_agent_host ON wazuh_agent(host_id);
+CREATE INDEX IF NOT EXISTS idx_wazuh_agent_ip ON wazuh_agent(ip);
+CREATE INDEX IF NOT EXISTS idx_wazuh_agent_mac ON wazuh_agent(mac);
+CREATE INDEX IF NOT EXISTS idx_wazuh_agent_hostname ON wazuh_agent(hostname);
+CREATE INDEX IF NOT EXISTS idx_wazuh_software_agent ON wazuh_software(agent_id);
+CREATE INDEX IF NOT EXISTS idx_wazuh_software_name ON wazuh_software(name);
+CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_agent ON wazuh_vuln(agent_id);
+CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_cve ON wazuh_vuln(cve);
+CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_severity ON wazuh_vuln(severity);
 
 -- Vulnerability findings (scanner-edge integration)
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_host ON vuln_findings(host_id, scanned_at DESC);

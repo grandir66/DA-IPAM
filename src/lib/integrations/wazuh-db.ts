@@ -319,6 +319,20 @@ export function getWazuhAgentByHostId(hostId: number): WazuhAgentRow | null {
   return db().prepare("SELECT * FROM wazuh_agent WHERE host_id = ?").get(hostId) as WazuhAgentRow | null;
 }
 
+/** Batch: ritorna mappa host_id → WazuhAgentRow (solo per host_id forniti che hanno match). */
+export function getWazuhAgentsByHostIds(hostIds: number[]): Map<number, WazuhAgentRow> {
+  const out = new Map<number, WazuhAgentRow>();
+  if (hostIds.length === 0) return out;
+  const placeholders = hostIds.map(() => "?").join(",");
+  const rows = db()
+    .prepare(`SELECT * FROM wazuh_agent WHERE host_id IN (${placeholders})`)
+    .all(...hostIds) as WazuhAgentRow[];
+  for (const row of rows) {
+    if (row.host_id != null) out.set(row.host_id, row);
+  }
+  return out;
+}
+
 export function getWazuhAgentByAgentId(agentId: string): WazuhAgentRow | null {
   return db().prepare("SELECT * FROM wazuh_agent WHERE agent_id = ?").get(agentId) as WazuhAgentRow | null;
 }

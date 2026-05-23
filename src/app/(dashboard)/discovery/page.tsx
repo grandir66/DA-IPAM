@@ -80,6 +80,7 @@ const CLASS_PRESETS: Array<{
 ];
 import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
+import { WazuhHostBadge, type WazuhHostStatus } from "@/components/integrations/wazuh-host-badge";
 
 const SORTED_CLASSIFICATIONS = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
 
@@ -343,6 +344,7 @@ function emptyBulkForm(): DiscoveryBulkForm {
 export default function DiscoveryPage() {
   const [hosts, setHosts] = useState<EnrichedHost[]>([]);
   const [librenmsMap, setLibrenmsMap] = useState<Map<string, LibreNMSHostMap>>(new Map());
+  const [wazuhMap, setWazuhMap] = useState<Map<number, WazuhHostStatus | null>>(new Map());
   const [credentials, setCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -551,6 +553,24 @@ export default function DiscoveryPage() {
         const m = new Map<string, LibreNMSHostMap>();
         for (const row of maps) m.set(`${row.network_id}:${row.host_ip}`, row);
         setLibrenmsMap(m);
+
+        // Batch fetch Wazuh status per tutti gli host della vista — singola query.
+        try {
+          const ids = data.map((h) => h.id).filter((v): v is number => Number.isFinite(v));
+          if (ids.length > 0) {
+            const wr = await fetch("/api/integrations/wazuh/host-status", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ host_ids: ids }),
+            });
+            if (wr.ok) {
+              const wj = (await wr.json()) as { statuses: Record<string, WazuhHostStatus | null> };
+              const wm = new Map<number, WazuhHostStatus | null>();
+              for (const id of ids) wm.set(id, wj.statuses?.[id] ?? null);
+              setWazuhMap(wm);
+            }
+          }
+        } catch { /* non critico */ }
       } else setHosts([]);
     } catch { setHosts([]); }
     finally {
@@ -1352,10 +1372,15 @@ export default function DiscoveryPage() {
               </span>
             )}
 
-            {/* Wazuh — placeholder: l'integrazione SIEM/HIDS non è ancora disponibile */}
-            <span title="Wazuh (in arrivo): visibilità su agent SIEM/HIDS" className="inline-flex items-center text-muted-foreground/30">
-              <ShieldAlert className="h-3.5 w-3.5" />
-            </span>
+            {/* Wazuh — icona attiva: presente=Shield colorato (verde/rosso), assente=PlusCircle grigio
+                (apre dialog enrollment con comandi install per Linux/Windows). */}
+            <WazuhHostBadge
+              hostId={h.id}
+              hostName={h.hostname ?? h.custom_name ?? null}
+              hostIp={h.ip}
+              prefetched={wazuhMap.get(h.id) ?? null}
+              mode="icon"
+            />
 
             {/* Multihomed — host con più IP correlati allo stesso device fisico.
                 Icona Link2:
@@ -1814,11 +1839,29 @@ export default function DiscoveryPage() {
                                     </DropdownMenuItem>
                                   )}
 
-                                  {/* Placeholder Wazuh — integrazione SIEM/HIDS in roadmap */}
-                                  <DropdownMenuItem disabled>
-                                    <ShieldAlert className="h-3.5 w-3.5" />
-                                    Aggiungi a Wazuh (in arrivo)
-                                  </DropdownMenuItem>
+                                  {/* Wazuh: stato informativo nel menu kebab. L'azione (apri dashboard /
+                                      enrollment) sta sull'icona Shield della colonna "Profilo" che apre
+                                      il rispettivo dialog. */}
+                                  {(() => {
+                                    const ws = wazuhMap.get(h.id);
+                                    if (ws) {
+                                      const c = ws.status === "active"
+                                        ? "text-emerald-600"
+                                        : "text-rose-600";
+                                      return (
+                                        <DropdownMenuItem disabled>
+                                          <Shield className={`h-3.5 w-3.5 ${c}`} />
+                                          <span className={c}>In Wazuh ({ws.status ?? "?"})</span>
+                                        </DropdownMenuItem>
+                                      );
+                                    }
+                                    return (
+                                      <DropdownMenuItem disabled>
+                                        <ShieldAlert className="h-3.5 w-3.5 text-muted-foreground" />
+                                        <span className="text-muted-foreground">Aggiungi a Wazuh (icona profilo)</span>
+                                      </DropdownMenuItem>
+                                    );
+                                  })()}
 
                                   <DropdownMenuSeparator />
 

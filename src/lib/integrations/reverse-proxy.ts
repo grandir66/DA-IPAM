@@ -228,7 +228,80 @@ export async function proxyRequest(
   // Stream body back.  `Readable.toWeb` returns a ReadableStream Next.js can
   // consume.  For HEAD / 204 / 304 there's nothing to stream.
   const noBody = req.method.toUpperCase() === "HEAD" || status === 204 || status === 304;
-  const body = noBody ? null : (Readable.toWeb(upstreamRes) as unknown as ReadableStream);
+  if (noBody) {
+    return new Response(null, { status, headers: respHeaders });
+  }
 
+  // HTML rewrite: asset/link assoluti `/...` vengono prefissati con `basePath`
+  // così il browser li chiede al proxy invece che alla root di DA-IPAM. Senza
+  // questo il dashboard upstream (Wazuh OpenSearch Dashboards / LibreNMS) emette
+  // path tipo `/ui/logos/...`, `/bootstrap.js`, `/app/login` che il browser cerca
+  // su DA-IPAM origin → 404 a cascata.
+  const contentType = respHeaders.get("content-type") ?? "";
+  const isHtml = /\b(text\/html|application\/xhtml\+xml)\b/i.test(contentType);
+  if (isHtml) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of upstreamRes) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const raw = Buffer.concat(chunks).toString("utf8");
+    const rewritten = rewriteHtmlAbsolutePaths(raw, opts.basePath);
+    respHeaders.delete("content-length");
+    return new Response(rewritten, { status, headers: respHeaders });
+  }
+
+  const body = Readable.toWeb(upstreamRes) as unknown as ReadableStream;
   return new Response(body, { status, headers: respHeaders });
+}
+
+/**
+ * Riscrive nei body HTML/XHTML i path assoluti che cominciano con "/" così
+ * vengono richiesti via il proxy DA-IPAM. Skip path già col basePath, URL
+ * protocol-relative `//host/...`, URL completi.
+ */
+function rewriteHtmlAbsolutePaths(html: string, basePath: string): string {
+  const prefix = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
+  const shouldRewrite = (path: string): boolean => !(path.startsWith(prefix + "/") || path === prefix);
+
+  // 1. Attributi DOM con path assoluto
+  let out = html.replace(
+    /(\s(?:src|href|action|formaction|poster|manifest|cite|ping|data-href|data-src)\s*=\s*)(["'])(\/)(?!\/)([^"']*)\2/gi,
+    (_m, attr: string, quote: string, _slash: string, rest: string) => {
+      const path = "/" + rest;
+      if (!shouldRewrite(path)) return `${attr}${quote}${path}${quote}`;
+      return `${attr}${quote}${prefix}${path}${quote}`;
+    },
+  );
+
+  // 2. <base href="/...">
+  out = out.replace(
+    /(<base\s+href=)(["'])(\/)(?!\/)([^"']*)\2/gi,
+    (_m, attr: string, quote: string, _slash: string, rest: string) => {
+      const path = "/" + rest;
+      if (!shouldRewrite(path)) return `${attr}${quote}${path}${quote}`;
+      return `${attr}${quote}${prefix}${path}${quote}`;
+    },
+  );
+
+  // 3. <meta http-equiv="refresh" content="0;url=/...">
+  out = out.replace(
+    /(<meta\s+http-equiv=["']refresh["']\s+content=["'][^"']*url=)(\/)(?!\/)([^"']*)/gi,
+    (_m, head: string, _slash: string, rest: string) => {
+      const path = "/" + rest;
+      if (!shouldRewrite(path)) return `${head}${path}`;
+      return `${head}${prefix}${path}`;
+    },
+  );
+
+  // 4. url(/...) in CSS inline
+  out = out.replace(
+    /url\(\s*(["']?)(\/)(?!\/)([^"')]*)\1\s*\)/g,
+    (_m, quote: string, _slash: string, rest: string) => {
+      const path = "/" + rest;
+      if (!shouldRewrite(path)) return `url(${quote}${path}${quote})`;
+      return `url(${quote}${prefix}${path}${quote})`;
+    },
+  );
+
+  return out;
 }

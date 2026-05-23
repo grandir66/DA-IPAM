@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ShieldAlert } from "lucide-react";
 
 interface Finding {
-  id: number;
+  id: string | number;
   cve_id: string | null;
   cvss_score: number | null;
   severity: string;
@@ -14,7 +14,13 @@ interface Finding {
   service: string | null;
   nvt_name: string | null;
   scanned_at: string;
+  sources?: string[];
 }
+
+const SOURCE_BADGE_STYLE: Record<string, string> = {
+  Wazuh: "bg-violet-600 text-white",
+  Greenbone: "bg-emerald-700 text-white",
+};
 
 interface VulnPayload {
   host_id: number;
@@ -128,7 +134,8 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
                     <th className="text-left py-1 pr-2">Severità</th>
                     <th className="text-left py-1 pr-2">CVSS</th>
                     <th className="text-left py-1 pr-2">Porta</th>
-                    <th className="text-left py-1 pr-2">NVT</th>
+                    <th className="text-left py-1 pr-2">NVT / Pacchetto</th>
+                    <th className="text-left py-1 pr-2">Fonte</th>
                     <th className="text-left py-1">Scansionato</th>
                   </tr>
                 </thead>
@@ -156,6 +163,21 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
                       <td className="py-1 pr-2 font-mono text-xs">{f.port ?? "—"}</td>
                       <td className="py-1 pr-2 truncate max-w-[28rem]" title={f.nvt_name ?? ""}>
                         {f.nvt_name ?? "—"}
+                      </td>
+                      <td className="py-1 pr-2">
+                        <div className="flex flex-wrap gap-1">
+                          {(f.sources ?? []).map((src) => (
+                            <Badge
+                              key={src}
+                              className={`text-[10px] px-1.5 py-0 ${SOURCE_BADGE_STYLE[src] ?? "bg-slate-600 text-white"}`}
+                            >
+                              {src}
+                            </Badge>
+                          ))}
+                          {(!f.sources || f.sources.length === 0) && (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-1 text-xs text-muted-foreground">
                         {new Date(f.scanned_at).toLocaleDateString("it-IT")}

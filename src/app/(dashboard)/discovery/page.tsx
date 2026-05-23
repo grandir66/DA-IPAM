@@ -41,7 +41,7 @@ import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, ShieldAlert, HardDrive, Monitor,
-  Phone, Printer, Camera, Cpu, Database, Smartphone,
+  Phone, Printer, Camera, Cpu, Database, Smartphone, Link2,
   Lock, KeyRound, Trash2, ShieldCheck, MoreVertical,
 } from "lucide-react";
 
@@ -75,6 +75,7 @@ const CLASS_PRESETS: Array<{
   { filter: "group:iot",      label: "IOT",        icon: Cpu,       match: ["iot", "smart_tv", "console", "sensore", "plc", "hmi", "controller"] },
   { filter: "group:mobile",   label: "MOBILE",     icon: Smartphone,match: ["tablet", "smartphone"] },
   { filter: "group:storage",  label: "STORAGE",    icon: Database,  match: ["storage", "nas", "nas_synology", "nas_qnap"] },
+  { filter: "group:multihomed", label: "MH",       icon: Link2,     match: [] /* speciale: filtra su h.multihomed != null */ },
   { filter: "group:other",    label: "ALTRO",      icon: Boxes,     match: [] /* catchall: vedi logica filtro */ },
 ];
 import { toast } from "sonner";
@@ -654,11 +655,15 @@ export default function DiscoveryPage() {
     return hosts.filter((h) => {
       if (statusFilter && h.status !== statusFilter) return false;
       if (classFilter) {
-        if (classFilter === "group:other") {
+        if (classFilter === "group:multihomed") {
+          // MH = host che appartengono a un gruppo multihomed (più IP correlati
+          // allo stesso device fisico via serial/sysName/hostname/AD).
+          if (!h.multihomed) return false;
+        } else if (classFilter === "group:other") {
           // ALTRO = host la cui classificazione non rientra in nessun altro preset.
           // Include anche unknown/null/"" così l'utente vede tutto ciò che resta fuori.
           const claimed = new Set(
-            CLASS_PRESETS.filter((p) => p.filter !== "group:other").flatMap((p) => p.match)
+            CLASS_PRESETS.filter((p) => p.filter !== "group:other" && p.filter !== "group:multihomed").flatMap((p) => p.match)
           );
           if (claimed.has(h.classification ?? "")) return false;
         } else if (classFilter.startsWith("group:")) {
@@ -1091,11 +1096,12 @@ export default function DiscoveryPage() {
         return h.vuln ? `${h.vuln.critical}/${h.vuln.high}` : "";
       case "profilo": {
         // Score per sort: bitfield delle promozioni raggiunte.
-        // discovery=1 (sempre), device=2, asset=4, librenms=8 → max 15.
+        // discovery=1 (sempre), device=2, asset=4, librenms=8, multihomed=16 → max 31.
         let score = 1;
         if (h.device_id) score += 2;
         if (h.asset_id) score += 4;
         if (librenmsMap.get(`${h.network_id}:${h.ip}`)) score += 8;
+        if (h.multihomed) score += 16;
         return String(score);
       }
       case "asset_tag": return h.asset_tag ?? "";
@@ -1341,6 +1347,27 @@ export default function DiscoveryPage() {
             <span title="Wazuh (in arrivo): visibilità su agent SIEM/HIDS" className="inline-flex items-center text-muted-foreground/30">
               <ShieldAlert className="h-3.5 w-3.5" />
             </span>
+
+            {/* Multihomed — host con più IP correlati allo stesso device fisico.
+                Cliccabile: porta al detail host (che ha già la sezione "Multihomed").
+                Tooltip: lista IP+rete dei peer + criterio di correlazione (serial/sysname/hostname/ad_dns). */}
+            {h.multihomed ? (
+              <Link
+                href={`/objects/${h.id}`}
+                title={
+                  `Multihomed — ${h.multihomed.peers.length + 1} interfacce (match: ${h.multihomed.match_type})\n`
+                  + `• ${h.ip} (${h.network_name}) — questo\n`
+                  + h.multihomed.peers.map((p) => `• ${p.ip} (${p.network_name})`).join("\n")
+                }
+                className="inline-flex items-center text-cyan-600 hover:text-cyan-700"
+              >
+                <Link2 className="h-3.5 w-3.5" />
+              </Link>
+            ) : (
+              <span title="Single-homed: un solo IP per questo device" className="inline-flex items-center text-muted-foreground/30">
+                <Link2 className="h-3.5 w-3.5" />
+              </span>
+            )}
           </span>
         );
       }

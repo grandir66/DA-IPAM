@@ -66,6 +66,7 @@ import {
 import { ipAssignmentShortLabel } from "@/lib/ip-assignment";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { compareUnknown, type SortDirection } from "@/lib/table-sort";
+import { WazuhHostBadge, type WazuhHostStatus } from "@/components/integrations/wazuh-host-badge";
 
 type HostWithDevice = Host & {
   device_id?: number;

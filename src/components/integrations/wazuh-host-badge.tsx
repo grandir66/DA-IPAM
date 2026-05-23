@@ -201,16 +201,14 @@ export function WazuhHostBadge({ hostId, hostName, hostIp, prefetched, mode = "i
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setDialogOpen(false)}>Chiudi</Button>
                 {runtime.dashboardUrl && (
-                  <Button asChild>
-                    <a
-                      href={`${runtime.dashboardUrl}/app/wazuh#/agents-preview/?tab=welcome&agent=${encodeURIComponent(status.agent_id)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1"
-                    >
-                      Apri in Wazuh dashboard <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  </Button>
+                  <a
+                    href={`${runtime.dashboardUrl}/app/wazuh#/agents-preview/?tab=welcome&agent=${encodeURIComponent(status.agent_id)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 px-3 py-1.5 text-sm font-medium"
+                  >
+                    Apri in Wazuh dashboard <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
                 )}
               </div>
             </div>

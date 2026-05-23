@@ -69,6 +69,37 @@ curl -sk -o /dev/null -w "%{http_code}\n" https://da-wazuh.tuodominio.it/
 > della VM non vedeva il record (NXDOMAIN da `127.0.0.53`). Stesso check
 > applicabile a LibreNMS, Greenbone, qualsiasi integrazione server-side.
 
+## Iframe dashboard embedded in DA-IPAM (basePath OSD)
+
+La pagina "Integrazioni → Wazuh" di DA-IPAM mostra il dashboard Wazuh in
+iframe via `/api/integrations/proxy/wazuh/*`. OpenSearch Dashboards (la
+SPA su cui gira Wazuh) genera link assoluti via `window.location.origin`,
+quindi senza `server.basePath` configurato il bootstrap della SPA fallisce
+con "Wazuh did not load properly" anche se HTML/CSS/JS sono raggiungibili.
+
+**Fix sul server Wazuh**:
+
+```bash
+sudo cp /etc/wazuh-dashboard/opensearch_dashboards.yml{,.bak-pre-basepath}
+sudo tee -a /etc/wazuh-dashboard/opensearch_dashboards.yml > /dev/null <<'EOF'
+
+# DA-IPAM iframe proxy
+server.basePath: "/api/integrations/proxy/wazuh"
+server.rewriteBasePath: true
+EOF
+sudo systemctl restart wazuh-dashboard
+```
+
+`rewriteBasePath: true` mantiene compatibile anche l'accesso diretto al
+dashboard via FQDN senza il sub-path. Verifica:
+
+```bash
+curl -sk -o /dev/null -w "%{http_code}\n" https://localhost/app/login
+curl -sk -o /dev/null -w "%{http_code}\n" https://localhost/api/integrations/proxy/wazuh/app/login
+```
+
+Entrambe le rotte devono rispondere 200 (o 302 verso il proprio /login).
+
 ## Prerequisiti
 
 | Cosa | Dove | Note |

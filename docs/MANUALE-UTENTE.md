@@ -1,546 +1,805 @@
 # DA-INVENT — Manuale utente
 
-> **Versione di riferimento:** 0.2.x  
-> **Ultima modifica:** Marzo 2026  
+> **Versione di riferimento:** 0.2.498
+> **Ultima modifica:** 2026-05-23
 > Prodotto open source di [Domarc](https://domarc.it). Per i fork pubblici è richiesta attribuzione (vedi `LICENSE`).
 
 ---
 
 ## Indice
 
-1. [Primo avvio e setup](#1-primo-avvio-e-setup)
-2. [Login e navigazione](#2-login-e-navigazione)
-3. [Dashboard](#3-dashboard)
-4. [Gestione Subnet (Reti)](#4-gestione-subnet-reti)
-5. [Scansioni e Discovery](#5-scansioni-e-discovery)
-6. [Host e Indirizzi IP](#6-host-e-indirizzi-ip)
-7. [Dispositivi di Rete (Router, Switch, Hypervisor)](#7-dispositivi-di-rete-router-switch-hypervisor)
-8. [Tabella ARP e Mappatura MAC-IP](#8-tabella-arp-e-mappatura-mac-ip)
-9. [Credenziali](#9-credenziali)
-10. [Inventario Asset](#10-inventario-asset)
-11. [Licenze Software](#11-licenze-software)
-12. [Job Schedulati](#12-job-schedulati)
-13. [Impostazioni](#13-impostazioni)
-14. [Ricerca Globale](#14-ricerca-globale)
-15. [Export e Backup](#15-export-e-backup)
+1. [Cos'è DA-INVENT](#1-cosè-da-invent)
+2. [Primo avvio e setup](#2-primo-avvio-e-setup)
+3. [Login e navigazione](#3-login-e-navigazione)
+4. [Dashboard](#4-dashboard)
+5. [Gestione Subnet (Reti)](#5-gestione-subnet-reti)
+6. [Discovery — vista unificata host](#6-discovery--vista-unificata-host)
+7. [Stati host (Online, Unreachable, Lost, …)](#7-stati-host)
+8. [Azioni rapide per riga](#8-azioni-rapide-per-riga)
+9. [Motore di scan](#9-motore-di-scan)
+10. [Dispositivi di Rete (Router, Switch, Firewall, Hypervisor)](#10-dispositivi-di-rete)
+11. [Tabella ARP e Tabella DHCP](#11-tabella-arp-e-tabella-dhcp)
+12. [Active Directory](#12-active-directory)
+13. [Credenziali](#13-credenziali)
+14. [Inventario Asset, Assegnatari, Ubicazioni](#14-inventario-asset-assegnatari-ubicazioni)
+15. [Licenze Software](#15-licenze-software)
+16. [Servizi NIS2](#16-servizi-nis2)
+17. [Anomalie](#17-anomalie)
+18. [Integrazioni](#18-integrazioni)
+19. [Scansioni — storico ed esecuzioni manuali](#19-scansioni--storico-ed-esecuzioni-manuali)
+20. [Impostazioni](#20-impostazioni)
+21. [Ricerca globale](#21-ricerca-globale)
+22. [Export e Backup](#22-export-e-backup)
+23. [Multi-tenant e Superadmin](#23-multi-tenant-e-superadmin)
+24. [Manuale in-app](#24-manuale-in-app)
+25. [Appendice — Classificazioni dispositivi](#25-appendice--classificazioni-dispositivi)
 
 ---
 
-## 1. Primo avvio e setup
+## 1. Cos'è DA-INVENT
 
-Al **primo accesso** (nessun utente nel database) l'app mostra la pagina `/setup`.
+**DA-INVENT** (codice progetto: DA-IPAM) è un IPAM (IP Address Management) + Inventario di rete con focus su:
 
-**Campi richiesti:**
+- **Discovery attiva** delle reti: ICMP + TCP fallback + ARP/DHCP poll dai router
+- **Inventario dispositivi** (host + network device gestibili: router, switch, firewall, hypervisor)
+- **Sincronizzazione Active Directory** per arricchire gli host con dati AD
+- **Vulnerability sync** da scanner-edge (Greenbone) per correlare CVE con host
+- **Multi-tenant** (un'installazione → più clienti separati)
+
+Differenze chiave rispetto ad altri IPAM:
+
+- **Lo stato online di un host è basato su probe attivi reali**, non sulla presenza in tabella ARP/DHCP. ARP e DHCP arricchiscono solo MAC/vendor/hostname (vedi §7 e §9).
+- Stati granulari (Offline, Unreachable, Transient, Lost) per distinguere il transitorio dal dismesso.
+- Entry point unico: la pagina **Discovery** (§6) mostra ogni host di ogni subnet con filtri rapidi.
+
+**Stack tecnico** (per i curiosi): Next.js 16 + TypeScript strict + SQLite (better-sqlite3) + NextAuth v5. Python sidecar opzionale per integrazioni avanzate. Vedi `MANUALE-SVILUPPATORE.md` per i dettagli.
+
+---
+
+## 2. Primo avvio e setup
+
+Al **primo accesso** (DB vuoto) l'app reindirizza a `/setup`.
+
+Campi richiesti:
 - Username (min 3 caratteri)
 - Password (min 8 caratteri)
 - Conferma password
 
-Dopo la creazione del primo account (ruolo `admin`), si viene reindirizzati al login.
+L'account creato ha ruolo `admin` (oppure `superadmin` se è il primo utente del cluster multi-tenant). Dopo la creazione si viene reindirizzati al login.
 
-> **Nota:** la pagina `/setup` è accessibile solo se non esistono utenti. Una volta completato il setup non è più raggiungibile.
+`/setup` non è più raggiungibile una volta esistente almeno un utente.
 
 ---
 
-## 2. Login e navigazione
+## 3. Login e navigazione
 
 ### Login
 
-URL: `http://<indirizzo-server>:3001/login`
+URL: `https://<indirizzo-server>/login` (o `http://...:3001` in dev).
 
-Inserire username e password. In caso di **5 tentativi errati** in 15 minuti per lo stesso username, il sistema blocca temporaneamente i tentativi (rate limiting).
+Inserire username e password. Dopo **5 tentativi errati in 15 minuti** per lo stesso username scatta il rate-limit (HTTP 429).
 
-### Struttura navigazione (sidebar sinistra)
+### Struttura sidebar (tenant attivo)
 
-| Voce | Sotto-voci |
-|------|-----------|
-| **Dashboard** | — |
-| **Network** | Subnet, Router, Switch, Tabella ARP, Credenziali, Scansioni |
-| **Dispositivi** | PC, Notebook, VM, Server, Access Point, Switch, Router, Firewall, Storage, Hypervisor, IoT, Stampanti, Telecamere, Telefoni |
-| **Inventario** | Asset, Assegnatari, Licenze |
-| **Impostazioni** | — |
+```
+─────────────────────────
+[ Logo / DA-INVENT ]
+─────────────────────────
 
-Su **mobile** la sidebar è nascosta: aprirla con l'icona hamburger in alto a sinistra.
+📊 Dashboard
+
+▾ Network
+   Subnet
+   Discovery               ← entry point principale
+   Active Directory
+   Credenziali
+   ─── Diagnostica ───
+   Tabella ARP
+   Tabella DHCP
+   Scansioni
+
+▾ Inventario
+   Asset
+   Assegnatari
+   Ubicazioni
+   Licenze
+   Servizi NIS2
+
+⚠️  Anomalie  (badge rosso se ce ne sono)
+🔌 Integrazioni  (visibile se almeno una attiva)
+📖 Manuale
+
+──── Sistema ────
+⚙️  Impostazioni
+```
+
+Solo per **superadmin** appaiono in alto:
+- **Clienti** — gestione tenant
+- **Agenti remoti** — appliance edge installate presso i clienti
+
+### Tenant switcher
+
+Sotto il blocco superadmin, un selettore tenant ti permette di passare velocemente da un cliente all'altro o vedere "Tutti i clienti". L'etichetta del tenant attivo appare prima del separatore "Dati cliente".
+
+### Mobile
+
+Su mobile la sidebar è collassata; aprila con il bottone hamburger in alto a sinistra. Tap fuori per chiuderla.
+
+### Ricerca globale
+
+In cima alla pagina trovi una **search bar** che cerca in IP, MAC, hostname, network device name, classificazione, su tutti i tenant a cui hai accesso. Vedi §21.
 
 ---
 
-## 3. Dashboard
+## 4. Dashboard
 
-La dashboard è la schermata principale con una panoramica dello stato della rete.
+`/` è la home con widget di sintesi.
 
-### Card statistiche
+### Card statistiche principali
 
 | Card | Significato |
-|------|------------|
+|---|---|
 | **Subnet** | Numero di reti gestite |
-| **Host Totali** | Host rilevati in tutte le reti |
-| **Online** | Host raggiungibili nell'ultimo ping |
-| **Offline** | Host noti ma non raggiungibili |
-| **Sconosciuti** | Host senza uno stato definito (mai scansionati) |
+| **Host totali** | Host noti nel DB del tenant |
+| **Online** | Host con `status=online` derivato (vedi §7) |
+| **Offline** | Host non più raggiungibili (somma di Offline+Unreachable+Transient+Lost) |
+| **Sconosciuti** | Host mai probati attivamente |
 
-### Grafico Online nel Tempo
+### Grafici
 
-Mostra l'andamento del numero di host online nelle ultime ore/giorni. Aggiornato automaticamente.
+- **Online nel tempo**: trend online/offline ultime 24h o 7g
+- **Latency anomalies**: pulsazioni RTT anomale rilevate
+- **Top subnet per cambi**: subnet con maggior turnover di host
 
-### Monitoraggio Attivo
+### Monitoraggio Host conosciuti
 
-Mostra gli **host conosciuti** (con flag "Host conosciuto" attivo):
-- Quanti sono online/offline
-- Latenza media di risposta
-- Lista host offline in allerta (con link diretto alla scheda)
+Lista degli host con flag `known_host=1` (monitor critico): online/offline con latenza media e ultimo down. Cliccabile per andare al dettaglio.
 
-### Griglia Subnet
+### Anomalie recenti
 
-Per ogni rete: barra proporzionale online/offline/unknown, totale host, link al dettaglio.
-
-### Attività Recente
-
-Ultime 10 scansioni eseguite con tipo e data.
+Ultimi alert generati: MAC flip, port change, latency anomaly, nuovi host non riconosciuti, uptime drop.
 
 ---
 
-## 4. Gestione Subnet (Reti)
+## 5. Gestione Subnet (Reti)
 
-### Elenco reti (`/networks`)
+### Elenco reti — `Network → Subnet`
 
-Tabella con: CIDR, Nome, VLAN, Posizione, Host totali, Online/Offline, Ultima scansione.
+Tabella con: CIDR, Nome, VLAN, Sede, Host totali, Online/Offline/Sconosciuti, Ultima scansione, azioni.
 
 ### Aggiungere una rete
 
-Cliccare **"Aggiungi Subnet"** (pulsante in alto a destra).
-
-**Campi disponibili:**
+Pulsante **"+ Aggiungi Subnet"** in alto a destra.
 
 | Campo | Obbligatorio | Descrizione |
-|-------|:---:|---------|
-| CIDR | ✓ | Indirizzo di rete in formato CIDR (es. `192.168.1.0/24`) |
-| Nome | ✓ | Nome identificativo della subnet |
-| Descrizione | — | Descrizione estesa |
-| Gateway | — | IP del gateway principale (es. `192.168.1.1`) |
-| VLAN ID | — | ID VLAN (1-4094) |
-| Posizione | — | Sede/edificio/stanza |
-| DNS Server | — | Server DNS personalizzato per questa rete |
-| SNMP Community | — | Community SNMP per scan su questa rete |
-| Router ARP | — | Router che fornisce la tabella ARP per questa subnet |
+|---|:---:|---|
+| **CIDR** | ✓ | `192.168.1.0/24` (validazione anti-overlap con reti esistenti) |
+| **Nome** | ✓ | Etichetta umana |
+| **Descrizione** | — | Note libere |
+| **Gateway** | — | IP gateway (es. `192.168.1.1`) |
+| **VLAN ID** | — | 1-4094 |
+| **Sede / Ubicazione** | — | Filiale, edificio, rack |
+| **DNS Server** | — | Override DNS per le reverse lookup |
+| **SNMP Community** | — | Community SNMP di default per questa subnet |
+| **Router ARP** | — | Network device da cui leggere la tabella ARP/lease DHCP |
 
-> **Overlap CIDR:** Il sistema impedisce di creare reti con CIDR sovrapposto a reti già esistenti.
+**Aggiungi router al volo:** dal dropdown "Router ARP" puoi cliccare **"+ Aggiungi router"** per registrare un nuovo network_device senza chiudere il form rete.
 
-**Aggiungere un router al volo:** Nel campo "Router ARP" è disponibile il pulsante **"Aggiungi router"** che apre un modale per registrare il dispositivo prima ancora di chiudere il form rete.
+### Catene credenziali per subnet
 
-**Catene di credenziali:** nello stesso modale **Nuova Rete** trovi la stessa maschera del dialog **Modifica rete** sul dettaglio subnet (blocco **Rilevamento avanzato** con WinRM + account Linux, poi SSH dispositivi e SNMP): archivio, ordine di priorità e creazione credenziali esplicite. Vedi anche sotto «Modifica rete».
+Il blocco **Rilevamento avanzato** del dialog rete raggruppa le catene credenziali in ordine di priorità:
 
-### Modifica rete
+- **WinRM (Windows)** — usata da scan Windows
+- **Account Linux (OS)** — usata da scan SSH
+- **SSH dispositivi** — per network_device tipo router/switch
+- **SNMP** — community v2c e profili v3
 
-Dal dettaglio rete (`/networks/[id]`), pulsante **matita** → dialog di modifica con gli stessi campi della creazione.
+Per ciascuna lista puoi:
+- **Prelevare dall'archivio** una credenziale già registrata (menu Credenziali)
+- **Creare credenziale esplicita** "al volo" con form (nome + dati)
 
-**Catene di credenziali per la subnet:** il blocco **Rilevamento avanzato** raggruppa le catene **WinRM (Windows)** e **account Linux (OS)** (usate in sequenza dal pulsante omonimo in toolbar); separati trovi **SSH dispositivi** e **SNMP**. Per ciascun elenco puoi:
+L'**ordine** è l'ordine di tentativo — un solo tentativo per credenziale per host. **Best practice**: almeno 3 credenziali per tipo in produzione.
 
-- **Prelevare dall’archivio** credenziali già registrate in **Credenziali** (menu laterale);
-- **Creare credenziali esplicite** con «Nuova credenziale» (nome + dati); vengono salvate in archivio e aggiunte alla catena.
+Fallback SSH: catena rete → catena Linux rete → "host Linux" globale in Impostazioni. Fallback SNMP: community in catena → campo "Community SNMP" della rete → `public` / `private`.
 
-L’**ordine** nella lista è l’ordine di tentativo in scansione (un solo tentativo per credenziale per host). Per uso in produzione è consigliato configurare **almeno tre** credenziali per tipo dove serve. Per SSH, la catena effettiva è: credenziali ruolo **SSH** sulla rete → credenziali **Linux** sulla rete → credenziale globale «host Linux» in **Impostazioni**. Per SNMP: community dalle credenziali SNMP in catena → eventuale valore nel campo **Community SNMP** della rete → `public` / `private`.
+### Dettaglio rete — `Network → Subnet → [subnet]`
 
-### Eliminazione rete
+**Toolbar** con i pulsanti scan:
 
-Pulsante cestino nella lista reti. **Operazione irreversibile**: elimina anche tutti gli host associati.
+| Pulsante | Azione |
+|---|---|
+| **Scoperta rete** | Lancia `network_discovery` (ICMP + second-pass TCP + Nmap quick + SNMP sysObj + DNS) |
+| **Nmap** (con dropdown profilo) | Port scan completo TCP+UDP — richiede selezione host |
+| **ARP** | Solo ARP poll dal router associato (no upsert status) |
+| **Rilevamento avanzato** | WinRM + SSH sugli host selezionati per OS/hostname/inventario |
+| **Aggiorna periodicamente** | Toggle: avvia `network_discovery` ogni N minuti (config in Impostazioni) |
 
-### Dettaglio rete (`/networks/[id]`)
+**Vista** alternabile tra:
+- 📊 **Griglia IP** — ogni IP della subnet come cella colorata (verde online, rosso offline, grigio sconosciuto). Click → scheda host.
+- 📋 **Lista** — tabella con tutti gli host, checkbox per selezione multipla.
 
-**Griglia IP:** ogni IP della subnet è visualizzato come cella colorata:
-- 🟢 Verde: online
-- 🔴 Rosso: offline  
-- ⬜ Grigio chiaro: sconosciuto
-- ⬜ Grigio scuro: non in database
+In lista puoi selezionare host e usare i pulsanti toolbar (Nmap manuale, SNMP, DNS, Rilevamento avanzato — applicano solo agli IP selezionati).
 
-Cliccando una cella si apre la scheda host.
+### Eliminare una subnet
 
-**Lista host:** tabella completa con IP, stato, MAC, vendor, hostname, classificazione, porte aperte, dispositivo collegato.
+Pulsante 🗑️ nella riga. **Irreversibile**: elimina anche tutti gli host associati. Conferma richiesta.
 
 ---
 
-## 5. Scansioni e Discovery
+## 6. Discovery — vista unificata host
 
-### Tipi di scansione
+`Network → Discovery` è la pagina più usata: una **tabella unica** con tutti gli host di tutte le subnet del tenant.
 
-| Tipo | Cosa fa |
-|------|---------|
-| **Scoperta rete** (`network_discovery`) | **Automatica sulla subnet:** sweep **ICMP** sugli IP della CIDR → su ogni host che risponde, **Nmap TCP “quick”** (solo porte comuni ridotte: SSH, SMTP, DNS, HTTP/S, SMB, RDP, ecc.; **non** l’elenco completo del profilo) **in sequenza** → registrazione host, **DNS** (PTR/forward) → **ARP dal router** (solo per arricchire i MAC degli host già scoperti, senza aggiungere IP solo da ARP/DHCP). Richiede `nmap` sul server per la fase TCP; senza Nmap resta solo ICMP. Per porte aggiuntive (es. **8291** MikroTik) usare **Nmap profilo** sulla lista host. |
-| **snmp**, **nmap**, **arp**, **dns**, **dhcp**, **Rilevamento avanzato** | **Manuali:** nella **vista lista** selezionare gli host con le checkbox, poi il pulsante desiderato. L’azione si applica **solo agli IP selezionati** (Nmap usa ping sugli IP scelti poi il profilo; SNMP interroga solo quelli in elenco; ARP/DNS/DHCP filtrano sugli IP selezionati). |
-| **nmap** (profilo) | Port scan completo come da profilo: **due esecuzioni nmap distinte** (prima TCP `-sT`, poi UDP `-sU` con porte predefinite). Richiede `nmap`. La fase **UDP** richiede in genere **privilegi root** sul processo. |
-| **Rilevamento avanzato** | Dalla toolbar del dettaglio rete: esegue **in sequenza** (1) **WinRM** sugli host selezionati con porte Windows note da Nmap, (2) **SSH** sugli host con porta 22 senza 445, usando le catene credenziali del blocco «Rilevamento avanzato» nella subnet e le impostazioni globali. Serve acquisire hostname, sistema operativo e dati fondamentali dei dispositivi. |
+### Cosa vedi per ogni host
 
-### Avviare una scansione
+Colonne configurabili dal menu **Colonne** (icona 3 colonne):
 
-Dal dettaglio rete usare i pulsanti in toolbar (**Scoperta rete**, **Nmap**, **ARP**, **Rilevamento avanzato**, …). Per **Scoperta rete** non serve selezione (lavora su tutta la subnet). Per le altre azioni, passare alla **vista lista**, selezionare gli host, poi il comando.
+- IP, MAC, hostname (custom o rilevato)
+- **Stato** (vedi §7) con timestamp relativo
+- Profilo device + classificazione + confidenza fingerprint
+- Vendor, produttore, OS, modello, seriale, firmware
+- Subnet di appartenenza, VLAN, sede
+- Credenziali validate (badge verde per protocollo OK)
+- Conteggi CVE (Critical/High/Medium) da scanner-edge
+- DHCP/statico, AD sì/no, multihomed
+- Porte TCP/UDP aperte, RTT
+- Asset tag, app scansionate, link LibreNMS
+- Ultimo/primo visto
 
-Per **Nmap** manuale, scegliere il **profilo** nel menu a tendina accanto al pulsante.
+### Toolbar (in alto)
 
-La barra di progresso mostra in tempo reale: fase, IP elaborati/totale, host trovati, log live.
+| Elemento | Funzione |
+|---|---|
+| 🔎 **Cerca** | Full-text su IP, MAC, hostname, vendor, network, note, OS, manufacturer |
+| **Stato** | Filtro base (Online / Offline / Sconosciuto) |
+| **Classificazione** | Dropdown con tutte le classificazioni presenti |
+| **Subnet** | Filtro per network |
+| **CVE** | "Critici/High", "Solo critici", "Con findings" |
+| 🎛️ **Colonne** | Picker per mostrare/nascondere colonne |
+| ⬇️ **Esporta CSV** | Scarica la vista filtrata corrente |
+| 🔄 **Aggiorna** | Ricarica i dati |
 
-**Auto-refresh:** se attivo l’intervallo e l’opzione **Scoperta rete periodica**, a intervalli viene lanciata la stessa pipeline di **Scoperta rete** (non le azioni manuali).
+### Chip preset rapidi (sotto la toolbar)
+
+Filtro one-click per macro-categoria:
+
+| Chip | Filtra `classification` IN | Note |
+|---|---|---|
+| **Tutti** | (nessuno) | Reset |
+| 🖥️ **Server** | `server`, `server_linux`, `server_windows` | Tutti i server insieme |
+| 💻 **Client** | `workstation`, `notebook` | Postazioni utente |
+| 💾 **Hypervisor** | `hypervisor` | Proxmox / VMware |
+| 🔀 **Router** | `router` | — |
+| 🔌 **Switch** | `switch` | — |
+| 🛡️ **Firewall** | `firewall` | — |
+
+Ogni chip mostra il conteggio fra parentesi. Click per attivare, click di nuovo per disattivare. Si combinano in AND con gli altri filtri.
+
+### Operazioni bulk (con selezione checkbox)
+
+Spuntando le checkbox a sinistra appare la barra **operazioni bulk**:
+
+- **Modifica** — dialog per editare campi comuni (classificazione, vendor, sede, note, IP assignment) su N host
+- **Aggiorna selezionati** — esegue scan per ogni IP in sequenza (con dialog progresso e log per-host)
+- **Crea asset NIS2** — promuove gli host selezionati come asset NIS2
+- **Aggiungi a dispositivi** — promuove host → `network_device` in bulk con credenziali + protocollo comuni
+- **Esporta selezionati** — CSV dei soli host selezionati
+
+---
+
+## 7. Stati host
+
+Lo stato di un host visualizzato nel badge è **derivato a display time** dal campo base `status` (online/offline/unknown nel DB) combinato con `last_seen` e l'**intervallo del cron scan** della sua subnet.
+
+Questo modello permette di distinguere a colpo d'occhio un down transitorio da un device fantasma dimenticato.
+
+### I 7 stati visualizzati
+
+| Badge | Etichetta | Condizione | Significato operativo |
+|---|---|---|---|
+| 🟢 verde pulsante | **Online** | `status=online`, ultima risposta recente | Risponde ora ai probe. Tutto OK. |
+| 🟡 ambra | **Online (stale)** | `status=online`, `last_seen > 24h` | Marcato online ma nessun probe da >24h. Indica scan rotto: investiga. |
+| 🔴 rosso | **Offline** | `status=offline`, down da < 4 cicli | Probabile down transitorio (riavvio, link flap). |
+| 🟠 arancio | **Unreachable** | `status=offline`, down da ≥ 4 × scan interval | Persistente. Verifica alimentazione/cavo/firewall/rete. |
+| 🟡 giallo scuro | **Transient** | `status=offline`, `last_seen ≥ 24h` | Down da ore/giorni. Spegnimento programmato, manutenzione. |
+| ⚫ grigio scuro | **Lost** | `status=offline`, `last_seen ≥ 7 giorni` | Probabilmente dismesso. Candidato a cleanup dall'inventario. |
+| ⚪ grigio chiaro | **Sconosciuto** | `status=unknown` o nessun `last_seen` | Mai probato attivamente. Visto solo via ARP/DHCP/AD. |
+
+### Soglia "Unreachable" calcolata per subnet
+
+La soglia è **4 × scan_interval_minutes** del job attivo sulla subnet:
+
+| Interval cron | Soglia Unreachable |
+|---|---|
+| 15 min | **1 ora** (default in produzione Domarc) |
+| 30 min | 2 ore |
+| 60 min | 4 ore |
+| 120 min | 8 ore |
+
+Subnet senza job scan attivo → default 30 min → soglia 2h.
+
+### Tooltip sul badge
+
+Al passaggio mouse appare:
+- Nome stato + spiegazione operativa
+- Timestamp assoluto dell'ultimo contatto
+- Soglia unreachable calcolata per quella subnet
+
+### Anti-host-fantasma: cosa NON cambia lo stato
+
+**Le sorgenti passive** (ARP table del router, DHCP lease, sync AD) NON forzano `status=online`. Una entry ARP può restare nel router per 4+ ore anche dopo lo spegnimento del device, un lease DHCP può durare giorni: non sono prove di reachability.
+
+Solo i **probe attivi** decidono lo stato:
+- `network_discovery` — cron + manuale (Network → Subnet → Scoperta rete)
+- `fast_scan` — cron (lo scan periodico per subnet)
+- `ping` — manuale
+
+ARP / DHCP / AD aggiornano solo metadata (MAC, hostname, vendor, classificazione), mai status.
+
+> **Bug fix v0.2.495 (rilevante):** prima di questa release, `arp_poll` e `dhcp` forzavano `status=online` per ogni entry presente nel router. Risultato: host spenti da settimane apparivano online. Dopo la fix, solo probe ICMP/TCP determinano lo stato.
+
+---
+
+## 8. Azioni rapide per riga
+
+Ogni riga di Discovery ha una colonna **Azioni** sempre visibile. Cambia in base al tipo:
+
+### Host puro (rilevato passivamente)
+
+| Icona | Nome | Funzione | Endpoint |
+|---|---|---|---|
+| ✏️ | **Modifica host** | Apre `/hosts/[id]` per editare hostname custom, classificazione manuale, note, asset tag, IP assignment, ecc. | — |
+| 🔑 | **Test cred host** | Apre dialog "Test credenziali" e prova le credenziali compatibili dal pool tenant contro l'IP grezzo. | `POST /api/hosts/[id]/test-creds` (interno) |
+| 🗑️ | **Elimina host** | Rimuove la riga dal DB (conferma richiesta). Ricreato al prossimo scan se ancora rilevato. | `DELETE /api/hosts/[id]` |
+
+### Host promosso a `network_device` (colonna "Dispositivo" valorizzata)
+
+| Icona | Nome | Funzione | Endpoint |
+|---|---|---|---|
+| ✏️ | **Modifica device** | Apre `/devices/[device_id]` per gestire credenziali binding, vendor, scan target, protocollo, ecc. | — |
+| 🛡️ | **Test credenziali device** | Verifica live le credenziali del binding (SSH/WinRM/SNMP/API). Toast con risultato. Pulsa durante test. | `GET /api/devices/[id]/test` |
+| 🔄 | **Riscansiona device** | Esegue query completa (port, sysinfo, ARP, DHCP se router). Ruota durante. Aggiorna la riga. | `POST /api/devices/[id]/query` |
+| 🔑 | **Test cred host** | Test diretto sull'IP (validare credenziali alternative). | — |
+| 🗑️ | **Elimina device** | Rimuove il `network_device` ma lascia l'host nel DB (conferma). | `DELETE /api/devices/[id]` |
+
+### Selezione multipla
+
+Spuntando le checkbox a sinistra appaiono le **operazioni bulk** (vedi §6).
+
+---
+
+## 9. Motore di scan
+
+### Tipi di scan e quando partono
+
+| Scan type | Trigger | Cosa fa | Modifica `status`? |
+|---|---|---|---|
+| **`fast_scan`** | Cron periodico per subnet (default 15 min in produzione), oppure manuale dalla pagina subnet | nmap -sn (o pingSweep) + second-pass TCP + ARP/DHCP poll dal router | ✅ Sì (P1 strict) |
+| **`network_discovery`** | Manuale (UI o cron `ping_sweep`) | ICMP + second-pass TCP + Nmap quick TCP + SNMP sysObjectID + DNS | ✅ Sì (P1 strict) |
+| **`arp_poll`** | Cron periodico o interno a fast_scan | Legge ARP table dei router, aggiorna MAC/vendor | ❌ No |
+| **`dhcp`** | Cron, o interno a fast_scan | Legge lease DHCP, aggiorna hostname/MAC | ❌ No |
+| **`nmap`** (profilo) | Manuale, host selezionati | Port scan completo TCP+UDP + OS fingerprint | ➕ Additivo |
+| **`snmp`** | Manuale, host selezionati | Walk SNMP per sysName/sysDescr/sysObjectID + arricchimento | ❌ No |
+| **`windows`** / **`ssh`** | Manuale (Rilevamento avanzato) | Inventory software via WinRM/SSH (richiede credenziali) | ❌ No |
+| **`credential_validate`** | Manuale | Solo test credenziali, no scan | ❌ No |
+| **`vuln_sync`** | Cron 30 min | Tira findings CVE da scanner-edge | ❌ No |
+| **`ad_sync`** | Cron | Sync LDAP/AD computer objects | ❌ No |
+| **`librenms_sync`** | Cron | Sync host con LibreNMS | ❌ No |
+
+### Algoritmo `network_discovery` e `fast_scan`
+
+1. **ICMP sweep parallelo** su tutti gli IP del CIDR (timeout 2s, 50-128 concorrenti)
+2. **Second-pass TCP**: per ogni host **già `status=online`** nel DB che NON ha risposto a ICMP, prova TCP su porte fallback `[22, 80, 443, 3389, 8080, 8443]` con timeout 2s. Se almeno una risponde → considerato online. Questo recupera device che bloccano ICMP (Windows con firewall default, stampanti di rete, IoT, server hardened).
+3. **ARP/DHCP poll** dal router della subnet (se configurato) — solo per arricchire MAC/vendor/hostname, **non** per cambiare status.
+4. **Phase 4 — offline marking (P1 strict)**: tutti gli IP del CIDR che NON sono in `onlineIps` (ICMP + TCP combinati) vengono marcati `status=offline`. Aggiunge anche una nota diagnostica.
+
+Per `network_discovery` viene aggiunto anche:
+- Nmap quick TCP sugli host online (porte comuni) → arricchimento porte
+- SNMP sysObjectID probe → identifica vendor/prodotto da OID
+- DNS reverse + forward lookup
+- Match Active Directory (collega host a computer AD esistenti)
+
+### Schedulazione cron
+
+Da **Network → Scansioni** vedi i job attivi e lo storico esecuzioni.
+
+**Best practice produzione (Domarc):**
+- `fast_scan` a 15 min su tutte le subnet → stato Offline reale in <15 min, Unreachable in 1h
+- `vuln_sync` a 30 min se hai scanner-edge collegato
+- Niente `ping_sweep` separato (il fast_scan è sufficiente)
+
+Per aggiungere/modificare job: pagina **Network → Subnet → [subnet]** ha (in evoluzione) una sezione Schedulazione. Per gli admin: SQL diretto su `scheduled_jobs` (vedi `MANUALE-SVILUPPATORE.md`).
+
+---
+
+## 10. Dispositivi di Rete
+
+Network device = host promosso a "risorsa gestita" con credenziali, vendor, protocollo, scan target.
+
+### Pagine classificate
+
+`/devices/router`, `/devices/switch`, `/devices/firewall`, `/devices/hypervisor`, `/devices/server`, ecc. mostrano la lista filtrata per `device_type`.
+
+> Le **azioni semplici per-riga** (Modifica, Test cred, Riscansiona, Elimina) sono **equivalenti a quelle in Discovery** (§8) — usa quello che preferisci. Le pagine classificate restano per workflow specialistici:
+
+### Workflow specifici per tipo
+
+**Router / Switch / Firewall:**
+- Aggiungi dispositivo da zero (dialog con picker credenziali + protocollo)
+- Aggiungi in bulk da host esistenti (promuovi più host insieme)
+- DHCP sync per MikroTik (importa lease nelle subnet)
+- Bulk test credenziali / bulk scan
+
+**Hypervisor:**
+- **Scan Proxmox** dedicato: legge VM, container, storage, subscription
+- **Visualizza dati** dell'ultimo scan Proxmox
+- **Abbina inventario** (match automatico VM ↔ asset)
+- **"Imposta come Proxmox"** per device hypervisor generici che vuoi gestire via API/SSH Proxmox
+
+### Aggiungere un device
+
+Pulsante **"+ Aggiungi"** in cima alla lista classificata, oppure da Discovery → operazioni bulk → "Aggiungi a dispositivi".
+
+Campi obbligatori: Nome, IP/host, Device type, Vendor, Protocollo, almeno una Credenziale (per protocolli che la richiedono).
+
+### Detail page — `/devices/[id]`
+
+- Tab **Generale**: editare tutti i campi
+- Tab **Credenziali**: binding multipli (es. un device con SSH + SNMP entrambi)
+- Tab **Porte switch** (solo switch): elenco porte con stato, VLAN, PoE, descrizione, MAC visti
+- Tab **Software** (linux/windows/proxmox): inventory app installate
+- Tab **Vulnerabilità**: CVE findings dallo scanner-edge
+
+---
+
+## 11. Tabella ARP e Tabella DHCP
+
+`Network → Tabella ARP` mostra l'aggregato di tutte le mappature MAC ↔ IP raccolte da:
+- Polling ARP dai router/switch L3
+- DHCP lease attivi
+- Switch port table (CAM)
+- Host (campo MAC del record host)
+
+Colonne: MAC, IP, Network, Vendor (OUI), Hostname, Sorgente (`arp`/`dhcp`/`host`/`switch`), Source device, First/Last seen.
+
+Filtri per network, sorgente, ricerca testuale.
+
+`Network → Tabella DHCP` mostra i lease DHCP attivi raccolti dai DHCP server (tipicamente MikroTik via API/SSH).
+
+Entrambe le tabelle servono per:
+- Diagnosi MAC flip (stesso MAC su IP diversi)
+- Tracciamento mobilità host
+- Identificazione "porta switch" di un IP
+
+> **Importante:** la presenza di una entry in ARP o un lease DHCP **NON significa che l'host sia attualmente online**. Vedi §7 (anti-host-fantasma).
+
+---
+
+## 12. Active Directory
+
+`Network → Active Directory` gestisce la sincronizzazione con uno o più domini AD.
+
+### Configurazione integrazione
+
+Da **Impostazioni → Integrazioni → Active Directory**:
+- URL LDAP (es. `ldap://dc.cliente.local:389` o `ldaps://...:636`)
+- Bind DN + password (con account che può leggere `Computer` objects)
+- Base DN per la ricerca
+- Filtri opzionali
+
+### Sync periodica
+
+Job `ad_sync` configurabile. Importa i computer object con: hostname, OS, ultima logon, OU.
+
+### Match con host esistenti
+
+Dopo ogni `network_discovery`, lo scanner tenta di **collegare** i computer AD agli host scoperti basandosi su DNS forward/reverse e hostname. Crea host nuovi se l'AD ne riporta uno non visto via ARP.
+
+Colonna **AD** in Discovery: badge verde se l'host è collegato a un computer object AD.
+
+### LDAPS su DC con signing forzato
+
+Se il tuo DC impone LDAP signing senza certificato installato, l'integrazione fallisce con `OPERATIONS_ERROR`. **Il fix è sul DC, non su DA-INVENT**: installa un certificato self-signed (o aziendale) nei store `My` + `Trusted Root` del DC e riavvia il servizio `NTDS`. Vedi `playbooks/ad-ldaps-windows.md`.
+
+---
+
+## 13. Credenziali
+
+`Network → Credenziali` è l'archivio centralizzato.
+
+### Tipi supportati
+
+| Tipo | Usato per |
+|---|---|
+| `linux` / `ssh` | Login SSH (router MikroTik/Cisco/Linux, server) |
+| `windows` / `winrm` | WinRM (server Windows, AD member) |
+| `snmp_v2` | Community string SNMP v2c |
+| `snmp_v3` | User/auth/priv SNMP v3 |
+| `api` | Token API (Proxmox, MikroTik REST) |
+| `proxmox` | User + token Proxmox API |
+
+### Crittografia at-rest
+
+Tutte le password e token sono **cifrati AES-GCM** con `ENCRYPTION_KEY` configurata in `.env.local`. **Non perdere quella chiave**: la sua perdita rende tutte le credenziali inaccessibili (recovery: reinserimento manuale).
+
+### Catene per subnet
+
+Una credenziale può essere:
+- Globale (visibile a tutti i tenant) — solo superadmin
+- Per-tenant (visibile solo dentro un tenant)
+
+E può essere **inserita in catene** sulle subnet (vedi §5) per essere provata in ordine durante gli scan.
+
+---
+
+## 14. Inventario Asset, Assegnatari, Ubicazioni
+
+`Inventario → Asset` è il vero inventario fisico (oltre al discovery di rete).
+
+### Asset
+
+Ogni asset ha: codice, descrizione, categoria, marca, modello, seriale, asset tag, data acquisto, valore, garanzia, fornitore, assegnatario, ubicazione, host collegato (opzionale).
+
+### Link Asset ↔ Host
+
+Un asset può essere collegato a un host scoperto. Da Discovery puoi "Crea asset NIS2" che genera asset partendo dall'host con classificazione corretta.
+
+### Assegnatari
+
+Persone o dipartimenti a cui sono assegnati gli asset. Campi: nome, email, ufficio, ruolo. Filtri per dipartimento.
+
+### Ubicazioni
+
+Sedi, edifici, locali, rack. Struttura ad albero (`Sede A > Building 1 > Floor 2 > Rack 12`). Filtro asset per ubicazione.
+
+---
+
+## 15. Licenze Software
+
+`Inventario → Licenze` traccia le licenze software:
+- Software (Microsoft Office, Adobe Creative Cloud, ecc.)
+- Tipo licenza (perpetua, abbonamento, OEM, volume)
+- Quantità acquisite, assegnate, disponibili
+- Scadenza (con alert)
+- Costo, fornitore, ordine d'acquisto
+
+Assegnazione licenza → asset.
+
+---
+
+## 16. Servizi NIS2
+
+`Inventario → Servizi NIS2` permette di censire i **servizi critici** richiesti dalla compliance NIS2:
+- Nome servizio, descrizione, criticità (low/medium/high/critical)
+- Asset coinvolti
+- Responsabile tecnico, owner di business
+- Dipendenze tra servizi
+
+---
+
+## 17. Anomalie
+
+Voce **Anomalie** in sidebar con badge rosso se ce ne sono di non acknowledged.
+
+Tipi di anomalia rilevati automaticamente:
+
+| Tipo | Trigger |
+|---|---|
+| **MAC flip** | Stesso MAC visto su 2+ IP diversi (può indicare DHCP rotation o spoofing) |
+| **Port change** | Stesso MAC migrato da una porta switch ad un'altra |
+| **Latency anomaly** | RTT > N × mediana storica |
+| **New unknown host** | Host nuovo non assegnato e con classificazione `unknown` |
+| **Uptime drop** | Calo improvviso di availability su una subnet |
+
+Per ogni anomalia: severity, host coinvolti, timestamp, possibilità di **Acknowledge** (rimuove dal badge) o **Snooze**.
+
+Job `anomaly_check` configurabile (default 15 min).
+
+---
+
+## 18. Integrazioni
+
+Voce sidebar **Integrazioni** visibile solo se almeno una è abilitata.
+
+Configurazione in **Impostazioni → Integrazioni**:
+
+| Integrazione | Cosa fa |
+|---|---|
+| **LibreNMS** | Sync host con LibreNMS (push/pull devices) |
+| **scanner-edge** (Domarc) | Ricezione findings CVE da appliance Greenbone remota |
+| **Active Directory** | Vedi §12 |
+| **Inventario CMDB esterno** | Push/pull asset (custom per cliente) |
+
+Ogni integrazione ha pagina dedicata in `/integrations/[nome]`.
+
+---
+
+## 19. Scansioni — storico ed esecuzioni manuali
+
+`Network → Scansioni` mostra:
+- **Job schedulati**: lista cron attivi con `job_type`, network, interval, ultima esecuzione, prossima
+- **Storico esecuzioni**: ultime N esecuzioni con esito (success/error), durata, host trovati, log
+
+Da qui puoi:
+- Abilitare/disabilitare un job
+- Vedere il log dettagliato di un'esecuzione
+- Triggerare manualmente uno scan ad-hoc
+
+---
+
+## 20. Impostazioni
+
+`Impostazioni` (in basso sidebar) è la pagina globale per:
+
+### Utenti e ruoli
+- Crea/modifica utenti (admin only)
+- Ruoli: `superadmin`, `admin`, `user`
+- Reset password, cambio username
+- Multi-tenant access (quali tenant può vedere)
 
 ### Profilo Nmap
+- Elenco porte TCP (obbligatorio)
+- Elenco porte UDP (opzionale, richiede root)
+- Community SNMP del profilo
 
-È disponibile **un solo profilo globale** in **Impostazioni → Profilo Nmap**. Definisci **l’elenco delle porte TCP** da testare (obbligatorio, separato da virgole) e, se serve, **l’elenco UDP** (opzionale). **Non** viene aggiunto alcun elenco predefinito alle tue porte TCP: vengono usate solo quelle che indichi.
+### Credenziali globali fallback
+- "Host Linux" globale per fallback SSH non-router
 
-L’app esegue **due processi Nmap distinti** (prima TCP, poi UDP se hai indicato almeno una porta UDP). Se lasci **vuoto** il campo UDP, **non** viene eseguita la fase UDP (solo TCP). La community SNMP opzionale nel profilo viene usata nella sessione con lo scan (oltre alle community di rete/credenziali).
+### Integrazioni
+- Configurazione LibreNMS, scanner-edge, AD, ecc.
 
----
+### Scansione periodica
+- Toggle global "Auto-scan subnet"
+- Interval default per nuovi job
 
-## 6. Host e Indirizzi IP
+### Backup
+- Trigger backup manuale (hub.db + tenant DB)
+- Configurazione backup nightly (cron)
+- Lista backup esistenti
 
-### Scheda host (`/hosts/[id]`)
-
-Accessibile cliccando l'IP in qualsiasi tabella, o la cella nella griglia IP.
-
-#### Informazioni di rete (automatiche)
-- Indirizzo IP, MAC address, vendor OUI, hostname
-- DNS forward e reverse
-- Sistema operativo, modello
-- Primo rilevamento e ultimo contatto
-- Stato corrente (Online/Offline/Sconosciuto)
-
-#### Campi personalizzati (editabili manualmente)
-
-| Campo | Descrizione |
-|-------|------------|
-| **Host conosciuto** | Toggle per attivare il monitoraggio attivo (ping periodico, allerta in dashboard) |
-| **Nome personalizzato** | Alias leggibile (es. "Server web principale") |
-| **Classificazione** | Tipo dispositivo: PC, Notebook, Server, Switch, Router, Firewall, ecc. |
-| **Codice inventario** | Riferimento all'inventario fisico (es. "INV-2024-001") |
-| **Note** | Note libere |
-| **Porte di monitoraggio** | Porte TCP da controllare nel monitoring attivo (es. `22, 80, 443`). Se non configurate, il sistema usa porte note (80, 22, 443, 3389) |
-
-#### Sezioni dati
-
-**Rilevamento automatico (fingerprint):** dopo **Scoperta rete**, **nmap** o **snmp**, la scheda host può mostrare un riepilogo (ipotesi tipo dispositivo, confidenza, TTL, porte chiave, fonti: firme porte, banner, SNMP). Con confidenza sufficiente, la **classificazione** dell’host viene allineata al tipo rilevato (es. Proxmox VE → *hypervisor*). Il pulsante **Ricalcola** sulla rete riallinea classificazioni da `detection_json` e regole aggiornate. Per variabili d’ambiente e dettaglio tecnico vedi `docs/DEVICE-FINGERPRINTING.md`.
-
-**Porte aperte:** badge con numero porta (UDP in blu).
-
-**Dispositivo gestito:** se l'IP coincide con un network device registrato, mostra il link.
-
-**Connessione di rete:** 
-- Quale router ha fornito il MAC via ARP
-- A quale porta dello switch è collegato (da MAC table)
-- VLAN di appartenenza
-
-**Grafico latenza:** andamento latenza ping nell'ultimo periodo.
-
-**Timeline Uptime:** visualizzazione grafica online/offline per slot temporali (ultime 24h o 7gg).
-
-**Storico scansioni:** ultime scansioni con tipo, risultato, porte trovate, durata.
+### TLS / HTTPS
+- Gestione certificato (self-signed via UI o upload custom)
+- Install fisico via sudoers entry
+- Vedi `MANUALE-SVILUPPATORE.md` per setup nginx reverse proxy
 
 ---
 
-## 7. Dispositivi di Rete (Router, Switch, Hypervisor)
+## 21. Ricerca globale
 
-I dispositivi di rete sono apparati gestiti attivamente dal sistema: il sistema si connette a loro per acquisire dati (tabella ARP, MAC table, porte switch, info sistema).
+La **search bar in cima** cerca cross-tenant (su tutti i tenant a cui hai accesso) in:
+- IP, MAC, hostname custom o rilevato
+- Network device name, vendor, sysname
+- Classificazione, OS, modello
+- Asset tag, codice asset
 
-### Aggiungere un dispositivo (`/devices`)
-
-Pulsante **"Aggiungi Dispositivo"** o, più direttamente, da una scheda host → menu **⋮** → "Aggiungi come Router/Switch".
-
-**Campi:**
-
-| Campo | Descrizione |
-|-------|------------|
-| **Tipo** | Router, Switch, Hypervisor |
-| **Nome** | Nome identificativo |
-| **IP** | Indirizzo IP del dispositivo |
-| **Vendor** | MikroTik, Ubiquiti, Cisco, HP (ProCurve/Comware), Omada, Stormshield, Proxmox, VMware, Linux, Windows, Synology, QNAP, Altro |
-| **Protocollo** | SSH, SNMP v2, SNMP v3, API REST, WinRM |
-| **Porta** | Porta di connessione (default: 22 SSH, 161 SNMP, 8006 Proxmox) |
-| **Credenziale archivio** | Credenziale SSH/API salvata nell'archivio (preferibile) |
-| **Username / Password** | Credenziali inline (alternativa all'archivio) |
-| **Credenziale SNMP** | Community SNMP dall'archivio |
-| **Community SNMP** | Community inline |
-
-### Scheda dispositivo (`/devices/[id]`)
-
-**Header:** nome, tipo, classificazione, vendor, IP:porta, protocollo.
-
-**Pulsanti azione:**
-- **"Test Connessione"** — verifica raggiungibilità e autenticazione
-- **"Aggiorna Dati"** — interroga il dispositivo e aggiorna tutte le informazioni (ARP, MAC, porte, info sistema)
-- **"Modifica"** — apre dialog di modifica
-
-#### Tab "Tabella ARP" (router)
-Voci acquisite dall'ARP table del router: IP, MAC, interfaccia, link all'host associato, timestamp.
-
-#### Tab "Schema Porte" (switch)
-Per ogni porta: icona tipo (trunk/access/SFP), stato (up/down/disabilitata), velocità, duplex, VLAN, stato STP (Forwarding/Blocking/Designated), watt PoE (se attivo), dispositivo neighbor collegato (LLDP/CDP).
-
-#### Tab "MAC Table" (switch)
-MAC address appresi su ogni porta: MAC, porta, VLAN, host associato.
-
-#### Tab "Neighbor" (switch)
-Dispositivi adiacenti rilevati via LLDP/CDP: nome, porta locale, porta remota, tipo dispositivo.
-
-#### Dati sistema (router/switch con SSH)
-sysName, sysDescr, firmware, serial_number.
-
-#### Dati Windows (dispositivi WinRM)
-Sistema operativo, hardware (CPU, RAM, dischi con utilizzo), schede di rete, licenza, servizi, software installato, utenti locali, hotfix.
-
-#### Dati Proxmox (hypervisor)
-Stato nodo, lista VM/CT con risorse, licenza subscription, dettagli hardware.
-
-**Più nodi (stessa subnet):** nel campo **IP / Host** puoi usare la forma breve `192.168.40.1,2,3,4,5` (ultimo ottetto elencato dopo la virgola). Per ogni indirizzo lo scan interroga sia l’**API** (porta 8006, da URL API o `https://IP:8006`) sia la **SSH** (porta del dispositivo, di default 22), poi unisce nodi e VM evitando duplicati. Dettagli ricchi (storage, rete, agent QEMU) provengono soprattutto dall’API; `pvesh` via SSH integra o conferma l’elenco cluster. Massimo 32 indirizzi per dispositivo.
-
-#### Spanning Tree (switch)
-Bridge ID, root bridge ID, priority, costi, porte, hello/forward/max-age time. Badge **ROOT BRIDGE** se questo switch è la radice STP.
-
-### Classificazioni dispositivi
-
-I dispositivi host vengono classificati automaticamente in base a:
-- OID SNMP (Cisco, HP, MikroTik, ecc.)
-- Parole chiave in sysDescr (router, switch, access point, printer, camera, NAS…)
-- Porte aperte (3389 → workstation, 631 → stampante, 22 → server/router…)
-
-La classificazione è modificabile manualmente dalla scheda host.
+Mostra fino a 50 risultati raggruppati per tipo (host / device / asset). Click → vai al dettaglio.
 
 ---
 
-## 8. Tabella ARP e Mappatura MAC-IP
+## 22. Export e Backup
 
-### Tabella ARP Cumulativa (`/arp-table`)
+### Export CSV
 
-Raccoglie **tutte** le voci ARP acquisite da router e switch nel tempo. Permette di:
-- Tracciare la storia IP di un MAC address (colonna "IP precedente")
-- Identificare dispositivi spostati tra subnet
-- Trovare un IP a partire dal MAC o viceversa
+Discovery → pulsante ⬇️ esporta la **vista filtrata corrente** (rispetta filtri attivi e selezione bulk).
 
-**Filtri disponibili:** ricerca testo (MAC, IP, hostname), rete, sorgente (ARP/DHCP/Host/Switch).
+Altre liste (Asset, Licenze, AD, ecc.) hanno il proprio pulsante Export con le colonne pertinenti.
 
-**Sorgenti:**
-- **ARP** — acquisita dalla tabella ARP del router
-- **DHCP** — da lease DHCP (MikroTik)
-- **Host** — associata allo scan host
-- **Switch** — dalla MAC table dello switch
+### Backup
 
----
+**Cron nightly** (default 03:00) crea uno snapshot di:
+- `hub.db` (utenti, tenant, anagrafica)
+- Tutti i DB tenant `tenants/[codice].db`
 
-## 9. Credenziali
+Conservazione: ultimi 7 backup. Files in `/var/lib/da-invent/backups/` o equivalente.
 
-Le credenziali riutilizzabili (`/credentials`) permettono di centralizzare le credenziali di accesso ai dispositivi. Sono cifrate con AES-256-GCM (mai in chiaro nel DB).
+**Restore**: manuale via script `scripts/restore-from-backup.sh [data]`.
 
-### Tipi
+**Backup manuale** da Impostazioni → Backup → "Esegui backup ora".
 
-| Tipo | Uso tipico |
-|------|-----------|
-| **ssh** | Router, switch, server Linux via SSH |
-| **snmp** | Dispositivi SNMP (community string) |
-| **api** | Proxmox, Omada Controller, API REST |
-| **windows** | WinRM per host Windows |
-| **linux** | SSH per host Linux |
-
-### Test credenziale
-
-Dal pulsante **"Testa"** nella lista o dalla scheda credenziale: inserire IP e porta target → il sistema tenta una connessione reale e riporta il risultato.
-
-### Utilizzo
-
-Le credenziali si assegnano ai dispositivi di rete (campo "Credenziale SSH" e "Credenziale SNMP"), alle **catene per subnet** nel dialog **Modifica rete** (vedi §4), o alle impostazioni globali per scan di massa su host Windows/Linux.
-
-**Priorità:** una credenziale da archivio ha sempre la precedenza sulle credenziali inline del dispositivo.
+> **IMPORTANTE**: il backup NON include `.env.local` (per sicurezza). In disaster recovery serve ripristinare separatamente `ENCRYPTION_KEY`, `NEXTAUTH_SECRET`, ecc.
 
 ---
 
-## 10. Inventario Asset
+## 23. Multi-tenant e Superadmin
 
-Il modulo inventario permette di gestire il ciclo di vita completo degli asset fisici e virtuali.
+DA-INVENT è single-server ma multi-tenant: una sola installazione gestisce N clienti separati.
 
-### Lista asset (`/inventory`)
+### Modello tenant
 
-**Filtri:** ricerca testo, categoria, stato.
+Ogni tenant ha:
+- Codice (es. `70791`)
+- Nome, descrizione
+- DB SQLite dedicato (`data/tenants/[codice].db`)
+- Utenti con accesso definito in `user_tenant_access`
 
-**Sincronizzazione rapida:**
-- **"Da dispositivi di rete"** — crea/aggiorna automaticamente un asset per ogni network device registrato
-- **"Da host"** — crea/aggiorna un asset per ogni host con "Host conosciuto" attivo
+### Tenant switcher
 
-**Export CSV** → download con tutti i campi.
+In sidebar, sotto il blocco superadmin, dropdown per cambiare tenant attivo. "Tutti i clienti" mostra dati aggregati (solo superadmin).
 
-### Scheda asset (`/inventory/[id]`)
+### Voci solo per superadmin
 
-Campi organizzati in sezioni:
+- **Clienti** — CRUD tenant
+- **Agenti remoti** — appliance edge installate presso i clienti (scanner-edge, agent remoti)
 
-| Sezione | Campi principali |
-|---------|-----------------|
-| **Identificazione** | Asset Tag (generato automaticamente), S/N, collegamento a device/host |
-| **Classificazione** | Nome prodotto, categoria (Desktop/Laptop/Server/Switch/Firewall/NAS/Stampante/VM/Licenza/Access Point/Router/Other), marca, modello, P/N |
-| **Assegnazione** | Assegnatario, sede, reparto, posizione fisica, data assegnazione |
-| **Ciclo vita** | Stato (Attivo/In magazzino/In riparazione/Dismesso/Rubato), data acquisto/installazione/dismissione, vita utile prevista |
-| **Garanzia** | Fine garanzia, fine supporto, tipo garanzia, contratto supporto, prossima manutenzione |
-| **Specifiche** | OS, CPU, RAM GB, storage GB/tipo, MAC, IP, VLAN, firmware |
-| **Finanziario** | Prezzo acquisto, fornitore, N° ordine/fattura, valore attuale, metodo ammortamento, centro di costo |
-| **Sicurezza/Compliance** | Crittografia disco, antivirus, MDR, classificazione dati (Pubblico/Interno/Confidenziale/Riservato), in scope GDPR, in scope NIS2, ultimo audit |
-| **Note tecniche** | Note libere, dati tecnici JSON |
+### Isolamento dati
 
-#### Tab Audit Log
-
-Ogni modifica all'asset è tracciata: campo modificato, valore precedente, valore nuovo, utente, data/ora. Utile per compliance GDPR/NIS2.
-
-### Assegnatari (`/inventory/assignees`)
-
-Persone fisiche a cui assegnare gli asset: nome, email, telefono, note. CRUD completo.
+I tenant non si vedono fra loro. Anche un admin di tenant A non può accedere a dati di tenant B. Solo il superadmin ha vista globale.
 
 ---
 
-## 11. Licenze Software
+## 24. Manuale in-app
 
-Il modulo licenze gestisce il parco licenze software.
+Voce sidebar **📖 Manuale** apre questo documento direttamente in-app, con renderer markdown integrato. Da lì puoi navigare:
+- Questo manuale utente
+- [Stati host e Discovery](STATI-HOST-E-DISCOVERY.md) (deep dive)
+- ADR architetturali (`docs/adr/`)
+- Playbook operativi (`docs/playbooks/`)
 
-### Campi principali
-
-- Nome prodotto, fornitore
-- Numero seriale / chiave
-- Seats totali (numero posti licenza)
-- Data scadenza, data acquisto
-- Costo acquisto
-- Note
-
-### Assegnazione posti
-
-Da ogni licenza è possibile assegnare i posti a:
-- **Asset** inventario
-- **Assegnatari** (persone)
-
-Il sistema mostra quanti posti sono usati vs totali.
+Il viewer mostra l'indice in sidebar laterale e il contenuto formattato a destra.
 
 ---
 
-## 12. Job Schedulati
+## 25. Appendice — Classificazioni dispositivi
 
-I job schedulati automatizzano le operazioni di monitoraggio e acquisizione dati.
+Lista delle classificazioni supportate (ordine alfabetico):
 
-### Tipi di job
+| Codice | Etichetta UI | Tipo |
+|---|---|---|
+| `access_point` | Access Point | rete |
+| `backup_server` | Backup Server | server |
+| `bridge` | Bridge | rete |
+| `controller` | Controller | OT |
+| `database_server` | Database Server | server |
+| `decoder` | Decoder | media |
+| `dhcp_server` | DHCP Server | server |
+| `dns_server` | DNS Server | server |
+| `firewall` | Firewall | rete |
+| `fotocopiatrice` | Fotocopiatrice | periferica |
+| `hmi` | HMI | OT |
+| `hypervisor` | Hypervisor | server |
+| `iot` | IoT | endpoint |
+| `load_balancer` | Load Balancer | rete |
+| `mail_server` | Mail Server | server |
+| `media_player` | Media Player | media |
+| `modem` | Modem | rete |
+| `multifunzione` | Multifunzione | periferica |
+| `nas` / `nas_synology` / `nas_qnap` | NAS / Synology / QNAP | storage |
+| `nfs_server` | NFS Server | server |
+| `notebook` | Notebook | client |
+| `ont` | ONT | rete |
+| `plc` | PLC | OT |
+| `proxy` | Proxy | rete |
+| `repeater` | Repeater | rete |
+| `rete_ot` | OT generica | OT |
+| `router` | Router | rete |
+| `scanner` | Scanner | periferica |
+| `sensore` | Sensore | OT |
+| `server` | Server (generico) | server |
+| `server_linux` | Server Linux | server |
+| `server_windows` | Server Windows | server |
+| `smart_tv` | Smart TV | media |
+| `smartphone` | Smartphone | mobile |
+| `stampante` | Stampante | periferica |
+| `storage` | Storage | storage |
+| `switch` | Switch | rete |
+| `tablet` | Tablet | mobile |
+| `telecamera` | Telecamera | sicurezza |
+| `unknown` | Sconosciuto | — |
+| `ups` | UPS | infrastruttura |
+| `vm` | VM | server |
+| `voip` | Telefono VOIP | client |
+| `vpn_gateway` | VPN Gateway | rete |
+| `web_server` | Web Server | server |
+| `workstation` | PC (workstation) | client |
 
-| Tipo | Cosa fa |
-|------|---------|
-| **ping_sweep** | Esegue la **scoperta rete** (ICMP + Nmap TCP quick + DNS + ARP router) su una rete o su tutte |
-| **snmp_scan** | Query SNMP sugli host per aggiornare info dispositivo |
-| **nmap_scan** | Port scan nmap |
-| **arp_poll** | Acquisisce ARP e MAC table da tutti i dispositivi abilitati |
-| **dns_resolve** | Risoluzione DNS per tutti gli host |
-| **known_host_check** | Ping (o TCP) su host conosciuti con flag attivo. Alimenta la timeline uptime |
-| **cleanup** | Rimuove host non visti da X giorni |
-
-### Configurazione (`/settings` → tab "Job Schedulati")
-
-1. Cliccare **"Nuovo Job"**
-2. Scegliere tipo, rete (opzionale, se vuota agisce su tutte), intervallo in minuti
-3. Il job viene attivato immediatamente nello scheduler
-
-**Intervalli predefiniti:** 5, 15, 30, 60, 360, 1440 minuti (max 1 settimana = 10080 min).
-
-Lo scheduler usa `node-cron` avviato da `server.ts` in produzione. Con `npm run dev` i job **non** vengono eseguiti; usare `npm run dev:server` per il server completo con scheduler.
-
----
-
-## 13. Impostazioni
-
-### Tab Generale
-
-- **Porta server:** porta HTTP (default 3001). Richiede riavvio del servizio.
-- **Credenziale host Windows:** credenziale globale per scan WinRM di massa
-- **Credenziale host Linux:** credenziale globale per scan SSH di massa
-- **Cambio password:** inserire password corrente, nuova password (min 8 caratteri)
-
-### Tab Utenti
-
-- Lista utenti: username, ruolo, creato il, ultimo accesso
-- **Crea utente:** username, password, ruolo (admin/viewer)
-- **Azioni:** promuovi/declassa, elimina utente
-- **Ruoli:** `admin` può modificare tutto; `viewer` può solo leggere (tutti i GET, nessun POST/PUT/DELETE)
-
-### Tab HTTPS
-
-- **Stato TLS:** mostra se abilitato, certificato presente, soggetto, data scadenza
-- **Genera certificato self-signed:** inserire dominio/IP, durata in giorni → genera automaticamente
-- **Importa certificato esterno:** incollare PEM certificato e chiave privata
-
-### Tab Profilo Nmap
-
-- **Porte TCP** (obbligatorie) e **porte UDP** (opzionali), testo libero separato da virgole; anteprima dei comandi generati
-- **Community SNMP** opzionale per la sessione di scan
-- **Custom OUI:** textarea per sovrascrivere/aggiungere vendor per prefissi MAC. Formato: `AABBCC Nome Vendor` (una riga per prefisso). Utile per dispositivi non nel database OUI standard.
-
-### Tab Job Schedulati
-
-Vedi [sezione 12](#12-job-schedulati).
-
-### Tab Gestione Dati
-
-- **Export host CSV:** download `hosts_export.csv` con IP, MAC, vendor, hostname, stato, porte
-- **Backup database:** download del file SQLite (`ipam.db`) per backup manuale
-- **Reset configurazione:** elimina reti, host, dispositivi, ARP, MAC table. **Mantiene** utenti e impostazioni. Irreversibile.
+Classificazione **manuale** (impostata dall'utente dalla scheda host) prevale sulla classificazione automatica del fingerprinting.
 
 ---
 
-## 14. Ricerca Globale
+## Risorse correlate
 
-Accessibile con **Cmd+K** (Mac) o **Ctrl+K** (Windows/Linux) da qualsiasi pagina.
-
-Cerca in tempo reale (min 2 caratteri, debounce 300ms) in:
-- Subnet (per CIDR, nome, posizione)
-- Host (per IP, MAC, hostname, nome personalizzato)
-
-Risultati divisi per categoria. Navigazione con ↑↓, selezione con Enter, chiudi con Escape.
-
----
-
-## 15. Export e Backup
-
-### Export host CSV
-
-Impostazioni → Gestione Dati → **"Export CSV"** (o direttamente `GET /api/export`).
-
-Campi: IP, MAC, vendor OUI, hostname, DNS reverse, DNS forward, stato, porte aperte, classificazione, last_seen, rete.
-
-### Export inventario CSV
-
-Inventario → Lista asset → pulsante **"Export CSV"**.
-
-Campi: tutti i campi dell'asset (50+).
-
-### Backup database
-
-Impostazioni → Gestione Dati → **"Scarica Backup DB"**.
-
-Scarica il file `ipam.db` (SQLite). Tenere in luogo sicuro: contiene tutte le credenziali cifrate.
-
-**Backup automatico (script):**
-
-```bash
-cd /opt/da-invent
-./scripts/backup.sh
-```
-
-I backup vengono compressi con gzip e salvati in `data/backups/`. La retention default è 7 giorni.
-
-**Backup da nodo Proxmox** (copia DB dal CT al Mac per debug):
-
-```bash
-npm run pull:db   # richiede conferma YES — sovrascrive il DB locale
-```
-
----
-
-## Appendice — Classificazioni Dispositivi
-
-| Slug | Label |
-|------|-------|
-| `workstation` | PC / Workstation |
-| `notebook` | Notebook / Laptop |
-| `server` | Server |
-| `vm` | Macchina Virtuale |
-| `switch` | Switch |
-| `router` | Router / Gateway |
-| `access_point` | Access Point |
-| `firewall` | Firewall |
-| `hypervisor` | Hypervisor |
-| `storage` | Storage / NAS |
-| `voip` | Telefono VoIP |
-| `iot` | Dispositivo IoT |
-| `stampante` | Stampante |
-| `telecamera` | Telecamera IP |
-| `unknown` | Sconosciuto |
+- [Stati host e Discovery — deep dive](STATI-HOST-E-DISCOVERY.md)
+- [Manuale sviluppatore](MANUALE-SVILUPPATORE.md)
+- [ADR architetturali](adr/)
+- [Playbook operativi](playbooks/)
+- [Changelog](../CHANGELOG.md)

@@ -38,6 +38,7 @@ import { Fingerprint } from "lucide-react";
 import type { ScheduledJob, NetworkWithStats } from "@/types";
 import Link from "next/link";
 import { ManualUpdateInstructions } from "@/components/shared/manual-update-instructions";
+import { UpdateChannelCard } from "@/components/settings/update-channel-card";
 import { ScanConfigTab } from "@/components/settings/scan-config-tab";
 import { DeviceIdentificationTab } from "@/components/settings/device-identification-tab";
 import { IntegrationsTab } from "@/components/settings/integrations-tab";
@@ -746,6 +747,13 @@ export default function SettingsPage() {
 
       {showManualUpdate && (
         <ManualUpdateInstructions className="max-w-3xl" />
+      )}
+
+      {/* Canale aggiornamenti (Stable/Beta) + promote dev→main — solo admin */}
+      {isAdmin && (
+        <div className="max-w-3xl">
+          <UpdateChannelCard />
+        </div>
       )}
 
       {/* Tabs */}

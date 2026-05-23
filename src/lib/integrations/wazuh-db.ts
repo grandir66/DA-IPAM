@@ -12,6 +12,7 @@ import type {
   WazuhSyscollectorHw,
   WazuhSyscollectorOs,
   WazuhSyscollectorPackage,
+  WazuhSyscollectorPort,
   WazuhVulnerability,
 } from "./wazuh-api";
 
@@ -88,6 +89,19 @@ export interface WazuhSoftwareRow {
   source: string | null;
   install_time: string | null;
   description: string | null;
+  scan_time: string | null;
+  synced_at: string;
+}
+
+export interface WazuhPortRow {
+  id: number;
+  agent_id: string;
+  protocol: string | null;
+  local_ip: string | null;
+  local_port: number | null;
+  state: string | null;
+  process: string | null;
+  pid: number | null;
   scan_time: string | null;
   synced_at: string;
 }
@@ -349,6 +363,49 @@ export function getWazuhOs(agentId: string): WazuhOsRow | null {
   return db().prepare("SELECT * FROM wazuh_os WHERE agent_id = ?").get(agentId) as WazuhOsRow | null;
 }
 
+/**
+ * Sostituisce le porte in ascolto dell'agent. Solo state="listening" persistito.
+ * Dedup su (agent_id, protocol, local_ip, local_port).
+ * @returns numero di righe inserite.
+ */
+export function replacePortsForAgent(agentId: string, ports: WazuhSyscollectorPort[]): number {
+  const d = db();
+  const insert = d.prepare(
+    `INSERT OR IGNORE INTO wazuh_ports (
+       agent_id, protocol, local_ip, local_port, state, process, pid, scan_time, synced_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+  );
+  let inserted = 0;
+  const tx = d.transaction(() => {
+    d.prepare("DELETE FROM wazuh_ports WHERE agent_id = ?").run(agentId);
+    for (const p of ports) {
+      const state = (p.state ?? "").toLowerCase();
+      if (state !== "listening") continue;
+      const r = insert.run(
+        agentId,
+        p.protocol ?? null,
+        p.local?.ip ?? null,
+        p.local?.port ?? null,
+        state,
+        p.process ?? null,
+        p.pid ?? null,
+        p.scan?.time ?? null,
+      );
+      if (r.changes) inserted++;
+    }
+  });
+  tx();
+  return inserted;
+}
+
+export function listWazuhPorts(agentId: string): WazuhPortRow[] {
+  return db()
+    .prepare(
+      "SELECT * FROM wazuh_ports WHERE agent_id = ? ORDER BY protocol, local_port",
+    )
+    .all(agentId) as WazuhPortRow[];
+}
+
 export function listWazuhSoftware(agentId: string): WazuhSoftwareRow[] {
   return db().prepare(
     "SELECT * FROM wazuh_software WHERE agent_id = ? ORDER BY name COLLATE NOCASE",
@@ -370,13 +427,14 @@ export function listWazuhVulns(agentId: string): WazuhVulnRow[] {
   ).all(agentId) as WazuhVulnRow[];
 }
 
-export function countsForAgent(agentId: string): { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number } {
+export function countsForAgent(agentId: string): { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number; ports: number } {
   const d = db();
   const sw = d.prepare("SELECT COUNT(*) AS c FROM wazuh_software WHERE agent_id = ?").get(agentId) as { c: number };
   const vAll = d.prepare("SELECT COUNT(*) AS c FROM wazuh_vuln WHERE agent_id = ?").get(agentId) as { c: number };
   const vCrit = d.prepare("SELECT COUNT(*) AS c FROM wazuh_vuln WHERE agent_id = ? AND severity = 'Critical'").get(agentId) as { c: number };
   const vHigh = d.prepare("SELECT COUNT(*) AS c FROM wazuh_vuln WHERE agent_id = ? AND severity = 'High'").get(agentId) as { c: number };
-  return { software: sw.c, vulns: vAll.c, vulnsCritical: vCrit.c, vulnsHigh: vHigh.c };
+  const pts = d.prepare("SELECT COUNT(*) AS c FROM wazuh_ports WHERE agent_id = ?").get(agentId) as { c: number };
+  return { software: sw.c, vulns: vAll.c, vulnsCritical: vCrit.c, vulnsHigh: vHigh.c, ports: pts.c };
 }
 
 export function deleteWazuhAgentsExcept(activeAgentIds: string[]): number {

@@ -52,6 +52,16 @@ interface WazuhSoftwareRow {
   architecture: string | null;
 }
 
+interface WazuhPortRow {
+  id: number;
+  protocol: string | null;
+  local_ip: string | null;
+  local_port: number | null;
+  state: string | null;
+  process: string | null;
+  pid: number | null;
+}
+
 interface WazuhVulnRow {
   id: number;
   cve: string;
@@ -72,9 +82,10 @@ interface Payload {
   agent?: WazuhAgentRow;
   hw?: WazuhHwRow | null;
   os?: WazuhOsRow | null;
-  counts?: { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number };
+  counts?: { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number; ports: number };
   software?: WazuhSoftwareRow[];
   vulns?: WazuhVulnRow[];
+  ports?: WazuhPortRow[];
 }
 
 function formatRam(kb: number | null | undefined): string {
@@ -98,13 +109,16 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
   const [softwareData, setSoftwareData] = useState<WazuhSoftwareRow[] | null>(null);
   const [showVulns, setShowVulns] = useState(false);
   const [vulnsData, setVulnsData] = useState<WazuhVulnRow[] | null>(null);
+  const [showPorts, setShowPorts] = useState(false);
+  const [portsData, setPortsData] = useState<WazuhPortRow[] | null>(null);
 
-  const load = async (opts: { withSoftware?: boolean; withVulns?: boolean } = {}) => {
+  const load = async (opts: { withSoftware?: boolean; withVulns?: boolean; withPorts?: boolean } = {}) => {
     setLoading(true);
     try {
       const includes: string[] = [];
       if (opts.withSoftware) includes.push("software");
       if (opts.withVulns) includes.push("vulns");
+      if (opts.withPorts) includes.push("ports");
       const qs = includes.length ? `?include=${includes.join(",")}` : "";
       const r = await fetch(`/api/integrations/wazuh/host/${hostId}${qs}`);
       if (!r.ok) { setData(null); return; }
@@ -112,6 +126,7 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       setData(d);
       if (opts.withSoftware && d.software) setSoftwareData(d.software);
       if (opts.withVulns && d.vulns) setVulnsData(d.vulns);
+      if (opts.withPorts && d.ports) setPortsData(d.ports);
     } finally {
       setLoading(false);
     }
@@ -126,7 +141,7 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       const d = (await r.json()) as { ok?: boolean; error?: string };
       if (r.ok && d.ok) {
         toast.success("Dati Wazuh aggiornati");
-        await load({ withSoftware: showSoftware, withVulns: showVulns });
+        await load({ withSoftware: showSoftware, withVulns: showVulns, withPorts: showPorts });
       } else {
         toast.error(d.error ?? "Refresh fallito");
       }
@@ -147,6 +162,13 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       await load({ withVulns: true });
     }
     setShowVulns((v) => !v);
+  };
+
+  const togglePorts = async () => {
+    if (!showPorts && !portsData) {
+      await load({ withPorts: true });
+    }
+    setShowPorts((v) => !v);
   };
 
   if (loading && !data) return null;
@@ -215,6 +237,15 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
                 · richiede utente OpenSearch in config Wazuh
               </span>
             </span>
+          )}
+          {counts && counts.ports > 0 && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <button onClick={togglePorts} className="inline-flex items-center gap-1 hover:underline">
+                {showPorts ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                <strong>{counts.ports}</strong> porte in ascolto
+              </button>
+            </>
           )}
         </div>
 
@@ -287,6 +318,36 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
             </table>
             <div className="text-[10px] text-muted-foreground px-2 py-1 border-t bg-muted/30">
               Fonte: <strong>Wazuh OpenSearch</strong> · indice <code>wazuh-states-vulnerabilities-*</code> · le finding di vuln scanner (Greenbone) restano nella card separata sopra.
+            </div>
+          </div>
+        )}
+
+        {showPorts && portsData && (
+          <div className="rounded-md border max-h-80 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr>
+                  <th className="text-left px-2 py-1 w-16">Proto</th>
+                  <th className="text-left px-2 py-1">IP locale</th>
+                  <th className="text-right px-2 py-1 w-20">Porta</th>
+                  <th className="text-left px-2 py-1">Processo</th>
+                  <th className="text-right px-2 py-1 w-20">PID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {portsData.map((p) => (
+                  <tr key={p.id} className="border-t">
+                    <td className="px-2 py-1 font-mono uppercase">{p.protocol ?? "—"}</td>
+                    <td className="px-2 py-1 font-mono text-muted-foreground">{p.local_ip ?? "—"}</td>
+                    <td className="px-2 py-1 font-mono text-right">{p.local_port ?? "—"}</td>
+                    <td className="px-2 py-1">{p.process ?? "—"}</td>
+                    <td className="px-2 py-1 font-mono text-right text-muted-foreground">{p.pid ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="text-[10px] text-muted-foreground px-2 py-1 border-t bg-muted/30">
+              Fonte: <strong>Wazuh syscollector</strong> · solo state=listening · aggiornato a ogni sync.
             </div>
           </div>
         )}

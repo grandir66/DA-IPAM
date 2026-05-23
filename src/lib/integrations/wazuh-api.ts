@@ -102,6 +102,16 @@ export interface WazuhSyscollectorNetiface {
   state?: string;
 }
 
+export interface WazuhSyscollectorPort {
+  scan?: { time?: string };
+  protocol?: string;                    // tcp|udp|tcp6|udp6
+  local?: { ip?: string; port?: number };
+  remote?: { ip?: string; port?: number };
+  state?: string;                       // listening|established|...
+  process?: string;
+  pid?: number;
+}
+
 export interface WazuhVulnerability {
   cve?: string;
   severity?: string;
@@ -299,6 +309,16 @@ export class WazuhClient {
   async getNetifaces(agentId: string): Promise<WazuhSyscollectorNetiface[]> {
     try {
       return await this.getPaged<WazuhSyscollectorNetiface>(`/syscollector/${agentId}/netiface`);
+    } catch (e) {
+      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
+      throw e;
+    }
+  }
+
+  /** Porte (tutte). Il filtro state=listening avviene lato sync. */
+  async getPorts(agentId: string): Promise<WazuhSyscollectorPort[]> {
+    try {
+      return await this.getPaged<WazuhSyscollectorPort>(`/syscollector/${agentId}/ports`);
     } catch (e) {
       if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
       throw e;

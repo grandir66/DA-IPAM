@@ -820,6 +820,22 @@ CREATE TABLE IF NOT EXISTS wazuh_vuln (
   UNIQUE(agent_id, cve, package_name, package_version)
 );
 
+-- Porte in ascolto (syscollector/{id}/ports filtrato state=listening).
+-- Una riga per (agent_id, protocol, local_ip, local_port). Replace su ogni sync.
+CREATE TABLE IF NOT EXISTS wazuh_ports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL REFERENCES wazuh_agent(agent_id) ON DELETE CASCADE,
+  protocol TEXT,                         -- tcp|udp|tcp6|udp6
+  local_ip TEXT,
+  local_port INTEGER,
+  state TEXT,                            -- listening|established (memorizziamo solo listening)
+  process TEXT,
+  pid INTEGER,
+  scan_time TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(agent_id, protocol, local_ip, local_port)
+);
+
 -- ───────────────────────────────────────────────────────────────────────────
 -- Integrazione Scanner-Edge (DA-Vul-can) — singleton applicativo per tenant.
 -- DA-IPAM consuma /api/v1/cve dello scanner-edge sulla stessa LAN cliente,
@@ -1080,6 +1096,7 @@ CREATE INDEX IF NOT EXISTS idx_wazuh_software_name ON wazuh_software(name);
 CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_agent ON wazuh_vuln(agent_id);
 CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_cve ON wazuh_vuln(cve);
 CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_severity ON wazuh_vuln(severity);
+CREATE INDEX IF NOT EXISTS idx_wazuh_ports_agent ON wazuh_ports(agent_id);
 
 -- Vulnerability findings (scanner-edge integration)
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_host ON vuln_findings(host_id, scanned_at DESC);

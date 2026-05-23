@@ -27,6 +27,7 @@ import {
   upsertWazuhOs,
   replaceSoftwareForAgent,
   replaceVulnsForAgent,
+  replacePortsForAgent,
   deleteWazuhAgentsExcept,
   enrichHostFromWazuh,
   getWazuhAgentByHostId,
@@ -42,6 +43,7 @@ export interface WazuhSyncResult {
   matchedHosts: number;
   softwareRows: number;
   vulnRows: number;
+  portRows: number;
   hostsEnriched: number;
   removedAgents: number;
   errors: string[];
@@ -149,16 +151,18 @@ export async function syncSingleAgent(agentId: string): Promise<void> {
   const { hostId, primaryMac } = await matchAgentToHost(client, agent, hostnameIndex);
   upsertWazuhAgent(agent, hostId, primaryMac);
 
-  const [hw, os, pkgs, vulns] = await Promise.all([
+  const [hw, os, pkgs, ports, vulns] = await Promise.all([
     client.getHardware(agent.id),
     client.getOs(agent.id),
     client.getPackages(agent.id),
+    client.getPorts(agent.id),
     fetchVulnsForAgent(agent.id, client, indexer),
   ]);
   if (hw) upsertWazuhHw(agent.id, hw);
   if (os) upsertWazuhOs(agent.id, os);
   if (hostId && (hw || os)) enrichHostFromWazuh(hostId, hw, os);
   replaceSoftwareForAgent(agent.id, pkgs);
+  replacePortsForAgent(agent.id, ports);
   replaceVulnsForAgent(agent.id, vulns);
 }
 
@@ -179,6 +183,7 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
     matchedHosts: 0,
     softwareRows: 0,
     vulnRows: 0,
+    portRows: 0,
     hostsEnriched: 0,
     removedAgents: 0,
     errors: [],
@@ -224,10 +229,11 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
       // Skip per never_connected (non hanno mai inviato dati).
       if (agent.status === "never_connected") continue;
 
-      const [hw, os, pkgs, vulns] = await Promise.all([
+      const [hw, os, pkgs, ports, vulns] = await Promise.all([
         client.getHardware(agent.id),
         client.getOs(agent.id),
         client.getPackages(agent.id),
+        client.getPorts(agent.id),
         fetchVulnsForAgent(agent.id, client, indexer),
       ]);
 
@@ -237,6 +243,7 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
         if (enrichHostFromWazuh(hostId, hw, os) > 0) result.hostsEnriched++;
       }
       result.softwareRows += replaceSoftwareForAgent(agent.id, pkgs);
+      result.portRows += replacePortsForAgent(agent.id, ports);
       result.vulnRows += replaceVulnsForAgent(agent.id, vulns);
     } catch (e) {
       result.errors.push(`agent ${agent.id} (${agent.name ?? "?"}): ${(e as Error).message}`);

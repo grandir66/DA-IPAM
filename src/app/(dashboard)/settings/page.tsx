@@ -52,6 +52,8 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   cleanup: "Pulizia Host",
   anomaly_check: "Rilevamento anomalie",
   librenms_sync: "Sincronizzazione LibreNMS",
+  vuln_sync: "Sincronizzazione vulnerability scanner",
+  wazuh_sync: "Sincronizzazione Wazuh (agent/sysc/CVE)",
 };
 
 const INTERVAL_OPTIONS = [

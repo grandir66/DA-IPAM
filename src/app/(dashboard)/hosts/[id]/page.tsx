@@ -31,6 +31,8 @@ import {
 import { UptimeTimeline } from "@/components/shared/uptime-timeline";
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { HostWazuhCard } from "@/components/hosts/host-wazuh-card";
+import { WazuhHostBadge } from "@/components/integrations/wazuh-host-badge";
+import { LibreNMSDeviceGraphs } from "@/components/integrations/librenms-device-graphs";
 import { Switch } from "@/components/ui/switch";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import {
@@ -292,6 +294,12 @@ export default function HostDetailPage() {
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl font-bold tracking-tight font-mono">{host.ip}</h1>
             <StatusBadge status={host.status} />
+            <WazuhHostBadge
+              hostId={host.id}
+              hostName={host.hostname ?? host.custom_name ?? null}
+              hostIp={host.ip}
+              mode="header"
+            />
             {host.known_host === 1 && <Badge variant="secondary" className="text-xs">Conosciuto</Badge>}
             {fp?.final_device && (
               <Badge variant="outline" className="text-xs">{fp.final_device}</Badge>
@@ -693,6 +701,12 @@ export default function HostDetailPage() {
                     <p className="text-xs">{libreNMSData.device.os}</p>
                   </div>
                 )}
+              </div>
+            )}
+
+            {libreNMSData.mapped && libreNMSData.librenmsDeviceId && (
+              <div className="mt-4">
+                <LibreNMSDeviceGraphs deviceId={libreNMSData.librenmsDeviceId} />
               </div>
             )}
           </CardContent>

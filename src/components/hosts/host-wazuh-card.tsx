@@ -52,6 +52,21 @@ interface WazuhSoftwareRow {
   architecture: string | null;
 }
 
+interface WazuhVulnRow {
+  id: number;
+  cve: string;
+  severity: string | null;
+  cvss3_score: number | null;
+  cvss2_score: number | null;
+  package_name: string | null;
+  package_version: string | null;
+  package_architecture: string | null;
+  status: string | null;
+  detection_time: string | null;
+  title: string | null;
+  external_references: string | null;
+}
+
 interface Payload {
   hasAgent: boolean;
   agent?: WazuhAgentRow;
@@ -59,6 +74,7 @@ interface Payload {
   os?: WazuhOsRow | null;
   counts?: { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number };
   software?: WazuhSoftwareRow[];
+  vulns?: WazuhVulnRow[];
 }
 
 function formatRam(kb: number | null | undefined): string {
@@ -80,16 +96,22 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
   const [refreshing, setRefreshing] = useState(false);
   const [showSoftware, setShowSoftware] = useState(false);
   const [softwareData, setSoftwareData] = useState<WazuhSoftwareRow[] | null>(null);
+  const [showVulns, setShowVulns] = useState(false);
+  const [vulnsData, setVulnsData] = useState<WazuhVulnRow[] | null>(null);
 
-  const load = async (withSoftware = false) => {
+  const load = async (opts: { withSoftware?: boolean; withVulns?: boolean } = {}) => {
     setLoading(true);
     try {
-      const url = `/api/integrations/wazuh/host/${hostId}${withSoftware ? "?include=software" : ""}`;
-      const r = await fetch(url);
+      const includes: string[] = [];
+      if (opts.withSoftware) includes.push("software");
+      if (opts.withVulns) includes.push("vulns");
+      const qs = includes.length ? `?include=${includes.join(",")}` : "";
+      const r = await fetch(`/api/integrations/wazuh/host/${hostId}${qs}`);
       if (!r.ok) { setData(null); return; }
       const d = (await r.json()) as Payload;
       setData(d);
-      if (withSoftware && d.software) setSoftwareData(d.software);
+      if (opts.withSoftware && d.software) setSoftwareData(d.software);
+      if (opts.withVulns && d.vulns) setVulnsData(d.vulns);
     } finally {
       setLoading(false);
     }
@@ -104,7 +126,7 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       const d = (await r.json()) as { ok?: boolean; error?: string };
       if (r.ok && d.ok) {
         toast.success("Dati Wazuh aggiornati");
-        await load(showSoftware);
+        await load({ withSoftware: showSoftware, withVulns: showVulns });
       } else {
         toast.error(d.error ?? "Refresh fallito");
       }
@@ -115,9 +137,16 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
 
   const toggleSoftware = async () => {
     if (!showSoftware && !softwareData) {
-      await load(true);
+      await load({ withSoftware: true });
     }
     setShowSoftware((v) => !v);
+  };
+
+  const toggleVulns = async () => {
+    if (!showVulns && !vulnsData) {
+      await load({ withVulns: true });
+    }
+    setShowVulns((v) => !v);
   };
 
   if (loading && !data) return null;
@@ -165,23 +194,26 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
           </div>
         )}
 
-        <div className="flex items-center gap-3 text-xs">
+        <div className="flex items-center gap-3 text-xs flex-wrap">
           <button onClick={toggleSoftware} className="inline-flex items-center gap-1 hover:underline">
             {showSoftware ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
             <strong>{counts?.software ?? 0}</strong> pacchetti software
           </button>
           <span className="text-muted-foreground">·</span>
-          <span>
-            <strong>{counts?.vulns ?? 0}</strong> CVE
-            {counts && counts.vulns > 0 && (
-              <span className="ml-1 text-muted-foreground">
-                ({counts.vulnsCritical} critical, {counts.vulnsHigh} high)
+          {counts && counts.vulns > 0 ? (
+            <button onClick={toggleVulns} className="inline-flex items-center gap-1 hover:underline">
+              {showVulns ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              <strong>{counts.vulns}</strong> CVE Wazuh
+              <span className="text-muted-foreground">
+                ({counts.vulnsCritical} crit · {counts.vulnsHigh} high)
               </span>
-            )}
-          </span>
-          {counts && counts.vulns === 0 && (
-            <span className="text-amber-700 dark:text-amber-400 text-[10px]">
-              · CVE non disponibili (richiede utente OpenSearch — vedi config Wazuh)
+            </button>
+          ) : (
+            <span>
+              <strong>0</strong> CVE Wazuh
+              <span className="ml-1 text-amber-700 dark:text-amber-400 text-[10px]">
+                · richiede utente OpenSearch in config Wazuh
+              </span>
             </span>
           )}
         </div>
@@ -210,7 +242,66 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
             </table>
           </div>
         )}
+
+        {showVulns && vulnsData && (
+          <div className="rounded-md border max-h-96 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr>
+                  <th className="text-left px-2 py-1">CVE</th>
+                  <th className="text-left px-2 py-1 w-20">Severity</th>
+                  <th className="text-right px-2 py-1 w-14">CVSS</th>
+                  <th className="text-left px-2 py-1">Pacchetto</th>
+                  <th className="text-left px-2 py-1">Versione</th>
+                  <th className="text-left px-2 py-1 w-32">Rilevato</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vulnsData.map((v) => {
+                  const refUrl = v.external_references
+                    ? v.external_references.split(/[\n,]+/).find((s) => s.trim().startsWith("http"))?.trim() ?? null
+                    : null;
+                  const cveHref = refUrl ?? `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(v.cve)}`;
+                  return (
+                    <tr key={v.id} className="border-t">
+                      <td className="px-2 py-1 font-mono">
+                        <a href={cveHref} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                          {v.cve}
+                        </a>
+                      </td>
+                      <td className="px-2 py-1">
+                        <span className={severityBadge(v.severity)}>{v.severity ?? "—"}</span>
+                      </td>
+                      <td className="px-2 py-1 font-mono text-right">
+                        {v.cvss3_score?.toFixed(1) ?? v.cvss2_score?.toFixed(1) ?? "—"}
+                      </td>
+                      <td className="px-2 py-1">{v.package_name ?? "—"}</td>
+                      <td className="px-2 py-1 font-mono text-muted-foreground">{v.package_version ?? "—"}</td>
+                      <td className="px-2 py-1 text-muted-foreground text-[10px]">
+                        {v.detection_time ? new Date(v.detection_time).toLocaleDateString("it-IT") : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="text-[10px] text-muted-foreground px-2 py-1 border-t bg-muted/30">
+              Fonte: <strong>Wazuh OpenSearch</strong> · indice <code>wazuh-states-vulnerabilities-*</code> · le finding di vuln scanner (Greenbone) restano nella card separata sopra.
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
+}
+
+function severityBadge(sev: string | null): string {
+  const base = "inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ";
+  switch (sev) {
+    case "Critical": return base + "bg-red-600 text-white";
+    case "High":     return base + "bg-orange-500 text-white";
+    case "Medium":   return base + "bg-amber-500 text-black";
+    case "Low":      return base + "bg-blue-500 text-white";
+    default:         return base + "bg-muted text-muted-foreground";
+  }
 }

@@ -20,7 +20,9 @@ const ActionSchema = z.object({
 /** Tutti i container da rimuovere per ogni componente (principale + dipendenze) */
 function getAllContainers(component: IntegrationComponent, containerName: string): string[] {
   if (component === "librenms") {
-    return [containerName, `${containerName}-db`, `${containerName}-redis`];
+    // Include il dispatcher sidecar (polling worker): condivide il volume /data
+    // col web e va rimosso/avviato insieme. Vedi installLibreNMS().
+    return [containerName, `${containerName}-db`, `${containerName}-redis`, `${containerName}-dispatcher`];
   }
   if (component === "graylog") {
     return [containerName, "da-graylog-opensearch", "da-graylog-mongo"];
@@ -61,13 +63,26 @@ export async function POST(
 
   try {
     if (action === "start") {
+      // Per LibreNMS avvia anche il dispatcher (polling); ignorato se non esiste.
       await execDockerCommand(["start", containerName]);
+      if (component === "librenms") {
+        try { await execDockerCommand(["start", `${containerName}-dispatcher`]); } catch { /* dispatcher opzionale */ }
+      }
     } else if (action === "stop") {
       await execDockerCommand(["stop", containerName]);
+      if (component === "librenms") {
+        try { await execDockerCommand(["stop", `${containerName}-dispatcher`]); } catch { /* dispatcher opzionale */ }
+      }
     } else if (action === "restart") {
       await execDockerCommand(["restart", containerName]);
+      if (component === "librenms") {
+        try { await execDockerCommand(["restart", `${containerName}-dispatcher`]); } catch { /* dispatcher opzionale */ }
+      }
     } else if (action === "remove") {
       await execDockerCommand(["rm", "-f", containerName]);
+      if (component === "librenms") {
+        try { await execDockerCommand(["rm", "-f", `${containerName}-dispatcher`]); } catch { /* dispatcher opzionale */ }
+      }
     } else if (action === "remove-all") {
       // Rimuove tutti i container + rete Docker associata
       const all = getAllContainers(component, containerName);

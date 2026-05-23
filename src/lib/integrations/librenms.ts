@@ -16,6 +16,12 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
   const log = (line: string) => appendLog(jobId, line);
   const dbContainer = `${containerName}-db`;
   const redisContainer = `${containerName}-redis`;
+  // Sidecar dispatcher: container separato che esegue il polling.
+  // L'immagine librenms/librenms in modalità SIDECAR_DISPATCHER=1 skippa il web
+  // setup e lancia librenms-service.py — è il modo ufficiale (vedi
+  // /etc/cont-init.d/05-svc-dispatcher.sh nell'image). Senza questo container
+  // i grafici restano vuoti perché nessuno popola gli RRD in /data/rrd.
+  const dispatcherContainer = `${containerName}-dispatcher`;
   // Porta host ricavata dall'URL (es. http://192.168.1.10:8090 → 8090)
   const hostPort = (() => { try { return new URL(serverUrl).port || "8090"; } catch { return "8090"; } })();
 
@@ -38,7 +44,7 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
     }
 
     // ── CLEANUP CONTAINER PRECEDENTI ─────────────────────────────────────────
-    for (const c of [containerName, dbContainer, redisContainer]) {
+    for (const c of [containerName, dbContainer, redisContainer, dispatcherContainer]) {
       try {
         await execDockerCommand(["rm", "-f", c]);
         log(`[create] Container '${c}' rimosso.`);
@@ -117,6 +123,55 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
     // Extra attesa: l'API risponde prima che il web layer (sessioni/cache) sia pronto
     log("[wait] Warm-up aggiuntivo 30s per sessioni e cache...");
     await new Promise((r) => setTimeout(r, 30_000));
+
+    // ── FIX APP_URL ─────────────────────────────────────────────────────────
+    // La default `.env` dell'image LibreNMS imposta APP_URL=/, che fa generare
+    // redirect rotti dopo login (404 al return). Sovrascriviamo via /data/.env
+    // (Laravel legge il valore più recente, e l'init script appende /data/.env
+    // a /opt/librenms/.env, quindi vince il nostro valore). Niente bisogno di
+    // restart: artisan config:clear basta.
+    log(`[config] Set APP_URL=${serverUrl} in /data/.env...`);
+    try {
+      await execDockerCommand([
+        "exec", containerName, "sh", "-c",
+        `grep -q '^APP_URL=' /data/.env 2>/dev/null && sed -i 's|^APP_URL=.*|APP_URL=${serverUrl}|' /data/.env || echo 'APP_URL=${serverUrl}' >> /data/.env`,
+      ]);
+      await execDockerCommand(["exec", containerName, "sh", "-c", `grep -q '^APP_URL=' /opt/librenms/.env && sed -i 's|^APP_URL=.*|APP_URL=${serverUrl}|' /opt/librenms/.env || echo 'APP_URL=${serverUrl}' >> /opt/librenms/.env`]);
+      await execDockerCommand(["exec", "--user", "librenms", containerName, "/opt/librenms/artisan", "config:clear"]);
+      log("[config] APP_URL configurato, cache pulita.");
+    } catch (e) {
+      log(`[warn] Fix APP_URL fallito (non blocca): ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    // ── DISPATCHER (SIDECAR) ─────────────────────────────────────────────────
+    // Lanciato DOPO che il web ha completato le migrazioni e creato /data/.env:
+    // l'init script /etc/cont-init.d/05-svc-dispatcher.sh richiede che
+    // /data/.env esista già (lo legge per recuperare APP_KEY e NODE_ID).
+    // Condivide volume /data con il web, stessa network, stessi DB/REDIS env.
+    log("[create] Avvio LibreNMS dispatcher (sidecar — polling, alerts, discovery)...");
+    await spawnDockerStream(
+      [
+        "run", "-d",
+        "--name", dispatcherContainer,
+        "--network", NETWORK,
+        "--restart", "unless-stopped",
+        // Volume condiviso col web: stesso /data, contiene rrd, plugins, .env
+        "--volumes-from", containerName,
+        ...SEC_OPT,
+        "-e", `DB_HOST=${dbContainer}`,
+        "-e", "DB_PORT=3306",
+        "-e", "DB_USER=librenms",
+        "-e", `DB_PASSWORD=${DB_PASSWORD}`,
+        "-e", "DB_NAME=librenms",
+        "-e", `REDIS_HOST=${redisContainer}`,
+        "-e", "REDIS_PORT=6379",
+        "-e", "SIDECAR_DISPATCHER=1",
+        "-e", "DISPATCHER_NODE_ID=dispatcher1",
+        LIBRENMS_IMAGE,
+      ],
+      log
+    );
+    log("[create] Dispatcher avviato — entro 5 min i primi RRD saranno popolati.");
 
     // ── API TOKEN AUTOMATICO ─────────────────────────────────────────────────
     log("[token] Generazione API token automatica via docker exec...");

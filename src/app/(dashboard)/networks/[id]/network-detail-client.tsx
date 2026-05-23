@@ -66,6 +66,7 @@ import {
 import { ipAssignmentShortLabel } from "@/lib/ip-assignment";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { compareUnknown, type SortDirection } from "@/lib/table-sort";
+import { WazuhHostBadge, type WazuhHostStatus } from "@/components/integrations/wazuh-host-badge";
 
 type HostWithDevice = Host & {
   device_id?: number;
@@ -173,6 +174,8 @@ export function NetworkDetailClient({
   // ─── LibreNMS: mapping host_ip → device_id ───────────────
   const [librenmsMap, setLibrenmsMap] = useState<Map<string, number>>(new Map());
   const [librenmsAdding, setLibrenmsAdding] = useState<Set<number>>(new Set());
+  // ─── Wazuh: mapping host_id → agent status (batch) ───────
+  const [wazuhMap, setWazuhMap] = useState<Map<number, WazuhHostStatus | null>>(new Map());
 
   useEffect(() => {
     fetch(`/api/integrations/librenms/sync?network_id=${network.id}`)
@@ -184,6 +187,25 @@ export function NetworkDetailClient({
       })
       .catch(() => {});
   }, [network.id]);
+
+  // Batch fetch Wazuh status: single query per tutti gli host della subnet
+  useEffect(() => {
+    const ids = hosts.map((h) => h.id).filter((v): v is number => Number.isFinite(v));
+    if (ids.length === 0) return;
+    fetch("/api/integrations/wazuh/host-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host_ids: ids }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { statuses?: Record<string, WazuhHostStatus | null> } | null) => {
+        if (!j?.statuses) return;
+        const m = new Map<number, WazuhHostStatus | null>();
+        for (const id of ids) m.set(id, j.statuses[id] ?? null);
+        setWazuhMap(m);
+      })
+      .catch(() => {});
+  }, [hosts]);
 
   async function addHostToLibreNMS(host: HostWithDevice) {
     setLibrenmsAdding((prev) => new Set(prev).add(host.id));
@@ -1487,6 +1509,7 @@ export function NetworkDetailClient({
                 <TableHead>Note</TableHead>
                 <TableHead>Porte</TableHead>
                 <TableHead title="LibreNMS NMS">LibreNMS</TableHead>
+                <TableHead title="Wazuh SIEM/HIDS agent" className="w-12 text-center">Wazuh</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1742,6 +1765,15 @@ export function NetworkDetailClient({
                           </Button>
                         );
                       })()}
+                    </TableCell>
+                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                      <WazuhHostBadge
+                        hostId={host.id}
+                        hostName={host.hostname ?? host.custom_name ?? null}
+                        hostIp={host.ip}
+                        prefetched={wazuhMap.get(host.id) ?? null}
+                        mode="icon"
+                      />
                     </TableCell>
                   </TableRow>
                 ))

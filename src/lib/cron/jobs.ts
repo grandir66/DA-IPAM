@@ -104,6 +104,16 @@ export async function runJob(jobId: number): Promise<void> {
       await runVulnSync();
       break;
     }
+    case "wazuh_sync": {
+      const { syncWazuhForTenant } = await import("@/lib/integrations/wazuh-sync");
+      const result = await syncWazuhForTenant();
+      console.info(
+        `[Scheduler] wazuh_sync: ${result.matchedHosts}/${result.totalAgents} agent matchati, ` +
+        `${result.softwareRows} sw, ${result.vulnRows} cve, ${result.errors.length} errori, ` +
+        `durata ${result.durationMs}ms`
+      );
+      break;
+    }
   }
 }
 

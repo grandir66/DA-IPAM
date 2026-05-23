@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ShieldAlert, ChevronRight, ChevronDown } from "lucide-react";
+import { SEVERITY_STYLE, SOURCE_BADGE_STYLE } from "@/lib/severity-style";
+import { CveLink, SourcesBadges } from "@/components/shared/vuln-badges";
 
 interface Finding {
   id: string | number;

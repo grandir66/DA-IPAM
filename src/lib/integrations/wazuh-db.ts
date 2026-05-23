@@ -11,6 +11,8 @@ import type {
   WazuhAgent,
   WazuhSyscollectorHotfix,
   WazuhSyscollectorHw,
+  WazuhSyscollectorNetaddr,
+  WazuhSyscollectorNetiface,
   WazuhSyscollectorOs,
   WazuhSyscollectorPackage,
   WazuhSyscollectorPort,
@@ -111,6 +113,30 @@ export interface WazuhHotfixRow {
   id: number;
   agent_id: string;
   hotfix: string;
+  scan_time: string | null;
+  synced_at: string;
+}
+
+export interface WazuhNetifaceRow {
+  id: number;
+  agent_id: string;
+  name: string;
+  mac: string | null;
+  type: string | null;
+  state: string | null;
+  mtu: number | null;
+  scan_time: string | null;
+  synced_at: string;
+}
+
+export interface WazuhNetaddrRow {
+  id: number;
+  agent_id: string;
+  iface: string | null;
+  proto: string | null;
+  address: string;
+  netmask: string | null;
+  broadcast: string | null;
   scan_time: string | null;
   synced_at: string;
 }
@@ -445,6 +471,84 @@ export function listWazuhHotfixes(agentId: string): WazuhHotfixRow[] {
     .all(agentId) as WazuhHotfixRow[];
 }
 
+/**
+ * Sostituisce le interfacce di rete dell'agent. Skippa entry senza name.
+ * Filtra opzionalmente interfacce di loopback se utile, ma per ora persiste tutto.
+ */
+export function replaceNetifacesForAgent(agentId: string, ifaces: WazuhSyscollectorNetiface[]): number {
+  const d = db();
+  const insert = d.prepare(
+    `INSERT OR IGNORE INTO wazuh_netiface (
+       agent_id, name, mac, type, state, mtu, scan_time, synced_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+  );
+  let inserted = 0;
+  const tx = d.transaction(() => {
+    d.prepare("DELETE FROM wazuh_netiface WHERE agent_id = ?").run(agentId);
+    for (const n of ifaces) {
+      const name = (n.name ?? "").trim();
+      if (!name) continue;
+      const r = insert.run(
+        agentId,
+        name,
+        n.mac ?? null,
+        n.type ?? null,
+        n.state ?? null,
+        n.mtu ?? null,
+        n.scan?.time ?? null,
+      );
+      if (r.changes) inserted++;
+    }
+  });
+  tx();
+  return inserted;
+}
+
+/**
+ * Sostituisce gli indirizzi IP dell'agent (multipli per interfaccia).
+ * Dedup su (agent_id, iface, address).
+ */
+export function replaceNetaddrsForAgent(agentId: string, addrs: WazuhSyscollectorNetaddr[]): number {
+  const d = db();
+  const insert = d.prepare(
+    `INSERT OR IGNORE INTO wazuh_netaddr (
+       agent_id, iface, proto, address, netmask, broadcast, scan_time, synced_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+  );
+  let inserted = 0;
+  const tx = d.transaction(() => {
+    d.prepare("DELETE FROM wazuh_netaddr WHERE agent_id = ?").run(agentId);
+    for (const a of addrs) {
+      const address = (a.address ?? "").trim();
+      if (!address) continue;
+      const r = insert.run(
+        agentId,
+        a.iface ?? null,
+        a.proto ?? null,
+        address,
+        a.netmask ?? null,
+        a.broadcast ?? null,
+        a.scan?.time ?? null,
+      );
+      if (r.changes) inserted++;
+    }
+  });
+  tx();
+  return inserted;
+}
+
+export function listWazuhNetifaces(agentId: string): WazuhNetifaceRow[] {
+  return db()
+    .prepare("SELECT * FROM wazuh_netiface WHERE agent_id = ? ORDER BY name")
+    .all(agentId) as WazuhNetifaceRow[];
+}
+
+export function listWazuhNetaddrs(agentId: string): WazuhNetaddrRow[] {
+  return db()
+    .prepare("SELECT * FROM wazuh_netaddr WHERE agent_id = ? ORDER BY iface, proto, address")
+    .all(agentId) as WazuhNetaddrRow[];
+}
+
 export function listWazuhSoftware(agentId: string): WazuhSoftwareRow[] {
   return db().prepare(
     "SELECT * FROM wazuh_software WHERE agent_id = ? ORDER BY name COLLATE NOCASE",
@@ -466,7 +570,7 @@ export function listWazuhVulns(agentId: string): WazuhVulnRow[] {
   ).all(agentId) as WazuhVulnRow[];
 }
 
-export function countsForAgent(agentId: string): { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number; ports: number; hotfixes: number } {
+export function countsForAgent(agentId: string): { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number; ports: number; hotfixes: number; netifaces: number; netaddrs: number } {
   const d = db();
   const sw = d.prepare("SELECT COUNT(*) AS c FROM wazuh_software WHERE agent_id = ?").get(agentId) as { c: number };
   const vAll = d.prepare("SELECT COUNT(*) AS c FROM wazuh_vuln WHERE agent_id = ?").get(agentId) as { c: number };
@@ -474,7 +578,9 @@ export function countsForAgent(agentId: string): { software: number; vulns: numb
   const vHigh = d.prepare("SELECT COUNT(*) AS c FROM wazuh_vuln WHERE agent_id = ? AND severity = 'High'").get(agentId) as { c: number };
   const pts = d.prepare("SELECT COUNT(*) AS c FROM wazuh_ports WHERE agent_id = ?").get(agentId) as { c: number };
   const hf = d.prepare("SELECT COUNT(*) AS c FROM wazuh_hotfix WHERE agent_id = ?").get(agentId) as { c: number };
-  return { software: sw.c, vulns: vAll.c, vulnsCritical: vCrit.c, vulnsHigh: vHigh.c, ports: pts.c, hotfixes: hf.c };
+  const nif = d.prepare("SELECT COUNT(*) AS c FROM wazuh_netiface WHERE agent_id = ?").get(agentId) as { c: number };
+  const nad = d.prepare("SELECT COUNT(*) AS c FROM wazuh_netaddr WHERE agent_id = ?").get(agentId) as { c: number };
+  return { software: sw.c, vulns: vAll.c, vulnsCritical: vCrit.c, vulnsHigh: vHigh.c, ports: pts.c, hotfixes: hf.c, netifaces: nif.c, netaddrs: nad.c };
 }
 
 export function deleteWazuhAgentsExcept(activeAgentIds: string[]): number {

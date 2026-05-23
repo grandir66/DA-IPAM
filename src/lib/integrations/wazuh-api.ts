@@ -96,10 +96,21 @@ export interface WazuhSyscollectorPackage {
 }
 
 export interface WazuhSyscollectorNetiface {
+  scan?: { time?: string };
   name?: string;
   mac?: string;
   type?: string;
   state?: string;
+  mtu?: number;
+}
+
+export interface WazuhSyscollectorNetaddr {
+  scan?: { time?: string };
+  iface?: string;
+  proto?: string;                        // ipv4|ipv6
+  address?: string;
+  netmask?: string;
+  broadcast?: string;
 }
 
 export interface WazuhSyscollectorPort {
@@ -334,6 +345,16 @@ export class WazuhClient {
   async getHotfixes(agentId: string): Promise<WazuhSyscollectorHotfix[]> {
     try {
       return await this.getPaged<WazuhSyscollectorHotfix>(`/syscollector/${agentId}/hotfixes`);
+    } catch (e) {
+      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
+      throw e;
+    }
+  }
+
+  /** Indirizzi IP per interfaccia (IPv4 + IPv6). */
+  async getNetaddrs(agentId: string): Promise<WazuhSyscollectorNetaddr[]> {
+    try {
+      return await this.getPaged<WazuhSyscollectorNetaddr>(`/syscollector/${agentId}/netaddr`);
     } catch (e) {
       if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
       throw e;

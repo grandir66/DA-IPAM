@@ -30,6 +30,7 @@ interface WazuhSyncResult {
   vulnRows: number;
   portRows: number;
   hotfixRows: number;
+  netaddrRows: number;
   hostsEnriched: number;
   removedAgents: number;
   durationMs: number;
@@ -178,7 +179,8 @@ export function WazuhCard() {
         const enrichMsg = d.hostsEnriched ? `, ${d.hostsEnriched} host arricchiti` : "";
         const portsMsg = d.portRows ? `, ${d.portRows} porte` : "";
         const hotfixMsg = d.hotfixRows ? `, ${d.hotfixRows} hotfix` : "";
-        toast.success(`Sync OK: ${d.matchedHosts}/${d.totalAgents} matchati, ${d.softwareRows} sw, ${d.vulnRows} cve${portsMsg}${hotfixMsg}${enrichMsg}${errMsg}`);
+        const netMsg = d.netaddrRows ? `, ${d.netaddrRows} IP` : "";
+        toast.success(`Sync OK: ${d.matchedHosts}/${d.totalAgents} matchati, ${d.softwareRows} sw, ${d.vulnRows} cve${portsMsg}${hotfixMsg}${netMsg}${enrichMsg}${errMsg}`);
       } else {
         toast.error(d.error ?? "Sync fallito");
       }

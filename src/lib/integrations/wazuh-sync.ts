@@ -15,7 +15,7 @@
 import { getCurrentTenantCode, getAllHostsFlat, getHostByIp, getHostByMac } from "../db-tenant";
 import { normalizeMac } from "../utils";
 import { getWazuhConfig } from "./wazuh-config";
-import { createWazuhClient, WazuhClient, type WazuhAgent } from "./wazuh-api";
+import { createWazuhClient, WazuhClient, type WazuhAgent, type WazuhSyscollectorNetiface } from "./wazuh-api";
 import {
   createWazuhIndexerClient,
   indexerDocToWazuhVuln,
@@ -29,6 +29,8 @@ import {
   replaceVulnsForAgent,
   replacePortsForAgent,
   replaceHotfixesForAgent,
+  replaceNetifacesForAgent,
+  replaceNetaddrsForAgent,
   deleteWazuhAgentsExcept,
   enrichHostFromWazuh,
   getWazuhAgentByHostId,
@@ -46,6 +48,7 @@ export interface WazuhSyncResult {
   vulnRows: number;
   portRows: number;
   hotfixRows: number;
+  netaddrRows: number;
   hostsEnriched: number;
   removedAgents: number;
   errors: string[];
@@ -61,15 +64,18 @@ function pickAgentIp(agent: WazuhAgent): string | null {
 
 /**
  * Match agent → host. Prova IP → MAC (da netiface) → hostname.
- * Ritorna { hostId, primaryMac } con primaryMac normalizzato lowercase aa:bb:..
+ * Ritorna { hostId, primaryMac, netifaces }: netifaces è la lista grezza già
+ * fetchata, riusata dal chiamante per persisterla in wazuh_netiface senza
+ * duplicare la chiamata HTTP.
  */
 async function matchAgentToHost(
   client: WazuhClient,
   agent: WazuhAgent,
   hostnameIndex: Map<string, number>,
-): Promise<{ hostId: number | null; primaryMac: string | null }> {
+): Promise<{ hostId: number | null; primaryMac: string | null; netifaces: WazuhSyscollectorNetiface[] }> {
   let hostId: number | null = null;
   let primaryMac: string | null = null;
+  let netifaces: WazuhSyscollectorNetiface[] = [];
 
   // 1) IP
   const ip = pickAgentIp(agent);
@@ -80,8 +86,8 @@ async function matchAgentToHost(
 
   // 2) MAC da netiface (utile sia per match che per arricchimento)
   try {
-    const nics = await client.getNetifaces(agent.id);
-    for (const n of nics) {
+    netifaces = await client.getNetifaces(agent.id);
+    for (const n of netifaces) {
       const mac = n.mac ? normalizeMac(n.mac) : null;
       if (!mac) continue;
       // Esclude MAC vuoti, virtuali, di loopback
@@ -103,7 +109,7 @@ async function matchAgentToHost(
     if (id) hostId = id;
   }
 
-  return { hostId, primaryMac };
+  return { hostId, primaryMac, netifaces };
 }
 
 function buildHostnameIndex(): Map<string, number> {
@@ -150,15 +156,17 @@ export async function syncSingleAgent(agentId: string): Promise<void> {
   if (!agent) throw new Error(`Agent ${agentId} non trovato su Wazuh`);
 
   const hostnameIndex = buildHostnameIndex();
-  const { hostId, primaryMac } = await matchAgentToHost(client, agent, hostnameIndex);
+  const { hostId, primaryMac, netifaces } = await matchAgentToHost(client, agent, hostnameIndex);
   upsertWazuhAgent(agent, hostId, primaryMac);
+  replaceNetifacesForAgent(agent.id, netifaces);
 
-  const [hw, os, pkgs, ports, hotfixes, vulns] = await Promise.all([
+  const [hw, os, pkgs, ports, hotfixes, netaddrs, vulns] = await Promise.all([
     client.getHardware(agent.id),
     client.getOs(agent.id),
     client.getPackages(agent.id),
     client.getPorts(agent.id),
     client.getHotfixes(agent.id),
+    client.getNetaddrs(agent.id),
     fetchVulnsForAgent(agent.id, client, indexer),
   ]);
   if (hw) upsertWazuhHw(agent.id, hw);
@@ -167,6 +175,7 @@ export async function syncSingleAgent(agentId: string): Promise<void> {
   replaceSoftwareForAgent(agent.id, pkgs);
   replacePortsForAgent(agent.id, ports);
   replaceHotfixesForAgent(agent.id, hotfixes);
+  replaceNetaddrsForAgent(agent.id, netaddrs);
   replaceVulnsForAgent(agent.id, vulns);
 }
 
@@ -189,6 +198,7 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
     vulnRows: 0,
     portRows: 0,
     hotfixRows: 0,
+    netaddrRows: 0,
     hostsEnriched: 0,
     removedAgents: 0,
     errors: [],
@@ -226,7 +236,7 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
   for (const agent of agents) {
     activeAgentIds.push(agent.id);
     try {
-      const { hostId, primaryMac } = await matchAgentToHost(client, agent, hostnameIndex);
+      const { hostId, primaryMac, netifaces } = await matchAgentToHost(client, agent, hostnameIndex);
       upsertWazuhAgent(agent, hostId, primaryMac);
       if (hostId) result.matchedHosts++;
 
@@ -234,12 +244,15 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
       // Skip per never_connected (non hanno mai inviato dati).
       if (agent.status === "never_connected") continue;
 
-      const [hw, os, pkgs, ports, hotfixes, vulns] = await Promise.all([
+      replaceNetifacesForAgent(agent.id, netifaces);
+
+      const [hw, os, pkgs, ports, hotfixes, netaddrs, vulns] = await Promise.all([
         client.getHardware(agent.id),
         client.getOs(agent.id),
         client.getPackages(agent.id),
         client.getPorts(agent.id),
         client.getHotfixes(agent.id),
+        client.getNetaddrs(agent.id),
         fetchVulnsForAgent(agent.id, client, indexer),
       ]);
 
@@ -251,6 +264,7 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
       result.softwareRows += replaceSoftwareForAgent(agent.id, pkgs);
       result.portRows += replacePortsForAgent(agent.id, ports);
       result.hotfixRows += replaceHotfixesForAgent(agent.id, hotfixes);
+      result.netaddrRows += replaceNetaddrsForAgent(agent.id, netaddrs);
       result.vulnRows += replaceVulnsForAgent(agent.id, vulns);
     } catch (e) {
       result.errors.push(`agent ${agent.id} (${agent.name ?? "?"}): ${(e as Error).message}`);

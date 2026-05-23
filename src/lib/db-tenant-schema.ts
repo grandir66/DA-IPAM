@@ -846,6 +846,34 @@ CREATE TABLE IF NOT EXISTS wazuh_hotfix (
   UNIQUE(agent_id, hotfix)
 );
 
+-- Interfacce di rete (syscollector/{id}/netiface). Una riga per (agent_id, name).
+CREATE TABLE IF NOT EXISTS wazuh_netiface (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL REFERENCES wazuh_agent(agent_id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mac TEXT,
+  type TEXT,                             -- ethernet|loopback|wireless|...
+  state TEXT,                            -- up|down|unknown
+  mtu INTEGER,
+  scan_time TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(agent_id, name)
+);
+
+-- Indirizzi IP (syscollector/{id}/netaddr). Multipli per interfaccia (IPv4 + IPv6).
+CREATE TABLE IF NOT EXISTS wazuh_netaddr (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL REFERENCES wazuh_agent(agent_id) ON DELETE CASCADE,
+  iface TEXT,
+  proto TEXT,                            -- ipv4|ipv6
+  address TEXT NOT NULL,
+  netmask TEXT,
+  broadcast TEXT,
+  scan_time TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(agent_id, iface, address)
+);
+
 -- ───────────────────────────────────────────────────────────────────────────
 -- Integrazione Scanner-Edge (DA-Vul-can) — singleton applicativo per tenant.
 -- DA-IPAM consuma /api/v1/cve dello scanner-edge sulla stessa LAN cliente,
@@ -1108,6 +1136,9 @@ CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_cve ON wazuh_vuln(cve);
 CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_severity ON wazuh_vuln(severity);
 CREATE INDEX IF NOT EXISTS idx_wazuh_ports_agent ON wazuh_ports(agent_id);
 CREATE INDEX IF NOT EXISTS idx_wazuh_hotfix_agent ON wazuh_hotfix(agent_id);
+CREATE INDEX IF NOT EXISTS idx_wazuh_netiface_agent ON wazuh_netiface(agent_id);
+CREATE INDEX IF NOT EXISTS idx_wazuh_netaddr_agent ON wazuh_netaddr(agent_id);
+CREATE INDEX IF NOT EXISTS idx_wazuh_netaddr_address ON wazuh_netaddr(address);
 
 -- Vulnerability findings (scanner-edge integration)
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_host ON vuln_findings(host_id, scanned_at DESC);

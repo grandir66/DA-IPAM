@@ -5219,16 +5219,29 @@ export function getStatusOverTime(
   const bucketFmt = hours <= 48 ? "%Y-%m-%dT%H:00:00" : "%Y-%m-%dT00:00:00";
   const totalRow = getDb().prepare("SELECT COUNT(*) as c FROM hosts").get() as { c: number };
   const total = totalRow.c;
+  // Dedup per host nel bucket: prendiamo l'ULTIMO check di ogni host in ciascun
+  // bucket (ROW_NUMBER…ORDER BY checked_at DESC, filtro rn=1). Senza questo
+  // dedup il SUM conta tutti i check del bucket, non gli host distinti — un
+  // host pingato 6 volte in un'ora veniva contato 6 volte.
   const rows = getDb().prepare(`
+    WITH last_in_bucket AS (
+      SELECT
+        strftime(?, checked_at) AS bucket,
+        host_id,
+        status,
+        ROW_NUMBER() OVER (PARTITION BY strftime(?, checked_at), host_id ORDER BY checked_at DESC) AS rn
+      FROM status_history
+      WHERE checked_at >= datetime('now', '-' || ? || ' hours')
+    )
     SELECT
-      strftime(?, checked_at) as time,
-      SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
-      SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline
-    FROM status_history
-    WHERE checked_at >= datetime('now', '-' || ? || ' hours')
-    GROUP BY strftime(?, checked_at)
-    ORDER BY time ASC
-  `).all(bucketFmt, hours, bucketFmt) as { time: string; online: number; offline: number }[];
+      bucket AS time,
+      SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) AS online,
+      SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) AS offline
+    FROM last_in_bucket
+    WHERE rn = 1
+    GROUP BY bucket
+    ORDER BY bucket ASC
+  `).all(bucketFmt, bucketFmt, hours) as { time: string; online: number; offline: number }[];
   return rows.map((r) => {
     const unknown = Math.max(0, total - r.online - r.offline);
     const denom = r.online + r.offline + unknown;

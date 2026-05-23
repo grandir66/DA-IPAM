@@ -41,6 +41,7 @@ import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, ShieldAlert, HardDrive, Monitor,
+  Phone, Printer, Camera, Cpu,
   Lock, KeyRound, Trash2, ShieldCheck, MoreVertical,
 } from "lucide-react";
 
@@ -55,15 +56,24 @@ const CLASS_PRESETS: Array<{
   filter: string;
   label: string;
   icon: typeof Server;
-  /** Classificazioni che soddisfano il preset (usato per espansione filtro group:*). */
+  /**
+   * Classificazioni che soddisfano il preset (usato per espansione filtro group:*).
+   * Per il preset speciale `group:other` la match è vuota: la logica filtro
+   * esclude gli host che rientrano in qualsiasi altro preset.
+   */
   match: readonly string[];
 }> = [
-  { filter: "group:server", label: "Server", icon: Server, match: ["server", "server_linux", "server_windows"] },
-  { filter: "group:client", label: "Client", icon: Monitor, match: ["workstation", "notebook"] },
-  { filter: "hypervisor", label: "Hypervisor", icon: HardDrive, match: ["hypervisor"] },
-  { filter: "router", label: "Router", icon: RouterIcon, match: ["router"] },
-  { filter: "switch", label: "Switch", icon: Cable, match: ["switch"] },
-  { filter: "firewall", label: "Firewall", icon: Shield, match: ["firewall"] },
+  { filter: "group:server",   label: "Server",     icon: Server,    match: ["server", "server_linux", "server_windows"] },
+  { filter: "group:client",   label: "Client",     icon: Monitor,   match: ["workstation", "notebook"] },
+  { filter: "hypervisor",     label: "Hypervisor", icon: HardDrive, match: ["hypervisor"] },
+  { filter: "router",         label: "Router",     icon: RouterIcon,match: ["router"] },
+  { filter: "switch",         label: "Switch",     icon: Cable,     match: ["switch"] },
+  { filter: "firewall",       label: "Firewall",   icon: Shield,    match: ["firewall"] },
+  { filter: "group:tel",      label: "TEL",        icon: Phone,     match: ["voip"] },
+  { filter: "group:print",    label: "PRINT",      icon: Printer,   match: ["stampante", "scanner", "fotocopiatrice", "multifunzione"] },
+  { filter: "group:cam",      label: "CAM",        icon: Camera,    match: ["telecamera"] },
+  { filter: "group:iot",      label: "IOT",        icon: Cpu,       match: ["iot", "smart_tv", "console", "tablet", "smartphone", "sensore", "plc", "hmi", "controller"] },
+  { filter: "group:other",    label: "ALTRO",      icon: Boxes,     match: [] /* catchall: vedi logica filtro */ },
 ];
 import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
@@ -642,7 +652,14 @@ export default function DiscoveryPage() {
     return hosts.filter((h) => {
       if (statusFilter && h.status !== statusFilter) return false;
       if (classFilter) {
-        if (classFilter.startsWith("group:")) {
+        if (classFilter === "group:other") {
+          // ALTRO = host la cui classificazione non rientra in nessun altro preset.
+          // Include anche unknown/null/"" così l'utente vede tutto ciò che resta fuori.
+          const claimed = new Set(
+            CLASS_PRESETS.filter((p) => p.filter !== "group:other").flatMap((p) => p.match)
+          );
+          if (claimed.has(h.classification ?? "")) return false;
+        } else if (classFilter.startsWith("group:")) {
           const preset = CLASS_PRESETS.find((p) => p.filter === classFilter);
           if (preset && !preset.match.includes(h.classification ?? "")) return false;
         } else if (h.classification !== classFilter) {

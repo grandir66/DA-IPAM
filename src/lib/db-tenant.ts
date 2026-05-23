@@ -4523,17 +4523,30 @@ export interface HostVulnSummary {
 }
 
 export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
-  // Aggregazione SU TUTTE le scan_run: per ogni host conta findings
-  // per severità. Esclude 'Log' (info-only, non vulnerabilità). Senza
-  // filtro temporale: per discovery interessa "ha mai avuto CVE
-  // Critical/High" non "ne ha ora".
+  // Aggregazione SU TUTTE le scan_run + Wazuh: per ogni host conta findings
+  // per severità da entrambe le fonti (scanner-edge `vuln_findings` e Wazuh
+  // `wazuh_vuln` joinato via wazuh_agent.host_id). Per discovery interessa
+  // "ha mai avuto CVE Critical/High" non "ne ha ora", quindi nessun filtro
+  // temporale. Le due fonti possono sovrapporsi sullo stesso CVE: i conteggi
+  // si sommano (UNION ALL) — accettiamo possibile inflazione perché l'obiettivo
+  // della discovery è triage rapido, non analisi puntuale.
   const rows = db()
     .prepare(
-      `SELECT host_id, severity, COUNT(*) AS n
-         FROM vuln_findings
-        WHERE host_id IS NOT NULL
-          AND severity IN ('Critical','High','Medium','Low')
-        GROUP BY host_id, severity`
+      `SELECT host_id, severity, SUM(n) AS n FROM (
+         SELECT host_id, severity, COUNT(*) AS n
+           FROM vuln_findings
+          WHERE host_id IS NOT NULL
+            AND severity IN ('Critical','High','Medium','Low')
+          GROUP BY host_id, severity
+         UNION ALL
+         SELECT wa.host_id AS host_id, wv.severity AS severity, COUNT(*) AS n
+           FROM wazuh_vuln wv
+           JOIN wazuh_agent wa ON wa.agent_id = wv.agent_id
+          WHERE wa.host_id IS NOT NULL
+            AND wv.severity IN ('Critical','High','Medium','Low')
+          GROUP BY wa.host_id, wv.severity
+       )
+       GROUP BY host_id, severity`
     )
     .all() as Array<{ host_id: number; severity: string; n: number }>;
 

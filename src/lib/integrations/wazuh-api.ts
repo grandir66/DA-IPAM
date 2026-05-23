@@ -96,10 +96,36 @@ export interface WazuhSyscollectorPackage {
 }
 
 export interface WazuhSyscollectorNetiface {
+  scan?: { time?: string };
   name?: string;
   mac?: string;
   type?: string;
   state?: string;
+  mtu?: number;
+}
+
+export interface WazuhSyscollectorNetaddr {
+  scan?: { time?: string };
+  iface?: string;
+  proto?: string;                        // ipv4|ipv6
+  address?: string;
+  netmask?: string;
+  broadcast?: string;
+}
+
+export interface WazuhSyscollectorPort {
+  scan?: { time?: string };
+  protocol?: string;                    // tcp|udp|tcp6|udp6
+  local?: { ip?: string; port?: number };
+  remote?: { ip?: string; port?: number };
+  state?: string;                       // listening|established|...
+  process?: string;
+  pid?: number;
+}
+
+export interface WazuhSyscollectorHotfix {
+  scan?: { time?: string };
+  hotfix?: string;                      // es. "KB5012170"
 }
 
 export interface WazuhVulnerability {
@@ -299,6 +325,36 @@ export class WazuhClient {
   async getNetifaces(agentId: string): Promise<WazuhSyscollectorNetiface[]> {
     try {
       return await this.getPaged<WazuhSyscollectorNetiface>(`/syscollector/${agentId}/netiface`);
+    } catch (e) {
+      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
+      throw e;
+    }
+  }
+
+  /** Porte (tutte). Il filtro state=listening avviene lato sync. */
+  async getPorts(agentId: string): Promise<WazuhSyscollectorPort[]> {
+    try {
+      return await this.getPaged<WazuhSyscollectorPort>(`/syscollector/${agentId}/ports`);
+    } catch (e) {
+      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
+      throw e;
+    }
+  }
+
+  /** Hotfix Windows. Linux agent → [] (Wazuh restituisce 404). */
+  async getHotfixes(agentId: string): Promise<WazuhSyscollectorHotfix[]> {
+    try {
+      return await this.getPaged<WazuhSyscollectorHotfix>(`/syscollector/${agentId}/hotfixes`);
+    } catch (e) {
+      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
+      throw e;
+    }
+  }
+
+  /** Indirizzi IP per interfaccia (IPv4 + IPv6). */
+  async getNetaddrs(agentId: string): Promise<WazuhSyscollectorNetaddr[]> {
+    try {
+      return await this.getPaged<WazuhSyscollectorNetaddr>(`/syscollector/${agentId}/netaddr`);
     } catch (e) {
       if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
       throw e;

@@ -9,9 +9,13 @@
 import { getTenantDb, getCurrentTenantCode } from "../db-tenant";
 import type {
   WazuhAgent,
+  WazuhSyscollectorHotfix,
   WazuhSyscollectorHw,
+  WazuhSyscollectorNetaddr,
+  WazuhSyscollectorNetiface,
   WazuhSyscollectorOs,
   WazuhSyscollectorPackage,
+  WazuhSyscollectorPort,
   WazuhVulnerability,
 } from "./wazuh-api";
 
@@ -88,6 +92,51 @@ export interface WazuhSoftwareRow {
   source: string | null;
   install_time: string | null;
   description: string | null;
+  scan_time: string | null;
+  synced_at: string;
+}
+
+export interface WazuhPortRow {
+  id: number;
+  agent_id: string;
+  protocol: string | null;
+  local_ip: string | null;
+  local_port: number | null;
+  state: string | null;
+  process: string | null;
+  pid: number | null;
+  scan_time: string | null;
+  synced_at: string;
+}
+
+export interface WazuhHotfixRow {
+  id: number;
+  agent_id: string;
+  hotfix: string;
+  scan_time: string | null;
+  synced_at: string;
+}
+
+export interface WazuhNetifaceRow {
+  id: number;
+  agent_id: string;
+  name: string;
+  mac: string | null;
+  type: string | null;
+  state: string | null;
+  mtu: number | null;
+  scan_time: string | null;
+  synced_at: string;
+}
+
+export interface WazuhNetaddrRow {
+  id: number;
+  agent_id: string;
+  iface: string | null;
+  proto: string | null;
+  address: string;
+  netmask: string | null;
+  broadcast: string | null;
   scan_time: string | null;
   synced_at: string;
 }
@@ -349,6 +398,157 @@ export function getWazuhOs(agentId: string): WazuhOsRow | null {
   return db().prepare("SELECT * FROM wazuh_os WHERE agent_id = ?").get(agentId) as WazuhOsRow | null;
 }
 
+/**
+ * Sostituisce le porte in ascolto dell'agent. Solo state="listening" persistito.
+ * Dedup su (agent_id, protocol, local_ip, local_port).
+ * @returns numero di righe inserite.
+ */
+export function replacePortsForAgent(agentId: string, ports: WazuhSyscollectorPort[]): number {
+  const d = db();
+  const insert = d.prepare(
+    `INSERT OR IGNORE INTO wazuh_ports (
+       agent_id, protocol, local_ip, local_port, state, process, pid, scan_time, synced_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+  );
+  let inserted = 0;
+  const tx = d.transaction(() => {
+    d.prepare("DELETE FROM wazuh_ports WHERE agent_id = ?").run(agentId);
+    for (const p of ports) {
+      const state = (p.state ?? "").toLowerCase();
+      if (state !== "listening") continue;
+      const r = insert.run(
+        agentId,
+        p.protocol ?? null,
+        p.local?.ip ?? null,
+        p.local?.port ?? null,
+        state,
+        p.process ?? null,
+        p.pid ?? null,
+        p.scan?.time ?? null,
+      );
+      if (r.changes) inserted++;
+    }
+  });
+  tx();
+  return inserted;
+}
+
+export function listWazuhPorts(agentId: string): WazuhPortRow[] {
+  return db()
+    .prepare(
+      "SELECT * FROM wazuh_ports WHERE agent_id = ? ORDER BY protocol, local_port",
+    )
+    .all(agentId) as WazuhPortRow[];
+}
+
+/**
+ * Sostituisce le hotfix dell'agent (DELETE+INSERT in transazione).
+ * Per agent Linux/Mac wazuh restituisce [] e la tabella resta vuota.
+ */
+export function replaceHotfixesForAgent(agentId: string, hotfixes: WazuhSyscollectorHotfix[]): number {
+  const d = db();
+  const insert = d.prepare(
+    `INSERT OR IGNORE INTO wazuh_hotfix (agent_id, hotfix, scan_time, synced_at)
+     VALUES (?, ?, ?, datetime('now'))`,
+  );
+  let inserted = 0;
+  const tx = d.transaction(() => {
+    d.prepare("DELETE FROM wazuh_hotfix WHERE agent_id = ?").run(agentId);
+    for (const h of hotfixes) {
+      const id = (h.hotfix ?? "").trim();
+      if (!id) continue;
+      const r = insert.run(agentId, id, h.scan?.time ?? null);
+      if (r.changes) inserted++;
+    }
+  });
+  tx();
+  return inserted;
+}
+
+export function listWazuhHotfixes(agentId: string): WazuhHotfixRow[] {
+  return db()
+    .prepare("SELECT * FROM wazuh_hotfix WHERE agent_id = ? ORDER BY hotfix DESC")
+    .all(agentId) as WazuhHotfixRow[];
+}
+
+/**
+ * Sostituisce le interfacce di rete dell'agent. Skippa entry senza name.
+ * Filtra opzionalmente interfacce di loopback se utile, ma per ora persiste tutto.
+ */
+export function replaceNetifacesForAgent(agentId: string, ifaces: WazuhSyscollectorNetiface[]): number {
+  const d = db();
+  const insert = d.prepare(
+    `INSERT OR IGNORE INTO wazuh_netiface (
+       agent_id, name, mac, type, state, mtu, scan_time, synced_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+  );
+  let inserted = 0;
+  const tx = d.transaction(() => {
+    d.prepare("DELETE FROM wazuh_netiface WHERE agent_id = ?").run(agentId);
+    for (const n of ifaces) {
+      const name = (n.name ?? "").trim();
+      if (!name) continue;
+      const r = insert.run(
+        agentId,
+        name,
+        n.mac ?? null,
+        n.type ?? null,
+        n.state ?? null,
+        n.mtu ?? null,
+        n.scan?.time ?? null,
+      );
+      if (r.changes) inserted++;
+    }
+  });
+  tx();
+  return inserted;
+}
+
+/**
+ * Sostituisce gli indirizzi IP dell'agent (multipli per interfaccia).
+ * Dedup su (agent_id, iface, address).
+ */
+export function replaceNetaddrsForAgent(agentId: string, addrs: WazuhSyscollectorNetaddr[]): number {
+  const d = db();
+  const insert = d.prepare(
+    `INSERT OR IGNORE INTO wazuh_netaddr (
+       agent_id, iface, proto, address, netmask, broadcast, scan_time, synced_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+  );
+  let inserted = 0;
+  const tx = d.transaction(() => {
+    d.prepare("DELETE FROM wazuh_netaddr WHERE agent_id = ?").run(agentId);
+    for (const a of addrs) {
+      const address = (a.address ?? "").trim();
+      if (!address) continue;
+      const r = insert.run(
+        agentId,
+        a.iface ?? null,
+        a.proto ?? null,
+        address,
+        a.netmask ?? null,
+        a.broadcast ?? null,
+        a.scan?.time ?? null,
+      );
+      if (r.changes) inserted++;
+    }
+  });
+  tx();
+  return inserted;
+}
+
+export function listWazuhNetifaces(agentId: string): WazuhNetifaceRow[] {
+  return db()
+    .prepare("SELECT * FROM wazuh_netiface WHERE agent_id = ? ORDER BY name")
+    .all(agentId) as WazuhNetifaceRow[];
+}
+
+export function listWazuhNetaddrs(agentId: string): WazuhNetaddrRow[] {
+  return db()
+    .prepare("SELECT * FROM wazuh_netaddr WHERE agent_id = ? ORDER BY iface, proto, address")
+    .all(agentId) as WazuhNetaddrRow[];
+}
+
 export function listWazuhSoftware(agentId: string): WazuhSoftwareRow[] {
   return db().prepare(
     "SELECT * FROM wazuh_software WHERE agent_id = ? ORDER BY name COLLATE NOCASE",
@@ -370,13 +570,17 @@ export function listWazuhVulns(agentId: string): WazuhVulnRow[] {
   ).all(agentId) as WazuhVulnRow[];
 }
 
-export function countsForAgent(agentId: string): { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number } {
+export function countsForAgent(agentId: string): { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number; ports: number; hotfixes: number; netifaces: number; netaddrs: number } {
   const d = db();
   const sw = d.prepare("SELECT COUNT(*) AS c FROM wazuh_software WHERE agent_id = ?").get(agentId) as { c: number };
   const vAll = d.prepare("SELECT COUNT(*) AS c FROM wazuh_vuln WHERE agent_id = ?").get(agentId) as { c: number };
   const vCrit = d.prepare("SELECT COUNT(*) AS c FROM wazuh_vuln WHERE agent_id = ? AND severity = 'Critical'").get(agentId) as { c: number };
   const vHigh = d.prepare("SELECT COUNT(*) AS c FROM wazuh_vuln WHERE agent_id = ? AND severity = 'High'").get(agentId) as { c: number };
-  return { software: sw.c, vulns: vAll.c, vulnsCritical: vCrit.c, vulnsHigh: vHigh.c };
+  const pts = d.prepare("SELECT COUNT(*) AS c FROM wazuh_ports WHERE agent_id = ?").get(agentId) as { c: number };
+  const hf = d.prepare("SELECT COUNT(*) AS c FROM wazuh_hotfix WHERE agent_id = ?").get(agentId) as { c: number };
+  const nif = d.prepare("SELECT COUNT(*) AS c FROM wazuh_netiface WHERE agent_id = ?").get(agentId) as { c: number };
+  const nad = d.prepare("SELECT COUNT(*) AS c FROM wazuh_netaddr WHERE agent_id = ?").get(agentId) as { c: number };
+  return { software: sw.c, vulns: vAll.c, vulnsCritical: vCrit.c, vulnsHigh: vHigh.c, ports: pts.c, hotfixes: hf.c, netifaces: nif.c, netaddrs: nad.c };
 }
 
 export function deleteWazuhAgentsExcept(activeAgentIds: string[]): number {
@@ -386,4 +590,74 @@ export function deleteWazuhAgentsExcept(activeAgentIds: string[]): number {
   }
   const placeholders = activeAgentIds.map(() => "?").join(",");
   return d.prepare(`DELETE FROM wazuh_agent WHERE agent_id NOT IN (${placeholders})`).run(...activeAgentIds).changes;
+}
+
+/**
+ * Arricchisce hosts.* con dati Wazuh syscollector (OS + HW).
+ * Riempie solo i campi vuoti o "unknown": valori già popolati da altre fonti
+ * (SNMP, AD, input manuale) restano intoccati.
+ */
+export function enrichHostFromWazuh(
+  hostId: number,
+  hw: WazuhSyscollectorHw | null,
+  os: WazuhSyscollectorOs | null,
+): number {
+  if (!hw && !os) return 0;
+  const d = db();
+  const current = d.prepare(
+    "SELECT os_info, model, serial_number, device_manufacturer FROM hosts WHERE id = ?",
+  ).get(hostId) as
+    | { os_info: string | null; model: string | null; serial_number: string | null; device_manufacturer: string | null }
+    | undefined;
+  if (!current) return 0;
+
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+
+  if (isEmptyOrUnknown(current.os_info) && os) {
+    const s = buildOsString(os);
+    if (s) { sets.push("os_info = ?"); vals.push(s); }
+  }
+  if (isEmptyOrUnknown(current.serial_number) && hw?.board_serial) {
+    const v = cleanField(hw.board_serial);
+    if (v && v !== "0") { sets.push("serial_number = ?"); vals.push(v); }
+  }
+  if (isEmptyOrUnknown(current.model) && hw?.board_product) {
+    const v = cleanField(hw.board_product);
+    if (v) { sets.push("model = ?"); vals.push(v); }
+  }
+  if (isEmptyOrUnknown(current.device_manufacturer) && hw?.board_vendor) {
+    const v = cleanField(hw.board_vendor);
+    if (v) { sets.push("device_manufacturer = ?"); vals.push(v); }
+  }
+
+  if (sets.length === 0) return 0;
+  const updated = sets.length;
+  sets.push("updated_at = datetime('now')");
+  d.prepare(`UPDATE hosts SET ${sets.join(", ")} WHERE id = ?`).run(...vals, hostId);
+  return updated;
+}
+
+function isEmptyOrUnknown(v: string | null | undefined): boolean {
+  if (!v) return true;
+  const t = v.trim().toLowerCase();
+  return t === "" || t === "unknown";
+}
+
+function cleanField(v: string): string | null {
+  const t = v.trim();
+  if (!t) return null;
+  if (t.toLowerCase() === "unknown") return null;
+  return t;
+}
+
+function buildOsString(os: WazuhSyscollectorOs): string | null {
+  const name = (os.os?.name ?? "").trim();
+  const ver = (os.os?.version ?? "").trim();
+  const arch = (os.architecture ?? "").trim();
+  let s = "";
+  if (name) s = name;
+  if (ver) s = s ? `${s} ${ver}` : ver;
+  if (s && arch) s = `${s} (${arch})`;
+  return s || null;
 }

@@ -52,6 +52,39 @@ interface WazuhSoftwareRow {
   architecture: string | null;
 }
 
+interface WazuhPortRow {
+  id: number;
+  protocol: string | null;
+  local_ip: string | null;
+  local_port: number | null;
+  state: string | null;
+  process: string | null;
+  pid: number | null;
+}
+
+interface WazuhHotfixRow {
+  id: number;
+  hotfix: string;
+  scan_time: string | null;
+}
+
+interface WazuhNetifaceRow {
+  id: number;
+  name: string;
+  mac: string | null;
+  type: string | null;
+  state: string | null;
+  mtu: number | null;
+}
+
+interface WazuhNetaddrRow {
+  id: number;
+  iface: string | null;
+  proto: string | null;
+  address: string;
+  netmask: string | null;
+}
+
 interface WazuhVulnRow {
   id: number;
   cve: string;
@@ -72,9 +105,13 @@ interface Payload {
   agent?: WazuhAgentRow;
   hw?: WazuhHwRow | null;
   os?: WazuhOsRow | null;
-  counts?: { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number };
+  counts?: { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number; ports: number; hotfixes: number; netifaces: number; netaddrs: number };
   software?: WazuhSoftwareRow[];
   vulns?: WazuhVulnRow[];
+  ports?: WazuhPortRow[];
+  hotfixes?: WazuhHotfixRow[];
+  netifaces?: WazuhNetifaceRow[];
+  netaddrs?: WazuhNetaddrRow[];
 }
 
 function formatRam(kb: number | null | undefined): string {
@@ -98,13 +135,22 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
   const [softwareData, setSoftwareData] = useState<WazuhSoftwareRow[] | null>(null);
   const [showVulns, setShowVulns] = useState(false);
   const [vulnsData, setVulnsData] = useState<WazuhVulnRow[] | null>(null);
+  const [showPorts, setShowPorts] = useState(false);
+  const [portsData, setPortsData] = useState<WazuhPortRow[] | null>(null);
+  const [showHotfixes, setShowHotfixes] = useState(false);
+  const [hotfixesData, setHotfixesData] = useState<WazuhHotfixRow[] | null>(null);
+  const [showNetwork, setShowNetwork] = useState(false);
+  const [networkData, setNetworkData] = useState<{ netifaces: WazuhNetifaceRow[]; netaddrs: WazuhNetaddrRow[] } | null>(null);
 
-  const load = async (opts: { withSoftware?: boolean; withVulns?: boolean } = {}) => {
+  const load = async (opts: { withSoftware?: boolean; withVulns?: boolean; withPorts?: boolean; withHotfixes?: boolean; withNetwork?: boolean } = {}) => {
     setLoading(true);
     try {
       const includes: string[] = [];
       if (opts.withSoftware) includes.push("software");
       if (opts.withVulns) includes.push("vulns");
+      if (opts.withPorts) includes.push("ports");
+      if (opts.withHotfixes) includes.push("hotfixes");
+      if (opts.withNetwork) includes.push("network");
       const qs = includes.length ? `?include=${includes.join(",")}` : "";
       const r = await fetch(`/api/integrations/wazuh/host/${hostId}${qs}`);
       if (!r.ok) { setData(null); return; }
@@ -112,6 +158,11 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       setData(d);
       if (opts.withSoftware && d.software) setSoftwareData(d.software);
       if (opts.withVulns && d.vulns) setVulnsData(d.vulns);
+      if (opts.withPorts && d.ports) setPortsData(d.ports);
+      if (opts.withHotfixes && d.hotfixes) setHotfixesData(d.hotfixes);
+      if (opts.withNetwork && (d.netifaces || d.netaddrs)) {
+        setNetworkData({ netifaces: d.netifaces ?? [], netaddrs: d.netaddrs ?? [] });
+      }
     } finally {
       setLoading(false);
     }
@@ -126,7 +177,7 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       const d = (await r.json()) as { ok?: boolean; error?: string };
       if (r.ok && d.ok) {
         toast.success("Dati Wazuh aggiornati");
-        await load({ withSoftware: showSoftware, withVulns: showVulns });
+        await load({ withSoftware: showSoftware, withVulns: showVulns, withPorts: showPorts, withHotfixes: showHotfixes, withNetwork: showNetwork });
       } else {
         toast.error(d.error ?? "Refresh fallito");
       }
@@ -147,6 +198,27 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       await load({ withVulns: true });
     }
     setShowVulns((v) => !v);
+  };
+
+  const togglePorts = async () => {
+    if (!showPorts && !portsData) {
+      await load({ withPorts: true });
+    }
+    setShowPorts((v) => !v);
+  };
+
+  const toggleHotfixes = async () => {
+    if (!showHotfixes && !hotfixesData) {
+      await load({ withHotfixes: true });
+    }
+    setShowHotfixes((v) => !v);
+  };
+
+  const toggleNetwork = async () => {
+    if (!showNetwork && !networkData) {
+      await load({ withNetwork: true });
+    }
+    setShowNetwork((v) => !v);
   };
 
   if (loading && !data) return null;
@@ -215,6 +287,33 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
                 · richiede utente OpenSearch in config Wazuh
               </span>
             </span>
+          )}
+          {counts && counts.ports > 0 && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <button onClick={togglePorts} className="inline-flex items-center gap-1 hover:underline">
+                {showPorts ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                <strong>{counts.ports}</strong> porte in ascolto
+              </button>
+            </>
+          )}
+          {counts && counts.hotfixes > 0 && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <button onClick={toggleHotfixes} className="inline-flex items-center gap-1 hover:underline">
+                {showHotfixes ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                <strong>{counts.hotfixes}</strong> patch KB
+              </button>
+            </>
+          )}
+          {counts && (counts.netifaces > 0 || counts.netaddrs > 0) && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <button onClick={toggleNetwork} className="inline-flex items-center gap-1 hover:underline">
+                {showNetwork ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                <strong>{counts.netifaces}</strong> if · <strong>{counts.netaddrs}</strong> IP
+              </button>
+            </>
           )}
         </div>
 
@@ -287,6 +386,133 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
             </table>
             <div className="text-[10px] text-muted-foreground px-2 py-1 border-t bg-muted/30">
               Fonte: <strong>Wazuh OpenSearch</strong> · indice <code>wazuh-states-vulnerabilities-*</code> · le finding di vuln scanner (Greenbone) restano nella card separata sopra.
+            </div>
+          </div>
+        )}
+
+        {showPorts && portsData && (
+          <div className="rounded-md border max-h-80 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr>
+                  <th className="text-left px-2 py-1 w-16">Proto</th>
+                  <th className="text-left px-2 py-1">IP locale</th>
+                  <th className="text-right px-2 py-1 w-20">Porta</th>
+                  <th className="text-left px-2 py-1">Processo</th>
+                  <th className="text-right px-2 py-1 w-20">PID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {portsData.map((p) => (
+                  <tr key={p.id} className="border-t">
+                    <td className="px-2 py-1 font-mono uppercase">{p.protocol ?? "—"}</td>
+                    <td className="px-2 py-1 font-mono text-muted-foreground">{p.local_ip ?? "—"}</td>
+                    <td className="px-2 py-1 font-mono text-right">{p.local_port ?? "—"}</td>
+                    <td className="px-2 py-1">{p.process ?? "—"}</td>
+                    <td className="px-2 py-1 font-mono text-right text-muted-foreground">{p.pid ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="text-[10px] text-muted-foreground px-2 py-1 border-t bg-muted/30">
+              Fonte: <strong>Wazuh syscollector</strong> · solo state=listening · aggiornato a ogni sync.
+            </div>
+          </div>
+        )}
+
+        {showHotfixes && hotfixesData && (
+          <div className="rounded-md border max-h-80 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr>
+                  <th className="text-left px-2 py-1">Patch (KB)</th>
+                  <th className="text-left px-2 py-1 w-40">Rilevato</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hotfixesData.map((h) => (
+                  <tr key={h.id} className="border-t">
+                    <td className="px-2 py-1 font-mono">
+                      <a
+                        href={`https://support.microsoft.com/help/${encodeURIComponent(h.hotfix.replace(/^KB/i, ""))}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                      >
+                        {h.hotfix}
+                      </a>
+                    </td>
+                    <td className="px-2 py-1 text-muted-foreground text-[10px]">
+                      {h.scan_time ? new Date(h.scan_time).toLocaleString("it-IT") : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="text-[10px] text-muted-foreground px-2 py-1 border-t bg-muted/30">
+              Fonte: <strong>Wazuh syscollector hotfixes</strong> · solo agent Windows · link a Microsoft Support.
+            </div>
+          </div>
+        )}
+
+        {showNetwork && networkData && (
+          <div className="space-y-2">
+            {networkData.netifaces.length > 0 && (
+              <div className="rounded-md border max-h-60 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-2 py-1">Interfaccia</th>
+                      <th className="text-left px-2 py-1">MAC</th>
+                      <th className="text-left px-2 py-1 w-20">Tipo</th>
+                      <th className="text-left px-2 py-1 w-16">Stato</th>
+                      <th className="text-right px-2 py-1 w-16">MTU</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {networkData.netifaces.map((n) => (
+                      <tr key={n.id} className="border-t">
+                        <td className="px-2 py-1 font-mono">{n.name}</td>
+                        <td className="px-2 py-1 font-mono text-muted-foreground">{n.mac ?? "—"}</td>
+                        <td className="px-2 py-1 text-muted-foreground">{n.type ?? "—"}</td>
+                        <td className="px-2 py-1">
+                          <span className={n.state === "up" ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}>
+                            {n.state ?? "—"}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1 font-mono text-right text-muted-foreground">{n.mtu ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {networkData.netaddrs.length > 0 && (
+              <div className="rounded-md border max-h-60 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-2 py-1 w-24">Interfaccia</th>
+                      <th className="text-left px-2 py-1 w-16">Proto</th>
+                      <th className="text-left px-2 py-1">Indirizzo</th>
+                      <th className="text-left px-2 py-1">Netmask</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {networkData.netaddrs.map((a) => (
+                      <tr key={a.id} className="border-t">
+                        <td className="px-2 py-1 font-mono">{a.iface ?? "—"}</td>
+                        <td className="px-2 py-1 font-mono uppercase text-muted-foreground">{a.proto ?? "—"}</td>
+                        <td className="px-2 py-1 font-mono">{a.address}</td>
+                        <td className="px-2 py-1 font-mono text-muted-foreground">{a.netmask ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="text-[10px] text-muted-foreground">
+              Fonte: <strong>Wazuh syscollector netiface + netaddr</strong>.
             </div>
           </div>
         )}

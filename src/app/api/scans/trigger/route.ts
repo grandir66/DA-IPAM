@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ScanTriggerSchema } from "@/lib/validators";
-import { getNmapProfileById, getActiveNmapProfile, getNetworkById, getHostById } from "@/lib/db";
+import { getNmapProfileById, getActiveNmapProfile, getHostById, relinkAdComputersForNetwork } from "@/lib/db";
 import { discoverNetwork } from "@/lib/scanner/discovery";
 import { buildCustomScanArgs } from "@/lib/scanner/ports";
 import { runArpPoll, runDhcpPollForNetwork, runDnsResolve } from "@/lib/cron/jobs";
@@ -69,11 +69,46 @@ export async function POST(request: Request) {
         });
       }
 
+      // scan_enrich (fase 1.4): ARP + DHCP + AD relink in sequenza, additivo.
+      // Non passa per discoverNetwork — è solo arricchimento dati esistenti.
+      if (parsed.data.scan_type === "scan_enrich") {
+        const phases: string[] = [];
+        const errors: string[] = [];
+
+        const arpResult = await runArpPoll(parsed.data.network_id, targetIps ? { onlyEnrichIps: targetIps } : undefined);
+        if (arpResult.error) errors.push(`ARP: ${arpResult.error}`);
+        else phases.push(`ARP: ${arpResult.phase ?? "ok"}`);
+
+        try {
+          const dhcpResult = await runDhcpPollForNetwork(parsed.data.network_id, targetIps ? { onlyIps: targetIps } : undefined);
+          if (dhcpResult.error) errors.push(`DHCP: ${dhcpResult.error}`);
+          else phases.push(`DHCP: ${dhcpResult.updated} host aggiornati`);
+        } catch (e) {
+          errors.push(`DHCP: ${e instanceof Error ? e.message : "errore"}`);
+        }
+
+        try {
+          const adResult = relinkAdComputersForNetwork(parsed.data.network_id);
+          phases.push(`AD: ${adResult.linked} linkati, ${adResult.enriched} arricchiti`);
+        } catch (e) {
+          errors.push(`AD: ${e instanceof Error ? e.message : "errore"}`);
+        }
+
+        const phaseMsg = phases.length > 0 ? phases.join(" · ") : "Enrich completato";
+        const status = errors.length > 0 && phases.length === 0 ? "failed" : "completed";
+        return NextResponse.json({
+          id: "scan-enrich",
+          progress: {
+            status,
+            phase: phaseMsg + (errors.length > 0 ? ` (errori: ${errors.join("; ")})` : ""),
+          },
+        });
+      }
+
       let nmapArgs: string | undefined;
       let snmpCommunity: string | null | undefined;
       let tcpPorts: string | null = null;
       let udpPorts: string | null = null;
-      const network = getNetworkById(parsed.data.network_id);
 
       if (parsed.data.scan_type === "nmap") {
         const profile = parsed.data.nmap_profile_id
@@ -104,7 +139,7 @@ export async function POST(request: Request) {
 
       const { id, progress } = await discoverNetwork(
         parsed.data.network_id,
-        parsed.data.scan_type as "ping" | "fast" | "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "ipam_full" | "credential_validate",
+        parsed.data.scan_type as import("@/lib/scanner/discovery").DiscoveryScanType,
         nmapArgs,
         snmpCommunity,
         discoverOpts

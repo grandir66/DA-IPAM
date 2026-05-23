@@ -69,7 +69,20 @@ export function getScanProgress(id: string): ScanProgress | undefined {
 
 let scanIdCounter = Date.now();
 
-export type DiscoveryScanType = "ping" | "fast" | "snmp" | "nmap" | "windows" | "ssh" | "network_discovery" | "ipam_full" | "credential_validate";
+export type DiscoveryScanType =
+  | "ping"
+  | "fast"
+  | "snmp"
+  | "nmap"
+  | "windows"
+  | "ssh"
+  | "network_discovery"
+  | "ipam_full"
+  | "credential_validate"
+  | "scan_icmp"
+  | "scan_nmap_base"
+  | "scan_snmp_verify"
+  | "scan_full";
 
 export type DiscoverNetworkOptions = {
   /** Se impostato, la scansione riguarda solo questi IP (devono appartenere alla subnet). */
@@ -357,6 +370,331 @@ async function runDiscovery(
   function log(msg: string) {
     progress.logs!.push(`[${new Date().toLocaleTimeString("it-IT")}] ${msg}`);
     if (progress.logs!.length > 200) progress.logs = progress.logs!.slice(-200);
+  }
+
+  // scan_full è un alias semantico di network_discovery (UI: "Scan completo").
+  // Mantiene il payload "network_discovery" lato persistenza/storia per non
+  // sdoppiare metriche, ma rende esplicito in UI che esegue l'intera sequenza
+  // ICMP → Nmap base → SNMP verify → Enrich (ARP/DHCP/AD).
+  if (scanType === "scan_full") {
+    scanType = "network_discovery";
+    progress.scan_type = "network_discovery";
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // SCAN_ICMP: sotto-fase 1.1 — ICMP sweep + second-pass TCP, persist host
+  // online. Niente ARP/DHCP/AD (vivono in scan_enrich), niente nmap, niente
+  // SNMP. Additivo: NON marca offline i non rispondenti.
+  // ═══════════════════════════════════════════════════════════════
+  if (scanType === "scan_icmp") {
+    progress.phase = "Ping sweep (ICMP)";
+    const results = await pingSweep(ips, 50, (scanned, found) => {
+      progress.scanned = scanned;
+      progress.found = found;
+    });
+    onlineIps = results.filter((r) => r.alive).map((r) => r.ip);
+    log(`ICMP: ${onlineIps.length}/${ips.length} host rispondono`);
+
+    // Second-pass TCP per host già online in DB ma silenziosi a ICMP
+    const onlineSet = new Set(onlineIps);
+    const dbHosts = getHostsByNetwork(networkId);
+    const tcpCandidates = dbHosts
+      .filter((h) => h.status === "online" && !onlineSet.has(h.ip))
+      .map((h) => h.ip);
+    if (tcpCandidates.length > 0) {
+      progress.phase = `Second-pass TCP — 0/${tcpCandidates.length}`;
+      log(`Second-pass TCP su ${tcpCandidates.length} host noti come online`);
+      const TCP_BATCH = 32;
+      let recovered = 0;
+      let scanned = 0;
+      for (let i = 0; i < tcpCandidates.length; i += TCP_BATCH) {
+        const batch = tcpCandidates.slice(i, i + TCP_BATCH);
+        const probed = await Promise.all(
+          batch.map(async (ip) => {
+            for (const port of FALLBACK_TCP_PORTS) {
+              if (await tcpConnect(ip, port, 2000)) return ip;
+            }
+            return null;
+          })
+        );
+        for (const ip of probed) {
+          scanned++;
+          if (ip) {
+            onlineIps.push(ip);
+            recovered++;
+          }
+        }
+        progress.phase = `Second-pass TCP — ${scanned}/${tcpCandidates.length}`;
+      }
+      log(`Second-pass TCP: recuperati ${recovered}/${tcpCandidates.length} host`);
+    }
+
+    // Persist additivo
+    for (const ip of onlineIps) {
+      try {
+        upsertHost({
+          network_id: networkId,
+          ip,
+          status: "online",
+          hostname_source: "scan",
+          bypassExclusion: true,
+        });
+      } catch { /* upsert singolo host non blocca lo sweep */ }
+    }
+
+    progress.status = "completed";
+    progress.phase = `ICMP completato (${onlineIps.length} online)`;
+    progress.scanned = ips.length;
+    progress.found = onlineIps.length;
+    console.info(`[Discovery] scan_icmp completato: ${onlineIps.length}/${ips.length} online, ${Date.now() - startTime}ms`);
+    setTimeout(() => getProgressMap().delete(scanId), 300000);
+    return {
+      network_id: networkId,
+      total_ips: ips.length,
+      hosts_found: onlineIps.length,
+      hosts_online: onlineIps.length,
+      hosts_offline: ips.length - onlineIps.length,
+      new_hosts: 0,
+      duration_ms: Date.now() - startTime,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // SCAN_NMAP_BASE: sotto-fase 1.2 — nmap quick TCP sugli host già online
+  // in DB (no ping iniziale). Aggiorna porte/servizi/OS. Niente fingerprint
+  // complesso, niente flip offline.
+  // ═══════════════════════════════════════════════════════════════
+  if (scanType === "scan_nmap_base") {
+    const inScopeNm = new Set(ips);
+    const existingHosts = getHostsByNetwork(networkId);
+    const targetIps = existingHosts
+      .filter((h) => h.status === "online" && inScopeNm.has(h.ip))
+      .map((h) => h.ip);
+    onlineIps = targetIps;
+
+    if (targetIps.length === 0) {
+      log("Nessun host online in DB su cui eseguire Nmap base. Esegui prima ICMP o Scan completo.");
+      progress.status = "completed";
+      progress.phase = "Nessun host online";
+      progress.scanned = 0;
+      progress.found = 0;
+      setTimeout(() => getProgressMap().delete(scanId), 300000);
+      return {
+        network_id: networkId,
+        total_ips: ips.length,
+        hosts_found: 0,
+        hosts_online: 0,
+        hosts_offline: 0,
+        new_hosts: 0,
+        duration_ms: Date.now() - startTime,
+      };
+    }
+
+    const nmapAvailable = await isNmapAvailable();
+    if (!nmapAvailable) {
+      log("Nmap non disponibile sul sistema/agent — scan annullato");
+      progress.status = "failed";
+      progress.phase = "Nmap non disponibile";
+      setTimeout(() => getProgressMap().delete(scanId), 300000);
+      return {
+        network_id: networkId,
+        total_ips: ips.length,
+        hosts_found: 0,
+        hosts_online: targetIps.length,
+        hosts_offline: 0,
+        new_hosts: 0,
+        duration_ms: Date.now() - startTime,
+      };
+    }
+
+    const quickArgs = buildNetworkDiscoveryQuickTcpArgs();
+    const quickExecMs = getNetworkDiscoveryQuickExecMs();
+    const quickBatch = getNetworkDiscoveryQuickConcurrency();
+    progress.phase = `Nmap quick TCP — 0/${targetIps.length}`;
+    progress.total = targetIps.length;
+    log(
+      `Nmap base su ${targetIps.length} host (batch ${quickBatch}, ~${Math.ceil(quickExecMs / 1000)}s max/host)`
+    );
+
+    for (let i = 0; i < targetIps.length; i += quickBatch) {
+      const batch = targetIps.slice(i, i + quickBatch);
+      const batchResults = await Promise.all(
+        batch.map((ip) => nmapPortScan(ip, quickArgs, quickExecMs, { skipUdp: true, onLog: log }))
+      );
+      for (let j = 0; j < batch.length; j++) {
+        const ip = batch[j];
+        const result = batchResults[j];
+        if (result) {
+          try {
+            upsertHost({
+              network_id: networkId,
+              ip,
+              mac: result.mac ?? undefined,
+              status: "online",
+              hostname_source: "scan",
+              open_ports: JSON.stringify(
+                result.ports.map((p) => ({
+                  port: p.port,
+                  protocol: p.protocol,
+                  service: p.service,
+                  version: p.version,
+                }))
+              ),
+              os_info: result.os ?? undefined,
+              bypassExclusion: true,
+            });
+          } catch { /* ignore */ }
+        }
+      }
+      progress.scanned = Math.min(i + quickBatch, targetIps.length);
+      progress.phase = `Nmap quick TCP — ${progress.scanned}/${targetIps.length}`;
+    }
+
+    progress.status = "completed";
+    progress.phase = `Nmap base completato (${targetIps.length} host)`;
+    progress.found = targetIps.length;
+    console.info(`[Discovery] scan_nmap_base: ${targetIps.length} host, ${Date.now() - startTime}ms`);
+    setTimeout(() => getProgressMap().delete(scanId), 300000);
+    return {
+      network_id: networkId,
+      total_ips: ips.length,
+      hosts_found: targetIps.length,
+      hosts_online: targetIps.length,
+      hosts_offline: 0,
+      new_hosts: 0,
+      duration_ms: Date.now() - startTime,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // SCAN_SNMP_VERIFY: sotto-fase 1.3 — SNMP sysObjectID probe sugli host
+  // online del DB + SNMP-only discovery sugli IP non rispondenti a ICMP.
+  // Verifica chi parla SNMP, salva sysName/sysDescr/sysObjectID.
+  // ═══════════════════════════════════════════════════════════════
+  if (scanType === "scan_snmp_verify") {
+    const inScopeSn = new Set(ips);
+    const existingHosts = getHostsByNetwork(networkId);
+    const onlineDbIps = existingHosts
+      .filter((h) => h.status === "online" && inScopeSn.has(h.ip))
+      .map((h) => h.ip);
+    const offlineDbIps = ips.filter((ip) => !onlineDbIps.includes(ip));
+
+    const communities = buildSnmpCommunitiesForHost(networkId, null, snmpCommunity ?? null);
+    log(`SNMP verify — community: ${communities.slice(0, 3).join(", ")}${communities.length > 3 ? "…" : ""}`);
+
+    let snmpResponders = 0;
+
+    // Probe sysObjectID su host online
+    if (onlineDbIps.length > 0) {
+      progress.phase = `SNMP sysObjectID — 0/${onlineDbIps.length}`;
+      progress.total = onlineDbIps.length;
+      const SNMP_BATCH = 24;
+      for (let si = 0; si < onlineDbIps.length; si += SNMP_BATCH) {
+        const batch = onlineDbIps.slice(si, si + SNMP_BATCH);
+        const batchResults = await Promise.all(
+          batch.map(async (ip) => {
+            try {
+              const r = await querySnmpInfoMultiCommunity(ip, communities, 161, { onLog: log });
+              if (r.sysName || r.sysDescr || r.sysObjectID) {
+                return { ip, sysName: r.sysName ?? null, sysDescr: r.sysDescr ?? null, sysObjectID: r.sysObjectID ?? null };
+              }
+            } catch { /* ignore */ }
+            return null;
+          })
+        );
+        for (const r of batchResults) {
+          if (!r) continue;
+          snmpResponders++;
+          try {
+            upsertHost({
+              network_id: networkId,
+              ip: r.ip,
+              status: "online",
+              hostname_source: "scan",
+              hostname: r.sysName ?? undefined,
+              os_info: r.sysDescr ?? undefined,
+              bypassExclusion: true,
+            });
+          } catch { /* ignore */ }
+          log(`✓ ${r.ip} → ${r.sysName || "—"} (${r.sysDescr?.slice(0, 50) || "—"})`);
+        }
+        progress.scanned = Math.min(si + SNMP_BATCH, onlineDbIps.length);
+        progress.phase = `SNMP sysObjectID — ${progress.scanned}/${onlineDbIps.length}`;
+      }
+    }
+
+    // SNMP-only discovery sugli IP non rispondenti (solo se community custom)
+    const hasCustomCommunity = communities.some((c) => c !== "public" && c !== "private");
+    if (hasCustomCommunity && offlineDbIps.length > 0 && offlineDbIps.length <= 512) {
+      const { snmpGet } = await import("./snmp-query");
+      progress.phase = `SNMP discovery (no-ICMP) — 0/${offlineDbIps.length}`;
+      let discovered = 0;
+      const SNMP_PROBE_BATCH = 32;
+      for (let si = 0; si < offlineDbIps.length; si += SNMP_PROBE_BATCH) {
+        const batch = offlineDbIps.slice(si, si + SNMP_PROBE_BATCH);
+        const batchResults = await Promise.all(
+          batch.map(async (ip) => {
+            try {
+              for (const community of communities) {
+                const varbinds = await snmpGet(ip, community, 161,
+                  ["1.3.6.1.2.1.1.2.0", "1.3.6.1.2.1.1.5.0", "1.3.6.1.2.1.1.1.0"], 2500);
+                if (varbinds.length === 0) continue;
+                let sysObjectID: string | null = null;
+                let sysName: string | null = null;
+                let sysDescr: string | null = null;
+                for (const vb of varbinds) {
+                  if (vb.type != null && [128, 129, 130].includes(vb.type)) continue;
+                  const val = vb.value != null ? String(vb.value).trim() : null;
+                  if (!val || val === "noSuchObject" || val === "noSuchInstance") continue;
+                  if (String(vb.oid).includes("1.2.0")) sysObjectID = normalizeOidString(val);
+                  else if (String(vb.oid).includes("1.5.0")) sysName = val;
+                  else if (String(vb.oid).includes("1.1.0")) sysDescr = val;
+                }
+                if (sysObjectID || sysName || sysDescr) {
+                  return { ip, sysObjectID, sysName, sysDescr };
+                }
+              }
+            } catch { /* ignore */ }
+            return null;
+          })
+        );
+        for (const r of batchResults) {
+          if (!r) continue;
+          discovered++;
+          snmpResponders++;
+          try {
+            upsertHost({
+              network_id: networkId,
+              ip: r.ip,
+              status: "online",
+              hostname_source: "scan",
+              hostname: r.sysName ?? undefined,
+              os_info: r.sysDescr ?? undefined,
+              bypassExclusion: true,
+            });
+          } catch { /* ignore */ }
+          log(`✓ SNMP-only ${r.ip} → ${r.sysName || "—"} (${r.sysObjectID || "—"})`);
+        }
+        progress.scanned = Math.min(si + SNMP_PROBE_BATCH, offlineDbIps.length);
+        progress.phase = `SNMP discovery (no-ICMP) — ${progress.scanned}/${offlineDbIps.length}`;
+      }
+      log(`SNMP no-ICMP: ${discovered} device scoperti`);
+    }
+
+    progress.status = "completed";
+    progress.phase = `SNMP verify completato (${snmpResponders} responder)`;
+    progress.found = snmpResponders;
+    console.info(`[Discovery] scan_snmp_verify: ${snmpResponders} SNMP responder, ${Date.now() - startTime}ms`);
+    setTimeout(() => getProgressMap().delete(scanId), 300000);
+    return {
+      network_id: networkId,
+      total_ips: ips.length,
+      hosts_found: snmpResponders,
+      hosts_online: snmpResponders,
+      hosts_offline: 0,
+      new_hosts: 0,
+      duration_ms: Date.now() - startTime,
+    };
   }
 
   // ═══════════════════════════════════════════════════════════════

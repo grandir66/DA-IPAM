@@ -148,6 +148,11 @@ export const ScanTriggerSchema = z.object({
     "dns",
     "ipam_full",
     "credential_validate",
+    "scan_icmp",
+    "scan_nmap_base",
+    "scan_snmp_verify",
+    "scan_enrich",
+    "scan_full",
   ]),
   nmap_profile_id: z.coerce.number().int().positive().optional(),
   /** Per azioni manuali: limita agli host selezionati (vista lista). */

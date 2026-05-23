@@ -18,6 +18,13 @@ export interface ActiveIntegrationInfo {
    *  una nuova tab almeno una volta. */
   iframeNeedsHandshake?: boolean;
   handshakeReason?: string;
+  /** false → UI mostra una landing con shortcut esterni invece dell'iframe.
+   *  Usato per Wazuh (SPA OpenSearch Dashboards che non funziona sotto
+   *  sub-path proxy senza nginx davanti — vedi
+   *  docs/playbooks/wazuh-integration.md). */
+  iframeSupported?: boolean;
+  /** Shortcut esterni mostrati nella landing quando iframeSupported=false. */
+  shortcuts?: Array<{ label: string; url: string; description?: string }>;
 }
 
 export async function GET() {
@@ -51,18 +58,26 @@ export async function GET() {
     };
   }
 
-  // Wazuh — via reverse proxy DA-IPAM per accettare cert self-signed e
-  // strippare X-Frame-Options sulla dashboard OpenSearch.
+  // Wazuh — l'iframe della SPA OpenSearch Dashboards non funziona sotto
+  // sub-path proxy senza nginx davanti (vedi docs/playbooks/wazuh-integration.md).
+  // Mostriamo una landing con shortcut diretti invece di tentare l'iframe.
   const wazuh = getWazuhConfig();
   if (wazuh.enabled && wazuh.url) {
     let dashUrl = wazuh.url.replace(/:55000(\/.*)?$/, "");
     if (!/^https?:\/\//.test(dashUrl)) dashUrl = `https://${dashUrl}`;
     result.wazuh = {
       enabled: true,
-      url: "/api/integrations/proxy/wazuh/",
+      url: dashUrl,
       directUrl: dashUrl,
       label: "Wazuh",
-      iframeNeedsHandshake: false,
+      iframeSupported: false,
+      shortcuts: [
+        { label: "Dashboard Wazuh", url: dashUrl, description: "Home del dashboard SIEM/HIDS." },
+        { label: "Agenti", url: `${dashUrl}/app/endpoints-summary`, description: "Lista agent Wazuh con stato e ultimo keep-alive." },
+        { label: "Vulnerabilità (CVE)", url: `${dashUrl}/app/vulnerability-detection`, description: "Dashboard CVE su tutti gli agent." },
+        { label: "Inventario", url: `${dashUrl}/app/it-hygiene`, description: "Software inventory + CIS hardening." },
+        { label: "Threat hunting", url: `${dashUrl}/app/threat-hunting`, description: "Eventi e regole di detection." },
+      ],
     };
   }
 

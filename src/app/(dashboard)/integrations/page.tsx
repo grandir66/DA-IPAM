@@ -12,6 +12,9 @@ interface IntegrationInfo {
   label: string;
   iframeNeedsHandshake?: boolean;
   handshakeReason?: string;
+  /** false → mostra landing con shortcut esterni invece dell'iframe. */
+  iframeSupported?: boolean;
+  shortcuts?: Array<{ label: string; url: string; description?: string }>;
 }
 
 interface ActiveIntegrations {
@@ -96,15 +99,60 @@ export default function IntegrationsPage() {
         </div>
       )}
 
-      {/* iframe */}
-      {current?.url && (
+      {/* Landing con shortcut (iframeSupported=false) o iframe */}
+      {current?.url && current.iframeSupported === false ? (
+        <IntegrationLanding key={selected} info={current} />
+      ) : current?.url ? (
         <IntegrationIframe
           key={selected}
           url={current.url}
           fallbackUrl={current.directUrl ?? current.url}
           label={current.label}
         />
-      )}
+      ) : null}
+    </div>
+  );
+}
+
+function IntegrationLanding({ info }: { info: IntegrationInfo }) {
+  const shortcuts = info.shortcuts ?? [];
+  return (
+    <div className="flex-1 overflow-y-auto p-6">
+      <div className="max-w-3xl mx-auto space-y-4">
+        <div className="rounded-lg border border-border bg-card p-5 space-y-2">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5 text-primary" />
+            {info.label}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {"L'integrazione "}
+            <strong>{info.label}</strong>
+            {" è attiva (sync API + CVE) ma il dashboard SPA non può essere mostrato in iframe sotto sub-path proxy. Apri le viste qui sotto in una nuova tab — i dati sincronizzati restano comunque visibili nel dettaglio host."}
+          </p>
+        </div>
+
+        {shortcuts.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {shortcuts.map((s) => (
+              <a
+                key={s.url}
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md border border-border bg-card hover:bg-accent transition-colors p-3 flex items-start gap-3 group"
+              >
+                <ExternalLink className="h-4 w-4 mt-0.5 text-muted-foreground group-hover:text-foreground shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{s.label}</p>
+                  {s.description && (
+                    <p className="text-xs text-muted-foreground mt-0.5">{s.description}</p>
+                  )}
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

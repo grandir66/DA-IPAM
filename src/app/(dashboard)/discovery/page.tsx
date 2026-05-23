@@ -40,8 +40,8 @@ import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-c
 import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
-  Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, HardDrive, Monitor,
-  Lock, KeyRound, Trash2, ShieldCheck, MoreHorizontal,
+  Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, ShieldAlert, HardDrive, Monitor,
+  Lock, KeyRound, Trash2, ShieldCheck, MoreVertical,
 } from "lucide-react";
 
 /**
@@ -117,58 +117,54 @@ interface ColumnDef {
   group: "base" | "rete" | "rilevamento" | "dettaglio";
 }
 
+// Ordine richiesto: dopo le colonne hardcoded (Checkbox in pos 1, Azioni-kebab in pos 2)
+// le 19 colonne dati visibili di default seguono la sequenza concordata.
+// Nota: `device_name` e `librenms_id` non sono più colonne a sé — confluiscono nelle
+// icone cliccabili della cella "Profilo".
 const COLUMNS: ColumnDef[] = [
-  // Base
-  { id: "profilo",         label: "Profilo",         defaultVisible: true,  group: "base" },
-  { id: "ip",              label: "IP",              defaultVisible: true,  group: "base" },
-  { id: "hostname",        label: "Nome",            defaultVisible: true,  group: "base" },
-  { id: "status",          label: "Stato",           defaultVisible: true,  group: "base" },
-  { id: "mac",             label: "MAC",             defaultVisible: true,  group: "base" },
-  { id: "device_manufacturer", label: "Produttore",  defaultVisible: true,  group: "base" },
-  { id: "vendor",          label: "Vendor",          defaultVisible: false, group: "base" },
-  { id: "classification",  label: "Classificazione", defaultVisible: true,  group: "base" },
-  { id: "fp_confidence",   label: "Conf.",           defaultVisible: true,  group: "base" },
-  { id: "validated_creds", label: "Cred.",            defaultVisible: true,  group: "base" },
-  { id: "vuln_max_severity", label: "CVE max",       defaultVisible: true,  group: "rilevamento" },
-  { id: "vuln_counts",       label: "CVE C/H/M",     defaultVisible: true,  group: "rilevamento" },
-  { id: "known_host",      label: "Manuale",         defaultVisible: false, group: "base" },
-  { id: "ip_assignment",   label: "DHCP",            defaultVisible: true,  group: "base" },
-  { id: "detected",        label: "Rilevato",        defaultVisible: false, group: "rilevamento" },
-  { id: "notes",           label: "Note",            defaultVisible: false, group: "base" },
+  // 3-21 — visibili di default, nell'ordine richiesto
+  { id: "profilo",             label: "Profilo",         defaultVisible: true,  group: "base" },
+  { id: "ip",                  label: "IP",              defaultVisible: true,  group: "base" },
+  { id: "hostname",            label: "Nome",            defaultVisible: true,  group: "base" },
+  { id: "status",              label: "Stato",           defaultVisible: true,  group: "base" },
+  { id: "device_manufacturer", label: "Produttore",      defaultVisible: true,  group: "base" },
+  { id: "classification",      label: "Classificazione", defaultVisible: true,  group: "base" },
+  { id: "validated_creds",     label: "Cred",            defaultVisible: true,  group: "base" },
+  { id: "known_host",          label: "Manuale",         defaultVisible: true,  group: "base" },
+  { id: "ip_assignment",       label: "DHCP",            defaultVisible: true,  group: "base" },
+  { id: "in_ad",               label: "AD",              defaultVisible: true,  group: "rete" },
+  { id: "vuln_max_severity",   label: "CVE",             defaultVisible: true,  group: "rilevamento" },
+  { id: "vuln_counts",         label: "CVE C/H/M",       defaultVisible: true,  group: "rilevamento" },
+  { id: "fp_confidence",       label: "Conf",            defaultVisible: true,  group: "base" },
+  { id: "mac",                 label: "MAC",             defaultVisible: true,  group: "base" },
+  { id: "network_name",        label: "Subnet",          defaultVisible: true,  group: "rete" },
+  { id: "serial_number",       label: "Seriale",         defaultVisible: true,  group: "dettaglio" },
+  { id: "open_ports_tcp",      label: "Porte TCP",       defaultVisible: true,  group: "rilevamento" },
+  { id: "open_ports_udp",      label: "Porte UDP",       defaultVisible: true,  group: "rilevamento" },
+  { id: "last_seen",           label: "Ultimo visto",    defaultVisible: true,  group: "base" },
 
-  // Rete
-  { id: "network_name",    label: "Subnet",          defaultVisible: true,  group: "rete" },
+  // Extra disponibili nel column picker, nascoste di default
+  { id: "vendor",          label: "Vendor",          defaultVisible: false, group: "base" },
+  { id: "notes",           label: "Note",            defaultVisible: false, group: "base" },
+  { id: "first_seen",      label: "Primo visto",     defaultVisible: false, group: "base" },
   { id: "vlan_id",         label: "VLAN",            defaultVisible: false, group: "rete" },
   { id: "location",        label: "Sede",            defaultVisible: false, group: "rete" },
-  { id: "device_name",     label: "Dispositivo",     defaultVisible: false, group: "rete" },
   { id: "switch_port",     label: "Porta switch",    defaultVisible: false, group: "rete" },
   { id: "ad_dns",          label: "AD DNS",          defaultVisible: false, group: "rete" },
-  { id: "in_ad",           label: "AD",              defaultVisible: true,  group: "rete" },
   { id: "multihomed",      label: "MH",              defaultVisible: false, group: "rete" },
-
-  // Rilevamento
+  { id: "detected",        label: "Rilevato",        defaultVisible: false, group: "rilevamento" },
   { id: "os_info",         label: "OS",              defaultVisible: false, group: "rilevamento" },
   { id: "open_ports",      label: "Porte aperte",    defaultVisible: false, group: "rilevamento" },
-  { id: "open_ports_tcp",  label: "Porte TCP",       defaultVisible: true,  group: "rilevamento" },
-  { id: "open_ports_udp",  label: "Porte UDP",       defaultVisible: true,  group: "rilevamento" },
   { id: "response_time",   label: "RTT (ms)",        defaultVisible: false, group: "rilevamento" },
-
-  // Dettaglio
   { id: "model",           label: "Modello",         defaultVisible: false, group: "dettaglio" },
-  { id: "serial_number",   label: "Seriale",         defaultVisible: false, group: "dettaglio" },
-  { id: "firmware",        label: "Firmware",         defaultVisible: false, group: "dettaglio" },
-  { id: "librenms_id",     label: "LibreNMS",         defaultVisible: true,  group: "dettaglio" },
+  { id: "firmware",        label: "Firmware",        defaultVisible: false, group: "dettaglio" },
   { id: "asset_tag",       label: "Asset tag",       defaultVisible: false, group: "dettaglio" },
   { id: "software_scan",   label: "App scansionate", defaultVisible: false, group: "dettaglio" },
 
-  // Temporali
-  { id: "last_seen",       label: "Ultimo visto",    defaultVisible: true,  group: "base" },
-  { id: "first_seen",      label: "Primo visto",     defaultVisible: false, group: "base" },
-
   // Nota: la colonna "Azioni" è hardcoded fuori da COLUMNS (vedi TableHead /
   // TableCell dedicati nel render della tabella) perché è sempre visibile e
-  // non sortable. Tier 1 ha esteso quella cella con Test cred / Riscansiona /
-  // Modifica device / Elimina device per host promossi a network_device.
+  // non sortable. Resa come menu kebab (tre puntini) per ospitare l'elenco
+  // crescente di azioni per riga (Tier 1, integrazione LibreNMS, Wazuh, ecc.).
 ];
 
 const GROUP_LABELS: Record<string, string> = {
@@ -181,8 +177,10 @@ const GROUP_LABELS: Record<string, string> = {
 const STORAGE_KEY = "discovery-columns";
 const PAGE_SIZE = 50;
 
-// Colonne che devono essere sempre visibili indipendentemente dal localStorage
-const ALWAYS_VISIBLE = new Set(["librenms_id"]);
+// Colonne che devono essere sempre visibili indipendentemente dal localStorage.
+// Profilo è il pivot della UI (ospita le icone di promozione e i link verso
+// device / NIS2 / LibreNMS / Wazuh): non deve mai sparire.
+const ALWAYS_VISIBLE = new Set(["profilo"]);
 
 function loadVisibleColumns(): Set<string> {
   if (typeof window === "undefined") return new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id));
@@ -1048,7 +1046,6 @@ export default function DiscoveryPage() {
       case "network_name": return `${h.network_name} (${h.network_cidr})`;
       case "vlan_id": return h.vlan_id != null ? String(h.vlan_id) : "";
       case "location": return h.location || "";
-      case "device_name": return h.device_name ?? "";
       case "switch_port": return h.switch_port ?? "";
       case "ad_dns": return h.ad_dns_host_name ?? "";
       case "os_info": return h.os_info ?? "";
@@ -1070,18 +1067,16 @@ export default function DiscoveryPage() {
         const c = getFpConfidence(h);
         return c > 0 ? `${Math.round(c * 100)}%` : "";
       }
-      case "librenms_id": {
-        const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
-        return lnms ? String(lnms.librenms_device_id) : "";
-      }
       case "vuln_max_severity": return h.vuln?.max_severity ?? "";
       case "vuln_counts":
         return h.vuln ? `${h.vuln.critical}/${h.vuln.high}` : "";
       case "profilo": {
-        // Score per sort: numero di "promozioni" raggiunte (discovery=1, +device=2, +asset=4 → max 7)
+        // Score per sort: bitfield delle promozioni raggiunte.
+        // discovery=1 (sempre), device=2, asset=4, librenms=8 → max 15.
         let score = 1;
         if (h.device_id) score += 2;
         if (h.asset_id) score += 4;
+        if (librenmsMap.get(`${h.network_id}:${h.ip}`)) score += 8;
         return String(score);
       }
       case "asset_tag": return h.asset_tag ?? "";
@@ -1136,21 +1131,6 @@ export default function DiscoveryPage() {
         return <span className="text-sm">{h.vlan_id != null ? h.vlan_id : "—"}</span>;
       case "location":
         return <span className="text-sm">{h.location || "—"}</span>;
-      case "device_name":
-        return h.device_id
-          ? (
-            <Link
-              href={`/devices/${h.device_id}`}
-              title={h.device_name ?? "Apri dispositivo"}
-              className="inline-flex items-center gap-1 text-primary hover:underline"
-            >
-              <Badge variant="outline" className="text-xs gap-1 px-1.5 py-0 border-primary/40 text-primary">
-                <Server className="h-3 w-3" />
-                <ExternalLink className="h-3 w-3" />
-              </Badge>
-            </Link>
-          )
-          : <span className="text-muted-foreground text-xs">—</span>;
       case "switch_port":
         return h.switch_port
           ? <span className="text-xs font-mono" title={h.switch_device_name ? `${h.switch_device_name} ${h.switch_port}` : h.switch_port}>{h.switch_port}</span>
@@ -1204,50 +1184,6 @@ export default function DiscoveryPage() {
             </span>
           )
           : <span className="text-muted-foreground text-xs">—</span>;
-      }
-      case "librenms_id": {
-        const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
-        const isAdding = librenmsAdding.has(h.id);
-        if (lnms) {
-          const deviceLink = librenmsUrl ? `${librenmsUrl}/device/device=${lnms.librenms_device_id}/` : null;
-          return (
-            <span className="inline-flex items-center gap-1">
-              <Activity className="h-3 w-3 text-success shrink-0" />
-              {deviceLink ? (
-                <a
-                  href={deviceLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-primary hover:underline"
-                  onClick={(e) => e.stopPropagation()}
-                  title="Apri in LibreNMS"
-                >
-                  <Badge variant="outline" className="font-mono text-xs">
-                    #{lnms.librenms_device_id}
-                  </Badge>
-                  <ExternalLink className="h-3 w-3 opacity-50" />
-                </a>
-              ) : (
-                <Badge variant="outline" className="font-mono text-xs">
-                  #{lnms.librenms_device_id}
-                </Badge>
-              )}
-            </span>
-          );
-        }
-        return (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-6 px-2 text-xs gap-1"
-            disabled={isAdding}
-            onClick={(e) => { e.stopPropagation(); addHostToLibreNMS(h); }}
-            title={h.snmp_data ? "Aggiungi a LibreNMS con SNMP" : "Aggiungi a LibreNMS (ping-only, senza SNMP)"}
-          >
-            {isAdding ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
-            LibreNMS
-          </Button>
-        );
       }
       case "validated_creds":
         return <ProtocolBadges protocols={h.validated_protocols || []} />;
@@ -1315,23 +1251,77 @@ export default function DiscoveryPage() {
         );
       }
       case "profilo": {
-        // Stati di evoluzione cumulativi: Discovery (sempre), Managed (network_device), Asset (inventory_asset).
+        // Cella "Profilo": una pastiglia di 4 icone che rappresentano le
+        // integrazioni a cui l'host è (o non è) agganciato. Le icone "verdi"
+        // sono link diretti alla risorsa; le grigie sono placeholder informativi.
+        // L'icona Discovery (Boxes) è stata rimossa perché sempre attiva = ridondante.
+        // Wazuh è placeholder: l'integrazione SIEM/HIDS è in roadmap.
         const isManaged = !!h.device_id;
         const isAsset = !!h.asset_id;
-        const titleParts = ["Rilevato (Discovery)"];
-        if (isManaged) titleParts.push(`Gestito → ${h.device_name}`);
-        if (isAsset) titleParts.push(`Asset${h.asset_tag ? ` ${h.asset_tag}` : ""}`);
+        const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
+        const lnmsDeviceLink = lnms && librenmsUrl
+          ? `${librenmsUrl}/device/device=${lnms.librenms_device_id}/`
+          : null;
+
         return (
-          <span className="inline-flex items-center gap-1" title={titleParts.join(" • ")}>
-            <Boxes className="h-3.5 w-3.5 text-muted-foreground" aria-label="Discovery" />
-            <Wrench
-              className={`h-3.5 w-3.5 ${isManaged ? "text-blue-600" : "text-muted-foreground/30"}`}
-              aria-label={isManaged ? "Gestito" : "Non gestito"}
-            />
-            <Package
-              className={`h-3.5 w-3.5 ${isAsset ? "text-emerald-600" : "text-muted-foreground/30"}`}
-              aria-label={isAsset ? "Asset registrato" : "Non in inventario asset"}
-            />
+          <span className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            {/* Dispositivo gestito → /devices/:id */}
+            {isManaged ? (
+              <Link
+                href={`/devices/${h.device_id}`}
+                title={`Apri dispositivo${h.device_name ? ` — ${h.device_name}` : ""}`}
+                className="inline-flex items-center text-blue-600 hover:text-blue-700"
+              >
+                <Wrench className="h-3.5 w-3.5" />
+              </Link>
+            ) : (
+              <span title="Host non promosso a dispositivo" className="inline-flex items-center text-muted-foreground/30">
+                <Wrench className="h-3.5 w-3.5" />
+              </span>
+            )}
+
+            {/* Asset NIS2 → /inventory/:asset_id */}
+            {isAsset ? (
+              <Link
+                href={`/inventory/${h.asset_id}`}
+                title={`Apri asset NIS2${h.asset_tag ? ` — ${h.asset_tag}` : ""}`}
+                className="inline-flex items-center text-emerald-600 hover:text-emerald-700"
+              >
+                <Package className="h-3.5 w-3.5" />
+              </Link>
+            ) : (
+              <span title="Host non registrato come asset NIS2" className="inline-flex items-center text-muted-foreground/30">
+                <Package className="h-3.5 w-3.5" />
+              </span>
+            )}
+
+            {/* LibreNMS → link esterno se ID + URL configurati, badge interno altrimenti */}
+            {lnms ? (
+              lnmsDeviceLink ? (
+                <a
+                  href={lnmsDeviceLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`Apri in LibreNMS — #${lnms.librenms_device_id}`}
+                  className="inline-flex items-center text-success hover:opacity-80"
+                >
+                  <Activity className="h-3.5 w-3.5" />
+                </a>
+              ) : (
+                <span title={`In LibreNMS — #${lnms.librenms_device_id} (URL non configurato)`} className="inline-flex items-center text-success">
+                  <Activity className="h-3.5 w-3.5" />
+                </span>
+              )
+            ) : (
+              <span title="Non monitorato in LibreNMS — usa il menu Azioni per aggiungerlo" className="inline-flex items-center text-muted-foreground/30">
+                <Activity className="h-3.5 w-3.5" />
+              </span>
+            )}
+
+            {/* Wazuh — placeholder: l'integrazione SIEM/HIDS non è ancora disponibile */}
+            <span title="Wazuh (in arrivo): visibilità su agent SIEM/HIDS" className="inline-flex items-center text-muted-foreground/30">
+              <ShieldAlert className="h-3.5 w-3.5" />
+            </span>
           </span>
         );
       }
@@ -1620,7 +1610,7 @@ export default function DiscoveryPage() {
                         onCheckedChange={toggleSelectAllPage}
                       />
                     </TableHead>
-                    <TableHead className="w-[88px] whitespace-nowrap">Azioni</TableHead>
+                    <TableHead className="w-10 whitespace-nowrap text-center">Azioni</TableHead>
                     {COLUMNS.filter((c) => isVisible(c.id)).map((col) => (
                       <SortableTableHead
                         key={col.id}
@@ -1644,74 +1634,127 @@ export default function DiscoveryPage() {
                           onCheckedChange={() => toggleSelect(h.id)}
                         />
                       </TableCell>
-                      <TableCell className="py-2">
-                        {/* Tier 1: per host promossi a network_device aggiungo
-                            Test cred device + Riscansiona device. Le azioni
-                            host-level (modifica host, test cred host, elimina
-                            host) restano sempre disponibili. */}
+                      <TableCell className="py-2 text-center">
+                        {/* Menu azioni "kebab" (tre puntini): contiene tutte le azioni
+                            per riga. Estendibile aggiungendo nuove voci qui sotto
+                            (es. Wazuh, esportazioni, sync verso integrazioni). */}
                         {(() => {
                           const isDev = h.device_id != null;
                           const busyHere = isDev && rowActionBusy?.id === h.device_id;
                           const label = h.hostname || h.ip;
+                          const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
+                          const isAddingLnms = librenmsAdding.has(h.id);
+                          const lnmsDeviceLink = lnms && librenmsUrl
+                            ? `${librenmsUrl}/device/device=${lnms.librenms_device_id}/`
+                            : null;
                           return (
-                            <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-                              <Link
-                                href={isDev ? `/devices/${h.device_id}` : `/hosts/${h.id}`}
-                                title={isDev ? "Modifica dispositivo" : "Modifica host"}
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Link>
-                              {isDev && (
-                                <>
-                                  <button
-                                    type="button"
-                                    title="Testa credenziali device"
-                                    disabled={busyHere}
-                                    onClick={() => handleRowTestCred(h.device_id!)}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                                  >
-                                    <ShieldCheck className={`h-3.5 w-3.5 ${rowActionBusy?.kind === "test" && busyHere ? "animate-pulse" : ""}`} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    title="Riscansiona dispositivo (query SNMP/SSH/API)"
-                                    disabled={busyHere}
-                                    onClick={() => handleRowRescan(h.device_id!)}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                                  >
-                                    <RefreshCw className={`h-3.5 w-3.5 ${rowActionBusy?.kind === "query" && busyHere ? "animate-spin" : ""}`} />
-                                  </button>
-                                </>
-                              )}
-                              <button
-                                type="button"
-                                title="Test credenziali su questo host (probe diretto)"
-                                onClick={() => openTestForRow(h)}
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                              >
-                                <KeyRound className="h-3.5 w-3.5" />
-                              </button>
-                              {isDev ? (
-                                <button
-                                  type="button"
-                                  title="Elimina dispositivo (l'host resta in DB)"
-                                  disabled={busyHere}
-                                  onClick={() => handleRowDeleteDevice(h.device_id!, label)}
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  title="Elimina host"
-                                  onClick={() => setDeleteHostRow(h)}
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              )}
+                            <div onClick={(e) => e.stopPropagation()} className="inline-flex">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger
+                                  render={
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7"
+                                      title="Azioni"
+                                      aria-label={`Azioni per ${label}`}
+                                    >
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  }
+                                />
+                                <DropdownMenuContent align="end" className="w-56">
+                                  <DropdownMenuItem
+                                    render={
+                                      <Link href={isDev ? `/devices/${h.device_id}` : `/hosts/${h.id}`}>
+                                        <Pencil className="h-3.5 w-3.5" />
+                                        {isDev ? "Modifica dispositivo" : "Modifica host"}
+                                      </Link>
+                                    }
+                                  />
+                                  {isDev && (
+                                    <>
+                                      <DropdownMenuItem
+                                        disabled={busyHere}
+                                        onClick={() => handleRowTestCred(h.device_id!)}
+                                      >
+                                        <ShieldCheck className={`h-3.5 w-3.5 ${rowActionBusy?.kind === "test" && busyHere ? "animate-pulse" : ""}`} />
+                                        Testa credenziali device
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        disabled={busyHere}
+                                        onClick={() => handleRowRescan(h.device_id!)}
+                                      >
+                                        <RefreshCw className={`h-3.5 w-3.5 ${rowActionBusy?.kind === "query" && busyHere ? "animate-spin" : ""}`} />
+                                        Riscansiona dispositivo
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
+                                  <DropdownMenuItem onClick={() => openTestForRow(h)}>
+                                    <KeyRound className="h-3.5 w-3.5" />
+                                    Test credenziali host
+                                  </DropdownMenuItem>
+
+                                  <DropdownMenuSeparator />
+
+                                  {/* Integrazione LibreNMS */}
+                                  {lnms ? (
+                                    lnmsDeviceLink ? (
+                                      <DropdownMenuItem
+                                        render={
+                                          <a href={lnmsDeviceLink} target="_blank" rel="noopener noreferrer">
+                                            <Activity className="h-3.5 w-3.5 text-success" />
+                                            Apri in LibreNMS
+                                            <ExternalLink className="h-3 w-3 ml-auto opacity-50" />
+                                          </a>
+                                        }
+                                      />
+                                    ) : (
+                                      <DropdownMenuItem disabled>
+                                        <Activity className="h-3.5 w-3.5 text-success" />
+                                        In LibreNMS (URL non configurato)
+                                      </DropdownMenuItem>
+                                    )
+                                  ) : (
+                                    <DropdownMenuItem
+                                      disabled={isAddingLnms}
+                                      onClick={() => addHostToLibreNMS(h)}
+                                    >
+                                      {isAddingLnms
+                                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        : <PlusCircle className="h-3.5 w-3.5" />}
+                                      Aggiungi a LibreNMS
+                                    </DropdownMenuItem>
+                                  )}
+
+                                  {/* Placeholder Wazuh — integrazione SIEM/HIDS in roadmap */}
+                                  <DropdownMenuItem disabled>
+                                    <ShieldAlert className="h-3.5 w-3.5" />
+                                    Aggiungi a Wazuh (in arrivo)
+                                  </DropdownMenuItem>
+
+                                  <DropdownMenuSeparator />
+
+                                  {isDev ? (
+                                    <DropdownMenuItem
+                                      variant="destructive"
+                                      disabled={busyHere}
+                                      onClick={() => handleRowDeleteDevice(h.device_id!, label)}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                      Elimina dispositivo
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem
+                                      variant="destructive"
+                                      onClick={() => setDeleteHostRow(h)}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                      Elimina host
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           );
                         })()}

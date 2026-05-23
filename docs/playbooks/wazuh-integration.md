@@ -42,6 +42,33 @@ Risultato: due utenti read-only attivi sul Wazuh — uno per la API REST (porta 
 
 ---
 
+## Risoluzione DNS lato VM DA-IPAM (anti-regressione)
+
+DA-IPAM apre connessioni HTTP server-side verso il Wazuh manager + dashboard
+(reverse proxy iframe + API REST). Se il FQDN `da-wazuh.<dominio>` non è
+risolvibile dal resolver della VM DA-IPAM (es. DNS interno LAN non
+configurato, Tailscale MagicDNS non condiviso), tutte le chiamate server-side
+falliscono con `ENOTFOUND` mentre il browser dell'utente risolve normalmente
+(usa il DNS aziendale).
+
+Fix permanente: aggiungere il FQDN al `/etc/hosts` della VM DA-IPAM:
+
+```bash
+echo "192.168.X.Y da-wazuh.tuodominio.it" | sudo tee -a /etc/hosts
+```
+
+Verifica:
+
+```bash
+getent hosts da-wazuh.tuodominio.it
+curl -sk -o /dev/null -w "%{http_code}\n" https://da-wazuh.tuodominio.it/
+```
+
+> **2026-05-23 Domarc** — sul cluster DA-IPAM `192.168.4.8` aggiunta entry
+> `192.168.4.19 da-wazuh.domarc.it` perché il resolver `systemd-resolved`
+> della VM non vedeva il record (NXDOMAIN da `127.0.0.53`). Stesso check
+> applicabile a LibreNMS, Greenbone, qualsiasi integrazione server-side.
+
 ## Prerequisiti
 
 | Cosa | Dove | Note |

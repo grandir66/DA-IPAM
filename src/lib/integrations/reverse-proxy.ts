@@ -245,7 +245,7 @@ export async function proxyRequest(
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
     const raw = Buffer.concat(chunks).toString("utf8");
-    const rewritten = rewriteHtmlAbsolutePaths(raw, opts.basePath);
+    const rewritten = rewriteHtmlAbsolutePaths(raw, opts.basePath, opts.upstreamOrigin);
     respHeaders.delete("content-length");
     return new Response(rewritten, { status, headers: respHeaders });
   }
@@ -255,16 +255,46 @@ export async function proxyRequest(
 }
 
 /**
- * Riscrive nei body HTML/XHTML i path assoluti che cominciano con "/" così
- * vengono richiesti via il proxy DA-IPAM. Skip path già col basePath, URL
- * protocol-relative `//host/...`, URL completi.
+ * Riscrive nei body HTML/XHTML:
+ *   - path assoluti `/...` → prefissati con `basePath`
+ *   - URL assoluti `http(s)://upstreamHost(:port)/...` → trasformati in path
+ *     relativi sotto `basePath` (eliminando scheme+host) per evitare mixed
+ *     content blocked + asset 404 quando l'upstream è raggiungibile solo
+ *     dalla LAN del server (es. LibreNMS in container Docker su 192.168.x).
  */
-function rewriteHtmlAbsolutePaths(html: string, basePath: string): string {
+function rewriteHtmlAbsolutePaths(html: string, basePath: string, upstreamOrigin: string): string {
   const prefix = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
   const shouldRewrite = (path: string): boolean => !(path.startsWith(prefix + "/") || path === prefix);
 
-  // 1. Attributi DOM con path assoluto
-  let out = html.replace(
+  // ─── PASS 0: URL assoluti che puntano all'upstream → path-only sul proxy ──
+  // Estraiamo host+porta dell'upstream da upstreamOrigin (es. http://192.168.4.8:8090
+  // → upstreamHostPattern "192\\.168\\.4\\.8:8090").
+  let upstreamHost = "";
+  try {
+    const u = new URL(upstreamOrigin);
+    upstreamHost = u.host; // include porta se presente
+  } catch { /* upstreamOrigin malformato: skip pass 0 */ }
+
+  let out = html;
+  if (upstreamHost) {
+    // Match URL completo http(s)://<host>[:port]<path?query?fragment?>
+    // dentro attributi DOM o stringhe contenute in quote singole/doppie.
+    const escHost = upstreamHost.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const upstreamUrlRe = new RegExp(
+      `(["'(])https?:\\/\\/${escHost}([\\/"'? )#]|$)`,
+      "gi",
+    );
+    out = out.replace(upstreamUrlRe, (_m, lead: string, follow: string) => {
+      // lead è il delimitatore prima (`"`, `'`, `(`); follow è il carattere
+      // immediatamente dopo l'host (`/`, `"`, `'`, ` `, `?`, `#`, `)`).
+      // Sostituiamo con `<lead><prefix><follow>` per ottenere `"<prefix>/..."`.
+      // Caso `follow=""` (fine stringa o virgola): aggiungiamo solo prefix.
+      return `${lead}${prefix}${follow}`;
+    });
+  }
+
+  // ─── PASS 1: attributi DOM con path assoluto ──────────────────────────────
+  out = out.replace(
     /(\s(?:src|href|action|formaction|poster|manifest|cite|ping|data-href|data-src)\s*=\s*)(["'])(\/)(?!\/)([^"']*)\2/gi,
     (_m, attr: string, quote: string, _slash: string, rest: string) => {
       const path = "/" + rest;
@@ -273,7 +303,7 @@ function rewriteHtmlAbsolutePaths(html: string, basePath: string): string {
     },
   );
 
-  // 2. <base href="/...">
+  // ─── PASS 2: <base href="/..."> ───────────────────────────────────────────
   out = out.replace(
     /(<base\s+href=)(["'])(\/)(?!\/)([^"']*)\2/gi,
     (_m, attr: string, quote: string, _slash: string, rest: string) => {
@@ -283,7 +313,7 @@ function rewriteHtmlAbsolutePaths(html: string, basePath: string): string {
     },
   );
 
-  // 3. <meta http-equiv="refresh" content="0;url=/...">
+  // ─── PASS 3: <meta http-equiv="refresh" content="0;url=/..."> ─────────────
   out = out.replace(
     /(<meta\s+http-equiv=["']refresh["']\s+content=["'][^"']*url=)(\/)(?!\/)([^"']*)/gi,
     (_m, head: string, _slash: string, rest: string) => {
@@ -293,7 +323,7 @@ function rewriteHtmlAbsolutePaths(html: string, basePath: string): string {
     },
   );
 
-  // 4. url(/...) in CSS inline
+  // ─── PASS 4: url(/...) in CSS inline ──────────────────────────────────────
   out = out.replace(
     /url\(\s*(["']?)(\/)(?!\/)([^"')]*)\1\s*\)/g,
     (_m, quote: string, _slash: string, rest: string) => {

@@ -57,6 +57,12 @@ async function handle(req: Request): Promise<Response> {
     basePath: BASE_PATH,
     insecureTls: !cfg.verifyTls,
     timeoutMs: 30_000,
+    // Wazuh dashboard (OpenSearch Dashboards) è configurato con
+    // server.basePath + server.rewriteBasePath: true: la SPA gestisce
+    // internamente lo strip del prefisso. Il proxy deve PRESERVARE il
+    // prefisso nel forward. Vedi docs/playbooks/wazuh-integration.md
+    // sezione "Iframe dashboard embedded".
+    preserveBasePath: true,
   });
 }
 

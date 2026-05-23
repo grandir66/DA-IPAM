@@ -43,6 +43,11 @@ export interface ReverseProxyOptions {
   stripResponseHeaders?: string[];
   /** Timeout for the upstream request, ms. */
   timeoutMs?: number;
+  /** When true, leave the basePath prefix in the forwarded path. Required for
+   *  upstreams like OpenSearch Dashboards (Wazuh) configured with
+   *  `server.basePath` + `server.rewriteBasePath: true`: OSD strips the
+   *  prefix itself, the proxy must NOT strip it. Default: false (strip). */
+  preserveBasePath?: boolean;
 }
 
 const DEFAULT_STRIP_HEADERS = [
@@ -71,7 +76,10 @@ const DEFAULT_STRIP_HEADERS = [
 function buildUpstreamUrl(reqUrl: string, opts: ReverseProxyOptions): URL {
   const incoming = new URL(reqUrl, "http://placeholder.local");
   let path = incoming.pathname;
-  if (path.startsWith(opts.basePath)) {
+  // Strip basePath dall'incoming, A MENO che opts.preserveBasePath sia true:
+  // upstream tipo OpenSearch Dashboards con rewriteBasePath:true si aspetta
+  // di ricevere il prefisso intatto perché lo gestisce internamente.
+  if (!opts.preserveBasePath && path.startsWith(opts.basePath)) {
     path = path.slice(opts.basePath.length);
   }
   if (!path.startsWith("/")) path = "/" + path;

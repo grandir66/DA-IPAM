@@ -112,6 +112,11 @@ export interface WazuhSyscollectorPort {
   pid?: number;
 }
 
+export interface WazuhSyscollectorHotfix {
+  scan?: { time?: string };
+  hotfix?: string;                      // es. "KB5012170"
+}
+
 export interface WazuhVulnerability {
   cve?: string;
   severity?: string;
@@ -319,6 +324,16 @@ export class WazuhClient {
   async getPorts(agentId: string): Promise<WazuhSyscollectorPort[]> {
     try {
       return await this.getPaged<WazuhSyscollectorPort>(`/syscollector/${agentId}/ports`);
+    } catch (e) {
+      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
+      throw e;
+    }
+  }
+
+  /** Hotfix Windows. Linux agent → [] (Wazuh restituisce 404). */
+  async getHotfixes(agentId: string): Promise<WazuhSyscollectorHotfix[]> {
+    try {
+      return await this.getPaged<WazuhSyscollectorHotfix>(`/syscollector/${agentId}/hotfixes`);
     } catch (e) {
       if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
       throw e;

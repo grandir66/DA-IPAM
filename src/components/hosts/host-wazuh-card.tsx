@@ -62,6 +62,12 @@ interface WazuhPortRow {
   pid: number | null;
 }
 
+interface WazuhHotfixRow {
+  id: number;
+  hotfix: string;
+  scan_time: string | null;
+}
+
 interface WazuhVulnRow {
   id: number;
   cve: string;
@@ -82,10 +88,11 @@ interface Payload {
   agent?: WazuhAgentRow;
   hw?: WazuhHwRow | null;
   os?: WazuhOsRow | null;
-  counts?: { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number; ports: number };
+  counts?: { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number; ports: number; hotfixes: number };
   software?: WazuhSoftwareRow[];
   vulns?: WazuhVulnRow[];
   ports?: WazuhPortRow[];
+  hotfixes?: WazuhHotfixRow[];
 }
 
 function formatRam(kb: number | null | undefined): string {
@@ -111,14 +118,17 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
   const [vulnsData, setVulnsData] = useState<WazuhVulnRow[] | null>(null);
   const [showPorts, setShowPorts] = useState(false);
   const [portsData, setPortsData] = useState<WazuhPortRow[] | null>(null);
+  const [showHotfixes, setShowHotfixes] = useState(false);
+  const [hotfixesData, setHotfixesData] = useState<WazuhHotfixRow[] | null>(null);
 
-  const load = async (opts: { withSoftware?: boolean; withVulns?: boolean; withPorts?: boolean } = {}) => {
+  const load = async (opts: { withSoftware?: boolean; withVulns?: boolean; withPorts?: boolean; withHotfixes?: boolean } = {}) => {
     setLoading(true);
     try {
       const includes: string[] = [];
       if (opts.withSoftware) includes.push("software");
       if (opts.withVulns) includes.push("vulns");
       if (opts.withPorts) includes.push("ports");
+      if (opts.withHotfixes) includes.push("hotfixes");
       const qs = includes.length ? `?include=${includes.join(",")}` : "";
       const r = await fetch(`/api/integrations/wazuh/host/${hostId}${qs}`);
       if (!r.ok) { setData(null); return; }
@@ -127,6 +137,7 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       if (opts.withSoftware && d.software) setSoftwareData(d.software);
       if (opts.withVulns && d.vulns) setVulnsData(d.vulns);
       if (opts.withPorts && d.ports) setPortsData(d.ports);
+      if (opts.withHotfixes && d.hotfixes) setHotfixesData(d.hotfixes);
     } finally {
       setLoading(false);
     }
@@ -141,7 +152,7 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       const d = (await r.json()) as { ok?: boolean; error?: string };
       if (r.ok && d.ok) {
         toast.success("Dati Wazuh aggiornati");
-        await load({ withSoftware: showSoftware, withVulns: showVulns, withPorts: showPorts });
+        await load({ withSoftware: showSoftware, withVulns: showVulns, withPorts: showPorts, withHotfixes: showHotfixes });
       } else {
         toast.error(d.error ?? "Refresh fallito");
       }
@@ -169,6 +180,13 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       await load({ withPorts: true });
     }
     setShowPorts((v) => !v);
+  };
+
+  const toggleHotfixes = async () => {
+    if (!showHotfixes && !hotfixesData) {
+      await load({ withHotfixes: true });
+    }
+    setShowHotfixes((v) => !v);
   };
 
   if (loading && !data) return null;
@@ -244,6 +262,15 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
               <button onClick={togglePorts} className="inline-flex items-center gap-1 hover:underline">
                 {showPorts ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                 <strong>{counts.ports}</strong> porte in ascolto
+              </button>
+            </>
+          )}
+          {counts && counts.hotfixes > 0 && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <button onClick={toggleHotfixes} className="inline-flex items-center gap-1 hover:underline">
+                {showHotfixes ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                <strong>{counts.hotfixes}</strong> patch KB
               </button>
             </>
           )}
@@ -348,6 +375,41 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
             </table>
             <div className="text-[10px] text-muted-foreground px-2 py-1 border-t bg-muted/30">
               Fonte: <strong>Wazuh syscollector</strong> · solo state=listening · aggiornato a ogni sync.
+            </div>
+          </div>
+        )}
+
+        {showHotfixes && hotfixesData && (
+          <div className="rounded-md border max-h-80 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr>
+                  <th className="text-left px-2 py-1">Patch (KB)</th>
+                  <th className="text-left px-2 py-1 w-40">Rilevato</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hotfixesData.map((h) => (
+                  <tr key={h.id} className="border-t">
+                    <td className="px-2 py-1 font-mono">
+                      <a
+                        href={`https://support.microsoft.com/help/${encodeURIComponent(h.hotfix.replace(/^KB/i, ""))}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                      >
+                        {h.hotfix}
+                      </a>
+                    </td>
+                    <td className="px-2 py-1 text-muted-foreground text-[10px]">
+                      {h.scan_time ? new Date(h.scan_time).toLocaleString("it-IT") : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="text-[10px] text-muted-foreground px-2 py-1 border-t bg-muted/30">
+              Fonte: <strong>Wazuh syscollector hotfixes</strong> · solo agent Windows · link a Microsoft Support.
             </div>
           </div>
         )}

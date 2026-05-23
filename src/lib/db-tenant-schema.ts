@@ -836,6 +836,16 @@ CREATE TABLE IF NOT EXISTS wazuh_ports (
   UNIQUE(agent_id, protocol, local_ip, local_port)
 );
 
+-- Hotfix Windows (syscollector/{id}/hotfixes). Vuoto/404 per agent Linux.
+CREATE TABLE IF NOT EXISTS wazuh_hotfix (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL REFERENCES wazuh_agent(agent_id) ON DELETE CASCADE,
+  hotfix TEXT NOT NULL,                  -- es. "KB5012170"
+  scan_time TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(agent_id, hotfix)
+);
+
 -- ───────────────────────────────────────────────────────────────────────────
 -- Integrazione Scanner-Edge (DA-Vul-can) — singleton applicativo per tenant.
 -- DA-IPAM consuma /api/v1/cve dello scanner-edge sulla stessa LAN cliente,
@@ -1097,6 +1107,7 @@ CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_agent ON wazuh_vuln(agent_id);
 CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_cve ON wazuh_vuln(cve);
 CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_severity ON wazuh_vuln(severity);
 CREATE INDEX IF NOT EXISTS idx_wazuh_ports_agent ON wazuh_ports(agent_id);
+CREATE INDEX IF NOT EXISTS idx_wazuh_hotfix_agent ON wazuh_hotfix(agent_id);
 
 -- Vulnerability findings (scanner-edge integration)
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_host ON vuln_findings(host_id, scanned_at DESC);
@@ -1112,6 +1123,14 @@ CREATE INDEX IF NOT EXISTS idx_software_scans_status ON software_scans(status);
 CREATE INDEX IF NOT EXISTS idx_software_inventory_scan ON software_inventory(scan_id);
 CREATE INDEX IF NOT EXISTS idx_software_inventory_name_version ON software_inventory(name, version);
 CREATE INDEX IF NOT EXISTS idx_software_scan_logs_scan ON software_scan_logs(scan_id, ts);
+
+-- Aggregazioni globali (pagine /vulnerabilities e /software)
+CREATE INDEX IF NOT EXISTS idx_vuln_findings_cve_severity ON vuln_findings(cve_id, severity);
+CREATE INDEX IF NOT EXISTS idx_vuln_findings_nvt_severity ON vuln_findings(nvt_oid, severity) WHERE cve_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_vuln_findings_severity_cvss ON vuln_findings(severity, cvss_score DESC);
+CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_cve_severity ON wazuh_vuln(cve, severity);
+CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_status_severity ON wazuh_vuln(status, severity);
+CREATE INDEX IF NOT EXISTS idx_wazuh_software_name_version ON wazuh_software(name, version);
 
 -- Tombstone IP esclusi (vedi db-schema.ts per i dettagli).
 CREATE TABLE IF NOT EXISTS excluded_ips (

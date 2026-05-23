@@ -9,6 +9,7 @@
 import { getTenantDb, getCurrentTenantCode } from "../db-tenant";
 import type {
   WazuhAgent,
+  WazuhSyscollectorHotfix,
   WazuhSyscollectorHw,
   WazuhSyscollectorOs,
   WazuhSyscollectorPackage,
@@ -102,6 +103,14 @@ export interface WazuhPortRow {
   state: string | null;
   process: string | null;
   pid: number | null;
+  scan_time: string | null;
+  synced_at: string;
+}
+
+export interface WazuhHotfixRow {
+  id: number;
+  agent_id: string;
+  hotfix: string;
   scan_time: string | null;
   synced_at: string;
 }
@@ -406,6 +415,36 @@ export function listWazuhPorts(agentId: string): WazuhPortRow[] {
     .all(agentId) as WazuhPortRow[];
 }
 
+/**
+ * Sostituisce le hotfix dell'agent (DELETE+INSERT in transazione).
+ * Per agent Linux/Mac wazuh restituisce [] e la tabella resta vuota.
+ */
+export function replaceHotfixesForAgent(agentId: string, hotfixes: WazuhSyscollectorHotfix[]): number {
+  const d = db();
+  const insert = d.prepare(
+    `INSERT OR IGNORE INTO wazuh_hotfix (agent_id, hotfix, scan_time, synced_at)
+     VALUES (?, ?, ?, datetime('now'))`,
+  );
+  let inserted = 0;
+  const tx = d.transaction(() => {
+    d.prepare("DELETE FROM wazuh_hotfix WHERE agent_id = ?").run(agentId);
+    for (const h of hotfixes) {
+      const id = (h.hotfix ?? "").trim();
+      if (!id) continue;
+      const r = insert.run(agentId, id, h.scan?.time ?? null);
+      if (r.changes) inserted++;
+    }
+  });
+  tx();
+  return inserted;
+}
+
+export function listWazuhHotfixes(agentId: string): WazuhHotfixRow[] {
+  return db()
+    .prepare("SELECT * FROM wazuh_hotfix WHERE agent_id = ? ORDER BY hotfix DESC")
+    .all(agentId) as WazuhHotfixRow[];
+}
+
 export function listWazuhSoftware(agentId: string): WazuhSoftwareRow[] {
   return db().prepare(
     "SELECT * FROM wazuh_software WHERE agent_id = ? ORDER BY name COLLATE NOCASE",
@@ -427,14 +466,15 @@ export function listWazuhVulns(agentId: string): WazuhVulnRow[] {
   ).all(agentId) as WazuhVulnRow[];
 }
 
-export function countsForAgent(agentId: string): { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number; ports: number } {
+export function countsForAgent(agentId: string): { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number; ports: number; hotfixes: number } {
   const d = db();
   const sw = d.prepare("SELECT COUNT(*) AS c FROM wazuh_software WHERE agent_id = ?").get(agentId) as { c: number };
   const vAll = d.prepare("SELECT COUNT(*) AS c FROM wazuh_vuln WHERE agent_id = ?").get(agentId) as { c: number };
   const vCrit = d.prepare("SELECT COUNT(*) AS c FROM wazuh_vuln WHERE agent_id = ? AND severity = 'Critical'").get(agentId) as { c: number };
   const vHigh = d.prepare("SELECT COUNT(*) AS c FROM wazuh_vuln WHERE agent_id = ? AND severity = 'High'").get(agentId) as { c: number };
   const pts = d.prepare("SELECT COUNT(*) AS c FROM wazuh_ports WHERE agent_id = ?").get(agentId) as { c: number };
-  return { software: sw.c, vulns: vAll.c, vulnsCritical: vCrit.c, vulnsHigh: vHigh.c, ports: pts.c };
+  const hf = d.prepare("SELECT COUNT(*) AS c FROM wazuh_hotfix WHERE agent_id = ?").get(agentId) as { c: number };
+  return { software: sw.c, vulns: vAll.c, vulnsCritical: vCrit.c, vulnsHigh: vHigh.c, ports: pts.c, hotfixes: hf.c };
 }
 
 export function deleteWazuhAgentsExcept(activeAgentIds: string[]): number {

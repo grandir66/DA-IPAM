@@ -25,6 +25,7 @@ import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities
 import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
 import { UptimeTimeline } from "@/components/shared/uptime-timeline";
 import { LatencyChart } from "@/app/(dashboard)/hosts/[id]/latency-chart";
+import { LibreNMSDeviceGraphs } from "@/components/integrations/librenms-device-graphs";
 import {
   ArrowLeft,
   RefreshCw,
@@ -710,6 +711,11 @@ export default function ObjectDetailPage() {
                   >
                     Apri in LibreNMS <Activity className="h-3 w-3" />
                   </a>
+                </div>
+              )}
+              {librenms.librenmsDeviceId && (
+                <div className="mt-4">
+                  <LibreNMSDeviceGraphs deviceId={librenms.librenmsDeviceId} />
                 </div>
               )}
             </>

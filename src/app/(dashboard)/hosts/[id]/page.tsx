@@ -32,6 +32,7 @@ import { UptimeTimeline } from "@/components/shared/uptime-timeline";
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { HostWazuhCard } from "@/components/hosts/host-wazuh-card";
 import { WazuhHostBadge } from "@/components/integrations/wazuh-host-badge";
+import { LibreNMSDeviceGraphs } from "@/components/integrations/librenms-device-graphs";
 import { Switch } from "@/components/ui/switch";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import {
@@ -700,6 +701,12 @@ export default function HostDetailPage() {
                     <p className="text-xs">{libreNMSData.device.os}</p>
                   </div>
                 )}
+              </div>
+            )}
+
+            {libreNMSData.mapped && libreNMSData.librenmsDeviceId && (
+              <div className="mt-4">
+                <LibreNMSDeviceGraphs deviceId={libreNMSData.librenmsDeviceId} />
               </div>
             )}
           </CardContent>

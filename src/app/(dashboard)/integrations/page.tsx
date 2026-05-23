@@ -6,6 +6,9 @@ import { ExternalLink, Monitor, ShieldAlert } from "lucide-react";
 interface IntegrationInfo {
   enabled: boolean;
   url: string;
+  /** URL diretto upstream — usato per "Apri in nuova scheda".
+   *  Compatibile col vecchio formato (potrebbe mancare). */
+  directUrl?: string;
   label: string;
   iframeNeedsHandshake?: boolean;
   handshakeReason?: string;
@@ -66,7 +69,7 @@ export default function IntegrationsPage() {
         ))}
         {current?.url && (
           <a
-            href={current.url}
+            href={current.directUrl ?? current.url}
             target="_blank"
             rel="noopener noreferrer"
             className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-3 py-2 transition-colors"
@@ -85,7 +88,7 @@ export default function IntegrationsPage() {
             <strong>Iframe potrebbe non caricarsi.</strong>{" "}
             {current.handshakeReason ?? "Apri prima in nuova tab per accettare il certificato/loggarti, poi ricarica questa pagina."}
             {" "}
-            <a href={current.url} target="_blank" rel="noopener noreferrer" className="underline font-medium">
+            <a href={current.directUrl ?? current.url} target="_blank" rel="noopener noreferrer" className="underline font-medium">
               Apri in nuova tab
             </a>
             .
@@ -94,12 +97,19 @@ export default function IntegrationsPage() {
       )}
 
       {/* iframe */}
-      {current?.url && <IntegrationIframe key={selected} url={current.url} label={current.label} />}
+      {current?.url && (
+        <IntegrationIframe
+          key={selected}
+          url={current.url}
+          fallbackUrl={current.directUrl ?? current.url}
+          label={current.label}
+        />
+      )}
     </div>
   );
 }
 
-function IntegrationIframe({ url, label }: { url: string; label: string }) {
+function IntegrationIframe({ url, fallbackUrl, label }: { url: string; fallbackUrl: string; label: string }) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -145,7 +155,7 @@ function IntegrationIframe({ url, label }: { url: string; label: string }) {
             </p>
           </div>
           <a
-            href={url}
+            href={fallbackUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm hover:bg-primary/90 transition-colors"

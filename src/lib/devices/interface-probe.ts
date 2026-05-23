@@ -57,7 +57,12 @@ export interface InterfaceProbeResult {
 export interface DeviceProbeOutcome {
   interfaces: InterfaceProbeResult[];
   /** Transport che ha prodotto il risultato. Utile per log e per UI "fonte". */
-  source: "snmp_ip_mib_v4v6" | "snmp_ip_mib_v4_legacy" | "none";
+  source:
+    | "snmp_ip_mib_v4v6"
+    | "snmp_ip_mib_v4_legacy"
+    | "vendor_cli_mikrotik"
+    | "vendor_cli_linux"
+    | "none";
   /** Errori non-fatali raccolti durante il probe (per il diagnostic log). */
   warnings: string[];
 }
@@ -206,10 +211,37 @@ function canProbeSnmp(device: NetworkDevice): boolean {
   return !!getDeviceCommunityString(device);
 }
 
+/**
+ * Fallback CLI vendor-specific quando SNMP non è disponibile o ritorna 0
+ * interfacce. Mappa `device.vendor` → probe corrispondente in
+ * [vendor-interface-probes.ts](./vendor-interface-probes.ts).
+ */
+async function tryVendorCliFallback(
+  device: NetworkDevice,
+  warnings: string[]
+): Promise<{ interfaces: InterfaceProbeResult[]; source: DeviceProbeOutcome["source"] } | null> {
+  try {
+    const { probeVendorInterfacesCli } = await import("./vendor-interface-probes");
+    const result = await probeVendorInterfacesCli(device);
+    if (result === null || result.length === 0) return null;
+    const source: DeviceProbeOutcome["source"] =
+      device.vendor === "mikrotik" ? "vendor_cli_mikrotik" : "vendor_cli_linux";
+    return { interfaces: result, source };
+  } catch (e) {
+    warnings.push(`Vendor CLI probe fallito: ${(e as Error).message}`);
+    return null;
+  }
+}
+
 export async function probeDeviceInterfaces(device: NetworkDevice): Promise<DeviceProbeOutcome> {
   const warnings: string[] = [];
+
+  // Prima tentativo: SNMP IP-MIB (universale per i device SNMP-compliant).
   if (!canProbeSnmp(device)) {
-    return { interfaces: [], source: "none", warnings: ["SNMP non configurato sul device"] };
+    // Niente SNMP → prova CLI vendor (Mikrotik, Proxmox/Linux/NAS).
+    const cli = await tryVendorCliFallback(device, warnings);
+    if (cli) return { interfaces: cli.interfaces, source: cli.source, warnings };
+    return { interfaces: [], source: "none", warnings: ["SNMP non configurato e nessun CLI vendor applicabile"] };
   }
 
   const snmp = await import("net-snmp");
@@ -413,6 +445,13 @@ export async function probeDeviceInterfaces(device: NetworkDevice): Promise<Devi
   const interfaces = Array.from(interfacesByIndex.values()).filter(
     (i) => i.addresses.length > 0 || i.mac
   );
+
+  // 5. Se SNMP ha risposto ma con 0 interfacce utili (community sbagliata, MIB minimo)
+  //    proviamo il CLI vendor come secondo tentativo.
+  if (interfaces.length === 0) {
+    const cli = await tryVendorCliFallback(device, warnings);
+    if (cli) return { interfaces: cli.interfaces, source: cli.source, warnings };
+  }
 
   return { interfaces, source, warnings };
 }

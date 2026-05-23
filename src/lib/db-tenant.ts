@@ -4978,3 +4978,759 @@ export function getLatestOkSoftwareScanForDevice(
     )
     .get(deviceId) as SoftwareScan | undefined;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGGREGAZIONI GLOBALI: pagine /vulnerabilities e /software
+// Vista INVERSA: data una CVE / un software → lista host che lo presentano.
+// Sorgenti unificate per vulnerabilità: vuln_findings (edge) + wazuh_vuln.
+// Sorgenti unificate per software: wazuh_software + software_inventory +
+// best-effort estrazione package_name da vuln_findings.nvt_name.
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { extractPackageName } from "./vuln/package-name-extract";
+import { SEVERITY_RANK, maxSeverity, normalizeSeverity, type Severity } from "./severity-style";
+
+export type AggregatedVulnSourceLabel = string;
+
+export interface AggregatedVulnHostRef {
+  host_id: number | null;
+  ip: string;
+  hostname: string | null;
+  network_id: number | null;
+  network_name: string | null;
+  severity: string;
+  cvss_score: number | null;
+  source: AggregatedVulnSourceLabel;
+  package_label: string | null;
+  scanned_at: string;
+}
+
+export interface AggregatedVuln {
+  key: string;
+  cve_id: string | null;
+  nvt_oid: string | null;
+  severity: Severity;
+  cvss_score: number | null;
+  package_label: string | null;
+  sources: AggregatedVulnSourceLabel[];
+  host_count: number;
+  orphan_count: number;
+  hosts_preview: AggregatedVulnHostRef[];
+  latest_scanned_at: string;
+}
+
+export interface AggregatedVulnOpts {
+  page: number;
+  pageSize: number;
+  severity?: Severity[];
+  sources?: string[];
+  search?: string;
+  hasCve?: boolean;
+  sortBy?: "severity" | "cvss" | "host_count" | "latest_scanned_at" | "cve_id";
+  sortDir?: "asc" | "desc";
+}
+
+export interface AggregatedVulnResult {
+  data: AggregatedVuln[];
+  total: number;
+  severity_rollup: { Critical: number; High: number; Medium: number; Low: number };
+}
+
+export type SoftwareSource = "Wazuh" | "Probe" | "Greenbone";
+
+export interface AggregatedSoftwareHostRef {
+  host_id: number;
+  ip: string;
+  hostname: string | null;
+  network_id: number | null;
+  network_name: string | null;
+  sources: SoftwareSource[];
+  publisher: string | null;
+  install_date: string | null;
+  scanned_at: string | null;
+}
+
+export interface AggregatedSoftware {
+  key: string;
+  name: string;
+  version: string | null;
+  publisher: string | null;
+  sources: SoftwareSource[];
+  host_count: number;
+  hosts_preview: AggregatedSoftwareHostRef[];
+  vuln_count: number;
+  latest_seen_at: string | null;
+}
+
+export interface AggregatedSoftwareOpts {
+  page: number;
+  pageSize: number;
+  sources?: SoftwareSource[];
+  search?: string;
+  hasVulns?: boolean;
+  sortBy?: "name" | "host_count" | "vuln_count" | "latest_seen_at";
+  sortDir?: "asc" | "desc";
+}
+
+export interface AggregatedSoftwareResult {
+  data: AggregatedSoftware[];
+  total: number;
+}
+
+interface HostMeta {
+  host_id: number;
+  ip: string;
+  hostname: string | null;
+  network_id: number | null;
+  network_name: string | null;
+}
+
+function loadHostsMeta(hostIds: number[]): Map<number, HostMeta> {
+  const map = new Map<number, HostMeta>();
+  if (hostIds.length === 0) return map;
+  const placeholders = hostIds.map(() => "?").join(",");
+  const rows = db()
+    .prepare(
+      `SELECT h.id AS host_id, h.ip,
+              COALESCE(h.custom_name, h.hostname) AS hostname,
+              h.network_id, n.name AS network_name
+         FROM hosts h
+         LEFT JOIN networks n ON n.id = h.network_id
+        WHERE h.id IN (${placeholders})`
+    )
+    .all(...hostIds) as HostMeta[];
+  for (const r of rows) map.set(r.host_id, r);
+  return map;
+}
+
+function compareSeverityRank(a: string, b: string): number {
+  return (SEVERITY_RANK[b] ?? 0) - (SEVERITY_RANK[a] ?? 0);
+}
+
+function compareNullableNumber(a: number | null, b: number | null, dir: "asc" | "desc"): number {
+  const av = a ?? -Infinity;
+  const bv = b ?? -Infinity;
+  return dir === "asc" ? av - bv : bv - av;
+}
+
+interface RawVulnRow {
+  key: string;
+  cve_id: string | null;
+  nvt_oid: string | null;
+  severity: string | null;
+  cvss_score: number | null;
+  package_label: string | null;
+  host_id: number | null;
+  ip: string;
+  scanned_at: string;
+  source: string;
+}
+
+export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): AggregatedVulnResult {
+  const baseSql = `
+    SELECT
+      COALESCE(f.cve_id, 'nvt:' || f.nvt_oid) AS key,
+      f.cve_id,
+      f.nvt_oid,
+      f.severity,
+      f.cvss_score,
+      f.nvt_name AS package_label,
+      f.host_id,
+      f.ip,
+      f.scanned_at,
+      COALESCE(s.name, 'Greenbone') AS source
+    FROM vuln_findings f
+    LEFT JOIN vuln_scan_runs r ON r.id = f.scan_run_id
+    LEFT JOIN vuln_scanners s ON s.id = r.scanner_id
+    WHERE f.severity IN ('Critical','High','Medium','Low')
+      AND (f.cve_id IS NOT NULL OR f.nvt_oid IS NOT NULL)
+    UNION ALL
+    SELECT
+      v.cve AS key,
+      v.cve AS cve_id,
+      NULL AS nvt_oid,
+      v.severity,
+      COALESCE(v.cvss3_score, v.cvss2_score) AS cvss_score,
+      CASE WHEN v.package_name IS NULL THEN NULL
+           ELSE v.package_name || COALESCE(' ' || v.package_version, '') END AS package_label,
+      a.host_id,
+      COALESCE(a.ip, '') AS ip,
+      COALESCE(v.detection_time, v.synced_at) AS scanned_at,
+      'Wazuh' AS source
+    FROM wazuh_vuln v
+    JOIN wazuh_agent a ON a.agent_id = v.agent_id
+    WHERE COALESCE(v.status, 'VALID') NOT IN ('SOLVED','OBSOLETE')
+      AND v.severity IN ('Critical','High','Medium','Low')
+  `;
+
+  const rows = db().prepare(baseSql).all() as RawVulnRow[];
+
+  interface AggInternal extends AggregatedVuln {
+    _hostKeys: Set<string>;
+    _hostIds: Set<number>;
+    _orphanCount: number;
+    _firstHostHits: AggregatedVulnHostRef[];
+  }
+  const map = new Map<string, AggInternal>();
+
+  for (const r of rows) {
+    if (!r.key) continue;
+    const sev = normalizeSeverity(r.severity);
+    const hostKey = r.host_id != null ? `h:${r.host_id}` : `ip:${r.ip}:${r.source}`;
+    let entry = map.get(r.key);
+    if (!entry) {
+      entry = {
+        key: r.key,
+        cve_id: r.cve_id,
+        nvt_oid: r.nvt_oid,
+        severity: sev,
+        cvss_score: r.cvss_score,
+        package_label: r.package_label,
+        sources: [],
+        host_count: 0,
+        orphan_count: 0,
+        hosts_preview: [],
+        latest_scanned_at: r.scanned_at,
+        _hostKeys: new Set(),
+        _hostIds: new Set(),
+        _orphanCount: 0,
+        _firstHostHits: [],
+      };
+      map.set(r.key, entry);
+    }
+    entry.severity = maxSeverity(entry.severity, sev) as Severity;
+    if (r.cvss_score != null && (entry.cvss_score == null || r.cvss_score > entry.cvss_score)) {
+      entry.cvss_score = r.cvss_score;
+    }
+    if (!entry.package_label && r.package_label) entry.package_label = r.package_label;
+    if (r.scanned_at > entry.latest_scanned_at) entry.latest_scanned_at = r.scanned_at;
+    if (!entry.sources.includes(r.source)) entry.sources.push(r.source);
+    if (!entry.cve_id && r.cve_id) entry.cve_id = r.cve_id;
+    if (!entry.nvt_oid && r.nvt_oid) entry.nvt_oid = r.nvt_oid;
+
+    if (!entry._hostKeys.has(hostKey)) {
+      entry._hostKeys.add(hostKey);
+      if (r.host_id != null) entry._hostIds.add(r.host_id);
+      else entry._orphanCount += 1;
+      if (entry._firstHostHits.length < 10) {
+        entry._firstHostHits.push({
+          host_id: r.host_id,
+          ip: r.ip,
+          hostname: null,
+          network_id: null,
+          network_name: null,
+          severity: sev,
+          cvss_score: r.cvss_score,
+          source: r.source,
+          package_label: r.package_label,
+          scanned_at: r.scanned_at,
+        });
+      }
+    }
+  }
+
+  for (const a of map.values()) {
+    a.host_count = a._hostIds.size + a._orphanCount;
+    a.orphan_count = a._orphanCount;
+  }
+
+  let arr = [...map.values()];
+  const severity_rollup = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+  for (const a of arr) {
+    if (a.severity in severity_rollup) severity_rollup[a.severity] += 1;
+  }
+
+  if (opts.severity?.length) {
+    const set = new Set(opts.severity);
+    arr = arr.filter((v) => set.has(v.severity));
+  }
+  if (opts.sources?.length) {
+    const set = new Set(opts.sources);
+    arr = arr.filter((v) => v.sources.some((s) => set.has(s)));
+  }
+  if (opts.hasCve === true) arr = arr.filter((v) => v.cve_id !== null);
+  else if (opts.hasCve === false) arr = arr.filter((v) => v.cve_id === null);
+  if (opts.search) {
+    const q = opts.search.toLowerCase();
+    arr = arr.filter(
+      (v) =>
+        v.cve_id?.toLowerCase().includes(q) ||
+        v.package_label?.toLowerCase().includes(q) ||
+        v.nvt_oid?.toLowerCase().includes(q)
+    );
+  }
+
+  const sortBy = opts.sortBy ?? "severity";
+  const sortDir = opts.sortDir ?? "desc";
+  arr.sort((a, b) => {
+    let cmp = 0;
+    switch (sortBy) {
+      case "cvss":
+        cmp = compareNullableNumber(a.cvss_score, b.cvss_score, sortDir);
+        if (cmp !== 0) return cmp;
+        break;
+      case "host_count":
+        cmp = sortDir === "asc" ? a.host_count - b.host_count : b.host_count - a.host_count;
+        if (cmp !== 0) return cmp;
+        break;
+      case "latest_scanned_at":
+        cmp = sortDir === "asc"
+          ? a.latest_scanned_at.localeCompare(b.latest_scanned_at)
+          : b.latest_scanned_at.localeCompare(a.latest_scanned_at);
+        if (cmp !== 0) return cmp;
+        break;
+      case "cve_id":
+        cmp = sortDir === "asc"
+          ? (a.cve_id ?? "zzz").localeCompare(b.cve_id ?? "zzz")
+          : (b.cve_id ?? "zzz").localeCompare(a.cve_id ?? "zzz");
+        if (cmp !== 0) return cmp;
+        break;
+      case "severity":
+      default:
+        cmp = sortDir === "asc" ? -compareSeverityRank(a.severity, b.severity) : compareSeverityRank(a.severity, b.severity);
+        if (cmp !== 0) return cmp;
+        cmp = compareNullableNumber(a.cvss_score, b.cvss_score, "desc");
+        if (cmp !== 0) return cmp;
+        cmp = b.host_count - a.host_count;
+        if (cmp !== 0) return cmp;
+        break;
+    }
+    return a.key.localeCompare(b.key);
+  });
+
+  const total = arr.length;
+  const start = (opts.page - 1) * opts.pageSize;
+  const pageRows = arr.slice(start, start + opts.pageSize);
+
+  const allHostIds = new Set<number>();
+  for (const r of pageRows) for (const h of r._firstHostHits) if (h.host_id != null) allHostIds.add(h.host_id);
+  const meta = loadHostsMeta([...allHostIds]);
+  for (const r of pageRows) {
+    r.hosts_preview = r._firstHostHits.map((h) => {
+      const m = h.host_id != null ? meta.get(h.host_id) : undefined;
+      return m
+        ? { ...h, hostname: m.hostname, network_id: m.network_id, network_name: m.network_name, ip: m.ip || h.ip }
+        : h;
+    });
+  }
+
+  const data = pageRows.map(({ _hostKeys: _a, _hostIds: _b, _orphanCount: _c, _firstHostHits: _d, ...rest }) => {
+    void _a; void _b; void _c; void _d;
+    return rest;
+  });
+
+  return { data, total, severity_rollup };
+}
+
+export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostRef[] {
+  const isNvt = key.startsWith("nvt:");
+  const cveKey = isNvt ? null : key;
+  const nvtKey = isNvt ? key.substring(4) : null;
+
+  const greenboneRows = db()
+    .prepare(
+      `SELECT f.host_id, f.ip, f.severity, f.cvss_score, f.scanned_at,
+              f.nvt_name AS package_label,
+              COALESCE(s.name, 'Greenbone') AS source
+         FROM vuln_findings f
+         LEFT JOIN vuln_scan_runs r ON r.id = f.scan_run_id
+         LEFT JOIN vuln_scanners s ON s.id = r.scanner_id
+        WHERE (
+          (? IS NOT NULL AND f.cve_id = ?) OR
+          (? IS NOT NULL AND f.nvt_oid = ? AND f.cve_id IS NULL)
+        )
+        AND f.severity IN ('Critical','High','Medium','Low')
+        ORDER BY f.scanned_at DESC
+        LIMIT ?`
+    )
+    .all(cveKey, cveKey, nvtKey, nvtKey, limit) as Array<{
+      host_id: number | null; ip: string; severity: string; cvss_score: number | null;
+      scanned_at: string; package_label: string | null; source: string;
+    }>;
+
+  const wazuhRows = isNvt
+    ? []
+    : (db()
+        .prepare(
+          `SELECT a.host_id, COALESCE(a.ip, '') AS ip, v.severity,
+                  COALESCE(v.cvss3_score, v.cvss2_score) AS cvss_score,
+                  COALESCE(v.detection_time, v.synced_at) AS scanned_at,
+                  CASE WHEN v.package_name IS NULL THEN NULL
+                       ELSE v.package_name || COALESCE(' ' || v.package_version, '') END AS package_label,
+                  'Wazuh' AS source
+             FROM wazuh_vuln v
+             JOIN wazuh_agent a ON a.agent_id = v.agent_id
+            WHERE v.cve = ?
+              AND COALESCE(v.status, 'VALID') NOT IN ('SOLVED','OBSOLETE')
+              AND v.severity IN ('Critical','High','Medium','Low')
+            ORDER BY scanned_at DESC
+            LIMIT ?`
+        )
+        .all(cveKey, limit) as Array<{
+          host_id: number | null; ip: string; severity: string; cvss_score: number | null;
+          scanned_at: string; package_label: string | null; source: string;
+        }>);
+
+  const combined = [...greenboneRows, ...wazuhRows];
+  const ids = [...new Set(combined.map((r) => r.host_id).filter((x): x is number => x != null))];
+  const meta = loadHostsMeta(ids);
+
+  const seen = new Set<string>();
+  const out: AggregatedVulnHostRef[] = [];
+  for (const r of combined) {
+    const k = `${r.host_id ?? "ip:" + r.ip}|${r.source}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const m = r.host_id != null ? meta.get(r.host_id) : undefined;
+    out.push({
+      host_id: r.host_id,
+      ip: m?.ip || r.ip,
+      hostname: m?.hostname ?? null,
+      network_id: m?.network_id ?? null,
+      network_name: m?.network_name ?? null,
+      severity: normalizeSeverity(r.severity),
+      cvss_score: r.cvss_score,
+      source: r.source,
+      package_label: r.package_label,
+      scanned_at: r.scanned_at,
+    });
+  }
+  return out;
+}
+
+interface RawSoftwareRow {
+  key: string;
+  name: string;
+  version: string | null;
+  publisher: string | null;
+  host_id: number | null;
+  ip: string;
+  install_date: string | null;
+  scanned_at: string | null;
+  source: SoftwareSource;
+}
+
+function softwareKeyOf(name: string, version: string | null | undefined): string {
+  return `${name.toLowerCase()}|${(version ?? "").toLowerCase()}`;
+}
+
+export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedSoftwareResult {
+  const wazuhRows = db()
+    .prepare(
+      `SELECT w.name, w.version, w.vendor AS publisher,
+              a.host_id, COALESCE(a.ip, '') AS ip,
+              w.install_time AS install_date,
+              w.scan_time AS scanned_at,
+              'Wazuh' AS source
+         FROM wazuh_software w
+         JOIN wazuh_agent a ON a.agent_id = w.agent_id
+        WHERE a.host_id IS NOT NULL
+          AND w.name IS NOT NULL AND TRIM(w.name) != ''`
+    )
+    .all() as Array<{
+      name: string; version: string | null; publisher: string | null;
+      host_id: number; ip: string; install_date: string | null;
+      scanned_at: string | null; source: SoftwareSource;
+    }>;
+
+  const probeRows = db()
+    .prepare(
+      `SELECT si.name, si.version, si.publisher,
+              sc.host_id, h.ip,
+              si.install_date,
+              sc.started_at AS scanned_at,
+              'Probe' AS source
+         FROM software_inventory si
+         JOIN software_scans sc ON sc.id = si.scan_id
+         JOIN hosts h ON h.id = sc.host_id
+        WHERE sc.host_id IS NOT NULL
+          AND sc.status = 'ok'
+          AND sc.id IN (
+            SELECT MAX(id) FROM software_scans
+             WHERE status = 'ok' AND host_id IS NOT NULL
+             GROUP BY host_id
+          )
+          AND si.name IS NOT NULL AND TRIM(si.name) != ''`
+    )
+    .all() as Array<{
+      name: string; version: string | null; publisher: string | null;
+      host_id: number; ip: string; install_date: string | null;
+      scanned_at: string | null; source: SoftwareSource;
+    }>;
+
+  const greenboneRaw = db()
+    .prepare(
+      `SELECT f.nvt_name AS nvt_name, f.host_id, f.ip, f.scanned_at
+         FROM vuln_findings f
+        WHERE f.host_id IS NOT NULL AND f.nvt_name IS NOT NULL`
+    )
+    .all() as Array<{ nvt_name: string; host_id: number; ip: string; scanned_at: string }>;
+
+  const greenboneRows: typeof wazuhRows = [];
+  for (const g of greenboneRaw) {
+    const pkg = extractPackageName(g.nvt_name);
+    if (!pkg) continue;
+    greenboneRows.push({
+      name: pkg,
+      version: null,
+      publisher: null,
+      host_id: g.host_id,
+      ip: g.ip,
+      install_date: null,
+      scanned_at: g.scanned_at,
+      source: "Greenbone",
+    });
+  }
+
+  const all: RawSoftwareRow[] = [
+    ...wazuhRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, r.version) })),
+    ...probeRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, r.version) })),
+    ...greenboneRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, null) })),
+  ];
+
+  interface AggInternal extends AggregatedSoftware {
+    _hostMap: Map<number, { sources: Set<SoftwareSource>; publisher: string | null; install_date: string | null; scanned_at: string | null; ip: string }>;
+  }
+  const map = new Map<string, AggInternal>();
+
+  for (const r of all) {
+    let entry = map.get(r.key);
+    if (!entry) {
+      entry = {
+        key: r.key,
+        name: r.name,
+        version: r.version,
+        publisher: r.publisher,
+        sources: [],
+        host_count: 0,
+        hosts_preview: [],
+        vuln_count: 0,
+        latest_seen_at: r.scanned_at,
+        _hostMap: new Map(),
+      };
+      map.set(r.key, entry);
+    }
+    if (!entry.sources.includes(r.source)) entry.sources.push(r.source);
+    if (!entry.version && r.version) entry.version = r.version;
+    if (r.publisher) {
+      if (r.source === "Probe") entry.publisher = r.publisher;
+      else if (!entry.publisher && r.source === "Wazuh") entry.publisher = r.publisher;
+    }
+    if (r.scanned_at && (!entry.latest_seen_at || r.scanned_at > entry.latest_seen_at)) {
+      entry.latest_seen_at = r.scanned_at;
+    }
+    if (r.host_id != null) {
+      let h = entry._hostMap.get(r.host_id);
+      if (!h) {
+        h = { sources: new Set(), publisher: null, install_date: null, scanned_at: null, ip: r.ip };
+        entry._hostMap.set(r.host_id, h);
+      }
+      h.sources.add(r.source);
+      if (r.publisher && (!h.publisher || r.source === "Probe")) h.publisher = r.publisher;
+      if (r.install_date && !h.install_date) h.install_date = r.install_date;
+      if (r.scanned_at && (!h.scanned_at || r.scanned_at > h.scanned_at)) h.scanned_at = r.scanned_at;
+      if (r.ip && !h.ip) h.ip = r.ip;
+    }
+  }
+
+  let arr = [...map.values()];
+  for (const a of arr) a.host_count = a._hostMap.size;
+
+  const needsVuln = opts.sortBy === "vuln_count" || opts.hasVulns !== undefined || arr.length <= 2000;
+  if (needsVuln) computeVulnCounts(arr);
+
+  if (opts.sources?.length) {
+    const set = new Set(opts.sources);
+    arr = arr.filter((s) => s.sources.some((src) => set.has(src)));
+  }
+  if (opts.hasVulns === true) arr = arr.filter((s) => s.vuln_count > 0);
+  else if (opts.hasVulns === false) arr = arr.filter((s) => s.vuln_count === 0);
+  if (opts.search) {
+    const q = opts.search.toLowerCase();
+    arr = arr.filter(
+      (s) => s.name.toLowerCase().includes(q) || s.publisher?.toLowerCase().includes(q)
+    );
+  }
+
+  const sortBy = opts.sortBy ?? "host_count";
+  const sortDir = opts.sortDir ?? "desc";
+  arr.sort((a, b) => {
+    let cmp = 0;
+    switch (sortBy) {
+      case "name":
+        cmp = sortDir === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
+        break;
+      case "vuln_count":
+        cmp = sortDir === "asc" ? a.vuln_count - b.vuln_count : b.vuln_count - a.vuln_count;
+        break;
+      case "latest_seen_at":
+        cmp = sortDir === "asc"
+          ? (a.latest_seen_at ?? "").localeCompare(b.latest_seen_at ?? "")
+          : (b.latest_seen_at ?? "").localeCompare(a.latest_seen_at ?? "");
+        break;
+      case "host_count":
+      default:
+        cmp = sortDir === "asc" ? a.host_count - b.host_count : b.host_count - a.host_count;
+        break;
+    }
+    if (cmp !== 0) return cmp;
+    return a.name.localeCompare(b.name);
+  });
+
+  const total = arr.length;
+  const start = (opts.page - 1) * opts.pageSize;
+  const pageRows = arr.slice(start, start + opts.pageSize);
+
+  const allHostIds = new Set<number>();
+  for (const p of pageRows) for (const id of p._hostMap.keys()) allHostIds.add(id);
+  const meta = loadHostsMeta([...allHostIds]);
+  for (const p of pageRows) {
+    const entries = [...p._hostMap.entries()].slice(0, 10);
+    p.hosts_preview = entries.map(([host_id, h]) => {
+      const m = meta.get(host_id);
+      return {
+        host_id,
+        ip: m?.ip || h.ip,
+        hostname: m?.hostname ?? null,
+        network_id: m?.network_id ?? null,
+        network_name: m?.network_name ?? null,
+        sources: [...h.sources],
+        publisher: h.publisher,
+        install_date: h.install_date,
+        scanned_at: h.scanned_at,
+      };
+    });
+  }
+
+  const data = pageRows.map(({ _hostMap: _hm, ...rest }) => {
+    void _hm;
+    return rest;
+  });
+  return { data, total };
+}
+
+function computeVulnCounts(items: AggregatedSoftware[]): void {
+  if (items.length === 0) return;
+  const d = db();
+  const wazuhStmt = d.prepare(
+    `SELECT COUNT(DISTINCT v.cve) AS n
+       FROM wazuh_vuln v
+      WHERE LOWER(v.package_name) = ?
+        AND COALESCE(v.status, 'VALID') NOT IN ('SOLVED','OBSOLETE')`
+  );
+  const gbStmt = d.prepare(
+    `SELECT COUNT(DISTINCT f.cve_id) AS n
+       FROM vuln_findings f
+      WHERE f.cve_id IS NOT NULL
+        AND LOWER(f.nvt_name) LIKE ?`
+  );
+  for (const item of items) {
+    const nameLower = item.name.toLowerCase();
+    const w = wazuhStmt.get(nameLower) as { n: number } | undefined;
+    const g = gbStmt.get(`%${nameLower}%`) as { n: number } | undefined;
+    item.vuln_count = (w?.n ?? 0) + (g?.n ?? 0);
+  }
+}
+
+export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftwareHostRef[] {
+  const sepIdx = key.indexOf("|");
+  if (sepIdx < 0) return [];
+  const nameLower = key.substring(0, sepIdx);
+  const versionLower = key.substring(sepIdx + 1);
+
+  const wazuhRows = db()
+    .prepare(
+      `SELECT a.host_id, COALESCE(a.ip, '') AS ip,
+              w.vendor AS publisher,
+              w.install_time AS install_date,
+              w.scan_time AS scanned_at,
+              'Wazuh' AS source
+         FROM wazuh_software w
+         JOIN wazuh_agent a ON a.agent_id = w.agent_id
+        WHERE a.host_id IS NOT NULL
+          AND LOWER(w.name) = ?
+          AND LOWER(COALESCE(w.version, '')) = ?
+        LIMIT ?`
+    )
+    .all(nameLower, versionLower, limit) as Array<{
+      host_id: number; ip: string; publisher: string | null;
+      install_date: string | null; scanned_at: string | null; source: SoftwareSource;
+    }>;
+
+  const probeRows = db()
+    .prepare(
+      `SELECT sc.host_id, h.ip,
+              si.publisher,
+              si.install_date,
+              sc.started_at AS scanned_at,
+              'Probe' AS source
+         FROM software_inventory si
+         JOIN software_scans sc ON sc.id = si.scan_id
+         JOIN hosts h ON h.id = sc.host_id
+        WHERE sc.host_id IS NOT NULL
+          AND sc.status = 'ok'
+          AND sc.id IN (
+            SELECT MAX(id) FROM software_scans
+             WHERE status = 'ok' AND host_id IS NOT NULL
+             GROUP BY host_id
+          )
+          AND LOWER(si.name) = ?
+          AND LOWER(COALESCE(si.version, '')) = ?
+        LIMIT ?`
+    )
+    .all(nameLower, versionLower, limit) as Array<{
+      host_id: number; ip: string; publisher: string | null;
+      install_date: string | null; scanned_at: string | null; source: SoftwareSource;
+    }>;
+
+  const gbRows = versionLower === ""
+    ? (db()
+        .prepare(
+          `SELECT f.host_id, f.ip, f.nvt_name, f.scanned_at, 'Greenbone' AS source
+             FROM vuln_findings f
+            WHERE f.host_id IS NOT NULL AND f.nvt_name IS NOT NULL`
+        )
+        .all() as Array<{ host_id: number; ip: string; nvt_name: string; scanned_at: string; source: SoftwareSource }>)
+        .filter((r) => {
+          const pkg = extractPackageName(r.nvt_name);
+          return pkg && pkg.toLowerCase() === nameLower;
+        })
+        .map((r) => ({
+          host_id: r.host_id,
+          ip: r.ip,
+          publisher: null as string | null,
+          install_date: null as string | null,
+          scanned_at: r.scanned_at,
+          source: "Greenbone" as SoftwareSource,
+        }))
+    : [];
+
+  const merged = [...wazuhRows, ...probeRows, ...gbRows];
+  const ids = [...new Set(merged.map((r) => r.host_id))];
+  const meta = loadHostsMeta(ids);
+
+  const byHost = new Map<number, AggregatedSoftwareHostRef>();
+  for (const r of merged) {
+    let h = byHost.get(r.host_id);
+    if (!h) {
+      const m = meta.get(r.host_id);
+      h = {
+        host_id: r.host_id,
+        ip: m?.ip || r.ip,
+        hostname: m?.hostname ?? null,
+        network_id: m?.network_id ?? null,
+        network_name: m?.network_name ?? null,
+        sources: [],
+        publisher: null,
+        install_date: null,
+        scanned_at: null,
+      };
+      byHost.set(r.host_id, h);
+    }
+    if (!h.sources.includes(r.source)) h.sources.push(r.source);
+    if (r.publisher && (!h.publisher || r.source === "Probe")) h.publisher = r.publisher;
+    if (r.install_date && !h.install_date) h.install_date = r.install_date;
+    if (r.scanned_at && (!h.scanned_at || r.scanned_at > h.scanned_at)) h.scanned_at = r.scanned_at;
+  }
+  return [...byHost.values()].slice(0, limit);
+}

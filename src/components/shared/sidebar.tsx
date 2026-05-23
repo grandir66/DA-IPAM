@@ -27,6 +27,7 @@ import {
   ClipboardList,
   Radar,
   AlertTriangle,
+  ShieldAlert,
   PlugZap,
   Workflow,
   BookOpen,
@@ -37,6 +38,7 @@ import { Button } from "@/components/ui/button";
 
 const inventorySubItems = [
   { href: "/inventory", label: "Asset", icon: Package },
+  { href: "/software", label: "Software", icon: Package },
   { href: "/inventory/assignees", label: "Assegnatari", icon: User },
   { href: "/inventory/locations", label: "Ubicazioni", icon: FolderTree },
   { href: "/inventory/licenses", label: "Licenze", icon: FileKey },
@@ -54,6 +56,8 @@ type NetworkItem = {
 const networkSubItems: readonly NetworkItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
+  { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert },
+  { href: "/software", label: "Software", icon: Package },
   { href: "/active-directory", label: "Active Directory", icon: FolderTree },
   { href: "/credentials", label: "Credenziali", icon: Key },
   { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered, divider: "Diagnostica" },

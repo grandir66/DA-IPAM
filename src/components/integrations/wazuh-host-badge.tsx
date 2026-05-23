@@ -199,30 +199,47 @@ export function WazuhHostBadge({ hostId, hostName, hostIp, prefetched, mode = "i
                   <p>{formatTs(status.last_keep_alive)}</p>
                 </div>
               </div>
-              <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-border/60 mt-3">
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>Chiudi</Button>
-                {runtime.dashboardUrl && (
-                  <>
-                    <a
-                      href={`${runtime.dashboardUrl}/app/vulnerability-detection#/dashboard?_g=(filters:!((meta:(key:agent.id),query:(match_phrase:'${encodeURIComponent(status.agent_id)}'))))`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={`Vulnerabilità Wazuh per agent ${status.agent_id}`}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background hover:bg-accent text-foreground px-3 py-1.5 text-sm font-medium"
-                    >
-                      CVE agent <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                    <a
-                      href={`${runtime.dashboardUrl}/app/endpoints-summary#/agents?tab=welcome&agent=${encodeURIComponent(status.agent_id)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={`Overview agent ${status.agent_id} su Wazuh (endpoints-summary)`}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 px-3 py-1.5 text-sm font-medium"
-                    >
-                      Apri agent in Wazuh <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  </>
-                )}
+              <div className="space-y-2">
+                <p className="text-[11px] text-muted-foreground">
+                  {"Suggerimento: per aprire i link sotto è richiesta una sessione attiva sul dashboard Wazuh. Apri prima il dashboard, fai login, poi torna qui e clicca."}
+                </p>
+                <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-border/60">
+                  <Button variant="outline" onClick={() => setDialogOpen(false)}>Chiudi</Button>
+                  {runtime.dashboardUrl ? (
+                    <>
+                      <a
+                        href={`${runtime.dashboardUrl}/app/vulnerability-detection`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`Vulnerabilità Wazuh — filtra agent.id=${status.agent_id} a mano dalla search bar`}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background hover:bg-accent text-foreground px-3 py-1.5 text-sm font-medium"
+                      >
+                        CVE <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                      <a
+                        href={`${runtime.dashboardUrl}/app/endpoints-summary`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`Lista agent Wazuh — cerca ${status.agent_id} in tabella`}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background hover:bg-accent text-foreground px-3 py-1.5 text-sm font-medium"
+                      >
+                        Agent <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                      <a
+                        href={runtime.dashboardUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 px-3 py-1.5 text-sm font-medium"
+                      >
+                        Dashboard <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </>
+                  ) : (
+                    <p className="text-xs text-amber-600">
+                      {"URL dashboard non configurato — vai a Settings → Integrazioni → Wazuh"}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}

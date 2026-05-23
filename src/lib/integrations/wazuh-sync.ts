@@ -17,6 +17,11 @@ import { normalizeMac } from "../utils";
 import { getWazuhConfig } from "./wazuh-config";
 import { createWazuhClient, WazuhClient, type WazuhAgent } from "./wazuh-api";
 import {
+  createWazuhIndexerClient,
+  indexerDocToWazuhVuln,
+  type WazuhIndexerClient,
+} from "./wazuh-indexer-api";
+import {
   upsertWazuhAgent,
   upsertWazuhHw,
   upsertWazuhOs,
@@ -105,6 +110,19 @@ function buildHostnameIndex(): Map<string, number> {
   return idx;
 }
 
+/** Recupera vulnerabilities da indexer se configurato, altrimenti dal manager API (legacy < 4.8). */
+async function fetchVulnsForAgent(
+  agentId: string,
+  manager: WazuhClient,
+  indexer: WazuhIndexerClient | null,
+): Promise<Parameters<typeof replaceVulnsForAgent>[1]> {
+  if (indexer) {
+    const docs = await indexer.getVulnerabilitiesForAgent(agentId);
+    return docs.map(indexerDocToWazuhVuln);
+  }
+  return manager.getVulnerabilities(agentId);
+}
+
 /**
  * Sincronizza un singolo agent (utile per refresh on-demand dalla scheda host).
  * Da chiamare dentro withTenant. Lancia eccezione su errori di connessione.
@@ -114,9 +132,13 @@ export async function syncSingleAgent(agentId: string): Promise<void> {
   if (!cfg.enabled) throw new Error("Integrazione Wazuh disabilitata");
   const client = createWazuhClient(cfg);
   if (!client) throw new Error("Configurazione Wazuh incompleta");
+  const indexer = createWazuhIndexerClient({
+    url: cfg.indexerUrl,
+    username: cfg.indexerUsername,
+    password: cfg.indexerPassword,
+    verifyTls: cfg.verifyTls,
+  });
 
-  // Recupera info agent (rifaccio listAgents filtrato — Wazuh non ha GET /agents/{id})
-  // In realtà /agents accetta agents_list=ID
   const all = await client.listAgents(true);
   const agent = all.find((a) => a.id === agentId);
   if (!agent) throw new Error(`Agent ${agentId} non trovato su Wazuh`);
@@ -129,7 +151,7 @@ export async function syncSingleAgent(agentId: string): Promise<void> {
     client.getHardware(agent.id),
     client.getOs(agent.id),
     client.getPackages(agent.id),
-    client.getVulnerabilities(agent.id),
+    fetchVulnsForAgent(agent.id, client, indexer),
   ]);
   if (hw) upsertWazuhHw(agent.id, hw);
   if (os) upsertWazuhOs(agent.id, os);
@@ -168,6 +190,12 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
     result.errors.push("Configurazione Wazuh incompleta (url/username/password)");
     return finalize(result, startedAt);
   }
+  const indexer = createWazuhIndexerClient({
+    url: cfg.indexerUrl,
+    username: cfg.indexerUsername,
+    password: cfg.indexerPassword,
+    verifyTls: cfg.verifyTls,
+  });
 
   let agents: WazuhAgent[];
   try {
@@ -196,7 +224,7 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
         client.getHardware(agent.id),
         client.getOs(agent.id),
         client.getPackages(agent.id),
-        client.getVulnerabilities(agent.id),
+        fetchVulnsForAgent(agent.id, client, indexer),
       ]);
 
       if (hw) upsertWazuhHw(agent.id, hw);

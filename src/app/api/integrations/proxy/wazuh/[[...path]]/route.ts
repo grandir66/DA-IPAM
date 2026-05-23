@@ -57,12 +57,13 @@ async function handle(req: Request): Promise<Response> {
     basePath: BASE_PATH,
     insecureTls: !cfg.verifyTls,
     timeoutMs: 30_000,
-    // Wazuh dashboard (OpenSearch Dashboards) è configurato con
-    // server.basePath + server.rewriteBasePath: true: la SPA gestisce
-    // internamente lo strip del prefisso. Il proxy deve PRESERVARE il
-    // prefisso nel forward. Vedi docs/playbooks/wazuh-integration.md
-    // sezione "Iframe dashboard embedded".
-    preserveBasePath: true,
+    // NB: il fix iframe Wazuh richiederebbe server.basePath in
+    // /etc/wazuh-dashboard/opensearch_dashboards.yml ma sul deployment
+    // attuale non c'è un nginx davanti a OSD che possa redirigere
+    // l'accesso diretto FQDN → basePath, quindi il setup rompe
+    // l'accesso normale al dashboard. La SPA in iframe quindi NON è
+    // completamente funzionante (asset path-assoluti 404). I deep-link
+    // dal badge host puntano direttamente al FQDN e funzionano.
   });
 }
 

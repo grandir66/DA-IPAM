@@ -175,11 +175,12 @@ export function WazuhHostBadge({ hostId, hostName, hostIp, prefetched, mode = "i
       {/* Dialog summary (agent presente) */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className={DIALOG_PANEL_COMPACT_CLASS}>
+          <div className="p-5 space-y-4 bg-card border border-border rounded-xl">
           <DialogHeader>
             <DialogTitle>Wazuh agent</DialogTitle>
           </DialogHeader>
           {status && (
-            <div className="space-y-3 text-sm">
+            <div className="space-y-4 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">Agent ID</Label>
@@ -198,36 +199,40 @@ export function WazuhHostBadge({ hostId, hostName, hostIp, prefetched, mode = "i
                   <p>{formatTs(status.last_keep_alive)}</p>
                 </div>
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-3 border-t border-border/60 mt-3">
                 <Button variant="outline" onClick={() => setDialogOpen(false)}>Chiudi</Button>
                 {runtime.dashboardUrl && (
                   <a
-                    href={`${runtime.dashboardUrl}/app/wazuh#/agents-preview/?tab=welcome&agent=${encodeURIComponent(status.agent_id)}`}
+                    href={`${runtime.dashboardUrl}/app/wazuh`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 px-3 py-1.5 text-sm font-medium"
+                    title={`Apri il dashboard Wazuh e cerca l'agent ${status.agent_id}`}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 px-3 py-1.5 text-sm font-medium"
                   >
-                    Apri in Wazuh dashboard <ExternalLink className="h-3.5 w-3.5" />
+                    Apri dashboard Wazuh <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                 )}
               </div>
             </div>
           )}
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* Dialog "Aggiungi" (agent assente) */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className={DIALOG_PANEL_COMPACT_CLASS}>
-          <DialogHeader>
-            <DialogTitle>Aggiungi host a Wazuh</DialogTitle>
-          </DialogHeader>
-          <WazuhEnrollmentDialogBody
-            hostName={hostName}
-            hostIp={hostIp}
-            managerHost={runtime.managerHost}
-            onClose={() => setAddOpen(false)}
-          />
+          <div className="p-5 space-y-4 bg-card border border-border rounded-xl">
+            <DialogHeader>
+              <DialogTitle>Aggiungi host a Wazuh</DialogTitle>
+            </DialogHeader>
+            <WazuhEnrollmentDialogBody
+              hostName={hostName}
+              hostIp={hostIp}
+              managerHost={runtime.managerHost}
+              onClose={() => setAddOpen(false)}
+            />
+          </div>
         </DialogContent>
       </Dialog>
     </>

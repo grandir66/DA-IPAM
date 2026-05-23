@@ -140,6 +140,15 @@ export async function proxyRequest(
   if (outHeaders.origin) {
     outHeaders.origin = `${target.protocol}//${target.host}`;
   }
+  // Forziamo `identity` perché il rewrite HTML opera su testo plain. Se
+  // l'upstream ci risponde con gzip/br/deflate, il toString("utf8") sui
+  // byte compressi produce gibberish: il regex non matcha nulla e il
+  // browser tenta di decomprimere garbage → "Content Encoding Error".
+  // Strippiamo qualsiasi `accept-encoding` ereditato dal client e ne
+  // mettiamo uno esplicito `identity`. Il prezzo (banda) è accettabile:
+  // il proxy serve solo navigazione interna dello staff.
+  outHeaders["accept-encoding"] = "identity";
+
   if (opts.extraRequestHeaders) {
     for (const [k, v] of Object.entries(opts.extraRequestHeaders)) {
       outHeaders[k.toLowerCase()] = v;
@@ -246,7 +255,11 @@ export async function proxyRequest(
     }
     const raw = Buffer.concat(chunks).toString("utf8");
     const rewritten = rewriteHtmlAbsolutePaths(raw, opts.basePath, opts.upstreamOrigin);
+    // Strippiamo `content-encoding` perché abbiamo riscritto plain text;
+    // se l'upstream avesse ignorato `Accept-Encoding: identity` lasciare
+    // l'header farebbe tentare al browser una decompressione su garbage.
     respHeaders.delete("content-length");
+    respHeaders.delete("content-encoding");
     return new Response(rewritten, { status, headers: respHeaders });
   }
 

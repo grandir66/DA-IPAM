@@ -50,7 +50,6 @@ import type {
   SoftwarePackage,
   SoftwareInventoryRow,
   SoftwareScanLog,
-  ExcludedIp,
   ExcludedIpWithNetwork,
 } from "@/types";
 

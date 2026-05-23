@@ -228,7 +228,96 @@ export async function proxyRequest(
   // Stream body back.  `Readable.toWeb` returns a ReadableStream Next.js can
   // consume.  For HEAD / 204 / 304 there's nothing to stream.
   const noBody = req.method.toUpperCase() === "HEAD" || status === 204 || status === 304;
-  const body = noBody ? null : (Readable.toWeb(upstreamRes) as unknown as ReadableStream);
+  if (noBody) {
+    return new Response(null, { status, headers: respHeaders });
+  }
 
+  // HTML rewrite: asset/link assoluti che cominciano con "/" vengono prefissati
+  // con `basePath` così il browser li chiede al proxy invece che alla root di
+  // DA-IPAM. Senza questo il dashboard upstream (Wazuh / LibreNMS) chiede
+  // `/ui/logos/...`, `/bootstrap.js`, `/app/...` direttamente all'host DA-IPAM
+  // che ovviamente non ha quei file → 404 a cascata.
+  const contentType = respHeaders.get("content-type") ?? "";
+  const isHtml = /\b(text\/html|application\/xhtml\+xml)\b/i.test(contentType);
+  if (isHtml) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of upstreamRes) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const raw = Buffer.concat(chunks).toString("utf8");
+    const rewritten = rewriteHtmlAbsolutePaths(raw, opts.basePath);
+    // Aggiorna content-length se presente
+    respHeaders.delete("content-length");
+    return new Response(rewritten, { status, headers: respHeaders });
+  }
+
+  const body = Readable.toWeb(upstreamRes) as unknown as ReadableStream;
   return new Response(body, { status, headers: respHeaders });
+}
+
+/**
+ * Riscrive in un blocco HTML/XHTML i path assoluti che iniziano con "/" così
+ * vengono richiesti via il proxy DA-IPAM. Non tocca path già prefissati col
+ * basePath, URL `//host/...` (protocol-relative) né URL completi.
+ *
+ * Coperti:
+ *   - attributi DOM: `src=`, `href=`, `action=`, `formaction=`, `poster=`,
+ *     `data-href=`, `data-src=`, `manifest=`, `cite=`, `ping=`, `srcset=`
+ *   - `<base href="/">`
+ *   - `<meta http-equiv="refresh" content="0;url=/...">`
+ *   - `url(/...)` in inline CSS / <style>
+ *   - script JSON literal: `"/api/..."`, `'/api/...'` solo per stringhe brevi
+ *     che assomigliano a path (heuristica conservativa per non rompere JS)
+ */
+function rewriteHtmlAbsolutePaths(html: string, basePath: string): string {
+  const prefix = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
+
+  // Skip se già prefissato col proxy (anti-doppio-rewrite)
+  function shouldRewrite(path: string): boolean {
+    if (path.startsWith(prefix + "/") || path === prefix) return false;
+    return true;
+  }
+
+  // 1. Attributi DOM con path assoluto: attr="/x" o attr='/x'
+  //    Esclude `//host/path` (protocol-relative) — gestiti dal browser come absolute con scheme.
+  let out = html.replace(
+    /(\s(?:src|href|action|formaction|poster|manifest|cite|ping|data-href|data-src)\s*=\s*)(["'])(\/)(?!\/)([^"']*)\2/gi,
+    (_m, attr: string, quote: string, _slash: string, rest: string) => {
+      const path = "/" + rest;
+      if (!shouldRewrite(path)) return `${attr}${quote}${path}${quote}`;
+      return `${attr}${quote}${prefix}${path}${quote}`;
+    },
+  );
+
+  // 2. <base href="/...">  — fissa il base path per tutti i path relativi figli
+  out = out.replace(
+    /(<base\s+href=)(["'])(\/)(?!\/)([^"']*)\2/gi,
+    (_m, attr: string, quote: string, _slash: string, rest: string) => {
+      const path = "/" + rest;
+      if (!shouldRewrite(path)) return `${attr}${quote}${path}${quote}`;
+      return `${attr}${quote}${prefix}${path}${quote}`;
+    },
+  );
+
+  // 3. <meta http-equiv="refresh" content="0;url=/...">
+  out = out.replace(
+    /(<meta\s+http-equiv=["']refresh["']\s+content=["'][^"']*url=)(\/)(?!\/)([^"']*)/gi,
+    (_m, head: string, _slash: string, rest: string) => {
+      const path = "/" + rest;
+      if (!shouldRewrite(path)) return `${head}${path}`;
+      return `${head}${prefix}${path}`;
+    },
+  );
+
+  // 4. url(/...) in CSS inline
+  out = out.replace(
+    /url\(\s*(["']?)(\/)(?!\/)([^"')]*)\1\s*\)/g,
+    (_m, quote: string, _slash: string, rest: string) => {
+      const path = "/" + rest;
+      if (!shouldRewrite(path)) return `url(${quote}${path}${quote})`;
+      return `url(${quote}${prefix}${path}${quote})`;
+    },
+  );
+
+  return out;
 }

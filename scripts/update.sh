@@ -51,6 +51,34 @@ for f in "${RESTORE_FILES[@]}"; do
   fi
 done
 
+# Pulizia residui debug noti (script temporanei lasciati dietro da sessioni
+# precedenti che non sono mai stati committati e bloccano il pull).
+DEBUG_RESIDUE=(scripts/probe-debug.ts scripts/wazuh-debug.ts)
+for f in "${DEBUG_RESIDUE[@]}"; do
+  if [ -f "$f" ] && ! git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+    echo ">>> rimuovo residuo debug non tracciato: $f"
+    rm -f "$f"
+  elif [ -n "$(git status --porcelain -- "$f" 2>/dev/null)" ]; then
+    echo ">>> $f modificato localmente: ripristino da Git..."
+    git restore "$f" 2>/dev/null || rm -f "$f"
+  fi
+done
+
+# Stash di sicurezza per QUALSIASI altra modifica locale non gestita sopra:
+# il pull non deve mai abortire silenziosamente in autoupdate. Lo stash è
+# taggato con timestamp ed è recuperabile manualmente (`git stash list`).
+DIRTY=$(git status --porcelain 2>/dev/null | head -c 1)
+if [ -n "$DIRTY" ]; then
+  STAMP=$(date +%Y%m%d-%H%M%S)
+  echo ">>> Modifiche locali rilevate: stash automatico 'autoupdate-$STAMP'"
+  echo ">>> File interessati:"
+  git status --porcelain | sed 's/^/    /' | head -20
+  git stash push -u -m "autoupdate-$STAMP" || {
+    echo "Errore: stash fallito. Pulisci manualmente: 'git status' e 'git restore' / 'rm'."
+    exit 1
+  }
+fi
+
 # Pull
 echo ">>> git pull..."
 git pull origin "$BRANCH"

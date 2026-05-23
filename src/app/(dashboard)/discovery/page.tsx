@@ -41,7 +41,7 @@ import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, ShieldAlert, HardDrive, Monitor,
-  Phone, Printer, Camera, Cpu,
+  Phone, Printer, Camera, Cpu, Database,
   Lock, KeyRound, Trash2, ShieldCheck, MoreVertical,
 } from "lucide-react";
 
@@ -73,6 +73,7 @@ const CLASS_PRESETS: Array<{
   { filter: "group:print",    label: "PRINT",      icon: Printer,   match: ["stampante", "scanner", "fotocopiatrice", "multifunzione"] },
   { filter: "group:cam",      label: "CAM",        icon: Camera,    match: ["telecamera"] },
   { filter: "group:iot",      label: "IOT",        icon: Cpu,       match: ["iot", "smart_tv", "console", "tablet", "smartphone", "sensore", "plc", "hmi", "controller"] },
+  { filter: "group:storage",  label: "STORAGE",    icon: Database,  match: ["storage", "nas", "nas_synology", "nas_qnap"] },
   { filter: "group:other",    label: "ALTRO",      icon: Boxes,     match: [] /* catchall: vedi logica filtro */ },
 ];
 import { toast } from "sonner";

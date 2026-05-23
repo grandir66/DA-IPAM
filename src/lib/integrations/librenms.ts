@@ -124,6 +124,25 @@ export async function installLibreNMS(jobId: string, containerName: string, admi
     log("[wait] Warm-up aggiuntivo 30s per sessioni e cache...");
     await new Promise((r) => setTimeout(r, 30_000));
 
+    // ── FIX APP_URL ─────────────────────────────────────────────────────────
+    // La default `.env` dell'image LibreNMS imposta APP_URL=/, che fa generare
+    // redirect rotti dopo login (404 al return). Sovrascriviamo via /data/.env
+    // (Laravel legge il valore più recente, e l'init script appende /data/.env
+    // a /opt/librenms/.env, quindi vince il nostro valore). Niente bisogno di
+    // restart: artisan config:clear basta.
+    log(`[config] Set APP_URL=${serverUrl} in /data/.env...`);
+    try {
+      await execDockerCommand([
+        "exec", containerName, "sh", "-c",
+        `grep -q '^APP_URL=' /data/.env 2>/dev/null && sed -i 's|^APP_URL=.*|APP_URL=${serverUrl}|' /data/.env || echo 'APP_URL=${serverUrl}' >> /data/.env`,
+      ]);
+      await execDockerCommand(["exec", containerName, "sh", "-c", `grep -q '^APP_URL=' /opt/librenms/.env && sed -i 's|^APP_URL=.*|APP_URL=${serverUrl}|' /opt/librenms/.env || echo 'APP_URL=${serverUrl}' >> /opt/librenms/.env`]);
+      await execDockerCommand(["exec", "--user", "librenms", containerName, "/opt/librenms/artisan", "config:clear"]);
+      log("[config] APP_URL configurato, cache pulita.");
+    } catch (e) {
+      log(`[warn] Fix APP_URL fallito (non blocca): ${e instanceof Error ? e.message : String(e)}`);
+    }
+
     // ── DISPATCHER (SIDECAR) ─────────────────────────────────────────────────
     // Lanciato DOPO che il web ha completato le migrazioni e creato /data/.env:
     // l'init script /etc/cont-init.d/05-svc-dispatcher.sh richiede che

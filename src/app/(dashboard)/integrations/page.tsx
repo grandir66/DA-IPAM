@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ExternalLink, Monitor } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ExternalLink, Monitor, ShieldAlert } from "lucide-react";
 
 interface IntegrationInfo {
   enabled: boolean;
   url: string;
   label: string;
+  iframeNeedsHandshake?: boolean;
+  handshakeReason?: string;
 }
 
 interface ActiveIntegrations {
@@ -75,33 +77,82 @@ export default function IntegrationsPage() {
         )}
       </div>
 
+      {/* Banner handshake (cert self-signed, cookie cross-site, ecc.) */}
+      {current?.iframeNeedsHandshake && (
+        <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300 text-xs flex items-start gap-2 shrink-0">
+          <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
+          <div>
+            <strong>Iframe potrebbe non caricarsi.</strong>{" "}
+            {current.handshakeReason ?? "Apri prima in nuova tab per accettare il certificato/loggarti, poi ricarica questa pagina."}
+            {" "}
+            <a href={current.url} target="_blank" rel="noopener noreferrer" className="underline font-medium">
+              Apri in nuova tab
+            </a>
+            .
+          </div>
+        </div>
+      )}
+
       {/* iframe */}
-      {current?.url && (
-        <div className="flex-1 relative">
-          <iframe
-            key={selected}
-            src={current.url}
-            title={current.label}
-            className="w-full h-full border-0"
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
-          />
-          {/* Overlay mostrato solo se l'iframe non carica (CSP/X-Frame-Options) */}
-          <noscript>
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-muted/20">
-              <p className="text-sm text-muted-foreground">
-                {current.label} non può essere incorporato in un frame.
-              </p>
-              <a
-                href={current.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm hover:bg-primary/90 transition-colors"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Apri {current.label}
-              </a>
-            </div>
-          </noscript>
+      {current?.url && <IntegrationIframe key={selected} url={current.url} label={current.label} />}
+    </div>
+  );
+}
+
+function IntegrationIframe({ url, label }: { url: string; label: string }) {
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [showFallback, setShowFallback] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    setLoadFailed(false);
+    setShowFallback(false);
+    // Se entro 6 secondi non riceviamo onLoad, mostriamo il fallback
+    // (succede quando il browser blocca per X-Frame-Options / connection refused / cert error).
+    const t = setTimeout(() => {
+      if (iframeRef.current) {
+        try {
+          // Tentativo di accedere al contentDocument: se same-origin e bloccato → eccezione catturabile
+          const doc = iframeRef.current.contentDocument;
+          if (!doc) setShowFallback(true);
+        } catch {
+          // Cross-origin (normale): non possiamo sapere se ha caricato, ma lasciamo perdere
+        }
+      }
+    }, 6000);
+    return () => clearTimeout(t);
+  }, [url]);
+
+  return (
+    <div className="flex-1 relative">
+      <iframe
+        ref={iframeRef}
+        src={url}
+        title={label}
+        className="w-full h-full border-0"
+        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+        onLoad={() => { setLoadFailed(false); setShowFallback(false); }}
+        onError={() => setLoadFailed(true)}
+      />
+      {(loadFailed || showFallback) && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-background/95 backdrop-blur">
+          <ShieldAlert className="h-10 w-10 text-amber-500" />
+          <div className="text-center max-w-md">
+            <p className="text-sm font-medium">L&apos;iframe verso <strong>{label}</strong> non si è caricato.</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Possibili cause: cert self-signed da accettare, header X-Frame-Options/CSP che blocca l&apos;embedding,
+              o sessione non ancora autenticata. Apri il servizio in nuova tab e ritenta.
+            </p>
+          </div>
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm hover:bg-primary/90 transition-colors"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Apri {label} in nuova tab
+          </a>
         </div>
       )}
     </div>

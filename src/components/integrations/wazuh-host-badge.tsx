@@ -277,13 +277,11 @@ NET START WazuhSvc`;
   return (
     <div className="space-y-3 text-sm">
       <p className="text-muted-foreground text-xs">
-        Wazuh richiede l'installazione di un agent sull'host. Auto-enrollment via porta 1515 — non
-        serve generare chiavi manualmente, il manager riconosce l'agent dopo il primo connect.
+        {"Wazuh richiede l'installazione di un agent sull'host. Auto-enrollment via porta 1515 — non serve generare chiavi manualmente, il manager riconosce l'agent dopo il primo connect."}
       </p>
       {!managerHost && (
         <p className="text-amber-600 text-xs">
-          ⚠ Manager Wazuh non configurato in DA-IPAM (Settings → Integrazioni → Wazuh).
-          Sostituisci <code>&lt;WAZUH_MANAGER_IP&gt;</code> con l'IP/FQDN del tuo manager.
+          {"⚠ Manager Wazuh non configurato in DA-IPAM (Settings → Integrazioni → Wazuh). Sostituisci "}<code>&lt;WAZUH_MANAGER_IP&gt;</code>{" con l'IP/FQDN del tuo manager."}
         </p>
       )}
       <div className="flex gap-1 border-b">

@@ -176,14 +176,14 @@ export async function GET(
       }
     }
 
-    // ─── Step 4: rollup (sui finding deduplicati, non sui raw) ───────────────
+    // ─── Step 4: rollup (sui finding deduplicati per CVE, non sui raw) ───────
     const rollup: SeverityRollup = { ...EMPTY };
     for (const f of merged.values()) {
       if (f.severity in rollup) rollup[f.severity as keyof SeverityRollup]++;
     }
 
     // Ordine: severity DESC, poi cvss DESC, poi scanned_at DESC
-    const findings = Array.from(merged.values()).sort((a, b) => {
+    const findingsSorted = Array.from(merged.values()).sort((a, b) => {
       const sa = SEVERITY_RANK[a.severity] ?? 0;
       const sb = SEVERITY_RANK[b.severity] ?? 0;
       if (sa !== sb) return sb - sa;
@@ -191,11 +191,108 @@ export async function GET(
       const cb = b.cvss_score ?? 0;
       if (ca !== cb) return cb - ca;
       return b.scanned_at.localeCompare(a.scanned_at);
-    }).slice(0, 200);
+    });
 
-    // Last scan info: massimo scanned_at fra tutti i finding (cross-source)
-    const lastScannedAt = findings.length > 0
-      ? findings.reduce((acc, f) => (f.scanned_at > acc ? f.scanned_at : acc), findings[0].scanned_at)
+    // ─── Step 5: aggregate per pacchetto/NVT ────────────────────────────────
+    // Wazuh genera spesso decine di CVE per la stessa applicazione (Firefox,
+    // Chrome, Windows Defender, ...) — UI inutilizzabile se mostra 1 riga per
+    // CVE. Raggruppiamo per `nvt_name` (Greenbone) o "Pacchetto: <name>"
+    // (Wazuh), tenendo il count breakdown per severity e i sample CVE.
+    interface FindingGroup {
+      key: string;
+      label: string;
+      top_severity: string;
+      top_cvss: number | null;
+      port: string | null;
+      service: string | null;
+      sources: string[];
+      latest_scanned_at: string;
+      breakdown: { Critical: number; High: number; Medium: number; Low: number };
+      cves: Array<{
+        cve_id: string | null;
+        severity: string;
+        cvss_score: number | null;
+        scanned_at: string;
+      }>;
+    }
+
+    const groupsMap = new Map<string, FindingGroup>();
+    for (const f of findingsSorted) {
+      // Chiave gruppo: nvt_name (preferito perché user-facing).
+      // Se nvt_name è null, fallback a service o a "_unknown".
+      const groupKey = (f.nvt_name ?? f.service ?? "_unknown").trim();
+      const existing = groupsMap.get(groupKey);
+      if (existing) {
+        if (SEVERITY_RANK[f.severity] > SEVERITY_RANK[existing.top_severity]) {
+          existing.top_severity = f.severity;
+          existing.top_cvss = f.cvss_score;
+        } else if (SEVERITY_RANK[f.severity] === SEVERITY_RANK[existing.top_severity]) {
+          if ((f.cvss_score ?? 0) > (existing.top_cvss ?? 0)) existing.top_cvss = f.cvss_score;
+        }
+        if (f.scanned_at > existing.latest_scanned_at) existing.latest_scanned_at = f.scanned_at;
+        for (const src of f.sources) if (!existing.sources.includes(src)) existing.sources.push(src);
+        if (f.severity in existing.breakdown) {
+          existing.breakdown[f.severity as keyof typeof existing.breakdown]++;
+        }
+        existing.cves.push({
+          cve_id: f.cve_id,
+          severity: f.severity,
+          cvss_score: f.cvss_score,
+          scanned_at: f.scanned_at,
+        });
+      } else {
+        groupsMap.set(groupKey, {
+          key: groupKey,
+          label: groupKey === "_unknown" ? "(senza etichetta)" : groupKey,
+          top_severity: f.severity,
+          top_cvss: f.cvss_score,
+          port: f.port,
+          service: f.service,
+          sources: [...f.sources],
+          latest_scanned_at: f.scanned_at,
+          breakdown: {
+            Critical: f.severity === "Critical" ? 1 : 0,
+            High: f.severity === "High" ? 1 : 0,
+            Medium: f.severity === "Medium" ? 1 : 0,
+            Low: f.severity === "Low" ? 1 : 0,
+          },
+          cves: [
+            {
+              cve_id: f.cve_id,
+              severity: f.severity,
+              cvss_score: f.cvss_score,
+              scanned_at: f.scanned_at,
+            },
+          ],
+        });
+      }
+    }
+
+    const groups = Array.from(groupsMap.values())
+      .map((g) => ({
+        ...g,
+        // ordina CVE dentro il gruppo per severity DESC, cvss DESC
+        cves: g.cves.sort((a, b) => {
+          const sa = SEVERITY_RANK[a.severity] ?? 0;
+          const sb = SEVERITY_RANK[b.severity] ?? 0;
+          if (sa !== sb) return sb - sa;
+          return (b.cvss_score ?? 0) - (a.cvss_score ?? 0);
+        }),
+      }))
+      .sort((a, b) => {
+        const sa = SEVERITY_RANK[a.top_severity] ?? 0;
+        const sb = SEVERITY_RANK[b.top_severity] ?? 0;
+        if (sa !== sb) return sb - sa;
+        // più CVE prima
+        const totA = a.breakdown.Critical + a.breakdown.High + a.breakdown.Medium + a.breakdown.Low;
+        const totB = b.breakdown.Critical + b.breakdown.High + b.breakdown.Medium + b.breakdown.Low;
+        if (totA !== totB) return totB - totA;
+        return a.label.localeCompare(b.label);
+      });
+
+    // Last scan info
+    const lastScannedAt = findingsSorted.length > 0
+      ? findingsSorted.reduce((acc, f) => (f.scanned_at > acc ? f.scanned_at : acc), findingsSorted[0].scanned_at)
       : null;
 
     return NextResponse.json({
@@ -205,11 +302,13 @@ export async function GET(
             id: 0,
             started_at: lastScannedAt,
             finished_at: lastScannedAt,
-            finding_count: findings.length,
+            finding_count: findingsSorted.length,
           }
         : null,
       severity_rollup: rollup,
-      findings,
+      groups,
+      // Limite alto: la UI gestisce paginazione/scroll quando serve.
+      findings: findingsSorted.slice(0, 2000),
     });
   });
 }

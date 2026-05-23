@@ -190,48 +190,49 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-            {networks.map((net) => (
-              <Link key={net.id} href={`/networks/${net.id}`}>
-                <Card className="hover:shadow-md hover:border-primary/40 transition-all cursor-pointer h-full">
-                  <CardContent className="py-3 px-3 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-semibold truncate" title={net.name}>{net.name}</span>
-                      <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">
-                        {net.cidr}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs">
-                      <span className="text-success font-medium">{net.online_count}</span>
-                      <span className="text-destructive font-medium">{net.offline_count}</span>
-                      <span className="text-muted-foreground">{net.unknown_count}</span>
-                      <span className="text-muted-foreground ml-auto">
-                        {net.total_hosts} tot
+          <Card>
+            <CardContent className="p-0">
+              <div className="divide-y divide-border">
+                {networks.map((net) => {
+                  const pctOnline = net.total_hosts > 0 ? (net.online_count / net.total_hosts) * 100 : 0;
+                  const pctOffline = net.total_hosts > 0 ? (net.offline_count / net.total_hosts) * 100 : 0;
+                  const pctUnknown = net.total_hosts > 0 ? (net.unknown_count / net.total_hosts) * 100 : 0;
+                  return (
+                    <Link
+                      key={net.id}
+                      href={`/networks/${net.id}`}
+                      className="flex items-center gap-3 px-3 py-1.5 text-sm hover:bg-muted/50 transition-colors group"
+                    >
+                      <span className="font-medium truncate w-32 sm:w-44 shrink-0 group-hover:text-primary" title={net.name}>
+                        {net.name}
                       </span>
-                    </div>
-                    {net.total_hosts > 0 && (
-                      <div className="flex h-1.5 rounded-full overflow-hidden bg-muted">
-                        {net.online_count > 0 && (
-                          <div className="bg-success" style={{ width: `${(net.online_count / net.total_hosts) * 100}%` }} />
-                        )}
-                        {net.offline_count > 0 && (
-                          <div className="bg-destructive" style={{ width: `${(net.offline_count / net.total_hosts) * 100}%` }} />
-                        )}
-                        {net.unknown_count > 0 && (
-                          <div className="bg-muted-foreground/40" style={{ width: `${(net.unknown_count / net.total_hosts) * 100}%` }} />
-                        )}
+                      <span className="font-mono text-[11px] text-muted-foreground w-28 shrink-0 truncate" title={net.cidr}>
+                        {net.cidr}
+                      </span>
+                      <div className="flex h-1.5 rounded-full overflow-hidden bg-muted flex-1 min-w-[80px] max-w-xs">
+                        {pctOnline > 0 && <div className="bg-success" style={{ width: `${pctOnline}%` }} />}
+                        {pctOffline > 0 && <div className="bg-destructive" style={{ width: `${pctOffline}%` }} />}
+                        {pctUnknown > 0 && <div className="bg-muted-foreground/40" style={{ width: `${pctUnknown}%` }} />}
                       </div>
-                    )}
-                    {net.last_scan && (
-                      <p className="text-[10px] text-muted-foreground">
-                        Scan: {new Date(net.last_scan).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
+                      <span className="font-mono text-[11px] tabular-nums w-32 sm:w-40 text-right shrink-0">
+                        <span className="text-success">{net.online_count}</span>
+                        <span className="text-muted-foreground/40 mx-0.5">/</span>
+                        <span className="text-destructive">{net.offline_count}</span>
+                        <span className="text-muted-foreground/40 mx-0.5">/</span>
+                        <span className="text-muted-foreground">{net.unknown_count}</span>
+                        <span className="text-muted-foreground ml-2">({net.total_hosts})</span>
+                      </span>
+                      {net.last_scan && (
+                        <span className="hidden md:inline text-[11px] text-muted-foreground whitespace-nowrap w-24 text-right shrink-0">
+                          {new Date(net.last_scan).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
 

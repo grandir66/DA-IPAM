@@ -97,19 +97,19 @@ export function StatusOverTimeChart() {
           <ComposedChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="gOnline" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="hsl(var(--success))" stopOpacity={0.55} />
-                <stop offset="95%" stopColor="hsl(var(--success))" stopOpacity={0.1} />
+                <stop offset="5%" stopColor="var(--success)" stopOpacity={0.55} />
+                <stop offset="95%" stopColor="var(--success)" stopOpacity={0.1} />
               </linearGradient>
               <linearGradient id="gOffline" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="hsl(var(--destructive))" stopOpacity={0.55} />
-                <stop offset="95%" stopColor="hsl(var(--destructive))" stopOpacity={0.1} />
+                <stop offset="5%" stopColor="var(--destructive)" stopOpacity={0.55} />
+                <stop offset="95%" stopColor="var(--destructive)" stopOpacity={0.1} />
               </linearGradient>
               <linearGradient id="gUnknown" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="hsl(var(--muted-foreground))" stopOpacity={0.35} />
-                <stop offset="95%" stopColor="hsl(var(--muted-foreground))" stopOpacity={0.05} />
+                <stop offset="5%" stopColor="var(--muted-foreground)" stopOpacity={0.35} />
+                <stop offset="95%" stopColor="var(--muted-foreground)" stopOpacity={0.05} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis
               dataKey="time"
               tickFormatter={(t: string) => {
@@ -118,14 +118,14 @@ export function StatusOverTimeChart() {
                   ? d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
                   : d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" });
               }}
-              stroke="hsl(var(--muted-foreground))"
+              stroke="var(--muted-foreground)"
               fontSize={11}
             />
-            <YAxis yAxisId="counts" stroke="hsl(var(--muted-foreground))" fontSize={11} allowDecimals={false} />
+            <YAxis yAxisId="counts" stroke="var(--muted-foreground)" fontSize={11} allowDecimals={false} />
             <YAxis
               yAxisId="pct"
               orientation="right"
-              stroke="hsl(var(--primary))"
+              stroke="var(--primary)"
               fontSize={11}
               domain={[0, 100]}
               tickFormatter={(v: number) => `${v}%`}
@@ -133,8 +133,8 @@ export function StatusOverTimeChart() {
             />
             <Tooltip
               contentStyle={{
-                backgroundColor: "hsl(var(--card))",
-                border: "1px solid hsl(var(--border))",
+                backgroundColor: "var(--card)",
+                border: "1px solid var(--border)",
                 borderRadius: "8px",
                 fontSize: "12px",
               }}
@@ -151,7 +151,7 @@ export function StatusOverTimeChart() {
               dataKey="online"
               name="Online"
               stackId="1"
-              stroke="hsl(var(--success))"
+              stroke="var(--success)"
               fill="url(#gOnline)"
               strokeWidth={1.5}
             />
@@ -161,7 +161,7 @@ export function StatusOverTimeChart() {
               dataKey="offline"
               name="Offline"
               stackId="1"
-              stroke="hsl(var(--destructive))"
+              stroke="var(--destructive)"
               fill="url(#gOffline)"
               strokeWidth={1.5}
             />
@@ -171,7 +171,7 @@ export function StatusOverTimeChart() {
               dataKey="unknown"
               name="Sconosciuti"
               stackId="1"
-              stroke="hsl(var(--muted-foreground))"
+              stroke="var(--muted-foreground)"
               fill="url(#gUnknown)"
               strokeWidth={1}
             />
@@ -180,7 +180,7 @@ export function StatusOverTimeChart() {
               type="monotone"
               dataKey="health_pct"
               name="Health %"
-              stroke="hsl(var(--primary))"
+              stroke="var(--primary)"
               strokeWidth={2}
               dot={false}
               strokeDasharray="4 2"

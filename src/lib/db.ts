@@ -5200,6 +5200,80 @@ export function getOnlineCountsOverTime(
   `).all(hours) as { time: string; online: number; offline: number }[];
 }
 
+/**
+ * Stato host nel tempo, bucket dinamico in base al periodo richiesto:
+ * - ≤ 48h → bucket orari
+ * - ≤ 14gg → bucket giornalieri
+ * - > 14gg → bucket giornalieri (limite di leggibilità asse X)
+ *
+ * "unknown" si calcola come `total_hosts_corrente - online - offline` clampato a ≥0:
+ * status_history salva solo online/offline per design (CHECK constraint).
+ * È un'approssimazione (il totale storico cambia nel tempo) ma utile per
+ * spotting trend di copertura monitoraggio.
+ *
+ * `health_pct` = online / (online + offline + unknown) × 100, arrotondato.
+ */
+export function getStatusOverTime(
+  hours: number = 24
+): { time: string; online: number; offline: number; unknown: number; total: number; health_pct: number }[] {
+  const bucketFmt = hours <= 48 ? "%Y-%m-%dT%H:00:00" : "%Y-%m-%dT00:00:00";
+  const totalRow = getDb().prepare("SELECT COUNT(*) as c FROM hosts").get() as { c: number };
+  const total = totalRow.c;
+  const rows = getDb().prepare(`
+    SELECT
+      strftime(?, checked_at) as time,
+      SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
+      SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline
+    FROM status_history
+    WHERE checked_at >= datetime('now', '-' || ? || ' hours')
+    GROUP BY strftime(?, checked_at)
+    ORDER BY time ASC
+  `).all(bucketFmt, hours, bucketFmt) as { time: string; online: number; offline: number }[];
+  return rows.map((r) => {
+    const unknown = Math.max(0, total - r.online - r.offline);
+    const denom = r.online + r.offline + unknown;
+    const health_pct = denom > 0 ? Math.round((r.online / denom) * 100) : 0;
+    return { ...r, unknown, total, health_pct };
+  });
+}
+
+/**
+ * Recenti transizioni di stato dei known-hosts (host registrati / con MAC noto).
+ * Una "transizione" è una riga di `status_history` il cui status differisce
+ * dalla riga precedente per lo stesso host.
+ * Ritorna gli ultimi `limit` cambi entro le ultime `hoursWindow` ore.
+ *
+ * Per ogni cambio: { host_id, ip, hostname, from_status, to_status, changed_at }.
+ */
+export function getRecentStatusChanges(
+  limit: number = 10,
+  hoursWindow: number = 24
+): { host_id: number; ip: string; hostname: string | null; from_status: string | null; to_status: string; changed_at: string }[] {
+  // CTE: per ogni riga di status_history, recupera il PREV status dello stesso host
+  // (window LAG). Filtra dove status != prev_status → vere transizioni.
+  return getDb().prepare(`
+    WITH ordered AS (
+      SELECT
+        sh.host_id, sh.status, sh.checked_at,
+        LAG(sh.status) OVER (PARTITION BY sh.host_id ORDER BY sh.checked_at) AS prev_status
+      FROM status_history sh
+      WHERE sh.checked_at >= datetime('now', '-' || ? || ' hours')
+    )
+    SELECT
+      o.host_id,
+      h.ip,
+      COALESCE(h.custom_name, h.hostname) AS hostname,
+      o.prev_status AS from_status,
+      o.status AS to_status,
+      o.checked_at AS changed_at
+    FROM ordered o
+    JOIN hosts h ON h.id = o.host_id
+    WHERE o.prev_status IS NOT NULL AND o.prev_status != o.status
+    ORDER BY o.checked_at DESC
+    LIMIT ?
+  `).all(hoursWindow, limit) as { host_id: number; ip: string; hostname: string | null; from_status: string | null; to_status: string; changed_at: string }[];
+}
+
 // ========================
 // Settings (key-value)
 // ========================

@@ -332,6 +332,9 @@ export async function probeDeviceInterfaces(device: NetworkDevice): Promise<Devi
     await loadIfTable();
   } catch (e) {
     warnings.push(`ifTable walk fallito: ${(e as Error).message}`);
+    // SNMP timeout / community sbagliata / device senza SNMP agent → CLI fallback.
+    const cli = await tryVendorCliFallback(device, warnings);
+    if (cli) return { interfaces: cli.interfaces, source: cli.source, warnings };
     return { interfaces: [], source: "none", warnings };
   }
 

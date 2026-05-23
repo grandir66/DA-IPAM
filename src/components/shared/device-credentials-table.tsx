@@ -83,6 +83,14 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [addMode, setAddMode] = useState<"archive" | "inline">("archive");
   const [testing, setTesting] = useState<number | null>(null);
+  const [diagnostic, setDiagnostic] = useState<{
+    bindingId: number;
+    message: string;
+    hint?: string;
+    kind?: string;
+    methodsOffered?: string[];
+    methodsTried?: string[];
+  } | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   // Add form state
   const [addProtocol, setAddProtocol] = useState("ssh");
@@ -172,8 +180,20 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
         body: JSON.stringify({ action: "test", binding_id: bindingId }),
       });
       const result = await res.json();
-      if (result.success) toast.success(result.message);
-      else toast.error(result.message);
+      if (result.success) {
+        toast.success(result.message);
+      } else {
+        // Toast con hint come description: messaggi parlanti dal transport SSH.
+        toast.error(result.message, result.hint ? { description: result.hint } : undefined);
+        setDiagnostic({
+          bindingId,
+          message: result.message,
+          hint: result.hint,
+          kind: result.kind,
+          methodsOffered: result.methodsOffered,
+          methodsTried: result.methodsTried,
+        });
+      }
       fetchBindings();
     } catch {
       toast.error("Errore test");
@@ -319,7 +339,25 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
                       )}
                     </div>
                     {b.test_message && b.test_status === "failed" && (
-                      <p className="text-[10px] text-red-500 mt-0.5 truncate max-w-[200px]">{b.test_message}</p>
+                      <div className="flex items-start gap-1 mt-0.5">
+                        <p className="text-[10px] text-red-500 truncate max-w-[200px]">{b.test_message}</p>
+                        <button
+                          type="button"
+                          className="text-[10px] underline text-muted-foreground hover:text-foreground shrink-0"
+                          onClick={() =>
+                            setDiagnostic({
+                              bindingId: b.id,
+                              message: b.test_message ?? "",
+                              hint: undefined,
+                              kind: undefined,
+                              methodsOffered: undefined,
+                              methodsTried: undefined,
+                            })
+                          }
+                        >
+                          dettagli
+                        </button>
+                      </div>
                     )}
                   </TableCell>
                   <TableCell>
@@ -493,6 +531,50 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
               <Button onClick={handleEdit}>Salva</Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={diagnostic !== null} onOpenChange={(o) => { if (!o) setDiagnostic(null); }}>
+        <DialogContent className={DIALOG_PANEL_COMPACT_CLASS}>
+          <DialogHeader>
+            <DialogTitle>Diagnostica SSH binding</DialogTitle>
+          </DialogHeader>
+          {diagnostic && (
+            <div className="space-y-3 text-sm">
+              {diagnostic.kind && (
+                <div>
+                  <Label className="text-xs">Tipo errore</Label>
+                  <p className="font-mono text-xs">{diagnostic.kind}</p>
+                </div>
+              )}
+              <div>
+                <Label className="text-xs">Messaggio</Label>
+                <p className="whitespace-pre-wrap break-words">{diagnostic.message || "—"}</p>
+              </div>
+              {diagnostic.hint && (
+                <div>
+                  <Label className="text-xs">Come risolvere</Label>
+                  <p className="whitespace-pre-wrap break-words text-muted-foreground">{diagnostic.hint}</p>
+                </div>
+              )}
+              {(diagnostic.methodsOffered?.length || diagnostic.methodsTried?.length) ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Metodi auth offerti dal server</Label>
+                    <p className="font-mono text-xs">{diagnostic.methodsOffered?.join(", ") || "—"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Metodi auth tentati dal client</Label>
+                    <p className="font-mono text-xs">{diagnostic.methodsTried?.join(", ") || "—"}</p>
+                  </div>
+                </div>
+              ) : null}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setDiagnostic(null)}>Chiudi</Button>
+                <Button onClick={() => handleTest(diagnostic.bindingId)} disabled={testing !== null}>Ritesta</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </Card>

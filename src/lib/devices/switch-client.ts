@@ -21,6 +21,28 @@ import {
   getHpComwareStpInfo,
 } from "./hp-vendor";
 import { createWinrmClient } from "./winrm-client";
+import { sshExec as transportSshExec } from "./ssh-transport";
+
+type DeviceCreds = { username?: string; password?: string };
+
+/** Helper interno: esegue un comando SSH sul device usando il transport unico. */
+async function execDeviceCmd(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs = 10000): Promise<string> {
+  const username = creds.username || device.username || undefined;
+  if (!username || !creds.password) {
+    throw new Error(`Credenziali SSH mancanti per ${device.name} (${device.host})`);
+  }
+  const res = await transportSshExec(
+    {
+      host: device.host,
+      port: device.port || 22,
+      username,
+      password: creds.password,
+      timeout: timeoutMs,
+    },
+    cmd
+  );
+  return res.stdout + res.stderr;
+}
 
 export interface MacTableEntry {
   mac: string;
@@ -164,8 +186,6 @@ export async function createSwitchClient(device: NetworkDevice): Promise<SwitchC
   };
 }
 
-type DeviceCreds = { username?: string; password?: string };
-
 async function createVendorClient(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
   if (device.protocol === "winrm" || device.vendor === "windows") {
     return createWinrmSwitchClient(device);
@@ -192,30 +212,7 @@ async function createSshSwitchClient(
   command: string,
   parser: (output: string) => MacTableEntry[]
 ): Promise<SwitchClient> {
-  const { Client } = await import("ssh2");
-
-  function execCommand(cmd: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const conn = new Client();
-      conn.on("ready", () => {
-        conn.exec(cmd, (err, stream) => {
-          if (err) { conn.end(); reject(err); return; }
-          let output = "";
-          stream.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.on("close", () => { conn.end(); resolve(output); });
-        });
-      });
-      conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
-      conn.connect({
-        host: device.host,
-        port: device.port,
-        username: creds.username || device.username || undefined,
-        password: creds.password,
-        readyTimeout: 10000,
-      });
-    });
-  }
+  const execCommand = (cmd: string) => execDeviceCmd(device, creds, cmd, 10000);
 
   return {
     async getMacTable() {
@@ -405,30 +402,7 @@ async function createSshWithFallbackCommands(device: NetworkDevice, creds: Devic
     { cmd: "brctl showmacs br0", parser: parseLinuxBrctlTable },
   ];
 
-  const { Client } = await import("ssh2");
-
-  function execCmd(cmd: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const conn = new Client();
-      conn.on("ready", () => {
-        conn.exec(cmd, (err, stream) => {
-          if (err) { conn.end(); reject(err); return; }
-          let output = "";
-          stream.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
-          stream.on("close", () => { conn.end(); resolve(output); });
-        });
-      });
-      conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
-      conn.connect({
-        host: device.host,
-        port: device.port || 22,
-        username: creds.username || device.username || undefined,
-        password: creds.password,
-        readyTimeout: 10000,
-      });
-    });
-  }
+  const execCmd = (cmd: string) => execDeviceCmd(device, creds, cmd, 10000);
 
   return {
     async getMacTable() {
@@ -457,29 +431,7 @@ async function createSshWithFallbackCommands(device: NetworkDevice, creds: Devic
 // Vendor implementations
 async function createMikrotikSwitchClient(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
   if (device.protocol === "ssh") {
-    const { Client } = await import("ssh2");
-    function execCommand(cmd: string): Promise<string> {
-      return new Promise((resolve, reject) => {
-        const conn = new Client();
-        conn.on("ready", () => {
-          conn.exec(cmd, (err, stream) => {
-            if (err) { conn.end(); reject(err); return; }
-            let output = "";
-            stream.on("data", (data: Buffer) => { output += data.toString(); });
-            stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
-            stream.on("close", () => { conn.end(); resolve(output); });
-          });
-        });
-        conn.on("error", (err) => { try { conn.end(); } catch { /* ignore */ } reject(err); });
-        conn.connect({
-          host: device.host,
-          port: device.port,
-          username: creds.username ?? device.username ?? undefined,
-          password: creds.password,
-          readyTimeout: 10000,
-        });
-      });
-    }
+    const execCommand = (cmd: string) => execDeviceCmd(device, creds, cmd, 10000);
     return {
       async getMacTable() {
         const output = await execCommand("/interface bridge host print terse");

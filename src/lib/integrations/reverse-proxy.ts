@@ -232,11 +232,11 @@ export async function proxyRequest(
     return new Response(null, { status, headers: respHeaders });
   }
 
-  // HTML rewrite: asset/link assoluti che cominciano con "/" vengono prefissati
-  // con `basePath` così il browser li chiede al proxy invece che alla root di
-  // DA-IPAM. Senza questo il dashboard upstream (Wazuh / LibreNMS) chiede
-  // `/ui/logos/...`, `/bootstrap.js`, `/app/...` direttamente all'host DA-IPAM
-  // che ovviamente non ha quei file → 404 a cascata.
+  // HTML rewrite: asset/link assoluti `/...` vengono prefissati con `basePath`
+  // così il browser li chiede al proxy invece che alla root di DA-IPAM. Senza
+  // questo il dashboard upstream (Wazuh OpenSearch Dashboards / LibreNMS) emette
+  // path tipo `/ui/logos/...`, `/bootstrap.js`, `/app/login` che il browser cerca
+  // su DA-IPAM origin → 404 a cascata.
   const contentType = respHeaders.get("content-type") ?? "";
   const isHtml = /\b(text\/html|application\/xhtml\+xml)\b/i.test(contentType);
   if (isHtml) {
@@ -246,7 +246,6 @@ export async function proxyRequest(
     }
     const raw = Buffer.concat(chunks).toString("utf8");
     const rewritten = rewriteHtmlAbsolutePaths(raw, opts.basePath);
-    // Aggiorna content-length se presente
     respHeaders.delete("content-length");
     return new Response(rewritten, { status, headers: respHeaders });
   }
@@ -256,30 +255,15 @@ export async function proxyRequest(
 }
 
 /**
- * Riscrive in un blocco HTML/XHTML i path assoluti che iniziano con "/" così
- * vengono richiesti via il proxy DA-IPAM. Non tocca path già prefissati col
- * basePath, URL `//host/...` (protocol-relative) né URL completi.
- *
- * Coperti:
- *   - attributi DOM: `src=`, `href=`, `action=`, `formaction=`, `poster=`,
- *     `data-href=`, `data-src=`, `manifest=`, `cite=`, `ping=`, `srcset=`
- *   - `<base href="/">`
- *   - `<meta http-equiv="refresh" content="0;url=/...">`
- *   - `url(/...)` in inline CSS / <style>
- *   - script JSON literal: `"/api/..."`, `'/api/...'` solo per stringhe brevi
- *     che assomigliano a path (heuristica conservativa per non rompere JS)
+ * Riscrive nei body HTML/XHTML i path assoluti che cominciano con "/" così
+ * vengono richiesti via il proxy DA-IPAM. Skip path già col basePath, URL
+ * protocol-relative `//host/...`, URL completi.
  */
 function rewriteHtmlAbsolutePaths(html: string, basePath: string): string {
   const prefix = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
+  const shouldRewrite = (path: string): boolean => !(path.startsWith(prefix + "/") || path === prefix);
 
-  // Skip se già prefissato col proxy (anti-doppio-rewrite)
-  function shouldRewrite(path: string): boolean {
-    if (path.startsWith(prefix + "/") || path === prefix) return false;
-    return true;
-  }
-
-  // 1. Attributi DOM con path assoluto: attr="/x" o attr='/x'
-  //    Esclude `//host/path` (protocol-relative) — gestiti dal browser come absolute con scheme.
+  // 1. Attributi DOM con path assoluto
   let out = html.replace(
     /(\s(?:src|href|action|formaction|poster|manifest|cite|ping|data-href|data-src)\s*=\s*)(["'])(\/)(?!\/)([^"']*)\2/gi,
     (_m, attr: string, quote: string, _slash: string, rest: string) => {
@@ -289,7 +273,7 @@ function rewriteHtmlAbsolutePaths(html: string, basePath: string): string {
     },
   );
 
-  // 2. <base href="/...">  — fissa il base path per tutti i path relativi figli
+  // 2. <base href="/...">
   out = out.replace(
     /(<base\s+href=)(["'])(\/)(?!\/)([^"']*)\2/gi,
     (_m, attr: string, quote: string, _slash: string, rest: string) => {

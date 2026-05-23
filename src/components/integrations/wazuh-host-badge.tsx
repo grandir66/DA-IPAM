@@ -199,18 +199,29 @@ export function WazuhHostBadge({ hostId, hostName, hostIp, prefetched, mode = "i
                   <p>{formatTs(status.last_keep_alive)}</p>
                 </div>
               </div>
-              <div className="flex justify-end gap-2 pt-3 border-t border-border/60 mt-3">
+              <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-border/60 mt-3">
                 <Button variant="outline" onClick={() => setDialogOpen(false)}>Chiudi</Button>
                 {runtime.dashboardUrl && (
-                  <a
-                    href={`${runtime.dashboardUrl}/app/wazuh`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={`Apri il dashboard Wazuh e cerca l'agent ${status.agent_id}`}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 px-3 py-1.5 text-sm font-medium"
-                  >
-                    Apri dashboard Wazuh <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
+                  <>
+                    <a
+                      href={`${runtime.dashboardUrl}/app/vulnerability-detection#/dashboard?_g=(filters:!((meta:(key:agent.id),query:(match_phrase:'${encodeURIComponent(status.agent_id)}'))))`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Vulnerabilità Wazuh per agent ${status.agent_id}`}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background hover:bg-accent text-foreground px-3 py-1.5 text-sm font-medium"
+                    >
+                      CVE agent <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                    <a
+                      href={`${runtime.dashboardUrl}/app/endpoints-summary#/agents?tab=welcome&agent=${encodeURIComponent(status.agent_id)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Overview agent ${status.agent_id} su Wazuh (endpoints-summary)`}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 px-3 py-1.5 text-sm font-medium"
+                    >
+                      Apri agent in Wazuh <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </>
                 )}
               </div>
             </div>

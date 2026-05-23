@@ -30,6 +30,7 @@ import {
   PlugZap,
   Workflow,
   BookOpen,
+  Ban,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,7 @@ const networkSubItems: readonly NetworkItem[] = [
   { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered, divider: "Diagnostica" },
   { href: "/dhcp", label: "Tabella DHCP", icon: Server },
   { href: "/scans", label: "Scansioni", icon: Scan },
+  { href: "/excluded-ips", label: "IP esclusi", icon: Ban },
 ] as const;
 
 export function Sidebar() {

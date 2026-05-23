@@ -1,6 +1,6 @@
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { NextResponse } from "next/server";
-import { getNetworkDeviceById } from "@/lib/db";
+import { getNetworkDeviceById, getMultihomedStatusByDeviceId } from "@/lib/db";
 import { z } from "zod";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
@@ -35,11 +35,25 @@ export async function POST(request: Request) {
 
     const scanned: { id: number; name: string; message: string }[] = [];
     const failed: { id: number; name: string; error: string }[] = [];
+    const skipped: { id: number; name: string; reason: string }[] = [];
 
     for (const id of device_ids) {
       const device = getNetworkDeviceById(id);
       if (!device) {
         failed.push({ id, name: String(id), error: "Dispositivo non trovato" });
+        continue;
+      }
+
+      // Multihomed dedup: i secondary vengono saltati silenziosamente — lo scan
+      // sul primary aggiorna lo stesso device fisico. Sezione separata `skipped[]`
+      // così l'utente capisce che non è un errore.
+      const mh = getMultihomedStatusByDeviceId(id);
+      if (mh && !mh.is_primary) {
+        skipped.push({
+          id,
+          name: device.name,
+          reason: `Secondary multihomed (primary: ${mh.primary_ip}, ${mh.peers_count} IF)`,
+        });
         continue;
       }
 
@@ -101,8 +115,10 @@ export async function POST(request: Request) {
       success: scanned.length > 0,
       scanned: scanned.length,
       failed: failed.length,
+      skipped: skipped.length,
       results: scanned,
       errors: failed,
+      skipped_devices: skipped,
       message,
     });
   } catch (error) {

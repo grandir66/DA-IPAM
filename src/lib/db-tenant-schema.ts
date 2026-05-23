@@ -258,12 +258,17 @@ CREATE TABLE IF NOT EXISTS host_credentials (
 );
 
 -- Dispositivi multi-homed
+-- is_primary: per ogni group_id esattamente UN record ha is_primary=1; sugli altri
+-- vengono saltate le scan costose (SNMP query, test cred, software inventory) per
+-- evitare di interrogare 5 volte lo stesso device fisico tramite IP differenti.
+-- Auto-pick: vedi recomputeMultihomedLinks() in db-tenant.ts.
 CREATE TABLE IF NOT EXISTS multihomed_links (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   group_id TEXT NOT NULL,
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
   match_type TEXT NOT NULL CHECK(match_type IN ('serial_number', 'sysname', 'hostname', 'ad_dns')),
   match_value TEXT NOT NULL,
+  is_primary INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   UNIQUE(host_id)
 );
@@ -926,4 +931,16 @@ CREATE INDEX IF NOT EXISTS idx_software_scans_status ON software_scans(status);
 CREATE INDEX IF NOT EXISTS idx_software_inventory_scan ON software_inventory(scan_id);
 CREATE INDEX IF NOT EXISTS idx_software_inventory_name_version ON software_inventory(name, version);
 CREATE INDEX IF NOT EXISTS idx_software_scan_logs_scan ON software_scan_logs(scan_id, ts);
+
+-- Tombstone IP esclusi (vedi db-schema.ts per i dettagli).
+CREATE TABLE IF NOT EXISTS excluded_ips (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+  ip TEXT NOT NULL,
+  excluded_at TEXT NOT NULL DEFAULT (datetime('now')),
+  reason TEXT,
+  excluded_by TEXT,
+  UNIQUE(network_id, ip)
+);
+CREATE INDEX IF NOT EXISTS idx_excluded_ips_network_ip ON excluded_ips(network_id, ip);
 `;

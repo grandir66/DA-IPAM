@@ -63,7 +63,12 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
       }
-      const host = upsertHost(parsed.data);
+      // Creazione manuale via UI: l'utente sa quel che fa, bypassa l'eventuale
+      // tombstone (excluded_ips). upsertHost rimuove l'esclusione e crea l'host.
+      const host = upsertHost({ ...parsed.data, bypassExclusion: true });
+      if (!host) {
+        return NextResponse.json({ error: "Impossibile creare l'host" }, { status: 500 });
+      }
       return NextResponse.json(host, { status: 201 });
     } catch (error) {
       console.error("Error creating host:", error);

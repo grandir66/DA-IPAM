@@ -69,6 +69,18 @@ export interface Host {
 /** Host conosciuto con nome rete (JOIN per UI monitoraggio). */
 export type KnownHostWithNetworkRow = Host & { network_name: string; network_cidr: string };
 
+/** Tombstone IP esclusi: una volta eliminato un host esplicitamente, l'IP entra qui per impedire la sua ricreazione da scan o enrichment. */
+export interface ExcludedIp {
+  id: number;
+  network_id: number;
+  ip: string;
+  excluded_at: string;
+  reason: string | null;
+  excluded_by: string | null;
+}
+
+export type ExcludedIpWithNetwork = ExcludedIp & { network_name: string; network_cidr: string };
+
 /** Struttura JSON di hosts.snmp_data — tutto ciò che SNMP ha restituito durante la scansione. */
 export interface HostSnmpData {
   sysName: string | null;

@@ -50,6 +50,8 @@ import type {
   HostUpdate,
   ScheduledJobInput,
   CredentialInput,
+  ExcludedIp,
+  ExcludedIpWithNetwork,
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 
@@ -2539,7 +2541,7 @@ function mergeOpenPortsByProtocol(existing: string | null, incoming: string, rep
   return JSON.stringify(unique.sort((a, b) => a.port - b.port || String(a.protocol).localeCompare(b.protocol)));
 }
 
-export function upsertHost(input: HostInput & { mac?: string; vendor?: string; hostname?: string; hostname_source?: string; dns_forward?: string; dns_reverse?: string; status?: "online" | "offline" | "unknown"; open_ports?: string; open_ports_replace?: boolean; open_ports_replace_protocol?: "tcp" | "udp"; os_info?: string; model?: string; serial_number?: string; firmware?: string | null; device_manufacturer?: string | null; detection_json?: string | null; snmp_data?: string | null; preserve_existing?: boolean }): Host {
+export function upsertHost(input: HostInput & { mac?: string; vendor?: string; hostname?: string; hostname_source?: string; dns_forward?: string; dns_reverse?: string; status?: "online" | "offline" | "unknown"; open_ports?: string; open_ports_replace?: boolean; open_ports_replace_protocol?: "tcp" | "udp"; os_info?: string; model?: string; serial_number?: string; firmware?: string | null; device_manufacturer?: string | null; detection_json?: string | null; snmp_data?: string | null; preserve_existing?: boolean; bypassExclusion?: boolean }): Host | null {
   const existing = getDb().prepare(
     "SELECT id FROM hosts WHERE network_id = ? AND ip = ?"
   ).get(input.network_id, input.ip) as { id: number } | undefined;
@@ -2682,6 +2684,20 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     return host;
   }
 
+  // INSERT branch: l'host non esiste. L'IP potrebbe essere in blacklist (tombstone post-delete).
+  // - Senza bypassExclusion (chiamate passive / generiche): blocca l'insert.
+  // - Con bypassExclusion (probe attivo ICMP-confermato, creazione manuale): l'IP risponde
+  //   davvero → device nuovo con stesso IP, rimuoviamo il tombstone e procediamo.
+  if (isIpExcluded(input.network_id, input.ip)) {
+    if (!input.bypassExclusion) {
+      return null;
+    }
+    try {
+      getDb().prepare("DELETE FROM excluded_ips WHERE network_id = ? AND ip = ?")
+        .run(input.network_id, input.ip);
+    } catch { /* ignore */ }
+  }
+
   const stmt = getDb().prepare(`
     INSERT INTO hosts (network_id, ip, mac, vendor, hostname, hostname_source, dns_forward, dns_reverse, custom_name, classification, inventory_code, notes, status, open_ports, os_info, model, serial_number, firmware, device_manufacturer, detection_json, snmp_data, first_seen, last_seen)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${input.status === "online" ? "datetime('now')" : "NULL"}, ${input.status === "online" ? "datetime('now')" : "NULL"})
@@ -2771,8 +2787,78 @@ export function updateHost(id: number, input: HostUpdate): Host | undefined {
   return updated;
 }
 
-export function deleteHost(id: number): boolean {
-  return getDb().prepare("DELETE FROM hosts WHERE id = ?").run(id).changes > 0;
+export function deleteHost(id: number, options?: { reason?: string; excludedBy?: string | null; skipExclusion?: boolean }): boolean {
+  const db = getDb();
+  const row = db.prepare("SELECT network_id, ip FROM hosts WHERE id = ?").get(id) as { network_id: number; ip: string } | undefined;
+  const changes = db.prepare("DELETE FROM hosts WHERE id = ?").run(id).changes;
+  if (changes > 0 && row && !options?.skipExclusion) {
+    // Tombstone: l'IP entra in blacklist così le fonti passive (ARP/DHCP/AD) e
+    // anche i probe attivi non lo ricreano silenziosamente al prossimo scan.
+    try {
+      db.prepare(
+        "INSERT OR IGNORE INTO excluded_ips (network_id, ip, reason, excluded_by) VALUES (?, ?, ?, ?)"
+      ).run(row.network_id, row.ip, options?.reason ?? "host_deleted", options?.excludedBy ?? null);
+    } catch { /* tabella mancante su DB pre-migrazione: ignora */ }
+  }
+  return changes > 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// excluded_ips — tombstone IP esclusi
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function isIpExcluded(networkId: number, ip: string): boolean {
+  try {
+    const row = getDb()
+      .prepare("SELECT 1 FROM excluded_ips WHERE network_id = ? AND ip = ? LIMIT 1")
+      .get(networkId, ip);
+    return !!row;
+  } catch {
+    return false;
+  }
+}
+
+export function addToExcludedIps(networkId: number, ip: string, reason?: string | null, excludedBy?: string | null): void {
+  getDb()
+    .prepare(
+      "INSERT OR IGNORE INTO excluded_ips (network_id, ip, reason, excluded_by) VALUES (?, ?, ?, ?)"
+    )
+    .run(networkId, ip, reason ?? null, excludedBy ?? null);
+}
+
+export function removeFromExcludedIps(networkId: number, ip: string): boolean {
+  return getDb()
+    .prepare("DELETE FROM excluded_ips WHERE network_id = ? AND ip = ?")
+    .run(networkId, ip).changes > 0;
+}
+
+export function getExcludedIps(networkId?: number): ExcludedIpWithNetwork[] {
+  const where = networkId != null ? "WHERE e.network_id = ?" : "";
+  const params = networkId != null ? [networkId] : [];
+  return getDb()
+    .prepare(
+      `SELECT e.*, n.name AS network_name, n.cidr AS network_cidr
+       FROM excluded_ips e
+       JOIN networks n ON n.id = e.network_id
+       ${where}
+       ORDER BY e.excluded_at DESC`
+    )
+    .all(...params) as ExcludedIpWithNetwork[];
+}
+
+/**
+ * UPDATE-only: aggiorna solo host già esistenti (network_id+ip). MAI inserisce.
+ * Da usare nelle fonti passive (ARP/DHCP/AD/DNS): un router risponde con entry ARP
+ * o lease DHCP anche per dispositivi spenti/dismessi — non vogliamo che riempiano
+ * il DB. Solo i probe attivi (ICMP/TCP/nmap di discovery.ts) creano host nuovi.
+ * Ritorna null se l'host non esiste.
+ */
+export function updateHostIfExists(input: HostInput & { mac?: string; vendor?: string; hostname?: string; hostname_source?: string; dns_forward?: string; dns_reverse?: string; status?: "online" | "offline" | "unknown"; os_info?: string; model?: string; serial_number?: string; firmware?: string | null; device_manufacturer?: string | null }): Host | null {
+  const existing = getDb()
+    .prepare("SELECT id FROM hosts WHERE network_id = ? AND ip = ?")
+    .get(input.network_id, input.ip) as { id: number } | undefined;
+  if (!existing) return null;
+  return upsertHost(input) as Host;
 }
 
 /** Aggiorna known_host per più host della stessa rete. Ritorna il numero di righe aggiornate. */
@@ -2786,11 +2872,28 @@ export function bulkUpdateHostsKnownHost(networkId: number, hostIds: number[], k
 }
 
 /** Elimina host della stessa rete (bulk). Ritorna il numero di righe eliminate. */
-export function bulkDeleteHosts(networkId: number, hostIds: number[]): number {
+export function bulkDeleteHosts(networkId: number, hostIds: number[], options?: { reason?: string; excludedBy?: string | null; skipExclusion?: boolean }): number {
   if (hostIds.length === 0) return 0;
+  const db = getDb();
   const placeholders = hostIds.map(() => "?").join(",");
-  const stmt = getDb().prepare(`DELETE FROM hosts WHERE network_id = ? AND id IN (${placeholders})`);
-  return stmt.run(networkId, ...hostIds).changes;
+  let ips: string[] = [];
+  if (!options?.skipExclusion) {
+    ips = (db.prepare(`SELECT ip FROM hosts WHERE network_id = ? AND id IN (${placeholders})`)
+      .all(networkId, ...hostIds) as { ip: string }[]).map((r) => r.ip);
+  }
+  const stmt = db.prepare(`DELETE FROM hosts WHERE network_id = ? AND id IN (${placeholders})`);
+  const changes = stmt.run(networkId, ...hostIds).changes;
+  if (changes > 0 && ips.length > 0) {
+    try {
+      const ins = db.prepare(
+        "INSERT OR IGNORE INTO excluded_ips (network_id, ip, reason, excluded_by) VALUES (?, ?, ?, ?)"
+      );
+      db.transaction(() => {
+        for (const ip of ips) ins.run(networkId, ip, options?.reason ?? "host_bulk_deleted", options?.excludedBy ?? null);
+      })();
+    } catch { /* tabella mancante: ignora */ }
+  }
+  return changes;
 }
 
 /** Quanti degli id appartengono alla rete indicata (nessun duplicato negli id). */
@@ -5988,6 +6091,22 @@ const MH_HOSTNAME_BLACKLIST = new Set([
 ]);
 
 /**
+ * IP v4 string → numeric value per ordinamento deterministico nella scelta del primary.
+ * Per IP non IPv4 valido ritorna Infinity così va in coda.
+ */
+function ipv4ToInt(ip: string): number {
+  const parts = ip.split(".");
+  if (parts.length !== 4) return Number.POSITIVE_INFINITY;
+  let n = 0;
+  for (const p of parts) {
+    const x = Number(p);
+    if (!Number.isInteger(x) || x < 0 || x > 255) return Number.POSITIVE_INFINITY;
+    n = n * 256 + x;
+  }
+  return n;
+}
+
+/**
  * Ricalcola i link multi-homed: stesso dispositivo fisico con IP in subnet diverse.
  * Match per: serial_number > sysName SNMP > hostname > AD dns_host_name.
  * Solo gruppi con host in ≥2 reti diverse.
@@ -5998,7 +6117,8 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
   const hosts = db.prepare(`
     SELECT h.id, h.network_id, h.ip, h.hostname, h.serial_number, h.snmp_data, h.custom_name,
            nd.sysname AS dev_sysname, nd.serial_number AS dev_serial,
-           ac.dns_host_name AS ad_dns
+           ac.dns_host_name AS ad_dns,
+           CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device
     FROM hosts h
     LEFT JOIN network_devices nd ON nd.host = h.ip
     LEFT JOIN (
@@ -6011,8 +6131,12 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
     hostname: string | null; serial_number: string | null;
     snmp_data: string | null; custom_name: string | null;
     dev_sysname: string | null; dev_serial: string | null;
-    ad_dns: string | null;
+    ad_dns: string | null; has_device: number;
   }>;
+
+  // Metadata per scegliere il primary del gruppo: IP + flag "managed".
+  const hostMeta = new Map<number, { ip: string; has_device: number }>();
+  for (const h of hosts) hostMeta.set(h.id, { ip: h.ip, has_device: h.has_device });
 
   // Key → Set<host_id>
   const buckets = new Map<string, Set<number>>();
@@ -6107,7 +6231,7 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
   db.transaction(() => {
     db.prepare("DELETE FROM multihomed_links").run();
     const ins = db.prepare(
-      "INSERT OR IGNORE INTO multihomed_links (group_id, host_id, match_type, match_value) VALUES (?, ?, ?, ?)"
+      "INSERT OR IGNORE INTO multihomed_links (group_id, host_id, match_type, match_value, is_primary) VALUES (?, ?, ?, ?, ?)"
     );
 
     for (const [, members] of finalGroups) {
@@ -6118,10 +6242,22 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
 
       const groupId = randomUUID();
       groupCount++;
+
+      // Auto-pick primary: priorità (1) host con network_device associato (managed),
+      // (2) a parità, IP numericamente più basso. Deterministico → idempotente sui recompute.
+      const ranked = [...members]
+        .map((hid) => ({ hid, meta: hostMeta.get(hid)! }))
+        .filter((m) => m.meta)
+        .sort((a, b) => {
+          if (a.meta.has_device !== b.meta.has_device) return b.meta.has_device - a.meta.has_device;
+          return ipv4ToInt(a.meta.ip) - ipv4ToInt(b.meta.ip);
+        });
+      const primaryHid = ranked.length > 0 ? ranked[0].hid : null;
+
       for (const hid of members) {
         const best = hostBest.get(hid);
         if (best) {
-          ins.run(groupId, hid, best.type, best.value);
+          ins.run(groupId, hid, best.type, best.value, hid === primaryHid ? 1 : 0);
           totalLinked++;
         }
       }
@@ -6129,6 +6265,57 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
   })();
 
   return { groups: groupCount, hosts_linked: totalLinked };
+}
+
+/**
+ * Stato multihomed di un host — usato dai runner di scan/query device per
+ * dedurre se la chiamata costosa va deduplicata.
+ *
+ * Ritorna:
+ * - `null` se l'host non è in alcun gruppo multihomed → eseguire normalmente
+ * - `{ is_primary: true, ... }` → eseguire (è il primary del device fisico)
+ * - `{ is_primary: false, primary_* }` → SKIP, scan deduplicato
+ *
+ * Idempotente, no side-effect.
+ */
+export function getMultihomedStatus(hostId: number): {
+  group_id: string;
+  is_primary: boolean;
+  primary_host_id: number;
+  primary_ip: string;
+  primary_network_name: string | null;
+  peers_count: number;
+} | null {
+  const d = getDb();
+  const link = d.prepare("SELECT group_id, is_primary FROM multihomed_links WHERE host_id = ?").get(hostId) as { group_id: string; is_primary: number } | undefined;
+  if (!link) return null;
+  const primary = d.prepare(`SELECT ml.host_id, h.ip, n.name AS network_name FROM multihomed_links ml JOIN hosts h ON h.id = ml.host_id LEFT JOIN networks n ON n.id = h.network_id WHERE ml.group_id = ? AND ml.is_primary = 1 LIMIT 1`).get(link.group_id) as { host_id: number; ip: string; network_name: string | null } | undefined;
+  const peersCount = (d.prepare("SELECT COUNT(*) AS c FROM multihomed_links WHERE group_id = ?").get(link.group_id) as { c: number }).c;
+  // Edge case: nessuno marked primary (recompute non ancora rieseguito dopo migration)
+  // → trattiamo l'host come primary per non bloccare gli scan ingiustamente.
+  if (!primary) return { group_id: link.group_id, is_primary: true, primary_host_id: hostId, primary_ip: "", primary_network_name: null, peers_count: peersCount };
+  return {
+    group_id: link.group_id,
+    is_primary: link.is_primary === 1,
+    primary_host_id: primary.host_id,
+    primary_ip: primary.ip,
+    primary_network_name: primary.network_name,
+    peers_count: peersCount,
+  };
+}
+
+/**
+ * Variante che parte da `network_devices.id`: risolve l'host via
+ * `network_devices.host = hosts.ip`. Usata dai 3 runner di scan device.
+ */
+export function getMultihomedStatusByDeviceId(deviceId: number): ReturnType<typeof getMultihomedStatus> {
+  const d = getDb();
+  const dev = d.prepare("SELECT host FROM network_devices WHERE id = ?").get(deviceId) as { host: string } | undefined;
+  if (!dev) return null;
+  // L'IP può comparire in più subnet (raro): preferiamo l'host che HA un link multihomed.
+  const host = d.prepare(`SELECT h.id FROM hosts h LEFT JOIN multihomed_links ml ON ml.host_id = h.id WHERE h.ip = ? ORDER BY (ml.id IS NULL), h.id LIMIT 1`).get(dev.host) as { id: number } | undefined;
+  if (!host) return null;
+  return getMultihomedStatus(host.id);
 }
 
 // AD Users

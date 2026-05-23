@@ -68,7 +68,8 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
       const adminCheck = await requireAdmin();
       if (isAuthError(adminCheck)) return adminCheck;
       const { id } = await params;
-      const deleted = deleteHost(Number(id));
+      const excludedBy = adminCheck.user?.name ?? adminCheck.user?.email ?? null;
+      const deleted = deleteHost(Number(id), { reason: "host_deleted", excludedBy });
       if (!deleted) {
         return NextResponse.json({ error: "Host non trovato" }, { status: 404 });
       }

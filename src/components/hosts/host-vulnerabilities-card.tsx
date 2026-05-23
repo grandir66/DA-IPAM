@@ -41,49 +41,10 @@ interface VulnPayload {
   findings: Finding[];
 }
 
-const SEVERITY_STYLE: Record<string, string> = {
-  Critical: "bg-red-600 text-white",
-  High: "bg-orange-500 text-white",
-  Medium: "bg-yellow-500 text-black",
-  Low: "bg-blue-500 text-white",
-};
-
-const SOURCE_BADGE_STYLE: Record<string, string> = {
-  Wazuh: "bg-violet-600 text-white",
-  Greenbone: "bg-emerald-700 text-white",
-};
-
 const PAGE_SIZE = 50;
 
 function formatDate(ts: string): string {
   try { return new Date(ts).toLocaleDateString("it-IT"); } catch { return ts; }
-}
-
-function cveLink(cve: string | null) {
-  if (!cve) return <span className="text-muted-foreground">—</span>;
-  return (
-    <a
-      href={`https://nvd.nist.gov/vuln/detail/${cve}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="hover:underline font-mono text-xs"
-    >
-      {cve}
-    </a>
-  );
-}
-
-function SourcesBadges({ sources }: { sources: string[] | undefined }) {
-  if (!sources || sources.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
-  return (
-    <div className="flex flex-wrap gap-1">
-      {sources.map((src) => (
-        <Badge key={src} className={`text-[10px] px-1.5 py-0 ${SOURCE_BADGE_STYLE[src] ?? "bg-slate-600 text-white"}`}>
-          {src}
-        </Badge>
-      ))}
-    </div>
-  );
 }
 
 function BreakdownBadges({ b }: { b: FindingGroup["breakdown"] }) {
@@ -270,7 +231,7 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
                                   <tbody>
                                     {g.cves.map((c, i) => (
                                       <tr key={`${g.key}-cve-${i}`}>
-                                        <td className="py-0.5 pr-2">{cveLink(c.cve_id)}</td>
+                                        <td className="py-0.5 pr-2"><CveLink cve={c.cve_id} /></td>
                                         <td className="py-0.5 pr-2">
                                           <Badge className={`text-[10px] px-1.5 py-0 ${SEVERITY_STYLE[c.severity] ?? ""}`}>{c.severity}</Badge>
                                         </td>
@@ -306,7 +267,7 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
                   <tbody>
                     {flatPaged.map((f) => (
                       <tr key={String(f.id)} className="border-b last:border-b-0">
-                        <td className="py-1 pr-2">{cveLink(f.cve_id)}</td>
+                        <td className="py-1 pr-2"><CveLink cve={f.cve_id} /></td>
                         <td className="py-1 pr-2"><Badge className={SEVERITY_STYLE[f.severity] ?? ""}>{f.severity}</Badge></td>
                         <td className="py-1 pr-2 font-mono">{f.cvss_score?.toFixed(1) ?? "—"}</td>
                         <td className="py-1 pr-2 font-mono text-xs">{f.port ?? "—"}</td>

@@ -568,7 +568,7 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
   const { getDb, linkAdComputerToHost: linkHost, updateHostIfExists, getNetworkContainingIp } = await import("@/lib/db");
   const db = getDb();
   let linked = 0;
-  let created = 0;
+  const created = 0;
   let enriched = 0;
 
   const computers = db

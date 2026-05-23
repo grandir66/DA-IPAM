@@ -50,7 +50,6 @@ import type {
   HostUpdate,
   ScheduledJobInput,
   CredentialInput,
-  ExcludedIp,
   ExcludedIpWithNetwork,
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";

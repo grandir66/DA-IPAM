@@ -12,7 +12,6 @@ import {
   addStatusHistory,
   getDb,
   getActiveNmapProfile,
-  upsertHost,
   updateHostIfExists,
   upsertArpEntries,
   upsertMacPortEntries,

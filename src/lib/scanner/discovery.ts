@@ -1107,7 +1107,11 @@ async function runDiscovery(
         try {
           const hostname = await runWinrmCommand(ip, winrmPort, creds.username, creds.password, "hostname", false, adRealm);
           const hn = String(hostname ?? "").trim();
-          if (hn) {
+          // Hostname valido: solo lettere/cifre/-/. fino a 254 char. Defense in
+          // depth contro stderr filtrato come stdout (es. "bad command name
+          // hostname (line 1 column 1)" da PowerShell ConstrainedLanguage).
+          const isValidHostname = hn.length > 0 && hn.length < 255 && /^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(hn);
+          if (isValidHostname) {
             nmapResults.set(ip, {
               ports: [{ port: winrmPort, protocol: "tcp", service: winrmPort === 5986 ? "winrm-https" : "winrm", version: null }],
               os: "Microsoft Windows",
@@ -1121,7 +1125,11 @@ async function runDiscovery(
             ok = true;
             break;
           }
-          log(`✗ ${ip} cred#${credId} — risposta vuota`);
+          if (hn) {
+            log(`✗ ${ip} cred#${credId} — output non valido come hostname: "${hn.slice(0, 60)}"`);
+          } else {
+            log(`✗ ${ip} cred#${credId} — risposta vuota`);
+          }
         } catch (e) {
           log(`✗ ${ip} cred#${credId}: ${(e as Error).message?.slice(0, 72) ?? "errore"}`);
         }
@@ -1249,7 +1257,11 @@ async function runDiscovery(
           });
 
           const lines = output.trim().split("\n");
-          const hn = lines[0]?.trim() || null;
+          const rawHn = lines[0]?.trim() || "";
+          // Stessa difesa di WinRM: l'output di `hostname` su shell restricted
+          // (rbash) o container minimi può ritornare errori o stringhe lunghe.
+          const isValidHostname = rawHn.length > 0 && rawHn.length < 255 && /^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(rawHn);
+          const hn = isValidHostname ? rawHn : null;
           const kernel = lines[1]?.trim() || null;
           let osName: string | null = null;
           for (const line of lines) {

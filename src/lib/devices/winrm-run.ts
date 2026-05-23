@@ -82,9 +82,18 @@ export function runWinrmCommand(
 
           const bridgeStdout = (result.stdout || "").trim();
           const bridgeStderr = (result.stderr || "").trim();
-          const output = bridgeStdout || bridgeStderr;
 
-          resolve(output);
+          // stderr NON è output valido: messaggi come "bad command name
+          // hostname (line 1 column 1)" arrivano in stderr quando il PowerShell
+          // remoto (Constrained Language / vecchia versione) rifiuta il
+          // cmdlet. Mai passare stderr al chiamante come fosse stdout — è la
+          // causa storica di hostname corrotti in DB.
+          if (!bridgeStdout && bridgeStderr) {
+            reject(new Error(`WinRM stderr: ${bridgeStderr.slice(0, 200)}`));
+            return;
+          }
+
+          resolve(bridgeStdout);
         } catch {
           reject(new Error(`Output non valido dal bridge WinRM: ${stdout.substring(0, 200)}`));
         }

@@ -28,6 +28,7 @@ import {
   replaceSoftwareForAgent,
   replaceVulnsForAgent,
   deleteWazuhAgentsExcept,
+  enrichHostFromWazuh,
   getWazuhAgentByHostId,
   type WazuhAgentRow,
 } from "./wazuh-db";
@@ -41,6 +42,7 @@ export interface WazuhSyncResult {
   matchedHosts: number;
   softwareRows: number;
   vulnRows: number;
+  hostsEnriched: number;
   removedAgents: number;
   errors: string[];
 }
@@ -155,6 +157,7 @@ export async function syncSingleAgent(agentId: string): Promise<void> {
   ]);
   if (hw) upsertWazuhHw(agent.id, hw);
   if (os) upsertWazuhOs(agent.id, os);
+  if (hostId && (hw || os)) enrichHostFromWazuh(hostId, hw, os);
   replaceSoftwareForAgent(agent.id, pkgs);
   replaceVulnsForAgent(agent.id, vulns);
 }
@@ -176,6 +179,7 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
     matchedHosts: 0,
     softwareRows: 0,
     vulnRows: 0,
+    hostsEnriched: 0,
     removedAgents: 0,
     errors: [],
   };
@@ -229,6 +233,9 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
 
       if (hw) upsertWazuhHw(agent.id, hw);
       if (os) upsertWazuhOs(agent.id, os);
+      if (hostId && (hw || os)) {
+        if (enrichHostFromWazuh(hostId, hw, os) > 0) result.hostsEnriched++;
+      }
       result.softwareRows += replaceSoftwareForAgent(agent.id, pkgs);
       result.vulnRows += replaceVulnsForAgent(agent.id, vulns);
     } catch (e) {

@@ -387,3 +387,73 @@ export function deleteWazuhAgentsExcept(activeAgentIds: string[]): number {
   const placeholders = activeAgentIds.map(() => "?").join(",");
   return d.prepare(`DELETE FROM wazuh_agent WHERE agent_id NOT IN (${placeholders})`).run(...activeAgentIds).changes;
 }
+
+/**
+ * Arricchisce hosts.* con dati Wazuh syscollector (OS + HW).
+ * Riempie solo i campi vuoti o "unknown": valori già popolati da altre fonti
+ * (SNMP, AD, input manuale) restano intoccati.
+ */
+export function enrichHostFromWazuh(
+  hostId: number,
+  hw: WazuhSyscollectorHw | null,
+  os: WazuhSyscollectorOs | null,
+): number {
+  if (!hw && !os) return 0;
+  const d = db();
+  const current = d.prepare(
+    "SELECT os_info, model, serial_number, device_manufacturer FROM hosts WHERE id = ?",
+  ).get(hostId) as
+    | { os_info: string | null; model: string | null; serial_number: string | null; device_manufacturer: string | null }
+    | undefined;
+  if (!current) return 0;
+
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+
+  if (isEmptyOrUnknown(current.os_info) && os) {
+    const s = buildOsString(os);
+    if (s) { sets.push("os_info = ?"); vals.push(s); }
+  }
+  if (isEmptyOrUnknown(current.serial_number) && hw?.board_serial) {
+    const v = cleanField(hw.board_serial);
+    if (v && v !== "0") { sets.push("serial_number = ?"); vals.push(v); }
+  }
+  if (isEmptyOrUnknown(current.model) && hw?.board_product) {
+    const v = cleanField(hw.board_product);
+    if (v) { sets.push("model = ?"); vals.push(v); }
+  }
+  if (isEmptyOrUnknown(current.device_manufacturer) && hw?.board_vendor) {
+    const v = cleanField(hw.board_vendor);
+    if (v) { sets.push("device_manufacturer = ?"); vals.push(v); }
+  }
+
+  if (sets.length === 0) return 0;
+  const updated = sets.length;
+  sets.push("updated_at = datetime('now')");
+  d.prepare(`UPDATE hosts SET ${sets.join(", ")} WHERE id = ?`).run(...vals, hostId);
+  return updated;
+}
+
+function isEmptyOrUnknown(v: string | null | undefined): boolean {
+  if (!v) return true;
+  const t = v.trim().toLowerCase();
+  return t === "" || t === "unknown";
+}
+
+function cleanField(v: string): string | null {
+  const t = v.trim();
+  if (!t) return null;
+  if (t.toLowerCase() === "unknown") return null;
+  return t;
+}
+
+function buildOsString(os: WazuhSyscollectorOs): string | null {
+  const name = (os.os?.name ?? "").trim();
+  const ver = (os.os?.version ?? "").trim();
+  const arch = (os.architecture ?? "").trim();
+  let s = "";
+  if (name) s = name;
+  if (ver) s = s ? `${s} ${ver}` : ver;
+  if (s && arch) s = `${s} (${arch})`;
+  return s || null;
+}

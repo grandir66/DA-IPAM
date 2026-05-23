@@ -28,6 +28,7 @@ interface WazuhSyncResult {
   matchedHosts: number;
   softwareRows: number;
   vulnRows: number;
+  hostsEnriched: number;
   removedAgents: number;
   durationMs: number;
   errors: string[];
@@ -172,7 +173,8 @@ export function WazuhCard() {
       const d = (await r.json()) as WazuhSyncResult & { error?: string };
       if (r.ok && !d.error) {
         const errMsg = d.errors?.length ? ` — ${d.errors.length} errori` : "";
-        toast.success(`Sync OK: ${d.matchedHosts}/${d.totalAgents} matchati, ${d.softwareRows} sw, ${d.vulnRows} cve${errMsg}`);
+        const enrichMsg = d.hostsEnriched ? `, ${d.hostsEnriched} host arricchiti` : "";
+        toast.success(`Sync OK: ${d.matchedHosts}/${d.totalAgents} matchati, ${d.softwareRows} sw, ${d.vulnRows} cve${enrichMsg}${errMsg}`);
       } else {
         toast.error(d.error ?? "Sync fallito");
       }

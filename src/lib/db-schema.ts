@@ -810,4 +810,17 @@ CREATE TABLE IF NOT EXISTS device_credential_bindings (
 );
 CREATE INDEX IF NOT EXISTS idx_dcb_device ON device_credential_bindings(device_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_dcb_credential ON device_credential_bindings(credential_id);
+
+-- Tombstone IP esclusi: una volta eliminato un host, l'IP entra qui per impedire
+-- a fonti passive (ARP/DHCP/AD) e attive (ICMP) di ricrearlo silenziosamente.
+CREATE TABLE IF NOT EXISTS excluded_ips (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+  ip TEXT NOT NULL,
+  excluded_at TEXT NOT NULL DEFAULT (datetime('now')),
+  reason TEXT,
+  excluded_by TEXT,
+  UNIQUE(network_id, ip)
+);
+CREATE INDEX IF NOT EXISTS idx_excluded_ips_network_ip ON excluded_ips(network_id, ip);
 `;

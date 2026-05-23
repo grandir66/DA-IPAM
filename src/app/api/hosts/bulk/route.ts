@@ -55,7 +55,8 @@ export async function DELETE(request: Request) {
         { status: 400 }
       );
     }
-    const changes = bulkDeleteHosts(network_id, unique);
+    const excludedBy = adminCheck.user?.name ?? adminCheck.user?.email ?? null;
+    const changes = bulkDeleteHosts(network_id, unique, { reason: "host_bulk_deleted", excludedBy });
     return NextResponse.json({ success: true, deleted: changes });
     } catch (error) {
       console.error("Hosts bulk DELETE error:", error);

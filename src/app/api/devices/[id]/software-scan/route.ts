@@ -18,6 +18,7 @@ import { auth } from "@/lib/auth";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { runSoftwareScan } from "@/lib/probes/software-runner";
+import { getMultihomedStatusByDeviceId } from "@/lib/db";
 
 const Body = z.object({
   credentialId: z.number().int().positive().optional(),
@@ -58,6 +59,19 @@ export async function POST(
         { error: parsed.error.issues[0]?.message ?? "Dati non validi" },
         { status: 400 }
       );
+    }
+
+    // Multihomed dedup: se device è secondary di un gruppo multihomed,
+    // saltiamo lo scan software (lo stesso device verrebbe interrogato N volte).
+    // Bypass: ?force=1 nella query string.
+    const force = new URL(request.url).searchParams.get("force") === "1";
+    const mh = getMultihomedStatusByDeviceId(deviceId);
+    if (mh && !mh.is_primary && !force) {
+      return NextResponse.json({
+        error: "scan_skipped_multihomed_secondary",
+        message: `Device secondary di un gruppo multihomed (${mh.peers_count} IF). Software scan saltato: esegui sul primary (${mh.primary_ip}) o forza con ?force=1.`,
+        multihomed: { group_id: mh.group_id, primary_host_id: mh.primary_host_id, primary_ip: mh.primary_ip, peers_count: mh.peers_count },
+      }, { status: 409 });
     }
 
     const session = await auth();

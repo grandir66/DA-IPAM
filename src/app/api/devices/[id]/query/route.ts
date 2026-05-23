@@ -1,11 +1,11 @@
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { NextResponse } from "next/server";
-import { getNetworkDeviceById, updateNetworkDevice, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, getInventoryAssetByNetworkDevice, updateInventoryAsset, syncDeviceToHost, trackDeviceInfoChanges, upsertNeighbors, upsertRoutes, getDeviceCommunityString, cleanOrphanedForeignKeys } from "@/lib/db";
+import { getNetworkDeviceById, updateNetworkDevice, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, getInventoryAssetByNetworkDevice, updateInventoryAsset, syncDeviceToHost, trackDeviceInfoChanges, upsertNeighbors, upsertRoutes, getDeviceCommunityString, cleanOrphanedForeignKeys, getMultihomedStatusByDeviceId } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { getDeviceInfo, resolveNasKind } from "@/lib/devices/device-info";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
-import { upsertHost, getNetworks, upsertDhcpLease, upsertMacIpMapping, syncIpAssignmentsForNetwork, getCurrentTenantCode } from "@/lib/db";
+import { updateHostIfExists, getNetworks, upsertDhcpLease, upsertMacIpMapping, syncIpAssignmentsForNetwork, getCurrentTenantCode } from "@/lib/db";
 import { withTenant } from "@/lib/db-tenant";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
@@ -160,17 +160,17 @@ async function runRouterQuery(deviceId: number, device: Parameters<typeof create
           const network = nets.find((n) => isIpInCidr(lease.ip, n.cidr));
           if (!network) continue;
           const vendor = await lookupVendor(lease.mac);
-          // Niente status='online' qui: un lease DHCP non prova reachability
-          // (server tiene lease per giorni dopo lo spegnimento del client).
-          // Lo status lo decide network_discovery (ICMP + TCP fallback).
-          const host = upsertHost({
+          // DHCP è fonte PASSIVA: aggiorna solo host esistenti, MAI inserisce.
+          // Il server tiene lease per giorni dopo lo spegnimento; lo status e la
+          // CREAZIONE host la decide solo network_discovery (ICMP + TCP).
+          const host = updateHostIfExists({
             network_id: network.id, ip: lease.ip, mac: lease.mac,
             ...(lease.hostname && { hostname: lease.hostname }),
             hostname_source: "dhcp", vendor: vendor || undefined,
           });
           upsertMacIpMapping({
             mac: lease.mac, ip: lease.ip, source: "dhcp", source_device_id: deviceId,
-            network_id: network.id, host_id: host.id, vendor: vendor ?? undefined,
+            network_id: network.id, host_id: host?.id ?? null, vendor: vendor ?? undefined,
             hostname: lease.hostname ?? undefined,
           });
           const sourceType = device.vendor === "mikrotik" ? "mikrotik" : "other";
@@ -180,7 +180,7 @@ async function runRouterQuery(deviceId: number, device: Parameters<typeof create
             hostname: lease.hostname ?? null, status: lease.status ?? null,
             lease_expires: lease.expiresAfter ?? null, description: lease.comment ?? null,
             dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
-            host_id: host.id, network_id: network.id,
+            host_id: host?.id ?? null, network_id: network.id,
           });
           dhcpNetworks.add(network.id);
         }
@@ -203,7 +203,8 @@ async function runRouterQuery(deviceId: number, device: Parameters<typeof create
     const network = networks.find((n) => isIpInCidr(entry.ip!, n.cidr));
     if (!network) continue;
     const vendor = await lookupVendor(entry.mac);
-    upsertHost({ network_id: network.id, ip: entry.ip, mac: entry.mac, vendor: vendor || undefined });
+    // ARP è fonte PASSIVA: aggiorna solo host esistenti, MAI inserisce.
+    updateHostIfExists({ network_id: network.id, ip: entry.ip, mac: entry.mac, vendor: vendor || undefined });
     hostsUpdated++;
   }
   plog(p, `✓ ${hostsUpdated} host aggiornati con MAC/vendor`);
@@ -448,6 +449,20 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       const device = getNetworkDeviceById(Number(id));
       if (!device) {
         return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
+      }
+
+      // Multihomed scan dedup: se il device è registrato su un IP "secondary"
+      // di un gruppo multihomed, evitiamo di rifare il query (stesso device fisico).
+      // Bypass: ?force=1 nella query string.
+      const url = new URL(_request.url);
+      const force = url.searchParams.get("force") === "1";
+      const mh = getMultihomedStatusByDeviceId(Number(id));
+      if (mh && !mh.is_primary && !force) {
+        return NextResponse.json({
+          error: "scan_skipped_multihomed_secondary",
+          message: `Device secondary di un gruppo multihomed (${mh.peers_count} IF). Scan saltato: esegui sul primary (${mh.primary_ip}) o forza con ?force=1.`,
+          multihomed: { group_id: mh.group_id, primary_host_id: mh.primary_host_id, primary_ip: mh.primary_ip, peers_count: mh.peers_count },
+        }, { status: 409 });
       }
 
       const scanTarget = (device as { scan_target?: string | null }).scan_target;

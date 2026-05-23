@@ -565,7 +565,7 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
  * se l'IP è noto (da DNS/DHCP) e cade in una subnet gestita.
  */
 async function linkComputersToHosts(integrationId: number): Promise<{ linked: number; created: number; enriched: number }> {
-  const { getDb, linkAdComputerToHost: linkHost, upsertHost, getNetworkContainingIp } = await import("@/lib/db");
+  const { getDb, linkAdComputerToHost: linkHost, updateHostIfExists, getNetworkContainingIp } = await import("@/lib/db");
   const db = getDb();
   let linked = 0;
   let created = 0;
@@ -660,27 +660,24 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
 
         linked++;
       } else if (comp.ip_address) {
-        // ── Nessun host trovato ma IP noto: crea se l'IP è in una subnet gestita ──
+        // ── AD ha un IP ma IPAM non ha l'host: aggiorna solo se esiste ──
+        // AD è una fonte PASSIVA (computer rimangono in AD anche se spenti/dismessi):
+        // non creiamo host da AD. Il primo scan ICMP/discovery li creerà; al successivo
+        // AD sync verranno linkati. Evita di re-introdurre host cancellati dall'utente.
         const network = getNetworkContainingIp(comp.ip_address);
         if (network) {
-          const notes = `[AD: ${hostname}]${osRaw ? ` ${osRaw}` : ""}`;
-          upsertHost({
+          const updated = updateHostIfExists({
             network_id: network.id,
             ip: comp.ip_address,
             hostname,
             hostname_source: "ad",
             os_info: osRaw || undefined,
             classification,
-            notes,
-            status: "unknown",
-          } as Parameters<typeof upsertHost>[0]);
-
-          // Dopo creazione, trova il nuovo host e collega
-          const newHost = db.prepare("SELECT id FROM hosts WHERE ip = ? LIMIT 1").get(comp.ip_address) as { id: number } | undefined;
-          if (newHost) {
-            linkHost(integrationId, comp.object_guid, newHost.id);
-            created++;
+          });
+          if (updated) {
+            linkHost(integrationId, comp.object_guid, updated.id);
             linked++;
+            enriched++;
           }
         }
       }

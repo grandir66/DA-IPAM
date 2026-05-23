@@ -50,6 +50,8 @@ import type {
   SoftwarePackage,
   SoftwareInventoryRow,
   SoftwareScanLog,
+  ExcludedIp,
+  ExcludedIpWithNetwork,
 } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -396,6 +398,22 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione NIS2 Fase 1 fallita:`, e);
+  }
+
+  // Migrazione runtime: multihomed_links.is_primary (flag scan-dedup).
+  // Per ogni gruppo multihomed un solo host è "primary" e riceve gli scan
+  // costosi (SNMP/test cred/software inventory). Vedi recomputeMultihomedLinks().
+  try {
+    const tbl = newDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='multihomed_links'").get();
+    if (tbl) {
+      const cols = newDb.prepare("PRAGMA table_info(multihomed_links)").all() as Array<{ name: string }>;
+      if (!cols.some((c) => c.name === "is_primary")) {
+        newDb.exec("ALTER TABLE multihomed_links ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0");
+        console.info(`[db-tenant] ${tenantCode}: multihomed_links.is_primary aggiunto (verrà popolato al prossimo recomputeMultihomedLinks)`);
+      }
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione multihomed_links.is_primary fallita:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -809,12 +827,12 @@ export function getHostsByNetworkWithDevices(networkId: number): (Host & {
   device_id?: number;
   device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string };
   ad_dns_host_name?: string | null;
-  multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
+  multihomed?: { group_id: string; match_type: string; is_primary: boolean; primary_host_id: number | null; primary_ip: string | null; peers: Array<{ ip: string; network_name: string; host_id: number; is_primary: boolean }> } | null;
 })[] {
   const hosts = db().prepare(
     `SELECT h.*, nd.id as _dev_id, nd.name as _dev_name, nd.sysname as _dev_sysname, nd.vendor as _dev_vendor, nd.protocol as _dev_protocol,
             ac.ad_dns as _ad_dns,
-            ml.group_id as _mh_group, ml.match_type as _mh_type
+            ml.group_id as _mh_group, ml.match_type as _mh_type, ml.is_primary as _mh_is_primary
      FROM hosts h
      LEFT JOIN network_devices nd ON nd.host = h.ip
      LEFT JOIN (
@@ -827,40 +845,58 @@ export function getHostsByNetworkWithDevices(networkId: number): (Host & {
      WHERE h.network_id = ?`
   ).all(networkId) as (Host & {
     _dev_id?: number; _dev_name?: string; _dev_sysname?: string | null; _dev_vendor?: string; _dev_protocol?: string;
-    _ad_dns?: string | null; _mh_group?: string | null; _mh_type?: string | null;
+    _ad_dns?: string | null; _mh_group?: string | null; _mh_type?: string | null; _mh_is_primary?: number | null;
   })[];
 
   const groupIds = new Set<string>();
   for (const h of hosts) {
     if (h._mh_group) groupIds.add(h._mh_group);
   }
-  const peersByGroup = new Map<string, Array<{ ip: string; network_name: string; host_id: number }>>();
+  const peersByGroup = new Map<string, Array<{ ip: string; network_name: string; host_id: number; is_primary: boolean }>>();
+  const primaryByGroup = new Map<string, { host_id: number; ip: string }>();
   if (groupIds.size > 0) {
     const placeholders = [...groupIds].map(() => "?").join(",");
+    // Carico TUTTI i peer del gruppo (anche stessa rete) per poter sempre indicare
+    // il primary nei dati restituiti. Filtro out questo host stesso più sotto.
     const peers = db().prepare(
-      `SELECT ml.group_id, h.id as host_id, h.ip, n.name as network_name
+      `SELECT ml.group_id, h.id as host_id, h.ip, n.name as network_name, ml.is_primary
        FROM multihomed_links ml
        JOIN hosts h ON h.id = ml.host_id
        JOIN networks n ON n.id = h.network_id
-       WHERE ml.group_id IN (${placeholders}) AND h.network_id != ?`
-    ).all(...groupIds, networkId) as Array<{ group_id: string; host_id: number; ip: string; network_name: string }>;
+       WHERE ml.group_id IN (${placeholders})`
+    ).all(...groupIds) as Array<{ group_id: string; host_id: number; ip: string; network_name: string; is_primary: number }>;
     for (const p of peers) {
       if (!peersByGroup.has(p.group_id)) peersByGroup.set(p.group_id, []);
-      peersByGroup.get(p.group_id)!.push({ ip: p.ip, network_name: p.network_name, host_id: p.host_id });
+      peersByGroup.get(p.group_id)!.push({ ip: p.ip, network_name: p.network_name, host_id: p.host_id, is_primary: p.is_primary === 1 });
+      if (p.is_primary === 1) primaryByGroup.set(p.group_id, { host_id: p.host_id, ip: p.ip });
     }
   }
 
   return hosts
     .sort((a, b) => ipToNum(a.ip) - ipToNum(b.ip))
-    .map(({ _dev_id, _dev_name, _dev_sysname, _dev_vendor, _dev_protocol, _ad_dns, _mh_group, _mh_type, ...h }) => ({
-      ...h,
-      device_id: _dev_id ?? undefined,
-      device: _dev_id ? { id: _dev_id, name: _dev_name!, sysname: _dev_sysname ?? null, vendor: _dev_vendor!, protocol: _dev_protocol! } : undefined,
-      ad_dns_host_name: _ad_dns ?? undefined,
-      multihomed: _mh_group && peersByGroup.has(_mh_group)
-        ? { group_id: _mh_group, match_type: _mh_type ?? "hostname", peers: peersByGroup.get(_mh_group)! }
-        : null,
-    }));
+    .map(({ _dev_id, _dev_name, _dev_sysname, _dev_vendor, _dev_protocol, _ad_dns, _mh_group, _mh_type, _mh_is_primary, ...h }) => {
+      let multihomed = null;
+      if (_mh_group && peersByGroup.has(_mh_group)) {
+        const allPeers = peersByGroup.get(_mh_group)!;
+        const otherPeers = allPeers.filter((p) => p.host_id !== h.id);
+        const primary = primaryByGroup.get(_mh_group) ?? null;
+        multihomed = {
+          group_id: _mh_group,
+          match_type: _mh_type ?? "hostname",
+          is_primary: _mh_is_primary === 1,
+          primary_host_id: primary?.host_id ?? null,
+          primary_ip: primary?.ip ?? null,
+          peers: otherPeers,
+        };
+      }
+      return {
+        ...h,
+        device_id: _dev_id ?? undefined,
+        device: _dev_id ? { id: _dev_id, name: _dev_name!, sysname: _dev_sysname ?? null, vendor: _dev_vendor!, protocol: _dev_protocol! } : undefined,
+        ad_dns_host_name: _ad_dns ?? undefined,
+        multihomed,
+      };
+    });
 }
 
 export function getKnownHosts(networkId?: number | null): Host[] {
@@ -998,7 +1034,7 @@ export function mergeOpenPortsJson(existing: string | null, incoming: string): s
   return JSON.stringify([...merged.values()].sort((a, b) => a.port - b.port || String(a.protocol).localeCompare(b.protocol)));
 }
 
-export function upsertHost(input: HostInput & { mac?: string; vendor?: string; hostname?: string; hostname_source?: string; dns_forward?: string; dns_reverse?: string; status?: "online" | "offline" | "unknown"; open_ports?: string; open_ports_replace?: boolean; open_ports_replace_protocol?: "tcp" | "udp"; os_info?: string; model?: string; serial_number?: string; firmware?: string | null; device_manufacturer?: string | null; detection_json?: string | null; snmp_data?: string | null; preserve_existing?: boolean }): Host {
+export function upsertHost(input: HostInput & { mac?: string; vendor?: string; hostname?: string; hostname_source?: string; dns_forward?: string; dns_reverse?: string; status?: "online" | "offline" | "unknown"; open_ports?: string; open_ports_replace?: boolean; open_ports_replace_protocol?: "tcp" | "udp"; os_info?: string; model?: string; serial_number?: string; firmware?: string | null; device_manufacturer?: string | null; detection_json?: string | null; snmp_data?: string | null; preserve_existing?: boolean; bypassExclusion?: boolean }): Host | null {
   const existing = db().prepare(
     "SELECT id FROM hosts WHERE network_id = ? AND ip = ?"
   ).get(input.network_id, input.ip) as { id: number } | undefined;
@@ -1131,6 +1167,20 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     return host;
   }
 
+  // INSERT branch: l'host non esiste. L'IP potrebbe essere in blacklist (tombstone post-delete).
+  // - Senza bypassExclusion (chiamate passive / generiche): blocca l'insert.
+  // - Con bypassExclusion (probe attivo ICMP-confermato, creazione manuale): l'IP risponde
+  //   davvero → device nuovo con stesso IP, rimuoviamo il tombstone e procediamo.
+  if (isIpExcluded(input.network_id, input.ip)) {
+    if (!input.bypassExclusion) {
+      return null;
+    }
+    try {
+      db().prepare("DELETE FROM excluded_ips WHERE network_id = ? AND ip = ?")
+        .run(input.network_id, input.ip);
+    } catch { /* ignore */ }
+  }
+
   const stmt = db().prepare(`
     INSERT INTO hosts (network_id, ip, mac, vendor, hostname, hostname_source, dns_forward, dns_reverse, custom_name, classification, inventory_code, notes, status, open_ports, os_info, model, serial_number, firmware, device_manufacturer, detection_json, snmp_data, first_seen, last_seen)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${input.status === "online" ? "datetime('now')" : "NULL"}, ${input.status === "online" ? "datetime('now')" : "NULL"})
@@ -1220,8 +1270,73 @@ export function updateHost(id: number, input: HostUpdate): Host | undefined {
   return updated;
 }
 
-export function deleteHost(id: number): boolean {
-  return db().prepare("DELETE FROM hosts WHERE id = ?").run(id).changes > 0;
+export function deleteHost(id: number, options?: { reason?: string; excludedBy?: string | null; skipExclusion?: boolean }): boolean {
+  const d = db();
+  const row = d.prepare("SELECT network_id, ip FROM hosts WHERE id = ?").get(id) as { network_id: number; ip: string } | undefined;
+  const changes = d.prepare("DELETE FROM hosts WHERE id = ?").run(id).changes;
+  if (changes > 0 && row && !options?.skipExclusion) {
+    try {
+      d.prepare(
+        "INSERT OR IGNORE INTO excluded_ips (network_id, ip, reason, excluded_by) VALUES (?, ?, ?, ?)"
+      ).run(row.network_id, row.ip, options?.reason ?? "host_deleted", options?.excludedBy ?? null);
+    } catch { /* tabella mancante su DB pre-migrazione: ignora */ }
+  }
+  return changes > 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// excluded_ips — tombstone IP esclusi
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function isIpExcluded(networkId: number, ip: string): boolean {
+  try {
+    const row = db()
+      .prepare("SELECT 1 FROM excluded_ips WHERE network_id = ? AND ip = ? LIMIT 1")
+      .get(networkId, ip);
+    return !!row;
+  } catch {
+    return false;
+  }
+}
+
+export function addToExcludedIps(networkId: number, ip: string, reason?: string | null, excludedBy?: string | null): void {
+  db()
+    .prepare(
+      "INSERT OR IGNORE INTO excluded_ips (network_id, ip, reason, excluded_by) VALUES (?, ?, ?, ?)"
+    )
+    .run(networkId, ip, reason ?? null, excludedBy ?? null);
+}
+
+export function removeFromExcludedIps(networkId: number, ip: string): boolean {
+  return db()
+    .prepare("DELETE FROM excluded_ips WHERE network_id = ? AND ip = ?")
+    .run(networkId, ip).changes > 0;
+}
+
+export function getExcludedIps(networkId?: number): ExcludedIpWithNetwork[] {
+  const where = networkId != null ? "WHERE e.network_id = ?" : "";
+  const params = networkId != null ? [networkId] : [];
+  return db()
+    .prepare(
+      `SELECT e.*, n.name AS network_name, n.cidr AS network_cidr
+       FROM excluded_ips e
+       JOIN networks n ON n.id = e.network_id
+       ${where}
+       ORDER BY e.excluded_at DESC`
+    )
+    .all(...params) as ExcludedIpWithNetwork[];
+}
+
+/**
+ * UPDATE-only: aggiorna solo host già esistenti (network_id+ip). MAI inserisce.
+ * Da usare nelle fonti passive (ARP/DHCP/AD/DNS): vedi commento in db.ts.
+ */
+export function updateHostIfExists(input: HostInput & { mac?: string; vendor?: string; hostname?: string; hostname_source?: string; dns_forward?: string; dns_reverse?: string; status?: "online" | "offline" | "unknown"; os_info?: string; model?: string; serial_number?: string; firmware?: string | null; device_manufacturer?: string | null }): Host | null {
+  const existing = db()
+    .prepare("SELECT id FROM hosts WHERE network_id = ? AND ip = ?")
+    .get(input.network_id, input.ip) as { id: number } | undefined;
+  if (!existing) return null;
+  return upsertHost(input) as Host;
 }
 
 export function bulkUpdateHostsKnownHost(networkId: number, hostIds: number[], knownHost: 0 | 1): number {
@@ -1233,11 +1348,28 @@ export function bulkUpdateHostsKnownHost(networkId: number, hostIds: number[], k
   return stmt.run(knownHost, networkId, ...hostIds).changes;
 }
 
-export function bulkDeleteHosts(networkId: number, hostIds: number[]): number {
+export function bulkDeleteHosts(networkId: number, hostIds: number[], options?: { reason?: string; excludedBy?: string | null; skipExclusion?: boolean }): number {
   if (hostIds.length === 0) return 0;
+  const d = db();
   const placeholders = hostIds.map(() => "?").join(",");
-  const stmt = db().prepare(`DELETE FROM hosts WHERE network_id = ? AND id IN (${placeholders})`);
-  return stmt.run(networkId, ...hostIds).changes;
+  let ips: string[] = [];
+  if (!options?.skipExclusion) {
+    ips = (d.prepare(`SELECT ip FROM hosts WHERE network_id = ? AND id IN (${placeholders})`)
+      .all(networkId, ...hostIds) as { ip: string }[]).map((r) => r.ip);
+  }
+  const stmt = d.prepare(`DELETE FROM hosts WHERE network_id = ? AND id IN (${placeholders})`);
+  const changes = stmt.run(networkId, ...hostIds).changes;
+  if (changes > 0 && ips.length > 0) {
+    try {
+      const ins = d.prepare(
+        "INSERT OR IGNORE INTO excluded_ips (network_id, ip, reason, excluded_by) VALUES (?, ?, ?, ?)"
+      );
+      d.transaction(() => {
+        for (const ip of ips) ins.run(networkId, ip, options?.reason ?? "host_bulk_deleted", options?.excludedBy ?? null);
+      })();
+    } catch { /* tabella mancante: ignora */ }
+  }
+  return changes;
 }
 
 export function countHostsInNetwork(networkId: number, hostIds: number[]): number {
@@ -2116,42 +2248,52 @@ export function getAllHostValidatedProtocols(): Map<number, string[]> {
 }
 
 /** Tutti i link multihomed con i peer, per la pagina Discovery. */
-export function getAllMultihomedLinks(): Map<number, { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> }> {
+export function getAllMultihomedLinks(): Map<number, { group_id: string; match_type: string; is_primary: boolean; primary_host_id: number | null; primary_ip: string | null; peers: Array<{ ip: string; network_name: string; host_id: number; is_primary: boolean }> }> {
   const rows = db().prepare(
-    `SELECT ml.host_id, ml.group_id, ml.match_type
+    `SELECT ml.host_id, ml.group_id, ml.match_type, ml.is_primary
      FROM multihomed_links ml`
-  ).all() as Array<{ host_id: number; group_id: string; match_type: string }>;
+  ).all() as Array<{ host_id: number; group_id: string; match_type: string; is_primary: number }>;
 
   const groupIds = new Set<string>();
-  const hostToGroup = new Map<number, { group_id: string; match_type: string }>();
+  const hostToGroup = new Map<number, { group_id: string; match_type: string; is_primary: number }>();
   for (const r of rows) {
     groupIds.add(r.group_id);
-    hostToGroup.set(r.host_id, { group_id: r.group_id, match_type: r.match_type });
+    hostToGroup.set(r.host_id, { group_id: r.group_id, match_type: r.match_type, is_primary: r.is_primary });
   }
   if (groupIds.size === 0) return new Map();
 
   const placeholders = [...groupIds].map(() => "?").join(",");
   const peers = db().prepare(
-    `SELECT ml.group_id, ml.host_id, h.ip, n.name AS network_name
+    `SELECT ml.group_id, ml.host_id, ml.is_primary, h.ip, n.name AS network_name
      FROM multihomed_links ml
      JOIN hosts h ON h.id = ml.host_id
      JOIN networks n ON n.id = h.network_id
      WHERE ml.group_id IN (${placeholders})`
-  ).all(...groupIds) as Array<{ group_id: string; host_id: number; ip: string; network_name: string }>;
+  ).all(...groupIds) as Array<{ group_id: string; host_id: number; ip: string; network_name: string; is_primary: number }>;
 
-  const peersByGroup = new Map<string, Array<{ ip: string; network_name: string; host_id: number }>>();
+  const peersByGroup = new Map<string, Array<{ ip: string; network_name: string; host_id: number; is_primary: boolean }>>();
+  const primaryByGroup = new Map<string, { host_id: number; ip: string }>();
   for (const p of peers) {
     const arr = peersByGroup.get(p.group_id) || [];
-    arr.push({ ip: p.ip, network_name: p.network_name, host_id: p.host_id });
+    arr.push({ ip: p.ip, network_name: p.network_name, host_id: p.host_id, is_primary: p.is_primary === 1 });
     peersByGroup.set(p.group_id, arr);
+    if (p.is_primary === 1) primaryByGroup.set(p.group_id, { host_id: p.host_id, ip: p.ip });
   }
 
-  const result = new Map<number, { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> }>();
-  for (const [hostId, { group_id, match_type }] of hostToGroup) {
+  const result = new Map<number, { group_id: string; match_type: string; is_primary: boolean; primary_host_id: number | null; primary_ip: string | null; peers: Array<{ ip: string; network_name: string; host_id: number; is_primary: boolean }> }>();
+  for (const [hostId, { group_id, match_type, is_primary }] of hostToGroup) {
     const allPeers = peersByGroup.get(group_id) || [];
     const otherPeers = allPeers.filter((p) => p.host_id !== hostId);
     if (otherPeers.length > 0) {
-      result.set(hostId, { group_id, match_type, peers: otherPeers });
+      const primary = primaryByGroup.get(group_id) ?? null;
+      result.set(hostId, {
+        group_id,
+        match_type,
+        is_primary: is_primary === 1,
+        primary_host_id: primary?.host_id ?? null,
+        primary_ip: primary?.ip ?? null,
+        peers: otherPeers,
+      });
     }
   }
   return result;
@@ -3843,9 +3985,31 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
 
 const MH_HOSTNAME_BLACKLIST = new Set(["localhost", "router", "switch", "firewall", "gateway", "server", "ap", "nas", "printer", "unknown", "default", "test"]);
 
+/**
+ * IP v4 string → numeric value per ordinamento deterministico.
+ * Per IP non IPv4 (es. IPv6 o stringa malformata) ritorna Infinity così finiscono
+ * in coda all'ordinamento del primary-pick.
+ */
+function ipv4ToInt(ip: string): number {
+  const parts = ip.split(".");
+  if (parts.length !== 4) return Number.POSITIVE_INFINITY;
+  let n = 0;
+  for (const p of parts) {
+    const x = Number(p);
+    if (!Number.isInteger(x) || x < 0 || x > 255) return Number.POSITIVE_INFINITY;
+    n = n * 256 + x;
+  }
+  return n;
+}
+
 export function recomputeMultihomedLinks(): { groups: number; hosts_linked: number } {
   const d = db();
-  const hosts = d.prepare(`SELECT h.id, h.network_id, h.ip, h.hostname, h.serial_number, h.snmp_data, h.custom_name, nd.sysname AS dev_sysname, nd.serial_number AS dev_serial, ac.dns_host_name AS ad_dns FROM hosts h LEFT JOIN network_devices nd ON nd.host = h.ip LEFT JOIN (SELECT host_id, MAX(dns_host_name) as dns_host_name FROM ad_computers WHERE host_id IS NOT NULL GROUP BY host_id) ac ON ac.host_id = h.id`).all() as Array<{ id: number; network_id: number; ip: string; hostname: string | null; serial_number: string | null; snmp_data: string | null; custom_name: string | null; dev_sysname: string | null; dev_serial: string | null; ad_dns: string | null }>;
+  // Includo `has_device` (1 se l'host ha un network_device associato via IP) per
+  // l'auto-pick primary: i managed hanno priorità perché concentrano credenziali,
+  // SNMP context e storia di scan.
+  const hosts = d.prepare(`SELECT h.id, h.network_id, h.ip, h.hostname, h.serial_number, h.snmp_data, h.custom_name, nd.sysname AS dev_sysname, nd.serial_number AS dev_serial, ac.dns_host_name AS ad_dns, CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device FROM hosts h LEFT JOIN network_devices nd ON nd.host = h.ip LEFT JOIN (SELECT host_id, MAX(dns_host_name) as dns_host_name FROM ad_computers WHERE host_id IS NOT NULL GROUP BY host_id) ac ON ac.host_id = h.id`).all() as Array<{ id: number; network_id: number; ip: string; hostname: string | null; serial_number: string | null; snmp_data: string | null; custom_name: string | null; dev_sysname: string | null; dev_serial: string | null; ad_dns: string | null; has_device: number }>;
+  const hostMeta = new Map<number, { ip: string; has_device: number }>();
+  for (const h of hosts) hostMeta.set(h.id, { ip: h.ip, has_device: h.has_device });
   const buckets = new Map<string, Set<number>>();
   const hostNet = new Map<number, number>();
   const PRIORITY: Record<string, number> = { serial_number: 4, sysname: 3, hostname: 2, ad_dns: 1 };
@@ -3879,10 +4043,88 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
   let totalLinked = 0;
   d.transaction(() => {
     d.prepare("DELETE FROM multihomed_links").run();
-    const ins = d.prepare("INSERT OR IGNORE INTO multihomed_links (group_id, host_id, match_type, match_value) VALUES (?, ?, ?, ?)");
-    for (const [, members] of finalGroups) { if (members.size < 2) continue; const nets = new Set<number>(); for (const hid of members) nets.add(hostNet.get(hid)!); if (nets.size < 2) continue; const groupId = randomUUID(); groupCount++; for (const hid of members) { const best = hostBest.get(hid); if (best) { ins.run(groupId, hid, best.type, best.value); totalLinked++; } } }
+    const ins = d.prepare("INSERT OR IGNORE INTO multihomed_links (group_id, host_id, match_type, match_value, is_primary) VALUES (?, ?, ?, ?, ?)");
+    for (const [, members] of finalGroups) {
+      if (members.size < 2) continue;
+      const nets = new Set<number>();
+      for (const hid of members) nets.add(hostNet.get(hid)!);
+      if (nets.size < 2) continue;
+      const groupId = randomUUID();
+      groupCount++;
+      // Auto-pick primary: priorità (1) host con network_device associato (managed),
+      // (2) a parità, IP numericamente più basso. Deterministico → idempotente sui recompute.
+      const ranked = [...members]
+        .map((hid) => ({ hid, meta: hostMeta.get(hid)! }))
+        .filter((m) => m.meta)
+        .sort((a, b) => {
+          if (a.meta.has_device !== b.meta.has_device) return b.meta.has_device - a.meta.has_device;
+          return ipv4ToInt(a.meta.ip) - ipv4ToInt(b.meta.ip);
+        });
+      const primaryHid = ranked.length > 0 ? ranked[0].hid : null;
+      for (const hid of members) {
+        const best = hostBest.get(hid);
+        if (best) {
+          ins.run(groupId, hid, best.type, best.value, hid === primaryHid ? 1 : 0);
+          totalLinked++;
+        }
+      }
+    }
   })();
   return { groups: groupCount, hosts_linked: totalLinked };
+}
+
+/**
+ * Stato multihomed di un host: serve a runner di scan/query per decidere se
+ * deduplicare le chiamate costose (SNMP/test cred/software inventory).
+ *
+ * - `null` se l'host NON appartiene ad alcun gruppo multihomed → eseguire normalmente
+ * - `{ is_primary: true, ... }` → eseguire (è l'host designato per il device fisico)
+ * - `{ is_primary: false, primary_* }` → SKIP, l'utente può comunque forzare lato UI
+ *
+ * Idempotente: nessun side-effect.
+ */
+export function getMultihomedStatus(hostId: number): {
+  group_id: string;
+  is_primary: boolean;
+  primary_host_id: number;
+  primary_ip: string;
+  primary_network_name: string | null;
+  peers_count: number;
+} | null {
+  const d = db();
+  const link = d.prepare("SELECT group_id, is_primary FROM multihomed_links WHERE host_id = ?").get(hostId) as { group_id: string; is_primary: number } | undefined;
+  if (!link) return null;
+  const primary = d.prepare(`SELECT ml.host_id, h.ip, n.name AS network_name FROM multihomed_links ml JOIN hosts h ON h.id = ml.host_id LEFT JOIN networks n ON n.id = h.network_id WHERE ml.group_id = ? AND ml.is_primary = 1 LIMIT 1`).get(link.group_id) as { host_id: number; ip: string; network_name: string | null } | undefined;
+  const peersCount = (d.prepare("SELECT COUNT(*) AS c FROM multihomed_links WHERE group_id = ?").get(link.group_id) as { c: number }).c;
+  // Edge case: se per qualche motivo nessuno è marked primary (es. recompute non
+  // ancora rieseguito dopo l'aggiunta della colonna), trattiamo come primary
+  // l'host stesso così le scan non vengono bloccate ingiustamente.
+  if (!primary) return { group_id: link.group_id, is_primary: true, primary_host_id: hostId, primary_ip: "", primary_network_name: null, peers_count: peersCount };
+  return {
+    group_id: link.group_id,
+    is_primary: link.is_primary === 1,
+    primary_host_id: primary.host_id,
+    primary_ip: primary.ip,
+    primary_network_name: primary.network_name,
+    peers_count: peersCount,
+  };
+}
+
+/**
+ * Variante che parte da un `network_devices.id`: risolve l'host_id via match
+ * `network_devices.host = hosts.ip` (vincolato alla rete del device se possibile).
+ * Usata dai runner di scan device (query, test, software-scan) per applicare
+ * la policy di dedup multihomed.
+ */
+export function getMultihomedStatusByDeviceId(deviceId: number): ReturnType<typeof getMultihomedStatus> {
+  const d = db();
+  const dev = d.prepare("SELECT host FROM network_devices WHERE id = ?").get(deviceId) as { host: string } | undefined;
+  if (!dev) return null;
+  // L'IP può comparire in più subnet (rarissimo, ma teorico): prendiamo il primo host
+  // con quell'IP che ha link multihomed; altrimenti il primo qualsiasi.
+  const host = d.prepare(`SELECT h.id FROM hosts h LEFT JOIN multihomed_links ml ON ml.host_id = h.id WHERE h.ip = ? ORDER BY (ml.id IS NULL), h.id LIMIT 1`).get(dev.host) as { id: number } | undefined;
+  if (!host) return null;
+  return getMultihomedStatus(host.id);
 }
 
 export function getAdUsers(integrationId: number): AdUser[] {

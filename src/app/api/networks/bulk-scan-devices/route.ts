@@ -4,7 +4,7 @@ import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, upsertNeighbors, updateNetworkDevice } from "@/lib/db";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
-import { upsertHost, getNetworks } from "@/lib/db";
+import { updateHostIfExists, getNetworks } from "@/lib/db";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -58,7 +58,8 @@ export async function POST(request: Request) {
           for (const entry of validEntries) {
             const network = networks.find((n) => isIpInCidr(entry.ip!, n.cidr));
             if (!network) continue;
-            upsertHost({
+            // ARP è fonte PASSIVA: aggiorna solo host esistenti, MAI inserisce.
+            updateHostIfExists({
               network_id: network.id,
               ip: entry.ip!,
               mac: entry.mac,

@@ -396,6 +396,9 @@ async function runDiscovery(
               mac: r.mac ?? undefined,
               status: "online",
               hostname_source: "scan",
+              // ICMP/nmap ha confermato il device vivo: nuovo device legittimo
+              // anche se l'IP era stato escluso (tombstone) in passato.
+              bypassExclusion: true,
             });
           } catch { /* upsert singolo host non blocca lo sweep */ }
         }
@@ -2126,6 +2129,9 @@ async function runDiscovery(
       serial_number: hostSerial,
       // preserve_existing: scan nmap/network_discovery/ipam_full non sovrascrivono dati già rilevati
       preserve_existing: scanType === "nmap" || scanType === "network_discovery" || scanType === "ipam_full",
+      // Probe attivo ICMP-confermato: se l'IP era nel tombstone (host cancellato e poi
+      // sostituito da un device nuovo), rimuovi l'esclusione e procedi alla creazione.
+      bypassExclusion: true,
       ...(finalFirmware !== undefined || hostManufacturer !== undefined || vendor
         ? {
             firmware: finalFirmware ?? null,
@@ -2136,6 +2142,7 @@ async function runDiscovery(
       ...(snmpDataJson !== undefined ? { snmp_data: snmpDataJson } : {}),
     });
 
+    if (!host) continue;
     if (host.first_seen === host.created_at) newHosts++;
 
     // Sync network_device collegato (stesso IP) — port e classification

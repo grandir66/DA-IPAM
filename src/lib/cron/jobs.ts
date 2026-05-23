@@ -13,6 +13,7 @@ import {
   getDb,
   getActiveNmapProfile,
   upsertHost,
+  updateHostIfExists,
   upsertArpEntries,
   upsertMacPortEntries,
   upsertSwitchPorts,
@@ -234,13 +235,13 @@ export async function runArpPoll(
           if (!network) continue;
           const vendor = await lookupVendor(entry.mac);
           const classification = classifyDevice({ hostname: null, vendor: vendor ?? null });
-          // NON forziamo status='online' da arp_poll: i router tengono entry
-          // ARP per ore (Cisco 4h default) e la presenza non prova reachability
-          // attuale — l'host potrebbe essere spento da settimane ma ricomparire
-          // "online" ad ogni ciclo. network_discovery (ICMP + TCP fallback) è
-          // l'unica fonte autoritativa per lo status. Per host nuovi insert-a
-          // come 'unknown'; per esistenti preserva lo status corrente.
-          upsertHost({
+          // ARP è fonte PASSIVA: aggiorna solo host già esistenti, MAI inserisce.
+          // I router tengono entry ARP per ore (Cisco 4h default), quindi un IP nella
+          // tabella ARP non prova reachability attuale né "esistenza" del device.
+          // Solo i probe attivi (ICMP + TCP fallback in network_discovery) sono
+          // autoritativi per la CREAZIONE di un host. Se l'host è stato cancellato
+          // dall'utente, NON va ricreato fino a quando ICMP non lo ri-conferma.
+          updateHostIfExists({
             network_id: network.id,
             ip: entry.ip,
             mac: entry.mac,
@@ -268,11 +269,11 @@ export async function runArpPoll(
                 hostname: lease.hostname ?? null,
                 vendor: vendor ?? null,
               });
-              // Vedi commento in arp_poll: i DHCP server tengono lease per
-              // ore/giorni dopo che il device si spegne, quindi un lease
-              // attivo non prova che l'host stia rispondendo ORA. Lasciamo
-              // status al probe (network_discovery).
-              const host = upsertHost({
+              // DHCP è fonte PASSIVA: aggiorna solo host esistenti, MAI inserisce.
+              // I DHCP server tengono lease per ore/giorni dopo che il device si
+              // spegne, quindi un lease attivo non prova che l'host esista più.
+              // Vedi commento in arp_poll sopra.
+              const host = updateHostIfExists({
                 network_id: network.id,
                 ip: lease.ip,
                 mac: lease.mac,
@@ -287,7 +288,7 @@ export async function runArpPoll(
                 source: "dhcp",
                 source_device_id: device.id,
                 network_id: network.id,
-                host_id: host.id,
+                host_id: host?.id ?? null,
                 vendor: vendor ?? undefined,
                 hostname: lease.hostname ?? undefined,
               });
@@ -303,7 +304,7 @@ export async function runArpPoll(
                 lease_expires: lease.expiresAfter ?? null,
                 description: lease.comment ?? null,
                 dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
-                host_id: host.id,
+                host_id: host?.id ?? null,
                 network_id: network.id,
               });
               dhcpNetworksToSync.add(network.id);
@@ -573,7 +574,8 @@ export async function runDhcpPollForNetwork(
       hostname: lease.hostname ?? null,
       vendor: vendor ?? null,
     });
-    const host = upsertHost({
+    // DHCP è fonte PASSIVA: aggiorna solo host esistenti, MAI inserisce.
+    const host = updateHostIfExists({
       network_id: networkId,
       ip: lease.ip,
       mac: lease.mac,
@@ -588,7 +590,7 @@ export async function runDhcpPollForNetwork(
       source: "dhcp",
       source_device_id: device.id,
       network_id: networkId,
-      host_id: host.id,
+      host_id: host?.id ?? null,
       vendor: vendor ?? undefined,
       hostname: lease.hostname ?? undefined,
     });
@@ -604,7 +606,7 @@ export async function runDhcpPollForNetwork(
       lease_expires: lease.expiresAfter ?? null,
       description: lease.comment ?? null,
       dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
-      host_id: host.id,
+      host_id: host?.id ?? null,
       network_id: networkId,
     });
     updated++;
@@ -691,7 +693,11 @@ export async function runDnsResolve(
       }
 
       if (dnsReverse || dnsForward) {
-        upsertHost({
+        // DNS resolve gira su host già esistenti (getHostsByNetwork), quindi
+        // updateHostIfExists è equivalente a upsertHost qui ma esplicita
+        // l'intento: arricchiamo, non creiamo. Se l'host è stato cancellato
+        // tra il fetch e qui, niente race-condition di resurrezione.
+        const updated = updateHostIfExists({
           network_id: nid,
           ip: host.ip,
           hostname: dnsReverse || undefined,
@@ -699,7 +705,7 @@ export async function runDnsResolve(
           dns_reverse: dnsReverse || undefined,
           dns_forward: dnsForward || undefined,
         });
-        resolved++;
+        if (updated) resolved++;
       }
     }
   }

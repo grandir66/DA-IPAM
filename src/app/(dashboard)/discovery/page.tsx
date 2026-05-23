@@ -100,7 +100,16 @@ type EnrichedHost = Host & {
   switch_device_name?: string;
   ad_dns_host_name?: string | null;
   validated_protocols?: string[];
-  multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
+  multihomed?: {
+    group_id: string;
+    match_type: string;
+    /** Questo host è il primary del gruppo: riceve gli scan costosi (SNMP/test cred/software). */
+    is_primary: boolean;
+    /** Primary del gruppo (può coincidere con questo host se is_primary). */
+    primary_host_id: number | null;
+    primary_ip: string | null;
+    peers: Array<{ ip: string; network_name: string; host_id: number; is_primary: boolean }>;
+  } | null;
   vuln?: {
     max_severity: "Critical" | "High" | "Medium" | "Low";
     critical: number;
@@ -1349,20 +1358,40 @@ export default function DiscoveryPage() {
             </span>
 
             {/* Multihomed — host con più IP correlati allo stesso device fisico.
-                Cliccabile: porta al detail host (che ha già la sezione "Multihomed").
-                Tooltip: lista IP+rete dei peer + criterio di correlazione (serial/sysname/hostname/ad_dns). */}
+                Icona Link2:
+                - colore cyan-600 + tag "P" se è il primary del gruppo (riceve gli scan)
+                - colore cyan-300 (più chiaro) se secondary (scan deduplicato sul primary)
+                - grigia se non multihomed
+                Cliccabile: porta al primary se secondary, al detail host se primary. */}
             {h.multihomed ? (
-              <Link
-                href={`/objects/${h.id}`}
-                title={
-                  `Multihomed — ${h.multihomed.peers.length + 1} interfacce (match: ${h.multihomed.match_type})\n`
-                  + `• ${h.ip} (${h.network_name}) — questo\n`
-                  + h.multihomed.peers.map((p) => `• ${p.ip} (${p.network_name})`).join("\n")
-                }
-                className="inline-flex items-center text-cyan-600 hover:text-cyan-700"
-              >
-                <Link2 className="h-3.5 w-3.5" />
-              </Link>
+              h.multihomed.is_primary ? (
+                <Link
+                  href={`/objects/${h.id}`}
+                  title={
+                    `Multihomed PRIMARY — ${h.multihomed.peers.length + 1} interfacce (match: ${h.multihomed.match_type})\n`
+                    + `Gli scan costosi (SNMP/test cred/software) girano su questo IP.\n`
+                    + `• ${h.ip} (${h.network_name}) — primary (questo)\n`
+                    + h.multihomed.peers.map((p) => `• ${p.ip} (${p.network_name})${p.is_primary ? " — primary" : ""}`).join("\n")
+                  }
+                  className="inline-flex items-center gap-0.5 text-cyan-600 hover:text-cyan-700"
+                >
+                  <Link2 className="h-3.5 w-3.5" />
+                  <span className="text-[9px] font-bold leading-none">P</span>
+                </Link>
+              ) : (
+                <Link
+                  href={h.multihomed.primary_host_id ? `/objects/${h.multihomed.primary_host_id}` : `/objects/${h.id}`}
+                  title={
+                    `Multihomed SECONDARY — scan deduplicato sul primary.\n`
+                    + `Primary: ${h.multihomed.primary_ip ?? "(non assegnato)"}\n`
+                    + `• ${h.ip} (${h.network_name}) — questo (secondary)\n`
+                    + h.multihomed.peers.map((p) => `• ${p.ip} (${p.network_name})${p.is_primary ? " — primary" : ""}`).join("\n")
+                  }
+                  className="inline-flex items-center text-cyan-300 hover:text-cyan-500"
+                >
+                  <Link2 className="h-3.5 w-3.5" />
+                </Link>
+              )
             ) : (
               <span title="Single-homed: un solo IP per questo device" className="inline-flex items-center text-muted-foreground/30">
                 <Link2 className="h-3.5 w-3.5" />
@@ -1690,6 +1719,14 @@ export default function DiscoveryPage() {
                           const label = h.hostname || h.ip;
                           const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
                           const isAddingLnms = librenmsAdding.has(h.id);
+                          // Multihomed secondary: disabilita le azioni device-scan che
+                          // lato server rifiuterebbero con 409 (vedi route /api/devices/*/{query,test,software-scan}).
+                          // L'utente vede UNA spiegazione coerente invece di un errore generico.
+                          const isMhSecondary = !!(h.multihomed && !h.multihomed.is_primary);
+                          const mhPrimaryIp = h.multihomed?.primary_ip ?? null;
+                          const mhSecondaryHint = mhPrimaryIp
+                            ? `Secondary multihomed — esegui sul primary ${mhPrimaryIp}`
+                            : "Secondary multihomed — esegui sul primary";
                           const lnmsDeviceLink = lnms && librenmsUrl
                             ? `${librenmsUrl}/device/device=${lnms.librenms_device_id}/`
                             : null;
@@ -1721,18 +1758,22 @@ export default function DiscoveryPage() {
                                   {isDev && (
                                     <>
                                       <DropdownMenuItem
-                                        disabled={busyHere}
+                                        disabled={busyHere || isMhSecondary}
                                         onClick={() => handleRowTestCred(h.device_id!)}
+                                        title={isMhSecondary ? mhSecondaryHint : undefined}
                                       >
                                         <ShieldCheck className={`h-3.5 w-3.5 ${rowActionBusy?.kind === "test" && busyHere ? "animate-pulse" : ""}`} />
                                         Testa credenziali device
+                                        {isMhSecondary && <span className="ml-auto text-[10px] text-muted-foreground">MH</span>}
                                       </DropdownMenuItem>
                                       <DropdownMenuItem
-                                        disabled={busyHere}
+                                        disabled={busyHere || isMhSecondary}
                                         onClick={() => handleRowRescan(h.device_id!)}
+                                        title={isMhSecondary ? mhSecondaryHint : undefined}
                                       >
                                         <RefreshCw className={`h-3.5 w-3.5 ${rowActionBusy?.kind === "query" && busyHere ? "animate-spin" : ""}`} />
                                         Riscansiona dispositivo
+                                        {isMhSecondary && <span className="ml-auto text-[10px] text-muted-foreground">MH</span>}
                                       </DropdownMenuItem>
                                     </>
                                   )}

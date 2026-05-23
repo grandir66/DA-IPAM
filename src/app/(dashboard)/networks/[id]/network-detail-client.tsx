@@ -38,7 +38,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { IpGrid } from "@/components/shared/ip-grid";
 import { ScanProgress } from "@/components/shared/scan-progress";
 import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
-import { ArrowLeft, Play, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Network as NetworkIcon, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Monitor, Terminal, Key, PlusCircle, Loader2, Activity, Zap } from "lucide-react";
+import { ClassificationProposalDialog } from "@/components/networks/classification-proposal-dialog";
+import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Zap, Radar, Layers, Wifi, Tags } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
@@ -141,8 +142,9 @@ export function NetworkDetailClient({
   const [editingField, setEditingField] = useState<"custom_name" | "notes" | "classification" | null>(null);
   const [arpPolling, setArpPolling] = useState(false);
   const [dhcpPolling, setDhcpPolling] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [dnsResolving, setDnsResolving] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [classifyOpen, setClassifyOpen] = useState(false);
   const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
   const [selectedHostIds, setSelectedHostIds] = useState<Set<number>>(new Set());
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
@@ -587,10 +589,20 @@ export function NetworkDetailClient({
     }
   }
 
-  const SCAN_LABELS: Record<
-    "fast" | "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "credential_validate",
-    string
-  > = {
+  type ScanJobType =
+    | "fast"
+    | "network_discovery"
+    | "snmp"
+    | "nmap"
+    | "windows"
+    | "ssh"
+    | "credential_validate"
+    | "scan_icmp"
+    | "scan_nmap_base"
+    | "scan_snmp_verify"
+    | "scan_full";
+
+  const SCAN_LABELS: Record<ScanJobType, string> = {
     fast: "Scansione veloce",
     network_discovery: "Scoperta rete",
     snmp: "SNMP",
@@ -598,16 +610,26 @@ export function NetworkDetailClient({
     windows: "WinRM (Windows)",
     ssh: "SSH (Linux)",
     credential_validate: "Validazione credenziali",
+    scan_icmp: "ICMP",
+    scan_nmap_base: "Nmap base",
+    scan_snmp_verify: "SNMP verify",
+    scan_full: "Scan completo",
   };
 
   async function runScanJob(
-    scanType: "fast" | "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "credential_validate",
+    scanType: ScanJobType,
     options?: { showStartToast?: boolean; refreshOnComplete?: boolean }
   ): Promise<{ ok: boolean; lastProgress: ScanProgressType | null }> {
     const showStartToast = options?.showStartToast !== false;
     const refreshOnComplete = options?.refreshOnComplete !== false;
 
-    const noHostSelectionNeeded = scanType === "network_discovery" || scanType === "fast";
+    const noHostSelectionNeeded =
+      scanType === "network_discovery" ||
+      scanType === "fast" ||
+      scanType === "scan_full" ||
+      scanType === "scan_icmp" ||
+      scanType === "scan_nmap_base" ||
+      scanType === "scan_snmp_verify";
     if (!noHostSelectionNeeded && selectedHostIds.size === 0) {
       toast.error("Seleziona uno o più host nella vista lista (azioni manuali solo sugli IP selezionati)");
       return { ok: false, lastProgress: null };
@@ -672,8 +694,33 @@ export function NetworkDetailClient({
     });
   }
 
-  async function triggerScan(scanType: "fast" | "network_discovery" | "snmp" | "nmap" | "windows" | "ssh" | "credential_validate") {
+  async function triggerScan(scanType: ScanJobType) {
     await runScanJob(scanType);
+  }
+
+  // scan_enrich non passa per discoverNetwork: chiama direttamente l'endpoint
+  // dedicato che esegue ARP + DHCP + AD relink in sequenza.
+  async function triggerEnrich() {
+    setEnriching(true);
+    try {
+      const res = await fetch("/api/scans/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network_id: network.id, scan_type: "scan_enrich" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.progress?.phase ?? "Enrich completato");
+        await refreshHosts();
+        router.refresh();
+      } else {
+        toast.error(data.error || "Errore enrich");
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setEnriching(false);
+    }
   }
 
   async function triggerAdvancedDetection() {
@@ -777,29 +824,6 @@ export function NetworkDetailClient({
     }
   }
 
-  async function triggerRefresh(force = false) {
-    if (force && !confirm("Ricalcola forzato: sovrascrive TUTTE le classificazioni, anche quelle impostate manualmente. Continuare?")) return;
-    setRefreshing(true);
-    try {
-      const res = await fetch(`/api/networks/${network.id}/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ force }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.message);
-        refreshHosts();
-        router.refresh();
-      } else {
-        toast.error(data.error || "Errore nell'aggiornamento");
-      }
-    } catch {
-      toast.error("Errore di rete");
-    } finally {
-      setRefreshing(false);
-    }
-  }
 
   const currentRouter = routerId ? routers.find((r) => r.id === routerId) : null;
   const canDhcp = currentRouter?.vendor === "mikrotik" && currentRouter?.protocol === "ssh";
@@ -961,46 +985,77 @@ export function NetworkDetailClient({
               Scansione e acquisizione dati
             </p>
             <div className="flex flex-wrap gap-2 items-start content-start">
-            {/* Fase 0 — Scansione veloce (presenza rapida, no port scan) */}
-            <div className="rounded-lg border-2 border-amber-500/60 bg-amber-500/10 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,10rem)] flex-1 sm:flex-none shadow-sm">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 leading-tight mb-1">
-                Fase 0 — Veloce
+
+            {/* ─── SCAN — intera subnet ─────────────────────────────── */}
+            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,22rem)] flex-1 sm:flex-none shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
+                Scan — intera subnet
               </p>
-              <Button
-                size="default"
-                variant="default"
-                className="w-full font-medium bg-amber-500 hover:bg-amber-600 text-white"
-                onClick={() => triggerScan("fast")}
-                disabled={!!scanning}
-                title="ICMP sweep dell'intero CIDR (nmap -sn) + ARP/DHCP dal router associato. Nessun port scan, niente fingerprint. Da usare prima di tutto il resto su reti grandi."
-              >
-                <Zap className="h-4 w-4 mr-1.5 shrink-0" />
-                Scansione veloce
-              </Button>
+              <div className="flex flex-col gap-1.5">
+                <Button
+                  size="default"
+                  variant="default"
+                  className="w-full font-medium"
+                  onClick={() => triggerScan("scan_full")}
+                  disabled={!!scanning || enriching}
+                  title="Scan completo: ICMP → Nmap base → SNMP verify → Enrich (ARP/DHCP/AD)"
+                >
+                  <Radar className="h-4 w-4 mr-1.5 shrink-0" />
+                  Scan completo
+                </Button>
+                <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs px-2 bg-background/90"
+                    onClick={() => triggerScan("scan_icmp")}
+                    disabled={!!scanning || enriching}
+                    title="1.1 — Solo ICMP sweep + second-pass TCP. Additivo, niente flip offline."
+                  >
+                    <Zap className="h-3.5 w-3.5 mr-1 shrink-0" />
+                    ICMP
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs px-2 bg-background/90"
+                    onClick={() => triggerScan("scan_nmap_base")}
+                    disabled={!!scanning || enriching}
+                    title="1.2 — Nmap quick TCP sugli host già online in DB"
+                  >
+                    <Scan className="h-3.5 w-3.5 mr-1 shrink-0" />
+                    Nmap base
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs px-2 bg-background/90"
+                    onClick={() => triggerScan("scan_snmp_verify")}
+                    disabled={!!scanning || enriching}
+                    title="1.3 — SNMP sysObjectID probe (community subnet + public)"
+                  >
+                    <Cpu className="h-3.5 w-3.5 mr-1 shrink-0" />
+                    SNMP verify
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs px-2 bg-background/90"
+                    onClick={() => void triggerEnrich()}
+                    disabled={!!scanning || enriching}
+                    title="1.4 — ARP router + DHCP MikroTik + AD relink"
+                  >
+                    <Layers className="h-3.5 w-3.5 mr-1 shrink-0" />
+                    {enriching ? "Enrich…" : "Enrich"}
+                  </Button>
+                </div>
+              </div>
             </div>
 
-            {/* Fase 1 — Scoperta rete */}
-            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,10rem)] flex-1 sm:flex-none shadow-sm">
+            {/* ─── DETECT — host selezionati ─────────────────────────── */}
+            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,16rem)] flex-1 sm:flex-none shadow-sm">
               <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
-                Fase 1 — Scoperta rete
-              </p>
-              <Button
-                size="default"
-                variant="default"
-                className="w-full font-medium"
-                onClick={() => triggerScan("network_discovery")}
-                disabled={!!scanning}
-                title="Ping + Nmap rapido su porte diagnostiche"
-              >
-                <Play className="h-4 w-4 mr-1.5 shrink-0" />
-                Scoperta rete
-              </Button>
-            </div>
-
-            {/* Fase 2 — Nmap + SNMP */}
-            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,12rem)] flex-1 sm:flex-none shadow-sm">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
-                Fase 2 — Scansione profilo
+                Detect — host selezionati
               </p>
               <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5">
                 <Button
@@ -1009,10 +1064,10 @@ export function NetworkDetailClient({
                   className="font-medium"
                   onClick={() => triggerScan("nmap")}
                   disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="Nmap profilo completo"
+                  title="Nmap profilo completo: port scan TCP/UDP esteso + SNMP unificato"
                 >
                   <Scan className="h-4 w-4 mr-1.5 shrink-0" />
-                  Nmap
+                  Nmap adv
                 </Button>
                 <Button
                   size="default"
@@ -1020,64 +1075,65 @@ export function NetworkDetailClient({
                   className="font-medium bg-background/90"
                   onClick={() => triggerScan("snmp")}
                   disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="Query SNMP"
+                  title="SNMP deep walk: produttore, modello, firmware, seriale, ARP table, OID fingerprint"
                 >
                   <Cpu className="h-4 w-4 mr-1.5 shrink-0" />
-                  SNMP
-                </Button>
-              </div>
-            </div>
-
-            {/* Fase 3 — Rilevamento e credenziali */}
-            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none shadow-sm">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
-                Fase 3 — Rilevamento e credenziali
-              </p>
-              <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5">
-                <Button
-                  size="default"
-                  variant="default"
-                  className="font-medium"
-                  onClick={() => void triggerAdvancedDetection()}
-                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="WinRM + SSH in sequenza"
-                >
-                  <Sparkles className="h-4 w-4 mr-1.5 shrink-0" />
-                  Rilevamento OS
+                  SNMP deep
                 </Button>
                 <Button
                   size="default"
                   variant="outline"
                   className="font-medium bg-background/90"
-                  onClick={() => triggerScan("credential_validate")}
-                  disabled={!!scanning || networkCredentialIds.length === 0 || view !== "list" || selectedHostIds.size === 0}
-                  title={networkCredentialIds.length === 0 ? "Configura credenziali nella modifica rete" : "Valida credenziali subnet sugli IP selezionati"}
+                  onClick={() => void triggerAdvancedDetection()}
+                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
+                  title="WinRM (Windows) + SSH (Linux) in sequenza"
                 >
-                  <Key className="h-4 w-4 mr-1.5 shrink-0" />
-                  Credenziali
+                  <Sparkles className="h-4 w-4 mr-1.5 shrink-0" />
+                  Rilevamento OS
                 </Button>
               </div>
             </div>
 
-            {/* Azioni secondarie */}
+            {/* ─── CREDENZIALI — host selezionati ────────────────────── */}
+            <div className="rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,12rem)] flex-1 sm:flex-none shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1">
+                Test credenziali
+              </p>
+              <Button
+                size="default"
+                variant="default"
+                className="w-full font-medium"
+                onClick={() => triggerScan("credential_validate")}
+                disabled={!!scanning || networkCredentialIds.length === 0 || view !== "list" || selectedHostIds.size === 0}
+                title={networkCredentialIds.length === 0
+                  ? "Configura credenziali nella modifica rete"
+                  : "Verifica SSH/WinRM/SNMP della subnet sugli IP selezionati. Le credenziali validate vengono salvate sul host."}
+              >
+                <Key className="h-4 w-4 mr-1.5 shrink-0" />
+                Verifica SSH/WinRM
+              </Button>
+            </div>
+
+            {/* ─── ARRICCHIMENTO MIRATO — host selezionati ──────────── */}
             <div className="rounded-lg border border-border/60 bg-muted/20 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,10rem)] flex-1 sm:flex-none">
               <p className="text-[11px] font-semibold text-muted-foreground leading-tight mb-1">
-                Arricchimento
+                Arricchimento mirato
               </p>
               <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5">
-                <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={triggerArpPoll} disabled={arpPolling || !!scanning || view !== "list" || selectedHostIds.size === 0} title="MAC dal router">
+                <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={triggerArpPoll} disabled={arpPolling || !!scanning || view !== "list" || selectedHostIds.size === 0} title="MAC dal router ARP">
+                  <Wifi className="h-3.5 w-3.5 mr-1 shrink-0" />
                   {arpPolling ? "ARP…" : "ARP"}
                 </Button>
                 <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={triggerDhcpPoll} disabled={!canDhcp || dhcpPolling || !!scanning || view !== "list" || selectedHostIds.size === 0} title={canDhcp ? "DHCP MikroTik" : "Richiede router MikroTik"}>
                   {dhcpPolling ? "DHCP…" : "DHCP"}
                 </Button>
-                <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => { void triggerDnsResolve(); }} disabled={dnsResolving || !!scanning || view !== "list" || selectedHostIds.size === 0} title="Risoluzione DNS">
+                <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => { void triggerDnsResolve(); }} disabled={dnsResolving || !!scanning || view !== "list" || selectedHostIds.size === 0} title="Risoluzione DNS reverse/forward">
                   {dnsResolving ? "DNS…" : "DNS"}
                 </Button>
               </div>
             </div>
 
-            {/* Classificazione */}
+            {/* ─── CLASSIFICAZIONE ──────────────────────────────────── */}
             <div className="rounded-lg border border-dashed border-border bg-muted/25 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,12rem)] flex-1 sm:flex-none">
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide leading-tight mb-1">
                 Classificazione
@@ -1086,28 +1142,19 @@ export function NetworkDetailClient({
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => triggerRefresh(false)}
-                  disabled={refreshing || !!scanning}
-                  title="Ricalcola (rispetta manuali)"
+                  onClick={() => setClassifyOpen(true)}
+                  disabled={!!scanning || enriching}
+                  title="Analizza proposte: mostra anteprima delle riclassificazioni e applica solo quelle scelte"
                 >
-                  <RefreshCw className={`h-3.5 w-3.5 mr-1 ${refreshing ? "animate-spin" : ""}`} />
-                  {refreshing ? "…" : "Ricalcola"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-orange-600 border-orange-300 hover:bg-orange-50 dark:text-orange-400 dark:border-orange-700 dark:hover:bg-orange-950"
-                  onClick={() => triggerRefresh(true)}
-                  disabled={refreshing || !!scanning}
-                  title="Forza (sovrascrive manuali)"
-                >
-                  Forza
+                  <Tags className="h-3.5 w-3.5 mr-1" />
+                  Analizza proposte
                 </Button>
                 <Button variant="ghost" size="icon-sm" className="size-8 shrink-0" onClick={() => refreshHosts()} title="Aggiorna elenco">
                   <RefreshCw className="h-3.5 w-3.5" />
                 </Button>
               </div>
             </div>
+
             </div>
           </div>
 
@@ -1830,6 +1877,13 @@ export function NetworkDetailClient({
           onCredentialsChanged={() => void refreshHosts()}
         />
       )}
+
+      <ClassificationProposalDialog
+        open={classifyOpen}
+        onOpenChange={setClassifyOpen}
+        networkId={network.id}
+        onApplied={() => { void refreshHosts(); router.refresh(); }}
+      />
     </div>
   );
 }

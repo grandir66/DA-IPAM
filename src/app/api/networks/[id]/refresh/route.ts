@@ -7,10 +7,22 @@ import type { DeviceFingerprintSnapshot } from "@/types";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
 
+type ClassificationProposal = {
+  host_id: number;
+  ip: string;
+  hostname: string | null;
+  current: string | null;
+  proposed: string;
+  reason: string;
+  manual: boolean;
+};
+
 /**
  * POST /api/networks/[id]/refresh
- * Ricalcola classificazioni, DNS, vendor per tutti gli host della rete.
- * Non esegue scan attivi (ping/nmap) — usa i dati già presenti nel DB.
+ * - Default: applica subito classificazioni/DNS/vendor.
+ * - { dryRun: true }: ritorna { proposals: [...] } senza scrivere.
+ * - { force: true }: sovrascrive anche le classificazioni manuali.
+ * - { forceDns: true }: ri-risolve DNS anche se già archiviato.
  */
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const adminCheck = await requireAdmin();
@@ -18,9 +30,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   try {
     const { id } = await params;
-    const body = await _request.json().catch(() => ({})) as { force?: boolean; forceDns?: boolean };
+    const body = await _request.json().catch(() => ({})) as { force?: boolean; forceDns?: boolean; dryRun?: boolean };
     const forceReclassify = body.force === true;
     const forceDns = body.forceDns === true;
+    const dryRun = body.dryRun === true;
 
     const network = getNetworkById(Number(id));
     if (!network) {
@@ -36,14 +49,15 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     let reclassified = 0;
     let dnsUpdated = 0;
     let vendorUpdated = 0;
+    const proposals: ClassificationProposal[] = [];
 
     for (const host of hosts) {
       const changes: string[] = [];
       const fields: string[] = ["updated_at = datetime('now')"];
       const values: unknown[] = [];
 
-      // 1. Ricalcola vendor da MAC (se MAC presente e vendor vuoto o cambiato)
-      if (host.mac) {
+      // 1. Vendor da MAC (solo applicazione, non dryRun)
+      if (!dryRun && host.mac) {
         const freshVendor = await lookupVendor(host.mac);
         if (freshVendor && freshVendor !== host.vendor) {
           fields.push("vendor = ?");
@@ -53,10 +67,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         }
       }
 
-      // 2. DNS — da DB se già archiviato; rete solo con forceDns o se manca dns_reverse
+      // 2. DNS (solo applicazione, non dryRun — il dryRun si concentra sulla classificazione)
       let dnsReverse: string | null = host.dns_reverse;
       let dnsForward: string | null = host.dns_forward ?? null;
-      if (forceDns || !host.dns_reverse) {
+      if (!dryRun && (forceDns || !host.dns_reverse)) {
         dnsReverse = await reverseDns(host.ip, dnsServer);
         dnsForward = null;
         if (dnsReverse) {
@@ -86,9 +100,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         }
       }
 
-      // 3. Ricalcola classificazione con le regole aggiornate
+      // 3. Classificazione
       const classificationManual = (host as unknown as Record<string, unknown>).classification_manual === 1;
-      if (!classificationManual || forceReclassify) {
+      if (!classificationManual || forceReclassify || dryRun) {
         let openPorts: Array<{ port: number; protocol?: string; service?: string | null; version?: string | null }> | null = null;
         if (host.open_ports) {
           try { openPorts = JSON.parse(host.open_ports); } catch { /* ignore */ }
@@ -118,22 +132,42 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         const newClassification = fromFingerprint ?? fromRules;
 
         if (newClassification && newClassification !== host.classification) {
-          fields.push("classification = ?");
-          values.push(newClassification);
-          if (forceReclassify && classificationManual) {
-            fields.push("classification_manual = 0");
+          if (dryRun) {
+            proposals.push({
+              host_id: host.id,
+              ip: host.ip,
+              hostname: host.hostname ?? null,
+              current: host.classification ?? null,
+              proposed: newClassification,
+              reason: fromFingerprint ? "fingerprint" : "regole",
+              manual: classificationManual,
+            });
+          } else {
+            fields.push("classification = ?");
+            values.push(newClassification);
+            if (forceReclassify && classificationManual) {
+              fields.push("classification_manual = 0");
+            }
+            changes.push(`classification: ${host.classification} → ${newClassification}`);
+            reclassified++;
           }
-          changes.push(`classification: ${host.classification} → ${newClassification}`);
-          reclassified++;
         }
       }
 
-      // Applica update se ci sono cambiamenti
-      if (values.length > 0) {
+      // Applica update se ci sono cambiamenti e non siamo in dry-run
+      if (!dryRun && values.length > 0) {
         values.push(host.id);
         db.prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`).run(...values);
         updated++;
       }
+    }
+
+    if (dryRun) {
+      return NextResponse.json({
+        dryRun: true,
+        total_hosts: hosts.length,
+        proposals,
+      });
     }
 
     return NextResponse.json({

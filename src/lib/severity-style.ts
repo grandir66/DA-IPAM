@@ -15,7 +15,7 @@ export const SEVERITY_STYLE: Record<string, string> = {
 
 export const SOURCE_BADGE_STYLE: Record<string, string> = {
   Wazuh: "bg-violet-600 text-white",
-  Greenbone: "bg-emerald-700 text-white",
+  Edge: "bg-emerald-700 text-white",
   Probe: "bg-sky-600 text-white",
 };
 

@@ -12,15 +12,18 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import {
   getAggregatedVulnerabilities,
   type AggregatedVulnOpts,
+  type OsFamily,
 } from "@/lib/db-tenant";
 
 const SeverityEnum = z.enum(["Critical", "High", "Medium", "Low"]);
+const OsFamilyEnum = z.enum(["Windows", "Linux", "Apple", "Unknown"]);
 
 const QuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
   severity: z.string().optional(),
   sources: z.string().optional(),
+  os: z.string().optional(),
   search: z.string().max(200).optional(),
   hasCve: z.enum(["true", "false"]).optional(),
   sortBy: z
@@ -54,12 +57,19 @@ export async function GET(request: Request) {
   const sources = q.sources
     ? q.sources.split(",").map((s) => s.trim()).filter(Boolean)
     : undefined;
+  const osFamilies = q.os
+    ? (q.os
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => OsFamilyEnum.safeParse(s).success) as OsFamily[])
+    : undefined;
 
   const opts: AggregatedVulnOpts = {
     page: q.page,
     pageSize: q.pageSize,
     severity,
     sources,
+    osFamilies,
     search: q.search,
     hasCve:
       q.hasCve === "true" ? true : q.hasCve === "false" ? false : undefined,

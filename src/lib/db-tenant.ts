@@ -4983,11 +4983,15 @@ export function getLatestOkSoftwareScanForDevice(
 // ═══════════════════════════════════════════════════════════════════════════
 // AGGREGAZIONI GLOBALI: pagine /vulnerabilities e /software
 // Vista INVERSA: data una CVE / un software → lista host che lo presentano.
-// Sorgenti unificate per vulnerabilità: vuln_findings (Greenbone via scanner-edge)
-// + wazuh_vuln. Le fonti sono SEMPRE "Greenbone" o "Wazuh" (mai "edge":
-// scanner-edge è solo il trasporto, lo strumento dietro è Greenbone).
+// Sorgenti unificate per vulnerabilità:
+//  - "Edge"  = vuln_findings, ovvero le CVE che arrivano dal scanner-edge
+//              appliance (uplink sync periodico). Lo strumento dietro (Greenbone,
+//              OpenVAS, ecc.) NON viene esposto in UI: dal punto di vista
+//              DA-IPAM la fonte è il canale Edge stesso.
+//  - "Wazuh" = wazuh_vuln, ovvero le CVE riportate dagli agent Wazuh installati
+//              sugli endpoint.
 // Sorgenti unificate per software: SOLO wazuh_software + software_inventory.
-// Greenbone NON è una fonte di software (produce vulnerabilità, non inventory).
+// Le vuln_findings (Edge) NON sono una fonte di software (sono vulnerabilità).
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { SEVERITY_RANK, maxSeverity, normalizeSeverity, type Severity } from "./severity-style";
@@ -5021,11 +5025,49 @@ export interface AggregatedVuln {
   latest_scanned_at: string;
 }
 
+export type OsFamily = "Windows" | "Linux" | "Apple" | "Unknown";
+
+export const OS_FAMILIES: readonly OsFamily[] = ["Windows", "Linux", "Apple", "Unknown"] as const;
+
+/**
+ * Carica la mappa hostId → OsFamily per un set di host. Usa hosts.os_info
+ * (free text classificato via keyword) come fonte primaria.
+ */
+export function loadHostsOsFamily(hostIds: number[]): Map<number, OsFamily> {
+  const out = new Map<number, OsFamily>();
+  if (hostIds.length === 0) return out;
+  const placeholders = hostIds.map(() => "?").join(",");
+  const rows = db()
+    .prepare(`SELECT id, os_info FROM hosts WHERE id IN (${placeholders})`)
+    .all(...hostIds) as Array<{ id: number; os_info: string | null }>;
+  for (const r of rows) out.set(r.id, classifyOsFamily(r.os_info));
+  return out;
+}
+
+/**
+ * Classifica un host in una famiglia OS in base a `hosts.os_info`
+ * (free text). Best-effort tramite keyword matching case-insensitive.
+ */
+export function classifyOsFamily(osInfo: string | null | undefined): OsFamily {
+  if (!osInfo) return "Unknown";
+  const s = osInfo.toLowerCase();
+  if (s.includes("windows")) return "Windows";
+  if (s.includes("macos") || s.includes("mac os") || s.includes("darwin") || s.includes("osx")) return "Apple";
+  if (
+    s.includes("linux") || s.includes("ubuntu") || s.includes("debian") ||
+    s.includes("centos") || s.includes("rhel") || s.includes("red hat") ||
+    s.includes("fedora") || s.includes("alpine") || s.includes("suse") ||
+    s.includes("arch") || s.includes("rocky") || s.includes("almalinux")
+  ) return "Linux";
+  return "Unknown";
+}
+
 export interface AggregatedVulnOpts {
   page: number;
   pageSize: number;
   severity?: Severity[];
   sources?: string[];
+  osFamilies?: OsFamily[];
   search?: string;
   hasCve?: boolean;
   sortBy?: "severity" | "cvss" | "host_count" | "latest_scanned_at" | "cve_id";
@@ -5068,6 +5110,7 @@ export interface AggregatedSoftwareOpts {
   page: number;
   pageSize: number;
   sources?: SoftwareSource[];
+  osFamilies?: OsFamily[];
   search?: string;
   hasVulns?: boolean;
   sortBy?: "name" | "host_count" | "vuln_count" | "latest_seen_at";
@@ -5140,7 +5183,7 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
       f.host_id,
       f.ip,
       f.scanned_at,
-      'Greenbone' AS source
+      'Edge' AS source
     FROM vuln_findings f
     WHERE f.severity IN ('Critical','High','Medium','Low')
       AND (f.cve_id IS NOT NULL OR f.nvt_oid IS NOT NULL)
@@ -5163,7 +5206,15 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
       AND v.severity IN ('Critical','High','Medium','Low')
   `;
 
-  const rows = db().prepare(baseSql).all() as RawVulnRow[];
+  let rows = db().prepare(baseSql).all() as RawVulnRow[];
+
+  // Filtro per famiglia OS (Windows/Linux/Apple/Unknown).
+  if (opts.osFamilies && opts.osFamilies.length > 0 && opts.osFamilies.length < OS_FAMILIES.length) {
+    const ids = [...new Set(rows.map((r) => r.host_id).filter((x): x is number => x !== null))];
+    const osMap = loadHostsOsFamily(ids);
+    const allowed = new Set(opts.osFamilies);
+    rows = rows.filter((r) => r.host_id !== null && allowed.has(osMap.get(r.host_id) ?? "Unknown"));
+  }
 
   interface AggInternal extends AggregatedVuln {
     _hostKeys: Set<string>;
@@ -5327,11 +5378,11 @@ export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostR
   const cveKey = isNvt ? null : key;
   const nvtKey = isNvt ? key.substring(4) : null;
 
-  const greenboneRows = db()
+  const edgeRows = db()
     .prepare(
       `SELECT f.host_id, f.ip, f.severity, f.cvss_score, f.scanned_at,
               f.nvt_name AS package_label,
-              'Greenbone' AS source
+              'Edge' AS source
          FROM vuln_findings f
         WHERE (
           (? IS NOT NULL AND f.cve_id = ?) OR
@@ -5369,7 +5420,7 @@ export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostR
           scanned_at: string; package_label: string | null; source: string;
         }>);
 
-  const combined = [...greenboneRows, ...wazuhRows];
+  const combined = [...edgeRows, ...wazuhRows];
   const ids = [...new Set(combined.map((r) => r.host_id).filter((x): x is number => x != null))];
   const meta = loadHostsMeta(ids);
 
@@ -5467,10 +5518,19 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
       scanned_at: string | null; source: SoftwareSource;
     }>;
 
-  const all: RawSoftwareRow[] = [
+  let all: RawSoftwareRow[] = [
     ...wazuhRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, r.version) })),
     ...probeRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, r.version) })),
   ];
+
+  // Filtro per famiglia OS (Windows/Linux/Apple/Unknown). Carico os_info per
+  // gli host coinvolti, classifico, scarto le righe fuori filtro.
+  if (opts.osFamilies && opts.osFamilies.length > 0 && opts.osFamilies.length < OS_FAMILIES.length) {
+    const ids = [...new Set(all.map((r) => r.host_id).filter((x): x is number => x !== null))];
+    const osMap = loadHostsOsFamily(ids);
+    const allowed = new Set(opts.osFamilies);
+    all = all.filter((r) => r.host_id !== null && allowed.has(osMap.get(r.host_id) ?? "Unknown"));
+  }
 
   interface AggInternal extends AggregatedSoftware {
     _hostMap: Map<number, { sources: Set<SoftwareSource>; publisher: string | null; install_date: string | null; scanned_at: string | null; ip: string }>;

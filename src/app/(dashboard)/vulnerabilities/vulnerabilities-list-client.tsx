@@ -70,7 +70,9 @@ interface ApiResponse {
 }
 
 const PAGE_SIZE = 50;
-const SOURCE_FILTERS = ["Greenbone", "Wazuh"] as const;
+const SOURCE_FILTERS = ["Edge", "Wazuh"] as const;
+type OsFamily = "Windows" | "Linux" | "Apple" | "Unknown";
+const OS_FILTERS: OsFamily[] = ["Windows", "Linux", "Apple", "Unknown"];
 
 function formatDate(ts: string | null): string {
   if (!ts) return "—";
@@ -94,6 +96,7 @@ export function VulnerabilitiesListClient() {
   const [searchInput, setSearchInput] = useState("");
   const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set());
   const [sourceFilter, setSourceFilter] = useState<Set<string>>(new Set());
+  const [osFilter, setOsFilter] = useState<Set<OsFamily>>(new Set());
   const [onlyWithCve, setOnlyWithCve] = useState(false);
 
   const [sortBy, setSortBy] = useState("severity");
@@ -127,9 +130,10 @@ export function VulnerabilitiesListClient() {
     if (search) sp.set("search", search);
     if (severityFilter.size > 0) sp.set("severity", [...severityFilter].join(","));
     if (sourceFilter.size > 0) sp.set("sources", [...sourceFilter].join(","));
+    if (osFilter.size > 0) sp.set("os", [...osFilter].join(","));
     if (onlyWithCve) sp.set("hasCve", "true");
     return sp.toString();
-  }, [page, sortBy, sortDir, search, severityFilter, sourceFilter, onlyWithCve]);
+  }, [page, sortBy, sortDir, search, severityFilter, sourceFilter, osFilter, onlyWithCve]);
 
   useEffect(() => {
     let cancelled = false;
@@ -236,11 +240,12 @@ export function VulnerabilitiesListClient() {
     setSearch("");
     setSeverityFilter(new Set());
     setSourceFilter(new Set());
+    setOsFilter(new Set());
     setOnlyWithCve(false);
     setPage(1);
   };
 
-  const hasFilters = search || severityFilter.size > 0 || sourceFilter.size > 0 || onlyWithCve;
+  const hasFilters = search || severityFilter.size > 0 || sourceFilter.size > 0 || osFilter.size > 0 || onlyWithCve;
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
@@ -309,6 +314,31 @@ export function VulnerabilitiesListClient() {
                     onClick={() => toggleSource(src)}
                   >
                     {src}
+                  </Button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground uppercase">OS:</span>
+              {OS_FILTERS.map((os) => {
+                const active = osFilter.has(os);
+                return (
+                  <Button
+                    key={os}
+                    type="button"
+                    size="sm"
+                    variant={active ? "default" : "outline"}
+                    onClick={() => {
+                      setOsFilter((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(os)) next.delete(os);
+                        else next.add(os);
+                        return next;
+                      });
+                      setPage(1);
+                    }}
+                  >
+                    {os}
                   </Button>
                 );
               })}

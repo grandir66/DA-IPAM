@@ -38,7 +38,7 @@ interface UnifiedFinding {
   nvt_name: string | null;
   description: string | null;
   scanned_at: string;
-  sources: string[];     // ["Greenbone", "Wazuh"] etc — fonti che hanno rilevato la stessa CVE
+  sources: string[];     // ["Edge", "Wazuh"] — fonti che hanno rilevato la stessa CVE
 }
 
 const SEVERITY_RANK: Record<string, number> = {
@@ -73,15 +73,16 @@ export async function GET(
     const code = getCurrentTenantCode() ?? "DEFAULT";
     const db = getTenantDb(code);
 
-    // ─── Step 1: Greenbone (raw findings dal scanner-edge che wrappa Greenbone) ──
+    // ─── Step 1: Edge — vuln raccolte dal scanner-edge appliance (vuln_findings) ──
     // Dedup per (cve_id|nvt_oid, port). Per ogni gruppo teniamo MAX(scanned_at).
-    // La fonte è SEMPRE "Greenbone" — scanner-edge è il trasporto, non lo strumento.
-    const greenboneRows = db
+    // Fonte etichettata "Edge" (= canale di sync uplink), lo strumento dietro
+    // (Greenbone/OpenVAS) non è esposto in UI.
+    const edgeRows = db
       .prepare(
         `SELECT f.id, f.cve_id, MAX(f.cvss_score) AS cvss_score, f.cvss_vector,
                 f.severity, f.port, f.service, f.nvt_oid, f.nvt_name,
                 f.description, MAX(f.scanned_at) AS scanned_at,
-                'Greenbone' AS source
+                'Edge' AS source
            FROM vuln_findings f
           WHERE f.host_id = ?
             AND f.severity IN ('Critical','High','Medium','Low')
@@ -115,7 +116,7 @@ export async function GET(
     // ─── Step 3: merge per (cve_id | nvt_oid) — accumulo sources ─────────────
     const merged = new Map<string, UnifiedFinding>();
 
-    for (const g of greenboneRows) {
+    for (const g of edgeRows) {
       const key = g.cve_id ?? g.nvt_oid ?? `nvt:${g.id}`;
       const sev = normalizeSeverity(g.severity);
       const existing = merged.get(key);

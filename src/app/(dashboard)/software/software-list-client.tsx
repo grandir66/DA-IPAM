@@ -67,6 +67,8 @@ interface ApiResponse {
 
 const PAGE_SIZE = 50;
 const SOURCE_FILTERS: SoftwareSource[] = ["Wazuh", "Probe"];
+type OsFamily = "Windows" | "Linux" | "Apple" | "Unknown";
+const OS_FILTERS: OsFamily[] = ["Windows", "Linux", "Apple", "Unknown"];
 
 function formatDate(ts: string | null): string {
   if (!ts) return "—";
@@ -88,6 +90,7 @@ export function SoftwareListClient() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [sourceFilter, setSourceFilter] = useState<Set<SoftwareSource>>(new Set());
+  const [osFilter, setOsFilter] = useState<Set<OsFamily>>(new Set());
   const [onlyWithVulns, setOnlyWithVulns] = useState(false);
 
   const [sortBy, setSortBy] = useState("host_count");
@@ -119,9 +122,10 @@ export function SoftwareListClient() {
     sp.set("sortDir", sortDir);
     if (search) sp.set("search", search);
     if (sourceFilter.size > 0) sp.set("sources", [...sourceFilter].join(","));
+    if (osFilter.size > 0) sp.set("os", [...osFilter].join(","));
     if (onlyWithVulns) sp.set("hasVulns", "true");
     return sp.toString();
-  }, [page, sortBy, sortDir, search, sourceFilter, onlyWithVulns]);
+  }, [page, sortBy, sortDir, search, sourceFilter, osFilter, onlyWithVulns]);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,6 +188,16 @@ export function SoftwareListClient() {
     setPage(1);
   };
 
+  const toggleOs = (os: OsFamily) => {
+    setOsFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(os)) next.delete(os);
+      else next.add(os);
+      return next;
+    });
+    setPage(1);
+  };
+
   const toggleExpand = (key: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -214,11 +228,12 @@ export function SoftwareListClient() {
     setSearchInput("");
     setSearch("");
     setSourceFilter(new Set());
+    setOsFilter(new Set());
     setOnlyWithVulns(false);
     setPage(1);
   };
 
-  const hasFilters = search || sourceFilter.size > 0 || onlyWithVulns;
+  const hasFilters = search || sourceFilter.size > 0 || osFilter.size > 0 || onlyWithVulns;
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
@@ -262,6 +277,23 @@ export function SoftwareListClient() {
                     onClick={() => toggleSource(src)}
                   >
                     {src}
+                  </Button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground uppercase">OS:</span>
+              {OS_FILTERS.map((os) => {
+                const active = osFilter.has(os);
+                return (
+                  <Button
+                    key={os}
+                    type="button"
+                    size="sm"
+                    variant={active ? "default" : "outline"}
+                    onClick={() => toggleOs(os)}
+                  >
+                    {os}
                   </Button>
                 );
               })}

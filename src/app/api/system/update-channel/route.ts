@@ -1,5 +1,9 @@
 /**
- * Canale di aggiornamento DA-IPAM (Stable=main / Beta=dev).
+ * Canale di aggiornamento DA-IPAM (Stable=main / Dev=dev).
+ *
+ * I due canali rispecchiano 1:1 i branch GitHub:
+ *  - "stable" → branch `main` (produzione, riceve solo promote esplicite)
+ *  - "dev"    → branch `dev`  (riceve ogni push di sviluppo, per test)
  *
  *  GET — ritorna canale attuale (DA_INVENT_BRANCH da .env.local) + branch
  *        git locale + se PAT GitHub configurato.
@@ -23,21 +27,23 @@ const execFile = promisify(_execFile);
 const APP_DIR = process.env.DA_INVENT_DIR ?? process.cwd();
 const ENV_FILE = path.join(APP_DIR, ".env.local");
 
-const BRANCH_TO_CHANNEL: Record<string, "stable" | "beta"> = {
+const BRANCH_TO_CHANNEL: Record<string, "stable" | "dev"> = {
   main: "stable",
-  dev: "beta",
+  dev: "dev",
 };
-const CHANNEL_TO_BRANCH: Record<"stable" | "beta", string> = {
+const CHANNEL_TO_BRANCH: Record<"stable" | "dev", string> = {
   stable: "main",
-  beta: "dev",
+  dev: "dev",
 };
 
+// Accetta sia "dev" (nuovo) che "beta" (legacy, mappato a "dev") per non
+// rompere eventuali client salvati con il vecchio enum.
 const PutSchema = z.object({
-  channel: z.enum(["stable", "beta"]),
+  channel: z.enum(["stable", "dev", "beta"]).transform((v) => (v === "beta" ? "dev" : v) as "stable" | "dev"),
 });
 
 interface UpdateChannelStatus {
-  channel: "stable" | "beta" | "unknown";
+  channel: "stable" | "dev" | "unknown";
   branch: string;
   configuredBranch: string;          // valore DA_INVENT_BRANCH in .env.local
   gitBranch: string | null;          // branch git effettivo

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { GitBranch, ShieldCheck, AlertTriangle, Loader2, Rocket, Lock, ChevronDown, ChevronRight } from "lucide-react";
 
 interface ChannelStatus {
-  channel: "stable" | "beta" | "unknown";
+  channel: "stable" | "dev" | "unknown";
   branch: string;
   configuredBranch: string;
   gitBranch: string | null;
@@ -60,10 +60,10 @@ export function UpdateChannelCard() {
 
   useEffect(() => { void load(); }, []);
 
-  const handleChannelChange = async (channel: "stable" | "beta") => {
+  const handleChannelChange = async (channel: "stable" | "dev") => {
     if (!status || channel === status.channel) return;
-    if (channel === "beta" && !confirm(
-      "Passare al canale Beta (dev)?\n\n" +
+    if (channel === "dev" && !confirm(
+      "Passare al canale Dev (branch dev)?\n\n" +
       "Verranno installati gli aggiornamenti in sviluppo, non ancora promossi in produzione.\n" +
       "Adatto SOLO a deployment di test, NON ai clienti.\n\n" +
       "Confermi?"
@@ -77,7 +77,7 @@ export function UpdateChannelCard() {
       });
       const d = (await r.json()) as { ok?: boolean; error?: string };
       if (r.ok && d.ok !== false) {
-        toast.success(`Canale impostato su ${channel === "stable" ? "Stable (main)" : "Beta (dev)"}. Prossimo auto-update entro 1 min.`);
+        toast.success(`Canale impostato su ${channel === "stable" ? "Stable (main)" : "Dev (dev)"}. Prossimo auto-update entro 15 min.`);
         await load();
       } else {
         toast.error(d.error ?? "Operazione fallita");
@@ -156,7 +156,7 @@ export function UpdateChannelCard() {
   if (!status) return null;
 
   const isStable = status.channel === "stable";
-  const isBeta = status.channel === "beta";
+  const isDev = status.channel === "dev";
 
   return (
     <div className="rounded-md border bg-card p-4 space-y-3">
@@ -167,7 +167,7 @@ export function UpdateChannelCard() {
           </h3>
           <p className="text-sm text-muted-foreground">
             Sceglie da quale branch GitHub il timer auto-update tira il codice. <strong>Stable (main)</strong> è
-            consigliato in produzione; <strong>Beta (dev)</strong> per server di test.
+            consigliato in produzione; <strong>Dev (dev)</strong> per server di test.
           </p>
         </div>
       </div>
@@ -190,13 +190,13 @@ export function UpdateChannelCard() {
         </button>
         <button
           disabled={saving}
-          onClick={() => handleChannelChange("beta")}
-          className={`text-left rounded-md border p-3 transition-colors ${isBeta ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30" : "hover:bg-accent"}`}
+          onClick={() => handleChannelChange("dev")}
+          className={`text-left rounded-md border p-3 transition-colors ${isDev ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30" : "hover:bg-accent"}`}
         >
           <div className="flex items-center gap-2 font-medium">
-            <AlertTriangle className={`h-4 w-4 ${isBeta ? "text-amber-600" : "text-muted-foreground"}`} />
-            Beta (dev)
-            {isBeta && <span className="text-xs ml-auto text-amber-700">attivo</span>}
+            <AlertTriangle className={`h-4 w-4 ${isDev ? "text-amber-600" : "text-muted-foreground"}`} />
+            Dev (dev)
+            {isDev && <span className="text-xs ml-auto text-amber-700">attivo</span>}
           </div>
           <p className="text-xs text-muted-foreground mt-1">
             Riceve ogni push di sviluppo. Solo deployment di test.

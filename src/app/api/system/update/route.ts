@@ -137,7 +137,17 @@ function getRemoteVersionFromGit(): { version: string; changelog: string[] } | n
   } catch (e) {
     console.warn("[Update] git fetch origin fallito (si prova comunque con ref già presenti):", e);
   }
-  const refs = ["origin/main", "origin/master"];
+  // Cerca prima sul branch corrente (per supportare canale Dev/altro), poi
+  // fallback main/master per compat. Dedup con Set per evitare doppi check.
+  let currentBranch: string | null = null;
+  try {
+    currentBranch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: root, encoding: "utf-8", timeout: 5000 }).trim();
+  } catch { /* ignora */ }
+  const refs = Array.from(new Set([
+    currentBranch && /^[a-z][a-z0-9_\-/]*$/i.test(currentBranch) ? `origin/${currentBranch}` : null,
+    "origin/main",
+    "origin/master",
+  ].filter((x): x is string => Boolean(x))));
   for (const ref of refs) {
     try {
       const json = execSync(`git show ${ref}:package.json`, {
@@ -324,9 +334,15 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    if (gitStatus.branch !== "main" && gitStatus.branch !== "master") {
+    // Il branch target dell'update è il branch git CORRENTE (quello che il
+    // timer auto-update mantiene allineato a DA_INVENT_BRANCH). Supportati:
+    // main/master per canale Stable, dev per canale Dev. Validato con regex
+    // strict — esce da `git rev-parse`, non da user input, ma paranoia ok.
+    const targetBranch = gitStatus.branch;
+    const allowedBranches = ["main", "master", "dev"];
+    if (!allowedBranches.includes(targetBranch) || !/^[a-z][a-z0-9_\-/]*$/i.test(targetBranch)) {
       return NextResponse.json({
-        error: `Sei sul branch "${gitStatus.branch}". Passa al branch main/master per aggiornare.`,
+        error: `Sei sul branch "${targetBranch}". L'aggiornamento è supportato solo per main/master/dev. Usa la card "Canale aggiornamenti" per cambiare canale.`,
         status: "error" as const,
       }, { status: 400 });
     }
@@ -360,11 +376,11 @@ export async function POST(request: NextRequest) {
     try {
       const steps: UpdateStatus[] = [];
 
-      steps.push({ status: "downloading", message: "Scaricamento aggiornamenti da GitHub...", progress: 10 });
-      execSync("git fetch origin main", { cwd: root, encoding: "utf-8", timeout: 60000 });
+      steps.push({ status: "downloading", message: `Scaricamento aggiornamenti da GitHub (${targetBranch})...`, progress: 10 });
+      execSync(`git fetch origin ${targetBranch}`, { cwd: root, encoding: "utf-8", timeout: 60000 });
 
       steps.push({ status: "downloading", message: "Applicazione modifiche...", progress: 30 });
-      execSync("git pull origin main --ff-only", { cwd: root, encoding: "utf-8", timeout: 120000 });
+      execSync(`git pull origin ${targetBranch} --ff-only`, { cwd: root, encoding: "utf-8", timeout: 120000 });
 
       steps.push({ status: "installing", message: "Installazione dipendenze...", progress: 50 });
       execSync("npm install --production=false", { cwd: root, encoding: "utf-8", timeout: 300000 });

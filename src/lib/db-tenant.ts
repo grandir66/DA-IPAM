@@ -5688,26 +5688,32 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
   return { data, total };
 }
 
+/**
+ * Conta CVE per ogni software. UNA SOLA query batch (no N+1).
+ *
+ * Sorgente: solo wazuh_vuln. La match Greenbone via LIKE '%name%' su
+ * nvt_name è stata rimossa: era N+1 con full table scan e imprecisa
+ * (matcha 'Mozilla' su 'Mozilla Firefox' anche per altri pacchetti che
+ * contengono 'Mozilla'). Per il count CVE preciso usare la pagina
+ * /vulnerabilities, dove la dedup avviene a livello CVE non package_name.
+ */
 function computeVulnCounts(items: AggregatedSoftware[]): void {
   if (items.length === 0) return;
-  const d = db();
-  const wazuhStmt = d.prepare(
-    `SELECT COUNT(DISTINCT v.cve) AS n
-       FROM wazuh_vuln v
-      WHERE LOWER(v.package_name) = ?
-        AND COALESCE(v.status, 'VALID') NOT IN ('SOLVED','OBSOLETE')`
-  );
-  const gbStmt = d.prepare(
-    `SELECT COUNT(DISTINCT f.cve_id) AS n
-       FROM vuln_findings f
-      WHERE f.cve_id IS NOT NULL
-        AND LOWER(f.nvt_name) LIKE ?`
-  );
+  const names = [...new Set(items.map((i) => i.name.toLowerCase()))];
+  if (names.length === 0) return;
+  const placeholders = names.map(() => "?").join(",");
+  const rows = db()
+    .prepare(
+      `SELECT LOWER(package_name) AS pkg, COUNT(DISTINCT cve) AS n
+         FROM wazuh_vuln
+        WHERE LOWER(package_name) IN (${placeholders})
+          AND status = 'VALID'
+        GROUP BY LOWER(package_name)`
+    )
+    .all(...names) as Array<{ pkg: string; n: number }>;
+  const counts = new Map(rows.map((r) => [r.pkg, r.n]));
   for (const item of items) {
-    const nameLower = item.name.toLowerCase();
-    const w = wazuhStmt.get(nameLower) as { n: number } | undefined;
-    const g = gbStmt.get(`%${nameLower}%`) as { n: number } | undefined;
-    item.vuln_count = (w?.n ?? 0) + (g?.n ?? 0);
+    item.vuln_count = counts.get(item.name.toLowerCase()) ?? 0;
   }
 }
 

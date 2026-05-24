@@ -38,7 +38,7 @@ interface UnifiedFinding {
   nvt_name: string | null;
   description: string | null;
   scanned_at: string;
-  sources: string[];     // ["Greenbone", "Wazuh"] etc — fonti che hanno rilevato la stessa CVE
+  sources: string[];     // ["Edge", "Wazuh"] — fonti che hanno rilevato la stessa CVE
 }
 
 const SEVERITY_RANK: Record<string, number> = {
@@ -73,18 +73,17 @@ export async function GET(
     const code = getCurrentTenantCode() ?? "DEFAULT";
     const db = getTenantDb(code);
 
-    // ─── Step 1: Greenbone / scanner-edge — dedupe per (cve_id|nvt_oid, port) ──
-    // Includiamo TUTTI gli scan_run del host: per ogni gruppo teniamo MAX(scanned_at).
-    // Lo scanner_name viene dal join con vuln_scanners (best-effort).
-    const greenboneRows = db
+    // ─── Step 1: Edge — vuln raccolte dal scanner-edge appliance (vuln_findings) ──
+    // Dedup per (cve_id|nvt_oid, port). Per ogni gruppo teniamo MAX(scanned_at).
+    // Fonte etichettata "Edge" (= canale di sync uplink), lo strumento dietro
+    // (Greenbone/OpenVAS) non è esposto in UI.
+    const edgeRows = db
       .prepare(
         `SELECT f.id, f.cve_id, MAX(f.cvss_score) AS cvss_score, f.cvss_vector,
                 f.severity, f.port, f.service, f.nvt_oid, f.nvt_name,
                 f.description, MAX(f.scanned_at) AS scanned_at,
-                COALESCE(s.name, 'Greenbone') AS source
+                'Edge' AS source
            FROM vuln_findings f
-           LEFT JOIN vuln_scan_runs r ON r.id = f.scan_run_id
-           LEFT JOIN vuln_scanners s ON s.id = r.scanner_id
           WHERE f.host_id = ?
             AND f.severity IN ('Critical','High','Medium','Low')
           GROUP BY COALESCE(f.cve_id, ''), COALESCE(f.nvt_oid, ''), COALESCE(f.port, '')`,
@@ -106,7 +105,7 @@ export async function GET(
            FROM wazuh_vuln v
            JOIN wazuh_agent a ON a.agent_id = v.agent_id
           WHERE a.host_id = ?
-            AND v.status IN ('VALID','PENDING')`,
+            AND v.status = 'VALID'`,
       )
       .all(hostId) as Array<{
         cve: string; cvss_score: number | null; severity: string | null;
@@ -117,7 +116,7 @@ export async function GET(
     // ─── Step 3: merge per (cve_id | nvt_oid) — accumulo sources ─────────────
     const merged = new Map<string, UnifiedFinding>();
 
-    for (const g of greenboneRows) {
+    for (const g of edgeRows) {
       const key = g.cve_id ?? g.nvt_oid ?? `nvt:${g.id}`;
       const sev = normalizeSeverity(g.severity);
       const existing = merged.get(key);

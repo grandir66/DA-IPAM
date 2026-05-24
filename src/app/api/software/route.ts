@@ -15,14 +15,17 @@ import {
   getAggregatedSoftware,
   type AggregatedSoftwareOpts,
   type SoftwareSource,
+  type OsFamily,
 } from "@/lib/db-tenant";
 
-const SourceEnum = z.enum(["Wazuh", "Probe", "Greenbone"]);
+const SourceEnum = z.enum(["Wazuh", "Probe"]);
+const OsFamilyEnum = z.enum(["Windows", "Linux", "Apple", "Unknown"]);
 
 const QuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
   sources: z.string().optional(),
+  os: z.string().optional(),
   search: z.string().max(200).optional(),
   hasVulns: z.enum(["true", "false"]).optional(),
   sortBy: z.enum(["name", "host_count", "vuln_count", "latest_seen_at"]).default("host_count"),
@@ -49,11 +52,18 @@ export async function GET(request: Request) {
         .map((s) => s.trim())
         .filter((s) => SourceEnum.safeParse(s).success) as SoftwareSource[])
     : undefined;
+  const osFamilies = q.os
+    ? (q.os
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => OsFamilyEnum.safeParse(s).success) as OsFamily[])
+    : undefined;
 
   const opts: AggregatedSoftwareOpts = {
     page: q.page,
     pageSize: q.pageSize,
     sources,
+    osFamilies,
     search: q.search,
     hasVulns:
       q.hasVulns === "true" ? true : q.hasVulns === "false" ? false : undefined,

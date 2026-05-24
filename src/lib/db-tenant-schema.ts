@@ -56,6 +56,24 @@ CREATE TABLE IF NOT EXISTS hosts (
   host_source TEXT DEFAULT 'scan',
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
+  -- Famiglia OS derivata da os_info via keyword matching (Windows/Linux/Apple/Unknown).
+  -- GENERATED VIRTUAL: si auto-aggiorna quando os_info cambia; indicizzata per
+  -- filtri rapidi su /software e /vulnerabilities. Nessun trigger da mantenere.
+  os_family TEXT GENERATED ALWAYS AS (
+    CASE
+      WHEN os_info IS NULL OR TRIM(os_info) = '' THEN 'Unknown'
+      WHEN LOWER(os_info) LIKE '%windows%' THEN 'Windows'
+      WHEN LOWER(os_info) LIKE '%macos%' OR LOWER(os_info) LIKE '%mac os%'
+        OR LOWER(os_info) LIKE '%darwin%' OR LOWER(os_info) LIKE '%osx%' THEN 'Apple'
+      WHEN LOWER(os_info) LIKE '%linux%' OR LOWER(os_info) LIKE '%ubuntu%'
+        OR LOWER(os_info) LIKE '%debian%' OR LOWER(os_info) LIKE '%centos%'
+        OR LOWER(os_info) LIKE '%rhel%' OR LOWER(os_info) LIKE '%red hat%'
+        OR LOWER(os_info) LIKE '%fedora%' OR LOWER(os_info) LIKE '%alpine%'
+        OR LOWER(os_info) LIKE '%suse%' OR LOWER(os_info) LIKE '%arch%'
+        OR LOWER(os_info) LIKE '%rocky%' OR LOWER(os_info) LIKE '%almalinux%' THEN 'Linux'
+      ELSE 'Unknown'
+    END
+  ) VIRTUAL,
   UNIQUE(network_id, ip)
 );
 
@@ -997,6 +1015,7 @@ CREATE INDEX IF NOT EXISTS idx_hosts_hostname ON hosts(hostname);
 CREATE INDEX IF NOT EXISTS idx_hosts_custom_name ON hosts(custom_name);
 CREATE INDEX IF NOT EXISTS idx_hosts_vendor ON hosts(vendor);
 CREATE INDEX IF NOT EXISTS idx_hosts_network_status ON hosts(network_id, status);
+CREATE INDEX IF NOT EXISTS idx_hosts_os_family ON hosts(os_family);
 CREATE INDEX IF NOT EXISTS idx_hosts_known_status ON hosts(known_host, status);
 CREATE INDEX IF NOT EXISTS idx_hosts_network_mac ON hosts(network_id, mac);
 

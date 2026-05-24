@@ -33,7 +33,7 @@ interface UpdateInfo {
 }
 
 interface ChannelStatus {
-  channel: "stable" | "beta" | "unknown";
+  channel: "stable" | "dev" | "unknown";
   branch: string;
   configuredBranch: string;
   gitBranch: string | null;
@@ -43,7 +43,7 @@ interface ChannelStatus {
 
 const CHANNEL_LABEL: Record<string, string> = {
   stable: "Stable (main)",
-  beta: "Beta (dev)",
+  dev: "Dev (dev)",
   unknown: "Sconosciuto",
 };
 

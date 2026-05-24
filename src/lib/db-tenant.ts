@@ -143,6 +143,36 @@ export function getTenantDb(tenantCode: string): Database.Database {
 
   newDb.exec(TENANT_INDEXES_SQL);
 
+  // Migrazione runtime: aggiungi hosts.os_family GENERATED VIRTUAL su tenant
+  // DB esistenti. Auto-derivata da os_info (Windows/Linux/Apple/Unknown).
+  // Indicizzata in TENANT_INDEXES_SQL → filtri rapidi su /software /vulnerabilities.
+  try {
+    const hostCols = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
+    if (hostCols.length > 0 && !hostCols.some((c) => c.name === "os_family")) {
+      newDb.exec(`
+        ALTER TABLE hosts ADD COLUMN os_family TEXT GENERATED ALWAYS AS (
+          CASE
+            WHEN os_info IS NULL OR TRIM(os_info) = '' THEN 'Unknown'
+            WHEN LOWER(os_info) LIKE '%windows%' THEN 'Windows'
+            WHEN LOWER(os_info) LIKE '%macos%' OR LOWER(os_info) LIKE '%mac os%'
+              OR LOWER(os_info) LIKE '%darwin%' OR LOWER(os_info) LIKE '%osx%' THEN 'Apple'
+            WHEN LOWER(os_info) LIKE '%linux%' OR LOWER(os_info) LIKE '%ubuntu%'
+              OR LOWER(os_info) LIKE '%debian%' OR LOWER(os_info) LIKE '%centos%'
+              OR LOWER(os_info) LIKE '%rhel%' OR LOWER(os_info) LIKE '%red hat%'
+              OR LOWER(os_info) LIKE '%fedora%' OR LOWER(os_info) LIKE '%alpine%'
+              OR LOWER(os_info) LIKE '%suse%' OR LOWER(os_info) LIKE '%arch%'
+              OR LOWER(os_info) LIKE '%rocky%' OR LOWER(os_info) LIKE '%almalinux%' THEN 'Linux'
+            ELSE 'Unknown'
+          END
+        ) VIRTUAL
+      `);
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_hosts_os_family ON hosts(os_family)");
+      console.info(`[db-tenant] ${tenantCode}: aggiunta hosts.os_family GENERATED + index`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione os_family fallita:`, e);
+  }
+
   // Migrazione runtime: scheduled_jobs.job_type CHECK include 'fast_scan' (schedulazione per-subnet)
   // I tenant DB esistenti non hanno questo valore: rigeneriamo la tabella in-place.
   try {
@@ -4543,6 +4573,7 @@ export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
            FROM wazuh_vuln wv
            JOIN wazuh_agent wa ON wa.agent_id = wv.agent_id
           WHERE wa.host_id IS NOT NULL
+            AND wv.status = 'VALID'
             AND wv.severity IN ('Critical','High','Medium','Low')
           GROUP BY wa.host_id, wv.severity
        )
@@ -4982,12 +5013,17 @@ export function getLatestOkSoftwareScanForDevice(
 // ═══════════════════════════════════════════════════════════════════════════
 // AGGREGAZIONI GLOBALI: pagine /vulnerabilities e /software
 // Vista INVERSA: data una CVE / un software → lista host che lo presentano.
-// Sorgenti unificate per vulnerabilità: vuln_findings (edge) + wazuh_vuln.
-// Sorgenti unificate per software: wazuh_software + software_inventory +
-// best-effort estrazione package_name da vuln_findings.nvt_name.
+// Sorgenti unificate per vulnerabilità:
+//  - "Edge"  = vuln_findings, ovvero le CVE che arrivano dal scanner-edge
+//              appliance (uplink sync periodico). Lo strumento dietro (Greenbone,
+//              OpenVAS, ecc.) NON viene esposto in UI: dal punto di vista
+//              DA-IPAM la fonte è il canale Edge stesso.
+//  - "Wazuh" = wazuh_vuln, ovvero le CVE riportate dagli agent Wazuh installati
+//              sugli endpoint.
+// Sorgenti unificate per software: SOLO wazuh_software + software_inventory.
+// Le vuln_findings (Edge) NON sono una fonte di software (sono vulnerabilità).
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { extractPackageName } from "./vuln/package-name-extract";
 import { SEVERITY_RANK, maxSeverity, normalizeSeverity, type Severity } from "./severity-style";
 
 export type AggregatedVulnSourceLabel = string;
@@ -5019,11 +5055,49 @@ export interface AggregatedVuln {
   latest_scanned_at: string;
 }
 
+export type OsFamily = "Windows" | "Linux" | "Apple" | "Unknown";
+
+export const OS_FAMILIES: readonly OsFamily[] = ["Windows", "Linux", "Apple", "Unknown"] as const;
+
+/**
+ * Carica la mappa hostId → OsFamily per un set di host. Usa hosts.os_info
+ * (free text classificato via keyword) come fonte primaria.
+ */
+export function loadHostsOsFamily(hostIds: number[]): Map<number, OsFamily> {
+  const out = new Map<number, OsFamily>();
+  if (hostIds.length === 0) return out;
+  const placeholders = hostIds.map(() => "?").join(",");
+  const rows = db()
+    .prepare(`SELECT id, os_info FROM hosts WHERE id IN (${placeholders})`)
+    .all(...hostIds) as Array<{ id: number; os_info: string | null }>;
+  for (const r of rows) out.set(r.id, classifyOsFamily(r.os_info));
+  return out;
+}
+
+/**
+ * Classifica un host in una famiglia OS in base a `hosts.os_info`
+ * (free text). Best-effort tramite keyword matching case-insensitive.
+ */
+export function classifyOsFamily(osInfo: string | null | undefined): OsFamily {
+  if (!osInfo) return "Unknown";
+  const s = osInfo.toLowerCase();
+  if (s.includes("windows")) return "Windows";
+  if (s.includes("macos") || s.includes("mac os") || s.includes("darwin") || s.includes("osx")) return "Apple";
+  if (
+    s.includes("linux") || s.includes("ubuntu") || s.includes("debian") ||
+    s.includes("centos") || s.includes("rhel") || s.includes("red hat") ||
+    s.includes("fedora") || s.includes("alpine") || s.includes("suse") ||
+    s.includes("arch") || s.includes("rocky") || s.includes("almalinux")
+  ) return "Linux";
+  return "Unknown";
+}
+
 export interface AggregatedVulnOpts {
   page: number;
   pageSize: number;
   severity?: Severity[];
   sources?: string[];
+  osFamilies?: OsFamily[];
   search?: string;
   hasCve?: boolean;
   sortBy?: "severity" | "cvss" | "host_count" | "latest_scanned_at" | "cve_id";
@@ -5036,7 +5110,7 @@ export interface AggregatedVulnResult {
   severity_rollup: { Critical: number; High: number; Medium: number; Low: number };
 }
 
-export type SoftwareSource = "Wazuh" | "Probe" | "Greenbone";
+export type SoftwareSource = "Wazuh" | "Probe";
 
 export interface AggregatedSoftwareHostRef {
   host_id: number;
@@ -5048,24 +5122,39 @@ export interface AggregatedSoftwareHostRef {
   publisher: string | null;
   install_date: string | null;
   scanned_at: string | null;
+  version: string | null;          // versione installata su questo host (può differire fra host)
+}
+
+export interface AggregatedSoftwareVersionHost {
+  host_id: number;
+  ip: string;
+  hostname: string | null;
+}
+
+export interface AggregatedSoftwareVersion {
+  version: string | null;
+  host_count: number;
+  latest_seen_at: string | null;
+  hosts: AggregatedSoftwareVersionHost[];   // elenco computer per QUESTA versione
 }
 
 export interface AggregatedSoftware {
-  key: string;
+  key: string;                 // = lowercase(name)
   name: string;
-  version: string | null;
   publisher: string | null;
   sources: SoftwareSource[];
-  host_count: number;
+  host_count: number;          // host distinti (qualunque versione)
   hosts_preview: AggregatedSoftwareHostRef[];
   vuln_count: number;
   latest_seen_at: string | null;
+  versions: AggregatedSoftwareVersion[];  // dettaglio versioni (ordinato desc)
 }
 
 export interface AggregatedSoftwareOpts {
   page: number;
   pageSize: number;
   sources?: SoftwareSource[];
+  osFamilies?: OsFamily[];
   search?: string;
   hasVulns?: boolean;
   sortBy?: "name" | "host_count" | "vuln_count" | "latest_seen_at";
@@ -5127,6 +5216,14 @@ interface RawVulnRow {
 }
 
 export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): AggregatedVulnResult {
+  // Filtro OS via SQL nativo (indice idx_hosts_os_family). Se attivo: JOIN
+  // su hosts.os_family. Quando non c'è filtro evitiamo la join (più veloce).
+  const osActive = !!(opts.osFamilies && opts.osFamilies.length > 0 && opts.osFamilies.length < OS_FAMILIES.length);
+  const osList = osActive ? opts.osFamilies! : [];
+  const osPlaceholders = osList.map(() => "?").join(",");
+  const edgeOsJoin = osActive ? `JOIN hosts h ON h.id = f.host_id AND h.os_family IN (${osPlaceholders})` : "";
+  const wazuhOsJoin = osActive ? `JOIN hosts h ON h.id = a.host_id AND h.os_family IN (${osPlaceholders})` : "";
+
   const baseSql = `
     SELECT
       COALESCE(f.cve_id, 'nvt:' || f.nvt_oid) AS key,
@@ -5138,10 +5235,9 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
       f.host_id,
       f.ip,
       f.scanned_at,
-      COALESCE(s.name, 'Greenbone') AS source
+      'Edge' AS source
     FROM vuln_findings f
-    LEFT JOIN vuln_scan_runs r ON r.id = f.scan_run_id
-    LEFT JOIN vuln_scanners s ON s.id = r.scanner_id
+    ${edgeOsJoin}
     WHERE f.severity IN ('Critical','High','Medium','Low')
       AND (f.cve_id IS NOT NULL OR f.nvt_oid IS NOT NULL)
     UNION ALL
@@ -5159,11 +5255,13 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
       'Wazuh' AS source
     FROM wazuh_vuln v
     JOIN wazuh_agent a ON a.agent_id = v.agent_id
-    WHERE COALESCE(v.status, 'VALID') NOT IN ('SOLVED','OBSOLETE')
+    ${wazuhOsJoin}
+    WHERE v.status = 'VALID'
       AND v.severity IN ('Critical','High','Medium','Low')
   `;
 
-  const rows = db().prepare(baseSql).all() as RawVulnRow[];
+  const params = osActive ? [...osList, ...osList] : [];
+  const rows = db().prepare(baseSql).all(...params) as RawVulnRow[];
 
   interface AggInternal extends AggregatedVuln {
     _hostKeys: Set<string>;
@@ -5327,14 +5425,12 @@ export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostR
   const cveKey = isNvt ? null : key;
   const nvtKey = isNvt ? key.substring(4) : null;
 
-  const greenboneRows = db()
+  const edgeRows = db()
     .prepare(
       `SELECT f.host_id, f.ip, f.severity, f.cvss_score, f.scanned_at,
               f.nvt_name AS package_label,
-              COALESCE(s.name, 'Greenbone') AS source
+              'Edge' AS source
          FROM vuln_findings f
-         LEFT JOIN vuln_scan_runs r ON r.id = f.scan_run_id
-         LEFT JOIN vuln_scanners s ON s.id = r.scanner_id
         WHERE (
           (? IS NOT NULL AND f.cve_id = ?) OR
           (? IS NOT NULL AND f.nvt_oid = ? AND f.cve_id IS NULL)
@@ -5361,7 +5457,7 @@ export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostR
              FROM wazuh_vuln v
              JOIN wazuh_agent a ON a.agent_id = v.agent_id
             WHERE v.cve = ?
-              AND COALESCE(v.status, 'VALID') NOT IN ('SOLVED','OBSOLETE')
+              AND v.status = 'VALID'
               AND v.severity IN ('Critical','High','Medium','Low')
             ORDER BY scanned_at DESC
             LIMIT ?`
@@ -5371,7 +5467,7 @@ export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostR
           scanned_at: string; package_label: string | null; source: string;
         }>);
 
-  const combined = [...greenboneRows, ...wazuhRows];
+  const combined = [...edgeRows, ...wazuhRows];
   const ids = [...new Set(combined.map((r) => r.host_id).filter((x): x is number => x != null))];
   const meta = loadHostsMeta(ids);
 
@@ -5410,11 +5506,26 @@ interface RawSoftwareRow {
   source: SoftwareSource;
 }
 
-function softwareKeyOf(name: string, version: string | null | undefined): string {
-  return `${name.toLowerCase()}|${(version ?? "").toLowerCase()}`;
+/**
+ * Chiave di aggregazione software: SOLO il nome (lowercase). Le versioni
+ * confluiscono dentro la stessa riga, esposte come sotto-categoria
+ * `versions: AggregatedSoftwareVersion[]`. Riduce drasticamente il numero
+ * di righe in tabella.
+ */
+function softwareKeyOf(name: string): string {
+  return name.toLowerCase();
 }
 
 export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedSoftwareResult {
+  // Filtro OS via SQL nativo (indice idx_hosts_os_family). Quando attivo:
+  // - wazuh: aggiunge JOIN hosts h ON h.id = a.host_id AND h.os_family IN (...)
+  // - probe: aggiunge condizione sulla CTE effective (host già joinato come h)
+  const osActive = !!(opts.osFamilies && opts.osFamilies.length > 0 && opts.osFamilies.length < OS_FAMILIES.length);
+  const osList = osActive ? opts.osFamilies! : [];
+  const osPlaceholders = osList.map(() => "?").join(",");
+  const wazuhOsJoin = osActive ? `JOIN hosts h ON h.id = a.host_id AND h.os_family IN (${osPlaceholders})` : "";
+  const probeOsClause = osActive ? `AND h.os_family IN (${osPlaceholders})` : "";
+
   const wazuhRows = db()
     .prepare(
       `SELECT w.name, w.version, w.vendor AS publisher,
@@ -5424,72 +5535,61 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
               'Wazuh' AS source
          FROM wazuh_software w
          JOIN wazuh_agent a ON a.agent_id = w.agent_id
+         ${wazuhOsJoin}
         WHERE a.host_id IS NOT NULL
           AND w.name IS NOT NULL AND TRIM(w.name) != ''`
     )
-    .all() as Array<{
+    .all(...(osActive ? osList : [])) as Array<{
       name: string; version: string | null; publisher: string | null;
       host_id: number; ip: string; install_date: string | null;
       scanned_at: string | null; source: SoftwareSource;
     }>;
 
+  // Probe scans: includere sia scan linkati a host_id direttamente sia scan
+  // linkati a un network_device (host_id NULL ma device_id NOT NULL) — il
+  // mapping device→host avviene via hosts.ip = network_devices.host.
+  // Per ogni host prendiamo l'ULTIMO scan ok (sia host-linked che device-linked).
   const probeRows = db()
     .prepare(
-      `SELECT si.name, si.version, si.publisher,
-              sc.host_id, h.ip,
+      `WITH effective AS (
+         SELECT sc.id AS scan_id,
+                COALESCE(sc.host_id, h2.id) AS host_id,
+                sc.started_at
+           FROM software_scans sc
+           LEFT JOIN network_devices nd ON nd.id = sc.device_id
+           LEFT JOIN hosts h2 ON h2.ip = nd.host
+          WHERE sc.status = 'ok'
+            AND COALESCE(sc.host_id, h2.id) IS NOT NULL
+       ),
+       latest AS (
+         SELECT host_id, MAX(scan_id) AS scan_id FROM effective GROUP BY host_id
+       )
+       SELECT si.name, si.version, si.publisher,
+              latest.host_id, h.ip,
               si.install_date,
               sc.started_at AS scanned_at,
               'Probe' AS source
-         FROM software_inventory si
-         JOIN software_scans sc ON sc.id = si.scan_id
-         JOIN hosts h ON h.id = sc.host_id
-        WHERE sc.host_id IS NOT NULL
-          AND sc.status = 'ok'
-          AND sc.id IN (
-            SELECT MAX(id) FROM software_scans
-             WHERE status = 'ok' AND host_id IS NOT NULL
-             GROUP BY host_id
-          )
-          AND si.name IS NOT NULL AND TRIM(si.name) != ''`
+         FROM latest
+         JOIN software_inventory si ON si.scan_id = latest.scan_id
+         JOIN software_scans sc ON sc.id = latest.scan_id
+         JOIN hosts h ON h.id = latest.host_id
+        WHERE si.name IS NOT NULL AND TRIM(si.name) != ''
+          ${probeOsClause}`
     )
-    .all() as Array<{
+    .all(...(osActive ? osList : [])) as Array<{
       name: string; version: string | null; publisher: string | null;
       host_id: number; ip: string; install_date: string | null;
       scanned_at: string | null; source: SoftwareSource;
     }>;
 
-  const greenboneRaw = db()
-    .prepare(
-      `SELECT f.nvt_name AS nvt_name, f.host_id, f.ip, f.scanned_at
-         FROM vuln_findings f
-        WHERE f.host_id IS NOT NULL AND f.nvt_name IS NOT NULL`
-    )
-    .all() as Array<{ nvt_name: string; host_id: number; ip: string; scanned_at: string }>;
-
-  const greenboneRows: typeof wazuhRows = [];
-  for (const g of greenboneRaw) {
-    const pkg = extractPackageName(g.nvt_name);
-    if (!pkg) continue;
-    greenboneRows.push({
-      name: pkg,
-      version: null,
-      publisher: null,
-      host_id: g.host_id,
-      ip: g.ip,
-      install_date: null,
-      scanned_at: g.scanned_at,
-      source: "Greenbone",
-    });
-  }
-
   const all: RawSoftwareRow[] = [
-    ...wazuhRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, r.version) })),
-    ...probeRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, r.version) })),
-    ...greenboneRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, null) })),
+    ...wazuhRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
+    ...probeRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
   ];
 
   interface AggInternal extends AggregatedSoftware {
     _hostMap: Map<number, { sources: Set<SoftwareSource>; publisher: string | null; install_date: string | null; scanned_at: string | null; ip: string }>;
+    _versions: Map<string, { hostIds: Set<number>; latest_seen_at: string | null }>;
   }
   const map = new Map<string, AggInternal>();
 
@@ -5499,25 +5599,37 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
       entry = {
         key: r.key,
         name: r.name,
-        version: r.version,
         publisher: r.publisher,
         sources: [],
         host_count: 0,
         hosts_preview: [],
         vuln_count: 0,
         latest_seen_at: r.scanned_at,
+        versions: [],
         _hostMap: new Map(),
+        _versions: new Map(),
       };
       map.set(r.key, entry);
     }
     if (!entry.sources.includes(r.source)) entry.sources.push(r.source);
-    if (!entry.version && r.version) entry.version = r.version;
     if (r.publisher) {
       if (r.source === "Probe") entry.publisher = r.publisher;
       else if (!entry.publisher && r.source === "Wazuh") entry.publisher = r.publisher;
     }
     if (r.scanned_at && (!entry.latest_seen_at || r.scanned_at > entry.latest_seen_at)) {
       entry.latest_seen_at = r.scanned_at;
+    }
+    // Sotto-categoria versioni: per ogni (name, version) traccio gli host distinti
+    // e l'ultimo scan. version=NULL diventa chiave "" (= "versione non rilevata").
+    const verKey = r.version ?? "";
+    let v = entry._versions.get(verKey);
+    if (!v) {
+      v = { hostIds: new Set(), latest_seen_at: null };
+      entry._versions.set(verKey, v);
+    }
+    if (r.host_id != null) v.hostIds.add(r.host_id);
+    if (r.scanned_at && (!v.latest_seen_at || r.scanned_at > v.latest_seen_at)) {
+      v.latest_seen_at = r.scanned_at;
     }
     if (r.host_id != null) {
       let h = entry._hostMap.get(r.host_id);
@@ -5534,7 +5646,23 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
   }
 
   let arr = [...map.values()];
-  for (const a of arr) a.host_count = a._hostMap.size;
+  for (const a of arr) {
+    a.host_count = a._hostMap.size;
+    // Ordina versioni desc (versioni "vuote" in coda). Gli `hosts` per versione
+    // vengono popolati più sotto, dopo aver caricato la meta degli host della pagina.
+    a.versions = [...a._versions.entries()]
+      .map(([ver, v]) => ({
+        version: ver === "" ? null : ver,
+        host_count: v.hostIds.size,
+        latest_seen_at: v.latest_seen_at,
+        hosts: [] as AggregatedSoftwareVersionHost[],
+      }))
+      .sort((x, y) => {
+        if (x.version === null) return 1;
+        if (y.version === null) return -1;
+        return y.version.localeCompare(x.version, undefined, { numeric: true, sensitivity: "base" });
+      });
+  }
 
   const needsVuln = opts.sortBy === "vuln_count" || opts.hasVulns !== undefined || arr.length <= 2000;
   if (needsVuln) computeVulnCounts(arr);
@@ -5582,7 +5710,10 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
   const pageRows = arr.slice(start, start + opts.pageSize);
 
   const allHostIds = new Set<number>();
-  for (const p of pageRows) for (const id of p._hostMap.keys()) allHostIds.add(id);
+  for (const p of pageRows) {
+    for (const id of p._hostMap.keys()) allHostIds.add(id);
+    for (const v of p._versions.values()) for (const id of v.hostIds) allHostIds.add(id);
+  }
   const meta = loadHostsMeta([...allHostIds]);
   for (const p of pageRows) {
     const entries = [...p._hostMap.entries()].slice(0, 10);
@@ -5598,45 +5729,67 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
         publisher: h.publisher,
         install_date: h.install_date,
         scanned_at: h.scanned_at,
+        version: null,  // preview aggregato per host; per dettaglio (host+versione) usare il drill-down
       };
     });
+    // Popola gli `hosts` per ogni versione (ordinati per hostname)
+    for (const ver of p.versions) {
+      const verData = p._versions.get(ver.version ?? "");
+      if (!verData) continue;
+      ver.hosts = [...verData.hostIds]
+        .map((host_id) => {
+          const m = meta.get(host_id);
+          return {
+            host_id,
+            ip: m?.ip ?? "",
+            hostname: m?.hostname ?? null,
+          };
+        })
+        .sort((a, b) => (a.hostname ?? a.ip).localeCompare(b.hostname ?? b.ip));
+    }
   }
 
-  const data = pageRows.map(({ _hostMap: _hm, ...rest }) => {
-    void _hm;
+  const data = pageRows.map(({ _hostMap: _hm, _versions: _v, ...rest }) => {
+    void _hm; void _v;
     return rest;
   });
   return { data, total };
 }
 
+/**
+ * Conta CVE per ogni software. UNA SOLA query batch (no N+1).
+ *
+ * Sorgente: solo wazuh_vuln. La match Greenbone via LIKE '%name%' su
+ * nvt_name è stata rimossa: era N+1 con full table scan e imprecisa
+ * (matcha 'Mozilla' su 'Mozilla Firefox' anche per altri pacchetti che
+ * contengono 'Mozilla'). Per il count CVE preciso usare la pagina
+ * /vulnerabilities, dove la dedup avviene a livello CVE non package_name.
+ */
 function computeVulnCounts(items: AggregatedSoftware[]): void {
   if (items.length === 0) return;
-  const d = db();
-  const wazuhStmt = d.prepare(
-    `SELECT COUNT(DISTINCT v.cve) AS n
-       FROM wazuh_vuln v
-      WHERE LOWER(v.package_name) = ?
-        AND COALESCE(v.status, 'VALID') NOT IN ('SOLVED','OBSOLETE')`
-  );
-  const gbStmt = d.prepare(
-    `SELECT COUNT(DISTINCT f.cve_id) AS n
-       FROM vuln_findings f
-      WHERE f.cve_id IS NOT NULL
-        AND LOWER(f.nvt_name) LIKE ?`
-  );
+  const names = [...new Set(items.map((i) => i.name.toLowerCase()))];
+  if (names.length === 0) return;
+  const placeholders = names.map(() => "?").join(",");
+  const rows = db()
+    .prepare(
+      `SELECT LOWER(package_name) AS pkg, COUNT(DISTINCT cve) AS n
+         FROM wazuh_vuln
+        WHERE LOWER(package_name) IN (${placeholders})
+          AND status = 'VALID'
+        GROUP BY LOWER(package_name)`
+    )
+    .all(...names) as Array<{ pkg: string; n: number }>;
+  const counts = new Map(rows.map((r) => [r.pkg, r.n]));
   for (const item of items) {
-    const nameLower = item.name.toLowerCase();
-    const w = wazuhStmt.get(nameLower) as { n: number } | undefined;
-    const g = gbStmt.get(`%${nameLower}%`) as { n: number } | undefined;
-    item.vuln_count = (w?.n ?? 0) + (g?.n ?? 0);
+    item.vuln_count = counts.get(item.name.toLowerCase()) ?? 0;
   }
 }
 
 export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftwareHostRef[] {
-  const sepIdx = key.indexOf("|");
-  if (sepIdx < 0) return [];
-  const nameLower = key.substring(0, sepIdx);
-  const versionLower = key.substring(sepIdx + 1);
+  // key = lowercase(name) — aggregato sul nome qualsiasi versione.
+  // Retro-compat: se key contiene "|version" lo ignoriamo e prendiamo solo il nome.
+  const nameLower = key.split("|")[0];
+  if (!nameLower) return [];
 
   const wazuhRows = db()
     .prepare(
@@ -5644,74 +5797,63 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
               w.vendor AS publisher,
               w.install_time AS install_date,
               w.scan_time AS scanned_at,
+              w.version AS version,
               'Wazuh' AS source
          FROM wazuh_software w
          JOIN wazuh_agent a ON a.agent_id = w.agent_id
         WHERE a.host_id IS NOT NULL
           AND LOWER(w.name) = ?
-          AND LOWER(COALESCE(w.version, '')) = ?
         LIMIT ?`
     )
-    .all(nameLower, versionLower, limit) as Array<{
+    .all(nameLower, limit) as Array<{
       host_id: number; ip: string; publisher: string | null;
-      install_date: string | null; scanned_at: string | null; source: SoftwareSource;
+      install_date: string | null; scanned_at: string | null; version: string | null; source: SoftwareSource;
     }>;
 
+  // Probe: include scan host-linked + device-linked (device_id → hosts via IP)
   const probeRows = db()
     .prepare(
-      `SELECT sc.host_id, h.ip,
+      `WITH effective AS (
+         SELECT sc.id AS scan_id,
+                COALESCE(sc.host_id, h2.id) AS host_id,
+                sc.started_at
+           FROM software_scans sc
+           LEFT JOIN network_devices nd ON nd.id = sc.device_id
+           LEFT JOIN hosts h2 ON h2.ip = nd.host
+          WHERE sc.status = 'ok'
+            AND COALESCE(sc.host_id, h2.id) IS NOT NULL
+       ),
+       latest AS (
+         SELECT host_id, MAX(scan_id) AS scan_id FROM effective GROUP BY host_id
+       )
+       SELECT latest.host_id, h.ip,
               si.publisher,
               si.install_date,
               sc.started_at AS scanned_at,
+              si.version AS version,
               'Probe' AS source
-         FROM software_inventory si
-         JOIN software_scans sc ON sc.id = si.scan_id
-         JOIN hosts h ON h.id = sc.host_id
-        WHERE sc.host_id IS NOT NULL
-          AND sc.status = 'ok'
-          AND sc.id IN (
-            SELECT MAX(id) FROM software_scans
-             WHERE status = 'ok' AND host_id IS NOT NULL
-             GROUP BY host_id
-          )
-          AND LOWER(si.name) = ?
-          AND LOWER(COALESCE(si.version, '')) = ?
+         FROM latest
+         JOIN software_inventory si ON si.scan_id = latest.scan_id
+         JOIN software_scans sc ON sc.id = latest.scan_id
+         JOIN hosts h ON h.id = latest.host_id
+        WHERE LOWER(si.name) = ?
         LIMIT ?`
     )
-    .all(nameLower, versionLower, limit) as Array<{
+    .all(nameLower, limit) as Array<{
       host_id: number; ip: string; publisher: string | null;
-      install_date: string | null; scanned_at: string | null; source: SoftwareSource;
+      install_date: string | null; scanned_at: string | null; version: string | null; source: SoftwareSource;
     }>;
 
-  const gbRows = versionLower === ""
-    ? (db()
-        .prepare(
-          `SELECT f.host_id, f.ip, f.nvt_name, f.scanned_at, 'Greenbone' AS source
-             FROM vuln_findings f
-            WHERE f.host_id IS NOT NULL AND f.nvt_name IS NOT NULL`
-        )
-        .all() as Array<{ host_id: number; ip: string; nvt_name: string; scanned_at: string; source: SoftwareSource }>)
-        .filter((r) => {
-          const pkg = extractPackageName(r.nvt_name);
-          return pkg && pkg.toLowerCase() === nameLower;
-        })
-        .map((r) => ({
-          host_id: r.host_id,
-          ip: r.ip,
-          publisher: null as string | null,
-          install_date: null as string | null,
-          scanned_at: r.scanned_at,
-          source: "Greenbone" as SoftwareSource,
-        }))
-    : [];
-
-  const merged = [...wazuhRows, ...probeRows, ...gbRows];
+  const merged = [...wazuhRows, ...probeRows];
   const ids = [...new Set(merged.map((r) => r.host_id))];
   const meta = loadHostsMeta(ids);
 
-  const byHost = new Map<number, AggregatedSoftwareHostRef>();
+  // Chiave (host_id, version) — un host può avere più versioni dello stesso software.
+  const byHostVer = new Map<string, AggregatedSoftwareHostRef>();
   for (const r of merged) {
-    let h = byHost.get(r.host_id);
+    const ver = r.version ?? null;
+    const k = `${r.host_id}|${ver ?? ""}`;
+    let h = byHostVer.get(k);
     if (!h) {
       const m = meta.get(r.host_id);
       h = {
@@ -5724,13 +5866,22 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
         publisher: null,
         install_date: null,
         scanned_at: null,
+        version: ver,
       };
-      byHost.set(r.host_id, h);
+      byHostVer.set(k, h);
     }
     if (!h.sources.includes(r.source)) h.sources.push(r.source);
     if (r.publisher && (!h.publisher || r.source === "Probe")) h.publisher = r.publisher;
     if (r.install_date && !h.install_date) h.install_date = r.install_date;
     if (r.scanned_at && (!h.scanned_at || r.scanned_at > h.scanned_at)) h.scanned_at = r.scanned_at;
   }
-  return [...byHost.values()].slice(0, limit);
+  // Ordino per hostname/IP poi versione desc
+  return [...byHostVer.values()]
+    .sort((a, b) => {
+      const an = (a.hostname ?? a.ip).toLowerCase();
+      const bn = (b.hostname ?? b.ip).toLowerCase();
+      if (an !== bn) return an.localeCompare(bn);
+      return (b.version ?? "").localeCompare(a.version ?? "", undefined, { numeric: true });
+    })
+    .slice(0, limit);
 }

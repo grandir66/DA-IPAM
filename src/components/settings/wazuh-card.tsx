@@ -122,10 +122,15 @@ export function WazuhCard() {
     setTesting(true);
     setTestResult(null);
     try {
+      // Omette password vuote: il backend usa quelle in DB come fallback.
+      const { password, indexerPassword, ...rest } = form;
+      const payload: Record<string, unknown> = { ...rest };
+      if (password) payload.password = password;
+      if (indexerPassword) payload.indexerPassword = indexerPassword;
       const r = await fetch("/api/integrations/wazuh/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       const d = (await r.json()) as TestResult & { error?: string };
       setTestResult(d);
@@ -149,10 +154,15 @@ export function WazuhCard() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Omette password vuote: il backend lascia invariate quelle gia salvate.
+      const { password, indexerPassword, ...rest } = form;
+      const payload: Record<string, unknown> = { ...rest, enabled: true };
+      if (password) payload.password = password;
+      if (indexerPassword) payload.indexerPassword = indexerPassword;
       const r = await fetch("/api/integrations/wazuh/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, enabled: true }),
+        body: JSON.stringify(payload),
       });
       if (!r.ok) {
         const d = (await r.json()) as { error?: string };
@@ -207,6 +217,11 @@ export function WazuhCard() {
 
   const configured = cfg?.enabled && cfg?.url && cfg?.username && cfg?.passwordSet;
   const indexerConfigured = cfg?.indexerUrl && cfg?.indexerUsername && cfg?.indexerPasswordSet;
+  // Se esiste già una password salvata nel DB, il backend la usa come fallback
+  // quando il body è vuoto (vedi /api/integrations/wazuh/test e /config).
+  // → consente Test/Save senza ridigitare la password (editMode o post-disabilita).
+  const hasSavedManagerPassword = cfg?.passwordSet ?? false;
+  const canTest = Boolean(form.url) && Boolean(form.username) && (Boolean(form.password) || hasSavedManagerPassword);
 
   return (
     <div className="rounded-md border bg-card p-4 space-y-3">
@@ -303,7 +318,7 @@ export function WazuhCard() {
                   <span>Password</span>
                   <input
                     className="w-full rounded border px-2 py-1 text-sm bg-background font-mono"
-                    placeholder="••••••••"
+                    placeholder={hasSavedManagerPassword ? "•••• (salvata — lascia vuoto per non cambiarla)" : "••••••••"}
                     value={form.password}
                     onChange={(e) => { setForm({ ...form, password: e.target.value }); setTestResult(null); }}
                     type="password"
@@ -340,7 +355,7 @@ export function WazuhCard() {
                   <span>Password</span>
                   <input
                     className="w-full rounded border px-2 py-1 text-sm bg-background font-mono"
-                    placeholder="••••••••"
+                    placeholder={cfg?.indexerPasswordSet ? "•••• (salvata — lascia vuoto per non cambiarla)" : "••••••••"}
                     value={form.indexerPassword}
                     onChange={(e) => { setForm({ ...form, indexerPassword: e.target.value }); setTestResult(null); }}
                     type="password"
@@ -361,7 +376,7 @@ export function WazuhCard() {
           </div>
 
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={handleTest} disabled={testing || !form.url || !form.username || !form.password}>
+            <Button size="sm" variant="outline" onClick={handleTest} disabled={testing || !canTest}>
               {testing && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
               Test connessione
             </Button>

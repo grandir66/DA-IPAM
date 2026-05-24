@@ -385,7 +385,7 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
               </tbody>
             </table>
             <div className="text-[10px] text-muted-foreground px-2 py-1 border-t bg-muted/30">
-              Fonte: <strong>Wazuh OpenSearch</strong> · indice <code>wazuh-states-vulnerabilities-*</code> · le finding di vuln scanner (Greenbone) restano nella card separata sopra.
+              Fonte: <strong>Wazuh OpenSearch</strong> · indice <code>wazuh-states-vulnerabilities-*</code> · le finding di vuln scanner (Edge) restano nella card separata sopra.
             </div>
           </div>
         )}

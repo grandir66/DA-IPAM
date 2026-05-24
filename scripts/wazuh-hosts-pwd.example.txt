@@ -1,0 +1,10 @@
+# DA-IPAM Wazuh upgrade — input password-based
+# Formato: ip|ssh_user|ssh_password[|sudo_password]
+# Righe con # sono commenti. Righe vuote ignorate.
+#
+# IMPORTANTE: rinomina questo file in wazuh-hosts-pwd.txt e chmod 600.
+# Il file *.txt è gitignored, il *.example.txt no.
+#
+# Esempio (sostituisci con i tuoi):
+# 192.168.20.5|domarc|password-ssh|password-sudo
+# 192.168.4.40|admin|stessa-pass-per-entrambi

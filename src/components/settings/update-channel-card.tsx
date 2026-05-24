@@ -204,12 +204,12 @@ export function UpdateChannelCard() {
         </button>
       </div>
 
-      {/* Info stato */}
+      {/* Info stato canale (solo cose strettamente legate al canale; il GitHub PAT
+          appartiene alla sezione "Promuovi" sotto, non a questo blocco) */}
       <div className="text-xs grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
         <div><span>Branch git locale:</span> <code className="font-mono">{status.gitBranch ?? "?"}</code></div>
         <div><span>DA_INVENT_BRANCH:</span> <code className="font-mono">{status.configuredBranch}</code></div>
-        <div><span>.env.local scrivibile:</span> {status.envFileWritable ? <span className="text-green-600">sì</span> : <span className="text-red-600">no</span>}</div>
-        <div><span>GitHub PAT:</span> {status.patConfigured ? <span className="text-green-600">configurato</span> : <span className="text-amber-600">non configurato</span>}</div>
+        <div className="col-span-2"><span>.env.local scrivibile:</span> {status.envFileWritable ? <span className="text-green-600">sì</span> : <span className="text-red-600">no</span>}</div>
       </div>
 
       {!status.envFileWritable && (
@@ -222,12 +222,20 @@ export function UpdateChannelCard() {
       {/* ──────────────── Promote dev → main ──────────────── */}
       <div className="border-t pt-3 mt-1 space-y-2">
         <div className="flex items-center justify-between">
-          <div>
+          <div className="flex-1">
             <h4 className="text-sm font-semibold flex items-center gap-2">
               <Rocket className="h-4 w-4" /> Promuovi dev → main
             </h4>
             <p className="text-xs text-muted-foreground">
               Pubblica gli aggiornamenti di sviluppo in produzione. Tutti i clienti su canale Stable li riceveranno al prossimo auto-update.
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Token GitHub:{" "}
+              {status.patConfigured ? (
+                <span className="text-green-600">configurato</span>
+              ) : (
+                <span className="text-amber-600">non configurato — necessario per il push autenticato verso main</span>
+              )}
             </p>
           </div>
         </div>

@@ -492,7 +492,7 @@ function RowGroup({
                                       className="hover:underline"
                                       title={h.ip || undefined}
                                     >
-                                      {h.hostname ?? h.ip || `host #${h.host_id}`}
+                                      {h.hostname ?? (h.ip || `host #${h.host_id}`)}
                                     </Link>
                                   ))}
                                 </span>

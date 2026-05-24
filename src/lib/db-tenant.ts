@@ -4543,6 +4543,7 @@ export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
            FROM wazuh_vuln wv
            JOIN wazuh_agent wa ON wa.agent_id = wv.agent_id
           WHERE wa.host_id IS NOT NULL
+            AND wv.status = 'VALID'
             AND wv.severity IN ('Critical','High','Medium','Low')
           GROUP BY wa.host_id, wv.severity
        )
@@ -4982,12 +4983,13 @@ export function getLatestOkSoftwareScanForDevice(
 // ═══════════════════════════════════════════════════════════════════════════
 // AGGREGAZIONI GLOBALI: pagine /vulnerabilities e /software
 // Vista INVERSA: data una CVE / un software → lista host che lo presentano.
-// Sorgenti unificate per vulnerabilità: vuln_findings (edge) + wazuh_vuln.
-// Sorgenti unificate per software: wazuh_software + software_inventory +
-// best-effort estrazione package_name da vuln_findings.nvt_name.
+// Sorgenti unificate per vulnerabilità: vuln_findings (Greenbone via scanner-edge)
+// + wazuh_vuln. Le fonti sono SEMPRE "Greenbone" o "Wazuh" (mai "edge":
+// scanner-edge è solo il trasporto, lo strumento dietro è Greenbone).
+// Sorgenti unificate per software: SOLO wazuh_software + software_inventory.
+// Greenbone NON è una fonte di software (produce vulnerabilità, non inventory).
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { extractPackageName } from "./vuln/package-name-extract";
 import { SEVERITY_RANK, maxSeverity, normalizeSeverity, type Severity } from "./severity-style";
 
 export type AggregatedVulnSourceLabel = string;
@@ -5036,7 +5038,7 @@ export interface AggregatedVulnResult {
   severity_rollup: { Critical: number; High: number; Medium: number; Low: number };
 }
 
-export type SoftwareSource = "Wazuh" | "Probe" | "Greenbone";
+export type SoftwareSource = "Wazuh" | "Probe";
 
 export interface AggregatedSoftwareHostRef {
   host_id: number;
@@ -5138,10 +5140,8 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
       f.host_id,
       f.ip,
       f.scanned_at,
-      COALESCE(s.name, 'Greenbone') AS source
+      'Greenbone' AS source
     FROM vuln_findings f
-    LEFT JOIN vuln_scan_runs r ON r.id = f.scan_run_id
-    LEFT JOIN vuln_scanners s ON s.id = r.scanner_id
     WHERE f.severity IN ('Critical','High','Medium','Low')
       AND (f.cve_id IS NOT NULL OR f.nvt_oid IS NOT NULL)
     UNION ALL
@@ -5159,7 +5159,7 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
       'Wazuh' AS source
     FROM wazuh_vuln v
     JOIN wazuh_agent a ON a.agent_id = v.agent_id
-    WHERE COALESCE(v.status, 'VALID') NOT IN ('SOLVED','OBSOLETE')
+    WHERE v.status = 'VALID'
       AND v.severity IN ('Critical','High','Medium','Low')
   `;
 
@@ -5331,10 +5331,8 @@ export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostR
     .prepare(
       `SELECT f.host_id, f.ip, f.severity, f.cvss_score, f.scanned_at,
               f.nvt_name AS package_label,
-              COALESCE(s.name, 'Greenbone') AS source
+              'Greenbone' AS source
          FROM vuln_findings f
-         LEFT JOIN vuln_scan_runs r ON r.id = f.scan_run_id
-         LEFT JOIN vuln_scanners s ON s.id = r.scanner_id
         WHERE (
           (? IS NOT NULL AND f.cve_id = ?) OR
           (? IS NOT NULL AND f.nvt_oid = ? AND f.cve_id IS NULL)
@@ -5361,7 +5359,7 @@ export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostR
              FROM wazuh_vuln v
              JOIN wazuh_agent a ON a.agent_id = v.agent_id
             WHERE v.cve = ?
-              AND COALESCE(v.status, 'VALID') NOT IN ('SOLVED','OBSOLETE')
+              AND v.status = 'VALID'
               AND v.severity IN ('Critical','High','Medium','Low')
             ORDER BY scanned_at DESC
             LIMIT ?`
@@ -5433,24 +5431,35 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
       scanned_at: string | null; source: SoftwareSource;
     }>;
 
+  // Probe scans: includere sia scan linkati a host_id direttamente sia scan
+  // linkati a un network_device (host_id NULL ma device_id NOT NULL) — il
+  // mapping device→host avviene via hosts.ip = network_devices.host.
+  // Per ogni host prendiamo l'ULTIMO scan ok (sia host-linked che device-linked).
   const probeRows = db()
     .prepare(
-      `SELECT si.name, si.version, si.publisher,
-              sc.host_id, h.ip,
+      `WITH effective AS (
+         SELECT sc.id AS scan_id,
+                COALESCE(sc.host_id, h2.id) AS host_id,
+                sc.started_at
+           FROM software_scans sc
+           LEFT JOIN network_devices nd ON nd.id = sc.device_id
+           LEFT JOIN hosts h2 ON h2.ip = nd.host
+          WHERE sc.status = 'ok'
+            AND COALESCE(sc.host_id, h2.id) IS NOT NULL
+       ),
+       latest AS (
+         SELECT host_id, MAX(scan_id) AS scan_id FROM effective GROUP BY host_id
+       )
+       SELECT si.name, si.version, si.publisher,
+              latest.host_id, h.ip,
               si.install_date,
               sc.started_at AS scanned_at,
               'Probe' AS source
-         FROM software_inventory si
-         JOIN software_scans sc ON sc.id = si.scan_id
-         JOIN hosts h ON h.id = sc.host_id
-        WHERE sc.host_id IS NOT NULL
-          AND sc.status = 'ok'
-          AND sc.id IN (
-            SELECT MAX(id) FROM software_scans
-             WHERE status = 'ok' AND host_id IS NOT NULL
-             GROUP BY host_id
-          )
-          AND si.name IS NOT NULL AND TRIM(si.name) != ''`
+         FROM latest
+         JOIN software_inventory si ON si.scan_id = latest.scan_id
+         JOIN software_scans sc ON sc.id = latest.scan_id
+         JOIN hosts h ON h.id = latest.host_id
+        WHERE si.name IS NOT NULL AND TRIM(si.name) != ''`
     )
     .all() as Array<{
       name: string; version: string | null; publisher: string | null;
@@ -5458,34 +5467,9 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
       scanned_at: string | null; source: SoftwareSource;
     }>;
 
-  const greenboneRaw = db()
-    .prepare(
-      `SELECT f.nvt_name AS nvt_name, f.host_id, f.ip, f.scanned_at
-         FROM vuln_findings f
-        WHERE f.host_id IS NOT NULL AND f.nvt_name IS NOT NULL`
-    )
-    .all() as Array<{ nvt_name: string; host_id: number; ip: string; scanned_at: string }>;
-
-  const greenboneRows: typeof wazuhRows = [];
-  for (const g of greenboneRaw) {
-    const pkg = extractPackageName(g.nvt_name);
-    if (!pkg) continue;
-    greenboneRows.push({
-      name: pkg,
-      version: null,
-      publisher: null,
-      host_id: g.host_id,
-      ip: g.ip,
-      install_date: null,
-      scanned_at: g.scanned_at,
-      source: "Greenbone",
-    });
-  }
-
   const all: RawSoftwareRow[] = [
     ...wazuhRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, r.version) })),
     ...probeRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, r.version) })),
-    ...greenboneRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, null) })),
   ];
 
   interface AggInternal extends AggregatedSoftware {
@@ -5657,24 +5641,32 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
       install_date: string | null; scanned_at: string | null; source: SoftwareSource;
     }>;
 
+  // Probe: include scan host-linked + device-linked (device_id → hosts via IP)
   const probeRows = db()
     .prepare(
-      `SELECT sc.host_id, h.ip,
+      `WITH effective AS (
+         SELECT sc.id AS scan_id,
+                COALESCE(sc.host_id, h2.id) AS host_id,
+                sc.started_at
+           FROM software_scans sc
+           LEFT JOIN network_devices nd ON nd.id = sc.device_id
+           LEFT JOIN hosts h2 ON h2.ip = nd.host
+          WHERE sc.status = 'ok'
+            AND COALESCE(sc.host_id, h2.id) IS NOT NULL
+       ),
+       latest AS (
+         SELECT host_id, MAX(scan_id) AS scan_id FROM effective GROUP BY host_id
+       )
+       SELECT latest.host_id, h.ip,
               si.publisher,
               si.install_date,
               sc.started_at AS scanned_at,
               'Probe' AS source
-         FROM software_inventory si
-         JOIN software_scans sc ON sc.id = si.scan_id
-         JOIN hosts h ON h.id = sc.host_id
-        WHERE sc.host_id IS NOT NULL
-          AND sc.status = 'ok'
-          AND sc.id IN (
-            SELECT MAX(id) FROM software_scans
-             WHERE status = 'ok' AND host_id IS NOT NULL
-             GROUP BY host_id
-          )
-          AND LOWER(si.name) = ?
+         FROM latest
+         JOIN software_inventory si ON si.scan_id = latest.scan_id
+         JOIN software_scans sc ON sc.id = latest.scan_id
+         JOIN hosts h ON h.id = latest.host_id
+        WHERE LOWER(si.name) = ?
           AND LOWER(COALESCE(si.version, '')) = ?
         LIMIT ?`
     )
@@ -5683,29 +5675,7 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
       install_date: string | null; scanned_at: string | null; source: SoftwareSource;
     }>;
 
-  const gbRows = versionLower === ""
-    ? (db()
-        .prepare(
-          `SELECT f.host_id, f.ip, f.nvt_name, f.scanned_at, 'Greenbone' AS source
-             FROM vuln_findings f
-            WHERE f.host_id IS NOT NULL AND f.nvt_name IS NOT NULL`
-        )
-        .all() as Array<{ host_id: number; ip: string; nvt_name: string; scanned_at: string; source: SoftwareSource }>)
-        .filter((r) => {
-          const pkg = extractPackageName(r.nvt_name);
-          return pkg && pkg.toLowerCase() === nameLower;
-        })
-        .map((r) => ({
-          host_id: r.host_id,
-          ip: r.ip,
-          publisher: null as string | null,
-          install_date: null as string | null,
-          scanned_at: r.scanned_at,
-          source: "Greenbone" as SoftwareSource,
-        }))
-    : [];
-
-  const merged = [...wazuhRows, ...probeRows, ...gbRows];
+  const merged = [...wazuhRows, ...probeRows];
   const ids = [...new Set(merged.map((r) => r.host_id))];
   const meta = loadHostsMeta(ids);
 

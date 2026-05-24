@@ -31,7 +31,7 @@ import { SortableTableHead, type SortDirection } from "@/components/shared/sorta
 import { Pagination } from "@/components/shared/pagination";
 import { SourcesBadges } from "@/components/shared/vuln-badges";
 
-type SoftwareSource = "Wazuh" | "Probe" | "Greenbone";
+type SoftwareSource = "Wazuh" | "Probe";
 
 interface SoftwareHostRef {
   host_id: number;
@@ -66,7 +66,7 @@ interface ApiResponse {
 }
 
 const PAGE_SIZE = 50;
-const SOURCE_FILTERS: SoftwareSource[] = ["Wazuh", "Probe", "Greenbone"];
+const SOURCE_FILTERS: SoftwareSource[] = ["Wazuh", "Probe"];
 
 function formatDate(ts: string | null): string {
   if (!ts) return "—";

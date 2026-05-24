@@ -17,7 +17,7 @@ import {
   type SoftwareSource,
 } from "@/lib/db-tenant";
 
-const SourceEnum = z.enum(["Wazuh", "Probe", "Greenbone"]);
+const SourceEnum = z.enum(["Wazuh", "Probe"]);
 
 const QuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

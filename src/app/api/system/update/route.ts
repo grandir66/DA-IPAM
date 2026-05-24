@@ -11,8 +11,19 @@ import path from "path";
 import fs from "fs";
 
 const REPO_API_URL = "https://api.github.com/repos/grandir66/DA-IPAM";
-/** Fallback senza API GitHub (evita rate limit 403 e problemi di rete verso api.github.com) */
-const RAW_PACKAGE_JSON_URL = "https://raw.githubusercontent.com/grandir66/DA-IPAM/main/package.json";
+const REPO_RAW_URL = "https://raw.githubusercontent.com/grandir66/DA-IPAM";
+
+/** Branch da cui leggere la versione "disponibile" su GitHub. Allineato al
+ *  branch git corrente, che il timer auto-update mantiene a DA_INVENT_BRANCH.
+ *  Fallback "main" se git non è disponibile o ritorna ref invalida.
+ */
+function getCurrentBranch(): string {
+  try {
+    const out = execSync("git rev-parse --abbrev-ref HEAD", { cwd: getProjectRoot(), encoding: "utf-8", timeout: 5000 }).trim();
+    if (/^[a-z][a-z0-9_\-/]*$/i.test(out)) return out;
+  } catch { /* ignora */ }
+  return "main";
+}
 
 interface UpdateInfo {
   currentVersion: string;
@@ -47,16 +58,19 @@ function getCurrentVersion(): string {
 async function getRemoteVersion(): Promise<{ version: string; changelog: string[] } | null> {
   const changelog: string[] = [];
   let version: string | null = null;
+  const branch = getCurrentBranch();
 
   const parsePkg = (text: string): string => {
     const pkg = JSON.parse(text) as { version?: string };
     return pkg.version || "0.0.0";
   };
 
-  // 1) raw.githubusercontent.com — di solito non è soggetto al rate limit dell'API REST
+  // 1) raw.githubusercontent.com — di solito non è soggetto al rate limit dell'API REST.
+  //    Cache-bust con ?t=now perché raw.githubusercontent.com cacha 5 minuti su edge.
   try {
-    const rawRes = await fetch(RAW_PACKAGE_JSON_URL, {
-      headers: { "User-Agent": "DA-IPAM-Updater" },
+    const rawUrl = `${REPO_RAW_URL}/${encodeURIComponent(branch)}/package.json?t=${Date.now()}`;
+    const rawRes = await fetch(rawUrl, {
+      headers: { "User-Agent": "DA-IPAM-Updater", "Cache-Control": "no-cache" },
       cache: "no-store",
     });
     if (rawRes.ok) {
@@ -69,7 +83,7 @@ async function getRemoteVersion(): Promise<{ version: string; changelog: string[
   // 2) API GitHub contents (stesso file, utile se raw è bloccato e API no)
   if (!version) {
     try {
-      const response = await fetch(`${REPO_API_URL}/contents/package.json?ref=main`, {
+      const response = await fetch(`${REPO_API_URL}/contents/package.json?ref=${encodeURIComponent(branch)}`, {
         headers: {
           Accept: "application/vnd.github.v3.raw",
           "User-Agent": "DA-IPAM-Updater",

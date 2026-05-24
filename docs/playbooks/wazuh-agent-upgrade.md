@@ -54,6 +54,36 @@ Aggiorna `4.14.5-1` alla release target corrente prima di usare.
 Per i casi "5 server Linux Domarc" l'install manuale è più rapido. Lo script
 resta per scenari futuri.
 
+### Variante con autenticazione PASSWORD: `scripts/upgrade-wazuh-agents-pwd.sh`
+
+Se NON hai chiavi SSH sugli host target (es. ambiente cliente, primo touch),
+usa questa variante. Richiede `sshpass` (`brew install hudochenkov/sshpass/sshpass`
+su Mac).
+
+```bash
+# 1. Prepara file input (chmod 600 — è gitignored di default)
+cp scripts/wazuh-hosts-pwd.example.txt /tmp/wazuh-hosts-pwd.txt
+chmod 600 /tmp/wazuh-hosts-pwd.txt
+# Riempi: ip|ssh_user|ssh_pass[|sudo_pass]
+#   192.168.20.5|domarc|sshpassword|sudopassword
+#   192.168.4.40|admin|stessapass
+
+# 2. Dry-run prima
+bash scripts/upgrade-wazuh-agents-pwd.sh --hosts /tmp/wazuh-hosts-pwd.txt --dry-run
+
+# 3. Vero upgrade
+bash scripts/upgrade-wazuh-agents-pwd.sh --hosts /tmp/wazuh-hosts-pwd.txt --target 4.14.5
+
+# 4. Cleanup: dopo l'uso elimina il file con le password
+shred -u /tmp/wazuh-hosts-pwd.txt
+```
+
+Lo script:
+- Maschera password nei log (`sed s/PASS/***`)
+- Avvisa se il file input ha permessi >600
+- Detect OS family (Ubuntu/Debian/RHEL), download pacchetto corretto
+- Skip automatico host già a target version
+
 ---
 
 ## Background: perché upgrade via Wazuh API spesso fallisce

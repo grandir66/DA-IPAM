@@ -71,3 +71,7 @@ data/hub.db-shm
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 backups/
+
+# Wazuh upgrade pwd input files — NON committare mai (contengono password)
+wazuh-hosts-pwd*.txt
+wazuh-hosts*.csv

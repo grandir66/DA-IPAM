@@ -143,6 +143,36 @@ export function getTenantDb(tenantCode: string): Database.Database {
 
   newDb.exec(TENANT_INDEXES_SQL);
 
+  // Migrazione runtime: aggiungi hosts.os_family GENERATED VIRTUAL su tenant
+  // DB esistenti. Auto-derivata da os_info (Windows/Linux/Apple/Unknown).
+  // Indicizzata in TENANT_INDEXES_SQL → filtri rapidi su /software /vulnerabilities.
+  try {
+    const hostCols = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
+    if (hostCols.length > 0 && !hostCols.some((c) => c.name === "os_family")) {
+      newDb.exec(`
+        ALTER TABLE hosts ADD COLUMN os_family TEXT GENERATED ALWAYS AS (
+          CASE
+            WHEN os_info IS NULL OR TRIM(os_info) = '' THEN 'Unknown'
+            WHEN LOWER(os_info) LIKE '%windows%' THEN 'Windows'
+            WHEN LOWER(os_info) LIKE '%macos%' OR LOWER(os_info) LIKE '%mac os%'
+              OR LOWER(os_info) LIKE '%darwin%' OR LOWER(os_info) LIKE '%osx%' THEN 'Apple'
+            WHEN LOWER(os_info) LIKE '%linux%' OR LOWER(os_info) LIKE '%ubuntu%'
+              OR LOWER(os_info) LIKE '%debian%' OR LOWER(os_info) LIKE '%centos%'
+              OR LOWER(os_info) LIKE '%rhel%' OR LOWER(os_info) LIKE '%red hat%'
+              OR LOWER(os_info) LIKE '%fedora%' OR LOWER(os_info) LIKE '%alpine%'
+              OR LOWER(os_info) LIKE '%suse%' OR LOWER(os_info) LIKE '%arch%'
+              OR LOWER(os_info) LIKE '%rocky%' OR LOWER(os_info) LIKE '%almalinux%' THEN 'Linux'
+            ELSE 'Unknown'
+          END
+        ) VIRTUAL
+      `);
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_hosts_os_family ON hosts(os_family)");
+      console.info(`[db-tenant] ${tenantCode}: aggiunta hosts.os_family GENERATED + index`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione os_family fallita:`, e);
+  }
+
   // Migrazione runtime: scheduled_jobs.job_type CHECK include 'fast_scan' (schedulazione per-subnet)
   // I tenant DB esistenti non hanno questo valore: rigeneriamo la tabella in-place.
   try {
@@ -5172,6 +5202,14 @@ interface RawVulnRow {
 }
 
 export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): AggregatedVulnResult {
+  // Filtro OS via SQL nativo (indice idx_hosts_os_family). Se attivo: JOIN
+  // su hosts.os_family. Quando non c'è filtro evitiamo la join (più veloce).
+  const osActive = !!(opts.osFamilies && opts.osFamilies.length > 0 && opts.osFamilies.length < OS_FAMILIES.length);
+  const osList = osActive ? opts.osFamilies! : [];
+  const osPlaceholders = osList.map(() => "?").join(",");
+  const edgeOsJoin = osActive ? `JOIN hosts h ON h.id = f.host_id AND h.os_family IN (${osPlaceholders})` : "";
+  const wazuhOsJoin = osActive ? `JOIN hosts h ON h.id = a.host_id AND h.os_family IN (${osPlaceholders})` : "";
+
   const baseSql = `
     SELECT
       COALESCE(f.cve_id, 'nvt:' || f.nvt_oid) AS key,
@@ -5185,6 +5223,7 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
       f.scanned_at,
       'Edge' AS source
     FROM vuln_findings f
+    ${edgeOsJoin}
     WHERE f.severity IN ('Critical','High','Medium','Low')
       AND (f.cve_id IS NOT NULL OR f.nvt_oid IS NOT NULL)
     UNION ALL
@@ -5202,19 +5241,13 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
       'Wazuh' AS source
     FROM wazuh_vuln v
     JOIN wazuh_agent a ON a.agent_id = v.agent_id
+    ${wazuhOsJoin}
     WHERE v.status = 'VALID'
       AND v.severity IN ('Critical','High','Medium','Low')
   `;
 
-  let rows = db().prepare(baseSql).all() as RawVulnRow[];
-
-  // Filtro per famiglia OS (Windows/Linux/Apple/Unknown).
-  if (opts.osFamilies && opts.osFamilies.length > 0 && opts.osFamilies.length < OS_FAMILIES.length) {
-    const ids = [...new Set(rows.map((r) => r.host_id).filter((x): x is number => x !== null))];
-    const osMap = loadHostsOsFamily(ids);
-    const allowed = new Set(opts.osFamilies);
-    rows = rows.filter((r) => r.host_id !== null && allowed.has(osMap.get(r.host_id) ?? "Unknown"));
-  }
+  const params = osActive ? [...osList, ...osList] : [];
+  const rows = db().prepare(baseSql).all(...params) as RawVulnRow[];
 
   interface AggInternal extends AggregatedVuln {
     _hostKeys: Set<string>;
@@ -5464,6 +5497,15 @@ function softwareKeyOf(name: string, version: string | null | undefined): string
 }
 
 export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedSoftwareResult {
+  // Filtro OS via SQL nativo (indice idx_hosts_os_family). Quando attivo:
+  // - wazuh: aggiunge JOIN hosts h ON h.id = a.host_id AND h.os_family IN (...)
+  // - probe: aggiunge condizione sulla CTE effective (host già joinato come h)
+  const osActive = !!(opts.osFamilies && opts.osFamilies.length > 0 && opts.osFamilies.length < OS_FAMILIES.length);
+  const osList = osActive ? opts.osFamilies! : [];
+  const osPlaceholders = osList.map(() => "?").join(",");
+  const wazuhOsJoin = osActive ? `JOIN hosts h ON h.id = a.host_id AND h.os_family IN (${osPlaceholders})` : "";
+  const probeOsClause = osActive ? `AND h.os_family IN (${osPlaceholders})` : "";
+
   const wazuhRows = db()
     .prepare(
       `SELECT w.name, w.version, w.vendor AS publisher,
@@ -5473,10 +5515,11 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
               'Wazuh' AS source
          FROM wazuh_software w
          JOIN wazuh_agent a ON a.agent_id = w.agent_id
+         ${wazuhOsJoin}
         WHERE a.host_id IS NOT NULL
           AND w.name IS NOT NULL AND TRIM(w.name) != ''`
     )
-    .all() as Array<{
+    .all(...(osActive ? osList : [])) as Array<{
       name: string; version: string | null; publisher: string | null;
       host_id: number; ip: string; install_date: string | null;
       scanned_at: string | null; source: SoftwareSource;
@@ -5510,27 +5553,19 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
          JOIN software_inventory si ON si.scan_id = latest.scan_id
          JOIN software_scans sc ON sc.id = latest.scan_id
          JOIN hosts h ON h.id = latest.host_id
-        WHERE si.name IS NOT NULL AND TRIM(si.name) != ''`
+        WHERE si.name IS NOT NULL AND TRIM(si.name) != ''
+          ${probeOsClause}`
     )
-    .all() as Array<{
+    .all(...(osActive ? osList : [])) as Array<{
       name: string; version: string | null; publisher: string | null;
       host_id: number; ip: string; install_date: string | null;
       scanned_at: string | null; source: SoftwareSource;
     }>;
 
-  let all: RawSoftwareRow[] = [
+  const all: RawSoftwareRow[] = [
     ...wazuhRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, r.version) })),
     ...probeRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, r.version) })),
   ];
-
-  // Filtro per famiglia OS (Windows/Linux/Apple/Unknown). Carico os_info per
-  // gli host coinvolti, classifico, scarto le righe fuori filtro.
-  if (opts.osFamilies && opts.osFamilies.length > 0 && opts.osFamilies.length < OS_FAMILIES.length) {
-    const ids = [...new Set(all.map((r) => r.host_id).filter((x): x is number => x !== null))];
-    const osMap = loadHostsOsFamily(ids);
-    const allowed = new Set(opts.osFamilies);
-    all = all.filter((r) => r.host_id !== null && allowed.has(osMap.get(r.host_id) ?? "Unknown"));
-  }
 
   interface AggInternal extends AggregatedSoftware {
     _hostMap: Map<number, { sources: Set<SoftwareSource>; publisher: string | null; install_date: string | null; scanned_at: string | null; ip: string }>;

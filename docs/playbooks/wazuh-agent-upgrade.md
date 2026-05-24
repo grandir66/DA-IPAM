@@ -1,5 +1,63 @@
 # Playbook — Upgrade agent Wazuh
 
+## Quando NON usare lo script (= reinstallazione manuale)
+
+Per **pochi host** (1-10) o **mix eterogeneo** (Win + Linux + Mac), l'install
+manuale è più rapido di setup `hosts.txt` + SSH config + script. Lo script
+serve per **flotte omogenee da 20+ host SSH-reachable**.
+
+### One-liner copy-paste
+
+**Linux Ubuntu/Debian** (SSH all'host):
+```bash
+sudo curl -fsSLo /tmp/wazuh-agent.deb \
+  "https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_4.14.5-1_amd64.deb" \
+  && sudo dpkg -i /tmp/wazuh-agent.deb \
+  && sudo systemctl restart wazuh-agent \
+  && /var/ossec/bin/wazuh-control info | grep VERSION
+```
+
+**RHEL/CentOS/Rocky** (SSH all'host):
+```bash
+sudo curl -fsSLo /tmp/wazuh-agent.rpm \
+  "https://packages.wazuh.com/4.x/yum/wazuh-agent-4.14.5-1.x86_64.rpm" \
+  && sudo rpm -U --force /tmp/wazuh-agent.rpm \
+  && sudo systemctl restart wazuh-agent
+```
+
+**Windows** (RDP, PowerShell admin):
+```powershell
+Invoke-WebRequest "https://packages.wazuh.com/4.x/windows/wazuh-agent-4.14.5-1.msi" -OutFile $env:TEMP\wazuh-agent.msi
+Start-Process msiexec.exe -ArgumentList "/i $env:TEMP\wazuh-agent.msi /q" -Wait
+Restart-Service WazuhSvc
+```
+
+**macOS** (terminale):
+```bash
+ARCH=$([ "$(uname -m)" = "arm64" ] && echo arm64 || echo intel64)
+curl -fsSLo /tmp/wazuh-agent.pkg "https://packages.wazuh.com/4.x/macos/wazuh-agent-4.14.5-1.${ARCH}.pkg"
+sudo installer -pkg /tmp/wazuh-agent.pkg -target /
+sudo /Library/Ossec/bin/wazuh-control restart
+```
+
+Aggiorna `4.14.5-1` alla release target corrente prima di usare.
+
+---
+
+## Quando USARE lo script `scripts/upgrade-wazuh-agents.sh`
+
+- Nuovo cliente con **20+ Linux server** SSH-reachable, omogenei
+- Vuoi log centralizzato per ogni host (`/tmp/wazuh-upgrade-<ts>/`)
+- Vuoi parallelismo controllato (`--parallel N`)
+- Vuoi `--dry-run` per verificare connettività prima di lanciare
+
+Per i casi "5 server Linux Domarc" l'install manuale è più rapido. Lo script
+resta per scenari futuri.
+
+---
+
+## Background: perché upgrade via Wazuh API spesso fallisce
+
 Quando l'upgrade via Wazuh REST API (`PUT /agents/upgrade`) fallisce con
 `Send upgrade command error` su agent v4.11/v4.12, il problema reale è che
 **il `wpk_root.pem` dell'agent non riconosce la firma del WPK target**

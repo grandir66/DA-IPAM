@@ -141,11 +141,11 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione software_scans device_id fallita:`, e);
   }
 
-  newDb.exec(TENANT_INDEXES_SQL);
-
-  // Migrazione runtime: aggiungi hosts.os_family GENERATED VIRTUAL su tenant
-  // DB esistenti. Auto-derivata da os_info (Windows/Linux/Apple/Unknown).
-  // Indicizzata in TENANT_INDEXES_SQL → filtri rapidi su /software /vulnerabilities.
+  // Migrazione runtime (PRIMA degli indici): aggiungi hosts.os_family GENERATED VIRTUAL
+  // su tenant DB esistenti. Auto-derivata da os_info (Windows/Linux/Apple/Unknown).
+  // DEVE girare PRIMA di TENANT_INDEXES_SQL perché tale blocco crea
+  // `CREATE INDEX idx_hosts_os_family ON hosts(os_family)` e fallirebbe se la
+  // colonna non esiste ancora (bug v0.2.554 → fix v0.2.560).
   try {
     const hostCols = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
     if (hostCols.length > 0 && !hostCols.some((c) => c.name === "os_family")) {
@@ -166,12 +166,13 @@ export function getTenantDb(tenantCode: string): Database.Database {
           END
         ) VIRTUAL
       `);
-      newDb.exec("CREATE INDEX IF NOT EXISTS idx_hosts_os_family ON hosts(os_family)");
-      console.info(`[db-tenant] ${tenantCode}: aggiunta hosts.os_family GENERATED + index`);
+      console.info(`[db-tenant] ${tenantCode}: aggiunta hosts.os_family GENERATED`);
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione os_family fallita:`, e);
   }
+
+  newDb.exec(TENANT_INDEXES_SQL);
 
   // Migrazione runtime: scheduled_jobs.job_type CHECK include 'fast_scan' (schedulazione per-subnet)
   // I tenant DB esistenti non hanno questo valore: rigeneriamo la tabella in-place.

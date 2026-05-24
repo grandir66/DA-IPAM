@@ -43,18 +43,25 @@ interface SoftwareHostRef {
   publisher: string | null;
   install_date: string | null;
   scanned_at: string | null;
+  version: string | null;
+}
+
+interface SoftwareVersionRef {
+  version: string | null;
+  host_count: number;
+  latest_seen_at: string | null;
 }
 
 interface AggregatedSoftwareUi {
   key: string;
   name: string;
-  version: string | null;
   publisher: string | null;
   sources: SoftwareSource[];
   host_count: number;
   hosts_preview: SoftwareHostRef[];
   vuln_count: number;
   latest_seen_at: string | null;
+  versions: SoftwareVersionRef[];
 }
 
 interface ApiResponse {
@@ -327,7 +334,7 @@ export function SoftwareListClient() {
                 <TableRow>
                   <SortableTableHead columnId="" sortColumn={sortBy} sortDirection={sortDir} onSort={() => {}} className="w-8">{""}</SortableTableHead>
                   <SortableTableHead columnId="name" sortColumn={sortBy} sortDirection={sortDir} onSort={onSort}>Nome</SortableTableHead>
-                  <SortableTableHead columnId="version" sortColumn={sortBy} sortDirection={sortDir} onSort={() => {}}>Versione</SortableTableHead>
+                  <SortableTableHead columnId="version_count" sortColumn={sortBy} sortDirection={sortDir} onSort={() => {}} className="text-right">Versioni</SortableTableHead>
                   <SortableTableHead columnId="publisher" sortColumn={sortBy} sortDirection={sortDir} onSort={() => {}}>Publisher</SortableTableHead>
                   <SortableTableHead columnId="sources" sortColumn={sortBy} sortDirection={sortDir} onSort={() => {}}>Sorgenti</SortableTableHead>
                   <SortableTableHead columnId="host_count" sortColumn={sortBy} sortDirection={sortDir} onSort={onSort} className="text-right">Host</SortableTableHead>
@@ -415,7 +422,11 @@ function RowGroup({
           {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </TableCell>
         <TableCell className="max-w-[20rem] truncate font-medium" title={row.name}>{row.name}</TableCell>
-        <TableCell className="font-mono text-xs">{row.version ?? "—"}</TableCell>
+        <TableCell className="font-mono text-xs text-right tabular-nums">
+          {row.versions.length === 1 && row.versions[0].version
+            ? <span className="text-muted-foreground">{row.versions[0].version}</span>
+            : <span>{row.versions.length}</span>}
+        </TableCell>
         <TableCell className="text-sm text-muted-foreground max-w-[14rem] truncate" title={row.publisher ?? ""}>
           {row.publisher ?? "—"}
         </TableCell>
@@ -441,8 +452,40 @@ function RowGroup({
       {isOpen && (
         <TableRow>
           <TableCell colSpan={8} className="bg-muted/20 p-0">
-            <div className="p-3">
-              <HostsTable hosts={row.hosts_preview} compact />
+            <div className="p-3 space-y-3">
+              {row.versions.length > 1 && (
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                    Versioni installate ({row.versions.length})
+                  </div>
+                  <div className="rounded-md border bg-background max-h-48 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/50 sticky top-0">
+                        <tr>
+                          <th className="text-left px-2 py-1">Versione</th>
+                          <th className="text-right px-2 py-1 w-20">Host</th>
+                          <th className="text-left px-2 py-1 w-40">Ultimo visto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {row.versions.map((v, i) => (
+                          <tr key={`${v.version ?? "null"}-${i}`} className="border-t">
+                            <td className="px-2 py-1 font-mono">{v.version ?? <em className="text-muted-foreground">non rilevata</em>}</td>
+                            <td className="px-2 py-1 text-right tabular-nums">{v.host_count}</td>
+                            <td className="px-2 py-1 text-muted-foreground">{formatDate(v.latest_seen_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              <div>
+                <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                  Host ({row.host_count})
+                </div>
+                <HostsTable hosts={row.hosts_preview} compact />
+              </div>
               {row.host_count > row.hosts_preview.length && (
                 <div className="mt-2 text-right">
                   <Button
@@ -476,6 +519,7 @@ function HostsTable({ hosts, compact = false }: { hosts: SoftwareHostRef[]; comp
           <tr>
             <th className="text-left py-1 pr-3">Host</th>
             <th className="text-left py-1 pr-3">IP</th>
+            <th className="text-left py-1 pr-3">Versione</th>
             <th className="text-left py-1 pr-3">Network</th>
             <th className="text-left py-1 pr-3">Publisher</th>
             <th className="text-left py-1 pr-3">Fonti</th>
@@ -484,14 +528,15 @@ function HostsTable({ hosts, compact = false }: { hosts: SoftwareHostRef[]; comp
           </tr>
         </thead>
         <tbody>
-          {hosts.map((h) => (
-            <tr key={h.host_id} className="border-t border-border/40">
+          {hosts.map((h, i) => (
+            <tr key={`${h.host_id}-${h.version ?? ""}-${i}`} className="border-t border-border/40">
               <td className="py-1 pr-3">
                 <Link href={`/hosts/${h.host_id}`} className="hover:underline">
                   {h.hostname ?? `host #${h.host_id}`}
                 </Link>
               </td>
               <td className="py-1 pr-3 font-mono">{h.ip || "—"}</td>
+              <td className="py-1 pr-3 font-mono text-muted-foreground">{h.version ?? "—"}</td>
               <td className="py-1 pr-3 text-muted-foreground">{h.network_name ?? "—"}</td>
               <td className="py-1 pr-3 text-muted-foreground max-w-[12rem] truncate" title={h.publisher ?? ""}>{h.publisher ?? "—"}</td>
               <td className="py-1 pr-3"><SourcesBadges sources={h.sources} /></td>

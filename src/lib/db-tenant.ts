@@ -5122,18 +5122,25 @@ export interface AggregatedSoftwareHostRef {
   publisher: string | null;
   install_date: string | null;
   scanned_at: string | null;
+  version: string | null;          // versione installata su questo host (può differire fra host)
+}
+
+export interface AggregatedSoftwareVersion {
+  version: string | null;
+  host_count: number;
+  latest_seen_at: string | null;
 }
 
 export interface AggregatedSoftware {
-  key: string;
+  key: string;                 // = lowercase(name)
   name: string;
-  version: string | null;
   publisher: string | null;
   sources: SoftwareSource[];
-  host_count: number;
+  host_count: number;          // host distinti (qualunque versione)
   hosts_preview: AggregatedSoftwareHostRef[];
   vuln_count: number;
   latest_seen_at: string | null;
+  versions: AggregatedSoftwareVersion[];  // dettaglio versioni (ordinato desc)
 }
 
 export interface AggregatedSoftwareOpts {
@@ -5492,8 +5499,14 @@ interface RawSoftwareRow {
   source: SoftwareSource;
 }
 
-function softwareKeyOf(name: string, version: string | null | undefined): string {
-  return `${name.toLowerCase()}|${(version ?? "").toLowerCase()}`;
+/**
+ * Chiave di aggregazione software: SOLO il nome (lowercase). Le versioni
+ * confluiscono dentro la stessa riga, esposte come sotto-categoria
+ * `versions: AggregatedSoftwareVersion[]`. Riduce drasticamente il numero
+ * di righe in tabella.
+ */
+function softwareKeyOf(name: string): string {
+  return name.toLowerCase();
 }
 
 export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedSoftwareResult {
@@ -5563,12 +5576,13 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
     }>;
 
   const all: RawSoftwareRow[] = [
-    ...wazuhRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, r.version) })),
-    ...probeRows.map((r) => ({ ...r, key: softwareKeyOf(r.name, r.version) })),
+    ...wazuhRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
+    ...probeRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
   ];
 
   interface AggInternal extends AggregatedSoftware {
     _hostMap: Map<number, { sources: Set<SoftwareSource>; publisher: string | null; install_date: string | null; scanned_at: string | null; ip: string }>;
+    _versions: Map<string, { hostIds: Set<number>; latest_seen_at: string | null }>;
   }
   const map = new Map<string, AggInternal>();
 
@@ -5578,25 +5592,37 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
       entry = {
         key: r.key,
         name: r.name,
-        version: r.version,
         publisher: r.publisher,
         sources: [],
         host_count: 0,
         hosts_preview: [],
         vuln_count: 0,
         latest_seen_at: r.scanned_at,
+        versions: [],
         _hostMap: new Map(),
+        _versions: new Map(),
       };
       map.set(r.key, entry);
     }
     if (!entry.sources.includes(r.source)) entry.sources.push(r.source);
-    if (!entry.version && r.version) entry.version = r.version;
     if (r.publisher) {
       if (r.source === "Probe") entry.publisher = r.publisher;
       else if (!entry.publisher && r.source === "Wazuh") entry.publisher = r.publisher;
     }
     if (r.scanned_at && (!entry.latest_seen_at || r.scanned_at > entry.latest_seen_at)) {
       entry.latest_seen_at = r.scanned_at;
+    }
+    // Sotto-categoria versioni: per ogni (name, version) traccio gli host distinti
+    // e l'ultimo scan. version=NULL diventa chiave "" (= "versione non rilevata").
+    const verKey = r.version ?? "";
+    let v = entry._versions.get(verKey);
+    if (!v) {
+      v = { hostIds: new Set(), latest_seen_at: null };
+      entry._versions.set(verKey, v);
+    }
+    if (r.host_id != null) v.hostIds.add(r.host_id);
+    if (r.scanned_at && (!v.latest_seen_at || r.scanned_at > v.latest_seen_at)) {
+      v.latest_seen_at = r.scanned_at;
     }
     if (r.host_id != null) {
       let h = entry._hostMap.get(r.host_id);
@@ -5613,7 +5639,21 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
   }
 
   let arr = [...map.values()];
-  for (const a of arr) a.host_count = a._hostMap.size;
+  for (const a of arr) {
+    a.host_count = a._hostMap.size;
+    // Ordina versioni desc (versioni "vuote" in coda)
+    a.versions = [...a._versions.entries()]
+      .map(([ver, v]) => ({
+        version: ver === "" ? null : ver,
+        host_count: v.hostIds.size,
+        latest_seen_at: v.latest_seen_at,
+      }))
+      .sort((x, y) => {
+        if (x.version === null) return 1;
+        if (y.version === null) return -1;
+        return y.version.localeCompare(x.version, undefined, { numeric: true, sensitivity: "base" });
+      });
+  }
 
   const needsVuln = opts.sortBy === "vuln_count" || opts.hasVulns !== undefined || arr.length <= 2000;
   if (needsVuln) computeVulnCounts(arr);
@@ -5677,12 +5717,13 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
         publisher: h.publisher,
         install_date: h.install_date,
         scanned_at: h.scanned_at,
+        version: null,  // preview aggregato per host; per dettaglio (host+versione) usare il drill-down
       };
     });
   }
 
-  const data = pageRows.map(({ _hostMap: _hm, ...rest }) => {
-    void _hm;
+  const data = pageRows.map(({ _hostMap: _hm, _versions: _v, ...rest }) => {
+    void _hm; void _v;
     return rest;
   });
   return { data, total };
@@ -5718,10 +5759,10 @@ function computeVulnCounts(items: AggregatedSoftware[]): void {
 }
 
 export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftwareHostRef[] {
-  const sepIdx = key.indexOf("|");
-  if (sepIdx < 0) return [];
-  const nameLower = key.substring(0, sepIdx);
-  const versionLower = key.substring(sepIdx + 1);
+  // key = lowercase(name) — aggregato sul nome qualsiasi versione.
+  // Retro-compat: se key contiene "|version" lo ignoriamo e prendiamo solo il nome.
+  const nameLower = key.split("|")[0];
+  if (!nameLower) return [];
 
   const wazuhRows = db()
     .prepare(
@@ -5729,17 +5770,17 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
               w.vendor AS publisher,
               w.install_time AS install_date,
               w.scan_time AS scanned_at,
+              w.version AS version,
               'Wazuh' AS source
          FROM wazuh_software w
          JOIN wazuh_agent a ON a.agent_id = w.agent_id
         WHERE a.host_id IS NOT NULL
           AND LOWER(w.name) = ?
-          AND LOWER(COALESCE(w.version, '')) = ?
         LIMIT ?`
     )
-    .all(nameLower, versionLower, limit) as Array<{
+    .all(nameLower, limit) as Array<{
       host_id: number; ip: string; publisher: string | null;
-      install_date: string | null; scanned_at: string | null; source: SoftwareSource;
+      install_date: string | null; scanned_at: string | null; version: string | null; source: SoftwareSource;
     }>;
 
   // Probe: include scan host-linked + device-linked (device_id → hosts via IP)
@@ -5762,27 +5803,30 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
               si.publisher,
               si.install_date,
               sc.started_at AS scanned_at,
+              si.version AS version,
               'Probe' AS source
          FROM latest
          JOIN software_inventory si ON si.scan_id = latest.scan_id
          JOIN software_scans sc ON sc.id = latest.scan_id
          JOIN hosts h ON h.id = latest.host_id
         WHERE LOWER(si.name) = ?
-          AND LOWER(COALESCE(si.version, '')) = ?
         LIMIT ?`
     )
-    .all(nameLower, versionLower, limit) as Array<{
+    .all(nameLower, limit) as Array<{
       host_id: number; ip: string; publisher: string | null;
-      install_date: string | null; scanned_at: string | null; source: SoftwareSource;
+      install_date: string | null; scanned_at: string | null; version: string | null; source: SoftwareSource;
     }>;
 
   const merged = [...wazuhRows, ...probeRows];
   const ids = [...new Set(merged.map((r) => r.host_id))];
   const meta = loadHostsMeta(ids);
 
-  const byHost = new Map<number, AggregatedSoftwareHostRef>();
+  // Chiave (host_id, version) — un host può avere più versioni dello stesso software.
+  const byHostVer = new Map<string, AggregatedSoftwareHostRef>();
   for (const r of merged) {
-    let h = byHost.get(r.host_id);
+    const ver = r.version ?? null;
+    const k = `${r.host_id}|${ver ?? ""}`;
+    let h = byHostVer.get(k);
     if (!h) {
       const m = meta.get(r.host_id);
       h = {
@@ -5795,13 +5839,22 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
         publisher: null,
         install_date: null,
         scanned_at: null,
+        version: ver,
       };
-      byHost.set(r.host_id, h);
+      byHostVer.set(k, h);
     }
     if (!h.sources.includes(r.source)) h.sources.push(r.source);
     if (r.publisher && (!h.publisher || r.source === "Probe")) h.publisher = r.publisher;
     if (r.install_date && !h.install_date) h.install_date = r.install_date;
     if (r.scanned_at && (!h.scanned_at || r.scanned_at > h.scanned_at)) h.scanned_at = r.scanned_at;
   }
-  return [...byHost.values()].slice(0, limit);
+  // Ordino per hostname/IP poi versione desc
+  return [...byHostVer.values()]
+    .sort((a, b) => {
+      const an = (a.hostname ?? a.ip).toLowerCase();
+      const bn = (b.hostname ?? b.ip).toLowerCase();
+      if (an !== bn) return an.localeCompare(bn);
+      return (b.version ?? "").localeCompare(a.version ?? "", undefined, { numeric: true });
+    })
+    .slice(0, limit);
 }

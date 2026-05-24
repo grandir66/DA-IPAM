@@ -46,10 +46,17 @@ interface SoftwareHostRef {
   version: string | null;
 }
 
+interface SoftwareVersionHost {
+  host_id: number;
+  ip: string;
+  hostname: string | null;
+}
+
 interface SoftwareVersionRef {
   version: string | null;
   host_count: number;
   latest_seen_at: string | null;
+  hosts: SoftwareVersionHost[];
 }
 
 interface AggregatedSoftwareUi {
@@ -458,20 +465,39 @@ function RowGroup({
                   <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
                     Versioni installate ({row.versions.length})
                   </div>
-                  <div className="rounded-md border bg-background max-h-48 overflow-y-auto">
+                  <div className="rounded-md border bg-background max-h-64 overflow-y-auto">
                     <table className="w-full text-xs">
                       <thead className="bg-muted/50 sticky top-0">
                         <tr>
-                          <th className="text-left px-2 py-1">Versione</th>
-                          <th className="text-right px-2 py-1 w-20">Host</th>
+                          <th className="text-left px-2 py-1 w-40">Versione</th>
+                          <th className="text-right px-2 py-1 w-16">Host</th>
+                          <th className="text-left px-2 py-1">Computer</th>
                           <th className="text-left px-2 py-1 w-40">Ultimo visto</th>
                         </tr>
                       </thead>
                       <tbody>
                         {row.versions.map((v, i) => (
-                          <tr key={`${v.version ?? "null"}-${i}`} className="border-t">
+                          <tr key={`${v.version ?? "null"}-${i}`} className="border-t align-top">
                             <td className="px-2 py-1 font-mono">{v.version ?? <em className="text-muted-foreground">non rilevata</em>}</td>
                             <td className="px-2 py-1 text-right tabular-nums">{v.host_count}</td>
+                            <td className="px-2 py-1">
+                              {v.hosts.length === 0 ? (
+                                <span className="text-muted-foreground">—</span>
+                              ) : (
+                                <span className="flex flex-wrap gap-x-2 gap-y-0.5">
+                                  {v.hosts.map((h) => (
+                                    <Link
+                                      key={h.host_id}
+                                      href={`/hosts/${h.host_id}`}
+                                      className="hover:underline"
+                                      title={h.ip || undefined}
+                                    >
+                                      {h.hostname ?? h.ip || `host #${h.host_id}`}
+                                    </Link>
+                                  ))}
+                                </span>
+                              )}
+                            </td>
                             <td className="px-2 py-1 text-muted-foreground">{formatDate(v.latest_seen_at)}</td>
                           </tr>
                         ))}

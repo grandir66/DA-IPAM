@@ -5125,10 +5125,17 @@ export interface AggregatedSoftwareHostRef {
   version: string | null;          // versione installata su questo host (può differire fra host)
 }
 
+export interface AggregatedSoftwareVersionHost {
+  host_id: number;
+  ip: string;
+  hostname: string | null;
+}
+
 export interface AggregatedSoftwareVersion {
   version: string | null;
   host_count: number;
   latest_seen_at: string | null;
+  hosts: AggregatedSoftwareVersionHost[];   // elenco computer per QUESTA versione
 }
 
 export interface AggregatedSoftware {
@@ -5641,12 +5648,14 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
   let arr = [...map.values()];
   for (const a of arr) {
     a.host_count = a._hostMap.size;
-    // Ordina versioni desc (versioni "vuote" in coda)
+    // Ordina versioni desc (versioni "vuote" in coda). Gli `hosts` per versione
+    // vengono popolati più sotto, dopo aver caricato la meta degli host della pagina.
     a.versions = [...a._versions.entries()]
       .map(([ver, v]) => ({
         version: ver === "" ? null : ver,
         host_count: v.hostIds.size,
         latest_seen_at: v.latest_seen_at,
+        hosts: [] as AggregatedSoftwareVersionHost[],
       }))
       .sort((x, y) => {
         if (x.version === null) return 1;
@@ -5701,7 +5710,10 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
   const pageRows = arr.slice(start, start + opts.pageSize);
 
   const allHostIds = new Set<number>();
-  for (const p of pageRows) for (const id of p._hostMap.keys()) allHostIds.add(id);
+  for (const p of pageRows) {
+    for (const id of p._hostMap.keys()) allHostIds.add(id);
+    for (const v of p._versions.values()) for (const id of v.hostIds) allHostIds.add(id);
+  }
   const meta = loadHostsMeta([...allHostIds]);
   for (const p of pageRows) {
     const entries = [...p._hostMap.entries()].slice(0, 10);
@@ -5720,6 +5732,21 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
         version: null,  // preview aggregato per host; per dettaglio (host+versione) usare il drill-down
       };
     });
+    // Popola gli `hosts` per ogni versione (ordinati per hostname)
+    for (const ver of p.versions) {
+      const verData = p._versions.get(ver.version ?? "");
+      if (!verData) continue;
+      ver.hosts = [...verData.hostIds]
+        .map((host_id) => {
+          const m = meta.get(host_id);
+          return {
+            host_id,
+            ip: m?.ip ?? "",
+            hostname: m?.hostname ?? null,
+          };
+        })
+        .sort((a, b) => (a.hostname ?? a.ip).localeCompare(b.hostname ?? b.ip));
+    }
   }
 
   const data = pageRows.map(({ _hostMap: _hm, _versions: _v, ...rest }) => {

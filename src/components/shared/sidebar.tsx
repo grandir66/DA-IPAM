@@ -32,6 +32,7 @@ import {
   Workflow,
   BookOpen,
   Ban,
+  ArrowUpCircle,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -365,13 +366,28 @@ export function Sidebar() {
           onClick={() => setMobileOpen(false)}
           className={cn(
             "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            isActive("/settings")
+            pathname === "/settings"
               ? "bg-sidebar-primary text-sidebar-primary-foreground"
               : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           )}
         >
           <Settings className="h-4 w-4" />
           Impostazioni
+        </Link>
+
+        {/* Aggiornamenti */}
+        <Link
+          href="/settings/updates"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            pathname === "/settings/updates"
+              ? "bg-sidebar-primary text-sidebar-primary-foreground"
+              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <ArrowUpCircle className="h-4 w-4" />
+          Aggiornamenti
         </Link>
 
       </nav>

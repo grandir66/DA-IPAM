@@ -13,6 +13,7 @@ import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { patchModuleGuard } from "@/lib/patch/route-guard";
+import { rematchCveForAllHosts } from "@/lib/patch/matcher";
 
 interface MatchBody {
   softwareId?: unknown;
@@ -121,6 +122,53 @@ export async function POST(
       console.error("[patch/cve/:id/match POST] errore:", error);
       return NextResponse.json(
         { error: "Errore nel salvataggio del match" },
+        { status: 500 }
+      );
+    }
+  });
+}
+
+/**
+ * PUT /api/patch/cve/[cveId]/match
+ *
+ * Re-match automatico della CVE su tutti gli host vulnerabili.
+ * Applica la cascata wazuh-package → dictionary → name-fuzzy.
+ * NON sovrascrive le righe `manual` già presenti.
+ *
+ * Solo admin. Ritorna { matched: N } con il numero di righe scritte/aggiornate.
+ */
+export async function PUT(
+  _request: Request,
+  { params }: { params: Promise<{ cveId: string }> }
+) {
+  return withTenantFromSession(async () => {
+    const guard = await patchModuleGuard();
+    if (isAuthError(guard)) return guard;
+
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
+
+    const { cveId } = await params;
+    if (!cveId) {
+      return NextResponse.json({ error: "cveId mancante" }, { status: 400 });
+    }
+
+    const tenantCode = getCurrentTenantCode();
+    if (!tenantCode) {
+      return NextResponse.json(
+        { error: "Tenant context non disponibile" },
+        { status: 500 }
+      );
+    }
+    const db = getTenantDb(tenantCode);
+
+    try {
+      const matched = rematchCveForAllHosts(db, cveId);
+      return NextResponse.json({ cveId, matched });
+    } catch (error) {
+      console.error("[patch/cve/:id/match PUT] errore:", error);
+      return NextResponse.json(
+        { error: "Errore nel re-match automatico" },
         { status: 500 }
       );
     }

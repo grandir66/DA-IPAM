@@ -65,7 +65,7 @@ export async function GET(request: Request) {
     try {
       // UNION wazuh_vuln+vuln_findings → dedupe per cve_id, conta host distinti.
       // LEFT JOIN patch_cve_target → flag fix_available (almeno una riga).
-      // Inner join host_with_inventory: solo host con almeno uno scan ok.
+      // host_with_inventory: host con scan diretto OR host con stesso IP di un network_device scansionato.
       const severityFilter = severity ? "WHERE LOWER(cu.severity) = LOWER(?)" : "";
       const matchFilter = hasMatch ? "HAVING fix_available = 1" : "";
 
@@ -75,6 +75,13 @@ export async function GET(request: Request) {
             FROM software_scans ss
            WHERE ss.status = 'ok'
              AND ss.host_id IS NOT NULL
+          UNION
+          SELECT DISTINCT h.id AS host_id
+            FROM software_scans ss
+            INNER JOIN network_devices nd ON nd.id = ss.device_id
+            INNER JOIN hosts h ON h.ip = nd.host
+           WHERE ss.status = 'ok'
+             AND ss.device_id IS NOT NULL
         ),
         cve_union AS (
           SELECT

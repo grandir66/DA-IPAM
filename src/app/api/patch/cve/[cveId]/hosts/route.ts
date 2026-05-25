@@ -79,9 +79,20 @@ export async function GET(
            GROUP BY host_id
         ),
         inventory_status AS (
-          SELECT host_id, COUNT(*) AS inventory_ok_count
-            FROM software_scans
-           WHERE status = 'ok' AND host_id IS NOT NULL
+          SELECT host_id, SUM(cnt) AS inventory_ok_count
+            FROM (
+              SELECT ss.host_id AS host_id, COUNT(*) AS cnt
+                FROM software_scans ss
+               WHERE ss.status = 'ok' AND ss.host_id IS NOT NULL
+               GROUP BY ss.host_id
+              UNION ALL
+              SELECT h.id AS host_id, COUNT(*) AS cnt
+                FROM software_scans ss
+                INNER JOIN network_devices nd ON nd.id = ss.device_id
+                INNER JOIN hosts h ON h.ip = nd.host
+               WHERE ss.status = 'ok' AND ss.device_id IS NOT NULL
+               GROUP BY h.id
+            )
            GROUP BY host_id
         ),
         last_probe AS (

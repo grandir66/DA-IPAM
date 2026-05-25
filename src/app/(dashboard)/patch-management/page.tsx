@@ -20,6 +20,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   AlertCircle,
+  History,
   Loader2,
   PackageSearch,
   RefreshCw,
@@ -183,6 +184,15 @@ export default function PatchManagementPage() {
           <div className="text-sm text-muted-foreground">
             {filteredItems.length} CVE • pagina {pageIndex}
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={<Link href="/patch-management/history" />}
+          >
+            <History className="h-4 w-4 mr-2" />
+            Storico operazioni
+          </Button>
           <Button
             variant="outline"
             size="sm"

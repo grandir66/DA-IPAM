@@ -20,7 +20,7 @@
  *   });
  */
 import { NextResponse } from "next/server";
-import { requireAuth } from "@/lib/api-auth";
+import { requireAuth, requireAdmin } from "@/lib/api-auth";
 import { getCurrentTenantCode } from "@/lib/db-tenant";
 import { isPatchEnabled } from "./feature";
 
@@ -65,4 +65,24 @@ export function userIdFromSession(
   if (!raw) return null;
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Patch Operator = chi può eseguire patch operations (probe, bootstrap,
+ * upgrade, cancel) e leggere la history del modulo Patch Management.
+ *
+ * F9: hardcoded come alias di `requireAdmin()` — tutti gli admin/superadmin
+ * sono anche patch_operator. PR3+ potrà introdurre un ruolo granulare
+ * (es. JWT claim `patch_operator: true`) senza dover toccare le route
+ * che già usano questo helper.
+ *
+ * Per F9 base le route Patch continuano a usare `requireAdmin()` diretto;
+ * questo helper esiste come future-proof. Quando il ruolo diventerà
+ * granulare basterà sostituire `requireAdmin()` con `requirePatchOperator()`
+ * nelle route interessate e aggiornare la logica qui dentro.
+ */
+export async function requirePatchOperator(): Promise<
+  Awaited<ReturnType<typeof requireAuth>>
+> {
+  return requireAdmin();
 }

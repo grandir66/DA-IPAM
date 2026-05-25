@@ -797,7 +797,21 @@ export function createNetwork(input: NetworkInput): Network {
     input.snmp_community || null,
     input.dns_server || null
   );
-  return db().prepare("SELECT * FROM networks WHERE id = ?").get(result.lastInsertRowid) as Network;
+  const networkId = Number(result.lastInsertRowid);
+
+  // Default scheduling: known_host_check (safe). Spalma il next_run in base ai
+  // network già esistenti per evitare burst se l'utente crea reti in serie.
+  try {
+    const existingNets = (db()
+      .prepare("SELECT COUNT(*) AS n FROM networks")
+      .get() as { n: number }).n;
+    const idx = Math.max(0, existingNets - 1);
+    seedDefaultJobsForNetwork(networkId, idx, Math.max(1, existingNets));
+  } catch (err) {
+    console.warn(`[createNetwork] seed default jobs failed per network ${networkId}:`, err);
+  }
+
+  return db().prepare("SELECT * FROM networks WHERE id = ?").get(networkId) as Network;
 }
 
 export function updateNetwork(id: number, input: Partial<NetworkInput>): Network | undefined {
@@ -3157,6 +3171,122 @@ export function toggleJob(id: number, enabled: boolean): void {
 
 export function deleteScheduledJob(id: number): boolean {
   return db().prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Default provisioning (post-incident 2026-05-25 DTS)
+//
+// `known_host_check` è il default safe: pinga SOLO host già registrati,
+// scope deterministico, costo CPU proporzionale a |host noti|, non a |IP nel subnet|.
+// `fast_scan`/`ping_sweep` schedulati sono distruttivi su subnet larghi e
+// devono essere on-demand dalla UI.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Interval (min) sicuro per N host. Modello sequenziale 3 s/host × safety 2. Floor 15, cap 1440. */
+export function computeMinIntervalMinutes(hostCount: number): number {
+  if (hostCount <= 0) return 15;
+  const minIntervalMin = Math.ceil((hostCount * 3 * 2) / 60);
+  return Math.max(15, Math.min(minIntervalMin, 1440));
+}
+
+/** Offset (min) per spalmare N next_run su 60 min. Min 1 per evitare burst al boot. */
+export function staggerOffsetMinutes(idx: number, total: number): number {
+  if (total <= 1) return 1;
+  return Math.max(1, idx * Math.floor(60 / total));
+}
+
+/**
+ * Seed `known_host_check` per `networkId` se assente. Idempotente.
+ * Interval calcolato sui known host correnti; next_run spalmato via stagger.
+ */
+export function seedDefaultJobsForNetwork(
+  networkId: number,
+  staggerIdx = 0,
+  staggerTotal = 1,
+): { created: boolean; jobId: number | null } {
+  const existing = db()
+    .prepare(
+      "SELECT id FROM scheduled_jobs WHERE network_id = ? AND job_type = 'known_host_check' LIMIT 1",
+    )
+    .get(networkId) as { id: number } | undefined;
+  if (existing) return { created: false, jobId: existing.id };
+
+  const { n: hostCount } = db()
+    .prepare("SELECT COUNT(*) AS n FROM hosts WHERE network_id = ? AND known_host = 1")
+    .get(networkId) as { n: number };
+  const interval = computeMinIntervalMinutes(hostCount);
+  const offset = staggerOffsetMinutes(staggerIdx, staggerTotal);
+
+  const res = db()
+    .prepare(
+      `INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, next_run)
+       VALUES (?, 'known_host_check', ?, 1, datetime('now', '+' || ? || ' minutes'))`,
+    )
+    .run(networkId, interval, offset);
+  return { created: true, jobId: Number(res.lastInsertRowid) };
+}
+
+/** CIDR → numero IP (tolleranza /0../32). */
+export function cidrIpCount(cidr: string): number {
+  const m = /\/(\d+)$/.exec(cidr);
+  if (!m) return 0;
+  const bits = Number(m[1]);
+  if (!Number.isFinite(bits) || bits < 0 || bits > 32) return 0;
+  return 2 ** (32 - bits);
+}
+
+/**
+ * Boot migration tenant-scope. Esegue:
+ *  1. Disabilita fast_scan/ping_sweep enabled con interval < 720 min su network ≥ /22
+ *     (= scan distruttivo schedulato "ragionevolmente" frequente su subnet grande).
+ *  2. Seed known_host_check sui network privi (spalmati su 60 min).
+ *
+ * Idempotente: rilancio non duplica. Ritorna conteggi per logging.
+ */
+export function applyTenantSchedulerDefaults(): { jobsDisabled: number; jobsSeeded: number } {
+  const out = { jobsDisabled: 0, jobsSeeded: 0 };
+
+  // (1) Disabilita fast_scan/ping_sweep rischiosi
+  const candidates = db()
+    .prepare(
+      `SELECT sj.id, sj.job_type, sj.interval_minutes, n.cidr
+       FROM scheduled_jobs sj
+       JOIN networks n ON n.id = sj.network_id
+       WHERE sj.enabled = 1
+         AND sj.job_type IN ('fast_scan', 'ping_sweep')
+         AND sj.interval_minutes < 720`,
+    )
+    .all() as Array<{ id: number; job_type: string; interval_minutes: number; cidr: string }>;
+  for (const row of candidates) {
+    if (cidrIpCount(row.cidr) >= 1024) {
+      db().prepare(
+        "UPDATE scheduled_jobs SET enabled = 0, updated_at = datetime('now') WHERE id = ?",
+      ).run(row.id);
+      console.warn(
+        `[scheduler-defaults] disabled ${row.job_type} #${row.id} su ${row.cidr} ` +
+          `(interval ${row.interval_minutes} min) — usa known_host_check + discovery on-demand`,
+      );
+      out.jobsDisabled++;
+    }
+  }
+
+  // (2) Seed known_host_check
+  const missing = db()
+    .prepare(
+      `SELECT n.id FROM networks n
+       WHERE NOT EXISTS (
+         SELECT 1 FROM scheduled_jobs sj
+         WHERE sj.network_id = n.id AND sj.job_type = 'known_host_check'
+       )
+       ORDER BY n.id`,
+    )
+    .all() as Array<{ id: number }>;
+  missing.forEach((row, idx) => {
+    const { created } = seedDefaultJobsForNetwork(row.id, idx, missing.length);
+    if (created) out.jobsSeeded++;
+  });
+
+  return out;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

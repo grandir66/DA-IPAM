@@ -624,48 +624,82 @@ export async function runDhcpPollForNetwork(
   return { updated };
 }
 
-export async function runKnownHostCheck(networkId: number | null): Promise<void> {
-  const hosts = getKnownHosts(networkId);
+/**
+ * Soft concurrency limit per evitare burst CPU/socket nei ping massivi.
+ * 8 worker = compromesso buono tra throughput e impronta. Su 422 host:
+ * ~53 batch × 3 s worst case = ~2.5 min, vs 21 min sequenziale puro.
+ */
+const KNOWN_HOST_CHECK_CONCURRENCY = 8;
+/** Jitter casuale (ms) prepended per ogni host. Spalma su una finestra di tempo
+ *  i ping all'interno del worker pool, evitando ICMP burst sincroni. */
+const KNOWN_HOST_CHECK_JITTER_MS = 250;
+
+async function checkSingleKnownHost(host: ReturnType<typeof getKnownHosts>[number]): Promise<void> {
   const timeoutMs = 3000;
+  // Jitter casuale per evitare che 8 ping partano nello stesso ms.
+  await new Promise((r) => setTimeout(r, Math.floor(Math.random() * KNOWN_HOST_CHECK_JITTER_MS)));
 
-  for (const host of hosts) {
-    let alive = false;
-    let latencyMs: number | null = null;
+  let alive = false;
+  let latencyMs: number | null = null;
 
-    const pingResult = await pingHost(host.ip, timeoutMs);
-    latencyMs = pingResult.latency_ms;
-    if (pingResult.alive) {
-      alive = true;
-    } else {
-      // Use custom monitor_ports if set, otherwise fallback
-      let portsToCheck: number[] = FALLBACK_TCP_PORTS;
-      if (host.monitor_ports) {
-        try {
-          const parsed = JSON.parse(host.monitor_ports) as number[];
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            portsToCheck = parsed;
-          }
-        } catch { /* invalid JSON, use fallback */ }
-      }
-      for (const port of portsToCheck) {
-        const ok = await tcpConnect(host.ip, port, 2000);
-        if (ok) {
-          alive = true;
-          break;
-        }
-      }
+  const pingResult = await pingHost(host.ip, timeoutMs);
+  latencyMs = pingResult.latency_ms;
+  if (pingResult.alive) {
+    alive = true;
+  } else {
+    let portsToCheck: number[] = FALLBACK_TCP_PORTS;
+    if (host.monitor_ports) {
+      try {
+        const parsed = JSON.parse(host.monitor_ports) as number[];
+        if (Array.isArray(parsed) && parsed.length > 0) portsToCheck = parsed;
+      } catch { /* invalid JSON, fallback */ }
     }
-
-    const newStatus = alive ? "online" : "offline";
-    // Always record status history with latency
-    addStatusHistory(host.id, newStatus, latencyMs);
-    // Always update host status and latency
-    updateHost(host.id, { status: newStatus });
-    // Update last_response_time_ms directly
-    getDb().prepare("UPDATE hosts SET last_response_time_ms = ? WHERE id = ?").run(latencyMs, host.id);
+    for (const port of portsToCheck) {
+      const ok = await tcpConnect(host.ip, port, 2000);
+      if (ok) { alive = true; break; }
+    }
   }
 
-  console.info(`[KnownHostCheck] ${hosts.length} host verificati`);
+  const newStatus = alive ? "online" : "offline";
+  addStatusHistory(host.id, newStatus, latencyMs);
+  updateHost(host.id, { status: newStatus });
+  getDb().prepare("UPDATE hosts SET last_response_time_ms = ? WHERE id = ?").run(latencyMs, host.id);
+}
+
+export async function runKnownHostCheck(networkId: number | null): Promise<void> {
+  const hosts = getKnownHosts(networkId);
+  if (hosts.length === 0) {
+    console.info(`[KnownHostCheck] nessun host registrato${networkId ? ` per network ${networkId}` : ""}, skip`);
+    return;
+  }
+
+  // Worker pool semplice: ogni worker pulla dalla coda fino a esaurimento.
+  // Senza dipendenze esterne — equivalente a Promise.allSettled + p-limit(8).
+  const queue = [...hosts];
+  let okCount = 0;
+  let errCount = 0;
+  const worker = async () => {
+    while (queue.length > 0) {
+      const host = queue.shift();
+      if (!host) break;
+      try {
+        await checkSingleKnownHost(host);
+        okCount++;
+      } catch (err) {
+        errCount++;
+        console.warn(`[KnownHostCheck] host ${host.ip} fallito: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  };
+  const workerCount = Math.min(KNOWN_HOST_CHECK_CONCURRENCY, hosts.length);
+  const startedAt = Date.now();
+  await Promise.allSettled(Array.from({ length: workerCount }, () => worker()));
+  const durationMs = Date.now() - startedAt;
+
+  console.info(
+    `[KnownHostCheck] ${okCount}/${hosts.length} host verificati ` +
+      `(${errCount} errori, ${workerCount} worker, ${durationMs}ms)`,
+  );
 }
 
 export async function runDnsResolve(

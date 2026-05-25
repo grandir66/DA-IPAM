@@ -15,7 +15,7 @@
  * (lista classica per chi vuole partire dal CVE).
  *
  * Drill-down click riga:
- *   - Device → `/patch-management/device/[hostId]` (F13, stub fino a quel momento)
+ *   - Device → `/patch-management/device/[hostId]` (F13)
  *   - Software → `/patch-management/software/[softwareKey]` (F14)
  *
  * Se modulo non installato → 404 dal backend → toast + empty state.

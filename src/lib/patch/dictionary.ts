@@ -65,26 +65,55 @@ export function loadDictionary(): DictionaryEntry[] {
 }
 
 /**
- * Normalizza un nome software per matching: lowercase, strip suffix architettura
- * ("(64-bit)", "(x86)", " x64", " 64-bit") e strip version number trailing.
+ * Normalizza un nome software per matching: lowercase, strip suffix architettura,
+ * suffisso locale, build/version, "Helper/Updater/Maintenance Service" e prefisso
+ * "Microsoft" per prodotti noti. Idempotente.
  *
- * Usato sia per cercare nel dictionary sia come chiave canonical durante il
- * confronto. Idempotente.
+ * Esempi:
+ *   "Mozilla Firefox 124.0 (x64 en-US)"   → "mozilla firefox"
+ *   "Microsoft Edge"                        → "edge"
+ *   "Java Maintenance Service"              → "java"
+ *   "Adobe Acrobat Reader DC (en-US)"       → "adobe acrobat reader dc"
+ *   "Windows 10 Build 19041"                → "windows 10"
+ *   "x64 Photoshop CC 2024"                 → "photoshop cc"
+ *
+ * Mantenere i pattern restrittivi per evitare false positives (es. NON rimuovere
+ * "Microsoft" generico, NON catturare parens 3+ char tipo "(GUI)" o "(SDK)").
  */
 export function normalizeSoftwareName(name: string): string {
   return name
     .toLowerCase()
-    // Strip suffisso ARN/locale tipo "(x64 en-us)", "(x86 it-IT)", "(64-bit en-us)"
+    // 1. Strip suffisso ARN+locale tipo "(x64 en-us)", "(x86 it-IT)", "(64-bit en-us)"
     .replace(/\s*\((?:x64|x86|64-bit|32-bit)\s+[a-z]{2,3}(?:[-_][a-z]{2,3})?\)/g, "")
+    // 2. Strip locale puro in parens: "(en-US)", "(it_IT)", "(de-de)" — solo 2 char + opz 2-4
+    .replace(/\s*\([a-z]{2}(?:[-_][a-z]{2,4})?\)/g, "")
+    // 3. Strip arch in parens
     .replace(/\s*\(64-bit\)/g, "")
     .replace(/\s*\(32-bit\)/g, "")
     .replace(/\s*\(x86\)/g, "")
     .replace(/\s*\(x64\)/g, "")
+    // 4. Strip arch trailing word
     .replace(/\s+x64\b/g, "")
     .replace(/\s+x86\b/g, "")
     .replace(/\s+64-bit\b/g, "")
     .replace(/\s+32-bit\b/g, "")
+    .replace(/\s+amd64\b/g, "")
+    // 5. Strip arch leading word: "x64 Photoshop", "amd64 Foo"
+    .replace(/^(?:x64|x86|64-bit|32-bit|amd64)\s+/g, "")
+    // 6. Strip "Build 19041", "Version 10.0", "Update 5"
+    .replace(/\s+(?:build|version|update|release)\s+[\d.]+/g, "")
+    // 7. Strip suffissi runtime/helper comuni
+    .replace(/\s+(?:maintenance service|update helper|web helper|update tool|updater|helper|runtime)\b/g, "")
+    // 8. Strip "by Vendor" trailing
+    .replace(/\s+by\s+[a-z0-9 ,&.'-]+$/g, "")
+    // 9. Strip prefix "Microsoft" solo per prodotti noti MS (case sicuro)
+    .replace(/^microsoft\s+(?=edge|teams|office|defender|onedrive|onenote|skype|outlook|word|excel|powerpoint|visual studio|sql server)/g, "")
+    // 10. Strip version trailing aggressivo: "10.0.19041", "2024.1.0"
+    .replace(/\s+\d+(\.\d+){1,}(?:\s|$)/g, " ")
+    // 11. Existing: version trailing semplice (mantenuto per compat)
     .replace(/\s+\d+(\.\d+)+(\.\d+)*/g, "")
+    // 12. Collassa spazi multipli causati dalle strip precedenti
+    .replace(/\s+/g, " ")
     .trim();
 }
 

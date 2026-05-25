@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { getCurrentTenantCode } from "@/lib/db-tenant";
+import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
 import {
   setFeatureDisabled,
   invalidateFeatureCache,
 } from "@/lib/patch/feature";
-// F1 — dropPatchModuleSchema sarà importato qui:
-// import { dropPatchModuleSchema } from "@/lib/patch/schema";
+import {
+  dropPatchModuleSchema,
+  patchModuleTablesExist,
+} from "@/lib/patch/schema";
 
 const ALLOWED_FEATURES = new Set<string>(["patch_management"]);
 
@@ -53,12 +55,17 @@ export async function POST(
     }
 
     try {
-      // F1 farà — quando dropData === true:
-      //   const db = getTenantDb(tenantCode);
-      //   dropPatchModuleSchema(db);
-      // In F0 il flag dropData viene accettato ma ignorato; lo si tracciasolo
-      // come effetto "non ancora supportato".
-      const dataDropped = false; // F0: sempre false, F1 lo farà.
+      // F1: se dropData=true droppa le tabelle del modulo dal DB tenant.
+      // Hardcoded patch_management (unica feature whitelistata). Quando
+      // aggiungeremo altri moduli demultiplexeremo qui per feature key.
+      let dataDropped = false;
+      if (dropData) {
+        const tenantDb = getTenantDb(tenantCode);
+        if (patchModuleTablesExist(tenantDb)) {
+          const dropResult = dropPatchModuleSchema(tenantDb);
+          dataDropped = dropResult.tablesDropped.length > 0;
+        }
+      }
 
       setFeatureDisabled(tenantCode, key);
       invalidateFeatureCache(tenantCode, key);
@@ -66,7 +73,7 @@ export async function POST(
       const payload: UninstallResponse = {
         status: "uninstalled",
         feature: key,
-        dataDropped: dropData && dataDropped, // honora la richiesta solo se effettivamente droppato
+        dataDropped,
       };
       return NextResponse.json(payload, { headers: NO_CACHE_HEADERS });
     } catch (error) {

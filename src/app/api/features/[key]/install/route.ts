@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { getCurrentTenantCode } from "@/lib/db-tenant";
+import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
 import { setFeatureEnabled, invalidateFeatureCache } from "@/lib/patch/feature";
-// F1 — applyPatchModuleMigrations sarà importato qui:
-// import { applyPatchModuleMigrations } from "@/lib/patch/schema";
+import { applyPatchModuleMigrations } from "@/lib/patch/schema";
 
 /**
  * Feature key whitelistate. Le route /api/features/[key]/* accettano solo
@@ -52,11 +51,12 @@ export async function POST(
       : userId;
 
     try {
-      // F1 farà:
-      //   const db = getTenantDb(tenantCode);
-      //   applyPatchModuleMigrations(db);
-      // In F0 non tocchiamo lo schema tenant.
-      const tablesCreated: string[] = [];
+      // F1: applica migration modulo (idempotente — IF NOT EXISTS).
+      // Per ora solo patch_management è whitelistata: hardcoded sopra.
+      // Quando aggiungeremo altri moduli demultiplexeremo qui per feature key.
+      const tenantDb = getTenantDb(tenantCode);
+      const migration = applyPatchModuleMigrations(tenantDb);
+      const tablesCreated = migration.tablesCreated;
 
       setFeatureEnabled(tenantCode, key, safeUserId);
       invalidateFeatureCache(tenantCode, key);

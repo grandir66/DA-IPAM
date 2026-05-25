@@ -85,8 +85,14 @@ export function normalizeSoftwareName(name: string): string {
     .toLowerCase()
     // 1. Strip suffisso ARN+locale tipo "(x64 en-us)", "(x86 it-IT)", "(64-bit en-us)"
     .replace(/\s*\((?:x64|x86|64-bit|32-bit)\s+[a-z]{2,3}(?:[-_][a-z]{2,3})?\)/g, "")
+    // 1b. Strip suffisso double-arch tipo "(64-bit x64)", "(32-bit x86)"
+    .replace(/\s*\((?:64-bit|32-bit)\s+x(?:64|86)\)/g, "")
     // 2. Strip locale puro in parens: "(en-US)", "(it_IT)", "(de-de)" — solo 2 char + opz 2-4
     .replace(/\s*\([a-z]{2}(?:[-_][a-z]{2,4})?\)/g, "")
+    // 2b. Strip pattern installer comuni: "(remove only)", "(machine - wv)", "(machine-wide)"
+    .replace(/\s*\(remove only\)/g, "")
+    .replace(/\s*\(machine[ -]wide\)/g, "")
+    .replace(/\s*\(machine\s*-\s*wv\)/g, "")
     // 3. Strip arch in parens
     .replace(/\s*\(64-bit\)/g, "")
     .replace(/\s*\(32-bit\)/g, "")
@@ -112,6 +118,10 @@ export function normalizeSoftwareName(name: string): string {
     .replace(/\s+\d+(\.\d+){1,}(?:\s|$)/g, " ")
     // 11. Existing: version trailing semplice (mantenuto per compat)
     .replace(/\s+\d+(\.\d+)+(\.\d+)*/g, "")
+    // 11b. Strip standalone year (1990-2099) come "Visual Studio 2019", "Office 2021"
+    .replace(/\s+(?:19|20)\d{2}\b/g, "")
+    // 11c. Strip leftover parens vuoti causati dalle strip precedenti
+    .replace(/\s*\(\s*\)/g, "")
     // 12. Collassa spazi multipli causati dalle strip precedenti
     .replace(/\s+/g, " ")
     .trim();

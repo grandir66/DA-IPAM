@@ -33,6 +33,8 @@ import {
   BookOpen,
   Ban,
   ArrowUpCircle,
+  PackageOpen,
+  ShieldCheck,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -87,6 +89,7 @@ export function Sidebar() {
   );
   const [unackedAnomalies, setUnackedAnomalies] = useState(0);
   const [activeIntegrations, setActiveIntegrations] = useState(false);
+  const [patchEnabled, setPatchEnabled] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -97,6 +100,19 @@ export function Sidebar() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!tenantCode || tenantCode === "__ALL__") {
+      setPatchEnabled(false);
+      return;
+    }
+    fetch("/api/features/patch_management", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { enabled?: boolean } | null) => {
+        setPatchEnabled(data?.enabled === true);
+      })
+      .catch(() => { /* feature off come default */ });
+  }, [tenantCode]);
 
   useEffect(() => {
     const fetchUnacked = () => {
@@ -336,6 +352,23 @@ export function Sidebar() {
           </Link>
         )}
 
+        {/* Patch Management — visibile solo se la feature è installata per il tenant */}
+        {patchEnabled && (
+          <Link
+            href="/patch-management"
+            onClick={() => setMobileOpen(false)}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+              isActive("/patch-management")
+                ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            )}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Patch Management
+          </Link>
+        )}
+
         {/* Manuale in-app: viewer markdown dei doc in /docs */}
         <Link
           href="/manual"
@@ -373,6 +406,21 @@ export function Sidebar() {
         >
           <Settings className="h-4 w-4" />
           Impostazioni
+        </Link>
+
+        {/* Moduli opzionali (feature flag patch_management & future) */}
+        <Link
+          href="/settings/features"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            pathname === "/settings/features"
+              ? "bg-sidebar-primary text-sidebar-primary-foreground"
+              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <PackageOpen className="h-4 w-4" />
+          Moduli
         </Link>
 
         {/* Aggiornamenti */}

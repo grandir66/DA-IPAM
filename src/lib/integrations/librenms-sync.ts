@@ -126,7 +126,14 @@ export async function syncNetworkToLibreNMS(networkId: number): Promise<LibreNMS
     return result;
   }
 
-  for (const host of snmpHosts) {
+  // Throttle intra-batch: piccolo jitter tra chiamate API per non saturare
+  // LibreNMS quando il numero di host SNMP del network è grande. 50-150ms
+  // tra host è invisibile all'utente ma evita burst su 50+ device.
+  for (let hi = 0; hi < snmpHosts.length; hi++) {
+    const host = snmpHosts[hi];
+    if (hi > 0) {
+      await new Promise((r) => setTimeout(r, 50 + Math.floor(Math.random() * 100)));
+    }
     try {
       const snmpData   = parseSnmpData(host.snmp_data)!;
       const snmpParams = resolveSnmpParams(snmpData, networkCommunity)!;
@@ -349,16 +356,36 @@ export async function addSingleNetworkDeviceToLibreNMS(
 }
 
 /**
- * Sincronizza tutte le reti del tenant corrente verso LibreNMS.
+ * Sincronizza tutte le reti del tenant verso LibreNMS in modo NON-contemporaneo.
+ *
+ * Pattern (post-incident 2026-05-25):
+ * - Sequenziale tra network (mai 2 sync in parallelo).
+ * - Inter-network jitter randomico 500-2000 ms tra una rete e la successiva,
+ *   per spalmare le chiamate API verso LibreNMS e ridurre il rischio di rate-limit
+ *   o picchi locali quando il numero di reti cresce.
+ * - Pre-jitter iniziale (0-1000 ms) per evitare burst contemporaneo se più
+ *   tenant lanciano il sync allo stesso minuto di scheduling.
+ *
  * Deve essere chiamata con contesto tenant attivo.
  */
 export async function syncAllNetworksToLibreNMS(): Promise<LibreNMSSyncResult[]> {
   const { getNetworks } = await import("../db-tenant");
   const networks = getNetworks();
   const results: LibreNMSSyncResult[] = [];
-  for (const net of networks) {
+
+  // Pre-jitter: spalma l'avvio su 1s se più tenant cadono sullo stesso slot cron.
+  await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 1000)));
+
+  for (let i = 0; i < networks.length; i++) {
+    const net = networks[i];
     const r = await syncNetworkToLibreNMS(net.id);
     results.push(r);
+
+    // Jitter tra network successive (escluso dopo l'ultima).
+    if (i < networks.length - 1) {
+      const jitterMs = 500 + Math.floor(Math.random() * 1500);
+      await new Promise((res) => setTimeout(res, jitterMs));
+    }
   }
   return results;
 }

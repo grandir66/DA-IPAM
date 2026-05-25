@@ -32,7 +32,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash, Monitor, Users, Shield, Tags, ArrowUpCircle, RefreshCw, Sparkles, Terminal, Search } from "lucide-react";
+import { Plus, Trash2, Clock, Download, Database, Save, Lock, Server, Radar, Pencil, RotateCcw, Hash, Monitor, Users, Shield, Tags, ArrowUpCircle, RefreshCw, Sparkles, Terminal, Search, Play } from "lucide-react";
 import { toast } from "sonner";
 import { Fingerprint } from "lucide-react";
 import type { ScheduledJob, NetworkWithStats } from "@/types";
@@ -45,17 +45,31 @@ import { IntegrationsTab } from "@/components/settings/integrations-tab";
 
 const JOB_TYPE_LABELS: Record<string, string> = {
   ping_sweep: "Scoperta rete (ICMP + Nmap quick + DNS + ARP)",
+  fast_scan: "Scoperta veloce subnet",
   snmp_scan: "SNMP Scan",
   nmap_scan: "Nmap Scan",
   arp_poll: "ARP Poll",
   dns_resolve: "DNS Resolve",
-  known_host_check: "Monitoraggio host conosciuti",
+  known_host_check: "Monitoraggio host registrati (ICMP)",
   cleanup: "Pulizia Host",
   anomaly_check: "Rilevamento anomalie",
   librenms_sync: "Sincronizzazione LibreNMS",
   vuln_sync: "Sincronizzazione vulnerability scanner",
   wazuh_sync: "Sincronizzazione Wazuh (agent/sysc/CVE)",
+  ad_sync: "Sincronizzazione Active Directory",
 };
+
+/** Tipi job che scansionano TUTTI gli IP di un subnet → rischio CPU su reti grandi. */
+const HEAVY_JOB_TYPES = new Set(["fast_scan", "ping_sweep"]);
+
+/** Soglia "rete grande": >=1024 IP (CIDR <= /22). */
+function networkIsLarge(cidr: string | undefined | null): boolean {
+  if (!cidr) return false;
+  const m = /\/(\d+)$/.exec(cidr);
+  if (!m) return false;
+  const bits = Number(m[1]);
+  return Number.isFinite(bits) && bits >= 0 && bits <= 22;
+}
 
 const INTERVAL_OPTIONS = [
   { value: "5", label: "Ogni 5 minuti" },
@@ -73,6 +87,8 @@ export default function SettingsPage() {
   const [jobs, setJobs] = useState<ScheduledJob[]>([]);
   const [networks, setNetworks] = useState<NetworkWithStats[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [newJobType, setNewJobType] = useState<string>("known_host_check");
+  const [runningJobId, setRunningJobId] = useState<number | null>(null);
 
   // Settings state
   const [serverPort, setServerPort] = useState("3000");
@@ -297,6 +313,26 @@ export default function SettingsPage() {
       body: JSON.stringify({ id, enabled }),
     });
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, enabled: enabled ? 1 : 0 } : j)));
+  }
+
+  async function runJobNow(id: number) {
+    setRunningJobId(id);
+    try {
+      const res = await fetch(`/api/jobs/${id}/run`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const ms = typeof data.duration_ms === "number" ? `${data.duration_ms} ms` : "ok";
+        toast.success(`Job eseguito (${ms})`);
+        const updated = await fetch("/api/jobs").then((r) => r.json());
+        setJobs(updated);
+      } else {
+        toast.error(data.error || "Esecuzione fallita");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Esecuzione fallita");
+    } finally {
+      setRunningJobId(null);
+    }
   }
 
   async function deleteJob(id: number) {
@@ -1270,18 +1306,27 @@ export default function SettingsPage() {
               <form onSubmit={handleCreateJob} className="space-y-4">
                 <div className="space-y-2">
                   <Label>Tipo</Label>
-                  <Select name="job_type" defaultValue="ping_sweep">
+                  <Select name="job_type" defaultValue="known_host_check" value={newJobType} onValueChange={(v) => setNewJobType(v ?? "known_host_check")}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ping_sweep">Ping Sweep</SelectItem>
+                      <SelectItem value="known_host_check">Monitoraggio host registrati (consigliato)</SelectItem>
+                      <SelectItem value="arp_poll">ARP Poll (passivo via SNMP switch)</SelectItem>
                       <SelectItem value="snmp_scan">SNMP Scan</SelectItem>
-                      <SelectItem value="nmap_scan">Nmap Scan</SelectItem>
-                      <SelectItem value="arp_poll">ARP Poll</SelectItem>
                       <SelectItem value="dns_resolve">DNS Resolve</SelectItem>
-                      <SelectItem value="known_host_check">Monitoraggio host conosciuti</SelectItem>
                       <SelectItem value="cleanup">Pulizia Host</SelectItem>
+                      <SelectItem value="ping_sweep">Ping Sweep (scan completo subnet)</SelectItem>
+                      <SelectItem value="fast_scan">Scoperta veloce subnet</SelectItem>
+                      <SelectItem value="nmap_scan">Nmap Scan</SelectItem>
                     </SelectContent>
                   </Select>
+                  {HEAVY_JOB_TYPES.has(newJobType) && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 leading-snug">
+                      ⚠ Tipo pesante: scansiona TUTTI gli IP del subnet. Su reti grandi
+                      (≥/22, 1024+ IP) può saturare CPU. Per scheduling periodico usa
+                      <em> Monitoraggio host registrati</em>; tieni questo per discovery on-demand
+                      o slot notturni (interval ≥ 12h).
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Rete (opzionale per cleanup)</Label>
@@ -1333,6 +1378,11 @@ export default function SettingsPage() {
                 </TableRow>
               ) : jobs.map((job) => {
                 const network = networks.find((n) => n.id === job.network_id);
+                const isHeavy = HEAVY_JOB_TYPES.has(job.job_type);
+                const isLargeNet = networkIsLarge(network?.cidr);
+                const shortInterval = job.interval_minutes < 720; // < 12 h
+                const riskyCpu = isHeavy && isLargeNet && shortInterval && !!job.enabled;
+                const isRunning = runningJobId === job.id;
                 return (
                   <TableRow key={job.id}>
                     <TableCell>
@@ -1342,7 +1392,14 @@ export default function SettingsPage() {
                       />
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{JOB_TYPE_LABELS[job.job_type] || job.job_type}</Badge>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline">{JOB_TYPE_LABELS[job.job_type] || job.job_type}</Badge>
+                        {riskyCpu && (
+                          <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-400" title="Scan completo subnet grande con frequenza <12h: rischio saturazione CPU. Valuta known_host_check + discovery on-demand.">
+                            ⚠ Carico CPU alto
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>{network ? `${network.name} (${network.cidr})` : "Tutte"}</TableCell>
                     <TableCell>
@@ -1355,14 +1412,29 @@ export default function SettingsPage() {
                       {job.next_run ? new Date(job.next_run).toLocaleString("it-IT") : "—"}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive/60 hover:text-destructive"
-                        onClick={() => deleteJob(job.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          disabled={isRunning}
+                          onClick={() => runJobNow(job.id)}
+                          title="Esegui ora"
+                        >
+                          {isRunning
+                            ? <RefreshCw className="h-4 w-4 animate-spin" />
+                            : <Play className="h-4 w-4" />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive/60 hover:text-destructive"
+                          onClick={() => deleteJob(job.id)}
+                          title="Elimina job"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );

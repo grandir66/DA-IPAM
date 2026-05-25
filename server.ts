@@ -103,6 +103,16 @@ app.prepare().then(() => {
   }
 
   function initCron() {
+    // Boot migration prima dello scheduler: garantisce che ogni tenant abbia
+    // known_host_check sui propri network e nessun fast_scan rischioso schedulato.
+    // Vedi src/lib/cron/scheduler-defaults.ts e incident DTS 2026-05-25.
+    import("./src/lib/cron/scheduler-defaults").then(({ applySchedulerBootMigration }) => {
+      try { applySchedulerBootMigration(); }
+      catch (e) { console.error("WARNING: scheduler boot migration failed:", e); }
+    }).catch((error) => {
+      console.error("WARNING: scheduler-defaults module load failed:", error);
+    });
+
     import("./src/lib/cron/scheduler").then(({ initializeScheduler }) => {
       initializeScheduler();
       console.log("> Cron scheduler initialized");

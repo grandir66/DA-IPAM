@@ -854,17 +854,23 @@ export default function DiscoveryPage() {
    */
   async function handleBulkUpdateAll() {
     if (selectedIds.size === 0) return;
-    const targets = hosts.filter((h) => selectedIds.has(h.id) && h.device_id);
-    if (targets.length === 0) {
-      toast.error("Nessuno degli host selezionati è promosso a device. Usa 'Aggiungi a dispositivi' prima.");
-      return;
-    }
-    const skipped = selectedIds.size - targets.length;
-    if (skipped > 0) {
-      toast.info(`${skipped} host senza device linkato verranno saltati`);
-    }
+    const selectedHosts = hosts.filter((h) => selectedIds.has(h.id));
+    const targets = selectedHosts.filter((h) => h.device_id);
+    const nonPromoted = selectedHosts.filter((h) => !h.device_id);
     setBulkScanRunning(true);
     const results: typeof bulkScanResults = [];
+    // Pre-popola gli skipped (non promossi a device) cosi` compaiono nel modale finale
+    for (const h of nonPromoted) {
+      results.push({
+        host_id: h.id,
+        ip: h.ip,
+        name: displayName(h) || h.ip,
+        query_status: "skipped",
+        query_message: "Host non promosso a device. Usa 'Aggiungi a dispositivi' prima.",
+        software_status: "not-applicable",
+        software_message: "",
+      });
+    }
     for (let i = 0; i < targets.length; i++) {
       const h = targets[i];
       const row: (typeof results)[number] = {
@@ -2241,10 +2247,13 @@ export default function DiscoveryPage() {
             <p className="text-xs text-muted-foreground mt-1">
               {bulkScanResults.length} host processati ·{" "}
               <span className="text-emerald-600 font-medium">
-                {bulkScanResults.filter((r) => r.query_status === "ok").length} query OK
+                {bulkScanResults.filter((r) => r.query_status === "ok").length} OK
               </span>{" "}·{" "}
               <span className="text-red-600 font-medium">
-                {bulkScanResults.filter((r) => r.query_status === "error").length} query errore
+                {bulkScanResults.filter((r) => r.query_status === "error").length} errore
+              </span>{" "}·{" "}
+              <span className="text-muted-foreground font-medium">
+                {bulkScanResults.filter((r) => r.query_status === "skipped").length} skip
               </span>{" "}·{" "}
               <span className="text-blue-600 font-medium">
                 {bulkScanResults.filter((r) => r.software_status === "ok").length} software OK

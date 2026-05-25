@@ -42,6 +42,8 @@ import {
   Copy,
   ShieldAlert,
   Terminal,
+  Save,
+  Settings2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -113,13 +115,19 @@ export default function AgentsOverviewPage() {
   // cliente che esegue il curl.
   const [hubUrlInfo, setHubUrlInfo] = useState<{ effective_url: string | null; source: "public_hub_url" | "tailnet_hostname" | "none" }>({ effective_url: null, source: "none" });
 
+  // Hub URL configuration (spostata qui da /settings perché serve solo a questo wizard).
+  const [publicHubUrl, setPublicHubUrl] = useState("");
+  const [hubTailnetHostname, setHubTailnetHostname] = useState("");
+  const [savingHubUrl, setSavingHubUrl] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [agentsRes, tenantsRes, hubUrlRes] = await Promise.all([
+      const [agentsRes, tenantsRes, hubUrlRes, settingsRes] = await Promise.all([
         fetch("/api/agents"),
         fetch("/api/tenants"),
         fetch("/api/settings/hub-url"),
+        fetch("/api/settings"),
       ]);
       if (agentsRes.ok) setAgents((await agentsRes.json()) as AgentRow[]);
       if (tenantsRes.ok) {
@@ -129,6 +137,11 @@ export default function AgentsOverviewPage() {
       if (hubUrlRes.ok) {
         const info = (await hubUrlRes.json()) as { effective_url: string | null; source: "public_hub_url" | "tailnet_hostname" | "none" };
         setHubUrlInfo(info);
+      }
+      if (settingsRes.ok) {
+        const settings = (await settingsRes.json()) as Record<string, string>;
+        if (settings.public_hub_url !== undefined) setPublicHubUrl(settings.public_hub_url || "");
+        if (settings.hub_tailnet_hostname !== undefined) setHubTailnetHostname(settings.hub_tailnet_hostname || "");
       }
       setRowState({});
     } catch (e) {
@@ -174,6 +187,44 @@ export default function AgentsOverviewPage() {
     } catch (e) {
       console.error(e);
       toast.error("Errore di rete");
+    }
+  };
+
+  const handleSaveHubUrl = async () => {
+    const url = publicHubUrl.trim();
+    const host = hubTailnetHostname.trim();
+    if (url && !/^https?:\/\/[^\s]+$/i.test(url)) {
+      toast.error("URL pubblico non valido (atteso https://host[:port])");
+      return;
+    }
+    if (host && !/^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$/.test(host)) {
+      toast.error("Hostname Tailscale non valido (solo short MagicDNS, niente schemi né punti)");
+      return;
+    }
+    setSavingHubUrl(true);
+    try {
+      const r1 = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "public_hub_url", value: url }),
+      });
+      const r2 = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "hub_tailnet_hostname", value: host }),
+      });
+      if (r1.ok && r2.ok) {
+        toast.success("Hub URL salvato. Useranno il nuovo valore i prossimi one-liner di install.");
+        const hubUrlRes = await fetch("/api/settings/hub-url");
+        if (hubUrlRes.ok) {
+          const info = (await hubUrlRes.json()) as { effective_url: string | null; source: "public_hub_url" | "tailnet_hostname" | "none" };
+          setHubUrlInfo(info);
+        }
+      } else {
+        toast.error("Errore nel salvataggio");
+      }
+    } finally {
+      setSavingHubUrl(false);
     }
   };
 
@@ -343,6 +394,65 @@ export default function AgentsOverviewPage() {
           )}
         </div>
       </div>
+
+      {canEdit && (
+        <Card>
+          <CardHeader>
+            <details>
+              <summary className="cursor-pointer list-none flex items-center gap-2 text-base font-semibold">
+                <Settings2 className="h-4 w-4 text-primary" />
+                Hub URL pubblico (per one-liner install agenti)
+                <span className="ml-2 text-xs text-muted-foreground font-normal">
+                  Effettivo:{" "}
+                  <code className="font-mono">
+                    {hubUrlInfo.effective_url ?? "—"}
+                  </code>
+                  {hubUrlInfo.source !== "none" && (
+                    <span className="ml-1 uppercase tracking-wide text-[10px]">
+                      ({hubUrlInfo.source === "public_hub_url" ? "pubblico" : "tailnet"})
+                    </span>
+                  )}
+                </span>
+              </summary>
+              <CardDescription className="mt-3">
+                Indirizzo con cui gli agent remoti raggiungono questo hub. Se vuoti, il wizard
+                <em> Nuovo agente</em> ricade su l&apos;origin del browser e mostra un warning
+                (l&apos;agent potrebbe non raggiungere quell&apos;URL dalla sua rete).
+              </CardDescription>
+              <div className="space-y-3 max-w-2xl mt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="public-hub-url">URL pubblico (preferito)</Label>
+                  <Input
+                    id="public-hub-url"
+                    placeholder="es. https://da-invent.tailc091fb.ts.net"
+                    value={publicHubUrl}
+                    onChange={(e) => setPublicHubUrl(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Schema + host + (eventuale porta). Funziona da qualunque rete raggiunga l&apos;URL.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="hub-tailnet-host">Hostname Tailscale (fallback)</Label>
+                  <Input
+                    id="hub-tailnet-host"
+                    placeholder="es. da-invent"
+                    value={hubTailnetHostname}
+                    onChange={(e) => setHubTailnetHostname(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    MagicDNS short. Se l&apos;URL pubblico è vuoto, viene usato come <code className="font-mono">https://&lt;hostname&gt;</code>.
+                  </p>
+                </div>
+                <Button onClick={handleSaveHubUrl} disabled={savingHubUrl}>
+                  <Save className="h-4 w-4 mr-2" />
+                  Salva
+                </Button>
+              </div>
+            </details>
+          </CardHeader>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

@@ -7,6 +7,7 @@ import { PageTransition } from "./page-transition";
 import { GlobalSearch } from "./global-search";
 import { ThemeToggle } from "./theme-toggle";
 import { UpdateChecker } from "./update-checker";
+import { UserMenu } from "./user-menu";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -70,6 +71,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <GlobalSearch />
               </div>
               <ThemeToggle />
+              <UserMenu />
             </div>
           </div>
           <div className="flex-1 overflow-auto px-2 py-2 md:px-3 md:py-3">

@@ -69,7 +69,7 @@ export function IntegrationsTab() {
       <div>
         <h2 className="text-lg font-semibold">Integrazioni esterne</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Connetti DA-INVENT a sistemi di monitoring (LibreNMS) e log management (Loki, Graylog).
+          Connetti DA-IPAM a sistemi di monitoring (LibreNMS) e log management (Loki, Graylog).
           Puoi usare istanze Docker gestite localmente oppure istanze già esistenti.
         </p>
       </div>
@@ -130,7 +130,7 @@ export function IntegrationsTab() {
       <IntegrationCard
         component="librenms"
         title="LibreNMS"
-        description="Monitoring SNMP e metriche di rete. DA-INVENT sincronizza i device scoperti su LibreNMS."
+        description="Monitoring SNMP e metriche di rete. DA-IPAM sincronizza i device scoperti su LibreNMS."
         dockerAvailable={dockerAvailable ?? false}
         showSyncButton
       />

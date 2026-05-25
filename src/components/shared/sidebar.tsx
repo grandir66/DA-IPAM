@@ -32,8 +32,6 @@ import {
   Workflow,
   BookOpen,
   Ban,
-  ArrowUpCircle,
-  PackageOpen,
   ShieldCheck,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
@@ -406,36 +404,6 @@ export function Sidebar() {
         >
           <Settings className="h-4 w-4" />
           Impostazioni
-        </Link>
-
-        {/* Moduli opzionali (feature flag patch_management & future) */}
-        <Link
-          href="/settings/features"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname === "/settings/features"
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <PackageOpen className="h-4 w-4" />
-          Moduli
-        </Link>
-
-        {/* Aggiornamenti */}
-        <Link
-          href="/settings/updates"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname === "/settings/updates"
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <ArrowUpCircle className="h-4 w-4" />
-          Aggiornamenti
         </Link>
 
       </nav>

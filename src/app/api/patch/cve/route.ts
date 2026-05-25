@@ -73,8 +73,10 @@ export async function GET(request: Request) {
         WITH host_with_inventory AS (
           SELECT DISTINCT ss.host_id AS host_id
             FROM software_scans ss
+            INNER JOIN hosts h ON h.id = ss.host_id
            WHERE ss.status = 'ok'
              AND ss.host_id IS NOT NULL
+             AND LOWER(h.os_family) = 'windows'
           UNION
           SELECT DISTINCT h.id AS host_id
             FROM software_scans ss
@@ -82,6 +84,7 @@ export async function GET(request: Request) {
             INNER JOIN hosts h ON h.ip = nd.host
            WHERE ss.status = 'ok'
              AND ss.device_id IS NOT NULL
+             AND LOWER(h.os_family) = 'windows'
         ),
         cve_union AS (
           SELECT
@@ -92,7 +95,9 @@ export async function GET(request: Request) {
             wa.host_id                                      AS host_id
           FROM wazuh_vuln wv
           INNER JOIN wazuh_agent wa ON wa.agent_id = wv.agent_id
+          INNER JOIN hosts h ON h.id = wa.host_id
           WHERE wa.host_id IS NOT NULL
+            AND LOWER(h.os_family) = 'windows'
 
           UNION ALL
 
@@ -103,8 +108,10 @@ export async function GET(request: Request) {
             vf.nvt_name   AS title,
             vf.host_id    AS host_id
           FROM vuln_findings vf
+          INNER JOIN hosts h ON h.id = vf.host_id
           WHERE vf.cve_id IS NOT NULL
             AND vf.host_id IS NOT NULL
+            AND LOWER(h.os_family) = 'windows'
         )
         SELECT
           cu.cve_id                                AS cve_id,

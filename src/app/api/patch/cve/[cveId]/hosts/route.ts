@@ -66,11 +66,15 @@ export async function GET(
           SELECT DISTINCT wa.host_id AS host_id
             FROM wazuh_vuln wv
             INNER JOIN wazuh_agent wa ON wa.agent_id = wv.agent_id
+            INNER JOIN hosts h ON h.id = wa.host_id
            WHERE wv.cve = ? AND wa.host_id IS NOT NULL
+             AND LOWER(h.os_family) = 'windows'
           UNION
           SELECT DISTINCT vf.host_id AS host_id
             FROM vuln_findings vf
+            INNER JOIN hosts h ON h.id = vf.host_id
            WHERE vf.cve_id = ? AND vf.host_id IS NOT NULL
+             AND LOWER(h.os_family) = 'windows'
         ),
         winrm_status AS (
           SELECT host_id, MAX(validated) AS winrm_validated

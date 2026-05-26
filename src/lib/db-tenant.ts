@@ -6336,12 +6336,16 @@ export function updateCustomClassification(slug: string, patch: { label?: string
   return getCustomClassificationBySlug(slug);
 }
 
-/** Conta host che referenziano una classification (custom o built-in). */
+/** Conta host + network_devices che referenziano una classification (custom o built-in).
+ *  Usata per validare DELETE custom: blocca se ci sono ancora row che la referenziano. */
 export function countHostsByClassification(classification: string): number {
-  const row = db()
+  const hostRow = db()
     .prepare("SELECT COUNT(*) AS n FROM hosts WHERE classification = ?")
     .get(classification) as { n: number };
-  return row.n;
+  const devRow = db()
+    .prepare("SELECT COUNT(*) AS n FROM network_devices WHERE classification = ?")
+    .get(classification) as { n: number };
+  return hostRow.n + devRow.n;
 }
 
 export function deleteCustomClassification(slug: string): void {

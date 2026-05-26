@@ -54,9 +54,13 @@ export function InlineEditCell(props: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const selectRef = useRef<HTMLSelectElement>(null);
 
+  // Bug fix audit 2026-05-26: sync prop→draft SOLO quando non si sta editando,
+  // altrimenti un parent refetch (polling, refresh dopo save vicino, …) cancella
+  // ciò che l'utente sta digitando. Perdita dati visibile in /discovery.
   useEffect(() => {
+    if (editing) return;
     setDraft(value ?? "");
-  }, [value]);
+  }, [value, editing]);
 
   useEffect(() => {
     if (!editing) return;

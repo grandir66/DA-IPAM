@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getNetworkById, getHostsByNetwork, getDb, getFingerprintClassificationRulesForResolve } from "@/lib/db";
+import { getCustomClassificationBySlug } from "@/lib/db-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { classifyDevice } from "@/lib/device-classifier";
 import { getClassificationFromFingerprintSnapshot } from "@/lib/device-fingerprint-classification";
 import type { DeviceFingerprintSnapshot } from "@/types";
@@ -28,6 +30,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const adminCheck = await requireAdmin();
   if (isAuthError(adminCheck)) return adminCheck;
 
+  // Bug fix audit 2026-05-26 (A1): senza withTenantFromSession getDb() cade su
+  // tenant DEFAULT, scrivendo su data/tenants/DEFAULT.db indipendentemente
+  // dall'utente loggato → cross-tenant corruption silente.
+  return withTenantFromSession(async () => {
   try {
     const { id } = await params;
     const body = await _request.json().catch(() => ({})) as { force?: boolean; forceDns?: boolean; dryRun?: boolean };
@@ -131,7 +137,15 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         });
         const newClassification = fromFingerprint ?? fromRules;
 
-        if (newClassification && newClassification !== host.classification) {
+        // Bug fix audit 2026-05-26 (A3): se la classification corrente è una
+        // custom child del newClassification (es. host.classification="server_postgres"
+        // con parent_slug="server" e classifier propone "server"), NON sovrascrivere:
+        // la custom è più specifica del parent built-in. Altrimenti force=true
+        // distrugge silenziosamente le sotto-categorie utente.
+        const currentCustom = host.classification ? getCustomClassificationBySlug(host.classification) : undefined;
+        const currentIsCustomChildOfNew = currentCustom?.parent_slug === newClassification;
+
+        if (newClassification && newClassification !== host.classification && !currentIsCustomChildOfNew) {
           if (dryRun) {
             proposals.push({
               host_id: host.id,
@@ -186,4 +200,5 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       { status: 500 }
     );
   }
+  });
 }

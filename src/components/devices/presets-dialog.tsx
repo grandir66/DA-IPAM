@@ -82,7 +82,15 @@ export function PresetsDialog({ open, onOpenChange, presets, availableClassifica
   };
 
   const removeAt = (idx: number) => {
-    setDraft((prev) => prev.filter((_, i) => i !== idx));
+    setDraft((prev) => {
+      const target = prev[idx];
+      if (!target) return prev;
+      // I preset speciali sono cablati nella logica di filtro (`group:multihomed`,
+      // `group:other`) — rimuoverli lascia gli host MH/unclassified senza chip,
+      // cosa non desiderata. Blocco la rimozione.
+      if (target.filter === "group:multihomed" || target.filter === "group:other") return prev;
+      return prev.filter((_, i) => i !== idx);
+    });
   };
 
   const moveAt = (idx: number, dir: -1 | 1) => {
@@ -178,8 +186,9 @@ export function PresetsDialog({ open, onOpenChange, presets, availableClassifica
                     <button
                       type="button"
                       onClick={() => removeAt(idx)}
-                      title="Rimuovi"
-                      className="p-1.5 rounded text-destructive hover:bg-destructive/10 self-end mb-0.5"
+                      disabled={isSpecial}
+                      title={isSpecial ? "Preset speciale: non rimovibile" : "Rimuovi"}
+                      className="p-1.5 rounded text-destructive hover:bg-destructive/10 self-end mb-0.5 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                     ><Trash2 className="h-4 w-4" /></button>
                   </div>
                   {!isSpecial && (

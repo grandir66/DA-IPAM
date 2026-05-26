@@ -23,6 +23,10 @@ import { getCurrentTenantCode } from "@/lib/db-tenant";
 
 const SLUG_RE = /^[a-z][a-z0-9_]{1,63}$/;
 const BUILTIN_SET = new Set<string>(DEVICE_CLASSIFICATIONS);
+// Sentinel slug riservati: 'unknown' è usato come fallback "nessuna classification";
+// 'user'/'group' sono namespace prefix dei preset chip (vedi preset-types.ts).
+// Permettere uno di questi confonderebbe la logica di filtro built-in.
+const RESERVED_SLUGS = new Set<string>(["unknown", "user", "group"]);
 
 const CreateSchema = z.object({
   slug: z
@@ -64,6 +68,9 @@ export async function POST(req: Request) {
 
     if (BUILTIN_SET.has(slug)) {
       return NextResponse.json({ error: `Lo slug "${slug}" coincide con una classification built-in` }, { status: 400 });
+    }
+    if (RESERVED_SLUGS.has(slug)) {
+      return NextResponse.json({ error: `Lo slug "${slug}" è riservato (sentinel di sistema)` }, { status: 400 });
     }
     if (!BUILTIN_SET.has(parent_slug)) {
       return NextResponse.json({ error: `parent_slug "${parent_slug}" non è una classification built-in valida` }, { status: 400 });

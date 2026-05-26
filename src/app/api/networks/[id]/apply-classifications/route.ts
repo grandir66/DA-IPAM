@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getNetworkById, getHostsByNetwork, getDb, getFingerprintClassificationRulesForResolve } from "@/lib/db";
+import { getCustomClassificationBySlug } from "@/lib/db-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { classifyDevice } from "@/lib/device-classifier";
 import { getClassificationFromFingerprintSnapshot } from "@/lib/device-fingerprint-classification";
 import type { DeviceFingerprintSnapshot } from "@/types";
@@ -18,6 +20,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const adminCheck = await requireAdmin();
   if (isAuthError(adminCheck)) return adminCheck;
 
+  // Bug fix audit 2026-05-26 (A2): senza withTenantFromSession getDb() cade su
+  // tenant DEFAULT, scrivendo su data/tenants/DEFAULT.db invece del tenant
+  // dell'utente loggato.
+  return withTenantFromSession(async () => {
   try {
     const { id } = await params;
     const body = await _request.json().catch(() => ({})) as { host_ids?: number[]; force?: boolean };
@@ -73,7 +79,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       });
       const newClassification = fromFingerprint ?? fromRules;
 
-      if (!newClassification || newClassification === host.classification) {
+      // Bug fix audit 2026-05-26 (A3): se classification corrente è custom
+      // child del newClassification proposto, NON sovrascrivere — la custom
+      // è più specifica del parent built-in (es. server_postgres → server).
+      const currentCustom = host.classification ? getCustomClassificationBySlug(host.classification) : undefined;
+      const currentIsCustomChildOfNew = currentCustom?.parent_slug === newClassification;
+
+      if (!newClassification || newClassification === host.classification || currentIsCustomChildOfNew) {
         skipped++;
         continue;
       }
@@ -102,4 +114,5 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       { status: 500 }
     );
   }
+  });
 }

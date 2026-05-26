@@ -2007,54 +2007,39 @@ export interface SysObjLookupRow {
   updated_at: string;
 }
 
+// v0.2.633 bug fix audit A8: TUTTE le funzioni `sysobj_lookup` ora delegano a
+// db-hub (tabella globale, vedi db-hub.ts:1394-1442). Prima erano implementate
+// con getDb() (tenant) mentre il list passava da db-hub → POST scriveva in
+// data/tenants/X.db, GET leggeva da data/hub.db → utente vedeva sempre vuoto.
 export function getSysObjLookupEntries(): SysObjLookupRow[] {
-  return getDb()
-    .prepare("SELECT * FROM sysobj_lookup ORDER BY LENGTH(oid) DESC")
-    .all() as SysObjLookupRow[];
+  const hub = require("./db-hub");
+  return hub.getSysObjLookupEntries();
 }
 
 export function createSysObjLookupEntry(input: {
   oid: string; vendor: string; product: string; category: string;
   enterprise_id: number; enabled?: number; note?: string | null;
 }): SysObjLookupRow {
-  const result = getDb().prepare(
-    `INSERT INTO sysobj_lookup (oid, vendor, product, category, enterprise_id, builtin, enabled, note)
-     VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
-  ).run(
-    input.oid.trim(), input.vendor.trim(), input.product.trim(), input.category.trim(),
-    input.enterprise_id, input.enabled ?? 1, input.note?.trim() || null,
-  );
-  return getDb().prepare("SELECT * FROM sysobj_lookup WHERE id = ?").get(result.lastInsertRowid) as SysObjLookupRow;
+  const hub = require("./db-hub");
+  return hub.createSysObjLookupEntry(input);
 }
 
 export function updateSysObjLookupEntry(id: number, input: Partial<{
   oid: string; vendor: string; product: string; category: string;
   enterprise_id: number; enabled: number; note: string | null;
 }>): SysObjLookupRow | undefined {
-  const existing = getDb().prepare("SELECT id FROM sysobj_lookup WHERE id = ?").get(id) as { id: number } | undefined;
-  if (!existing) return undefined;
-  const sets: string[] = ["updated_at = datetime('now')"];
-  const vals: unknown[] = [];
-  const field = (col: string, val: unknown) => { sets.push(`${col} = ?`); vals.push(val); };
-  if (input.oid !== undefined) field("oid", input.oid.trim());
-  if (input.vendor !== undefined) field("vendor", input.vendor.trim());
-  if (input.product !== undefined) field("product", input.product.trim());
-  if (input.category !== undefined) field("category", input.category.trim());
-  if (input.enterprise_id !== undefined) field("enterprise_id", input.enterprise_id);
-  if (input.enabled !== undefined) field("enabled", input.enabled);
-  if (input.note !== undefined) field("note", input.note?.trim() || null);
-  vals.push(id);
-  getDb().prepare(`UPDATE sysobj_lookup SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
-  return getDb().prepare("SELECT * FROM sysobj_lookup WHERE id = ?").get(id) as SysObjLookupRow | undefined;
+  const hub = require("./db-hub");
+  return hub.updateSysObjLookupEntry(id, input);
 }
 
 export function deleteSysObjLookupEntry(id: number): boolean {
-  return getDb().prepare("DELETE FROM sysobj_lookup WHERE id = ?").run(id).changes > 0;
+  const hub = require("./db-hub");
+  return hub.deleteSysObjLookupEntry(id);
 }
 
 export function resetBuiltinSysObjLookup(): void {
-  getDb().prepare("DELETE FROM sysobj_lookup WHERE builtin = 1").run();
-  seedBuiltinSysObjLookup(getDb());
+  const hub = require("./db-hub");
+  hub.resetBuiltinSysObjLookup();
 }
 
 // ========================
@@ -6739,12 +6724,19 @@ export function getDistinctHostVendorHints(limit = 400): string[] {
   return rows.map((r) => r.v);
 }
 
+// v0.2.633 bug fix audit A8: TUTTE le funzioni `snmp_vendor_profiles` ora
+// delegano a db-hub (tabella globale, vedi db-hub.ts:1243-1389). Prima erano
+// implementate con getDb() (tenant) per id/byProfileId/create/update/delete/
+// reset/export/import, mentre i list passavano da db-hub → POST scriveva in
+// data/tenants/X.db, GET leggeva da data/hub.db → utente vedeva sempre vuoto.
 export function getSnmpVendorProfileById(id: number): SnmpVendorProfileRow | undefined {
-  return getDb().prepare("SELECT * FROM snmp_vendor_profiles WHERE id = ?").get(id) as SnmpVendorProfileRow | undefined;
+  const hub = require("./db-hub");
+  return hub.getSnmpVendorProfileById(id);
 }
 
 export function getSnmpVendorProfileByProfileId(profileId: string): SnmpVendorProfileRow | undefined {
-  return getDb().prepare("SELECT * FROM snmp_vendor_profiles WHERE profile_id = ?").get(profileId) as SnmpVendorProfileRow | undefined;
+  const hub = require("./db-hub");
+  return hub.getSnmpVendorProfileByProfileId(profileId);
 }
 
 export function createSnmpVendorProfile(input: {
@@ -6759,22 +6751,8 @@ export function createSnmpVendorProfile(input: {
   builtin?: number;
   note?: string | null;
 }): SnmpVendorProfileRow {
-  const stmt = getDb().prepare(`INSERT INTO snmp_vendor_profiles
-    (profile_id, name, category, enterprise_oid_prefixes, sysdescr_pattern, fields, confidence, enabled, builtin, note)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  const r = stmt.run(
-    input.profile_id,
-    input.name,
-    input.category,
-    JSON.stringify(input.enterprise_oid_prefixes ?? []),
-    input.sysdescr_pattern ?? null,
-    JSON.stringify(input.fields ?? {}),
-    input.confidence ?? 0.90,
-    input.enabled ?? 1,
-    input.builtin ?? 0,
-    input.note ?? null
-  );
-  return getSnmpVendorProfileById(Number(r.lastInsertRowid))!;
+  const hub = require("./db-hub");
+  return hub.createSnmpVendorProfile(input);
 }
 
 export function updateSnmpVendorProfile(id: number, input: Partial<{
@@ -6788,39 +6766,23 @@ export function updateSnmpVendorProfile(id: number, input: Partial<{
   enabled: number;
   note: string | null;
 }>): SnmpVendorProfileRow | undefined {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-
-  if (input.profile_id !== undefined) { fields.push("profile_id = ?"); values.push(input.profile_id); }
-  if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
-  if (input.category !== undefined) { fields.push("category = ?"); values.push(input.category); }
-  if (input.enterprise_oid_prefixes !== undefined) { fields.push("enterprise_oid_prefixes = ?"); values.push(JSON.stringify(input.enterprise_oid_prefixes)); }
-  if (input.sysdescr_pattern !== undefined) { fields.push("sysdescr_pattern = ?"); values.push(input.sysdescr_pattern); }
-  if (input.fields !== undefined) { fields.push("fields = ?"); values.push(JSON.stringify(input.fields)); }
-  if (input.confidence !== undefined) { fields.push("confidence = ?"); values.push(input.confidence); }
-  if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled); }
-  if (input.note !== undefined) { fields.push("note = ?"); values.push(input.note); }
-
-  if (fields.length === 0) return getSnmpVendorProfileById(id);
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-
-  getDb().prepare(`UPDATE snmp_vendor_profiles SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  return getSnmpVendorProfileById(id);
+  const hub = require("./db-hub");
+  return hub.updateSnmpVendorProfile(id, input);
 }
 
 export function deleteSnmpVendorProfile(id: number): boolean {
-  const r = getDb().prepare("DELETE FROM snmp_vendor_profiles WHERE id = ?").run(id);
-  return r.changes > 0;
+  const hub = require("./db-hub");
+  return hub.deleteSnmpVendorProfile(id);
 }
 
 export function resetBuiltinSnmpVendorProfiles(): void {
-  getDb().prepare("DELETE FROM snmp_vendor_profiles WHERE builtin = 1").run();
-  seedBuiltinSnmpVendorProfiles(getDb());
+  const hub = require("./db-hub");
+  hub.resetBuiltinSnmpVendorProfiles();
 }
 
 export function exportSnmpVendorProfiles(): SnmpVendorProfileRow[] {
-  return getDb().prepare("SELECT * FROM snmp_vendor_profiles ORDER BY category, name").all() as SnmpVendorProfileRow[];
+  const hub = require("./db-hub");
+  return hub.exportSnmpVendorProfiles();
 }
 
 export function importSnmpVendorProfiles(profiles: Array<{
@@ -6834,48 +6796,8 @@ export function importSnmpVendorProfiles(profiles: Array<{
   enabled?: number;
   note?: string | null;
 }>, replaceExisting: boolean = false): { imported: number; skipped: number; errors: string[] } {
-  const result = { imported: 0, skipped: 0, errors: [] as string[] };
-
-  for (const p of profiles) {
-    try {
-      const existing = getSnmpVendorProfileByProfileId(p.profile_id);
-      if (existing) {
-        if (replaceExisting && !existing.builtin) {
-          updateSnmpVendorProfile(existing.id, {
-            name: p.name,
-            category: p.category,
-            enterprise_oid_prefixes: Array.isArray(p.enterprise_oid_prefixes) ? p.enterprise_oid_prefixes : JSON.parse(p.enterprise_oid_prefixes),
-            sysdescr_pattern: p.sysdescr_pattern ?? null,
-            fields: typeof p.fields === "string" ? JSON.parse(p.fields) : p.fields,
-            confidence: p.confidence ?? 0.90,
-            enabled: p.enabled ?? 1,
-            note: p.note ?? null,
-          });
-          result.imported++;
-        } else {
-          result.skipped++;
-        }
-      } else {
-        createSnmpVendorProfile({
-          profile_id: p.profile_id,
-          name: p.name,
-          category: p.category,
-          enterprise_oid_prefixes: Array.isArray(p.enterprise_oid_prefixes) ? p.enterprise_oid_prefixes : JSON.parse(p.enterprise_oid_prefixes),
-          sysdescr_pattern: p.sysdescr_pattern ?? null,
-          fields: typeof p.fields === "string" ? JSON.parse(p.fields) : p.fields,
-          confidence: p.confidence ?? 0.90,
-          enabled: p.enabled ?? 1,
-          builtin: 0,
-          note: p.note ?? null,
-        });
-        result.imported++;
-      }
-    } catch (err) {
-      result.errors.push(`${p.profile_id}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  return result;
+  const hub = require("./db-hub");
+  return hub.importSnmpVendorProfiles(profiles, replaceExisting);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

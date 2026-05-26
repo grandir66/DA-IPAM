@@ -27,7 +27,10 @@
  * v2 (2026-05-26) — aggiunto os_info come segnale primario; regola VMware ristretta
  *                   per distinguere ESXi reale da VM su VMware con NIC virtuale
  */
-export const CLASSIFIER_VERSION = 2;
+// v3 (2026-05-26 v0.2.633): fix Apple iOS classificato come network-os (A9) +
+// Linux workstation classificato come server di default (A10). Bump triggera
+// ricomputo automatico via backfill in initializeTenantDb.
+export const CLASSIFIER_VERSION = 3;
 
 export type InferredDeviceType =
   | "router"
@@ -168,8 +171,17 @@ function inferOsFromOsInfo(osInfo: string | null | undefined): { os: InferredOsF
   const s = osInfo.toLowerCase();
   if (/\bwindows\b/.test(s)) return { os: "windows", confidence: 95, reason: "os_info dichiara Windows" };
   if (/\b(linux|ubuntu|debian|centos|redhat|rhel|fedora|alpine|kernel)\b/.test(s)) return { os: "linux", confidence: 95, reason: "os_info dichiara Linux" };
+  // v0.2.633 bug fix A9: Apple iOS/iPadOS PRIMA del ramo network-os.
+  // La vecchia regex `/\bios\b/` catturava "Apple iOS 17" e classificava
+  // iPhone come network-os → "switch" con SNMP polling. Trattiamo iOS/iPadOS
+  // come famiglia macOS (Darwin-based) — è la categorizzazione più vicina.
+  if (/\b(ipados|iphone os|apple ios)\b/.test(s) || /\bios\b\s*\d/.test(s)) {
+    return { os: "macos", confidence: 90, reason: "os_info dichiara iOS/iPadOS (Apple)" };
+  }
   if (/\b(macos|darwin|mac os|osx)\b/.test(s)) return { os: "macos", confidence: 95, reason: "os_info dichiara macOS" };
-  if (/\b(ios|cisco|nx-os|junos|routeros|mikrotik|fortios|stormshield|vyos)\b/.test(s)) return { os: "network-os", confidence: 90, reason: "os_info dichiara network OS" };
+  // v0.2.633 bug fix A9: `ios` bare word rimosso (vedi sopra), `cisco ios`
+  // resta come fingerprint Cisco esplicito.
+  if (/\b(cisco ios|cisco|nx-os|junos|routeros|mikrotik|fortios|stormshield|vyos)\b/.test(s)) return { os: "network-os", confidence: 90, reason: "os_info dichiara network OS" };
   if (/\b(vmware esx|esxi)\b/.test(s)) return { os: "linux", confidence: 85, reason: "os_info dichiara ESXi (linux-based)" };
   return { os: null, confidence: 0, reason: "" };
 }
@@ -239,8 +251,23 @@ function inferDeviceType(
   }
   if (osFamily === "macos") return { device_type: "workstation", reason: "macOS" };
   if (osFamily === "linux") {
-    if (/^(srv|server|host|node|web|db|sql|app)/.test(h)) return { device_type: "server", reason: "hostname server-like" };
-    return { device_type: "server", reason: "Linux con hostname generico — assunto server" };
+    // v0.2.633 bug fix A10: il default per Linux era SEMPRE "server", facendo
+    // finire desktop Ubuntu/Mint, Raspberry IoT e laptop Linux nel chip
+    // "Server". Ora differenzio:
+    //   - hostname server-like → server
+    //   - hostname client-like → workstation
+    //   - porte server tipiche (80/443/3306/5432/25/53) → server
+    //   - altrimenti default workstation (più conservativo: meglio un server
+    //     non riconosciuto come workstation che un laptop come server).
+    if (/^(srv|server|host|node|web|db|sql|app|nginx|apache|mail|proxy|gw|fw)/.test(h)) {
+      return { device_type: "server", reason: "hostname server-like" };
+    }
+    if (/^(desktop|laptop|workstation|ws|nb|pc|ubuntu-desk|kubuntu|mint|lubuntu|xubuntu)/.test(h)) {
+      return { device_type: "workstation", reason: "Linux hostname client-like" };
+    }
+    const hasServerPorts = set.has(80) || set.has(443) || set.has(3306) || set.has(5432) || set.has(25) || set.has(53);
+    if (hasServerPorts) return { device_type: "server", reason: "Linux con porte server aperte (80/443/3306/5432/25/53)" };
+    return { device_type: "workstation", reason: "Linux senza segnali server (default conservativo)" };
   }
   return { device_type: null, reason: "" };
 }

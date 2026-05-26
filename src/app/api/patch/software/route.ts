@@ -69,16 +69,21 @@ export async function GET(request: Request) {
     const db = getTenantDb(tenantCode);
 
     try {
-      // Pipeline:
-      //  - sw_host_pairs: 1 riga per (name_normalized, version, host_id) — dedup host
-      //    via UNION scan diretto + via device IP-mapping (entrambi su host Windows con scan ok)
-      //  - sw_dedup: dedup per (name_normalized, version), conta host_count distinti +
-      //    GROUP_CONCAT software_ids per JOIN successivi
-      //  - sw_choco: max choco_id da patch_software_meta tra i software_id deduplicati
-      //  - sw_cve_wazuh: count CVE da wazuh_vuln per match package_name su (name,version)
-      //  - sw_cve_target: count CVE da patch_cve_target sui software_id deduplicati
-      const searchFilter = search ? "AND LOWER(si.name) LIKE LOWER(?)" : "";
+      // Pipeline (3 fonti software unite + equi-join CVE per performance):
+      //  - sw_host_pairs: 1 riga per (name_normalized, version, host_id) da 3 fonti:
+      //      (a) software_inventory via scan diretto host_id
+      //      (b) software_inventory via scan device_id + IP-mapping
+      //      (c) wazuh_software via wazuh_agent.host_id (software_id = NULL)
+      //  - sw_dedup: dedup per (name_normalized, version), host_count distinto
+      //  - sw_choco: choco_id da patch_software_meta (solo software_id non null)
+      //  - cve_by_pkg: PRE-AGGREGATO da wazuh_vuln su LOWER(package_name)+version
+      //    (evita LIKE O(N*M) — ora O(N+M) via equi-join sul name_normalized)
+      //  - sw_cve_target: count CVE da patch_cve_target sui software_id locali
+      const searchFilter = search ? "AND LOWER(?) LIKE LOWER(?)" : "";
+      const searchFilterSi = search ? "AND LOWER(si.name) LIKE LOWER(?)" : "";
+      const searchFilterWs = search ? "AND LOWER(ws.name) LIKE LOWER(?)" : "";
       const searchParam = search ? `%${search}%` : null;
+      void searchFilter; // helper non usato, mantenuto per chiarezza
 
       const havingClauses: string[] = [];
       if (onlyWithCve) havingClauses.push("cve_count > 0");
@@ -90,6 +95,7 @@ export async function GET(request: Request) {
 
       const sql = `
         WITH sw_host_pairs AS (
+          -- (a) software_inventory via scan locale diretto
           SELECT LOWER(si.name) AS name_normalized, si.name AS name, si.version AS version,
                  si.publisher AS publisher, ss.host_id AS host_id, si.id AS software_id
             FROM software_inventory si
@@ -98,8 +104,9 @@ export async function GET(request: Request) {
            WHERE ss.status = 'ok'
              AND ss.host_id IS NOT NULL
              AND LOWER(h.os_family) = 'windows'
-             ${searchFilter}
+             ${searchFilterSi}
           UNION ALL
+          -- (b) software_inventory via scan device + IP-mapping
           SELECT LOWER(si.name) AS name_normalized, si.name AS name, si.version AS version,
                  si.publisher AS publisher, h.id AS host_id, si.id AS software_id
             FROM software_inventory si
@@ -109,15 +116,24 @@ export async function GET(request: Request) {
            WHERE ss.status = 'ok'
              AND ss.device_id IS NOT NULL
              AND LOWER(h.os_family) = 'windows'
-             ${searchFilter}
+             ${searchFilterSi}
+          UNION ALL
+          -- (c) wazuh_software (software_id locale = NULL → niente FK su patch_software_meta)
+          SELECT LOWER(ws.name) AS name_normalized, ws.name AS name, ws.version AS version,
+                 ws.vendor AS publisher, wa.host_id AS host_id, NULL AS software_id
+            FROM wazuh_software ws
+            INNER JOIN wazuh_agent wa ON wa.agent_id = ws.agent_id
+            INNER JOIN hosts h ON h.id = wa.host_id
+           WHERE wa.host_id IS NOT NULL
+             AND LOWER(h.os_family) = 'windows'
+             ${searchFilterWs}
         ),
         sw_dedup AS (
           SELECT name_normalized,
                  MAX(name) AS name,
                  version,
                  MAX(publisher) AS publisher,
-                 COUNT(DISTINCT host_id) AS host_count,
-                 GROUP_CONCAT(DISTINCT software_id) AS software_ids
+                 COUNT(DISTINCT host_id) AS host_count
             FROM sw_host_pairs
            GROUP BY name_normalized, version
         ),
@@ -125,26 +141,26 @@ export async function GET(request: Request) {
           SELECT shp.name_normalized, shp.version,
                  MAX(psm.choco_id) AS choco_id
             FROM sw_host_pairs shp
-            LEFT JOIN patch_software_meta psm ON psm.software_id = shp.software_id
-           WHERE psm.choco_id IS NOT NULL
+            INNER JOIN patch_software_meta psm ON psm.software_id = shp.software_id
+           WHERE shp.software_id IS NOT NULL AND psm.choco_id IS NOT NULL
            GROUP BY shp.name_normalized, shp.version
         ),
-        sw_cve_wazuh AS (
-          SELECT LOWER(si.name) AS name_normalized, si.version AS version,
+        cve_by_pkg AS (
+          -- Pre-aggrega CVE da wazuh_vuln per (package_name normalized, version)
+          -- — single GROUP BY, poi equi-join sotto.
+          SELECT LOWER(wv.package_name) AS name_normalized,
+                 wv.package_version AS version,
                  COUNT(DISTINCT wv.cve) AS n
-            FROM software_inventory si
-            INNER JOIN software_scans ss ON ss.id = si.scan_id
-            INNER JOIN wazuh_vuln wv
-              ON LOWER(wv.package_name) LIKE LOWER(si.name) || '%'
-             AND (wv.package_version IS NULL OR wv.package_version = si.version)
-           WHERE ss.status = 'ok'
-           GROUP BY LOWER(si.name), si.version
+            FROM wazuh_vuln wv
+           WHERE wv.package_name IS NOT NULL
+           GROUP BY LOWER(wv.package_name), wv.package_version
         ),
         sw_cve_target AS (
           SELECT shp.name_normalized, shp.version,
                  COUNT(DISTINCT pct.cve_id) AS n
             FROM sw_host_pairs shp
             INNER JOIN patch_cve_target pct ON pct.software_id = shp.software_id
+           WHERE shp.software_id IS NOT NULL
            GROUP BY shp.name_normalized, shp.version
         )
         SELECT
@@ -160,8 +176,9 @@ export async function GET(request: Request) {
             THEN 1 ELSE 0
           END                                                  AS patchable
         FROM sw_dedup sd
-        LEFT JOIN sw_choco sc      ON sc.name_normalized = sd.name_normalized AND sc.version IS sd.version
-        LEFT JOIN sw_cve_wazuh scw ON scw.name_normalized = sd.name_normalized AND scw.version IS sd.version
+        LEFT JOIN sw_choco sc       ON sc.name_normalized = sd.name_normalized AND sc.version IS sd.version
+        LEFT JOIN cve_by_pkg scw    ON scw.name_normalized = sd.name_normalized
+                                    AND (scw.version IS NULL OR sd.version IS NULL OR scw.version = sd.version)
         LEFT JOIN sw_cve_target sct ON sct.name_normalized = sd.name_normalized AND sct.version IS sd.version
         ${havingSql}
         ORDER BY cve_count DESC, sd.name ASC, sd.version ASC
@@ -169,8 +186,9 @@ export async function GET(request: Request) {
       `;
 
       const params: unknown[] = [];
-      // searchFilter occorre 2 volte (le 2 branch UNION ALL di sw_host_pairs)
+      // searchFilter occorre 3 volte (3 branch UNION ALL di sw_host_pairs: 2x si + 1x ws)
       if (searchParam) {
+        params.push(searchParam);
         params.push(searchParam);
         params.push(searchParam);
       }

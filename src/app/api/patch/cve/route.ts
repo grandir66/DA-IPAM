@@ -71,6 +71,7 @@ export async function GET(request: Request) {
 
       const sql = `
         WITH host_with_inventory AS (
+          -- (a) Scan locale diretto su host_id
           SELECT DISTINCT ss.host_id AS host_id
             FROM software_scans ss
             INNER JOIN hosts h ON h.id = ss.host_id
@@ -78,12 +79,21 @@ export async function GET(request: Request) {
              AND ss.host_id IS NOT NULL
              AND LOWER(h.os_family) = 'windows'
           UNION
+          -- (b) Scan locale su network_device mappato a host via IP
           SELECT DISTINCT h.id AS host_id
             FROM software_scans ss
             INNER JOIN network_devices nd ON nd.id = ss.device_id
             INNER JOIN hosts h ON h.ip = nd.host
            WHERE ss.status = 'ok'
              AND ss.device_id IS NOT NULL
+             AND LOWER(h.os_family) = 'windows'
+          UNION
+          -- (c) Inventory raccolto da Wazuh agent
+          SELECT DISTINCT h.id AS host_id
+            FROM wazuh_software ws
+            INNER JOIN wazuh_agent wa ON wa.agent_id = ws.agent_id
+            INNER JOIN hosts h ON h.id = wa.host_id
+           WHERE wa.host_id IS NOT NULL
              AND LOWER(h.os_family) = 'windows'
         ),
         cve_union AS (

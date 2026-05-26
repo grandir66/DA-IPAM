@@ -267,3 +267,145 @@ export function rematchCveForAllHosts(
   }
   return total;
 }
+
+export interface FullSyncResult {
+  softwareWithChoco: number; // righe patch_software_meta scritte/aggiornate (escluse 'manual')
+  cveTargetsWritten: number; // righe patch_cve_target scritte/aggiornate (escluse 'manual')
+  durationMs: number;
+}
+
+/**
+ * Sync globale matcher per il tenant corrente.
+ *
+ * Pass 1: per ogni `software_inventory` row di host Windows con scan ok, calcola
+ *   `choco_id` via dictionary (lookupExact). Bulk UPSERT in `patch_software_meta`
+ *   senza sovrascrivere righe `match_strategy='manual'`.
+ *
+ * Pass 2: SQL bulk INSERT in `patch_cve_target` matchando `wazuh_vuln.package_name`
+ *   ↔ `software_inventory.name` (LIKE prefix) per quel host. Una sola query.
+ *   Idempotente, preserva 'manual'.
+ *
+ * Pensata per essere triggerata manualmente da UI (bottone "Calcola matching").
+ * Tempo: ~secondi su tenant medio (~3k software, ~30k wazuh_vuln).
+ */
+export function runFullSyncMatch(db: Database.Database): FullSyncResult {
+  const start = Date.now();
+
+  // --- Pass 1: dictionary lookup → patch_software_meta ---
+  const allSoftware = db
+    .prepare(
+      `SELECT si.id, si.name
+         FROM software_inventory si
+         INNER JOIN software_scans ss ON ss.id = si.scan_id
+         INNER JOIN hosts h ON h.id = ss.host_id
+        WHERE ss.status = 'ok'
+          AND ss.host_id IS NOT NULL
+          AND LOWER(h.os_family) = 'windows'
+       UNION
+       SELECT si.id, si.name
+         FROM software_inventory si
+         INNER JOIN software_scans ss ON ss.id = si.scan_id
+         INNER JOIN network_devices nd ON nd.id = ss.device_id
+         INNER JOIN hosts h ON h.ip = nd.host
+        WHERE ss.status = 'ok'
+          AND ss.device_id IS NOT NULL
+          AND LOWER(h.os_family) = 'windows'`
+    )
+    .all() as Array<{ id: number; name: string }>;
+
+  const upsertMeta = db.prepare(`
+    INSERT INTO patch_software_meta (software_id, choco_id, match_strategy, match_confidence, last_matched_at)
+    VALUES (?, ?, 'dictionary', 0.8, datetime('now'))
+    ON CONFLICT(software_id) DO UPDATE SET
+      choco_id        = CASE WHEN patch_software_meta.match_strategy='manual'
+                              THEN patch_software_meta.choco_id ELSE excluded.choco_id END,
+      match_strategy  = CASE WHEN patch_software_meta.match_strategy='manual'
+                              THEN patch_software_meta.match_strategy ELSE excluded.match_strategy END,
+      match_confidence= CASE WHEN patch_software_meta.match_strategy='manual'
+                              THEN patch_software_meta.match_confidence ELSE excluded.match_confidence END,
+      last_matched_at = excluded.last_matched_at
+  `);
+  const txMeta = db.transaction((rows: Array<{ id: number; name: string }>) => {
+    let n = 0;
+    for (const r of rows) {
+      const dict = lookupExact(r.name);
+      if (dict) {
+        upsertMeta.run(r.id, dict.choco);
+        n++;
+      }
+    }
+    return n;
+  });
+  const softwareWithChoco = txMeta(allSoftware);
+
+  // --- Pass 2: bulk INSERT patch_cve_target da wazuh_vuln ---
+  // Match LIKE bidirezionale prefix tra wv.package_name e si.name.
+  // 2 branch UNION per coprire entrambe le strategie di link host↔scan:
+  //   (a) software_scans.host_id = wazuh_agent.host_id (scan diretto)
+  //   (b) software_scans.device_id → network_device.host = hosts.ip = wazuh_agent.host_id
+  let cveTargetsWritten = 0;
+  try {
+    const result = db.prepare(`
+      INSERT INTO patch_cve_target
+        (cve_id, software_id, match_strategy, confidence, fix_package_manager, fix_package_id, fix_version, created_at)
+      SELECT DISTINCT cve, software_id, 'wazuh-package', 0.9,
+             CASE WHEN choco_id IS NOT NULL THEN 'choco' ELSE NULL END,
+             choco_id, NULL, datetime('now')
+      FROM (
+        -- (a) scan diretto host_id
+        SELECT wv.cve AS cve, si.id AS software_id, psm.choco_id AS choco_id
+          FROM wazuh_vuln wv
+          INNER JOIN wazuh_agent wa ON wa.agent_id = wv.agent_id
+          INNER JOIN software_scans ss ON ss.host_id = wa.host_id AND ss.status='ok'
+          INNER JOIN software_inventory si ON si.scan_id = ss.id
+          INNER JOIN hosts h ON h.id = wa.host_id
+          LEFT JOIN patch_software_meta psm ON psm.software_id = si.id
+         WHERE wv.package_name IS NOT NULL
+           AND LOWER(h.os_family) = 'windows'
+           AND (
+             LOWER(si.name) LIKE LOWER(wv.package_name) || '%'
+             OR LOWER(wv.package_name) LIKE LOWER(si.name) || '%'
+           )
+           AND (wv.package_version IS NULL OR si.version IS NULL OR wv.package_version = si.version)
+        UNION ALL
+        -- (b) scan via device_id mappato a host via IP
+        SELECT wv.cve AS cve, si.id AS software_id, psm.choco_id AS choco_id
+          FROM wazuh_vuln wv
+          INNER JOIN wazuh_agent wa ON wa.agent_id = wv.agent_id
+          INNER JOIN hosts h ON h.id = wa.host_id
+          INNER JOIN network_devices nd ON nd.host = h.ip
+          INNER JOIN software_scans ss ON ss.device_id = nd.id AND ss.status='ok'
+          INNER JOIN software_inventory si ON si.scan_id = ss.id
+          LEFT JOIN patch_software_meta psm ON psm.software_id = si.id
+         WHERE wv.package_name IS NOT NULL
+           AND LOWER(h.os_family) = 'windows'
+           AND (
+             LOWER(si.name) LIKE LOWER(wv.package_name) || '%'
+             OR LOWER(wv.package_name) LIKE LOWER(si.name) || '%'
+           )
+           AND (wv.package_version IS NULL OR si.version IS NULL OR wv.package_version = si.version)
+      )
+      WHERE 1=1
+      ON CONFLICT(cve_id, software_id) DO UPDATE SET
+        match_strategy = CASE WHEN patch_cve_target.match_strategy='manual'
+                                THEN patch_cve_target.match_strategy ELSE excluded.match_strategy END,
+        confidence     = CASE WHEN patch_cve_target.match_strategy='manual'
+                                THEN patch_cve_target.confidence ELSE excluded.confidence END,
+        fix_package_manager = CASE WHEN patch_cve_target.match_strategy='manual'
+                                THEN patch_cve_target.fix_package_manager ELSE excluded.fix_package_manager END,
+        fix_package_id = CASE WHEN patch_cve_target.match_strategy='manual'
+                                THEN patch_cve_target.fix_package_id ELSE excluded.fix_package_id END,
+        created_at     = excluded.created_at
+    `).run();
+    cveTargetsWritten = result.changes ?? 0;
+  } catch (err) {
+    // Wazuh non presente / errore SQL: skip e ritorna parziale
+    console.error("[patch/matcher runFullSyncMatch] pass 2 fail:", err);
+  }
+
+  return {
+    softwareWithChoco,
+    cveTargetsWritten,
+    durationMs: Date.now() - start,
+  };
+}

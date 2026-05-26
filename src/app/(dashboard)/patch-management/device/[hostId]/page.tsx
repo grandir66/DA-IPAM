@@ -108,15 +108,25 @@ interface DeviceCve {
 }
 
 interface DeviceSoftware {
-  softwareId: number;
+  // null per pacchetti wazuh-only (no FK su software_inventory locale): non selezionabili
+  // per bulk patch automatico; restano visibili con CVE ma serve "Pin manuale".
+  softwareId: number | null;
   name: string;
   version: string | null;
   publisher: string | null;
-  source: string;
+  source: string | null;
   chocoId: string | null;
   cpe: string | null;
   patchable: boolean;
   cves: DeviceCve[];
+}
+
+// Chiave stabile per React + Set di selezione: usa softwareId numerico se presente,
+// altrimenti compone una stringa con name+version (univoca dopo dedup backend).
+function swKey(sw: DeviceSoftware): string {
+  return sw.softwareId !== null
+    ? `id-${sw.softwareId}`
+    : `ws-${sw.name}|${sw.version ?? ""}`;
 }
 
 interface DeviceDetail {
@@ -414,9 +424,15 @@ export default function DeviceDetailPage() {
   }, [fetchDetail]);
 
   // Reset selezione se cambia inventory (es. dopo refresh)
+  // Considera solo i software con softwareId locale: i wazuh-only (softwareId=null)
+  // NON sono mai patchable né selezionabili (manca FK su patch_software_meta).
   useEffect(() => {
     setSelected((prev) => {
-      const validIds = new Set((detail?.software ?? []).map((s) => s.softwareId));
+      const validIds = new Set(
+        (detail?.software ?? [])
+          .map((s) => s.softwareId)
+          .filter((id): id is number => id !== null)
+      );
       const next = new Set<number>();
       for (const id of prev) {
         if (validIds.has(id)) next.add(id);
@@ -441,8 +457,14 @@ export default function DeviceDetailPage() {
     });
   }, [detail, searchInput, onlyWithCve, onlyPatchable]);
 
+  // Selezione: solo software con softwareId locale (patchable garantisce chocoId+CVE).
+  // I pacchetti wazuh-only hanno softwareId=null e patchable=false → mai selezionati.
   const selectableInFiltered = useMemo(
-    () => filteredSoftware.filter((s) => s.patchable),
+    () =>
+      filteredSoftware.filter(
+        (s): s is DeviceSoftware & { softwareId: number } =>
+          s.patchable && s.softwareId !== null
+      ),
     [filteredSoftware]
   );
 
@@ -451,7 +473,8 @@ export default function DeviceDetailPage() {
     selectableInFiltered.every((s) => selected.has(s.softwareId));
 
   const toggleSoftware = (sw: DeviceSoftware, checked: boolean) => {
-    if (!sw.patchable) return;
+    if (!sw.patchable || sw.softwareId === null) return;
+    const swId = sw.softwareId;
     setSelected((prev) => {
       const next = new Set(prev);
       if (checked) {
@@ -461,9 +484,9 @@ export default function DeviceDetailPage() {
           );
           return prev;
         }
-        next.add(sw.softwareId);
+        next.add(swId);
       } else {
-        next.delete(sw.softwareId);
+        next.delete(swId);
       }
       return next;
     });
@@ -978,11 +1001,12 @@ export default function DeviceDetailPage() {
                   </TableHeader>
                   <TableBody>
                     {filteredSoftware.map((sw) => {
-                      const isSelected = selected.has(sw.softwareId);
-                      const checkboxDisabled = !sw.patchable;
+                      const isSelected =
+                        sw.softwareId !== null && selected.has(sw.softwareId);
+                      const checkboxDisabled = !sw.patchable || sw.softwareId === null;
                       return (
                         <TableRow
-                          key={sw.softwareId}
+                          key={swKey(sw)}
                           className={
                             isSelected ? "bg-muted/40" : "hover:bg-muted/30"
                           }
@@ -1127,8 +1151,8 @@ export default function DeviceDetailPage() {
                 !detail.winrmValidated
               }
               onClick={() => {
-                const targets = (detail.software ?? []).filter((s) =>
-                  selected.has(s.softwareId)
+                const targets = (detail.software ?? []).filter(
+                  (s) => s.softwareId !== null && selected.has(s.softwareId)
                 );
                 void launchUpgrade(targets);
               }}

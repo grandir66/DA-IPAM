@@ -124,8 +124,13 @@ export async function GET(
       const versionEq = version === null
         ? "si.version IS NULL"
         : "si.version = ?";
+      const versionEqWs = version === null
+        ? "ws.version IS NULL"
+        : "ws.version = ?";
 
-      // 1) Software ids corrispondenti + metadata (publisher, choco_id)
+      // 1) Software ids da software_inventory corrispondenti + metadata.
+      //    Se nessun software_inventory match, l'inventario potrebbe essere solo wazuh:
+      //    in quel caso softwareIds=[] ma il software esiste comunque.
       const swIdSql = `
         SELECT DISTINCT si.id AS software_id, si.publisher AS publisher,
                psm.choco_id AS choco_id
@@ -141,7 +146,24 @@ export async function GET(
 
       const swRows = db.prepare(swIdSql).all(...swIdParams) as SoftwareIdRow[];
 
-      if (swRows.length === 0) {
+      // 1b) Verifica esistenza anche in wazuh_software (per software wazuh-only)
+      const wsExistsSql = `
+        SELECT ws.vendor AS vendor
+          FROM wazuh_software ws
+          INNER JOIN wazuh_agent wa ON wa.agent_id = ws.agent_id
+          INNER JOIN hosts h ON h.id = wa.host_id
+         WHERE LOWER(ws.name) = LOWER(?)
+           AND ${versionEqWs}
+           AND LOWER(h.os_family) = 'windows'
+         LIMIT 1
+      `;
+      const wsExistsParams: unknown[] = [name];
+      if (version !== null) wsExistsParams.push(version);
+      const wsExists = db.prepare(wsExistsSql).get(...wsExistsParams) as
+        | { vendor: string | null }
+        | undefined;
+
+      if (swRows.length === 0 && !wsExists) {
         return NextResponse.json(
           { error: "Software non trovato" },
           { status: 404 }
@@ -149,12 +171,15 @@ export async function GET(
       }
 
       const softwareIds = swRows.map((r) => r.software_id);
-      const publisher = swRows.find((r) => r.publisher)?.publisher ?? null;
+      const publisher =
+        swRows.find((r) => r.publisher)?.publisher ?? wsExists?.vendor ?? null;
       const chocoId = swRows.find((r) => r.choco_id)?.choco_id ?? null;
 
-      const swIdsPlaceholders = softwareIds.map(() => "?").join(",");
+      // Placeholder per IN(): se vuoto, usa '-1' per evitare SQL error
+      const swIdsPlaceholders =
+        softwareIds.length > 0 ? softwareIds.map(() => "?").join(",") : "-1";
 
-      // 2) Host che hanno il software (via scan diretto OR via device IP-mapping)
+      // 2) Host che hanno il software (3 fonti: scan diretto, scan via device IP, wazuh_software)
       const hostSql = `
         WITH affected AS (
           SELECT DISTINCT ss.host_id AS host_id
@@ -175,6 +200,15 @@ export async function GET(
              AND ss.device_id IS NOT NULL
              AND LOWER(h.os_family) = 'windows'
              AND si.id IN (${swIdsPlaceholders})
+          UNION
+          SELECT DISTINCT wa.host_id AS host_id
+            FROM wazuh_software ws
+            INNER JOIN wazuh_agent wa ON wa.agent_id = ws.agent_id
+            INNER JOIN hosts h ON h.id = wa.host_id
+           WHERE wa.host_id IS NOT NULL
+             AND LOWER(h.os_family) = 'windows'
+             AND LOWER(ws.name) = LOWER(?)
+             AND ${versionEqWs}
         ),
         winrm_status AS (
           SELECT host_id, MAX(validated) AS winrm_validated
@@ -209,9 +243,19 @@ export async function GET(
         ORDER BY h.ip ASC
       `;
 
+      // hostSql params: softwareIds appare 2 volte (scan diretto + via device).
+      // Se softwareIds è vuoto, la query usa IN(-1) — passiamo solo i param wazuh.
+      const hostSqlParams: unknown[] = [];
+      if (softwareIds.length > 0) {
+        hostSqlParams.push(...softwareIds, ...softwareIds);
+      }
+      // Param wazuh branch: name + (version se non null)
+      hostSqlParams.push(name);
+      if (version !== null) hostSqlParams.push(version);
+
       const hostRows = db
         .prepare(hostSql)
-        .all(...softwareIds, ...softwareIds) as HostDetailRow[];
+        .all(...hostSqlParams) as HostDetailRow[];
 
       const hostIds = hostRows.map((r) => r.host_id);
 

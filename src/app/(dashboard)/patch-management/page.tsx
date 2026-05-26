@@ -34,6 +34,7 @@ import {
   RefreshCw,
   Search,
   ServerCog,
+  Sparkles,
   ShieldCheck,
   ShieldQuestion,
 } from "lucide-react";
@@ -147,6 +148,41 @@ function formatDate(iso: string | null): string {
 
 // ─── home ────────────────────────────────────────────────────────────────
 export default function PatchManagementHomePage() {
+  const [matchingBusy, setMatchingBusy] = useState(false);
+  // Bump per forzare il refresh dei tab dopo "Calcola matching" (rimonta sub-tree).
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleRunMatching = useCallback(async () => {
+    setMatchingBusy(true);
+    try {
+      const res = await fetch("/api/patch/matcher/run", { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const msg =
+          typeof body?.error === "string"
+            ? body.error
+            : `HTTP ${res.status}`;
+        toast.error(`Matching fallito: ${msg}`);
+        return;
+      }
+      const data = (await res.json()) as {
+        softwareWithChoco: number;
+        cveTargetsWritten: number;
+        durationMs: number;
+      };
+      toast.success(
+        `Matching completato in ${(data.durationMs / 1000).toFixed(1)}s: ` +
+          `${data.softwareWithChoco} software con choco_id, ${data.cveTargetsWritten} CVE→fix mappati`
+      );
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Errore matching";
+      toast.error(msg);
+    } finally {
+      setMatchingBusy(false);
+    }
+  }, []);
+
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
@@ -161,7 +197,21 @@ export default function PatchManagementHomePage() {
             installato; entra nel dettaglio per pianificare un&apos;operazione.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleRunMatching}
+            disabled={matchingBusy}
+            title="Calcola match CVE↔software e popola choco_id dal dizionario per tutto il tenant"
+          >
+            {matchingBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-2" />
+            )}
+            Calcola matching
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -183,8 +233,8 @@ export default function PatchManagementHomePage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <Tabs defaultValue="device" className="space-y-4">
+      {/* Tabs (key bump → refetch dopo matching) */}
+      <Tabs key={refreshKey} defaultValue="device" className="space-y-4">
         <TabsList className="!h-10 p-1 gap-1 bg-muted border border-border">
           <TabsTrigger value="device" className="px-4 py-1.5 text-sm">
             <ServerCog className="h-4 w-4 mr-1.5" />

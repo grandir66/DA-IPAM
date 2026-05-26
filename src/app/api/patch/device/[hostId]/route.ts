@@ -58,11 +58,14 @@ interface SoftwareCveRow {
 }
 
 interface SoftwareItem {
-  softwareId: number;
+  // softwareId è null per pacchetti che esistono SOLO in wazuh_software (senza FK su
+  // software_inventory). In quel caso choco_id/cpe restano null e il bottone "Patch"
+  // resta disabilitato (l'utente può usare "Pin manuale" per associare).
+  softwareId: number | null;
   name: string;
   version: string | null;
   publisher: string | null;
-  source: string;
+  source: string | null;
   chocoId: string | null;
   cpe: string | null;
   cves: Array<{
@@ -162,6 +165,10 @@ export async function GET(
       const lastScanId = scanRow?.scan_id ?? null;
 
       const software: SoftwareItem[] = [];
+      // Dedup chiave: lower(name) + "|" + (version || "")
+      const dedupKey = (name: string, version: string | null) =>
+        `${name.toLowerCase()}|${version ?? ""}`;
+      const seenSoftware = new Map<string, SoftwareItem>();
 
       if (lastScanId !== null) {
         // 3) Single query: software_inventory + LEFT JOIN CVE da 2 source
@@ -260,17 +267,86 @@ export async function GET(
 
         for (const item of bySoftware.values()) {
           item.patchable = item.cves.length > 0 && !!item.chocoId;
-          software.push(item);
+          seenSoftware.set(dedupKey(item.name, item.version), item);
         }
-
-        // Ordine per N CVE desc, poi name asc
-        software.sort((a, b) => {
-          if (b.cves.length !== a.cves.length) {
-            return b.cves.length - a.cves.length;
-          }
-          return a.name.localeCompare(b.name);
-        });
       }
+
+      // 3b) Aggiungi pacchetti da wazuh_software per gli agent linkati a questo host.
+      // I pacchetti wazuh-only hanno softwareId=null (no FK su patch_software_meta).
+      // CVE associate via wazuh_vuln per LIKE package_name su agent dell'host.
+      const wsSql = `
+        WITH host_agents AS (
+          SELECT agent_id FROM wazuh_agent WHERE host_id = ?
+        )
+        SELECT
+          ws.name      AS name,
+          ws.version   AS version,
+          ws.vendor    AS publisher,
+          ws.format    AS source,
+          wv.cve       AS cve_id,
+          wv.severity  AS cve_severity,
+          COALESCE(wv.cvss3_score, wv.cvss2_score) AS cve_cvss
+        FROM wazuh_software ws
+        INNER JOIN host_agents ha ON ha.agent_id = ws.agent_id
+        LEFT JOIN wazuh_vuln wv
+          ON wv.agent_id = ws.agent_id
+         AND LOWER(wv.package_name) LIKE LOWER(ws.name) || '%'
+         AND (wv.package_version IS NULL OR ws.version IS NULL OR wv.package_version = ws.version)
+        ORDER BY ws.name ASC, ws.version ASC
+        LIMIT ?
+      `;
+      const wsRows = db.prepare(wsSql).all(hostId, MAX_SOFTWARE_CVE_ROWS) as Array<{
+        name: string;
+        version: string | null;
+        publisher: string | null;
+        source: string | null;
+        cve_id: string | null;
+        cve_severity: string | null;
+        cve_cvss: number | null;
+      }>;
+
+      for (const r of wsRows) {
+        const key = dedupKey(r.name, r.version);
+        let item = seenSoftware.get(key);
+        if (!item) {
+          item = {
+            softwareId: null, // wazuh-only: nessuna FK su patch_software_meta
+            name: r.name,
+            version: r.version,
+            publisher: r.publisher,
+            source: r.source ? `wazuh-agent (${r.source})` : "wazuh-agent",
+            chocoId: null,
+            cpe: null,
+            cves: [],
+            patchable: false,
+          };
+          seenSoftware.set(key, item);
+        }
+        if (r.cve_id) {
+          const cveKey = `${r.cve_id}|wazuh`;
+          if (!item.cves.some((c) => `${c.cveId}|${c.source}` === cveKey)) {
+            item.cves.push({
+              cveId: r.cve_id,
+              cvssScore: r.cve_cvss,
+              severity: r.cve_severity,
+              source: "wazuh",
+            });
+          }
+        }
+      }
+
+      for (const item of seenSoftware.values()) {
+        item.patchable = item.cves.length > 0 && !!item.chocoId;
+        software.push(item);
+      }
+
+      // Ordine per N CVE desc, poi name asc
+      software.sort((a, b) => {
+        if (b.cves.length !== a.cves.length) {
+          return b.cves.length - a.cves.length;
+        }
+        return a.name.localeCompare(b.name);
+      });
 
       return NextResponse.json(
         {

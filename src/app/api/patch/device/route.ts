@@ -70,10 +70,12 @@ export async function GET(request: Request) {
     const db = getTenantDb(tenantCode);
 
     try {
-      // host_with_inventory: host (Windows) con almeno uno scan ok,
-      // sia diretto (ss.host_id) sia via device IP-mapping.
+      // host_with_inventory: host (Windows) con almeno una fonte di inventory:
+      //   (a) scan locale diretto su host_id
+      //   (b) scan locale su network_device mappato a host via IP
+      //   (c) inventory raccolto da Wazuh agent linkato al host
       // host_cve_counts: aggregato per severity da UNION wazuh_vuln+vuln_findings.
-      // software_count: SUM dei count per host (diretto + via IP mapping).
+      // software_count: SUM dei count per host (3 fonti).
       // winrm_status: validated MAX da host_credentials protocol_type='winrm'.
       // last_probe: status/started_at dell'ultima patch_operations action='probe'.
       const sql = `
@@ -91,6 +93,13 @@ export async function GET(request: Request) {
             INNER JOIN hosts h ON h.ip = nd.host
            WHERE ss.status = 'ok'
              AND ss.device_id IS NOT NULL
+             AND LOWER(h.os_family) = 'windows'
+          UNION
+          SELECT DISTINCT h.id AS host_id
+            FROM wazuh_software ws
+            INNER JOIN wazuh_agent wa ON wa.agent_id = ws.agent_id
+            INNER JOIN hosts h ON h.id = wa.host_id
+           WHERE wa.host_id IS NOT NULL
              AND LOWER(h.os_family) = 'windows'
         ),
         host_cve_counts AS (
@@ -133,6 +142,12 @@ export async function GET(request: Request) {
                 INNER JOIN hosts h ON h.ip = nd.host
                WHERE ss.status = 'ok' AND ss.device_id IS NOT NULL
                GROUP BY h.id
+              UNION ALL
+              SELECT wa.host_id AS host_id, COUNT(ws.id) AS cnt
+                FROM wazuh_software ws
+                INNER JOIN wazuh_agent wa ON wa.agent_id = ws.agent_id
+               WHERE wa.host_id IS NOT NULL
+               GROUP BY wa.host_id
             )
            GROUP BY host_id
         ),

@@ -96,6 +96,12 @@ export async function GET(
                 INNER JOIN hosts h ON h.ip = nd.host
                WHERE ss.status = 'ok' AND ss.device_id IS NOT NULL
                GROUP BY h.id
+              UNION ALL
+              SELECT wa.host_id AS host_id, COUNT(*) AS cnt
+                FROM wazuh_software ws
+                INNER JOIN wazuh_agent wa ON wa.agent_id = ws.agent_id
+               WHERE wa.host_id IS NOT NULL
+               GROUP BY wa.host_id
             )
            GROUP BY host_id
         ),

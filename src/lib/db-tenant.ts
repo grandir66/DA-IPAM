@@ -549,6 +549,40 @@ export function getTenantDb(tenantCode: string): Database.Database {
       newDb.exec("ALTER TABLE hosts ADD COLUMN host_source TEXT DEFAULT 'scan'");
       console.info(`[db-tenant] ${tenantCode}: hosts.host_source aggiunto`);
     }
+    // F1 (v0.2.590+): auto-classify server-side alla discovery.
+    // Suggerimenti calcolati da OUI/hostname/open_ports/snmp_data; usati dal modale
+    // di promozione come default editabili. classification_manual=1 li ignora.
+    const inferredCols: Array<{ name: string; sql: string }> = [
+      { name: "inferred_device_type", sql: "ALTER TABLE hosts ADD COLUMN inferred_device_type TEXT" },
+      { name: "inferred_vendor",      sql: "ALTER TABLE hosts ADD COLUMN inferred_vendor TEXT" },
+      { name: "inferred_protocol",    sql: "ALTER TABLE hosts ADD COLUMN inferred_protocol TEXT" },
+      { name: "inferred_scan_target", sql: "ALTER TABLE hosts ADD COLUMN inferred_scan_target TEXT" },
+      { name: "inferred_os_family",   sql: "ALTER TABLE hosts ADD COLUMN inferred_os_family TEXT" },
+      { name: "inferred_confidence",  sql: "ALTER TABLE hosts ADD COLUMN inferred_confidence INTEGER" },
+      { name: "inferred_reasons",     sql: "ALTER TABLE hosts ADD COLUMN inferred_reasons TEXT" },
+      { name: "inferred_at",          sql: "ALTER TABLE hosts ADD COLUMN inferred_at TEXT" },
+    ];
+    for (const col of inferredCols) {
+      if (!hCols.some((c) => c.name === col.name)) {
+        newDb.exec(col.sql);
+        console.info(`[db-tenant] ${tenantCode}: hosts.${col.name} aggiunto`);
+      }
+    }
+    // Backfill one-shot: host esistenti senza inferred_at vengono classificati ora.
+    // Idempotente: alle prossime apriture del tenant nessuno rientra nel WHERE.
+    try {
+      const toBackfill = newDb.prepare("SELECT id FROM hosts WHERE inferred_at IS NULL").all() as Array<{ id: number }>;
+      if (toBackfill.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { applyAutoClassification } = require("./devices/auto-classify");
+        for (const row of toBackfill) {
+          try { applyAutoClassification(newDb, row.id); } catch { /* skip singolo host non classificabile */ }
+        }
+        console.info(`[db-tenant] ${tenantCode}: auto-classify backfill su ${toBackfill.length} host`);
+      }
+    } catch (e) {
+      console.warn(`[db-tenant] ${tenantCode}: backfill auto-classify fallito:`, e);
+    }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione physical_devices fallita:`, e);
   }
@@ -1315,6 +1349,12 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
         syncIpAssignmentsForNetwork(input.network_id);
       }
     }
+    // F1: ricomputo classificazione automatica dai dati appena aggiornati.
+    // Idempotente: se i segnali non sono cambiati, il risultato è identico.
+    try {
+      const { applyAutoClassification } = require("./devices/auto-classify");
+      applyAutoClassification(db(), host.id);
+    } catch { /* non blocca l'upsert se la classificazione fallisce */ }
     return host;
   }
 
@@ -1371,6 +1411,11 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       hostname: host.hostname ?? undefined,
     });
   }
+  // F1: prima classificazione automatica all'insert.
+  try {
+    const { applyAutoClassification } = require("./devices/auto-classify");
+    applyAutoClassification(db(), host.id);
+  } catch { /* non blocca l'insert se la classificazione fallisce */ }
   return host;
 }
 

@@ -66,6 +66,16 @@ export interface Host {
   physical_device_id?: number | null;
   /** Sorgente di scoperta: 'scan' (default, ARP/Nmap), 'device_interface' (promosso da probe interfacce). */
   host_source?: "scan" | "device_interface" | string | null;
+  /** F1: auto-classify server-side (popolato in upsertHost). Suggerimenti editabili nel modale di promozione. */
+  inferred_device_type?: string | null;
+  inferred_vendor?: string | null;
+  inferred_protocol?: "ssh" | "snmp_v2" | "snmp_v3" | "winrm" | "api" | string | null;
+  inferred_scan_target?: "windows" | "linux" | "macos" | "proxmox" | "vmware" | "network" | string | null;
+  inferred_os_family?: "windows" | "linux" | "macos" | "network-os" | string | null;
+  inferred_confidence?: number | null;
+  /** JSON array di stringhe spiegazione (es. ["porta WinRM aperta", "hostname suggerisce windows"]) */
+  inferred_reasons?: string | null;
+  inferred_at?: string | null;
   created_at: string;
   updated_at: string;
 }

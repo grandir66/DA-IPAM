@@ -2709,6 +2709,11 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
         syncIpAssignmentsForNetwork(input.network_id);
       }
     }
+    // F1: ricomputo classificazione automatica dai dati appena aggiornati (idempotente).
+    try {
+      const { applyAutoClassification } = require("./devices/auto-classify");
+      applyAutoClassification(getDb(), host.id);
+    } catch { /* non blocca l'upsert se la classificazione fallisce */ }
     return host;
   }
 
@@ -2765,6 +2770,11 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       hostname: host.hostname ?? undefined,
     });
   }
+  // F1: prima classificazione automatica all'insert.
+  try {
+    const { applyAutoClassification } = require("./devices/auto-classify");
+    applyAutoClassification(getDb(), host.id);
+  } catch { /* non blocca l'insert se la classificazione fallisce */ }
   return host;
 }
 

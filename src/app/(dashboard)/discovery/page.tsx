@@ -20,8 +20,8 @@ import {
   DialogScrollableArea, DialogTitle, DIALOG_PANEL_WIDE_CLASS,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup,
-  DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuItem,
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuSeparator, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
@@ -395,6 +395,9 @@ export default function DiscoveryPage() {
   const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
   const [page, setPage] = useState(1);
   const [columnOrder, setColumnOrder] = useState<string[]>(loadColumnOrder);
+  // v0.2.624: column manager in Dialog separato (Base UI Menu non ammette
+  // <button> arbitrari come children → errore #31).
+  const [columnsDialogOpen, setColumnsDialogOpen] = useState(false);
 
   // v0.2.622+623: sync server-side. Server vince su localStorage se diverso.
   useEffect(() => {
@@ -1751,78 +1754,9 @@ export default function DiscoveryPage() {
               </Select>
 
               {/* Column picker */}
-              <DropdownMenu>
-                <DropdownMenuTrigger>
-                  <Button variant="outline" size="icon" title="Colonne visibili">
-                    <Columns3 className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-72 max-h-[520px] overflow-y-auto">
-                  <DropdownMenuLabel>Colonne</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <div className="flex gap-1 px-2 pb-1">
-                    <Button variant="ghost" size="sm" className="text-xs h-7" onClick={showAll}>Tutte</Button>
-                    <Button variant="ghost" size="sm" className="text-xs h-7" onClick={resetCols}>Predefinite</Button>
-                  </div>
-                  <DropdownMenuSeparator />
-                  {/* v0.2.623: ordine + frecce ↑↓ per riordinare le visibili */}
-                  <DropdownMenuLabel className="text-[10px] uppercase tracking-wider">Ordine attuale (visibili)</DropdownMenuLabel>
-                  <div className="px-1 pb-1">
-                    {orderedVisibleCols.map((col, idx) => {
-                      const isLocked = ALWAYS_VISIBLE.has(col.id);
-                      return (
-                        <div key={col.id} className="flex items-center gap-1 px-1.5 py-1 text-sm hover:bg-muted/40 rounded">
-                          <span className="flex-1 truncate" title={col.label}>{col.label}</span>
-                          <button
-                            type="button"
-                            disabled={idx === 0 || isLocked}
-                            onClick={() => moveCol(col.id, -1)}
-                            title="Sposta su"
-                            className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
-                          >
-                            <ArrowUp className="h-3 w-3" />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={idx === orderedVisibleCols.length - 1 || isLocked}
-                            onClick={() => moveCol(col.id, 1)}
-                            title="Sposta giù"
-                            className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
-                          >
-                            <ArrowDown className="h-3 w-3" />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isLocked}
-                            onClick={() => toggleCol(col.id)}
-                            title={isLocked ? "Colonna sempre visibile" : "Nascondi colonna"}
-                            className="p-0.5 rounded hover:bg-destructive/15 hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel className="text-[10px] uppercase tracking-wider">Aggiungi/togli</DropdownMenuLabel>
-                  {Object.entries(GROUP_LABELS).map(([group, label]) => (
-                    <DropdownMenuGroup key={group}>
-                      <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground/70">{label}</DropdownMenuLabel>
-                      {COLUMNS.filter((c) => c.group === group).map((col) => (
-                        <DropdownMenuCheckboxItem
-                          key={col.id}
-                          checked={columnOrder.includes(col.id)}
-                          onCheckedChange={() => toggleCol(col.id)}
-                          disabled={ALWAYS_VISIBLE.has(col.id)}
-                        >
-                          {col.label}
-                        </DropdownMenuCheckboxItem>
-                      ))}
-                    </DropdownMenuGroup>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button variant="outline" size="icon" title="Gestisci colonne (ordine + visibilità)" onClick={() => setColumnsDialogOpen(true)}>
+                <Columns3 className="h-4 w-4" />
+              </Button>
 
               {/* Export CSV */}
               <Button variant="outline" size="icon" onClick={exportCsv} title="Esporta CSV">
@@ -2776,6 +2710,93 @@ export default function DiscoveryPage() {
         )}
         onLinked={() => { setSelectedIds(new Set()); fetchData(); }}
       />
+
+      {/* v0.2.624: Column manager in Dialog dedicato (Base UI Menu non ammette
+          button arbitrari come children → errore #31). */}
+      <Dialog open={columnsDialogOpen} onOpenChange={setColumnsDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader className="border-b border-border/50 px-4 pt-4 pb-3">
+            <DialogTitle>Gestisci colonne</DialogTitle>
+          </DialogHeader>
+          <DialogScrollableArea className="px-4 py-3 max-h-[60vh]">
+            <div className="flex gap-2 mb-3">
+              <Button variant="outline" size="sm" onClick={showAll}>Mostra tutte</Button>
+              <Button variant="outline" size="sm" onClick={resetCols}>Predefinite</Button>
+            </div>
+
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">
+              Ordine attuale ({orderedVisibleCols.length} visibili)
+            </div>
+            <div className="border rounded-md divide-y mb-4">
+              {orderedVisibleCols.map((col, idx) => {
+                const isLocked = ALWAYS_VISIBLE.has(col.id);
+                return (
+                  <div key={col.id} className="flex items-center gap-1 px-2 py-1.5 hover:bg-muted/40">
+                    <span className="text-[10px] text-muted-foreground font-mono w-6 text-center">{idx + 1}</span>
+                    <span className="flex-1 text-sm truncate" title={col.label}>{col.label}</span>
+                    <button
+                      type="button"
+                      disabled={idx === 0 || isLocked}
+                      onClick={() => moveCol(col.id, -1)}
+                      title="Sposta su"
+                      className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={idx === orderedVisibleCols.length - 1 || isLocked}
+                      onClick={() => moveCol(col.id, 1)}
+                      title="Sposta giù"
+                      className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLocked}
+                      onClick={() => toggleCol(col.id)}
+                      title={isLocked ? "Colonna sempre visibile" : "Nascondi colonna"}
+                      className="p-1 rounded hover:bg-destructive/15 hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">
+              Aggiungi colonne
+            </div>
+            {Object.entries(GROUP_LABELS).map(([group, label]) => {
+              const colsInGroup = COLUMNS.filter((c) => c.group === group && !columnOrder.includes(c.id));
+              if (colsInGroup.length === 0) return null;
+              return (
+                <div key={group} className="mb-2">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 px-1 pb-1">{label}</div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {colsInGroup.map((col) => (
+                      <button
+                        key={col.id}
+                        type="button"
+                        onClick={() => toggleCol(col.id)}
+                        className="text-left text-sm px-2 py-1 rounded border border-dashed border-border hover:bg-muted/60 hover:border-primary/50 truncate"
+                        title={`Aggiungi ${col.label}`}
+                      >
+                        + {col.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </DialogScrollableArea>
+          <DialogFooter className="px-4 py-3 border-t border-border/50">
+            <Button variant="outline" onClick={() => setColumnsDialogOpen(false)}>Chiudi</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

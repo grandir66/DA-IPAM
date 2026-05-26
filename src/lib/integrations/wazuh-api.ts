@@ -17,6 +17,7 @@
 
 import * as https from "node:https";
 import { URL } from "node:url";
+import { getSharedAgent } from "./http-pool";
 
 export interface WazuhClientConfig {
   url: string;            // es. https://da-wazuh.domarc.it:55000
@@ -159,10 +160,11 @@ export class WazuhClient {
     this.baseUrl = new URL(normalized);
     this.username = cfg.username;
     this.password = cfg.password;
-    this.agent = new https.Agent({
-      rejectUnauthorized: cfg.verifyTls,
-      keepAlive: true,
-    });
+    // v0.2.642 audit perf MC8: agent condiviso per profilo verifyTls anziché
+    // istanza-locale. Cross-istanze di WazuhClient (es. cron sync periodico
+    // che ne crea uno nuovo ogni tick) → riuso delle connessioni TLS persistenti
+    // e taglio del handshake (~200ms) su ogni call successiva alla prima.
+    this.agent = getSharedAgent("https", cfg.verifyTls) as https.Agent;
   }
 
   // ──────────────────────────────── HTTP core ────────────────────────────────

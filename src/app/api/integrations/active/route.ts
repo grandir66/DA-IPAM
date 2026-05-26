@@ -81,5 +81,9 @@ export async function GET() {
     };
   }
 
-  return NextResponse.json(result);
+  // v0.2.642 audit perf UI7: cache 60s + SWR 5min — chiamato da varie pagine
+  // dashboard al mount (badge LibreNMS/Wazuh sull'host).
+  return NextResponse.json(result, {
+    headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" },
+  });
 }

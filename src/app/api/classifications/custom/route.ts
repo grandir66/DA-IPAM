@@ -44,7 +44,11 @@ export async function GET() {
     if (isAuthError(authCheck)) return authCheck;
     try {
       const items = listCustomClassifications();
-      return NextResponse.json({ items });
+      // v0.2.642 audit perf UI7: dati read-mostly (mutati solo dalla UI Settings),
+      // cache client 60s + SWR 5min — switch tab istantaneo invece di refetch.
+      return NextResponse.json({ items }, {
+        headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" },
+      });
     } catch (e) {
       console.error("[/api/classifications/custom] GET failed:", e);
       return NextResponse.json({ error: "Errore caricamento classification custom" }, { status: 500 });

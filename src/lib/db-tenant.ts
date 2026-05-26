@@ -3414,6 +3414,15 @@ export function getScheduledJobs(): ScheduledJob[] {
   return db().prepare("SELECT * FROM scheduled_jobs ORDER BY id").all() as ScheduledJob[];
 }
 
+/**
+ * v0.2.642 audit perf MC3: fetch mirato per cron tick (`runJob`). Prima ogni
+ * tick faceva `getScheduledJobs()` (full table scan + .find() lato JS); su 10
+ * tenant × 8 job × 1 tick/min = 80 query/min inutili. Ora una sola SELECT con WHERE id.
+ */
+export function getScheduledJobById(id: number): ScheduledJob | undefined {
+  return db().prepare("SELECT * FROM scheduled_jobs WHERE id = ?").get(id) as ScheduledJob | undefined;
+}
+
 export function getEnabledJobs(): ScheduledJob[] {
   return db().prepare("SELECT * FROM scheduled_jobs WHERE enabled = 1").all() as ScheduledJob[];
 }

@@ -25,27 +25,43 @@ const CACHE_TTL_MS = 60_000;
 
 interface CacheEntry {
   items: CustomClassificationRow[];
+  // v0.2.642 audit perf MC7: pre-computed Map<slug, row> per O(1) lookup
+  // invece di .find() linear su array. Su pagine che renderizzano 500 righe
+  // chiamando getEffectiveLabel/getEffectiveDeviceCategoryGroup per ognuna,
+  // risparmia ~1000 scan O(M) per render.
+  bySlug: Map<string, CustomClassificationRow>;
   expires: number;
 }
 
 const cache = new Map<string, CacheEntry>();
 
+function buildEntry(items: CustomClassificationRow[]): CacheEntry {
+  const bySlug = new Map<string, CustomClassificationRow>();
+  for (const c of items) bySlug.set(c.slug, c);
+  return { items, bySlug, expires: Date.now() + CACHE_TTL_MS };
+}
+
 function fetchFromDb(tenant: string): CustomClassificationRow[] {
   return withTenant(tenant, () => listCustomClassifications());
 }
 
-export function getCustomClassifications(tenant: string | null | undefined): CustomClassificationRow[] {
-  if (!tenant) return [];
+function getEntry(tenant: string | null | undefined): CacheEntry | null {
+  if (!tenant) return null;
   const cached = cache.get(tenant);
-  if (cached && cached.expires > Date.now()) return cached.items;
+  if (cached && cached.expires > Date.now()) return cached;
   try {
     const items = fetchFromDb(tenant);
-    cache.set(tenant, { items, expires: Date.now() + CACHE_TTL_MS });
-    return items;
+    const entry = buildEntry(items);
+    cache.set(tenant, entry);
+    return entry;
   } catch (e) {
     console.warn(`[device-classifications-runtime] fetch failed for tenant ${tenant}:`, e);
-    return cached?.items ?? [];
+    return cached ?? null;
   }
+}
+
+export function getCustomClassifications(tenant: string | null | undefined): CustomClassificationRow[] {
+  return getEntry(tenant)?.items ?? [];
 }
 
 export function invalidateCustomClassificationsCache(tenant: string | null | undefined): void {
@@ -61,14 +77,14 @@ export function getAllClassifications(tenant: string | null | undefined): string
 
 /** Label effettiva: custom prevale sul built-in. */
 export function getEffectiveClassificationLabel(slug: string, tenant: string | null | undefined): string {
-  const c = getCustomClassifications(tenant).find((x) => x.slug === slug);
+  const c = getEntry(tenant)?.bySlug.get(slug);
   if (c) return c.label;
   return getClassificationLabel(slug);
 }
 
 /** Macro-categoria effettiva: per custom, eredita dal parent. */
 export function getEffectiveDeviceCategoryGroup(slug: string, tenant: string | null | undefined): DeviceCategoryGroup {
-  const c = getCustomClassifications(tenant).find((x) => x.slug === slug);
+  const c = getEntry(tenant)?.bySlug.get(slug);
   if (c) return getDeviceCategoryGroup(c.parent_slug);
   return getDeviceCategoryGroup(slug);
 }

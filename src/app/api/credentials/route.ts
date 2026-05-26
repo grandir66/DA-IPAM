@@ -14,7 +14,11 @@ export async function GET() {
         encrypted_username: c.encrypted_username ? "●●●●●●●●" : null,
         encrypted_password: c.encrypted_password ? "●●●●●●●●" : null,
       }));
-      return NextResponse.json(masked);
+      // v0.2.642 audit perf UI7: cache client 60s + SWR 5min su credenziali
+      // mascherate (sono read-mostly, mutate solo dalla UI Settings).
+      return NextResponse.json(masked, {
+        headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" },
+      });
     } catch (error) {
       console.error("Error fetching credentials:", error);
       return NextResponse.json({ error: "Errore nel recupero delle credenziali" }, { status: 500 });

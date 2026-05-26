@@ -1,5 +1,5 @@
 import {
-  getScheduledJobs,
+  getScheduledJobById,
   getNetworks,
   getNetworkById,
   getNetworkDevices,
@@ -57,8 +57,8 @@ import {
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 
 export async function runJob(jobId: number): Promise<void> {
-  const jobs = getScheduledJobs();
-  const job = jobs.find((j) => j.id === jobId);
+  // v0.2.642 audit perf MC3: SELECT WHERE id invece di full-scan + .find().
+  const job = getScheduledJobById(jobId);
   if (!job) throw new Error(`Job #${jobId} non trovato`);
 
   switch (job.job_type) {

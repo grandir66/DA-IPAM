@@ -5100,6 +5100,11 @@ export function getScheduledJobs(): ScheduledJob[] {
   return getDb().prepare("SELECT * FROM scheduled_jobs ORDER BY id").all() as ScheduledJob[];
 }
 
+// v0.2.642 audit perf MC3: fetch mirato per id (no .find() lato JS sui tick cron).
+export function getScheduledJobById(id: number): ScheduledJob | undefined {
+  return getDb().prepare("SELECT * FROM scheduled_jobs WHERE id = ?").get(id) as ScheduledJob | undefined;
+}
+
 export function getEnabledJobs(): ScheduledJob[] {
   return getDb().prepare("SELECT * FROM scheduled_jobs WHERE enabled = 1").all() as ScheduledJob[];
 }

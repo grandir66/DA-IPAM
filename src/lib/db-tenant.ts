@@ -473,28 +473,29 @@ export function getTenantDb(tenantCode: string): Database.Database {
         newDb.exec("ALTER TABLE multihomed_links ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0");
         console.info(`[db-tenant] ${tenantCode}: multihomed_links.is_primary aggiunto (verrà popolato al prossimo recomputeMultihomedLinks)`);
       }
-      // v0.2.612: estendere CHECK constraint per ammettere match_type='physical_device'
-      // (introdotto dal bridge in recomputeMultihomedLinks). SQLite non permette
-      // ALTER TABLE per cambiare CHECK constraint — serve table-swap.
-      // Statements separati per evitare il bug "no such column: \"\"" che capita
-      // con multi-statement exec dentro transaction esplicita.
+      // v0.2.613: estendere CHECK constraint per ammettere match_type='physical_device'.
+      // Approccio table-swap NON FUNZIONA su DB esistenti perché la GENERATED column
+      // hosts.os_family ha un CASE WHEN con stringhe in double-quote (legacy SQLite),
+      // e ogni DROP/ALTER triggera schema-integrity check che fallisce con
+      // "no such column: \"\"". Usiamo invece writable_schema per modificare in-place
+      // lo schema di multihomed_links (tecnica documentata: safe per cambi di CHECK
+      // additivi che non rendono righe esistenti invalide).
       const tableSql = (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='multihomed_links'").get() as { sql: string } | undefined)?.sql ?? "";
       if (tableSql && !tableSql.includes("'physical_device'")) {
-        // Disabilita FK durante lo swap (le righe vengono trasferite intatte)
-        newDb.exec("PRAGMA foreign_keys = OFF");
-        const tx = newDb.transaction(() => {
-          newDb.exec("CREATE TABLE multihomed_links_new (id INTEGER PRIMARY KEY AUTOINCREMENT, group_id TEXT NOT NULL, host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE, match_type TEXT NOT NULL CHECK(match_type IN ('serial_number','sysname','hostname','ad_dns','physical_device')), match_value TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')), is_primary INTEGER NOT NULL DEFAULT 0, UNIQUE(host_id))");
-          newDb.exec("INSERT INTO multihomed_links_new (id, group_id, host_id, match_type, match_value, created_at, is_primary) SELECT id, group_id, host_id, match_type, match_value, created_at, is_primary FROM multihomed_links");
-          newDb.exec("DROP TABLE multihomed_links");
-          newDb.exec("ALTER TABLE multihomed_links_new RENAME TO multihomed_links");
-          newDb.exec("CREATE INDEX IF NOT EXISTS idx_multihomed_links_group ON multihomed_links(group_id)");
-          newDb.exec("CREATE INDEX IF NOT EXISTS idx_multihomed_links_host ON multihomed_links(host_id)");
-        });
-        try {
-          tx();
-          console.info(`[db-tenant] ${tenantCode}: multihomed_links CHECK constraint esteso a 'physical_device'`);
-        } finally {
-          newDb.exec("PRAGMA foreign_keys = ON");
+        const newSql = tableSql.replace(
+          /CHECK\(match_type IN \('serial_number',\s*'sysname',\s*'hostname',\s*'ad_dns'\)\)/,
+          "CHECK(match_type IN ('serial_number', 'sysname', 'hostname', 'ad_dns', 'physical_device'))"
+        );
+        if (newSql !== tableSql) {
+          newDb.exec("PRAGMA writable_schema = 1");
+          try {
+            newDb.prepare("UPDATE sqlite_master SET sql = ? WHERE type = 'table' AND name = 'multihomed_links'").run(newSql);
+            console.info(`[db-tenant] ${tenantCode}: multihomed_links CHECK constraint esteso a 'physical_device' via writable_schema`);
+          } finally {
+            newDb.exec("PRAGMA writable_schema = 0");
+          }
+        } else {
+          console.warn(`[db-tenant] ${tenantCode}: pattern CHECK non trovato in schema multihomed_links, skip estensione`);
         }
       }
     }

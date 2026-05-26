@@ -27,18 +27,31 @@ interface JoinedRow {
   encrypted_password: string | null;
 }
 
+// Porta WinRM default per fallback AD: 5985 (HTTP). 5986 (HTTPS) richiede
+// cert sul target, non assumibile come default.
+const WINRM_DEFAULT_PORT = 5985;
+
 /**
- * Ritorna la migliore credenziale WinRM disponibile per `hostId`, già decifrata,
- * oppure `null` se:
+ * Ritorna la migliore credenziale WinRM disponibile per `hostId`, già decifrata.
+ *
+ * Cascade di lookup:
+ *   1. `host_credentials` con `protocol_type='winrm'` per quell'host specifico
+ *      (validated DESC, sort_order ASC, id ASC).
+ *   2. Fallback **AD integration**: se nessuna riga esplicita, prende la prima
+ *      `ad_integrations` enabled con `winrm_credential_id` valido, JOIN
+ *      `credentials` per username/password cifrati. Porta WinRM default 5985.
+ *
+ * Ritorna `null` se:
  *   - l'host non esiste / non ha IP
- *   - non esistono `host_credentials` di tipo `winrm`
+ *   - nessuna credenziale né esplicita né da AD fallback
  *   - la decifratura di username o password fallisce / è vuota
  */
 export function loadWinrmCredentialsForHost(
   db: Database,
   hostId: number
 ): WinrmCredentialsResolved | null {
-  const row = db
+  // Primo lookup: host_credentials esplicite
+  let row = db
     .prepare(
       `SELECT h.ip AS host_ip,
               hc.port AS port,
@@ -53,6 +66,25 @@ export function loadWinrmCredentialsForHost(
         LIMIT 1`
     )
     .get(hostId) as JoinedRow | undefined;
+
+  // Fallback: credenziali AD globali del tenant (ad_integrations.winrm_credential_id)
+  if (!row) {
+    row = db
+      .prepare(
+        `SELECT h.ip AS host_ip,
+                ? AS port,
+                c.encrypted_username AS encrypted_username,
+                c.encrypted_password AS encrypted_password
+           FROM ad_integrations ai
+           JOIN credentials c ON c.id = ai.winrm_credential_id
+           JOIN hosts h ON h.id = ?
+          WHERE ai.enabled = 1
+            AND ai.winrm_credential_id IS NOT NULL
+          ORDER BY ai.id ASC
+          LIMIT 1`
+      )
+      .get(WINRM_DEFAULT_PORT, hostId) as JoinedRow | undefined;
+  }
 
   if (!row) {
     return null;

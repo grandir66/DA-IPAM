@@ -112,6 +112,12 @@ export async function GET(
            WHERE protocol_type = 'winrm'
            GROUP BY host_id
         ),
+        ad_winrm_available AS (
+          SELECT CASE WHEN EXISTS(
+            SELECT 1 FROM ad_integrations
+             WHERE enabled = 1 AND winrm_credential_id IS NOT NULL
+          ) THEN 1 ELSE 0 END AS has_ad
+        ),
         last_probe AS (
           SELECT po.host_id, po.status AS last_probe_status, po.started_at AS last_probe_at
             FROM patch_operations po
@@ -124,9 +130,14 @@ export async function GET(
         )
         SELECT
           h.id, h.ip, h.hostname, h.custom_name, h.os_info, h.os_family,
-          COALESCE(ws.winrm_validated, 0) AS winrm_validated,
+          CASE
+            WHEN COALESCE(ws.winrm_validated, 0) = 1 THEN 1
+            WHEN awa.has_ad = 1 THEN 1
+            ELSE 0
+          END AS winrm_validated,
           lp.last_probe_status, lp.last_probe_at
         FROM hosts h
+        CROSS JOIN ad_winrm_available awa
         LEFT JOIN winrm_status ws ON ws.host_id = h.id
         LEFT JOIN last_probe lp ON lp.host_id = h.id
         WHERE h.id = ?

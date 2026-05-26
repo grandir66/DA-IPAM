@@ -157,6 +157,15 @@ export async function GET(request: Request) {
            WHERE protocol_type = 'winrm'
            GROUP BY host_id
         ),
+        -- Fallback AD: se esiste almeno una ad_integrations enabled con
+        -- winrm_credential_id, tutti gli host Windows sono "WinRM disponibile"
+        -- anche senza host_credentials esplicite (vedi loadWinrmCredentialsForHost).
+        ad_winrm_available AS (
+          SELECT CASE WHEN EXISTS(
+            SELECT 1 FROM ad_integrations
+             WHERE enabled = 1 AND winrm_credential_id IS NOT NULL
+          ) THEN 1 ELSE 0 END AS has_ad
+        ),
         last_probe AS (
           SELECT po.host_id, po.status AS last_probe_status, po.started_at AS last_probe_at
             FROM patch_operations po
@@ -180,11 +189,16 @@ export async function GET(request: Request) {
           COALESCE(hcc.cve_medium, 0)           AS cve_medium,
           COALESCE(hcc.cve_low, 0)              AS cve_low,
           COALESCE(hcc.cve_total, 0)            AS cve_total,
-          COALESCE(ws.winrm_validated, 0)       AS winrm_validated,
+          CASE
+            WHEN COALESCE(ws.winrm_validated, 0) = 1 THEN 1
+            WHEN awa.has_ad = 1 THEN 1
+            ELSE 0
+          END                                   AS winrm_validated,
           lp.last_probe_status                  AS last_probe_status,
           lp.last_probe_at                      AS last_probe_at
         FROM host_with_inventory hwi
         INNER JOIN hosts h ON h.id = hwi.host_id
+        CROSS JOIN ad_winrm_available awa
         LEFT JOIN host_cve_counts hcc ON hcc.host_id = h.id
         LEFT JOIN software_count sc ON sc.host_id = h.id
         LEFT JOIN winrm_status ws ON ws.host_id = h.id

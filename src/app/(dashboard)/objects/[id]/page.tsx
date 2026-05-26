@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { PromoteHostDialog } from "@/components/devices/promote-host-dialog";
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
 import { UptimeTimeline } from "@/components/shared/uptime-timeline";
@@ -370,6 +371,8 @@ export default function ObjectDetailPage() {
 
   const [host, setHost] = useState<HostDetail | null>(null);
   const [device, setDevice] = useState<DeviceFull | null>(null);
+  // F3.3: modale di promozione inline (no più redirect a /hosts/[id]?promote=1)
+  const [promoteOpen, setPromoteOpen] = useState(false);
   const [asset, setAsset] = useState<InventoryAsset | null>(null);
   const [librenms, setLibrenms] = useState<{
     configured: boolean;
@@ -576,9 +579,9 @@ export default function ObjectDetailPage() {
                 Crea asset NIS2
               </Button>
             )}
-            {/* F2.4: bottone contestuale.
-                - Host non gestito → "Promuovi a dispositivo" apre il modale create su /hosts/[id]
-                  via query string ?promote=1 (auto-open al load).
+            {/* F3.3: bottone contestuale.
+                - Host non gestito → "Promuovi a dispositivo" apre il <PromoteHostDialog> in-page
+                  (modale inline, no più redirect a /hosts/[id]?promote=1).
                 - Device gestito → "Modifica device" punta a /devices/[deviceId] dove esiste già
                   l'editor completo (credenziali/vendor/protocollo/scan_target). */}
             {isManaged && device ? (
@@ -587,7 +590,7 @@ export default function ObjectDetailPage() {
                 Modifica device
               </Button>
             ) : (
-              <Button variant="outline" nativeButton={false} render={<Link href={`/hosts/${host.id}?promote=1`} />}>
+              <Button variant="outline" onClick={() => setPromoteOpen(true)}>
                 <PackagePlus className="h-4 w-4 mr-2" />
                 Promuovi a dispositivo
               </Button>
@@ -1861,6 +1864,16 @@ export default function ObjectDetailPage() {
 
       {/* Spazio in fondo per scroll comodo */}
       <div className="h-8" />
+
+      {/* F3.3: modale promozione inline — niente più redirect cross-pagina. */}
+      {host && !isManaged && (
+        <PromoteHostDialog
+          host={host as HostDetail}
+          open={promoteOpen}
+          onOpenChange={setPromoteOpen}
+          onCreated={() => { setPromoteOpen(false); fetchAll(); }}
+        />
+      )}
 
     </div>
   );

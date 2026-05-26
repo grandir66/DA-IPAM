@@ -576,10 +576,22 @@ export default function ObjectDetailPage() {
                 Crea asset NIS2
               </Button>
             )}
-            <Button variant="outline" nativeButton={false} render={<Link href={`/hosts/${host.id}`} />}>
-              <Pencil className="h-4 w-4 mr-2" />
-              Modifica
-            </Button>
+            {/* F2.4: bottone contestuale.
+                - Host non gestito → "Promuovi a dispositivo" apre il modale create su /hosts/[id]
+                  via query string ?promote=1 (auto-open al load).
+                - Device gestito → "Modifica device" punta a /devices/[deviceId] dove esiste già
+                  l'editor completo (credenziali/vendor/protocollo/scan_target). */}
+            {isManaged && device ? (
+              <Button variant="outline" nativeButton={false} render={<Link href={`/devices/${device.id}`} />}>
+                <Pencil className="h-4 w-4 mr-2" />
+                Modifica device
+              </Button>
+            ) : (
+              <Button variant="outline" nativeButton={false} render={<Link href={`/hosts/${host.id}?promote=1`} />}>
+                <PackagePlus className="h-4 w-4 mr-2" />
+                Promuovi a dispositivo
+              </Button>
+            )}
           </div>
         </div>
       </div>

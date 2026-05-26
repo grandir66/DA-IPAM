@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -110,6 +110,7 @@ function InfoItem({ label, value, mono, badge, alwaysShow }: { label: string; va
 export default function HostDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [host, setHost] = useState<HostDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -163,6 +164,18 @@ export default function HostDetailPage() {
   }, [params.id, router]);
 
   useEffect(() => { fetchHost(); }, [fetchHost]);
+
+  // F2.4: ?promote=1 da /objects/[id] → auto-apri il modale di promozione una volta
+  // che l'host è caricato (così i campi inferred_* sono disponibili per il prefill).
+  useEffect(() => {
+    if (!host) return;
+    if (searchParams?.get("promote") === "1" && !createDeviceOpen) {
+      openCreateDevice();
+      // Pulisci la query per non rifare l'auto-open su navigazioni successive
+      router.replace(`/hosts/${host.id}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [host?.id]);
 
   useEffect(() => {
     const id = params.id;
@@ -231,14 +244,49 @@ export default function HostDetailPage() {
     if (!host) return;
     let snmp: HostSnmpData | null = null;
     try { if (host.snmp_data) snmp = JSON.parse(host.snmp_data) as HostSnmpData; } catch { /* ignore */ }
-    const vendor = inferVendorFromManufacturer(snmp?.manufacturer ?? host.device_manufacturer ?? null);
-    const protocol = inferProtocolFromSnmp(snmp);
-    const device_type = inferDeviceTypeFromClassification(host.classification);
+
+    // F1: prefer server-side auto-classify (inferred_*) over client-side heuristics.
+    // Fallback ai calcoli client per host pre-F1 senza inferred_at popolato.
+    const hasInferred = !!host.inferred_at;
+    const inferredVendor = host.inferred_vendor ?? null;
+    const inferredProtocol = host.inferred_protocol ?? null;
+    const inferredDeviceType = host.inferred_device_type ?? null;
+    const inferredClassification = host.inferred_scan_target ?? null;
+
+    // Mapping vendor inferito → opzione del Select Vendor del form (subset noto)
+    const vendorOptions = new Set(["cisco", "mikrotik", "juniper", "ubiquiti", "fortinet", "stormshield", "sonicwall", "draytek", "synology", "qnap", "vmware", "proxmox", "hp", "dell", "lenovo", "microsoft", "apple", "other"]);
+    const mappedInferredVendor = inferredVendor && vendorOptions.has(inferredVendor) ? inferredVendor : null;
+    const vendor = mappedInferredVendor ?? inferVendorFromManufacturer(snmp?.manufacturer ?? host.device_manufacturer ?? null);
+
+    // Mapping protocollo inferito → form (subset compatibile col select del form single)
+    const protocolOptions = new Set(["ssh", "snmp_v2", "snmp_v3", "winrm", "api"]);
+    const protocol = (inferredProtocol && protocolOptions.has(inferredProtocol) ? inferredProtocol : null) ?? inferProtocolFromSnmp(snmp);
+
+    // Mapping device_type inferito → form: il select del form ha "router|switch|hypervisor".
+    // workstation/server → hypervisor (è la classe "server-like" generica disponibile);
+    // firewall → router; nas/printer/iot/ups → fallback al calcolo esistente.
+    let device_type: "router" | "switch" | "hypervisor";
+    if (inferredDeviceType === "router" || inferredDeviceType === "switch" || inferredDeviceType === "hypervisor") {
+      device_type = inferredDeviceType;
+    } else if (inferredDeviceType === "firewall") {
+      device_type = "router";
+    } else if (inferredDeviceType === "workstation" || inferredDeviceType === "server") {
+      device_type = "hypervisor";
+    } else {
+      device_type = inferDeviceTypeFromClassification(host.classification);
+    }
+
+    // Porta di default in base al protocollo
+    const port = protocol === "snmp_v2" || protocol === "snmp_v3" ? 161
+      : protocol === "winrm" ? 5985
+      : 22;
+
     setDeviceForm({
       name: snmp?.sysName || host.custom_name || host.hostname || host.ip,
       vendor, protocol, device_type,
-      classification: host.classification !== "unknown" ? host.classification : "",
-      port: protocol === "snmp_v2" ? 161 : 22,
+      classification: (hasInferred && inferredClassification) ? inferredClassification
+        : (host.classification !== "unknown" ? host.classification : ""),
+      port,
       model: snmp?.model || host.model || "", serial_number: snmp?.serialNumber || host.serial_number || "",
       firmware: snmp?.firmware || host.firmware || "", sysname: snmp?.sysName || host.hostname || "",
       sysdescr: snmp?.sysDescr || host.os_info || "", community_string: snmp?.community || "",

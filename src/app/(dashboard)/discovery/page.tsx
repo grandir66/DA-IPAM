@@ -797,6 +797,55 @@ export default function DiscoveryPage() {
     }
   }
 
+  // F2.3: pre-fill del bulk dialog da inferred_* degli host selezionati.
+  // Se sono tutti omogenei (stesso inferred_*), applica come default; altrimenti
+  // lascia i default generici (server/other/ssh) e lascia all'utente la scelta.
+  function openAddDevices() {
+    const selectedHosts = hosts.filter((h) => selectedIds.has(h.id));
+    if (selectedHosts.length === 0) { setAddDevicesOpen(true); return; }
+
+    // Helper: ritorna valore unanime tra gli host, altrimenti null
+    function unanimous<T>(values: Array<T | null | undefined>): T | null {
+      const nonNull = values.filter((v): v is T => v != null && v !== "");
+      if (nonNull.length === 0) return null;
+      const first = nonNull[0];
+      return nonNull.every((v) => v === first) ? first : null;
+    }
+
+    const validVendors = new Set(["cisco", "mikrotik", "juniper", "ubiquiti", "fortinet", "stormshield", "sonicwall", "draytek", "synology", "qnap", "vmware", "proxmox", "hp", "dell", "lenovo", "microsoft", "apple", "other"]);
+    const validProtocols = new Set(["ssh", "snmp_v2", "snmp_v3", "winrm", "api"]);
+    const validScanTargets = new Set(["windows", "linux", "macos", "proxmox", "vmware", "network"]);
+
+    const inferredVendor = unanimous(selectedHosts.map((h) => h.inferred_vendor));
+    const inferredProtocol = unanimous(selectedHosts.map((h) => h.inferred_protocol));
+    const inferredScanTarget = unanimous(selectedHosts.map((h) => h.inferred_scan_target));
+    const inferredDeviceType = unanimous(selectedHosts.map((h) => h.inferred_device_type));
+
+    if (inferredVendor && validVendors.has(inferredVendor)) setAddVendor(inferredVendor);
+    if (inferredProtocol && validProtocols.has(inferredProtocol)) setAddProtocol(inferredProtocol);
+    if (inferredScanTarget && validScanTargets.has(inferredScanTarget)) setAddScanTarget(inferredScanTarget);
+
+    // device_type → classification mapping per il bulk dialog (classifications più granulari)
+    if (inferredDeviceType) {
+      const dtMap: Record<string, string> = {
+        workstation: "workstation",
+        server: "server",
+        router: "router",
+        switch: "switch",
+        firewall: "firewall",
+        hypervisor: "server",
+        printer: "printer",
+        nas: "nas",
+        ups: "ups",
+        iot: "iot",
+      };
+      const mapped = dtMap[inferredDeviceType];
+      if (mapped) setAddClassification(mapped);
+    }
+
+    setAddDevicesOpen(true);
+  }
+
   // ---------- bulk edit ----------
   async function handleBulkAddToDevices() {
     if (selectedIds.size === 0) return;
@@ -1660,7 +1709,7 @@ export default function DiscoveryPage() {
                 <Pencil className="h-3.5 w-3.5" />
                 Modifica multipla
               </Button>
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddDevicesOpen(true)}>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={openAddDevices}>
                 <PackagePlus className="h-3.5 w-3.5" />
                 Aggiungi a dispositivi
               </Button>

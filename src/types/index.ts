@@ -719,6 +719,16 @@ export interface HostDetail extends Host {
     vendor: string;
     protocol: string;
   } | null;
+  /** v0.2.603: aggregazione multi-IP (multihomed). Popolato da getHostById tramite
+   *  JOIN su multihomed_links. Bridge con physical_device_id da v0.2.596. */
+  multihomed?: {
+    group_id: string;
+    match_type: string;
+    is_primary: boolean;
+    primary_host_id: number | null;
+    primary_ip: string | null;
+    peers: Array<{ ip: string; network_name: string; host_id: number; is_primary: boolean }>;
+  } | null;
 }
 
 export interface PortMappingView {

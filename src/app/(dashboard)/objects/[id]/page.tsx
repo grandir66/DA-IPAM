@@ -588,10 +588,20 @@ export default function ObjectDetailPage() {
     try {
       const res = await fetch(`/api/devices/${device.id}/test`);
       const data = await res.json();
-      if (data.success) toast.success("Connessione riuscita");
-      else toast.error(data.error || "Connessione fallita");
-    } catch {
-      toast.error("Errore nel test di connessione");
+      if (data.success) {
+        // /api/devices/[id]/test usa runDeviceConnectionTest che PROVA effettivamente
+        // le credenziali (SSH/SNMP/WinRM/API). Esponiamo il risultato concreto.
+        const msg = data.message
+          || (data.proxmox_api_ok && data.proxmox_ssh_ok ? "Credenziali OK (API + SSH)"
+            : data.proxmox_api_ok ? "Credenziali OK (solo API Proxmox)"
+            : data.proxmox_ssh_ok ? "Credenziali OK (solo SSH)"
+            : `Credenziali OK via ${device.protocol}`);
+        toast.success(msg);
+      } else {
+        toast.error(data.error || `Credenziali rifiutate via ${device.protocol}`);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore nel test credenziali");
     } finally {
       setTestingConnection(false);
     }
@@ -680,10 +690,10 @@ export default function ObjectDetailPage() {
                 variant="outline"
                 onClick={handleTestConnection}
                 disabled={testingConnection || refreshing}
-                title="Test rapido della connessione al device (TCP/SNMP/SSH/WinRM)"
+                title="Testa le credenziali registrate (SSH/SNMP/WinRM/API) effettuando autenticazione reale"
               >
-                <Activity className={`h-4 w-4 mr-2 ${testingConnection ? "animate-pulse" : ""}`} />
-                {testingConnection ? "Test..." : "Test connessione"}
+                <KeyRound className={`h-4 w-4 mr-2 ${testingConnection ? "animate-pulse" : ""}`} />
+                {testingConnection ? "Test..." : "Testa credenziali"}
               </Button>
             )}
             {isManaged && (
@@ -859,9 +869,37 @@ export default function ObjectDetailPage() {
               )}
             </>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              LibreNMS configurato ma questo host non è ancora mappato.
-            </p>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                LibreNMS configurato ma questo host non è ancora mappato — quindi nessun grafico disponibile.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  if (!host) return;
+                  try {
+                    const r = await fetch("/api/integrations/librenms/host", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ host_id: host.id }),
+                    });
+                    const data = await r.json();
+                    if (r.ok) {
+                      toast.success(data.message || "Host aggiunto a LibreNMS — i grafici saranno disponibili dopo il primo polling.");
+                      void fetchAll();
+                    } else {
+                      toast.error(data.error || "Errore aggiunta a LibreNMS");
+                    }
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "Errore di rete");
+                  }
+                }}
+              >
+                <Activity className="h-3.5 w-3.5 mr-1.5" />
+                Aggiungi a LibreNMS
+              </Button>
+            </div>
           )}
         </Section>
       )}

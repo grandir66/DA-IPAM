@@ -1251,6 +1251,45 @@ export function getHostById(id: number): HostDetail | undefined {
 
   const scanTypesSeen = [...new Set(recentScans.map((s) => s.scan_type))];
 
+  // v0.2.603: include multihomed group info (peers + is_primary). Prima era
+  // popolato solo dalla list discovery, /objects/[id] non lo riceveva → simbolo
+  // multihomed sempre nascosto anche dopo manual link manualLinkHostsToPhysicalDevice.
+  const mhLink = db().prepare(
+    "SELECT group_id, match_type, is_primary FROM multihomed_links WHERE host_id = ? LIMIT 1"
+  ).get(id) as { group_id: string; match_type: string; is_primary: number } | undefined;
+  let multihomed: {
+    group_id: string;
+    match_type: string;
+    is_primary: boolean;
+    primary_host_id: number | null;
+    primary_ip: string | null;
+    peers: Array<{ ip: string; network_name: string; host_id: number; is_primary: boolean }>;
+  } | null = null;
+  if (mhLink) {
+    const peers = db().prepare(
+      `SELECT ml.host_id, h.ip, n.name AS network_name, ml.is_primary
+         FROM multihomed_links ml
+         JOIN hosts h ON h.id = ml.host_id
+         JOIN networks n ON n.id = h.network_id
+        WHERE ml.group_id = ? AND ml.host_id != ?
+        ORDER BY h.ip`
+    ).all(mhLink.group_id, id) as Array<{ host_id: number; ip: string; network_name: string; is_primary: number }>;
+    const primary = db().prepare(
+      `SELECT ml.host_id, h.ip FROM multihomed_links ml
+         JOIN hosts h ON h.id = ml.host_id
+        WHERE ml.group_id = ? AND ml.is_primary = 1
+        LIMIT 1`
+    ).get(mhLink.group_id) as { host_id: number; ip: string } | undefined;
+    multihomed = {
+      group_id: mhLink.group_id,
+      match_type: mhLink.match_type,
+      is_primary: mhLink.is_primary === 1,
+      primary_host_id: primary?.host_id ?? null,
+      primary_ip: primary?.ip ?? null,
+      peers: peers.map((p) => ({ host_id: p.host_id, ip: p.ip, network_name: p.network_name, is_primary: p.is_primary === 1 })),
+    };
+  }
+
   return {
     ...host,
     recent_scans: recentScans,
@@ -1260,6 +1299,7 @@ export function getHostById(id: number): HostDetail | undefined {
     arp_source: arpSource || null,
     switch_port: switchPort || null,
     network_device: networkDevice ? { id: networkDevice.id, name: networkDevice.name, sysname: networkDevice.sysname, vendor: networkDevice.vendor, protocol: networkDevice.protocol } : null,
+    multihomed,
   };
 }
 

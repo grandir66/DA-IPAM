@@ -263,6 +263,16 @@ export function resolvePhysicalDevice(device: NetworkDevice, probe: DeviceProbeO
     }
   }
 
+  // v0.2.610: ricalcola multihomed_links per attivare scan-dedup. Senza questo,
+  // i due IP del cluster fisico vengono visti come single-homed e ognuno riceve
+  // i propri scan/probe (duplicazione). Lo stesso recompute è già fatto in
+  // manualLinkHostsToPhysicalDevice — qui copre il path automatico del resolver.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { recomputeMultihomedLinks } = require("@/lib/db-tenant");
+    recomputeMultihomedLinks();
+  } catch { /* niente, sarà ricalcolato al prossimo manual link o boot */ }
+
   return {
     physical_device_id: physicalDeviceId,
     created,

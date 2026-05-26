@@ -21,9 +21,17 @@ import { getIntegrationConfig } from "@/lib/integrations/config";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Shape della risposta LibreNMS API per i grafici:
+ *
+ * - LibreNMS vecchio (~v1.x):  { status, image: "<base64>", image_type: "image/png" }
+ * - LibreNMS recente (≥24.x):  { status, image: { image: "<base64>", "content-type": "image/svg+xml" }, count }
+ *
+ * Gestiamo entrambi i formati.
+ */
 interface LibreNMSGraphResponse {
   image_type?: string;
-  image?: string;
+  image?: string | { image: string; "content-type"?: string; image_type?: string };
   status?: string;
   message?: string;
 }
@@ -86,17 +94,30 @@ export async function GET(req: Request) {
     }
 
     const data = (await res.json()) as LibreNMSGraphResponse;
-    if (!data.image) {
+    // v0.2.610 fix: gestione struttura nested. LibreNMS ≥24 risponde con
+    //   { image: { image: "<base64>", "content-type": "image/svg+xml" } }
+    // mentre versioni precedenti rispondevano con
+    //   { image: "<base64>", image_type: "image/png" }
+    let imageB64: string | undefined;
+    let imageMime: string | undefined;
+    if (typeof data.image === "string") {
+      imageB64 = data.image;
+      imageMime = data.image_type;
+    } else if (data.image && typeof data.image === "object") {
+      imageB64 = data.image.image;
+      imageMime = data.image["content-type"] ?? data.image.image_type;
+    }
+    if (!imageB64) {
       return NextResponse.json(
         { error: "Grafico non disponibile", details: data.message ?? "" },
         { status: 404 },
       );
     }
 
-    // L'immagine può venire come "data:image/png;base64,..." o solo base64.
-    const m = data.image.match(/^data:([^;]+);base64,(.*)$/);
-    const mime = m?.[1] ?? data.image_type ?? "image/png";
-    const b64 = m?.[2] ?? data.image;
+    // L'immagine può venire come "data:image/png;base64,..." prefissata o solo base64.
+    const m = imageB64.match(/^data:([^;]+);base64,(.*)$/);
+    const mime = m?.[1] ?? imageMime ?? "image/png";
+    const b64 = m?.[2] ?? imageB64;
     const buf = Buffer.from(b64, "base64");
 
     return new Response(new Uint8Array(buf), {

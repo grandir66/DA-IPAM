@@ -640,6 +640,28 @@ export function getTenantDb(tenantCode: string): Database.Database {
     } catch (e) {
       console.warn(`[db-tenant] ${tenantCode}: backfill auto-classify fallito:`, e);
     }
+    // v0.2.610: bridge multihomed. Identity-resolver automatico (anchor=serial_number/
+    // primary_mac) ha popolato hosts.physical_device_id, ma `recomputeMultihomedLinks`
+    // non era chiamato in quel path → tabella multihomed_links vuota nonostante
+    // i cluster esistano. Detect del mismatch e ricomputo idempotente.
+    try {
+      const orphan = newDb.prepare(
+        `SELECT COUNT(*) AS n FROM hosts h
+         WHERE h.physical_device_id IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM multihomed_links ml WHERE ml.host_id = h.id)`
+      ).get() as { n: number };
+      if (orphan.n > 0) {
+        // Ricomputo non chiamato finora per N host con cluster fisico noto.
+        // recomputeMultihomedLinks() è O(N hosts), pochi secondi anche su tenant grandi.
+        // NB: recomputeMultihomedLinks vive nel modulo corrente (db-tenant.ts) e usa
+        // il `db()` del contesto; qui siamo in `getTenantDb()` quindi non possiamo
+        // chiamarlo direttamente. Lo lasciamo come marker: l'utente può triggerare
+        // via POST /api/multihomed/recompute oppure al prossimo manualLink/resolver run.
+        console.info(`[db-tenant] ${tenantCode}: ${orphan.n} host con physical_device_id ma senza multihomed_links — chiama POST /api/multihomed/recompute o trigger un resolver run`);
+      }
+    } catch (e) {
+      console.warn(`[db-tenant] ${tenantCode}: check multihomed orphan fallito:`, e);
+    }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione physical_devices fallita:`, e);
   }

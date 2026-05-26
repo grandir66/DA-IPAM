@@ -42,7 +42,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { DeviceFingerprintSnapshot, FingerprintExplanation, HostDetail, HostSnmpData, LibreNMSDevice } from "@/types";
-import { getDefaultNetworkDeviceVendorOptions } from "@/lib/network-device-vendor-options";
+import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { LatencyChart } from "./latency-chart";
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -76,19 +76,8 @@ function inferProtocolFromSnmp(snmp: HostSnmpData | null): string {
 }
 
 const HOST_CLASSIFICATION_OPTIONS_SORTED = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
-const CREATE_DEVICE_CLASSIFICATION_OPTIONS = sortClassificationsByDisplayLabel(
-  DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown")
-);
-const CREATE_DEVICE_PROTOCOL_OPTIONS = [
-  { value: "ssh", label: "SSH" }, { value: "snmp_v2", label: "SNMP v2" },
-  { value: "snmp_v3", label: "SNMP v3" }, { value: "api", label: "API REST" },
-  { value: "winrm", label: "WinRM" },
-].sort((a, b) => a.label.localeCompare(b.label, "it", { sensitivity: "base" }));
-const CREATE_DEVICE_TYPE_OPTIONS = [
-  { value: "router", label: "Router / Firewall" },
-  { value: "switch", label: "Switch" },
-  { value: "hypervisor", label: "Hypervisor / Server" },
-].sort((a, b) => a.label.localeCompare(b.label, "it", { sensitivity: "base" }));
+// F2.2: select Tipo/Vendor/Protocollo/Classificazione del modale single ora delegati
+// a <DeviceFormFields>. I vecchi array CREATE_DEVICE_* sono stati rimossi.
 
 function InfoItem({ label, value, mono, badge, alwaysShow }: { label: string; value: string | null | undefined; mono?: boolean; badge?: boolean; alwaysShow?: boolean }) {
   if (!value && !alwaysShow) return null;
@@ -140,7 +129,16 @@ export default function HostDetailPage() {
     classification: "", port: 22,
     model: "", serial_number: "", firmware: "",
     sysname: "", sysdescr: "", community_string: "",
+    // F2.2: campi aggiuntivi gestiti da DeviceFormFields
+    vendorSubtype: null as string | null,
+    productProfile: null as string | null,
+    scanTarget: null as string | null,
+    credentialId: null as string | null,
+    snmpCredentialId: null as string | null,
+    useForArpPoll: false,
   });
+  // F2.2: lista credenziali per il select del modale (carica al mount)
+  const [credentialsList, setCredentialsList] = useState<Array<{ id: number; name: string; credential_type: string }>>([]);
 
   const fetchHost = useCallback(async () => {
     const id = params.id;
@@ -165,6 +163,16 @@ export default function HostDetailPage() {
 
   useEffect(() => { fetchHost(); }, [fetchHost]);
 
+  // F2.2: lista credenziali per il modale di promozione
+  useEffect(() => {
+    fetch("/api/credentials", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: Array<{ id: number; name: string; credential_type: string }>) => {
+        if (Array.isArray(data)) setCredentialsList(data);
+      })
+      .catch(() => { /* niente, modale funziona comunque */ });
+  }, []);
+
   // F2.4: ?promote=1 da /objects/[id] → auto-apri il modale di promozione una volta
   // che l'host è caricato (così i campi inferred_* sono disponibili per il prefill).
   useEffect(() => {
@@ -174,8 +182,7 @@ export default function HostDetailPage() {
       // Pulisci la query per non rifare l'auto-open su navigazioni successive
       router.replace(`/hosts/${host.id}`);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [host?.id]);
+  }, [host?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const id = params.id;
@@ -281,6 +288,15 @@ export default function HostDetailPage() {
       : protocol === "winrm" ? 5985
       : 22;
 
+    // F2.2: credenziale validata sull'host con stesso protocol → default credentialId.
+    // Le credenziali sono in host.host_credentials (caricate dalla scheda host).
+    const protoTypeForCred = protocol === "winrm" ? "winrm"
+      : protocol === "api" ? "api"
+      : protocol === "snmp_v2" || protocol === "snmp_v3" ? "snmp"
+      : "ssh";
+    const matchingCred = host.host_credentials?.find((hc) => hc.protocol_type === protoTypeForCred && hc.validated === 1);
+    const matchingSnmpCred = host.host_credentials?.find((hc) => hc.protocol_type === "snmp" && hc.validated === 1);
+
     setDeviceForm({
       name: snmp?.sysName || host.custom_name || host.hostname || host.ip,
       vendor, protocol, device_type,
@@ -290,6 +306,12 @@ export default function HostDetailPage() {
       model: snmp?.model || host.model || "", serial_number: snmp?.serialNumber || host.serial_number || "",
       firmware: snmp?.firmware || host.firmware || "", sysname: snmp?.sysName || host.hostname || "",
       sysdescr: snmp?.sysDescr || host.os_info || "", community_string: snmp?.community || "",
+      vendorSubtype: null,
+      productProfile: null,
+      scanTarget: inferredClassification,
+      credentialId: matchingCred ? String(matchingCred.credential_id) : null,
+      snmpCredentialId: matchingSnmpCred ? String(matchingSnmpCred.credential_id) : null,
+      useForArpPoll: false,
     });
     setCreateDeviceOpen(true);
   }
@@ -298,14 +320,37 @@ export default function HostDetailPage() {
     e.preventDefault();
     if (!host) return;
     setCreatingDevice(true);
-    const body = {
-      name: deviceForm.name, host: host.ip, device_type: deviceForm.device_type,
-      vendor: deviceForm.vendor, protocol: deviceForm.protocol, port: deviceForm.port,
+    // device_type derivato dalla classification (server-side lo ricalcola da product_profile,
+    // ma lo schema Zod lo richiede in input)
+    const deviceTypeForSchema: "router" | "switch" | "firewall" | "hypervisor" =
+      deviceForm.classification === "router" ? "router"
+      : deviceForm.classification === "switch" ? "switch"
+      : deviceForm.classification === "firewall" ? "firewall"
+      : "hypervisor";
+    const body: Record<string, unknown> = {
+      name: deviceForm.name,
+      host: host.ip,
+      device_type: deviceTypeForSchema,
+      vendor: deviceForm.vendor,
+      protocol: deviceForm.protocol,
+      port: deviceForm.port,
       classification: deviceForm.classification || undefined,
-      model: deviceForm.model || undefined, serial_number: deviceForm.serial_number || undefined,
-      firmware: deviceForm.firmware || undefined, sysname: deviceForm.sysname || undefined,
-      sysdescr: deviceForm.sysdescr || undefined, community_string: deviceForm.community_string || undefined,
+      vendor_subtype: deviceForm.vendorSubtype || undefined,
+      product_profile: deviceForm.productProfile || undefined,
+      scan_target: deviceForm.scanTarget || undefined,
+      model: deviceForm.model || undefined,
+      serial_number: deviceForm.serial_number || undefined,
+      firmware: deviceForm.firmware || undefined,
+      sysname: deviceForm.sysname || undefined,
+      sysdescr: deviceForm.sysdescr || undefined,
+      community_string: deviceForm.community_string || undefined,
     };
+    if (deviceForm.credentialId && deviceForm.credentialId !== "none") {
+      body.credential_id = Number(deviceForm.credentialId);
+    }
+    if (deviceForm.snmpCredentialId && deviceForm.snmpCredentialId !== "none") {
+      body.snmp_credential_id = Number(deviceForm.snmpCredentialId);
+    }
     const res = await fetch("/api/devices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (res.ok) { toast.success("Dispositivo creato"); setCreateDeviceOpen(false); fetchHost(); }
     else { const data = await res.json(); toast.error(data.error || "Errore"); }
@@ -814,47 +859,52 @@ export default function HostDetailPage() {
       <Dialog open={createDeviceOpen} onOpenChange={setCreateDeviceOpen}>
         <DialogContent className={DIALOG_PANEL_COMPACT_CLASS}>
           <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
-            <DialogTitle>Crea dispositivo gestito — {host.ip}</DialogTitle>
-            <DialogDescription>Campi pre-compilati da dati SNMP/scan.</DialogDescription>
+            <DialogTitle>Promuovi a dispositivo gestito — {host.ip}</DialogTitle>
+            <DialogDescription>
+              {host.inferred_at
+                ? `Pre-compilato dall'auto-rilevamento (confidence ${host.inferred_confidence ?? 0}%). Modifica se necessario.`
+                : "Campi pre-compilati da dati SNMP/scan."}
+            </DialogDescription>
           </DialogHeader>
           <DialogScrollableArea className="px-4 py-3">
           <form onSubmit={handleCreateDevice} className="space-y-4">
+            {/* Identificazione: Nome + IP (IP readonly) */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1"><Label className="text-xs">Nome</Label><Input required value={deviceForm.name} onChange={(e) => setDeviceForm((f) => ({ ...f, name: e.target.value }))} /></div>
               <div className="space-y-1"><Label className="text-xs">IP</Label><Input value={host.ip} readOnly className="bg-muted" /></div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1"><Label className="text-xs">Tipo</Label>
-                <Select value={deviceForm.device_type} onValueChange={(v) => setDeviceForm((f) => ({ ...f, device_type: v as "router" | "switch" | "hypervisor" }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{CREATE_DEVICE_TYPE_OPTIONS.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1"><Label className="text-xs">Vendor</Label>
-                <Select value={deviceForm.vendor} onValueChange={(v) => setDeviceForm((f) => ({ ...f, vendor: v ?? "other" }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{getDefaultNetworkDeviceVendorOptions().map((v) => <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1"><Label className="text-xs">Protocollo</Label>
-                <Select value={deviceForm.protocol} onValueChange={(v) => setDeviceForm((f) => ({ ...f, protocol: v ?? "ssh", port: v === "snmp_v2" || v === "snmp_v3" ? 161 : v === "winrm" ? 5985 : 22 }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{CREATE_DEVICE_PROTOCOL_OPTIONS.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1"><Label className="text-xs">Porta</Label><Input type="number" value={deviceForm.port} onChange={(e) => setDeviceForm((f) => ({ ...f, port: Number(e.target.value) }))} /></div>
-              {(deviceForm.protocol === "snmp_v2" || deviceForm.protocol === "snmp_v3") && (
-                <div className="space-y-1"><Label className="text-xs">Community</Label><Input value={deviceForm.community_string} onChange={(e) => setDeviceForm((f) => ({ ...f, community_string: e.target.value }))} placeholder="public" /></div>
-              )}
-              <div className="space-y-1"><Label className="text-xs">Classificazione</Label>
-                <Select value={deviceForm.classification || ""} onValueChange={(v) => setDeviceForm((f) => ({ ...f, classification: v ?? "" }))}>
-                  <SelectTrigger><SelectValue placeholder="Seleziona" /></SelectTrigger>
-                  <SelectContent>{CREATE_DEVICE_CLASSIFICATION_OPTIONS.map((c) => <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            </div>
+
+            {/* F2.2: profilo + credenziali tramite componente unificato (stesso di /discovery bulk) */}
+            <DeviceFormFields
+              mode="create"
+              credentials={credentialsList}
+              idPrefix="host-create-device"
+              showIdentificazione={false}
+              showProfilo={true}
+              showCredenziali={true}
+              classification={deviceForm.classification}
+              vendor={deviceForm.vendor}
+              vendorSubtype={deviceForm.vendorSubtype}
+              protocol={deviceForm.protocol}
+              scanTarget={deviceForm.scanTarget}
+              productProfile={deviceForm.productProfile}
+              credentialId={deviceForm.credentialId}
+              snmpCredentialId={deviceForm.snmpCredentialId}
+              useForArpPoll={deviceForm.useForArpPoll}
+              onClassificationChange={(v) => setDeviceForm((f) => ({ ...f, classification: v }))}
+              onVendorChange={(v) => setDeviceForm((f) => ({ ...f, vendor: v, vendorSubtype: v !== "hp" ? null : f.vendorSubtype }))}
+              onVendorSubtypeChange={(v) => setDeviceForm((f) => ({ ...f, vendorSubtype: v }))}
+              onProtocolChange={(v) => setDeviceForm((f) => ({ ...f, protocol: v, port: v === "snmp_v2" || v === "snmp_v3" ? 161 : v === "winrm" ? 5985 : 22 }))}
+              onScanTargetChange={(v) => setDeviceForm((f) => ({ ...f, scanTarget: v }))}
+              onProductProfileChange={(v) => setDeviceForm((f) => ({ ...f, productProfile: v }))}
+              onCredentialIdChange={(v) => setDeviceForm((f) => ({ ...f, credentialId: v }))}
+              onSnmpCredentialIdChange={(v) => setDeviceForm((f) => ({ ...f, snmpCredentialId: v }))}
+              onUseForArpPollChange={(v) => setDeviceForm((f) => ({ ...f, useForArpPoll: v }))}
+              defaultClassification="server"
+              defaultVendor="other"
+              defaultProtocol="ssh"
+            />
+
             <Separator />
             <p className="text-xs text-muted-foreground font-medium">Dati inventario</p>
             <div className="grid grid-cols-3 gap-3">

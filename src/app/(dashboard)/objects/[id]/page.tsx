@@ -19,6 +19,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { PromoteHostDialog } from "@/components/devices/promote-host-dialog";
@@ -406,6 +409,9 @@ export default function ObjectDetailPage() {
   const [editDeviceOpen, setEditDeviceOpen] = useState(false);
   // v0.2.600: test connessione (era solo su /devices/[id], ora /devices/[id] redirige qui)
   const [testingConnection, setTestingConnection] = useState(false);
+  // v0.2.604: inventory_code + notes editabili inline nel tab Generale
+  const [editableInventoryCode, setEditableInventoryCode] = useState("");
+  const [editableNotes, setEditableNotes] = useState("");
   // Multi-IP link manuale (v0.2.594+)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [clusterMembers, setClusterMembers] = useState<Array<{
@@ -452,6 +458,9 @@ export default function ObjectDetailPage() {
       }
       const h = (await hRes.json()) as HostDetail;
       setHost(h);
+      // v0.2.604: sincronizza i field editabili
+      setEditableInventoryCode(h.inventory_code ?? "");
+      setEditableNotes(h.notes ?? "");
       // Device linkato (per IP)
       if (h.network_device?.id) {
         const dRes = await fetch(`/api/devices/${h.network_device.id}`);
@@ -579,6 +588,26 @@ export default function ObjectDetailPage() {
       await fetchAll();
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  // v0.2.604: salvataggio inline di inventory_code / notes dal tab Generale.
+  async function saveHostField(patch: Record<string, unknown>) {
+    if (!host) return;
+    try {
+      const res = await fetch(`/api/hosts/${host.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "Errore salvataggio");
+        return;
+      }
+      toast.success("Salvato", { duration: 1500 });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore di rete");
     }
   }
 
@@ -768,9 +797,10 @@ export default function ObjectDetailPage() {
         {/* ═══════════════ TAB: GENERALE ═══════════════ */}
         <TabsContent value="generale" className="space-y-4">
 
-      {/* ─── 1. Identità ─── */}
+      {/* ─── 1. Identità ─── Tutti i campi anagrafici + inventory_code/note editabili */}
       <Section icon={<Cpu className="h-4 w-4" />} title="Identità">
         <dl className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <InfoRow label="Nome" value={host.custom_name ?? host.hostname ?? host.ip} />
           <InfoRow label="IP" value={host.ip} mono />
           <InfoRow label="MAC" value={host.mac} mono />
           <InfoRow label="Hostname" value={host.hostname} />
@@ -778,14 +808,75 @@ export default function ObjectDetailPage() {
           <InfoRow label="DNS forward" value={host.dns_forward} />
           <InfoRow label="Vendor (MAC OUI)" value={host.vendor} />
           <InfoRow label="Manufacturer" value={host.device_manufacturer} />
-          <InfoRow label="OS" value={host.os_info} />
-          <InfoRow label="Classification" value={classificationLabel} />
-          {host.model && <InfoRow label="Modello" value={host.model} />}
-          {host.serial_number && <InfoRow label="Seriale" value={host.serial_number} mono />}
-          {host.firmware && <InfoRow label="Firmware" value={host.firmware} />}
-          {host.ip_assignment && <InfoRow label="IP assignment" value={host.ip_assignment} />}
+          <InfoRow label="Classificazione" value={classificationLabel} />
+          <InfoRow label="Modello" value={device?.model ?? host.model} />
+          <InfoRow label="Firmware/Versione" value={device?.firmware ?? host.firmware} />
+          <InfoRow label="OS" value={device?.device_info?.os_name ?? host.os_info} />
+          <InfoRow label="Kernel/Build" value={device?.device_info?.os_version ?? device?.device_info?.kernel_version ?? null} />
+          <InfoRow label="Seriale" value={device?.serial_number ?? host.serial_number} mono />
+          <InfoRow label="IP assignment" value={host.ip_assignment} />
+          <InfoRow label="Uptime" value={device?.device_info?.uptime_days != null ? `${device.device_info.uptime_days} giorni` : (device?.device_info?.uptime ?? null)} />
         </dl>
+        <Separator className="my-3" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="inv-code" className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Numero inventario</Label>
+            <Input
+              id="inv-code"
+              value={editableInventoryCode}
+              onChange={(e) => setEditableInventoryCode(e.target.value)}
+              onBlur={() => saveHostField({ inventory_code: editableInventoryCode || null })}
+              placeholder="Es: INV-2026-001"
+              className="font-mono text-sm"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="inv-notes" className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Note</Label>
+            <Textarea
+              id="inv-notes"
+              value={editableNotes}
+              onChange={(e) => setEditableNotes(e.target.value)}
+              onBlur={() => saveHostField({ notes: editableNotes })}
+              placeholder="Annotazioni libere su questo asset…"
+              rows={2}
+              className="text-sm"
+            />
+          </div>
+        </div>
       </Section>
+
+      {/* ─── 2. Hardware ─── CPU/RAM/dischi/NIC se device_info popolato */}
+      {(() => {
+        const di = device?.device_info ?? null;
+        const hasHw = !!(di && (di.cpu_model || di.ram_total_gb || di.disks?.length || di.network_adapters?.length));
+        if (!hasHw) return null;
+        return (
+          <Section icon={<Cpu className="h-4 w-4" />} title="Hardware">
+            <dl className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <InfoRow label="CPU" value={di?.cpu_model ?? null} />
+              <InfoRow label="Core / Thread" value={di?.cpu_cores != null ? `${di.cpu_cores}${di?.cpu_threads ? ` / ${di.cpu_threads}` : ""}` : null} />
+              <InfoRow label="Freq. max" value={di?.cpu_speed_mhz ? `${di.cpu_speed_mhz} MHz` : null} />
+              <InfoRow label="Processor count" value={di?.processor_count != null ? String(di.processor_count) : null} />
+              <InfoRow label="RAM totale" value={di?.ram_total_gb != null ? `${di.ram_total_gb} GB` : (di?.ram_total_mb ? `${di.ram_total_mb} MB` : null)} />
+              <InfoRow label="Disco totale" value={di?.disk_total_gb != null ? `${di.disk_total_gb} GB` : null} />
+              <InfoRow label="Disco libero" value={di?.disk_free_gb != null ? `${di.disk_free_gb} GB` : null} />
+              <InfoRow label="NIC count" value={di?.network_adapters?.length ? String(di.network_adapters.length) : null} />
+            </dl>
+            {di?.network_adapters && di.network_adapters.length > 0 && (
+              <div className="mt-3 border-t border-border/50 pt-2">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Schede di rete</div>
+                <div className="flex flex-wrap gap-2">
+                  {di.network_adapters.slice(0, 8).map((a, i) => (
+                    <Badge key={i} variant="outline" className="text-[10px] font-mono">
+                      {(a.mac_address ?? a.mac ?? "?")} {a.name ? `· ${a.name}` : ""}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Section>
+        );
+      })()}
 
       {/* ─── 2. Rete ─── */}
       <Section icon={<Network className="h-4 w-4" />} title="Rete">
@@ -904,19 +995,89 @@ export default function ObjectDetailPage() {
         </Section>
       )}
 
-      {/* ─── Latency chart + Uptime timeline (storico ping) ─── */}
-      <Section icon={<Activity className="h-4 w-4" />} title="Disponibilità">
-        <div className="space-y-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Uptime nel tempo</div>
-            <UptimeTimeline hostId={host.id} />
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Latenza (ms)</div>
-            <LatencyChart hostId={host.id} />
-          </div>
-        </div>
-      </Section>
+      {/* ─── 4. Stato runtime ─── porte aperte + credenziali funzionanti */}
+      {(() => {
+        // Parse open_ports (formato: [{port, protocol}] o {tcp:[...], udp:[...]})
+        let tcpPorts: number[] = [];
+        let udpPorts: number[] = [];
+        try {
+          if (host.open_ports) {
+            const parsed = JSON.parse(host.open_ports);
+            if (Array.isArray(parsed)) {
+              for (const p of parsed) {
+                if (typeof p === "object" && p?.port) {
+                  if ((p.protocol ?? "tcp") === "tcp") tcpPorts.push(p.port);
+                  else if (p.protocol === "udp") udpPorts.push(p.port);
+                } else if (typeof p === "number") tcpPorts.push(p);
+              }
+            } else if (typeof parsed === "object" && parsed !== null) {
+              if (Array.isArray(parsed.tcp)) tcpPorts = parsed.tcp;
+              if (Array.isArray(parsed.udp)) udpPorts = parsed.udp;
+            }
+          }
+        } catch { /* ignore */ }
+        const validatedCreds = (host.host_credentials ?? []).filter((hc) => hc.validated === 1);
+        const lastSeenStr = host.last_seen ? new Date(host.last_seen).toLocaleString("it-IT") : null;
+        return (
+          <Section icon={<Activity className="h-4 w-4" />} title="Stato runtime">
+            <dl className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <InfoRow label="Status" value={host.status === "online" ? "Online" : host.status === "offline" ? "Offline" : "Sconosciuto"} />
+              <InfoRow label="Ultima risposta" value={host.last_response_time_ms != null ? `${host.last_response_time_ms} ms` : null} />
+              <InfoRow label="Ultima volta visto" value={lastSeenStr} />
+              <InfoRow label="Prima volta visto" value={host.first_seen ? new Date(host.first_seen).toLocaleString("it-IT") : null} />
+            </dl>
+            <Separator className="my-3" />
+            {/* Porte aperte */}
+            <div className="space-y-2">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                Porte TCP aperte ({tcpPorts.length})
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {tcpPorts.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">Nessuna porta TCP rilevata</span>
+                ) : (
+                  tcpPorts.slice(0, 50).map((p) => (
+                    <Badge key={`tcp-${p}`} variant="outline" className="text-[10px] font-mono">{p}</Badge>
+                  ))
+                )}
+                {tcpPorts.length > 50 && <span className="text-[10px] text-muted-foreground">+{tcpPorts.length - 50}</span>}
+              </div>
+            </div>
+            {udpPorts.length > 0 && (
+              <div className="space-y-2 mt-3">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                  Porte UDP aperte ({udpPorts.length})
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {udpPorts.slice(0, 30).map((p) => (
+                    <Badge key={`udp-${p}`} variant="secondary" className="text-[10px] font-mono">{p}</Badge>
+                  ))}
+                  {udpPorts.length > 30 && <span className="text-[10px] text-muted-foreground">+{udpPorts.length - 30}</span>}
+                </div>
+              </div>
+            )}
+            <Separator className="my-3" />
+            {/* Credenziali funzionanti */}
+            <div className="space-y-2">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                Credenziali funzionanti ({validatedCreds.length})
+              </div>
+              {validatedCreds.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nessuna credenziale validata su questo host.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {validatedCreds.map((hc) => (
+                    <Badge key={hc.id} variant="default" className="text-[10px] gap-1">
+                      <KeyRound className="h-3 w-3" />
+                      {hc.protocol_type}:{hc.port} · {hc.credential_name}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Section>
+        );
+      })()}
 
         </TabsContent>
 
@@ -2260,6 +2421,21 @@ export default function ObjectDetailPage() {
 
         {/* ═══════════════ TAB: STORICO ═══════════════ */}
         <TabsContent value="storico" className="space-y-4">
+
+      {/* ─── v0.2.604: Disponibilità (uptime + latenza) ─── spostata qui dal tab Generale.
+          È un indicatore di stato storico, non un tool di monitoraggio: secondario. */}
+      <Section icon={<Activity className="h-4 w-4" />} title="Disponibilità storica">
+        <div className="space-y-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Uptime nel tempo</div>
+            <UptimeTimeline hostId={host.id} />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Latenza ICMP (ms)</div>
+            <LatencyChart hostId={host.id} />
+          </div>
+        </div>
+      </Section>
 
       {/* ─── 7. Discovery ─── */}
       <Section icon={<ScanSearch className="h-4 w-4" />} title="Discovery">

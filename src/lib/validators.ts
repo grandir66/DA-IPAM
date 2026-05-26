@@ -63,6 +63,10 @@ export const HostUpdateSchema = z.object({
   mac: z.string().regex(macRegex, "MAC address non valido").optional().or(z.literal("")),
   known_host: z.union([z.literal(0), z.literal(1)]).optional(),
   monitor_ports: z.string().max(500).optional().nullable(),
+  // v0.2.605: editing manuale anagrafica device da scheda asset
+  serial_number: z.string().max(200).optional().nullable(),
+  model: z.string().max(200).optional().nullable(),
+  firmware: z.string().max(200).optional().nullable(),
   /** Forza credenziali archivio per ruolo detect (null = rimuovi binding). */
   detect_credentials: z
     .record(

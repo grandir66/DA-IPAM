@@ -103,7 +103,8 @@ interface DeviceExtras {
 }
 
 type DeviceFull = NetworkDevice & DeviceExtras;
-import { getClassificationLabel } from "@/lib/device-classifications";
+import { getClassificationLabel, DEVICE_CLASSIFICATIONS_ORDERED, sortClassificationsByDisplayLabel } from "@/lib/device-classifications";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -412,6 +413,9 @@ export default function ObjectDetailPage() {
   // v0.2.604: inventory_code + notes editabili inline nel tab Generale
   const [editableInventoryCode, setEditableInventoryCode] = useState("");
   const [editableNotes, setEditableNotes] = useState("");
+  // v0.2.605: serial_number + classification editabili inline
+  const [editableSerial, setEditableSerial] = useState("");
+  const [editableClassification, setEditableClassification] = useState("");
   // Multi-IP link manuale (v0.2.594+)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [clusterMembers, setClusterMembers] = useState<Array<{
@@ -458,9 +462,11 @@ export default function ObjectDetailPage() {
       }
       const h = (await hRes.json()) as HostDetail;
       setHost(h);
-      // v0.2.604: sincronizza i field editabili
+      // v0.2.604/605: sincronizza i field editabili
       setEditableInventoryCode(h.inventory_code ?? "");
       setEditableNotes(h.notes ?? "");
+      setEditableSerial(h.serial_number ?? "");
+      setEditableClassification(h.classification && h.classification !== "unknown" ? h.classification : "");
       // Device linkato (per IP)
       if (h.network_device?.id) {
         const dRes = await fetch(`/api/devices/${h.network_device.id}`);
@@ -818,7 +824,43 @@ export default function ObjectDetailPage() {
           <InfoRow label="Uptime" value={device?.device_info?.uptime_days != null ? `${device.device_info.uptime_days} giorni` : (device?.device_info?.uptime ?? null)} />
         </dl>
         <Separator className="my-3" />
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">Campi editabili</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* v0.2.605: classificazione editabile inline */}
+          <div className="space-y-1.5">
+            <Label htmlFor="ed-classification" className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Classificazione</Label>
+            <Select
+              value={editableClassification || "unknown"}
+              onValueChange={(v) => {
+                const raw = v ?? "unknown";
+                const next: string = raw === "unknown" ? "" : raw;
+                setEditableClassification(next);
+                void saveHostField({ classification: next || "unknown" });
+              }}
+            >
+              <SelectTrigger id="ed-classification" className="text-sm">
+                <SelectValue placeholder="Seleziona…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unknown">— Sconosciuta —</SelectItem>
+                {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown")).map((c) => (
+                  <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* v0.2.605: seriale editabile (utile quando il device non lo espone via SNMP/WinRM) */}
+          <div className="space-y-1.5">
+            <Label htmlFor="ed-serial" className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Seriale</Label>
+            <Input
+              id="ed-serial"
+              value={editableSerial}
+              onChange={(e) => setEditableSerial(e.target.value)}
+              onBlur={() => saveHostField({ serial_number: editableSerial || null })}
+              placeholder="Inserisci manualmente se non rilevato"
+              className="font-mono text-sm"
+            />
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="inv-code" className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Numero inventario</Label>
             <Input

@@ -2847,6 +2847,10 @@ export function updateHost(id: number, input: HostUpdate): Host | undefined {
   if (input.known_host !== undefined) { fields.push("known_host = ?"); values.push(input.known_host); }
   if (input.monitor_ports !== undefined) { fields.push("monitor_ports = ?"); values.push(input.monitor_ports); }
   if (input.device_manufacturer !== undefined) { fields.push("device_manufacturer = ?"); values.push(input.device_manufacturer); }
+  // v0.2.605: editing manuale anagrafica device da scheda asset
+  if (input.serial_number !== undefined) { fields.push("serial_number = ?"); values.push(input.serial_number || null); }
+  if (input.model !== undefined) { fields.push("model = ?"); values.push(input.model || null); }
+  if (input.firmware !== undefined) { fields.push("firmware = ?"); values.push(input.firmware || null); }
   if (input.ip_assignment !== undefined) { fields.push("ip_assignment = ?"); values.push(input.ip_assignment); }
   if (input.status !== undefined) {
     fields.push("status = ?");

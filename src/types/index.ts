@@ -779,6 +779,10 @@ export interface HostUpdate {
   monitor_ports?: string | null;
   device_manufacturer?: string | null;
   ip_assignment?: "dynamic" | "static" | "reserved" | "unknown";
+  // v0.2.605: editing anagrafica device da scheda asset
+  serial_number?: string | null;
+  model?: string | null;
+  firmware?: string | null;
 }
 
 export interface NetworkDeviceInput {

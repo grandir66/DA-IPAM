@@ -341,7 +341,10 @@ CREATE TABLE IF NOT EXISTS multihomed_links (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   group_id TEXT NOT NULL,
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
-  match_type TEXT NOT NULL CHECK(match_type IN ('serial_number', 'sysname', 'hostname', 'ad_dns')),
+  -- v0.2.639 audit B8: aggiunto 'physical_device'. Workaround precedente
+  -- usava 'serial_number' con match_value="physical_device:<id>" e impediva
+  -- una statistica per anchor type pulita.
+  match_type TEXT NOT NULL CHECK(match_type IN ('serial_number', 'sysname', 'hostname', 'ad_dns', 'physical_device')),
   match_value TEXT NOT NULL,
   is_primary INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),

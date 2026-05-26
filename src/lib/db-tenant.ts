@@ -473,6 +473,34 @@ export function getTenantDb(tenantCode: string): Database.Database {
         newDb.exec("ALTER TABLE multihomed_links ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0");
         console.info(`[db-tenant] ${tenantCode}: multihomed_links.is_primary aggiunto (verrà popolato al prossimo recomputeMultihomedLinks)`);
       }
+      // v0.2.612: estendere CHECK constraint per ammettere match_type='physical_device'
+      // (introdotto dal bridge in recomputeMultihomedLinks). SQLite non permette
+      // ALTER TABLE per cambiare CHECK constraint — serve table-swap.
+      const tableSql = (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='multihomed_links'").get() as { sql: string } | undefined)?.sql ?? "";
+      if (tableSql && !tableSql.includes("'physical_device'")) {
+        const tx = newDb.transaction(() => {
+          newDb.exec(`
+            CREATE TABLE multihomed_links_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              group_id TEXT NOT NULL,
+              host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+              match_type TEXT NOT NULL CHECK(match_type IN ('serial_number','sysname','hostname','ad_dns','physical_device')),
+              match_value TEXT NOT NULL,
+              created_at TEXT DEFAULT (datetime('now')),
+              is_primary INTEGER NOT NULL DEFAULT 0,
+              UNIQUE(host_id)
+            );
+            INSERT INTO multihomed_links_new (id, group_id, host_id, match_type, match_value, created_at, is_primary)
+              SELECT id, group_id, host_id, match_type, match_value, created_at, is_primary FROM multihomed_links;
+            DROP TABLE multihomed_links;
+            ALTER TABLE multihomed_links_new RENAME TO multihomed_links;
+            CREATE INDEX IF NOT EXISTS idx_multihomed_links_group ON multihomed_links(group_id);
+            CREATE INDEX IF NOT EXISTS idx_multihomed_links_host ON multihomed_links(host_id);
+          `);
+        });
+        tx();
+        console.info(`[db-tenant] ${tenantCode}: multihomed_links CHECK constraint esteso a 'physical_device'`);
+      }
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione multihomed_links.is_primary fallita:`, e);

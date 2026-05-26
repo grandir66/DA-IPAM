@@ -1231,4 +1231,16 @@ CREATE INDEX IF NOT EXISTS idx_hosts_classification ON hosts(classification);
 CREATE INDEX IF NOT EXISTS idx_hosts_physical_device_id ON hosts(physical_device_id);
 CREATE INDEX IF NOT EXISTS idx_network_devices_classification ON network_devices(classification);
 CREATE INDEX IF NOT EXISTS idx_network_devices_physical_device_id ON network_devices(physical_device_id);
+
+-- v0.2.641 audit perf (DB3/DB9/DB12):
+-- - scan_history(timestamp DESC): "recent activity" dashboard + scan card per-host
+--   prima full-scan (80-150ms), ora index seek (~5ms).
+-- - wazuh_vuln(agent_id, severity): counter dashboard "Critical/High per agent"
+--   prima scan-filter dopo idx_agent (15ms × 2 sev × N agent), ora index composito.
+-- - ad_computers(host_id, dns_host_name): covering index per JOIN
+--   MAX(dns_host_name) ... GROUP BY host_id in getHostsByNetworkWithDevices /
+--   getAllHostsEnriched (30ms -> 5ms per pagina rete).
+CREATE INDEX IF NOT EXISTS idx_scan_history_timestamp ON scan_history(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_agent_severity ON wazuh_vuln(agent_id, severity);
+CREATE INDEX IF NOT EXISTS idx_ad_computers_host_dns ON ad_computers(host_id, dns_host_name);
 `;

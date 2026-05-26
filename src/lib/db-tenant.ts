@@ -112,6 +112,13 @@ export function getTenantDb(tenantCode: string): Database.Database {
   newDb.pragma("cache_size = -64000");
   newDb.pragma("temp_store = MEMORY");
   newDb.pragma("mmap_size = 268435456");
+  // v0.2.641 audit perf DB7/MC12:
+  //  - wal_autocheckpoint=200: checkpoint più frequenti su scan write-heavy,
+  //    evita WAL che cresce a >50MB tra checkpoint e abbatte picchi I/O.
+  //  - busy_timeout=5000: reader/writer concorrenti (cron + UI sullo stesso
+  //    tenant) attendono 5s prima di SQLITE_BUSY invece di fallire subito.
+  newDb.pragma("wal_autocheckpoint = 200");
+  newDb.pragma("busy_timeout = 5000");
 
   // Create schema if needed
   newDb.exec(TENANT_SCHEMA_SQL);
@@ -678,9 +685,14 @@ export function getTenantDb(tenantCode: string): Database.Database {
         "SELECT id FROM hosts WHERE inferred_at IS NULL OR inferred_classifier_version IS NULL OR inferred_classifier_version < ?"
       ).all(CLASSIFIER_VERSION) as Array<{ id: number }>;
       if (toBackfill.length > 0) {
-        for (const row of toBackfill) {
-          try { applyAutoClassification(newDb, row.id); } catch { /* skip singolo host non classificabile */ }
-        }
+        // v0.2.641 audit perf DB1: backfill di N host in singola transazione.
+        // Prima: 1 fsync per host (SELECT + UPDATE). Su 2000 host = ~30s.
+        // Ora: 1 fsync totale per tutto il backfill (~1s).
+        newDb.transaction(() => {
+          for (const row of toBackfill) {
+            try { applyAutoClassification(newDb, row.id); } catch { /* skip singolo host non classificabile */ }
+          }
+        })();
         console.info(`[db-tenant] ${tenantCode}: auto-classify backfill v${CLASSIFIER_VERSION} su ${toBackfill.length} host`);
       }
     } catch (e) {

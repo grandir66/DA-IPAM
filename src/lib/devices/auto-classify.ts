@@ -393,6 +393,39 @@ interface SqliteDbLike {
   };
 }
 
+// v0.2.641 audit perf DB1: cache dei 2 prepared statement per Database handle.
+// Prima `db.prepare(SELECT...)` e `db.prepare(UPDATE...)` venivano ricompilati
+// ad ogni invocazione (~50-100µs/cad). Su backfill 2000 host = ~400ms persi
+// solo in prepare; in hot loop di scan ancora di più.
+type PreparedStmt = ReturnType<SqliteDbLike["prepare"]>;
+const stmtCache = new WeakMap<SqliteDbLike, { select: PreparedStmt; update: PreparedStmt }>();
+
+function getStmts(db: SqliteDbLike) {
+  let entry = stmtCache.get(db);
+  if (!entry) {
+    entry = {
+      select: db.prepare(
+        "SELECT hostname, mac, vendor, device_manufacturer, os_info, open_ports, snmp_data, detection_json, classification FROM hosts WHERE id = ?"
+      ),
+      update: db.prepare(`
+        UPDATE hosts SET
+          inferred_device_type = ?,
+          inferred_vendor = ?,
+          inferred_protocol = ?,
+          inferred_scan_target = ?,
+          inferred_os_family = ?,
+          inferred_confidence = ?,
+          inferred_reasons = ?,
+          inferred_at = datetime('now'),
+          inferred_classifier_version = ?
+        WHERE id = ?
+      `),
+    };
+    stmtCache.set(db, entry);
+  }
+  return entry;
+}
+
 /**
  * Legge i campi rilevanti dell'host, calcola le inferenze, e fa UPDATE delle
  * colonne inferred_*. Rispetta classification_manual=1 (in quel caso NON
@@ -403,9 +436,8 @@ interface SqliteDbLike {
  * Sicuro chiamarlo a ogni upsert.
  */
 export function applyAutoClassification(db: SqliteDbLike, hostId: number): AutoClassifyResult | null {
-  const row = db.prepare(
-    "SELECT hostname, mac, vendor, device_manufacturer, os_info, open_ports, snmp_data, detection_json, classification FROM hosts WHERE id = ?"
-  ).get(hostId) as {
+  const stmts = getStmts(db);
+  const row = stmts.select.get(hostId) as {
     hostname: string | null;
     mac: string | null;
     vendor: string | null;
@@ -431,19 +463,7 @@ export function applyAutoClassification(db: SqliteDbLike, hostId: number): AutoC
     current_classification: row.classification,
   });
 
-  db.prepare(`
-    UPDATE hosts SET
-      inferred_device_type = ?,
-      inferred_vendor = ?,
-      inferred_protocol = ?,
-      inferred_scan_target = ?,
-      inferred_os_family = ?,
-      inferred_confidence = ?,
-      inferred_reasons = ?,
-      inferred_at = datetime('now'),
-      inferred_classifier_version = ?
-    WHERE id = ?
-  `).run(
+  stmts.update.run(
     result.inferred_device_type,
     result.inferred_vendor,
     result.inferred_protocol,

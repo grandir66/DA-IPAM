@@ -1371,9 +1371,12 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
   ).get(input.network_id, input.ip) as { id: number } | undefined;
 
   if (existing) {
+    // v0.2.637 audit B3: aggiunti snmp_data/detection_json/vendor/hostname al
+    // SELECT per poter confrontare i SIGNAL del classifier e gate-are la
+    // chiamata a applyAutoClassification — vedi `shouldRecomputeClassification`.
     const existingRow = db().prepare(
-      "SELECT open_ports, classification_manual, model, serial_number, firmware, device_manufacturer, os_info, mac FROM hosts WHERE id = ?"
-    ).get(existing.id) as { open_ports: string | null; classification_manual?: number; model?: string | null; serial_number?: string | null; firmware?: string | null; device_manufacturer?: string | null; os_info?: string | null; mac?: string | null } | undefined;
+      "SELECT open_ports, classification_manual, model, serial_number, firmware, device_manufacturer, os_info, mac, snmp_data, detection_json, vendor, hostname FROM hosts WHERE id = ?"
+    ).get(existing.id) as { open_ports: string | null; classification_manual?: number; model?: string | null; serial_number?: string | null; firmware?: string | null; device_manufacturer?: string | null; os_info?: string | null; mac?: string | null; snmp_data?: string | null; detection_json?: string | null; vendor?: string | null; hostname?: string | null } | undefined;
     const classificationManual = existingRow?.classification_manual === 1;
     const preserve = input.preserve_existing === true;
     const fields: string[] = ["updated_at = datetime('now')"];
@@ -1495,12 +1498,24 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
         syncIpAssignmentsForNetwork(input.network_id);
       }
     }
-    // F1: ricomputo classificazione automatica dai dati appena aggiornati.
-    // Idempotente: se i segnali non sono cambiati, il risultato è identico.
+    // v0.2.637 audit B3: ricomputo classifier SOLO se cambia un signal rilevante.
+    // Prima `applyAutoClassification` veniva chiamato a ogni upsert — quindi
+    // anche su passaggi `status=online ↔ offline` da fast_scan/ping → migliaia
+    // di UPDATE+ricalcoli inutili al minuto. Ora gate con shouldRecomputeClassification.
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { applyAutoClassification } = require("./devices/auto-classify");
-      applyAutoClassification(db(), host.id);
+      const { applyAutoClassification, shouldRecomputeClassification } = require("./devices/auto-classify");
+      const changedSignals = new Set<string>();
+      if (input.open_ports !== undefined && input.open_ports !== existingRow?.open_ports) changedSignals.add("open_ports");
+      if (input.snmp_data !== undefined && input.snmp_data !== existingRow?.snmp_data) changedSignals.add("snmp_data");
+      if (input.device_manufacturer !== undefined && input.device_manufacturer !== existingRow?.device_manufacturer) changedSignals.add("device_manufacturer");
+      if (input.hostname !== undefined && input.hostname !== existingRow?.hostname) changedSignals.add("hostname");
+      if (input.vendor !== undefined && input.vendor !== existingRow?.vendor) changedSignals.add("vendor");
+      if (input.detection_json !== undefined && input.detection_json !== existingRow?.detection_json) changedSignals.add("detection_json");
+      if (input.os_info !== undefined && input.os_info !== existingRow?.os_info) changedSignals.add("os_info");
+      if (shouldRecomputeClassification(changedSignals)) {
+        applyAutoClassification(db(), host.id);
+      }
     } catch { /* non blocca l'upsert se la classificazione fallisce */ }
     // F4 v0.2.597: reverse trigger — se esiste un network_device con host = IP
     // dell'host appena aggiornato e host_id NULL, lo collega ora (caso tipico:

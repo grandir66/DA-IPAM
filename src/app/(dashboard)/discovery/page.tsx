@@ -643,6 +643,9 @@ export default function DiscoveryPage() {
   }
 
   // ---------- fetch ----------
+  // v0.2.635 audit B1: in caso di errore di rete o HTTP, toast esplicito invece
+  // di tabella silenziosamente vuota (l'utente non distingueva "nessun host"
+  // da "API down"). Logica del catch invariata sui side-fetch non critici.
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -685,8 +688,14 @@ export default function DiscoveryPage() {
             }
           }
         } catch { /* non critico */ }
-      } else setHosts([]);
-    } catch { setHosts([]); }
+      } else {
+        setHosts([]);
+        toast.error(`Errore caricamento host: HTTP ${res.status}`);
+      }
+    } catch (e) {
+      setHosts([]);
+      toast.error(`Errore di rete nel caricamento host: ${e instanceof Error ? e.message : String(e)}`);
+    }
     finally {
       setLoading(false);
       setSelectedIds(new Set());

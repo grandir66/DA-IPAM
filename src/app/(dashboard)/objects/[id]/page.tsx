@@ -484,8 +484,18 @@ export default function ObjectDetailPage() {
       router.push("/discovery");
       return;
     }
+    // v0.2.635 audit B1: try/catch globale + toast per errori di rete; senza
+    // questo, un fetch falliva silenzioso → loading=false ma host=null → render
+    // pagina bianca senza messaggio. Ora l'utente vede l'errore di rete e può
+    // tornare a /discovery oppure ricaricare.
     try {
-      const hRes = await fetch(`/api/hosts/${hostId}`);
+      let hRes: Response;
+      try {
+        hRes = await fetch(`/api/hosts/${hostId}`);
+      } catch (e) {
+        toast.error(`Errore di rete nel caricamento host: ${e instanceof Error ? e.message : String(e)}`);
+        return;
+      }
       if (!hRes.ok) {
         toast.error(`Host ${hostId} non trovato`);
         router.push("/discovery");
@@ -498,25 +508,35 @@ export default function ObjectDetailPage() {
       setEditableNotes(h.notes ?? "");
       setEditableSerial(h.serial_number ?? "");
       setEditableClassification(h.classification && h.classification !== "unknown" ? h.classification : "");
-      // Device linkato (per IP)
-      if (h.network_device?.id) {
-        const dRes = await fetch(`/api/devices/${h.network_device.id}`);
-        if (dRes.ok) setDevice((await dRes.json()) as DeviceFull);
+      // v0.2.635 audit perf: i 3 fetch ausiliari (device + asset + librenms) sono
+      // indipendenti tra loro e dall'host principale. Parallelizzo con allSettled
+      // per ridurre la latency complessiva e tollerare fallimenti parziali.
+      const auxResults = await Promise.allSettled([
+        h.network_device?.id ? fetch(`/api/devices/${h.network_device.id}`) : Promise.resolve(null),
+        fetch(`/api/inventory?host_id=${hostId}`),
+        fetch(`/api/hosts/${hostId}/librenms`),
+      ]);
+
+      const [dRes, aRes, lnmsRes] = auxResults;
+
+      if (dRes.status === "fulfilled" && dRes.value && dRes.value.ok) {
+        try { setDevice((await dRes.value.json()) as DeviceFull); } catch { /* non critico */ }
       }
-      // Asset linkato (per host_id)
-      const aRes = await fetch(`/api/inventory?host_id=${hostId}`);
-      if (aRes.ok) {
-        const list = (await aRes.json()) as InventoryAsset[];
-        if (Array.isArray(list) && list.length > 0) setAsset(list[0]);
+      if (aRes.status === "fulfilled" && aRes.value.ok) {
+        try {
+          const list = (await aRes.value.json()) as InventoryAsset[];
+          if (Array.isArray(list) && list.length > 0) setAsset(list[0]);
+        } catch { /* non critico */ }
       }
-      // LibreNMS integration (se configurata)
-      try {
-        const lnms = await fetch(`/api/hosts/${hostId}/librenms`);
-        if (lnms.ok) {
-          const data = await lnms.json();
+      if (lnmsRes.status === "fulfilled" && lnmsRes.value.ok) {
+        try {
+          const data = await lnmsRes.value.json();
           if (data) setLibrenms(data);
-        }
-      } catch { /* non critico */ }
+        } catch { /* non critico */ }
+      }
+    } catch (e) {
+      // Catch difensivo per qualunque throw inaspettato lungo la catena.
+      toast.error(`Errore caricamento dati host: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setLoading(false);
     }

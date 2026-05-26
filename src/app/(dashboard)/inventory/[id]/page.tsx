@@ -154,8 +154,15 @@ export default function InventoryAssetPage() {
       setLoading(false);
       return;
     }
+    // v0.2.635 audit B1: distinguere 404 (asset davvero mancante) da network
+    // error (pagina vuota indistinguibile). Toast sull'errore di rete.
     fetch(`/api/inventory/${id}`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (r.status === 404) return null;
+        if (!r.ok) { toast.error(`Errore caricamento asset: HTTP ${r.status}`); return null; }
+        try { return await r.json(); } catch { toast.error("Risposta JSON non valida"); return null; }
+      })
+      .catch((e) => { toast.error(`Errore di rete: ${e instanceof Error ? e.message : String(e)}`); return null; })
       .then((data) => {
         setAsset(data);
         if (data) {

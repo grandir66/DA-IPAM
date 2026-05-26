@@ -546,7 +546,7 @@ CREATE TABLE IF NOT EXISTS multihomed_links (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   group_id TEXT NOT NULL,
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
-  match_type TEXT NOT NULL CHECK(match_type IN ('serial_number', 'sysname', 'hostname', 'ad_dns', 'physical_device')),
+  match_type TEXT NOT NULL CHECK(match_type IN ('serial_number', 'sysname', 'hostname', 'ad_dns')),
   match_value TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')),
   UNIQUE(host_id)

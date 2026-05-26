@@ -491,31 +491,13 @@ export function getTenantDb(tenantCode: string): Database.Database {
         newDb.exec("ALTER TABLE multihomed_links ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0");
         console.info(`[db-tenant] ${tenantCode}: multihomed_links.is_primary aggiunto (verrà popolato al prossimo recomputeMultihomedLinks)`);
       }
-      // v0.2.613: estendere CHECK constraint per ammettere match_type='physical_device'.
-      // Approccio table-swap NON FUNZIONA su DB esistenti perché la GENERATED column
-      // hosts.os_family ha un CASE WHEN con stringhe in double-quote (legacy SQLite),
-      // e ogni DROP/ALTER triggera schema-integrity check che fallisce con
-      // "no such column: \"\"". Usiamo invece writable_schema per modificare in-place
-      // lo schema di multihomed_links (tecnica documentata: safe per cambi di CHECK
-      // additivi che non rendono righe esistenti invalide).
-      const tableSql = (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='multihomed_links'").get() as { sql: string } | undefined)?.sql ?? "";
-      if (tableSql && !tableSql.includes("'physical_device'")) {
-        const newSql = tableSql.replace(
-          /CHECK\(match_type IN \('serial_number',\s*'sysname',\s*'hostname',\s*'ad_dns'\)\)/,
-          "CHECK(match_type IN ('serial_number', 'sysname', 'hostname', 'ad_dns', 'physical_device'))"
-        );
-        if (newSql !== tableSql) {
-          newDb.exec("PRAGMA writable_schema = 1");
-          try {
-            newDb.prepare("UPDATE sqlite_master SET sql = ? WHERE type = 'table' AND name = 'multihomed_links'").run(newSql);
-            console.info(`[db-tenant] ${tenantCode}: multihomed_links CHECK constraint esteso a 'physical_device' via writable_schema`);
-          } finally {
-            newDb.exec("PRAGMA writable_schema = 0");
-          }
-        } else {
-          console.warn(`[db-tenant] ${tenantCode}: pattern CHECK non trovato in schema multihomed_links, skip estensione`);
-        }
-      }
+      // v0.2.617: il CHECK constraint di multihomed_links accetta solo 4 valori
+      // (serial_number/sysname/hostname/ad_dns) e non può essere esteso perché
+      // ogni DROP/ALTER su hosts fallisce per via di un legacy bug sulla
+      // GENERATED column os_family (double-quoted strings). Workaround:
+      // recomputeMultihomedLinks usa match_type='serial_number' anche per il
+      // bucket physical, con match_value che inizia per 'physical_device:' come
+      // marker — passa il CHECK e mantiene la semantica.
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione multihomed_links.is_primary fallita:`, e);
@@ -4547,6 +4529,9 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
     hostNet.set(h.id, h.network_id);
     // F4 v0.2.596: anchor #1 — physical_device_id condiviso (dichiarazione esplicita
     // o aggregazione automatica). Sufficiente da solo per formare un gruppo.
+    // v0.2.617: usiamo match_type='serial_number' (uno dei valori ammessi dal CHECK
+    // legacy) con value prefissato 'physical_device:N' come marker — il CHECK non
+    // può essere esteso senza toccare hosts (vedi commento in getTenantDb).
     if (h.physical_device_id) {
       addToBucket(`physical:${h.physical_device_id}`, h.id, "physical_device", `physical_device:${h.physical_device_id}`);
     }
@@ -4614,7 +4599,10 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
       for (const hid of members) {
         const best = hostBest.get(hid);
         if (best) {
-          ins.run(groupId, hid, best.type, best.value, hid === primaryHid ? 1 : 0);
+          // v0.2.617: type 'physical_device' non passa il CHECK constraint (vedi
+          // commento sopra). Lo mappiamo a 'serial_number' col marker nel value.
+          const dbType = best.type === "physical_device" ? "serial_number" : best.type;
+          ins.run(groupId, hid, dbType, best.value, hid === primaryHid ? 1 : 0);
           totalLinked++;
         }
       }

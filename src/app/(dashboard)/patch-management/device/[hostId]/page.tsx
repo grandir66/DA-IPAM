@@ -365,6 +365,27 @@ export default function DeviceDetailPage() {
   // Probe / bootstrap pulsanti globali (loading state)
   const [probeBusy, setProbeBusy] = useState(false);
   const [bootstrapBusy, setBootstrapBusy] = useState(false);
+  const [wazuhBusy, setWazuhBusy] = useState(false);
+  const [wazuhConfigured, setWazuhConfigured] = useState(false);
+  const [wazuhManagerHost, setWazuhManagerHost] = useState<string | null>(null);
+
+  // Carica stato Wazuh manager una volta al mount
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/patch/install-wazuh", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { configured?: boolean; managerHost?: string | null } | null) => {
+        if (cancelled || !data) return;
+        setWazuhConfigured(!!data.configured);
+        setWazuhManagerHost(data.managerHost ?? null);
+      })
+      .catch(() => {
+        /* lascia disabilitato */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fetchDetail = useCallback(async () => {
     if (!Number.isFinite(hostId) || hostId <= 0) {
@@ -589,6 +610,52 @@ export default function DeviceDetailPage() {
       setBootstrapBusy(false);
     }
   }, [detail]);
+
+  // ---- Install Wazuh agent singolo host ----
+  const handleInstallWazuh = useCallback(async () => {
+    if (!detail) return;
+    if (!wazuhConfigured) {
+      toast.error(
+        "Wazuh manager non configurato. Vai a Integrazioni → Wazuh per impostare URL e credenziali."
+      );
+      return;
+    }
+    setWazuhBusy(true);
+    try {
+      const res = await fetch("/api/patch/install-wazuh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hostId: detail.hostId }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { operationId?: number };
+      if (typeof data.operationId !== "number") {
+        throw new Error("Risposta install-wazuh senza operationId");
+      }
+      setModalTitle("Install Wazuh agent");
+      setModalDescription(
+        `Download MSI ufficiale + install + start servizio. Manager: ${wazuhManagerHost}. Idempotente.`
+      );
+      setModalOps([
+        {
+          operationId: data.operationId,
+          hostId: detail.hostId,
+          hostLabel: hostLabel(detail),
+        },
+      ]);
+      setModalOpen(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Errore install Wazuh";
+      toast.error(msg);
+    } finally {
+      setWazuhBusy(false);
+    }
+  }, [detail, wazuhConfigured, wazuhManagerHost]);
 
   // ---- Lancia upgrade per N software (singolo o bulk) ----
   const launchUpgrade = useCallback(
@@ -893,6 +960,31 @@ export default function DeviceDetailPage() {
                   <Wrench className="h-4 w-4 mr-2" />
                 )}
                 Bootstrap choco
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleInstallWazuh()}
+                disabled={
+                  wazuhBusy ||
+                  !detail ||
+                  !detail.winrmValidated ||
+                  !wazuhConfigured
+                }
+                title={
+                  !wazuhConfigured
+                    ? "Wazuh manager non configurato (Integrazioni → Wazuh)"
+                    : !detail?.winrmValidated
+                      ? "WinRM non configurato per questo host"
+                      : `Installa Wazuh agent (manager: ${wazuhManagerHost})`
+                }
+              >
+                {wazuhBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <ShieldCheck className="h-4 w-4 mr-2" />
+                )}
+                Installa Wazuh agent
               </Button>
               {detail && (
                 <a

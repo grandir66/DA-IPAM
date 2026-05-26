@@ -32,12 +32,18 @@ import {
   Package,
   PackageSearch,
   RefreshCw,
+  Rocket,
   Search,
   ServerCog,
-  Sparkles,
   ShieldCheck,
   ShieldQuestion,
+  Sparkles,
+  Wand2,
 } from "lucide-react";
+import {
+  HostActionModal,
+  type HostActionOperation,
+} from "@/components/patch/host-action-modal";
 import {
   Card,
   CardContent,
@@ -259,6 +265,8 @@ export default function PatchManagementHomePage() {
 }
 
 // ─── DeviceTab ───────────────────────────────────────────────────────────
+const MAX_BULK_SELECTION = 50;
+
 function DeviceTab() {
   const [items, setItems] = useState<DeviceItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -269,6 +277,37 @@ function DeviceTab() {
   const [severityThreshold, setSeverityThreshold] =
     useState<SeverityThreshold>("all");
   const [offset, setOffset] = useState(0);
+
+  // Selezione bulk multi-host (cap MAX_BULK_SELECTION).
+  // Solo host con winrmValidated=true sono selezionabili.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  // Modal esecuzione bulk (riusa HostActionModal con polling 2s).
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalTitle, setModalTitle] = useState("");
+  const [modalOps, setModalOps] = useState<HostActionOperation[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Stato config Wazuh manager (per abilitare bottone "Installa Wazuh").
+  const [wazuhConfigured, setWazuhConfigured] = useState(false);
+  const [wazuhManagerHost, setWazuhManagerHost] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/patch/install-wazuh", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { configured?: boolean; managerHost?: string | null } | null) => {
+        if (cancelled || !data) return;
+        setWazuhConfigured(!!data.configured);
+        setWazuhManagerHost(data.managerHost ?? null);
+      })
+      .catch(() => {
+        // Network/auth fail: lascia disabilitato il bottone
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fetchDevices = useCallback(async () => {
     setLoading(true);
@@ -309,6 +348,142 @@ function DeviceTab() {
   useEffect(() => {
     void fetchDevices();
   }, [fetchDevices]);
+
+  // Reset selezione quando cambia la pagina
+  useEffect(() => {
+    setSelected((prev) => {
+      const valid = new Set(items.map((d) => d.hostId));
+      const next = new Set<number>();
+      for (const id of prev) if (valid.has(id)) next.add(id);
+      return next;
+    });
+  }, [items]);
+
+  // ---- Selezione bulk ----
+  const toggleHost = (host: DeviceItem, checked: boolean) => {
+    if (!host.winrmValidated) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        if (next.size >= MAX_BULK_SELECTION) {
+          toast.warning(
+            `Limite massimo: ${MAX_BULK_SELECTION} host selezionabili per batch`
+          );
+          return prev;
+        }
+        next.add(host.hostId);
+      } else {
+        next.delete(host.hostId);
+      }
+      return next;
+    });
+  };
+
+  const selectableHosts = items.filter((d) => d.winrmValidated);
+  const allSelectableSelected =
+    selectableHosts.length > 0 &&
+    selectableHosts.every((d) => selected.has(d.hostId));
+
+  const toggleAll = (checked: boolean) => {
+    if (checked) {
+      const next = new Set<number>();
+      for (const d of selectableHosts) {
+        if (next.size >= MAX_BULK_SELECTION) break;
+        next.add(d.hostId);
+      }
+      if (selectableHosts.length > MAX_BULK_SELECTION) {
+        toast.warning(
+          `Selezionati i primi ${MAX_BULK_SELECTION} di ${selectableHosts.length} (limite batch)`
+        );
+      }
+      setSelected(next);
+    } else {
+      setSelected(new Set());
+    }
+  };
+
+  // ---- Bulk launch ----
+  // Lancia N POST sequenziali (throttle 200ms) verso un endpoint e apre il
+  // HostActionModal aggregando tutte le operations.
+  const launchBulk = useCallback(
+    async (params: {
+      endpoint: string;
+      body?: (host: DeviceItem) => Record<string, unknown>;
+      title: string;
+      label: (host: DeviceItem) => string;
+    }) => {
+      const targets = items.filter((d) => selected.has(d.hostId));
+      if (targets.length === 0) return;
+      setBulkBusy(true);
+      const ops: HostActionOperation[] = [];
+      try {
+        for (const host of targets) {
+          try {
+            const payload = params.body?.(host) ?? { hostId: host.hostId };
+            const res = await fetch(params.endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            if (res.status === 404) {
+              toast.error("Modulo Patch Management non installato.");
+              break;
+            }
+            if (!res.ok) {
+              const body = (await res.json().catch(() => null)) as
+                | { error?: string }
+                | null;
+              toast.error(
+                `${host.hostname ?? host.hostId}: ${body?.error ?? `HTTP ${res.status}`}`
+              );
+              continue;
+            }
+            const data = (await res.json()) as { operationId?: number };
+            if (typeof data.operationId === "number") {
+              ops.push({
+                operationId: data.operationId,
+                hostId: host.hostId,
+                hostLabel: params.label(host),
+              });
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            toast.error(`${host.hostname ?? host.hostId}: ${msg}`);
+          }
+          // Throttle anti-WinRM-burst
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        if (ops.length > 0) {
+          setModalOps(ops);
+          setModalTitle(`${params.title} (${ops.length} host)`);
+          setModalOpen(true);
+        }
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [items, selected]
+  );
+
+  const handleBulkBootstrap = () =>
+    launchBulk({
+      endpoint: "/api/patch/bootstrap",
+      title: "Bootstrap Chocolatey",
+      label: (h) => h.customName || h.hostname || `host #${h.hostId}`,
+    });
+
+  const handleBulkInstallWazuh = () =>
+    launchBulk({
+      endpoint: "/api/patch/install-wazuh",
+      title: "Install Wazuh agent",
+      label: (h) => h.customName || h.hostname || `host #${h.hostId}`,
+    });
+
+  const handleModalClose = () => {
+    setModalOpen(false);
+    // Ricarica device list per riflettere lastProbeStatus / inventory aggiornato
+    void fetchDevices();
+  };
 
   // Filtri client-side
   const filtered = items.filter((d) => {
@@ -469,7 +644,12 @@ function DeviceTab() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">
-                  <Checkbox disabled aria-label="Selezione multipla (F13)" />
+                  <Checkbox
+                    checked={allSelectableSelected}
+                    onCheckedChange={(v) => toggleAll(v === true)}
+                    aria-label="Seleziona tutti gli host con WinRM"
+                    disabled={selectableHosts.length === 0}
+                  />
                 </TableHead>
                 <TableHead>Host</TableHead>
                 <TableHead className="w-32">IP</TableHead>
@@ -489,7 +669,17 @@ function DeviceTab() {
                     className="hover:bg-muted/50 cursor-pointer"
                   >
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Checkbox disabled aria-label={`Seleziona host ${d.hostname ?? d.hostId}`} />
+                      <Checkbox
+                        checked={selected.has(d.hostId)}
+                        onCheckedChange={(v) => toggleHost(d, v === true)}
+                        disabled={!d.winrmValidated}
+                        aria-label={`Seleziona host ${d.hostname ?? d.hostId}`}
+                        title={
+                          !d.winrmValidated
+                            ? "WinRM non configurato — host non selezionabile per bulk"
+                            : undefined
+                        }
+                      />
                     </TableCell>
                     <TableCell>
                       <Link
@@ -609,6 +799,56 @@ function DeviceTab() {
           </Button>
         </div>
       )}
+
+      {/* Bulk action bar — sticky bottom */}
+      {!moduleMissing && !error && items.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 sticky bottom-0 bg-background/80 backdrop-blur py-3 border-t">
+          <div className="text-sm text-muted-foreground mr-auto">
+            {selected.size > 0
+              ? `${selected.size} host selezionati`
+              : "Seleziona host con WinRM ✓ per azioni bulk"}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleBulkBootstrap}
+            disabled={selected.size === 0 || bulkBusy}
+            title="Installa Chocolatey su tutti gli host selezionati (richiesto prima del patch)"
+          >
+            {bulkBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Rocket className="h-4 w-4 mr-2" />
+            )}
+            Bootstrap Choco ({selected.size})
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleBulkInstallWazuh}
+            disabled={selected.size === 0 || bulkBusy || !wazuhConfigured}
+            title={
+              !wazuhConfigured
+                ? "Wazuh manager non configurato (Integrazioni → Wazuh)"
+                : `Installa Wazuh agent (manager: ${wazuhManagerHost})`
+            }
+          >
+            {bulkBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Wand2 className="h-4 w-4 mr-2" />
+            )}
+            Installa Wazuh ({selected.size})
+          </Button>
+        </div>
+      )}
+
+      <HostActionModal
+        open={modalOpen}
+        onClose={handleModalClose}
+        title={modalTitle}
+        operations={modalOps}
+      />
     </>
   );
 }

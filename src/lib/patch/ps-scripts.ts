@@ -111,13 +111,114 @@ export function buildUpgradeScript(
     assertSafeIdentifier(version, "version");
   }
   const logPath = logFilePathForOperation(opId);
+  // Pre-check: se choco non esiste, errore esplicito (exit 127) — altrimenti
+  // PowerShell CommandNotFoundException lascia $LASTEXITCODE vuoto e i log
+  // non riportano la causa.
   return `$ErrorActionPreference='Continue'
 $logPath = '${logPath}'
 New-Item -ItemType Directory -Force -Path (Split-Path $logPath) | Out-Null
+$choco = (Get-Command choco -ErrorAction SilentlyContinue).Source
+if (-not $choco) {
+  'ERROR: Chocolatey non installato su questo host. Esegui prima un Bootstrap choco.' | Tee-Object -FilePath $logPath
+  'EXIT_CODE=127' | Tee-Object -FilePath $logPath -Append
+  exit 127
+}
 & choco upgrade ${packageId} -y --no-progress --limit-output ${verArg} 2>&1 | Tee-Object -FilePath $logPath
 $ec = $LASTEXITCODE
 "EXIT_CODE=$ec" | Tee-Object -FilePath $logPath -Append
 exit $ec`;
+}
+
+// Hostname valido: lettere/digit/dot/dash, max 253, almeno 1 dot oppure puro IPv4.
+const SAFE_HOSTNAME_RE = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
+const SAFE_IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;
+
+/**
+ * Valida hostname o IPv4 per Wazuh manager. Throw se non valido — non costruisce script.
+ */
+export function assertSafeManagerHost(value: string): void {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`[patch/ps-scripts] manager host vuoto`);
+  }
+  if (value.length > 253) {
+    throw new Error(`[patch/ps-scripts] manager host troppo lungo (>253 char)`);
+  }
+  if (!SAFE_HOSTNAME_RE.test(value) && !SAFE_IPV4_RE.test(value)) {
+    throw new Error(
+      `[patch/ps-scripts] manager host non valido: deve essere hostname o IPv4`
+    );
+  }
+}
+
+/**
+ * Wazuh agent install: scarica MSI ufficiale (packages.wazuh.com), installa con
+ * WAZUH_MANAGER specificato, avvia il servizio. Idempotente: se WazuhSvc è già
+ * running, exit 0 senza reinstallare.
+ *
+ * Exit code:
+ *   0   → success (installato o già presente e running)
+ *   1   → download MSI failed
+ *   2   → service NOT running dopo install
+ *   N   → exit code msiexec (se !=0)
+ *
+ * `managerHost` passa per `assertSafeManagerHost` per evitare PS injection.
+ */
+export function buildWazuhInstallScript(opId: number, managerHost: string): string {
+  assertSafeManagerHost(managerHost);
+  const logPath = logFilePathForOperation(opId);
+  return `$ErrorActionPreference='Continue'
+$logPath = '${logPath}'
+New-Item -ItemType Directory -Force -Path (Split-Path $logPath) | Out-Null
+'WAZUH_INSTALL_START' | Tee-Object -FilePath $logPath
+# Skip se già installato e running
+$existing = Get-Service WazuhSvc -ErrorAction SilentlyContinue
+if ($existing -and $existing.Status -eq 'Running') {
+  'WAZUH_ALREADY_INSTALLED_AND_RUNNING' | Tee-Object -FilePath $logPath -Append
+  'EXIT_CODE=0' | Tee-Object -FilePath $logPath -Append
+  exit 0
+}
+# Download MSI ufficiale (TLS 1.2 forzato per OS legacy)
+$msi = "$env:TEMP\\wazuh-agent.msi"
+'DOWNLOADING_MSI from packages.wazuh.com' | Tee-Object -FilePath $logPath -Append
+try {
+  [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+  Invoke-WebRequest -Uri 'https://packages.wazuh.com/4.x/windows/wazuh-agent.msi' -OutFile $msi -UseBasicParsing 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
+} catch {
+  "ERROR: Download MSI failed: $_" | Tee-Object -FilePath $logPath -Append
+  'EXIT_CODE=1' | Tee-Object -FilePath $logPath -Append
+  exit 1
+}
+if (-not (Test-Path $msi)) {
+  'ERROR: MSI non scaricato' | Tee-Object -FilePath $logPath -Append
+  'EXIT_CODE=1' | Tee-Object -FilePath $logPath -Append
+  exit 1
+}
+# Install con WAZUH_MANAGER hardcoded (validato lato server)
+'INSTALLING_MSI' | Tee-Object -FilePath $logPath -Append
+$proc = Start-Process msiexec.exe -Wait -PassThru -ArgumentList ('/i', $msi, '/qn', 'WAZUH_MANAGER=${managerHost}', 'WAZUH_AGENT_GROUP=default')
+$installExit = $proc.ExitCode
+"MSI_EXIT=$installExit" | Tee-Object -FilePath $logPath -Append
+if ($installExit -ne 0) {
+  "ERROR: msiexec exit $installExit" | Tee-Object -FilePath $logPath -Append
+  "EXIT_CODE=$installExit" | Tee-Object -FilePath $logPath -Append
+  exit $installExit
+}
+# Start service
+'STARTING_SERVICE' | Tee-Object -FilePath $logPath -Append
+Start-Service WazuhSvc 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
+Start-Sleep -Seconds 3
+$svc = Get-Service WazuhSvc -ErrorAction SilentlyContinue
+if ($svc -and $svc.Status -eq 'Running') {
+  'WAZUH_INSTALLED_AND_RUNNING' | Tee-Object -FilePath $logPath -Append
+  "WAZUH_MANAGER=${managerHost}" | Tee-Object -FilePath $logPath -Append
+  'EXIT_CODE=0' | Tee-Object -FilePath $logPath -Append
+  exit 0
+} else {
+  $status = if ($svc) { $svc.Status } else { 'NOT_FOUND' }
+  "ERROR: WazuhSvc status=$status dopo install" | Tee-Object -FilePath $logPath -Append
+  'EXIT_CODE=2' | Tee-Object -FilePath $logPath -Append
+  exit 2
+}`;
 }
 
 /**

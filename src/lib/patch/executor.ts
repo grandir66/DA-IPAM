@@ -26,6 +26,7 @@ import {
   buildBootstrapScript,
   buildProbeScript,
   buildUpgradeScript,
+  buildWazuhInstallScript,
   logFilePathForOperation,
 } from "./ps-scripts";
 import type {
@@ -390,6 +391,106 @@ export async function executeBootstrap(
   });
 
   return { operationId, chocoVersion: parsed.chocoVersion, success };
+}
+
+/**
+ * Wazuh agent install: download MSI ufficiale + msiexec con WAZUH_MANAGER
+ * + start servizio. Idempotente lato target (skip se già running).
+ *
+ * Schema patch_operations:
+ *   action='install'
+ *   package_id='wazuh-agent'  (marker)
+ *   package_manager='choco'   (placeholder — CHECK constraint accetta solo 'choco')
+ *
+ * Atteso: ~30-120s per host (download MSI 60MB + install). NON è fire-and-forget
+ * perché vogliamo restituire l'esito alla UI con il payload (manager applicato,
+ * servizio running). Per il bulk il client UI itera N POST.
+ */
+export interface WazuhInstallResult {
+  operationId: number;
+  success: boolean;
+  alreadyInstalled: boolean;
+}
+
+export async function executeWazuhInstall(
+  opts: ExecutorOptions & { managerHost: string }
+): Promise<WazuhInstallResult> {
+  const db = resolveTenantDb(opts.tenantCode);
+  const operationId = createOperation(db, {
+    hostId: opts.hostId,
+    userId: opts.userId,
+    cveId: opts.cveId ?? null,
+    action: "install",
+    packageId: "wazuh-agent",
+  });
+  const logPath = logFilePathForOperation(operationId);
+
+  updateOperation(db, operationId, {
+    status: "running",
+    startedAt: nowIso(),
+    logFilePath: logPath,
+  });
+
+  const creds = loadWinrmCredentialsForHost(db, opts.hostId);
+  if (!creds) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: "Credenziali WinRM mancanti o non decifrabili per l'host",
+    });
+    return { operationId, success: false, alreadyInstalled: false };
+  }
+
+  // managerHost validato dentro buildWazuhInstallScript (assertSafeManagerHost)
+  let script: string;
+  try {
+    script = buildWazuhInstallScript(operationId, opts.managerHost);
+  } catch (err) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: `Manager host non valido: ${(err as Error).message ?? err}`,
+    });
+    return { operationId, success: false, alreadyInstalled: false };
+  }
+
+  let stdout = "";
+  try {
+    stdout = await runWinrmCommand(
+      creds.host,
+      creds.port,
+      creds.username,
+      creds.password,
+      script,
+      true,
+      creds.realm ?? ""
+    );
+  } catch (err) {
+    const message = (err as Error)?.message ?? String(err);
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: message.slice(0, 2000),
+    });
+    return { operationId, success: false, alreadyInstalled: false };
+  }
+
+  const exitCode = parseExitCodeFromOutput(stdout);
+  const alreadyInstalled = stdout.includes("WAZUH_ALREADY_INSTALLED_AND_RUNNING");
+  const installedOk =
+    exitCode === 0 &&
+    (alreadyInstalled || stdout.includes("WAZUH_INSTALLED_AND_RUNNING"));
+
+  updateOperation(db, operationId, {
+    status: installedOk ? "success" : "failed",
+    exitCode: exitCode ?? null,
+    finishedAt: nowIso(),
+    errorMessage: installedOk
+      ? null
+      : tailForError(stdout) || "Wazuh agent install fallito",
+  });
+
+  return { operationId, success: installedOk, alreadyInstalled };
 }
 
 /**

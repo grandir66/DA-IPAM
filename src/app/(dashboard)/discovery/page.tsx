@@ -212,6 +212,7 @@ const PAGE_SIZE = 50;
 // device / NIS2 / LibreNMS / Wazuh): non deve mai sparire.
 const ALWAYS_VISIBLE = new Set(["profilo"]);
 
+/** Sync state da localStorage (load immediato, no flash). */
 function loadVisibleColumns(): Set<string> {
   if (typeof window === "undefined") return new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id));
   try {
@@ -220,7 +221,7 @@ function loadVisibleColumns(): Set<string> {
       const arr = JSON.parse(raw) as string[];
       if (Array.isArray(arr) && arr.length > 0) {
         const set = new Set(arr);
-        for (const id of ALWAYS_VISIBLE) set.add(id); // garantisce sempre visibile
+        for (const id of ALWAYS_VISIBLE) set.add(id);
         return set;
       }
     }
@@ -228,8 +229,35 @@ function loadVisibleColumns(): Set<string> {
   return new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id));
 }
 
+/** v0.2.622: persistenza server-side. Salva sia localStorage (load immediato al
+ *  prossimo refresh) sia /api/user/preferences (sync cross-browser/device per
+ *  lo stesso utente loggato). Fire-and-forget sul server (no spinner). */
 function saveVisibleColumns(cols: Set<string>) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...cols])); } catch { /* ignore */ }
+  const value = JSON.stringify([...cols]);
+  try { localStorage.setItem(STORAGE_KEY, value); } catch { /* ignore */ }
+  try {
+    void fetch("/api/user/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "discovery-columns", value }),
+      cache: "no-store",
+    });
+  } catch { /* ignore */ }
+}
+
+/** Carica le preferenze dal server e merge con quelle locali (server vince). */
+async function fetchServerColumns(): Promise<Set<string> | null> {
+  try {
+    const r = await fetch("/api/user/preferences?key=discovery-columns", { cache: "no-store" });
+    if (!r.ok) return null;
+    const data = await r.json() as { value: string | null };
+    if (!data.value) return null;
+    const arr = JSON.parse(data.value) as string[];
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    const set = new Set(arr);
+    for (const id of ALWAYS_VISIBLE) set.add(id);
+    return set;
+  } catch { return null; }
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +389,18 @@ export default function DiscoveryPage() {
   const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
   const [page, setPage] = useState(1);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(loadVisibleColumns);
+
+  // v0.2.622: al mount sincronizza con la preferenza salvata server-side per
+  // questo utente loggato. Server vince su localStorage se diverso (cross-browser).
+  useEffect(() => {
+    void fetchServerColumns().then((srv) => {
+      if (!srv) return;
+      const localStr = JSON.stringify([...visibleCols].sort());
+      const srvStr = JSON.stringify([...srv].sort());
+      if (localStr !== srvStr) setVisibleCols(srv);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Tier 1 row actions: state per disabilitare il bottone durante l'azione ─
   const [rowActionBusy, setRowActionBusy] = useState<{ id: number; kind: "test" | "query" | "delete" } | null>(null);
@@ -1262,9 +1302,24 @@ export default function DiscoveryPage() {
         );
       }
       case "known_host":
-        return h.known_host
-          ? <span title="Configurazione manuale: non aggiornata automaticamente dagli scan" className="inline-flex items-center justify-center text-primary"><Lock className="h-3.5 w-3.5" /></span>
-          : <span className="text-muted-foreground text-xs">—</span>;
+        // v0.2.622: toggleable inline. Click → PUT { known_host: 0|1 }.
+        // Quando attivo (lucchetto), l'host non viene rimosso/marcato offline
+        // dagli scan automatici — usato per device statici noti (router/server).
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void saveHostFieldInline(h.id, { known_host: h.known_host ? 0 : 1 });
+            }}
+            title={h.known_host
+              ? "Host fisso (clicca per disattivare). Non rimosso automaticamente dagli scan."
+              : "Clicca per marcare come host fisso (non rimuovere automaticamente)."}
+            className={`inline-flex items-center justify-center rounded p-0.5 hover:bg-muted/60 ${h.known_host ? "text-primary" : "text-muted-foreground/40 hover:text-muted-foreground"}`}
+          >
+            <Lock className="h-3.5 w-3.5" />
+          </button>
+        );
       case "ip_assignment": {
         const labels: Record<string, string> = { dynamic: "DHCP", static: "Statico", reserved: "Riservato", unknown: "—" };
         const colors: Record<string, string> = { dynamic: "bg-blue-500/10 text-blue-600 border-blue-300/40", static: "bg-amber-500/10 text-amber-600 border-amber-300/40", reserved: "bg-purple-500/10 text-purple-600 border-purple-300/40" };

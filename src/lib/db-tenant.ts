@@ -651,16 +651,14 @@ export function getTenantDb(tenantCode: string): Database.Database {
            AND NOT EXISTS (SELECT 1 FROM multihomed_links ml WHERE ml.host_id = h.id)`
       ).get() as { n: number };
       if (orphan.n > 0) {
-        // Ricomputo non chiamato finora per N host con cluster fisico noto.
-        // recomputeMultihomedLinks() è O(N hosts), pochi secondi anche su tenant grandi.
-        // NB: recomputeMultihomedLinks vive nel modulo corrente (db-tenant.ts) e usa
-        // il `db()` del contesto; qui siamo in `getTenantDb()` quindi non possiamo
-        // chiamarlo direttamente. Lo lasciamo come marker: l'utente può triggerare
-        // via POST /api/multihomed/recompute oppure al prossimo manualLink/resolver run.
-        console.info(`[db-tenant] ${tenantCode}: ${orphan.n} host con physical_device_id ma senza multihomed_links — chiama POST /api/multihomed/recompute o trigger un resolver run`);
+        // recomputeMultihomedLinks è definita più sotto nello stesso modulo:
+        // chiamata sicura via re-import (evita circular initialization issue in
+        // SQL builder). Idempotente.
+        const result = recomputeMultihomedLinks(newDb);
+        console.info(`[db-tenant] ${tenantCode}: multihomed bridge — ${orphan.n} host orphan → ricomputati ${result.groups} gruppi, ${result.hosts_linked} link`);
       }
     } catch (e) {
-      console.warn(`[db-tenant] ${tenantCode}: check multihomed orphan fallito:`, e);
+      console.warn(`[db-tenant] ${tenantCode}: bridge multihomed fallito:`, e);
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione physical_devices fallita:`, e);
@@ -4474,8 +4472,13 @@ function ipv4ToInt(ip: string): number {
   return n;
 }
 
-export function recomputeMultihomedLinks(): { groups: number; hosts_linked: number } {
-  const d = db();
+/**
+ * Parametro `targetDb` opzionale: se passato (uso interno dalla migration getTenantDb),
+ * usa quel handle invece di `db()` (che richiede context tenant attivo, non ancora
+ * disponibile durante l'apertura).
+ */
+export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups: number; hosts_linked: number } {
+  const d = targetDb ?? db();
   // Includo `has_device` (1 se l'host ha un network_device associato via IP) per
   // l'auto-pick primary: i managed hanno priorità perché concentrano credenziali,
   // SNMP context e storia di scan.

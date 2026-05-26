@@ -59,6 +59,20 @@ const TYPE_PRIORITY: string[] = [
   "device_temperature",
 ];
 
+/**
+ * Grafici "sempre da tentare" perché LibreNMS spesso non li elenca nella
+ * risposta di `/devices/{id}/graphs` anche quando il device ha i dati (CPU/RAM/
+ * traffico aggregato). Li passiamo come tentativo: se LibreNMS ritorna 404
+ * il componente <LibreNMSGraph> mostra "non disponibile" e amen, altrimenti
+ * appaiono.
+ */
+const ALWAYS_PROBE: string[] = [
+  "device_processor",
+  "device_mempool",
+  "device_bits",
+  "device_ping_perf",
+];
+
 interface Props {
   deviceId: number;
   /** Limita il numero di grafici renderizzati (default 6 più rilevanti). */
@@ -86,26 +100,39 @@ export function LibreNMSDeviceGraphs({ deviceId, limit = 6 }: Props) {
         const data = await r.json().catch(() => ({ graphs: [] as Array<{ name: string; desc?: string }> }));
         if (!r.ok) {
           setLoadError(data?.error || `HTTP ${r.status}`);
-          setAvailableGraphs([]);
+          // Anche se il list endpoint fallisce, tentiamo i comuni
+          setAvailableGraphs(ALWAYS_PROBE.map((t) => ({ type: t, label: TYPE_LABELS[t] ?? t })));
           return;
         }
         const list = (data.graphs ?? []) as Array<{ name: string; desc?: string }>;
-        // Ordino per TYPE_PRIORITY, gli altri in coda
+        // v0.2.625: merge ALWAYS_PROBE + lista dinamica.
+        // La lista LibreNMS è spesso incompleta (omette CPU/RAM/traffic anche se i
+        // grafici esistono): forziamo i tipi base sempre, gli altri si aggiungono.
+        const known = new Set<string>(ALWAYS_PROBE);
+        const merged: Array<{ name: string; desc?: string }> = ALWAYS_PROBE.map((t) => ({ name: t, desc: TYPE_LABELS[t] }));
+        for (const g of list) {
+          if (!known.has(g.name)) {
+            merged.push(g);
+            known.add(g.name);
+          }
+        }
+        // Ordino per priorità
         const prioMap = new Map<string, number>();
         TYPE_PRIORITY.forEach((t, i) => prioMap.set(t, i));
-        const sorted = [...list].sort((a, b) => {
+        merged.sort((a, b) => {
           const pa = prioMap.has(a.name) ? prioMap.get(a.name)! : 100;
           const pb = prioMap.has(b.name) ? prioMap.get(b.name)! : 100;
           return pa - pb;
         });
-        setAvailableGraphs(sorted.slice(0, limit).map((g) => ({
+        setAvailableGraphs(merged.slice(0, limit).map((g) => ({
           type: g.name,
           label: TYPE_LABELS[g.name] ?? g.desc ?? g.name,
         })));
       })
       .catch((e) => {
         setLoadError(e instanceof Error ? e.message : String(e));
-        setAvailableGraphs([]);
+        // Fallback: prova comunque i comuni
+        setAvailableGraphs(ALWAYS_PROBE.map((t) => ({ type: t, label: TYPE_LABELS[t] ?? t })));
       });
   }, [deviceId, limit]);
 
@@ -181,6 +208,11 @@ function LibreNMSGraph({ deviceId, type, label, from }: GraphProps) {
   const [state, setState] = useState<"loading" | "ok" | "error">("loading");
   const src = `/api/integrations/librenms/graph?device_id=${deviceId}&type=${encodeURIComponent(type)}&from=${encodeURIComponent(from)}&to=now&width=1200&height=250`;
 
+  // v0.2.625: i grafici non disponibili (404 da LibreNMS) sono nascosti
+  // completamente — non ha senso vedere placeholder vuoti per tipi che il
+  // device non supporta. Resta solo lo spinner finché carica.
+  if (state === "error") return null;
+
   return (
     <div className="rounded-md border border-border bg-muted/20">
       <div className="px-3 py-1.5 border-b border-border text-xs font-medium text-muted-foreground">
@@ -189,11 +221,6 @@ function LibreNMSGraph({ deviceId, type, label, from }: GraphProps) {
       <div className="relative min-h-[120px] flex items-center justify-center">
         {state === "loading" && (
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground absolute" />
-        )}
-        {state === "error" && (
-          <p className="text-xs text-muted-foreground py-8">
-            Grafico non ancora disponibile (in attesa di dati di polling).
-          </p>
         )}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img

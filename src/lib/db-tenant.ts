@@ -540,6 +540,28 @@ export function getTenantDb(tenantCode: string): Database.Database {
       newDb.exec("ALTER TABLE network_devices ADD COLUMN physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL");
       console.info(`[db-tenant] ${tenantCode}: network_devices.physical_device_id aggiunto`);
     }
+    // F4 (v0.2.595+): FK formale network_devices.host_id → hosts(id).
+    // Prima il join host↔device era solo per IP string (network_devices.host = hosts.ip):
+    // fragile e ambiguo se più reti hanno lo stesso IP. Ora abbiamo una vera
+    // relazione, con ON DELETE SET NULL (il device sopravvive se l'host viene
+    // rimosso dal discovery, ma perde l'ancora).
+    if (!ndCols.some((c) => c.name === "host_id")) {
+      newDb.exec("ALTER TABLE network_devices ADD COLUMN host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_network_devices_host_id ON network_devices(host_id)");
+      // Backfill best-effort: per ogni device, cerca un host con stesso IP letterale.
+      // I device con host=URL (es. Proxmox "https://1.2.3.4:8006") restano NULL.
+      // Se più reti hanno lo stesso IP, prendiamo il primo match (LIMIT 1).
+      try {
+        const backfill = newDb.prepare(`
+          UPDATE network_devices SET host_id = (
+            SELECT h.id FROM hosts h WHERE h.ip = network_devices.host LIMIT 1
+          ) WHERE host_id IS NULL
+        `).run();
+        console.info(`[db-tenant] ${tenantCode}: network_devices.host_id aggiunto (backfill: ${backfill.changes} righe collegate)`);
+      } catch (e) {
+        console.warn(`[db-tenant] ${tenantCode}: backfill host_id fallito:`, e);
+      }
+    }
     const hCols = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
     if (!hCols.some((c) => c.name === "physical_device_id")) {
       newDb.exec("ALTER TABLE hosts ADD COLUMN physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL");
@@ -1186,7 +1208,11 @@ export function getHostById(id: number): HostDetail | undefined {
     ORDER BY mpe.timestamp DESC LIMIT 1
   `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; port_name: string; vlan: number | null } | undefined : undefined;
 
-  const networkDevice = getNetworkDeviceByHost(host.ip);
+  // F4: prefer FK lookup (network_devices.host_id) over fragile IP string match;
+  // fallback all'IP per compatibilità con device pre-migration che potrebbero avere
+  // host_id NULL se il backfill non ha matchato (es. proxmox host="https://..."
+  // anziché IP plain).
+  const networkDevice = getNetworkDeviceByHostId(host.id) ?? getNetworkDeviceByHost(host.ip);
 
   const scanTypesSeen = [...new Set(recentScans.map((s) => s.scan_type))];
 
@@ -1775,17 +1801,32 @@ export function getNetworkDeviceByHost(ip: string): NetworkDevice | undefined {
   return db().prepare("SELECT * FROM network_devices WHERE host = ?").get(ip) as NetworkDevice | undefined;
 }
 
+/** F4: lookup device via FK host_id (più affidabile della string match su IP). */
+export function getNetworkDeviceByHostId(hostId: number): NetworkDevice | undefined {
+  return db().prepare("SELECT * FROM network_devices WHERE host_id = ? ORDER BY id LIMIT 1").get(hostId) as NetworkDevice | undefined;
+}
+
 type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll"> & {
   classification?: string | null;
   scan_target?: string | null;
   product_profile?: string | null;
   use_for_arp_poll?: number | boolean | null;
+  /** F4: opzionale — se non passato, lookup automatico via IP. */
+  host_id?: number | null;
 };
 
 export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
+  // F4: auto-lookup host_id da IP se non passato esplicitamente. Best-effort:
+  // se più reti hanno lo stesso IP, prendiamo il primo match (raro nei deploy reali).
+  let hostId: number | null = input.host_id ?? null;
+  if (hostId === null && input.host) {
+    const match = db().prepare("SELECT id FROM hosts WHERE ip = ? ORDER BY id LIMIT 1").get(input.host) as { id: number } | undefined;
+    if (match) hostId = match.id;
+  }
+
   const stmt = db().prepare(
-    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll, host_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name, input.host, input.device_type, input.vendor,
@@ -1796,7 +1837,8 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     (input as { classification?: string | null }).classification ?? null,
     (input as { scan_target?: string | null }).scan_target ?? null,
     (input as { product_profile?: string | null }).product_profile ?? null,
-    (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === 1 || (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === true ? 1 : 0
+    (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === 1 || (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === true ? 1 : 0,
+    hostId
   );
   return db().prepare("SELECT * FROM network_devices WHERE id = ?").get(result.lastInsertRowid) as NetworkDevice;
 }
@@ -1805,7 +1847,7 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll"] as const;
+  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id"] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);

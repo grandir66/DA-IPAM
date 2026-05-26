@@ -207,6 +207,8 @@ export interface NetworkDevice {
   use_for_arp_poll: number;
   /** Aggregazione cross-subnet: punta a physical_devices.id. Nullable: assegnato solo dopo interface probe + identity resolver. */
   physical_device_id: number | null;
+  /** F4 (v0.2.595+): FK formale all'host originale in discovery (1:1 logico, ma schema permette 1:N). Null se il device è stato creato manualmente senza host corrispondente, oppure se l'host è stato eliminato (ON DELETE SET NULL). */
+  host_id?: number | null;
   created_at: string;
   updated_at: string;
 }

@@ -110,7 +110,7 @@ export function PresetsDialog({ open, onOpenChange, presets, availableClassifica
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-5xl">
         <DialogHeader className="border-b border-border/50 px-4 pt-4 pb-3">
           <DialogTitle>Gestisci filtri rapidi</DialogTitle>
         </DialogHeader>
@@ -125,6 +125,12 @@ export function PresetsDialog({ open, onOpenChange, presets, availableClassifica
             {draft.map((preset, idx) => {
               const Icon = ICON_BY_NAME[preset.iconName] ?? Boxes;
               const isSpecial = preset.filter === "group:multihomed" || preset.filter === "group:other";
+              // Classification già assegnate ad ALTRI preset: vanno nascoste
+              // dalla lista disponibile di questo, ma restano selezionate qui
+              // (se ce le ha già). Rimuoverle da un preset le rimette in pool.
+              const claimedElsewhere = new Set(
+                draft.flatMap((p, j) => (j === idx ? [] : p.match))
+              );
               return (
                 <div key={`${preset.filter}-${idx}`} className="border rounded-md p-3 space-y-2 bg-muted/20">
                   <div className="flex items-center gap-2">
@@ -170,6 +176,7 @@ export function PresetsDialog({ open, onOpenChange, presets, availableClassifica
                     <ClassificationMultiSelect
                       selected={preset.match}
                       available={availableClassifications}
+                      hideFromPool={claimedElsewhere}
                       onChange={(next) => updateAt(idx, { match: next })}
                     />
                   )}
@@ -207,10 +214,13 @@ export function PresetsDialog({ open, onOpenChange, presets, availableClassifica
 interface MultiSelectProps {
   selected: string[];
   available: readonly string[];
+  /** Classification già assegnate ad altri preset: nascoste dal pool ma non
+   *  forzate qui (il caller mantiene `selected` autoritativo). */
+  hideFromPool?: ReadonlySet<string>;
   onChange: (next: string[]) => void;
 }
 
-function ClassificationMultiSelect({ selected, available, onChange }: MultiSelectProps) {
+function ClassificationMultiSelect({ selected, available, hideFromPool, onChange }: MultiSelectProps) {
   const [search, setSearch] = useState("");
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   const filtered = useMemo(() => {
@@ -247,8 +257,8 @@ function ClassificationMultiSelect({ selected, available, onChange }: MultiSelec
           ))}
         </div>
       )}
-      <div className="border rounded max-h-[160px] overflow-y-auto p-1 grid grid-cols-3 gap-0.5">
-        {filtered.filter((c) => !selectedSet.has(c)).slice(0, 60).map((c) => (
+      <div className="border rounded max-h-[160px] overflow-y-auto p-1 grid grid-cols-4 gap-0.5">
+        {filtered.filter((c) => !selectedSet.has(c) && !(hideFromPool?.has(c))).slice(0, 80).map((c) => (
           <button
             key={c}
             type="button"

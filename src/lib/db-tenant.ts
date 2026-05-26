@@ -164,12 +164,13 @@ export function getTenantDb(tenantCode: string): Database.Database {
     ) VIRTUAL
   `;
   try {
-    const hostCols = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
+    // table_xinfo include anche le GENERATED VIRTUAL columns (table_info NO).
+    const hostCols = newDb.prepare("PRAGMA table_xinfo(hosts)").all() as Array<{ name: string }>;
     if (hostCols.length > 0 && !hostCols.some((c) => c.name === "os_family")) {
       newDb.exec(`ALTER TABLE hosts ADD COLUMN os_family TEXT ${OS_FAMILY_GENERATED_SQL}`);
       console.info(`[db-tenant] ${tenantCode}: aggiunta hosts.os_family GENERATED`);
-    } else {
-      // v0.2.614: fix legacy DB con os_family che ha valori in DOUBLE QUOTES
+    } else if (hostCols.length > 0) {
+      // v0.2.616: fix legacy DB con os_family che ha valori in DOUBLE QUOTES
       // (es. "Unknown" invece di 'Unknown'). SQLite stricter interpreta i double
       // quotes come column reference → ogni ALTER/DROP su qualsiasi tabella
       // triggera integrity check e fallisce con "no such column: \"\"".
@@ -181,7 +182,7 @@ export function getTenantDb(tenantCode: string): Database.Database {
           newDb.exec(`ALTER TABLE hosts ADD COLUMN os_family TEXT ${OS_FAMILY_GENERATED_SQL}`);
           console.info(`[db-tenant] ${tenantCode}: hosts.os_family ricreata (fix double-quote legacy)`);
         } catch (e) {
-          console.warn(`[db-tenant] ${tenantCode}: fix double-quote os_family fallito (richiede SQLite ≥3.35):`, e);
+          console.warn(`[db-tenant] ${tenantCode}: fix double-quote os_family fallito:`, e);
         }
       }
     }

@@ -858,75 +858,67 @@ export default function ObjectDetailPage() {
         {/* ═══════════════ TAB: GENERALE ═══════════════ */}
         <TabsContent value="generale" className="space-y-4">
 
-      {/* ─── v0.2.606: Stato runtime spostato in cima — è la prima cosa che serve sapere
-          aprendo l'asset. Porte e credenziali sono ancora più visibili tramite i badge
-          nell'header (riga ~705). */}
+      {/* ─── v0.2.608: Stato runtime condensato — 3 righe invece di 8. */}
       <Section
         id="runtime-section"
         icon={<Activity className="h-4 w-4 text-emerald-600" />}
         title="Stato runtime"
         badge={
-          <div className="flex items-center gap-1.5 ml-2">
+          <div className="flex items-center gap-1.5 ml-2 flex-wrap">
             {host.status === "online" && <Badge className="text-[10px] bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Online</Badge>}
             {host.status === "offline" && <Badge variant="destructive" className="text-[10px]">Offline</Badge>}
             {host.last_response_time_ms != null && (
               <Badge variant="outline" className="text-[10px] font-mono">{host.last_response_time_ms} ms</Badge>
             )}
+            <span className="text-[10px] text-muted-foreground ml-1">
+              {host.last_seen ? `visto ${parseUtcDate(host.last_seen).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}
+              {host.first_seen ? ` · scoperto ${parseUtcDate(host.first_seen).toLocaleDateString("it-IT")}` : ""}
+            </span>
           </div>
         }
       >
-        <dl className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <InfoRow label="Ultima volta visto" value={host.last_seen ? parseUtcDate(host.last_seen).toLocaleString("it-IT") : null} />
-          <InfoRow label="Prima volta visto" value={host.first_seen ? parseUtcDate(host.first_seen).toLocaleString("it-IT") : null} />
-          <InfoRow label="Porte TCP aperte" value={runtimeSummary.tcpPorts.length > 0 ? String(runtimeSummary.tcpPorts.length) : null} />
-          <InfoRow label="Credenziali validate" value={runtimeSummary.validatedCreds.length > 0 ? String(runtimeSummary.validatedCreds.length) : null} />
-        </dl>
-        <Separator className="my-3" />
-        <div className="space-y-2">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-            Porte TCP aperte ({runtimeSummary.tcpPorts.length})
-          </div>
-          <div className="flex flex-wrap gap-1.5">
+        <div className="space-y-2 text-xs">
+          {/* Porte TCP/UDP in un'unica riga compatta */}
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-muted-foreground font-medium shrink-0 min-w-[80px]">TCP ({runtimeSummary.tcpPorts.length})</span>
             {runtimeSummary.tcpPorts.length === 0 ? (
-              <span className="text-xs text-muted-foreground">Nessuna porta TCP rilevata</span>
+              <span className="text-muted-foreground/60">—</span>
             ) : (
-              runtimeSummary.tcpPorts.slice(0, 50).map((p) => (
-                <Badge key={`tcp-${p}`} variant="outline" className="text-[10px] font-mono">{p}</Badge>
-              ))
+              <div className="flex flex-wrap gap-1">
+                {runtimeSummary.tcpPorts.slice(0, 30).map((p) => (
+                  <Badge key={`tcp-${p}`} variant="outline" className="text-[10px] font-mono px-1.5 py-0">{p}</Badge>
+                ))}
+                {runtimeSummary.tcpPorts.length > 30 && <span className="text-[10px] text-muted-foreground">+{runtimeSummary.tcpPorts.length - 30}</span>}
+              </div>
             )}
-            {runtimeSummary.tcpPorts.length > 50 && <span className="text-[10px] text-muted-foreground">+{runtimeSummary.tcpPorts.length - 50}</span>}
           </div>
-        </div>
-        {runtimeSummary.udpPorts.length > 0 && (
-          <div className="space-y-2 mt-3">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-              Porte UDP aperte ({runtimeSummary.udpPorts.length})
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {runtimeSummary.udpPorts.slice(0, 30).map((p) => (
-                <Badge key={`udp-${p}`} variant="secondary" className="text-[10px] font-mono">{p}</Badge>
-              ))}
-              {runtimeSummary.udpPorts.length > 30 && <span className="text-[10px] text-muted-foreground">+{runtimeSummary.udpPorts.length - 30}</span>}
-            </div>
-          </div>
-        )}
-        <Separator className="my-3" />
-        <div className="space-y-2">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-            Credenziali funzionanti ({runtimeSummary.validatedCreds.length})
-          </div>
-          {runtimeSummary.validatedCreds.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Nessuna credenziale validata su questo host.</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {runtimeSummary.validatedCreds.map((hc) => (
-                <Badge key={hc.id} variant="default" className="text-[10px] gap-1">
-                  <KeyRound className="h-3 w-3" />
-                  {hc.protocol_type}:{hc.port} · {hc.credential_name}
-                </Badge>
-              ))}
+          {runtimeSummary.udpPorts.length > 0 && (
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-muted-foreground font-medium shrink-0 min-w-[80px]">UDP ({runtimeSummary.udpPorts.length})</span>
+              <div className="flex flex-wrap gap-1">
+                {runtimeSummary.udpPorts.slice(0, 20).map((p) => (
+                  <Badge key={`udp-${p}`} variant="secondary" className="text-[10px] font-mono px-1.5 py-0">{p}</Badge>
+                ))}
+                {runtimeSummary.udpPorts.length > 20 && <span className="text-[10px] text-muted-foreground">+{runtimeSummary.udpPorts.length - 20}</span>}
+              </div>
             </div>
           )}
+          {/* Credenziali validate inline */}
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-muted-foreground font-medium shrink-0 min-w-[80px]">Cred. OK ({runtimeSummary.validatedCreds.length})</span>
+            {runtimeSummary.validatedCreds.length === 0 ? (
+              <span className="text-muted-foreground/60">—</span>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {runtimeSummary.validatedCreds.map((hc) => (
+                  <Badge key={hc.id} variant="default" className="text-[10px] gap-0.5 px-1.5 py-0">
+                    <KeyRound className="h-2.5 w-2.5" />
+                    {hc.protocol_type}:{hc.port}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </Section>
 

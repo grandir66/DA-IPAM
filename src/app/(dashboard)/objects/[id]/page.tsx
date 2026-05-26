@@ -403,6 +403,8 @@ export default function ObjectDetailPage() {
   const [promoteOpen, setPromoteOpen] = useState(false);
   // v0.2.599: modale edit device inline (no più redirect a /devices/[id], che era senza tab)
   const [editDeviceOpen, setEditDeviceOpen] = useState(false);
+  // v0.2.600: test connessione (era solo su /devices/[id], ora /devices/[id] redirige qui)
+  const [testingConnection, setTestingConnection] = useState(false);
   // Multi-IP link manuale (v0.2.594+)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [clusterMembers, setClusterMembers] = useState<Array<{
@@ -562,6 +564,21 @@ export default function ObjectDetailPage() {
     }
   }
 
+  async function handleTestConnection() {
+    if (!device) return;
+    setTestingConnection(true);
+    try {
+      const res = await fetch(`/api/devices/${device.id}/test`);
+      const data = await res.json();
+      if (data.success) toast.success("Connessione riuscita");
+      else toast.error(data.error || "Connessione fallita");
+    } catch {
+      toast.error("Errore nel test di connessione");
+    } finally {
+      setTestingConnection(false);
+    }
+  }
+
   async function handleCreateAsset() {
     if (!host) return;
     try {
@@ -642,8 +659,19 @@ export default function ObjectDetailPage() {
           <div className="flex gap-2 shrink-0">
             {isManaged && (
               <Button
+                variant="outline"
+                onClick={handleTestConnection}
+                disabled={testingConnection || refreshing}
+                title="Test rapido della connessione al device (TCP/SNMP/SSH/WinRM)"
+              >
+                <Activity className={`h-4 w-4 mr-2 ${testingConnection ? "animate-pulse" : ""}`} />
+                {testingConnection ? "Test..." : "Test connessione"}
+              </Button>
+            )}
+            {isManaged && (
+              <Button
                 onClick={handleUpdateAll}
-                disabled={refreshing}
+                disabled={refreshing || testingConnection}
                 className="bg-primary hover:bg-primary/90"
                 title="Test connessione → query SNMP/ARP → inventario software"
               >

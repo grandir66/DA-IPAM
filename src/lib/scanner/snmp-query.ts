@@ -813,3 +813,67 @@ export async function querySnmpInfoMultiCommunity(
     community: null,
   };
 }
+
+/**
+ * v0.2.644 audit perf SC1: probe leggero "solo sysGroup" (sysDescr+sysName+sysObjectID).
+ *
+ * Prima il primo probe in `runDiscovery` chiamava `querySnmpInfoMultiCommunity()`
+ * che dietro le quinte fa FASE 1 GET + FASE 2 ENTITY-MIB walks + FASE 3
+ * ifTable/ARP/UniFi/HostResources walks + testFingerprintOids walks per ogni
+ * prefisso enterprise (5-15s/host). Poi la stessa pipeline veniva ripetuta
+ * dalla "sessione unificata" successiva → SNMP doppio walk completo per host.
+ *
+ * Questa funzione fa SOLO i 3 GET base necessari al lookup sysObjectID (~200ms
+ * vs 5-15s) e si ferma alla prima community che risponde. Il walk pesante
+ * resta poi una volta sola nella sessione unificata.
+ */
+export async function querySnmpSysGroupMultiCommunity(
+  ip: string,
+  communities: string[],
+  port: number = 161,
+): Promise<{ sysName: string | null; sysDescr: string | null; sysObjectID: string | null; community: string | null }> {
+  for (const community of communities) {
+    try {
+      const baseOids = [OID_SYSDESCR, OID_SYSNAME, OID_SYSOBJECTID];
+      const baseVarbinds = await snmpGet(ip, community, port, baseOids, 3500);
+
+      let sysName: string | null = null;
+      let sysDescr: string | null = null;
+      let sysObjectID: string | null = null;
+
+      for (const vb of baseVarbinds) {
+        const { oid, value } = parseVarbind(vb);
+        if (!value) continue;
+        if (oid === OID_SYSDESCR) sysDescr = value;
+        else if (oid === OID_SYSNAME) sysName = value;
+        else if (oid === OID_SYSOBJECTID) {
+          const v = vb.value;
+          let rawOid: string | null = null;
+          if (typeof v === "string") rawOid = v.trim() || null;
+          else if (Array.isArray(v) && v.length > 0) rawOid = v.join(".");
+          else if (v != null && typeof v === "object" && "type" in v) {
+            const obj = v as { type?: string; value?: string };
+            if (obj.type === "OID" && obj.value) rawOid = obj.value;
+            else rawOid = value;
+          } else rawOid = value;
+          sysObjectID = rawOid ? normalizeOidString(rawOid) : null;
+        }
+      }
+
+      // Fallback CLI snmpwalk se net-snmp UDP non risponde (community-name OK su CLI ma timeout su UDP raw).
+      if (!sysName && !sysDescr && !sysObjectID) {
+        const cli = await snmpwalkSystemGroupCli(ip, community, port);
+        if (cli) {
+          sysName = cli.sysName;
+          sysDescr = cli.sysDescr;
+          sysObjectID = cli.sysObjectID;
+        }
+      }
+
+      if (sysName || sysDescr || sysObjectID) {
+        return { sysName, sysDescr, sysObjectID, community };
+      }
+    } catch { /* prova prossima community */ }
+  }
+  return { sysName: null, sysDescr: null, sysObjectID: null, community: null };
+}

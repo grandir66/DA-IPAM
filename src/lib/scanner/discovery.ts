@@ -15,7 +15,7 @@ import {
 } from "./ports";
 import { readArpCache } from "./arp-cache";
 import { lookupVendor } from "./mac-vendor";
-import { querySnmpInfoMultiCommunity, normalizeOidString } from "./snmp-query";
+import { querySnmpInfoMultiCommunity, querySnmpSysGroupMultiCommunity, normalizeOidString } from "./snmp-query";
 import { classifyDevice } from "@/lib/device-classifier";
 import {
   getClassificationFromFingerprintSnapshot,
@@ -859,10 +859,16 @@ async function runDiscovery(
 
         for (let si = 0; si < onlineIps.length; si += SNMP_BATCH) {
           const batch = onlineIps.slice(si, si + SNMP_BATCH);
+          // v0.2.644 audit perf SC1: probe leggero (solo sysGroup GET, no walk).
+          // Prima `querySnmpInfoMultiCommunity` faceva FASE 1 + FASE 2 ENTITY-MIB
+          // + FASE 3 walks + testFingerprintOids (5-15s/host) — e poi la stessa
+          // pipeline veniva ripetuta nella "sessione unificata" successiva.
+          // Ora ~200ms/host per la sola identificazione vendor via sysObjectID;
+          // il walk completo resta una sola volta nel blocco unificato (riga ~1720).
           const batchResults = await Promise.all(
             batch.map(async (ip) => {
               try {
-                const r = await querySnmpInfoMultiCommunity(ip, communities, 161, { onLog: log });
+                const r = await querySnmpSysGroupMultiCommunity(ip, communities, 161);
                 if (r.sysObjectID) {
                   return { ip, sysObjectID: r.sysObjectID, sysName: r.sysName ?? null, sysDescr: r.sysDescr ?? null };
                 }

@@ -144,6 +144,50 @@ function updateOperation(
 }
 
 /** ISO8601 UTC compatibile con il resto dei timestamp tenant. */
+/**
+ * Serializzazione per host: aspetta che NON ci siano operations `running` con
+ * action `upgrade|bootstrap|install` per quel hostId. Choco mantiene file lock
+ * (`.chocolateyPending`) per qualche secondo dopo l'exit del processo, e il
+ * retry interno di choco (3 try * 300ms) non è sufficiente.
+ *
+ * Polling 3s, max wait 5 minuti. Se timeout → throw (il chiamante marca op
+ * come failed con messaggio chiaro).
+ */
+async function waitForHostFree(
+  db: Database,
+  hostId: number,
+  excludeOperationId: number
+): Promise<void> {
+  const POLL_MS = 3000;
+  const MAX_WAIT_MS = 5 * 60 * 1000;
+  const start = Date.now();
+  // Grace period 10s: include op terminate negli ultimi 10s (choco potrebbe
+  // tenere ancora lock .chocolateyPending dopo l'exit del processo).
+  const stmt = db.prepare(
+    `SELECT id FROM patch_operations
+      WHERE host_id = ?
+        AND id != ?
+        AND action IN ('upgrade','bootstrap','install')
+        AND (
+          status = 'running'
+          OR (
+            status IN ('success','failed','reboot_pending')
+            AND finished_at IS NOT NULL
+            AND finished_at > datetime('now', '-10 seconds')
+          )
+        )
+      LIMIT 1`
+  );
+  while (Date.now() - start < MAX_WAIT_MS) {
+    const busy = stmt.get(hostId, excludeOperationId) as { id: number } | undefined;
+    if (!busy) return;
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+  throw new Error(
+    `Timeout 5min attesa: un'altra operazione choco è ancora running sull'host`
+  );
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -338,6 +382,18 @@ export async function executeBootstrap(
     action: "bootstrap",
   });
   const logPath = logFilePathForOperation(operationId);
+
+  // Serializzazione per host (vedi nota in waitForHostFree)
+  try {
+    await waitForHostFree(db, opts.hostId, operationId);
+  } catch (err) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: (err as Error).message ?? "Wait host timeout",
+    });
+    return { operationId, chocoVersion: null, success: false };
+  }
 
   updateOperation(db, operationId, {
     status: "running",
@@ -547,6 +603,18 @@ async function executeUpgradeAsync(
 ): Promise<void> {
   const db = getTenantDb(tenantCode);
   const logPath = logFilePathForOperation(operationId);
+
+  // Attesa: choco serializzato per host (lock file .chocolateyPending).
+  try {
+    await waitForHostFree(db, opts.hostId, operationId);
+  } catch (err) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: (err as Error).message ?? "Wait host timeout",
+    });
+    return;
+  }
 
   updateOperation(db, operationId, {
     status: "running",

@@ -55,7 +55,7 @@ import {
   Layers,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { HostDetail, InventoryAsset, NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
+import type { HostDetail, HostSnmpData, InventoryAsset, NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 
 /** Dati addizionali ritornati da GET /api/devices/[id] oltre al NetworkDevice base. */
 interface DeviceExtras {
@@ -198,6 +198,30 @@ interface DeviceInfoJson {
   // Software
   installed_software_count?: number;
   packages_count?: number;
+  // F5.D: snapshot NAS Synology/QNAP (popolato da scan SNMP/SSH)
+  nas_inventory?: {
+    vendor: "synology" | "qnap";
+    sources?: string[];
+    snmp?: {
+      temperature_c?: number | null;
+      cpu_temperature_c?: number | null;
+      system_status?: string | null;
+      disks?: Array<{ slot?: string; model?: string; status?: string; smart_health?: string; capacity_gb?: number | null; temperature_c?: number | null; serial?: string }>;
+      raids?: Array<{ name?: string; status?: string; free_gb?: number | null; total_gb?: number | null }>;
+      volumes_snmp?: Array<{ name?: string; size_gb?: number | null; free_gb?: number | null; status?: string | null; raid_type?: string | null }>;
+      storage_pools?: Array<{ name?: string; status?: string | null; total_gb?: number | null; used_gb?: number | null }>;
+      ups?: { status?: string | null; battery_pct?: string | null };
+      services?: Array<{ name?: string; state?: string | null }>;
+    };
+    ssh?: {
+      cpu_model?: string | null;
+      kernel?: string | null;
+      mdstat_summary?: string;
+      synology_shares_preview?: string;
+      synology_packages_count?: number | null;
+      qnap_qpkg_preview?: string;
+    };
+  };
   // Metadata
   scanned_at?: string;
 }
@@ -811,6 +835,225 @@ export default function ObjectDetailPage() {
 
         {/* ═══════════════ TAB: SISTEMA ═══════════════ */}
         <TabsContent value="sistema" className="space-y-4">
+
+      {/* ─── F5.A: Inventario base — SEMPRE visibile, anche senza device_info.
+          Software di inventario: OS, SN, modello, tipologia sono indispensabili
+          per OGNI device, anche per quelli "Altri/Indeterminato". Pesca da host
+          (campi popolati da SNMP/ARP/scan) e dai suggerimenti F1 (inferred_*).
+          device_info (quando presente, via WinRM/SSH/SNMP-rich) ha priorità
+          come override per campi più dettagliati. */}
+      <Section icon={<Boxes className="h-4 w-4" />} title="Inventario base">
+        {(() => {
+          const di = device?.device_info ?? null;
+          const mfg = di?.manufacturer ?? host.device_manufacturer ?? null;
+          const model = di?.model ?? host.model ?? null;
+          const serial = di?.serial_number ?? host.serial_number ?? null;
+          const firmware = di?.os_version ?? host.firmware ?? null;
+          const osName = di?.os_name ?? host.os_info ?? null;
+          const tipologia = host.inferred_device_type
+            ?? (device?.device_type as string | undefined)
+            ?? (host.classification && host.classification !== "unknown" ? host.classification : null);
+          const vendor = host.inferred_vendor ?? device?.vendor ?? host.vendor ?? null;
+          const osFamily = host.inferred_os_family ?? null;
+          return (
+            <dl className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
+              <InfoRow label="Tipologia" value={tipologia} />
+              <InfoRow label="Vendor" value={vendor} />
+              <InfoRow label="OS family" value={osFamily} />
+              <InfoRow label="OS / Sistema" value={osName} />
+              <InfoRow label="Modello" value={model} />
+              <InfoRow label="Seriale" value={serial} mono />
+              <InfoRow label="Firmware / Versione" value={firmware} />
+              <InfoRow label="Manufacturer" value={mfg} />
+              <InfoRow label="MAC" value={host.mac} mono />
+              {host.inferred_at && (
+                <InfoRow
+                  label="Auto-classificazione"
+                  value={`${host.inferred_confidence ?? 0}% · ${new Date(host.inferred_at).toLocaleDateString("it-IT")}`}
+                />
+              )}
+            </dl>
+          );
+        })()}
+      </Section>
+
+      {/* ─── F5.B: Network device facts (SNMP) ───
+          Visibile per router/switch/firewall (network gear) e per qualsiasi host
+          con snmp_data popolato. Mostra i campi SNMP che il discovery cattura ma
+          che oggi finivano solo nel raw JSON. Per Mikrotik/UniFi/HP/Cisco/Stormshield
+          questo era il "buco principale" del tab Sistema. */}
+      {(() => {
+        let snmp: HostSnmpData | null = null;
+        try { if (host.snmp_data) snmp = JSON.parse(host.snmp_data) as HostSnmpData; } catch { /* skip */ }
+        const isNetworkGear = device?.device_type === "router" || device?.device_type === "switch" || device?.device_type === "firewall";
+        if (!isNetworkGear && !snmp) return null;
+        return (
+          <Section icon={<Network className="h-4 w-4" />} title="Informazioni di rete (SNMP)">
+            <dl className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
+              <InfoRow label="Sysname (SNMP)" value={device?.sysname ?? snmp?.sysName ?? null} />
+              <InfoRow label="Sysdescr" value={device?.sysdescr ?? snmp?.sysDescr ?? null} />
+              <InfoRow label="sysObjectID" value={snmp?.sysObjectID ?? null} mono />
+              <InfoRow label="Uptime SNMP" value={snmp?.sysUpTime ?? null} />
+              <InfoRow label="ARP entries" value={snmp?.arpEntryCount != null ? String(snmp.arpEntryCount) : null} />
+              <InfoRow label="SNMP port" value={snmp?.port ? String(snmp.port) : null} />
+              <InfoRow label="Part number" value={device?.part_number ?? snmp?.partNumber ?? null} />
+              <InfoRow label="Ultima query device" value={device?.last_info_update ? new Date(device.last_info_update).toLocaleString("it-IT") : null} />
+            </dl>
+            {/* Hints vendor-specifici che il discovery cattura via OID custom */}
+            {(snmp?.mikrotikIdentity || snmp?.unifiSummary || snmp?.ifDescrSummary || snmp?.hostResourcesSummary) && (
+              <div className="mt-3 space-y-1.5 text-xs text-muted-foreground border-t border-border/50 pt-2">
+                {snmp?.mikrotikIdentity && <p><span className="font-medium text-foreground">MikroTik:</span> {snmp.mikrotikIdentity}</p>}
+                {snmp?.unifiSummary && <p><span className="font-medium text-foreground">UniFi:</span> {snmp.unifiSummary}</p>}
+                {snmp?.ifDescrSummary && <p><span className="font-medium text-foreground">Interfacce:</span> {snmp.ifDescrSummary}</p>}
+                {snmp?.hostResourcesSummary && <p><span className="font-medium text-foreground">Risorse:</span> {snmp.hostResourcesSummary}</p>}
+              </div>
+            )}
+          </Section>
+        );
+      })()}
+
+      {/* ─── F5.D: Storage NAS (Synology/QNAP) ───
+          nas_inventory è popolato da scan SNMP + (opzionale) SSH. Mostra dischi
+          con SMART status, RAID/pool, volumi, servizi, UPS — la cosa che oggi
+          vivevano solo nel JSON raw senza essere visibili. */}
+      {(() => {
+        const nas = device?.device_info?.nas_inventory ?? null;
+        if (!nas) return null;
+        const snmp = nas.snmp;
+        const ssh = nas.ssh;
+        return (
+          <Section icon={<HardDrive className="h-4 w-4" />} title={`Storage NAS — ${nas.vendor === "synology" ? "Synology" : "QNAP"}`}>
+            <div className="space-y-3">
+              <dl className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-2">
+                <InfoRow label="Stato sistema" value={snmp?.system_status ?? null} />
+                <InfoRow label="Temperatura sistema" value={snmp?.temperature_c != null ? `${snmp.temperature_c} °C` : null} />
+                <InfoRow label="Temperatura CPU" value={snmp?.cpu_temperature_c != null ? `${snmp.cpu_temperature_c} °C` : null} />
+                <InfoRow label="UPS" value={snmp?.ups?.status ? `${snmp.ups.status}${snmp.ups.battery_pct ? ` (${snmp.ups.battery_pct})` : ""}` : null} />
+                <InfoRow label="CPU model" value={ssh?.cpu_model ?? null} />
+                <InfoRow label="Kernel" value={ssh?.kernel ?? null} mono />
+                <InfoRow label="Pacchetti installati" value={ssh?.synology_packages_count != null ? String(ssh.synology_packages_count) : null} />
+                <InfoRow label="Fonti dati" value={nas.sources && nas.sources.length ? nas.sources.join(" + ") : null} />
+              </dl>
+
+              {/* Dischi fisici */}
+              {snmp?.disks && snmp.disks.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Dischi ({snmp.disks.length})</div>
+                  <div className="border rounded-md overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="text-left px-2 py-1.5 font-medium">Slot</th>
+                          <th className="text-left px-2 py-1.5 font-medium">Modello</th>
+                          <th className="text-left px-2 py-1.5 font-medium">Capacità</th>
+                          <th className="text-left px-2 py-1.5 font-medium">Stato</th>
+                          <th className="text-left px-2 py-1.5 font-medium">SMART</th>
+                          <th className="text-left px-2 py-1.5 font-medium">Temp.</th>
+                          <th className="text-left px-2 py-1.5 font-medium">Serial</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {snmp.disks.map((d, i) => (
+                          <tr key={i} className="hover:bg-muted/30">
+                            <td className="px-2 py-1.5 font-mono">{d.slot ?? "—"}</td>
+                            <td className="px-2 py-1.5">{d.model ?? "—"}</td>
+                            <td className="px-2 py-1.5">{d.capacity_gb != null ? `${d.capacity_gb} GB` : "—"}</td>
+                            <td className="px-2 py-1.5">
+                              {d.status ? <Badge variant={/ok|normal|active/i.test(d.status) ? "default" : "destructive"} className="text-[10px]">{d.status}</Badge> : "—"}
+                            </td>
+                            <td className="px-2 py-1.5">{d.smart_health ?? "—"}</td>
+                            <td className="px-2 py-1.5">{d.temperature_c != null ? `${d.temperature_c} °C` : "—"}</td>
+                            <td className="px-2 py-1.5 font-mono text-[10px]">{d.serial ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* RAID groups */}
+              {snmp?.raids && snmp.raids.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">RAID groups ({snmp.raids.length})</div>
+                  <div className="border rounded-md divide-y">
+                    {snmp.raids.map((r, i) => (
+                      <div key={i} className="px-3 py-2 flex items-center justify-between text-sm">
+                        <span className="font-medium">{r.name ?? `RAID #${i + 1}`}</span>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          {r.status && (
+                            <Badge variant={/ok|normal|active/i.test(r.status) ? "default" : "destructive"} className="text-[10px]">{r.status}</Badge>
+                          )}
+                          {r.total_gb != null && <span>{r.free_gb != null ? `${r.free_gb}/${r.total_gb} GB free` : `${r.total_gb} GB`}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Volumi / storage pools */}
+              {snmp?.volumes_snmp && snmp.volumes_snmp.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Volumi ({snmp.volumes_snmp.length})</div>
+                  <div className="border rounded-md divide-y">
+                    {snmp.volumes_snmp.map((v, i) => (
+                      <div key={i} className="px-3 py-2 flex items-center justify-between text-sm">
+                        <span>{v.name ?? `Vol #${i + 1}`} {v.raid_type && <span className="text-xs text-muted-foreground">({v.raid_type})</span>}</span>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          {v.status && <Badge variant={/ok|normal|active/i.test(v.status) ? "default" : "destructive"} className="text-[10px]">{v.status}</Badge>}
+                          {v.size_gb != null && <span>{v.free_gb != null ? `${v.free_gb}/${v.size_gb} GB free` : `${v.size_gb} GB`}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Storage pools (QNAP) */}
+              {snmp?.storage_pools && snmp.storage_pools.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Storage pool ({snmp.storage_pools.length})</div>
+                  <div className="border rounded-md divide-y">
+                    {snmp.storage_pools.map((p, i) => (
+                      <div key={i} className="px-3 py-2 flex items-center justify-between text-sm">
+                        <span>{p.name ?? `Pool #${i + 1}`}</span>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          {p.status && <Badge variant={/ok|normal|active/i.test(p.status) ? "default" : "destructive"} className="text-[10px]">{p.status}</Badge>}
+                          {p.total_gb != null && <span>{p.used_gb != null ? `${p.used_gb}/${p.total_gb} GB used` : `${p.total_gb} GB`}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Servizi SNMP NAS */}
+              {snmp?.services && snmp.services.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Servizi NAS ({snmp.services.length})</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {snmp.services.map((s, i) => (
+                      <Badge key={i} variant={s.state && /running|active|ok/i.test(s.state) ? "default" : "outline"} className="text-[10px]">
+                        {s.name ?? "?"}{s.state ? `: ${s.state}` : ""}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* SSH previews (raw text) */}
+              {(ssh?.synology_shares_preview || ssh?.qnap_qpkg_preview || ssh?.mdstat_summary) && (
+                <div className="text-xs text-muted-foreground space-y-1 border-t border-border/50 pt-2">
+                  {ssh?.mdstat_summary && <div><span className="font-medium text-foreground">mdstat:</span> <code className="text-[10px]">{ssh.mdstat_summary}</code></div>}
+                  {ssh?.synology_shares_preview && <div><span className="font-medium text-foreground">Share Synology:</span> {ssh.synology_shares_preview}</div>}
+                  {ssh?.qnap_qpkg_preview && <div><span className="font-medium text-foreground">QPKG:</span> {ssh.qnap_qpkg_preview}</div>}
+                </div>
+              )}
+            </div>
+          </Section>
+        );
+      })()}
 
       {/* ─── 3. Sistema operativo (Windows/Linux server) ─── */}
       {(() => {

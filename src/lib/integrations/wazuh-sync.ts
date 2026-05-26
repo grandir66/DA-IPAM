@@ -232,28 +232,37 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
 
   const hostnameIndex = buildHostnameIndex();
   const activeAgentIds: string[] = [];
+  for (const agent of agents) activeAgentIds.push(agent.id);
 
-  for (const agent of agents) {
-    activeAgentIds.push(agent.id);
+  // v0.2.643 audit perf SC10: agent loop parallelizzato con p-limit(8). Prima
+  // sequenziale: 100 agent × ~500ms/agent = 50s. Ora ~6-8s. Le 7 chiamate API
+  // per agent restano serializzate via Promise.all (già parallele tra loro),
+  // ma 8 agent vengono processati contemporaneamente. SQLite better-sqlite3
+  // è sync e single-writer: i replaceXxxForAgent serializzano naturalmente.
+  // TS narrowing su `client` non si propaga nella closure: ribindo a const non-null.
+  const wzClient = client;
+  const CONCURRENCY = Math.max(1, Math.min(16, parseInt(process.env.DA_INVENT_WAZUH_AGENT_CONCURRENCY || "8", 10) || 8));
+  let cursor = 0;
+  async function processAgent(agent: WazuhAgent): Promise<void> {
     try {
-      const { hostId, primaryMac, netifaces } = await matchAgentToHost(client, agent, hostnameIndex);
+      const { hostId, primaryMac, netifaces } = await matchAgentToHost(wzClient, agent, hostnameIndex);
       upsertWazuhAgent(agent, hostId, primaryMac);
       if (hostId) result.matchedHosts++;
 
       // Sincronizza dati per gli agent attivi e disconnected recenti.
       // Skip per never_connected (non hanno mai inviato dati).
-      if (agent.status === "never_connected") continue;
+      if (agent.status === "never_connected") return;
 
       replaceNetifacesForAgent(agent.id, netifaces);
 
       const [hw, os, pkgs, ports, hotfixes, netaddrs, vulns] = await Promise.all([
-        client.getHardware(agent.id),
-        client.getOs(agent.id),
-        client.getPackages(agent.id),
-        client.getPorts(agent.id),
-        client.getHotfixes(agent.id),
-        client.getNetaddrs(agent.id),
-        fetchVulnsForAgent(agent.id, client, indexer),
+        wzClient.getHardware(agent.id),
+        wzClient.getOs(agent.id),
+        wzClient.getPackages(agent.id),
+        wzClient.getPorts(agent.id),
+        wzClient.getHotfixes(agent.id),
+        wzClient.getNetaddrs(agent.id),
+        fetchVulnsForAgent(agent.id, wzClient, indexer),
       ]);
 
       if (hw) upsertWazuhHw(agent.id, hw);
@@ -270,6 +279,14 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
       result.errors.push(`agent ${agent.id} (${agent.name ?? "?"}): ${(e as Error).message}`);
     }
   }
+  const workers = Array.from({ length: CONCURRENCY }, async () => {
+    while (cursor < agents.length) {
+      const idx = cursor++;
+      if (idx >= agents.length) break;
+      await processAgent(agents[idx]);
+    }
+  });
+  await Promise.all(workers);
 
   try {
     result.removedAgents = deleteWazuhAgentsExcept(activeAgentIds);

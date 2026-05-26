@@ -1655,12 +1655,14 @@ async function runDiscovery(
       if (skipUdpPhase) log("UDP: disattivato (nessuna porta UDP nel profilo)");
       else if (udpPortsArg) log(`Porte UDP profilo: ${udpPortsArg}`);
       else log("UDP: elenco predefinito applicazione (profilo senza elenco UDP)");
-      /** Concorrenza port scan: default 4 host in parallelo (bilanciamento velocità / affidabilità). Override: DA_INVENT_NMAP_PORT_SCAN_CONCURRENCY */
+      /** v0.2.643 audit perf SC5: default 4→8, cap 8→12. Combinato con
+       *  --max-retries 1 + --min-rate 200 lo scan profondo ~2-3× più veloce
+       *  senza degrado rilevante. Override: DA_INVENT_NMAP_PORT_SCAN_CONCURRENCY */
       const BATCH_SIZE = Math.min(
-        8,
-        Math.max(1, parseInt(process.env.DA_INVENT_NMAP_PORT_SCAN_CONCURRENCY || "4", 10))
+        12,
+        Math.max(1, parseInt(process.env.DA_INVENT_NMAP_PORT_SCAN_CONCURRENCY || "8", 10))
       );
-      if (BATCH_SIZE < 8) log(`Nmap port scan: concorrenza ${BATCH_SIZE} host (consigliato per reti con hypervisor / TLS)`);
+      if (BATCH_SIZE < 4) log(`Nmap port scan: concorrenza ${BATCH_SIZE} host (consigliato per reti con hypervisor / TLS)`);
       for (let i = 0; i < onlineIps.length; i += BATCH_SIZE) {
         const batch = onlineIps.slice(i, i + BATCH_SIZE);
         const batchResults = await Promise.all(

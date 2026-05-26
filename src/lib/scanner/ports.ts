@@ -68,11 +68,14 @@ export function getNetworkDiscoveryQuickHostTimeoutSeconds(): number {
   return Math.min(20, Math.max(5, n));
 }
 
-/** Host Nmap quick in parallelo (default 6). */
+/** Host Nmap quick in parallelo (default 12 da v0.2.643 audit perf SC3,
+ *  prima era 6). Bilanciamento aggressivo: -Pn -T5 host stabili, 12 paralleli
+ *  saturano meno la rete di 16 ma dimezzano il tempo di sweep.
+ *  Override: DA_INVENT_NMAP_DISCOVERY_CONCURRENCY. */
 export function getNetworkDiscoveryQuickConcurrency(): number {
-  const n = parseInt(process.env.DA_INVENT_NMAP_DISCOVERY_CONCURRENCY || "6", 10);
-  if (Number.isNaN(n)) return 6;
-  return Math.min(16, Math.max(1, n));
+  const n = parseInt(process.env.DA_INVENT_NMAP_DISCOVERY_CONCURRENCY || "12", 10);
+  if (Number.isNaN(n)) return 12;
+  return Math.min(24, Math.max(1, n));
 }
 
 /** Limite duro (ms) sul processo `nmap` per host in fase quick. */
@@ -106,7 +109,9 @@ export function getQuickScanTcpPorts(): string {
 export function buildNetworkDiscoveryQuickTcpArgs(): string {
   const ht = getNetworkDiscoveryQuickHostTimeoutSeconds();
   const ports = getQuickScanTcpPorts();
-  return `-Pn -sT -p ${ports} -T5 --max-retries 1 --min-rate 150 --host-timeout ${ht}s`;
+  // v0.2.643 audit perf SC3: --min-rate 150 → 400 (host già confermati live
+  // da ICMP, possiamo essere più aggressivi). Quick-Nmap ~2× più veloce.
+  return `-Pn -sT -p ${ports} -T5 --max-retries 1 --min-rate 400 --host-timeout ${ht}s`;
 }
 
 /**
@@ -137,8 +142,11 @@ export function buildTcpScanArgs(customPorts?: string | null, explicitTcpPorts?:
     tcpList = [...tcpSet].map(Number).sort((a, b) => a - b).join(",");
   }
   const ht = getNmapHostTimeoutSeconds();
-  /* -Pn: host già verificato online da ping/nmap-sn → salta host discovery di Nmap (evita falsi "down"); min-rate basso = meno perdite su rete congestionata */
-  return `-Pn -sT -p ${tcpList} -sV --version-intensity 0 -T4 --max-retries 3 --min-rate 35 --host-timeout ${ht}s`;
+  /* -Pn: host già verificato online da ping/nmap-sn → salta host discovery di Nmap (evita falsi "down").
+   * v0.2.643 audit perf SC5: --max-retries 3→1, --min-rate 35→200. Su host già
+   * confermati live i retry pesanti raramente cambiano l'esito; min-rate basso
+   * era pensato per reti congestionate ma rallenta enormemente lo scan profondo. */
+  return `-Pn -sT -p ${tcpList} -sV --version-intensity 0 -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
 }
 
 /**

@@ -22,6 +22,7 @@ import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { isAuthError } from "@/lib/api-auth";
 import { patchModuleGuard } from "@/lib/patch/route-guard";
+import { maybeRunLazyMatch } from "@/lib/patch/matcher";
 
 const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -68,6 +69,9 @@ export async function GET(request: Request) {
       );
     }
     const db = getTenantDb(tenantCode);
+    // Lazy match: se ci sono software_inventory nuovi senza meta, esegue
+    // runFullSyncMatch ora (throttle 60s). Sync, ~50ms.
+    maybeRunLazyMatch(db, tenantCode);
 
     try {
       // host_with_inventory: host (Windows) con almeno una fonte di inventory:

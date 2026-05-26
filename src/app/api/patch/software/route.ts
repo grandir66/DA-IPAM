@@ -26,6 +26,7 @@ import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { isAuthError } from "@/lib/api-auth";
 import { patchModuleGuard } from "@/lib/patch/route-guard";
+import { maybeRunLazyMatch } from "@/lib/patch/matcher";
 
 const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -67,6 +68,7 @@ export async function GET(request: Request) {
       );
     }
     const db = getTenantDb(tenantCode);
+    maybeRunLazyMatch(db, tenantCode);
 
     try {
       // Pipeline (3 fonti software unite + equi-join CVE per performance):

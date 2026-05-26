@@ -274,6 +274,57 @@ export interface FullSyncResult {
   durationMs: number;
 }
 
+// Throttle in-memory per maybeRunLazyMatch (per tenant). Evita doppi run consecutivi
+// quando l'utente naviga velocemente tra pagine. Window: 60s.
+const lazyMatchLastRun = new Map<string, number>();
+const LAZY_MATCH_WINDOW_MS = 60_000;
+
+/**
+ * Lazy auto-match: se esistono righe `software_inventory` senza una `patch_software_meta`
+ * corrispondente (cioè scans arrivati DOPO l'ultimo runFullSyncMatch), esegue subito
+ * un sync globale del tenant. Throttle 60s per tenant per evitare run frequenti.
+ *
+ * Async ma awaited: il chiamante può attendere il completamento prima di ritornare
+ * la response. Su tenant medio ~50ms — accettabile.
+ *
+ * Ritorna `true` se ha effettivamente eseguito un sync, `false` se skipped.
+ */
+export function maybeRunLazyMatch(
+  db: Database.Database,
+  tenantCode: string
+): boolean {
+  // Throttle: skip se ultimo run < 60s fa
+  const lastRun = lazyMatchLastRun.get(tenantCode) ?? 0;
+  if (Date.now() - lastRun < LAZY_MATCH_WINDOW_MS) {
+    return false;
+  }
+  // Check veloce: c'è almeno un software_inventory senza meta?
+  // (LIMIT 1 → query ottimizzata, non scansiona tutto)
+  const orphan = db
+    .prepare(
+      `SELECT 1 FROM software_inventory si
+        WHERE NOT EXISTS (
+          SELECT 1 FROM patch_software_meta psm WHERE psm.software_id = si.id
+        )
+        LIMIT 1`
+    )
+    .get();
+  if (!orphan) {
+    // Niente di nuovo da matchare, ma aggiorno timestamp per skippare il check ravvicinato
+    lazyMatchLastRun.set(tenantCode, Date.now());
+    return false;
+  }
+  // Aggiorno PRIMA del run (evita due trigger concorrenti durante un run lungo)
+  lazyMatchLastRun.set(tenantCode, Date.now());
+  try {
+    runFullSyncMatch(db);
+    return true;
+  } catch (err) {
+    console.error("[patch/matcher maybeRunLazyMatch] fail:", err);
+    return false;
+  }
+}
+
 /**
  * Sync globale matcher per il tenant corrente.
  *

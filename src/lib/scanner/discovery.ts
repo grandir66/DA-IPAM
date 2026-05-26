@@ -186,6 +186,10 @@ export async function discoverNetwork(
         p.error = msg;
         p.logs = [...(p.logs ?? []), `[ERRORE] ${msg}`];
       }
+      // v0.2.634 audit B9: anche le scan in stato `failed` devono uscire dalla
+      // progressMap dopo 5 min, come quelle `completed`. Senza questo cleanup
+      // la mappa cresce indefinitamente con ogni scan fallita (memory slow leak).
+      setTimeout(() => getProgressMap().delete(id), 300_000);
     }
   );
 

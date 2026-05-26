@@ -1213,4 +1213,14 @@ CREATE INDEX IF NOT EXISTS idx_excluded_ips_network_ip ON excluded_ips(network_i
 -- collisioni cognitive (Server PG / server pg) nelle UI.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dcc_label_ci ON device_classifications_custom(lower(label));
 CREATE INDEX IF NOT EXISTS idx_dcc_parent ON device_classifications_custom(parent_slug);
+
+-- v0.2.634 audit B4: indici mancanti su filtri/aggregazioni frequenti.
+-- - hosts(classification): filtro chip discovery + countHostsByClassification (DELETE custom)
+-- - hosts(physical_device_id): cluster multihomed UI (objects/[id] tab cluster)
+-- - network_devices(classification): join refresh + apply-classifications
+-- - network_devices(physical_device_id): merge fisico devices/cluster lookup
+CREATE INDEX IF NOT EXISTS idx_hosts_classification ON hosts(classification);
+CREATE INDEX IF NOT EXISTS idx_hosts_physical_device_id ON hosts(physical_device_id);
+CREATE INDEX IF NOT EXISTS idx_network_devices_classification ON network_devices(classification);
+CREATE INDEX IF NOT EXISTS idx_network_devices_physical_device_id ON network_devices(physical_device_id);
 `;

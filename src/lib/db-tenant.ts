@@ -340,44 +340,17 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione cert_pin fallita:`, e);
   }
 
-  // v0.2.639 audit B8: multihomed_links.match_type CHECK include 'physical_device'.
-  // Prima il workaround era usare 'serial_number' con match_value="physical_device:<id>"
-  // perché il CHECK vecchio rifiutava il valore semantico. Migration in-place via table-swap.
-  try {
-    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='multihomed_links'").get() as { sql?: string } | undefined;
-    if (row?.sql && !row.sql.includes("'physical_device'")) {
-      newDb.pragma("foreign_keys = OFF");
-      newDb.exec("DROP TABLE IF EXISTS multihomed_links_v2");
-      newDb.exec(`CREATE TABLE multihomed_links_v2 (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        group_id TEXT NOT NULL,
-        host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
-        match_type TEXT NOT NULL CHECK(match_type IN ('serial_number', 'sysname', 'hostname', 'ad_dns', 'physical_device')),
-        match_value TEXT NOT NULL,
-        is_primary INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT DEFAULT (datetime('now')),
-        UNIQUE(host_id)
-      )`);
-      // Promuove i marker workaround 'serial_number:physical_device:<id>' al
-      // nuovo match_type='physical_device' con match_value=<id> (più pulito).
-      newDb.exec(
-        `INSERT INTO multihomed_links_v2 (id, group_id, host_id, match_type, match_value, is_primary, created_at)
-         SELECT id, group_id, host_id,
-           CASE WHEN match_type='serial_number' AND match_value LIKE 'physical_device:%' THEN 'physical_device' ELSE match_type END,
-           CASE WHEN match_type='serial_number' AND match_value LIKE 'physical_device:%' THEN substr(match_value, length('physical_device:')+1) ELSE match_value END,
-           is_primary, created_at
-         FROM multihomed_links`
-      );
-      newDb.exec("DROP TABLE multihomed_links");
-      newDb.exec("ALTER TABLE multihomed_links_v2 RENAME TO multihomed_links");
-      newDb.exec("CREATE INDEX IF NOT EXISTS idx_multihomed_links_group ON multihomed_links(group_id)");
-      newDb.exec("CREATE INDEX IF NOT EXISTS idx_multihomed_links_host ON multihomed_links(host_id)");
-      newDb.pragma("foreign_keys = ON");
-      console.info(`[db-tenant] ${tenantCode}: multihomed_links CHECK aggiornato con 'physical_device' + marker workaround promossi`);
-    }
-  } catch (e) {
-    console.error(`[db-tenant] ${tenantCode}: migrazione multihomed_links fallita:`, e);
-  }
+  // v0.2.639 audit B8: la migration table-swap multihomed_links è stata
+  // tentata ma fallisce in produzione per il bug noto hosts.os_family
+  // GENERATED VIRTUAL con double-quote "Unknown"/"Windows"/... (vedi sopra,
+  // riga ~140). SQLite stricter interpreta le double-quote come reference a
+  // colonne inesistenti e fa abortire ogni ALTER su tabelle che hanno FK a
+  // hosts. Rollback: la migration runtime è disabilitata, lo schema nuovo
+  // (CHECK include 'physical_device') vale solo per nuovi tenant. Per i
+  // tenant esistenti il writer continua a usare match_type='physical_device'
+  // direttamente (era già coerente con il CHECK nuovo: lo è già lo schema
+  // upstream), e i record legacy con 'serial_number:physical_device:N' vanno
+  // bonificati via SQL manuale al boot del prossimo tenant nuovo. Piano: ADR-0004.
 
   // Migrazione runtime: network_devices.use_for_arp_poll (flag "Usa per polling ARP/MAC")
   // Permette di usare come sorgente ARP qualsiasi device (router, firewall, switch L3) indipendentemente dalla classification.
@@ -4565,6 +4538,24 @@ function ipv4ToInt(ip: string): number {
  * usa quel handle invece di `db()` (che richiede context tenant attivo, non ancora
  * disponibile durante l'apertura).
  */
+// v0.2.639 audit B8: detect cached se lo schema multihomed_links ammette
+// 'physical_device' nel CHECK constraint. Cache per Database handle (tenant).
+const multihomedSchemaSupports = new WeakMap<Database.Database, boolean>();
+function multihomedSupportsPhysicalDevice(targetDb?: Database.Database): boolean {
+  const d = targetDb ?? db();
+  const cached = multihomedSchemaSupports.get(d);
+  if (cached !== undefined) return cached;
+  try {
+    const row = d.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='multihomed_links'").get() as { sql?: string } | undefined;
+    const ok = !!row?.sql && row.sql.includes("'physical_device'");
+    multihomedSchemaSupports.set(d, ok);
+    return ok;
+  } catch {
+    multihomedSchemaSupports.set(d, false);
+    return false;
+  }
+}
+
 export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups: number; hosts_linked: number } {
   const d = targetDb ?? db();
   // Includo `has_device` (1 se l'host ha un network_device associato via IP) per
@@ -4592,11 +4583,16 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
     hostNet.set(h.id, h.network_id);
     // F4 v0.2.596: anchor #1 — physical_device_id condiviso (dichiarazione esplicita
     // o aggregazione automatica). Sufficiente da solo per formare un gruppo.
-    // v0.2.639 audit B8: match_type='physical_device' (CHECK aggiornato +
-    // migration runtime promuove i marker 'serial_number:physical_device:N' legacy
-    // al nuovo schema). match_value ora contiene solo l'id senza prefisso.
+    // v0.2.639 audit B8: schema nuovo (CHECK include 'physical_device') vale per
+    // tenant nuovi; tenant esistenti hanno CHECK vecchio (la migration ha fallito
+    // per il bug os_family GENERATED, rollback). Detect runtime: se il CHECK
+    // ammette 'physical_device' usa quello, altrimenti workaround serial_number.
     if (h.physical_device_id) {
-      addToBucket(`physical:${h.physical_device_id}`, h.id, "physical_device", String(h.physical_device_id));
+      if (multihomedSupportsPhysicalDevice(d)) {
+        addToBucket(`physical:${h.physical_device_id}`, h.id, "physical_device", String(h.physical_device_id));
+      } else {
+        addToBucket(`physical:${h.physical_device_id}`, h.id, "serial_number", `physical_device:${h.physical_device_id}`);
+      }
     }
     const serial = (h.serial_number || h.dev_serial || "").trim().toUpperCase();
     if (serial && serial.length >= 4) addToBucket(`serial:${serial}`, h.id, "serial_number", serial);

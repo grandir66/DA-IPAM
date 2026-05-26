@@ -476,30 +476,26 @@ export function getTenantDb(tenantCode: string): Database.Database {
       // v0.2.612: estendere CHECK constraint per ammettere match_type='physical_device'
       // (introdotto dal bridge in recomputeMultihomedLinks). SQLite non permette
       // ALTER TABLE per cambiare CHECK constraint — serve table-swap.
+      // Statements separati per evitare il bug "no such column: \"\"" che capita
+      // con multi-statement exec dentro transaction esplicita.
       const tableSql = (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='multihomed_links'").get() as { sql: string } | undefined)?.sql ?? "";
       if (tableSql && !tableSql.includes("'physical_device'")) {
+        // Disabilita FK durante lo swap (le righe vengono trasferite intatte)
+        newDb.exec("PRAGMA foreign_keys = OFF");
         const tx = newDb.transaction(() => {
-          newDb.exec(`
-            CREATE TABLE multihomed_links_new (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              group_id TEXT NOT NULL,
-              host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
-              match_type TEXT NOT NULL CHECK(match_type IN ('serial_number','sysname','hostname','ad_dns','physical_device')),
-              match_value TEXT NOT NULL,
-              created_at TEXT DEFAULT (datetime('now')),
-              is_primary INTEGER NOT NULL DEFAULT 0,
-              UNIQUE(host_id)
-            );
-            INSERT INTO multihomed_links_new (id, group_id, host_id, match_type, match_value, created_at, is_primary)
-              SELECT id, group_id, host_id, match_type, match_value, created_at, is_primary FROM multihomed_links;
-            DROP TABLE multihomed_links;
-            ALTER TABLE multihomed_links_new RENAME TO multihomed_links;
-            CREATE INDEX IF NOT EXISTS idx_multihomed_links_group ON multihomed_links(group_id);
-            CREATE INDEX IF NOT EXISTS idx_multihomed_links_host ON multihomed_links(host_id);
-          `);
+          newDb.exec("CREATE TABLE multihomed_links_new (id INTEGER PRIMARY KEY AUTOINCREMENT, group_id TEXT NOT NULL, host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE, match_type TEXT NOT NULL CHECK(match_type IN ('serial_number','sysname','hostname','ad_dns','physical_device')), match_value TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')), is_primary INTEGER NOT NULL DEFAULT 0, UNIQUE(host_id))");
+          newDb.exec("INSERT INTO multihomed_links_new (id, group_id, host_id, match_type, match_value, created_at, is_primary) SELECT id, group_id, host_id, match_type, match_value, created_at, is_primary FROM multihomed_links");
+          newDb.exec("DROP TABLE multihomed_links");
+          newDb.exec("ALTER TABLE multihomed_links_new RENAME TO multihomed_links");
+          newDb.exec("CREATE INDEX IF NOT EXISTS idx_multihomed_links_group ON multihomed_links(group_id)");
+          newDb.exec("CREATE INDEX IF NOT EXISTS idx_multihomed_links_host ON multihomed_links(host_id)");
         });
-        tx();
-        console.info(`[db-tenant] ${tenantCode}: multihomed_links CHECK constraint esteso a 'physical_device'`);
+        try {
+          tx();
+          console.info(`[db-tenant] ${tenantCode}: multihomed_links CHECK constraint esteso a 'physical_device'`);
+        } finally {
+          newDb.exec("PRAGMA foreign_keys = ON");
+        }
       }
     }
   } catch (e) {

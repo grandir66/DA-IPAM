@@ -431,8 +431,10 @@ def main():
         error_msg = str(e)
         err_lower = error_msg.lower()
         tried_str = " → ".join(tried) if tried else "nessuno"
+        error_code = "UNKNOWN"
 
         if _is_kerberos_failure(error_msg) and not any(t != "kerberos" for t in tried):
+            error_code = "KERBEROS_FAILED"
             error_msg = (
                 f"Kerberos fallito: {error_msg}. "
                 "Verifica che il DC sia raggiungibile, le credenziali siano nel formato user@DOMAIN.FQDN, "
@@ -441,6 +443,7 @@ def main():
         elif _is_credssp_unavailable(error_msg) or (
             "negotiate" in err_lower and "kerberos" in err_lower
         ):
+            error_code = "KERBEROS_ONLY"
             krb_hint = ""
             if not kerberos_ready:
                 krb_hint = (
@@ -459,6 +462,7 @@ def main():
             or "access is denied" in err_lower
             or "logon failure" in err_lower
         ):
+            error_code = "AUTH_REJECTED"
             error_msg = (
                 f"Credenziali rifiutate da Windows (WinRM) con {tried_str}. "
                 "Verifica password e formato utente: "
@@ -469,21 +473,29 @@ def main():
                 "Controlla che l'account non sia bloccato/scaduto."
             )
         elif _is_basic_unavailable(error_msg):
+            error_code = "BASIC_DISABLED"
             error_msg = (
                 "Basic auth rifiutata (AllowUnencrypted=false o Basic non abilitato). "
                 + _windows_winrm_config_hint()
             )
         elif "ECONNREFUSED" in error_msg or "Connection refused" in error_msg or "refused" in err_lower:
+            error_code = "TCP_CLOSED"
             error_msg = (
                 "Connessione rifiutata: WinRM non in ascolto o firewall. Sul Windows: "
                 "winrm quickconfig; apri porta 5985 (HTTP) o 5986 (HTTPS) verso l'IP del server DA-INVENT."
             )
         elif "timed out" in err_lower or "timeout" in err_lower:
+            error_code = "TCP_TIMEOUT"
             error_msg = f"Timeout connessione WinRM a {host}:{port}. Metodi tentati: {tried_str}."
         else:
             error_msg = f"Errore WinRM ({tried_str}): {error_msg}"
 
-        print(json.dumps({"error": error_msg}))
+        print(json.dumps({
+            "error": error_msg,
+            "errorCode": error_code,
+            "transport": tried[-1] if tried else None,
+            "tried": tried,
+        }))
         sys.exit(1)
 
 

@@ -1019,6 +1019,247 @@ function parseLinuxCronJobs(
 }
 
 /**
+ * Mappa il dict raw (output dello script PowerShell WinRM o del bridge WMI/DCOM)
+ * nello shape Partial<DeviceInfo>. Funzione pura, riusata da entrambi i flow.
+ *
+ * Il bridge WMI produce un sottoinsieme dei campi (no registry, no AD): i campi
+ * mancanti restano semplicemente undefined nel result.
+ */
+export function mapWindowsRawToDeviceInfo(raw: Record<string, unknown>): Partial<DeviceInfo> {
+  const getStr = (v: unknown): string | null =>
+    v != null && typeof v === "string" && v.trim() ? v.trim() : null;
+  const getNum = (v: unknown): number | null =>
+    typeof v === "number" && !Number.isNaN(v) ? v : null;
+  const parseWmiDate = (v: unknown): string | null => {
+    if (v == null) return null;
+    const s = String(v);
+    const m = s.match(/\/Date\((\d+)\)\//);
+    if (m) return new Date(Number(m[1])).toISOString();
+    if (/^\d{14}/.test(s)) {
+      const y = s.slice(0,4), mo = s.slice(4,6), d = s.slice(6,8), h = s.slice(8,10), mi = s.slice(10,12), se = s.slice(12,14);
+      return `${y}-${mo}-${d}T${h}:${mi}:${se}`;
+    }
+    return s;
+  };
+
+  const result: Partial<DeviceInfo> = {
+    sysname: getStr(raw.hostname) ?? getStr(raw.sysname) ?? null,
+    sysdescr: getStr(raw.os_name) ?? null,
+    model: getStr(raw.model) ?? null,
+    firmware: getStr(raw.os_version) ?? null,
+    serial_number: getStr(raw.serial_number) ?? getStr(raw.bios_serial) ?? null,
+    part_number: getStr(raw.part_number) ?? null,
+  };
+
+  result.os_name = getStr(raw.os_name);
+  result.os_version = getStr(raw.os_version);
+  result.os_build = getStr(raw.os_build);
+  result.architecture = getStr(raw.architecture);
+  result.hostname = getStr(raw.hostname);
+  result.domain = getStr(raw.domain);
+  result.manufacturer = getStr(raw.manufacturer);
+  result.ram_total_gb = getNum(raw.ram_total_gb);
+  result.cpu_model = getStr(raw.cpu_model);
+  result.cpu_cores = getNum(raw.cpu_cores);
+  result.cpu_threads = getNum(raw.cpu_threads);
+  result.cpu_speed_mhz = getNum(raw.cpu_speed_mhz);
+  result.domain_role = getStr(raw.domain_role);
+  result.is_domain_controller = raw.is_domain_controller === true;
+  result.is_server = raw.is_server === true;
+
+  if (Array.isArray(raw.disks)) {
+    result.disks = raw.disks.map((d: unknown) => {
+      const o = d as Record<string, unknown>;
+      return {
+        device: String(o.device ?? ""),
+        size_gb: getNum(o.size_gb) ?? undefined,
+        free_gb: getNum(o.free_gb) ?? undefined,
+        filesystem: getStr(o.filesystem) ?? undefined,
+        label: getStr(o.label) ?? undefined,
+      };
+    });
+  }
+  if (Array.isArray(raw.network_adapters)) {
+    result.network_adapters = raw.network_adapters.map((a: unknown) => {
+      const o = a as Record<string, unknown>;
+      return {
+        name: String(o.name ?? ""),
+        mac: getStr(o.mac) ?? undefined,
+        ips: Array.isArray(o.ips) ? o.ips.map(String) : undefined,
+        dhcp: o.dhcp === true,
+      };
+    });
+  }
+  if (Array.isArray(raw.memory_modules)) {
+    result.memory_modules = raw.memory_modules.map((m: unknown) => {
+      const o = m as Record<string, unknown>;
+      return {
+        size_gb: getNum(o.size_gb) ?? undefined,
+        speed_mhz: getNum(o.speed_mhz) ?? undefined,
+        manufacturer: getStr(o.manufacturer) ?? undefined,
+      };
+    });
+  }
+  if (Array.isArray(raw.server_roles)) {
+    result.server_roles = raw.server_roles.map(String).filter(Boolean);
+  }
+  if (Array.isArray(raw.important_services)) {
+    result.important_services = raw.important_services.map((s: unknown) => {
+      const o = s as Record<string, unknown>;
+      return {
+        name: String(o.name ?? ""),
+        display_name: String(o.display_name ?? ""),
+        state: String(o.state ?? ""),
+        start_mode: String(o.start_mode ?? ""),
+      };
+    });
+  }
+  if (Array.isArray(raw.local_users)) {
+    result.local_users = raw.local_users.map((u: unknown) => {
+      const o = u as Record<string, unknown>;
+      return {
+        name: String(o.name ?? ""),
+        full_name: getStr(o.full_name) ?? undefined,
+        disabled: o.disabled === true,
+      };
+    });
+  }
+  if (Array.isArray(raw.antivirus)) {
+    result.antivirus = raw.antivirus.map((a: unknown) => {
+      const o = a as Record<string, unknown>;
+      return {
+        name: String(o.name ?? ""),
+        state: getStr(o.state) ?? undefined,
+      };
+    });
+  }
+
+  result.system_type = getStr(raw.system_type);
+  result.os_serial = getStr(raw.os_serial);
+  result.registered_user = getStr(raw.registered_user);
+  result.organization = getStr(raw.organization);
+  result.install_date = parseWmiDate(raw.install_date);
+  result.last_boot = parseWmiDate(raw.last_boot);
+  result.uptime_days = getNum(raw.uptime_days);
+  result.bios_version = getStr(raw.bios_version);
+  result.bios_manufacturer = getStr(raw.bios_manufacturer);
+
+  result.cpu_manufacturer = getStr(raw.cpu_manufacturer);
+  result.processor_count = getNum(raw.processor_count);
+  result.ram_total_mb = getNum(raw.ram_total_mb);
+  result.disk_total_gb = getNum(raw.disk_total_gb);
+  result.disk_free_gb = getNum(raw.disk_free_gb);
+  if (Array.isArray(raw.gpu)) {
+    result.gpu = raw.gpu.map((g: unknown) => {
+      const o = g as Record<string, unknown>;
+      return {
+        name: String(o.name ?? ""),
+        driver_version: getStr(o.driver_version) ?? undefined,
+        ram_gb: getNum(o.ram_gb) ?? undefined,
+      };
+    });
+  }
+
+  result.license_status = getStr(raw.license_status);
+  result.license_name = getStr(raw.license_name);
+  result.license_partial_key = getStr(raw.license_partial_key);
+
+  if (Array.isArray(raw.installed_hotfixes)) {
+    result.installed_hotfixes = raw.installed_hotfixes.map((h: unknown) => {
+      const o = h as Record<string, unknown>;
+      return {
+        id: String(o.id ?? ""),
+        description: getStr(o.description) ?? undefined,
+        installed_on: getStr(o.installed_on) ?? undefined,
+      };
+    });
+  }
+  result.pending_updates_count = getNum(raw.pending_updates_count);
+
+  if (Array.isArray(raw.physical_disks)) {
+    result.physical_disks = raw.physical_disks.map((d: unknown) => {
+      const o = d as Record<string, unknown>;
+      return {
+        device: String(o.device ?? ""),
+        model: getStr(o.model) ?? undefined,
+        size_gb: getNum(o.size_gb) ?? undefined,
+        serial: getStr(o.serial) ?? undefined,
+        vendor: getStr(o.vendor) ?? undefined,
+        interface_type: getStr(o.interface_type) ?? undefined,
+      };
+    });
+  }
+
+  result.installed_software_count = getNum(raw.installed_software_count);
+  if (Array.isArray(raw.key_software)) {
+    result.key_software = raw.key_software.map((s: unknown) => {
+      const o = s as Record<string, unknown>;
+      return {
+        name: String(o.name ?? ""),
+        version: getStr(o.version) ?? undefined,
+        publisher: getStr(o.publisher) ?? undefined,
+      };
+    });
+  }
+
+  result.last_logged_on_user = getStr(raw.last_logged_on_user);
+  if (Array.isArray(raw.logged_on_users)) {
+    result.logged_on_users = raw.logged_on_users.map((u: unknown) => {
+      const o = u as Record<string, unknown>;
+      return {
+        username: String(o.username ?? ""),
+        session_type: getStr(o.session_type) ?? undefined,
+        logon_time: getStr(o.logon_time) ?? undefined,
+      };
+    });
+  }
+  if (Array.isArray(raw.user_profiles)) {
+    result.user_profiles = raw.user_profiles.map((p: unknown) => {
+      const o = p as Record<string, unknown>;
+      return {
+        username: String(o.username ?? ""),
+        sid: getStr(o.sid) ?? undefined,
+        profile_path: getStr(o.profile_path) ?? undefined,
+        loaded: o.loaded === true,
+        last_use: getStr(o.last_use) ?? undefined,
+        ad_display_name: getStr(o.ad_display_name) ?? undefined,
+        ad_email: getStr(o.ad_email) ?? undefined,
+        ad_department: getStr(o.ad_department) ?? undefined,
+        ad_title: getStr(o.ad_title) ?? undefined,
+        ad_enabled: typeof o.ad_enabled === "boolean" ? o.ad_enabled : undefined,
+        ad_last_logon: getStr(o.ad_last_logon) ?? undefined,
+      };
+    });
+  }
+
+  const parts = [result.model, result.sysdescr].filter(Boolean);
+  result.sysdescr = parts.length > 0 ? parts.join(" | ") : result.sysdescr;
+
+  return result;
+}
+
+/**
+ * Recupera info da host Windows via WMI/DCOM (impacket) — fallback usato
+ * automaticamente da getDeviceInfo() quando WinRM (5985/5986) non risponde.
+ *
+ * Modalità degradata: niente registry (installed_software dal Registry,
+ * last_logged_on_user, key_software), niente DirectorySearcher (AD enrichment
+ * dei user_profiles), niente PowerShell. Per quei dati serve WinRM.
+ */
+export async function getDeviceInfoFromWmi(device: NetworkDevice): Promise<Partial<DeviceInfo>> {
+  const { getDeviceCredentials } = await import("@/lib/db");
+  const { runWmiProbe } = await import("./wmi-run");
+  const creds = getDeviceCredentials(device);
+  const username = creds?.username ?? device.username ?? "";
+  const password = creds?.password ?? "";
+  if (!username || !password) {
+    throw new Error("Credenziali Windows mancanti — fallback WMI non eseguibile.");
+  }
+  const raw = await runWmiProbe(device.host, username, password);
+  return mapWindowsRawToDeviceInfo(raw);
+}
+
+/**
  * Recupera info da host Windows via WinRM e WMI/CIM.
  * Replica le query WMI di DADude3 (wmi_probe.py): OS, hardware, rete, dischi, servizi, utenti, antivirus.
  * Usa Get-CimInstance (CIM) con fallback a Get-WmiObject (WMI legacy).
@@ -1080,222 +1321,7 @@ $r | ConvertTo-Json -Depth 5 -Compress
       return legacy;
     }
 
-    const getStr = (v: unknown): string | null =>
-      v != null && typeof v === "string" && v.trim() ? v.trim() : null;
-    const getNum = (v: unknown): number | null =>
-      typeof v === "number" && !Number.isNaN(v) ? v : null;
-
-    const result: Partial<DeviceInfo> = {
-      sysname: getStr(raw.hostname) ?? getStr(raw.sysname) ?? null,
-      sysdescr: getStr(raw.os_name) ?? null,
-      model: getStr(raw.model) ?? null,
-      firmware: getStr(raw.os_version) ?? null,
-      serial_number: getStr(raw.serial_number) ?? getStr(raw.bios_serial) ?? null,
-      part_number: getStr(raw.part_number) ?? null,
-    };
-
-    // Campi estesi (DADude3)
-    result.os_name = getStr(raw.os_name);
-    result.os_version = getStr(raw.os_version);
-    result.os_build = getStr(raw.os_build);
-    result.architecture = getStr(raw.architecture);
-    result.hostname = getStr(raw.hostname);
-    result.domain = getStr(raw.domain);
-    result.manufacturer = getStr(raw.manufacturer);
-    result.ram_total_gb = getNum(raw.ram_total_gb);
-    result.cpu_model = getStr(raw.cpu_model);
-    result.cpu_cores = getNum(raw.cpu_cores);
-    result.cpu_threads = getNum(raw.cpu_threads);
-    result.cpu_speed_mhz = getNum(raw.cpu_speed_mhz);
-    result.domain_role = getStr(raw.domain_role);
-    result.is_domain_controller = raw.is_domain_controller === true;
-    result.is_server = raw.is_server === true;
-
-    if (Array.isArray(raw.disks)) {
-      result.disks = raw.disks.map((d: unknown) => {
-        const o = d as Record<string, unknown>;
-        return {
-          device: String(o.device ?? ""),
-          size_gb: getNum(o.size_gb) ?? undefined,
-          free_gb: getNum(o.free_gb) ?? undefined,
-          filesystem: getStr(o.filesystem) ?? undefined,
-          label: getStr(o.label) ?? undefined,
-        };
-      });
-    }
-    if (Array.isArray(raw.network_adapters)) {
-      result.network_adapters = raw.network_adapters.map((a: unknown) => {
-        const o = a as Record<string, unknown>;
-        return {
-          name: String(o.name ?? ""),
-          mac: getStr(o.mac) ?? undefined,
-          ips: Array.isArray(o.ips) ? o.ips.map(String) : undefined,
-          dhcp: o.dhcp === true,
-        };
-      });
-    }
-    if (Array.isArray(raw.memory_modules)) {
-      result.memory_modules = raw.memory_modules.map((m: unknown) => {
-        const o = m as Record<string, unknown>;
-        return {
-          size_gb: getNum(o.size_gb) ?? undefined,
-          speed_mhz: getNum(o.speed_mhz) ?? undefined,
-          manufacturer: getStr(o.manufacturer) ?? undefined,
-        };
-      });
-    }
-    if (Array.isArray(raw.server_roles)) {
-      result.server_roles = raw.server_roles.map(String).filter(Boolean);
-    }
-    if (Array.isArray(raw.important_services)) {
-      result.important_services = raw.important_services.map((s: unknown) => {
-        const o = s as Record<string, unknown>;
-        return {
-          name: String(o.name ?? ""),
-          display_name: String(o.display_name ?? ""),
-          state: String(o.state ?? ""),
-          start_mode: String(o.start_mode ?? ""),
-        };
-      });
-    }
-    if (Array.isArray(raw.local_users)) {
-      result.local_users = raw.local_users.map((u: unknown) => {
-        const o = u as Record<string, unknown>;
-        return {
-          name: String(o.name ?? ""),
-          full_name: getStr(o.full_name) ?? undefined,
-          disabled: o.disabled === true,
-        };
-      });
-    }
-    if (Array.isArray(raw.antivirus)) {
-      result.antivirus = raw.antivirus.map((a: unknown) => {
-        const o = a as Record<string, unknown>;
-        return {
-          name: String(o.name ?? ""),
-          state: getStr(o.state) ?? undefined,
-        };
-      });
-    }
-
-    // Campi sistema estesi
-    result.system_type = getStr(raw.system_type);
-    result.os_serial = getStr(raw.os_serial);
-    result.registered_user = getStr(raw.registered_user);
-    result.organization = getStr(raw.organization);
-    const parseWmiDate = (v: unknown): string | null => {
-      if (v == null) return null;
-      const s = String(v);
-      const m = s.match(/\/Date\((\d+)\)\//);
-      if (m) return new Date(Number(m[1])).toISOString();
-      if (/^\d{14}/.test(s)) {
-        const y = s.slice(0,4), mo = s.slice(4,6), d = s.slice(6,8), h = s.slice(8,10), mi = s.slice(10,12), se = s.slice(12,14);
-        return `${y}-${mo}-${d}T${h}:${mi}:${se}`;
-      }
-      return s;
-    };
-    result.install_date = parseWmiDate(raw.install_date);
-    result.last_boot = parseWmiDate(raw.last_boot);
-    result.uptime_days = getNum(raw.uptime_days);
-    result.bios_version = getStr(raw.bios_version);
-    result.bios_manufacturer = getStr(raw.bios_manufacturer);
-
-    // HW aggiuntivo
-    result.cpu_manufacturer = getStr(raw.cpu_manufacturer);
-    result.processor_count = getNum(raw.processor_count);
-    result.ram_total_mb = getNum(raw.ram_total_mb);
-    result.disk_total_gb = getNum(raw.disk_total_gb);
-    result.disk_free_gb = getNum(raw.disk_free_gb);
-    if (Array.isArray(raw.gpu)) {
-      result.gpu = raw.gpu.map((g: unknown) => {
-        const o = g as Record<string, unknown>;
-        return {
-          name: String(o.name ?? ""),
-          driver_version: getStr(o.driver_version) ?? undefined,
-          ram_gb: getNum(o.ram_gb) ?? undefined,
-        };
-      });
-    }
-
-    // Licenza
-    result.license_status = getStr(raw.license_status);
-    result.license_name = getStr(raw.license_name);
-    result.license_partial_key = getStr(raw.license_partial_key);
-
-    // Hotfix
-    if (Array.isArray(raw.installed_hotfixes)) {
-      result.installed_hotfixes = raw.installed_hotfixes.map((h: unknown) => {
-        const o = h as Record<string, unknown>;
-        return {
-          id: String(o.id ?? ""),
-          description: getStr(o.description) ?? undefined,
-          installed_on: getStr(o.installed_on) ?? undefined,
-        };
-      });
-    }
-    result.pending_updates_count = getNum(raw.pending_updates_count);
-
-    // Dischi fisici (Win32_DiskDrive)
-    if (Array.isArray(raw.physical_disks)) {
-      result.physical_disks = raw.physical_disks.map((d: unknown) => {
-        const o = d as Record<string, unknown>;
-        return {
-          device: String(o.device ?? ""),
-          model: getStr(o.model) ?? undefined,
-          size_gb: getNum(o.size_gb) ?? undefined,
-          serial: getStr(o.serial) ?? undefined,
-          vendor: getStr(o.vendor) ?? undefined,
-          interface_type: getStr(o.interface_type) ?? undefined,
-        };
-      });
-    }
-
-    // Software
-    result.installed_software_count = getNum(raw.installed_software_count);
-    if (Array.isArray(raw.key_software)) {
-      result.key_software = raw.key_software.map((s: unknown) => {
-        const o = s as Record<string, unknown>;
-        return {
-          name: String(o.name ?? ""),
-          version: getStr(o.version) ?? undefined,
-          publisher: getStr(o.publisher) ?? undefined,
-        };
-      });
-    }
-
-    // Utenti e sessioni
-    result.last_logged_on_user = getStr(raw.last_logged_on_user);
-    if (Array.isArray(raw.logged_on_users)) {
-      result.logged_on_users = raw.logged_on_users.map((u: unknown) => {
-        const o = u as Record<string, unknown>;
-        return {
-          username: String(o.username ?? ""),
-          session_type: getStr(o.session_type) ?? undefined,
-          logon_time: getStr(o.logon_time) ?? undefined,
-        };
-      });
-    }
-    if (Array.isArray(raw.user_profiles)) {
-      result.user_profiles = raw.user_profiles.map((p: unknown) => {
-        const o = p as Record<string, unknown>;
-        return {
-          username: String(o.username ?? ""),
-          sid: getStr(o.sid) ?? undefined,
-          profile_path: getStr(o.profile_path) ?? undefined,
-          loaded: o.loaded === true,
-          last_use: getStr(o.last_use) ?? undefined,
-          ad_display_name: getStr(o.ad_display_name) ?? undefined,
-          ad_email: getStr(o.ad_email) ?? undefined,
-          ad_department: getStr(o.ad_department) ?? undefined,
-          ad_title: getStr(o.ad_title) ?? undefined,
-          ad_enabled: typeof o.ad_enabled === "boolean" ? o.ad_enabled : undefined,
-          ad_last_logon: getStr(o.ad_last_logon) ?? undefined,
-        };
-      });
-    }
-
-    const parts = [result.model, result.sysdescr].filter(Boolean);
-    result.sysdescr = parts.length > 0 ? parts.join(" | ") : result.sysdescr;
+    const result = mapWindowsRawToDeviceInfo(raw);
 
     if (!deviceInfoHasAnyData(result)) {
       throw new Error(
@@ -1409,13 +1435,35 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
   const hasWinrm =
     device.protocol === "winrm" || device.vendor === "windows" || scanTarget === "windows";
 
-  // Prima WinRM se configurato
+  // Prima WinRM se configurato. Se WinRM è raggiungibile ma il servizio non è
+  // attivo (TCP_CLOSED/TCP_TIMEOUT), tenta automaticamente WMI/DCOM su 135 come
+  // fallback. NON facciamo fallback su AUTH_REJECTED/KERBEROS_*/BASIC_DISABLED:
+  // le stesse credenziali falliranno anche su WMI.
   if (hasWinrm) {
     try {
       const winrmInfo = await getDeviceInfoFromWinrm(device);
       result = { ...result, ...winrmInfo };
     } catch (e) {
-      winrmFailure = e instanceof Error ? e : new Error(String(e));
+      const originalWinrmError: Error = e instanceof Error ? e : new Error(String(e));
+      winrmFailure = originalWinrmError;
+      const { WinrmError } = await import("./winrm-run");
+      const fallbackCodes = new Set(["TCP_CLOSED", "TCP_TIMEOUT", "BRIDGE_TIMEOUT", "UNKNOWN"]);
+      const shouldFallback = originalWinrmError instanceof WinrmError && fallbackCodes.has(originalWinrmError.code);
+      if (shouldFallback) {
+        try {
+          const wmiInfo = await getDeviceInfoFromWmi(device);
+          if (deviceInfoHasAnyData(wmiInfo)) {
+            result = { ...result, ...wmiInfo };
+            // Successo via fallback: non rilanciare l'errore WinRM a fine funzione.
+            winrmFailure = null;
+          }
+        } catch (wmiErr) {
+          // Fallback WMI fallito: conserva l'errore WinRM originale (più informativo
+          // sul probable root cause), aggiungi suffisso diagnostico.
+          const wmiMsg = wmiErr instanceof Error ? wmiErr.message : String(wmiErr);
+          winrmFailure = new Error(`${originalWinrmError.message}\n[Fallback WMI fallito] ${wmiMsg}`);
+        }
+      }
     }
   }
 

@@ -28,6 +28,7 @@ import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-conf
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
+import { InlineEditCell } from "@/components/shared/inline-edit-cell";
 import { AddableSelect } from "@/components/shared/addable-select";
 import { credTypeForProtocol, CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
@@ -1197,6 +1198,23 @@ export default function DiscoveryPage() {
     }
   }
 
+  /** v0.2.618: salva un campo host inline e aggiorna lo state locale.
+   *  Usato dalle celle InlineEditCell di /discovery (classification, manufacturer, …). */
+  async function saveHostFieldInline(hostId: number, patch: Record<string, unknown>) {
+    const res = await fetch(`/api/hosts/${hostId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err?.error || "Errore salvataggio");
+      throw new Error(err?.error || "save failed");
+    }
+    setHosts((prev) => prev.map((h) => h.id === hostId ? { ...h, ...patch } : h));
+    toast.success("Salvato", { duration: 1200 });
+  }
+
   function renderCell(h: EnrichedHost, colId: string) {
     switch (colId) {
       case "ip":
@@ -1219,10 +1237,25 @@ export default function DiscoveryPage() {
         return <span className="font-mono text-xs">{h.mac ?? "—"}</span>;
       case "vendor":
         return <span className="text-sm text-muted-foreground truncate max-w-[140px] block" title={h.vendor ?? ""}>{h.vendor ?? "—"}</span>;
-      case "classification":
-        return h.classification && h.classification !== "unknown"
-          ? <Badge variant="outline" className="text-xs">{h.classification}</Badge>
-          : <span className="text-muted-foreground text-xs">—</span>;
+      case "classification": {
+        // v0.2.618: editabile inline (select). Save → PUT /api/hosts/:id { classification }.
+        const opts = [{ value: "unknown", label: "— Sconosciuta —" },
+          ...DEVICE_CLASSIFICATIONS_ORDERED
+            .filter((c) => c !== "unknown")
+            .map((c) => ({ value: c, label: getClassificationLabel(c) }))];
+        return (
+          <InlineEditCell
+            mode="select"
+            value={h.classification && h.classification !== "unknown" ? h.classification : "unknown"}
+            selectOptions={opts}
+            onSave={(v) => saveHostFieldInline(h.id, { classification: v || "unknown" })}
+            display={h.classification && h.classification !== "unknown"
+              ? <Badge variant="outline" className="text-xs">{getClassificationLabel(h.classification) || h.classification}</Badge>
+              : <span className="text-muted-foreground text-xs">—</span>}
+            title="Clicca per cambiare classificazione"
+          />
+        );
+      }
       case "known_host":
         return h.known_host
           ? <span title="Configurazione manuale: non aggiornata automaticamente dagli scan" className="inline-flex items-center justify-center text-primary"><Lock className="h-3.5 w-3.5" /></span>
@@ -1261,10 +1294,22 @@ export default function DiscoveryPage() {
           ? <span className="text-xs font-mono">{h.last_response_time_ms} ms</span>
           : <span className="text-muted-foreground text-xs">—</span>;
       case "device_manufacturer": {
+        // v0.2.618: editabile inline. getManufacturer() ritorna o device_manufacturer
+        // o fallback MAC vendor: editiamo device_manufacturer (preferito), MAC vendor
+        // resta fallback automatico.
         const mfr = getManufacturer(h);
-        return mfr.text
-          ? <span className={`text-sm ${mfr.fromVendor ? "text-muted-foreground italic" : ""}`} title={mfr.fromVendor ? "Da MAC vendor" : ""}>{mfr.text}</span>
-          : <span className="text-muted-foreground text-xs">—</span>;
+        return (
+          <InlineEditCell
+            mode="text"
+            value={h.device_manufacturer ?? ""}
+            placeholder={mfr.fromVendor ? `MAC: ${mfr.text}` : "Es: HP, Dell, Cisco…"}
+            onSave={(v) => saveHostFieldInline(h.id, { device_manufacturer: v || null })}
+            display={mfr.text
+              ? <span className={`text-sm ${mfr.fromVendor ? "text-muted-foreground italic" : ""}`} title={mfr.fromVendor ? "Da MAC vendor (editabile)" : ""}>{mfr.text}</span>
+              : <span className="text-muted-foreground text-xs">—</span>}
+            title="Clicca per modificare il produttore"
+          />
+        );
       }
       case "model":
         return <span className="text-sm">{h.model ?? "—"}</span>;

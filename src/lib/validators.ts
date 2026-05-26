@@ -67,6 +67,8 @@ export const HostUpdateSchema = z.object({
   serial_number: z.string().max(200).optional().nullable(),
   model: z.string().max(200).optional().nullable(),
   firmware: z.string().max(200).optional().nullable(),
+  // v0.2.618: editing inline produttore nella lista discovery
+  device_manufacturer: z.string().max(200).optional().nullable(),
   /** Forza credenziali archivio per ruolo detect (null = rimuovi binding). */
   detect_credentials: z
     .record(

@@ -86,9 +86,10 @@ export async function syncNetworkToLibreNMS(networkId: number): Promise<LibreNMS
 
   const client = createLibreNMSClient(cfg.url, cfg.apiToken);
 
-  const alive = await client.ping();
-  if (!alive) {
-    result.errors.push(`LibreNMS non raggiungibile a ${cfg.url}`);
+  // v0.2.638 audit B6: probe diagnostico (token scaduto vs server down vs altro)
+  const probe = await client.probe();
+  if (!probe.ok) {
+    result.errors.push(`LibreNMS ${cfg.url}: ${probe.message}`);
     return result;
   }
 
@@ -237,8 +238,9 @@ export async function addSingleHostToLibreNMS(
   // snmpParams può essere null: in quel caso aggiungiamo a LibreNMS in modalità ping-only
 
   const client = createLibreNMSClient(cfg.url, cfg.apiToken);
-  const alive = await client.ping();
-  if (!alive) throw new Error(`LibreNMS non raggiungibile a ${cfg.url}`);
+  // v0.2.638 audit B6: messaggio chiaro al caller (UI) invece di generico.
+  const probe = await client.probe();
+  if (!probe.ok) throw new Error(`LibreNMS ${cfg.url}: ${probe.message}`);
 
   const hostname = pickHostname(host.ip);
   const sysName  = pickSysName(host.hostname, host.custom_name);
@@ -304,8 +306,9 @@ export async function addSingleNetworkDeviceToLibreNMS(
   if (!device) throw new Error("Dispositivo non trovato");
 
   const client = createLibreNMSClient(cfg.url, cfg.apiToken);
-  const alive = await client.ping();
-  if (!alive) throw new Error(`LibreNMS non raggiungibile a ${cfg.url}`);
+  // v0.2.638 audit B6: messaggio chiaro al caller (UI) invece di generico.
+  const probe = await client.probe();
+  if (!probe.ok) throw new Error(`LibreNMS ${cfg.url}: ${probe.message}`);
 
   const hostname = device.host; // IP come hostname per polling affidabile
   const sysName  = device.sysname || device.name || undefined;

@@ -911,6 +911,11 @@ CREATE TABLE IF NOT EXISTS vuln_scanners (
   cert_pin TEXT,
   -- Fingerprint sha256 del cert intero (DER). Solo UI diagnostica.
   cert_fingerprint TEXT,
+  -- v0.2.638 audit B7: contatore errori consecutivi + timestamp auto-disable.
+  -- Dopo 5 errori consecutivi il cron auto-disabilita lo scanner (enabled=0)
+  -- per evitare retry muti per ore (es. TOFU pin mismatch).
+  consecutive_errors INTEGER DEFAULT 0,
+  auto_disabled_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

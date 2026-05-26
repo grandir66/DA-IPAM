@@ -64,7 +64,7 @@ export async function runVulnSync(): Promise<{
 
   const scanner = db
     .prepare(
-      "SELECT id, name, base_url, token_encrypted, enabled, last_sync_at, last_error " +
+      "SELECT id, name, base_url, token_encrypted, enabled, last_sync_at, last_error, consecutive_errors " +
         "FROM vuln_scanners WHERE enabled = 1 LIMIT 1",
     )
     .get() as VulnScannerRow | undefined;
@@ -179,8 +179,9 @@ export async function runVulnSync(): Promise<{
       }
     }
 
+    // v0.2.638 audit B7: success → azzera counter consecutive_errors.
     db.prepare(
-      "UPDATE vuln_scanners SET last_sync_at = ?, last_error = NULL, updated_at = datetime('now') WHERE id = ?",
+      "UPDATE vuln_scanners SET last_sync_at = ?, last_error = NULL, consecutive_errors = 0, auto_disabled_at = NULL, updated_at = datetime('now') WHERE id = ?",
     ).run(nowIso(), scanner.id);
 
     return { ok: true, newScans, newFindings };
@@ -189,9 +190,28 @@ export async function runVulnSync(): Promise<{
       e instanceof EdgeClientError
         ? `edge ${e.status}: ${e.message}`
         : (e as Error).message;
-    db.prepare(
-      "UPDATE vuln_scanners SET last_error = ?, updated_at = datetime('now') WHERE id = ?",
-    ).run(msg.slice(0, 500), scanner.id);
+    // v0.2.638 audit B7: incrementa counter; a 5 errori consecutivi auto-disable
+    // lo scanner per fermare il rumore (cron muto per ore su TOFU mismatch).
+    // L'utente vede `auto_disabled_at` + `last_error` chiaro per riattivare manualmente.
+    const AUTO_DISABLE_THRESHOLD = 5;
+    const newCount = (scanner.consecutive_errors ?? 0) + 1;
+    if (newCount >= AUTO_DISABLE_THRESHOLD) {
+      db.prepare(
+        `UPDATE vuln_scanners
+         SET last_error = ?, consecutive_errors = ?, enabled = 0, auto_disabled_at = ?,
+             updated_at = datetime('now')
+         WHERE id = ?`,
+      ).run(
+        `Auto-disabilitato dopo ${newCount} errori consecutivi: ${msg}`.slice(0, 500),
+        newCount,
+        nowIso(),
+        scanner.id,
+      );
+    } else {
+      db.prepare(
+        "UPDATE vuln_scanners SET last_error = ?, consecutive_errors = ?, updated_at = datetime('now') WHERE id = ?",
+      ).run(msg.slice(0, 500), newCount, scanner.id);
+    }
     return { ok: false, newScans, newFindings, error: msg };
   }
 }

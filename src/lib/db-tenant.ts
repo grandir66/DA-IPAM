@@ -326,6 +326,15 @@ export function getTenantDb(tenantCode: string): Database.Database {
         newDb.exec("ALTER TABLE vuln_scanners ADD COLUMN cert_fingerprint TEXT");
         console.info(`[db-tenant] ${tenantCode}: vuln_scanners.cert_fingerprint aggiunto`);
       }
+      // v0.2.638 audit B7: auto-disable dopo K errori consecutivi.
+      if (!cols.some((c) => c.name === "consecutive_errors")) {
+        newDb.exec("ALTER TABLE vuln_scanners ADD COLUMN consecutive_errors INTEGER DEFAULT 0");
+        console.info(`[db-tenant] ${tenantCode}: vuln_scanners.consecutive_errors aggiunto`);
+      }
+      if (!cols.some((c) => c.name === "auto_disabled_at")) {
+        newDb.exec("ALTER TABLE vuln_scanners ADD COLUMN auto_disabled_at TEXT");
+        console.info(`[db-tenant] ${tenantCode}: vuln_scanners.auto_disabled_at aggiunto`);
+      }
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione cert_pin fallita:`, e);

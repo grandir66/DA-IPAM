@@ -144,6 +144,31 @@ export class LibreNMSClient {
       return false;
     }
   }
+
+  /**
+   * v0.2.638 audit B6: probe diagnostico che distingue token scaduto/permesso
+   * (`auth`) da server irraggiungibile (`network`) o errore server (`server`).
+   * I caller possono mostrare un messaggio chiaro all'utente invece del
+   * generico "LibreNMS non raggiungibile".
+   */
+  async probe(): Promise<{ ok: true } | { ok: false; reason: "auth" | "network" | "server" | "unknown"; message: string }> {
+    try {
+      await this.request("GET", "/devices?limit=1");
+      return { ok: true };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // request() lancia con format "GET /path → HTTP <status>: <body>"
+      const httpMatch = msg.match(/HTTP\s+(\d{3})/);
+      const status = httpMatch ? Number(httpMatch[1]) : null;
+      if (status === 401 || status === 403) return { ok: false, reason: "auth", message: "Token API non valido o scaduto" };
+      if (status && status >= 500) return { ok: false, reason: "server", message: `Errore server LibreNMS (HTTP ${status})` };
+      // ECONNREFUSED / ETIMEDOUT / DNS fail → network
+      if (/ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|abort|timeout/i.test(msg)) {
+        return { ok: false, reason: "network", message: "Server LibreNMS non raggiungibile (rete o DNS)" };
+      }
+      return { ok: false, reason: "unknown", message: msg };
+    }
+  }
 }
 
 /** Crea un client a partire dalla config hub del tenant */

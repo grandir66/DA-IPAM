@@ -98,6 +98,9 @@ export interface VulnScannerRow {
   last_error: string | null;
   cert_pin?: string | null;
   cert_fingerprint?: string | null;
+  // v0.2.638 audit B7: counter errori consecutivi + timestamp auto-disable.
+  consecutive_errors?: number;
+  auto_disabled_at?: string | null;
 }
 
 export class EdgeClientError extends Error {

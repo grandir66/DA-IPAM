@@ -34,7 +34,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ArrowLeft, RefreshCw, Zap, ZapOff, Cable, Minus, Pencil, Key, Server, Wifi, Database, Activity, Radio, Package, ExternalLink, Plus, Monitor, Cpu, HardDrive, Shield, Users, Clock, Award, Layers, Info, Download } from "lucide-react";
+import { ArrowLeft, RefreshCw, Zap, ZapOff, Cable, Minus, Pencil, Key, Server, Wifi, Database, Activity, Radio, Package, ExternalLink, Plus, Monitor, Cpu, HardDrive, Shield, Users, Clock, Award, Layers, Info, Download, Link2 } from "lucide-react";
 
 import { toast } from "sonner";
 import { getClassificationLabel } from "@/lib/device-classifications";
@@ -953,6 +953,15 @@ function DeviceDetailPage() {
               )}
               {device.vendor_subtype && (
                 <Badge variant="outline" className="text-xs">{device.vendor_subtype}</Badge>
+              )}
+              {/* F4: FK host_id resa visibile — link diretto alla scheda asset unificata */}
+              {device.host_id && (
+                <Link href={`/objects/${device.host_id}`} className="inline-flex">
+                  <Badge variant="outline" className="text-xs gap-1 hover:bg-primary/10 cursor-pointer">
+                    <Link2 className="h-3 w-3" />
+                    host #{device.host_id}
+                  </Badge>
+                </Link>
               )}
             </div>
             <p className="text-muted-foreground font-mono text-sm mt-1">{device.host}:{device.port} ({device.protocol})</p>

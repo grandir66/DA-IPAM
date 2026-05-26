@@ -4361,12 +4361,16 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
   // Includo `has_device` (1 se l'host ha un network_device associato via IP) per
   // l'auto-pick primary: i managed hanno priorità perché concentrano credenziali,
   // SNMP context e storia di scan.
-  const hosts = d.prepare(`SELECT h.id, h.network_id, h.ip, h.hostname, h.serial_number, h.snmp_data, h.custom_name, nd.sysname AS dev_sysname, nd.serial_number AS dev_serial, ac.dns_host_name AS ad_dns, CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device FROM hosts h LEFT JOIN network_devices nd ON nd.host = h.ip LEFT JOIN (SELECT host_id, MAX(dns_host_name) as dns_host_name FROM ad_computers WHERE host_id IS NOT NULL GROUP BY host_id) ac ON ac.host_id = h.id`).all() as Array<{ id: number; network_id: number; ip: string; hostname: string | null; serial_number: string | null; snmp_data: string | null; custom_name: string | null; dev_sysname: string | null; dev_serial: string | null; ad_dns: string | null; has_device: number }>;
+  // F4 v0.2.596: leggo anche hosts.physical_device_id come anchor di aggregazione.
+  // Un physical_device_id condiviso è la firma più forte possibile (utente l'ha
+  // dichiarato esplicitamente o l'identity-resolver l'ha trovato): prevale su tutto.
+  const hosts = d.prepare(`SELECT h.id, h.network_id, h.ip, h.hostname, h.serial_number, h.snmp_data, h.custom_name, h.physical_device_id, nd.sysname AS dev_sysname, nd.serial_number AS dev_serial, ac.dns_host_name AS ad_dns, CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device FROM hosts h LEFT JOIN network_devices nd ON nd.host = h.ip LEFT JOIN (SELECT host_id, MAX(dns_host_name) as dns_host_name FROM ad_computers WHERE host_id IS NOT NULL GROUP BY host_id) ac ON ac.host_id = h.id`).all() as Array<{ id: number; network_id: number; ip: string; hostname: string | null; serial_number: string | null; snmp_data: string | null; custom_name: string | null; physical_device_id: number | null; dev_sysname: string | null; dev_serial: string | null; ad_dns: string | null; has_device: number }>;
   const hostMeta = new Map<number, { ip: string; has_device: number }>();
   for (const h of hosts) hostMeta.set(h.id, { ip: h.ip, has_device: h.has_device });
   const buckets = new Map<string, Set<number>>();
   const hostNet = new Map<number, number>();
-  const PRIORITY: Record<string, number> = { serial_number: 4, sysname: 3, hostname: 2, ad_dns: 1 };
+  // F4 v0.2.596: priorità 5 a physical_device (anchor user-marked / resolver-validated).
+  const PRIORITY: Record<string, number> = { physical_device: 5, serial_number: 4, sysname: 3, hostname: 2, ad_dns: 1 };
   const hostBest = new Map<number, { type: string; value: string; priority: number }>();
   function addToBucket(key: string, hostId: number, type: string, value: string) {
     if (!buckets.has(key)) buckets.set(key, new Set());
@@ -4377,6 +4381,11 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
   }
   for (const h of hosts) {
     hostNet.set(h.id, h.network_id);
+    // F4 v0.2.596: anchor #1 — physical_device_id condiviso (dichiarazione esplicita
+    // o aggregazione automatica). Sufficiente da solo per formare un gruppo.
+    if (h.physical_device_id) {
+      addToBucket(`physical:${h.physical_device_id}`, h.id, "physical_device", `physical_device:${h.physical_device_id}`);
+    }
     const serial = (h.serial_number || h.dev_serial || "").trim().toUpperCase();
     if (serial && serial.length >= 4) addToBucket(`serial:${serial}`, h.id, "serial_number", serial);
     let sysName = h.dev_sysname ?? null;
@@ -4388,9 +4397,28 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
     if (adDns && adDns.length >= 3) { const shortAd = adDns.split(".")[0]; if (shortAd.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(shortAd)) addToBucket(`ad_dns:${shortAd}`, h.id, "ad_dns", h.ad_dns!.trim()); }
   }
   const parent = new Map<number, number>();
+  // F4 v0.2.596: traccio quali host appartengono ad almeno un bucket "physical"
+  // (aggregazione manuale o resolver-validated). Quei gruppi devono persistere
+  // anche se gli host sono nella stessa rete — il check classico "reti diverse"
+  // è troppo restrittivo quando l'utente ha già dichiarato la relazione.
+  const physicalLinkedHosts = new Set<number>();
   function find(x: number): number { if (!parent.has(x)) parent.set(x, x); if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!)); return parent.get(x)!; }
   function union(a: number, b: number) { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); }
-  for (const [, hostIds] of buckets) { if (hostIds.size < 2) continue; const nets = new Set<number>(); for (const hid of hostIds) nets.add(hostNet.get(hid)!); if (nets.size < 2) continue; const arr = [...hostIds]; for (let i = 1; i < arr.length; i++) union(arr[0], arr[i]); }
+  for (const [key, hostIds] of buckets) {
+    if (hostIds.size < 2) continue;
+    const isPhysical = key.startsWith("physical:");
+    if (isPhysical) {
+      for (const hid of hostIds) physicalLinkedHosts.add(hid);
+    } else {
+      // Per anchor non-physical conserva la regola "reti diverse" (evita falsi
+      // positivi su hostname/sysname brevi che capitano nella stessa subnet).
+      const nets = new Set<number>();
+      for (const hid of hostIds) nets.add(hostNet.get(hid)!);
+      if (nets.size < 2) continue;
+    }
+    const arr = [...hostIds];
+    for (let i = 1; i < arr.length; i++) union(arr[0], arr[i]);
+  }
   const finalGroups = new Map<number, Set<number>>();
   for (const [hid] of parent) { const root = find(hid); if (!finalGroups.has(root)) finalGroups.set(root, new Set()); finalGroups.get(root)!.add(hid); }
   let groupCount = 0;
@@ -4400,9 +4428,13 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
     const ins = d.prepare("INSERT OR IGNORE INTO multihomed_links (group_id, host_id, match_type, match_value, is_primary) VALUES (?, ?, ?, ?, ?)");
     for (const [, members] of finalGroups) {
       if (members.size < 2) continue;
-      const nets = new Set<number>();
-      for (const hid of members) nets.add(hostNet.get(hid)!);
-      if (nets.size < 2) continue;
+      // Skip "diverse reti" check per gruppi che includono link physical (manuale).
+      const hasPhysicalAnchor = [...members].some((hid) => physicalLinkedHosts.has(hid));
+      if (!hasPhysicalAnchor) {
+        const nets = new Set<number>();
+        for (const hid of members) nets.add(hostNet.get(hid)!);
+        if (nets.size < 2) continue;
+      }
       const groupId = randomUUID();
       groupCount++;
       // Auto-pick primary: priorità (1) host con network_device associato (managed),

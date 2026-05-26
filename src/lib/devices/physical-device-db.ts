@@ -382,6 +382,15 @@ export function manualLinkHostsToPhysicalDevice(
 
   updatePhysicalDevice(targetId, { /* bump last_seen */ });
 
+  // F4 v0.2.596: ricalcola multihomed_links per attivare scan-dedup.
+  // Senza questo passaggio, gli scan/probe ARP/SNMP girano in parallelo su
+  // ogni IP del cluster, sprecando tempo e generando duplicazioni.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { recomputeMultihomedLinks } = require("@/lib/db-tenant");
+    recomputeMultihomedLinks();
+  } catch { /* fallback: il recompute verrà fatto al prossimo job schedulato */ }
+
   return {
     physical_device_id: targetId,
     linked_host_ids: hosts.map((h) => h.id),
@@ -404,6 +413,14 @@ export function unlinkHostFromPhysicalDevice(hostId: number): { previous_physica
   const remaining = db.prepare("SELECT COUNT(*) AS n FROM hosts WHERE physical_device_id = ?").get(prevId) as { n: number };
   const remainingDevices = db.prepare("SELECT COUNT(*) AS n FROM network_devices WHERE physical_device_id = ?").get(prevId) as { n: number };
   const orphaned = remaining.n === 0 && remainingDevices.n === 0;
+
+  // F4 v0.2.596: ricalcola multihomed_links anche dopo unlink (l'host esce
+  // dal gruppo e ricomincia a ricevere i propri scan).
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { recomputeMultihomedLinks } = require("@/lib/db-tenant");
+    recomputeMultihomedLinks();
+  } catch { /* fallback su job schedulato */ }
 
   return { previous_physical_device_id: prevId, orphaned };
 }

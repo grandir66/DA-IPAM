@@ -45,6 +45,7 @@ import {
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, ShieldAlert, HardDrive, Monitor,
   Phone, Printer, Camera, Cpu, Database, Smartphone, Link2,
   Lock, KeyRound, Trash2, ShieldCheck, MoreVertical, Wifi,
+  BatteryCharging, Network,
 } from "lucide-react";
 
 /**
@@ -72,6 +73,9 @@ const CLASS_PRESETS: Array<{
   { filter: "switch",         label: "Switch",     icon: Cable,     match: ["switch"] },
   { filter: "access_point",   label: "AP",         icon: Wifi,      match: ["access_point"] },
   { filter: "firewall",       label: "Firewall",   icon: Shield,    match: ["firewall"] },
+  // v0.2.620: NET = device di rete generici non coperti dai preset specifici
+  { filter: "group:net",      label: "NET",        icon: Network,   match: ["bridge", "repeater", "modem", "ont", "load_balancer", "vpn_gateway", "proxy", "rete_ot"] },
+  { filter: "ups",            label: "UPS",        icon: BatteryCharging, match: ["ups"] },
   { filter: "group:tel",      label: "TEL",        icon: Phone,     match: ["voip"] },
   { filter: "group:print",    label: "PRINT",      icon: Printer,   match: ["stampante", "scanner", "fotocopiatrice", "multifunzione"] },
   { filter: "group:cam",      label: "CAM",        icon: Camera,    match: ["telecamera"] },

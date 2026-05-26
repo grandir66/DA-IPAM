@@ -12,7 +12,7 @@
  *   Identità · Rete · Vulnerabilità · Software · Asset NIS2 · Credenziali · Discovery · Cronologia
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -108,10 +108,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
+/**
+ * Parser sicuro per stringhe datetime SQLite/ISO.
+ * SQLite `datetime('now')` ritorna "YYYY-MM-DD HH:MM:SS" senza timezone marker:
+ * il browser lo interpreterebbe come LOCAL invece di UTC → orari shiftati.
+ * Forziamo UTC se manca un marker esplicito.
+ */
+function parseUtcDate(s: string): Date {
+  if (/Z$|[+-]\d{2}:?\d{2}$/.test(s)) return new Date(s);
+  return new Date(s.replace(" ", "T") + "Z");
+}
+
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("it-IT", {
+    return parseUtcDate(iso).toLocaleString("it-IT", {
       day: "2-digit", month: "2-digit", year: "numeric",
       hour: "2-digit", minute: "2-digit",
     });
@@ -377,11 +388,13 @@ interface SectionProps {
   title: string;
   badge?: React.ReactNode;
   children: React.ReactNode;
+  /** id opzionale per ancore di scroll (es. dal badge header) */
+  id?: string;
 }
 
-function Section({ icon, title, badge, children }: SectionProps) {
+function Section({ icon, title, badge, children, id }: SectionProps) {
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden" id={id}>
       <CardHeader className="bg-muted/30 border-b py-2.5 px-4">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <span className="text-primary">{icon}</span>
@@ -675,6 +688,31 @@ export default function ObjectDetailPage() {
   const displayName = host.custom_name || host.hostname || host.dns_reverse || host.ip;
   const classificationLabel = host.classification ? getClassificationLabel(host.classification) : null;
   const isManaged = !!device;
+
+  // v0.2.606: runtime summary calcolato una volta, usato sia nel badge header
+  // sia nella Section "Stato runtime". Evita di parsare open_ports due volte.
+  const runtimeSummary = useMemo(() => {
+    let tcpPorts: number[] = [];
+    let udpPorts: number[] = [];
+    try {
+      if (host?.open_ports) {
+        const parsed = JSON.parse(host.open_ports);
+        if (Array.isArray(parsed)) {
+          for (const p of parsed) {
+            if (typeof p === "object" && p?.port) {
+              if ((p.protocol ?? "tcp") === "tcp") tcpPorts.push(p.port);
+              else if (p.protocol === "udp") udpPorts.push(p.port);
+            } else if (typeof p === "number") tcpPorts.push(p);
+          }
+        } else if (typeof parsed === "object" && parsed !== null) {
+          if (Array.isArray(parsed.tcp)) tcpPorts = parsed.tcp;
+          if (Array.isArray(parsed.udp)) udpPorts = parsed.udp;
+        }
+      }
+    } catch { /* ignore */ }
+    const validatedCreds = (host?.host_credentials ?? []).filter((hc) => hc.validated === 1);
+    return { tcpPorts, udpPorts, validatedCreds };
+  }, [host?.open_ports, host?.host_credentials]);
   const isAsset = !!asset;
   const isWindowsOrLinux = device?.vendor === "windows" || device?.vendor === "linux";
 
@@ -691,6 +729,23 @@ export default function ObjectDetailPage() {
               <h1 className="text-xl font-bold tracking-tight font-mono">{host.ip}</h1>
               <span className="text-base text-muted-foreground truncate">{displayName}</span>
               <StatusBadge status={host.status} />
+              {/* v0.2.606: badge rapidi runtime cliccabili (scroll alla section) */}
+              {runtimeSummary.validatedCreds.length > 0 && (
+                <a href="#runtime-section" className="inline-flex">
+                  <Badge variant="default" className="text-[10px] gap-1 cursor-pointer" title="Credenziali validate (clicca per dettagli)">
+                    <KeyRound className="h-3 w-3" />
+                    {runtimeSummary.validatedCreds.length}
+                  </Badge>
+                </a>
+              )}
+              {runtimeSummary.tcpPorts.length > 0 && (
+                <a href="#runtime-section" className="inline-flex">
+                  <Badge variant="outline" className="text-[10px] gap-1 cursor-pointer" title="Porte TCP aperte (clicca per dettagli)">
+                    <Cable className="h-3 w-3" />
+                    {runtimeSummary.tcpPorts.length} TCP
+                  </Badge>
+                </a>
+              )}
             </div>
             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
               <span className="inline-flex items-center gap-1.5">
@@ -802,6 +857,78 @@ export default function ObjectDetailPage() {
 
         {/* ═══════════════ TAB: GENERALE ═══════════════ */}
         <TabsContent value="generale" className="space-y-4">
+
+      {/* ─── v0.2.606: Stato runtime spostato in cima — è la prima cosa che serve sapere
+          aprendo l'asset. Porte e credenziali sono ancora più visibili tramite i badge
+          nell'header (riga ~705). */}
+      <Section
+        id="runtime-section"
+        icon={<Activity className="h-4 w-4 text-emerald-600" />}
+        title="Stato runtime"
+        badge={
+          <div className="flex items-center gap-1.5 ml-2">
+            {host.status === "online" && <Badge className="text-[10px] bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Online</Badge>}
+            {host.status === "offline" && <Badge variant="destructive" className="text-[10px]">Offline</Badge>}
+            {host.last_response_time_ms != null && (
+              <Badge variant="outline" className="text-[10px] font-mono">{host.last_response_time_ms} ms</Badge>
+            )}
+          </div>
+        }
+      >
+        <dl className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <InfoRow label="Ultima volta visto" value={host.last_seen ? parseUtcDate(host.last_seen).toLocaleString("it-IT") : null} />
+          <InfoRow label="Prima volta visto" value={host.first_seen ? parseUtcDate(host.first_seen).toLocaleString("it-IT") : null} />
+          <InfoRow label="Porte TCP aperte" value={runtimeSummary.tcpPorts.length > 0 ? String(runtimeSummary.tcpPorts.length) : null} />
+          <InfoRow label="Credenziali validate" value={runtimeSummary.validatedCreds.length > 0 ? String(runtimeSummary.validatedCreds.length) : null} />
+        </dl>
+        <Separator className="my-3" />
+        <div className="space-y-2">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+            Porte TCP aperte ({runtimeSummary.tcpPorts.length})
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {runtimeSummary.tcpPorts.length === 0 ? (
+              <span className="text-xs text-muted-foreground">Nessuna porta TCP rilevata</span>
+            ) : (
+              runtimeSummary.tcpPorts.slice(0, 50).map((p) => (
+                <Badge key={`tcp-${p}`} variant="outline" className="text-[10px] font-mono">{p}</Badge>
+              ))
+            )}
+            {runtimeSummary.tcpPorts.length > 50 && <span className="text-[10px] text-muted-foreground">+{runtimeSummary.tcpPorts.length - 50}</span>}
+          </div>
+        </div>
+        {runtimeSummary.udpPorts.length > 0 && (
+          <div className="space-y-2 mt-3">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+              Porte UDP aperte ({runtimeSummary.udpPorts.length})
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {runtimeSummary.udpPorts.slice(0, 30).map((p) => (
+                <Badge key={`udp-${p}`} variant="secondary" className="text-[10px] font-mono">{p}</Badge>
+              ))}
+              {runtimeSummary.udpPorts.length > 30 && <span className="text-[10px] text-muted-foreground">+{runtimeSummary.udpPorts.length - 30}</span>}
+            </div>
+          </div>
+        )}
+        <Separator className="my-3" />
+        <div className="space-y-2">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+            Credenziali funzionanti ({runtimeSummary.validatedCreds.length})
+          </div>
+          {runtimeSummary.validatedCreds.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Nessuna credenziale validata su questo host.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {runtimeSummary.validatedCreds.map((hc) => (
+                <Badge key={hc.id} variant="default" className="text-[10px] gap-1">
+                  <KeyRound className="h-3 w-3" />
+                  {hc.protocol_type}:{hc.port} · {hc.credential_name}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      </Section>
 
       {/* ─── 1. Identità ─── Tutti i campi anagrafici + inventory_code/note editabili */}
       <Section icon={<Cpu className="h-4 w-4" />} title="Identità">
@@ -1037,90 +1164,6 @@ export default function ObjectDetailPage() {
         </Section>
       )}
 
-      {/* ─── 4. Stato runtime ─── porte aperte + credenziali funzionanti */}
-      {(() => {
-        // Parse open_ports (formato: [{port, protocol}] o {tcp:[...], udp:[...]})
-        let tcpPorts: number[] = [];
-        let udpPorts: number[] = [];
-        try {
-          if (host.open_ports) {
-            const parsed = JSON.parse(host.open_ports);
-            if (Array.isArray(parsed)) {
-              for (const p of parsed) {
-                if (typeof p === "object" && p?.port) {
-                  if ((p.protocol ?? "tcp") === "tcp") tcpPorts.push(p.port);
-                  else if (p.protocol === "udp") udpPorts.push(p.port);
-                } else if (typeof p === "number") tcpPorts.push(p);
-              }
-            } else if (typeof parsed === "object" && parsed !== null) {
-              if (Array.isArray(parsed.tcp)) tcpPorts = parsed.tcp;
-              if (Array.isArray(parsed.udp)) udpPorts = parsed.udp;
-            }
-          }
-        } catch { /* ignore */ }
-        const validatedCreds = (host.host_credentials ?? []).filter((hc) => hc.validated === 1);
-        const lastSeenStr = host.last_seen ? new Date(host.last_seen).toLocaleString("it-IT") : null;
-        return (
-          <Section icon={<Activity className="h-4 w-4" />} title="Stato runtime">
-            <dl className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <InfoRow label="Status" value={host.status === "online" ? "Online" : host.status === "offline" ? "Offline" : "Sconosciuto"} />
-              <InfoRow label="Ultima risposta" value={host.last_response_time_ms != null ? `${host.last_response_time_ms} ms` : null} />
-              <InfoRow label="Ultima volta visto" value={lastSeenStr} />
-              <InfoRow label="Prima volta visto" value={host.first_seen ? new Date(host.first_seen).toLocaleString("it-IT") : null} />
-            </dl>
-            <Separator className="my-3" />
-            {/* Porte aperte */}
-            <div className="space-y-2">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-                Porte TCP aperte ({tcpPorts.length})
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {tcpPorts.length === 0 ? (
-                  <span className="text-xs text-muted-foreground">Nessuna porta TCP rilevata</span>
-                ) : (
-                  tcpPorts.slice(0, 50).map((p) => (
-                    <Badge key={`tcp-${p}`} variant="outline" className="text-[10px] font-mono">{p}</Badge>
-                  ))
-                )}
-                {tcpPorts.length > 50 && <span className="text-[10px] text-muted-foreground">+{tcpPorts.length - 50}</span>}
-              </div>
-            </div>
-            {udpPorts.length > 0 && (
-              <div className="space-y-2 mt-3">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-                  Porte UDP aperte ({udpPorts.length})
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {udpPorts.slice(0, 30).map((p) => (
-                    <Badge key={`udp-${p}`} variant="secondary" className="text-[10px] font-mono">{p}</Badge>
-                  ))}
-                  {udpPorts.length > 30 && <span className="text-[10px] text-muted-foreground">+{udpPorts.length - 30}</span>}
-                </div>
-              </div>
-            )}
-            <Separator className="my-3" />
-            {/* Credenziali funzionanti */}
-            <div className="space-y-2">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-                Credenziali funzionanti ({validatedCreds.length})
-              </div>
-              {validatedCreds.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Nessuna credenziale validata su questo host.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {validatedCreds.map((hc) => (
-                    <Badge key={hc.id} variant="default" className="text-[10px] gap-1">
-                      <KeyRound className="h-3 w-3" />
-                      {hc.protocol_type}:{hc.port} · {hc.credential_name}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          </Section>
-        );
-      })()}
-
         </TabsContent>
 
         {/* ═══════════════ TAB: SISTEMA ═══════════════ */}
@@ -1187,7 +1230,7 @@ export default function ObjectDetailPage() {
               <InfoRow label="ARP entries" value={snmp?.arpEntryCount != null ? String(snmp.arpEntryCount) : null} />
               <InfoRow label="SNMP port" value={snmp?.port ? String(snmp.port) : null} />
               <InfoRow label="Part number" value={device?.part_number ?? snmp?.partNumber ?? null} />
-              <InfoRow label="Ultima query device" value={device?.last_info_update ? new Date(device.last_info_update).toLocaleString("it-IT") : null} />
+              <InfoRow label="Ultima query device" value={device?.last_info_update ? parseUtcDate(device.last_info_update).toLocaleString("it-IT") : null} />
             </dl>
             {/* Hints vendor-specifici che il discovery cattura via OID custom */}
             {(snmp?.mikrotikIdentity || snmp?.unifiSummary || snmp?.ifDescrSummary || snmp?.hostResourcesSummary) && (

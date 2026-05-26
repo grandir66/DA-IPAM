@@ -1063,9 +1063,22 @@ export default function DiscoveryPage() {
           row.query_status = "error";
           row.query_message = qd.error ?? `HTTP ${qr.status}`;
         } else if (qd.id) {
-          // polling fino a completion
+          // v0.2.636 audit B2: polling con max-retry e cleanup. Prima il setInterval
+          // poteva girare all'infinito se lo scan restava 'running' (es. crash
+          // background task senza progress update) → bottone "Aggiorna selezionati"
+          // bloccato per sempre. Ora dopo POLL_MAX_ATTEMPTS (400 × 1500ms = 10min)
+          // forza failed.
+          const POLL_INTERVAL_MS = 1500;
+          const POLL_MAX_ATTEMPTS = 400;
           const finalPhase = await new Promise<{ status: string; phase: string }>((resolve) => {
+            let attempts = 0;
             const poll = setInterval(async () => {
+              attempts++;
+              if (attempts >= POLL_MAX_ATTEMPTS) {
+                clearInterval(poll);
+                resolve({ status: "failed", phase: "timeout dopo 10 minuti di polling" });
+                return;
+              }
               try {
                 const pr = await fetch(`/api/scans/progress/${qd.id}`);
                 if (!pr.ok) return;
@@ -1074,8 +1087,8 @@ export default function DiscoveryPage() {
                   clearInterval(poll);
                   resolve(pd);
                 }
-              } catch { /* ignore */ }
-            }, 1500);
+              } catch { /* ignore: il prossimo tick riproverà fino al max */ }
+            }, POLL_INTERVAL_MS);
           });
           if (finalPhase.status === "completed") {
             row.query_status = "ok";

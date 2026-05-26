@@ -636,9 +636,21 @@ export default function ObjectDetailPage() {
         return;
       }
       if (qd.id) {
-        // attende polling completion
+        // v0.2.636 audit B2: polling con max-attempts. Senza limite il setInterval
+        // poteva girare per sempre se lo scan restava bloccato in 'running' —
+        // il bottone "Refresh" restava in spinner indefinitamente.
+        const POLL_INTERVAL_MS = 1500;
+        const POLL_MAX_ATTEMPTS = 400; // ≈ 10 minuti
         await new Promise<void>((resolve) => {
+          let attempts = 0;
           const poll = setInterval(async () => {
+            attempts++;
+            if (attempts >= POLL_MAX_ATTEMPTS) {
+              clearInterval(poll);
+              toast.error("Query timeout dopo 10 minuti");
+              resolve();
+              return;
+            }
             try {
               const pr = await fetch(`/api/scans/progress/${qd.id}`);
               if (!pr.ok) return;
@@ -649,8 +661,8 @@ export default function ObjectDetailPage() {
                 else toast.error(pd.phase ?? "Query fallita");
                 resolve();
               }
-            } catch { /* ignore */ }
-          }, 1500);
+            } catch { /* ignore: il prossimo tick riproverà fino al max */ }
+          }, POLL_INTERVAL_MS);
         });
       }
       if (device.vendor === "windows" || device.vendor === "linux") {

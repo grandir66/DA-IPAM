@@ -548,16 +548,44 @@ export function getTenantDb(tenantCode: string): Database.Database {
     if (!ndCols.some((c) => c.name === "host_id")) {
       newDb.exec("ALTER TABLE network_devices ADD COLUMN host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL");
       newDb.exec("CREATE INDEX IF NOT EXISTS idx_network_devices_host_id ON network_devices(host_id)");
-      // Backfill best-effort: per ogni device, cerca un host con stesso IP letterale.
-      // I device con host=URL (es. Proxmox "https://1.2.3.4:8006") restano NULL.
-      // Se più reti hanno lo stesso IP, prendiamo il primo match (LIMIT 1).
+      // Backfill best-effort in 2 passi:
+      //   1) match diretto su IP letterale (network_devices.host = hosts.ip)
+      //   2) match su IP estratto da host URL/host:port (es. Proxmox "https://1.2.3.4:8006")
+      //      usando SQLite REGEX semplificata via SUBSTR + INSTR.
       try {
-        const backfill = newDb.prepare(`
+        const phase1 = newDb.prepare(`
           UPDATE network_devices SET host_id = (
             SELECT h.id FROM hosts h WHERE h.ip = network_devices.host LIMIT 1
           ) WHERE host_id IS NULL
         `).run();
-        console.info(`[db-tenant] ${tenantCode}: network_devices.host_id aggiunto (backfill: ${backfill.changes} righe collegate)`);
+
+        // Per URL/host:port serve estrarre l'IP. SQLite non ha REGEXP built-in,
+        // ma possiamo usare SUBSTR + INSTR per i pattern comuni: "scheme://IP[:port]"
+        // o "IP:port". Faccio passi separati per ognuno dei pattern.
+        let phase2Changes = 0;
+        // Pattern A: "https://IP:port" o "http://IP:port" o "https://IP/path"
+        const phase2a = newDb.prepare(`
+          UPDATE network_devices SET host_id = (
+            SELECT h.id FROM hosts h
+             WHERE host LIKE 'http%://' || h.ip || ':%'
+                OR host LIKE 'http%://' || h.ip || '/%'
+                OR host LIKE 'http%://' || h.ip
+             LIMIT 1
+          ) WHERE host_id IS NULL AND host LIKE 'http%://%'
+        `).run();
+        phase2Changes += phase2a.changes;
+        // Pattern B: "IP:port" senza scheme
+        const phase2b = newDb.prepare(`
+          UPDATE network_devices SET host_id = (
+            SELECT h.id FROM hosts h
+             WHERE host LIKE h.ip || ':%'
+             LIMIT 1
+          ) WHERE host_id IS NULL AND host LIKE '%:%' AND host NOT LIKE 'http%'
+        `).run();
+        phase2Changes += phase2b.changes;
+
+        const total = phase1.changes + phase2Changes;
+        console.info(`[db-tenant] ${tenantCode}: network_devices.host_id aggiunto (backfill: ${phase1.changes} direct + ${phase2Changes} URL/port = ${total} righe collegate)`);
       } catch (e) {
         console.warn(`[db-tenant] ${tenantCode}: backfill host_id fallito:`, e);
       }
@@ -1378,9 +1406,18 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     // F1: ricomputo classificazione automatica dai dati appena aggiornati.
     // Idempotente: se i segnali non sono cambiati, il risultato è identico.
     try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { applyAutoClassification } = require("./devices/auto-classify");
       applyAutoClassification(db(), host.id);
     } catch { /* non blocca l'upsert se la classificazione fallisce */ }
+    // F4 v0.2.597: reverse trigger — se esiste un network_device con host = IP
+    // dell'host appena aggiornato e host_id NULL, lo collega ora (caso tipico:
+    // device creato manualmente prima che l'host fosse scoperto via discovery).
+    try {
+      db().prepare(
+        "UPDATE network_devices SET host_id = ?, updated_at = datetime('now') WHERE host_id IS NULL AND host = ?"
+      ).run(host.id, host.ip);
+    } catch { /* niente */ }
     return host;
   }
 
@@ -1439,9 +1476,17 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
   }
   // F1: prima classificazione automatica all'insert.
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { applyAutoClassification } = require("./devices/auto-classify");
     applyAutoClassification(db(), host.id);
   } catch { /* non blocca l'insert se la classificazione fallisce */ }
+  // F4 v0.2.597: reverse trigger anche nel branch INSERT (host nuovo) — un device
+  // potrebbe già esistere col suo IP e attendere il host_id.
+  try {
+    db().prepare(
+      "UPDATE network_devices SET host_id = ?, updated_at = datetime('now') WHERE host_id IS NULL AND host = ?"
+    ).run(host.id, host.ip);
+  } catch { /* niente */ }
   return host;
 }
 

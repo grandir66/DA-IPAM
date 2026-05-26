@@ -2712,9 +2712,16 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     }
     // F1: ricomputo classificazione automatica dai dati appena aggiornati (idempotente).
     try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { applyAutoClassification } = require("./devices/auto-classify");
       applyAutoClassification(getDb(), host.id);
     } catch { /* non blocca l'upsert se la classificazione fallisce */ }
+    // F4 v0.2.597: reverse trigger — device orphan con stesso IP viene collegato.
+    try {
+      getDb().prepare(
+        "UPDATE network_devices SET host_id = ?, updated_at = datetime('now') WHERE host_id IS NULL AND host = ?"
+      ).run(host.id, host.ip);
+    } catch { /* niente */ }
     return host;
   }
 
@@ -2773,9 +2780,16 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
   }
   // F1: prima classificazione automatica all'insert.
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { applyAutoClassification } = require("./devices/auto-classify");
     applyAutoClassification(getDb(), host.id);
   } catch { /* non blocca l'insert se la classificazione fallisce */ }
+  // F4 v0.2.597: reverse trigger anche nel branch INSERT.
+  try {
+    getDb().prepare(
+      "UPDATE network_devices SET host_id = ?, updated_at = datetime('now') WHERE host_id IS NULL AND host = ?"
+    ).run(host.id, host.ip);
+  } catch { /* niente */ }
   return host;
 }
 

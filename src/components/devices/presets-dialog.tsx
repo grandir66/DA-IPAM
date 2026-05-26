@@ -110,7 +110,7 @@ export function PresetsDialog({ open, onOpenChange, presets, availableClassifica
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl">
+      <DialogContent className="sm:max-w-7xl w-full">
         <DialogHeader className="border-b border-border/50 px-4 pt-4 pb-3">
           <DialogTitle>Gestisci filtri rapidi</DialogTitle>
         </DialogHeader>

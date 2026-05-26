@@ -1355,7 +1355,19 @@ export default function DiscoveryPage() {
           : <span className="text-muted-foreground text-xs">—</span>;
       }
       case "notes":
-        return <span className="text-xs text-muted-foreground truncate max-w-[150px] block" title={h.notes}>{h.notes || "—"}</span>;
+        // v0.2.627: editabile inline (text). Note libere sull'host.
+        return (
+          <InlineEditCell
+            mode="text"
+            value={h.notes ?? ""}
+            placeholder="Aggiungi note…"
+            onSave={(v) => saveHostFieldInline(h.id, { notes: v })}
+            display={h.notes
+              ? <span className="text-xs text-muted-foreground truncate max-w-[150px] block" title={h.notes}>{h.notes}</span>
+              : <span className="text-muted-foreground text-xs">—</span>}
+            title="Clicca per modificare le note"
+          />
+        );
       case "network_name":
         return <span className="text-sm" title={h.network_cidr}>{h.network_name}</span>;
       case "vlan_id":

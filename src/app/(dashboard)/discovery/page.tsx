@@ -44,7 +44,7 @@ import {
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, ShieldAlert, HardDrive, Monitor,
   Phone, Printer, Camera, Cpu, Database, Smartphone, Link2,
-  Lock, KeyRound, Trash2, ShieldCheck, MoreVertical,
+  Lock, KeyRound, Trash2, ShieldCheck, MoreVertical, Wifi,
 } from "lucide-react";
 
 /**
@@ -70,6 +70,7 @@ const CLASS_PRESETS: Array<{
   { filter: "hypervisor",     label: "Hypervisor", icon: HardDrive, match: ["hypervisor"] },
   { filter: "router",         label: "Router",     icon: RouterIcon,match: ["router"] },
   { filter: "switch",         label: "Switch",     icon: Cable,     match: ["switch"] },
+  { filter: "access_point",   label: "AP",         icon: Wifi,      match: ["access_point"] },
   { filter: "firewall",       label: "Firewall",   icon: Shield,    match: ["firewall"] },
   { filter: "group:tel",      label: "TEL",        icon: Phone,     match: ["voip"] },
   { filter: "group:print",    label: "PRINT",      icon: Printer,   match: ["stampante", "scanner", "fotocopiatrice", "multifunzione"] },

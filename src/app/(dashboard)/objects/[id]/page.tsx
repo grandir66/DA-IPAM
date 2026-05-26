@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { PromoteHostDialog } from "@/components/devices/promote-host-dialog";
 import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
+import { EditDeviceDialog } from "@/components/devices/edit-device-dialog";
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
 import { UptimeTimeline } from "@/components/shared/uptime-timeline";
@@ -400,6 +401,8 @@ export default function ObjectDetailPage() {
   const [device, setDevice] = useState<DeviceFull | null>(null);
   // F3.3: modale di promozione inline (no più redirect a /hosts/[id]?promote=1)
   const [promoteOpen, setPromoteOpen] = useState(false);
+  // v0.2.599: modale edit device inline (no più redirect a /devices/[id], che era senza tab)
+  const [editDeviceOpen, setEditDeviceOpen] = useState(false);
   // Multi-IP link manuale (v0.2.594+)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [clusterMembers, setClusterMembers] = useState<Array<{
@@ -660,7 +663,7 @@ export default function ObjectDetailPage() {
                 - Device gestito → "Modifica device" punta a /devices/[deviceId] dove esiste già
                   l'editor completo (credenziali/vendor/protocollo/scan_target). */}
             {isManaged && device ? (
-              <Button variant="outline" nativeButton={false} render={<Link href={`/devices/${device.id}`} />}>
+              <Button variant="outline" onClick={() => setEditDeviceOpen(true)}>
                 <Pencil className="h-4 w-4 mr-2" />
                 Modifica device
               </Button>
@@ -2247,6 +2250,18 @@ export default function ObjectDetailPage() {
           anchorHostId={host.id}
           anchorHostLabel={host.hostname || host.ip}
           onLinked={() => { void fetchAll(); void fetchClusterMembers(); }}
+        />
+      )}
+
+      {/* v0.2.599: modale edit device inline (sostituisce navigazione a /devices/[id]).
+          /devices/[id] resta accessibile direct, ma il pulsante "Modifica device"
+          della scheda asset ora apre questo dialog → niente più perdita dei tab. */}
+      {device && (
+        <EditDeviceDialog
+          device={device}
+          open={editDeviceOpen}
+          onOpenChange={setEditDeviceOpen}
+          onSaved={() => { setEditDeviceOpen(false); void fetchAll(); }}
         />
       )}
 

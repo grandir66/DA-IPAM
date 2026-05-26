@@ -1244,9 +1244,9 @@ export default function DiscoveryPage() {
         return <span className="text-sm text-muted-foreground truncate max-w-[140px] block" title={h.vendor ?? ""}>{h.vendor ?? "—"}</span>;
       case "classification": {
         // v0.2.618: editabile inline (select). Save → PUT /api/hosts/:id { classification }.
+        // v0.2.621: ordinamento alfabetico per LABEL visibile (es. "Access Point", "Bridge", ...)
         const opts = [{ value: "unknown", label: "— Sconosciuta —" },
-          ...DEVICE_CLASSIFICATIONS_ORDERED
-            .filter((c) => c !== "unknown")
+          ...sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown"))
             .map((c) => ({ value: c, label: getClassificationLabel(c) }))];
         return (
           <InlineEditCell

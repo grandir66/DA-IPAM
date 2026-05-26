@@ -1002,6 +1002,21 @@ CREATE TABLE IF NOT EXISTS software_scan_logs (
   message TEXT NOT NULL,
   details TEXT
 );
+
+-- v0.2.632: Classification custom per-tenant. Sotto-categorie utente di un built-in.
+-- Eredita icona e macro-categoria dal parent_slug (che DEVE essere un built-in,
+-- validato lato API — qui CHECK solo formato base). Lo slug è PK e immutabile
+-- una volta creato perché referenziato da hosts.classification.
+CREATE TABLE IF NOT EXISTS device_classifications_custom (
+  slug TEXT PRIMARY KEY NOT NULL,
+  label TEXT NOT NULL,
+  parent_slug TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK (length(slug) >= 2 AND length(slug) <= 64),
+  CHECK (slug GLOB '[a-z]*'),
+  CHECK (length(label) >= 1 AND length(label) <= 80)
+);
 `;
 
 export const TENANT_INDEXES_SQL = `
@@ -1193,4 +1208,9 @@ CREATE TABLE IF NOT EXISTS excluded_ips (
   UNIQUE(network_id, ip)
 );
 CREATE INDEX IF NOT EXISTS idx_excluded_ips_network_ip ON excluded_ips(network_id, ip);
+
+-- v0.2.632: Classification custom — unique label case-insensitive per evitare
+-- collisioni cognitive (Server PG / server pg) nelle UI.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dcc_label_ci ON device_classifications_custom(lower(label));
+CREATE INDEX IF NOT EXISTS idx_dcc_parent ON device_classifications_custom(parent_slug);
 `;

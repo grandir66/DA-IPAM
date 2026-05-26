@@ -429,6 +429,24 @@ export default function ObjectDetailPage() {
   // v0.2.605: serial_number + classification editabili inline
   const [editableSerial, setEditableSerial] = useState("");
   const [editableClassification, setEditableClassification] = useState("");
+  // v0.2.632: custom classifications per-tenant
+  const [customClassifications, setCustomClassifications] = useState<Array<{ slug: string; label: string; parent_slug: string }>>([]);
+  useEffect(() => {
+    void fetch("/api/classifications/custom", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((data) => setCustomClassifications(data.items ?? []))
+      .catch(() => { /* ignore */ });
+  }, []);
+  const customLabelMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of customClassifications) m.set(c.slug, c.label);
+    return m;
+  }, [customClassifications]);
+  const effectiveClassificationLabel = useCallback((slug: string) => customLabelMap.get(slug) ?? getClassificationLabel(slug), [customLabelMap]);
+  const effectiveClassificationSlugs = useMemo(
+    () => [...DEVICE_CLASSIFICATIONS_ORDERED, ...customClassifications.map((c) => c.slug)],
+    [customClassifications]
+  );
   // Multi-IP link manuale (v0.2.594+)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [clusterMembers, setClusterMembers] = useState<Array<{
@@ -711,7 +729,7 @@ export default function ObjectDetailPage() {
   if (!host) return null;
 
   const displayName = host.custom_name || host.hostname || host.dns_reverse || host.ip;
-  const classificationLabel = host.classification ? getClassificationLabel(host.classification) : null;
+  const classificationLabel = host.classification ? effectiveClassificationLabel(host.classification) : null;
   const isManaged = !!device;
   const isAsset = !!asset;
   const isWindowsOrLinux = device?.vendor === "windows" || device?.vendor === "linux";
@@ -962,8 +980,8 @@ export default function ObjectDetailPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="unknown">— Sconosciuta —</SelectItem>
-                {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown")).map((c) => (
-                  <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>
+                {[...effectiveClassificationSlugs].filter((c) => c !== "unknown").sort((a, b) => effectiveClassificationLabel(a).localeCompare(effectiveClassificationLabel(b), "it", { sensitivity: "base" })).map((c) => (
+                  <SelectItem key={c} value={c}>{effectiveClassificationLabel(c)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

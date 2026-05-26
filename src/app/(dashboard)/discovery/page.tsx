@@ -400,6 +400,30 @@ export default function DiscoveryPage() {
   // v0.2.628: preset chip personalizzabili dall'utente
   const [presets, setPresets] = useState<ClassPreset[]>(DEFAULT_CLASS_PRESETS);
   const [presetsDialogOpen, setPresetsDialogOpen] = useState(false);
+  // v0.2.632: classification custom per-tenant. Fetch al mount, refresh on focus.
+  const [customClassifications, setCustomClassifications] = useState<Array<{ slug: string; label: string; parent_slug: string }>>([]);
+  useEffect(() => {
+    const load = () => {
+      void fetch("/api/classifications/custom", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : { items: [] }))
+        .then((data) => setCustomClassifications(data.items ?? []))
+        .catch(() => { /* ignore */ });
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
+  }, []);
+  // Map slug → label per override custom. Built-in fallback via getClassificationLabel.
+  const customLabelMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of customClassifications) m.set(c.slug, c.label);
+    return m;
+  }, [customClassifications]);
+  const effectiveLabel = useCallback((slug: string) => customLabelMap.get(slug) ?? getClassificationLabel(slug), [customLabelMap]);
+  const effectiveClassifications = useMemo(
+    () => [...DEVICE_CLASSIFICATIONS_ORDERED, ...customClassifications.map((c) => c.slug)],
+    [customClassifications]
+  );
 
   // Carica preset salvati al mount (localStorage immediato + sync server)
   useEffect(() => {
@@ -1346,9 +1370,11 @@ export default function DiscoveryPage() {
       case "classification": {
         // v0.2.618: editabile inline (select). Save → PUT /api/hosts/:id { classification }.
         // v0.2.621: ordinamento alfabetico per LABEL visibile (es. "Access Point", "Bridge", ...)
+        // v0.2.632: include classification custom (effectiveClassifications + effectiveLabel).
+        const slugs = effectiveClassifications.filter((c) => c !== "unknown");
+        const sortedSlugs = [...slugs].sort((a, b) => effectiveLabel(a).localeCompare(effectiveLabel(b), "it", { sensitivity: "base" }));
         const opts = [{ value: "unknown", label: "— Sconosciuta —" },
-          ...sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown"))
-            .map((c) => ({ value: c, label: getClassificationLabel(c) }))];
+          ...sortedSlugs.map((c) => ({ value: c, label: effectiveLabel(c) }))];
         return (
           <InlineEditCell
             mode="select"
@@ -1356,7 +1382,7 @@ export default function DiscoveryPage() {
             selectOptions={opts}
             onSave={(v) => saveHostFieldInline(h.id, { classification: v || "unknown" })}
             display={h.classification && h.classification !== "unknown"
-              ? <Badge variant="outline" className="text-xs">{getClassificationLabel(h.classification) || h.classification}</Badge>
+              ? <Badge variant="outline" className="text-xs">{effectiveLabel(h.classification) || h.classification}</Badge>
               : <span className="text-muted-foreground text-xs">—</span>}
             title="Clicca per cambiare classificazione"
           />
@@ -1855,8 +1881,13 @@ export default function DiscoveryPage() {
               title="Aggiungi/modifica/rimuovi i filtri rapidi"
             >
               <Pencil className="h-3.5 w-3.5" />
-              Gestisci
+              Gestisci filtri
             </Button>
+            {/* v0.2.632: shortcut a gestione classification custom */}
+            <Link href="/settings/classifications" className="h-7 inline-flex items-center px-2 text-xs text-muted-foreground hover:text-foreground rounded" title="Aggiungi/modifica classification custom">
+              <Pencil className="h-3.5 w-3.5 mr-1" />
+              Classification
+            </Link>
           </div>
         </CardHeader>
 
@@ -2167,8 +2198,8 @@ export default function DiscoveryPage() {
                   <SelectTrigger><SelectValue placeholder="Seleziona..." /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__empty__">— Seleziona —</SelectItem>
-                    {SORTED_CLASSIFICATIONS.map((c) => (
-                      <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>
+                    {[...effectiveClassifications].sort((a, b) => effectiveLabel(a).localeCompare(effectiveLabel(b), "it", { sensitivity: "base" })).map((c) => (
+                      <SelectItem key={c} value={c}>{effectiveLabel(c)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -2773,7 +2804,8 @@ export default function DiscoveryPage() {
         open={presetsDialogOpen}
         onOpenChange={setPresetsDialogOpen}
         presets={presets}
-        availableClassifications={DEVICE_CLASSIFICATIONS_ORDERED}
+        availableClassifications={effectiveClassifications}
+        getLabel={effectiveLabel}
         onSave={(next) => {
           setPresets(next);
           savePresets(next);

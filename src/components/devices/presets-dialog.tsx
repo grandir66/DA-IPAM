@@ -62,11 +62,14 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   presets: ClassPreset[];
   availableClassifications: readonly string[];
+  /** v0.2.632: opzionale override label (per supportare custom classifications). */
+  getLabel?: (slug: string) => string;
   onSave: (next: ClassPreset[]) => void;
   onReset: () => void;
 }
 
-export function PresetsDialog({ open, onOpenChange, presets, availableClassifications, onSave, onReset }: Props) {
+export function PresetsDialog({ open, onOpenChange, presets, availableClassifications, getLabel, onSave, onReset }: Props) {
+  const labelOf = getLabel ?? getClassificationLabel;
   const [draft, setDraft] = useState<ClassPreset[]>([]);
 
   // Sincronizza il draft con le props quando si apre o quando presets cambia esternamente
@@ -184,6 +187,7 @@ export function PresetsDialog({ open, onOpenChange, presets, availableClassifica
                       selected={preset.match}
                       available={availableClassifications}
                       hideFromPool={claimedElsewhere}
+                      getLabel={labelOf}
                       onChange={(next) => updateAt(idx, { match: next })}
                     />
                   )}
@@ -224,17 +228,20 @@ interface MultiSelectProps {
   /** Classification già assegnate ad altri preset: nascoste dal pool ma non
    *  forzate qui (il caller mantiene `selected` autoritativo). */
   hideFromPool?: ReadonlySet<string>;
+  /** Override label (per custom classifications). */
+  getLabel?: (slug: string) => string;
   onChange: (next: string[]) => void;
 }
 
-function ClassificationMultiSelect({ selected, available, hideFromPool, onChange }: MultiSelectProps) {
+function ClassificationMultiSelect({ selected, available, hideFromPool, getLabel, onChange }: MultiSelectProps) {
   const [search, setSearch] = useState("");
+  const labelOf = getLabel ?? getClassificationLabel;
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return available;
-    return available.filter((c) => c.includes(q) || getClassificationLabel(c).toLowerCase().includes(q));
-  }, [available, search]);
+    return available.filter((c) => c.includes(q) || labelOf(c).toLowerCase().includes(q));
+  }, [available, search, labelOf]);
 
   const toggle = (slug: string) => {
     if (selectedSet.has(slug)) onChange(selected.filter((s) => s !== slug));
@@ -258,7 +265,7 @@ function ClassificationMultiSelect({ selected, available, hideFromPool, onChange
         <div className="flex flex-wrap gap-1 mb-1">
           {selected.map((s) => (
             <Badge key={s} variant="default" className="text-[10px] gap-1 cursor-pointer" onClick={() => toggle(s)}>
-              {getClassificationLabel(s) || s}
+              {labelOf(s) || s}
               <span className="text-primary-foreground/60">×</span>
             </Badge>
           ))}
@@ -273,7 +280,7 @@ function ClassificationMultiSelect({ selected, available, hideFromPool, onChange
             className="text-[11px] text-left px-1.5 py-0.5 rounded hover:bg-primary/10 hover:text-primary truncate"
             title={c}
           >
-            + {getClassificationLabel(c) || c}
+            + {labelOf(c) || c}
           </button>
         ))}
       </div>

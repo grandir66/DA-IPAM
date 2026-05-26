@@ -6287,3 +6287,63 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
     })
     .slice(0, limit);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CUSTOM CLASSIFICATIONS (v0.2.632)
+// Tabella tenant `device_classifications_custom`: sotto-categorie utente di
+// classification built-in. Eredita icona/macro-categoria dal parent_slug.
+// Lo slug è PK immutabile — referenziato da hosts.classification.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface CustomClassificationRow {
+  slug: string;
+  label: string;
+  parent_slug: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listCustomClassifications(): CustomClassificationRow[] {
+  return db()
+    .prepare("SELECT slug, label, parent_slug, created_at, updated_at FROM device_classifications_custom ORDER BY label COLLATE NOCASE")
+    .all() as CustomClassificationRow[];
+}
+
+export function getCustomClassificationBySlug(slug: string): CustomClassificationRow | undefined {
+  return db()
+    .prepare("SELECT slug, label, parent_slug, created_at, updated_at FROM device_classifications_custom WHERE slug = ?")
+    .get(slug) as CustomClassificationRow | undefined;
+}
+
+export function createCustomClassification(input: { slug: string; label: string; parent_slug: string }): CustomClassificationRow {
+  db()
+    .prepare("INSERT INTO device_classifications_custom (slug, label, parent_slug) VALUES (?, ?, ?)")
+    .run(input.slug, input.label, input.parent_slug);
+  const row = getCustomClassificationBySlug(input.slug);
+  if (!row) throw new Error("createCustomClassification: row not found after insert");
+  return row;
+}
+
+export function updateCustomClassification(slug: string, patch: { label?: string; parent_slug?: string }): CustomClassificationRow | undefined {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (patch.label !== undefined) { sets.push("label = ?"); params.push(patch.label); }
+  if (patch.parent_slug !== undefined) { sets.push("parent_slug = ?"); params.push(patch.parent_slug); }
+  if (sets.length === 0) return getCustomClassificationBySlug(slug);
+  sets.push("updated_at = datetime('now')");
+  params.push(slug);
+  db().prepare(`UPDATE device_classifications_custom SET ${sets.join(", ")} WHERE slug = ?`).run(...params);
+  return getCustomClassificationBySlug(slug);
+}
+
+/** Conta host che referenziano una classification (custom o built-in). */
+export function countHostsByClassification(classification: string): number {
+  const row = db()
+    .prepare("SELECT COUNT(*) AS n FROM hosts WHERE classification = ?")
+    .get(classification) as { n: number };
+  return row.n;
+}
+
+export function deleteCustomClassification(slug: string): void {
+  db().prepare("DELETE FROM device_classifications_custom WHERE slug = ?").run(slug);
+}

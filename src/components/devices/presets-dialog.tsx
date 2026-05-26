@@ -133,44 +133,51 @@ export function PresetsDialog({ open, onOpenChange, presets, availableClassifica
               );
               return (
                 <div key={`${preset.filter}-${idx}`} className="border rounded-md p-3 space-y-2 bg-muted/20">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={idx === 0}
-                      onClick={() => moveAt(idx, -1)}
-                      title="Sposta su"
-                      className="p-1 rounded hover:bg-muted disabled:opacity-30"
-                    ><ChevronUp className="h-3.5 w-3.5" /></button>
-                    <button
-                      type="button"
-                      disabled={idx === draft.length - 1}
-                      onClick={() => moveAt(idx, 1)}
-                      title="Sposta giù"
-                      className="p-1 rounded hover:bg-muted disabled:opacity-30"
-                    ><ChevronDown className="h-3.5 w-3.5" /></button>
-                    <Icon className="h-4 w-4 text-primary" />
-                    <Input
-                      value={preset.label}
-                      onChange={(e) => updateAt(idx, { label: e.target.value })}
-                      className="h-7 text-sm w-32"
-                      placeholder="Label"
-                    />
-                    <select
-                      value={preset.iconName}
-                      onChange={(e) => updateAt(idx, { iconName: e.target.value as ClassPreset["iconName"] })}
-                      className="h-7 text-xs border rounded px-1 bg-background"
-                    >
-                      {ICONS.map((i) => <option key={i.name} value={i.name}>{i.name}</option>)}
-                    </select>
-                    {preset.builtin && <Badge variant="outline" className="text-[10px]">built-in</Badge>}
-                    {isSpecial && <Badge variant="outline" className="text-[10px] bg-amber-50 border-amber-300 text-amber-700">speciale</Badge>}
-                    <div className="flex-1" />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex flex-col gap-0.5">
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() => moveAt(idx, -1)}
+                        title="Sposta su"
+                        className="p-0.5 rounded hover:bg-muted disabled:opacity-30"
+                      ><ChevronUp className="h-3.5 w-3.5" /></button>
+                      <button
+                        type="button"
+                        disabled={idx === draft.length - 1}
+                        onClick={() => moveAt(idx, 1)}
+                        title="Sposta giù"
+                        className="p-0.5 rounded hover:bg-muted disabled:opacity-30"
+                      ><ChevronDown className="h-3.5 w-3.5" /></button>
+                    </div>
+                    <Icon className="h-5 w-5 text-primary shrink-0" />
+                    <div className="flex flex-col gap-0.5 flex-1 min-w-[200px]">
+                      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Nome categoria</Label>
+                      <Input
+                        value={preset.label}
+                        onChange={(e) => updateAt(idx, { label: e.target.value })}
+                        className="h-8 text-sm"
+                        placeholder="Es. Server, Router, AP…"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Icona</Label>
+                      <select
+                        value={preset.iconName}
+                        onChange={(e) => updateAt(idx, { iconName: e.target.value as ClassPreset["iconName"] })}
+                        className="h-8 text-xs border rounded px-2 bg-background"
+                      >
+                        {ICONS.map((i) => <option key={i.name} value={i.name}>{i.name}</option>)}
+                      </select>
+                    </div>
+                    {preset.builtin && <Badge variant="outline" className="text-[10px] self-end mb-1">built-in</Badge>}
+                    {isSpecial && <Badge variant="outline" className="text-[10px] bg-amber-50 border-amber-300 text-amber-700 self-end mb-1">speciale</Badge>}
                     <button
                       type="button"
                       onClick={() => removeAt(idx)}
                       title="Rimuovi"
-                      className="p-1 rounded text-destructive hover:bg-destructive/10"
-                    ><Trash2 className="h-3.5 w-3.5" /></button>
+                      className="p-1.5 rounded text-destructive hover:bg-destructive/10 self-end mb-0.5"
+                    ><Trash2 className="h-4 w-4" /></button>
                   </div>
                   {!isSpecial && (
                     <ClassificationMultiSelect

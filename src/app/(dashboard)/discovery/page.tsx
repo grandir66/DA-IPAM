@@ -45,7 +45,7 @@ import {
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, ShieldAlert, HardDrive, Monitor,
   Phone, Printer, Camera, Cpu, Database, Smartphone, Link2,
   Lock, KeyRound, Trash2, ShieldCheck, MoreVertical, Wifi,
-  BatteryCharging, Network,
+  BatteryCharging, Network, ArrowUp, ArrowDown,
 } from "lucide-react";
 
 /**
@@ -212,28 +212,34 @@ const PAGE_SIZE = 50;
 // device / NIS2 / LibreNMS / Wazuh): non deve mai sparire.
 const ALWAYS_VISIBLE = new Set(["profilo"]);
 
-/** Sync state da localStorage (load immediato, no flash). */
-function loadVisibleColumns(): Set<string> {
-  if (typeof window === "undefined") return new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id));
+/** v0.2.623: ordine + visibilità colonne come array (l'ordine è significativo).
+ *  Una colonna che non appare nell'array = nascosta. Backward compat: vecchio
+ *  formato era già array, semplicemente l'ordine era casuale (Set iteration).
+ *  ALWAYS_VISIBLE viene aggiunto in cima se assente. */
+function defaultOrder(): string[] {
+  return [...new Set(["profilo", ...COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id)])];
+}
+
+function loadColumnOrder(): string[] {
+  if (typeof window === "undefined") return defaultOrder();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const arr = JSON.parse(raw) as string[];
       if (Array.isArray(arr) && arr.length > 0) {
-        const set = new Set(arr);
-        for (const id of ALWAYS_VISIBLE) set.add(id);
-        return set;
+        const cleaned = arr.filter((id, i, a) => COLUMNS.some((c) => c.id === id) && a.indexOf(id) === i);
+        // Garantisce ALWAYS_VISIBLE (profilo) presente — se assente, in testa
+        for (const id of ALWAYS_VISIBLE) if (!cleaned.includes(id)) cleaned.unshift(id);
+        return cleaned;
       }
     }
   } catch { /* ignore */ }
-  return new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id));
+  return defaultOrder();
 }
 
-/** v0.2.622: persistenza server-side. Salva sia localStorage (load immediato al
- *  prossimo refresh) sia /api/user/preferences (sync cross-browser/device per
- *  lo stesso utente loggato). Fire-and-forget sul server (no spinner). */
-function saveVisibleColumns(cols: Set<string>) {
-  const value = JSON.stringify([...cols]);
+/** Persiste sia localStorage (load istantaneo) sia server-side per cross-device. */
+function saveColumnOrder(order: string[]) {
+  const value = JSON.stringify(order);
   try { localStorage.setItem(STORAGE_KEY, value); } catch { /* ignore */ }
   try {
     void fetch("/api/user/preferences", {
@@ -245,8 +251,8 @@ function saveVisibleColumns(cols: Set<string>) {
   } catch { /* ignore */ }
 }
 
-/** Carica le preferenze dal server e merge con quelle locali (server vince). */
-async function fetchServerColumns(): Promise<Set<string> | null> {
+/** Carica preferenza dal server. Ritorna null se assente o non valida. */
+async function fetchServerColumnOrder(): Promise<string[] | null> {
   try {
     const r = await fetch("/api/user/preferences?key=discovery-columns", { cache: "no-store" });
     if (!r.ok) return null;
@@ -254,9 +260,9 @@ async function fetchServerColumns(): Promise<Set<string> | null> {
     if (!data.value) return null;
     const arr = JSON.parse(data.value) as string[];
     if (!Array.isArray(arr) || arr.length === 0) return null;
-    const set = new Set(arr);
-    for (const id of ALWAYS_VISIBLE) set.add(id);
-    return set;
+    const cleaned = arr.filter((id, i, a) => COLUMNS.some((c) => c.id === id) && a.indexOf(id) === i);
+    for (const id of ALWAYS_VISIBLE) if (!cleaned.includes(id)) cleaned.unshift(id);
+    return cleaned;
   } catch { return null; }
 }
 
@@ -388,16 +394,15 @@ export default function DiscoveryPage() {
   const [networkFilter, setNetworkFilter] = useState("");
   const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
   const [page, setPage] = useState(1);
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(loadVisibleColumns);
+  const [columnOrder, setColumnOrder] = useState<string[]>(loadColumnOrder);
 
-  // v0.2.622: al mount sincronizza con la preferenza salvata server-side per
-  // questo utente loggato. Server vince su localStorage se diverso (cross-browser).
+  // v0.2.622+623: sync server-side. Server vince su localStorage se diverso.
   useEffect(() => {
-    void fetchServerColumns().then((srv) => {
+    void fetchServerColumnOrder().then((srv) => {
       if (!srv) return;
-      const localStr = JSON.stringify([...visibleCols].sort());
-      const srvStr = JSON.stringify([...srv].sort());
-      if (localStr !== srvStr) setVisibleCols(srv);
+      const localStr = JSON.stringify(columnOrder);
+      const srvStr = JSON.stringify(srv);
+      if (localStr !== srvStr) setColumnOrder(srv);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1147,31 +1152,50 @@ export default function DiscoveryPage() {
     }
   }
 
-  // ---------- column toggle ----------
+  // ---------- column toggle / reorder (v0.2.623) ----------
   const toggleCol = (id: string) => {
-    setVisibleCols((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      saveVisibleColumns(next);
+    if (ALWAYS_VISIBLE.has(id)) return; // protezione
+    setColumnOrder((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      saveColumnOrder(next);
       return next;
     });
   };
   const showAll = () => {
-    const all = new Set(COLUMNS.map((c) => c.id));
-    setVisibleCols(all);
-    saveVisibleColumns(all);
+    // Mantieni l'ordine corrente per quelle già visibili, aggiungi le mancanti in fondo
+    const next = [...columnOrder, ...COLUMNS.map((c) => c.id).filter((id) => !columnOrder.includes(id))];
+    setColumnOrder(next);
+    saveColumnOrder(next);
   };
   const resetCols = () => {
-    const def = new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id));
-    setVisibleCols(def);
-    saveVisibleColumns(def);
+    const def = defaultOrder();
+    setColumnOrder(def);
+    saveColumnOrder(def);
+  };
+  /** v0.2.623: sposta una colonna di una posizione su (-1) o giù (+1) dentro l'ordine. */
+  const moveCol = (id: string, dir: -1 | 1) => {
+    setColumnOrder((prev) => {
+      const i = prev.indexOf(id);
+      if (i < 0) return prev;
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      saveColumnOrder(next);
+      return next;
+    });
   };
 
-  const isVisible = (id: string) => visibleCols.has(id);
+  const isVisible = (id: string) => columnOrder.includes(id);
+  /** Mappa ordinata: itera sull'ordine custom, filtra le sconosciute. */
+  const orderedVisibleCols = useMemo(
+    () => columnOrder.map((id) => COLUMNS.find((c) => c.id === id)).filter((c): c is typeof COLUMNS[number] => !!c),
+    [columnOrder]
+  );
 
   // ---------- CSV export ----------
   const exportCsv = () => {
-    const visibleDefs = COLUMNS.filter((c) => visibleCols.has(c.id));
+    const visibleDefs = orderedVisibleCols;
     const header = visibleDefs.map((c) => c.label).join(";");
     const rows = sortedRows.map((h) =>
       visibleDefs.map((c) => {
@@ -1733,24 +1757,64 @@ export default function DiscoveryPage() {
                     <Columns3 className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56 max-h-[420px] overflow-y-auto">
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel>Colonne visibili</DropdownMenuLabel>
-                  </DropdownMenuGroup>
+                <DropdownMenuContent align="end" className="w-72 max-h-[520px] overflow-y-auto">
+                  <DropdownMenuLabel>Colonne</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <div className="flex gap-1 px-2 pb-1">
                     <Button variant="ghost" size="sm" className="text-xs h-7" onClick={showAll}>Tutte</Button>
                     <Button variant="ghost" size="sm" className="text-xs h-7" onClick={resetCols}>Predefinite</Button>
                   </div>
                   <DropdownMenuSeparator />
+                  {/* v0.2.623: ordine + frecce ↑↓ per riordinare le visibili */}
+                  <DropdownMenuLabel className="text-[10px] uppercase tracking-wider">Ordine attuale (visibili)</DropdownMenuLabel>
+                  <div className="px-1 pb-1">
+                    {orderedVisibleCols.map((col, idx) => {
+                      const isLocked = ALWAYS_VISIBLE.has(col.id);
+                      return (
+                        <div key={col.id} className="flex items-center gap-1 px-1.5 py-1 text-sm hover:bg-muted/40 rounded">
+                          <span className="flex-1 truncate" title={col.label}>{col.label}</span>
+                          <button
+                            type="button"
+                            disabled={idx === 0 || isLocked}
+                            onClick={() => moveCol(col.id, -1)}
+                            title="Sposta su"
+                            className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ArrowUp className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx === orderedVisibleCols.length - 1 || isLocked}
+                            onClick={() => moveCol(col.id, 1)}
+                            title="Sposta giù"
+                            className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ArrowDown className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isLocked}
+                            onClick={() => toggleCol(col.id)}
+                            title={isLocked ? "Colonna sempre visibile" : "Nascondi colonna"}
+                            className="p-0.5 rounded hover:bg-destructive/15 hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-[10px] uppercase tracking-wider">Aggiungi/togli</DropdownMenuLabel>
                   {Object.entries(GROUP_LABELS).map(([group, label]) => (
                     <DropdownMenuGroup key={group}>
-                      <DropdownMenuLabel className="text-[10px] uppercase tracking-wider">{label}</DropdownMenuLabel>
+                      <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground/70">{label}</DropdownMenuLabel>
                       {COLUMNS.filter((c) => c.group === group).map((col) => (
                         <DropdownMenuCheckboxItem
                           key={col.id}
-                          checked={visibleCols.has(col.id)}
+                          checked={columnOrder.includes(col.id)}
                           onCheckedChange={() => toggleCol(col.id)}
+                          disabled={ALWAYS_VISIBLE.has(col.id)}
                         >
                           {col.label}
                         </DropdownMenuCheckboxItem>
@@ -1879,7 +1943,7 @@ export default function DiscoveryPage() {
                       />
                     </TableHead>
                     <TableHead className="w-10 whitespace-nowrap text-center">Azioni</TableHead>
-                    {COLUMNS.filter((c) => isVisible(c.id)).map((col) => (
+                    {orderedVisibleCols.map((col) => (
                       <SortableTableHead
                         key={col.id}
                         columnId={col.id}
@@ -2060,7 +2124,7 @@ export default function DiscoveryPage() {
                           );
                         })()}
                       </TableCell>
-                      {COLUMNS.filter((c) => isVisible(c.id)).map((col) => (
+                      {orderedVisibleCols.map((col) => (
                         <TableCell key={col.id} className="py-2">
                           {renderCell(h, col.id)}
                         </TableCell>

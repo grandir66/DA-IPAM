@@ -4,6 +4,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
 import { setFeatureEnabled, invalidateFeatureCache } from "@/lib/patch/feature";
 import { applyPatchModuleMigrations } from "@/lib/patch/schema";
+import { runFullSyncMatch } from "@/lib/patch/matcher";
 
 /**
  * Feature key whitelistate. Le route /api/features/[key]/* accettano solo
@@ -17,6 +18,11 @@ interface InstallResponse {
   status: "installed";
   feature: string;
   tablesCreated: string[];
+  initialMatching?: {
+    softwareWithChoco: number;
+    cveTargetsWritten: number;
+    durationMs: number;
+  };
 }
 
 export async function POST(
@@ -61,10 +67,26 @@ export async function POST(
       setFeatureEnabled(tenantCode, key, safeUserId);
       invalidateFeatureCache(tenantCode, key);
 
+      // Auto-trigger matching iniziale per popolare patch_software_meta e patch_cve_target.
+      // Non-blocking opzionale; qui awaited così la response include il summary.
+      // Se fallisce, l'install rimane valida — l'utente potrà ri-eseguire dal bottone.
+      let initialMatching: InstallResponse["initialMatching"];
+      if (key === "patch_management") {
+        try {
+          initialMatching = runFullSyncMatch(tenantDb);
+        } catch (matchErr) {
+          console.error(
+            `[features/${key}/install] initial matching failed (non-blocking):`,
+            matchErr
+          );
+        }
+      }
+
       const payload: InstallResponse = {
         status: "installed",
         feature: key,
         tablesCreated,
+        initialMatching,
       };
       return NextResponse.json(payload, { headers: NO_CACHE_HEADERS });
     } catch (error) {

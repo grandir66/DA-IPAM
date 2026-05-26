@@ -520,6 +520,31 @@ export default function ObjectDetailPage() {
 
   useEffect(() => { void fetchClusterMembers(); }, [fetchClusterMembers]);
 
+  // v0.2.607: runtime summary memoizzato. DEVE stare prima di qualsiasi early
+  // return (loading / !host) per non violare le rules of hooks (React #310).
+  const runtimeSummary = useMemo(() => {
+    let tcpPorts: number[] = [];
+    let udpPorts: number[] = [];
+    try {
+      if (host?.open_ports) {
+        const parsed = JSON.parse(host.open_ports);
+        if (Array.isArray(parsed)) {
+          for (const p of parsed) {
+            if (typeof p === "object" && p?.port) {
+              if ((p.protocol ?? "tcp") === "tcp") tcpPorts.push(p.port);
+              else if (p.protocol === "udp") udpPorts.push(p.port);
+            } else if (typeof p === "number") tcpPorts.push(p);
+          }
+        } else if (typeof parsed === "object" && parsed !== null) {
+          if (Array.isArray(parsed.tcp)) tcpPorts = parsed.tcp;
+          if (Array.isArray(parsed.udp)) udpPorts = parsed.udp;
+        }
+      }
+    } catch { /* ignore */ }
+    const validatedCreds = (host?.host_credentials ?? []).filter((hc) => hc.validated === 1);
+    return { tcpPorts, udpPorts, validatedCreds };
+  }, [host?.open_ports, host?.host_credentials]);
+
   // v0.2.601: deep-link da menù tre-puntini / link esterni:
   //   ?edit=1     → auto-apri EditDeviceDialog (richiede device gestito)
   //   ?promote=1  → auto-apri PromoteHostDialog (richiede host non gestito)
@@ -688,31 +713,6 @@ export default function ObjectDetailPage() {
   const displayName = host.custom_name || host.hostname || host.dns_reverse || host.ip;
   const classificationLabel = host.classification ? getClassificationLabel(host.classification) : null;
   const isManaged = !!device;
-
-  // v0.2.606: runtime summary calcolato una volta, usato sia nel badge header
-  // sia nella Section "Stato runtime". Evita di parsare open_ports due volte.
-  const runtimeSummary = useMemo(() => {
-    let tcpPorts: number[] = [];
-    let udpPorts: number[] = [];
-    try {
-      if (host?.open_ports) {
-        const parsed = JSON.parse(host.open_ports);
-        if (Array.isArray(parsed)) {
-          for (const p of parsed) {
-            if (typeof p === "object" && p?.port) {
-              if ((p.protocol ?? "tcp") === "tcp") tcpPorts.push(p.port);
-              else if (p.protocol === "udp") udpPorts.push(p.port);
-            } else if (typeof p === "number") tcpPorts.push(p);
-          }
-        } else if (typeof parsed === "object" && parsed !== null) {
-          if (Array.isArray(parsed.tcp)) tcpPorts = parsed.tcp;
-          if (Array.isArray(parsed.udp)) udpPorts = parsed.udp;
-        }
-      }
-    } catch { /* ignore */ }
-    const validatedCreds = (host?.host_credentials ?? []).filter((hc) => hc.validated === 1);
-    return { tcpPorts, udpPorts, validatedCreds };
-  }, [host?.open_ports, host?.host_credentials]);
   const isAsset = !!asset;
   const isWindowsOrLinux = device?.vendor === "windows" || device?.vendor === "linux";
 

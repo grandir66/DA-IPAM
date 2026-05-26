@@ -1835,11 +1835,14 @@ export default function DiscoveryPage() {
                                   }
                                 />
                                 <DropdownMenuContent align="end" className="w-56">
+                                  {/* v0.2.601: dal menu sempre alla scheda asset unica /objects/[id].
+                                      Se isDev → ?edit=1 auto-apre EditDeviceDialog.
+                                      Se !isDev (host non promosso) → ?promote=1 auto-apre PromoteHostDialog. */}
                                   <DropdownMenuItem
                                     render={
-                                      <Link href={isDev ? `/devices/${h.device_id}` : `/hosts/${h.id}`}>
+                                      <Link href={`/objects/${h.id}${isDev ? "?edit=1" : "?promote=1"}`}>
                                         <Pencil className="h-3.5 w-3.5" />
-                                        {isDev ? "Modifica dispositivo" : "Modifica host"}
+                                        {isDev ? "Modifica dispositivo" : "Promuovi a dispositivo"}
                                       </Link>
                                     }
                                   />

@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -395,6 +395,7 @@ function Section({ icon, title, badge, children }: SectionProps) {
 export default function ObjectDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const hostId = typeof params.id === "string" ? Number(params.id) : NaN;
 
   const [host, setHost] = useState<HostDetail | null>(null);
@@ -490,6 +491,23 @@ export default function ObjectDetailPage() {
   }, [host?.physical_device_id]);
 
   useEffect(() => { void fetchClusterMembers(); }, [fetchClusterMembers]);
+
+  // v0.2.601: deep-link da menù tre-puntini / link esterni:
+  //   ?edit=1     → auto-apri EditDeviceDialog (richiede device gestito)
+  //   ?promote=1  → auto-apri PromoteHostDialog (richiede host non gestito)
+  // Pulisce la query subito dopo per non rifarlo a ogni re-render.
+  useEffect(() => {
+    if (!host) return;
+    const editFlag = searchParams?.get("edit");
+    const promoteFlag = searchParams?.get("promote");
+    if (editFlag === "1" && device && !editDeviceOpen) {
+      setEditDeviceOpen(true);
+      router.replace(`/objects/${host.id}`);
+    } else if (promoteFlag === "1" && !device && !promoteOpen) {
+      setPromoteOpen(true);
+      router.replace(`/objects/${host.id}`);
+    }
+  }, [host?.id, device?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleUnlinkHost(targetHostId: number) {
     if (!confirm("Scollegare questo IP dal device fisico?")) return;

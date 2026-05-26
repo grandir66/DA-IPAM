@@ -23,6 +23,7 @@ const NO_CACHE = { "Cache-Control": "no-store, private" };
 const ALLOWED_KEYS = new Set([
   "discovery-columns",
   "discovery-filters",
+  "discovery-presets",
   "objects-tab-prefs",
 ]);
 

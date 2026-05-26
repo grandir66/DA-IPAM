@@ -54,40 +54,39 @@ import {
  * - I singoletti (router/switch/firewall/hypervisor) usano direttamente la classificazione,
  *   così la chip e l'opzione del dropdown classFilter restano allineate.
  */
-const CLASS_PRESETS: Array<{
-  /** Valore impostato in classFilter quando la chip è attiva. */
-  filter: string;
-  label: string;
-  icon: typeof Server;
-  /**
-   * Classificazioni che soddisfano il preset (usato per espansione filtro group:*).
-   * Per il preset speciale `group:other` la match è vuota: la logica filtro
-   * esclude gli host che rientrano in qualsiasi altro preset.
-   */
-  match: readonly string[];
-}> = [
-  { filter: "group:server",   label: "Server",     icon: Server,    match: ["server", "server_linux", "server_windows"] },
-  { filter: "group:client",   label: "Client",     icon: Monitor,   match: ["workstation", "notebook"] },
-  { filter: "hypervisor",     label: "Hypervisor", icon: HardDrive, match: ["hypervisor"] },
-  { filter: "router",         label: "Router",     icon: RouterIcon,match: ["router"] },
-  { filter: "switch",         label: "Switch",     icon: Cable,     match: ["switch"] },
-  { filter: "access_point",   label: "AP",         icon: Wifi,      match: ["access_point"] },
-  { filter: "firewall",       label: "Firewall",   icon: Shield,    match: ["firewall"] },
-  // v0.2.620: NET = device di rete generici non coperti dai preset specifici
-  { filter: "group:net",      label: "NET",        icon: Network,   match: ["bridge", "repeater", "modem", "ont", "load_balancer", "vpn_gateway", "proxy", "rete_ot"] },
-  { filter: "ups",            label: "UPS",        icon: BatteryCharging, match: ["ups"] },
-  { filter: "group:tel",      label: "TEL",        icon: Phone,     match: ["voip"] },
-  { filter: "group:print",    label: "PRINT",      icon: Printer,   match: ["stampante", "scanner", "fotocopiatrice", "multifunzione"] },
-  { filter: "group:cam",      label: "CAM",        icon: Camera,    match: ["telecamera"] },
-  { filter: "group:iot",      label: "IOT",        icon: Cpu,       match: ["iot", "smart_tv", "console", "sensore", "plc", "hmi", "controller"] },
-  { filter: "group:mobile",   label: "MOBILE",     icon: Smartphone,match: ["tablet", "smartphone"] },
-  { filter: "group:storage",  label: "STORAGE",    icon: Database,  match: ["storage", "nas", "nas_synology", "nas_qnap"] },
-  { filter: "group:multihomed", label: "MH",       icon: Link2,     match: [] /* speciale: filtra su h.multihomed != null */ },
-  { filter: "group:other",    label: "ALTRO",      icon: Boxes,     match: [] /* catchall: vedi logica filtro */ },
+/** v0.2.628: preset chip ora serializzabili (icon è una stringa, mappata a
+ *  componente lucide a render time). I tipi sono in `./preset-types` per
+ *  poter essere importati anche dal dialog di gestione. */
+const ICON_MAP: Record<IconName, typeof Server> = {
+  Server, Monitor, HardDrive, RouterIcon, Cable, Wifi, Shield, Network,
+  BatteryCharging, Phone, Printer, Camera, Cpu, Smartphone, Database, Link2,
+  Boxes, Activity, Package,
+};
+
+const DEFAULT_CLASS_PRESETS: ClassPreset[] = [
+  { filter: "group:server",   label: "Server",     iconName: "Server",    match: ["server", "server_linux", "server_windows"], builtin: true },
+  { filter: "group:client",   label: "Client",     iconName: "Monitor",   match: ["workstation", "notebook"], builtin: true },
+  { filter: "hypervisor",     label: "Hypervisor", iconName: "HardDrive", match: ["hypervisor"], builtin: true },
+  { filter: "router",         label: "Router",     iconName: "RouterIcon",match: ["router"], builtin: true },
+  { filter: "switch",         label: "Switch",     iconName: "Cable",     match: ["switch"], builtin: true },
+  { filter: "access_point",   label: "AP",         iconName: "Wifi",      match: ["access_point"], builtin: true },
+  { filter: "firewall",       label: "Firewall",   iconName: "Shield",    match: ["firewall"], builtin: true },
+  { filter: "group:net",      label: "NET",        iconName: "Network",   match: ["bridge", "repeater", "modem", "ont", "load_balancer", "vpn_gateway", "proxy", "rete_ot"], builtin: true },
+  { filter: "ups",            label: "UPS",        iconName: "BatteryCharging", match: ["ups"], builtin: true },
+  { filter: "group:tel",      label: "TEL",        iconName: "Phone",     match: ["voip"], builtin: true },
+  { filter: "group:print",    label: "PRINT",      iconName: "Printer",   match: ["stampante", "scanner", "fotocopiatrice", "multifunzione"], builtin: true },
+  { filter: "group:cam",      label: "CAM",        iconName: "Camera",    match: ["telecamera"], builtin: true },
+  { filter: "group:iot",      label: "IOT",        iconName: "Cpu",       match: ["iot", "smart_tv", "console", "sensore", "plc", "hmi", "controller"], builtin: true },
+  { filter: "group:mobile",   label: "MOBILE",     iconName: "Smartphone",match: ["tablet", "smartphone"], builtin: true },
+  { filter: "group:storage",  label: "STORAGE",    iconName: "Database",  match: ["storage", "nas", "nas_synology", "nas_qnap"], builtin: true },
+  { filter: "group:multihomed", label: "MH",       iconName: "Link2",     match: [] /* speciale: h.multihomed != null */, builtin: true },
+  { filter: "group:other",    label: "ALTRO",      iconName: "Boxes",     match: [] /* catchall */, builtin: true },
 ];
 import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
 import { WazuhHostBadge, type WazuhHostStatus } from "@/components/integrations/wazuh-host-badge";
+import type { ClassPreset, IconName } from "./preset-types";
+import { PresetsDialog } from "@/components/devices/presets-dialog";
 
 const SORTED_CLASSIFICATIONS = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
 
@@ -398,6 +397,41 @@ export default function DiscoveryPage() {
   // v0.2.624: column manager in Dialog separato (Base UI Menu non ammette
   // <button> arbitrari come children → errore #31).
   const [columnsDialogOpen, setColumnsDialogOpen] = useState(false);
+  // v0.2.628: preset chip personalizzabili dall'utente
+  const [presets, setPresets] = useState<ClassPreset[]>(DEFAULT_CLASS_PRESETS);
+  const [presetsDialogOpen, setPresetsDialogOpen] = useState(false);
+
+  // Carica preset salvati al mount (localStorage immediato + sync server)
+  useEffect(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem("discovery-presets") : null;
+      if (raw) {
+        const parsed = JSON.parse(raw) as ClassPreset[];
+        if (Array.isArray(parsed) && parsed.length > 0) setPresets(parsed);
+      }
+    } catch { /* ignore */ }
+    void fetch("/api/user/preferences?key=discovery-presets", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { value: string | null } | null) => {
+        if (!data?.value) return;
+        const parsed = JSON.parse(data.value) as ClassPreset[];
+        if (Array.isArray(parsed) && parsed.length > 0) setPresets(parsed);
+      })
+      .catch(() => { /* ignore */ });
+  }, []);
+
+  function savePresets(next: ClassPreset[]) {
+    const value = JSON.stringify(next);
+    try { localStorage.setItem("discovery-presets", value); } catch { /* ignore */ }
+    try {
+      void fetch("/api/user/preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "discovery-presets", value }),
+        cache: "no-store",
+      });
+    } catch { /* ignore */ }
+  }
 
   // v0.2.622+623: sync server-side. Server vince su localStorage se diverso.
   useEffect(() => {
@@ -748,11 +782,11 @@ export default function DiscoveryPage() {
           // ALTRO = host la cui classificazione non rientra in nessun altro preset.
           // Include anche unknown/null/"" così l'utente vede tutto ciò che resta fuori.
           const claimed = new Set(
-            CLASS_PRESETS.filter((p) => p.filter !== "group:other" && p.filter !== "group:multihomed").flatMap((p) => p.match)
+            presets.filter((p) => p.filter !== "group:other" && p.filter !== "group:multihomed").flatMap((p) => p.match)
           );
           if (claimed.has(h.classification ?? "")) return false;
         } else if (classFilter.startsWith("group:")) {
-          const preset = CLASS_PRESETS.find((p) => p.filter === classFilter);
+          const preset = presets.find((p) => p.filter === classFilter);
           if (preset && !preset.match.includes(h.classification ?? "")) return false;
         } else if (h.classification !== classFilter) {
           return false;
@@ -768,7 +802,7 @@ export default function DiscoveryPage() {
       }
       return true;
     });
-  }, [hosts, q, statusFilter, classFilter, networkFilter, vulnFilter]);
+  }, [hosts, q, statusFilter, classFilter, networkFilter, vulnFilter, presets]);
 
   // ---------- sort ----------
   const sortAccessors = useMemo(() => ({
@@ -1794,8 +1828,8 @@ export default function DiscoveryPage() {
             >
               Tutti
             </Button>
-            {CLASS_PRESETS.map((preset) => {
-              const Icon = preset.icon;
+            {presets.map((preset) => {
+              const Icon = ICON_MAP[preset.iconName] ?? Boxes;
               const active = classFilter === preset.filter;
               const count = hosts.filter((h) => preset.match.includes(h.classification ?? "")).length;
               return (
@@ -1812,6 +1846,17 @@ export default function DiscoveryPage() {
                 </Button>
               );
             })}
+            {/* v0.2.628: bottone per gestire i preset */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setPresetsDialogOpen(true)}
+              title="Aggiungi/modifica/rimuovi i filtri rapidi"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Gestisci
+            </Button>
           </div>
         </CardHeader>
 
@@ -2721,6 +2766,22 @@ export default function DiscoveryPage() {
             .map((h) => [h.id, `${h.ip}${h.hostname ? ` (${h.hostname})` : ""}`])
         )}
         onLinked={() => { setSelectedIds(new Set()); fetchData(); }}
+      />
+
+      {/* v0.2.628: Preset chip manager */}
+      <PresetsDialog
+        open={presetsDialogOpen}
+        onOpenChange={setPresetsDialogOpen}
+        presets={presets}
+        availableClassifications={DEVICE_CLASSIFICATIONS_ORDERED}
+        onSave={(next) => {
+          setPresets(next);
+          savePresets(next);
+        }}
+        onReset={() => {
+          setPresets(DEFAULT_CLASS_PRESETS);
+          savePresets(DEFAULT_CLASS_PRESETS);
+        }}
       />
 
       {/* v0.2.624: Column manager in Dialog dedicato (Base UI Menu non ammette

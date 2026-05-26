@@ -22,6 +22,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { PromoteHostDialog } from "@/components/devices/promote-host-dialog";
+import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
 import { UptimeTimeline } from "@/components/shared/uptime-timeline";
@@ -47,6 +48,8 @@ import {
   Cable,
   Route,
   Radio,
+  Link2,
+  Unlink,
   Table as TableIcon,
   Server,
   Layers,
@@ -373,6 +376,18 @@ export default function ObjectDetailPage() {
   const [device, setDevice] = useState<DeviceFull | null>(null);
   // F3.3: modale di promozione inline (no più redirect a /hosts/[id]?promote=1)
   const [promoteOpen, setPromoteOpen] = useState(false);
+  // Multi-IP link manuale (v0.2.594+)
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [clusterMembers, setClusterMembers] = useState<Array<{
+    id: number;
+    ip: string;
+    hostname: string | null;
+    vendor: string | null;
+    status: "online" | "offline" | "unknown";
+    network_name: string;
+    inferred_os_family: string | null;
+  }>>([]);
+  const [unlinkingHostId, setUnlinkingHostId] = useState<number | null>(null);
   const [asset, setAsset] = useState<InventoryAsset | null>(null);
   const [librenms, setLibrenms] = useState<{
     configured: boolean;
@@ -432,6 +447,42 @@ export default function ObjectDetailPage() {
   }, [hostId, router]);
 
   useEffect(() => { void fetchAll(); }, [fetchAll]);
+
+  // Carica gli host del cluster fisico (se esistono) — usato dalla sezione "IP collegati"
+  const fetchClusterMembers = useCallback(async () => {
+    if (!host?.physical_device_id) { setClusterMembers([]); return; }
+    try {
+      const r = await fetch(`/api/physical-devices/${host.physical_device_id}/hosts`, { cache: "no-store" });
+      if (r.ok) {
+        const data = await r.json() as { hosts: typeof clusterMembers };
+        setClusterMembers(data.hosts ?? []);
+      }
+    } catch { /* non critico */ }
+  }, [host?.physical_device_id]);
+
+  useEffect(() => { void fetchClusterMembers(); }, [fetchClusterMembers]);
+
+  async function handleUnlinkHost(targetHostId: number) {
+    if (!confirm("Scollegare questo IP dal device fisico?")) return;
+    setUnlinkingHostId(targetHostId);
+    try {
+      const r = await fetch("/api/physical-devices/unlink", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host_id: targetHostId }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        toast.error(err.error || "Errore unlink");
+        return;
+      }
+      toast.success("IP scollegato");
+      void fetchAll();
+      void fetchClusterMembers();
+    } finally {
+      setUnlinkingHostId(null);
+    }
+  }
 
   async function handleUpdateAll() {
     if (!host?.network_device?.id || !device) {
@@ -1192,6 +1243,76 @@ export default function ObjectDetailPage() {
         {/* ═══════════════ TAB: RETE AVANZATA ═══════════════ */}
         <TabsContent value="network" className="space-y-4">
 
+      {/* ─── 3.0 IP collegati (cluster fisico) ─────────────────────────
+          Espone l'aggregazione physical_device: tutti gli IP che il sistema
+          (o l'utente, via "Collega altro IP") ha dichiarato appartenere allo
+          stesso device fisico. Caso d'uso tipico: Proxmox con NIC su VLAN
+          diverse (mgmt 40.1 + VM 16.1), router/firewall con gateway multipli.
+      */}
+      <Section icon={<Link2 className="h-4 w-4" />} title="IP collegati allo stesso device fisico">
+        <div className="space-y-3">
+          {host?.physical_device_id && clusterMembers.length > 0 ? (
+            <>
+              <div className="text-xs text-muted-foreground">
+                Cluster fisico <span className="font-mono">#{host.physical_device_id}</span> · {clusterMembers.length} {clusterMembers.length === 1 ? "IP" : "IP"} aggregati
+              </div>
+              <div className="border rounded-md divide-y">
+                {clusterMembers.map((m) => {
+                  const isCurrent = m.id === host?.id;
+                  return (
+                    <div key={m.id} className="flex items-center gap-3 px-3 py-2 hover:bg-muted/30">
+                      <div className="flex-1 min-w-0 flex items-center gap-2">
+                        {isCurrent ? (
+                          <span className="font-mono text-sm">{m.ip}</span>
+                        ) : (
+                          <Link href={`/objects/${m.id}`} className="font-mono text-sm hover:underline text-primary">{m.ip}</Link>
+                        )}
+                        {m.hostname && <span className="text-sm text-muted-foreground truncate">{m.hostname}</span>}
+                        <span className="text-[10px] text-muted-foreground">· {m.network_name}</span>
+                        {isCurrent && <Badge variant="secondary" className="text-[10px]">qui</Badge>}
+                        <StatusBadge status={m.status} />
+                      </div>
+                      {!isCurrent && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleUnlinkHost(m.id)}
+                          disabled={unlinkingHostId === m.id}
+                          title="Scollega questo IP dal device fisico"
+                        >
+                          <Unlink className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Nessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setLinkDialogOpen(true)} disabled={!host}>
+              <Link2 className="h-3.5 w-3.5 mr-1.5" />
+              Collega altro IP
+            </Button>
+            {host?.physical_device_id && clusterMembers.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => host?.id && handleUnlinkHost(host.id)}
+                disabled={unlinkingHostId === host?.id}
+              >
+                <Unlink className="h-3.5 w-3.5 mr-1.5" />
+                Esci dal cluster
+              </Button>
+            )}
+          </div>
+        </div>
+      </Section>
+
       {/* ─── 3a. Proxmox (host + VM + subscription) ─── */}
       {(() => {
         const px = device?.proxmox_data ?? null;
@@ -1872,6 +1993,17 @@ export default function ObjectDetailPage() {
           open={promoteOpen}
           onOpenChange={setPromoteOpen}
           onCreated={() => { setPromoteOpen(false); fetchAll(); }}
+        />
+      )}
+
+      {/* v0.2.594+: modale link manuale multi-IP allo stesso physical_device */}
+      {host && (
+        <LinkIpsDialog
+          open={linkDialogOpen}
+          onOpenChange={setLinkDialogOpen}
+          anchorHostId={host.id}
+          anchorHostLabel={host.hostname || host.ip}
+          onLinked={() => { void fetchAll(); void fetchClusterMembers(); }}
         />
       )}
 

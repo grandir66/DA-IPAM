@@ -27,6 +27,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
+import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
 import { AddableSelect } from "@/components/shared/addable-select";
 import { credTypeForProtocol, CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
@@ -380,6 +381,7 @@ export default function DiscoveryPage() {
 
   // ─── Add to devices (bulk promote host → device) ──────────
   const [addDevicesOpen, setAddDevicesOpen] = useState(false);
+  const [linkSameDeviceOpen, setLinkSameDeviceOpen] = useState(false);
   const [addDevicesSaving, setAddDevicesSaving] = useState(false);
   const [addClassification, setAddClassification] = useState<string>("server");
   const [addVendor, setAddVendor] = useState<string>("other");
@@ -1713,6 +1715,12 @@ export default function DiscoveryPage() {
                 <PackagePlus className="h-3.5 w-3.5" />
                 Aggiungi a dispositivi
               </Button>
+              {selectedIds.size >= 2 && (
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setLinkSameDeviceOpen(true)}>
+                  <Link2 className="h-3.5 w-3.5" />
+                  Stesso device fisico
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -2583,6 +2591,19 @@ export default function DiscoveryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* v0.2.594+: bulk link manuale "stesso device fisico" */}
+      <LinkIpsDialog
+        open={linkSameDeviceOpen}
+        onOpenChange={setLinkSameDeviceOpen}
+        preSelectedHostIds={Array.from(selectedIds)}
+        preSelectedHostLabels={Object.fromEntries(
+          hosts
+            .filter((h) => selectedIds.has(h.id))
+            .map((h) => [h.id, `${h.ip}${h.hostname ? ` (${h.hostname})` : ""}`])
+        )}
+        onLinked={() => { setSelectedIds(new Set()); fetchData(); }}
+      />
     </div>
   );
 }

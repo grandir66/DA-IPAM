@@ -51,7 +51,11 @@ export async function GET(req: Request) {
 
   const base = cfg.url.replace(/\/+$/, "");
   const params = new URLSearchParams({ from, to, width, height, output: "base64" });
-  const upstreamUrl = `${base}/api/v0/devices/${encodeURIComponent(deviceId)}/graphs/${encodeURIComponent(type)}?${params.toString()}`;
+  // v0.2.609 fix: il path LibreNMS API per un grafico singolo è `/devices/{id}/{type}`,
+  // NON `/devices/{id}/graphs/{type}`. Il path con `graphs/` esiste solo come listing
+  // (`/devices/{id}/graphs` → elenco dei tipi disponibili).
+  // Riferimento: docs.librenms.org/API/Devices/#get-graph-by-type
+  const upstreamUrl = `${base}/api/v0/devices/${encodeURIComponent(deviceId)}/${encodeURIComponent(type)}?${params.toString()}`;
 
   try {
     const res = await fetch(upstreamUrl, {

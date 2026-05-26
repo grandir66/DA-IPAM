@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 type Range = "1h" | "24h" | "7d" | "30d";
@@ -17,28 +17,116 @@ interface GraphSpec {
   label: string;
 }
 
-const DEFAULT_GRAPHS: GraphSpec[] = [
-  { type: "device_bits", label: "Traffico (bits/s)" },
-  { type: "device_processor", label: "CPU" },
-  { type: "device_mempool", label: "Memoria" },
-  { type: "device_ping_perf", label: "Ping (latenza + loss)" },
+/**
+ * Etichette italiane per i tipi LibreNMS più comuni. Per i tipi non mappati
+ * usiamo il `desc` raw dall'API. La lista di tipi disponibili viene FETCHATA
+ * da `/api/integrations/librenms/graph-list` perché dipende dal vendor/OS del
+ * device: un router ha device_bits/processor/mempool, un host Windows magari
+ * solo ping_perf + uptime, ecc.
+ */
+const TYPE_LABELS: Record<string, string> = {
+  device_bits: "Traffico (bits/s)",
+  device_processor: "CPU",
+  device_mempool: "Memoria",
+  device_ping_perf: "Ping (latenza + loss)",
+  device_icmp_perf: "Ping ICMP",
+  device_uptime: "Uptime",
+  device_poller_perf: "Poller (durata polling)",
+  device_availability: "Disponibilità",
+  device_hr_processes: "Processi attivi",
+  device_hr_users: "Utenti loggati",
+  device_netstat_tcp: "TCP statistiche",
+  device_netstat_udp: "UDP statistiche",
+  device_netstat_ip: "IP statistiche",
+  device_netstat_icmp: "ICMP statistiche",
+  device_netstat_snmp: "SNMP statistiche",
+  device_storage: "Storage",
+  device_temperature: "Temperatura",
+  device_voltage: "Voltaggio",
+  device_current: "Corrente",
+  device_fanspeed: "Velocità ventole",
+};
+
+/** Priorità di display: i grafici più "leggibili" in cima. */
+const TYPE_PRIORITY: string[] = [
+  "device_bits",
+  "device_processor",
+  "device_mempool",
+  "device_ping_perf",
+  "device_icmp_perf",
+  "device_uptime",
+  "device_availability",
+  "device_temperature",
 ];
 
 interface Props {
   deviceId: number;
-  graphs?: GraphSpec[];
+  /** Limita il numero di grafici renderizzati (default 6 più rilevanti). */
+  limit?: number;
 }
 
 /**
- * Mostra i grafici principali LibreNMS per il device dato.
- * Le PNG vengono servite via `/api/integrations/librenms/graph` (server-side
- * fetch con X-Auth-Token), quindi nessun X-Frame-Options / cert error.
+ * Mostra i grafici LibreNMS per il device. Fetch dinamico della lista disponibili
+ * (un Windows host non ha gli stessi grafici di un router Mikrotik) e rendering
+ * delle PNG via `/api/integrations/librenms/graph`.
  */
-export function LibreNMSDeviceGraphs({ deviceId, graphs = DEFAULT_GRAPHS }: Props) {
+export function LibreNMSDeviceGraphs({ deviceId, limit = 6 }: Props) {
   const [range, setRange] = useState<Range>("24h");
   const [reloadKey, setReloadKey] = useState(0);
+  const [availableGraphs, setAvailableGraphs] = useState<GraphSpec[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const ranges: Range[] = useMemo(() => ["1h", "24h", "7d", "30d"], []);
+
+  useEffect(() => {
+    setAvailableGraphs(null);
+    setLoadError(null);
+    fetch(`/api/integrations/librenms/graph-list?device_id=${deviceId}`, { cache: "no-store" })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({ graphs: [] as Array<{ name: string; desc?: string }> }));
+        if (!r.ok) {
+          setLoadError(data?.error || `HTTP ${r.status}`);
+          setAvailableGraphs([]);
+          return;
+        }
+        const list = (data.graphs ?? []) as Array<{ name: string; desc?: string }>;
+        // Ordino per TYPE_PRIORITY, gli altri in coda
+        const prioMap = new Map<string, number>();
+        TYPE_PRIORITY.forEach((t, i) => prioMap.set(t, i));
+        const sorted = [...list].sort((a, b) => {
+          const pa = prioMap.has(a.name) ? prioMap.get(a.name)! : 100;
+          const pb = prioMap.has(b.name) ? prioMap.get(b.name)! : 100;
+          return pa - pb;
+        });
+        setAvailableGraphs(sorted.slice(0, limit).map((g) => ({
+          type: g.name,
+          label: TYPE_LABELS[g.name] ?? g.desc ?? g.name,
+        })));
+      })
+      .catch((e) => {
+        setLoadError(e instanceof Error ? e.message : String(e));
+        setAvailableGraphs([]);
+      });
+  }, [deviceId, limit]);
+
+  if (availableGraphs === null) {
+    return (
+      <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+        Caricamento grafici disponibili…
+      </div>
+    );
+  }
+
+  if (availableGraphs.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground py-4 text-center">
+        {loadError
+          ? `Impossibile leggere la lista grafici LibreNMS: ${loadError}`
+          : "Nessun grafico disponibile per questo device. LibreNMS non ha ancora pollato dati metriche (richiede SNMP attivo + alcuni cicli di polling)."}
+      </p>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -68,7 +156,7 @@ export function LibreNMSDeviceGraphs({ deviceId, graphs = DEFAULT_GRAPHS }: Prop
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {graphs.map((g) => (
+        {availableGraphs.map((g) => (
           <LibreNMSGraph
             key={`${g.type}-${range}-${reloadKey}`}
             deviceId={deviceId}
@@ -104,7 +192,7 @@ function LibreNMSGraph({ deviceId, type, label, from }: GraphProps) {
         )}
         {state === "error" && (
           <p className="text-xs text-muted-foreground py-8">
-            Grafico non disponibile per questo device.
+            Grafico non ancora disponibile (in attesa di dati di polling).
           </p>
         )}
         {/* eslint-disable-next-line @next/next/no-img-element */}

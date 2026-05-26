@@ -146,27 +146,44 @@ export function getTenantDb(tenantCode: string): Database.Database {
   // DEVE girare PRIMA di TENANT_INDEXES_SQL perché tale blocco crea
   // `CREATE INDEX idx_hosts_os_family ON hosts(os_family)` e fallirebbe se la
   // colonna non esiste ancora (bug v0.2.554 → fix v0.2.560).
+  const OS_FAMILY_GENERATED_SQL = `
+    GENERATED ALWAYS AS (
+      CASE
+        WHEN os_info IS NULL OR TRIM(os_info) = '' THEN 'Unknown'
+        WHEN LOWER(os_info) LIKE '%windows%' THEN 'Windows'
+        WHEN LOWER(os_info) LIKE '%macos%' OR LOWER(os_info) LIKE '%mac os%'
+          OR LOWER(os_info) LIKE '%darwin%' OR LOWER(os_info) LIKE '%osx%' THEN 'Apple'
+        WHEN LOWER(os_info) LIKE '%linux%' OR LOWER(os_info) LIKE '%ubuntu%'
+          OR LOWER(os_info) LIKE '%debian%' OR LOWER(os_info) LIKE '%centos%'
+          OR LOWER(os_info) LIKE '%rhel%' OR LOWER(os_info) LIKE '%red hat%'
+          OR LOWER(os_info) LIKE '%fedora%' OR LOWER(os_info) LIKE '%alpine%'
+          OR LOWER(os_info) LIKE '%suse%' OR LOWER(os_info) LIKE '%arch%'
+          OR LOWER(os_info) LIKE '%rocky%' OR LOWER(os_info) LIKE '%almalinux%' THEN 'Linux'
+        ELSE 'Unknown'
+      END
+    ) VIRTUAL
+  `;
   try {
     const hostCols = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
     if (hostCols.length > 0 && !hostCols.some((c) => c.name === "os_family")) {
-      newDb.exec(`
-        ALTER TABLE hosts ADD COLUMN os_family TEXT GENERATED ALWAYS AS (
-          CASE
-            WHEN os_info IS NULL OR TRIM(os_info) = '' THEN 'Unknown'
-            WHEN LOWER(os_info) LIKE '%windows%' THEN 'Windows'
-            WHEN LOWER(os_info) LIKE '%macos%' OR LOWER(os_info) LIKE '%mac os%'
-              OR LOWER(os_info) LIKE '%darwin%' OR LOWER(os_info) LIKE '%osx%' THEN 'Apple'
-            WHEN LOWER(os_info) LIKE '%linux%' OR LOWER(os_info) LIKE '%ubuntu%'
-              OR LOWER(os_info) LIKE '%debian%' OR LOWER(os_info) LIKE '%centos%'
-              OR LOWER(os_info) LIKE '%rhel%' OR LOWER(os_info) LIKE '%red hat%'
-              OR LOWER(os_info) LIKE '%fedora%' OR LOWER(os_info) LIKE '%alpine%'
-              OR LOWER(os_info) LIKE '%suse%' OR LOWER(os_info) LIKE '%arch%'
-              OR LOWER(os_info) LIKE '%rocky%' OR LOWER(os_info) LIKE '%almalinux%' THEN 'Linux'
-            ELSE 'Unknown'
-          END
-        ) VIRTUAL
-      `);
+      newDb.exec(`ALTER TABLE hosts ADD COLUMN os_family TEXT ${OS_FAMILY_GENERATED_SQL}`);
       console.info(`[db-tenant] ${tenantCode}: aggiunta hosts.os_family GENERATED`);
+    } else {
+      // v0.2.614: fix legacy DB con os_family che ha valori in DOUBLE QUOTES
+      // (es. "Unknown" invece di 'Unknown'). SQLite stricter interpreta i double
+      // quotes come column reference → ogni ALTER/DROP su qualsiasi tabella
+      // triggera integrity check e fallisce con "no such column: \"\"".
+      // Detect + ricreate con single quotes.
+      const hostsTableSql = (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='hosts'").get() as { sql?: string } | undefined)?.sql ?? "";
+      if (hostsTableSql.includes('"Unknown"') || hostsTableSql.includes('"Windows"')) {
+        try {
+          newDb.exec("ALTER TABLE hosts DROP COLUMN os_family");
+          newDb.exec(`ALTER TABLE hosts ADD COLUMN os_family TEXT ${OS_FAMILY_GENERATED_SQL}`);
+          console.info(`[db-tenant] ${tenantCode}: hosts.os_family ricreata (fix double-quote legacy)`);
+        } catch (e) {
+          console.warn(`[db-tenant] ${tenantCode}: fix double-quote os_family fallito (richiede SQLite ≥3.35):`, e);
+        }
+      }
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione os_family fallita:`, e);

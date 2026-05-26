@@ -611,6 +611,8 @@ export function getTenantDb(tenantCode: string): Database.Database {
       { name: "inferred_confidence",  sql: "ALTER TABLE hosts ADD COLUMN inferred_confidence INTEGER" },
       { name: "inferred_reasons",     sql: "ALTER TABLE hosts ADD COLUMN inferred_reasons TEXT" },
       { name: "inferred_at",          sql: "ALTER TABLE hosts ADD COLUMN inferred_at TEXT" },
+      // v0.2.602: versione classifier per ricomputo automatico quando le regole cambiano.
+      { name: "inferred_classifier_version", sql: "ALTER TABLE hosts ADD COLUMN inferred_classifier_version INTEGER" },
     ];
     for (const col of inferredCols) {
       if (!hCols.some((c) => c.name === col.name)) {
@@ -618,17 +620,22 @@ export function getTenantDb(tenantCode: string): Database.Database {
         console.info(`[db-tenant] ${tenantCode}: hosts.${col.name} aggiunto`);
       }
     }
-    // Backfill one-shot: host esistenti senza inferred_at vengono classificati ora.
-    // Idempotente: alle prossime apriture del tenant nessuno rientra nel WHERE.
+    // Backfill/upgrade:
+    //   - host senza inferred_at → mai classificato
+    //   - host con inferred_classifier_version < CLASSIFIER_VERSION → ricomputo richiesto
+    // Idempotente: alle prossime apriture del tenant nessuno rientra nel WHERE
+    // (applyAutoClassification scrive sempre il numero di versione corrente).
     try {
-      const toBackfill = newDb.prepare("SELECT id FROM hosts WHERE inferred_at IS NULL").all() as Array<{ id: number }>;
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { applyAutoClassification, CLASSIFIER_VERSION } = require("./devices/auto-classify");
+      const toBackfill = newDb.prepare(
+        "SELECT id FROM hosts WHERE inferred_at IS NULL OR inferred_classifier_version IS NULL OR inferred_classifier_version < ?"
+      ).all(CLASSIFIER_VERSION) as Array<{ id: number }>;
       if (toBackfill.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { applyAutoClassification } = require("./devices/auto-classify");
         for (const row of toBackfill) {
           try { applyAutoClassification(newDb, row.id); } catch { /* skip singolo host non classificabile */ }
         }
-        console.info(`[db-tenant] ${tenantCode}: auto-classify backfill su ${toBackfill.length} host`);
+        console.info(`[db-tenant] ${tenantCode}: auto-classify backfill v${CLASSIFIER_VERSION} su ${toBackfill.length} host`);
       }
     } catch (e) {
       console.warn(`[db-tenant] ${tenantCode}: backfill auto-classify fallito:`, e);

@@ -18,6 +18,17 @@
  * classificazione a mano, il chiamante NON deve sovrascrivere le inferenze.
  */
 
+/**
+ * Versione del classifier. Bump quando le regole cambiano in modo non backward-compat
+ * (es. nuovi segnali, regole vendor ristrette). La migration del tenant ricomputa
+ * automaticamente gli host con `inferred_classifier_version < CLASSIFIER_VERSION`.
+ *
+ * v1 (originale) — solo OUI/hostname/porte/snmp_data
+ * v2 (2026-05-26) — aggiunto os_info come segnale primario; regola VMware ristretta
+ *                   per distinguere ESXi reale da VM su VMware con NIC virtuale
+ */
+export const CLASSIFIER_VERSION = 2;
+
 export type InferredDeviceType =
   | "router"
   | "switch"
@@ -41,6 +52,8 @@ export interface AutoClassifyInput {
   mac: string | null | undefined;
   vendor: string | null | undefined;                  // OUI manufacturer (es. "Apple, Inc.")
   device_manufacturer?: string | null | undefined;    // SMBIOS/fingerprint (es. "Microsoft Corporation")
+  /** Stringa OS testuale (da SNMP sysDescr o WinRM/SSH probe). Es: "Hardware: AMD64 ... Software: Windows Version 6.3 (Build 17763)". Segnale primario quando presente. */
+  os_info?: string | null | undefined;
   open_ports_json?: string | null | undefined;        // JSON serializzato come da hosts.open_ports
   snmp_data_json?: string | null | undefined;
   detection_json?: string | null | undefined;
@@ -112,8 +125,16 @@ const VENDOR_RULES: VendorRule[] = [
   // NAS
   { vendor: "synology", os: "linux", matches: ({ ouiVendor, hostname }) => /synology/.test(ouiVendor) || /^(diskstation|ds-)/.test(hostname) },
   { vendor: "qnap", os: "linux", matches: ({ ouiVendor, hostname }) => /qnap/.test(ouiVendor) || /^qnap/.test(hostname) },
-  // Hypervisor
-  { vendor: "vmware", os: "linux", matches: ({ ouiVendor, mfg, hostname }) => /vmware/.test(ouiVendor) || /vmware/.test(mfg) || /^esxi/.test(hostname) },
+  // Hypervisor — VMware ESXi/vCenter solo se ci sono segnali specifici di hypervisor.
+  // ATTENZIONE: il MAC OUI VMware indica che il NIC è virtuale (la macchina è una VM
+  // su VMware), NON che la macchina È un VMware ESXi. Una VM Windows ha MAC OUI VMware.
+  // Per identificare un ESXi reale servono: hostname esxi/vcsa, oppure manufacturer
+  // SMBIOS "VMware" combinato con porte ESXi (902/9443) — non il solo NIC OUI.
+  { vendor: "vmware", os: "linux", matches: ({ hostname, mfg }) =>
+      /^(esxi|vcsa|vcenter)/.test(hostname) ||
+      // mfg=VMware è ambiguo (le VM su VMware hanno SMBIOS=VMware): richiediamo
+      // anche un hint nell'hostname. Le VM Windows hanno hostname client-style.
+      (/vmware/.test(mfg) && /^(esx|host|hv|hypervisor)/.test(hostname)) },
   { vendor: "proxmox", os: "linux", matches: ({ mfg, hostname }) => /proxmox/.test(mfg) || /^pve/.test(hostname) },
   // UPS
   { vendor: "apc", os: null, matches: ({ ouiVendor }) => /apc|american power/.test(ouiVendor) },
@@ -136,6 +157,22 @@ function inferVendorAndOs(
 }
 
 // ─── Hostname pattern OS detection ──────────────────────────────────────────
+
+/**
+ * Parse del campo `os_info` (sysDescr SNMP, output WinRM/SSH probe).
+ * È il segnale PIÙ FORTE quando è popolato: parla esplicitamente dell'OS.
+ * Es: "...Software: Windows Version 6.3..." → windows; "Linux ubuntu 5.15..." → linux.
+ */
+function inferOsFromOsInfo(osInfo: string | null | undefined): { os: InferredOsFamily | null; confidence: number; reason: string } {
+  if (!osInfo) return { os: null, confidence: 0, reason: "" };
+  const s = osInfo.toLowerCase();
+  if (/\bwindows\b/.test(s)) return { os: "windows", confidence: 95, reason: "os_info dichiara Windows" };
+  if (/\b(linux|ubuntu|debian|centos|redhat|rhel|fedora|alpine|kernel)\b/.test(s)) return { os: "linux", confidence: 95, reason: "os_info dichiara Linux" };
+  if (/\b(macos|darwin|mac os|osx)\b/.test(s)) return { os: "macos", confidence: 95, reason: "os_info dichiara macOS" };
+  if (/\b(ios|cisco|nx-os|junos|routeros|mikrotik|fortios|stormshield|vyos)\b/.test(s)) return { os: "network-os", confidence: 90, reason: "os_info dichiara network OS" };
+  if (/\b(vmware esx|esxi)\b/.test(s)) return { os: "linux", confidence: 85, reason: "os_info dichiara ESXi (linux-based)" };
+  return { os: null, confidence: 0, reason: "" };
+}
 
 function inferOsFromHostname(hostname: string | null | undefined): InferredOsFamily | null {
   if (!hostname) return null;
@@ -244,23 +281,41 @@ export function autoClassifyHost(input: AutoClassifyInput): AutoClassifyResult {
   const snmpData = safeParseJson<Record<string, unknown>>(input.snmp_data_json);
   const hasSnmpData = !!snmpData && Object.keys(snmpData).length > 0;
 
+  // 0. OS_INFO (sysDescr SNMP / WinRM/SSH banner) — segnale più forte quando presente.
+  //    Es: una VM Windows su VMware ha MAC OUI VMware (segnale debole) ma os_info
+  //    "Software: Windows Version 6.3" (segnale forte). Vince os_info.
+  const osInfoInfer = inferOsFromOsInfo(input.os_info);
+  if (osInfoInfer.os) reasons.push(osInfoInfer.reason);
+
   // 1. Vendor + OS via OUI / manufacturer / hostname prefix
   const { vendor, os: vendorOs } = inferVendorAndOs(ouiVendor, deviceMfg, hostname);
   if (vendor) reasons.push(`vendor=${vendor}`);
 
   // 2. OS via hostname pattern (se non già da vendor)
   const hostnameOs = inferOsFromHostname(hostname);
-  if (hostnameOs && !vendorOs) reasons.push(`hostname suggerisce ${hostnameOs}`);
+  if (hostnameOs && !vendorOs && !osInfoInfer.os) reasons.push(`hostname suggerisce ${hostnameOs}`);
 
-  // 3. OS via porte aperte (più forte di hostname/vendor per OS distinction)
+  // 3. OS via porte aperte (segnale diretto, ma os_info è ancora più diretto)
   const portInfer = inferOsFromPorts(ports);
-  if (portInfer.os) reasons.push(portInfer.reason);
+  if (portInfer.os && !osInfoInfer.os) reasons.push(portInfer.reason);
 
-  // Combina: priorità porte > vendor > hostname (porte sono evidence diretta)
-  const osFamily: InferredOsFamily | null = portInfer.os ?? vendorOs ?? hostnameOs;
+  // Combina: priorità os_info > porte > vendor > hostname.
+  // os_info è la verità riportata dall'OS stesso (sysDescr/WinRM banner): se dice
+  // "Windows" è Windows anche se NIC è VMware OUI e SMBIOS è vmware (caso VM).
+  const osFamily: InferredOsFamily | null = osInfoInfer.os ?? portInfer.os ?? vendorOs ?? hostnameOs;
 
-  // 4. Device type
+  // 4. Device type — se os_info forza Windows/macOS/Linux, NON è hypervisor
+  //    (lo override sui vendor=vmware/proxmox vale solo se è davvero ESXi/PVE).
   const dt = inferDeviceType(ports, vendor, osFamily, hostname);
+  // Override: se os_info dice esplicitamente Windows/macOS, non è hypervisor
+  // anche se vendor=vmware (caso VM Windows con NIC VMware).
+  if ((osInfoInfer.os === "windows" || osInfoInfer.os === "macos") && dt.device_type === "hypervisor") {
+    const wsRedirect: InferredDeviceType = osInfoInfer.os === "windows"
+      ? (/^(srv|server|host|dc|ad|sql|exchange|file|hyperv)/.test(hostname.toLowerCase()) ? "server" : "workstation")
+      : "workstation";
+    dt.device_type = wsRedirect;
+    dt.reason = `override da os_info ${osInfoInfer.os}`;
+  }
   if (dt.device_type) reasons.push(`tipo=${dt.device_type} (${dt.reason})`);
 
   // 5. Protocol + scan_target
@@ -269,10 +324,11 @@ export function autoClassifyHost(input: AutoClassifyInput): AutoClassifyResult {
 
   // 6. Confidence: somma pesata dei segnali presenti
   let confidence = 0;
+  if (osInfoInfer.confidence > 0) confidence = Math.max(confidence, osInfoInfer.confidence);
   if (portInfer.confidence > 0) confidence = Math.max(confidence, portInfer.confidence);
   if (vendor && vendorOs) confidence = Math.max(confidence, 65);
   if (hasSnmpData && (dt.device_type === "switch" || dt.device_type === "router" || dt.device_type === "firewall")) confidence = Math.max(confidence, 80);
-  if (hostnameOs && !portInfer.os) confidence = Math.max(confidence, 55);
+  if (hostnameOs && !portInfer.os && !osInfoInfer.os) confidence = Math.max(confidence, 55);
   if (vendor && !osFamily) confidence = Math.max(confidence, 40);
   // Nessun segnale utile
   if (!osFamily && !dt.device_type && !vendor) confidence = 0;
@@ -321,12 +377,13 @@ interface SqliteDbLike {
  */
 export function applyAutoClassification(db: SqliteDbLike, hostId: number): AutoClassifyResult | null {
   const row = db.prepare(
-    "SELECT hostname, mac, vendor, device_manufacturer, open_ports, snmp_data, detection_json, classification FROM hosts WHERE id = ?"
+    "SELECT hostname, mac, vendor, device_manufacturer, os_info, open_ports, snmp_data, detection_json, classification FROM hosts WHERE id = ?"
   ).get(hostId) as {
     hostname: string | null;
     mac: string | null;
     vendor: string | null;
     device_manufacturer: string | null;
+    os_info: string | null;
     open_ports: string | null;
     snmp_data: string | null;
     detection_json: string | null;
@@ -340,6 +397,7 @@ export function applyAutoClassification(db: SqliteDbLike, hostId: number): AutoC
     mac: row.mac,
     vendor: row.vendor,
     device_manufacturer: row.device_manufacturer,
+    os_info: row.os_info,
     open_ports_json: row.open_ports,
     snmp_data_json: row.snmp_data,
     detection_json: row.detection_json,
@@ -355,7 +413,8 @@ export function applyAutoClassification(db: SqliteDbLike, hostId: number): AutoC
       inferred_os_family = ?,
       inferred_confidence = ?,
       inferred_reasons = ?,
-      inferred_at = datetime('now')
+      inferred_at = datetime('now'),
+      inferred_classifier_version = ?
     WHERE id = ?
   `).run(
     result.inferred_device_type,
@@ -365,6 +424,7 @@ export function applyAutoClassification(db: SqliteDbLike, hostId: number): AutoC
     result.inferred_os_family,
     result.inferred_confidence,
     JSON.stringify(result.inferred_reasons),
+    CLASSIFIER_VERSION,
     hostId,
   );
 

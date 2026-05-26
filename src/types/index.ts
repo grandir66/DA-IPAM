@@ -76,6 +76,8 @@ export interface Host {
   /** JSON array di stringhe spiegazione (es. ["porta WinRM aperta", "hostname suggerisce windows"]) */
   inferred_reasons?: string | null;
   inferred_at?: string | null;
+  /** Versione del classifier che ha popolato i campi inferred_*. Bump → ricomputo automatico. */
+  inferred_classifier_version?: number | null;
   created_at: string;
   updated_at: string;
 }

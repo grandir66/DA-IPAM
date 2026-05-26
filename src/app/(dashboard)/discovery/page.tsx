@@ -2767,26 +2767,35 @@ export default function DiscoveryPage() {
             </div>
 
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">
-              Aggiungi colonne
+              Tutte le colonne disponibili
             </div>
             {Object.entries(GROUP_LABELS).map(([group, label]) => {
-              const colsInGroup = COLUMNS.filter((c) => c.group === group && !columnOrder.includes(c.id));
+              const colsInGroup = COLUMNS.filter((c) => c.group === group);
               if (colsInGroup.length === 0) return null;
               return (
-                <div key={group} className="mb-2">
+                <div key={group} className="mb-3">
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 px-1 pb-1">{label}</div>
                   <div className="grid grid-cols-2 gap-1">
-                    {colsInGroup.map((col) => (
-                      <button
-                        key={col.id}
-                        type="button"
-                        onClick={() => toggleCol(col.id)}
-                        className="text-left text-sm px-2 py-1 rounded border border-dashed border-border hover:bg-muted/60 hover:border-primary/50 truncate"
-                        title={`Aggiungi ${col.label}`}
-                      >
-                        + {col.label}
-                      </button>
-                    ))}
+                    {colsInGroup.map((col) => {
+                      const checked = columnOrder.includes(col.id);
+                      const isLocked = ALWAYS_VISIBLE.has(col.id);
+                      return (
+                        <label
+                          key={col.id}
+                          className={`flex items-center gap-2 text-sm px-2 py-1 rounded hover:bg-muted/60 cursor-pointer ${checked ? "bg-primary/5" : ""} ${isLocked ? "opacity-60 cursor-not-allowed" : ""}`}
+                          title={isLocked ? "Sempre visibile" : checked ? `Nascondi ${col.label}` : `Mostra ${col.label}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={isLocked}
+                            onChange={() => toggleCol(col.id)}
+                            className="h-3.5 w-3.5 rounded border-border accent-primary"
+                          />
+                          <span className="truncate">{col.label}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
               );

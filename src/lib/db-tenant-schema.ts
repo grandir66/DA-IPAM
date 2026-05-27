@@ -648,6 +648,11 @@ CREATE TABLE IF NOT EXISTS ad_dhcp_leases (
   lease_expires TEXT,
   address_state TEXT,
   description TEXT,
+  -- v0.2.659: ultima volta che il client DHCP è stato visto attivo.
+  -- Per Microsoft DHCP: calcolato lato PowerShell come (LeaseExpiryTime - LeaseDuration).
+  -- Per i lease "expired" o reservation inattive, è null.
+  -- Permette di filtrare lease "vivi" vs relitti vecchi.
+  last_seen TEXT,
   last_synced TEXT DEFAULT (datetime('now')),
   UNIQUE(integration_id, ip_address)
 );
@@ -669,6 +674,11 @@ CREATE TABLE IF NOT EXISTS dhcp_leases (
   lease_expires TEXT,
   description TEXT,
   dynamic_lease INTEGER,
+  -- v0.2.659: ultimo "visto" dal DHCP server. Per Mikrotik viene da
+  -- last-seen RouterOS convertito in ISO timestamp. Per Windows DHCP
+  -- viene calcolato lato PowerShell come LeaseExpiryTime - LeaseDuration.
+  -- Filtrare last_seen > datetime now -N days per nascondere relitti.
+  last_seen TEXT,
   host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
   network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
   last_synced TEXT DEFAULT (datetime('now')),

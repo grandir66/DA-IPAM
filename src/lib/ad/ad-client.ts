@@ -12,6 +12,10 @@ import {
   upsertAdUser,
   upsertAdGroup,
   upsertAdDhcpLease,
+  upsertDhcpLease,
+  upsertMacIpMapping,
+  getNetworkDeviceByHost,
+  createNetworkDevice,
   syncIpAssignmentsForAllNetworks,
   type AdIntegration,
 } from "@/lib/db";
@@ -471,6 +475,39 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
   const port = 5985;
   const realm = integration.domain || "";
 
+  // v0.2.659: trova/crea un network_device "DHCP server" per il DC, così
+  // possiamo popolare anche `dhcp_leases` (tabella unificata UI) oltre a
+  // `ad_dhcp_leases`. Senza source_device_id la UNIQUE constraint non
+  // permette l'UPSERT per i lease Windows. Auto-create idempotente.
+  let windowsDhcpDeviceId: number | null = null;
+  try {
+    let dev = getNetworkDeviceByHost(integration.dc_host);
+    if (!dev) {
+      const created = createNetworkDevice({
+        name: `${integration.name} — Windows DHCP`,
+        host: integration.dc_host,
+        device_type: "router",
+        vendor: "windows",
+        vendor_subtype: null,
+        protocol: "winrm",
+        credential_id: integration.winrm_credential_id ?? null,
+        snmp_credential_id: null,
+        username: null,
+        encrypted_password: null,
+        community_string: null,
+        api_token: null,
+        api_url: null,
+        port: 5985,
+        enabled: 1,
+      });
+      dev = created;
+      console.info(`[ad-client] creato network_device per Windows DHCP: ${dev.name} (${dev.host})`);
+    }
+    windowsDhcpDeviceId = dev.id;
+  } catch (e) {
+    console.warn(`[ad-client] impossibile trovare/creare network_device DHCP: ${(e as Error).message}`);
+  }
+
   // v0.2.658 audit bug 2R: ConvertTo-Json di PowerShell serializza `ScopeId`
   // e `IPAddress` come OGGETTI .NET annidati (con campo `IPAddressToString`),
   // non come stringhe. Il codice precedente faceva `scope.ScopeId ?? ""` e
@@ -478,15 +515,17 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
   // Fix: flattening lato PowerShell con Select-Object (calculated properties)
   // così i campi arrivano già come stringhe semplici.
 
-  // Recupera scopes con campi appiattiti
+  // Recupera scopes con campi appiattiti.
+  // v0.2.659: aggiungo LeaseDuration (TotalSeconds) per calcolare last_seen
+  // come (LeaseExpiryTime - LeaseDuration) sui singoli lease.
   const scopesJson = await runWinrmCommand(
     host, port, username, password,
-    `Get-DhcpServerv4Scope | Select-Object @{N='ScopeId';E={$_.ScopeId.IPAddressToString}}, Name, @{N='SubnetMask';E={$_.SubnetMask.IPAddressToString}}, @{N='State';E={$_.State.ToString()}} | ConvertTo-Json -Compress`,
+    `Get-DhcpServerv4Scope | Select-Object @{N='ScopeId';E={$_.ScopeId.IPAddressToString}}, Name, @{N='SubnetMask';E={$_.SubnetMask.IPAddressToString}}, @{N='State';E={$_.State.ToString()}}, @{N='LeaseDurationSeconds';E={[int]$_.LeaseDuration.TotalSeconds}} | ConvertTo-Json -Compress`,
     true,
     realm
   );
 
-  let scopes: Array<{ ScopeId: string; Name?: string; State?: string }> = [];
+  let scopes: Array<{ ScopeId: string; Name?: string; State?: string; LeaseDurationSeconds?: number }> = [];
   try {
     const raw = JSON.parse(scopesJson);
     scopes = Array.isArray(raw) ? raw : [raw];
@@ -500,6 +539,7 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
   for (const scope of scopes) {
     const scopeId = String(scope.ScopeId ?? "").trim();
     const scopeName = scope.Name ?? null;
+    const leaseDurationSec = typeof scope.LeaseDurationSeconds === "number" ? scope.LeaseDurationSeconds : null;
     if (!scopeId) continue;
     // Skip scope inattivi per non sprecare cicli
     if (scope.State && String(scope.State).toLowerCase() === "inactive") continue;
@@ -552,16 +592,77 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
           } catch { /* ignora */ }
         }
 
+        // v0.2.659: last_seen = LeaseExpiryTime - LeaseDuration (approssimazione
+        // del lease start = quando il client ha ottenuto/rinnovato il lease).
+        // Per reservation inattive (LeaseExpiryTime=null) resta null →
+        // l'UI lo mostra come "—" e il filtro "solo attivi" lo nasconde.
+        let lastSeen: string | null = null;
+        if (leaseExpires && leaseDurationSec && leaseDurationSec > 0) {
+          try {
+            const expMs = Date.parse(leaseExpires);
+            if (!isNaN(expMs)) {
+              lastSeen = new Date(expMs - leaseDurationSec * 1000).toISOString();
+            }
+          } catch { /* ignora */ }
+        }
+
+        const hostname = String(lease.HostName ?? lease.ClientId ?? "").trim() || null;
+        const addressState = String(lease.AddressState ?? "").trim() || null;
+        const description = String(lease.Description ?? "").trim() || null;
+
         upsertAdDhcpLease(integration.id, {
           scope_id: scopeId,
           scope_name: scopeName,
           ip_address: ip,
           mac_address: mac,
-          hostname: String(lease.HostName ?? lease.ClientId ?? "").trim() || null,
+          hostname,
           lease_expires: leaseExpires,
-          address_state: String(lease.AddressState ?? "").trim() || null,
-          description: String(lease.Description ?? "").trim() || null,
+          address_state: addressState,
+          description,
+          last_seen: lastSeen,
         });
+
+        // v0.2.659: popola anche la tabella unificata `dhcp_leases` per i lease
+        // Windows, così appaiono nella UI principale (insieme a Mikrotik) e
+        // arricchiscono `mac_ip_mapping` → host. status mappato da AddressState:
+        // ActiveReservation/Active → "bound", *Reservation → "static", altri → null.
+        if (windowsDhcpDeviceId) {
+          const statusMap =
+            addressState === "Active" ? "bound" :
+            addressState === "ActiveReservation" ? "bound" :
+            addressState === "InactiveReservation" ? "expired" :
+            addressState === "Released" ? "expired" :
+            addressState === "Declined" ? "declined" : null;
+          const isReservation = addressState?.includes("Reservation") ?? false;
+          upsertDhcpLease({
+            source_type: "windows",
+            source_device_id: windowsDhcpDeviceId,
+            source_name: integration.name,
+            server_name: integration.dc_host,
+            scope_id: scopeId,
+            scope_name: scopeName,
+            ip_address: ip,
+            mac_address: mac,
+            hostname,
+            status: statusMap,
+            lease_expires: leaseExpires,
+            description,
+            dynamic_lease: isReservation ? 0 : 1,
+            last_seen: lastSeen,
+          });
+
+          // Arricchimento: registra il mapping MAC↔IP da DHCP così i workflow
+          // di host discovery possono collegare hostname/vendor a IP dinamici.
+          try {
+            upsertMacIpMapping({
+              mac,
+              ip,
+              source: "dhcp",
+              source_device_id: windowsDhcpDeviceId,
+              hostname: hostname ?? undefined,
+            });
+          } catch { /* ignora errori singolo mapping */ }
+        }
 
         // Aggiorna ip_address su ad_computers per correlazione
         if (lease.HostName) {

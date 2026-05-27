@@ -27,7 +27,7 @@ import { discoverNetwork } from "@/lib/scanner/discovery";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
 import { pingHost } from "@/lib/scanner/ping";
 import { tcpConnect, FALLBACK_TCP_PORTS } from "@/lib/scanner/tcp-check";
-import { createRouterClient } from "@/lib/devices/router-client";
+import { createRouterClient, routerOsDurationToIsoTimestamp } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { classifyDevice } from "@/lib/device-classifier";
@@ -312,6 +312,9 @@ export async function runArpPoll(
                 lease_expires: lease.expiresAfter ?? null,
                 description: lease.comment ?? null,
                 dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
+                // v0.2.659: last-seen RouterOS è durata relativa (es. "1d2h").
+                // Convertita in ISO timestamp assoluto = now - duration.
+                last_seen: routerOsDurationToIsoTimestamp(lease.lastSeen),
                 host_id: host?.id ?? null,
                 network_id: network.id,
               });
@@ -614,6 +617,8 @@ export async function runDhcpPollForNetwork(
       lease_expires: lease.expiresAfter ?? null,
       description: lease.comment ?? null,
       dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
+      // v0.2.659: last_seen ISO timestamp (= now - RouterOS duration).
+      last_seen: routerOsDurationToIsoTimestamp(lease.lastSeen),
       host_id: host?.id ?? null,
       network_id: networkId,
     });

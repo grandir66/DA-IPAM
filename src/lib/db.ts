@@ -6663,11 +6663,13 @@ export function upsertAdDhcpLease(integrationId: number, input: {
   lease_expires?: string | null;
   address_state?: string | null;
   description?: string | null;
+  last_seen?: string | null;
 }): void {
   const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
+  // v0.2.659: aggiunto last_seen.
   getDb().prepare(`INSERT INTO ad_dhcp_leases
-    (integration_id, scope_id, scope_name, ip_address, mac_address, hostname, lease_expires, address_state, description, last_synced)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    (integration_id, scope_id, scope_name, ip_address, mac_address, hostname, lease_expires, address_state, description, last_seen, last_synced)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(integration_id, ip_address) DO UPDATE SET
       scope_id = excluded.scope_id,
       scope_name = excluded.scope_name,
@@ -6676,6 +6678,7 @@ export function upsertAdDhcpLease(integrationId: number, input: {
       lease_expires = excluded.lease_expires,
       address_state = excluded.address_state,
       description = excluded.description,
+      last_seen = excluded.last_seen,
       last_synced = datetime('now')
   `).run(
     integrationId,
@@ -6686,7 +6689,8 @@ export function upsertAdDhcpLease(integrationId: number, input: {
     input.hostname ?? null,
     input.lease_expires ?? null,
     input.address_state ?? null,
-    input.description ?? null
+    input.description ?? null,
+    input.last_seen ?? null
   );
 }
 
@@ -6946,14 +6950,16 @@ export function upsertDhcpLease(input: {
   host_id?: number | null;
   network_id?: number | null;
   dynamic_lease?: number | null;
+  last_seen?: string | null;
 }): void {
   const db = getDb();
   const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
+  // v0.2.659: aggiunto last_seen.
   db.prepare(`INSERT INTO dhcp_leases
     (source_type, source_device_id, source_name, server_name, scope_id, scope_name,
      ip_address, mac_address, hostname, status, lease_start, lease_expires, description,
-     dynamic_lease, host_id, network_id, last_synced)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     dynamic_lease, last_seen, host_id, network_id, last_synced)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(source_device_id, ip_address) DO UPDATE SET
       source_name = excluded.source_name,
       server_name = excluded.server_name,
@@ -6966,6 +6972,7 @@ export function upsertDhcpLease(input: {
       lease_expires = excluded.lease_expires,
       description = excluded.description,
       dynamic_lease = COALESCE(excluded.dynamic_lease, dhcp_leases.dynamic_lease),
+      last_seen = COALESCE(excluded.last_seen, dhcp_leases.last_seen),
       host_id = COALESCE(excluded.host_id, dhcp_leases.host_id),
       network_id = COALESCE(excluded.network_id, dhcp_leases.network_id),
       last_synced = datetime('now')
@@ -6984,6 +6991,7 @@ export function upsertDhcpLease(input: {
     input.lease_expires ?? null,
     input.description ?? null,
     input.dynamic_lease ?? null,
+    input.last_seen ?? null,
     input.host_id ?? null,
     input.network_id ?? null
   );

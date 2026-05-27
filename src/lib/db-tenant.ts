@@ -373,6 +373,20 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione use_for_arp_poll fallita:`, e);
   }
 
+  // v0.2.659: aggiunto last_seen a ad_dhcp_leases + dhcp_leases per filtrare
+  // relitti vecchi. Migration additiva (ALTER ADD COLUMN), idempotente.
+  try {
+    for (const table of ["ad_dhcp_leases", "dhcp_leases"]) {
+      const cols = newDb.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      if (cols.length > 0 && !cols.some((c) => c.name === "last_seen")) {
+        newDb.exec(`ALTER TABLE ${table} ADD COLUMN last_seen TEXT`);
+        console.info(`[db-tenant] ${tenantCode}: ${table}.last_seen aggiunto`);
+      }
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione last_seen DHCP fallita:`, e);
+  }
+
   // Migrazione runtime: network_devices.device_type CHECK include 'firewall'
   try {
     const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='network_devices'").get() as { sql?: string } | undefined;
@@ -4950,9 +4964,10 @@ export function getAdDhcpLeasesPaginated(integrationId: number, page: number, pa
   return { rows, total };
 }
 
-export function upsertAdDhcpLease(integrationId: number, input: { scope_id: string; scope_name?: string | null; ip_address: string; mac_address: string; hostname?: string | null; lease_expires?: string | null; address_state?: string | null; description?: string | null }): void {
+export function upsertAdDhcpLease(integrationId: number, input: { scope_id: string; scope_name?: string | null; ip_address: string; mac_address: string; hostname?: string | null; lease_expires?: string | null; address_state?: string | null; description?: string | null; last_seen?: string | null }): void {
   const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
-  db().prepare(`INSERT INTO ad_dhcp_leases (integration_id, scope_id, scope_name, ip_address, mac_address, hostname, lease_expires, address_state, description, last_synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(integration_id, ip_address) DO UPDATE SET scope_id = excluded.scope_id, scope_name = excluded.scope_name, mac_address = excluded.mac_address, hostname = excluded.hostname, lease_expires = excluded.lease_expires, address_state = excluded.address_state, description = excluded.description, last_synced = datetime('now')`).run(integrationId, input.scope_id, input.scope_name ?? null, input.ip_address, macNorm, input.hostname ?? null, input.lease_expires ?? null, input.address_state ?? null, input.description ?? null);
+  // v0.2.659: aggiunto last_seen (calcolato lato PS come LeaseExpiryTime - LeaseDuration).
+  db().prepare(`INSERT INTO ad_dhcp_leases (integration_id, scope_id, scope_name, ip_address, mac_address, hostname, lease_expires, address_state, description, last_seen, last_synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(integration_id, ip_address) DO UPDATE SET scope_id = excluded.scope_id, scope_name = excluded.scope_name, mac_address = excluded.mac_address, hostname = excluded.hostname, lease_expires = excluded.lease_expires, address_state = excluded.address_state, description = excluded.description, last_seen = excluded.last_seen, last_synced = datetime('now')`).run(integrationId, input.scope_id, input.scope_name ?? null, input.ip_address, macNorm, input.hostname ?? null, input.lease_expires ?? null, input.address_state ?? null, input.description ?? null, input.last_seen ?? null);
 }
 
 export function clearAdDhcpLeases(integrationId: number): void {
@@ -4963,7 +4978,7 @@ export function clearAdDhcpLeases(integrationId: number): void {
 // DHCP LEASES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export interface DhcpLease { id: number; source_type: "mikrotik" | "windows" | "cisco" | "other"; source_device_id: number | null; source_name: string | null; server_name: string | null; scope_id: string | null; scope_name: string | null; ip_address: string; mac_address: string; hostname: string | null; status: string | null; lease_start: string | null; lease_expires: string | null; description: string | null; dynamic_lease: number | null; host_id: number | null; network_id: number | null; last_synced: string; }
+export interface DhcpLease { id: number; source_type: "mikrotik" | "windows" | "cisco" | "other"; source_device_id: number | null; source_name: string | null; server_name: string | null; scope_id: string | null; scope_name: string | null; ip_address: string; mac_address: string; hostname: string | null; status: string | null; lease_start: string | null; lease_expires: string | null; description: string | null; dynamic_lease: number | null; last_seen: string | null; host_id: number | null; network_id: number | null; last_synced: string; }
 export interface DhcpLeaseWithRelations extends DhcpLease { host_hostname?: string | null; host_ip?: string | null; network_name?: string | null; network_cidr?: string | null; device_name?: string | null; }
 
 export function getDhcpLeases(): DhcpLeaseWithRelations[] {
@@ -5000,10 +5015,12 @@ export function getDhcpLeasesByDevice(deviceId: number): DhcpLease[] {
   return db().prepare("SELECT * FROM dhcp_leases WHERE source_device_id = ? ORDER BY ip_address").all(deviceId) as DhcpLease[];
 }
 
-export function upsertDhcpLease(input: { source_type: "mikrotik" | "windows" | "cisco" | "other"; source_device_id: number; source_name?: string | null; server_name?: string | null; scope_id?: string | null; scope_name?: string | null; ip_address: string; mac_address: string; hostname?: string | null; status?: string | null; lease_start?: string | null; lease_expires?: string | null; description?: string | null; host_id?: number | null; network_id?: number | null; dynamic_lease?: number | null }): void {
+export function upsertDhcpLease(input: { source_type: "mikrotik" | "windows" | "cisco" | "other"; source_device_id: number; source_name?: string | null; server_name?: string | null; scope_id?: string | null; scope_name?: string | null; ip_address: string; mac_address: string; hostname?: string | null; status?: string | null; lease_start?: string | null; lease_expires?: string | null; description?: string | null; host_id?: number | null; network_id?: number | null; dynamic_lease?: number | null; last_seen?: string | null }): void {
   const d = db();
   const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
-  d.prepare(`INSERT INTO dhcp_leases (source_type, source_device_id, source_name, server_name, scope_id, scope_name, ip_address, mac_address, hostname, status, lease_start, lease_expires, description, dynamic_lease, host_id, network_id, last_synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(source_device_id, ip_address) DO UPDATE SET source_name = excluded.source_name, server_name = excluded.server_name, scope_id = excluded.scope_id, scope_name = excluded.scope_name, mac_address = excluded.mac_address, hostname = excluded.hostname, status = excluded.status, lease_start = excluded.lease_start, lease_expires = excluded.lease_expires, description = excluded.description, dynamic_lease = COALESCE(excluded.dynamic_lease, dhcp_leases.dynamic_lease), host_id = COALESCE(excluded.host_id, dhcp_leases.host_id), network_id = COALESCE(excluded.network_id, dhcp_leases.network_id), last_synced = datetime('now')`).run(input.source_type, input.source_device_id, input.source_name ?? null, input.server_name ?? null, input.scope_id ?? null, input.scope_name ?? null, input.ip_address, macNorm, input.hostname ?? null, input.status ?? null, input.lease_start ?? null, input.lease_expires ?? null, input.description ?? null, input.dynamic_lease ?? null, input.host_id ?? null, input.network_id ?? null);
+  // v0.2.659: aggiunto last_seen (ISO timestamp, da Mikrotik last-seen o
+  // calcolato per Windows DHCP).
+  d.prepare(`INSERT INTO dhcp_leases (source_type, source_device_id, source_name, server_name, scope_id, scope_name, ip_address, mac_address, hostname, status, lease_start, lease_expires, description, dynamic_lease, last_seen, host_id, network_id, last_synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(source_device_id, ip_address) DO UPDATE SET source_name = excluded.source_name, server_name = excluded.server_name, scope_id = excluded.scope_id, scope_name = excluded.scope_name, mac_address = excluded.mac_address, hostname = excluded.hostname, status = excluded.status, lease_start = excluded.lease_start, lease_expires = excluded.lease_expires, description = excluded.description, dynamic_lease = COALESCE(excluded.dynamic_lease, dhcp_leases.dynamic_lease), last_seen = COALESCE(excluded.last_seen, dhcp_leases.last_seen), host_id = COALESCE(excluded.host_id, dhcp_leases.host_id), network_id = COALESCE(excluded.network_id, dhcp_leases.network_id), last_synced = datetime('now')`).run(input.source_type, input.source_device_id, input.source_name ?? null, input.server_name ?? null, input.scope_id ?? null, input.scope_name ?? null, input.ip_address, macNorm, input.hostname ?? null, input.status ?? null, input.lease_start ?? null, input.lease_expires ?? null, input.description ?? null, input.dynamic_lease ?? null, input.last_seen ?? null, input.host_id ?? null, input.network_id ?? null);
 }
 
 export function syncIpAssignmentsForNetwork(networkId: number): number {

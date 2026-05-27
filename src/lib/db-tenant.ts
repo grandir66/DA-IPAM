@@ -722,6 +722,20 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione physical_devices fallita:`, e);
   }
 
+  // v0.2.651: cleanup one-shot mac_port_entries più vecchi di 24h al boot tenant.
+  // Su tenant esistenti con backlog accumulato (es. 9300 righe in 25 giorni),
+  // libera subito spazio e velocizza getAllHostsEnriched.
+  try {
+    const r = newDb.prepare(
+      "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-24 hours')"
+    ).run() as { changes: number };
+    if (r.changes > 0) {
+      console.info(`[db-tenant] ${tenantCode}: mac_port_entries one-shot cleanup — ${r.changes} righe rimosse`);
+    }
+  } catch (e) {
+    console.warn(`[db-tenant] ${tenantCode}: mac_port_entries cleanup fallito:`, e);
+  }
+
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
   return newDb;
 }
@@ -3142,6 +3156,22 @@ export function upsertMacPortEntries(deviceId: number, entries: { mac: string; p
   });
 
   insertMany(entries);
+}
+
+/**
+ * v0.2.651: retention mac_port_entries — elimina row più vecchie di N ore.
+ * Lo switch_port discovery inserisce fino a 4096 row per ogni run (intera MAC
+ * table dello switch). Senza retention la tabella cresce indefinitamente:
+ * misurato su tenant prod 70791 ~9300 righe in 25 giorni con tabelle MAC piccole;
+ * su switch enterprise (4096 MAC × 4 scan/giorno) diventa milioni in poche
+ * settimane. Default 24h è sicuro: getMacPortEntriesByDevice mostra solo le
+ * ultime, e `upsertMacPortEntries` rimpiazza per device ad ogni scan.
+ */
+export function cleanupOldMacPortEntries(retentionHours: number = 24): number {
+  const r = db().prepare(
+    "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' hours')"
+  ).run(retentionHours) as { changes: number };
+  return r.changes;
 }
 
 export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { host_ip?: string; host_name?: string })[] {

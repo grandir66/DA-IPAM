@@ -1714,12 +1714,15 @@ export default function DiscoveryPage() {
                     + `• ${h.ip} (${h.network_name}) — primary (questo)\n`
                     + h.multihomed.peers.map((p) => `• ${p.ip} (${p.network_name})${p.is_primary ? " — primary" : ""}`).join("\n")
                   }
-                  className="inline-flex items-center gap-0.5 text-cyan-600 hover:text-cyan-700"
+                  className="inline-flex items-center gap-0.5 text-cyan-600 hover:text-cyan-700 font-bold"
                 >
                   <Link2 className="h-3.5 w-3.5" />
-                  <span className="text-[9px] font-bold leading-none">P</span>
+                  <span className="text-[9px] leading-none">P</span>
                 </Link>
               ) : (
+                // v0.2.651: secondary ora cyan-600 (era cyan-300, poco visibile)
+                // + badge "/N" col numero di interfacce del cluster per evidenziare
+                // chiaramente che è un device multihomed e non un host isolato.
                 <Link
                   href={h.multihomed.primary_host_id ? `/objects/${h.multihomed.primary_host_id}` : `/objects/${h.id}`}
                   title={
@@ -1728,9 +1731,10 @@ export default function DiscoveryPage() {
                     + `• ${h.ip} (${h.network_name}) — questo (secondary)\n`
                     + h.multihomed.peers.map((p) => `• ${p.ip} (${p.network_name})${p.is_primary ? " — primary" : ""}`).join("\n")
                   }
-                  className="inline-flex items-center text-cyan-300 hover:text-cyan-500"
+                  className="inline-flex items-center gap-0.5 text-cyan-600 hover:text-cyan-700"
                 >
                   <Link2 className="h-3.5 w-3.5" />
+                  <span className="text-[9px] leading-none">/{h.multihomed.peers.length + 1}</span>
                 </Link>
               )
             ) : (

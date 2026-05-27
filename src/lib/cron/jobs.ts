@@ -756,7 +756,7 @@ export async function runDnsResolve(
 }
 
 async function runCleanup(configStr: string): Promise<void> {
-  let config: { days_until_stale?: number; days_until_delete?: number };
+  let config: { days_until_stale?: number; days_until_delete?: number; mac_port_retention_hours?: number };
   try {
     config = JSON.parse(configStr || "{}");
   } catch {
@@ -765,9 +765,24 @@ async function runCleanup(configStr: string): Promise<void> {
   }
   const daysUntilStale = config.days_until_stale || 30;
   const daysUntilDelete = config.days_until_delete || 90;
+  // v0.2.651: retention mac_port_entries (default 24h). Switch_port discovery
+  // inserisce fino a 4096 row per scan (intera MAC table) → senza cleanup
+  // la tabella cresce a milioni di righe in poche settimane.
+  const macPortRetentionHours = config.mac_port_retention_hours ?? 24;
 
   const result = cleanupStaleHosts(daysUntilStale, daysUntilDelete);
   console.info(`[Cleanup] ${result.flagged} host segnalati stale, ${result.deleted} eliminati`);
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { cleanupOldMacPortEntries } = require("@/lib/db-tenant");
+    const deleted = cleanupOldMacPortEntries(macPortRetentionHours);
+    if (deleted > 0) {
+      console.info(`[Cleanup] mac_port_entries: eliminate ${deleted} righe più vecchie di ${macPortRetentionHours}h`);
+    }
+  } catch (e) {
+    console.warn(`[Cleanup] mac_port_entries cleanup fallito:`, e);
+  }
 }
 
 async function runAdSync(configStr: string): Promise<void> {

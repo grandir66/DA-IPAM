@@ -20,7 +20,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogS
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Copy, Check, ExternalLink } from "lucide-react";
+import { Copy, Check, ExternalLink, Download, FileText } from "lucide-react";
 
 interface Props {
   open: boolean;
@@ -73,6 +73,36 @@ export function WinRMSetupGuideDialog({ open, onOpenChange, initialTab = "workgr
             in <strong>PowerShell come amministratore</strong>.
           </p>
 
+          {/* v0.2.656: download script PowerShell automatico + manuale completo */}
+          <div className="mb-4 p-3 rounded-md border border-primary/30 bg-primary/5 flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[200px]">
+              <p className="text-sm font-semibold">Setup automatico</p>
+              <p className="text-xs text-muted-foreground">
+                Lo script PowerShell copre tutti gli scenari (workgroup, dominio, admin custom).
+                Scaricalo, copia sul server, esegui in PowerShell elevato.
+              </p>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <a
+                href="/api/winrm-setup/script"
+                download="Configure-WinRM-DA-IPAM.ps1"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs hover:bg-primary/90"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Script .ps1
+              </a>
+              <a
+                href="/api/winrm-setup/manual"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-border bg-background text-xs hover:bg-muted"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Manuale .md
+              </a>
+            </div>
+          </div>
+
           <Tabs defaultValue={initialTab}>
             <TabsList className="grid grid-cols-5 mb-3">
               <TabsTrigger value="workgroup-builtin">Workgroup<br/>Administrator</TabsTrigger>
@@ -92,7 +122,9 @@ export function WinRMSetupGuideDialog({ open, onOpenChange, initialTab = "workgr
                 Caso più semplice: l&apos;account <code>Administrator</code> builtin è esente dal filtro UAC remoto.
                 Basta abilitare il listener WinRM su NIC pubblica e aprire il firewall.
               </p>
-              <h4 className="text-sm font-semibold">1. Comando unico (PowerShell elevato sul server)</h4>
+              <h4 className="text-sm font-semibold">0. Setup automatico (consigliato)</h4>
+              <CodeBlock code={`.\\Configure-WinRM-DA-IPAM.ps1 -Mode Workgroup`} />
+              <h4 className="text-sm font-semibold">1. Setup manuale (alternativa)</h4>
               <CodeBlock code={`Enable-PSRemoting -Force -SkipNetworkProfileCheck`} />
               <p className="text-xs text-muted-foreground">
                 Configura listener WinRM, abilita la regola firewall <code>WINRM-HTTP-In-TCP-PUBLIC</code>
@@ -121,6 +153,13 @@ export function WinRMSetupGuideDialog({ open, onOpenChange, initialTab = "workgr
               <p className="text-sm">
                 Caso con tre ostacoli sovrapposti: profilo NIC Public, filtro UAC remoto sugli admin
                 locali non-builtin, e formato username. Servono <strong>tutti e tre</strong> i fix.
+              </p>
+
+              <h4 className="text-sm font-semibold">0. Setup automatico (consigliato)</h4>
+              <CodeBlock code={`.\\Configure-WinRM-DA-IPAM.ps1 -Mode WorkgroupCustomAdmin`} />
+              <p className="text-xs text-muted-foreground">
+                Lo script copre tutti i 3 fix sotto in un colpo. Per restringere l&apos;accesso solo al DA-IPAM appliance:
+                <code className="ml-1">-AllowFromIP 192.168.4.8</code>
               </p>
 
               <h4 className="text-sm font-semibold">1. Disabilita il filtro UAC remoto</h4>
@@ -165,7 +204,9 @@ export function WinRMSetupGuideDialog({ open, onOpenChange, initialTab = "workgr
                 Caso più semplice in ambiente AD: l&apos;account di dominio usa Kerberos automaticamente.
                 Il filtro UAC remoto NON si applica agli account di dominio.
               </p>
-              <h4 className="text-sm font-semibold">1. Abilita WinRM sul server</h4>
+              <h4 className="text-sm font-semibold">0. Setup automatico (consigliato)</h4>
+              <CodeBlock code={`.\\Configure-WinRM-DA-IPAM.ps1 -Mode Domain`} />
+              <h4 className="text-sm font-semibold">1. Setup manuale</h4>
               <CodeBlock code={`Enable-PSRemoting -Force`} />
               <p className="text-xs text-muted-foreground">
                 In dominio la NIC è già Private/DomainAuthenticated → niente <code>-SkipNetworkProfileCheck</code>.
@@ -276,17 +317,27 @@ net localgroup Administrators`} />
             </TabsContent>
           </Tabs>
 
-          <div className="mt-4 pt-3 border-t border-border/50 text-xs text-muted-foreground flex items-center gap-2">
-            <ExternalLink className="h-3 w-3" />
-            Documentazione ufficiale Microsoft:&nbsp;
-            <a
-              href="https://learn.microsoft.com/en-us/windows/win32/winrm/installation-and-configuration-for-windows-remote-management"
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary hover:underline"
-            >
-              WinRM installation and configuration
-            </a>
+          <div className="mt-4 pt-3 border-t border-border/50 space-y-2">
+            <div className="text-xs text-muted-foreground">
+              <p className="font-semibold mb-1">Casi avanzati (non in questo dialog):</p>
+              <ul className="list-disc ml-5 space-y-0.5">
+                <li>Mass deployment su postazioni Windows via <strong>Group Policy</strong> → vedi <a href="/api/winrm-setup/manual" target="_blank" rel="noreferrer" className="text-primary hover:underline">manuale completo §5</a></li>
+                <li>Configurazione <strong>Domain Controller</strong> per LDAPS + WinRM → manuale §3.6</li>
+                <li>Hardening con <strong>HTTPS 5986</strong> e restrizione IP → manuale §9</li>
+              </ul>
+            </div>
+            <div className="text-xs text-muted-foreground flex items-center gap-2">
+              <ExternalLink className="h-3 w-3" />
+              Documentazione ufficiale Microsoft:&nbsp;
+              <a
+                href="https://learn.microsoft.com/en-us/windows/win32/winrm/installation-and-configuration-for-windows-remote-management"
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary hover:underline"
+              >
+                WinRM installation and configuration
+              </a>
+            </div>
           </div>
         </DialogScrollableArea>
 

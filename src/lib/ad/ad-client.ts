@@ -471,15 +471,22 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
   const port = 5985;
   const realm = integration.domain || "";
 
-  // Recupera scopes
+  // v0.2.658 audit bug 2R: ConvertTo-Json di PowerShell serializza `ScopeId`
+  // e `IPAddress` come OGGETTI .NET annidati (con campo `IPAddressToString`),
+  // non come stringhe. Il codice precedente faceva `scope.ScopeId ?? ""` e
+  // otteneva `[object Object]` → skip di TUTTI i scope → 0 lease sincronizzati.
+  // Fix: flattening lato PowerShell con Select-Object (calculated properties)
+  // così i campi arrivano già come stringhe semplici.
+
+  // Recupera scopes con campi appiattiti
   const scopesJson = await runWinrmCommand(
     host, port, username, password,
-    "Get-DhcpServerv4Scope | ConvertTo-Json -Depth 2 -Compress",
+    `Get-DhcpServerv4Scope | Select-Object @{N='ScopeId';E={$_.ScopeId.IPAddressToString}}, Name, @{N='SubnetMask';E={$_.SubnetMask.IPAddressToString}}, @{N='State';E={$_.State.ToString()}} | ConvertTo-Json -Compress`,
     true,
     realm
   );
 
-  let scopes: Array<{ ScopeId: string; Name?: string }> = [];
+  let scopes: Array<{ ScopeId: string; Name?: string; State?: string }> = [];
   try {
     const raw = JSON.parse(scopesJson);
     scopes = Array.isArray(raw) ? raw : [raw];
@@ -491,15 +498,19 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
   let total = 0;
 
   for (const scope of scopes) {
-    const scopeId = scope.ScopeId ?? "";
+    const scopeId = String(scope.ScopeId ?? "").trim();
     const scopeName = scope.Name ?? null;
     if (!scopeId) continue;
+    // Skip scope inattivi per non sprecare cicli
+    if (scope.State && String(scope.State).toLowerCase() === "inactive") continue;
 
     let leasesJson: string;
     try {
+      // v0.2.658 audit bug 2R: anche i lease hanno IPAddress come oggetto.
+      // Calculated properties per estrarre stringhe pulite.
       leasesJson = await runWinrmCommand(
         host, port, username, password,
-        `Get-DhcpServerv4Lease -ScopeId "${scopeId}" | ConvertTo-Json -Depth 2 -Compress`,
+        `Get-DhcpServerv4Lease -ScopeId "${scopeId}" | Select-Object @{N='IPAddress';E={$_.IPAddress.IPAddressToString}}, ClientId, HostName, @{N='AddressState';E={$_.AddressState.ToString()}}, @{N='LeaseExpiryTime';E={if($_.LeaseExpiryTime){$_.LeaseExpiryTime.ToString('o')}else{$null}}}, Description | ConvertTo-Json -Compress`,
         true,
         realm
       );
@@ -517,7 +528,14 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
 
     for (const lease of leases) {
       try {
-        const ip = String(lease.IPAddress ?? "").trim();
+        // IPAddress ora arriva come stringa pura grazie al flattening PS.
+        // Defensive: gestisco anche eventuale oggetto residuo per compat.
+        const ipRaw = lease.IPAddress;
+        const ip = typeof ipRaw === "string"
+          ? ipRaw.trim()
+          : (ipRaw && typeof ipRaw === "object" && "IPAddressToString" in ipRaw
+              ? String((ipRaw as { IPAddressToString: string }).IPAddressToString).trim()
+              : "");
         const mac = String(lease.ClientId ?? lease.MACAddress ?? "").trim().toLowerCase().replace(/-/g, ":");
         if (!ip || !mac) continue;
 

@@ -1112,16 +1112,16 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
       GROUP BY network_id
     ) sj ON sj.network_id = h.network_id
     LEFT JOIN network_devices nd ON nd.host = h.ip
-    -- v0.2.645 audit perf DB2: pre-aggregato (mac, MAX(timestamp)) seek-only.
-    -- Prima ROW_NUMBER() OVER (PARTITION BY mac) materializzava tutta la tabella
-    -- mac_port_entries (full-scan O(N globale)). Ora con idx_mac_port_entries_mac_ts
-    -- l'inner GROUP BY è seek-per-mac, e il JOIN finale è index lookup.
+    -- v0.2.645 audit perf DB2 + v0.2.650 hotfix: pre-aggregato seek-only su MAX(rowid).
+    -- Prima ROW_NUMBER() OVER (PARTITION BY mac) full-scan; il fix v0.2.645 usava
+    -- MAX(timestamp) ma le righe (mac, timestamp) NON sono uniche (fino a 4096
+    -- duplicati osservati su switch_port discovery che inserisce stessa riga ad
+    -- ogni tick) → INNER JOIN moltiplicava gli host. MAX(rowid) garantisce 1 riga
+    -- per mac (rowid univoco di default in SQLite).
     LEFT JOIN (
-      SELECT m1.mac, m1.port_name, m1.device_id
-      FROM mac_port_entries m1
-      INNER JOIN (
-        SELECT mac, MAX(timestamp) AS max_ts FROM mac_port_entries GROUP BY mac
-      ) m2 ON m2.mac = m1.mac AND m2.max_ts = m1.timestamp
+      SELECT mac, port_name, device_id
+      FROM mac_port_entries
+      WHERE rowid IN (SELECT MAX(rowid) FROM mac_port_entries GROUP BY mac)
     ) mpe ON mpe.mac = h.mac
     LEFT JOIN network_devices sw ON sw.id = mpe.device_id
     LEFT JOIN (

@@ -26,8 +26,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Trash2, Pencil } from "lucide-react";
+import { Plus, Trash2, Pencil, BookOpen } from "lucide-react";
 import { toast } from "sonner";
+import { WinRMSetupGuideDialog } from "@/components/shared/winrm-setup-guide-dialog";
 
 interface Credential {
   id: number;
@@ -45,6 +46,8 @@ export default function CredentialsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ name: "", credential_type: "ssh" as "ssh" | "snmp" | "api" | "windows" | "linux", username: "", password: "" });
+  // v0.2.649: guida WinRM accessibile dal form quando type=windows.
+  const [winrmGuideOpen, setWinrmGuideOpen] = useState(false);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [testDialogOpen, setTestDialogOpen] = useState(false);
   const [testCredId, setTestCredId] = useState<number | null>(null);
@@ -166,7 +169,22 @@ export default function CredentialsPage() {
         toast.success(data.message || "Test riuscito");
         setTestDialogOpen(false);
       } else {
-        toast.error(data.error || "Test fallito");
+        // v0.2.649: per credenziali windows con errori WinRM tipici, mostra
+        // un'azione "Guida" che apre il dialog con i fix specifici.
+        const errMsg = String(data.error || "Test fallito");
+        const testedCred = credentials.find((c) => c.id === testCredId);
+        const isWinrmError = testedCred?.credential_type === "windows" && /AUTH_REJECTED|TCP_TIMEOUT|KERBEROS_FAILED|KERBEROS_ONLY|401|5985/i.test(errMsg);
+        if (isWinrmError) {
+          toast.error(errMsg, {
+            duration: 8000,
+            action: {
+              label: "Guida WinRM",
+              onClick: () => setWinrmGuideOpen(true),
+            },
+          });
+        } else {
+          toast.error(errMsg);
+        }
       }
     } catch {
       toast.error("Errore nel test");
@@ -229,12 +247,30 @@ export default function CredentialsPage() {
                 {(form.credential_type === "ssh" || form.credential_type === "api" || form.credential_type === "windows" || form.credential_type === "linux") && (
                   <>
                     <div>
-                      <Label>Username</Label>
+                      <div className="flex items-center justify-between">
+                        <Label>Username</Label>
+                        {form.credential_type === "windows" && (
+                          <button
+                            type="button"
+                            onClick={() => setWinrmGuideOpen(true)}
+                            className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
+                            title="Guida per abilitare WinRM sul server target"
+                          >
+                            <BookOpen className="h-3 w-3" />
+                            Come abilitare WinRM?
+                          </button>
+                        )}
+                      </div>
                       <Input
                         value={form.username}
                         onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-                        placeholder="es. admin o DOMINIO\\utente"
+                        placeholder={form.credential_type === "windows" ? "es. .\\admin (locale), DOMINIO\\utente (AD), o utente@dominio.fqdn" : "es. admin o DOMINIO\\utente"}
                       />
+                      {form.credential_type === "windows" && (
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Account locale → <code>.\nomeutente</code> · Dominio AD → <code>DOMINIO\nomeutente</code> o <code>utente@dominio.fqdn</code>
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label>Password {editingId && "(lascia vuoto per non modificare)"}</Label>
@@ -355,6 +391,9 @@ export default function CredentialsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* v0.2.649: guida WinRM apribile dal form credenziali (type=windows) */}
+      <WinRMSetupGuideDialog open={winrmGuideOpen} onOpenChange={setWinrmGuideOpen} />
     </div>
   );
 }

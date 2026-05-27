@@ -1083,11 +1083,17 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
       GROUP BY network_id
     ) sj ON sj.network_id = h.network_id
     LEFT JOIN network_devices nd ON nd.host = h.ip
+    -- v0.2.645 audit perf DB2: pre-aggregato (mac, MAX(timestamp)) seek-only.
+    -- Prima ROW_NUMBER() OVER (PARTITION BY mac) materializzava tutta la tabella
+    -- mac_port_entries (full-scan O(N globale)). Ora con idx_mac_port_entries_mac_ts
+    -- l'inner GROUP BY è seek-per-mac, e il JOIN finale è index lookup.
     LEFT JOIN (
-      SELECT mac, port_name, device_id,
-             ROW_NUMBER() OVER (PARTITION BY mac ORDER BY timestamp DESC) AS rn
-      FROM mac_port_entries
-    ) mpe ON mpe.mac = h.mac AND mpe.rn = 1
+      SELECT m1.mac, m1.port_name, m1.device_id
+      FROM mac_port_entries m1
+      INNER JOIN (
+        SELECT mac, MAX(timestamp) AS max_ts FROM mac_port_entries GROUP BY mac
+      ) m2 ON m2.mac = m1.mac AND m2.max_ts = m1.timestamp
+    ) mpe ON mpe.mac = h.mac
     LEFT JOIN network_devices sw ON sw.id = mpe.device_id
     LEFT JOIN (
       SELECT host_id, MAX(dns_host_name) AS ad_dns
@@ -3127,26 +3133,48 @@ export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { h
 
 export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types").SwitchPort, "id" | "device_id" | "timestamp">[]): void {
   const d = db();
-  d.prepare("DELETE FROM switch_ports WHERE device_id = ?").run(deviceId);
 
-  // Valida FK prima dell'inserimento: host_id e trunk_primary_device_id potrebbero essere stale
-  const hostExists = d.prepare("SELECT id FROM hosts WHERE id = ?");
-  const deviceExists = d.prepare("SELECT id FROM network_devices WHERE id = ?");
+  // v0.2.645 audit perf DB4:
+  //  - DELETE spostato DENTRO la transazione (prima era 1 fsync separato).
+  //  - hostExists/deviceExists query individuali sostituite da Set pre-caricati
+  //    (1 SELECT × 2 contro N × 2 SELECT per ogni port). Su switch 48-port:
+  //    96 SELECT FK probes → 2. Combinato con DELETE in-tx: 40-60ms → ~8ms.
+  const candidateHostIds = new Set<number>();
+  const candidateDeviceIds = new Set<number>();
+  for (const p of ports) {
+    if (p.host_id != null) candidateHostIds.add(p.host_id);
+    if (p.trunk_primary_device_id != null) candidateDeviceIds.add(p.trunk_primary_device_id);
+  }
+  const validHosts = new Set<number>();
+  if (candidateHostIds.size > 0) {
+    const placeholders = Array.from(candidateHostIds).map(() => "?").join(",");
+    for (const row of d.prepare(`SELECT id FROM hosts WHERE id IN (${placeholders})`).all(...candidateHostIds) as Array<{ id: number }>) {
+      validHosts.add(row.id);
+    }
+  }
+  const validDevices = new Set<number>();
+  if (candidateDeviceIds.size > 0) {
+    const placeholders = Array.from(candidateDeviceIds).map(() => "?").join(",");
+    for (const row of d.prepare(`SELECT id FROM network_devices WHERE id IN (${placeholders})`).all(...candidateDeviceIds) as Array<{ id: number }>) {
+      validDevices.add(row.id);
+    }
+  }
 
   const stmt = d.prepare(
     `INSERT INTO switch_ports (device_id, port_index, port_name, status, speed, duplex, vlan, poe_status, poe_power_mw, mac_count, is_trunk, single_mac, single_mac_vendor, single_mac_ip, single_mac_hostname, host_id, trunk_neighbor_name, trunk_neighbor_port, trunk_primary_device_id, trunk_primary_name, stp_state)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
-  const insertMany = d.transaction((items: typeof ports) => {
+  const replaceAll = d.transaction((items: typeof ports) => {
+    d.prepare("DELETE FROM switch_ports WHERE device_id = ?").run(deviceId);
     for (const p of items) {
-      const hostId = p.host_id != null && hostExists.get(p.host_id) ? p.host_id : null;
-      const trunkDeviceId = p.trunk_primary_device_id != null && deviceExists.get(p.trunk_primary_device_id) ? p.trunk_primary_device_id : null;
+      const hostId = p.host_id != null && validHosts.has(p.host_id) ? p.host_id : null;
+      const trunkDeviceId = p.trunk_primary_device_id != null && validDevices.has(p.trunk_primary_device_id) ? p.trunk_primary_device_id : null;
       stmt.run(deviceId, p.port_index, p.port_name, p.status, p.speed, p.duplex, p.vlan, p.poe_status, p.poe_power_mw, p.mac_count, p.is_trunk, p.single_mac, p.single_mac_vendor, p.single_mac_ip, p.single_mac_hostname, hostId, p.trunk_neighbor_name ?? null, p.trunk_neighbor_port ?? null, trunkDeviceId, trunkDeviceId ? (p.trunk_primary_name ?? null) : null, p.stp_state ?? null);
     }
   });
 
-  insertMany(ports);
+  replaceAll(ports);
 }
 
 export function getSwitchPortsByDevice(deviceId: number): import("@/types").SwitchPort[] {
@@ -3582,6 +3610,38 @@ export function addStatusHistory(hostId: number, status: "online" | "offline", r
   db().prepare(
     "INSERT INTO status_history (host_id, status, response_time_ms) VALUES (?, ?, ?)"
   ).run(hostId, status, responseTimeMs ?? null);
+}
+
+/**
+ * v0.2.645 audit perf DB8: helper combinato per known-host-check.
+ * Prima il loop faceva 3 fsync separati per host (addStatusHistory +
+ * updateHost + UPDATE last_response_time_ms). Su 360 host = 1080 fsync per
+ * ciclo (~15-20s solo I/O). Ora 1 transazione → ~7s.
+ *
+ * Combina: INSERT status_history + UPDATE hosts.status + last_seen + last_response_time_ms.
+ */
+export function recordHostHeartbeat(
+  hostId: number,
+  status: "online" | "offline",
+  responseTimeMs: number | null,
+): void {
+  const d = db();
+  const tx = d.transaction(() => {
+    d.prepare(
+      "INSERT INTO status_history (host_id, status, response_time_ms) VALUES (?, ?, ?)"
+    ).run(hostId, status, responseTimeMs);
+    // status + last_seen (solo online) + last_response_time_ms in un solo UPDATE
+    if (status === "online") {
+      d.prepare(
+        "UPDATE hosts SET status = ?, last_seen = datetime('now'), last_response_time_ms = ?, updated_at = datetime('now') WHERE id = ?"
+      ).run(status, responseTimeMs, hostId);
+    } else {
+      d.prepare(
+        "UPDATE hosts SET status = ?, last_response_time_ms = ?, updated_at = datetime('now') WHERE id = ?"
+      ).run(status, responseTimeMs, hostId);
+    }
+  });
+  tx();
 }
 
 export function getStatusHistory(hostId: number, limit: number = 100): StatusHistory[] {

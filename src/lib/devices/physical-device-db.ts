@@ -363,20 +363,38 @@ export function manualLinkHostsToPhysicalDevice(
     created = true;
   }
 
-  // Ri-punta tutti gli host al target
+  // v0.2.645 audit perf DB5: UPDATE loop dentro singola transazione (prima
+  // 1 fsync per host → su batch 50 host ~100ms persi solo in sync).
   const updateStmt = db.prepare("UPDATE hosts SET physical_device_id = ?, updated_at = datetime('now') WHERE id = ?");
-  for (const h of hosts) {
-    if (h.physical_device_id !== targetId) updateStmt.run(targetId, h.id);
-  }
+  const updateAll = db.transaction(() => {
+    for (const h of hosts) {
+      if (h.physical_device_id !== targetId) updateStmt.run(targetId, h.id);
+    }
+  });
+  updateAll();
 
-  // Calcola gli orphan (cluster vuoti dopo il merge)
+  // Calcola gli orphan (cluster vuoti dopo il merge). v0.2.645 audit perf DB5:
+  // sostituite 2 COUNT(*) × N device pre-esistenti con 2 SELECT GROUP BY one-shot.
   const orphaned: number[] = [];
-  for (const prevId of existingDeviceIds) {
-    if (prevId === targetId) continue;
-    const remaining = db.prepare("SELECT COUNT(*) AS n FROM hosts WHERE physical_device_id = ?").get(prevId) as { n: number };
-    const remainingDevices = db.prepare("SELECT COUNT(*) AS n FROM network_devices WHERE physical_device_id = ?").get(prevId) as { n: number };
-    if (remaining.n === 0 && remainingDevices.n === 0) {
-      orphaned.push(prevId);
+  const previousIds = existingDeviceIds.filter((id) => id !== targetId);
+  if (previousIds.length > 0) {
+    const ph = previousIds.map(() => "?").join(",");
+    const hostCounts = new Map<number, number>();
+    for (const row of db.prepare(
+      `SELECT physical_device_id AS pid, COUNT(*) AS n FROM hosts WHERE physical_device_id IN (${ph}) GROUP BY physical_device_id`,
+    ).all(...previousIds) as Array<{ pid: number; n: number }>) {
+      hostCounts.set(row.pid, row.n);
+    }
+    const deviceCounts = new Map<number, number>();
+    for (const row of db.prepare(
+      `SELECT physical_device_id AS pid, COUNT(*) AS n FROM network_devices WHERE physical_device_id IN (${ph}) GROUP BY physical_device_id`,
+    ).all(...previousIds) as Array<{ pid: number; n: number }>) {
+      deviceCounts.set(row.pid, row.n);
+    }
+    for (const prevId of previousIds) {
+      if ((hostCounts.get(prevId) ?? 0) === 0 && (deviceCounts.get(prevId) ?? 0) === 0) {
+        orphaned.push(prevId);
+      }
     }
   }
 

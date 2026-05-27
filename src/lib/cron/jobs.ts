@@ -8,8 +8,7 @@ import {
   cleanupStaleHosts,
   getHostsByNetwork,
   getKnownHosts,
-  updateHost,
-  addStatusHistory,
+  recordHostHeartbeat,
   getDb,
   getActiveNmapProfile,
   updateHostIfExists,
@@ -661,9 +660,9 @@ async function checkSingleKnownHost(host: ReturnType<typeof getKnownHosts>[numbe
   }
 
   const newStatus = alive ? "online" : "offline";
-  addStatusHistory(host.id, newStatus, latencyMs);
-  updateHost(host.id, { status: newStatus });
-  getDb().prepare("UPDATE hosts SET last_response_time_ms = ? WHERE id = ?").run(latencyMs, host.id);
+  // v0.2.645 audit perf DB8: 3 fsync → 1 (INSERT status_history + UPDATE
+  // status/last_seen/last_response_time_ms in singola transazione).
+  recordHostHeartbeat(host.id, newStatus, latencyMs);
 }
 
 export async function runKnownHostCheck(networkId: number | null): Promise<void> {

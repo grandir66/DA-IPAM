@@ -1060,6 +1060,10 @@ CREATE INDEX IF NOT EXISTS idx_arp_entries_mac_timestamp ON arp_entries(mac, tim
 CREATE INDEX IF NOT EXISTS idx_mac_port_entries_device ON mac_port_entries(device_id);
 CREATE INDEX IF NOT EXISTS idx_mac_port_entries_mac ON mac_port_entries(mac);
 CREATE INDEX IF NOT EXISTS idx_mac_port_entries_device_mac ON mac_port_entries(device_id, mac);
+-- v0.2.645 audit perf DB2: index composito per "ultimo entry per mac".
+-- Sostituisce il pattern ROW_NUMBER() OVER (PARTITION BY mac) full-scan in
+-- getAllHostsEnriched con JOIN su (mac, MAX(timestamp)) seek-only.
+CREATE INDEX IF NOT EXISTS idx_mac_port_entries_mac_ts ON mac_port_entries(mac, timestamp DESC);
 
 -- Network Router
 CREATE INDEX IF NOT EXISTS idx_network_router_network ON network_router(network_id);

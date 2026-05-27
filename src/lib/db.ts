@@ -5156,6 +5156,17 @@ export function addStatusHistory(hostId: number, status: "online" | "offline", r
   ).run(hostId, status, responseTimeMs ?? null);
 }
 
+// v0.2.645 audit perf DB8: facade → db-tenant.recordHostHeartbeat (combina
+// INSERT status_history + UPDATE status/last_seen/last_response_time_ms in 1 fsync).
+export function recordHostHeartbeat(
+  hostId: number,
+  status: "online" | "offline",
+  responseTimeMs: number | null,
+): void {
+  const tenant = require("./db-tenant");
+  tenant.recordHostHeartbeat(hostId, status, responseTimeMs);
+}
+
 export function getStatusHistory(hostId: number, limit: number = 100): StatusHistory[] {
   return getDb().prepare(
     "SELECT * FROM status_history WHERE host_id = ? ORDER BY checked_at DESC LIMIT ?"

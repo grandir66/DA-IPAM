@@ -741,20 +741,26 @@ export function getTenantDb(tenantCode: string): Database.Database {
   // riavviato durante la loro esecuzione → la Promise fire-and-forget è morta
   // con il process e nessuno li riprenderà. Marchiamoli failed con messaggio
   // chiaro così la UI sblocca e l'utente può ricreare l'operazione.
+  // Skip se patch management non è abilitato per il tenant (tabella non creata).
   try {
-    const r = newDb.prepare(
-      `UPDATE patch_operations
-       SET status = 'failed',
-           finished_at = datetime('now'),
-           error_message = COALESCE(error_message, '') ||
-             CASE WHEN error_message IS NULL OR error_message = ''
-                  THEN 'Service restart durante esecuzione: job non ripreso al riavvio. Ricrea l''operazione.'
-                  ELSE '' END
-       WHERE status IN ('queued', 'running')
-         AND (started_at IS NULL OR started_at < datetime('now', '-10 minutes'))`
-    ).run() as { changes: number };
-    if (r.changes > 0) {
-      console.info(`[db-tenant] ${tenantCode}: patch_operations recovery — ${r.changes} job orfani segnati failed`);
+    const hasTable = newDb.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='patch_operations'"
+    ).get();
+    if (hasTable) {
+      const r = newDb.prepare(
+        `UPDATE patch_operations
+         SET status = 'failed',
+             finished_at = datetime('now'),
+             error_message = COALESCE(error_message, '') ||
+               CASE WHEN error_message IS NULL OR error_message = ''
+                    THEN 'Service restart durante esecuzione: job non ripreso al riavvio. Ricrea l''operazione.'
+                    ELSE '' END
+         WHERE status IN ('queued', 'running')
+           AND (started_at IS NULL OR started_at < datetime('now', '-10 minutes'))`
+      ).run() as { changes: number };
+      if (r.changes > 0) {
+        console.info(`[db-tenant] ${tenantCode}: patch_operations recovery — ${r.changes} job orfani segnati failed`);
+      }
     }
   } catch (e) {
     console.warn(`[db-tenant] ${tenantCode}: patch_operations recovery fallito:`, e);

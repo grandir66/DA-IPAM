@@ -657,7 +657,9 @@ export default function DiscoveryPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/hosts/discovery");
+      // v0.2.647 audit perf UI1: lite mode esclude snmp_data/conflict_flags
+      // (non usati dalla tabella) → payload tipicamente -30/50%.
+      const res = await fetch("/api/hosts/discovery?lite=1");
       if (res.ok) {
         const data: EnrichedHost[] = await res.json();
         setHosts(data);

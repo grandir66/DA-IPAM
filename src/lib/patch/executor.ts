@@ -163,6 +163,13 @@ async function waitForHostFree(
   const start = Date.now();
   // Grace period 10s: include op terminate negli ultimi 10s (choco potrebbe
   // tenere ancora lock .chocolateyPending dopo l'exit del processo).
+  // v0.2.652 hotfix: `finished_at` è scritto via `nowIso()` come ISO 8601
+  // (es. `2026-05-27T15:24:55.611Z`) mentre `datetime('now', '-10 seconds')`
+  // SQLite ritorna `2026-05-27 15:24:45` (no T, no Z, no ms). Il confronto
+  // STRINGA char-by-char era sempre TRUE perché `T` (0x54) > ` ` (0x20) →
+  // qualunque job terminato in qualsiasi momento bloccava la coda 5 minuti
+  // poi falliva. Normalizzo finished_at strippando T/Z e ms così il confronto
+  // diventa pulito tra due stringhe nello stesso formato.
   const stmt = db.prepare(
     `SELECT id FROM patch_operations
       WHERE host_id = ?
@@ -173,7 +180,8 @@ async function waitForHostFree(
           OR (
             status IN ('success','failed','reboot_pending')
             AND finished_at IS NOT NULL
-            AND finished_at > datetime('now', '-10 seconds')
+            AND substr(replace(replace(finished_at, 'T', ' '), 'Z', ''), 1, 19)
+                > datetime('now', '-10 seconds')
           )
         )
       LIMIT 1`

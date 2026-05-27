@@ -736,6 +736,30 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.warn(`[db-tenant] ${tenantCode}: mac_port_entries cleanup fallito:`, e);
   }
 
+  // v0.2.652: recovery patch_operations stuck. Se ci sono job con status='queued'
+  // o 'running' all'apertura del DB, vuol dire che il process Node è stato
+  // riavviato durante la loro esecuzione → la Promise fire-and-forget è morta
+  // con il process e nessuno li riprenderà. Marchiamoli failed con messaggio
+  // chiaro così la UI sblocca e l'utente può ricreare l'operazione.
+  try {
+    const r = newDb.prepare(
+      `UPDATE patch_operations
+       SET status = 'failed',
+           finished_at = datetime('now'),
+           error_message = COALESCE(error_message, '') ||
+             CASE WHEN error_message IS NULL OR error_message = ''
+                  THEN 'Service restart durante esecuzione: job non ripreso al riavvio. Ricrea l''operazione.'
+                  ELSE '' END
+       WHERE status IN ('queued', 'running')
+         AND (started_at IS NULL OR started_at < datetime('now', '-10 minutes'))`
+    ).run() as { changes: number };
+    if (r.changes > 0) {
+      console.info(`[db-tenant] ${tenantCode}: patch_operations recovery — ${r.changes} job orfani segnati failed`);
+    }
+  } catch (e) {
+    console.warn(`[db-tenant] ${tenantCode}: patch_operations recovery fallito:`, e);
+  }
+
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
   return newDb;
 }

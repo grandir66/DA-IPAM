@@ -709,5 +709,35 @@ async function executeUpgradeAsync(
         (err as Error)?.message ?? err
       );
     });
+
+    // v0.2.655: trigger Wazuh sync delayed (30s) per pescare i dati syscollector
+    // aggiornati dal manager. L'agent Wazuh sull'host rileva l'installazione di
+    // pacchetto in real-time tramite event-driven syscollector (Windows event log
+    // o inotify Linux), aggiorna il manager entro pochi secondi. Senza questo
+    // l'utente vede CVE/software vecchio fino al prossimo cron `wazuh_sync`
+    // (default 60min). Con 30s di delay l'agent ha tempo di propagare al manager.
+    setTimeout(() => {
+      void (async () => {
+        try {
+          const { getWazuhAgentForHost, syncSingleAgent } = await import(
+            "@/lib/integrations/wazuh-sync"
+          );
+          const { withTenant } = await import("@/lib/db-tenant");
+          await withTenant(tenantCode, async () => {
+            const agent = getWazuhAgentForHost(opts.hostId);
+            if (!agent) return; // host non collegato a Wazuh: skip
+            await syncSingleAgent(agent.agent_id);
+            console.info(
+              `[patch/executor] op=${operationId}: Wazuh sync post-upgrade completato per agent ${agent.agent_id}`
+            );
+          });
+        } catch (err) {
+          console.warn(
+            `[patch/executor] Wazuh sync post-upgrade op=${operationId} fallito (non critico):`,
+            (err as Error)?.message ?? err
+          );
+        }
+      })();
+    }, 30_000).unref();
   }
 }

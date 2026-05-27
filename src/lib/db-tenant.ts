@@ -5094,7 +5094,28 @@ export interface HostVulnSummary {
   total: number;
 }
 
+// v0.2.646 audit perf UI11: cache per-tenant del summary CVE, TTL 30s.
+// La query fa 2 full-scan + GROUP BY su vuln_findings + wazuh_vuln (100k row
+// tipici = 500-1500ms). Viene invocata ad ogni hit di /api/hosts/discovery
+// (apertura pagina + refetch post-mutation). Cache abbatte il costo dopo
+// la prima call, invalidata implicitamente dal TTL.
+interface VulnSummaryCacheEntry {
+  data: Map<number, HostVulnSummary>;
+  expires: number;
+}
+const vulnSummaryCache = new Map<string, VulnSummaryCacheEntry>();
+const VULN_SUMMARY_TTL_MS = 30_000;
+
+export function invalidateAllHostsVulnSummaryCache(): void {
+  const tenant = getCurrentTenantCode() ?? "_default";
+  vulnSummaryCache.delete(tenant);
+}
+
 export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
+  const tenant = getCurrentTenantCode() ?? "_default";
+  const cached = vulnSummaryCache.get(tenant);
+  if (cached && cached.expires > Date.now()) return cached.data;
+
   // Aggregazione SU TUTTE le scan_run + Wazuh: per ogni host conta findings
   // per severità da entrambe le fonti (scanner-edge `vuln_findings` e Wazuh
   // `wazuh_vuln` joinato via wazuh_agent.host_id). Per discovery interessa
@@ -5144,6 +5165,7 @@ export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
     }
     map.set(r.host_id, cur);
   }
+  vulnSummaryCache.set(tenant, { data: map, expires: Date.now() + VULN_SUMMARY_TTL_MS });
   return map;
 }
 

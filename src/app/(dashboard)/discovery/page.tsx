@@ -388,6 +388,14 @@ export default function DiscoveryPage() {
   const [credentials, setCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  // v0.2.646 audit perf UI3: debounce 250ms sulla search per non rifare il
+  // filter+sort su tutto l'array hosts ad ogni keystroke. Il filter è O(N)
+  // con JSON.parse in alcuni accessor → su 1000+ host ogni tasto = 100-300ms.
+  const [qDebounced, setQDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q), 250);
+    return () => clearTimeout(t);
+  }, [q]);
   const [statusFilter, setStatusFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [networkFilter, setNetworkFilter] = useState("");
@@ -801,9 +809,30 @@ export default function DiscoveryPage() {
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "it"));
   }, [hosts]);
 
+  // ---------- pre-arricchimento ----------
+  // v0.2.646 audit perf UI3: precalcola i campi parsati una sola volta dopo
+  // fetchData, invece di chiamare JSON.parse dentro ogni accessor del sort
+  // (eseguito O(N log N) volte ad ogni render). Mappa hostId → extras.
+  const hostExtras = useMemo(() => {
+    const m = new Map<number, { detectedLabel: string; openPortsTcp: string; openPortsUdp: string; fpConfidence: number }>();
+    for (const h of hosts) {
+      const det = parseDetectedDeviceFromDetectionJson(h.detection_json);
+      m.set(h.id, {
+        detectedLabel: det?.label ?? "",
+        openPortsTcp: parsePortsByProtocol(h.open_ports, "tcp"),
+        openPortsUdp: parsePortsByProtocol(h.open_ports, "udp"),
+        fpConfidence: getFpConfidence(h),
+      });
+    }
+    return m;
+  }, [hosts]);
+
   // ---------- filter ----------
+  // v0.2.646 audit perf UI3: usa qDebounced (250ms) per il filter, non `q`.
+  // L'input rimane reattivo (controlled component), ma il filter su 1000+ host
+  // gira al massimo 1 volta ogni 250ms invece di a ogni keystroke.
   const filtered = useMemo(() => {
-    const lower = q.toLowerCase().trim();
+    const lower = qDebounced.toLowerCase().trim();
     return hosts.filter((h) => {
       if (statusFilter && h.status !== statusFilter) return false;
       if (classFilter) {
@@ -835,7 +864,7 @@ export default function DiscoveryPage() {
       }
       return true;
     });
-  }, [hosts, q, statusFilter, classFilter, networkFilter, vulnFilter, presets]);
+  }, [hosts, qDebounced, statusFilter, classFilter, networkFilter, vulnFilter, presets]);
 
   // ---------- sort ----------
   const sortAccessors = useMemo(() => ({
@@ -863,19 +892,21 @@ export default function DiscoveryPage() {
     firmware:            (h: EnrichedHost) => h.firmware ?? "",
     last_seen:           (h: EnrichedHost) => h.last_seen ? new Date(h.last_seen).getTime() : 0,
     first_seen:          (h: EnrichedHost) => h.first_seen ? new Date(h.first_seen).getTime() : 0,
-    fp_confidence:       (h: EnrichedHost) => getFpConfidence(h),
+    // v0.2.646 audit perf UI3: accessor leggono dalla Map precalcolata (O(1))
+    // invece di JSON.parse per ogni invocazione (sort = O(N log N) × parse).
+    fp_confidence:       (h: EnrichedHost) => hostExtras.get(h.id)?.fpConfidence ?? 0,
     validated_creds:     (h: EnrichedHost) => (h.validated_protocols || []).length,
-    detected:            (h: EnrichedHost) => { const d = parseDetectedDeviceFromDetectionJson(h.detection_json); return d?.label ?? ""; },
+    detected:            (h: EnrichedHost) => hostExtras.get(h.id)?.detectedLabel ?? "",
     multihomed:          (h: EnrichedHost) => h.multihomed ? h.multihomed.peers.length + 1 : 0,
-    open_ports_tcp:      (h: EnrichedHost) => parsePortsByProtocol(h.open_ports, "tcp"),
-    open_ports_udp:      (h: EnrichedHost) => parsePortsByProtocol(h.open_ports, "udp"),
+    open_ports_tcp:      (h: EnrichedHost) => hostExtras.get(h.id)?.openPortsTcp ?? "",
+    open_ports_udp:      (h: EnrichedHost) => hostExtras.get(h.id)?.openPortsUdp ?? "",
     in_ad:               (h: EnrichedHost) => h.ad_dns_host_name ? 1 : 0,
     vuln_max_severity:   (h: EnrichedHost) => {
       const rank: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3, Log: 4 };
       return h.vuln ? (rank[h.vuln.max_severity] ?? 9) : 99;
     },
     vuln_counts:         (h: EnrichedHost) => h.vuln ? (h.vuln.critical * 1000 + h.vuln.high) : -1,
-  }), []);
+  }), [hostExtras]);
 
   const { sortedRows, sortColumn, sortDirection, onSort } = useClientTableSort(
     filtered, sortAccessors, "ip", "asc",

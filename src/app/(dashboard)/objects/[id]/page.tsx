@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,14 +25,18 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { PromoteHostDialog } from "@/components/devices/promote-host-dialog";
-import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
-import { EditDeviceDialog } from "@/components/devices/edit-device-dialog";
+// v0.2.646 audit perf UI9: i dialog modali (Promote/LinkIps/EditDevice) e i
+// componenti grafici pesanti (LatencyChart/UptimeTimeline/LibreNMSGraphs) sono
+// caricati on-demand. Prima erano nel bundle iniziale anche se l'utente non li
+// apriva mai → ~100-300KB JS evitati al mount.
+const PromoteHostDialog = dynamic(() => import("@/components/devices/promote-host-dialog").then((m) => ({ default: m.PromoteHostDialog })), { ssr: false });
+const LinkIpsDialog = dynamic(() => import("@/components/devices/link-ips-dialog").then((m) => ({ default: m.LinkIpsDialog })), { ssr: false });
+const EditDeviceDialog = dynamic(() => import("@/components/devices/edit-device-dialog").then((m) => ({ default: m.EditDeviceDialog })), { ssr: false });
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
-import { UptimeTimeline } from "@/components/shared/uptime-timeline";
-import { LatencyChart } from "@/app/(dashboard)/hosts/[id]/latency-chart";
-import { LibreNMSDeviceGraphs } from "@/components/integrations/librenms-device-graphs";
+const UptimeTimeline = dynamic(() => import("@/components/shared/uptime-timeline").then((m) => ({ default: m.UptimeTimeline })), { ssr: false });
+const LatencyChart = dynamic(() => import("@/app/(dashboard)/hosts/[id]/latency-chart").then((m) => ({ default: m.LatencyChart })), { ssr: false });
+const LibreNMSDeviceGraphs = dynamic(() => import("@/components/integrations/librenms-device-graphs").then((m) => ({ default: m.LibreNMSDeviceGraphs })), { ssr: false });
 import {
   ArrowLeft,
   RefreshCw,

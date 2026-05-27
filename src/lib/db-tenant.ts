@@ -766,6 +766,36 @@ function db(): Database.Database {
   return getTenantDb(code);
 }
 
+// v0.2.648 audit perf MC2: statement cache per-Database. better-sqlite3 non
+// cacha internamente, quindi `db.prepare(sql)` ricompila ad ogni call (~50-100µs).
+// Su hot path (getHostsByNetwork, getScheduledJobById ad ogni cron tick, ...)
+// è puro overhead. Cached via WeakMap automaticamente GC'd quando il Database
+// handle viene evicted dalla LRU.
+const statementCache = new WeakMap<Database.Database, Map<string, Database.Statement>>();
+
+/**
+ * Ritorna un prepared statement riusabile per (db, sql). Cache automatica.
+ * USO: `prep("SELECT ...").get(...)` invece di `db().prepare("SELECT ...").get(...)`.
+ * Idempotente: la stessa stringa SQL produce la stessa Statement istanza.
+ *
+ * Generic <P>: tipo varargs dei parameter. Default unknown[]. Necessario per
+ * compatibilità con Statement.run/get/all che accettano signature variadica.
+ */
+export function prep<P extends unknown[] = unknown[]>(sql: string, targetDb?: Database.Database): Database.Statement<P> {
+  const d = targetDb ?? db();
+  let bucket = statementCache.get(d);
+  if (!bucket) {
+    bucket = new Map();
+    statementCache.set(d, bucket);
+  }
+  let stmt = bucket.get(sql);
+  if (!stmt) {
+    stmt = d.prepare(sql);
+    bucket.set(sql, stmt);
+  }
+  return stmt as Database.Statement<P>;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // UTILITIES (local to this module)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1015,9 +1045,8 @@ export function deleteNetwork(id: number): boolean {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function getHostsByNetwork(networkId: number): Host[] {
-  const hosts = db().prepare(
-    "SELECT * FROM hosts WHERE network_id = ?"
-  ).all(networkId) as Host[];
+  // v0.2.648 audit perf MC2: prep cached (chiamato 100+ volte per scan grande).
+  const hosts = prep("SELECT * FROM hosts WHERE network_id = ?").all(networkId) as Host[];
   return hosts.sort((a, b) => ipToNum(a.ip) - ipToNum(b.ip));
 }
 
@@ -3439,20 +3468,22 @@ export function getPrimaryBindingForProtocol(deviceId: number, protocolType: str
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function getScheduledJobs(): ScheduledJob[] {
-  return db().prepare("SELECT * FROM scheduled_jobs ORDER BY id").all() as ScheduledJob[];
+  // v0.2.648 audit perf MC2: prep cached.
+  return prep("SELECT * FROM scheduled_jobs ORDER BY id").all() as ScheduledJob[];
 }
 
 /**
  * v0.2.642 audit perf MC3: fetch mirato per cron tick (`runJob`). Prima ogni
  * tick faceva `getScheduledJobs()` (full table scan + .find() lato JS); su 10
  * tenant × 8 job × 1 tick/min = 80 query/min inutili. Ora una sola SELECT con WHERE id.
+ * v0.2.648 audit perf MC2: prep cached (lo stesso statement riusato ogni tick).
  */
 export function getScheduledJobById(id: number): ScheduledJob | undefined {
-  return db().prepare("SELECT * FROM scheduled_jobs WHERE id = ?").get(id) as ScheduledJob | undefined;
+  return prep("SELECT * FROM scheduled_jobs WHERE id = ?").get(id) as ScheduledJob | undefined;
 }
 
 export function getEnabledJobs(): ScheduledJob[] {
-  return db().prepare("SELECT * FROM scheduled_jobs WHERE enabled = 1").all() as ScheduledJob[];
+  return prep("SELECT * FROM scheduled_jobs WHERE enabled = 1").all() as ScheduledJob[];
 }
 
 export function createScheduledJob(input: ScheduledJobInput): ScheduledJob {
@@ -3607,9 +3638,9 @@ export function applyTenantSchedulerDefaults(): { jobsDisabled: number; jobsSeed
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function addStatusHistory(hostId: number, status: "online" | "offline", responseTimeMs?: number | null): void {
-  db().prepare(
-    "INSERT INTO status_history (host_id, status, response_time_ms) VALUES (?, ?, ?)"
-  ).run(hostId, status, responseTimeMs ?? null);
+  // v0.2.648 audit perf MC2: prep cached.
+  prep("INSERT INTO status_history (host_id, status, response_time_ms) VALUES (?, ?, ?)")
+    .run(hostId, status, responseTimeMs ?? null);
 }
 
 /**

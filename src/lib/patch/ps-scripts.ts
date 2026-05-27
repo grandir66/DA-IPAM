@@ -126,6 +126,16 @@ if (-not $choco) {
 & choco upgrade ${packageId} -y --no-progress --limit-output ${verArg} 2>&1 | Tee-Object -FilePath $logPath
 $ec = $LASTEXITCODE
 "EXIT_CODE=$ec" | Tee-Object -FilePath $logPath -Append
+# v0.2.654: leggi versione effettivamente installata dopo l'upgrade.
+# choco list --limit-output produce \`<id>|<version>\` (es. \`notepadplusplus|8.7.0\`).
+# Filtriamo esattamente il pacchetto richiesto per evitare match parziali.
+$listOut = & choco list ${packageId} --limit-output --exact 2>&1 | Select-String '^[^|]+\\|[^|]+$' | Select-Object -First 1
+if ($listOut) {
+  $parts = $listOut.ToString() -split '\\|', 2
+  if ($parts.Length -eq 2) {
+    "PKG_VERSION_AFTER=$($parts[1].Trim())" | Tee-Object -FilePath $logPath -Append
+  }
+}
 exit $ec`;
 }
 

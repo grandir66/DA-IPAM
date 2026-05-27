@@ -676,11 +676,38 @@ async function executeUpgradeAsync(
   const exitCode = parseExitCodeFromOutput(stdout);
   const { status, rebootRequired } = statusFromExitCode(exitCode);
 
+  // v0.2.654: estrai la versione installata post-upgrade dallo stdout.
+  // Il script PowerShell appende `PKG_VERSION_AFTER=<ver>` dopo aver fatto
+  // `choco list <pkg> --exact`. Se trovato, popoliamo il campo dedicato
+  // del DB così la dashboard mostra la nuova versione e l'utente sa che è
+  // andata davvero a buon fine (non solo "exit 0" generico).
+  const verAfterMatch = /^PKG_VERSION_AFTER=(.+)$/m.exec(stdout);
+  const packageVersionAfter = verAfterMatch?.[1]?.trim() || null;
+
   updateOperation(db, operationId, {
     status,
     exitCode,
     rebootRequired,
     finishedAt: nowIso(),
     errorMessage: status === "failed" ? tailForError(stdout) : null,
+    packageVersionAfter,
   });
+
+  // v0.2.654: re-probe automatico fire-and-forget dopo upgrade success.
+  // Aggiorna la lista degli outdated del device — senza questo l'utente
+  // doveva cliccare manualmente "Ricontrolla aggiornamenti" per veder
+  // sparire il pacchetto appena aggiornato dalla lista. Skip se l'upgrade
+  // è fallito (probe non aggiungerebbe informazione utile).
+  if (status === "success" || status === "reboot_pending") {
+    void executeProbe({
+      hostId: opts.hostId,
+      userId: opts.userId,
+      tenantCode,
+    }).catch((err) => {
+      console.warn(
+        `[patch/executor] re-probe post-upgrade op=${operationId} fallito (non critico):`,
+        (err as Error)?.message ?? err
+      );
+    });
+  }
 }

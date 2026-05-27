@@ -3098,6 +3098,22 @@ export function getRouters(): NetworkDevice[] {
   return getDb().prepare("SELECT * FROM network_devices WHERE device_type = 'router' ORDER BY name").all() as NetworkDevice[];
 }
 
+/**
+ * v0.2.661: sources DHCP effettive — qualunque network_device con almeno 1
+ * lease in `dhcp_leases`. Include Mikrotik, Windows DHCP, ecc.
+ */
+export function getDhcpSources(): Array<{ id: number; name: string; host: string; vendor: string; type: string; lease_count: number; last_synced: string | null }> {
+  return getDb().prepare(`
+    SELECT nd.id, nd.name, nd.host, nd.vendor, d.source_type AS type,
+           COUNT(d.id) AS lease_count,
+           MAX(d.last_synced) AS last_synced
+    FROM network_devices nd
+    JOIN dhcp_leases d ON d.source_device_id = nd.id
+    GROUP BY nd.id, nd.name, nd.host, nd.vendor, d.source_type
+    ORDER BY lease_count DESC, nd.name ASC
+  `).all() as Array<{ id: number; name: string; host: string; vendor: string; type: string; lease_count: number; last_synced: string | null }>;
+}
+
 /** Sorgenti ARP utilizzabili come "Router ARP default" di una subnet:
  *  qualsiasi device con use_for_arp_poll=1 (router, firewall, switch L3, ...).
  *  Fallback per record legacy: device_type='router' o vendor='stormshield'. */

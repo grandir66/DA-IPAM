@@ -15,6 +15,7 @@ import {
   deleteDhcpLeasesByDevice,
   buildNetworkLookup,
   getRouters,
+  getDhcpSources,
 } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
 
@@ -29,16 +30,10 @@ export async function GET(request: NextRequest) {
   }
 
   if (action === "sources") {
-    const routers = getRouters();
-    const dhcpSources = routers
-      .filter((r) => r.vendor === "mikrotik" && r.protocol === "ssh")
-      .map((r) => ({
-        id: r.id,
-        name: r.name,
-        host: r.host,
-        vendor: r.vendor,
-        type: "mikrotik" as const,
-      }));
+    // v0.2.661: sources reali dal DB dhcp_leases — include sia Mikrotik sia
+    // Windows DHCP (auto-create da sync AD). Prima filtrava solo mikrotik+ssh
+    // → sources Windows non comparivano nella UI nonostante avessero lease.
+    const dhcpSources = getDhcpSources();
     return NextResponse.json({ sources: dhcpSources });
   }
 

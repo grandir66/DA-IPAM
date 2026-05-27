@@ -97,9 +97,11 @@ export default function DhcpPage() {
   const [total, setTotal] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   // v0.2.659: filtro "solo attivi recenti" — lease visti negli ultimi N giorni.
-  // Default ON con 7gg per nascondere relitti vecchi (mesi/anni accumulati nel DHCP).
-  const [onlyRecent, setOnlyRecent] = useState(true);
-  const [recentDays, setRecentDays] = useState(7);
+  // v0.2.661: default OFF per evitare di nascondere tutti i lease quando il
+  // DB legacy ha last_seen=null (es. sync Mikrotik pre-fix). L'utente lo attiva
+  // manualmente quando vuole filtrare i relitti.
+  const [onlyRecent, setOnlyRecent] = useState(false);
+  const [recentDays, setRecentDays] = useState(30);
   const [sourceTypeFilter, setSourceTypeFilter] = useState<string>("all");
   const [sourceDeviceFilter, setSourceDeviceFilter] = useState<string>("all");
   const [sortColumn, setSortColumn] = useState<string | null>("last_synced");
@@ -388,7 +390,24 @@ export default function DhcpPage() {
               <p className="text-lg">Nessun lease DHCP trovato</p>
               <p className="text-sm mt-1">Clicca &quot;Sincronizza tutti&quot; per acquisire i lease dai router</p>
             </div>
-          ) : (
+          ) : (() => {
+              // v0.2.661: se il filtro "solo attivi recenti" nasconde TUTTI i lease,
+              // mostra un messaggio chiaro invece di tabella vuota silenziosa.
+              const visibleCount = onlyRecent
+                ? leases.filter((l) => l.last_seen && (Date.now() - Date.parse(l.last_seen)) / 86400000 <= recentDays).length
+                : leases.length;
+              if (visibleCount === 0 && onlyRecent) {
+                return (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Server className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p className="text-lg">Nessun lease attivo negli ultimi {recentDays} {recentDays === 1 ? "giorno" : "giorni"}</p>
+                    <p className="text-sm mt-1">{leases.length} lease totali nascosti dal filtro. Disabilita &quot;Solo attivi&quot; o aumenta la finestra.</p>
+                    <Button variant="link" onClick={() => setOnlyRecent(false)} className="mt-2">Mostra tutti</Button>
+                  </div>
+                );
+              }
+              return null;
+            })() || (
             <>
               <div className="overflow-x-auto">
                 <Table>

@@ -8,6 +8,7 @@ import {
   Users,
   FolderTree,
   RefreshCw,
+  BookOpen,
   Plus,
   Trash2,
   TestTube,
@@ -31,6 +32,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
+import { ADSetupGuideDialog } from "@/components/shared/ad-setup-guide-dialog";
 
 interface AdIntegration {
   id: number;
@@ -147,6 +149,8 @@ export default function ActiveDirectoryPage() {
 
   const [winrmCredentials, setWinrmCredentials] = useState<WinrmCredential[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // v0.2.657: guida configurazione DC
+  const [adGuideOpen, setAdGuideOpen] = useState(false);
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
 
@@ -435,6 +439,16 @@ export default function ActiveDirectoryPage() {
           <FolderTree className="w-6 h-6 text-primary" />
           Active Directory
         </h1>
+        <div className="flex items-center gap-2">
+          {/* v0.2.657: guida configurazione DC (LDAPS, WinRM, DHCP, svc account) */}
+          <Button
+            variant="outline"
+            onClick={() => setAdGuideOpen(true)}
+            title="Guida configurazione Domain Controller (LDAPS, WinRM, DHCP, service account)"
+          >
+            <BookOpen className="w-4 h-4 mr-2" />
+            Guida DC
+          </Button>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger render={<Button><Plus className="w-4 h-4 mr-2" />Nuova integrazione</Button>} />
           <DialogContent className="sm:max-w-[540px]">
@@ -553,6 +567,11 @@ export default function ActiveDirectoryPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
+      </div>
+
+      {/* v0.2.657: dialog guida configurazione DC */}
+      <ADSetupGuideDialog open={adGuideOpen} onOpenChange={setAdGuideOpen} />
 
       {/* Dialog modifica integrazione */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
@@ -675,7 +694,6 @@ export default function ActiveDirectoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      </div>
 
       {integrations.length === 0 ? (
         <Card>

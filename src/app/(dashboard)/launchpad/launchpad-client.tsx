@@ -51,21 +51,46 @@ import {
 import type { CredentialKind, SystemCredential } from "@/lib/credentials-vault";
 
 /**
- * Mappa kind+label → anchor della card di configurazione nell'integration tab
- * (/settings?tab=integrazioni#int-<anchor>). Per il kind "other" disambiguiamo
- * via label per i casi noti (Loki). Ritorna null se non c'è una pagina di
- * configurazione corrispondente (es. truenas, hub, tailscale, pve → solo vault).
+ * Mappa kind+label → URL della pagina di configurazione corrispondente.
+ * Le integrazioni Docker (Wazuh, LibreNMS, Graylog, Scanner-Edge, Loki) vivono
+ * tutte sotto /settings?tab=integrazioni#int-<anchor>. Il Hub URL pubblico
+ * (usato per enrollment agenti) vive invece in /agents#hub-url-config.
+ *
+ * Ritorna l'URL completo (deep-link diretto) oppure null se la entry vault è
+ * "stand-alone" (nessuna pagina di config dedicata — usato come hint testuale
+ * via getCredentialUsageHint).
  */
-function getIntegrationAnchor(item: SystemCredential): string | null {
+function getIntegrationConfigHref(item: SystemCredential): string | null {
   const label = item.label.toLowerCase();
   switch (item.kind) {
-    case "wazuh": return "wazuh";
-    case "librenms": return "librenms";
-    case "graylog": return "graylog";
-    case "edge": return "edge";
+    case "wazuh": return "/settings?tab=integrazioni#int-wazuh";
+    case "librenms": return "/settings?tab=integrazioni#int-librenms";
+    case "graylog": return "/settings?tab=integrazioni#int-graylog";
+    case "edge": return "/settings?tab=integrazioni#int-edge";
+    case "hub": return "/agents#hub-url-config";
     case "other":
-      if (label.includes("loki")) return "loki";
+      if (label.includes("loki")) return "/settings?tab=integrazioni#int-loki";
       return null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Per i kind senza pagina di config (Tailscale, Proxmox, TrueNAS, "other" non-Loki)
+ * ritorna una breve descrizione di dove la credenziale viene usata in DA-IPAM.
+ * Aiuta l'utente a capire cosa farà la credenziale prima di salvarla.
+ */
+function getCredentialUsageHint(item: SystemCredential): string | null {
+  switch (item.kind) {
+    case "tailscale":
+      return "Tailscale auth key — usato dal wizard nuovo agente per join automatico VPN. Nessuna pagina config: la credenziale viene letta solo al momento dell'enrollment.";
+    case "pve":
+      return "Proxmox API — letto da /devices durante match per-device (Proxmox-targets). Nessuna pagina config centralizzata.";
+    case "truenas":
+      return "TrueNAS target — riservato a backup remoti futuri. Oggi solo storage del secret, integrazione non ancora attiva.";
+    case "other":
+      return "Credenziale generica — usata da script/integrazioni custom. Nessuna pagina config standard.";
     default:
       return null;
   }
@@ -552,37 +577,56 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                     </div>
                   )}
 
-                  {/* Link → pagina di configurazione integrazione (deep-link).
-                      Variante warning quando la entry è incompleta (manca URL
-                      o credenziali), variante muted quando è solo un "vai a config". */}
+                  {/* Link → pagina di configurazione (deep-link). Variante
+                      warning se entry incompleta. Per i kind senza pagina di
+                      config dedicata mostriamo invece una nota testuale che
+                      spiega dove la credenziale viene effettivamente usata. */}
                   {(() => {
-                    const anchor = getIntegrationAnchor(item);
-                    if (!anchor) return null;
-                    const incomplete = isCredentialIncomplete(item);
-                    const href = `/settings?tab=integrazioni#int-${anchor}`;
-                    if (incomplete) {
+                    const href = getIntegrationConfigHref(item);
+                    if (href) {
+                      const incomplete = isCredentialIncomplete(item);
+                      // Label dinamico: "Impostazioni" per /settings,
+                      // "wizard agenti" per /agents (Hub URL config sta lì).
+                      const destinationLabel = href.startsWith("/agents")
+                        ? "wizard agenti"
+                        : "Impostazioni";
+                      if (incomplete) {
+                        return (
+                          <a
+                            href={href}
+                            className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-2 py-1.5 text-xs text-amber-900 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/40 transition-colors"
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            <span className="flex-1 leading-tight">
+                              Config incompleta — vai a {destinationLabel}
+                            </span>
+                            <SettingsIcon className="h-3.5 w-3.5 shrink-0" />
+                          </a>
+                        );
+                      }
+                      const linkLabel = href.startsWith("/agents")
+                        ? "Hub URL & enrollment →"
+                        : "Configura integrazione →";
                       return (
                         <a
                           href={href}
-                          className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-2 py-1.5 text-xs text-amber-900 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/40 transition-colors"
+                          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                         >
-                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                          <span className="flex-1 leading-tight">
-                            Config incompleta — vai a Impostazioni
-                          </span>
-                          <SettingsIcon className="h-3.5 w-3.5 shrink-0" />
+                          <SettingsIcon className="h-3 w-3" />
+                          {linkLabel}
                         </a>
                       );
                     }
-                    return (
-                      <a
-                        href={href}
-                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <SettingsIcon className="h-3 w-3" />
-                        Configura integrazione →
-                      </a>
-                    );
+                    // Nessuna pagina di config: mostra hint d'uso (se disponibile).
+                    const hint = getCredentialUsageHint(item);
+                    if (hint) {
+                      return (
+                        <p className="text-[11px] text-muted-foreground italic leading-snug">
+                          {hint}
+                        </p>
+                      );
+                    }
+                    return null;
                   })()}
 
                   <div className="flex items-center gap-1 pt-2 border-t mt-2">

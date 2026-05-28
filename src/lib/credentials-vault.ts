@@ -350,11 +350,19 @@ export function listCredentialEvents(opts: { credentialId?: number; limit?: numb
 // Sync da legacy settings.integration_* → vault (one-shot migration helper)
 // ============================================================================
 import { getSetting } from "./db-hub";
+import { getTenantDb } from "./db-tenant";
+import { getActiveTenants } from "./db-hub";
 
 /**
- * Importa le credenziali esistenti dalle `settings.integration_*` plain-text
- * nel vault cifrato. Idempotente: crea le entry mancanti, NON sovrascrive.
- * Restituisce {created, skipped}.
+ * Importa le credenziali esistenti nel vault cifrato.
+ * Idempotente: crea le entry mancanti, NON sovrascrive.
+ *
+ * Sorgenti:
+ *  - hub `settings.integration_librenms_*`  (plain text legacy)
+ *  - hub `settings.integration_graylog_*`   (plain text legacy)
+ *  - hub `settings.integration_loki_*`      (plain text legacy)
+ *  - hub `settings.integration_wazuh_*`     (password già encrypted via crypto.ts)
+ *  - tenant `vuln_scanners`                  (scanner-edge per ogni tenant)
  */
 export function syncFromLegacySettings(): { created: number; skipped: number } {
   const existing = listCredentials();
@@ -367,6 +375,7 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
     label: string,
     fields: {
       url?: string;
+      api_url?: string;
       username?: string;
       password?: string;
       api_token?: string;
@@ -385,6 +394,7 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
       kind,
       label,
       url: fields.url ?? null,
+      api_url: fields.api_url ?? null,
       username: fields.username ?? null,
       password: fields.password || null,
       api_token: fields.api_token || null,
@@ -392,14 +402,15 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
     created++;
   };
 
-  // LibreNMS
+  // LibreNMS (settings legacy plain-text)
   tryAdd("librenms", "LibreNMS (managed)", {
     url: getSetting("integration_librenms_url") ?? undefined,
+    username: "admin",
     api_token: getSetting("integration_librenms_api_token") ?? undefined,
     password: getSetting("integration_librenms_admin_password") ?? undefined,
   });
 
-  // Graylog
+  // Graylog (settings legacy plain-text)
   tryAdd("graylog", "Graylog (managed)", {
     url: getSetting("integration_graylog_url") ?? undefined,
     username: getSetting("integration_graylog_username") ?? undefined,
@@ -407,11 +418,55 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
     api_token: getSetting("integration_graylog_api_token") ?? undefined,
   });
 
-  // Loki (no UI tipico — solo URL/token, niente login)
+  // Loki (settings legacy, no UI)
   tryAdd("other", "Loki", {
     url: getSetting("integration_loki_url") ?? undefined,
     api_token: getSetting("integration_loki_api_token") ?? undefined,
   });
+
+  // Wazuh Manager (settings hub, password già encrypted via crypto.ts)
+  const wzPasswordEnc = getSetting("integration_wazuh_password_encrypted");
+  const wzPassword = wzPasswordEnc ? safeDecrypt(wzPasswordEnc) : null;
+  tryAdd("wazuh", "Wazuh Manager", {
+    url: getSetting("integration_wazuh_url") ?? undefined,
+    username: getSetting("integration_wazuh_username") ?? undefined,
+    password: wzPassword ?? undefined,
+  });
+
+  // Wazuh Indexer (OpenSearch)
+  const wzIdxPasswordEnc = getSetting("integration_wazuh_indexer_password_encrypted");
+  const wzIdxPassword = wzIdxPasswordEnc ? safeDecrypt(wzIdxPasswordEnc) : null;
+  tryAdd("wazuh", "Wazuh Indexer (OpenSearch)", {
+    url: getSetting("integration_wazuh_indexer_url") ?? undefined,
+    username: getSetting("integration_wazuh_indexer_username") ?? undefined,
+    password: wzIdxPassword ?? undefined,
+  });
+
+  // Scanner-Edge: scan tenant DBs alla ricerca di vuln_scanners (token_encrypted).
+  // Aggrega come "<scanner.name> (<tenant>)" — un'entry per ogni tenant×scanner.
+  try {
+    const tenants = getActiveTenants();
+    for (const t of tenants) {
+      try {
+        const tdb = getTenantDb(t.codice_cliente);
+        const scanners = tdb
+          .prepare("SELECT name, base_url, token_encrypted FROM vuln_scanners WHERE enabled = 1")
+          .all() as Array<{ name: string; base_url: string; token_encrypted: string }>;
+        for (const s of scanners) {
+          const token = s.token_encrypted ? safeDecrypt(s.token_encrypted) : null;
+          tryAdd("edge", `${s.name} (${t.codice_cliente})`, {
+            url: s.base_url,
+            api_url: s.base_url,
+            api_token: token ?? undefined,
+          });
+        }
+      } catch {
+        // tenant DB illeggibile: salta silenzioso (non-critical per sync)
+      }
+    }
+  } catch {
+    // ignore
+  }
 
   return { created, skipped };
 }

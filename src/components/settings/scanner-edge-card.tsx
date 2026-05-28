@@ -163,7 +163,7 @@ export function ScannerEdgeCard() {
   }
 
   return (
-    <div className="rounded-md border bg-card p-4 space-y-3">
+    <div id="int-edge" data-integration-anchor="edge" className="rounded-md border bg-card p-4 space-y-3 scroll-mt-20">
       <div className="flex items-start justify-between">
         <div>
           <h3 className="font-semibold">Scanner-Edge (DA-Vul-can)</h3>

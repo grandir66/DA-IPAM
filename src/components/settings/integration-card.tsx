@@ -237,7 +237,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
 
   if (loading) {
     return (
-      <Card>
+      <Card id={`int-${component}`} data-integration-anchor={component} className="scroll-mt-20">
         <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
         <CardContent><Loader2 className="h-4 w-4 animate-spin" /></CardContent>
       </Card>
@@ -245,7 +245,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
   }
 
   return (
-    <Card>
+    <Card id={`int-${component}`} data-integration-anchor={component} className="scroll-mt-20">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>

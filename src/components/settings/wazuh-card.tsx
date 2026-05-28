@@ -224,7 +224,7 @@ export function WazuhCard() {
   const canTest = Boolean(form.url) && Boolean(form.username) && (Boolean(form.password) || hasSavedManagerPassword);
 
   return (
-    <div className="rounded-md border bg-card p-4 space-y-3">
+    <div id="int-wazuh" data-integration-anchor="wazuh" className="rounded-md border bg-card p-4 space-y-3 scroll-mt-20">
       <div className="flex items-start justify-between">
         <div>
           <h3 className="font-semibold flex items-center gap-2">

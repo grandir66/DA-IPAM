@@ -23,6 +23,8 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Settings as SettingsIcon,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -47,6 +49,35 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { CredentialKind, SystemCredential } from "@/lib/credentials-vault";
+
+/**
+ * Mappa kind+label → anchor della card di configurazione nell'integration tab
+ * (/settings?tab=integrazioni#int-<anchor>). Per il kind "other" disambiguiamo
+ * via label per i casi noti (Loki). Ritorna null se non c'è una pagina di
+ * configurazione corrispondente (es. truenas, hub, tailscale, pve → solo vault).
+ */
+function getIntegrationAnchor(item: SystemCredential): string | null {
+  const label = item.label.toLowerCase();
+  switch (item.kind) {
+    case "wazuh": return "wazuh";
+    case "librenms": return "librenms";
+    case "graylog": return "graylog";
+    case "edge": return "edge";
+    case "other":
+      if (label.includes("loki")) return "loki";
+      return null;
+    default:
+      return null;
+  }
+}
+
+/** Una entry vault è "incompleta" quando non può completare un test di
+ *  connessione: manca URL oppure mancano sia password che api_token. */
+function isCredentialIncomplete(item: SystemCredential): boolean {
+  if (!item.url && !item.api_url) return true;
+  if (!item.has_password && !item.has_api_token) return true;
+  return false;
+}
 
 const KIND_META: Record<CredentialKind, { icon: typeof Shield; label: string; color: string }> = {
   wazuh: { icon: Shield, label: "Wazuh", color: "text-blue-600" },
@@ -520,6 +551,39 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                       </div>
                     </div>
                   )}
+
+                  {/* Link → pagina di configurazione integrazione (deep-link).
+                      Variante warning quando la entry è incompleta (manca URL
+                      o credenziali), variante muted quando è solo un "vai a config". */}
+                  {(() => {
+                    const anchor = getIntegrationAnchor(item);
+                    if (!anchor) return null;
+                    const incomplete = isCredentialIncomplete(item);
+                    const href = `/settings?tab=integrazioni#int-${anchor}`;
+                    if (incomplete) {
+                      return (
+                        <a
+                          href={href}
+                          className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-2 py-1.5 text-xs text-amber-900 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/40 transition-colors"
+                        >
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                          <span className="flex-1 leading-tight">
+                            Config incompleta — vai a Impostazioni
+                          </span>
+                          <SettingsIcon className="h-3.5 w-3.5 shrink-0" />
+                        </a>
+                      );
+                    }
+                    return (
+                      <a
+                        href={href}
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <SettingsIcon className="h-3 w-3" />
+                        Configura integrazione →
+                      </a>
+                    );
+                  })()}
 
                   <div className="flex items-center gap-1 pt-2 border-t mt-2">
                     {item.url && (

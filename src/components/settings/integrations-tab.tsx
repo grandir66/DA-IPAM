@@ -40,6 +40,28 @@ export function IntegrationsTab() {
     return () => { if (dockerPollRef.current) clearInterval(dockerPollRef.current); };
   }, []);
 
+  // Deep-link: /settings?tab=integrazioni#int-<kind> scrolla alla card integrazione
+  // corrispondente. Riferimento dai bottoni "Configura integrazione" nel Launchpad.
+  // Usa rAF doppio per attendere che il render con vaultItems sia completo (la
+  // sezione embed cresce e cambia gli offset).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash;
+    if (!hash || !hash.startsWith("#int-")) return;
+    if (vaultItems === null) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = document.getElementById(hash.slice(1));
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+          // Highlight transitorio: aggiungi una classe ring per ~2s
+          el.classList.add("ring-2", "ring-primary", "ring-offset-2");
+          setTimeout(() => el.classList.remove("ring-2", "ring-primary", "ring-offset-2"), 2200);
+        }
+      });
+    });
+  }, [vaultItems]);
+
   const handleInstallDocker = async () => {
     setInstallingDocker(true);
     setDockerInstallJob(null);

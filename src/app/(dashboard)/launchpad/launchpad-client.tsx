@@ -96,6 +96,16 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
   const [form, setForm] = useState<EditFormState>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [revealed, setRevealed] = useState<Record<number, RevealedSecrets | undefined>>({});
+  const [showInternal, setShowInternal] = useState(false);
+
+  // Le entry con label che termina in "(API interna)" sono per consumo
+  // container-to-container (URL interni tipo 10.255.255.x, librenms:8000,
+  // host.docker.internal:8080) e non si possono aprire dal browser. Nascoste
+  // di default; toggle per esporle quando servono per debugging/curl.
+  const internalCount = items.filter((i) => /\(API interna\)/.test(i.label)).length;
+  const visibleItems = showInternal
+    ? items
+    : items.filter((i) => !/\(API interna\)/.test(i.label));
 
   async function refresh() {
     const res = await fetch("/api/system-credentials");
@@ -248,7 +258,18 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
           </p>
         </div>
         {isAdmin && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {internalCount > 0 && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none border rounded px-2 py-1.5">
+                <input
+                  type="checkbox"
+                  checked={showInternal}
+                  onChange={(e) => setShowInternal(e.target.checked)}
+                  className="h-3 w-3"
+                />
+                Mostra API interne ({internalCount})
+              </label>
+            )}
             <Button variant="outline" onClick={handleSync} disabled={busy}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Importa legacy
@@ -261,7 +282,7 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
         )}
       </div>
 
-      {items.length === 0 ? (
+      {visibleItems.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
             <KeyRound className="h-12 w-12 mx-auto mb-3 opacity-30" />
@@ -276,7 +297,7 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {items.map((item) => {
+          {visibleItems.map((item) => {
             const meta = KIND_META[item.kind] ?? KIND_META.other;
             const Icon = meta.icon;
             const rev = revealed[item.id];

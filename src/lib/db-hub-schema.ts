@@ -194,6 +194,41 @@ CREATE TABLE IF NOT EXISTS tenant_features (
   config_json  TEXT,
   PRIMARY KEY (tenant_code, feature_key)
 );
+
+-- Vault credenziali unificato per accesso ai sistemi della stack security.
+-- AES-GCM encrypted via lib/crypto.ts (ENCRYPTION_KEY). Risorse: Wazuh,
+-- Graylog, LibreNMS, Scanner-Edge, DA-Vul-can hub, PVE Tailscale, ecc.
+-- Diverso dalle settings.integration_* (legacy, plain text per librenms/loki/graylog).
+CREATE TABLE IF NOT EXISTS system_credentials (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind            TEXT NOT NULL,
+  label           TEXT NOT NULL,
+  url             TEXT,
+  api_url         TEXT,
+  username        TEXT,
+  password_enc    TEXT,
+  api_token_enc   TEXT,
+  extra_json_enc  TEXT,
+  launch_mode     TEXT NOT NULL DEFAULT 'copy',
+  notes           TEXT,
+  last_tested_at  TEXT,
+  last_test_result TEXT,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  sort_order      INTEGER NOT NULL DEFAULT 100,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS system_credential_events (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  credential_id  INTEGER REFERENCES system_credentials(id) ON DELETE SET NULL,
+  action         TEXT NOT NULL,
+  actor_user_id  INTEGER,
+  actor_username TEXT,
+  result         TEXT,
+  details_json   TEXT,
+  ts             TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 export const HUB_INDEXES_SQL = `

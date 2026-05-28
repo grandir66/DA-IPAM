@@ -33,6 +33,7 @@ import {
   BookOpen,
   Ban,
   ShieldCheck,
+  KeyRound,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -390,6 +391,21 @@ export function Sidebar() {
             </p>
           </div>
         </div>
+
+        {/* Launchpad — entry point unificato per accesso ai sistemi della stack */}
+        <Link
+          href="/launchpad"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            pathname.startsWith("/launchpad")
+              ? "bg-sidebar-primary text-sidebar-primary-foreground"
+              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <KeyRound className="h-4 w-4" />
+          Launchpad
+        </Link>
 
         {/* Impostazioni (globale) */}
         <Link

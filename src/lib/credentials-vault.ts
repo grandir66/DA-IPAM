@@ -370,13 +370,41 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
   let created = 0;
   let skipped = 0;
 
-  // Helper: URL "interno" non raggiungibile dal browser cliente.
-  // I valori salvati da connect.sh (librenms:8000, 10.255.255.x, host.docker.internal)
-  // sono per consumo container-to-container, NON per launch dal browser.
-  // Quindi questi entry vanno marcati come "(internal API)" e launch_mode=copy.
+  // Helper: URL "API interna" — non aprire dal browser, è un endpoint API.
+  // Detection a 2 livelli:
+  //  1) hostname container-only (librenms, host.docker.internal, ecc)
+  //  2) port-based: 55000 (Wazuh API), 9200 (OpenSearch), 3001 (Next dev) sono
+  //     porte API che NON servono UI HTML. 8080 può essere UI (scanner-edge)
+  //     quindi NON è in lista. 443/80/altri suffissi /dashboard restano lanciabili.
   const isInternalUrl = (u: string | undefined): boolean => {
     if (!u) return false;
-    return /^(https?:\/\/)?(librenms|graylog|loki|wazuh|host\.docker\.internal|10\.255\.255\.|172\.|appliance-)/.test(u);
+    if (/^(https?:\/\/)?(librenms|graylog|loki|host\.docker\.internal|10\.255\.255\.|172\.|appliance-)/.test(u)) {
+      return true;
+    }
+    // Port heuristic (API-only ports)
+    const m = u.match(/:(\d+)(\/|$)/);
+    if (m) {
+      const port = parseInt(m[1], 10);
+      // Porte note solo-API: Wazuh Manager (55000), OpenSearch/Indexer (9200),
+      // Next.js dev (3001), Greenbone GMP (9390/9392)
+      if ([55000, 9200, 3001, 9390, 9392].includes(port)) return true;
+    }
+    return false;
+  };
+
+  // Sintetizza URL Dashboard probabile da un URL API "https://host:55000" → "https://host/"
+  // (Wazuh Dashboard è di solito su root path su 443/8443 dietro nginx).
+  const guessDashboardUrl = (apiUrl: string | undefined): string | null => {
+    if (!apiUrl) return null;
+    try {
+      const u = new URL(apiUrl);
+      // Strip port: rimanda alla root host (admin dovrà aggiustare se serve)
+      u.port = "";
+      u.pathname = "/";
+      return u.toString();
+    } catch {
+      return null;
+    }
   };
 
   const addOrInternalNote = (
@@ -446,30 +474,41 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
   );
 
   // Wazuh Manager API (settings hub, password già encrypted via crypto.ts)
+  const wzApiUrl = getSetting("integration_wazuh_url") ?? undefined;
   const wzPasswordEnc = getSetting("integration_wazuh_password_encrypted");
   const wzPassword = wzPasswordEnc ? safeDecrypt(wzPasswordEnc) : null;
-  addOrInternalNote(
-    "wazuh",
-    "Wazuh Manager",
-    getSetting("integration_wazuh_url") ?? undefined,
-    {
-      username: getSetting("integration_wazuh_username") ?? undefined,
-      password: wzPassword ?? undefined,
-    },
-  );
+  const wzUsername = getSetting("integration_wazuh_username") ?? undefined;
+  addOrInternalNote("wazuh", "Wazuh Manager", wzApiUrl, {
+    username: wzUsername,
+    password: wzPassword ?? undefined,
+  });
 
   // Wazuh Indexer (OpenSearch)
   const wzIdxPasswordEnc = getSetting("integration_wazuh_indexer_password_encrypted");
   const wzIdxPassword = wzIdxPasswordEnc ? safeDecrypt(wzIdxPasswordEnc) : null;
-  addOrInternalNote(
-    "wazuh",
-    "Wazuh Indexer (OpenSearch)",
+  addOrInternalNote("wazuh", "Wazuh Indexer (OpenSearch)",
     getSetting("integration_wazuh_indexer_url") ?? undefined,
     {
       username: getSetting("integration_wazuh_indexer_username") ?? undefined,
       password: wzIdxPassword ?? undefined,
     },
   );
+
+  // Sintetizza Wazuh Dashboard URL probabile (root del manager host).
+  // Usa le stesse credenziali da-ipam come placeholder — l'admin dovrà
+  // aggiornare con quelle del Dashboard reale (admin/<password>) via edit.
+  const wzDashboardUrl = guessDashboardUrl(wzApiUrl);
+  if (wzDashboardUrl && !byKind.has("wazuh:Wazuh Dashboard (login UI)")) {
+    createCredential({
+      kind: "wazuh",
+      label: "Wazuh Dashboard (login UI)",
+      url: wzDashboardUrl,
+      username: "admin",
+      password: null,
+      notes: "URL Dashboard sintetizzato dall'API URL. Aggiorna porta/path se necessario. Credenziali Dashboard non in DA-IPAM: chiedile all'amministratore della VM Wazuh.",
+    });
+    created++;
+  }
 
   // Scanner-Edge: scan tenant DBs alla ricerca di vuln_scanners (token_encrypted).
   // Aggrega come "<scanner.name> (<tenant>) (API interna)" — anche queste hanno

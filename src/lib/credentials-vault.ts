@@ -370,80 +370,110 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
   let created = 0;
   let skipped = 0;
 
-  const tryAdd = (
+  // Helper: URL "interno" non raggiungibile dal browser cliente.
+  // I valori salvati da connect.sh (librenms:8000, 10.255.255.x, host.docker.internal)
+  // sono per consumo container-to-container, NON per launch dal browser.
+  // Quindi questi entry vanno marcati come "(internal API)" e launch_mode=copy.
+  const isInternalUrl = (u: string | undefined): boolean => {
+    if (!u) return false;
+    return /^(https?:\/\/)?(librenms|graylog|loki|wazuh|host\.docker\.internal|10\.255\.255\.|172\.|appliance-)/.test(u);
+  };
+
+  const addOrInternalNote = (
     kind: CredentialKind,
     label: string,
-    fields: {
-      url?: string;
-      api_url?: string;
-      username?: string;
-      password?: string;
-      api_token?: string;
-    },
+    url: string | undefined,
+    fields: { username?: string; password?: string; api_token?: string },
   ): void => {
-    if (byKind.has(`${kind}:${label}`)) {
+    if (!url) return;
+    const internal = isInternalUrl(url);
+    const finalLabel = internal ? `${label} (API interna)` : label;
+    const notes = internal
+      ? "URL container-to-container — NON raggiungibile dal browser. Usa la card Dashboard per il login UI."
+      : undefined;
+    if (byKind.has(`${kind}:${finalLabel}`)) {
       skipped++;
       return;
     }
-    const hasAny = fields.password || fields.api_token || fields.url;
-    if (!hasAny) {
+    if (!fields.password && !fields.api_token) {
       skipped++;
       return;
     }
     createCredential({
       kind,
-      label,
-      url: fields.url ?? null,
-      api_url: fields.api_url ?? null,
+      label: finalLabel,
+      url,
       username: fields.username ?? null,
-      password: fields.password || null,
-      api_token: fields.api_token || null,
+      password: fields.password ?? null,
+      api_token: fields.api_token ?? null,
+      notes: notes ?? null,
     });
     created++;
   };
 
   // LibreNMS (settings legacy plain-text)
-  tryAdd("librenms", "LibreNMS (managed)", {
-    url: getSetting("integration_librenms_url") ?? undefined,
-    username: "admin",
-    api_token: getSetting("integration_librenms_api_token") ?? undefined,
-    password: getSetting("integration_librenms_admin_password") ?? undefined,
-  });
+  addOrInternalNote(
+    "librenms",
+    "LibreNMS",
+    getSetting("integration_librenms_url") ?? undefined,
+    {
+      username: "admin",
+      api_token: getSetting("integration_librenms_api_token") ?? undefined,
+      password: getSetting("integration_librenms_admin_password") ?? undefined,
+    },
+  );
 
   // Graylog (settings legacy plain-text)
-  tryAdd("graylog", "Graylog (managed)", {
-    url: getSetting("integration_graylog_url") ?? undefined,
-    username: getSetting("integration_graylog_username") ?? undefined,
-    password: getSetting("integration_graylog_password") ?? undefined,
-    api_token: getSetting("integration_graylog_api_token") ?? undefined,
-  });
+  addOrInternalNote(
+    "graylog",
+    "Graylog",
+    getSetting("integration_graylog_url") ?? undefined,
+    {
+      username: getSetting("integration_graylog_username") ?? undefined,
+      password: getSetting("integration_graylog_password") ?? undefined,
+      api_token: getSetting("integration_graylog_api_token") ?? undefined,
+    },
+  );
 
   // Loki (settings legacy, no UI)
-  tryAdd("other", "Loki", {
-    url: getSetting("integration_loki_url") ?? undefined,
-    api_token: getSetting("integration_loki_api_token") ?? undefined,
-  });
+  addOrInternalNote(
+    "other",
+    "Loki",
+    getSetting("integration_loki_url") ?? undefined,
+    {
+      api_token: getSetting("integration_loki_api_token") ?? undefined,
+    },
+  );
 
-  // Wazuh Manager (settings hub, password già encrypted via crypto.ts)
+  // Wazuh Manager API (settings hub, password già encrypted via crypto.ts)
   const wzPasswordEnc = getSetting("integration_wazuh_password_encrypted");
   const wzPassword = wzPasswordEnc ? safeDecrypt(wzPasswordEnc) : null;
-  tryAdd("wazuh", "Wazuh Manager", {
-    url: getSetting("integration_wazuh_url") ?? undefined,
-    username: getSetting("integration_wazuh_username") ?? undefined,
-    password: wzPassword ?? undefined,
-  });
+  addOrInternalNote(
+    "wazuh",
+    "Wazuh Manager",
+    getSetting("integration_wazuh_url") ?? undefined,
+    {
+      username: getSetting("integration_wazuh_username") ?? undefined,
+      password: wzPassword ?? undefined,
+    },
+  );
 
   // Wazuh Indexer (OpenSearch)
   const wzIdxPasswordEnc = getSetting("integration_wazuh_indexer_password_encrypted");
   const wzIdxPassword = wzIdxPasswordEnc ? safeDecrypt(wzIdxPasswordEnc) : null;
-  tryAdd("wazuh", "Wazuh Indexer (OpenSearch)", {
-    url: getSetting("integration_wazuh_indexer_url") ?? undefined,
-    username: getSetting("integration_wazuh_indexer_username") ?? undefined,
-    password: wzIdxPassword ?? undefined,
-  });
+  addOrInternalNote(
+    "wazuh",
+    "Wazuh Indexer (OpenSearch)",
+    getSetting("integration_wazuh_indexer_url") ?? undefined,
+    {
+      username: getSetting("integration_wazuh_indexer_username") ?? undefined,
+      password: wzIdxPassword ?? undefined,
+    },
+  );
 
   // Scanner-Edge: scan tenant DBs alla ricerca di vuln_scanners (token_encrypted).
-  // Aggrega come "<scanner.name> (<tenant>)" — un'entry per ogni tenant×scanner.
+  // Aggrega come "<scanner.name> (<tenant>) (API interna)" — anche queste hanno
+  // URL container-to-container (host.docker.internal:8080), NON browser-friendly.
   try {
     const tenants = getActiveTenants();
     for (const t of tenants) {
@@ -454,9 +484,7 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
           .all() as Array<{ name: string; base_url: string; token_encrypted: string }>;
         for (const s of scanners) {
           const token = s.token_encrypted ? safeDecrypt(s.token_encrypted) : null;
-          tryAdd("edge", `${s.name} (${t.codice_cliente})`, {
-            url: s.base_url,
-            api_url: s.base_url,
+          addOrInternalNote("edge", `${s.name} (${t.codice_cliente})`, s.base_url, {
             api_token: token ?? undefined,
           });
         }

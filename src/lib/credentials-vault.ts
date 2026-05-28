@@ -14,6 +14,7 @@ export type CredentialKind =
   | "wazuh"
   | "graylog"
   | "librenms"
+  | "truenas"      // backup target (futuro)
   | "edge"
   | "hub"
   | "tailscale"

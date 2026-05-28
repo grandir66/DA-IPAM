@@ -11,6 +11,7 @@ const KindEnum = z.enum([
   "wazuh",
   "graylog",
   "librenms",
+  "truenas",
   "edge",
   "hub",
   "tailscale",

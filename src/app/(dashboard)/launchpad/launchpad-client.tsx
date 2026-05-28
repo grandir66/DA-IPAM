@@ -19,6 +19,10 @@ import {
   Cloud,
   Wifi,
   RefreshCw,
+  HardDrive,
+  CheckCircle2,
+  XCircle,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -48,6 +52,7 @@ const KIND_META: Record<CredentialKind, { icon: typeof Shield; label: string; co
   wazuh: { icon: Shield, label: "Wazuh", color: "text-blue-600" },
   graylog: { icon: Activity, label: "Graylog", color: "text-amber-600" },
   librenms: { icon: Server, label: "LibreNMS", color: "text-emerald-600" },
+  truenas: { icon: HardDrive, label: "TrueNAS (backup)", color: "text-rose-600" },
   edge: { icon: Radar, label: "Scanner-Edge", color: "text-purple-600" },
   hub: { icon: Cloud, label: "DA-Vul-can Hub", color: "text-cyan-600" },
   tailscale: { icon: Wifi, label: "Tailscale", color: "text-indigo-600" },
@@ -97,6 +102,8 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
   const [busy, setBusy] = useState(false);
   const [revealed, setRevealed] = useState<Record<number, RevealedSecrets | undefined>>({});
   const [showInternal, setShowInternal] = useState(false);
+  const [testing, setTesting] = useState<number | null>(null);
+  const [testResults, setTestResults] = useState<Record<number, "ok" | "fail">>({});
 
   // Detection "API interna" su 2 livelli:
   //  - label che contiene "(API interna)"
@@ -206,6 +213,32 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
       await refresh();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleTest(item: SystemCredential) {
+    setTesting(item.id);
+    try {
+      const res = await fetch(`/api/system-credentials/${item.id}/test`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      const ok = !!data.ok;
+      setTestResults((m) => ({ ...m, [item.id]: ok ? "ok" : "fail" }));
+      if (ok) {
+        toast.success(`${item.label}: ok`, {
+          description: `${data.http_status} · ${data.latency_ms}ms`,
+        });
+      } else {
+        toast.error(`${item.label}: errore`, {
+          description: data.error || `HTTP ${data.http_status}`,
+        });
+      }
+    } catch (e) {
+      setTestResults((m) => ({ ...m, [item.id]: "fail" }));
+      toast.error(`${item.label}: ${(e as Error).message}`);
+    } finally {
+      setTesting(null);
     }
   }
 
@@ -414,6 +447,25 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
                       >
                         <ExternalLink className="h-3 w-3 mr-1" />
                         Apri
+                      </Button>
+                    )}
+                    {isAdmin && (item.url || item.api_url) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleTest(item)}
+                        disabled={testing === item.id}
+                        title="Test connessione"
+                      >
+                        {testing === item.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : testResults[item.id] === "ok" ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        ) : testResults[item.id] === "fail" ? (
+                          <XCircle className="h-4 w-4 text-red-600" />
+                        ) : (
+                          <Activity className="h-4 w-4" />
+                        )}
                       </Button>
                     )}
                     {isAdmin && (

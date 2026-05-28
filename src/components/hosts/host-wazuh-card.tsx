@@ -100,18 +100,55 @@ interface WazuhVulnRow {
   external_references: string | null;
 }
 
+interface WazuhProcessRow {
+  id: number;
+  pid: number;
+  ppid: number | null;
+  name: string | null;
+  cmd: string | null;
+  vm_size: number | null;
+  resident_size: number | null;
+  nlwp: number | null;
+}
+
+interface WazuhServiceRow {
+  id: number;
+  service_id: string;
+  enabled: string | null;
+  start_type: string | null;
+  service_type: string | null;
+  exit_code: number | null;
+  process_pid: number | null;
+  process_executable: string | null;
+}
+
+interface WazuhNetprotoRow {
+  id: number;
+  iface: string | null;
+  type: string | null;
+  gateway: string | null;
+  dhcp: string | null;
+}
+
 interface Payload {
   hasAgent: boolean;
   agent?: WazuhAgentRow;
   hw?: WazuhHwRow | null;
   os?: WazuhOsRow | null;
-  counts?: { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number; ports: number; hotfixes: number; netifaces: number; netaddrs: number };
+  counts?: {
+    software: number; vulns: number; vulnsCritical: number; vulnsHigh: number;
+    ports: number; hotfixes: number; netifaces: number; netaddrs: number;
+    processes: number; services: number; netproto: number;
+  };
   software?: WazuhSoftwareRow[];
   vulns?: WazuhVulnRow[];
   ports?: WazuhPortRow[];
   hotfixes?: WazuhHotfixRow[];
   netifaces?: WazuhNetifaceRow[];
   netaddrs?: WazuhNetaddrRow[];
+  netproto?: WazuhNetprotoRow[];
+  processes?: WazuhProcessRow[];
+  services?: WazuhServiceRow[];
 }
 
 function formatRam(kb: number | null | undefined): string {
@@ -140,9 +177,13 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
   const [showHotfixes, setShowHotfixes] = useState(false);
   const [hotfixesData, setHotfixesData] = useState<WazuhHotfixRow[] | null>(null);
   const [showNetwork, setShowNetwork] = useState(false);
-  const [networkData, setNetworkData] = useState<{ netifaces: WazuhNetifaceRow[]; netaddrs: WazuhNetaddrRow[] } | null>(null);
+  const [networkData, setNetworkData] = useState<{ netifaces: WazuhNetifaceRow[]; netaddrs: WazuhNetaddrRow[]; netproto: WazuhNetprotoRow[] } | null>(null);
+  const [showProcesses, setShowProcesses] = useState(false);
+  const [processesData, setProcessesData] = useState<WazuhProcessRow[] | null>(null);
+  const [showServices, setShowServices] = useState(false);
+  const [servicesData, setServicesData] = useState<WazuhServiceRow[] | null>(null);
 
-  const load = async (opts: { withSoftware?: boolean; withVulns?: boolean; withPorts?: boolean; withHotfixes?: boolean; withNetwork?: boolean } = {}) => {
+  const load = async (opts: { withSoftware?: boolean; withVulns?: boolean; withPorts?: boolean; withHotfixes?: boolean; withNetwork?: boolean; withProcesses?: boolean; withServices?: boolean } = {}) => {
     setLoading(true);
     try {
       const includes: string[] = [];
@@ -151,6 +192,8 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       if (opts.withPorts) includes.push("ports");
       if (opts.withHotfixes) includes.push("hotfixes");
       if (opts.withNetwork) includes.push("network");
+      if (opts.withProcesses) includes.push("processes");
+      if (opts.withServices) includes.push("services");
       const qs = includes.length ? `?include=${includes.join(",")}` : "";
       const r = await fetch(`/api/integrations/wazuh/host/${hostId}${qs}`);
       if (!r.ok) { setData(null); return; }
@@ -160,9 +203,11 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       if (opts.withVulns && d.vulns) setVulnsData(d.vulns);
       if (opts.withPorts && d.ports) setPortsData(d.ports);
       if (opts.withHotfixes && d.hotfixes) setHotfixesData(d.hotfixes);
-      if (opts.withNetwork && (d.netifaces || d.netaddrs)) {
-        setNetworkData({ netifaces: d.netifaces ?? [], netaddrs: d.netaddrs ?? [] });
+      if (opts.withNetwork && (d.netifaces || d.netaddrs || d.netproto)) {
+        setNetworkData({ netifaces: d.netifaces ?? [], netaddrs: d.netaddrs ?? [], netproto: d.netproto ?? [] });
       }
+      if (opts.withProcesses && d.processes) setProcessesData(d.processes);
+      if (opts.withServices && d.services) setServicesData(d.services);
     } finally {
       setLoading(false);
     }
@@ -177,7 +222,7 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       const d = (await r.json()) as { ok?: boolean; error?: string };
       if (r.ok && d.ok) {
         toast.success("Dati Wazuh aggiornati");
-        await load({ withSoftware: showSoftware, withVulns: showVulns, withPorts: showPorts, withHotfixes: showHotfixes, withNetwork: showNetwork });
+        await load({ withSoftware: showSoftware, withVulns: showVulns, withPorts: showPorts, withHotfixes: showHotfixes, withNetwork: showNetwork, withProcesses: showProcesses, withServices: showServices });
       } else {
         toast.error(d.error ?? "Refresh fallito");
       }
@@ -219,6 +264,20 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
       await load({ withNetwork: true });
     }
     setShowNetwork((v) => !v);
+  };
+
+  const toggleProcesses = async () => {
+    if (!showProcesses && !processesData) {
+      await load({ withProcesses: true });
+    }
+    setShowProcesses((v) => !v);
+  };
+
+  const toggleServices = async () => {
+    if (!showServices && !servicesData) {
+      await load({ withServices: true });
+    }
+    setShowServices((v) => !v);
   };
 
   if (loading && !data) return null;
@@ -306,12 +365,30 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
               </button>
             </>
           )}
-          {counts && (counts.netifaces > 0 || counts.netaddrs > 0) && (
+          {counts && (counts.netifaces > 0 || counts.netaddrs > 0 || counts.netproto > 0) && (
             <>
               <span className="text-muted-foreground">·</span>
               <button onClick={toggleNetwork} className="inline-flex items-center gap-1 hover:underline">
                 {showNetwork ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                <strong>{counts.netifaces}</strong> if · <strong>{counts.netaddrs}</strong> IP
+                <strong>{counts.netifaces}</strong> if · <strong>{counts.netaddrs}</strong> IP{counts.netproto > 0 ? <> · <strong>{counts.netproto}</strong> route</> : null}
+              </button>
+            </>
+          )}
+          {counts && counts.processes > 0 && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <button onClick={toggleProcesses} className="inline-flex items-center gap-1 hover:underline">
+                {showProcesses ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                <strong>{counts.processes}</strong> processi
+              </button>
+            </>
+          )}
+          {counts && counts.services > 0 && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <button onClick={toggleServices} className="inline-flex items-center gap-1 hover:underline">
+                {showServices ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                <strong>{counts.services}</strong> servizi
               </button>
             </>
           )}
@@ -511,8 +588,98 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
                 </table>
               </div>
             )}
+            {networkData.netproto.length > 0 && (
+              <div className="rounded-md border max-h-60 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-2 py-1 w-24">Interfaccia</th>
+                      <th className="text-left px-2 py-1 w-16">Tipo</th>
+                      <th className="text-left px-2 py-1">Gateway</th>
+                      <th className="text-left px-2 py-1 w-20">DHCP</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {networkData.netproto.map((n) => (
+                      <tr key={n.id} className="border-t">
+                        <td className="px-2 py-1 font-mono">{n.iface ?? "—"}</td>
+                        <td className="px-2 py-1 font-mono uppercase text-muted-foreground">{n.type ?? "—"}</td>
+                        <td className="px-2 py-1 font-mono">{n.gateway ?? "—"}</td>
+                        <td className="px-2 py-1 text-muted-foreground">{n.dhcp ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             <div className="text-[10px] text-muted-foreground">
-              Fonte: <strong>Wazuh syscollector netiface + netaddr</strong>.
+              Fonte: <strong>Wazuh syscollector netiface + netaddr + netproto</strong>.
+            </div>
+          </div>
+        )}
+
+        {showProcesses && processesData && (
+          <div className="rounded-md border max-h-96 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr>
+                  <th className="text-left px-2 py-1">Processo</th>
+                  <th className="text-right px-2 py-1 w-20">PID</th>
+                  <th className="text-right px-2 py-1 w-20">PPID</th>
+                  <th className="text-right px-2 py-1 w-24">VM (MB)</th>
+                  <th className="text-right px-2 py-1 w-20">Thread</th>
+                </tr>
+              </thead>
+              <tbody>
+                {processesData.map((p) => (
+                  <tr key={p.id} className="border-t">
+                    <td className="px-2 py-1 font-mono" title={p.cmd ?? undefined}>{p.name ?? "—"}</td>
+                    <td className="px-2 py-1 font-mono text-right">{p.pid}</td>
+                    <td className="px-2 py-1 font-mono text-right text-muted-foreground">{p.ppid ?? "—"}</td>
+                    <td className="px-2 py-1 font-mono text-right">{p.vm_size ? (p.vm_size / 1024).toFixed(1) : "—"}</td>
+                    <td className="px-2 py-1 font-mono text-right text-muted-foreground">{p.nlwp ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="text-[10px] text-muted-foreground px-2 py-1 border-t bg-muted/30">
+              Fonte: <strong>Wazuh syscollector processes</strong> · top 50 per VM size · snapshot ultima scansione.
+            </div>
+          </div>
+        )}
+
+        {showServices && servicesData && (
+          <div className="rounded-md border max-h-96 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr>
+                  <th className="text-left px-2 py-1">Servizio</th>
+                  <th className="text-left px-2 py-1 w-20">Avvio</th>
+                  <th className="text-left px-2 py-1 w-20">Stato</th>
+                  <th className="text-left px-2 py-1">Eseguibile</th>
+                  <th className="text-right px-2 py-1 w-16">PID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {servicesData.map((s) => (
+                  <tr key={s.id} className="border-t">
+                    <td className="px-2 py-1 font-mono">{s.service_id}</td>
+                    <td className="px-2 py-1 text-muted-foreground">{s.start_type ?? "—"}</td>
+                    <td className="px-2 py-1">
+                      <span className={s.enabled === "true" ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}>
+                        {s.enabled === "true" ? "abilitato" : (s.enabled === "false" ? "disabilitato" : "—")}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1 font-mono text-muted-foreground text-[10px] truncate max-w-[280px]" title={s.process_executable ?? undefined}>
+                      {s.process_executable ?? "—"}
+                    </td>
+                    <td className="px-2 py-1 font-mono text-right text-muted-foreground">{s.process_pid ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="text-[10px] text-muted-foreground px-2 py-1 border-t bg-muted/30">
+              Fonte: <strong>Wazuh syscollector services</strong> · disponibile da Wazuh 4.13+.
             </div>
           </div>
         )}

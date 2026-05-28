@@ -66,6 +66,18 @@ export interface Host {
   physical_device_id?: number | null;
   /** Sorgente di scoperta: 'scan' (default, ARP/Nmap), 'device_interface' (promosso da probe interfacce). */
   host_source?: "scan" | "device_interface" | string | null;
+  /** F1: auto-classify server-side (popolato in upsertHost). Suggerimenti editabili nel modale di promozione. */
+  inferred_device_type?: string | null;
+  inferred_vendor?: string | null;
+  inferred_protocol?: "ssh" | "snmp_v2" | "snmp_v3" | "winrm" | "api" | string | null;
+  inferred_scan_target?: "windows" | "linux" | "macos" | "proxmox" | "vmware" | "network" | string | null;
+  inferred_os_family?: "windows" | "linux" | "macos" | "network-os" | string | null;
+  inferred_confidence?: number | null;
+  /** JSON array di stringhe spiegazione (es. ["porta WinRM aperta", "hostname suggerisce windows"]) */
+  inferred_reasons?: string | null;
+  inferred_at?: string | null;
+  /** Versione del classifier che ha popolato i campi inferred_*. Bump → ricomputo automatico. */
+  inferred_classifier_version?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -197,6 +209,8 @@ export interface NetworkDevice {
   use_for_arp_poll: number;
   /** Aggregazione cross-subnet: punta a physical_devices.id. Nullable: assegnato solo dopo interface probe + identity resolver. */
   physical_device_id: number | null;
+  /** F4 (v0.2.595+): FK formale all'host originale in discovery (1:1 logico, ma schema permette 1:N). Null se il device è stato creato manualmente senza host corrispondente, oppure se l'host è stato eliminato (ON DELETE SET NULL). */
+  host_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -705,6 +719,16 @@ export interface HostDetail extends Host {
     vendor: string;
     protocol: string;
   } | null;
+  /** v0.2.603: aggregazione multi-IP (multihomed). Popolato da getHostById tramite
+   *  JOIN su multihomed_links. Bridge con physical_device_id da v0.2.596. */
+  multihomed?: {
+    group_id: string;
+    match_type: string;
+    is_primary: boolean;
+    primary_host_id: number | null;
+    primary_ip: string | null;
+    peers: Array<{ ip: string; network_name: string; host_id: number; is_primary: boolean }>;
+  } | null;
 }
 
 export interface PortMappingView {
@@ -755,6 +779,10 @@ export interface HostUpdate {
   monitor_ports?: string | null;
   device_manufacturer?: string | null;
   ip_assignment?: "dynamic" | "static" | "reserved" | "unknown";
+  // v0.2.605: editing anagrafica device da scheda asset
+  serial_number?: string | null;
+  model?: string | null;
+  firmware?: string | null;
 }
 
 export interface NetworkDeviceInput {

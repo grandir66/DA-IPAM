@@ -124,6 +124,16 @@ setup_winrm_venv() {
       return 1
     }
   fi
+
+  # impacket: fallback WMI/DCOM (porta 135) quando WinRM (5985/5986) è disabilitato sul target.
+  # Modalità degradata: recupera OS, hardware, rete, hotfix, antivirus — niente registry né AD.
+  echo ">>> Installazione impacket nel venv (fallback WMI/DCOM)..."
+  if "$venv_dir/bin/pip" install --quiet impacket; then
+    echo "    impacket pronto: fallback WMI disponibile su porta 135."
+  else
+    echo "    Avviso: install di impacket fallito. Il fallback WMI non sarà disponibile;"
+    echo "    DA-IPAM continuerà a funzionare via WinRM dove configurato."
+  fi
 }
 
 # npm install e build
@@ -322,7 +332,8 @@ echo "Accedi a: http://<indirizzo-ip>:$PORT"
 echo "Al primo avvio completa il setup dalla pagina /setup"
 echo ""
 echo "WinRM verso host Windows: venv pywinrm in \$HOME/.da-invent-venv (Kerberos via gssapi se libkrb5-dev presente)."
-echo "Se la scansione WinRM fallisce, ricrea il venv:"
+echo "Fallback WMI/DCOM su porta 135 via impacket (modalità degradata se WinRM è chiuso sul target)."
+echo "Se la scansione WinRM/WMI fallisce, ricrea il venv:"
 echo "  rm -rf ~/.da-invent-venv && python3 -m venv ~/.da-invent-venv && \\"
-echo "    ~/.da-invent-venv/bin/pip install pywinrm requests-ntlm requests-credssp gssapi"
+echo "    ~/.da-invent-venv/bin/pip install pywinrm requests-ntlm requests-credssp gssapi impacket"
 echo ""

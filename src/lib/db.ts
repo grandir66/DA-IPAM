@@ -2007,54 +2007,39 @@ export interface SysObjLookupRow {
   updated_at: string;
 }
 
+// v0.2.633 bug fix audit A8: TUTTE le funzioni `sysobj_lookup` ora delegano a
+// db-hub (tabella globale, vedi db-hub.ts:1394-1442). Prima erano implementate
+// con getDb() (tenant) mentre il list passava da db-hub → POST scriveva in
+// data/tenants/X.db, GET leggeva da data/hub.db → utente vedeva sempre vuoto.
 export function getSysObjLookupEntries(): SysObjLookupRow[] {
-  return getDb()
-    .prepare("SELECT * FROM sysobj_lookup ORDER BY LENGTH(oid) DESC")
-    .all() as SysObjLookupRow[];
+  const hub = require("./db-hub");
+  return hub.getSysObjLookupEntries();
 }
 
 export function createSysObjLookupEntry(input: {
   oid: string; vendor: string; product: string; category: string;
   enterprise_id: number; enabled?: number; note?: string | null;
 }): SysObjLookupRow {
-  const result = getDb().prepare(
-    `INSERT INTO sysobj_lookup (oid, vendor, product, category, enterprise_id, builtin, enabled, note)
-     VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
-  ).run(
-    input.oid.trim(), input.vendor.trim(), input.product.trim(), input.category.trim(),
-    input.enterprise_id, input.enabled ?? 1, input.note?.trim() || null,
-  );
-  return getDb().prepare("SELECT * FROM sysobj_lookup WHERE id = ?").get(result.lastInsertRowid) as SysObjLookupRow;
+  const hub = require("./db-hub");
+  return hub.createSysObjLookupEntry(input);
 }
 
 export function updateSysObjLookupEntry(id: number, input: Partial<{
   oid: string; vendor: string; product: string; category: string;
   enterprise_id: number; enabled: number; note: string | null;
 }>): SysObjLookupRow | undefined {
-  const existing = getDb().prepare("SELECT id FROM sysobj_lookup WHERE id = ?").get(id) as { id: number } | undefined;
-  if (!existing) return undefined;
-  const sets: string[] = ["updated_at = datetime('now')"];
-  const vals: unknown[] = [];
-  const field = (col: string, val: unknown) => { sets.push(`${col} = ?`); vals.push(val); };
-  if (input.oid !== undefined) field("oid", input.oid.trim());
-  if (input.vendor !== undefined) field("vendor", input.vendor.trim());
-  if (input.product !== undefined) field("product", input.product.trim());
-  if (input.category !== undefined) field("category", input.category.trim());
-  if (input.enterprise_id !== undefined) field("enterprise_id", input.enterprise_id);
-  if (input.enabled !== undefined) field("enabled", input.enabled);
-  if (input.note !== undefined) field("note", input.note?.trim() || null);
-  vals.push(id);
-  getDb().prepare(`UPDATE sysobj_lookup SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
-  return getDb().prepare("SELECT * FROM sysobj_lookup WHERE id = ?").get(id) as SysObjLookupRow | undefined;
+  const hub = require("./db-hub");
+  return hub.updateSysObjLookupEntry(id, input);
 }
 
 export function deleteSysObjLookupEntry(id: number): boolean {
-  return getDb().prepare("DELETE FROM sysobj_lookup WHERE id = ?").run(id).changes > 0;
+  const hub = require("./db-hub");
+  return hub.deleteSysObjLookupEntry(id);
 }
 
 export function resetBuiltinSysObjLookup(): void {
-  getDb().prepare("DELETE FROM sysobj_lookup WHERE builtin = 1").run();
-  seedBuiltinSysObjLookup(getDb());
+  const hub = require("./db-hub");
+  hub.resetBuiltinSysObjLookup();
 }
 
 // ========================
@@ -2497,9 +2482,40 @@ export function getHostById(id: number): HostDetail | undefined {
   `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; port_name: string; vlan: number | null } | undefined : undefined;
 
   // Dispositivo gestito con stesso IP (es. WINRM, SSH, SNMP)
-  const networkDevice = getNetworkDeviceByHost(host.ip);
+  // F4: prefer FK lookup, fallback al match per IP per device pre-migration.
+  const networkDevice = getNetworkDeviceByHostId(host.id) ?? getNetworkDeviceByHost(host.ip);
 
   const scanTypesSeen = [...new Set(recentScans.map((s) => s.scan_type))];
+
+  // v0.2.603: include multihomed group info (mirror di db-tenant.ts).
+  const mhLink = getDb().prepare(
+    "SELECT group_id, match_type, is_primary FROM multihomed_links WHERE host_id = ? LIMIT 1"
+  ).get(id) as { group_id: string; match_type: string; is_primary: number } | undefined;
+  let multihomed: HostDetail["multihomed"] = null;
+  if (mhLink) {
+    const peers = getDb().prepare(
+      `SELECT ml.host_id, h.ip, n.name AS network_name, ml.is_primary
+         FROM multihomed_links ml
+         JOIN hosts h ON h.id = ml.host_id
+         JOIN networks n ON n.id = h.network_id
+        WHERE ml.group_id = ? AND ml.host_id != ?
+        ORDER BY h.ip`
+    ).all(mhLink.group_id, id) as Array<{ host_id: number; ip: string; network_name: string; is_primary: number }>;
+    const primary = getDb().prepare(
+      `SELECT ml.host_id, h.ip FROM multihomed_links ml
+         JOIN hosts h ON h.id = ml.host_id
+        WHERE ml.group_id = ? AND ml.is_primary = 1
+        LIMIT 1`
+    ).get(mhLink.group_id) as { host_id: number; ip: string } | undefined;
+    multihomed = {
+      group_id: mhLink.group_id,
+      match_type: mhLink.match_type,
+      is_primary: mhLink.is_primary === 1,
+      primary_host_id: primary?.host_id ?? null,
+      primary_ip: primary?.ip ?? null,
+      peers: peers.map((p) => ({ host_id: p.host_id, ip: p.ip, network_name: p.network_name, is_primary: p.is_primary === 1 })),
+    };
+  }
 
   return {
     ...host,
@@ -2510,6 +2526,7 @@ export function getHostById(id: number): HostDetail | undefined {
     arp_source: arpSource || null,
     switch_port: switchPort || null,
     network_device: networkDevice ? { id: networkDevice.id, name: networkDevice.name, sysname: networkDevice.sysname, vendor: networkDevice.vendor, protocol: networkDevice.protocol } : null,
+    multihomed,
   };
 }
 
@@ -2709,6 +2726,18 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
         syncIpAssignmentsForNetwork(input.network_id);
       }
     }
+    // F1: ricomputo classificazione automatica dai dati appena aggiornati (idempotente).
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { applyAutoClassification } = require("./devices/auto-classify");
+      applyAutoClassification(getDb(), host.id);
+    } catch { /* non blocca l'upsert se la classificazione fallisce */ }
+    // F4 v0.2.597: reverse trigger — device orphan con stesso IP viene collegato.
+    try {
+      getDb().prepare(
+        "UPDATE network_devices SET host_id = ?, updated_at = datetime('now') WHERE host_id IS NULL AND host = ?"
+      ).run(host.id, host.ip);
+    } catch { /* niente */ }
     return host;
   }
 
@@ -2765,6 +2794,18 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       hostname: host.hostname ?? undefined,
     });
   }
+  // F1: prima classificazione automatica all'insert.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { applyAutoClassification } = require("./devices/auto-classify");
+    applyAutoClassification(getDb(), host.id);
+  } catch { /* non blocca l'insert se la classificazione fallisce */ }
+  // F4 v0.2.597: reverse trigger anche nel branch INSERT.
+  try {
+    getDb().prepare(
+      "UPDATE network_devices SET host_id = ?, updated_at = datetime('now') WHERE host_id IS NULL AND host = ?"
+    ).run(host.id, host.ip);
+  } catch { /* niente */ }
   return host;
 }
 
@@ -2791,6 +2832,10 @@ export function updateHost(id: number, input: HostUpdate): Host | undefined {
   if (input.known_host !== undefined) { fields.push("known_host = ?"); values.push(input.known_host); }
   if (input.monitor_ports !== undefined) { fields.push("monitor_ports = ?"); values.push(input.monitor_ports); }
   if (input.device_manufacturer !== undefined) { fields.push("device_manufacturer = ?"); values.push(input.device_manufacturer); }
+  // v0.2.605: editing manuale anagrafica device da scheda asset
+  if (input.serial_number !== undefined) { fields.push("serial_number = ?"); values.push(input.serial_number || null); }
+  if (input.model !== undefined) { fields.push("model = ?"); values.push(input.model || null); }
+  if (input.firmware !== undefined) { fields.push("firmware = ?"); values.push(input.firmware || null); }
   if (input.ip_assignment !== undefined) { fields.push("ip_assignment = ?"); values.push(input.ip_assignment); }
   if (input.status !== undefined) {
     fields.push("status = ?");
@@ -3051,6 +3096,22 @@ export function getNetworkDevices(): NetworkDevice[] {
 
 export function getRouters(): NetworkDevice[] {
   return getDb().prepare("SELECT * FROM network_devices WHERE device_type = 'router' ORDER BY name").all() as NetworkDevice[];
+}
+
+/**
+ * v0.2.661: sources DHCP effettive — qualunque network_device con almeno 1
+ * lease in `dhcp_leases`. Include Mikrotik, Windows DHCP, ecc.
+ */
+export function getDhcpSources(): Array<{ id: number; name: string; host: string; vendor: string; type: string; lease_count: number; last_synced: string | null }> {
+  return getDb().prepare(`
+    SELECT nd.id, nd.name, nd.host, nd.vendor, d.source_type AS type,
+           COUNT(d.id) AS lease_count,
+           MAX(d.last_synced) AS last_synced
+    FROM network_devices nd
+    JOIN dhcp_leases d ON d.source_device_id = nd.id
+    GROUP BY nd.id, nd.name, nd.host, nd.vendor, d.source_type
+    ORDER BY lease_count DESC, nd.name ASC
+  `).all() as Array<{ id: number; name: string; host: string; vendor: string; type: string; lease_count: number; last_synced: string | null }>;
 }
 
 /** Sorgenti ARP utilizzabili come "Router ARP default" di una subnet:
@@ -3807,17 +3868,31 @@ export function getNetworkDeviceByHost(ip: string): NetworkDevice | undefined {
   return getDb().prepare("SELECT * FROM network_devices WHERE host = ?").get(ip) as NetworkDevice | undefined;
 }
 
+/** F4: lookup device via FK host_id (più affidabile della string match su IP). */
+export function getNetworkDeviceByHostId(hostId: number): NetworkDevice | undefined {
+  return getDb().prepare("SELECT * FROM network_devices WHERE host_id = ? ORDER BY id LIMIT 1").get(hostId) as NetworkDevice | undefined;
+}
+
 type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll" | "physical_device_id"> & {
   classification?: string | null;
   scan_target?: string | null;
   product_profile?: string | null;
   use_for_arp_poll?: number | boolean | null;
+  /** F4: opzionale — se non passato, lookup automatico via IP. */
+  host_id?: number | null;
 };
 
 export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
+  // F4: auto-lookup host_id da IP se non passato esplicitamente.
+  let hostId: number | null = input.host_id ?? null;
+  if (hostId === null && input.host) {
+    const match = getDb().prepare("SELECT id FROM hosts WHERE ip = ? ORDER BY id LIMIT 1").get(input.host) as { id: number } | undefined;
+    if (match) hostId = match.id;
+  }
+
   const stmt = getDb().prepare(
-    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll, host_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name, input.host, input.device_type, input.vendor,
@@ -3828,7 +3903,8 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     (input as { classification?: string | null }).classification ?? null,
     (input as { scan_target?: string | null }).scan_target ?? null,
     (input as { product_profile?: string | null }).product_profile ?? null,
-    (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === 1 || (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === true ? 1 : 0
+    (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === 1 || (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === true ? 1 : 0,
+    hostId
   );
   return getDb().prepare("SELECT * FROM network_devices WHERE id = ?").get(result.lastInsertRowid) as NetworkDevice;
 }
@@ -3837,7 +3913,7 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll"] as const;
+  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id"] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);
@@ -5040,6 +5116,11 @@ export function getScheduledJobs(): ScheduledJob[] {
   return getDb().prepare("SELECT * FROM scheduled_jobs ORDER BY id").all() as ScheduledJob[];
 }
 
+// v0.2.642 audit perf MC3: fetch mirato per id (no .find() lato JS sui tick cron).
+export function getScheduledJobById(id: number): ScheduledJob | undefined {
+  return getDb().prepare("SELECT * FROM scheduled_jobs WHERE id = ?").get(id) as ScheduledJob | undefined;
+}
+
 export function getEnabledJobs(): ScheduledJob[] {
   return getDb().prepare("SELECT * FROM scheduled_jobs WHERE enabled = 1").all() as ScheduledJob[];
 }
@@ -5089,6 +5170,17 @@ export function addStatusHistory(hostId: number, status: "online" | "offline", r
   getDb().prepare(
     "INSERT INTO status_history (host_id, status, response_time_ms) VALUES (?, ?, ?)"
   ).run(hostId, status, responseTimeMs ?? null);
+}
+
+// v0.2.645 audit perf DB8: facade → db-tenant.recordHostHeartbeat (combina
+// INSERT status_history + UPDATE status/last_seen/last_response_time_ms in 1 fsync).
+export function recordHostHeartbeat(
+  hostId: number,
+  status: "online" | "offline",
+  responseTimeMs: number | null,
+): void {
+  const tenant = require("./db-tenant");
+  tenant.recordHostHeartbeat(hostId, status, responseTimeMs);
 }
 
 export function getStatusHistory(hostId: number, limit: number = 100): StatusHistory[] {
@@ -6587,11 +6679,13 @@ export function upsertAdDhcpLease(integrationId: number, input: {
   lease_expires?: string | null;
   address_state?: string | null;
   description?: string | null;
+  last_seen?: string | null;
 }): void {
   const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
+  // v0.2.659: aggiunto last_seen.
   getDb().prepare(`INSERT INTO ad_dhcp_leases
-    (integration_id, scope_id, scope_name, ip_address, mac_address, hostname, lease_expires, address_state, description, last_synced)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    (integration_id, scope_id, scope_name, ip_address, mac_address, hostname, lease_expires, address_state, description, last_seen, last_synced)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(integration_id, ip_address) DO UPDATE SET
       scope_id = excluded.scope_id,
       scope_name = excluded.scope_name,
@@ -6600,6 +6694,7 @@ export function upsertAdDhcpLease(integrationId: number, input: {
       lease_expires = excluded.lease_expires,
       address_state = excluded.address_state,
       description = excluded.description,
+      last_seen = excluded.last_seen,
       last_synced = datetime('now')
   `).run(
     integrationId,
@@ -6610,7 +6705,8 @@ export function upsertAdDhcpLease(integrationId: number, input: {
     input.hostname ?? null,
     input.lease_expires ?? null,
     input.address_state ?? null,
-    input.description ?? null
+    input.description ?? null,
+    input.last_seen ?? null
   );
 }
 
@@ -6664,12 +6760,19 @@ export function getDistinctHostVendorHints(limit = 400): string[] {
   return rows.map((r) => r.v);
 }
 
+// v0.2.633 bug fix audit A8: TUTTE le funzioni `snmp_vendor_profiles` ora
+// delegano a db-hub (tabella globale, vedi db-hub.ts:1243-1389). Prima erano
+// implementate con getDb() (tenant) per id/byProfileId/create/update/delete/
+// reset/export/import, mentre i list passavano da db-hub → POST scriveva in
+// data/tenants/X.db, GET leggeva da data/hub.db → utente vedeva sempre vuoto.
 export function getSnmpVendorProfileById(id: number): SnmpVendorProfileRow | undefined {
-  return getDb().prepare("SELECT * FROM snmp_vendor_profiles WHERE id = ?").get(id) as SnmpVendorProfileRow | undefined;
+  const hub = require("./db-hub");
+  return hub.getSnmpVendorProfileById(id);
 }
 
 export function getSnmpVendorProfileByProfileId(profileId: string): SnmpVendorProfileRow | undefined {
-  return getDb().prepare("SELECT * FROM snmp_vendor_profiles WHERE profile_id = ?").get(profileId) as SnmpVendorProfileRow | undefined;
+  const hub = require("./db-hub");
+  return hub.getSnmpVendorProfileByProfileId(profileId);
 }
 
 export function createSnmpVendorProfile(input: {
@@ -6684,22 +6787,8 @@ export function createSnmpVendorProfile(input: {
   builtin?: number;
   note?: string | null;
 }): SnmpVendorProfileRow {
-  const stmt = getDb().prepare(`INSERT INTO snmp_vendor_profiles
-    (profile_id, name, category, enterprise_oid_prefixes, sysdescr_pattern, fields, confidence, enabled, builtin, note)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  const r = stmt.run(
-    input.profile_id,
-    input.name,
-    input.category,
-    JSON.stringify(input.enterprise_oid_prefixes ?? []),
-    input.sysdescr_pattern ?? null,
-    JSON.stringify(input.fields ?? {}),
-    input.confidence ?? 0.90,
-    input.enabled ?? 1,
-    input.builtin ?? 0,
-    input.note ?? null
-  );
-  return getSnmpVendorProfileById(Number(r.lastInsertRowid))!;
+  const hub = require("./db-hub");
+  return hub.createSnmpVendorProfile(input);
 }
 
 export function updateSnmpVendorProfile(id: number, input: Partial<{
@@ -6713,39 +6802,23 @@ export function updateSnmpVendorProfile(id: number, input: Partial<{
   enabled: number;
   note: string | null;
 }>): SnmpVendorProfileRow | undefined {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-
-  if (input.profile_id !== undefined) { fields.push("profile_id = ?"); values.push(input.profile_id); }
-  if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
-  if (input.category !== undefined) { fields.push("category = ?"); values.push(input.category); }
-  if (input.enterprise_oid_prefixes !== undefined) { fields.push("enterprise_oid_prefixes = ?"); values.push(JSON.stringify(input.enterprise_oid_prefixes)); }
-  if (input.sysdescr_pattern !== undefined) { fields.push("sysdescr_pattern = ?"); values.push(input.sysdescr_pattern); }
-  if (input.fields !== undefined) { fields.push("fields = ?"); values.push(JSON.stringify(input.fields)); }
-  if (input.confidence !== undefined) { fields.push("confidence = ?"); values.push(input.confidence); }
-  if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled); }
-  if (input.note !== undefined) { fields.push("note = ?"); values.push(input.note); }
-
-  if (fields.length === 0) return getSnmpVendorProfileById(id);
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-
-  getDb().prepare(`UPDATE snmp_vendor_profiles SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  return getSnmpVendorProfileById(id);
+  const hub = require("./db-hub");
+  return hub.updateSnmpVendorProfile(id, input);
 }
 
 export function deleteSnmpVendorProfile(id: number): boolean {
-  const r = getDb().prepare("DELETE FROM snmp_vendor_profiles WHERE id = ?").run(id);
-  return r.changes > 0;
+  const hub = require("./db-hub");
+  return hub.deleteSnmpVendorProfile(id);
 }
 
 export function resetBuiltinSnmpVendorProfiles(): void {
-  getDb().prepare("DELETE FROM snmp_vendor_profiles WHERE builtin = 1").run();
-  seedBuiltinSnmpVendorProfiles(getDb());
+  const hub = require("./db-hub");
+  hub.resetBuiltinSnmpVendorProfiles();
 }
 
 export function exportSnmpVendorProfiles(): SnmpVendorProfileRow[] {
-  return getDb().prepare("SELECT * FROM snmp_vendor_profiles ORDER BY category, name").all() as SnmpVendorProfileRow[];
+  const hub = require("./db-hub");
+  return hub.exportSnmpVendorProfiles();
 }
 
 export function importSnmpVendorProfiles(profiles: Array<{
@@ -6759,48 +6832,8 @@ export function importSnmpVendorProfiles(profiles: Array<{
   enabled?: number;
   note?: string | null;
 }>, replaceExisting: boolean = false): { imported: number; skipped: number; errors: string[] } {
-  const result = { imported: 0, skipped: 0, errors: [] as string[] };
-
-  for (const p of profiles) {
-    try {
-      const existing = getSnmpVendorProfileByProfileId(p.profile_id);
-      if (existing) {
-        if (replaceExisting && !existing.builtin) {
-          updateSnmpVendorProfile(existing.id, {
-            name: p.name,
-            category: p.category,
-            enterprise_oid_prefixes: Array.isArray(p.enterprise_oid_prefixes) ? p.enterprise_oid_prefixes : JSON.parse(p.enterprise_oid_prefixes),
-            sysdescr_pattern: p.sysdescr_pattern ?? null,
-            fields: typeof p.fields === "string" ? JSON.parse(p.fields) : p.fields,
-            confidence: p.confidence ?? 0.90,
-            enabled: p.enabled ?? 1,
-            note: p.note ?? null,
-          });
-          result.imported++;
-        } else {
-          result.skipped++;
-        }
-      } else {
-        createSnmpVendorProfile({
-          profile_id: p.profile_id,
-          name: p.name,
-          category: p.category,
-          enterprise_oid_prefixes: Array.isArray(p.enterprise_oid_prefixes) ? p.enterprise_oid_prefixes : JSON.parse(p.enterprise_oid_prefixes),
-          sysdescr_pattern: p.sysdescr_pattern ?? null,
-          fields: typeof p.fields === "string" ? JSON.parse(p.fields) : p.fields,
-          confidence: p.confidence ?? 0.90,
-          enabled: p.enabled ?? 1,
-          builtin: 0,
-          note: p.note ?? null,
-        });
-        result.imported++;
-      }
-    } catch (err) {
-      result.errors.push(`${p.profile_id}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  return result;
+  const hub = require("./db-hub");
+  return hub.importSnmpVendorProfiles(profiles, replaceExisting);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -6933,14 +6966,16 @@ export function upsertDhcpLease(input: {
   host_id?: number | null;
   network_id?: number | null;
   dynamic_lease?: number | null;
+  last_seen?: string | null;
 }): void {
   const db = getDb();
   const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
+  // v0.2.659: aggiunto last_seen.
   db.prepare(`INSERT INTO dhcp_leases
     (source_type, source_device_id, source_name, server_name, scope_id, scope_name,
      ip_address, mac_address, hostname, status, lease_start, lease_expires, description,
-     dynamic_lease, host_id, network_id, last_synced)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     dynamic_lease, last_seen, host_id, network_id, last_synced)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(source_device_id, ip_address) DO UPDATE SET
       source_name = excluded.source_name,
       server_name = excluded.server_name,
@@ -6953,6 +6988,7 @@ export function upsertDhcpLease(input: {
       lease_expires = excluded.lease_expires,
       description = excluded.description,
       dynamic_lease = COALESCE(excluded.dynamic_lease, dhcp_leases.dynamic_lease),
+      last_seen = COALESCE(excluded.last_seen, dhcp_leases.last_seen),
       host_id = COALESCE(excluded.host_id, dhcp_leases.host_id),
       network_id = COALESCE(excluded.network_id, dhcp_leases.network_id),
       last_synced = datetime('now')
@@ -6971,6 +7007,7 @@ export function upsertDhcpLease(input: {
     input.lease_expires ?? null,
     input.description ?? null,
     input.dynamic_lease ?? null,
+    input.last_seen ?? null,
     input.host_id ?? null,
     input.network_id ?? null
   );

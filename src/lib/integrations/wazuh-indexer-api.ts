@@ -14,6 +14,7 @@
 
 import * as https from "node:https";
 import { URL } from "node:url";
+import { getSharedAgent } from "./http-pool";
 
 export interface WazuhIndexerConfig {
   url: string;            // es. https://da-wazuh.domarc.it:9200
@@ -92,10 +93,8 @@ export class WazuhIndexerClient {
   constructor(cfg: WazuhIndexerConfig) {
     if (!cfg.url) throw new Error("WazuhIndexerClient: url mancante");
     this.baseUrl = new URL(cfg.url.replace(/\/+$/, ""));
-    this.agent = new https.Agent({
-      rejectUnauthorized: cfg.verifyTls,
-      keepAlive: true,
-    });
+    // v0.2.642 audit perf MC8: agent condiviso (vedi http-pool.ts).
+    this.agent = getSharedAgent("https", cfg.verifyTls) as https.Agent;
     this.authHeader = "Basic " + Buffer.from(`${cfg.username}:${cfg.password}`).toString("base64");
   }
 

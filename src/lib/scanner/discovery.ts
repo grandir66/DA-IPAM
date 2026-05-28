@@ -15,7 +15,7 @@ import {
 } from "./ports";
 import { readArpCache } from "./arp-cache";
 import { lookupVendor } from "./mac-vendor";
-import { querySnmpInfoMultiCommunity, normalizeOidString } from "./snmp-query";
+import { querySnmpInfoMultiCommunity, querySnmpSysGroupMultiCommunity, normalizeOidString } from "./snmp-query";
 import { classifyDevice } from "@/lib/device-classifier";
 import {
   getClassificationFromFingerprintSnapshot,
@@ -186,6 +186,10 @@ export async function discoverNetwork(
         p.error = msg;
         p.logs = [...(p.logs ?? []), `[ERRORE] ${msg}`];
       }
+      // v0.2.634 audit B9: anche le scan in stato `failed` devono uscire dalla
+      // progressMap dopo 5 min, come quelle `completed`. Senza questo cleanup
+      // la mappa cresce indefinitamente con ogni scan fallita (memory slow leak).
+      setTimeout(() => getProgressMap().delete(id), 300_000);
     }
   );
 
@@ -855,10 +859,16 @@ async function runDiscovery(
 
         for (let si = 0; si < onlineIps.length; si += SNMP_BATCH) {
           const batch = onlineIps.slice(si, si + SNMP_BATCH);
+          // v0.2.644 audit perf SC1: probe leggero (solo sysGroup GET, no walk).
+          // Prima `querySnmpInfoMultiCommunity` faceva FASE 1 + FASE 2 ENTITY-MIB
+          // + FASE 3 walks + testFingerprintOids (5-15s/host) — e poi la stessa
+          // pipeline veniva ripetuta nella "sessione unificata" successiva.
+          // Ora ~200ms/host per la sola identificazione vendor via sysObjectID;
+          // il walk completo resta una sola volta nel blocco unificato (riga ~1720).
           const batchResults = await Promise.all(
             batch.map(async (ip) => {
               try {
-                const r = await querySnmpInfoMultiCommunity(ip, communities, 161, { onLog: log });
+                const r = await querySnmpSysGroupMultiCommunity(ip, communities, 161);
                 if (r.sysObjectID) {
                   return { ip, sysObjectID: r.sysObjectID, sysName: r.sysName ?? null, sysDescr: r.sysDescr ?? null };
                 }
@@ -1651,12 +1661,14 @@ async function runDiscovery(
       if (skipUdpPhase) log("UDP: disattivato (nessuna porta UDP nel profilo)");
       else if (udpPortsArg) log(`Porte UDP profilo: ${udpPortsArg}`);
       else log("UDP: elenco predefinito applicazione (profilo senza elenco UDP)");
-      /** Concorrenza port scan: default 4 host in parallelo (bilanciamento velocità / affidabilità). Override: DA_INVENT_NMAP_PORT_SCAN_CONCURRENCY */
+      /** v0.2.643 audit perf SC5: default 4→8, cap 8→12. Combinato con
+       *  --max-retries 1 + --min-rate 200 lo scan profondo ~2-3× più veloce
+       *  senza degrado rilevante. Override: DA_INVENT_NMAP_PORT_SCAN_CONCURRENCY */
       const BATCH_SIZE = Math.min(
-        8,
-        Math.max(1, parseInt(process.env.DA_INVENT_NMAP_PORT_SCAN_CONCURRENCY || "4", 10))
+        12,
+        Math.max(1, parseInt(process.env.DA_INVENT_NMAP_PORT_SCAN_CONCURRENCY || "8", 10))
       );
-      if (BATCH_SIZE < 8) log(`Nmap port scan: concorrenza ${BATCH_SIZE} host (consigliato per reti con hypervisor / TLS)`);
+      if (BATCH_SIZE < 4) log(`Nmap port scan: concorrenza ${BATCH_SIZE} host (consigliato per reti con hypervisor / TLS)`);
       for (let i = 0; i < onlineIps.length; i += BATCH_SIZE) {
         const batch = onlineIps.slice(i, i + BATCH_SIZE);
         const batchResults = await Promise.all(

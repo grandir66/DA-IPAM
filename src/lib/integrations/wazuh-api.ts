@@ -17,6 +17,7 @@
 
 import * as https from "node:https";
 import { URL } from "node:url";
+import { getSharedAgent } from "./http-pool";
 
 export interface WazuhClientConfig {
   url: string;            // es. https://da-wazuh.domarc.it:55000
@@ -159,10 +160,11 @@ export class WazuhClient {
     this.baseUrl = new URL(normalized);
     this.username = cfg.username;
     this.password = cfg.password;
-    this.agent = new https.Agent({
-      rejectUnauthorized: cfg.verifyTls,
-      keepAlive: true,
-    });
+    // v0.2.642 audit perf MC8: agent condiviso per profilo verifyTls anziché
+    // istanza-locale. Cross-istanze di WazuhClient (es. cron sync periodico
+    // che ne crea uno nuovo ogni tick) → riuso delle connessioni TLS persistenti
+    // e taglio del handshake (~200ms) su ogni call successiva alla prima.
+    this.agent = getSharedAgent("https", cfg.verifyTls) as https.Agent;
   }
 
   // ──────────────────────────────── HTTP core ────────────────────────────────
@@ -298,7 +300,11 @@ export class WazuhClient {
       const res = await this.getJson<WazuhPagedResponse<WazuhSyscollectorHw>>(`/syscollector/${agentId}/hardware`);
       return res.data?.affected_items?.[0] ?? null;
     } catch (e) {
-      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return null;
+      // v0.2.638 audit B5: solo 404 (Not Found) è "lista vuota legittima".
+      // 401/403 (auth fail), 405/429/5xx devono propagare invece di mascherare
+      // un fault come "agent senza dati" → altrimenti il sync sovrascrive
+      // tutto con [] e cancella le row storiche.
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return null;
       throw e;
     }
   }
@@ -308,7 +314,11 @@ export class WazuhClient {
       const res = await this.getJson<WazuhPagedResponse<WazuhSyscollectorOs>>(`/syscollector/${agentId}/os`);
       return res.data?.affected_items?.[0] ?? null;
     } catch (e) {
-      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return null;
+      // v0.2.638 audit B5: solo 404 (Not Found) è "lista vuota legittima".
+      // 401/403 (auth fail), 405/429/5xx devono propagare invece di mascherare
+      // un fault come "agent senza dati" → altrimenti il sync sovrascrive
+      // tutto con [] e cancella le row storiche.
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return null;
       throw e;
     }
   }
@@ -317,7 +327,9 @@ export class WazuhClient {
     try {
       return await this.getPaged<WazuhSyscollectorPackage>(`/syscollector/${agentId}/packages`);
     } catch (e) {
-      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
+      // v0.2.638 audit B5: solo 404 → lista vuota legittima; altri 4xx/5xx
+      // propagano per non perdere dati storici a causa di token scaduto o errore transient.
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
       throw e;
     }
   }
@@ -326,7 +338,9 @@ export class WazuhClient {
     try {
       return await this.getPaged<WazuhSyscollectorNetiface>(`/syscollector/${agentId}/netiface`);
     } catch (e) {
-      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
+      // v0.2.638 audit B5: solo 404 → lista vuota legittima; altri 4xx/5xx
+      // propagano per non perdere dati storici a causa di token scaduto o errore transient.
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
       throw e;
     }
   }
@@ -336,7 +350,9 @@ export class WazuhClient {
     try {
       return await this.getPaged<WazuhSyscollectorPort>(`/syscollector/${agentId}/ports`);
     } catch (e) {
-      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
+      // v0.2.638 audit B5: solo 404 → lista vuota legittima; altri 4xx/5xx
+      // propagano per non perdere dati storici a causa di token scaduto o errore transient.
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
       throw e;
     }
   }
@@ -346,7 +362,9 @@ export class WazuhClient {
     try {
       return await this.getPaged<WazuhSyscollectorHotfix>(`/syscollector/${agentId}/hotfixes`);
     } catch (e) {
-      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
+      // v0.2.638 audit B5: solo 404 → lista vuota legittima; altri 4xx/5xx
+      // propagano per non perdere dati storici a causa di token scaduto o errore transient.
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
       throw e;
     }
   }
@@ -356,7 +374,9 @@ export class WazuhClient {
     try {
       return await this.getPaged<WazuhSyscollectorNetaddr>(`/syscollector/${agentId}/netaddr`);
     } catch (e) {
-      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
+      // v0.2.638 audit B5: solo 404 → lista vuota legittima; altri 4xx/5xx
+      // propagano per non perdere dati storici a causa di token scaduto o errore transient.
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
       throw e;
     }
   }
@@ -372,7 +392,9 @@ export class WazuhClient {
     try {
       return await this.getPaged<WazuhVulnerability>(`/vulnerability/${agentId}`);
     } catch (e) {
-      if (e instanceof Error && /HTTP 4\d\d/.test(e.message)) return [];
+      // v0.2.638 audit B5: solo 404 → lista vuota legittima; altri 4xx/5xx
+      // propagano per non perdere dati storici a causa di token scaduto o errore transient.
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
       throw e;
     }
   }

@@ -1,5 +1,5 @@
 import {
-  getScheduledJobs,
+  getScheduledJobById,
   getNetworks,
   getNetworkById,
   getNetworkDevices,
@@ -8,8 +8,7 @@ import {
   cleanupStaleHosts,
   getHostsByNetwork,
   getKnownHosts,
-  updateHost,
-  addStatusHistory,
+  recordHostHeartbeat,
   getDb,
   getActiveNmapProfile,
   updateHostIfExists,
@@ -28,7 +27,7 @@ import { discoverNetwork } from "@/lib/scanner/discovery";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
 import { pingHost } from "@/lib/scanner/ping";
 import { tcpConnect, FALLBACK_TCP_PORTS } from "@/lib/scanner/tcp-check";
-import { createRouterClient } from "@/lib/devices/router-client";
+import { createRouterClient, routerOsDurationToIsoTimestamp } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { classifyDevice } from "@/lib/device-classifier";
@@ -57,8 +56,8 @@ import {
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 
 export async function runJob(jobId: number): Promise<void> {
-  const jobs = getScheduledJobs();
-  const job = jobs.find((j) => j.id === jobId);
+  // v0.2.642 audit perf MC3: SELECT WHERE id invece di full-scan + .find().
+  const job = getScheduledJobById(jobId);
   if (!job) throw new Error(`Job #${jobId} non trovato`);
 
   switch (job.job_type) {
@@ -313,6 +312,9 @@ export async function runArpPoll(
                 lease_expires: lease.expiresAfter ?? null,
                 description: lease.comment ?? null,
                 dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
+                // v0.2.659: last-seen RouterOS è durata relativa (es. "1d2h").
+                // Convertita in ISO timestamp assoluto = now - duration.
+                last_seen: routerOsDurationToIsoTimestamp(lease.lastSeen),
                 host_id: host?.id ?? null,
                 network_id: network.id,
               });
@@ -615,6 +617,8 @@ export async function runDhcpPollForNetwork(
       lease_expires: lease.expiresAfter ?? null,
       description: lease.comment ?? null,
       dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
+      // v0.2.659: last_seen ISO timestamp (= now - RouterOS duration).
+      last_seen: routerOsDurationToIsoTimestamp(lease.lastSeen),
       host_id: host?.id ?? null,
       network_id: networkId,
     });
@@ -661,9 +665,9 @@ async function checkSingleKnownHost(host: ReturnType<typeof getKnownHosts>[numbe
   }
 
   const newStatus = alive ? "online" : "offline";
-  addStatusHistory(host.id, newStatus, latencyMs);
-  updateHost(host.id, { status: newStatus });
-  getDb().prepare("UPDATE hosts SET last_response_time_ms = ? WHERE id = ?").run(latencyMs, host.id);
+  // v0.2.645 audit perf DB8: 3 fsync → 1 (INSERT status_history + UPDATE
+  // status/last_seen/last_response_time_ms in singola transazione).
+  recordHostHeartbeat(host.id, newStatus, latencyMs);
 }
 
 export async function runKnownHostCheck(networkId: number | null): Promise<void> {
@@ -757,7 +761,7 @@ export async function runDnsResolve(
 }
 
 async function runCleanup(configStr: string): Promise<void> {
-  let config: { days_until_stale?: number; days_until_delete?: number };
+  let config: { days_until_stale?: number; days_until_delete?: number; mac_port_retention_hours?: number };
   try {
     config = JSON.parse(configStr || "{}");
   } catch {
@@ -766,9 +770,24 @@ async function runCleanup(configStr: string): Promise<void> {
   }
   const daysUntilStale = config.days_until_stale || 30;
   const daysUntilDelete = config.days_until_delete || 90;
+  // v0.2.651: retention mac_port_entries (default 24h). Switch_port discovery
+  // inserisce fino a 4096 row per scan (intera MAC table) → senza cleanup
+  // la tabella cresce a milioni di righe in poche settimane.
+  const macPortRetentionHours = config.mac_port_retention_hours ?? 24;
 
   const result = cleanupStaleHosts(daysUntilStale, daysUntilDelete);
   console.info(`[Cleanup] ${result.flagged} host segnalati stale, ${result.deleted} eliminati`);
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { cleanupOldMacPortEntries } = require("@/lib/db-tenant");
+    const deleted = cleanupOldMacPortEntries(macPortRetentionHours);
+    if (deleted > 0) {
+      console.info(`[Cleanup] mac_port_entries: eliminate ${deleted} righe più vecchie di ${macPortRetentionHours}h`);
+    }
+  } catch (e) {
+    console.warn(`[Cleanup] mac_port_entries cleanup fallito:`, e);
+  }
 }
 
 async function runAdSync(configStr: string): Promise<void> {

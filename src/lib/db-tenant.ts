@@ -112,6 +112,13 @@ export function getTenantDb(tenantCode: string): Database.Database {
   newDb.pragma("cache_size = -64000");
   newDb.pragma("temp_store = MEMORY");
   newDb.pragma("mmap_size = 268435456");
+  // v0.2.641 audit perf DB7/MC12:
+  //  - wal_autocheckpoint=200: checkpoint più frequenti su scan write-heavy,
+  //    evita WAL che cresce a >50MB tra checkpoint e abbatte picchi I/O.
+  //  - busy_timeout=5000: reader/writer concorrenti (cron + UI sullo stesso
+  //    tenant) attendono 5s prima di SQLITE_BUSY invece di fallire subito.
+  newDb.pragma("wal_autocheckpoint = 200");
+  newDb.pragma("busy_timeout = 5000");
 
   // Create schema if needed
   newDb.exec(TENANT_SCHEMA_SQL);
@@ -146,27 +153,45 @@ export function getTenantDb(tenantCode: string): Database.Database {
   // DEVE girare PRIMA di TENANT_INDEXES_SQL perché tale blocco crea
   // `CREATE INDEX idx_hosts_os_family ON hosts(os_family)` e fallirebbe se la
   // colonna non esiste ancora (bug v0.2.554 → fix v0.2.560).
+  const OS_FAMILY_GENERATED_SQL = `
+    GENERATED ALWAYS AS (
+      CASE
+        WHEN os_info IS NULL OR TRIM(os_info) = '' THEN 'Unknown'
+        WHEN LOWER(os_info) LIKE '%windows%' THEN 'Windows'
+        WHEN LOWER(os_info) LIKE '%macos%' OR LOWER(os_info) LIKE '%mac os%'
+          OR LOWER(os_info) LIKE '%darwin%' OR LOWER(os_info) LIKE '%osx%' THEN 'Apple'
+        WHEN LOWER(os_info) LIKE '%linux%' OR LOWER(os_info) LIKE '%ubuntu%'
+          OR LOWER(os_info) LIKE '%debian%' OR LOWER(os_info) LIKE '%centos%'
+          OR LOWER(os_info) LIKE '%rhel%' OR LOWER(os_info) LIKE '%red hat%'
+          OR LOWER(os_info) LIKE '%fedora%' OR LOWER(os_info) LIKE '%alpine%'
+          OR LOWER(os_info) LIKE '%suse%' OR LOWER(os_info) LIKE '%arch%'
+          OR LOWER(os_info) LIKE '%rocky%' OR LOWER(os_info) LIKE '%almalinux%' THEN 'Linux'
+        ELSE 'Unknown'
+      END
+    ) VIRTUAL
+  `;
   try {
-    const hostCols = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
+    // table_xinfo include anche le GENERATED VIRTUAL columns (table_info NO).
+    const hostCols = newDb.prepare("PRAGMA table_xinfo(hosts)").all() as Array<{ name: string }>;
     if (hostCols.length > 0 && !hostCols.some((c) => c.name === "os_family")) {
-      newDb.exec(`
-        ALTER TABLE hosts ADD COLUMN os_family TEXT GENERATED ALWAYS AS (
-          CASE
-            WHEN os_info IS NULL OR TRIM(os_info) = '' THEN 'Unknown'
-            WHEN LOWER(os_info) LIKE '%windows%' THEN 'Windows'
-            WHEN LOWER(os_info) LIKE '%macos%' OR LOWER(os_info) LIKE '%mac os%'
-              OR LOWER(os_info) LIKE '%darwin%' OR LOWER(os_info) LIKE '%osx%' THEN 'Apple'
-            WHEN LOWER(os_info) LIKE '%linux%' OR LOWER(os_info) LIKE '%ubuntu%'
-              OR LOWER(os_info) LIKE '%debian%' OR LOWER(os_info) LIKE '%centos%'
-              OR LOWER(os_info) LIKE '%rhel%' OR LOWER(os_info) LIKE '%red hat%'
-              OR LOWER(os_info) LIKE '%fedora%' OR LOWER(os_info) LIKE '%alpine%'
-              OR LOWER(os_info) LIKE '%suse%' OR LOWER(os_info) LIKE '%arch%'
-              OR LOWER(os_info) LIKE '%rocky%' OR LOWER(os_info) LIKE '%almalinux%' THEN 'Linux'
-            ELSE 'Unknown'
-          END
-        ) VIRTUAL
-      `);
+      newDb.exec(`ALTER TABLE hosts ADD COLUMN os_family TEXT ${OS_FAMILY_GENERATED_SQL}`);
       console.info(`[db-tenant] ${tenantCode}: aggiunta hosts.os_family GENERATED`);
+    } else if (hostCols.length > 0) {
+      // v0.2.616: fix legacy DB con os_family che ha valori in DOUBLE QUOTES
+      // (es. "Unknown" invece di 'Unknown'). SQLite stricter interpreta i double
+      // quotes come column reference → ogni ALTER/DROP su qualsiasi tabella
+      // triggera integrity check e fallisce con "no such column: \"\"".
+      // Detect + ricreate con single quotes.
+      const hostsTableSql = (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='hosts'").get() as { sql?: string } | undefined)?.sql ?? "";
+      if (hostsTableSql.includes('"Unknown"') || hostsTableSql.includes('"Windows"')) {
+        try {
+          newDb.exec("ALTER TABLE hosts DROP COLUMN os_family");
+          newDb.exec(`ALTER TABLE hosts ADD COLUMN os_family TEXT ${OS_FAMILY_GENERATED_SQL}`);
+          console.info(`[db-tenant] ${tenantCode}: hosts.os_family ricreata (fix double-quote legacy)`);
+        } catch (e) {
+          console.warn(`[db-tenant] ${tenantCode}: fix double-quote os_family fallito:`, e);
+        }
+      }
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione os_family fallita:`, e);
@@ -308,10 +333,31 @@ export function getTenantDb(tenantCode: string): Database.Database {
         newDb.exec("ALTER TABLE vuln_scanners ADD COLUMN cert_fingerprint TEXT");
         console.info(`[db-tenant] ${tenantCode}: vuln_scanners.cert_fingerprint aggiunto`);
       }
+      // v0.2.638 audit B7: auto-disable dopo K errori consecutivi.
+      if (!cols.some((c) => c.name === "consecutive_errors")) {
+        newDb.exec("ALTER TABLE vuln_scanners ADD COLUMN consecutive_errors INTEGER DEFAULT 0");
+        console.info(`[db-tenant] ${tenantCode}: vuln_scanners.consecutive_errors aggiunto`);
+      }
+      if (!cols.some((c) => c.name === "auto_disabled_at")) {
+        newDb.exec("ALTER TABLE vuln_scanners ADD COLUMN auto_disabled_at TEXT");
+        console.info(`[db-tenant] ${tenantCode}: vuln_scanners.auto_disabled_at aggiunto`);
+      }
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione cert_pin fallita:`, e);
   }
+
+  // v0.2.639 audit B8: la migration table-swap multihomed_links è stata
+  // tentata ma fallisce in produzione per il bug noto hosts.os_family
+  // GENERATED VIRTUAL con double-quote "Unknown"/"Windows"/... (vedi sopra,
+  // riga ~140). SQLite stricter interpreta le double-quote come reference a
+  // colonne inesistenti e fa abortire ogni ALTER su tabelle che hanno FK a
+  // hosts. Rollback: la migration runtime è disabilitata, lo schema nuovo
+  // (CHECK include 'physical_device') vale solo per nuovi tenant. Per i
+  // tenant esistenti il writer continua a usare match_type='physical_device'
+  // direttamente (era già coerente con il CHECK nuovo: lo è già lo schema
+  // upstream), e i record legacy con 'serial_number:physical_device:N' vanno
+  // bonificati via SQL manuale al boot del prossimo tenant nuovo. Piano: ADR-0004.
 
   // Migrazione runtime: network_devices.use_for_arp_poll (flag "Usa per polling ARP/MAC")
   // Permette di usare come sorgente ARP qualsiasi device (router, firewall, switch L3) indipendentemente dalla classification.
@@ -325,6 +371,20 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione use_for_arp_poll fallita:`, e);
+  }
+
+  // v0.2.659: aggiunto last_seen a ad_dhcp_leases + dhcp_leases per filtrare
+  // relitti vecchi. Migration additiva (ALTER ADD COLUMN), idempotente.
+  try {
+    for (const table of ["ad_dhcp_leases", "dhcp_leases"]) {
+      const cols = newDb.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      if (cols.length > 0 && !cols.some((c) => c.name === "last_seen")) {
+        newDb.exec(`ALTER TABLE ${table} ADD COLUMN last_seen TEXT`);
+        console.info(`[db-tenant] ${tenantCode}: ${table}.last_seen aggiunto`);
+      }
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione last_seen DHCP fallita:`, e);
   }
 
   // Migrazione runtime: network_devices.device_type CHECK include 'firewall'
@@ -473,6 +533,13 @@ export function getTenantDb(tenantCode: string): Database.Database {
         newDb.exec("ALTER TABLE multihomed_links ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0");
         console.info(`[db-tenant] ${tenantCode}: multihomed_links.is_primary aggiunto (verrà popolato al prossimo recomputeMultihomedLinks)`);
       }
+      // v0.2.617: il CHECK constraint di multihomed_links accetta solo 4 valori
+      // (serial_number/sysname/hostname/ad_dns) e non può essere esteso perché
+      // ogni DROP/ALTER su hosts fallisce per via di un legacy bug sulla
+      // GENERATED column os_family (double-quoted strings). Workaround:
+      // recomputeMultihomedLinks usa match_type='serial_number' anche per il
+      // bucket physical, con match_value che inizia per 'physical_device:' come
+      // marker — passa il CHECK e mantiene la semantica.
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione multihomed_links.is_primary fallita:`, e);
@@ -540,6 +607,56 @@ export function getTenantDb(tenantCode: string): Database.Database {
       newDb.exec("ALTER TABLE network_devices ADD COLUMN physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL");
       console.info(`[db-tenant] ${tenantCode}: network_devices.physical_device_id aggiunto`);
     }
+    // F4 (v0.2.595+): FK formale network_devices.host_id → hosts(id).
+    // Prima il join host↔device era solo per IP string (network_devices.host = hosts.ip):
+    // fragile e ambiguo se più reti hanno lo stesso IP. Ora abbiamo una vera
+    // relazione, con ON DELETE SET NULL (il device sopravvive se l'host viene
+    // rimosso dal discovery, ma perde l'ancora).
+    if (!ndCols.some((c) => c.name === "host_id")) {
+      newDb.exec("ALTER TABLE network_devices ADD COLUMN host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_network_devices_host_id ON network_devices(host_id)");
+      // Backfill best-effort in 2 passi:
+      //   1) match diretto su IP letterale (network_devices.host = hosts.ip)
+      //   2) match su IP estratto da host URL/host:port (es. Proxmox "https://1.2.3.4:8006")
+      //      usando SQLite REGEX semplificata via SUBSTR + INSTR.
+      try {
+        const phase1 = newDb.prepare(`
+          UPDATE network_devices SET host_id = (
+            SELECT h.id FROM hosts h WHERE h.ip = network_devices.host LIMIT 1
+          ) WHERE host_id IS NULL
+        `).run();
+
+        // Per URL/host:port serve estrarre l'IP. SQLite non ha REGEXP built-in,
+        // ma possiamo usare SUBSTR + INSTR per i pattern comuni: "scheme://IP[:port]"
+        // o "IP:port". Faccio passi separati per ognuno dei pattern.
+        let phase2Changes = 0;
+        // Pattern A: "https://IP:port" o "http://IP:port" o "https://IP/path"
+        const phase2a = newDb.prepare(`
+          UPDATE network_devices SET host_id = (
+            SELECT h.id FROM hosts h
+             WHERE host LIKE 'http%://' || h.ip || ':%'
+                OR host LIKE 'http%://' || h.ip || '/%'
+                OR host LIKE 'http%://' || h.ip
+             LIMIT 1
+          ) WHERE host_id IS NULL AND host LIKE 'http%://%'
+        `).run();
+        phase2Changes += phase2a.changes;
+        // Pattern B: "IP:port" senza scheme
+        const phase2b = newDb.prepare(`
+          UPDATE network_devices SET host_id = (
+            SELECT h.id FROM hosts h
+             WHERE host LIKE h.ip || ':%'
+             LIMIT 1
+          ) WHERE host_id IS NULL AND host LIKE '%:%' AND host NOT LIKE 'http%'
+        `).run();
+        phase2Changes += phase2b.changes;
+
+        const total = phase1.changes + phase2Changes;
+        console.info(`[db-tenant] ${tenantCode}: network_devices.host_id aggiunto (backfill: ${phase1.changes} direct + ${phase2Changes} URL/port = ${total} righe collegate)`);
+      } catch (e) {
+        console.warn(`[db-tenant] ${tenantCode}: backfill host_id fallito:`, e);
+      }
+    }
     const hCols = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
     if (!hCols.some((c) => c.name === "physical_device_id")) {
       newDb.exec("ALTER TABLE hosts ADD COLUMN physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL");
@@ -549,8 +666,118 @@ export function getTenantDb(tenantCode: string): Database.Database {
       newDb.exec("ALTER TABLE hosts ADD COLUMN host_source TEXT DEFAULT 'scan'");
       console.info(`[db-tenant] ${tenantCode}: hosts.host_source aggiunto`);
     }
+    // F1 (v0.2.590+): auto-classify server-side alla discovery.
+    // Suggerimenti calcolati da OUI/hostname/open_ports/snmp_data; usati dal modale
+    // di promozione come default editabili. classification_manual=1 li ignora.
+    const inferredCols: Array<{ name: string; sql: string }> = [
+      { name: "inferred_device_type", sql: "ALTER TABLE hosts ADD COLUMN inferred_device_type TEXT" },
+      { name: "inferred_vendor",      sql: "ALTER TABLE hosts ADD COLUMN inferred_vendor TEXT" },
+      { name: "inferred_protocol",    sql: "ALTER TABLE hosts ADD COLUMN inferred_protocol TEXT" },
+      { name: "inferred_scan_target", sql: "ALTER TABLE hosts ADD COLUMN inferred_scan_target TEXT" },
+      { name: "inferred_os_family",   sql: "ALTER TABLE hosts ADD COLUMN inferred_os_family TEXT" },
+      { name: "inferred_confidence",  sql: "ALTER TABLE hosts ADD COLUMN inferred_confidence INTEGER" },
+      { name: "inferred_reasons",     sql: "ALTER TABLE hosts ADD COLUMN inferred_reasons TEXT" },
+      { name: "inferred_at",          sql: "ALTER TABLE hosts ADD COLUMN inferred_at TEXT" },
+      // v0.2.602: versione classifier per ricomputo automatico quando le regole cambiano.
+      { name: "inferred_classifier_version", sql: "ALTER TABLE hosts ADD COLUMN inferred_classifier_version INTEGER" },
+    ];
+    for (const col of inferredCols) {
+      if (!hCols.some((c) => c.name === col.name)) {
+        newDb.exec(col.sql);
+        console.info(`[db-tenant] ${tenantCode}: hosts.${col.name} aggiunto`);
+      }
+    }
+    // Backfill/upgrade:
+    //   - host senza inferred_at → mai classificato
+    //   - host con inferred_classifier_version < CLASSIFIER_VERSION → ricomputo richiesto
+    // Idempotente: alle prossime apriture del tenant nessuno rientra nel WHERE
+    // (applyAutoClassification scrive sempre il numero di versione corrente).
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { applyAutoClassification, CLASSIFIER_VERSION } = require("./devices/auto-classify");
+      const toBackfill = newDb.prepare(
+        "SELECT id FROM hosts WHERE inferred_at IS NULL OR inferred_classifier_version IS NULL OR inferred_classifier_version < ?"
+      ).all(CLASSIFIER_VERSION) as Array<{ id: number }>;
+      if (toBackfill.length > 0) {
+        // v0.2.641 audit perf DB1: backfill di N host in singola transazione.
+        // Prima: 1 fsync per host (SELECT + UPDATE). Su 2000 host = ~30s.
+        // Ora: 1 fsync totale per tutto il backfill (~1s).
+        newDb.transaction(() => {
+          for (const row of toBackfill) {
+            try { applyAutoClassification(newDb, row.id); } catch { /* skip singolo host non classificabile */ }
+          }
+        })();
+        console.info(`[db-tenant] ${tenantCode}: auto-classify backfill v${CLASSIFIER_VERSION} su ${toBackfill.length} host`);
+      }
+    } catch (e) {
+      console.warn(`[db-tenant] ${tenantCode}: backfill auto-classify fallito:`, e);
+    }
+    // v0.2.610: bridge multihomed. Identity-resolver automatico (anchor=serial_number/
+    // primary_mac) ha popolato hosts.physical_device_id, ma `recomputeMultihomedLinks`
+    // non era chiamato in quel path → tabella multihomed_links vuota nonostante
+    // i cluster esistano. Detect del mismatch e ricomputo idempotente.
+    try {
+      const orphan = newDb.prepare(
+        `SELECT COUNT(*) AS n FROM hosts h
+         WHERE h.physical_device_id IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM multihomed_links ml WHERE ml.host_id = h.id)`
+      ).get() as { n: number };
+      if (orphan.n > 0) {
+        // recomputeMultihomedLinks è definita più sotto nello stesso modulo:
+        // chiamata sicura via re-import (evita circular initialization issue in
+        // SQL builder). Idempotente.
+        const result = recomputeMultihomedLinks(newDb);
+        console.info(`[db-tenant] ${tenantCode}: multihomed bridge — ${orphan.n} host orphan → ricomputati ${result.groups} gruppi, ${result.hosts_linked} link`);
+      }
+    } catch (e) {
+      console.warn(`[db-tenant] ${tenantCode}: bridge multihomed fallito:`, e);
+    }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione physical_devices fallita:`, e);
+  }
+
+  // v0.2.651: cleanup one-shot mac_port_entries più vecchi di 24h al boot tenant.
+  // Su tenant esistenti con backlog accumulato (es. 9300 righe in 25 giorni),
+  // libera subito spazio e velocizza getAllHostsEnriched.
+  try {
+    const r = newDb.prepare(
+      "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-24 hours')"
+    ).run() as { changes: number };
+    if (r.changes > 0) {
+      console.info(`[db-tenant] ${tenantCode}: mac_port_entries one-shot cleanup — ${r.changes} righe rimosse`);
+    }
+  } catch (e) {
+    console.warn(`[db-tenant] ${tenantCode}: mac_port_entries cleanup fallito:`, e);
+  }
+
+  // v0.2.652: recovery patch_operations stuck. Se ci sono job con status='queued'
+  // o 'running' all'apertura del DB, vuol dire che il process Node è stato
+  // riavviato durante la loro esecuzione → la Promise fire-and-forget è morta
+  // con il process e nessuno li riprenderà. Marchiamoli failed con messaggio
+  // chiaro così la UI sblocca e l'utente può ricreare l'operazione.
+  // Skip se patch management non è abilitato per il tenant (tabella non creata).
+  try {
+    const hasTable = newDb.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='patch_operations'"
+    ).get();
+    if (hasTable) {
+      const r = newDb.prepare(
+        `UPDATE patch_operations
+         SET status = 'failed',
+             finished_at = datetime('now'),
+             error_message = COALESCE(error_message, '') ||
+               CASE WHEN error_message IS NULL OR error_message = ''
+                    THEN 'Service restart durante esecuzione: job non ripreso al riavvio. Ricrea l''operazione.'
+                    ELSE '' END
+         WHERE status IN ('queued', 'running')
+           AND (started_at IS NULL OR started_at < datetime('now', '-10 minutes'))`
+      ).run() as { changes: number };
+      if (r.changes > 0) {
+        console.info(`[db-tenant] ${tenantCode}: patch_operations recovery — ${r.changes} job orfani segnati failed`);
+      }
+    }
+  } catch (e) {
+    console.warn(`[db-tenant] ${tenantCode}: patch_operations recovery fallito:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -595,6 +822,36 @@ function db(): Database.Database {
   const code = tenantContext.getStore();
   if (!code) throw new Error("Nessun contesto tenant — usare withTenant() prima di accedere al DB tenant");
   return getTenantDb(code);
+}
+
+// v0.2.648 audit perf MC2: statement cache per-Database. better-sqlite3 non
+// cacha internamente, quindi `db.prepare(sql)` ricompila ad ogni call (~50-100µs).
+// Su hot path (getHostsByNetwork, getScheduledJobById ad ogni cron tick, ...)
+// è puro overhead. Cached via WeakMap automaticamente GC'd quando il Database
+// handle viene evicted dalla LRU.
+const statementCache = new WeakMap<Database.Database, Map<string, Database.Statement>>();
+
+/**
+ * Ritorna un prepared statement riusabile per (db, sql). Cache automatica.
+ * USO: `prep("SELECT ...").get(...)` invece di `db().prepare("SELECT ...").get(...)`.
+ * Idempotente: la stessa stringa SQL produce la stessa Statement istanza.
+ *
+ * Generic <P>: tipo varargs dei parameter. Default unknown[]. Necessario per
+ * compatibilità con Statement.run/get/all che accettano signature variadica.
+ */
+export function prep<P extends unknown[] = unknown[]>(sql: string, targetDb?: Database.Database): Database.Statement<P> {
+  const d = targetDb ?? db();
+  let bucket = statementCache.get(d);
+  if (!bucket) {
+    bucket = new Map();
+    statementCache.set(d, bucket);
+  }
+  let stmt = bucket.get(sql);
+  if (!stmt) {
+    stmt = d.prepare(sql);
+    bucket.set(sql, stmt);
+  }
+  return stmt as Database.Statement<P>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -846,9 +1103,8 @@ export function deleteNetwork(id: number): boolean {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function getHostsByNetwork(networkId: number): Host[] {
-  const hosts = db().prepare(
-    "SELECT * FROM hosts WHERE network_id = ?"
-  ).all(networkId) as Host[];
+  // v0.2.648 audit perf MC2: prep cached (chiamato 100+ volte per scan grande).
+  const hosts = prep("SELECT * FROM hosts WHERE network_id = ?").all(networkId) as Host[];
   return hosts.sort((a, b) => ipToNum(a.ip) - ipToNum(b.ip));
 }
 
@@ -914,11 +1170,17 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
       GROUP BY network_id
     ) sj ON sj.network_id = h.network_id
     LEFT JOIN network_devices nd ON nd.host = h.ip
+    -- v0.2.645 audit perf DB2 + v0.2.650 hotfix: pre-aggregato seek-only su MAX(rowid).
+    -- Prima ROW_NUMBER() OVER (PARTITION BY mac) full-scan; il fix v0.2.645 usava
+    -- MAX(timestamp) ma le righe (mac, timestamp) NON sono uniche (fino a 4096
+    -- duplicati osservati su switch_port discovery che inserisce stessa riga ad
+    -- ogni tick) → INNER JOIN moltiplicava gli host. MAX(rowid) garantisce 1 riga
+    -- per mac (rowid univoco di default in SQLite).
     LEFT JOIN (
-      SELECT mac, port_name, device_id,
-             ROW_NUMBER() OVER (PARTITION BY mac ORDER BY timestamp DESC) AS rn
+      SELECT mac, port_name, device_id
       FROM mac_port_entries
-    ) mpe ON mpe.mac = h.mac AND mpe.rn = 1
+      WHERE rowid IN (SELECT MAX(rowid) FROM mac_port_entries GROUP BY mac)
+    ) mpe ON mpe.mac = h.mac
     LEFT JOIN network_devices sw ON sw.id = mpe.device_id
     LEFT JOIN (
       SELECT host_id, MAX(dns_host_name) AS ad_dns
@@ -1152,9 +1414,52 @@ export function getHostById(id: number): HostDetail | undefined {
     ORDER BY mpe.timestamp DESC LIMIT 1
   `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; port_name: string; vlan: number | null } | undefined : undefined;
 
-  const networkDevice = getNetworkDeviceByHost(host.ip);
+  // F4: prefer FK lookup (network_devices.host_id) over fragile IP string match;
+  // fallback all'IP per compatibilità con device pre-migration che potrebbero avere
+  // host_id NULL se il backfill non ha matchato (es. proxmox host="https://..."
+  // anziché IP plain).
+  const networkDevice = getNetworkDeviceByHostId(host.id) ?? getNetworkDeviceByHost(host.ip);
 
   const scanTypesSeen = [...new Set(recentScans.map((s) => s.scan_type))];
+
+  // v0.2.603: include multihomed group info (peers + is_primary). Prima era
+  // popolato solo dalla list discovery, /objects/[id] non lo riceveva → simbolo
+  // multihomed sempre nascosto anche dopo manual link manualLinkHostsToPhysicalDevice.
+  const mhLink = db().prepare(
+    "SELECT group_id, match_type, is_primary FROM multihomed_links WHERE host_id = ? LIMIT 1"
+  ).get(id) as { group_id: string; match_type: string; is_primary: number } | undefined;
+  let multihomed: {
+    group_id: string;
+    match_type: string;
+    is_primary: boolean;
+    primary_host_id: number | null;
+    primary_ip: string | null;
+    peers: Array<{ ip: string; network_name: string; host_id: number; is_primary: boolean }>;
+  } | null = null;
+  if (mhLink) {
+    const peers = db().prepare(
+      `SELECT ml.host_id, h.ip, n.name AS network_name, ml.is_primary
+         FROM multihomed_links ml
+         JOIN hosts h ON h.id = ml.host_id
+         JOIN networks n ON n.id = h.network_id
+        WHERE ml.group_id = ? AND ml.host_id != ?
+        ORDER BY h.ip`
+    ).all(mhLink.group_id, id) as Array<{ host_id: number; ip: string; network_name: string; is_primary: number }>;
+    const primary = db().prepare(
+      `SELECT ml.host_id, h.ip FROM multihomed_links ml
+         JOIN hosts h ON h.id = ml.host_id
+        WHERE ml.group_id = ? AND ml.is_primary = 1
+        LIMIT 1`
+    ).get(mhLink.group_id) as { host_id: number; ip: string } | undefined;
+    multihomed = {
+      group_id: mhLink.group_id,
+      match_type: mhLink.match_type,
+      is_primary: mhLink.is_primary === 1,
+      primary_host_id: primary?.host_id ?? null,
+      primary_ip: primary?.ip ?? null,
+      peers: peers.map((p) => ({ host_id: p.host_id, ip: p.ip, network_name: p.network_name, is_primary: p.is_primary === 1 })),
+    };
+  }
 
   return {
     ...host,
@@ -1165,6 +1470,7 @@ export function getHostById(id: number): HostDetail | undefined {
     arp_source: arpSource || null,
     switch_port: switchPort || null,
     network_device: networkDevice ? { id: networkDevice.id, name: networkDevice.name, sysname: networkDevice.sysname, vendor: networkDevice.vendor, protocol: networkDevice.protocol } : null,
+    multihomed,
   };
 }
 
@@ -1191,9 +1497,12 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
   ).get(input.network_id, input.ip) as { id: number } | undefined;
 
   if (existing) {
+    // v0.2.637 audit B3: aggiunti snmp_data/detection_json/vendor/hostname al
+    // SELECT per poter confrontare i SIGNAL del classifier e gate-are la
+    // chiamata a applyAutoClassification — vedi `shouldRecomputeClassification`.
     const existingRow = db().prepare(
-      "SELECT open_ports, classification_manual, model, serial_number, firmware, device_manufacturer, os_info, mac FROM hosts WHERE id = ?"
-    ).get(existing.id) as { open_ports: string | null; classification_manual?: number; model?: string | null; serial_number?: string | null; firmware?: string | null; device_manufacturer?: string | null; os_info?: string | null; mac?: string | null } | undefined;
+      "SELECT open_ports, classification_manual, model, serial_number, firmware, device_manufacturer, os_info, mac, snmp_data, detection_json, vendor, hostname FROM hosts WHERE id = ?"
+    ).get(existing.id) as { open_ports: string | null; classification_manual?: number; model?: string | null; serial_number?: string | null; firmware?: string | null; device_manufacturer?: string | null; os_info?: string | null; mac?: string | null; snmp_data?: string | null; detection_json?: string | null; vendor?: string | null; hostname?: string | null } | undefined;
     const classificationManual = existingRow?.classification_manual === 1;
     const preserve = input.preserve_existing === true;
     const fields: string[] = ["updated_at = datetime('now')"];
@@ -1315,6 +1624,33 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
         syncIpAssignmentsForNetwork(input.network_id);
       }
     }
+    // v0.2.637 audit B3: ricomputo classifier SOLO se cambia un signal rilevante.
+    // Prima `applyAutoClassification` veniva chiamato a ogni upsert — quindi
+    // anche su passaggi `status=online ↔ offline` da fast_scan/ping → migliaia
+    // di UPDATE+ricalcoli inutili al minuto. Ora gate con shouldRecomputeClassification.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { applyAutoClassification, shouldRecomputeClassification } = require("./devices/auto-classify");
+      const changedSignals = new Set<string>();
+      if (input.open_ports !== undefined && input.open_ports !== existingRow?.open_ports) changedSignals.add("open_ports");
+      if (input.snmp_data !== undefined && input.snmp_data !== existingRow?.snmp_data) changedSignals.add("snmp_data");
+      if (input.device_manufacturer !== undefined && input.device_manufacturer !== existingRow?.device_manufacturer) changedSignals.add("device_manufacturer");
+      if (input.hostname !== undefined && input.hostname !== existingRow?.hostname) changedSignals.add("hostname");
+      if (input.vendor !== undefined && input.vendor !== existingRow?.vendor) changedSignals.add("vendor");
+      if (input.detection_json !== undefined && input.detection_json !== existingRow?.detection_json) changedSignals.add("detection_json");
+      if (input.os_info !== undefined && input.os_info !== existingRow?.os_info) changedSignals.add("os_info");
+      if (shouldRecomputeClassification(changedSignals)) {
+        applyAutoClassification(db(), host.id);
+      }
+    } catch { /* non blocca l'upsert se la classificazione fallisce */ }
+    // F4 v0.2.597: reverse trigger — se esiste un network_device con host = IP
+    // dell'host appena aggiornato e host_id NULL, lo collega ora (caso tipico:
+    // device creato manualmente prima che l'host fosse scoperto via discovery).
+    try {
+      db().prepare(
+        "UPDATE network_devices SET host_id = ?, updated_at = datetime('now') WHERE host_id IS NULL AND host = ?"
+      ).run(host.id, host.ip);
+    } catch { /* niente */ }
     return host;
   }
 
@@ -1371,6 +1707,19 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       hostname: host.hostname ?? undefined,
     });
   }
+  // F1: prima classificazione automatica all'insert.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { applyAutoClassification } = require("./devices/auto-classify");
+    applyAutoClassification(db(), host.id);
+  } catch { /* non blocca l'insert se la classificazione fallisce */ }
+  // F4 v0.2.597: reverse trigger anche nel branch INSERT (host nuovo) — un device
+  // potrebbe già esistere col suo IP e attendere il host_id.
+  try {
+    db().prepare(
+      "UPDATE network_devices SET host_id = ?, updated_at = datetime('now') WHERE host_id IS NULL AND host = ?"
+    ).run(host.id, host.ip);
+  } catch { /* niente */ }
   return host;
 }
 
@@ -1397,6 +1746,10 @@ export function updateHost(id: number, input: HostUpdate): Host | undefined {
   if (input.known_host !== undefined) { fields.push("known_host = ?"); values.push(input.known_host); }
   if (input.monitor_ports !== undefined) { fields.push("monitor_ports = ?"); values.push(input.monitor_ports); }
   if (input.device_manufacturer !== undefined) { fields.push("device_manufacturer = ?"); values.push(input.device_manufacturer); }
+  // v0.2.605: editing manuale anagrafica device da scheda asset
+  if (input.serial_number !== undefined) { fields.push("serial_number = ?"); values.push(input.serial_number || null); }
+  if (input.model !== undefined) { fields.push("model = ?"); values.push(input.model || null); }
+  if (input.firmware !== undefined) { fields.push("firmware = ?"); values.push(input.firmware || null); }
   if (input.ip_assignment !== undefined) { fields.push("ip_assignment = ?"); values.push(input.ip_assignment); }
   if (input.status !== undefined) {
     fields.push("status = ?");
@@ -1636,6 +1989,24 @@ export function getNetworkDevices(): NetworkDevice[] {
   return db().prepare("SELECT * FROM network_devices ORDER BY name").all() as NetworkDevice[];
 }
 
+/**
+ * v0.2.661: sources DHCP effettive — qualunque network_device con almeno 1
+ * lease in `dhcp_leases`. Include Mikrotik, Windows DHCP (auto-create da sync AD),
+ * o altri (Cisco, OpenWRT, ecc). Sostituisce il filtro hardcoded
+ * "vendor=mikrotik AND protocol=ssh" che escludeva Microsoft DHCP.
+ */
+export function getDhcpSources(): Array<{ id: number; name: string; host: string; vendor: string; type: string; lease_count: number; last_synced: string | null }> {
+  return db().prepare(`
+    SELECT nd.id, nd.name, nd.host, nd.vendor, d.source_type AS type,
+           COUNT(d.id) AS lease_count,
+           MAX(d.last_synced) AS last_synced
+    FROM network_devices nd
+    JOIN dhcp_leases d ON d.source_device_id = nd.id
+    GROUP BY nd.id, nd.name, nd.host, nd.vendor, d.source_type
+    ORDER BY lease_count DESC, nd.name ASC
+  `).all() as Array<{ id: number; name: string; host: string; vendor: string; type: string; lease_count: number; last_synced: string | null }>;
+}
+
 export function getRouters(): NetworkDevice[] {
   return db().prepare("SELECT * FROM network_devices WHERE device_type = 'router' ORDER BY name").all() as NetworkDevice[];
 }
@@ -1730,17 +2101,32 @@ export function getNetworkDeviceByHost(ip: string): NetworkDevice | undefined {
   return db().prepare("SELECT * FROM network_devices WHERE host = ?").get(ip) as NetworkDevice | undefined;
 }
 
+/** F4: lookup device via FK host_id (più affidabile della string match su IP). */
+export function getNetworkDeviceByHostId(hostId: number): NetworkDevice | undefined {
+  return db().prepare("SELECT * FROM network_devices WHERE host_id = ? ORDER BY id LIMIT 1").get(hostId) as NetworkDevice | undefined;
+}
+
 type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll"> & {
   classification?: string | null;
   scan_target?: string | null;
   product_profile?: string | null;
   use_for_arp_poll?: number | boolean | null;
+  /** F4: opzionale — se non passato, lookup automatico via IP. */
+  host_id?: number | null;
 };
 
 export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
+  // F4: auto-lookup host_id da IP se non passato esplicitamente. Best-effort:
+  // se più reti hanno lo stesso IP, prendiamo il primo match (raro nei deploy reali).
+  let hostId: number | null = input.host_id ?? null;
+  if (hostId === null && input.host) {
+    const match = db().prepare("SELECT id FROM hosts WHERE ip = ? ORDER BY id LIMIT 1").get(input.host) as { id: number } | undefined;
+    if (match) hostId = match.id;
+  }
+
   const stmt = db().prepare(
-    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll, host_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name, input.host, input.device_type, input.vendor,
@@ -1751,7 +2137,8 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     (input as { classification?: string | null }).classification ?? null,
     (input as { scan_target?: string | null }).scan_target ?? null,
     (input as { product_profile?: string | null }).product_profile ?? null,
-    (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === 1 || (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === true ? 1 : 0
+    (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === 1 || (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === true ? 1 : 0,
+    hostId
   );
   return db().prepare("SELECT * FROM network_devices WHERE id = ?").get(result.lastInsertRowid) as NetworkDevice;
 }
@@ -1760,7 +2147,7 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll"] as const;
+  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id"] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);
@@ -2833,6 +3220,22 @@ export function upsertMacPortEntries(deviceId: number, entries: { mac: string; p
   insertMany(entries);
 }
 
+/**
+ * v0.2.651: retention mac_port_entries — elimina row più vecchie di N ore.
+ * Lo switch_port discovery inserisce fino a 4096 row per ogni run (intera MAC
+ * table dello switch). Senza retention la tabella cresce indefinitamente:
+ * misurato su tenant prod 70791 ~9300 righe in 25 giorni con tabelle MAC piccole;
+ * su switch enterprise (4096 MAC × 4 scan/giorno) diventa milioni in poche
+ * settimane. Default 24h è sicuro: getMacPortEntriesByDevice mostra solo le
+ * ultime, e `upsertMacPortEntries` rimpiazza per device ad ogni scan.
+ */
+export function cleanupOldMacPortEntries(retentionHours: number = 24): number {
+  const r = db().prepare(
+    "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' hours')"
+  ).run(retentionHours) as { changes: number };
+  return r.changes;
+}
+
 export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { host_ip?: string; host_name?: string })[] {
   return db().prepare(`
     SELECT mpe.*,
@@ -2851,26 +3254,48 @@ export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { h
 
 export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types").SwitchPort, "id" | "device_id" | "timestamp">[]): void {
   const d = db();
-  d.prepare("DELETE FROM switch_ports WHERE device_id = ?").run(deviceId);
 
-  // Valida FK prima dell'inserimento: host_id e trunk_primary_device_id potrebbero essere stale
-  const hostExists = d.prepare("SELECT id FROM hosts WHERE id = ?");
-  const deviceExists = d.prepare("SELECT id FROM network_devices WHERE id = ?");
+  // v0.2.645 audit perf DB4:
+  //  - DELETE spostato DENTRO la transazione (prima era 1 fsync separato).
+  //  - hostExists/deviceExists query individuali sostituite da Set pre-caricati
+  //    (1 SELECT × 2 contro N × 2 SELECT per ogni port). Su switch 48-port:
+  //    96 SELECT FK probes → 2. Combinato con DELETE in-tx: 40-60ms → ~8ms.
+  const candidateHostIds = new Set<number>();
+  const candidateDeviceIds = new Set<number>();
+  for (const p of ports) {
+    if (p.host_id != null) candidateHostIds.add(p.host_id);
+    if (p.trunk_primary_device_id != null) candidateDeviceIds.add(p.trunk_primary_device_id);
+  }
+  const validHosts = new Set<number>();
+  if (candidateHostIds.size > 0) {
+    const placeholders = Array.from(candidateHostIds).map(() => "?").join(",");
+    for (const row of d.prepare(`SELECT id FROM hosts WHERE id IN (${placeholders})`).all(...candidateHostIds) as Array<{ id: number }>) {
+      validHosts.add(row.id);
+    }
+  }
+  const validDevices = new Set<number>();
+  if (candidateDeviceIds.size > 0) {
+    const placeholders = Array.from(candidateDeviceIds).map(() => "?").join(",");
+    for (const row of d.prepare(`SELECT id FROM network_devices WHERE id IN (${placeholders})`).all(...candidateDeviceIds) as Array<{ id: number }>) {
+      validDevices.add(row.id);
+    }
+  }
 
   const stmt = d.prepare(
     `INSERT INTO switch_ports (device_id, port_index, port_name, status, speed, duplex, vlan, poe_status, poe_power_mw, mac_count, is_trunk, single_mac, single_mac_vendor, single_mac_ip, single_mac_hostname, host_id, trunk_neighbor_name, trunk_neighbor_port, trunk_primary_device_id, trunk_primary_name, stp_state)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
-  const insertMany = d.transaction((items: typeof ports) => {
+  const replaceAll = d.transaction((items: typeof ports) => {
+    d.prepare("DELETE FROM switch_ports WHERE device_id = ?").run(deviceId);
     for (const p of items) {
-      const hostId = p.host_id != null && hostExists.get(p.host_id) ? p.host_id : null;
-      const trunkDeviceId = p.trunk_primary_device_id != null && deviceExists.get(p.trunk_primary_device_id) ? p.trunk_primary_device_id : null;
+      const hostId = p.host_id != null && validHosts.has(p.host_id) ? p.host_id : null;
+      const trunkDeviceId = p.trunk_primary_device_id != null && validDevices.has(p.trunk_primary_device_id) ? p.trunk_primary_device_id : null;
       stmt.run(deviceId, p.port_index, p.port_name, p.status, p.speed, p.duplex, p.vlan, p.poe_status, p.poe_power_mw, p.mac_count, p.is_trunk, p.single_mac, p.single_mac_vendor, p.single_mac_ip, p.single_mac_hostname, hostId, p.trunk_neighbor_name ?? null, p.trunk_neighbor_port ?? null, trunkDeviceId, trunkDeviceId ? (p.trunk_primary_name ?? null) : null, p.stp_state ?? null);
     }
   });
 
-  insertMany(ports);
+  replaceAll(ports);
 }
 
 export function getSwitchPortsByDevice(deviceId: number): import("@/types").SwitchPort[] {
@@ -3135,11 +3560,22 @@ export function getPrimaryBindingForProtocol(deviceId: number, protocolType: str
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function getScheduledJobs(): ScheduledJob[] {
-  return db().prepare("SELECT * FROM scheduled_jobs ORDER BY id").all() as ScheduledJob[];
+  // v0.2.648 audit perf MC2: prep cached.
+  return prep("SELECT * FROM scheduled_jobs ORDER BY id").all() as ScheduledJob[];
+}
+
+/**
+ * v0.2.642 audit perf MC3: fetch mirato per cron tick (`runJob`). Prima ogni
+ * tick faceva `getScheduledJobs()` (full table scan + .find() lato JS); su 10
+ * tenant × 8 job × 1 tick/min = 80 query/min inutili. Ora una sola SELECT con WHERE id.
+ * v0.2.648 audit perf MC2: prep cached (lo stesso statement riusato ogni tick).
+ */
+export function getScheduledJobById(id: number): ScheduledJob | undefined {
+  return prep("SELECT * FROM scheduled_jobs WHERE id = ?").get(id) as ScheduledJob | undefined;
 }
 
 export function getEnabledJobs(): ScheduledJob[] {
-  return db().prepare("SELECT * FROM scheduled_jobs WHERE enabled = 1").all() as ScheduledJob[];
+  return prep("SELECT * FROM scheduled_jobs WHERE enabled = 1").all() as ScheduledJob[];
 }
 
 export function createScheduledJob(input: ScheduledJobInput): ScheduledJob {
@@ -3294,9 +3730,41 @@ export function applyTenantSchedulerDefaults(): { jobsDisabled: number; jobsSeed
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function addStatusHistory(hostId: number, status: "online" | "offline", responseTimeMs?: number | null): void {
-  db().prepare(
-    "INSERT INTO status_history (host_id, status, response_time_ms) VALUES (?, ?, ?)"
-  ).run(hostId, status, responseTimeMs ?? null);
+  // v0.2.648 audit perf MC2: prep cached.
+  prep("INSERT INTO status_history (host_id, status, response_time_ms) VALUES (?, ?, ?)")
+    .run(hostId, status, responseTimeMs ?? null);
+}
+
+/**
+ * v0.2.645 audit perf DB8: helper combinato per known-host-check.
+ * Prima il loop faceva 3 fsync separati per host (addStatusHistory +
+ * updateHost + UPDATE last_response_time_ms). Su 360 host = 1080 fsync per
+ * ciclo (~15-20s solo I/O). Ora 1 transazione → ~7s.
+ *
+ * Combina: INSERT status_history + UPDATE hosts.status + last_seen + last_response_time_ms.
+ */
+export function recordHostHeartbeat(
+  hostId: number,
+  status: "online" | "offline",
+  responseTimeMs: number | null,
+): void {
+  const d = db();
+  const tx = d.transaction(() => {
+    d.prepare(
+      "INSERT INTO status_history (host_id, status, response_time_ms) VALUES (?, ?, ?)"
+    ).run(hostId, status, responseTimeMs);
+    // status + last_seen (solo online) + last_response_time_ms in un solo UPDATE
+    if (status === "online") {
+      d.prepare(
+        "UPDATE hosts SET status = ?, last_seen = datetime('now'), last_response_time_ms = ?, updated_at = datetime('now') WHERE id = ?"
+      ).run(status, responseTimeMs, hostId);
+    } else {
+      d.prepare(
+        "UPDATE hosts SET status = ?, last_response_time_ms = ?, updated_at = datetime('now') WHERE id = ?"
+      ).run(status, responseTimeMs, hostId);
+    }
+  });
+  tx();
 }
 
 export function getStatusHistory(hostId: number, limit: number = 100): StatusHistory[] {
@@ -4269,17 +4737,44 @@ function ipv4ToInt(ip: string): number {
   return n;
 }
 
-export function recomputeMultihomedLinks(): { groups: number; hosts_linked: number } {
-  const d = db();
+/**
+ * Parametro `targetDb` opzionale: se passato (uso interno dalla migration getTenantDb),
+ * usa quel handle invece di `db()` (che richiede context tenant attivo, non ancora
+ * disponibile durante l'apertura).
+ */
+// v0.2.639 audit B8: detect cached se lo schema multihomed_links ammette
+// 'physical_device' nel CHECK constraint. Cache per Database handle (tenant).
+const multihomedSchemaSupports = new WeakMap<Database.Database, boolean>();
+function multihomedSupportsPhysicalDevice(targetDb?: Database.Database): boolean {
+  const d = targetDb ?? db();
+  const cached = multihomedSchemaSupports.get(d);
+  if (cached !== undefined) return cached;
+  try {
+    const row = d.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='multihomed_links'").get() as { sql?: string } | undefined;
+    const ok = !!row?.sql && row.sql.includes("'physical_device'");
+    multihomedSchemaSupports.set(d, ok);
+    return ok;
+  } catch {
+    multihomedSchemaSupports.set(d, false);
+    return false;
+  }
+}
+
+export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups: number; hosts_linked: number } {
+  const d = targetDb ?? db();
   // Includo `has_device` (1 se l'host ha un network_device associato via IP) per
   // l'auto-pick primary: i managed hanno priorità perché concentrano credenziali,
   // SNMP context e storia di scan.
-  const hosts = d.prepare(`SELECT h.id, h.network_id, h.ip, h.hostname, h.serial_number, h.snmp_data, h.custom_name, nd.sysname AS dev_sysname, nd.serial_number AS dev_serial, ac.dns_host_name AS ad_dns, CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device FROM hosts h LEFT JOIN network_devices nd ON nd.host = h.ip LEFT JOIN (SELECT host_id, MAX(dns_host_name) as dns_host_name FROM ad_computers WHERE host_id IS NOT NULL GROUP BY host_id) ac ON ac.host_id = h.id`).all() as Array<{ id: number; network_id: number; ip: string; hostname: string | null; serial_number: string | null; snmp_data: string | null; custom_name: string | null; dev_sysname: string | null; dev_serial: string | null; ad_dns: string | null; has_device: number }>;
+  // F4 v0.2.596: leggo anche hosts.physical_device_id come anchor di aggregazione.
+  // Un physical_device_id condiviso è la firma più forte possibile (utente l'ha
+  // dichiarato esplicitamente o l'identity-resolver l'ha trovato): prevale su tutto.
+  const hosts = d.prepare(`SELECT h.id, h.network_id, h.ip, h.hostname, h.serial_number, h.snmp_data, h.custom_name, h.physical_device_id, nd.sysname AS dev_sysname, nd.serial_number AS dev_serial, ac.dns_host_name AS ad_dns, CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device FROM hosts h LEFT JOIN network_devices nd ON nd.host = h.ip LEFT JOIN (SELECT host_id, MAX(dns_host_name) as dns_host_name FROM ad_computers WHERE host_id IS NOT NULL GROUP BY host_id) ac ON ac.host_id = h.id`).all() as Array<{ id: number; network_id: number; ip: string; hostname: string | null; serial_number: string | null; snmp_data: string | null; custom_name: string | null; physical_device_id: number | null; dev_sysname: string | null; dev_serial: string | null; ad_dns: string | null; has_device: number }>;
   const hostMeta = new Map<number, { ip: string; has_device: number }>();
   for (const h of hosts) hostMeta.set(h.id, { ip: h.ip, has_device: h.has_device });
   const buckets = new Map<string, Set<number>>();
   const hostNet = new Map<number, number>();
-  const PRIORITY: Record<string, number> = { serial_number: 4, sysname: 3, hostname: 2, ad_dns: 1 };
+  // F4 v0.2.596: priorità 5 a physical_device (anchor user-marked / resolver-validated).
+  const PRIORITY: Record<string, number> = { physical_device: 5, serial_number: 4, sysname: 3, hostname: 2, ad_dns: 1 };
   const hostBest = new Map<number, { type: string; value: string; priority: number }>();
   function addToBucket(key: string, hostId: number, type: string, value: string) {
     if (!buckets.has(key)) buckets.set(key, new Set());
@@ -4290,6 +4785,19 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
   }
   for (const h of hosts) {
     hostNet.set(h.id, h.network_id);
+    // F4 v0.2.596: anchor #1 — physical_device_id condiviso (dichiarazione esplicita
+    // o aggregazione automatica). Sufficiente da solo per formare un gruppo.
+    // v0.2.639 audit B8: schema nuovo (CHECK include 'physical_device') vale per
+    // tenant nuovi; tenant esistenti hanno CHECK vecchio (la migration ha fallito
+    // per il bug os_family GENERATED, rollback). Detect runtime: se il CHECK
+    // ammette 'physical_device' usa quello, altrimenti workaround serial_number.
+    if (h.physical_device_id) {
+      if (multihomedSupportsPhysicalDevice(d)) {
+        addToBucket(`physical:${h.physical_device_id}`, h.id, "physical_device", String(h.physical_device_id));
+      } else {
+        addToBucket(`physical:${h.physical_device_id}`, h.id, "serial_number", `physical_device:${h.physical_device_id}`);
+      }
+    }
     const serial = (h.serial_number || h.dev_serial || "").trim().toUpperCase();
     if (serial && serial.length >= 4) addToBucket(`serial:${serial}`, h.id, "serial_number", serial);
     let sysName = h.dev_sysname ?? null;
@@ -4301,9 +4809,28 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
     if (adDns && adDns.length >= 3) { const shortAd = adDns.split(".")[0]; if (shortAd.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(shortAd)) addToBucket(`ad_dns:${shortAd}`, h.id, "ad_dns", h.ad_dns!.trim()); }
   }
   const parent = new Map<number, number>();
+  // F4 v0.2.596: traccio quali host appartengono ad almeno un bucket "physical"
+  // (aggregazione manuale o resolver-validated). Quei gruppi devono persistere
+  // anche se gli host sono nella stessa rete — il check classico "reti diverse"
+  // è troppo restrittivo quando l'utente ha già dichiarato la relazione.
+  const physicalLinkedHosts = new Set<number>();
   function find(x: number): number { if (!parent.has(x)) parent.set(x, x); if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!)); return parent.get(x)!; }
   function union(a: number, b: number) { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); }
-  for (const [, hostIds] of buckets) { if (hostIds.size < 2) continue; const nets = new Set<number>(); for (const hid of hostIds) nets.add(hostNet.get(hid)!); if (nets.size < 2) continue; const arr = [...hostIds]; for (let i = 1; i < arr.length; i++) union(arr[0], arr[i]); }
+  for (const [key, hostIds] of buckets) {
+    if (hostIds.size < 2) continue;
+    const isPhysical = key.startsWith("physical:");
+    if (isPhysical) {
+      for (const hid of hostIds) physicalLinkedHosts.add(hid);
+    } else {
+      // Per anchor non-physical conserva la regola "reti diverse" (evita falsi
+      // positivi su hostname/sysname brevi che capitano nella stessa subnet).
+      const nets = new Set<number>();
+      for (const hid of hostIds) nets.add(hostNet.get(hid)!);
+      if (nets.size < 2) continue;
+    }
+    const arr = [...hostIds];
+    for (let i = 1; i < arr.length; i++) union(arr[0], arr[i]);
+  }
   const finalGroups = new Map<number, Set<number>>();
   for (const [hid] of parent) { const root = find(hid); if (!finalGroups.has(root)) finalGroups.set(root, new Set()); finalGroups.get(root)!.add(hid); }
   let groupCount = 0;
@@ -4313,9 +4840,13 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
     const ins = d.prepare("INSERT OR IGNORE INTO multihomed_links (group_id, host_id, match_type, match_value, is_primary) VALUES (?, ?, ?, ?, ?)");
     for (const [, members] of finalGroups) {
       if (members.size < 2) continue;
-      const nets = new Set<number>();
-      for (const hid of members) nets.add(hostNet.get(hid)!);
-      if (nets.size < 2) continue;
+      // Skip "diverse reti" check per gruppi che includono link physical (manuale).
+      const hasPhysicalAnchor = [...members].some((hid) => physicalLinkedHosts.has(hid));
+      if (!hasPhysicalAnchor) {
+        const nets = new Set<number>();
+        for (const hid of members) nets.add(hostNet.get(hid)!);
+        if (nets.size < 2) continue;
+      }
       const groupId = randomUUID();
       groupCount++;
       // Auto-pick primary: priorità (1) host con network_device associato (managed),
@@ -4331,7 +4862,10 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
       for (const hid of members) {
         const best = hostBest.get(hid);
         if (best) {
-          ins.run(groupId, hid, best.type, best.value, hid === primaryHid ? 1 : 0);
+          // v0.2.617: type 'physical_device' non passa il CHECK constraint (vedi
+          // commento sopra). Lo mappiamo a 'serial_number' col marker nel value.
+          const dbType = best.type === "physical_device" ? "serial_number" : best.type;
+          ins.run(groupId, hid, dbType, best.value, hid === primaryHid ? 1 : 0);
           totalLinked++;
         }
       }
@@ -4448,9 +4982,10 @@ export function getAdDhcpLeasesPaginated(integrationId: number, page: number, pa
   return { rows, total };
 }
 
-export function upsertAdDhcpLease(integrationId: number, input: { scope_id: string; scope_name?: string | null; ip_address: string; mac_address: string; hostname?: string | null; lease_expires?: string | null; address_state?: string | null; description?: string | null }): void {
+export function upsertAdDhcpLease(integrationId: number, input: { scope_id: string; scope_name?: string | null; ip_address: string; mac_address: string; hostname?: string | null; lease_expires?: string | null; address_state?: string | null; description?: string | null; last_seen?: string | null }): void {
   const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
-  db().prepare(`INSERT INTO ad_dhcp_leases (integration_id, scope_id, scope_name, ip_address, mac_address, hostname, lease_expires, address_state, description, last_synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(integration_id, ip_address) DO UPDATE SET scope_id = excluded.scope_id, scope_name = excluded.scope_name, mac_address = excluded.mac_address, hostname = excluded.hostname, lease_expires = excluded.lease_expires, address_state = excluded.address_state, description = excluded.description, last_synced = datetime('now')`).run(integrationId, input.scope_id, input.scope_name ?? null, input.ip_address, macNorm, input.hostname ?? null, input.lease_expires ?? null, input.address_state ?? null, input.description ?? null);
+  // v0.2.659: aggiunto last_seen (calcolato lato PS come LeaseExpiryTime - LeaseDuration).
+  db().prepare(`INSERT INTO ad_dhcp_leases (integration_id, scope_id, scope_name, ip_address, mac_address, hostname, lease_expires, address_state, description, last_seen, last_synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(integration_id, ip_address) DO UPDATE SET scope_id = excluded.scope_id, scope_name = excluded.scope_name, mac_address = excluded.mac_address, hostname = excluded.hostname, lease_expires = excluded.lease_expires, address_state = excluded.address_state, description = excluded.description, last_seen = excluded.last_seen, last_synced = datetime('now')`).run(integrationId, input.scope_id, input.scope_name ?? null, input.ip_address, macNorm, input.hostname ?? null, input.lease_expires ?? null, input.address_state ?? null, input.description ?? null, input.last_seen ?? null);
 }
 
 export function clearAdDhcpLeases(integrationId: number): void {
@@ -4461,7 +4996,7 @@ export function clearAdDhcpLeases(integrationId: number): void {
 // DHCP LEASES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export interface DhcpLease { id: number; source_type: "mikrotik" | "windows" | "cisco" | "other"; source_device_id: number | null; source_name: string | null; server_name: string | null; scope_id: string | null; scope_name: string | null; ip_address: string; mac_address: string; hostname: string | null; status: string | null; lease_start: string | null; lease_expires: string | null; description: string | null; dynamic_lease: number | null; host_id: number | null; network_id: number | null; last_synced: string; }
+export interface DhcpLease { id: number; source_type: "mikrotik" | "windows" | "cisco" | "other"; source_device_id: number | null; source_name: string | null; server_name: string | null; scope_id: string | null; scope_name: string | null; ip_address: string; mac_address: string; hostname: string | null; status: string | null; lease_start: string | null; lease_expires: string | null; description: string | null; dynamic_lease: number | null; last_seen: string | null; host_id: number | null; network_id: number | null; last_synced: string; }
 export interface DhcpLeaseWithRelations extends DhcpLease { host_hostname?: string | null; host_ip?: string | null; network_name?: string | null; network_cidr?: string | null; device_name?: string | null; }
 
 export function getDhcpLeases(): DhcpLeaseWithRelations[] {
@@ -4498,10 +5033,12 @@ export function getDhcpLeasesByDevice(deviceId: number): DhcpLease[] {
   return db().prepare("SELECT * FROM dhcp_leases WHERE source_device_id = ? ORDER BY ip_address").all(deviceId) as DhcpLease[];
 }
 
-export function upsertDhcpLease(input: { source_type: "mikrotik" | "windows" | "cisco" | "other"; source_device_id: number; source_name?: string | null; server_name?: string | null; scope_id?: string | null; scope_name?: string | null; ip_address: string; mac_address: string; hostname?: string | null; status?: string | null; lease_start?: string | null; lease_expires?: string | null; description?: string | null; host_id?: number | null; network_id?: number | null; dynamic_lease?: number | null }): void {
+export function upsertDhcpLease(input: { source_type: "mikrotik" | "windows" | "cisco" | "other"; source_device_id: number; source_name?: string | null; server_name?: string | null; scope_id?: string | null; scope_name?: string | null; ip_address: string; mac_address: string; hostname?: string | null; status?: string | null; lease_start?: string | null; lease_expires?: string | null; description?: string | null; host_id?: number | null; network_id?: number | null; dynamic_lease?: number | null; last_seen?: string | null }): void {
   const d = db();
   const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
-  d.prepare(`INSERT INTO dhcp_leases (source_type, source_device_id, source_name, server_name, scope_id, scope_name, ip_address, mac_address, hostname, status, lease_start, lease_expires, description, dynamic_lease, host_id, network_id, last_synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(source_device_id, ip_address) DO UPDATE SET source_name = excluded.source_name, server_name = excluded.server_name, scope_id = excluded.scope_id, scope_name = excluded.scope_name, mac_address = excluded.mac_address, hostname = excluded.hostname, status = excluded.status, lease_start = excluded.lease_start, lease_expires = excluded.lease_expires, description = excluded.description, dynamic_lease = COALESCE(excluded.dynamic_lease, dhcp_leases.dynamic_lease), host_id = COALESCE(excluded.host_id, dhcp_leases.host_id), network_id = COALESCE(excluded.network_id, dhcp_leases.network_id), last_synced = datetime('now')`).run(input.source_type, input.source_device_id, input.source_name ?? null, input.server_name ?? null, input.scope_id ?? null, input.scope_name ?? null, input.ip_address, macNorm, input.hostname ?? null, input.status ?? null, input.lease_start ?? null, input.lease_expires ?? null, input.description ?? null, input.dynamic_lease ?? null, input.host_id ?? null, input.network_id ?? null);
+  // v0.2.659: aggiunto last_seen (ISO timestamp, da Mikrotik last-seen o
+  // calcolato per Windows DHCP).
+  d.prepare(`INSERT INTO dhcp_leases (source_type, source_device_id, source_name, server_name, scope_id, scope_name, ip_address, mac_address, hostname, status, lease_start, lease_expires, description, dynamic_lease, last_seen, host_id, network_id, last_synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(source_device_id, ip_address) DO UPDATE SET source_name = excluded.source_name, server_name = excluded.server_name, scope_id = excluded.scope_id, scope_name = excluded.scope_name, mac_address = excluded.mac_address, hostname = excluded.hostname, status = excluded.status, lease_start = excluded.lease_start, lease_expires = excluded.lease_expires, description = excluded.description, dynamic_lease = COALESCE(excluded.dynamic_lease, dhcp_leases.dynamic_lease), last_seen = COALESCE(excluded.last_seen, dhcp_leases.last_seen), host_id = COALESCE(excluded.host_id, dhcp_leases.host_id), network_id = COALESCE(excluded.network_id, dhcp_leases.network_id), last_synced = datetime('now')`).run(input.source_type, input.source_device_id, input.source_name ?? null, input.server_name ?? null, input.scope_id ?? null, input.scope_name ?? null, input.ip_address, macNorm, input.hostname ?? null, input.status ?? null, input.lease_start ?? null, input.lease_expires ?? null, input.description ?? null, input.dynamic_lease ?? null, input.last_seen ?? null, input.host_id ?? null, input.network_id ?? null);
 }
 
 export function syncIpAssignmentsForNetwork(networkId: number): number {
@@ -4683,7 +5220,28 @@ export interface HostVulnSummary {
   total: number;
 }
 
+// v0.2.646 audit perf UI11: cache per-tenant del summary CVE, TTL 30s.
+// La query fa 2 full-scan + GROUP BY su vuln_findings + wazuh_vuln (100k row
+// tipici = 500-1500ms). Viene invocata ad ogni hit di /api/hosts/discovery
+// (apertura pagina + refetch post-mutation). Cache abbatte il costo dopo
+// la prima call, invalidata implicitamente dal TTL.
+interface VulnSummaryCacheEntry {
+  data: Map<number, HostVulnSummary>;
+  expires: number;
+}
+const vulnSummaryCache = new Map<string, VulnSummaryCacheEntry>();
+const VULN_SUMMARY_TTL_MS = 30_000;
+
+export function invalidateAllHostsVulnSummaryCache(): void {
+  const tenant = getCurrentTenantCode() ?? "_default";
+  vulnSummaryCache.delete(tenant);
+}
+
 export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
+  const tenant = getCurrentTenantCode() ?? "_default";
+  const cached = vulnSummaryCache.get(tenant);
+  if (cached && cached.expires > Date.now()) return cached.data;
+
   // Aggregazione SU TUTTE le scan_run + Wazuh: per ogni host conta findings
   // per severità da entrambe le fonti (scanner-edge `vuln_findings` e Wazuh
   // `wazuh_vuln` joinato via wazuh_agent.host_id). Per discovery interessa
@@ -4733,6 +5291,7 @@ export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
     }
     map.set(r.host_id, cur);
   }
+  vulnSummaryCache.set(tenant, { data: map, expires: Date.now() + VULN_SUMMARY_TTL_MS });
   return map;
 }
 
@@ -6015,4 +6574,68 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
       return (b.version ?? "").localeCompare(a.version ?? "", undefined, { numeric: true });
     })
     .slice(0, limit);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CUSTOM CLASSIFICATIONS (v0.2.632)
+// Tabella tenant `device_classifications_custom`: sotto-categorie utente di
+// classification built-in. Eredita icona/macro-categoria dal parent_slug.
+// Lo slug è PK immutabile — referenziato da hosts.classification.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface CustomClassificationRow {
+  slug: string;
+  label: string;
+  parent_slug: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listCustomClassifications(): CustomClassificationRow[] {
+  return db()
+    .prepare("SELECT slug, label, parent_slug, created_at, updated_at FROM device_classifications_custom ORDER BY label COLLATE NOCASE")
+    .all() as CustomClassificationRow[];
+}
+
+export function getCustomClassificationBySlug(slug: string): CustomClassificationRow | undefined {
+  return db()
+    .prepare("SELECT slug, label, parent_slug, created_at, updated_at FROM device_classifications_custom WHERE slug = ?")
+    .get(slug) as CustomClassificationRow | undefined;
+}
+
+export function createCustomClassification(input: { slug: string; label: string; parent_slug: string }): CustomClassificationRow {
+  db()
+    .prepare("INSERT INTO device_classifications_custom (slug, label, parent_slug) VALUES (?, ?, ?)")
+    .run(input.slug, input.label, input.parent_slug);
+  const row = getCustomClassificationBySlug(input.slug);
+  if (!row) throw new Error("createCustomClassification: row not found after insert");
+  return row;
+}
+
+export function updateCustomClassification(slug: string, patch: { label?: string; parent_slug?: string }): CustomClassificationRow | undefined {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (patch.label !== undefined) { sets.push("label = ?"); params.push(patch.label); }
+  if (patch.parent_slug !== undefined) { sets.push("parent_slug = ?"); params.push(patch.parent_slug); }
+  if (sets.length === 0) return getCustomClassificationBySlug(slug);
+  sets.push("updated_at = datetime('now')");
+  params.push(slug);
+  db().prepare(`UPDATE device_classifications_custom SET ${sets.join(", ")} WHERE slug = ?`).run(...params);
+  return getCustomClassificationBySlug(slug);
+}
+
+/** Conta host + network_devices che referenziano una classification (custom o built-in).
+ *  Usata per validare DELETE custom: blocca se ci sono ancora row che la referenziano. */
+export function countHostsByClassification(classification: string): number {
+  const hostRow = db()
+    .prepare("SELECT COUNT(*) AS n FROM hosts WHERE classification = ?")
+    .get(classification) as { n: number };
+  const devRow = db()
+    .prepare("SELECT COUNT(*) AS n FROM network_devices WHERE classification = ?")
+    .get(classification) as { n: number };
+  return hostRow.n + devRow.n;
+}
+
+export function deleteCustomClassification(slug: string): void {
+  db().prepare("DELETE FROM device_classifications_custom WHERE slug = ?").run(slug);
 }

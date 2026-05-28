@@ -12,20 +12,31 @@
  *   Identità · Rete · Vulnerabilità · Software · Asset NIS2 · Credenziali · Discovery · Cronologia
  */
 
-import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shared/status-badge";
+// v0.2.646 audit perf UI9: i dialog modali (Promote/LinkIps/EditDevice) e i
+// componenti grafici pesanti (LatencyChart/UptimeTimeline/LibreNMSGraphs) sono
+// caricati on-demand. Prima erano nel bundle iniziale anche se l'utente non li
+// apriva mai → ~100-300KB JS evitati al mount.
+const PromoteHostDialog = dynamic(() => import("@/components/devices/promote-host-dialog").then((m) => ({ default: m.PromoteHostDialog })), { ssr: false });
+const LinkIpsDialog = dynamic(() => import("@/components/devices/link-ips-dialog").then((m) => ({ default: m.LinkIpsDialog })), { ssr: false });
+const EditDeviceDialog = dynamic(() => import("@/components/devices/edit-device-dialog").then((m) => ({ default: m.EditDeviceDialog })), { ssr: false });
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
-import { UptimeTimeline } from "@/components/shared/uptime-timeline";
-import { LatencyChart } from "@/app/(dashboard)/hosts/[id]/latency-chart";
-import { LibreNMSDeviceGraphs } from "@/components/integrations/librenms-device-graphs";
+const UptimeTimeline = dynamic(() => import("@/components/shared/uptime-timeline").then((m) => ({ default: m.UptimeTimeline })), { ssr: false });
+const LatencyChart = dynamic(() => import("@/app/(dashboard)/hosts/[id]/latency-chart").then((m) => ({ default: m.LatencyChart })), { ssr: false });
+const LibreNMSDeviceGraphs = dynamic(() => import("@/components/integrations/librenms-device-graphs").then((m) => ({ default: m.LibreNMSDeviceGraphs })), { ssr: false });
 import {
   ArrowLeft,
   RefreshCw,
@@ -46,12 +57,14 @@ import {
   Cable,
   Route,
   Radio,
+  Link2,
+  Unlink,
   Table as TableIcon,
   Server,
   Layers,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { HostDetail, InventoryAsset, NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
+import type { HostDetail, HostSnmpData, InventoryAsset, NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 
 /** Dati addizionali ritornati da GET /api/devices/[id] oltre al NetworkDevice base. */
 interface DeviceExtras {
@@ -95,14 +108,26 @@ interface DeviceExtras {
 }
 
 type DeviceFull = NetworkDevice & DeviceExtras;
-import { getClassificationLabel } from "@/lib/device-classifications";
+import { getClassificationLabel, DEVICE_CLASSIFICATIONS_ORDERED, sortClassificationsByDisplayLabel } from "@/lib/device-classifications";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // ─── Helpers ────────────────────────────────────────────────────────
+
+/**
+ * Parser sicuro per stringhe datetime SQLite/ISO.
+ * SQLite `datetime('now')` ritorna "YYYY-MM-DD HH:MM:SS" senza timezone marker:
+ * il browser lo interpreterebbe come LOCAL invece di UTC → orari shiftati.
+ * Forziamo UTC se manca un marker esplicito.
+ */
+function parseUtcDate(s: string): Date {
+  if (/Z$|[+-]\d{2}:?\d{2}$/.test(s)) return new Date(s);
+  return new Date(s.replace(" ", "T") + "Z");
+}
 
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("it-IT", {
+    return parseUtcDate(iso).toLocaleString("it-IT", {
       day: "2-digit", month: "2-digit", year: "numeric",
       hour: "2-digit", minute: "2-digit",
     });
@@ -194,6 +219,30 @@ interface DeviceInfoJson {
   // Software
   installed_software_count?: number;
   packages_count?: number;
+  // F5.D: snapshot NAS Synology/QNAP (popolato da scan SNMP/SSH)
+  nas_inventory?: {
+    vendor: "synology" | "qnap";
+    sources?: string[];
+    snmp?: {
+      temperature_c?: number | null;
+      cpu_temperature_c?: number | null;
+      system_status?: string | null;
+      disks?: Array<{ slot?: string; model?: string; status?: string; smart_health?: string; capacity_gb?: number | null; temperature_c?: number | null; serial?: string }>;
+      raids?: Array<{ name?: string; status?: string; free_gb?: number | null; total_gb?: number | null }>;
+      volumes_snmp?: Array<{ name?: string; size_gb?: number | null; free_gb?: number | null; status?: string | null; raid_type?: string | null }>;
+      storage_pools?: Array<{ name?: string; status?: string | null; total_gb?: number | null; used_gb?: number | null }>;
+      ups?: { status?: string | null; battery_pct?: string | null };
+      services?: Array<{ name?: string; state?: string | null }>;
+    };
+    ssh?: {
+      cpu_model?: string | null;
+      kernel?: string | null;
+      mdstat_summary?: string;
+      synology_shares_preview?: string;
+      synology_packages_count?: number | null;
+      qnap_qpkg_preview?: string;
+    };
+  };
   // Metadata
   scanned_at?: string;
 }
@@ -344,11 +393,13 @@ interface SectionProps {
   title: string;
   badge?: React.ReactNode;
   children: React.ReactNode;
+  /** id opzionale per ancore di scroll (es. dal badge header) */
+  id?: string;
 }
 
-function Section({ icon, title, badge, children }: SectionProps) {
+function Section({ icon, title, badge, children, id }: SectionProps) {
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden" id={id}>
       <CardHeader className="bg-muted/30 border-b py-2.5 px-4">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <span className="text-primary">{icon}</span>
@@ -366,10 +417,53 @@ function Section({ icon, title, badge, children }: SectionProps) {
 export default function ObjectDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const hostId = typeof params.id === "string" ? Number(params.id) : NaN;
 
   const [host, setHost] = useState<HostDetail | null>(null);
   const [device, setDevice] = useState<DeviceFull | null>(null);
+  // F3.3: modale di promozione inline (no più redirect a /hosts/[id]?promote=1)
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  // v0.2.599: modale edit device inline (no più redirect a /devices/[id], che era senza tab)
+  const [editDeviceOpen, setEditDeviceOpen] = useState(false);
+  // v0.2.600: test connessione (era solo su /devices/[id], ora /devices/[id] redirige qui)
+  const [testingConnection, setTestingConnection] = useState(false);
+  // v0.2.604: inventory_code + notes editabili inline nel tab Generale
+  const [editableInventoryCode, setEditableInventoryCode] = useState("");
+  const [editableNotes, setEditableNotes] = useState("");
+  // v0.2.605: serial_number + classification editabili inline
+  const [editableSerial, setEditableSerial] = useState("");
+  const [editableClassification, setEditableClassification] = useState("");
+  // v0.2.632: custom classifications per-tenant
+  const [customClassifications, setCustomClassifications] = useState<Array<{ slug: string; label: string; parent_slug: string }>>([]);
+  useEffect(() => {
+    void fetch("/api/classifications/custom", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((data) => setCustomClassifications(data.items ?? []))
+      .catch(() => { /* ignore */ });
+  }, []);
+  const customLabelMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of customClassifications) m.set(c.slug, c.label);
+    return m;
+  }, [customClassifications]);
+  const effectiveClassificationLabel = useCallback((slug: string) => customLabelMap.get(slug) ?? getClassificationLabel(slug), [customLabelMap]);
+  const effectiveClassificationSlugs = useMemo(
+    () => [...DEVICE_CLASSIFICATIONS_ORDERED, ...customClassifications.map((c) => c.slug)],
+    [customClassifications]
+  );
+  // Multi-IP link manuale (v0.2.594+)
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [clusterMembers, setClusterMembers] = useState<Array<{
+    id: number;
+    ip: string;
+    hostname: string | null;
+    vendor: string | null;
+    status: "online" | "offline" | "unknown";
+    network_name: string;
+    inferred_os_family: string | null;
+  }>>([]);
+  const [unlinkingHostId, setUnlinkingHostId] = useState<number | null>(null);
   const [asset, setAsset] = useState<InventoryAsset | null>(null);
   const [librenms, setLibrenms] = useState<{
     configured: boolean;
@@ -395,8 +489,18 @@ export default function ObjectDetailPage() {
       router.push("/discovery");
       return;
     }
+    // v0.2.635 audit B1: try/catch globale + toast per errori di rete; senza
+    // questo, un fetch falliva silenzioso → loading=false ma host=null → render
+    // pagina bianca senza messaggio. Ora l'utente vede l'errore di rete e può
+    // tornare a /discovery oppure ricaricare.
     try {
-      const hRes = await fetch(`/api/hosts/${hostId}`);
+      let hRes: Response;
+      try {
+        hRes = await fetch(`/api/hosts/${hostId}`);
+      } catch (e) {
+        toast.error(`Errore di rete nel caricamento host: ${e instanceof Error ? e.message : String(e)}`);
+        return;
+      }
       if (!hRes.ok) {
         toast.error(`Host ${hostId} non trovato`);
         router.push("/discovery");
@@ -404,31 +508,124 @@ export default function ObjectDetailPage() {
       }
       const h = (await hRes.json()) as HostDetail;
       setHost(h);
-      // Device linkato (per IP)
-      if (h.network_device?.id) {
-        const dRes = await fetch(`/api/devices/${h.network_device.id}`);
-        if (dRes.ok) setDevice((await dRes.json()) as DeviceFull);
+      // v0.2.604/605: sincronizza i field editabili
+      setEditableInventoryCode(h.inventory_code ?? "");
+      setEditableNotes(h.notes ?? "");
+      setEditableSerial(h.serial_number ?? "");
+      setEditableClassification(h.classification && h.classification !== "unknown" ? h.classification : "");
+      // v0.2.635 audit perf: i 3 fetch ausiliari (device + asset + librenms) sono
+      // indipendenti tra loro e dall'host principale. Parallelizzo con allSettled
+      // per ridurre la latency complessiva e tollerare fallimenti parziali.
+      const auxResults = await Promise.allSettled([
+        h.network_device?.id ? fetch(`/api/devices/${h.network_device.id}`) : Promise.resolve(null),
+        fetch(`/api/inventory?host_id=${hostId}`),
+        fetch(`/api/hosts/${hostId}/librenms`),
+      ]);
+
+      const [dRes, aRes, lnmsRes] = auxResults;
+
+      if (dRes.status === "fulfilled" && dRes.value && dRes.value.ok) {
+        try { setDevice((await dRes.value.json()) as DeviceFull); } catch { /* non critico */ }
       }
-      // Asset linkato (per host_id)
-      const aRes = await fetch(`/api/inventory?host_id=${hostId}`);
-      if (aRes.ok) {
-        const list = (await aRes.json()) as InventoryAsset[];
-        if (Array.isArray(list) && list.length > 0) setAsset(list[0]);
+      if (aRes.status === "fulfilled" && aRes.value.ok) {
+        try {
+          const list = (await aRes.value.json()) as InventoryAsset[];
+          if (Array.isArray(list) && list.length > 0) setAsset(list[0]);
+        } catch { /* non critico */ }
       }
-      // LibreNMS integration (se configurata)
-      try {
-        const lnms = await fetch(`/api/hosts/${hostId}/librenms`);
-        if (lnms.ok) {
-          const data = await lnms.json();
+      if (lnmsRes.status === "fulfilled" && lnmsRes.value.ok) {
+        try {
+          const data = await lnmsRes.value.json();
           if (data) setLibrenms(data);
-        }
-      } catch { /* non critico */ }
+        } catch { /* non critico */ }
+      }
+    } catch (e) {
+      // Catch difensivo per qualunque throw inaspettato lungo la catena.
+      toast.error(`Errore caricamento dati host: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setLoading(false);
     }
   }, [hostId, router]);
 
   useEffect(() => { void fetchAll(); }, [fetchAll]);
+
+  // Carica gli host del cluster fisico (se esistono) — usato dalla sezione "IP collegati"
+  const fetchClusterMembers = useCallback(async () => {
+    if (!host?.physical_device_id) { setClusterMembers([]); return; }
+    try {
+      const r = await fetch(`/api/physical-devices/${host.physical_device_id}/hosts`, { cache: "no-store" });
+      if (r.ok) {
+        const data = await r.json() as { hosts: typeof clusterMembers };
+        setClusterMembers(data.hosts ?? []);
+      }
+    } catch { /* non critico */ }
+  }, [host?.physical_device_id]);
+
+  useEffect(() => { void fetchClusterMembers(); }, [fetchClusterMembers]);
+
+  // v0.2.607: runtime summary memoizzato. DEVE stare prima di qualsiasi early
+  // return (loading / !host) per non violare le rules of hooks (React #310).
+  const runtimeSummary = useMemo(() => {
+    let tcpPorts: number[] = [];
+    let udpPorts: number[] = [];
+    try {
+      if (host?.open_ports) {
+        const parsed = JSON.parse(host.open_ports);
+        if (Array.isArray(parsed)) {
+          for (const p of parsed) {
+            if (typeof p === "object" && p?.port) {
+              if ((p.protocol ?? "tcp") === "tcp") tcpPorts.push(p.port);
+              else if (p.protocol === "udp") udpPorts.push(p.port);
+            } else if (typeof p === "number") tcpPorts.push(p);
+          }
+        } else if (typeof parsed === "object" && parsed !== null) {
+          if (Array.isArray(parsed.tcp)) tcpPorts = parsed.tcp;
+          if (Array.isArray(parsed.udp)) udpPorts = parsed.udp;
+        }
+      }
+    } catch { /* ignore */ }
+    const validatedCreds = (host?.host_credentials ?? []).filter((hc) => hc.validated === 1);
+    return { tcpPorts, udpPorts, validatedCreds };
+  }, [host?.open_ports, host?.host_credentials]);
+
+  // v0.2.601: deep-link da menù tre-puntini / link esterni:
+  //   ?edit=1     → auto-apri EditDeviceDialog (richiede device gestito)
+  //   ?promote=1  → auto-apri PromoteHostDialog (richiede host non gestito)
+  // Pulisce la query subito dopo per non rifarlo a ogni re-render.
+  useEffect(() => {
+    if (!host) return;
+    const editFlag = searchParams?.get("edit");
+    const promoteFlag = searchParams?.get("promote");
+    if (editFlag === "1" && device && !editDeviceOpen) {
+      setEditDeviceOpen(true);
+      router.replace(`/objects/${host.id}`);
+    } else if (promoteFlag === "1" && !device && !promoteOpen) {
+      setPromoteOpen(true);
+      router.replace(`/objects/${host.id}`);
+    }
+  }, [host?.id, device?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleUnlinkHost(targetHostId: number) {
+    if (!confirm("Scollegare questo IP dal device fisico?")) return;
+    setUnlinkingHostId(targetHostId);
+    try {
+      const r = await fetch("/api/physical-devices/unlink", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host_id: targetHostId }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        toast.error(err.error || "Errore unlink");
+        return;
+      }
+      toast.success("IP scollegato");
+      void fetchAll();
+      void fetchClusterMembers();
+    } finally {
+      setUnlinkingHostId(null);
+    }
+  }
 
   async function handleUpdateAll() {
     if (!host?.network_device?.id || !device) {
@@ -444,9 +641,21 @@ export default function ObjectDetailPage() {
         return;
       }
       if (qd.id) {
-        // attende polling completion
+        // v0.2.636 audit B2: polling con max-attempts. Senza limite il setInterval
+        // poteva girare per sempre se lo scan restava bloccato in 'running' —
+        // il bottone "Refresh" restava in spinner indefinitamente.
+        const POLL_INTERVAL_MS = 1500;
+        const POLL_MAX_ATTEMPTS = 400; // ≈ 10 minuti
         await new Promise<void>((resolve) => {
+          let attempts = 0;
           const poll = setInterval(async () => {
+            attempts++;
+            if (attempts >= POLL_MAX_ATTEMPTS) {
+              clearInterval(poll);
+              toast.error("Query timeout dopo 10 minuti");
+              resolve();
+              return;
+            }
             try {
               const pr = await fetch(`/api/scans/progress/${qd.id}`);
               if (!pr.ok) return;
@@ -457,8 +666,8 @@ export default function ObjectDetailPage() {
                 else toast.error(pd.phase ?? "Query fallita");
                 resolve();
               }
-            } catch { /* ignore */ }
-          }, 1500);
+            } catch { /* ignore: il prossimo tick riproverà fino al max */ }
+          }, POLL_INTERVAL_MS);
         });
       }
       if (device.vendor === "windows" || device.vendor === "linux") {
@@ -478,6 +687,51 @@ export default function ObjectDetailPage() {
       await fetchAll();
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  // v0.2.604: salvataggio inline di inventory_code / notes dal tab Generale.
+  async function saveHostField(patch: Record<string, unknown>) {
+    if (!host) return;
+    try {
+      const res = await fetch(`/api/hosts/${host.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "Errore salvataggio");
+        return;
+      }
+      toast.success("Salvato", { duration: 1500 });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore di rete");
+    }
+  }
+
+  async function handleTestConnection() {
+    if (!device) return;
+    setTestingConnection(true);
+    try {
+      const res = await fetch(`/api/devices/${device.id}/test`);
+      const data = await res.json();
+      if (data.success) {
+        // /api/devices/[id]/test usa runDeviceConnectionTest che PROVA effettivamente
+        // le credenziali (SSH/SNMP/WinRM/API). Esponiamo il risultato concreto.
+        const msg = data.message
+          || (data.proxmox_api_ok && data.proxmox_ssh_ok ? "Credenziali OK (API + SSH)"
+            : data.proxmox_api_ok ? "Credenziali OK (solo API Proxmox)"
+            : data.proxmox_ssh_ok ? "Credenziali OK (solo SSH)"
+            : `Credenziali OK via ${device.protocol}`);
+        toast.success(msg);
+      } else {
+        toast.error(data.error || `Credenziali rifiutate via ${device.protocol}`);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore nel test credenziali");
+    } finally {
+      setTestingConnection(false);
     }
   }
 
@@ -512,7 +766,7 @@ export default function ObjectDetailPage() {
   if (!host) return null;
 
   const displayName = host.custom_name || host.hostname || host.dns_reverse || host.ip;
-  const classificationLabel = host.classification ? getClassificationLabel(host.classification) : null;
+  const classificationLabel = host.classification ? effectiveClassificationLabel(host.classification) : null;
   const isManaged = !!device;
   const isAsset = !!asset;
   const isWindowsOrLinux = device?.vendor === "windows" || device?.vendor === "linux";
@@ -530,6 +784,23 @@ export default function ObjectDetailPage() {
               <h1 className="text-xl font-bold tracking-tight font-mono">{host.ip}</h1>
               <span className="text-base text-muted-foreground truncate">{displayName}</span>
               <StatusBadge status={host.status} />
+              {/* v0.2.606: badge rapidi runtime cliccabili (scroll alla section) */}
+              {runtimeSummary.validatedCreds.length > 0 && (
+                <a href="#runtime-section" className="inline-flex">
+                  <Badge variant="default" className="text-[10px] gap-1 cursor-pointer" title="Credenziali validate (clicca per dettagli)">
+                    <KeyRound className="h-3 w-3" />
+                    {runtimeSummary.validatedCreds.length}
+                  </Badge>
+                </a>
+              )}
+              {runtimeSummary.tcpPorts.length > 0 && (
+                <a href="#runtime-section" className="inline-flex">
+                  <Badge variant="outline" className="text-[10px] gap-1 cursor-pointer" title="Porte TCP aperte (clicca per dettagli)">
+                    <Cable className="h-3 w-3" />
+                    {runtimeSummary.tcpPorts.length} TCP
+                  </Badge>
+                </a>
+              )}
             </div>
             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
               <span className="inline-flex items-center gap-1.5">
@@ -561,8 +832,19 @@ export default function ObjectDetailPage() {
           <div className="flex gap-2 shrink-0">
             {isManaged && (
               <Button
+                variant="outline"
+                onClick={handleTestConnection}
+                disabled={testingConnection || refreshing}
+                title="Testa le credenziali registrate (SSH/SNMP/WinRM/API) effettuando autenticazione reale"
+              >
+                <KeyRound className={`h-4 w-4 mr-2 ${testingConnection ? "animate-pulse" : ""}`} />
+                {testingConnection ? "Test..." : "Testa credenziali"}
+              </Button>
+            )}
+            {isManaged && (
+              <Button
                 onClick={handleUpdateAll}
-                disabled={refreshing}
+                disabled={refreshing || testingConnection}
                 className="bg-primary hover:bg-primary/90"
                 title="Test connessione → query SNMP/ARP → inventario software"
               >
@@ -576,10 +858,22 @@ export default function ObjectDetailPage() {
                 Crea asset NIS2
               </Button>
             )}
-            <Button variant="outline" nativeButton={false} render={<Link href={`/hosts/${host.id}`} />}>
-              <Pencil className="h-4 w-4 mr-2" />
-              Modifica
-            </Button>
+            {/* F3.3: bottone contestuale.
+                - Host non gestito → "Promuovi a dispositivo" apre il <PromoteHostDialog> in-page
+                  (modale inline, no più redirect a /hosts/[id]?promote=1).
+                - Device gestito → "Modifica device" punta a /devices/[deviceId] dove esiste già
+                  l'editor completo (credenziali/vendor/protocollo/scan_target). */}
+            {isManaged && device ? (
+              <Button variant="outline" onClick={() => setEditDeviceOpen(true)}>
+                <Pencil className="h-4 w-4 mr-2" />
+                Modifica device
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={() => setPromoteOpen(true)}>
+                <PackagePlus className="h-4 w-4 mr-2" />
+                Promuovi a dispositivo
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -619,9 +913,74 @@ export default function ObjectDetailPage() {
         {/* ═══════════════ TAB: GENERALE ═══════════════ */}
         <TabsContent value="generale" className="space-y-4">
 
-      {/* ─── 1. Identità ─── */}
+      {/* ─── v0.2.608: Stato runtime condensato — 3 righe invece di 8. */}
+      <Section
+        id="runtime-section"
+        icon={<Activity className="h-4 w-4 text-emerald-600" />}
+        title="Stato runtime"
+        badge={
+          <div className="flex items-center gap-1.5 ml-2 flex-wrap">
+            {host.status === "online" && <Badge className="text-[10px] bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Online</Badge>}
+            {host.status === "offline" && <Badge variant="destructive" className="text-[10px]">Offline</Badge>}
+            {host.last_response_time_ms != null && (
+              <Badge variant="outline" className="text-[10px] font-mono">{host.last_response_time_ms} ms</Badge>
+            )}
+            <span className="text-[10px] text-muted-foreground ml-1">
+              {host.last_seen ? `visto ${parseUtcDate(host.last_seen).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}
+              {host.first_seen ? ` · scoperto ${parseUtcDate(host.first_seen).toLocaleDateString("it-IT")}` : ""}
+            </span>
+          </div>
+        }
+      >
+        <div className="space-y-2 text-xs">
+          {/* Porte TCP/UDP in un'unica riga compatta */}
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-muted-foreground font-medium shrink-0 min-w-[80px]">TCP ({runtimeSummary.tcpPorts.length})</span>
+            {runtimeSummary.tcpPorts.length === 0 ? (
+              <span className="text-muted-foreground/60">—</span>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {runtimeSummary.tcpPorts.slice(0, 30).map((p) => (
+                  <Badge key={`tcp-${p}`} variant="outline" className="text-[10px] font-mono px-1.5 py-0">{p}</Badge>
+                ))}
+                {runtimeSummary.tcpPorts.length > 30 && <span className="text-[10px] text-muted-foreground">+{runtimeSummary.tcpPorts.length - 30}</span>}
+              </div>
+            )}
+          </div>
+          {runtimeSummary.udpPorts.length > 0 && (
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-muted-foreground font-medium shrink-0 min-w-[80px]">UDP ({runtimeSummary.udpPorts.length})</span>
+              <div className="flex flex-wrap gap-1">
+                {runtimeSummary.udpPorts.slice(0, 20).map((p) => (
+                  <Badge key={`udp-${p}`} variant="secondary" className="text-[10px] font-mono px-1.5 py-0">{p}</Badge>
+                ))}
+                {runtimeSummary.udpPorts.length > 20 && <span className="text-[10px] text-muted-foreground">+{runtimeSummary.udpPorts.length - 20}</span>}
+              </div>
+            </div>
+          )}
+          {/* Credenziali validate inline */}
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-muted-foreground font-medium shrink-0 min-w-[80px]">Cred. OK ({runtimeSummary.validatedCreds.length})</span>
+            {runtimeSummary.validatedCreds.length === 0 ? (
+              <span className="text-muted-foreground/60">—</span>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {runtimeSummary.validatedCreds.map((hc) => (
+                  <Badge key={hc.id} variant="default" className="text-[10px] gap-0.5 px-1.5 py-0">
+                    <KeyRound className="h-2.5 w-2.5" />
+                    {hc.protocol_type}:{hc.port}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </Section>
+
+      {/* ─── 1. Identità ─── Tutti i campi anagrafici + inventory_code/note editabili */}
       <Section icon={<Cpu className="h-4 w-4" />} title="Identità">
         <dl className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <InfoRow label="Nome" value={host.custom_name ?? host.hostname ?? host.ip} />
           <InfoRow label="IP" value={host.ip} mono />
           <InfoRow label="MAC" value={host.mac} mono />
           <InfoRow label="Hostname" value={host.hostname} />
@@ -629,14 +988,111 @@ export default function ObjectDetailPage() {
           <InfoRow label="DNS forward" value={host.dns_forward} />
           <InfoRow label="Vendor (MAC OUI)" value={host.vendor} />
           <InfoRow label="Manufacturer" value={host.device_manufacturer} />
-          <InfoRow label="OS" value={host.os_info} />
-          <InfoRow label="Classification" value={classificationLabel} />
-          {host.model && <InfoRow label="Modello" value={host.model} />}
-          {host.serial_number && <InfoRow label="Seriale" value={host.serial_number} mono />}
-          {host.firmware && <InfoRow label="Firmware" value={host.firmware} />}
-          {host.ip_assignment && <InfoRow label="IP assignment" value={host.ip_assignment} />}
+          <InfoRow label="Classificazione" value={classificationLabel} />
+          <InfoRow label="Modello" value={device?.model ?? host.model} />
+          <InfoRow label="Firmware/Versione" value={device?.firmware ?? host.firmware} />
+          <InfoRow label="OS" value={device?.device_info?.os_name ?? host.os_info} />
+          <InfoRow label="Kernel/Build" value={device?.device_info?.os_version ?? device?.device_info?.kernel_version ?? null} />
+          <InfoRow label="Seriale" value={device?.serial_number ?? host.serial_number} mono />
+          <InfoRow label="IP assignment" value={host.ip_assignment} />
+          <InfoRow label="Uptime" value={device?.device_info?.uptime_days != null ? `${device.device_info.uptime_days} giorni` : (device?.device_info?.uptime ?? null)} />
         </dl>
+        <Separator className="my-3" />
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">Campi editabili</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* v0.2.605: classificazione editabile inline */}
+          <div className="space-y-1.5">
+            <Label htmlFor="ed-classification" className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Classificazione</Label>
+            <Select
+              value={editableClassification || "unknown"}
+              onValueChange={(v) => {
+                const raw = v ?? "unknown";
+                const next: string = raw === "unknown" ? "" : raw;
+                setEditableClassification(next);
+                void saveHostField({ classification: next || "unknown" });
+              }}
+            >
+              <SelectTrigger id="ed-classification" className="text-sm">
+                <SelectValue placeholder="Seleziona…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unknown">— Sconosciuta —</SelectItem>
+                {[...effectiveClassificationSlugs].filter((c) => c !== "unknown").sort((a, b) => effectiveClassificationLabel(a).localeCompare(effectiveClassificationLabel(b), "it", { sensitivity: "base" })).map((c) => (
+                  <SelectItem key={c} value={c}>{effectiveClassificationLabel(c)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* v0.2.605: seriale editabile (utile quando il device non lo espone via SNMP/WinRM) */}
+          <div className="space-y-1.5">
+            <Label htmlFor="ed-serial" className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Seriale</Label>
+            <Input
+              id="ed-serial"
+              value={editableSerial}
+              onChange={(e) => setEditableSerial(e.target.value)}
+              onBlur={() => saveHostField({ serial_number: editableSerial || null })}
+              placeholder="Inserisci manualmente se non rilevato"
+              className="font-mono text-sm"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="inv-code" className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Numero inventario</Label>
+            <Input
+              id="inv-code"
+              value={editableInventoryCode}
+              onChange={(e) => setEditableInventoryCode(e.target.value)}
+              onBlur={() => saveHostField({ inventory_code: editableInventoryCode || null })}
+              placeholder="Es: INV-2026-001"
+              className="font-mono text-sm"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="inv-notes" className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Note</Label>
+            <Textarea
+              id="inv-notes"
+              value={editableNotes}
+              onChange={(e) => setEditableNotes(e.target.value)}
+              onBlur={() => saveHostField({ notes: editableNotes })}
+              placeholder="Annotazioni libere su questo asset…"
+              rows={2}
+              className="text-sm"
+            />
+          </div>
+        </div>
       </Section>
+
+      {/* ─── 2. Hardware ─── CPU/RAM/dischi/NIC se device_info popolato */}
+      {(() => {
+        const di = device?.device_info ?? null;
+        const hasHw = !!(di && (di.cpu_model || di.ram_total_gb || di.disks?.length || di.network_adapters?.length));
+        if (!hasHw) return null;
+        return (
+          <Section icon={<Cpu className="h-4 w-4" />} title="Hardware">
+            <dl className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <InfoRow label="CPU" value={di?.cpu_model ?? null} />
+              <InfoRow label="Core / Thread" value={di?.cpu_cores != null ? `${di.cpu_cores}${di?.cpu_threads ? ` / ${di.cpu_threads}` : ""}` : null} />
+              <InfoRow label="Freq. max" value={di?.cpu_speed_mhz ? `${di.cpu_speed_mhz} MHz` : null} />
+              <InfoRow label="Processor count" value={di?.processor_count != null ? String(di.processor_count) : null} />
+              <InfoRow label="RAM totale" value={di?.ram_total_gb != null ? `${di.ram_total_gb} GB` : (di?.ram_total_mb ? `${di.ram_total_mb} MB` : null)} />
+              <InfoRow label="Disco totale" value={di?.disk_total_gb != null ? `${di.disk_total_gb} GB` : null} />
+              <InfoRow label="Disco libero" value={di?.disk_free_gb != null ? `${di.disk_free_gb} GB` : null} />
+              <InfoRow label="NIC count" value={di?.network_adapters?.length ? String(di.network_adapters.length) : null} />
+            </dl>
+            {di?.network_adapters && di.network_adapters.length > 0 && (
+              <div className="mt-3 border-t border-border/50 pt-2">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Schede di rete</div>
+                <div className="flex flex-wrap gap-2">
+                  {di.network_adapters.slice(0, 8).map((a, i) => (
+                    <Badge key={i} variant="outline" className="text-[10px] font-mono">
+                      {(a.mac_address ?? a.mac ?? "?")} {a.name ? `· ${a.name}` : ""}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Section>
+        );
+      })()}
 
       {/* ─── 2. Rete ─── */}
       <Section icon={<Network className="h-4 w-4" />} title="Rete">
@@ -720,31 +1176,264 @@ export default function ObjectDetailPage() {
               )}
             </>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              LibreNMS configurato ma questo host non è ancora mappato.
-            </p>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                LibreNMS configurato ma questo host non è ancora mappato — quindi nessun grafico disponibile.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  if (!host) return;
+                  try {
+                    const r = await fetch("/api/integrations/librenms/host", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ host_id: host.id }),
+                    });
+                    const data = await r.json();
+                    if (r.ok) {
+                      toast.success(data.message || "Host aggiunto a LibreNMS — i grafici saranno disponibili dopo il primo polling.");
+                      void fetchAll();
+                    } else {
+                      toast.error(data.error || "Errore aggiunta a LibreNMS");
+                    }
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "Errore di rete");
+                  }
+                }}
+              >
+                <Activity className="h-3.5 w-3.5 mr-1.5" />
+                Aggiungi a LibreNMS
+              </Button>
+            </div>
           )}
         </Section>
       )}
-
-      {/* ─── Latency chart + Uptime timeline (storico ping) ─── */}
-      <Section icon={<Activity className="h-4 w-4" />} title="Disponibilità">
-        <div className="space-y-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Uptime nel tempo</div>
-            <UptimeTimeline hostId={host.id} />
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Latenza (ms)</div>
-            <LatencyChart hostId={host.id} />
-          </div>
-        </div>
-      </Section>
 
         </TabsContent>
 
         {/* ═══════════════ TAB: SISTEMA ═══════════════ */}
         <TabsContent value="sistema" className="space-y-4">
+
+      {/* ─── F5.A: Inventario base — SEMPRE visibile, anche senza device_info.
+          Software di inventario: OS, SN, modello, tipologia sono indispensabili
+          per OGNI device, anche per quelli "Altri/Indeterminato". Pesca da host
+          (campi popolati da SNMP/ARP/scan) e dai suggerimenti F1 (inferred_*).
+          device_info (quando presente, via WinRM/SSH/SNMP-rich) ha priorità
+          come override per campi più dettagliati. */}
+      <Section icon={<Boxes className="h-4 w-4" />} title="Inventario base">
+        {(() => {
+          const di = device?.device_info ?? null;
+          const mfg = di?.manufacturer ?? host.device_manufacturer ?? null;
+          const model = di?.model ?? host.model ?? null;
+          const serial = di?.serial_number ?? host.serial_number ?? null;
+          const firmware = di?.os_version ?? host.firmware ?? null;
+          const osName = di?.os_name ?? host.os_info ?? null;
+          const tipologia = host.inferred_device_type
+            ?? (device?.device_type as string | undefined)
+            ?? (host.classification && host.classification !== "unknown" ? host.classification : null);
+          const vendor = host.inferred_vendor ?? device?.vendor ?? host.vendor ?? null;
+          const osFamily = host.inferred_os_family ?? null;
+          return (
+            <dl className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
+              <InfoRow label="Tipologia" value={tipologia} />
+              <InfoRow label="Vendor" value={vendor} />
+              <InfoRow label="OS family" value={osFamily} />
+              <InfoRow label="OS / Sistema" value={osName} />
+              <InfoRow label="Modello" value={model} />
+              <InfoRow label="Seriale" value={serial} mono />
+              <InfoRow label="Firmware / Versione" value={firmware} />
+              <InfoRow label="Manufacturer" value={mfg} />
+              <InfoRow label="MAC" value={host.mac} mono />
+              {host.inferred_at && (
+                <InfoRow
+                  label="Auto-classificazione"
+                  value={`${host.inferred_confidence ?? 0}% · ${new Date(host.inferred_at).toLocaleDateString("it-IT")}`}
+                />
+              )}
+            </dl>
+          );
+        })()}
+      </Section>
+
+      {/* ─── F5.B: Network device facts (SNMP) ───
+          Visibile per router/switch/firewall (network gear) e per qualsiasi host
+          con snmp_data popolato. Mostra i campi SNMP che il discovery cattura ma
+          che oggi finivano solo nel raw JSON. Per Mikrotik/UniFi/HP/Cisco/Stormshield
+          questo era il "buco principale" del tab Sistema. */}
+      {(() => {
+        let snmp: HostSnmpData | null = null;
+        try { if (host.snmp_data) snmp = JSON.parse(host.snmp_data) as HostSnmpData; } catch { /* skip */ }
+        const isNetworkGear = device?.device_type === "router" || device?.device_type === "switch" || device?.device_type === "firewall";
+        if (!isNetworkGear && !snmp) return null;
+        return (
+          <Section icon={<Network className="h-4 w-4" />} title="Informazioni di rete (SNMP)">
+            <dl className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
+              <InfoRow label="Sysname (SNMP)" value={device?.sysname ?? snmp?.sysName ?? null} />
+              <InfoRow label="Sysdescr" value={device?.sysdescr ?? snmp?.sysDescr ?? null} />
+              <InfoRow label="sysObjectID" value={snmp?.sysObjectID ?? null} mono />
+              <InfoRow label="Uptime SNMP" value={snmp?.sysUpTime ?? null} />
+              <InfoRow label="ARP entries" value={snmp?.arpEntryCount != null ? String(snmp.arpEntryCount) : null} />
+              <InfoRow label="SNMP port" value={snmp?.port ? String(snmp.port) : null} />
+              <InfoRow label="Part number" value={device?.part_number ?? snmp?.partNumber ?? null} />
+              <InfoRow label="Ultima query device" value={device?.last_info_update ? parseUtcDate(device.last_info_update).toLocaleString("it-IT") : null} />
+            </dl>
+            {/* Hints vendor-specifici che il discovery cattura via OID custom */}
+            {(snmp?.mikrotikIdentity || snmp?.unifiSummary || snmp?.ifDescrSummary || snmp?.hostResourcesSummary) && (
+              <div className="mt-3 space-y-1.5 text-xs text-muted-foreground border-t border-border/50 pt-2">
+                {snmp?.mikrotikIdentity && <p><span className="font-medium text-foreground">MikroTik:</span> {snmp.mikrotikIdentity}</p>}
+                {snmp?.unifiSummary && <p><span className="font-medium text-foreground">UniFi:</span> {snmp.unifiSummary}</p>}
+                {snmp?.ifDescrSummary && <p><span className="font-medium text-foreground">Interfacce:</span> {snmp.ifDescrSummary}</p>}
+                {snmp?.hostResourcesSummary && <p><span className="font-medium text-foreground">Risorse:</span> {snmp.hostResourcesSummary}</p>}
+              </div>
+            )}
+          </Section>
+        );
+      })()}
+
+      {/* ─── F5.D: Storage NAS (Synology/QNAP) ───
+          nas_inventory è popolato da scan SNMP + (opzionale) SSH. Mostra dischi
+          con SMART status, RAID/pool, volumi, servizi, UPS — la cosa che oggi
+          vivevano solo nel JSON raw senza essere visibili. */}
+      {(() => {
+        const nas = device?.device_info?.nas_inventory ?? null;
+        if (!nas) return null;
+        const snmp = nas.snmp;
+        const ssh = nas.ssh;
+        return (
+          <Section icon={<HardDrive className="h-4 w-4" />} title={`Storage NAS — ${nas.vendor === "synology" ? "Synology" : "QNAP"}`}>
+            <div className="space-y-3">
+              <dl className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-2">
+                <InfoRow label="Stato sistema" value={snmp?.system_status ?? null} />
+                <InfoRow label="Temperatura sistema" value={snmp?.temperature_c != null ? `${snmp.temperature_c} °C` : null} />
+                <InfoRow label="Temperatura CPU" value={snmp?.cpu_temperature_c != null ? `${snmp.cpu_temperature_c} °C` : null} />
+                <InfoRow label="UPS" value={snmp?.ups?.status ? `${snmp.ups.status}${snmp.ups.battery_pct ? ` (${snmp.ups.battery_pct})` : ""}` : null} />
+                <InfoRow label="CPU model" value={ssh?.cpu_model ?? null} />
+                <InfoRow label="Kernel" value={ssh?.kernel ?? null} mono />
+                <InfoRow label="Pacchetti installati" value={ssh?.synology_packages_count != null ? String(ssh.synology_packages_count) : null} />
+                <InfoRow label="Fonti dati" value={nas.sources && nas.sources.length ? nas.sources.join(" + ") : null} />
+              </dl>
+
+              {/* Dischi fisici */}
+              {snmp?.disks && snmp.disks.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Dischi ({snmp.disks.length})</div>
+                  <div className="border rounded-md overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="text-left px-2 py-1.5 font-medium">Slot</th>
+                          <th className="text-left px-2 py-1.5 font-medium">Modello</th>
+                          <th className="text-left px-2 py-1.5 font-medium">Capacità</th>
+                          <th className="text-left px-2 py-1.5 font-medium">Stato</th>
+                          <th className="text-left px-2 py-1.5 font-medium">SMART</th>
+                          <th className="text-left px-2 py-1.5 font-medium">Temp.</th>
+                          <th className="text-left px-2 py-1.5 font-medium">Serial</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {snmp.disks.map((d, i) => (
+                          <tr key={i} className="hover:bg-muted/30">
+                            <td className="px-2 py-1.5 font-mono">{d.slot ?? "—"}</td>
+                            <td className="px-2 py-1.5">{d.model ?? "—"}</td>
+                            <td className="px-2 py-1.5">{d.capacity_gb != null ? `${d.capacity_gb} GB` : "—"}</td>
+                            <td className="px-2 py-1.5">
+                              {d.status ? <Badge variant={/ok|normal|active/i.test(d.status) ? "default" : "destructive"} className="text-[10px]">{d.status}</Badge> : "—"}
+                            </td>
+                            <td className="px-2 py-1.5">{d.smart_health ?? "—"}</td>
+                            <td className="px-2 py-1.5">{d.temperature_c != null ? `${d.temperature_c} °C` : "—"}</td>
+                            <td className="px-2 py-1.5 font-mono text-[10px]">{d.serial ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* RAID groups */}
+              {snmp?.raids && snmp.raids.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">RAID groups ({snmp.raids.length})</div>
+                  <div className="border rounded-md divide-y">
+                    {snmp.raids.map((r, i) => (
+                      <div key={i} className="px-3 py-2 flex items-center justify-between text-sm">
+                        <span className="font-medium">{r.name ?? `RAID #${i + 1}`}</span>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          {r.status && (
+                            <Badge variant={/ok|normal|active/i.test(r.status) ? "default" : "destructive"} className="text-[10px]">{r.status}</Badge>
+                          )}
+                          {r.total_gb != null && <span>{r.free_gb != null ? `${r.free_gb}/${r.total_gb} GB free` : `${r.total_gb} GB`}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Volumi / storage pools */}
+              {snmp?.volumes_snmp && snmp.volumes_snmp.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Volumi ({snmp.volumes_snmp.length})</div>
+                  <div className="border rounded-md divide-y">
+                    {snmp.volumes_snmp.map((v, i) => (
+                      <div key={i} className="px-3 py-2 flex items-center justify-between text-sm">
+                        <span>{v.name ?? `Vol #${i + 1}`} {v.raid_type && <span className="text-xs text-muted-foreground">({v.raid_type})</span>}</span>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          {v.status && <Badge variant={/ok|normal|active/i.test(v.status) ? "default" : "destructive"} className="text-[10px]">{v.status}</Badge>}
+                          {v.size_gb != null && <span>{v.free_gb != null ? `${v.free_gb}/${v.size_gb} GB free` : `${v.size_gb} GB`}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Storage pools (QNAP) */}
+              {snmp?.storage_pools && snmp.storage_pools.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Storage pool ({snmp.storage_pools.length})</div>
+                  <div className="border rounded-md divide-y">
+                    {snmp.storage_pools.map((p, i) => (
+                      <div key={i} className="px-3 py-2 flex items-center justify-between text-sm">
+                        <span>{p.name ?? `Pool #${i + 1}`}</span>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          {p.status && <Badge variant={/ok|normal|active/i.test(p.status) ? "default" : "destructive"} className="text-[10px]">{p.status}</Badge>}
+                          {p.total_gb != null && <span>{p.used_gb != null ? `${p.used_gb}/${p.total_gb} GB used` : `${p.total_gb} GB`}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Servizi SNMP NAS */}
+              {snmp?.services && snmp.services.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Servizi NAS ({snmp.services.length})</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {snmp.services.map((s, i) => (
+                      <Badge key={i} variant={s.state && /running|active|ok/i.test(s.state) ? "default" : "outline"} className="text-[10px]">
+                        {s.name ?? "?"}{s.state ? `: ${s.state}` : ""}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* SSH previews (raw text) */}
+              {(ssh?.synology_shares_preview || ssh?.qnap_qpkg_preview || ssh?.mdstat_summary) && (
+                <div className="text-xs text-muted-foreground space-y-1 border-t border-border/50 pt-2">
+                  {ssh?.mdstat_summary && <div><span className="font-medium text-foreground">mdstat:</span> <code className="text-[10px]">{ssh.mdstat_summary}</code></div>}
+                  {ssh?.synology_shares_preview && <div><span className="font-medium text-foreground">Share Synology:</span> {ssh.synology_shares_preview}</div>}
+                  {ssh?.qnap_qpkg_preview && <div><span className="font-medium text-foreground">QPKG:</span> {ssh.qnap_qpkg_preview}</div>}
+                </div>
+              )}
+            </div>
+          </Section>
+        );
+      })()}
 
       {/* ─── 3. Sistema operativo (Windows/Linux server) ─── */}
       {(() => {
@@ -1176,6 +1865,76 @@ export default function ObjectDetailPage() {
 
         {/* ═══════════════ TAB: RETE AVANZATA ═══════════════ */}
         <TabsContent value="network" className="space-y-4">
+
+      {/* ─── 3.0 IP collegati (cluster fisico) ─────────────────────────
+          Espone l'aggregazione physical_device: tutti gli IP che il sistema
+          (o l'utente, via "Collega altro IP") ha dichiarato appartenere allo
+          stesso device fisico. Caso d'uso tipico: Proxmox con NIC su VLAN
+          diverse (mgmt 40.1 + VM 16.1), router/firewall con gateway multipli.
+      */}
+      <Section icon={<Link2 className="h-4 w-4" />} title="IP collegati allo stesso device fisico">
+        <div className="space-y-3">
+          {host?.physical_device_id && clusterMembers.length > 0 ? (
+            <>
+              <div className="text-xs text-muted-foreground">
+                Cluster fisico <span className="font-mono">#{host.physical_device_id}</span> · {clusterMembers.length} {clusterMembers.length === 1 ? "IP" : "IP"} aggregati
+              </div>
+              <div className="border rounded-md divide-y">
+                {clusterMembers.map((m) => {
+                  const isCurrent = m.id === host?.id;
+                  return (
+                    <div key={m.id} className="flex items-center gap-3 px-3 py-2 hover:bg-muted/30">
+                      <div className="flex-1 min-w-0 flex items-center gap-2">
+                        {isCurrent ? (
+                          <span className="font-mono text-sm">{m.ip}</span>
+                        ) : (
+                          <Link href={`/objects/${m.id}`} className="font-mono text-sm hover:underline text-primary">{m.ip}</Link>
+                        )}
+                        {m.hostname && <span className="text-sm text-muted-foreground truncate">{m.hostname}</span>}
+                        <span className="text-[10px] text-muted-foreground">· {m.network_name}</span>
+                        {isCurrent && <Badge variant="secondary" className="text-[10px]">qui</Badge>}
+                        <StatusBadge status={m.status} />
+                      </div>
+                      {!isCurrent && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleUnlinkHost(m.id)}
+                          disabled={unlinkingHostId === m.id}
+                          title="Scollega questo IP dal device fisico"
+                        >
+                          <Unlink className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Nessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setLinkDialogOpen(true)} disabled={!host}>
+              <Link2 className="h-3.5 w-3.5 mr-1.5" />
+              Collega altro IP
+            </Button>
+            {host?.physical_device_id && clusterMembers.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => host?.id && handleUnlinkHost(host.id)}
+                disabled={unlinkingHostId === host?.id}
+              >
+                <Unlink className="h-3.5 w-3.5 mr-1.5" />
+                Esci dal cluster
+              </Button>
+            )}
+          </div>
+        </div>
+      </Section>
 
       {/* ─── 3a. Proxmox (host + VM + subscription) ─── */}
       {(() => {
@@ -1795,6 +2554,21 @@ export default function ObjectDetailPage() {
         {/* ═══════════════ TAB: STORICO ═══════════════ */}
         <TabsContent value="storico" className="space-y-4">
 
+      {/* ─── v0.2.604: Disponibilità (uptime + latenza) ─── spostata qui dal tab Generale.
+          È un indicatore di stato storico, non un tool di monitoraggio: secondario. */}
+      <Section icon={<Activity className="h-4 w-4" />} title="Disponibilità storica">
+        <div className="space-y-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Uptime nel tempo</div>
+            <UptimeTimeline hostId={host.id} />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Latenza ICMP (ms)</div>
+            <LatencyChart hostId={host.id} />
+          </div>
+        </div>
+      </Section>
+
       {/* ─── 7. Discovery ─── */}
       <Section icon={<ScanSearch className="h-4 w-4" />} title="Discovery">
         <dl className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
@@ -1849,6 +2623,39 @@ export default function ObjectDetailPage() {
 
       {/* Spazio in fondo per scroll comodo */}
       <div className="h-8" />
+
+      {/* F3.3: modale promozione inline — niente più redirect cross-pagina. */}
+      {host && !isManaged && (
+        <PromoteHostDialog
+          host={host as HostDetail}
+          open={promoteOpen}
+          onOpenChange={setPromoteOpen}
+          onCreated={() => { setPromoteOpen(false); fetchAll(); }}
+        />
+      )}
+
+      {/* v0.2.594+: modale link manuale multi-IP allo stesso physical_device */}
+      {host && (
+        <LinkIpsDialog
+          open={linkDialogOpen}
+          onOpenChange={setLinkDialogOpen}
+          anchorHostId={host.id}
+          anchorHostLabel={host.hostname || host.ip}
+          onLinked={() => { void fetchAll(); void fetchClusterMembers(); }}
+        />
+      )}
+
+      {/* v0.2.599: modale edit device inline (sostituisce navigazione a /devices/[id]).
+          /devices/[id] resta accessibile direct, ma il pulsante "Modifica device"
+          della scheda asset ora apre questo dialog → niente più perdita dei tab. */}
+      {device && (
+        <EditDeviceDialog
+          device={device}
+          open={editDeviceOpen}
+          onOpenChange={setEditDeviceOpen}
+          onSaved={() => { setEditDeviceOpen(false); void fetchAll(); }}
+        />
+      )}
 
     </div>
   );

@@ -20,13 +20,15 @@ import {
   DialogScrollableArea, DialogTitle, DIALOG_PANEL_WIDE_CLASS,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup,
-  DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuItem,
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuSeparator, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
+import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
+import { InlineEditCell } from "@/components/shared/inline-edit-cell";
 import { AddableSelect } from "@/components/shared/addable-select";
 import { credTypeForProtocol, CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
@@ -42,7 +44,8 @@ import {
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, ShieldAlert, HardDrive, Monitor,
   Phone, Printer, Camera, Cpu, Database, Smartphone, Link2,
-  Lock, KeyRound, Trash2, ShieldCheck, MoreVertical,
+  Lock, KeyRound, Trash2, ShieldCheck, MoreVertical, Wifi,
+  BatteryCharging, Network, ArrowUp, ArrowDown,
 } from "lucide-react";
 
 /**
@@ -51,36 +54,39 @@ import {
  * - I singoletti (router/switch/firewall/hypervisor) usano direttamente la classificazione,
  *   così la chip e l'opzione del dropdown classFilter restano allineate.
  */
-const CLASS_PRESETS: Array<{
-  /** Valore impostato in classFilter quando la chip è attiva. */
-  filter: string;
-  label: string;
-  icon: typeof Server;
-  /**
-   * Classificazioni che soddisfano il preset (usato per espansione filtro group:*).
-   * Per il preset speciale `group:other` la match è vuota: la logica filtro
-   * esclude gli host che rientrano in qualsiasi altro preset.
-   */
-  match: readonly string[];
-}> = [
-  { filter: "group:server",   label: "Server",     icon: Server,    match: ["server", "server_linux", "server_windows"] },
-  { filter: "group:client",   label: "Client",     icon: Monitor,   match: ["workstation", "notebook"] },
-  { filter: "hypervisor",     label: "Hypervisor", icon: HardDrive, match: ["hypervisor"] },
-  { filter: "router",         label: "Router",     icon: RouterIcon,match: ["router"] },
-  { filter: "switch",         label: "Switch",     icon: Cable,     match: ["switch"] },
-  { filter: "firewall",       label: "Firewall",   icon: Shield,    match: ["firewall"] },
-  { filter: "group:tel",      label: "TEL",        icon: Phone,     match: ["voip"] },
-  { filter: "group:print",    label: "PRINT",      icon: Printer,   match: ["stampante", "scanner", "fotocopiatrice", "multifunzione"] },
-  { filter: "group:cam",      label: "CAM",        icon: Camera,    match: ["telecamera"] },
-  { filter: "group:iot",      label: "IOT",        icon: Cpu,       match: ["iot", "smart_tv", "console", "sensore", "plc", "hmi", "controller"] },
-  { filter: "group:mobile",   label: "MOBILE",     icon: Smartphone,match: ["tablet", "smartphone"] },
-  { filter: "group:storage",  label: "STORAGE",    icon: Database,  match: ["storage", "nas", "nas_synology", "nas_qnap"] },
-  { filter: "group:multihomed", label: "MH",       icon: Link2,     match: [] /* speciale: filtra su h.multihomed != null */ },
-  { filter: "group:other",    label: "ALTRO",      icon: Boxes,     match: [] /* catchall: vedi logica filtro */ },
+/** v0.2.628: preset chip ora serializzabili (icon è una stringa, mappata a
+ *  componente lucide a render time). I tipi sono in `./preset-types` per
+ *  poter essere importati anche dal dialog di gestione. */
+const ICON_MAP: Record<IconName, typeof Server> = {
+  Server, Monitor, HardDrive, RouterIcon, Cable, Wifi, Shield, Network,
+  BatteryCharging, Phone, Printer, Camera, Cpu, Smartphone, Database, Link2,
+  Boxes, Activity, Package,
+};
+
+const DEFAULT_CLASS_PRESETS: ClassPreset[] = [
+  { filter: "group:server",   label: "Server",     iconName: "Server",    match: ["server", "server_linux", "server_windows"], builtin: true },
+  { filter: "group:client",   label: "Client",     iconName: "Monitor",   match: ["workstation", "notebook"], builtin: true },
+  { filter: "hypervisor",     label: "Hypervisor", iconName: "HardDrive", match: ["hypervisor"], builtin: true },
+  { filter: "router",         label: "Router",     iconName: "RouterIcon",match: ["router"], builtin: true },
+  { filter: "switch",         label: "Switch",     iconName: "Cable",     match: ["switch"], builtin: true },
+  { filter: "access_point",   label: "AP",         iconName: "Wifi",      match: ["access_point"], builtin: true },
+  { filter: "firewall",       label: "Firewall",   iconName: "Shield",    match: ["firewall"], builtin: true },
+  { filter: "group:net",      label: "NET",        iconName: "Network",   match: ["bridge", "repeater", "modem", "ont", "load_balancer", "vpn_gateway", "proxy", "rete_ot"], builtin: true },
+  { filter: "ups",            label: "UPS",        iconName: "BatteryCharging", match: ["ups"], builtin: true },
+  { filter: "group:tel",      label: "TEL",        iconName: "Phone",     match: ["voip"], builtin: true },
+  { filter: "group:print",    label: "PRINT",      iconName: "Printer",   match: ["stampante", "scanner", "fotocopiatrice", "multifunzione"], builtin: true },
+  { filter: "group:cam",      label: "CAM",        iconName: "Camera",    match: ["telecamera"], builtin: true },
+  { filter: "group:iot",      label: "IOT",        iconName: "Cpu",       match: ["iot", "smart_tv", "console", "sensore", "plc", "hmi", "controller"], builtin: true },
+  { filter: "group:mobile",   label: "MOBILE",     iconName: "Smartphone",match: ["tablet", "smartphone"], builtin: true },
+  { filter: "group:storage",  label: "STORAGE",    iconName: "Database",  match: ["storage", "nas", "nas_synology", "nas_qnap"], builtin: true },
+  { filter: "group:multihomed", label: "MH",       iconName: "Link2",     match: [] /* speciale: h.multihomed != null */, builtin: true },
+  { filter: "group:other",    label: "ALTRO",      iconName: "Boxes",     match: [] /* catchall */, builtin: true },
 ];
 import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
 import { WazuhHostBadge, type WazuhHostStatus } from "@/components/integrations/wazuh-host-badge";
+import type { ClassPreset, IconName } from "./preset-types";
+import { PresetsDialog } from "@/components/devices/presets-dialog";
 
 const SORTED_CLASSIFICATIONS = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
 
@@ -205,24 +211,58 @@ const PAGE_SIZE = 50;
 // device / NIS2 / LibreNMS / Wazuh): non deve mai sparire.
 const ALWAYS_VISIBLE = new Set(["profilo"]);
 
-function loadVisibleColumns(): Set<string> {
-  if (typeof window === "undefined") return new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id));
+/** v0.2.623: ordine + visibilità colonne come array (l'ordine è significativo).
+ *  Una colonna che non appare nell'array = nascosta. Backward compat: vecchio
+ *  formato era già array, semplicemente l'ordine era casuale (Set iteration).
+ *  ALWAYS_VISIBLE viene aggiunto in cima se assente. */
+function defaultOrder(): string[] {
+  return [...new Set(["profilo", ...COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id)])];
+}
+
+function loadColumnOrder(): string[] {
+  if (typeof window === "undefined") return defaultOrder();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const arr = JSON.parse(raw) as string[];
       if (Array.isArray(arr) && arr.length > 0) {
-        const set = new Set(arr);
-        for (const id of ALWAYS_VISIBLE) set.add(id); // garantisce sempre visibile
-        return set;
+        const cleaned = arr.filter((id, i, a) => COLUMNS.some((c) => c.id === id) && a.indexOf(id) === i);
+        // Garantisce ALWAYS_VISIBLE (profilo) presente — se assente, in testa
+        for (const id of ALWAYS_VISIBLE) if (!cleaned.includes(id)) cleaned.unshift(id);
+        return cleaned;
       }
     }
   } catch { /* ignore */ }
-  return new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id));
+  return defaultOrder();
 }
 
-function saveVisibleColumns(cols: Set<string>) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...cols])); } catch { /* ignore */ }
+/** Persiste sia localStorage (load istantaneo) sia server-side per cross-device. */
+function saveColumnOrder(order: string[]) {
+  const value = JSON.stringify(order);
+  try { localStorage.setItem(STORAGE_KEY, value); } catch { /* ignore */ }
+  try {
+    void fetch("/api/user/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "discovery-columns", value }),
+      cache: "no-store",
+    });
+  } catch { /* ignore */ }
+}
+
+/** Carica preferenza dal server. Ritorna null se assente o non valida. */
+async function fetchServerColumnOrder(): Promise<string[] | null> {
+  try {
+    const r = await fetch("/api/user/preferences?key=discovery-columns", { cache: "no-store" });
+    if (!r.ok) return null;
+    const data = await r.json() as { value: string | null };
+    if (!data.value) return null;
+    const arr = JSON.parse(data.value) as string[];
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    const cleaned = arr.filter((id, i, a) => COLUMNS.some((c) => c.id === id) && a.indexOf(id) === i);
+    for (const id of ALWAYS_VISIBLE) if (!cleaned.includes(id)) cleaned.unshift(id);
+    return cleaned;
+  } catch { return null; }
 }
 
 // ---------------------------------------------------------------------------
@@ -348,12 +388,93 @@ export default function DiscoveryPage() {
   const [credentials, setCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  // v0.2.646 audit perf UI3: debounce 250ms sulla search per non rifare il
+  // filter+sort su tutto l'array hosts ad ogni keystroke. Il filter è O(N)
+  // con JSON.parse in alcuni accessor → su 1000+ host ogni tasto = 100-300ms.
+  const [qDebounced, setQDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q), 250);
+    return () => clearTimeout(t);
+  }, [q]);
   const [statusFilter, setStatusFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [networkFilter, setNetworkFilter] = useState("");
   const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
   const [page, setPage] = useState(1);
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(loadVisibleColumns);
+  const [columnOrder, setColumnOrder] = useState<string[]>(loadColumnOrder);
+  // v0.2.624: column manager in Dialog separato (Base UI Menu non ammette
+  // <button> arbitrari come children → errore #31).
+  const [columnsDialogOpen, setColumnsDialogOpen] = useState(false);
+  // v0.2.628: preset chip personalizzabili dall'utente
+  const [presets, setPresets] = useState<ClassPreset[]>(DEFAULT_CLASS_PRESETS);
+  const [presetsDialogOpen, setPresetsDialogOpen] = useState(false);
+  // v0.2.632: classification custom per-tenant. Fetch al mount, refresh on focus.
+  const [customClassifications, setCustomClassifications] = useState<Array<{ slug: string; label: string; parent_slug: string }>>([]);
+  useEffect(() => {
+    const load = () => {
+      void fetch("/api/classifications/custom", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : { items: [] }))
+        .then((data) => setCustomClassifications(data.items ?? []))
+        .catch(() => { /* ignore */ });
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
+  }, []);
+  // Map slug → label per override custom. Built-in fallback via getClassificationLabel.
+  const customLabelMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of customClassifications) m.set(c.slug, c.label);
+    return m;
+  }, [customClassifications]);
+  const effectiveLabel = useCallback((slug: string) => customLabelMap.get(slug) ?? getClassificationLabel(slug), [customLabelMap]);
+  const effectiveClassifications = useMemo(
+    () => [...DEVICE_CLASSIFICATIONS_ORDERED, ...customClassifications.map((c) => c.slug)],
+    [customClassifications]
+  );
+
+  // Carica preset salvati al mount (localStorage immediato + sync server)
+  useEffect(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem("discovery-presets") : null;
+      if (raw) {
+        const parsed = JSON.parse(raw) as ClassPreset[];
+        if (Array.isArray(parsed) && parsed.length > 0) setPresets(parsed);
+      }
+    } catch { /* ignore */ }
+    void fetch("/api/user/preferences?key=discovery-presets", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { value: string | null } | null) => {
+        if (!data?.value) return;
+        const parsed = JSON.parse(data.value) as ClassPreset[];
+        if (Array.isArray(parsed) && parsed.length > 0) setPresets(parsed);
+      })
+      .catch(() => { /* ignore */ });
+  }, []);
+
+  function savePresets(next: ClassPreset[]) {
+    const value = JSON.stringify(next);
+    try { localStorage.setItem("discovery-presets", value); } catch { /* ignore */ }
+    try {
+      void fetch("/api/user/preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "discovery-presets", value }),
+        cache: "no-store",
+      });
+    } catch { /* ignore */ }
+  }
+
+  // v0.2.622+623: sync server-side. Server vince su localStorage se diverso.
+  useEffect(() => {
+    void fetchServerColumnOrder().then((srv) => {
+      if (!srv) return;
+      const localStr = JSON.stringify(columnOrder);
+      const srvStr = JSON.stringify(srv);
+      if (localStr !== srvStr) setColumnOrder(srv);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Tier 1 row actions: state per disabilitare il bottone durante l'azione ─
   const [rowActionBusy, setRowActionBusy] = useState<{ id: number; kind: "test" | "query" | "delete" } | null>(null);
@@ -380,6 +501,7 @@ export default function DiscoveryPage() {
 
   // ─── Add to devices (bulk promote host → device) ──────────
   const [addDevicesOpen, setAddDevicesOpen] = useState(false);
+  const [linkSameDeviceOpen, setLinkSameDeviceOpen] = useState(false);
   const [addDevicesSaving, setAddDevicesSaving] = useState(false);
   const [addClassification, setAddClassification] = useState<string>("server");
   const [addVendor, setAddVendor] = useState<string>("other");
@@ -529,10 +651,15 @@ export default function DiscoveryPage() {
   }
 
   // ---------- fetch ----------
+  // v0.2.635 audit B1: in caso di errore di rete o HTTP, toast esplicito invece
+  // di tabella silenziosamente vuota (l'utente non distingueva "nessun host"
+  // da "API down"). Logica del catch invariata sui side-fetch non critici.
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/hosts/discovery");
+      // v0.2.647 audit perf UI1: lite mode esclude snmp_data/conflict_flags
+      // (non usati dalla tabella) → payload tipicamente -30/50%.
+      const res = await fetch("/api/hosts/discovery?lite=1");
       if (res.ok) {
         const data: EnrichedHost[] = await res.json();
         setHosts(data);
@@ -571,8 +698,14 @@ export default function DiscoveryPage() {
             }
           }
         } catch { /* non critico */ }
-      } else setHosts([]);
-    } catch { setHosts([]); }
+      } else {
+        setHosts([]);
+        toast.error(`Errore caricamento host: HTTP ${res.status}`);
+      }
+    } catch (e) {
+      setHosts([]);
+      toast.error(`Errore di rete nel caricamento host: ${e instanceof Error ? e.message : String(e)}`);
+    }
     finally {
       setLoading(false);
       setSelectedIds(new Set());
@@ -678,9 +811,30 @@ export default function DiscoveryPage() {
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "it"));
   }, [hosts]);
 
+  // ---------- pre-arricchimento ----------
+  // v0.2.646 audit perf UI3: precalcola i campi parsati una sola volta dopo
+  // fetchData, invece di chiamare JSON.parse dentro ogni accessor del sort
+  // (eseguito O(N log N) volte ad ogni render). Mappa hostId → extras.
+  const hostExtras = useMemo(() => {
+    const m = new Map<number, { detectedLabel: string; openPortsTcp: string; openPortsUdp: string; fpConfidence: number }>();
+    for (const h of hosts) {
+      const det = parseDetectedDeviceFromDetectionJson(h.detection_json);
+      m.set(h.id, {
+        detectedLabel: det?.label ?? "",
+        openPortsTcp: parsePortsByProtocol(h.open_ports, "tcp"),
+        openPortsUdp: parsePortsByProtocol(h.open_ports, "udp"),
+        fpConfidence: getFpConfidence(h),
+      });
+    }
+    return m;
+  }, [hosts]);
+
   // ---------- filter ----------
+  // v0.2.646 audit perf UI3: usa qDebounced (250ms) per il filter, non `q`.
+  // L'input rimane reattivo (controlled component), ma il filter su 1000+ host
+  // gira al massimo 1 volta ogni 250ms invece di a ogni keystroke.
   const filtered = useMemo(() => {
-    const lower = q.toLowerCase().trim();
+    const lower = qDebounced.toLowerCase().trim();
     return hosts.filter((h) => {
       if (statusFilter && h.status !== statusFilter) return false;
       if (classFilter) {
@@ -692,11 +846,11 @@ export default function DiscoveryPage() {
           // ALTRO = host la cui classificazione non rientra in nessun altro preset.
           // Include anche unknown/null/"" così l'utente vede tutto ciò che resta fuori.
           const claimed = new Set(
-            CLASS_PRESETS.filter((p) => p.filter !== "group:other" && p.filter !== "group:multihomed").flatMap((p) => p.match)
+            presets.filter((p) => p.filter !== "group:other" && p.filter !== "group:multihomed").flatMap((p) => p.match)
           );
           if (claimed.has(h.classification ?? "")) return false;
         } else if (classFilter.startsWith("group:")) {
-          const preset = CLASS_PRESETS.find((p) => p.filter === classFilter);
+          const preset = presets.find((p) => p.filter === classFilter);
           if (preset && !preset.match.includes(h.classification ?? "")) return false;
         } else if (h.classification !== classFilter) {
           return false;
@@ -712,7 +866,7 @@ export default function DiscoveryPage() {
       }
       return true;
     });
-  }, [hosts, q, statusFilter, classFilter, networkFilter, vulnFilter]);
+  }, [hosts, qDebounced, statusFilter, classFilter, networkFilter, vulnFilter, presets]);
 
   // ---------- sort ----------
   const sortAccessors = useMemo(() => ({
@@ -740,19 +894,21 @@ export default function DiscoveryPage() {
     firmware:            (h: EnrichedHost) => h.firmware ?? "",
     last_seen:           (h: EnrichedHost) => h.last_seen ? new Date(h.last_seen).getTime() : 0,
     first_seen:          (h: EnrichedHost) => h.first_seen ? new Date(h.first_seen).getTime() : 0,
-    fp_confidence:       (h: EnrichedHost) => getFpConfidence(h),
+    // v0.2.646 audit perf UI3: accessor leggono dalla Map precalcolata (O(1))
+    // invece di JSON.parse per ogni invocazione (sort = O(N log N) × parse).
+    fp_confidence:       (h: EnrichedHost) => hostExtras.get(h.id)?.fpConfidence ?? 0,
     validated_creds:     (h: EnrichedHost) => (h.validated_protocols || []).length,
-    detected:            (h: EnrichedHost) => { const d = parseDetectedDeviceFromDetectionJson(h.detection_json); return d?.label ?? ""; },
+    detected:            (h: EnrichedHost) => hostExtras.get(h.id)?.detectedLabel ?? "",
     multihomed:          (h: EnrichedHost) => h.multihomed ? h.multihomed.peers.length + 1 : 0,
-    open_ports_tcp:      (h: EnrichedHost) => parsePortsByProtocol(h.open_ports, "tcp"),
-    open_ports_udp:      (h: EnrichedHost) => parsePortsByProtocol(h.open_ports, "udp"),
+    open_ports_tcp:      (h: EnrichedHost) => hostExtras.get(h.id)?.openPortsTcp ?? "",
+    open_ports_udp:      (h: EnrichedHost) => hostExtras.get(h.id)?.openPortsUdp ?? "",
     in_ad:               (h: EnrichedHost) => h.ad_dns_host_name ? 1 : 0,
     vuln_max_severity:   (h: EnrichedHost) => {
       const rank: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3, Log: 4 };
       return h.vuln ? (rank[h.vuln.max_severity] ?? 9) : 99;
     },
     vuln_counts:         (h: EnrichedHost) => h.vuln ? (h.vuln.critical * 1000 + h.vuln.high) : -1,
-  }), []);
+  }), [hostExtras]);
 
   const { sortedRows, sortColumn, sortDirection, onSort } = useClientTableSort(
     filtered, sortAccessors, "ip", "asc",
@@ -795,6 +951,55 @@ export default function DiscoveryPage() {
         return next;
       });
     }
+  }
+
+  // F2.3: pre-fill del bulk dialog da inferred_* degli host selezionati.
+  // Se sono tutti omogenei (stesso inferred_*), applica come default; altrimenti
+  // lascia i default generici (server/other/ssh) e lascia all'utente la scelta.
+  function openAddDevices() {
+    const selectedHosts = hosts.filter((h) => selectedIds.has(h.id));
+    if (selectedHosts.length === 0) { setAddDevicesOpen(true); return; }
+
+    // Helper: ritorna valore unanime tra gli host, altrimenti null
+    function unanimous<T>(values: Array<T | null | undefined>): T | null {
+      const nonNull = values.filter((v): v is T => v != null && v !== "");
+      if (nonNull.length === 0) return null;
+      const first = nonNull[0];
+      return nonNull.every((v) => v === first) ? first : null;
+    }
+
+    const validVendors = new Set(["cisco", "mikrotik", "juniper", "ubiquiti", "fortinet", "stormshield", "sonicwall", "draytek", "synology", "qnap", "vmware", "proxmox", "hp", "dell", "lenovo", "microsoft", "apple", "other"]);
+    const validProtocols = new Set(["ssh", "snmp_v2", "snmp_v3", "winrm", "api"]);
+    const validScanTargets = new Set(["windows", "linux", "macos", "proxmox", "vmware", "network"]);
+
+    const inferredVendor = unanimous(selectedHosts.map((h) => h.inferred_vendor));
+    const inferredProtocol = unanimous(selectedHosts.map((h) => h.inferred_protocol));
+    const inferredScanTarget = unanimous(selectedHosts.map((h) => h.inferred_scan_target));
+    const inferredDeviceType = unanimous(selectedHosts.map((h) => h.inferred_device_type));
+
+    if (inferredVendor && validVendors.has(inferredVendor)) setAddVendor(inferredVendor);
+    if (inferredProtocol && validProtocols.has(inferredProtocol)) setAddProtocol(inferredProtocol);
+    if (inferredScanTarget && validScanTargets.has(inferredScanTarget)) setAddScanTarget(inferredScanTarget);
+
+    // device_type → classification mapping per il bulk dialog (classifications più granulari)
+    if (inferredDeviceType) {
+      const dtMap: Record<string, string> = {
+        workstation: "workstation",
+        server: "server",
+        router: "router",
+        switch: "switch",
+        firewall: "firewall",
+        hypervisor: "server",
+        printer: "printer",
+        nas: "nas",
+        ups: "ups",
+        iot: "iot",
+      };
+      const mapped = dtMap[inferredDeviceType];
+      if (mapped) setAddClassification(mapped);
+    }
+
+    setAddDevicesOpen(true);
   }
 
   // ---------- bulk edit ----------
@@ -854,17 +1059,23 @@ export default function DiscoveryPage() {
    */
   async function handleBulkUpdateAll() {
     if (selectedIds.size === 0) return;
-    const targets = hosts.filter((h) => selectedIds.has(h.id) && h.device_id);
-    if (targets.length === 0) {
-      toast.error("Nessuno degli host selezionati è promosso a device. Usa 'Aggiungi a dispositivi' prima.");
-      return;
-    }
-    const skipped = selectedIds.size - targets.length;
-    if (skipped > 0) {
-      toast.info(`${skipped} host senza device linkato verranno saltati`);
-    }
+    const selectedHosts = hosts.filter((h) => selectedIds.has(h.id));
+    const targets = selectedHosts.filter((h) => h.device_id);
+    const nonPromoted = selectedHosts.filter((h) => !h.device_id);
     setBulkScanRunning(true);
     const results: typeof bulkScanResults = [];
+    // Pre-popola gli skipped (non promossi a device) cosi` compaiono nel modale finale
+    for (const h of nonPromoted) {
+      results.push({
+        host_id: h.id,
+        ip: h.ip,
+        name: displayName(h) || h.ip,
+        query_status: "skipped",
+        query_message: "Host non promosso a device. Usa 'Aggiungi a dispositivi' prima.",
+        software_status: "not-applicable",
+        software_message: "",
+      });
+    }
     for (let i = 0; i < targets.length; i++) {
       const h = targets[i];
       const row: (typeof results)[number] = {
@@ -885,9 +1096,22 @@ export default function DiscoveryPage() {
           row.query_status = "error";
           row.query_message = qd.error ?? `HTTP ${qr.status}`;
         } else if (qd.id) {
-          // polling fino a completion
+          // v0.2.636 audit B2: polling con max-retry e cleanup. Prima il setInterval
+          // poteva girare all'infinito se lo scan restava 'running' (es. crash
+          // background task senza progress update) → bottone "Aggiorna selezionati"
+          // bloccato per sempre. Ora dopo POLL_MAX_ATTEMPTS (400 × 1500ms = 10min)
+          // forza failed.
+          const POLL_INTERVAL_MS = 1500;
+          const POLL_MAX_ATTEMPTS = 400;
           const finalPhase = await new Promise<{ status: string; phase: string }>((resolve) => {
+            let attempts = 0;
             const poll = setInterval(async () => {
+              attempts++;
+              if (attempts >= POLL_MAX_ATTEMPTS) {
+                clearInterval(poll);
+                resolve({ status: "failed", phase: "timeout dopo 10 minuti di polling" });
+                return;
+              }
               try {
                 const pr = await fetch(`/api/scans/progress/${qd.id}`);
                 if (!pr.ok) return;
@@ -896,8 +1120,8 @@ export default function DiscoveryPage() {
                   clearInterval(poll);
                   resolve(pd);
                 }
-              } catch { /* ignore */ }
-            }, 1500);
+              } catch { /* ignore: il prossimo tick riproverà fino al max */ }
+            }, POLL_INTERVAL_MS);
           });
           if (finalPhase.status === "completed") {
             row.query_status = "ok";
@@ -1044,31 +1268,50 @@ export default function DiscoveryPage() {
     }
   }
 
-  // ---------- column toggle ----------
+  // ---------- column toggle / reorder (v0.2.623) ----------
   const toggleCol = (id: string) => {
-    setVisibleCols((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      saveVisibleColumns(next);
+    if (ALWAYS_VISIBLE.has(id)) return; // protezione
+    setColumnOrder((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      saveColumnOrder(next);
       return next;
     });
   };
   const showAll = () => {
-    const all = new Set(COLUMNS.map((c) => c.id));
-    setVisibleCols(all);
-    saveVisibleColumns(all);
+    // Mantieni l'ordine corrente per quelle già visibili, aggiungi le mancanti in fondo
+    const next = [...columnOrder, ...COLUMNS.map((c) => c.id).filter((id) => !columnOrder.includes(id))];
+    setColumnOrder(next);
+    saveColumnOrder(next);
   };
   const resetCols = () => {
-    const def = new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id));
-    setVisibleCols(def);
-    saveVisibleColumns(def);
+    const def = defaultOrder();
+    setColumnOrder(def);
+    saveColumnOrder(def);
+  };
+  /** v0.2.623: sposta una colonna di una posizione su (-1) o giù (+1) dentro l'ordine. */
+  const moveCol = (id: string, dir: -1 | 1) => {
+    setColumnOrder((prev) => {
+      const i = prev.indexOf(id);
+      if (i < 0) return prev;
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      saveColumnOrder(next);
+      return next;
+    });
   };
 
-  const isVisible = (id: string) => visibleCols.has(id);
+  const isVisible = (id: string) => columnOrder.includes(id);
+  /** Mappa ordinata: itera sull'ordine custom, filtra le sconosciute. */
+  const orderedVisibleCols = useMemo(
+    () => columnOrder.map((id) => COLUMNS.find((c) => c.id === id)).filter((c): c is typeof COLUMNS[number] => !!c),
+    [columnOrder]
+  );
 
   // ---------- CSV export ----------
   const exportCsv = () => {
-    const visibleDefs = COLUMNS.filter((c) => visibleCols.has(c.id));
+    const visibleDefs = orderedVisibleCols;
     const header = visibleDefs.map((c) => c.label).join(";");
     const rows = sortedRows.map((h) =>
       visibleDefs.map((c) => {
@@ -1140,6 +1383,23 @@ export default function DiscoveryPage() {
     }
   }
 
+  /** v0.2.618: salva un campo host inline e aggiorna lo state locale.
+   *  Usato dalle celle InlineEditCell di /discovery (classification, manufacturer, …). */
+  async function saveHostFieldInline(hostId: number, patch: Record<string, unknown>) {
+    const res = await fetch(`/api/hosts/${hostId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err?.error || "Errore salvataggio");
+      throw new Error(err?.error || "save failed");
+    }
+    setHosts((prev) => prev.map((h) => h.id === hostId ? { ...h, ...patch } : h));
+    toast.success("Salvato", { duration: 1200 });
+  }
+
   function renderCell(h: EnrichedHost, colId: string) {
     switch (colId) {
       case "ip":
@@ -1162,14 +1422,46 @@ export default function DiscoveryPage() {
         return <span className="font-mono text-xs">{h.mac ?? "—"}</span>;
       case "vendor":
         return <span className="text-sm text-muted-foreground truncate max-w-[140px] block" title={h.vendor ?? ""}>{h.vendor ?? "—"}</span>;
-      case "classification":
-        return h.classification && h.classification !== "unknown"
-          ? <Badge variant="outline" className="text-xs">{h.classification}</Badge>
-          : <span className="text-muted-foreground text-xs">—</span>;
+      case "classification": {
+        // v0.2.618: editabile inline (select). Save → PUT /api/hosts/:id { classification }.
+        // v0.2.621: ordinamento alfabetico per LABEL visibile (es. "Access Point", "Bridge", ...)
+        // v0.2.632: include classification custom (effectiveClassifications + effectiveLabel).
+        const slugs = effectiveClassifications.filter((c) => c !== "unknown");
+        const sortedSlugs = [...slugs].sort((a, b) => effectiveLabel(a).localeCompare(effectiveLabel(b), "it", { sensitivity: "base" }));
+        const opts = [{ value: "unknown", label: "— Sconosciuta —" },
+          ...sortedSlugs.map((c) => ({ value: c, label: effectiveLabel(c) }))];
+        return (
+          <InlineEditCell
+            mode="select"
+            value={h.classification && h.classification !== "unknown" ? h.classification : "unknown"}
+            selectOptions={opts}
+            onSave={(v) => saveHostFieldInline(h.id, { classification: v || "unknown" })}
+            display={h.classification && h.classification !== "unknown"
+              ? <Badge variant="outline" className="text-xs">{effectiveLabel(h.classification) || h.classification}</Badge>
+              : <span className="text-muted-foreground text-xs">—</span>}
+            title="Clicca per cambiare classificazione"
+          />
+        );
+      }
       case "known_host":
-        return h.known_host
-          ? <span title="Configurazione manuale: non aggiornata automaticamente dagli scan" className="inline-flex items-center justify-center text-primary"><Lock className="h-3.5 w-3.5" /></span>
-          : <span className="text-muted-foreground text-xs">—</span>;
+        // v0.2.622: toggleable inline. Click → PUT { known_host: 0|1 }.
+        // Quando attivo (lucchetto), l'host non viene rimosso/marcato offline
+        // dagli scan automatici — usato per device statici noti (router/server).
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void saveHostFieldInline(h.id, { known_host: h.known_host ? 0 : 1 });
+            }}
+            title={h.known_host
+              ? "Host fisso (clicca per disattivare). Non rimosso automaticamente dagli scan."
+              : "Clicca per marcare come host fisso (non rimuovere automaticamente)."}
+            className={`inline-flex items-center justify-center rounded p-0.5 hover:bg-muted/60 ${h.known_host ? "text-primary" : "text-muted-foreground/40 hover:text-muted-foreground"}`}
+          >
+            <Lock className="h-3.5 w-3.5" />
+          </button>
+        );
       case "ip_assignment": {
         const labels: Record<string, string> = { dynamic: "DHCP", static: "Statico", reserved: "Riservato", unknown: "—" };
         const colors: Record<string, string> = { dynamic: "bg-blue-500/10 text-blue-600 border-blue-300/40", static: "bg-amber-500/10 text-amber-600 border-amber-300/40", reserved: "bg-purple-500/10 text-purple-600 border-purple-300/40" };
@@ -1178,7 +1470,19 @@ export default function DiscoveryPage() {
           : <span className="text-muted-foreground text-xs">—</span>;
       }
       case "notes":
-        return <span className="text-xs text-muted-foreground truncate max-w-[150px] block" title={h.notes}>{h.notes || "—"}</span>;
+        // v0.2.627: editabile inline (text). Note libere sull'host.
+        return (
+          <InlineEditCell
+            mode="text"
+            value={h.notes ?? ""}
+            placeholder="Aggiungi note…"
+            onSave={(v) => saveHostFieldInline(h.id, { notes: v })}
+            display={h.notes
+              ? <span className="text-xs text-muted-foreground truncate max-w-[150px] block" title={h.notes}>{h.notes}</span>
+              : <span className="text-muted-foreground text-xs">—</span>}
+            title="Clicca per modificare le note"
+          />
+        );
       case "network_name":
         return <span className="text-sm" title={h.network_cidr}>{h.network_name}</span>;
       case "vlan_id":
@@ -1204,10 +1508,22 @@ export default function DiscoveryPage() {
           ? <span className="text-xs font-mono">{h.last_response_time_ms} ms</span>
           : <span className="text-muted-foreground text-xs">—</span>;
       case "device_manufacturer": {
+        // v0.2.618: editabile inline. getManufacturer() ritorna o device_manufacturer
+        // o fallback MAC vendor: editiamo device_manufacturer (preferito), MAC vendor
+        // resta fallback automatico.
         const mfr = getManufacturer(h);
-        return mfr.text
-          ? <span className={`text-sm ${mfr.fromVendor ? "text-muted-foreground italic" : ""}`} title={mfr.fromVendor ? "Da MAC vendor" : ""}>{mfr.text}</span>
-          : <span className="text-muted-foreground text-xs">—</span>;
+        return (
+          <InlineEditCell
+            mode="text"
+            value={h.device_manufacturer ?? ""}
+            placeholder={mfr.fromVendor ? `MAC: ${mfr.text}` : "Es: HP, Dell, Cisco…"}
+            onSave={(v) => saveHostFieldInline(h.id, { device_manufacturer: v || null })}
+            display={mfr.text
+              ? <span className={`text-sm ${mfr.fromVendor ? "text-muted-foreground italic" : ""}`} title={mfr.fromVendor ? "Da MAC vendor (editabile)" : ""}>{mfr.text}</span>
+              : <span className="text-muted-foreground text-xs">—</span>}
+            title="Clicca per modificare il produttore"
+          />
+        );
       }
       case "model":
         return <span className="text-sm">{h.model ?? "—"}</span>;
@@ -1398,12 +1714,15 @@ export default function DiscoveryPage() {
                     + `• ${h.ip} (${h.network_name}) — primary (questo)\n`
                     + h.multihomed.peers.map((p) => `• ${p.ip} (${p.network_name})${p.is_primary ? " — primary" : ""}`).join("\n")
                   }
-                  className="inline-flex items-center gap-0.5 text-cyan-600 hover:text-cyan-700"
+                  className="inline-flex items-center gap-0.5 text-cyan-600 hover:text-cyan-700 font-bold"
                 >
                   <Link2 className="h-3.5 w-3.5" />
-                  <span className="text-[9px] font-bold leading-none">P</span>
+                  <span className="text-[9px] leading-none">P</span>
                 </Link>
               ) : (
+                // v0.2.651: secondary ora cyan-600 (era cyan-300, poco visibile)
+                // + badge "/N" col numero di interfacce del cluster per evidenziare
+                // chiaramente che è un device multihomed e non un host isolato.
                 <Link
                   href={h.multihomed.primary_host_id ? `/objects/${h.multihomed.primary_host_id}` : `/objects/${h.id}`}
                   title={
@@ -1412,9 +1731,10 @@ export default function DiscoveryPage() {
                     + `• ${h.ip} (${h.network_name}) — questo (secondary)\n`
                     + h.multihomed.peers.map((p) => `• ${p.ip} (${p.network_name})${p.is_primary ? " — primary" : ""}`).join("\n")
                   }
-                  className="inline-flex items-center text-cyan-300 hover:text-cyan-500"
+                  className="inline-flex items-center gap-0.5 text-cyan-600 hover:text-cyan-700"
                 >
                   <Link2 className="h-3.5 w-3.5" />
+                  <span className="text-[9px] leading-none">/{h.multihomed.peers.length + 1}</span>
                 </Link>
               )
             ) : (
@@ -1565,38 +1885,9 @@ export default function DiscoveryPage() {
               </Select>
 
               {/* Column picker */}
-              <DropdownMenu>
-                <DropdownMenuTrigger>
-                  <Button variant="outline" size="icon" title="Colonne visibili">
-                    <Columns3 className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56 max-h-[420px] overflow-y-auto">
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel>Colonne visibili</DropdownMenuLabel>
-                  </DropdownMenuGroup>
-                  <DropdownMenuSeparator />
-                  <div className="flex gap-1 px-2 pb-1">
-                    <Button variant="ghost" size="sm" className="text-xs h-7" onClick={showAll}>Tutte</Button>
-                    <Button variant="ghost" size="sm" className="text-xs h-7" onClick={resetCols}>Predefinite</Button>
-                  </div>
-                  <DropdownMenuSeparator />
-                  {Object.entries(GROUP_LABELS).map(([group, label]) => (
-                    <DropdownMenuGroup key={group}>
-                      <DropdownMenuLabel className="text-[10px] uppercase tracking-wider">{label}</DropdownMenuLabel>
-                      {COLUMNS.filter((c) => c.group === group).map((col) => (
-                        <DropdownMenuCheckboxItem
-                          key={col.id}
-                          checked={visibleCols.has(col.id)}
-                          onCheckedChange={() => toggleCol(col.id)}
-                        >
-                          {col.label}
-                        </DropdownMenuCheckboxItem>
-                      ))}
-                    </DropdownMenuGroup>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button variant="outline" size="icon" title="Gestisci colonne (ordine + visibilità)" onClick={() => setColumnsDialogOpen(true)}>
+                <Columns3 className="h-4 w-4" />
+              </Button>
 
               {/* Export CSV */}
               <Button variant="outline" size="icon" onClick={exportCsv} title="Esporta CSV">
@@ -1622,8 +1913,8 @@ export default function DiscoveryPage() {
             >
               Tutti
             </Button>
-            {CLASS_PRESETS.map((preset) => {
-              const Icon = preset.icon;
+            {presets.map((preset) => {
+              const Icon = ICON_MAP[preset.iconName] ?? Boxes;
               const active = classFilter === preset.filter;
               const count = hosts.filter((h) => preset.match.includes(h.classification ?? "")).length;
               return (
@@ -1640,6 +1931,22 @@ export default function DiscoveryPage() {
                 </Button>
               );
             })}
+            {/* v0.2.628: bottone per gestire i preset */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setPresetsDialogOpen(true)}
+              title="Aggiungi/modifica/rimuovi i filtri rapidi"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Gestisci filtri
+            </Button>
+            {/* v0.2.632: shortcut a gestione classification custom */}
+            <Link href="/settings/classifications" className="h-7 inline-flex items-center px-2 text-xs text-muted-foreground hover:text-foreground rounded" title="Aggiungi/modifica classification custom">
+              <Pencil className="h-3.5 w-3.5 mr-1" />
+              Classification
+            </Link>
           </div>
         </CardHeader>
 
@@ -1654,10 +1961,16 @@ export default function DiscoveryPage() {
                 <Pencil className="h-3.5 w-3.5" />
                 Modifica multipla
               </Button>
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddDevicesOpen(true)}>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={openAddDevices}>
                 <PackagePlus className="h-3.5 w-3.5" />
                 Aggiungi a dispositivi
               </Button>
+              {selectedIds.size >= 2 && (
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setLinkSameDeviceOpen(true)}>
+                  <Link2 className="h-3.5 w-3.5" />
+                  Stesso device fisico
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -1711,7 +2024,7 @@ export default function DiscoveryPage() {
                       />
                     </TableHead>
                     <TableHead className="w-10 whitespace-nowrap text-center">Azioni</TableHead>
-                    {COLUMNS.filter((c) => isVisible(c.id)).map((col) => (
+                    {orderedVisibleCols.map((col) => (
                       <SortableTableHead
                         key={col.id}
                         columnId={col.id}
@@ -1772,11 +2085,14 @@ export default function DiscoveryPage() {
                                   }
                                 />
                                 <DropdownMenuContent align="end" className="w-56">
+                                  {/* v0.2.601: dal menu sempre alla scheda asset unica /objects/[id].
+                                      Se isDev → ?edit=1 auto-apre EditDeviceDialog.
+                                      Se !isDev (host non promosso) → ?promote=1 auto-apre PromoteHostDialog. */}
                                   <DropdownMenuItem
                                     render={
-                                      <Link href={isDev ? `/devices/${h.device_id}` : `/hosts/${h.id}`}>
+                                      <Link href={`/objects/${h.id}${isDev ? "?edit=1" : "?promote=1"}`}>
                                         <Pencil className="h-3.5 w-3.5" />
-                                        {isDev ? "Modifica dispositivo" : "Modifica host"}
+                                        {isDev ? "Modifica dispositivo" : "Promuovi a dispositivo"}
                                       </Link>
                                     }
                                   />
@@ -1889,7 +2205,7 @@ export default function DiscoveryPage() {
                           );
                         })()}
                       </TableCell>
-                      {COLUMNS.filter((c) => isVisible(c.id)).map((col) => (
+                      {orderedVisibleCols.map((col) => (
                         <TableCell key={col.id} className="py-2">
                           {renderCell(h, col.id)}
                         </TableCell>
@@ -1941,8 +2257,8 @@ export default function DiscoveryPage() {
                   <SelectTrigger><SelectValue placeholder="Seleziona..." /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__empty__">— Seleziona —</SelectItem>
-                    {SORTED_CLASSIFICATIONS.map((c) => (
-                      <SelectItem key={c} value={c}>{getClassificationLabel(c)}</SelectItem>
+                    {[...effectiveClassifications].sort((a, b) => effectiveLabel(a).localeCompare(effectiveLabel(b), "it", { sensitivity: "base" })).map((c) => (
+                      <SelectItem key={c} value={c}>{effectiveLabel(c)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -2241,10 +2557,13 @@ export default function DiscoveryPage() {
             <p className="text-xs text-muted-foreground mt-1">
               {bulkScanResults.length} host processati ·{" "}
               <span className="text-emerald-600 font-medium">
-                {bulkScanResults.filter((r) => r.query_status === "ok").length} query OK
+                {bulkScanResults.filter((r) => r.query_status === "ok").length} OK
               </span>{" "}·{" "}
               <span className="text-red-600 font-medium">
-                {bulkScanResults.filter((r) => r.query_status === "error").length} query errore
+                {bulkScanResults.filter((r) => r.query_status === "error").length} errore
+              </span>{" "}·{" "}
+              <span className="text-muted-foreground font-medium">
+                {bulkScanResults.filter((r) => r.query_status === "skipped").length} skip
               </span>{" "}·{" "}
               <span className="text-blue-600 font-medium">
                 {bulkScanResults.filter((r) => r.software_status === "ok").length} software OK
@@ -2522,6 +2841,132 @@ export default function DiscoveryPage() {
             <Button onClick={handleTestRowCredential} disabled={testRowRunning || !testRowCredId}>
               {testRowRunning ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Test in corso...</> : <><Activity className="h-4 w-4 mr-1.5" />Esegui test</>}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* v0.2.594+: bulk link manuale "stesso device fisico" */}
+      <LinkIpsDialog
+        open={linkSameDeviceOpen}
+        onOpenChange={setLinkSameDeviceOpen}
+        preSelectedHostIds={Array.from(selectedIds)}
+        preSelectedHostLabels={Object.fromEntries(
+          hosts
+            .filter((h) => selectedIds.has(h.id))
+            .map((h) => [h.id, `${h.ip}${h.hostname ? ` (${h.hostname})` : ""}`])
+        )}
+        onLinked={() => { setSelectedIds(new Set()); fetchData(); }}
+      />
+
+      {/* v0.2.628: Preset chip manager */}
+      <PresetsDialog
+        open={presetsDialogOpen}
+        onOpenChange={setPresetsDialogOpen}
+        presets={presets}
+        availableClassifications={effectiveClassifications}
+        getLabel={effectiveLabel}
+        onSave={(next) => {
+          setPresets(next);
+          savePresets(next);
+        }}
+        onReset={() => {
+          setPresets(DEFAULT_CLASS_PRESETS);
+          savePresets(DEFAULT_CLASS_PRESETS);
+        }}
+      />
+
+      {/* v0.2.624: Column manager in Dialog dedicato (Base UI Menu non ammette
+          button arbitrari come children → errore #31). */}
+      <Dialog open={columnsDialogOpen} onOpenChange={setColumnsDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader className="border-b border-border/50 px-4 pt-4 pb-3">
+            <DialogTitle>Gestisci colonne</DialogTitle>
+          </DialogHeader>
+          <DialogScrollableArea className="px-4 py-3 max-h-[60vh]">
+            <div className="flex gap-2 mb-3">
+              <Button variant="outline" size="sm" onClick={showAll}>Mostra tutte</Button>
+              <Button variant="outline" size="sm" onClick={resetCols}>Predefinite</Button>
+            </div>
+
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">
+              Ordine attuale ({orderedVisibleCols.length} visibili)
+            </div>
+            <div className="border rounded-md divide-y mb-4">
+              {orderedVisibleCols.map((col, idx) => {
+                const isLocked = ALWAYS_VISIBLE.has(col.id);
+                return (
+                  <div key={col.id} className="flex items-center gap-1 px-2 py-1.5 hover:bg-muted/40">
+                    <span className="text-[10px] text-muted-foreground font-mono w-6 text-center">{idx + 1}</span>
+                    <span className="flex-1 text-sm truncate" title={col.label}>{col.label}</span>
+                    <button
+                      type="button"
+                      disabled={idx === 0 || isLocked}
+                      onClick={() => moveCol(col.id, -1)}
+                      title="Sposta su"
+                      className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={idx === orderedVisibleCols.length - 1 || isLocked}
+                      onClick={() => moveCol(col.id, 1)}
+                      title="Sposta giù"
+                      className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLocked}
+                      onClick={() => toggleCol(col.id)}
+                      title={isLocked ? "Colonna sempre visibile" : "Nascondi colonna"}
+                      className="p-1 rounded hover:bg-destructive/15 hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">
+              Tutte le colonne disponibili
+            </div>
+            {Object.entries(GROUP_LABELS).map(([group, label]) => {
+              const colsInGroup = COLUMNS.filter((c) => c.group === group);
+              if (colsInGroup.length === 0) return null;
+              return (
+                <div key={group} className="mb-3">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 px-1 pb-1">{label}</div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {colsInGroup.map((col) => {
+                      const checked = columnOrder.includes(col.id);
+                      const isLocked = ALWAYS_VISIBLE.has(col.id);
+                      return (
+                        <label
+                          key={col.id}
+                          className={`flex items-center gap-2 text-sm px-2 py-1 rounded hover:bg-muted/60 cursor-pointer ${checked ? "bg-primary/5" : ""} ${isLocked ? "opacity-60 cursor-not-allowed" : ""}`}
+                          title={isLocked ? "Sempre visibile" : checked ? `Nascondi ${col.label}` : `Mostra ${col.label}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={isLocked}
+                            onChange={() => toggleCol(col.id)}
+                            className="h-3.5 w-3.5 rounded border-border accent-primary"
+                          />
+                          <span className="truncate">{col.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </DialogScrollableArea>
+          <DialogFooter className="px-4 py-3 border-t border-border/50">
+            <Button variant="outline" onClick={() => setColumnsDialogOpen(false)}>Chiudi</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getScheduledJobs, updateJobLastRun } from "@/lib/db";
+import { getScheduledJobById, updateJobLastRun } from "@/lib/db";
 import { runJob } from "@/lib/cron/jobs";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -20,7 +20,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         return NextResponse.json({ error: "ID job non valido" }, { status: 400 });
       }
 
-      const job = getScheduledJobs().find((j) => j.id === jobId);
+      const job = getScheduledJobById(jobId);
       if (!job) return NextResponse.json({ error: "Job non trovato" }, { status: 404 });
 
       const startedAt = Date.now();

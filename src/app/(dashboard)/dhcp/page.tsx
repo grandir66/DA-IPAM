@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +50,9 @@ interface DhcpLease {
   lease_expires: string | null;
   description: string | null;
   dynamic_lease: number | null;
+  // v0.2.659: ultimo "visto" dal DHCP server (ISO timestamp). Mikrotik = now - last-seen;
+  // Windows = LeaseExpiryTime - LeaseDuration. Null per lease senza dato (reservation inattive).
+  last_seen: string | null;
   host_id: number | null;
   network_id: number | null;
   last_synced: string;
@@ -93,6 +96,12 @@ export default function DhcpPage() {
   const [pageSize] = useState(50);
   const [total, setTotal] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
+  // v0.2.659: filtro "solo attivi recenti" — lease visti negli ultimi N giorni.
+  // v0.2.661: default OFF per evitare di nascondere tutti i lease quando il
+  // DB legacy ha last_seen=null (es. sync Mikrotik pre-fix). L'utente lo attiva
+  // manualmente quando vuole filtrare i relitti.
+  const [onlyRecent, setOnlyRecent] = useState(false);
+  const [recentDays, setRecentDays] = useState(30);
   const [sourceTypeFilter, setSourceTypeFilter] = useState<string>("all");
   const [sourceDeviceFilter, setSourceDeviceFilter] = useState<string>("all");
   const [sortColumn, setSortColumn] = useState<string | null>("last_synced");
@@ -349,6 +358,28 @@ export default function DhcpPage() {
               <Search className="h-4 w-4 mr-1" />
               Cerca
             </Button>
+            {/* v0.2.659: filtro "solo lease recenti" — nasconde relitti vecchi */}
+            <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground ml-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={onlyRecent}
+                onChange={(e) => setOnlyRecent(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              Solo attivi negli ultimi
+            </label>
+            <Select value={String(recentDays)} onValueChange={(v) => v && setRecentDays(parseInt(v, 10))} disabled={!onlyRecent}>
+              <SelectTrigger className="w-[110px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1 giorno</SelectItem>
+                <SelectItem value="7">7 giorni</SelectItem>
+                <SelectItem value="30">30 giorni</SelectItem>
+                <SelectItem value="90">90 giorni</SelectItem>
+                <SelectItem value="365">1 anno</SelectItem>
+              </SelectContent>
+            </Select>
           </form>
 
           {loading ? (
@@ -359,7 +390,24 @@ export default function DhcpPage() {
               <p className="text-lg">Nessun lease DHCP trovato</p>
               <p className="text-sm mt-1">Clicca &quot;Sincronizza tutti&quot; per acquisire i lease dai router</p>
             </div>
-          ) : (
+          ) : (() => {
+              // v0.2.661: se il filtro "solo attivi recenti" nasconde TUTTI i lease,
+              // mostra un messaggio chiaro invece di tabella vuota silenziosa.
+              const visibleCount = onlyRecent
+                ? leases.filter((l) => l.last_seen && (Date.now() - Date.parse(l.last_seen)) / 86400000 <= recentDays).length
+                : leases.length;
+              if (visibleCount === 0 && onlyRecent) {
+                return (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Server className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p className="text-lg">Nessun lease attivo negli ultimi {recentDays} {recentDays === 1 ? "giorno" : "giorni"}</p>
+                    <p className="text-sm mt-1">{leases.length} lease totali nascosti dal filtro. Disabilita &quot;Solo attivi&quot; o aumenta la finestra.</p>
+                    <Button variant="link" onClick={() => setOnlyRecent(false)} className="mt-2">Mostra tutti</Button>
+                  </div>
+                );
+              }
+              return null;
+            })() || (
             <>
               <div className="overflow-x-auto">
                 <Table>
@@ -386,13 +434,25 @@ export default function DhcpPage() {
                       <SortableTableHead columnId="status" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
                         Stato
                       </SortableTableHead>
+                      {/* v0.2.659: ultimo "visto" lease vs sync DA-IPAM. Distingue
+                          attivi recenti da relitti accumulati nel server DHCP. */}
+                      <SortableTableHead columnId="last_seen" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
+                        Ultimo visto
+                      </SortableTableHead>
                       <SortableTableHead columnId="last_synced" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
                         Ultimo sync
                       </SortableTableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {leases.map((lease) => (
+                    {leases
+                      .filter((lease) => {
+                        if (!onlyRecent) return true;
+                        if (!lease.last_seen) return false;
+                        const ageDays = (Date.now() - Date.parse(lease.last_seen)) / 86400000;
+                        return ageDays <= recentDays;
+                      })
+                      .map((lease) => (
                       <TableRow key={lease.id}>
                         <TableCell className="font-mono">
                           {lease.host_id ? (
@@ -438,6 +498,30 @@ export default function DhcpPage() {
                           )}
                           {lease.lease_expires && (
                             <p className="text-xs text-muted-foreground mt-0.5">{lease.lease_expires}</p>
+                          )}
+                        </TableCell>
+                        {/* v0.2.659: ultimo visto dal DHCP server + badge color by age */}
+                        <TableCell className="text-xs">
+                          {lease.last_seen ? (() => {
+                            const ageMs = Date.now() - Date.parse(lease.last_seen);
+                            const ageDays = ageMs / 86400000;
+                            const color =
+                              ageDays < 7 ? "bg-emerald-50 text-emerald-700 border-emerald-300" :
+                              ageDays < 30 ? "bg-yellow-50 text-yellow-700 border-yellow-300" :
+                              ageDays < 90 ? "bg-orange-50 text-orange-700 border-orange-300" :
+                              "bg-red-50 text-red-700 border-red-300";
+                            const label =
+                              ageDays < 1 ? `${Math.round(ageMs / 3600000)}h fa` :
+                              ageDays < 30 ? `${Math.round(ageDays)}g fa` :
+                              ageDays < 365 ? `${Math.round(ageDays / 30)}mesi fa` :
+                              `${(ageDays / 365).toFixed(1)}a fa`;
+                            return (
+                              <Badge variant="outline" className={`text-xs ${color}`} title={new Date(lease.last_seen).toLocaleString("it-IT")}>
+                                {label}
+                              </Badge>
+                            );
+                          })() : (
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">

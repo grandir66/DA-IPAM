@@ -34,7 +34,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ArrowLeft, RefreshCw, Zap, ZapOff, Cable, Minus, Pencil, Key, Server, Wifi, Database, Activity, Radio, Package, ExternalLink, Plus, Monitor, Cpu, HardDrive, Shield, Users, Clock, Award, Layers, Info, Download } from "lucide-react";
+import { ArrowLeft, RefreshCw, Zap, ZapOff, Cable, Minus, Pencil, Key, Server, Wifi, Database, Activity, Radio, Package, ExternalLink, Plus, Monitor, Cpu, HardDrive, Shield, Users, Clock, Award, Layers, Info, Download, Link2 } from "lucide-react";
 
 import { toast } from "sonner";
 import { getClassificationLabel } from "@/lib/device-classifications";
@@ -668,6 +668,17 @@ function DeviceDetailPage() {
     void fetchDevice();
   }, [fetchDevice]);
 
+  // v0.2.600: la scheda dettaglio device unificata è /objects/[host_id].
+  // /devices/[id] resta una pagina di transizione: appena conosciamo l'host_id
+  // del device redirigiamo alla scheda asset con tab. Solo i (rari) device
+  // creati a mano senza host_id mostrano questa pagina.
+  useEffect(() => {
+    const hostId = (device as { host_id?: number | null } | null)?.host_id;
+    if (hostId) {
+      router.replace(`/objects/${hostId}`);
+    }
+  }, [device, router]);
+
   const proxmoxScanData = useMemo((): ProxmoxScanViewModel | null => {
     if (!device) return null;
     const pd = (device as unknown as { proxmox_data?: ProxmoxScanViewModel | null }).proxmox_data;
@@ -897,6 +908,10 @@ function DeviceDetailPage() {
   }
 
   if (loading || !device) return <div className="text-muted-foreground py-8">Caricamento...</div>;
+  // v0.2.600: se host_id presente, stiamo facendo redirect → evita flash della vecchia scheda.
+  if ((device as { host_id?: number | null }).host_id) {
+    return <div className="text-muted-foreground py-8">Apertura scheda asset…</div>;
+  }
 
   const upPorts = device.switch_ports?.filter(p => p.status === "up").length || 0;
   const totalPorts = device.switch_ports?.length || 0;
@@ -953,6 +968,15 @@ function DeviceDetailPage() {
               )}
               {device.vendor_subtype && (
                 <Badge variant="outline" className="text-xs">{device.vendor_subtype}</Badge>
+              )}
+              {/* F4: FK host_id resa visibile — link diretto alla scheda asset unificata */}
+              {device.host_id && (
+                <Link href={`/objects/${device.host_id}`} className="inline-flex">
+                  <Badge variant="outline" className="text-xs gap-1 hover:bg-primary/10 cursor-pointer">
+                    <Link2 className="h-3 w-3" />
+                    host #{device.host_id}
+                  </Badge>
+                </Link>
               )}
             </div>
             <p className="text-muted-foreground font-mono text-sm mt-1">{device.host}:{device.port} ({device.protocol})</p>

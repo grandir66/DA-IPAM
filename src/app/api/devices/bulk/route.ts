@@ -137,6 +137,7 @@ export async function POST(request: Request) {
       const device = createNetworkDevice({
         name,
         host: host.ip,
+        host_id: host.id, // F4: relazione formale già nota in questo loop
         device_type: deviceType,
         vendor: deviceVendor,
         vendor_subtype: vendorSubtypeFromProductProfile(profileId),

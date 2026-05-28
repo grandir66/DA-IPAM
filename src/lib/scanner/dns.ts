@@ -171,25 +171,30 @@ export async function resolveDnsBatch(
   let completed = 0;
   const conc = Math.max(1, Math.min(64, concurrency));
 
-  for (let i = 0; i < ips.length; i += conc) {
-    const slice = ips.slice(i, i + conc);
-    const results = await Promise.all(
-      slice.map(async (ip) => {
-        const reverse = await reverseDns(ip, dnsServer);
-        let forward: string | null = null;
-        if (reverse) {
-          const forwardResults = await forwardDns(reverse, dnsServer);
-          if (forwardResults.includes(ip)) forward = reverse;
-        }
-        return { ip, reverse, forward };
-      })
-    );
-    for (const r of results) {
-      out.set(r.ip, { reverse: r.reverse, forward: r.forward });
+  // v0.2.643 audit perf SC2: pool dinamico invece di chunk-barrier.
+  // Prima `for chunk of conc` + `await Promise.all(slice)` aspettava sempre il
+  // più lento del batch (worst-case 2.5s × tutti gli altri 15). Ora ogni
+  // worker prende il prossimo IP appena finisce → durata totale ≈ media×N/conc
+  // invece di max×N/conc. Speedup DNS phase ~2.5× su 100 host con uno slow IP.
+  let cursor = 0;
+  const next = () => (cursor < ips.length ? ips[cursor++] : null);
+
+  const workers = Array.from({ length: conc }, async () => {
+    while (true) {
+      const ip = next();
+      if (ip == null) return;
+      const reverse = await reverseDns(ip, dnsServer);
+      let forward: string | null = null;
+      if (reverse) {
+        const forwardResults = await forwardDns(reverse, dnsServer);
+        if (forwardResults.includes(ip)) forward = reverse;
+      }
+      out.set(ip, { reverse, forward });
       completed++;
+      onProgress?.(completed, total);
     }
-    onProgress?.(completed, total);
-  }
+  });
+  await Promise.all(workers);
 
   return out;
 }

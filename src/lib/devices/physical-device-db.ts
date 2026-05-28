@@ -274,3 +274,311 @@ export function listHostsByPhysicalDevice(physicalDeviceId: number): Array<{ id:
     .prepare("SELECT id, ip, network_id, host_source FROM hosts WHERE physical_device_id = ? ORDER BY ip")
     .all(physicalDeviceId) as Array<{ id: number; ip: string; network_id: number; host_source: string | null }>;
 }
+
+// ──────────────────────────────────────────────────────────────────
+// Manual linking (v0.2.594+)
+// Quando l'identity-resolver automatico non riesce ad aggregare host che
+// l'utente sa essere lo stesso device fisico (es. interfacce su VLAN diverse
+// senza SNMP visibile, NIC senza MAC condiviso), permettiamo il link manuale.
+// ──────────────────────────────────────────────────────────────────
+
+export interface ManualLinkResult {
+  physical_device_id: number;
+  linked_host_ids: number[];
+  /** True se ha creato un nuovo physical_devices, False se ha riusato uno esistente */
+  created: boolean;
+  /** Eventuali physical_device_id orfani (cluster vuoto dopo merge) — il chiamante può eliminarli */
+  orphaned_physical_device_ids: number[];
+}
+
+/**
+ * Collega N host allo stesso physical_device.
+ *
+ * Logica di merge:
+ *   - Se `target_physical_device_id` esplicito → quello vince
+ *   - Altrimenti se uno degli host ha già un physical_device → usa il primo con confidence più alto
+ *   - Altrimenti crea un nuovo physical_devices dal primo host (manual anchor)
+ *
+ * Gli host che avevano un physical_device diverso vengono ri-puntati al target.
+ * Se questo lascia cluster vuoti, ritorniamo gli ID nel campo orphaned_physical_device_ids
+ * (il chiamante può scegliere se eliminarli — non lo facciamo qui per sicurezza).
+ *
+ * NB: usato anche dall'API POST /api/physical-devices/link.
+ */
+export function manualLinkHostsToPhysicalDevice(
+  host_ids: number[],
+  target_physical_device_id?: number | null,
+): ManualLinkResult {
+  if (host_ids.length === 0) {
+    throw new Error("Almeno un host richiesto per il link");
+  }
+
+  const db = getDb();
+  const placeholders = host_ids.map(() => "?").join(",");
+  const hosts = db.prepare(
+    `SELECT id, ip, hostname, vendor, device_manufacturer, mac, physical_device_id
+       FROM hosts WHERE id IN (${placeholders})`
+  ).all(...host_ids) as Array<{
+    id: number;
+    ip: string;
+    hostname: string | null;
+    vendor: string | null;
+    device_manufacturer: string | null;
+    mac: string | null;
+    physical_device_id: number | null;
+  }>;
+
+  if (hosts.length === 0) {
+    throw new Error("Nessun host trovato per gli ID forniti");
+  }
+
+  // Decide il target physical_device_id
+  let targetId: number;
+  let created = false;
+  const existingDeviceIds = Array.from(new Set(hosts.map((h) => h.physical_device_id).filter((x): x is number => x !== null)));
+
+  if (target_physical_device_id) {
+    // Validation: deve esistere
+    const exists = getPhysicalDeviceById(target_physical_device_id);
+    if (!exists) throw new Error(`physical_device ${target_physical_device_id} non esiste`);
+    targetId = target_physical_device_id;
+  } else if (existingDeviceIds.length > 0) {
+    // Usa il primo con confidence più alto (preferiamo aggregati già "solidi")
+    const candidates = db.prepare(
+      `SELECT id, identity_confidence FROM physical_devices WHERE id IN (${existingDeviceIds.map(() => "?").join(",")}) ORDER BY identity_confidence DESC, id ASC LIMIT 1`
+    ).get(...existingDeviceIds) as { id: number; identity_confidence: number } | undefined;
+    targetId = candidates?.id ?? existingDeviceIds[0];
+  } else {
+    // Crea un nuovo physical_devices a partire dal primo host
+    const seed = hosts[0];
+    const newDev = createPhysicalDevice({
+      vendor: seed.vendor,
+      manufacturer: seed.device_manufacturer,
+      primary_mac: seed.mac,
+      sysname: seed.hostname,
+      identity_confidence: 100, // manuale = trust massimo
+      identity_anchor: "manual_link",
+    });
+    targetId = newDev.id;
+    created = true;
+  }
+
+  // v0.2.645 audit perf DB5: UPDATE loop dentro singola transazione (prima
+  // 1 fsync per host → su batch 50 host ~100ms persi solo in sync).
+  const updateStmt = db.prepare("UPDATE hosts SET physical_device_id = ?, updated_at = datetime('now') WHERE id = ?");
+  const updateAll = db.transaction(() => {
+    for (const h of hosts) {
+      if (h.physical_device_id !== targetId) updateStmt.run(targetId, h.id);
+    }
+  });
+  updateAll();
+
+  // Calcola gli orphan (cluster vuoti dopo il merge). v0.2.645 audit perf DB5:
+  // sostituite 2 COUNT(*) × N device pre-esistenti con 2 SELECT GROUP BY one-shot.
+  const orphaned: number[] = [];
+  const previousIds = existingDeviceIds.filter((id) => id !== targetId);
+  if (previousIds.length > 0) {
+    const ph = previousIds.map(() => "?").join(",");
+    const hostCounts = new Map<number, number>();
+    for (const row of db.prepare(
+      `SELECT physical_device_id AS pid, COUNT(*) AS n FROM hosts WHERE physical_device_id IN (${ph}) GROUP BY physical_device_id`,
+    ).all(...previousIds) as Array<{ pid: number; n: number }>) {
+      hostCounts.set(row.pid, row.n);
+    }
+    const deviceCounts = new Map<number, number>();
+    for (const row of db.prepare(
+      `SELECT physical_device_id AS pid, COUNT(*) AS n FROM network_devices WHERE physical_device_id IN (${ph}) GROUP BY physical_device_id`,
+    ).all(...previousIds) as Array<{ pid: number; n: number }>) {
+      deviceCounts.set(row.pid, row.n);
+    }
+    for (const prevId of previousIds) {
+      if ((hostCounts.get(prevId) ?? 0) === 0 && (deviceCounts.get(prevId) ?? 0) === 0) {
+        orphaned.push(prevId);
+      }
+    }
+  }
+
+  updatePhysicalDevice(targetId, { /* bump last_seen */ });
+
+  // F4 v0.2.596: ricalcola multihomed_links per attivare scan-dedup.
+  // Senza questo passaggio, gli scan/probe ARP/SNMP girano in parallelo su
+  // ogni IP del cluster, sprecando tempo e generando duplicazioni.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { recomputeMultihomedLinks } = require("@/lib/db-tenant");
+    recomputeMultihomedLinks();
+  } catch { /* fallback: il recompute verrà fatto al prossimo job schedulato */ }
+
+  return {
+    physical_device_id: targetId,
+    linked_host_ids: hosts.map((h) => h.id),
+    created,
+    orphaned_physical_device_ids: orphaned,
+  };
+}
+
+/** Scollega un host dal suo physical_device. Se è l'ultimo membro, non elimina il cluster (il chiamante decide). */
+export function unlinkHostFromPhysicalDevice(hostId: number): { previous_physical_device_id: number | null; orphaned: boolean } {
+  const db = getDb();
+  const row = db.prepare("SELECT physical_device_id FROM hosts WHERE id = ?").get(hostId) as { physical_device_id: number | null } | undefined;
+  if (!row) throw new Error("Host non trovato");
+  const prevId = row.physical_device_id;
+  if (prevId === null) return { previous_physical_device_id: null, orphaned: false };
+
+  db.prepare("UPDATE hosts SET physical_device_id = NULL, updated_at = datetime('now') WHERE id = ?").run(hostId);
+
+  // Verifica se il cluster è rimasto vuoto
+  const remaining = db.prepare("SELECT COUNT(*) AS n FROM hosts WHERE physical_device_id = ?").get(prevId) as { n: number };
+  const remainingDevices = db.prepare("SELECT COUNT(*) AS n FROM network_devices WHERE physical_device_id = ?").get(prevId) as { n: number };
+  const orphaned = remaining.n === 0 && remainingDevices.n === 0;
+
+  // F4 v0.2.596: ricalcola multihomed_links anche dopo unlink (l'host esce
+  // dal gruppo e ricomincia a ricevere i propri scan).
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { recomputeMultihomedLinks } = require("@/lib/db-tenant");
+    recomputeMultihomedLinks();
+  } catch { /* fallback su job schedulato */ }
+
+  return { previous_physical_device_id: prevId, orphaned };
+}
+
+/**
+ * Trova host candidati per essere linkati allo stesso device fisico di `hostId`.
+ * Ritorna fino a `limit` host ordinati per affinity score discendente.
+ *
+ * Affinity score:
+ *   +50 stessa subnet (network_id)
+ *   +30 inferred_vendor uguale
+ *   +30 device_manufacturer match (lowercase contains)
+ *   +25 inferred_os_family uguale
+ *   +20 MAC OUI uguale (primi 3 ottetti, escludendo virtual)
+ *   +30 hostname prefix match (almeno 4 char comuni con dash)
+ *
+ * Esclude:
+ *   - L'host stesso
+ *   - Gli host già nello stesso cluster (stesso physical_device_id)
+ *   - Host offline da >30 giorni (probabilmente dismessi)
+ */
+export interface LinkCandidate {
+  id: number;
+  ip: string;
+  hostname: string | null;
+  vendor: string | null;
+  device_manufacturer: string | null;
+  inferred_os_family: string | null;
+  network_id: number;
+  network_name: string;
+  physical_device_id: number | null;
+  affinity_score: number;
+  reasons: string[];
+}
+
+export function getLinkCandidatesForHost(hostId: number, limit = 20): LinkCandidate[] {
+  const db = getDb();
+  const target = db.prepare(`
+    SELECT id, ip, hostname, mac, vendor, device_manufacturer, inferred_vendor,
+           inferred_os_family, network_id, physical_device_id
+      FROM hosts WHERE id = ?
+  `).get(hostId) as {
+    id: number;
+    ip: string;
+    hostname: string | null;
+    mac: string | null;
+    vendor: string | null;
+    device_manufacturer: string | null;
+    inferred_vendor: string | null;
+    inferred_os_family: string | null;
+    network_id: number;
+    physical_device_id: number | null;
+  } | undefined;
+
+  if (!target) return [];
+
+  // Carica tutti gli host candidati (escluso target + già nello stesso cluster)
+  const candidates = db.prepare(`
+    SELECT h.id, h.ip, h.hostname, h.mac, h.vendor, h.device_manufacturer,
+           h.inferred_vendor, h.inferred_os_family, h.network_id, h.physical_device_id,
+           n.name AS network_name
+      FROM hosts h
+      JOIN networks n ON n.id = h.network_id
+     WHERE h.id != ?
+       AND (h.physical_device_id IS NULL OR h.physical_device_id != COALESCE(?, -1))
+       AND (h.last_seen IS NULL OR datetime(h.last_seen) > datetime('now', '-30 days'))
+  `).all(hostId, target.physical_device_id) as Array<{
+    id: number;
+    ip: string;
+    hostname: string | null;
+    mac: string | null;
+    vendor: string | null;
+    device_manufacturer: string | null;
+    inferred_vendor: string | null;
+    inferred_os_family: string | null;
+    network_id: number;
+    network_name: string;
+    physical_device_id: number | null;
+  }>;
+
+  // Calcola affinity
+  const targetOui = ouiPrefix(target.mac);
+  const targetHostnamePrefix = hostnamePrefix(target.hostname);
+
+  const scored: LinkCandidate[] = candidates.map((c) => {
+    const reasons: string[] = [];
+    let score = 0;
+
+    if (c.network_id === target.network_id) { score += 50; reasons.push("stessa rete"); }
+    if (target.inferred_vendor && c.inferred_vendor && target.inferred_vendor === c.inferred_vendor) {
+      score += 30; reasons.push(`vendor=${target.inferred_vendor}`);
+    }
+    if (target.device_manufacturer && c.device_manufacturer
+        && target.device_manufacturer.toLowerCase().includes(c.device_manufacturer.toLowerCase().slice(0, 8))) {
+      score += 30; reasons.push(`stesso manufacturer (${c.device_manufacturer})`);
+    }
+    if (target.inferred_os_family && c.inferred_os_family && target.inferred_os_family === c.inferred_os_family) {
+      score += 25; reasons.push(`OS ${target.inferred_os_family}`);
+    }
+    if (targetOui && ouiPrefix(c.mac) === targetOui) {
+      score += 20; reasons.push("OUI MAC condiviso");
+    }
+    const cPrefix = hostnamePrefix(c.hostname);
+    if (targetHostnamePrefix && cPrefix && targetHostnamePrefix === cPrefix) {
+      score += 30; reasons.push(`hostname prefix "${targetHostnamePrefix}"`);
+    }
+
+    return {
+      id: c.id,
+      ip: c.ip,
+      hostname: c.hostname,
+      vendor: c.vendor,
+      device_manufacturer: c.device_manufacturer,
+      inferred_os_family: c.inferred_os_family,
+      network_id: c.network_id,
+      network_name: c.network_name,
+      physical_device_id: c.physical_device_id,
+      affinity_score: score,
+      reasons,
+    };
+  });
+
+  // Filter zero-score ma keep almeno top-N per dare opzioni
+  scored.sort((a, b) => b.affinity_score - a.affinity_score || a.ip.localeCompare(b.ip, undefined, { numeric: true }));
+  return scored.slice(0, limit);
+}
+
+function ouiPrefix(mac: string | null | undefined): string | null {
+  const n = normalizeMac(mac);
+  if (!n) return null;
+  if (isVirtualMac(n)) return null;
+  return n.slice(0, 8); // "aa:bb:cc"
+}
+
+function hostnamePrefix(hostname: string | null): string | null {
+  if (!hostname) return null;
+  // "SRV-DB-01" → "SRV-DB"; "MB-Air-di-Mauri" → "MB-Air"; "PC-GIULIA" → "PC"
+  const parts = hostname.toUpperCase().split(/[-_.]/);
+  if (parts.length < 2) return null;
+  // Prendi i primi 2 segmenti se il primo è corto (≤4 char), altrimenti solo il primo
+  if (parts[0].length <= 4 && parts[1]) return `${parts[0]}-${parts[1]}`;
+  return parts[0];
+}

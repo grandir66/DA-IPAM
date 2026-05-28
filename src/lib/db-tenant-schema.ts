@@ -341,7 +341,10 @@ CREATE TABLE IF NOT EXISTS multihomed_links (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   group_id TEXT NOT NULL,
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
-  match_type TEXT NOT NULL CHECK(match_type IN ('serial_number', 'sysname', 'hostname', 'ad_dns')),
+  -- v0.2.639 audit B8: aggiunto 'physical_device'. Workaround precedente
+  -- usava 'serial_number' con match_value="physical_device:<id>" e impediva
+  -- una statistica per anchor type pulita.
+  match_type TEXT NOT NULL CHECK(match_type IN ('serial_number', 'sysname', 'hostname', 'ad_dns', 'physical_device')),
   match_value TEXT NOT NULL,
   is_primary INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
@@ -645,6 +648,11 @@ CREATE TABLE IF NOT EXISTS ad_dhcp_leases (
   lease_expires TEXT,
   address_state TEXT,
   description TEXT,
+  -- v0.2.659: ultima volta che il client DHCP è stato visto attivo.
+  -- Per Microsoft DHCP: calcolato lato PowerShell come (LeaseExpiryTime - LeaseDuration).
+  -- Per i lease "expired" o reservation inattive, è null.
+  -- Permette di filtrare lease "vivi" vs relitti vecchi.
+  last_seen TEXT,
   last_synced TEXT DEFAULT (datetime('now')),
   UNIQUE(integration_id, ip_address)
 );
@@ -666,6 +674,11 @@ CREATE TABLE IF NOT EXISTS dhcp_leases (
   lease_expires TEXT,
   description TEXT,
   dynamic_lease INTEGER,
+  -- v0.2.659: ultimo "visto" dal DHCP server. Per Mikrotik viene da
+  -- last-seen RouterOS convertito in ISO timestamp. Per Windows DHCP
+  -- viene calcolato lato PowerShell come LeaseExpiryTime - LeaseDuration.
+  -- Filtrare last_seen > datetime now -N days per nascondere relitti.
+  last_seen TEXT,
   host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
   network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
   last_synced TEXT DEFAULT (datetime('now')),
@@ -911,6 +924,11 @@ CREATE TABLE IF NOT EXISTS vuln_scanners (
   cert_pin TEXT,
   -- Fingerprint sha256 del cert intero (DER). Solo UI diagnostica.
   cert_fingerprint TEXT,
+  -- v0.2.638 audit B7: contatore errori consecutivi + timestamp auto-disable.
+  -- Dopo 5 errori consecutivi il cron auto-disabilita lo scanner (enabled=0)
+  -- per evitare retry muti per ore (es. TOFU pin mismatch).
+  consecutive_errors INTEGER DEFAULT 0,
+  auto_disabled_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -1002,6 +1020,21 @@ CREATE TABLE IF NOT EXISTS software_scan_logs (
   message TEXT NOT NULL,
   details TEXT
 );
+
+-- v0.2.632: Classification custom per-tenant. Sotto-categorie utente di un built-in.
+-- Eredita icona e macro-categoria dal parent_slug (che DEVE essere un built-in,
+-- validato lato API — qui CHECK solo formato base). Lo slug è PK e immutabile
+-- una volta creato perché referenziato da hosts.classification.
+CREATE TABLE IF NOT EXISTS device_classifications_custom (
+  slug TEXT PRIMARY KEY NOT NULL,
+  label TEXT NOT NULL,
+  parent_slug TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK (length(slug) >= 2 AND length(slug) <= 64),
+  CHECK (slug GLOB '[a-z]*'),
+  CHECK (length(label) >= 1 AND length(label) <= 80)
+);
 `;
 
 export const TENANT_INDEXES_SQL = `
@@ -1037,6 +1070,10 @@ CREATE INDEX IF NOT EXISTS idx_arp_entries_mac_timestamp ON arp_entries(mac, tim
 CREATE INDEX IF NOT EXISTS idx_mac_port_entries_device ON mac_port_entries(device_id);
 CREATE INDEX IF NOT EXISTS idx_mac_port_entries_mac ON mac_port_entries(mac);
 CREATE INDEX IF NOT EXISTS idx_mac_port_entries_device_mac ON mac_port_entries(device_id, mac);
+-- v0.2.645 audit perf DB2: index composito per "ultimo entry per mac".
+-- Sostituisce il pattern ROW_NUMBER() OVER (PARTITION BY mac) full-scan in
+-- getAllHostsEnriched con JOIN su (mac, MAX(timestamp)) seek-only.
+CREATE INDEX IF NOT EXISTS idx_mac_port_entries_mac_ts ON mac_port_entries(mac, timestamp DESC);
 
 -- Network Router
 CREATE INDEX IF NOT EXISTS idx_network_router_network ON network_router(network_id);
@@ -1193,4 +1230,31 @@ CREATE TABLE IF NOT EXISTS excluded_ips (
   UNIQUE(network_id, ip)
 );
 CREATE INDEX IF NOT EXISTS idx_excluded_ips_network_ip ON excluded_ips(network_id, ip);
+
+-- v0.2.632: Classification custom — unique label case-insensitive per evitare
+-- collisioni cognitive (Server PG / server pg) nelle UI.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dcc_label_ci ON device_classifications_custom(lower(label));
+CREATE INDEX IF NOT EXISTS idx_dcc_parent ON device_classifications_custom(parent_slug);
+
+-- v0.2.634 audit B4: indici mancanti su filtri/aggregazioni frequenti.
+-- - hosts(classification): filtro chip discovery + countHostsByClassification (DELETE custom)
+-- - hosts(physical_device_id): cluster multihomed UI (objects/[id] tab cluster)
+-- - network_devices(classification): join refresh + apply-classifications
+-- - network_devices(physical_device_id): merge fisico devices/cluster lookup
+CREATE INDEX IF NOT EXISTS idx_hosts_classification ON hosts(classification);
+CREATE INDEX IF NOT EXISTS idx_hosts_physical_device_id ON hosts(physical_device_id);
+CREATE INDEX IF NOT EXISTS idx_network_devices_classification ON network_devices(classification);
+CREATE INDEX IF NOT EXISTS idx_network_devices_physical_device_id ON network_devices(physical_device_id);
+
+-- v0.2.641 audit perf (DB3/DB9/DB12):
+-- - scan_history(timestamp DESC): "recent activity" dashboard + scan card per-host
+--   prima full-scan (80-150ms), ora index seek (~5ms).
+-- - wazuh_vuln(agent_id, severity): counter dashboard "Critical/High per agent"
+--   prima scan-filter dopo idx_agent (15ms × 2 sev × N agent), ora index composito.
+-- - ad_computers(host_id, dns_host_name): covering index per JOIN
+--   MAX(dns_host_name) ... GROUP BY host_id in getHostsByNetworkWithDevices /
+--   getAllHostsEnriched (30ms -> 5ms per pagina rete).
+CREATE INDEX IF NOT EXISTS idx_scan_history_timestamp ON scan_history(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_agent_severity ON wazuh_vuln(agent_id, severity);
+CREATE INDEX IF NOT EXISTS idx_ad_computers_host_dns ON ad_computers(host_id, dns_host_name);
 `;

@@ -34,6 +34,10 @@ export const authConfig: NextAuthConfig = {
         token.role = (user as { role?: string }).role || "viewer";
         token.tenants = (user as Record<string, unknown>).tenants || [];
         token.tenantCode = (user as Record<string, unknown>).tenantCode || null;
+        // Persist user id in token: NextAuth lo mette in token.sub di default,
+        // ma lo replichiamo esplicitamente per robustezza tra refresh/update.
+        const rawId = (user as { id?: string }).id;
+        if (rawId) token.userId = rawId;
       }
       // Allow client-side tenant switch via session update
       if (trigger === "update" && session?.tenantCode) {
@@ -55,9 +59,12 @@ export const authConfig: NextAuthConfig = {
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as unknown as Record<string, unknown>).role = token.role as string;
-        (session.user as unknown as Record<string, unknown>).tenantCode = token.tenantCode as string | null;
-        (session.user as unknown as Record<string, unknown>).tenants = token.tenants || [];
+        const u = session.user as unknown as Record<string, unknown>;
+        // id: prima token.userId (esplicito), fallback token.sub (standard JWT).
+        u.id = (token.userId as string | undefined) ?? token.sub ?? null;
+        u.role = token.role as string;
+        u.tenantCode = token.tenantCode as string | null;
+        u.tenants = token.tenants || [];
       }
       return session;
     },

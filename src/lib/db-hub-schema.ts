@@ -180,6 +180,55 @@ CREATE TABLE IF NOT EXISTS tenant_agents (
   updated_at TEXT DEFAULT (datetime('now')),
   UNIQUE(tenant_id, label)
 );
+
+-- Feature flag opzionali per tenant (es. patch_management).
+-- Quando non esiste alcuna riga per (tenant_code, feature_key) la feature è OFF.
+-- Le migration delle tabelle del modulo vengono applicate SOLO all'install esplicito,
+-- per garantire zero impatto a parità di feature spenta.
+CREATE TABLE IF NOT EXISTS tenant_features (
+  tenant_code  TEXT NOT NULL,
+  feature_key  TEXT NOT NULL,
+  enabled      INTEGER NOT NULL DEFAULT 0,
+  enabled_at   TEXT,
+  enabled_by   INTEGER,
+  config_json  TEXT,
+  PRIMARY KEY (tenant_code, feature_key)
+);
+
+-- Vault credenziali unificato per accesso ai sistemi della stack security.
+-- AES-GCM encrypted via lib/crypto.ts (ENCRYPTION_KEY). Risorse: Wazuh,
+-- Graylog, LibreNMS, Scanner-Edge, DA-Vul-can hub, PVE Tailscale, ecc.
+-- Diverso dalle settings.integration_* (legacy, plain text per librenms/loki/graylog).
+CREATE TABLE IF NOT EXISTS system_credentials (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind            TEXT NOT NULL,
+  label           TEXT NOT NULL,
+  url             TEXT,
+  api_url         TEXT,
+  username        TEXT,
+  password_enc    TEXT,
+  api_token_enc   TEXT,
+  extra_json_enc  TEXT,
+  launch_mode     TEXT NOT NULL DEFAULT 'copy',
+  notes           TEXT,
+  last_tested_at  TEXT,
+  last_test_result TEXT,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  sort_order      INTEGER NOT NULL DEFAULT 100,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS system_credential_events (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  credential_id  INTEGER REFERENCES system_credentials(id) ON DELETE SET NULL,
+  action         TEXT NOT NULL,
+  actor_user_id  INTEGER,
+  actor_username TEXT,
+  result         TEXT,
+  details_json   TEXT,
+  ts             TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 export const HUB_INDEXES_SQL = `
@@ -195,4 +244,5 @@ CREATE INDEX IF NOT EXISTS idx_fingerprint_class_map_pri ON fingerprint_classifi
 CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_oid ON sysobj_lookup(oid);
 CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_enabled ON sysobj_lookup(enabled);
 CREATE INDEX IF NOT EXISTS idx_tenant_agents_tenant ON tenant_agents(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_features_key ON tenant_features(feature_key, enabled);
 `;

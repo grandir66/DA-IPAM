@@ -41,10 +41,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-# Dati locali: solo il template DB vuoto è versionato
+# Dati locali: solo il template DB vuoto e il dictionary patch sono versionati
 data/*
 !data/ipam.empty.db
 !data/README.md
+!data/package-dictionary.json
 .env.local
 
 # Libreria OID SNMP: dati di ambiente / inventario (non versionare)

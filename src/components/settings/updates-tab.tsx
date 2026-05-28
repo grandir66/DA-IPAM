@@ -56,7 +56,7 @@ function formatDate(iso: string | null | undefined): string {
   }
 }
 
-export function UpdatesPageClient() {
+export function UpdatesTab() {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [channel, setChannel] = useState<ChannelStatus | null>(null);
   const [loadingInfo, setLoadingInfo] = useState(true);
@@ -136,7 +136,6 @@ export function UpdatesPageClient() {
         toast.error(d.error);
       } else if (d.status === "completed") {
         toast.success("Aggiornamento applicato. Riavvio in corso…");
-        // attendo il restart (max 90s) poi ricarico
         setTimeout(() => window.location.reload(), 60_000);
       }
     } catch (e) {
@@ -148,20 +147,19 @@ export function UpdatesPageClient() {
     }
   };
 
-  // drift detection: git branch effettivo ≠ canale configurato OR canale="unknown"
   const driftDetected =
     channel !== null &&
     (channel.channel === "unknown" ||
       (channel.gitBranch !== null && channel.gitBranch !== channel.configuredBranch));
 
   return (
-    <div className="space-y-4 p-4 sm:p-6 max-w-5xl">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <ArrowUpCircle className="h-6 w-6 text-sky-500" />
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <ArrowUpCircle className="h-5 w-5 text-sky-500" />
             Aggiornamenti
-          </h1>
+          </h2>
           <p className="text-sm text-muted-foreground mt-1">
             Stato versione installata, canale di aggiornamento e applicazione manuale.
           </p>

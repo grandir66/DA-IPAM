@@ -216,6 +216,27 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
     }
   }
 
+  async function handleSeedDefaults() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/system-credentials/seed-defaults", {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      toast.success(`Placeholder creati: ${data.created} (skipped ${data.skipped})`, {
+        description: "Compila URL e password tramite Modifica per attivarle.",
+      });
+      // Refresh page items
+      const list = await fetch("/api/system-credentials").then((r) => r.json());
+      setItems(list.items ?? list);
+    } catch (e) {
+      toast.error("Errore seed", { description: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleTest(item: SystemCredential) {
     setTesting(item.id);
     try {
@@ -337,10 +358,26 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
             <KeyRound className="h-12 w-12 mx-auto mb-3 opacity-30" />
             <p>Nessuna credenziale in vault.</p>
             {isAdmin && (
-              <p className="text-sm mt-2">
-                Usa <strong>Importa legacy</strong> per migrare le integrazioni esistenti,
-                oppure <strong>Aggiungi</strong> manualmente.
-              </p>
+              <>
+                <p className="text-sm mt-2">
+                  <strong>Setup rapido</strong>: crea i 5 placeholder standard (Wazuh Manager + Indexer,
+                  LibreNMS, Graylog, TrueNAS) e compila i secrets dopo via Modifica.
+                </p>
+                <div className="mt-4 flex justify-center gap-2">
+                  <Button onClick={handleSeedDefaults} disabled={busy}>
+                    <KeyRound className="h-4 w-4 mr-2" />
+                    Crea placeholder default
+                  </Button>
+                  <Button variant="outline" onClick={handleSync} disabled={busy}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Importa legacy
+                  </Button>
+                  <Button variant="outline" onClick={openAdd} disabled={busy}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Aggiungi manuale
+                  </Button>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

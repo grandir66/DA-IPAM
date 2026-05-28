@@ -511,24 +511,27 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
   }
 
   // Scanner-Edge: scan tenant DBs alla ricerca di vuln_scanners (token_encrypted).
-  // Aggrega come "<scanner.name> (<tenant>) (API interna)" — anche queste hanno
-  // URL container-to-container (host.docker.internal:8080), NON browser-friendly.
+  // NB: includi sempre 'DEFAULT' (tenant fallback usato da connect.sh anche se non
+  // in tenants table) + tutti i tenants attivi. Senza DEFAULT lo scanner-edge
+  // registrato in tenant-level dal bundle non veniva visto.
   try {
-    const tenants = getActiveTenants();
-    for (const t of tenants) {
+    const tenantCodes = new Set<string>(["DEFAULT"]);
+    for (const t of getActiveTenants()) tenantCodes.add(t.codice_cliente);
+
+    for (const code of tenantCodes) {
       try {
-        const tdb = getTenantDb(t.codice_cliente);
+        const tdb = getTenantDb(code);
         const scanners = tdb
           .prepare("SELECT name, base_url, token_encrypted FROM vuln_scanners WHERE enabled = 1")
           .all() as Array<{ name: string; base_url: string; token_encrypted: string }>;
         for (const s of scanners) {
           const token = s.token_encrypted ? safeDecrypt(s.token_encrypted) : null;
-          addOrInternalNote("edge", `${s.name} (${t.codice_cliente})`, s.base_url, {
+          addOrInternalNote("edge", `${s.name} (${code})`, s.base_url, {
             api_token: token ?? undefined,
           });
         }
       } catch {
-        // tenant DB illeggibile: salta silenzioso (non-critical per sync)
+        // tenant DB illeggibile (non esiste, locked, ecc): salta silenzioso
       }
     }
   } catch {

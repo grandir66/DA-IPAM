@@ -98,14 +98,30 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
   const [revealed, setRevealed] = useState<Record<number, RevealedSecrets | undefined>>({});
   const [showInternal, setShowInternal] = useState(false);
 
-  // Le entry con label che termina in "(API interna)" sono per consumo
-  // container-to-container (URL interni tipo 10.255.255.x, librenms:8000,
-  // host.docker.internal:8080) e non si possono aprire dal browser. Nascoste
-  // di default; toggle per esporle quando servono per debugging/curl.
-  const internalCount = items.filter((i) => /\(API interna\)/.test(i.label)).length;
-  const visibleItems = showInternal
-    ? items
-    : items.filter((i) => !/\(API interna\)/.test(i.label));
+  // Detection "API interna" su 2 livelli:
+  //  - label che contiene "(API interna)"
+  //  - URL con hostname/porta NON browser-friendly:
+  //      hostname container-only (librenms, graylog, loki, host.docker.internal)
+  //      IP rete privata appliance (10.255.255.x)
+  //      port API-only (55000 Wazuh Manager, 9200 OpenSearch, 9390/9392 Greenbone GMP)
+  // Nascoste di default; toggle per esporle quando servono per debug/curl.
+  const isApiOnlyUrl = (url: string | null): boolean => {
+    if (!url) return false;
+    if (/^(https?:\/\/)?(librenms|graylog|loki|host\.docker\.internal|10\.255\.255\.|172\.|appliance-)/.test(url)) {
+      return true;
+    }
+    const m = url.match(/:(\d+)(\/|$)/);
+    if (m) {
+      const port = parseInt(m[1], 10);
+      if ([55000, 9200, 3001, 9390, 9392].includes(port)) return true;
+    }
+    return false;
+  };
+  const isInternalItem = (i: SystemCredential): boolean =>
+    /\(API interna\)/.test(i.label) || isApiOnlyUrl(i.url);
+
+  const internalCount = items.filter(isInternalItem).length;
+  const visibleItems = showInternal ? items : items.filter((i) => !isInternalItem(i));
 
   async function refresh() {
     const res = await fetch("/api/system-credentials");

@@ -9,10 +9,21 @@
  *
  * Per kind specifici (wazuh, librenms, graylog, truenas) probe migliorato
  * verso un endpoint API noto.
+ *
+ * v0.2.671: passa da `fetch()` di Node (che falliva con "fetch failed" su
+ * cert self-signed senza modo di disattivare verifyTls a livello di chiamata)
+ * a `node:https`/`node:http` raw con shared agent — stesso pattern usato in
+ * wazuh-api.ts/proxmox-client.ts. Self-signed accettati di default perché
+ * tutti i sistemi della stack security girano in LAN privata con cert auto-
+ * generati.
  */
+import * as http from "node:http";
+import * as https from "node:https";
+import { URL } from "node:url";
 import { NextResponse } from "next/server";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { getCredential, getCredentialSecrets, logCredentialEvent, recordTestResult } from "@/lib/credentials-vault";
+import { getSharedAgent } from "@/lib/integrations/http-pool";
 
 const PROBE_PATHS: Record<string, string> = {
   wazuh: "/security/user/authenticate",          // Wazuh Manager API
@@ -33,23 +44,115 @@ function buildAuthHeader(
   apiToken: string | null,
 ): Record<string, string> {
   const h: Record<string, string> = {};
-  // Bearer token: per truenas/graylog se presente
   if (apiToken && (kind === "truenas" || kind === "graylog")) {
     if (kind === "truenas") {
       h["Authorization"] = `Bearer ${apiToken}`;
     } else {
-      // Graylog: token come username + "token" come password
       const auth = Buffer.from(`${apiToken}:token`).toString("base64");
       h["Authorization"] = `Basic ${auth}`;
     }
     return h;
   }
-  // Basic auth standard
   if (username && password) {
     const auth = Buffer.from(`${username}:${password}`).toString("base64");
     h["Authorization"] = `Basic ${auth}`;
   }
   return h;
+}
+
+interface ProbeResult {
+  ok: boolean;
+  status: number;
+  error: string | null;
+  bodyHint: string | null;
+}
+
+function probeRequest(
+  fullUrl: string,
+  headers: Record<string, string>,
+  timeoutMs = 8_000,
+): Promise<ProbeResult> {
+  return new Promise((resolve) => {
+    let url: URL;
+    try {
+      url = new URL(fullUrl);
+    } catch {
+      resolve({ ok: false, status: 0, error: "URL non valido", bodyHint: null });
+      return;
+    }
+
+    const isHttps = url.protocol === "https:";
+    if (!isHttps && url.protocol !== "http:") {
+      resolve({ ok: false, status: 0, error: `Protocollo non supportato (${url.protocol})`, bodyHint: null });
+      return;
+    }
+
+    // verifyTls=false: i sistemi della stack security in LAN usano cert
+    // self-signed. Se in futuro vogliamo verify strict per certi target,
+    // aggiungere un flag in system_credentials.
+    const agent = isHttps
+      ? (getSharedAgent("https", false) as https.Agent)
+      : (getSharedAgent("http") as http.Agent);
+
+    const reqOpts: http.RequestOptions = {
+      method: "GET",
+      hostname: url.hostname,
+      port: url.port || (isHttps ? 443 : 80),
+      path: (url.pathname || "/") + (url.search || ""),
+      headers: {
+        Accept: "*/*",
+        "User-Agent": "DA-IPAM/launchpad-test",
+        ...headers,
+      },
+      agent,
+      timeout: timeoutMs,
+    };
+
+    const client = isHttps ? https : http;
+    const req = client.request(reqOpts, (res) => {
+      let data = "";
+      let bytes = 0;
+      const MAX = 4_096;
+      res.on("data", (chunk: Buffer) => {
+        if (bytes < MAX) {
+          const slice = chunk.toString("utf8");
+          data += slice;
+          bytes += slice.length;
+        }
+      });
+      res.on("end", () => {
+        const status = res.statusCode ?? 0;
+        // 401 = endpoint OK ma auth diversa (es. token vs basic) → consideriamo
+        // raggiungibile. Per il vault è già un esito positivo di "connettività".
+        const ok = status > 0 && (status < 400 || status === 401);
+        resolve({
+          ok,
+          status,
+          error: null,
+          bodyHint: ok ? null : data.slice(0, 200),
+        });
+      });
+    });
+
+    req.on("timeout", () => {
+      req.destroy(new Error("timeout"));
+    });
+    req.on("error", (err: NodeJS.ErrnoException) => {
+      const code = err.code ?? "";
+      let msg = err.message;
+      if (code === "ECONNREFUSED") msg = `Connessione rifiutata (${url.host})`;
+      else if (code === "EHOSTUNREACH") msg = `Host irraggiungibile (${url.host})`;
+      else if (code === "ENOTFOUND") msg = `DNS non risolto (${url.hostname})`;
+      else if (code === "ETIMEDOUT" || msg === "timeout") msg = `Timeout (${timeoutMs}ms)`;
+      else if (code === "DEPTH_ZERO_SELF_SIGNED_CERT" || code === "SELF_SIGNED_CERT_IN_CHAIN") {
+        msg = "Errore TLS (cert self-signed, ma verifyTls=false dovrebbe averlo accettato)";
+      } else if (code.startsWith("ERR_TLS") || msg.toLowerCase().includes("certificate")) {
+        msg = `Errore TLS: ${msg}`;
+      }
+      resolve({ ok: false, status: 0, error: msg, bodyHint: null });
+    });
+    req.end();
+  });
 }
 
 export async function POST(
@@ -90,60 +193,33 @@ export async function POST(
   );
 
   const start = Date.now();
-  let httpStatus = 0;
-  let okResult = false;
-  let errorMessage: string | null = null;
-  let bodyHint: string | null = null;
-
-  try {
-    const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 8000);
-    const res = await fetch(fullUrl, {
-      method: "GET",
-      headers,
-      signal: ctrl.signal,
-    });
-    clearTimeout(timeout);
-    httpStatus = res.status;
-    okResult = res.status < 400 || res.status === 401; // 401 = endpoint OK ma auth diversa (es. token vs basic)
-    if (!okResult) {
-      bodyHint = (await res.text()).slice(0, 200);
-    }
-  } catch (e) {
-    const msg = (e as Error).message;
-    if (msg.includes("aborted")) errorMessage = "Timeout (8s)";
-    else if (msg.includes("certificate") || msg.includes("SELF_SIGNED")) errorMessage = "Errore TLS (certificato non valido)";
-    else errorMessage = msg;
-  }
-
+  const result = await probeRequest(fullUrl, headers, 8_000);
   const latency = Date.now() - start;
 
-  // Aggiorna last_test_at + last_test_status nel vault
-  const resultLabel = okResult
-    ? `ok (${httpStatus} ${latency}ms)`
-    : `fail (${httpStatus || "err"}: ${errorMessage || "n/a"})`;
+  const resultLabel = result.ok
+    ? `ok (${result.status} ${latency}ms)`
+    : `fail (${result.status || "err"}: ${result.error || "n/a"})`;
   recordTestResult(id, resultLabel);
 
-  // Log audit
   logCredentialEvent({
     credentialId: id,
     action: "test",
     actorUsername: adminCheck.user.name ?? null,
-    result: okResult ? "ok" : "fail",
+    result: result.ok ? "ok" : "fail",
     details: {
       url: fullUrl,
-      http_status: httpStatus,
+      http_status: result.status,
       latency_ms: latency,
-      error: errorMessage,
+      error: result.error,
     },
   });
 
   return NextResponse.json({
-    ok: okResult,
-    http_status: httpStatus,
+    ok: result.ok,
+    http_status: result.status,
     latency_ms: latency,
-    error: errorMessage,
-    hint: bodyHint,
+    error: result.error,
+    hint: result.bodyHint,
     tested_url: fullUrl,
   });
 }

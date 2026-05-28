@@ -89,7 +89,15 @@ const EMPTY_FORM: EditFormState = {
   notes: "",
 };
 
-export function LaunchpadClient({ initialItems }: { initialItems: SystemCredential[] }) {
+interface LaunchpadClientProps {
+  initialItems: SystemCredential[];
+  /** Quando true, nasconde l'header pagina (titolo + descrizione) per embed
+   *  dentro un'altra pagina (es. /settings?tab=integrazioni). I bottoni
+   *  Importa/Dedup/Aggiungi restano per gli admin. */
+  embedded?: boolean;
+}
+
+export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadClientProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const isAdmin = ["admin", "superadmin"].includes(
@@ -149,6 +157,27 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
         return;
       }
       toast.success(`Importate ${data.created} credenziali (${data.skipped} già presenti)`);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDedup() {
+    if (!confirm("Cerca entry duplicate (stesso kind+label o stesso kind+URL host) e tiene solo la migliore. Eliminazioni loggate in audit. Procedere?")) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/system-credentials/dedup", { method: "POST" });
+      const data: { deleted: number; groups_with_duplicates: number; error?: string } = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Errore dedup");
+        return;
+      }
+      if (data.deleted === 0) {
+        toast.info("Nessun duplicato trovato");
+      } else {
+        toast.success(`Eliminati ${data.deleted} duplicati in ${data.groups_with_duplicates} gruppi`);
+      }
       await refresh();
     } finally {
       setBusy(false);
@@ -315,18 +344,32 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className={embedded ? "space-y-4" : "space-y-6 p-6"}>
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <KeyRound className="h-6 w-6" />
-            Launchpad
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Entry point unificato per accesso ai sistemi della stack security.
-            Le credenziali sono cifrate (AES-GCM) in DA-IPAM. Ogni reveal è loggato.
-          </p>
-        </div>
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <KeyRound className="h-6 w-6" />
+              Launchpad
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Entry point unificato per accesso ai sistemi della stack security.
+              Le credenziali sono cifrate (AES-GCM) in DA-IPAM. Ogni reveal è loggato.
+            </p>
+          </div>
+        )}
+        {embedded && (
+          <div>
+            <h3 className="text-base font-semibold flex items-center gap-2">
+              <KeyRound className="h-4 w-4" />
+              Accessi & credenziali (vault cifrato)
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Vault AES-GCM con URL, user, password/token e test connessione.
+              Reveal loggato in audit. Solo admin può modificare.
+            </p>
+          </div>
+        )}
         {isAdmin && (
           <div className="flex gap-2 items-center">
             {internalCount > 0 && (
@@ -343,6 +386,10 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
             <Button variant="outline" onClick={handleSync} disabled={busy}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Importa legacy
+            </Button>
+            <Button variant="outline" onClick={handleDedup} disabled={busy} title="Cerca e rimuove entry duplicate (kind+label normalizzato o kind+URL host)">
+              <Trash2 className="h-4 w-4 mr-2" />
+              Dedup
             </Button>
             <Button onClick={openAdd} disabled={busy}>
               <Plus className="h-4 w-4 mr-2" />

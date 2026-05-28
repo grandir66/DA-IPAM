@@ -6,14 +6,19 @@ import { ScannerEdgeCard } from "./scanner-edge-card";
 import { WazuhCard } from "./wazuh-card";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import type { InstallJob } from "@/lib/integrations/types";
+import { LaunchpadClient } from "@/app/(dashboard)/launchpad/launchpad-client";
+import type { SystemCredential } from "@/lib/credentials-vault";
 
 export function IntegrationsTab() {
   const [dockerAvailable, setDockerAvailable] = useState<boolean | null>(null);
   const [installingDocker, setInstallingDocker] = useState(false);
   const [dockerInstallJob, setDockerInstallJob] = useState<InstallJob | null>(null);
   const dockerPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [vaultItems, setVaultItems] = useState<SystemCredential[] | null>(null);
 
   const checkDocker = () => {
     fetch("/api/integrations/docker-status")
@@ -22,8 +27,16 @@ export function IntegrationsTab() {
       .catch(() => setDockerAvailable(false));
   };
 
+  const loadVault = () => {
+    fetch("/api/system-credentials")
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d: { items: SystemCredential[] }) => setVaultItems(d.items ?? []))
+      .catch(() => setVaultItems([]));
+  };
+
   useEffect(() => {
     checkDocker();
+    loadVault();
     return () => { if (dockerPollRef.current) clearInterval(dockerPollRef.current); };
   }, []);
 
@@ -71,6 +84,33 @@ export function IntegrationsTab() {
         <p className="text-sm text-muted-foreground mt-1">
           Connetti DA-IPAM a sistemi di monitoring (LibreNMS) e log management (Loki, Graylog).
           Puoi usare istanze Docker gestite localmente oppure istanze già esistenti.
+          Sotto trovi sia gli accessi (URL, credenziali, test) sia la configurazione
+          delle integrazioni Docker.
+        </p>
+      </div>
+
+      {/* v0.2.671 fusione: ex-Launchpad embedded come prima sezione.
+          Una sola tab in /settings?tab=integrazioni con accessi + config Docker. */}
+      <Card>
+        <CardContent className="pt-6">
+          {vaultItems === null ? (
+            <div className="text-sm text-muted-foreground flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Carico credenziali vault…
+            </div>
+          ) : (
+            <LaunchpadClient initialItems={vaultItems} embedded />
+          )}
+        </CardContent>
+      </Card>
+
+      <Separator />
+
+      <div>
+        <h3 className="text-base font-semibold">Configurazione integrazioni</h3>
+        <p className="text-xs text-muted-foreground mt-1">
+          Gestione container Docker locali e parametri di connessione per le
+          integrazioni con UI/API dedicata.
         </p>
       </div>
 

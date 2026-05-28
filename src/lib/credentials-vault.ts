@@ -367,7 +367,22 @@ import { getActiveTenants } from "./db-hub";
  */
 export function syncFromLegacySettings(): { created: number; skipped: number } {
   const existing = listCredentials();
+  // v0.2.671: normalizza label per match cross-suffix (placeholder/API interna).
+  // Evita di creare "LibreNMS (API interna)" se esiste già "LibreNMS (placeholder)".
+  const normalizeLabel = (s: string): string =>
+    s
+      .toLowerCase()
+      .replace(/\s*\(placeholder\)\s*/gi, "")
+      .replace(/\s*\(api interna\)\s*/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
   const byKind = new Map(existing.map((c) => [`${c.kind}:${c.label}`, c]));
+  const byKindNormalized = new Set(
+    existing.map((c) => `${c.kind}|${normalizeLabel(c.label)}`),
+  );
+  const byKindAndUrl = new Set(
+    existing.filter((c) => c.url).map((c) => `${c.kind}|${(c.url ?? "").toLowerCase()}`),
+  );
   let created = 0;
   let skipped = 0;
 
@@ -421,6 +436,17 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
       ? "URL container-to-container — NON raggiungibile dal browser. Usa la card Dashboard per il login UI."
       : undefined;
     if (byKind.has(`${kind}:${finalLabel}`)) {
+      skipped++;
+      return;
+    }
+    // Match cross-suffix: lo stesso kind con label normalizzato uguale
+    // (es. "LibreNMS" già presente come placeholder) → skip.
+    if (byKindNormalized.has(`${kind}|${normalizeLabel(finalLabel)}`)) {
+      skipped++;
+      return;
+    }
+    // Match stesso kind + stesso URL (anche con label diversi) → skip.
+    if (byKindAndUrl.has(`${kind}|${url.toLowerCase()}`)) {
       skipped++;
       return;
     }

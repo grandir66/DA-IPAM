@@ -40,8 +40,16 @@ interface ScannerRowRedacted {
   finding_count: number;
   cert_pin: string | null;
   cert_fingerprint: string | null;
+  consecutive_errors: number;
+  auto_disabled_at: string | null;
 }
 
+/**
+ * Singleton — ritorna il record indipendentemente da enabled, così la UI
+ * può mostrare lo stato auto-disabled (5 errori consecutivi → enabled=0
+ * via sync-job.ts) e offrire il bottone "Riattiva" invece della form
+ * vuota (che fa pensare "non è configurato, devo reincollare il token").
+ */
 function readScanner(): ScannerRowRedacted | null {
   const code = getCurrentTenantCode() ?? "DEFAULT";
   const db = getTenantDb(code);
@@ -49,10 +57,12 @@ function readScanner(): ScannerRowRedacted | null {
     .prepare(
       `SELECT s.id, s.name, s.base_url, s.enabled, s.last_sync_at,
               s.last_error, s.created_at, s.cert_pin, s.cert_fingerprint,
+              COALESCE(s.consecutive_errors, 0) AS consecutive_errors,
+              s.auto_disabled_at,
               (SELECT COUNT(*) FROM vuln_findings f
                  JOIN vuln_scan_runs r ON r.id = f.scan_run_id
                  WHERE r.scanner_id = s.id) AS finding_count
-         FROM vuln_scanners s WHERE s.enabled = 1 LIMIT 1`,
+         FROM vuln_scanners s ORDER BY s.id LIMIT 1`,
     )
     .get() as ScannerRowRedacted | undefined;
   return row ?? null;
@@ -133,6 +143,40 @@ export async function POST(req: Request) {
     reloadTenantScheduler(code);
 
     return NextResponse.json({ scanner: readScanner() }, { status: 201 });
+  });
+}
+
+/**
+ * PATCH — riattivazione singleton auto-disabled (5+ errori consecutivi):
+ * azzera consecutive_errors, last_error, auto_disabled_at e rimette
+ * enabled=1. Resta valido lo stesso token e cert_pin del record.
+ */
+export async function PATCH() {
+  const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
+  return await withTenantFromSession(() => {
+    const code = getCurrentTenantCode() ?? "DEFAULT";
+    const db = getTenantDb(code);
+    const existing = db
+      .prepare("SELECT id FROM vuln_scanners ORDER BY id LIMIT 1")
+      .get() as { id: number } | undefined;
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Nessuno scanner-edge configurato" },
+        { status: 404 },
+      );
+    }
+    db.prepare(
+      `UPDATE vuln_scanners
+         SET enabled = 1,
+             consecutive_errors = 0,
+             last_error = NULL,
+             auto_disabled_at = NULL,
+             updated_at = datetime('now')
+       WHERE id = ?`,
+    ).run(existing.id);
+    reloadTenantScheduler(code);
+    return NextResponse.json({ scanner: readScanner() });
   });
 }
 

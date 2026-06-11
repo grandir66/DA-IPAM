@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, RefreshCw, ShieldCheck, ShieldAlert, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, ShieldCheck, ShieldAlert, Trash2, PlayCircle } from "lucide-react";
 
 interface ScannerRow {
   id: number;
@@ -16,6 +16,8 @@ interface ScannerRow {
   finding_count: number;
   cert_pin: string | null;
   cert_fingerprint: string | null;
+  consecutive_errors: number;
+  auto_disabled_at: string | null;
 }
 
 export function ScannerEdgeCard() {
@@ -25,6 +27,7 @@ export function ScannerEdgeCard() {
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [reactivating, setReactivating] = useState(false);
   const [tested, setTested] = useState(false);
   // SPKI pin del cert dell'edge, raccolto dal Test connessione e
   // mostrato all'utente per conferma esplicita prima del Salva.
@@ -147,6 +150,24 @@ export function ScannerEdgeCard() {
     }
   };
 
+  const handleReactivate = async () => {
+    setReactivating(true);
+    try {
+      const r = await fetch("/api/integrations/scanner-edge", { method: "PATCH" });
+      const d = (await r.json()) as { scanner?: ScannerRow; error?: string };
+      if (r.ok) {
+        toast.success("Scanner-edge riattivato. Il prossimo sync partirà come da schedule.");
+        await load();
+      } else {
+        toast.error(d.error || "Riattivazione fallita");
+      }
+    } catch (e) {
+      toast.error(`Errore rete: ${(e as Error).message}`);
+    } finally {
+      setReactivating(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!confirm("Rimuovere la configurazione scanner-edge? I findings storici restano in archivio.")) return;
     const r = await fetch("/api/integrations/scanner-edge", { method: "DELETE" });
@@ -171,9 +192,14 @@ export function ScannerEdgeCard() {
             Importa findings CVE dallo scanner-edge sulla LAN del cliente. Una sola istanza per appliance.
           </p>
         </div>
-        {scanner && (
+        {scanner && scanner.enabled === 1 && (
           <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-400">
             <CheckCircle2 className="h-3.5 w-3.5" /> Configurato
+          </span>
+        )}
+        {scanner && scanner.enabled !== 1 && (
+          <span className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400">
+            <ShieldAlert className="h-3.5 w-3.5" /> Auto-disabilitato
           </span>
         )}
       </div>
@@ -208,16 +234,34 @@ export function ScannerEdgeCard() {
               Connessione in HTTP plaintext (token e findings non cifrati). Aggiorna l&apos;edge a HTTPS.
             </div>
           )}
+          {scanner.enabled !== 1 && scanner.auto_disabled_at && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-sm text-amber-900 dark:text-amber-300 space-y-1">
+              <div className="font-semibold">
+                Auto-disabilitato dopo {scanner.consecutive_errors} errori consecutivi
+              </div>
+              <div className="text-xs">
+                Disabilitato il {new Date(scanner.auto_disabled_at).toLocaleString("it-IT")}.
+                Il cron è fermo finché non riattivi. Token e SPKI pin restano salvati.
+              </div>
+            </div>
+          )}
           {scanner.last_error && (
             <div className="rounded-md border border-red-300 bg-red-50 dark:bg-red-950/20 px-3 py-2 text-sm text-red-800 dark:text-red-300">
               <span className="font-semibold">Ultimo errore:</span> {scanner.last_error}
             </div>
           )}
-          <div className="flex gap-2 pt-1">
-            <Button size="sm" onClick={handleSync} disabled={syncing}>
-              {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
-              Sincronizza ora
-            </Button>
+          <div className="flex gap-2 pt-1 flex-wrap">
+            {scanner.enabled !== 1 ? (
+              <Button size="sm" onClick={handleReactivate} disabled={reactivating}>
+                {reactivating ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <PlayCircle className="h-3.5 w-3.5 mr-1" />}
+                Riattiva
+              </Button>
+            ) : (
+              <Button size="sm" onClick={handleSync} disabled={syncing}>
+                {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
+                Sincronizza ora
+              </Button>
+            )}
             <Button size="sm" variant="destructive" onClick={handleDelete}>
               <Trash2 className="h-3.5 w-3.5 mr-1" /> Rimuovi
             </Button>

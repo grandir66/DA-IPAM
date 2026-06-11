@@ -26,7 +26,7 @@ import { getCredential, getCredentialSecrets, logCredentialEvent, recordTestResu
 import { getSharedAgent } from "@/lib/integrations/http-pool";
 
 const PROBE_PATHS: Record<string, string> = {
-  wazuh: "/security/user/authenticate",          // Wazuh Manager API
+  wazuh: "/security/user/authenticate",          // Wazuh Manager API (port 55000)
   librenms: "/api/v0",                            // LibreNMS API
   graylog: "/api/system/cluster/nodes",           // Graylog API
   truenas: "/api/v2.0/system/info",               // TrueNAS REST
@@ -36,6 +36,25 @@ const PROBE_PATHS: Record<string, string> = {
   pve: "/api2/json/version",                       // Proxmox VE API
   other: "/",
 };
+
+/**
+ * Distingue Wazuh Manager (port 55000) da Wazuh Indexer/OpenSearch (port 9200).
+ * L'Indexer non risponde su /security/user/authenticate (404) e marca fail
+ * tutte le entry "Wazuh Indexer (OpenSearch)" del Launchpad. Path corretto
+ * per OpenSearch: /_cluster/health (HTTP 200 con auth, ok per il probe).
+ */
+function resolveProbePath(kind: string, url: string, label: string): string {
+  if (kind === "wazuh") {
+    let port = "";
+    try { port = new URL(url).port; } catch { /* ignore */ }
+    const lowerLabel = label.toLowerCase();
+    const isIndexer = port === "9200"
+      || lowerLabel.includes("indexer")
+      || lowerLabel.includes("opensearch");
+    if (isIndexer) return "/_cluster/health";
+  }
+  return PROBE_PATHS[kind] ?? "/";
+}
 
 function buildAuthHeader(
   kind: string,
@@ -182,7 +201,7 @@ export async function POST(
   }
 
   const secrets = getCredentialSecrets(id);
-  const probePath = PROBE_PATHS[cred.kind] ?? "/";
+  const probePath = resolveProbePath(cred.kind, targetUrl, cred.label);
   const fullUrl = targetUrl.replace(/\/+$/, "") + probePath;
 
   const headers = buildAuthHeader(

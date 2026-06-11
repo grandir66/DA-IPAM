@@ -3,11 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Network, Monitor, Wifi, WifiOff, HelpCircle, Shield, AlertTriangle, Activity, TrendingUp } from "lucide-react";
+import { Network, Monitor, Wifi, WifiOff, HelpCircle, Shield, AlertTriangle, Activity, TrendingUp, PlugZap, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { StatusOverTimeChart } from "@/components/shared/status-over-time-chart";
 import { StatusChangeFeed } from "@/components/shared/status-change-feed";
 import { getServerTenantCode } from "@/lib/api-tenant";
 import { withTenant } from "@/lib/db-tenant";
+import { getIntegrationsOverview, type IntegrationHealth } from "@/lib/integrations/dashboard-health";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,9 @@ export default async function DashboardPage() {
   const recentActivity = withTenant(tenantCode, () => getRecentActivity(8));
   const monitorStats = withTenant(tenantCode, () => getKnownHostStats());
   const offlineKnown = withTenant(tenantCode, () => getOfflineKnownHosts());
+  const integrations = withTenant(tenantCode, () => getIntegrationsOverview());
+  const integrationErrors = integrations.filter((i) => i.status === "error").length;
+  const integrationWarnings = integrations.filter((i) => i.status === "warning" || i.status === "stale").length;
 
   // KPI hero: Health%, totali, subnet, monitorati offline come allerta
   const denom = stats.online_hosts + stats.offline_hosts + stats.unknown_hosts;
@@ -168,6 +172,33 @@ export default async function DashboardPage() {
         </Card>
       )}
 
+      {/* ── Integrazioni configurate ─────────────────────────────────── */}
+      {integrations.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <PlugZap className="h-4 w-4 text-primary" />
+              Integrazioni
+              {integrationErrors > 0 && (
+                <Badge variant="destructive" className="ml-1 text-xs">
+                  {integrationErrors} in errore
+                </Badge>
+              )}
+              {integrationErrors === 0 && integrationWarnings > 0 && (
+                <Badge variant="outline" className="ml-1 text-xs border-amber-500/60 text-amber-700 dark:text-amber-400">
+                  {integrationWarnings} da verificare
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            {integrations.map((it) => (
+              <IntegrationRow key={it.key} item={it} />
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── Subnet grid compatta ──────────────────────────────────────── */}
       <div>
         <div className="flex items-center justify-between mb-2">
@@ -289,4 +320,35 @@ function KpiCard({ title, value, icon, color, href }: {
     </Card>
   );
   return href ? <Link href={href}>{card}</Link> : card;
+}
+
+function IntegrationRow({ item }: { item: IntegrationHealth }) {
+  const icon =
+    item.status === "ok" ? <CheckCircle2 className="h-4 w-4 text-success" /> :
+    item.status === "error" ? <XCircle className="h-4 w-4 text-destructive" /> :
+    item.status === "warning" ? <AlertTriangle className="h-4 w-4 text-amber-500" /> :
+    item.status === "stale" ? <Clock className="h-4 w-4 text-amber-500" /> :
+    <HelpCircle className="h-4 w-4 text-muted-foreground" />;
+  const lastSyncLabel = item.lastSync
+    ? new Date(item.lastSync).toLocaleString("it-IT")
+    : "Mai eseguita";
+  return (
+    <Link
+      href={item.href}
+      className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50 transition-colors"
+    >
+      <span className="flex items-center gap-2 min-w-0">
+        {icon}
+        <span className="text-sm font-medium truncate">{item.label}</span>
+        {item.message && (
+          <span className="text-xs text-muted-foreground truncate hidden sm:inline">
+            — {item.message}
+          </span>
+        )}
+      </span>
+      <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+        {lastSyncLabel}
+      </span>
+    </Link>
+  );
 }

@@ -31,6 +31,7 @@ import {
   PlugZap,
   Workflow,
   BookOpen,
+  Network as NetworkIcon,
   Ban,
   ShieldCheck,
   KeyRound,
@@ -405,6 +406,21 @@ export function Sidebar() {
         >
           <KeyRound className="h-4 w-4" />
           Launchpad
+        </Link>
+
+        {/* Network Services — DNS+DHCP+AdBlock+Resolver gateway (ADR-0007) */}
+        <Link
+          href="/network-services"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            pathname.startsWith("/network-services")
+              ? "bg-sidebar-primary text-sidebar-primary-foreground"
+              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <NetworkIcon className="h-4 w-4" />
+          Network Services
         </Link>
 
         {/* Impostazioni (globale) */}

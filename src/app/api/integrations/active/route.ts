@@ -122,6 +122,10 @@ export async function GET() {
   if (wazuh.enabled && wazuh.url) {
     let dashUrl = wazuh.url.replace(/:55000(\/.*)?$/, "");
     if (!/^https?:\/\//.test(dashUrl)) dashUrl = `https://${dashUrl}`;
+    // Risolvi URL Dashboard LAN-accessible (es. https://192.168.99.51:8443/)
+    // dal launchpad. Il default dashUrl punta all'IP interno /28 (10.255.255.3)
+    // NON raggiungibile dal browser → shortcut rotti.
+    dashUrl = resolveLanUrl("wazuh", dashUrl).replace(/\/$/, "");
     result.wazuh = {
       enabled: true,
       url: dashUrl,

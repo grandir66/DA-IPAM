@@ -1,91 +1,131 @@
-import { getCurrentTenantCode } from "@/lib/db-tenant";
-import { withTenantFromSession } from "@/lib/api-tenant";
-import { auth } from "@/lib/auth";
-import {
-  makeNetServicesClient,
-  BridgeUnavailableError,
-} from "@/lib/network-services/client";
-import { getNetServicesState } from "@/lib/network-services/feature";
-import { NetworkServicesSetup } from "./network-services-setup";
-import { NetworkServicesClient } from "./network-services-client";
+"use client";
 
 /**
  * Network Services — UI per gestione DNS+DHCP+AdBlock+Resolver erogati dalla
  * VM dedicata (ADR-0007).
  *
- * Pattern Patch Management:
- * - se feature non installata per il tenant → mostra setup wizard (form apiUrl+token)
- * - se installata e configurata → dashboard 4 cards + CRUD forward zones + adblock rules
- *
- * Tutti i 4 servizi sottostanti sono opt-in: l'admin li attiva dal toggle in dashboard.
+ * Pattern Patch Management (client-only):
+ * - fetch /api/network-services/setup → stato feature
+ * - se non installata: setup wizard
+ * - se installata: fetch /api/network-services/status → dashboard
  */
-export const dynamic = "force-dynamic";
 
-export default async function NetworkServicesPage() {
-  return withTenantFromSession(async () => {
-    const session = await auth();
-    const role = (session?.user as { role?: string } | undefined)?.role;
-    const isAdmin = role === "admin" || role === "superadmin";
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
+import { Loader2 } from "lucide-react";
+import { NetworkServicesSetup } from "./network-services-setup";
+import { NetworkServicesClient } from "./network-services-client";
+import type {
+  BridgeStatus,
+  ResolverStatus,
+  AdBlockStats,
+} from "@/lib/network-services/client";
 
-    const tenantCode = getCurrentTenantCode();
-    if (!tenantCode) {
-      return (
-        <div className="container mx-auto p-6">
-          <h1 className="text-2xl font-semibold mb-3">Network Services</h1>
-          <div className="rounded border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-900">
-            Tenant non risolto dalla sessione.
-          </div>
-        </div>
-      );
+interface SetupState {
+  installed: boolean;
+  configured: boolean;
+  apiUrl: string;
+  hasToken: boolean;
+}
+
+export default function NetworkServicesPage() {
+  const session = useSession();
+  const role = (session.data?.user as { role?: string } | undefined)?.role;
+  const isAdmin = role === "admin" || role === "superadmin";
+
+  const [loading, setLoading] = useState(true);
+  const [setupState, setSetupState] = useState<SetupState | null>(null);
+  const [bridge, setBridge] = useState<BridgeStatus | null>(null);
+  const [resolver, setResolver] = useState<ResolverStatus | null>(null);
+  const [adblock, setAdblock] = useState<AdBlockStats | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      try {
+        // Stato setup feature (richiede admin per GET /setup)
+        const r = await fetch("/api/network-services/setup", { cache: "no-store" });
+        if (r.status === 401 || r.status === 403) {
+          if (!cancelled) {
+            setSetupState({ installed: false, configured: false, apiUrl: "", hasToken: false });
+            setLoading(false);
+          }
+          return;
+        }
+        const data = (await r.json()) as SetupState;
+        if (cancelled) return;
+        setSetupState(data);
+
+        // Se installato + configurato → carica status dashboard
+        if (data.installed && data.configured) {
+          const sr = await fetch("/api/network-services/status", { cache: "no-store" });
+          const sdata = await sr.json();
+          if (cancelled) return;
+          if (sdata.ok) {
+            setBridge(sdata.bridge);
+            setResolver(sdata.resolver);
+            setAdblock(sdata.adblock);
+          } else {
+            setStatusError(sdata.error ?? "Bridge non raggiungibile");
+          }
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setStatusError(String(e));
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
+    load();
+    return () => { cancelled = true; };
+  }, []);
 
-    const state = await getNetServicesState(tenantCode);
-
-    // Stato 1: feature non installata → setup wizard (solo admin)
-    if (!state.enabled) {
-      return <NetworkServicesSetup isAdmin={isAdmin} initialApiUrl="" hasToken={false} />;
-    }
-
-    // Stato 2: installata ma config mancante → ri-mostra setup (rare edge case)
-    if (!state.configured) {
-      return (
-        <NetworkServicesSetup
-          isAdmin={isAdmin}
-          initialApiUrl={state.apiUrl}
-          hasToken={false}
-          installedButMissingConfig
-        />
-      );
-    }
-
-    // Stato 3: installata + configurata → dashboard
-    let initialError: string | null = null;
-    let bridge: Awaited<ReturnType<Awaited<ReturnType<typeof makeNetServicesClient>>["status"]>> | null = null;
-    let resolver: Awaited<ReturnType<Awaited<ReturnType<typeof makeNetServicesClient>>["resolverStatus"]>> | null = null;
-    let adblock: Awaited<ReturnType<Awaited<ReturnType<typeof makeNetServicesClient>>["adblockStats"]>> | null = null;
-    try {
-      const client = await makeNetServicesClient(tenantCode);
-      [bridge, resolver, adblock] = await Promise.all([
-        client.status(),
-        client.resolverStatus().catch(() => null),
-        client.adblockStats().catch(() => null),
-      ]);
-    } catch (e) {
-      initialError =
-        e instanceof BridgeUnavailableError
-          ? `Bridge non raggiungibile: ${e.message}`
-          : String(e);
-    }
-
+  if (loading) {
     return (
-      <NetworkServicesClient
-        apiBase={state.apiUrl}
-        initialBridge={bridge}
-        initialResolver={resolver}
-        initialAdblock={adblock}
-        initialError={initialError}
+      <div className="container mx-auto p-6 flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!setupState) {
+    return (
+      <div className="container mx-auto p-6 text-sm text-red-600">
+        Errore caricamento stato modulo.
+      </div>
+    );
+  }
+
+  // Stato 1: feature non installata → setup wizard
+  if (!setupState.installed) {
+    return <NetworkServicesSetup isAdmin={isAdmin} initialApiUrl="" hasToken={false} />;
+  }
+
+  // Stato 2: installata ma config mancante → re-config
+  if (!setupState.configured) {
+    return (
+      <NetworkServicesSetup
         isAdmin={isAdmin}
+        initialApiUrl={setupState.apiUrl}
+        hasToken={setupState.hasToken}
+        installedButMissingConfig
       />
     );
-  });
+  }
+
+  // Stato 3: installata + configurata → dashboard
+  return (
+    <NetworkServicesClient
+      apiBase={setupState.apiUrl}
+      initialBridge={bridge}
+      initialResolver={resolver}
+      initialAdblock={adblock}
+      initialError={statusError}
+      isAdmin={isAdmin}
+    />
+  );
 }

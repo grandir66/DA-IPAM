@@ -47,7 +47,6 @@ import {
   Monitor,
   Users,
   Shield,
-  Tags,
   ArrowUpCircle,
   Sparkles,
   Play,
@@ -61,7 +60,6 @@ import { toast } from "sonner";
 import type { ScheduledJob, NetworkWithStats } from "@/types";
 import { ScanConfigTab } from "@/components/settings/scan-config-tab";
 import { DeviceIdentificationTab } from "@/components/settings/device-identification-tab";
-import { IntegrationsTab } from "@/components/settings/integrations-tab";
 import { ModulesTab } from "@/components/settings/modules-tab";
 import { UpdatesTab } from "@/components/settings/updates-tab";
 
@@ -105,7 +103,6 @@ type TabKey =
   | "scansione"
   | "identificazione"
   | "jobs"
-  | "integrazioni"
   | "https"
   | "moduli"
   | "aggiornamenti"
@@ -120,8 +117,9 @@ const TAB_ALIASES: Record<string, TabKey> = {
   fingerprint: "identificazione",
   jobs: "jobs",
   job: "jobs",
-  integrazioni: "integrazioni",
-  integrations: "integrazioni",
+  // ex-tab "integrazioni" consolidata in "moduli" (config unica dei moduli)
+  integrazioni: "moduli",
+  integrations: "moduli",
   https: "https",
   tls: "https",
   moduli: "moduli",
@@ -562,7 +560,6 @@ function SettingsPageInner() {
     { key: "scansione", label: "Scansione", icon: Radar },
     { key: "identificazione", label: "Identificazione", icon: Fingerprint },
     { key: "jobs", label: "Job pianificati", icon: Clock },
-    { key: "integrazioni", label: "Integrazioni", icon: Tags },
     { key: "https", label: "HTTPS", icon: Shield },
     { key: "moduli", label: "Moduli", icon: PackageOpen },
     { key: "aggiornamenti", label: "Aggiornamenti", icon: ArrowUpCircle },
@@ -1015,7 +1012,6 @@ function SettingsPageInner() {
       )}
 
       {/* === Tab: Integrazioni === */}
-      {activeTab === "integrazioni" && <IntegrationsTab />}
 
       {/* === Tab: HTTPS === */}
       {activeTab === "https" && (
@@ -1084,7 +1080,7 @@ function SettingsPageInner() {
       )}
 
       {/* === Tab: Moduli === */}
-      {activeTab === "moduli" && <ModulesTab />}
+      {activeTab === "moduli" && <ModulesTab isAdmin={isAdmin} />}
 
       {/* === Tab: Aggiornamenti === */}
       {activeTab === "aggiornamenti" && <UpdatesTab />}

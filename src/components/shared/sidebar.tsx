@@ -28,7 +28,6 @@ import {
   Radar,
   AlertTriangle,
   ShieldAlert,
-  PlugZap,
   Workflow,
   BookOpen,
   Network as NetworkIcon,
@@ -88,18 +87,8 @@ export function Sidebar() {
     inventorySubItems.some((d) => pathname.startsWith(d.href))
   );
   const [unackedAnomalies, setUnackedAnomalies] = useState(0);
-  const [activeIntegrations, setActiveIntegrations] = useState(false);
   const [patchEnabled, setPatchEnabled] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    fetch("/api/integrations/active")
-      .then((r) => r.json())
-      .then((d: Record<string, { enabled: boolean }>) => {
-        setActiveIntegrations(Object.values(d).some((v) => v.enabled));
-      })
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (!tenantCode || tenantCode === "__ALL__") {
@@ -335,23 +324,6 @@ export function Sidebar() {
           Config Cliente
         </div>
 
-        {/* Integrazioni — visibile solo se almeno una è configurata */}
-        {activeIntegrations && (
-          <Link
-            href="/integrations"
-            onClick={() => setMobileOpen(false)}
-            className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-              isActive("/integrations")
-                ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            )}
-          >
-            <PlugZap className="h-4 w-4" />
-            Integrazioni
-          </Link>
-        )}
-
         {/* Patch Management — visibile solo se la feature è installata per il tenant */}
         {patchEnabled && (
           <Link
@@ -423,20 +395,6 @@ export function Sidebar() {
           Network Services
         </Link>
 
-        {/* Appliance — vista unificata moduli installati (F1 ADR-0009) */}
-        <Link
-          href="/appliance"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname.startsWith("/appliance")
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <ServerCog className="h-4 w-4" />
-          Appliance
-        </Link>
 
         {/* Impostazioni (globale) */}
         <Link

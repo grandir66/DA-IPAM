@@ -53,7 +53,7 @@ import type { CredentialKind, SystemCredential } from "@/lib/credentials-vault";
 /**
  * Mappa kind+label → URL della pagina di configurazione corrispondente.
  * Le integrazioni Docker (Wazuh, LibreNMS, Graylog, Scanner-Edge, Loki) vivono
- * tutte sotto /settings?tab=integrazioni#int-<anchor>. Il Hub URL pubblico
+ * tutte sotto /settings?tab=moduli#module-<anchor>. Il Hub URL pubblico
  * (usato per enrollment agenti) vive invece in /agents#hub-url-config.
  *
  * Ritorna l'URL completo (deep-link diretto) oppure null se la entry vault è
@@ -63,13 +63,13 @@ import type { CredentialKind, SystemCredential } from "@/lib/credentials-vault";
 function getIntegrationConfigHref(item: SystemCredential): string | null {
   const label = item.label.toLowerCase();
   switch (item.kind) {
-    case "wazuh": return "/settings?tab=integrazioni#int-wazuh";
-    case "librenms": return "/settings?tab=integrazioni#int-librenms";
-    case "graylog": return "/settings?tab=integrazioni#int-graylog";
-    case "edge": return "/settings?tab=integrazioni#int-edge";
+    case "wazuh": return "/settings?tab=moduli#module-wazuh";
+    case "librenms": return "/settings?tab=moduli#module-librenms";
+    case "graylog": return "/settings?tab=moduli#module-graylog";
+    case "edge": return "/settings?tab=moduli#module-edge";
     case "hub": return "/agents#hub-url-config";
     case "other":
-      if (label.includes("loki")) return "/settings?tab=integrazioni#int-loki";
+      if (label.includes("loki")) return "/settings?tab=moduli#module-loki";
       return null;
     default:
       return null;

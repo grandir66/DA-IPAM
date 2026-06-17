@@ -97,7 +97,7 @@ export function getIntegrationsOverview(): IntegrationHealth[] {
       status,
       lastSync: scanner.last_sync_at,
       message,
-      href: "/settings?tab=integrazioni#int-edge",
+      href: "/settings?tab=moduli#module-edge",
     });
   }
 
@@ -117,7 +117,7 @@ export function getIntegrationsOverview(): IntegrationHealth[] {
       status,
       lastSync: job?.last_run ?? null,
       message: !job?.enabled ? "Sync disabilitata" : null,
-      href: "/settings?tab=integrazioni#int-wazuh",
+      href: "/settings?tab=moduli#module-wazuh",
     });
   }
 
@@ -139,7 +139,7 @@ export function getIntegrationsOverview(): IntegrationHealth[] {
       status,
       lastSync: job?.last_run ?? null,
       message: null,
-      href: "/settings?tab=integrazioni#int-wazuh",
+      href: "/settings?tab=moduli#module-wazuh",
     });
   }
 
@@ -162,7 +162,7 @@ export function getIntegrationsOverview(): IntegrationHealth[] {
       status,
       lastSync: job?.last_run ?? null,
       message: !job ? "Job sync non schedulato" : null,
-      href: "/settings?tab=integrazioni#int-librenms",
+      href: "/settings?tab=moduli#module-librenms",
     });
   }
 

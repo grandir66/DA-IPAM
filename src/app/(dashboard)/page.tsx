@@ -9,6 +9,8 @@ import { StatusChangeFeed } from "@/components/shared/status-change-feed";
 import { getServerTenantCode } from "@/lib/api-tenant";
 import { withTenant } from "@/lib/db-tenant";
 import { getIntegrationsOverview, type IntegrationHealth } from "@/lib/integrations/dashboard-health";
+import { getModulesHealth } from "@/lib/modules/health";
+import { MODULE_DESCRIPTORS } from "@/lib/modules/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +27,28 @@ export default async function DashboardPage() {
   const recentActivity = withTenant(tenantCode, () => getRecentActivity(8));
   const monitorStats = withTenant(tenantCode, () => getKnownHostStats());
   const offlineKnown = withTenant(tenantCode, () => getOfflineKnownHosts());
-  const integrations = withTenant(tenantCode, () => getIntegrationsOverview());
+  // Stato moduli (registry + health cachato 60s) + riga Active Directory separata
+  // (AD non è uno dei 6 moduli base ma resta visibile per non regredire).
+  const moduleHealth = await getModulesHealth(tenantCode);
+  const moduleRows: IntegrationHealth[] = moduleHealth.map((h) => {
+    const d = MODULE_DESCRIPTORS.find((m) => m.key === h.key);
+    return {
+      key: h.key,
+      label: d?.label ?? h.key,
+      status: h.status === "unknown" ? "stale" : h.status,
+      lastSync: h.lastSync,
+      message: h.message,
+      href: d?.configHref ?? "/settings?tab=moduli",
+    };
+  });
+  const adRows = withTenant(tenantCode, () => getIntegrationsOverview()).filter((i) =>
+    i.key.startsWith("ad_"),
+  );
+  const integrations: IntegrationHealth[] = [...moduleRows, ...adRows];
   const integrationErrors = integrations.filter((i) => i.status === "error").length;
-  const integrationWarnings = integrations.filter((i) => i.status === "warning" || i.status === "stale").length;
+  const integrationWarnings = integrations.filter(
+    (i) => i.status === "warning" || i.status === "stale",
+  ).length;
 
   // KPI hero: Health%, totali, subnet, monitorati offline come allerta
   const denom = stats.online_hosts + stats.offline_hosts + stats.unknown_hosts;
@@ -172,13 +193,13 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {/* ── Integrazioni configurate ─────────────────────────────────── */}
+      {/* ── Stato moduli ─────────────────────────────────────────────── */}
       {integrations.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <PlugZap className="h-4 w-4 text-primary" />
-              Integrazioni
+              Stato Moduli
               {integrationErrors > 0 && (
                 <Badge variant="destructive" className="ml-1 text-xs">
                   {integrationErrors} in errore

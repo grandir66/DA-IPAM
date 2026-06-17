@@ -27,8 +27,11 @@ import type {
 
 type ServiceKey = "resolver" | "adblock" | "dns" | "dhcp";
 
+import { NetworkServicesSettings } from "./network-services-setup";
+
 interface Props {
   apiBase: string;
+  isAdmin?: boolean;
   initialBridge: BridgeStatus | null;
   initialResolver: ResolverStatus | null;
   initialAdblock: AdBlockStats | null;
@@ -67,6 +70,7 @@ export function NetworkServicesClient({
   initialResolver,
   initialAdblock,
   initialError,
+  isAdmin = false,
 }: Props) {
   const [bridge, setBridge] = useState(initialBridge);
   const [resolver, setResolver] = useState(initialResolver);
@@ -409,6 +413,8 @@ export function NetworkServicesClient({
           </div>
         </CardContent>
       </Card>
+
+      {isAdmin && <NetworkServicesSettings apiUrl={apiBase} />}
     </div>
   );
 }

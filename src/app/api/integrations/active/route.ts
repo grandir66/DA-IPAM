@@ -2,6 +2,48 @@ import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
+import { listCredentials } from "@/lib/credentials-vault";
+
+/**
+ * Risolve un URL LAN-accessible per un kind di integrazione cercando nei
+ * `system_credentials` (popolato dal bootstrap launchpad durante install
+ * appliance Domarc).
+ *
+ * Le integrazioni hub-level sono configurate con hostname Docker internal
+ * (es. `http://librenms:8000`) o IP internal `/28` (es. `http://10.255.255.5`)
+ * che NON sono raggiungibili dal browser cliente. Per "Apri in nuova scheda"
+ * e shortcut esterni serve l'URL pubblico LAN sul reverse proxy nginx
+ * (es. `https://192.168.99.51:7443/`).
+ *
+ * Match strategy:
+ * - kind corrisponde
+ * - url presente e schema http/https
+ * - url NON contiene token internal (librenms, graylog, wazuh, host.docker.internal, 10.255.255.x)
+ * - label termina con "Dashboard" (per evitare bridge API URL ecc.)
+ *
+ * Se nessun match → ritorna fallback (URL originale).
+ */
+function resolveLanUrl(kind: string, fallback: string): string {
+  try {
+    const creds = listCredentials();
+    const match = creds.find(
+      (c) =>
+        c.kind === kind &&
+        c.url &&
+        /^https?:\/\//.test(c.url) &&
+        !/(^|\/\/)(librenms|graylog|wazuh|host\.docker\.internal|10\.255\.255\.)/i.test(c.url) &&
+        /Dashboard/i.test(c.label),
+    );
+    return match?.url ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function isInternalUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return /(^|\/\/)(librenms|graylog|wazuh|host\.docker\.internal|10\.255\.255\.)/i.test(url);
+}
 
 export interface ActiveIntegrationInfo {
   enabled: boolean;
@@ -40,21 +82,36 @@ export async function GET() {
     result.librenms = {
       enabled: true,
       url: "/api/integrations/proxy/librenms/",
-      directUrl: librenms.url,
+      directUrl: resolveLanUrl("librenms", librenms.url),
       label: "LibreNMS",
     };
   } else {
     result.librenms = { enabled: false, url: "", directUrl: "", label: "LibreNMS" };
   }
 
-  // Graylog / Loki — niente proxy per ora, lasciamo il flusso esistente.
+  // Graylog / Loki — niente proxy per ora. Risolviamo URL LAN-accessible per
+  // "Apri in nuova scheda". Se l'URL salvato è solo internal e non risolto,
+  // disabilitiamo l'iframe (landing con avviso).
   for (const c of ["graylog", "loki"] as const) {
     const cfg = getIntegrationConfig(c);
+    const resolved = resolveLanUrl(c, cfg.url ?? "");
+    const internalOnly = isInternalUrl(cfg.url) && resolved === cfg.url;
     result[c] = {
       enabled: cfg.mode !== "disabled" && !!cfg.url,
-      url: cfg.url ?? "",
-      directUrl: cfg.url ?? "",
+      url: internalOnly ? "" : resolved,
+      directUrl: resolved,
       label: c === "graylog" ? "Graylog" : "Loki",
+      iframeSupported: !internalOnly,
+      ...(internalOnly && {
+        shortcuts: [
+          {
+            label: `URL backend interno (${cfg.url})`,
+            url: cfg.url ?? "",
+            description:
+              "Questo è l'URL di sync usato dal backend DA-IPAM (Docker network). Non è accessibile dal browser. Configura il reverse proxy nginx LAN o aggiungi una entry Dashboard nel launchpad per l'accesso browser.",
+          },
+        ],
+      }),
     };
   }
 

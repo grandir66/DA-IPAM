@@ -32,6 +32,7 @@ import {
   Workflow,
   BookOpen,
   Network as NetworkIcon,
+  ServerCog,
   Ban,
   ShieldCheck,
   KeyRound,
@@ -421,6 +422,21 @@ export function Sidebar() {
         >
           <NetworkIcon className="h-4 w-4" />
           Network Services
+        </Link>
+
+        {/* Appliance — vista unificata moduli installati (F1 ADR-0009) */}
+        <Link
+          href="/appliance"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            pathname.startsWith("/appliance")
+              ? "bg-sidebar-primary text-sidebar-primary-foreground"
+              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <ServerCog className="h-4 w-4" />
+          Appliance
         </Link>
 
         {/* Impostazioni (globale) */}

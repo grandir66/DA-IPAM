@@ -32,7 +32,6 @@ import {
   Workflow,
   BookOpen,
   Network as NetworkIcon,
-  ServerCog,
   Ban,
   ShieldCheck,
   KeyRound,

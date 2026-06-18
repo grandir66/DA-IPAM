@@ -549,10 +549,48 @@ export function NetworkDetailClient({
     }
   }
 
+  /**
+   * Dopo l'assegnazione (o il cambio) del router ARP di una rete:
+   *  1. verifica reachability + credenziali del router (GET /api/devices/[id]/test);
+   *  2. se raggiungibile, scarica subito ARP + DHCP (scan_enrich) senza attendere una scan.
+   * Mostra il feedback all'utente via toast. Non blocca il salvataggio della rete.
+   */
+  async function testAndFetchRouter(routerId: number) {
+    const tId = toast.loading("Verifico raggiungibilità del router…");
+    try {
+      const testRes = await fetch(`/api/devices/${routerId}/test`);
+      const testData = await testRes.json().catch(() => ({}));
+      if (!testData?.success) {
+        toast.error(
+          `Router non raggiungibile: ${testData?.error || testData?.message || "verifica credenziali e connettività"}`,
+          { id: tId }
+        );
+        return;
+      }
+      toast.loading("Router OK — scarico ARP/DHCP…", { id: tId });
+      const enrichRes = await fetch("/api/scans/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network_id: network.id, scan_type: "scan_enrich" }),
+      });
+      const enrichData = await enrichRes.json().catch(() => ({}));
+      if (enrichRes.ok && enrichData?.progress?.status !== "failed") {
+        toast.success(`Router verificato. ${enrichData?.progress?.phase ?? "ARP/DHCP scaricati"}`, { id: tId });
+        await refreshHosts();
+        router.refresh();
+      } else {
+        toast.error(`Router OK ma fetch ARP/DHCP fallito: ${enrichData?.error || enrichData?.progress?.phase || "errore"}`, { id: tId });
+      }
+    } catch {
+      toast.error("Errore durante la verifica del router", { id: tId });
+    }
+  }
+
   async function handleSaveEdit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
     const form = e.currentTarget;
+    const prevRouterId = routerId;
     const body = {
       cidr: (form.elements.namedItem("cidr") as HTMLInputElement).value.trim(),
       name: (form.elements.namedItem("name") as HTMLInputElement).value,
@@ -597,6 +635,12 @@ export function NetworkDetailClient({
         setEditOpen(false);
         toast.success("Rete aggiornata");
         router.refresh();
+        // Se è stato assegnato/cambiato un router ARP, verifica subito reachability
+        // e scarica ARP/DHCP (in background, non blocca la chiusura del dialog).
+        const newRouterId = updated.router_id ?? null;
+        if (newRouterId && newRouterId !== prevRouterId) {
+          void testAndFetchRouter(newRouterId);
+        }
       } else {
         const data = await res.json();
         toast.error(data.error || "Errore nell'aggiornamento");

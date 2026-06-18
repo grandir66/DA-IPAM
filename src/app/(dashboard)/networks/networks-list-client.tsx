@@ -435,11 +435,53 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
       return;
     }
 
+    const created = await res.json().catch(() => null);
     toast.success("Rete creata con successo");
     setDialogOpen(false);
     setNewNetworkRouterId("");
     setNetworkCredentialIds([]);
     refreshNetworks();
+
+    // Se è stato assegnato un router, verifica subito reachability + credenziali
+    // e scarica ARP/DHCP, così l'utente ha conferma immediata senza lanciare una scan.
+    const createdRouterId = created?.router_id ?? body.router_id ?? null;
+    if (created?.id && createdRouterId) {
+      void testAndFetchRouter(created.id, createdRouterId);
+    }
+  }
+
+  /**
+   * Verifica reachability + credenziali del router appena assegnato a una rete e,
+   * se OK, scarica subito ARP + DHCP (scan_enrich). Feedback via toast.
+   */
+  async function testAndFetchRouter(networkId: number, routerId: number) {
+    const tId = toast.loading("Verifico raggiungibilità del router…");
+    try {
+      const testRes = await fetch(`/api/devices/${routerId}/test`);
+      const testData = await testRes.json().catch(() => ({}));
+      if (!testData?.success) {
+        toast.error(
+          `Router non raggiungibile: ${testData?.error || testData?.message || "verifica credenziali e connettività"}`,
+          { id: tId }
+        );
+        return;
+      }
+      toast.loading("Router OK — scarico ARP/DHCP…", { id: tId });
+      const enrichRes = await fetch("/api/scans/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network_id: networkId, scan_type: "scan_enrich" }),
+      });
+      const enrichData = await enrichRes.json().catch(() => ({}));
+      if (enrichRes.ok && enrichData?.progress?.status !== "failed") {
+        toast.success(`Router verificato. ${enrichData?.progress?.phase ?? "ARP/DHCP scaricati"}`, { id: tId });
+        refreshNetworks();
+      } else {
+        toast.error(`Router OK ma fetch ARP/DHCP fallito: ${enrichData?.error || enrichData?.progress?.phase || "errore"}`, { id: tId });
+      }
+    } catch {
+      toast.error("Errore durante la verifica del router", { id: tId });
+    }
   }
 
   async function handleDelete(id: number, name: string) {

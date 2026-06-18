@@ -15,6 +15,46 @@ import { getNetServicesConfig } from "./config";
 
 const insecureAgent = new https.Agent({ rejectUnauthorized: false });
 
+/**
+ * Transport via node:https (NON fetch): undici/`fetch` ignora l'opzione `agent`,
+ * quindi il cert self-signed del bridge veniva rifiutato (DEPTH_ZERO_SELF_SIGNED_CERT).
+ * `https.request` con insecureAgent rispetta rejectUnauthorized:false → funziona
+ * verso il bridge TLS self-signed sulla rete interna.
+ */
+interface RawResp { status: number; ok: boolean; body: string; }
+function httpsRequest(
+  rawUrl: string,
+  opts: { method?: string; headers?: Record<string, string>; body?: string; timeoutMs?: number } = {},
+): Promise<RawResp> {
+  return new Promise((resolve, reject) => {
+    let u: URL;
+    try { u = new URL(rawUrl); } catch (e) { reject(e as Error); return; }
+    const req = https.request(
+      {
+        hostname: u.hostname,
+        port: u.port || 443,
+        path: `${u.pathname}${u.search}`,
+        method: opts.method || "GET",
+        headers: opts.headers,
+        agent: insecureAgent,
+        timeout: opts.timeoutMs ?? 8000,
+      },
+      (res) => {
+        let d = "";
+        res.on("data", (c) => (d += c));
+        res.on("end", () => {
+          const code = res.statusCode || 0;
+          resolve({ status: code, ok: code >= 200 && code < 300, body: d });
+        });
+      },
+    );
+    req.on("error", reject);
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    if (opts.body) req.write(opts.body);
+    req.end();
+  });
+}
+
 export interface BridgeStatus {
   bridge: string;
   services: {
@@ -79,20 +119,27 @@ async function makeCall(tenantCode: string) {
   }
   return async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     const url = `${cfg.apiUrl.replace(/\/$/, "")}${path}`;
-    const headers = new Headers(init.headers);
-    headers.set("Authorization", `Bearer ${cfg.apiToken}`);
-    if (init.body) headers.set("Content-Type", "application/json");
-    // @ts-expect-error — undici fetch types non includono agent ma a runtime lo accetta via dispatcher
-    const res = await fetch(url, { ...init, headers, dispatcher: undefined, agent: insecureAgent });
-    if (!res.ok) {
-      let body = "";
-      try { body = await res.text(); } catch { /* ignore */ }
+    const headers: Record<string, string> = { Authorization: `Bearer ${cfg.apiToken}` };
+    if (init.body) headers["Content-Type"] = "application/json";
+    let res: RawResp;
+    try {
+      res = await httpsRequest(url, {
+        method: (init.method as string) || "GET",
+        headers,
+        body: typeof init.body === "string" ? init.body : undefined,
+      });
+    } catch (e) {
       throw new BridgeUnavailableError(
-        `bridge ${path} HTTP ${res.status}: ${body.slice(0, 300)}`,
+        `bridge ${path} unreachable: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    if (!res.ok) {
+      throw new BridgeUnavailableError(
+        `bridge ${path} HTTP ${res.status}: ${res.body.slice(0, 300)}`,
         res.status,
       );
     }
-    return (await res.json()) as T;
+    return JSON.parse(res.body) as T;
   };
 }
 
@@ -145,10 +192,9 @@ export async function probeBridge(
 ): Promise<{ ok: true; version: string } | { ok: false; error: string }> {
   try {
     const url = `${apiUrl.replace(/\/$/, "")}/api/v1/health`;
-    // @ts-expect-error — runtime accepts agent on fetch
-    const res = await fetch(url, { agent: insecureAgent });
+    const res = await httpsRequest(url);
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-    const body = (await res.json()) as { status?: string; version?: string };
+    const body = JSON.parse(res.body) as { status?: string; version?: string };
     return { ok: true, version: body.version ?? "unknown" };
   } catch (e) {
     return { ok: false, error: String(e) };
@@ -165,11 +211,7 @@ export async function probeBridgeWithAuth(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const url = `${apiUrl.replace(/\/$/, "")}/api/v1/status`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${apiToken}` },
-      // @ts-expect-error — runtime accepts agent on fetch via dispatcher
-      agent: insecureAgent,
-    });
+    const res = await httpsRequest(url, { headers: { Authorization: `Bearer ${apiToken}` } });
     if (res.status === 401) return { ok: false, error: "Token non valido (HTTP 401)" };
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
     return { ok: true };

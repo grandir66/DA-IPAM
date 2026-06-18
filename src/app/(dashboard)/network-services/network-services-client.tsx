@@ -28,6 +28,8 @@ import type {
 type ServiceKey = "resolver" | "adblock" | "dns" | "dhcp";
 
 import { NetworkServicesSettings } from "./network-services-setup";
+import { DnsSection } from "./dns-section";
+import { DhcpSection } from "./dhcp-section";
 
 interface Props {
   apiBase: string;
@@ -413,6 +415,10 @@ export function NetworkServicesClient({
           </div>
         </CardContent>
       </Card>
+
+      <DnsSection isAdmin={isAdmin} active={bridge?.services?.dns?.active === "active"} />
+
+      <DhcpSection active={bridge?.services?.dhcp?.active === "active"} />
 
       {isAdmin && <NetworkServicesSettings apiUrl={apiBase} />}
     </div>

@@ -96,6 +96,72 @@ export interface AdBlockRules {
   note?: string;
 }
 
+// ── DNS authoritative (PowerDNS) ──
+
+export interface DnsZone {
+  id: string;
+  name: string;
+  kind: string;
+  serial: number;
+  dnssec: boolean;
+}
+
+export interface DnsZonesResp {
+  running: boolean;
+  zones: DnsZone[];
+  count: number;
+  note?: string;
+}
+
+export interface DnsRecord {
+  /** Nome FQDN della rrset (es. host1.cliente.lan.). */
+  name: string;
+  type: string;
+  ttl: number;
+  /** Valori della rrset (es. ["10.0.0.5"]). */
+  contents: string[];
+}
+
+export interface DnsRecordsResp {
+  running: boolean;
+  zone: string;
+  records: DnsRecord[];
+  count: number;
+  note?: string;
+}
+
+interface RawRrset {
+  name: string;
+  type: string;
+  ttl: number;
+  records?: Array<{ content: string; disabled?: boolean }>;
+}
+
+// ── DHCP (Kea, read-only) ──
+
+export interface DhcpLease {
+  /** Campi Kea grezzi (ip-address, hw-address, hostname, valid-lft, cltt, ...). */
+  [field: string]: unknown;
+}
+
+export interface DhcpLeasesResp {
+  running: boolean;
+  leases: DhcpLease[];
+  count: number;
+  note?: string;
+}
+
+export interface DhcpReservation {
+  [field: string]: unknown;
+}
+
+export interface DhcpReservationsResp {
+  running: boolean;
+  reservations: DhcpReservation[];
+  count: number;
+  note?: string;
+}
+
 export class BridgeUnavailableError extends Error {
   constructor(message: string, public statusCode?: number) {
     super(message);
@@ -166,6 +232,40 @@ export async function makeNetServicesClient(tenantCode: string) {
         `/api/v1/resolver/forwards/${encodeURIComponent(zone)}`,
         { method: "DELETE" },
       ),
+
+    // ── DNS authoritative (PowerDNS): CRUD completo ──
+    dnsZones: () => call<DnsZonesResp>("/api/v1/zones"),
+    addDnsZone: (zone: string) =>
+      call<{ ok: boolean; zone: string; created?: boolean; error?: string }>(
+        "/api/v1/zones",
+        { method: "POST", body: JSON.stringify({ zone }) },
+      ),
+    dnsRecords: async (zone: string): Promise<DnsRecordsResp> => {
+      const raw = await call<{ running: boolean; zone: string; rrsets?: RawRrset[]; count?: number; note?: string }>(
+        `/api/v1/zones/${encodeURIComponent(zone)}/records`,
+      );
+      const records: DnsRecord[] = (raw.rrsets ?? []).map((rr) => ({
+        name: rr.name,
+        type: rr.type,
+        ttl: rr.ttl,
+        contents: (rr.records ?? []).filter((r) => !r.disabled).map((r) => r.content),
+      }));
+      return { running: raw.running, zone: raw.zone, records, count: raw.count ?? records.length, note: raw.note };
+    },
+    addDnsRecord: (zone: string, name: string, type: string, contents: string[], ttl: number) =>
+      call<{ ok: boolean; http?: number; error?: string; body?: string }>(
+        `/api/v1/zones/${encodeURIComponent(zone)}/records`,
+        { method: "POST", body: JSON.stringify({ name, type, records: contents, ttl }) },
+      ),
+    removeDnsRecord: (zone: string, name: string, type: string) =>
+      call<{ ok: boolean; http?: number; error?: string }>(
+        `/api/v1/zones/${encodeURIComponent(zone)}/records`,
+        { method: "DELETE", body: JSON.stringify({ name, type }) },
+      ),
+
+    // ── DHCP (Kea): SOLO LETTURA ──
+    dhcpLeases: () => call<DhcpLeasesResp>("/api/v1/leases"),
+    dhcpReservations: () => call<DhcpReservationsResp>("/api/v1/reservations"),
 
     adblockStats: () => call<AdBlockStats>("/api/v1/adblock/stats"),
     adblockRules: () => call<AdBlockRules>("/api/v1/adblock/rules"),

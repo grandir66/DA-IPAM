@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, RefreshCw, ShieldCheck, ShieldAlert, Trash2, PlayCircle } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, ShieldCheck, ShieldAlert, Trash2, PlayCircle, Network, ExternalLink, Plug } from "lucide-react";
 
 interface ScannerRow {
   id: number;
@@ -18,6 +18,108 @@ interface ScannerRow {
   cert_fingerprint: string | null;
   consecutive_errors: number;
   auto_disabled_at: string | null;
+}
+
+/**
+ * Deriva la base URL della UI dell'edge (browser-reachable) dal base_url di sync.
+ * La UI dell'edge gira su :6443 (nginx), distinta dalla porta API di sync.
+ * Ritorna null se l'host non è raggiungibile da browser (docker-internal/localhost),
+ * caso in cui il deep-link non ha senso e mostriamo solo l'hint.
+ */
+function deriveEdgeUiBase(baseUrl: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+  const host = u.hostname;
+  if (
+    host === "host.docker.internal" ||
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host.endsWith(".internal")
+  ) {
+    return null;
+  }
+  return `https://${host}:6443`;
+}
+
+/**
+ * Pannello Edge MVP: due riquadri informativi con deep-link alla UI propria
+ * dell'edge (Scansioni & VLAN su /networks, Onboarding su /settings).
+ * NON modifica lo scanner-edge: solo navigazione. Quelle UI esistono già.
+ */
+function EdgePanel({ scanner }: { scanner: ScannerRow }) {
+  const uiBase = deriveEdgeUiBase(scanner.base_url);
+  const connected = scanner.enabled === 1 && !scanner.auto_disabled_at;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+      {/* Scansioni & VLAN */}
+      <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Network className="h-4 w-4 text-muted-foreground" />
+          Scansioni &amp; VLAN
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Reti e sotto-interfacce VLAN da scansionare si gestiscono nella UI dell&apos;edge.
+        </p>
+        {uiBase ? (
+          <a
+            href={`${uiBase}/networks`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Apri gestione reti edge
+          </a>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">
+            Host non raggiungibile da browser (<code>{scanner.base_url}</code>). Apri la UI edge
+            sulla sua porta <code>6443</code> dalla LAN cliente.
+          </p>
+        )}
+      </div>
+
+      {/* Onboarding DA-Vulcan */}
+      <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Plug className="h-4 w-4 text-muted-foreground" />
+          Onboarding DA-Vulcan
+        </div>
+        <div className="flex items-center gap-1.5 text-xs">
+          <span
+            className={`h-2 w-2 rounded-full shrink-0 ${connected ? "bg-emerald-500" : "bg-amber-500"}`}
+          />
+          <span className="text-muted-foreground">
+            {connected
+              ? `Collegato — ultimo sync ${scanner.last_sync_at ?? "—"}`
+              : "Connessione inattiva (auto-disabilitato o disattivo)"}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          L&apos;aggancio dell&apos;edge all&apos;hub (token, URL hub) si configura nella sua UI.
+        </p>
+        {uiBase ? (
+          <a
+            href={`${uiBase}/settings`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Apri onboarding edge
+          </a>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">
+            Apri <code>/settings</code> sulla UI edge (porta <code>6443</code>) dalla LAN cliente.
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function ScannerEdgeCard() {
@@ -266,6 +368,8 @@ export function ScannerEdgeCard() {
               <Trash2 className="h-3.5 w-3.5 mr-1" /> Rimuovi
             </Button>
           </div>
+
+          <EdgePanel scanner={scanner} />
         </div>
       ) : (
         <div className="space-y-2">

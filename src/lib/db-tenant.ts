@@ -2137,7 +2137,15 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     (input as { classification?: string | null }).classification ?? null,
     (input as { scan_target?: string | null }).scan_target ?? null,
     (input as { product_profile?: string | null }).product_profile ?? null,
-    (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === 1 || (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === true ? 1 : 0,
+    // use_for_arp_poll: rispetta il flag esplicito se fornito; altrimenti default
+    // by-type (router/firewall/stormshield → 1). Evita il trap "router creato da un
+    // percorso che non setta il flag → ARP poll mai eseguito" (incident 2026-06-20).
+    ((): number => {
+      const f = (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll;
+      if (f === 1 || f === true) return 1;
+      if (f === 0 || f === false) return 0;
+      return input.device_type === "router" || input.device_type === "firewall" || input.vendor === "stormshield" ? 1 : 0;
+    })(),
     hostId
   );
   return db().prepare("SELECT * FROM network_devices WHERE id = ?").get(result.lastInsertRowid) as NetworkDevice;

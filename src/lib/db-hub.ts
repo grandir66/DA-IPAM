@@ -399,6 +399,16 @@ function initializeHubDb(db: Database.Database): void {
       db.exec("ALTER TABLE tenants ADD COLUMN agent_last_seen_at TEXT");
     }
   } catch { /* ignore */ }
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS inventory_ingest_tokens (
+        token_sha256 TEXT PRIMARY KEY,
+        tenant_code TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_inventory_ingest_tenant ON inventory_ingest_tokens(tenant_code);
+    `);
+  } catch { /* ignore */ }
   // Migrazione 1->N agent: per ogni tenant con agent_hostname configurato,
   // crea una riga in tenant_agents se non già esistente. Idempotente.
   try {

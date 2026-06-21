@@ -31,6 +31,12 @@ const FEATURE_CATALOG: ReadonlyArray<{
     description:
       "Lancia upgrade Chocolatey via WinRM guidati dalle vulnerabilità rilevate. Solo Windows, modalità interattiva.",
   },
+  {
+    key: "inventory_agent",
+    title: "Inventory Agent (GLPI push)",
+    description:
+      "Riceve inventario software push da GLPI Agent (Windows/Linux/macOS) via JSON. Nessun server GLPI né Wazuh.",
+  },
 ] as const;
 
 export async function GET() {

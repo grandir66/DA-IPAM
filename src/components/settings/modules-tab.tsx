@@ -36,6 +36,7 @@ import {
 import { IntegrationCard } from "./integration-card";
 import { ScannerEdgeCard } from "./scanner-edge-card";
 import { WazuhCard } from "./wazuh-card";
+import { InventoryAgentCard } from "./inventory-agent-card";
 import { ModuleJsonImport } from "./module-json-import";
 import type { InstallJob } from "@/lib/integrations/types";
 import type { ModuleKey } from "@/lib/modules/registry";
@@ -192,6 +193,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
   }, [fetchFeatures]);
 
   const patch = features.find((f) => f.key === "patch_management");
+  const inventoryAgent = features.find((f) => f.key === "inventory_agent");
 
   const handleInstallPatch = async () => {
     setBusyKey("patch_management");
@@ -205,6 +207,26 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
         throw new Error(err?.error ?? `HTTP ${r.status}`);
       }
       toast.success("Modulo Patch Management installato");
+      await fetchFeatures();
+    } catch (e) {
+      toast.error(`Installazione fallita: ${e instanceof Error ? e.message : "errore"}`);
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const handleInstallInventoryAgent = async () => {
+    setBusyKey("inventory_agent");
+    try {
+      const r = await fetch("/api/features/inventory_agent/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!r.ok) {
+        const err = (await r.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(err?.error ?? `HTTP ${r.status}`);
+      }
+      toast.success("Modulo Inventory Agent installato");
       await fetchFeatures();
     } catch (e) {
       toast.error(`Installazione fallita: ${e instanceof Error ? e.message : "errore"}`);
@@ -239,6 +261,8 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
 
   const patchInstalled = patch?.status === "installed";
   const patchBusy = busyKey === "patch_management";
+  const inventoryInstalled = inventoryAgent?.status === "installed";
+  const inventoryBusy = busyKey === "inventory_agent";
 
   return (
     <div className="space-y-8">
@@ -319,6 +343,22 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
             </CardContent>
           )}
         </Card>
+      </ModuleSection>
+
+      <ModuleSection
+        id="module-inventory_agent"
+        title="Inventory Agent"
+      >
+        <InventoryAgentCard
+          isAdmin={isAdmin}
+          installed={inventoryInstalled}
+          installBusy={inventoryBusy}
+          onInstall={handleInstallInventoryAgent}
+          onUninstall={() =>
+            inventoryAgent &&
+            setUninstallDialog({ open: true, feature: inventoryAgent, dropData: false })
+          }
+        />
       </ModuleSection>
 
       <ModuleSection

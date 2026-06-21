@@ -231,6 +231,13 @@ CREATE TABLE IF NOT EXISTS system_credential_events (
   details_json   TEXT,
   ts             TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Token Bearer per POST /api/inventory/ingest (sha256 → tenant_code)
+CREATE TABLE IF NOT EXISTS inventory_ingest_tokens (
+  token_sha256 TEXT PRIMARY KEY,
+  tenant_code TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 export const HUB_INDEXES_SQL = `
@@ -247,4 +254,5 @@ CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_oid ON sysobj_lookup(oid);
 CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_enabled ON sysobj_lookup(enabled);
 CREATE INDEX IF NOT EXISTS idx_tenant_agents_tenant ON tenant_agents(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_tenant_features_key ON tenant_features(feature_key, enabled);
+CREATE INDEX IF NOT EXISTS idx_inventory_ingest_tenant ON inventory_ingest_tokens(tenant_code);
 `;

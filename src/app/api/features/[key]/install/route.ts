@@ -5,12 +5,14 @@ import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
 import { setFeatureEnabled, invalidateFeatureCache } from "@/lib/patch/feature";
 import { applyPatchModuleMigrations } from "@/lib/patch/schema";
 import { runFullSyncMatch } from "@/lib/patch/matcher";
+import { applyInventoryAgentMigrations } from "@/lib/inventory-agent/schema";
+import { installInventoryAgentFeature } from "@/lib/inventory-agent/feature";
 
 /**
  * Feature key whitelistate. Le route /api/features/[key]/* accettano solo
  * questi valori: una key sconosciuta ritorna 404 senza toccare il DB.
  */
-const ALLOWED_FEATURES = new Set<string>(["patch_management"]);
+const ALLOWED_FEATURES = new Set<string>(["patch_management", "inventory_agent"]);
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -61,10 +63,18 @@ export async function POST(
       // Per ora solo patch_management è whitelistata: hardcoded sopra.
       // Quando aggiungeremo altri moduli demultiplexeremo qui per feature key.
       const tenantDb = getTenantDb(tenantCode);
-      const migration = applyPatchModuleMigrations(tenantDb);
-      const tablesCreated = migration.tablesCreated;
-
-      setFeatureEnabled(tenantCode, key, safeUserId);
+      let tablesCreated: string[] = [];
+      if (key === "patch_management") {
+        const migration = applyPatchModuleMigrations(tenantDb);
+        tablesCreated = migration.tablesCreated;
+        setFeatureEnabled(tenantCode, key, safeUserId);
+      } else if (key === "inventory_agent") {
+        const migration = applyInventoryAgentMigrations(tenantDb);
+        tablesCreated = migration.tablesCreated;
+        installInventoryAgentFeature(tenantCode, safeUserId);
+      } else {
+        setFeatureEnabled(tenantCode, key, safeUserId);
+      }
       invalidateFeatureCache(tenantCode, key);
 
       // Auto-trigger matching iniziale per popolare patch_software_meta e patch_cve_target.

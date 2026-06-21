@@ -13,6 +13,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -21,6 +30,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { DnsZone, DnsRecord } from "@/lib/network-services/client";
+import {
+  proposePtrFromARecord,
+  shouldOfferPtrProposal,
+  stripDot as stripDnsDot,
+  type PtrProposal,
+} from "@/lib/network-services/dns-ptr";
 
 const RECORD_TYPES = ["A", "AAAA", "CNAME", "TXT", "MX", "NS", "PTR", "SRV", "CAA"];
 
@@ -39,6 +54,45 @@ export function DnsSection({ isAdmin, active }: Props) {
   const [newZone, setNewZone] = useState("");
   const [newReverseCidr, setNewReverseCidr] = useState("");
   const [newRec, setNewRec] = useState({ name: "", type: "A", content: "", ttl: "3600" });
+  const [ptrDialogOpen, setPtrDialogOpen] = useState(false);
+  const [ptrProposal, setPtrProposal] = useState<PtrProposal | null>(null);
+  const [createReverseZoneToo, setCreateReverseZoneToo] = useState(true);
+  const [pendingRec, setPendingRec] = useState<{
+    name: string;
+    type: string;
+    contents: string[];
+    ttl: number;
+  } | null>(null);
+
+  async function fetchZoneRecords(zone: string): Promise<DnsRecord[]> {
+    const z = encodeURIComponent(stripDnsDot(zone));
+    const r = await fetch(`/api/network-services/dns/zones/${z}/records`, { cache: "no-store" });
+    const d = await r.json();
+    if (!d.ok) return [];
+    return (d.records || []) as DnsRecord[];
+  }
+
+  async function postRecord(
+    zone: string,
+    name: string,
+    type: string,
+    contents: string[],
+    ttl: number,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const r = await fetch(
+      `/api/network-services/dns/zones/${encodeURIComponent(stripDnsDot(zone))}/records`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, type, contents, ttl }),
+      },
+    );
+    const d = await r.json();
+    if (!r.ok || d.ok === false) {
+      return { ok: false, error: d.error || d.body || r.statusText };
+    }
+    return { ok: true };
+  }
 
   const loadZones = useCallback(async () => {
     try {
@@ -125,28 +179,136 @@ export function DnsSection({ isAdmin, active }: Props) {
     }
     const contents = newRec.content.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
     if (contents.length === 0) return;
+
+    const ttl = Number(newRec.ttl) || 3600;
+    const payload = {
+      name: newRec.name.trim(),
+      type: newRec.type,
+      contents,
+      ttl,
+    };
+
+    if (shouldOfferPtrProposal(newRec.type, selected, contents[0]) && contents.length === 1) {
+      startTransition(async () => {
+        let reverseRecords: DnsRecord[] | undefined;
+        const prelim = proposePtrFromARecord({
+          recordName: payload.name,
+          ip: contents[0],
+          forwardZone: selected,
+          zones,
+        });
+        if (!prelim) {
+          await commitRecord(payload, false);
+          return;
+        }
+        if (prelim.reverseZoneExists) {
+          reverseRecords = await fetchZoneRecords(prelim.reverseZone);
+        }
+        const proposal = proposePtrFromARecord({
+          recordName: payload.name,
+          ip: contents[0],
+          forwardZone: selected,
+          zones,
+          reverseRecords,
+        });
+        if (!proposal || proposal.ptrExists) {
+          if (proposal?.ptrExists) {
+            toast.message("PTR già presente per questo IP — aggiungo solo il record A");
+          }
+          await commitRecord(payload, false);
+          return;
+        }
+        setPendingRec(payload);
+        setPtrProposal(proposal);
+        setCreateReverseZoneToo(!proposal.reverseZoneExists);
+        setPtrDialogOpen(true);
+      });
+      return;
+    }
+
     startTransition(async () => {
-      const r = await fetch(
-        `/api/network-services/dns/zones/${encodeURIComponent(selected)}/records`,
-        {
+      await commitRecord(payload, false);
+    });
+  }
+
+  async function commitRecord(
+    payload: { name: string; type: string; contents: string[]; ttl: number },
+    withPtr: boolean,
+    proposal?: PtrProposal | null,
+  ) {
+    if (!selected) return;
+    const aRes = await postRecord(
+      selected,
+      payload.name,
+      payload.type,
+      payload.contents,
+      payload.ttl,
+    );
+    if (!aRes.ok) {
+      toast.error(`Aggiunta record fallita: ${aRes.error}`);
+      return;
+    }
+
+    if (withPtr && proposal) {
+      let reverseZone = proposal.reverseZone;
+      if (!proposal.reverseZoneExists && createReverseZoneToo) {
+        const rz = await fetch("/api/network-services/dns/zones/reverse", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: newRec.name.trim(),
-            type: newRec.type,
-            contents,
-            ttl: Number(newRec.ttl) || 3600,
-          }),
-        },
-      );
-      const d = await r.json();
-      if (!r.ok || d.ok === false) {
-        toast.error(`Aggiunta record fallita: ${d.error || d.body || r.statusText}`);
-        return;
+          body: JSON.stringify({ cidr: proposal.suggestedCidr }),
+        });
+        const rd = await rz.json();
+        if (!rz.ok || rd.ok === false) {
+          toast.error(`Record A creato, ma zona reverse fallita: ${rd.error || rz.statusText}`);
+          await loadZones();
+          await loadRecords(selected);
+          resetRecForm();
+          return;
+        }
+        if (rd.reverse_zone) {
+          reverseZone = rd.reverse_zone.endsWith(".") ? rd.reverse_zone : `${rd.reverse_zone}.`;
+        }
+        await loadZones();
       }
+
+      const ptrRes = await postRecord(
+        reverseZone,
+        proposal.ptrName,
+        "PTR",
+        [proposal.hostnameFqdn],
+        payload.ttl,
+      );
+      if (!ptrRes.ok) {
+        toast.error(`Record A creato, ma PTR fallito: ${ptrRes.error}`);
+      } else {
+        toast.success("Record A e PTR creati");
+      }
+    } else {
       toast.success("Record aggiunto");
-      setNewRec({ name: "", type: "A", content: "", ttl: "3600" });
-      await loadRecords(selected);
+    }
+
+    resetRecForm();
+    await loadRecords(selected);
+  }
+
+  function resetRecForm() {
+    setNewRec({ name: "", type: "A", content: "", ttl: "3600" });
+    setPtrDialogOpen(false);
+    setPtrProposal(null);
+    setPendingRec(null);
+  }
+
+  function confirmWithPtr() {
+    if (!pendingRec || !ptrProposal) return;
+    startTransition(async () => {
+      await commitRecord(pendingRec, true, ptrProposal);
+    });
+  }
+
+  function confirmWithoutPtr() {
+    if (!pendingRec) return;
+    startTransition(async () => {
+      await commitRecord(pendingRec, false);
     });
   }
 
@@ -195,8 +357,8 @@ export function DnsSection({ isAdmin, active }: Props) {
           )}
         </div>
         <CardDescription>
-          PowerDNS — zone forward/reverse e record (A/AAAA/CNAME/TXT/PTR/…). Nome record come FQDN
-          (es. <code>host1.cliente.lan</code> o PTR <code>12.99.168.192.in-addr.arpa</code>).
+          PowerDNS — zone forward/reverse e record. Per i record <strong>A</strong> in zona forward
+          viene proposta la creazione del PTR coerente se assente.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -382,6 +544,60 @@ export function DnsSection({ isAdmin, active }: Props) {
           </>
         )}
       </CardContent>
+
+      <Dialog open={ptrDialogOpen} onOpenChange={(open) => !open && resetRecForm()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Record PTR coerente</DialogTitle>
+            <DialogDescription>
+              Il record A punta a un indirizzo IPv4 senza PTR corrispondente. Vuoi registrarlo?
+            </DialogDescription>
+          </DialogHeader>
+
+          {ptrProposal && pendingRec && (
+            <div className="space-y-3 text-sm">
+              <div className="rounded-md border bg-muted/30 p-3 space-y-1.5 font-mono text-xs">
+                <p>
+                  <span className="text-muted-foreground">A </span>
+                  {pendingRec.name} → {ptrProposal.ip}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">PTR </span>
+                  {ptrProposal.ptrName} → {ptrProposal.hostnameFqdn}
+                </p>
+                <p className="text-muted-foreground font-sans text-[11px] pt-1">
+                  Zona reverse: {ptrProposal.reverseZone}
+                </p>
+              </div>
+
+              {!ptrProposal.reverseZoneExists && (
+                <div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+                  <Switch
+                    id="create-reverse-zone"
+                    checked={createReverseZoneToo}
+                    onCheckedChange={setCreateReverseZoneToo}
+                  />
+                  <Label htmlFor="create-reverse-zone" className="text-xs leading-snug cursor-pointer">
+                    Crea zona reverse <code>{ptrProposal.suggestedCidr}</code> (consigliato)
+                  </Label>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={resetRecForm} disabled={pending}>
+              Annulla
+            </Button>
+            <Button variant="secondary" onClick={confirmWithoutPtr} disabled={pending}>
+              Solo record A
+            </Button>
+            <Button onClick={confirmWithPtr} disabled={pending || (!ptrProposal?.reverseZoneExists && !createReverseZoneToo)}>
+              A + PTR
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

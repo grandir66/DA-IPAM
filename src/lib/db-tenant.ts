@@ -3054,6 +3054,21 @@ export function upsertArpEntries(
       stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name);
       if (entry.ip && entry.mac) {
         const networkId = getNetworkIdForIp?.(entry.ip) ?? null;
+        // Propaga il MAC all'host ESISTENTE per quell'IP (by-IP, non by-MAC):
+        // l'ARP table del gateway è autoritativa sul MAC. Senza questo, un host
+        // creato dal discovery nmap SENZA MAC restava a mac=NULL anche se il
+        // gateway ne conosce il MAC (incident 2026-06-21: 20/29 host senza MAC
+        // pur essendo in arp_entries). Aggiorna solo se l'host esiste già e ha
+        // MAC mancante/diverso. NON crea host (resta fonte passiva).
+        if (networkId != null) {
+          const normMac = normalizeMacForStorage(entry.mac);
+          if (normMac) {
+            d.prepare(
+              `UPDATE hosts SET mac = ?, updated_at = datetime('now')
+               WHERE network_id = ? AND ip = ? AND (mac IS NULL OR mac = '' OR mac != ?)`
+            ).run(normMac, networkId, entry.ip, normMac);
+          }
+        }
         try {
           upsertMacIpMapping({
             mac: entry.mac,

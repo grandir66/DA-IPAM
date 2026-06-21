@@ -10,12 +10,37 @@ import {
   librenmsProxyHostHeader,
   withLibreNMSAutologin,
 } from "@/lib/integrations/librenms-proxy-auth";
-import { proxyRequest } from "@/lib/integrations/reverse-proxy";
+import { proxyRequest, type ReverseProxyOptions } from "@/lib/integrations/reverse-proxy";
+import type { ComponentConfig } from "@/lib/integrations/types";
 
 const BASE_PATH = "/api/integrations/proxy/librenms";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+function librenmsHtmlRewriteHosts(cfg: ComponentConfig): string[] {
+  const hosts: string[] = [];
+  for (const raw of [cfg.uiUrl, process.env.LIBRENMS_UI_URL]) {
+    if (!raw?.trim()) continue;
+    try {
+      hosts.push(new URL(raw.trim()).host);
+    } catch {
+      /* skip */
+    }
+  }
+  return hosts;
+}
+
+function librenmsProxyOpts(cfg: ComponentConfig, hostHeader?: string): ReverseProxyOptions {
+  return {
+    upstreamOrigin: cfg.url.replace(/\/+$/, ""),
+    basePath: BASE_PATH,
+    insecureTls: true,
+    timeoutMs: 30_000,
+    extraRequestHeaders: hostHeader ? { Host: hostHeader } : undefined,
+    extraHtmlRewriteHosts: librenmsHtmlRewriteHosts(cfg),
+  };
+}
 
 async function handle(req: Request): Promise<Response> {
   const authCheck = await requireAuth();
@@ -43,14 +68,9 @@ async function handle(req: Request): Promise<Response> {
     ? await withLibreNMSAutologin(req, autologinCookies)
     : req;
   const hostHeader = librenmsProxyHostHeader();
+  const proxyOpts = librenmsProxyOpts(cfg, hostHeader);
 
-  let resp = await proxyRequest(proxiedReq, {
-    upstreamOrigin: cfg.url.replace(/\/+$/, ""),
-    basePath: BASE_PATH,
-    insecureTls: true,
-    timeoutMs: 30_000,
-    extraRequestHeaders: hostHeader ? { Host: hostHeader } : undefined,
-  });
+  let resp = await proxyRequest(proxiedReq, proxyOpts);
 
   // Login page dopo autologin → redirect alla home proxy con cookie impostati.
   const reqPath = new URL(req.url).pathname;
@@ -62,13 +82,7 @@ async function handle(req: Request): Promise<Response> {
       new URL(`${BASE_PATH}/`, req.url),
       { method: "GET", headers: proxiedReq.headers },
     );
-    resp = await proxyRequest(overviewReq, {
-      upstreamOrigin: cfg.url.replace(/\/+$/, ""),
-      basePath: BASE_PATH,
-      insecureTls: true,
-      timeoutMs: 30_000,
-      extraRequestHeaders: hostHeader ? { Host: hostHeader } : undefined,
-    });
+    resp = await proxyRequest(overviewReq, proxyOpts);
   }
 
   if (autologinCookies) {

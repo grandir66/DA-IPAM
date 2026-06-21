@@ -2,8 +2,8 @@ import { getIntegrationConfig } from "@/lib/integrations/config";
 import {
   getLibreNMSWebSession,
   librenmsHostHeaderFromUiUrl,
-  requestHasLibreNMSSession,
 } from "@/lib/integrations/librenms-web-session";
+import { isInternalIntegrationUrl } from "@/lib/integrations/public-url";
 
 const DEFAULT_USERNAME = "admin";
 
@@ -17,16 +17,37 @@ export function librenmsProxyHostHeader(): string | undefined {
   );
 }
 
+/**
+ * Origin per autologin web: deve essere l'URL HTTPS pubblico (APP_URL / ui_url).
+ * Login su http://127.0.0.1:8000 produce cookie Laravel non validi anche con Host header.
+ */
+export function librenmsAutologinUpstreamOrigin(): string | null {
+  const cfg = getIntegrationConfig("librenms");
+  const ui =
+    cfg.uiUrl?.trim() ||
+    process.env.LIBRENMS_UI_URL?.trim() ||
+    "";
+  if (ui && !isInternalIntegrationUrl(ui)) {
+    return ui.replace(/\/+$/, "");
+  }
+  const api = cfg.url?.trim() ?? "";
+  if (api && !isInternalIntegrationUrl(api)) {
+    return api.replace(/\/+$/, "");
+  }
+  return null;
+}
+
 /** Cookie sessione LibreNMS se adminPassword configurata e autologin attivo. */
 export async function librenmsAutologinCookieHeader(): Promise<string | null> {
   const cfg = getIntegrationConfig("librenms");
   const password = cfg.adminPassword?.trim();
-  if (!password || cfg.mode === "disabled" || !cfg.url) return null;
+  const loginOrigin = librenmsAutologinUpstreamOrigin();
+  if (!password || cfg.mode === "disabled" || !cfg.url || !loginOrigin) return null;
 
   try {
     const { cookieHeader } = await getLibreNMSWebSession({
-      upstreamOrigin: cfg.url.replace(/\/+$/, ""),
-      hostHeader: librenmsProxyHostHeader(),
+      upstreamOrigin: loginOrigin,
+      hostHeader: librenmsHostHeaderFromUiUrl(loginOrigin),
       username: DEFAULT_USERNAME,
       password,
       insecureTls: true,
@@ -78,7 +99,12 @@ export async function withLibreNMSAutologin(
 
 export function librenmsAutologinEnabled(): boolean {
   const cfg = getIntegrationConfig("librenms");
-  return cfg.mode !== "disabled" && !!cfg.url && !!cfg.adminPassword?.trim();
+  return (
+    cfg.mode !== "disabled" &&
+    !!cfg.url &&
+    !!cfg.adminPassword?.trim() &&
+    !!librenmsAutologinUpstreamOrigin()
+  );
 }
 
 /** Cookie da impostare nel browser (Path = proxy base). */

@@ -48,6 +48,8 @@ export interface ReverseProxyOptions {
    *  `server.basePath` + `server.rewriteBasePath: true`: OSD strips the
    *  prefix itself, the proxy must NOT strip it. Default: false (strip). */
   preserveBasePath?: boolean;
+  /** Host aggiuntivi (host:port) da riscrivere in HTML oltre a upstreamOrigin. */
+  extraHtmlRewriteHosts?: string[];
 }
 
 const DEFAULT_STRIP_HEADERS = [
@@ -262,7 +264,12 @@ export async function proxyRequest(
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
     const raw = Buffer.concat(chunks).toString("utf8");
-    const rewritten = rewriteHtmlAbsolutePaths(raw, opts.basePath, opts.upstreamOrigin);
+    const rewritten = rewriteHtmlAbsolutePaths(
+      raw,
+      opts.basePath,
+      opts.upstreamOrigin,
+      opts.extraHtmlRewriteHosts,
+    );
     // Strippiamo `content-encoding` perché abbiamo riscritto plain text;
     // se l'upstream avesse ignorato `Accept-Encoding: identity` lasciare
     // l'header farebbe tentare al browser una decompressione su garbage.
@@ -283,33 +290,33 @@ export async function proxyRequest(
  *     content blocked + asset 404 quando l'upstream è raggiungibile solo
  *     dalla LAN del server (es. LibreNMS in container Docker su 192.168.x).
  */
-function rewriteHtmlAbsolutePaths(html: string, basePath: string, upstreamOrigin: string): string {
+function rewriteHtmlAbsolutePaths(
+  html: string,
+  basePath: string,
+  upstreamOrigin: string,
+  extraHtmlRewriteHosts?: string[],
+): string {
   const prefix = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
   const shouldRewrite = (path: string): boolean => !(path.startsWith(prefix + "/") || path === prefix);
 
   // ─── PASS 0: URL assoluti che puntano all'upstream → path-only sul proxy ──
-  // Estraiamo host+porta dell'upstream da upstreamOrigin (es. http://192.168.4.8:8090
-  // → upstreamHostPattern "192\\.168\\.4\\.8:8090").
-  let upstreamHost = "";
+  const rewriteHosts = new Set<string>();
   try {
-    const u = new URL(upstreamOrigin);
-    upstreamHost = u.host; // include porta se presente
-  } catch { /* upstreamOrigin malformato: skip pass 0 */ }
+    rewriteHosts.add(new URL(upstreamOrigin).host);
+  } catch { /* upstreamOrigin malformato */ }
+  for (const h of extraHtmlRewriteHosts ?? []) {
+    const t = h.trim();
+    if (t) rewriteHosts.add(t);
+  }
 
   let out = html;
-  if (upstreamHost) {
-    // Match URL completo http(s)://<host>[:port]<path?query?fragment?>
-    // dentro attributi DOM o stringhe contenute in quote singole/doppie.
+  for (const upstreamHost of rewriteHosts) {
     const escHost = upstreamHost.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const upstreamUrlRe = new RegExp(
       `(["'(])https?:\\/\\/${escHost}([\\/"'? )#]|$)`,
       "gi",
     );
     out = out.replace(upstreamUrlRe, (_m, lead: string, follow: string) => {
-      // lead è il delimitatore prima (`"`, `'`, `(`); follow è il carattere
-      // immediatamente dopo l'host (`/`, `"`, `'`, ` `, `?`, `#`, `)`).
-      // Sostituiamo con `<lead><prefix><follow>` per ottenere `"<prefix>/..."`.
-      // Caso `follow=""` (fine stringa o virgola): aggiungiamo solo prefix.
       return `${lead}${prefix}${follow}`;
     });
   }

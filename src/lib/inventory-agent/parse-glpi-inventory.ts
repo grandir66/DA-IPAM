@@ -14,6 +14,107 @@ export interface ParsedGlpiSoftware {
   size_bytes: number | null;
 }
 
+export interface ParsedGlpiBios {
+  manufacturer: string | null;
+  system_manufacturer: string | null;
+  system_model: string | null;
+  system_serial: string | null;
+  motherboard_manufacturer: string | null;
+  motherboard_model: string | null;
+  motherboard_serial: string | null;
+  version: string | null;
+  date: string | null;
+  asset_tag: string | null;
+}
+
+export interface ParsedGlpiHardwareProfile {
+  name: string | null;
+  uuid: string | null;
+  chassis_type: string | null;
+  memory_mb: number | null;
+  swap_mb: number | null;
+  default_gateway: string | null;
+  dns: string | null;
+  last_logged_user: string | null;
+  workgroup: string | null;
+  vm_system: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  serial: string | null;
+}
+
+export interface ParsedGlpiCpu {
+  name: string | null;
+  manufacturer: string | null;
+  cores: number | null;
+  threads: number | null;
+  speed_mhz: number | null;
+}
+
+export interface ParsedGlpiMemory {
+  capacity_mb: number | null;
+  caption: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  speed: string | null;
+  type: string | null;
+}
+
+export interface ParsedGlpiStorage {
+  name: string | null;
+  model: string | null;
+  manufacturer: string | null;
+  size_mb: number | null;
+  type: string | null;
+  interface: string | null;
+  serial: string | null;
+  firmware: string | null;
+}
+
+export interface ParsedGlpiNetwork {
+  name: string | null;
+  ip: string | null;
+  mac: string | null;
+  gateway: string | null;
+  dhcp: boolean | null;
+  description: string | null;
+}
+
+export interface ParsedGlpiUser {
+  login: string | null;
+  domain: string | null;
+  status: string | null;
+}
+
+export interface ParsedGlpiAntivirus {
+  name: string | null;
+  company: string | null;
+  enabled: boolean | null;
+  version: string | null;
+  uptodate: boolean | null;
+}
+
+export interface ParsedGlpiMonitor {
+  name: string | null;
+  manufacturer: string | null;
+  serial: string | null;
+  description: string | null;
+  width: number | null;
+  height: number | null;
+}
+
+export interface ParsedGlpiInventoryProfile {
+  hardware: ParsedGlpiHardwareProfile;
+  bios: ParsedGlpiBios | null;
+  cpus: ParsedGlpiCpu[];
+  memories: ParsedGlpiMemory[];
+  storages: ParsedGlpiStorage[];
+  networks: ParsedGlpiNetwork[];
+  users: ParsedGlpiUser[];
+  antivirus: ParsedGlpiAntivirus[];
+  monitors: ParsedGlpiMonitor[];
+}
+
 export interface ParsedGlpiInventory {
   device_id: string;
   hostname: string | null;
@@ -25,6 +126,7 @@ export interface ParsedGlpiInventory {
   agent_tag: string | null;
   agent_version: string | null;
   software: ParsedGlpiSoftware[];
+  profile: ParsedGlpiInventoryProfile;
 }
 
 function asRecord(v: unknown): Record<string, unknown> | null {
@@ -81,6 +183,130 @@ function mapOsFamily(name: string | null, kernel: string | null): ParsedGlpiInve
     return "linux";
   }
   return "other";
+}
+
+function int(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+  if (v != null) {
+    const n = Number(v);
+    if (Number.isFinite(n)) return Math.trunc(n);
+  }
+  return null;
+}
+
+function bool(v: unknown): boolean | null {
+  if (typeof v === "boolean") return v;
+  if (v === "1" || v === 1 || v === "true") return true;
+  if (v === "0" || v === 0 || v === "false") return false;
+  return null;
+}
+
+function parseArray<T>(raw: unknown, map: (row: Record<string, unknown>) => T | null): T[] {
+  if (!Array.isArray(raw)) return [];
+  const out: T[] = [];
+  for (const item of raw) {
+    const row = asRecord(item);
+    if (!row) continue;
+    const parsed = map(row);
+    if (parsed) out.push(parsed);
+  }
+  return out;
+}
+
+function parseBios(raw: Record<string, unknown> | null): ParsedGlpiBios | null {
+  if (!raw) return null;
+  return {
+    manufacturer: str(raw.bmanufacturer),
+    system_manufacturer: str(raw.smanufacturer),
+    system_model: str(raw.smodel),
+    system_serial: str(raw.ssn ?? raw.biosserial ?? raw.enclosureserial),
+    motherboard_manufacturer: str(raw.mmanufacturer),
+    motherboard_model: str(raw.mmodel),
+    motherboard_serial: str(raw.msn),
+    version: str(raw.bversion),
+    date: str(raw.bdate),
+    asset_tag: str(raw.assettag),
+  };
+}
+
+function parseHardwareProfile(hw: Record<string, unknown> | null, bios: ParsedGlpiBios | null): ParsedGlpiHardwareProfile {
+  return {
+    name: str(hw?.name),
+    uuid: str(hw?.uuid),
+    chassis_type: str(hw?.chassis_type ?? hw?.type),
+    memory_mb: int(hw?.memory),
+    swap_mb: int(hw?.swap),
+    default_gateway: str(hw?.defaultgateway),
+    dns: str(hw?.dns),
+    last_logged_user: str(hw?.lastloggeduser),
+    workgroup: str(hw?.workgroup),
+    vm_system: str(hw?.vmsystem),
+    manufacturer: str(bios?.system_manufacturer ?? bios?.motherboard_manufacturer),
+    model: str(bios?.system_model ?? bios?.motherboard_model ?? hw?.description),
+    serial: str(bios?.system_serial ?? bios?.motherboard_serial ?? hw?.uuid),
+  };
+}
+
+function parseInventoryProfile(content: Record<string, unknown>): ParsedGlpiInventoryProfile {
+  const hw = asRecord(content.hardware);
+  const bios = parseBios(asRecord(content.bios));
+  return {
+    hardware: parseHardwareProfile(hw, bios),
+    bios,
+    cpus: parseArray(content.cpus, (row) => ({
+      name: str(row.name ?? row.type),
+      manufacturer: str(row.manufacturer),
+      cores: int(row.cores ?? row.nbcores),
+      threads: int(row.threads ?? row.nbthreads),
+      speed_mhz: int(row.speed ?? row.frequency),
+    })),
+    memories: parseArray(content.memories, (row) => ({
+      capacity_mb: int(row.capacity),
+      caption: str(row.caption),
+      manufacturer: str(row.manufacturer),
+      model: str(row.model),
+      speed: str(row.speed),
+      type: str(row.type),
+    })),
+    storages: parseArray(content.storages, (row) => ({
+      name: str(row.name),
+      model: str(row.model),
+      manufacturer: str(row.manufacturer),
+      size_mb: int(row.disksize),
+      type: str(row.type),
+      interface: str(row.interface),
+      serial: str(row.serial),
+      firmware: str(row.firmware),
+    })),
+    networks: parseArray(content.networks, (row) => ({
+      name: str(row.description ?? row.name ?? row.ipaddress),
+      ip: str(row.ipaddress ?? row.ip ?? row.ipAddress),
+      mac: normalizeMac(str(row.mac ?? row.macaddr)),
+      gateway: str(row.gateway),
+      dhcp: bool(row.dhcp),
+      description: str(row.description),
+    })),
+    users: parseArray(content.users, (row) => ({
+      login: str(row.login ?? row.userid),
+      domain: str(row.domain),
+      status: str(row.status),
+    })),
+    antivirus: parseArray(content.antivirus, (row) => ({
+      name: str(row.name),
+      company: str(row.company),
+      enabled: bool(row.enabled),
+      version: str(row.version),
+      uptodate: bool(row.uptodate),
+    })),
+    monitors: parseArray(content.monitors, (row) => ({
+      name: str(row.name ?? row.caption),
+      manufacturer: str(row.manufacturer),
+      serial: str(row.serial),
+      description: str(row.description),
+      width: int(row.width),
+      height: int(row.height),
+    })),
+  };
 }
 
 function parseSoftwareItem(raw: Record<string, unknown>): ParsedGlpiSoftware | null {
@@ -150,6 +376,8 @@ export function parseGlpiInventory(body: unknown): ParsedGlpiInventory {
   const os_version = str(os?.version ?? os?.kernel_version);
   const os_family = mapOsFamily(os_name, str(os?.kernel_name));
 
+  const profile = parseInventoryProfile(content);
+
   const softwaresRaw = content.softwares ?? content.software ?? root.softwares;
   const software: ParsedGlpiSoftware[] = [];
   if (Array.isArray(softwaresRaw)) {
@@ -172,5 +400,6 @@ export function parseGlpiInventory(body: unknown): ParsedGlpiInventory {
     agent_tag: str(root.tag ?? content.tag),
     agent_version: str(versionBlock?.agent ?? versionBlock?.content ?? root.agentversion),
     software,
+    profile,
   };
 }

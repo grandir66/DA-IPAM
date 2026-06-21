@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS inv_agent_report (
   apps_count INTEGER NOT NULL DEFAULT 0,
   payload_hash TEXT,
   agent_version TEXT,
+  inventory_json TEXT,
   error_message TEXT
 );
 
@@ -62,7 +63,24 @@ CREATE INDEX IF NOT EXISTS idx_inv_agent_software_name ON inv_agent_software(nam
 export function applyInventoryAgentMigrations(db: Database): { tablesCreated: string[] } {
   db.exec(INVENTORY_AGENT_SCHEMA_SQL);
   db.exec(INVENTORY_AGENT_INDEXES_SQL);
+  ensureInventoryAgentColumns(db);
   return { tablesCreated: [...INVENTORY_AGENT_TABLES] };
+}
+
+function ensureInventoryAgentColumns(db: Database): void {
+  const reportCols = db.prepare("PRAGMA table_info(inv_agent_report)").all() as Array<{ name: string }>;
+  if (reportCols.length > 0 && !reportCols.some((c) => c.name === "inventory_json")) {
+    db.exec("ALTER TABLE inv_agent_report ADD COLUMN inventory_json TEXT");
+  }
+  const endpointCols = db.prepare("PRAGMA table_info(inv_agent_endpoint)").all() as Array<{ name: string }>;
+  if (endpointCols.length > 0 && !endpointCols.some((c) => c.name === "inventory_json")) {
+    db.exec("ALTER TABLE inv_agent_endpoint ADD COLUMN inventory_json TEXT");
+  }
+}
+
+/** Migrazioni incrementali (idempotente) — chiamare anche su tenant già installati. */
+export function migrateInventoryAgentSchema(db: Database): void {
+  ensureInventoryAgentColumns(db);
 }
 
 export function dropInventoryAgentSchema(db: Database): void {

@@ -4,6 +4,8 @@
 import { createHash } from "node:crypto";
 import { getTenantDb, getCurrentTenantCode, getHostByIp, getHostByMac } from "@/lib/db-tenant";
 import type { ParsedGlpiInventory, ParsedGlpiSoftware } from "@/lib/inventory-agent/parse-glpi-inventory";
+import { enrichHostFromInventoryAgent } from "@/lib/inventory-agent/enrich-host";
+import { migrateInventoryAgentSchema } from "@/lib/inventory-agent/schema";
 
 function db() {
   const code = getCurrentTenantCode();
@@ -25,6 +27,7 @@ export interface InvAgentEndpointRow {
   last_seen_at: string;
   apps_count?: number | null;
   match_status?: string | null;
+  inventory_json?: string | null;
 }
 
 export interface InvAgentSoftwareRow {
@@ -70,8 +73,10 @@ export function ingestInventoryReport(parsed: ParsedGlpiInventory): {
   matchStatus: "matched" | "unmatched";
 } {
   const d = db();
+  migrateInventoryAgentSchema(d);
   const hostId = matchHostId(parsed);
   const matchStatus = hostId != null ? "matched" : "unmatched";
+  const inventoryJson = JSON.stringify(parsed.profile);
   const payload_hash = createHash("sha256")
     .update(JSON.stringify({ device_id: parsed.device_id, n: parsed.software.length }))
     .digest("hex")
@@ -81,8 +86,8 @@ export function ingestInventoryReport(parsed: ParsedGlpiInventory): {
     d.prepare(
       `INSERT INTO inv_agent_endpoint (
          device_id, host_id, hostname, primary_ip, primary_mac,
-         os_family, os_name, os_version, agent_tag, last_seen_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+         os_family, os_name, os_version, agent_tag, inventory_json, last_seen_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
        ON CONFLICT(device_id) DO UPDATE SET
          host_id = COALESCE(excluded.host_id, inv_agent_endpoint.host_id),
          hostname = excluded.hostname,
@@ -92,6 +97,7 @@ export function ingestInventoryReport(parsed: ParsedGlpiInventory): {
          os_name = excluded.os_name,
          os_version = excluded.os_version,
          agent_tag = excluded.agent_tag,
+         inventory_json = excluded.inventory_json,
          last_seen_at = datetime('now')`,
     ).run(
       parsed.device_id,
@@ -103,13 +109,14 @@ export function ingestInventoryReport(parsed: ParsedGlpiInventory): {
       parsed.os_name,
       parsed.os_version,
       parsed.agent_tag,
+      inventoryJson,
     );
 
     const rep = d
       .prepare(
         `INSERT INTO inv_agent_report (
-           device_id, host_id, match_status, apps_count, payload_hash, agent_version
-         ) VALUES (?, ?, ?, ?, ?, ?)`,
+           device_id, host_id, match_status, apps_count, payload_hash, agent_version, inventory_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         parsed.device_id,
@@ -118,6 +125,7 @@ export function ingestInventoryReport(parsed: ParsedGlpiInventory): {
         parsed.software.length,
         payload_hash,
         parsed.agent_version,
+        inventoryJson,
       );
     const reportId = Number(rep.lastInsertRowid);
 
@@ -156,7 +164,11 @@ export function ingestInventoryReport(parsed: ParsedGlpiInventory): {
     } as const;
   });
 
-  return tx();
+  const result = tx();
+  if (result.hostId != null) {
+    enrichHostFromInventoryAgent(result.hostId, parsed);
+  }
+  return result;
 }
 
 export function getInvAgentByHostId(hostId: number): InvAgentEndpointRow | undefined {
@@ -168,15 +180,29 @@ export function getInvAgentByHostId(hostId: number): InvAgentEndpointRow | undef
 export function getCurrentInvAgentSoftware(hostId: number): {
   endpoint: InvAgentEndpointRow | null;
   software: InvAgentSoftwareRow[];
+  profile: ParsedGlpiInventory["profile"] | null;
 } {
   const endpoint = getInvAgentByHostId(hostId);
   if (!endpoint?.last_report_id) {
-    return { endpoint: endpoint ?? null, software: [] };
+    return { endpoint: endpoint ?? null, software: [], profile: parseProfileJson(endpoint?.inventory_json) };
   }
   const software = db()
     .prepare("SELECT * FROM inv_agent_software WHERE report_id = ? ORDER BY name COLLATE NOCASE")
     .all(endpoint.last_report_id) as InvAgentSoftwareRow[];
-  return { endpoint, software };
+  return {
+    endpoint,
+    software,
+    profile: parseProfileJson(endpoint.inventory_json),
+  };
+}
+
+function parseProfileJson(raw: string | null | undefined): ParsedGlpiInventory["profile"] | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ParsedGlpiInventory["profile"];
+  } catch {
+    return null;
+  }
 }
 
 export function listInvAgentEndpoints(limit = 100): InvAgentEndpointRow[] {

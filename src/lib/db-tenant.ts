@@ -1515,7 +1515,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     }
     if (input.vendor !== undefined) { fields.push("vendor = ?"); values.push(input.vendor); }
     if (input.hostname !== undefined) {
-      const HOSTNAME_PRIORITY: Record<string, number> = { manual: 6, dhcp: 5, snmp: 4, nmap: 3, dns: 2, arp: 1 };
+      const HOSTNAME_PRIORITY: Record<string, number> = { manual: 6, dhcp: 5, glpi_agent: 5, snmp: 4, nmap: 3, dns: 2, arp: 1 };
       const existingSource = (db().prepare("SELECT hostname_source FROM hosts WHERE id = ?").get(existing.id) as { hostname_source?: string })?.hostname_source;
       const newPriority = HOSTNAME_PRIORITY[input.hostname_source ?? ""] ?? 0;
       const oldPriority = HOSTNAME_PRIORITY[existingSource ?? ""] ?? 0;

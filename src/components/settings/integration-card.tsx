@@ -23,6 +23,7 @@ interface Props {
 interface ApiState {
   config: ComponentConfig;
   containerStatus: ContainerStatus | null;
+  browserUrl?: string;
 }
 
 export function IntegrationCard({ component, title, description, dockerAvailable, showSyncButton }: Props) {
@@ -50,6 +51,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
   const logsRef = useRef<HTMLDivElement>(null);
   const [activeJob, setActiveJob] = useState<InstallJob | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [browserUrl, setBrowserUrl] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [lastSyncResult, setLastSyncResult] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -60,7 +62,11 @@ export function IntegrationCard({ component, title, description, dockerAvailable
       if (!res.ok) return;
       const data = (await res.json()) as ApiState;
       setState(data);
-      setLocalConfig({ ...data.config });
+      setLocalConfig({
+        ...data.config,
+        uiUrl: data.config.uiUrl || data.config.browserUrl || data.browserUrl || "",
+      });
+      setBrowserUrl(data.config.browserUrl ?? data.browserUrl ?? "");
     } catch {
       // ignore
     } finally {
@@ -297,19 +303,37 @@ export function IntegrationCard({ component, title, description, dockerAvailable
           </div>
 
           {!isDisabled && (
-            <div className="col-span-2">
-              <Label className="text-xs text-muted-foreground">
-                URL{isManaged ? <span className="ml-1 text-muted-foreground/60">(auto)</span> : ""}
-              </Label>
-              <Input
-                className="mt-1"
-                placeholder="http://localhost:8090"
-                value={localConfig.url}
-                readOnly={isManaged}
-                disabled={isManaged && !!localConfig.url}
-                onChange={(e) => setLocalConfig((c) => ({ ...c, url: e.target.value }))}
-              />
-            </div>
+            <>
+              <div className="col-span-2">
+                <Label className="text-xs text-muted-foreground">
+                  URL API (backend)
+                  {isManaged ? <span className="ml-1 text-muted-foreground/60">(auto)</span> : null}
+                </Label>
+                <Input
+                  className="mt-1 font-mono text-xs"
+                  placeholder="http://127.0.0.1:8000"
+                  value={localConfig.url}
+                  readOnly={isManaged}
+                  disabled={isManaged && !!localConfig.url}
+                  onChange={(e) => setLocalConfig((c) => ({ ...c, url: e.target.value }))}
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Solo per sync server-side. Non aprire dal browser se è loopback o hostname Docker.
+                </p>
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs text-muted-foreground">URL dashboard (browser)</Label>
+                <Input
+                  className="mt-1 font-mono text-xs"
+                  placeholder="https://192.168.x.y:7443"
+                  value={localConfig.uiUrl ?? ""}
+                  onChange={(e) => setLocalConfig((c) => ({ ...c, uiUrl: e.target.value }))}
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Link per Apri / Launchpad. Se vuoto, viene derivato da env o proxy IPAM.
+                </p>
+              </div>
+            </>
           )}
         </div>
 
@@ -546,9 +570,9 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             </Button>
           )}
 
-          {!isDisabled && localConfig.url && (
+          {!isDisabled && (browserUrl || localConfig.uiUrl) && (
             <a
-              href={localConfig.url}
+              href={localConfig.uiUrl || browserUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"

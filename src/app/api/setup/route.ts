@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 import { createUser, getUserCount, createTenant, createTenantDatabase, setUserTenantAccess } from "@/lib/db";
 import { SetupSchema } from "@/lib/validators";
-import fs from "fs";
-import path from "path";
-import { generateEncryptionKey } from "@/lib/crypto";
+import { ensureEnvSecrets } from "@/lib/env-secrets";
 
 export async function GET() {
   const count = getUserCount();
@@ -58,28 +56,8 @@ export async function POST(request: Request) {
       createUser(username, passwordHash, "superadmin");
     }
 
-    // Generate encryption key / AUTH_SECRET if not exists, and inject into process.env
-    const envPath = path.join(process.cwd(), ".env.local");
-    let envContent = "";
-    if (fs.existsSync(envPath)) {
-      envContent = fs.readFileSync(envPath, "utf-8");
-    }
-    let envDirty = false;
-    if (!envContent.includes("ENCRYPTION_KEY")) {
-      const key = generateEncryptionKey();
-      envContent += `\nENCRYPTION_KEY=${key}\n`;
-      process.env.ENCRYPTION_KEY = key;
-      envDirty = true;
-    }
-    if (!envContent.includes("AUTH_SECRET")) {
-      const authSecret = generateEncryptionKey();
-      envContent += `AUTH_SECRET=${authSecret}\n`;
-      process.env.AUTH_SECRET = authSecret;
-      envDirty = true;
-    }
-    if (envDirty) {
-      fs.writeFileSync(envPath, envContent.replace(/^\n+/, ""));
-    }
+    // Allinea chiavi segrete (runtime → .env.local) prima di cifrare credenziali in UI
+    ensureEnvSecrets();
 
     return NextResponse.json({ success: true, username });
   } catch (error) {

@@ -37,6 +37,7 @@ export function DnsSection({ isAdmin, active }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [newZone, setNewZone] = useState("");
+  const [newReverseCidr, setNewReverseCidr] = useState("");
   const [newRec, setNewRec] = useState({ name: "", type: "A", content: "", ttl: "3600" });
 
   const loadZones = useCallback(async () => {
@@ -75,6 +76,26 @@ export function DnsSection({ isAdmin, active }: Props) {
     if (selected) loadRecords(selected);
     else setRecords([]);
   }, [selected, loadRecords]);
+
+  function addReverseZone() {
+    if (!newReverseCidr.trim()) return;
+    startTransition(async () => {
+      const r = await fetch("/api/network-services/dns/zones/reverse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cidr: newReverseCidr.trim() }),
+      });
+      const d = await r.json();
+      if (!r.ok || d.ok === false) {
+        toast.error(`Zona reverse fallita: ${d.error || r.statusText}`);
+        return;
+      }
+      toast.success(`Zona reverse ${d.reverse_zone ?? ""} creata`);
+      setNewReverseCidr("");
+      await loadZones();
+      if (d.reverse_zone) setSelected(d.reverse_zone.endsWith(".") ? d.reverse_zone : `${d.reverse_zone}.`);
+    });
+  }
 
   function addZone() {
     if (!newZone.trim()) return;
@@ -174,8 +195,8 @@ export function DnsSection({ isAdmin, active }: Props) {
           )}
         </div>
         <CardDescription>
-          PowerDNS — zone interne cliente e record (A/AAAA/CNAME/TXT/…). Il nome record va
-          espresso come FQDN dentro la zona (es. <code>host1.cliente.lan</code>).
+          PowerDNS — zone forward/reverse e record (A/AAAA/CNAME/TXT/PTR/…). Nome record come FQDN
+          (es. <code>host1.cliente.lan</code> o PTR <code>12.99.168.192.in-addr.arpa</code>).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -208,7 +229,10 @@ export function DnsSection({ isAdmin, active }: Props) {
                       {zones.map((z) => (
                         <SelectItem key={z.id} value={z.name}>
                           {z.name}{" "}
-                          <span className="text-xs text-muted-foreground">({z.kind})</span>
+                          <span className="text-xs text-muted-foreground">
+                            ({z.kind}
+                            {z.name.includes("in-addr.arpa") ? " · reverse" : ""})
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -216,21 +240,36 @@ export function DnsSection({ isAdmin, active }: Props) {
                 )}
               </div>
               {isAdmin && (
-                <div className="flex items-end gap-2">
+                <div className="flex flex-wrap items-end gap-2">
                   <div>
                     <Label htmlFor="newzone" className="text-xs">
-                      Nuova zona
+                      Zona forward
                     </Label>
                     <Input
                       id="newzone"
-                      placeholder="es. cliente.lan"
+                      placeholder="cliente.lan"
                       value={newZone}
                       onChange={(e) => setNewZone(e.target.value)}
                       className="w-44"
                     />
                   </div>
                   <Button onClick={addZone} disabled={pending}>
-                    <Plus className="h-4 w-4 mr-1" /> Crea zona
+                    <Plus className="h-4 w-4 mr-1" /> Crea forward
+                  </Button>
+                  <div>
+                    <Label htmlFor="reverse-cidr" className="text-xs">
+                      Zona reverse (CIDR)
+                    </Label>
+                    <Input
+                      id="reverse-cidr"
+                      placeholder="192.168.99.0/24"
+                      value={newReverseCidr}
+                      onChange={(e) => setNewReverseCidr(e.target.value)}
+                      className="w-44"
+                    />
+                  </div>
+                  <Button variant="secondary" onClick={addReverseZone} disabled={pending}>
+                    <Plus className="h-4 w-4 mr-1" /> Crea reverse
                   </Button>
                 </div>
               )}

@@ -169,6 +169,8 @@ setup_env() {
     local domarc_pass=$(openssl rand -base64 20 | tr -dc 'A-Za-z0-9' | head -c 20)
     {
       echo "# DA-INVENT — generato dall'installer"
+      echo "# ENCRYPTION_KEY: NON duplicare con valore diverso in Docker/env esterno."
+      echo "# Vedi docs/playbooks/APPLIANCE-DEPLOY.md per appliance container."
       echo "ENCRYPTION_KEY=$key"
       echo "AUTH_SECRET=$secret"
       echo "PORT=$PORT"

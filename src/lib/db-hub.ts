@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import { HUB_SCHEMA_SQL, HUB_INDEXES_SQL } from "./db-hub-schema";
+import { backfillAllIntegrationUiUrls } from "./integrations/public-url-server";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -436,6 +437,11 @@ function initializeHubDb(db: Database.Database): void {
     console.error("[db-hub] Migrazione tenants→tenant_agents fallita (non blocca):", e);
   }
   seedHubDefaults(db);
+  try {
+    backfillAllIntegrationUiUrls();
+  } catch (e) {
+    console.warn("[db-hub] backfill integration ui_url:", e);
+  }
 }
 
 export function getHubDb(): Database.Database {

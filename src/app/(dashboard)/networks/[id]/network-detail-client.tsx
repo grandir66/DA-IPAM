@@ -38,6 +38,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { IpGrid } from "@/components/shared/ip-grid";
 import { ScanProgress } from "@/components/shared/scan-progress";
 import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
+import { SubnetEdgeScanPanel } from "@/components/networks/subnet-edge-scan-panel";
 import { ClassificationProposalDialog } from "@/components/networks/classification-proposal-dialog";
 import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Zap, Radar, Layers, Wifi, Tags } from "lucide-react";
 import { toast } from "sonner";
@@ -1020,6 +1021,17 @@ export function NetworkDetailClient({
                   </Button>
                 </div>
               </div>
+            </div>
+
+            {/* ─── VA SCAN — vulnerability assessment ───────────────── */}
+            <div className="rounded-lg border-2 border-purple-500/45 bg-purple-500/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none shadow-sm sm:max-w-[16rem]">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-purple-800 dark:text-purple-300 leading-tight mb-1">
+                VA Scan
+              </p>
+              <p className="text-[10px] text-muted-foreground leading-snug mb-1.5">
+                Vulnerability assessment on-demand o schedulato
+              </p>
+              <SubnetEdgeScanPanel networkId={network.id} disabled={!!scanning || enriching} />
             </div>
 
             {/* ─── DETECT — host selezionati ─────────────────────────── */}

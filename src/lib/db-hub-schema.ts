@@ -64,7 +64,9 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('hub_tailnet_hostname', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_mode', 'disabled');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_url', '');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_api_token', '');
-INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_container_name', 'da-librenms');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_ui_url', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_graylog_ui_url', '');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_loki_ui_url', '');
 
 -- Integration settings (Loki)
 INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_loki_mode', 'disabled');

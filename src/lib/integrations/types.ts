@@ -39,6 +39,10 @@ export interface ComponentConfig {
   password?: string;
   /** password admin salvata dopo l'installazione managed (librenms, graylog) */
   adminPassword?: string;
+  /** URL dashboard browser (nginx LAN / proxy). Distinto dall'URL API interno. */
+  uiUrl?: string;
+  /** Risolto a runtime — usare per link "Apri dashboard", mai `url` se interno. */
+  browserUrl?: string;
   /** nome container Docker (se managed) */
   containerName?: string;
 }

@@ -45,15 +45,15 @@ function getOuiData(): Record<string, string> {
   }
 }
 
-export async function lookupVendor(mac: string): Promise<string | null> {
+/** Lookup OUI sincrono (la logica è già sync; lookupVendor è async solo per firma
+ *  storica). Usato dove serve il vendor in contesto sincrono (es. upsertArpEntries). */
+export function lookupVendorSync(mac: string): string | null {
   if (!mac) return null;
-
   try {
     const prefix = mac.replace(/[^0-9a-fA-F]/g, "").toUpperCase().substring(0, 6);
     const custom = getCustomOui();
     const customResult = custom[prefix];
     if (customResult) return customResult;
-
     const data = getOuiData();
     const result = data[prefix];
     if (!result) return null;
@@ -62,6 +62,10 @@ export async function lookupVendor(mac: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+export async function lookupVendor(mac: string): Promise<string | null> {
+  return lookupVendorSync(mac);
 }
 
 export function invalidateCustomOuiCache(): void {

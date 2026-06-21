@@ -1,44 +1,15 @@
 import { createServer } from "http";
 import { createServer as createSecureServer } from "https";
-import { readFileSync, existsSync, writeFileSync } from "fs";
-import { randomBytes } from "crypto";
+import { readFileSync } from "fs";
 import { join } from "path";
 import next from "next";
+import { ensureEnvSecrets, assertContainerSecretsConfigured } from "./src/lib/env-secrets";
+import { logEncryptionKeyHealthAtBoot } from "./src/lib/encryption-key-health";
 
-// ── Ensure AUTH_SECRET & ENCRYPTION_KEY exist before Next.js boots ──
-// On a fresh install .env.local may not exist yet. We generate the keys
-// eagerly so that NextAuth can sign JWTs from the very first login
-// (without requiring a server restart after /setup).
-(function ensureEnvSecrets() {
-  const envPath = join(process.cwd(), ".env.local");
-  let content = "";
-  if (existsSync(envPath)) {
-    content = readFileSync(envPath, "utf-8");
-  }
-  let dirty = false;
-  if (!content.includes("ENCRYPTION_KEY")) {
-    const key = randomBytes(32).toString("hex");
-    content += `\nENCRYPTION_KEY=${key}\n`;
-    process.env.ENCRYPTION_KEY = key;
-    dirty = true;
-  } else if (!process.env.ENCRYPTION_KEY) {
-    const m = content.match(/^ENCRYPTION_KEY=(.+)$/m);
-    if (m) process.env.ENCRYPTION_KEY = m[1].trim();
-  }
-  if (!content.includes("AUTH_SECRET")) {
-    const secret = randomBytes(32).toString("hex");
-    content += `AUTH_SECRET=${secret}\n`;
-    process.env.AUTH_SECRET = secret;
-    dirty = true;
-  } else if (!process.env.AUTH_SECRET) {
-    const m = content.match(/^AUTH_SECRET=(.+)$/m);
-    if (m) process.env.AUTH_SECRET = m[1].trim();
-  }
-  if (dirty) {
-    writeFileSync(envPath, content.replace(/^\n+/, ""));
-    console.log("> Generated missing secrets in .env.local");
-  }
-})();
+// ── Segreti: container = compose .env host; systemd = .env.local (install.sh) ──
+assertContainerSecretsConfigured();
+ensureEnvSecrets();
+logEncryptionKeyHealthAtBoot();
 
 // ── Global error handlers — prevent silent crashes ──
 process.on("uncaughtException", (err) => {

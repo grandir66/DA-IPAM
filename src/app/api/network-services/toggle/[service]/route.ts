@@ -6,6 +6,9 @@ import { getCurrentTenantCode } from "@/lib/db-tenant";
 import {
   makeNetServicesClient,
   BridgeUnavailableError,
+  toggleHadFailures,
+  toggleFailureMessage,
+  type ToggleResponse,
 } from "@/lib/network-services/client";
 
 const ALLOWED = ["resolver", "adblock", "dns", "dhcp"] as const;
@@ -48,7 +51,16 @@ export async function POST(
         service as (typeof ALLOWED)[number],
         parsed.data.enable,
       );
-      return NextResponse.json(result);
+      const toggleResult = result as ToggleResponse;
+      const failed = toggleHadFailures(toggleResult);
+      return NextResponse.json(
+        {
+          ...toggleResult,
+          ok: !failed,
+          ...(failed ? { error: toggleFailureMessage(toggleResult) } : {}),
+        },
+        { status: failed ? 502 : 200 },
+      );
     } catch (e) {
       if (e instanceof BridgeUnavailableError) {
         return NextResponse.json(

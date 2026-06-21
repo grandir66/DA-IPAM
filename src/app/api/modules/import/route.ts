@@ -132,11 +132,15 @@ function applyModuleConfig(
     case "librenms":
     case "graylog": {
       if (!e.url && !apiUrl) throw new Error(`${e.module} richiede url o api_url`);
-      // L'integrazione usa questo url server-side (API + proxy grafici), quindi
-      // preferisci api_url; `url` (UI browser) serve solo al vault/launch.
+      const apiInternal = apiUrl || (e.url ?? "");
+      const browserUrl =
+        apiUrl && e.url && e.url !== apiUrl
+          ? e.url
+          : undefined;
       setIntegrationConfig(e.module, {
         mode: "external",
-        url: apiUrl || (e.url ?? ""),
+        url: apiInternal,
+        uiUrl: browserUrl,
         apiToken: e.api_key ?? "",
         ...(e.module === "graylog"
           ? { username: e.username ?? undefined, password: e.password ?? undefined }

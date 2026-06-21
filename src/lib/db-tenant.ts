@@ -16,6 +16,7 @@ import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
+import { lookupVendorSync } from "./scanner/mac-vendor";
 import { sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
@@ -3067,6 +3068,16 @@ export function upsertArpEntries(
               `UPDATE hosts SET mac = ?, updated_at = datetime('now')
                WHERE network_id = ? AND ip = ? AND (mac IS NULL OR mac = '' OR mac != ?)`
             ).run(normMac, networkId, entry.ip, normMac);
+            // Propaga anche il VENDOR (OUI) by-IP se l'host esiste e non ne ha uno.
+            // Stesso incident MAC 2026-06-21: gli host popolati col MAC ma senza
+            // vendor (updateHostIfExists non li aggiornava) restavano senza marca.
+            const vnd = lookupVendorSync(normMac);
+            if (vnd) {
+              d.prepare(
+                `UPDATE hosts SET vendor = ?, updated_at = datetime('now')
+                 WHERE network_id = ? AND ip = ? AND (vendor IS NULL OR vendor = '')`
+              ).run(vnd, networkId, entry.ip);
+            }
           }
         }
         try {

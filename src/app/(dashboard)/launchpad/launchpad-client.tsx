@@ -178,7 +178,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
   // Nascoste di default; toggle per esporle quando servono per debug/curl.
   const isApiOnlyUrl = (url: string | null): boolean => {
     if (!url) return false;
-    if (/^(https?:\/\/)?(librenms|graylog|loki|host\.docker\.internal|10\.255\.255\.|172\.|appliance-)/.test(url)) {
+    if (/^(https?:\/\/)?(librenms|graylog|loki|host\.docker\.internal|10\.255\.255\.|172\.|appliance-|127\.0\.0\.1|localhost)/.test(url)) {
       return true;
     }
     const m = url.match(/:(\d+)(\/|$)/);

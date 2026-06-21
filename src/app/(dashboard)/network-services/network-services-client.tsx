@@ -1,35 +1,28 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import {
-  Shield,
-  Globe,
-  Server,
-  Wifi,
-  RefreshCw,
-  Plus,
-  Trash2,
-  Power,
-} from "lucide-react";
+import { Shield, Globe, Server, Wifi, RefreshCw, Power } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
   BridgeStatus,
   ResolverStatus,
   AdBlockStats,
   AdBlockRules,
-  ForwardZone,
 } from "@/lib/network-services/client";
-
-type ServiceKey = "resolver" | "adblock" | "dns" | "dhcp";
 
 import { NetworkServicesSettings } from "./network-services-setup";
 import { DnsSection } from "./dns-section";
 import { DhcpSection } from "./dhcp-section";
+import { DnsChainCard } from "./dns-chain-card";
+import { ResolverPanel } from "./resolver-panel";
+import { AdblockPanel } from "./adblock-panel";
+
+type ServiceKey = "resolver" | "adblock" | "dns" | "dhcp";
 
 interface Props {
   apiBase: string;
@@ -46,22 +39,22 @@ const SERVICE_META: Record<
 > = {
   resolver: {
     label: "Resolver",
-    description: "Unbound recursive resolver (forward zones interne)",
+    description: "Unbound recursive (forward zones, upstream, cache)",
     icon: Globe,
   },
   adblock: {
     label: "AdBlock",
-    description: "AdGuard Home — frontend DNS + filtri",
+    description: "AdGuard Home — frontend DNS :53 + filtri",
     icon: Shield,
   },
   dns: {
     label: "DNS Authoritative",
-    description: "PowerDNS — zona interna cliente",
+    description: "PowerDNS — zone forward/reverse + record",
     icon: Server,
   },
   dhcp: {
     label: "DHCP",
-    description: "Kea DHCP4 — lease real-time → DA-IPAM",
+    description: "Kea DHCP4 — lease (configurazione in arrivo)",
     icon: Wifi,
   },
 };
@@ -80,8 +73,6 @@ export function NetworkServicesClient({
   const [adblockRules, setAdblockRules] = useState<AdBlockRules | null>(null);
   const [error, setError] = useState(initialError);
   const [pending, startTransition] = useTransition();
-  const [newZone, setNewZone] = useState({ zone: "", targets: "" });
-  const [newRule, setNewRule] = useState("");
 
   async function refreshAll() {
     try {
@@ -105,7 +96,7 @@ export function NetworkServicesClient({
   }
 
   useEffect(() => {
-    refreshAll();
+    void refreshAll();
     const t = setInterval(() => refreshAll(), 30_000);
     return () => clearInterval(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -118,94 +109,29 @@ export function NetworkServicesClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enable }),
       });
-      const data = await r.json();
-      if (!r.ok) {
-        toast.error(`Toggle ${svc} fallito: ${data.error || r.statusText}`);
+      const data = (await r.json()) as {
+        ok?: boolean;
+        error?: string;
+        results?: Array<{ unit: string; out?: string }>;
+      };
+      if (!r.ok || data.ok === false) {
+        const detail =
+          data.error ||
+          data.results?.map((x) => `${x.unit}: ${x.out ?? "?"}`).join(" · ") ||
+          r.statusText;
+        toast.error(`Toggle ${svc} fallito: ${detail}`);
+        await refreshAll();
         return;
       }
-      toast.success(`${svc} ${enable ? "abilitato" : "disabilitato"}`);
+      toast.success(`${SERVICE_META[svc].label} ${enable ? "abilitato" : "disabilitato"}`);
       await refreshAll();
     });
   }
 
-  async function addForward() {
-    if (!newZone.zone.trim()) return;
-    const targets = newZone.targets.split(/[,\s]+/).filter(Boolean);
-    if (targets.length === 0) {
-      toast.error("Inserisci almeno un target");
-      return;
-    }
-    startTransition(async () => {
-      const r = await fetch("/api/network-services/resolver/forwards", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ zone: newZone.zone, targets }),
-      });
-      const data = await r.json();
-      if (!r.ok || !data.ok) {
-        toast.error(`Aggiunta zona fallita: ${data.error || data.detail || r.statusText}`);
-        return;
-      }
-      toast.success(`Forward zone ${newZone.zone} aggiunta`);
-      setNewZone({ zone: "", targets: "" });
-      await refreshAll();
-    });
-  }
-
-  async function removeForward(zone: string) {
-    if (!confirm(`Rimuovere la forward zone ${zone}?`)) return;
-    startTransition(async () => {
-      const r = await fetch("/api/network-services/resolver/forwards", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ zone }),
-      });
-      const data = await r.json();
-      if (!r.ok) {
-        toast.error(`Rimozione fallita: ${data.error || r.statusText}`);
-        return;
-      }
-      toast.success(`${zone} rimossa`);
-      await refreshAll();
-    });
-  }
-
-  async function addRule() {
-    if (!newRule.trim()) return;
-    startTransition(async () => {
-      const r = await fetch("/api/network-services/adblock/rules", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rule: newRule.trim() }),
-      });
-      const data = await r.json();
-      if (!r.ok) {
-        toast.error(`Aggiunta regola fallita: ${data.error || r.statusText}`);
-        return;
-      }
-      toast.success("Regola aggiunta");
-      setNewRule("");
-      await refreshAll();
-    });
-  }
-
-  async function removeRule(rule: string) {
-    if (!confirm(`Rimuovere la regola "${rule}"?`)) return;
-    startTransition(async () => {
-      const r = await fetch("/api/network-services/adblock/rules", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rule }),
-      });
-      const data = await r.json();
-      if (!r.ok) {
-        toast.error(`Rimozione fallita: ${data.error || r.statusText}`);
-        return;
-      }
-      toast.success("Regola rimossa");
-      await refreshAll();
-    });
-  }
+  const resolverActive = bridge?.services?.resolver?.active === "active";
+  const adblockActive = bridge?.services?.adblock?.active === "active";
+  const dnsActive = bridge?.services?.dns?.active === "active";
+  const dhcpActive = bridge?.services?.dhcp?.active === "active";
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -213,8 +139,10 @@ export function NetworkServicesClient({
         <div>
           <h1 className="text-2xl font-semibold">Network Services</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            DNS, DHCP, AdBlock e Resolver erogati dalla VM <code>{apiBase}</code> (ADR-0007). Tutti i
-            servizi sono opt-in.
+            DNS auth, DHCP, toggle servizi — VM <code>{apiBase}</code> ·{" "}
+            <Link href="/dns" className="text-primary hover:underline">
+              Monitoraggio DNS &amp; Filtri →
+            </Link>
           </p>
         </div>
         <Button variant="outline" onClick={() => refreshAll()} disabled={pending}>
@@ -229,198 +157,87 @@ export function NetworkServicesClient({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {(Object.keys(SERVICE_META) as ServiceKey[]).map((svc) => {
-          const meta = SERVICE_META[svc];
-          const Icon = meta.icon;
-          const state = bridge?.services?.[svc];
-          const active = state?.active === "active";
-          return (
-            <Card key={svc}>
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <Icon className="h-5 w-5 text-muted-foreground" />
-                  <Badge variant={active ? "default" : "secondary"}>
-                    {active ? "active" : "inactive"}
-                  </Badge>
-                </div>
-                <CardTitle className="text-base mt-2">{meta.label}</CardTitle>
-                <CardDescription className="text-xs">{meta.description}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button
-                  size="sm"
-                  variant={active ? "destructive" : "default"}
-                  className="w-full"
-                  onClick={() => toggleService(svc, !active)}
-                  disabled={pending}
-                >
-                  <Power className="h-3.5 w-3.5 mr-2" />
-                  {active ? "Disabilita" : "Abilita"}
-                </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+      <Tabs defaultValue="overview">
+        <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="overview">Panorama</TabsTrigger>
+          <TabsTrigger value="resolver">Resolver</TabsTrigger>
+          <TabsTrigger value="adblock">AdBlock</TabsTrigger>
+          <TabsTrigger value="dns">DNS auth</TabsTrigger>
+          <TabsTrigger value="dhcp">DHCP</TabsTrigger>
+        </TabsList>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Resolver — Forward Zones</CardTitle>
-          <CardDescription>
-            Inoltra query DNS per zone specifiche a server interni (es. <code>cliente.lan</code> →
-            PowerDNS authoritative su 127.0.0.1@5400).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {resolver?.running === false && (
-            <div className="rounded border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-900">
-              Resolver disabilitato. Attivalo dal toggle in alto per gestire forward zones.
-            </div>
-          )}
-          <div className="space-y-2">
-            {(resolver?.forward_zones || []).length === 0 ? (
-              <div className="text-sm text-muted-foreground">Nessuna forward zone configurata.</div>
-            ) : (
-              <div className="space-y-1">
-                {(resolver?.forward_zones || []).map((z: ForwardZone) => (
-                  <div
-                    key={z.zone}
-                    className="flex items-center justify-between rounded border p-2 text-sm"
-                  >
-                    <div>
-                      <span className="font-mono font-medium">{z.zone}</span>
-                      <span className="ml-3 text-xs text-muted-foreground">
-                        → {z.targets.join(", ")}
-                      </span>
+        <TabsContent value="overview" className="space-y-4 mt-4">
+          <DnsChainCard apiBase={apiBase} />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {(Object.keys(SERVICE_META) as ServiceKey[]).map((svc) => {
+              const meta = SERVICE_META[svc];
+              const Icon = meta.icon;
+              const state = bridge?.services?.[svc];
+              const active = state?.active === "active";
+              return (
+                <Card key={svc}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <Icon className="h-5 w-5 text-muted-foreground" />
+                      <Badge variant={active ? "default" : "secondary"}>
+                        {active ? "active" : "inactive"}
+                      </Badge>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeForward(z.zone)}
-                      disabled={pending}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
+                    <CardTitle className="text-base mt-2">{meta.label}</CardTitle>
+                    <CardDescription className="text-xs">{meta.description}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {isAdmin ? (
+                      <Button
+                        size="sm"
+                        variant={active ? "destructive" : "default"}
+                        className="w-full"
+                        onClick={() => toggleService(svc, !active)}
+                        disabled={pending}
+                      >
+                        <Power className="h-3.5 w-3.5 mr-2" />
+                        {active ? "Disabilita" : "Abilita"}
+                      </Button>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Solo admin</p>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
-          <div className="flex gap-2 items-end">
-            <div className="flex-1">
-              <Label htmlFor="zone" className="text-xs">
-                Zona
-              </Label>
-              <Input
-                id="zone"
-                placeholder="es. cliente.lan"
-                value={newZone.zone}
-                onChange={(e) => setNewZone({ ...newZone, zone: e.target.value })}
-              />
-            </div>
-            <div className="flex-1">
-              <Label htmlFor="targets" className="text-xs">
-                Target (separati da spazio o virgola)
-              </Label>
-              <Input
-                id="targets"
-                placeholder="127.0.0.1@5400"
-                value={newZone.targets}
-                onChange={(e) => setNewZone({ ...newZone, targets: e.target.value })}
-              />
-            </div>
-            <Button onClick={addForward} disabled={pending}>
-              <Plus className="h-4 w-4 mr-2" />
-              Aggiungi
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">AdBlock — Custom Filter Rules</CardTitle>
-          <CardDescription>
-            Regole aggiuntive AdGuard (sintassi <code>||domain.com^</code> per blocco,{" "}
-            <code>@@||domain.com^</code> per whitelist).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {adblock?.running === false && (
-            <div className="rounded border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-900">
-              AdBlock disabilitato. Attivalo dal toggle in alto per gestire le filter rules.
-            </div>
-          )}
-          {adblock?.running && (
-            <div className="grid grid-cols-3 gap-3 text-sm">
-              <div className="rounded border p-2">
-                <div className="text-xs text-muted-foreground">Query totali</div>
-                <div className="font-mono">{adblock.num_dns_queries ?? "—"}</div>
-              </div>
-              <div className="rounded border p-2">
-                <div className="text-xs text-muted-foreground">Bloccate</div>
-                <div className="font-mono">{adblock.num_blocked_filtering ?? "—"}</div>
-              </div>
-              <div className="rounded border p-2">
-                <div className="text-xs text-muted-foreground">Avg latency</div>
-                <div className="font-mono">
-                  {typeof adblock.avg_processing_time === "number"
-                    ? `${(adblock.avg_processing_time * 1000).toFixed(1)} ms`
-                    : "—"}
-                </div>
-              </div>
-            </div>
-          )}
-          <div className="space-y-2">
-            {(adblockRules?.rules || []).length === 0 ? (
-              <div className="text-sm text-muted-foreground">Nessuna custom rule configurata.</div>
-            ) : (
-              <div className="space-y-1">
-                {(adblockRules?.rules || []).map((rule, idx) => (
-                  <div
-                    key={`${rule}-${idx}`}
-                    className="flex items-center justify-between rounded border p-2 text-sm"
-                  >
-                    <code className="font-mono text-xs">{rule}</code>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeRule(rule)}
-                      disabled={pending}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="flex gap-2 items-end">
-            <div className="flex-1">
-              <Label htmlFor="rule" className="text-xs">
-                Nuova regola
-              </Label>
-              <Input
-                id="rule"
-                placeholder="||example.com^"
-                value={newRule}
-                onChange={(e) => setNewRule(e.target.value)}
-              />
-            </div>
-            <Button onClick={addRule} disabled={pending}>
-              <Plus className="h-4 w-4 mr-2" />
-              Aggiungi
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          {isAdmin && <NetworkServicesSettings apiUrl={apiBase} />}
+        </TabsContent>
 
-      <DnsSection isAdmin={isAdmin} active={bridge?.services?.dns?.active === "active"} />
+        <TabsContent value="resolver" className="mt-4">
+          <ResolverPanel
+            isAdmin={isAdmin}
+            active={resolverActive}
+            resolver={resolver}
+            onRefresh={refreshAll}
+          />
+        </TabsContent>
 
-      <DhcpSection active={bridge?.services?.dhcp?.active === "active"} />
+        <TabsContent value="adblock" className="mt-4">
+          <AdblockPanel
+            isAdmin={isAdmin}
+            active={adblockActive}
+            adblock={adblock}
+            adblockRules={adblockRules}
+            onRefresh={refreshAll}
+          />
+        </TabsContent>
 
-      {isAdmin && <NetworkServicesSettings apiUrl={apiBase} />}
+        <TabsContent value="dns" className="mt-4">
+          <DnsSection isAdmin={isAdmin} active={dnsActive} />
+        </TabsContent>
+
+        <TabsContent value="dhcp" className="mt-4">
+          <DhcpSection active={dhcpActive} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

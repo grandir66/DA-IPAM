@@ -2,47 +2,41 @@ import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
+import { isInternalIntegrationUrl } from "@/lib/integrations/public-url";
+import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
 import { listCredentials } from "@/lib/credentials-vault";
+import type { IntegrationComponent } from "@/lib/integrations/types";
 
 /**
- * Risolve un URL LAN-accessible per un kind di integrazione cercando nei
- * `system_credentials` (popolato dal bootstrap launchpad durante install
- * appliance Domarc).
- *
- * Le integrazioni hub-level sono configurate con hostname Docker internal
- * (es. `http://librenms:8000`) o IP internal `/28` (es. `http://10.255.255.5`)
- * che NON sono raggiungibili dal browser cliente. Per "Apri in nuova scheda"
- * e shortcut esterni serve l'URL pubblico LAN sul reverse proxy nginx
- * (es. `https://192.168.99.51:7443/`).
- *
- * Match strategy:
- * - kind corrisponde
- * - url presente e schema http/https
- * - url NON contiene token internal (librenms, graylog, wazuh, host.docker.internal, 10.255.255.x)
- * - label termina con "Dashboard" (per evitare bridge API URL ecc.)
- *
- * Se nessun match → ritorna fallback (URL originale).
+ * Risolve un URL LAN-accessible per un kind di integrazione.
+ * Preferisce `integration_*_ui_url`, launchpad Dashboard, env, proxy same-origin.
  */
-function resolveLanUrl(kind: string, fallback: string): string {
-  try {
-    const creds = listCredentials();
-    const match = creds.find(
-      (c) =>
-        c.kind === kind &&
-        c.url &&
-        /^https?:\/\//.test(c.url) &&
-        !/(^|\/\/)(librenms|graylog|wazuh|host\.docker\.internal|10\.255\.255\.)/i.test(c.url) &&
-        /Dashboard/i.test(c.label),
-    );
-    return match?.url ?? fallback;
-  } catch {
-    return fallback;
-  }
+function resolveLanUrl(kind: IntegrationComponent, fallback: string): string {
+  const resolved = resolveIntegrationBrowserUrl(kind, fallback);
+  if (resolved && !isInternalIntegrationUrl(resolved)) return resolved;
+  // Mai restituire l'URL API interno al browser — proxy same-origin come ultima risorsa.
+  if (kind === "librenms") return "/api/integrations/proxy/librenms";
+  return resolved || "";
 }
 
 function isInternalUrl(url: string | null | undefined): boolean {
-  if (!url) return false;
-  return /(^|\/\/)(librenms|graylog|wazuh|host\.docker\.internal|10\.255\.255\.)/i.test(url);
+  return isInternalIntegrationUrl(url);
+}
+
+/** Wazuh dashboard URL dal vault (kind wazuh, label Dashboard). */
+function resolveWazuhDashboardUrl(fallback: string): string {
+  try {
+    const match = listCredentials().find(
+      (c) =>
+        c.kind === "wazuh" &&
+        c.url &&
+        /dashboard/i.test(c.label) &&
+        !isInternalIntegrationUrl(c.url),
+    );
+    return match?.url?.replace(/\/+$/, "") ?? fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export interface ActiveIntegrationInfo {
@@ -79,10 +73,11 @@ export async function GET() {
   // funziona anche con `frame_options = "DENY"` (default LibreNMS).
   const librenms = getIntegrationConfig("librenms");
   if (librenms.mode !== "disabled" && librenms.url) {
+    const browserBase = resolveLanUrl("librenms", librenms.url);
     result.librenms = {
       enabled: true,
       url: "/api/integrations/proxy/librenms/",
-      directUrl: resolveLanUrl("librenms", librenms.url),
+      directUrl: browserBase,
       label: "LibreNMS",
     };
   } else {
@@ -125,7 +120,7 @@ export async function GET() {
     // Risolvi URL Dashboard LAN-accessible (es. https://192.168.99.51:8443/)
     // dal launchpad. Il default dashUrl punta all'IP interno /28 (10.255.255.3)
     // NON raggiungibile dal browser → shortcut rotti.
-    dashUrl = resolveLanUrl("wazuh", dashUrl).replace(/\/$/, "");
+    dashUrl = resolveWazuhDashboardUrl(dashUrl).replace(/\/$/, "");
     result.wazuh = {
       enabled: true,
       url: dashUrl,

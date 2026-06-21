@@ -19,6 +19,7 @@
  * connessione all'appliance è solo configurazione (tenant `vuln_scanners`).
  */
 import { listCredentials } from "@/lib/credentials-vault";
+import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { getNetServicesState } from "@/lib/network-services/feature";
@@ -233,6 +234,7 @@ export async function resolveModules(tenantCode: string): Promise<ModuleState[]>
   {
     const cfg = getIntegrationConfig("librenms");
     const entry = findLaunchpadEntry(creds, "librenms", "LibreNMS");
+    const browserUrl = resolveIntegrationBrowserUrl("librenms", cfg.url);
     const installed = cfg.mode !== "disabled" || !!entry;
     const configured = cfg.mode !== "disabled" && !!cfg.url;
     out.push({
@@ -240,7 +242,7 @@ export async function resolveModules(tenantCode: string): Promise<ModuleState[]>
       installed,
       configured,
       enabled: configured,
-      uiUrl: entry?.url ?? null,
+      uiUrl: browserUrl || entry?.url || null,
       uiIsInternal: false,
       note: installed ? undefined : "Non configurato. Importa il JSON dell'installer LibreNMS.",
     });

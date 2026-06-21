@@ -71,6 +71,32 @@ export interface ForwardZone {
   targets: string[];
 }
 
+export interface DnsChain {
+  listen: Record<string, string>;
+  adblock: { running: boolean; upstream_dns: string[] };
+  resolver: {
+    running: boolean;
+    root_forwarders: string[];
+    forward_zones: ForwardZone[];
+  };
+  hint?: string;
+}
+
+export interface RootUpstream {
+  zone: string;
+  targets: string[];
+  file?: string;
+}
+
+export interface AdblockUpstream {
+  running: boolean;
+  upstream_dns?: string[];
+  bootstrap_dns?: string[];
+  protection_enabled?: boolean;
+  filtering_enabled?: boolean;
+  error?: string;
+}
+
 export interface ResolverStatus {
   running: boolean;
   forward_zones?: ForwardZone[];
@@ -94,6 +120,43 @@ export interface AdBlockRules {
   rules?: string[];
   filters_count?: number;
   note?: string;
+}
+
+export interface ToggleUnitResult {
+  unit: string;
+  rc_enable_or_disable: number;
+  rc_start_or_stop: number;
+  out?: string;
+  state?: { unit: string; active: string; enabled: string };
+}
+
+export interface ToggleResponse {
+  service: string;
+  enable: boolean;
+  ok?: boolean;
+  results: ToggleUnitResult[];
+  provision?: { ok: boolean; error?: string; note?: string };
+}
+
+/** True se almeno un unit ha fallito enable/start (o disable/stop). */
+export function toggleHadFailures(result: ToggleResponse): boolean {
+  if (result.ok === false) return true;
+  return result.results.some((r) => {
+    if (result.enable) {
+      return r.rc_enable_or_disable !== 0 || r.rc_start_or_stop !== 0;
+    }
+    return r.rc_start_or_stop !== 0;
+  });
+}
+
+export function toggleFailureMessage(result: ToggleResponse): string {
+  const failed = result.results.filter((r) =>
+    result.enable
+      ? r.rc_enable_or_disable !== 0 || r.rc_start_or_stop !== 0
+      : r.rc_start_or_stop !== 0,
+  );
+  if (failed.length === 0) return "Operazione fallita";
+  return failed.map((r) => `${r.unit}: ${r.out || "systemctl error"}`).join(" · ");
 }
 
 // ── DNS authoritative (PowerDNS) ──
@@ -216,7 +279,7 @@ export async function makeNetServicesClient(tenantCode: string) {
     status: () => call<BridgeStatus>("/api/v1/status"),
 
     toggle: (service: "resolver" | "adblock" | "dns" | "dhcp", enable: boolean) =>
-      call<{ service: string; enable: boolean; results: unknown[] }>(
+      call<ToggleResponse>(
         `/api/v1/toggle/${service}?enable=${enable}`,
         { method: "POST" },
       ),
@@ -232,13 +295,29 @@ export async function makeNetServicesClient(tenantCode: string) {
         `/api/v1/resolver/forwards/${encodeURIComponent(zone)}`,
         { method: "DELETE" },
       ),
+    resolverFlushCache: () =>
+      call<{ ok: boolean; error?: string; out?: string }>(
+        "/api/v1/resolver/cache/flush",
+        { method: "POST" },
+      ),
+    resolverGetUpstream: () => call<RootUpstream>("/api/v1/resolver/upstream"),
+    resolverSetUpstream: (targets: string[]) =>
+      call<{ ok: boolean; targets?: string[]; error?: string }>(
+        "/api/v1/resolver/upstream",
+        { method: "PUT", body: JSON.stringify({ targets }) },
+      ),
 
-    // ── DNS authoritative (PowerDNS): CRUD completo ──
+    dnsChain: () => call<DnsChain>("/api/v1/dns/chain"),
     dnsZones: () => call<DnsZonesResp>("/api/v1/zones"),
     addDnsZone: (zone: string) =>
       call<{ ok: boolean; zone: string; created?: boolean; error?: string }>(
         "/api/v1/zones",
         { method: "POST", body: JSON.stringify({ zone }) },
+      ),
+    addReverseZone: (cidr: string) =>
+      call<{ ok: boolean; reverse_zone?: string; cidr?: string; error?: string }>(
+        "/api/v1/zones/reverse",
+        { method: "POST", body: JSON.stringify({ cidr }) },
       ),
     dnsRecords: async (zone: string): Promise<DnsRecordsResp> => {
       const raw = await call<{ running: boolean; zone: string; rrsets?: RawRrset[]; count?: number; note?: string }>(
@@ -278,6 +357,17 @@ export async function makeNetServicesClient(tenantCode: string) {
       call<{ ok: boolean; removed?: boolean }>(
         "/api/v1/adblock/rules",
         { method: "DELETE", body: JSON.stringify({ rule }) },
+      ),
+    adblockFlushCache: () =>
+      call<{ ok: boolean; error?: string }>("/api/v1/adblock/cache/flush", { method: "POST" }),
+    adblockGetUpstream: () => call<AdblockUpstream>("/api/v1/adblock/upstream"),
+    adblockSetUpstream: (upstream_dns: string[], bootstrap_dns?: string[]) =>
+      call<{ ok: boolean; error?: string }>(
+        "/api/v1/adblock/upstream",
+        {
+          method: "PUT",
+          body: JSON.stringify({ upstream_dns, bootstrap_dns: bootstrap_dns ?? undefined }),
+        },
       ),
   };
 }

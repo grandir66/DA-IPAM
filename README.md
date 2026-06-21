@@ -247,8 +247,28 @@ Script **interattivo** (template, storage, rete, privilegi, install opzionale ne
 | [`scripts/update.sh`](scripts/update.sh) | `git pull`, `npm install`, `build`; `--restart` per `systemctl restart da-invent` |
 | [`scripts/pct-update.sh`](scripts/pct-update.sh) | Dal **nodo** Proxmox: `pct exec <VMID>` → `update.sh` nella directory dell’app |
 | [`scripts/pct-install-net-up-service.sh`](scripts/pct-install-net-up-service.sh) | Dal **nodo** Proxmox: installa nel CT l’unità systemd **permanente** per alzare la NIC a ogni boot (`deploy/lxc-net-up/`) |
+| [`scripts/appliance-env-init.sh`](scripts/appliance-env-init.sh) | Init `.env` host per stack Docker appliance (`ENCRYPTION_KEY`, `AUTH_SECRET`) |
+| [`scripts/verify-appliance-health.sh`](scripts/verify-appliance-health.sh) | Smoke test `/api/health` + decrypt credenziali (post-deploy container) |
 
-### Variabili — bootstrap Proxmox (`bootstrap-proxmox.sh`)
+### Deploy Docker appliance (parità hub systemd)
+
+Per distribuire DA-IPAM come **container** con lo stesso comportamento del hub VM
+(`EnvironmentFile=.env.local`, chiave unica, credenziali sempre decifrabili):
+
+- Immagine: [`deploy/docker/Dockerfile`](deploy/docker/Dockerfile)
+- Compose: [`deploy/docker/compose.da-ipam.example.yml`](deploy/docker/compose.da-ipam.example.yml)
+- Playbook: [`docs/playbooks/APPLIANCE-DEPLOY.md`](docs/playbooks/APPLIANCE-DEPLOY.md)
+
+```bash
+sudo bash scripts/appliance-env-init.sh /opt/appliance-stack/.env
+docker build -f deploy/docker/Dockerfile -t appliance/da-ipam:latest .
+# integrare compose, poi:
+bash scripts/verify-appliance-health.sh http://127.0.0.1:3001
+```
+
+Il container **non genera** chiavi random: `ENCRYPTION_KEY` deve essere nel `.env` host.
+I segreti persistono in `/data/.env.local` (volume), non nel layer immagine.
+
 
 | Variabile | Descrizione |
 |-----------|-------------|
@@ -310,7 +330,7 @@ Il login e il setup normalizzano gli **spazi** nello username (trim); la ricerca
 |-----------|-------------|
 | `DA_INVENT_SERVICE_USER` | Solo installer `--systemd`: utente del servizio (default **`root`**, consigliato per nmap UDP nel CT) |
 | `DA_INVENT_SERVICE_GROUP` | Gruppo del servizio (default = stesso nome di `DA_INVENT_SERVICE_USER`) |
-| `ENCRYPTION_KEY` | Cifratura credenziali dispositivi (generata dall’installer) |
+| `ENCRYPTION_KEY` | Cifratura credenziali dispositivi (generata dall’installer). **Una sola chiave per installazione** — in Docker appliance vive in `.env` del compose sul host; vedi [docs/playbooks/APPLIANCE-DEPLOY.md](docs/playbooks/APPLIANCE-DEPLOY.md) |
 | `AUTH_SECRET` | Secret NextAuth (generato) |
 | `PORT` | Porta HTTP (default 3001) |
 | `WINRM_PYTHON` | Path interprete Python con pywinrm (opzionale) |

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { librenmsDevicePath } from "@/lib/integrations/public-url";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -793,8 +794,12 @@ export default function DiscoveryPage() {
       setAddCredentials(data);
       if (Array.isArray(data)) setCredentials(data);
     }).catch(() => {});
-    fetch("/api/integrations/active").then((r) => r.json()).then((data: Record<string, { enabled: boolean; url: string }>) => {
-      if (data?.librenms?.enabled && data.librenms.url) setLibrenmsUrl(data.librenms.url.replace(/\/+$/, ""));
+    fetch("/api/integrations/active").then((r) => r.json()).then((data: Record<string, { enabled: boolean; directUrl?: string; url: string }>) => {
+      const lnms = data?.librenms;
+      if (lnms?.enabled) {
+        const base = (lnms.directUrl || "").replace(/\/+$/, "");
+        if (base) setLibrenmsUrl(base);
+      }
     }).catch(() => {});
   }, []);
 
@@ -1630,7 +1635,7 @@ export default function DiscoveryPage() {
         const isAsset = !!h.asset_id;
         const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
         const lnmsDeviceLink = lnms && librenmsUrl
-          ? `${librenmsUrl}/device/device=${lnms.librenms_device_id}/`
+          ? librenmsDevicePath(librenmsUrl, lnms.librenms_device_id)
           : null;
 
         return (
@@ -2066,7 +2071,7 @@ export default function DiscoveryPage() {
                             ? `Secondary multihomed — esegui sul primary ${mhPrimaryIp}`
                             : "Secondary multihomed — esegui sul primary";
                           const lnmsDeviceLink = lnms && librenmsUrl
-                            ? `${librenmsUrl}/device/device=${lnms.librenms_device_id}/`
+                            ? librenmsDevicePath(librenmsUrl, lnms.librenms_device_id)
                             : null;
                           return (
                             <div onClick={(e) => e.stopPropagation()} className="inline-flex">

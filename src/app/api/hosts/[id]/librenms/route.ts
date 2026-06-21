@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { getHostById } from "@/lib/db-tenant";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { createLibreNMSClient } from "@/lib/integrations/librenms-api";
-import { getHostById } from "@/lib/db";
+import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
 
 export async function GET(
   _req: Request,
@@ -40,7 +41,7 @@ export async function GET(
       librenmsHostname: map.librenms_hostname,
       lastSyncedAt: map.last_synced_at,
       device,
-      librenmsUrl: cfg.url,
+      librenmsUrl: cfg.browserUrl ?? resolveIntegrationBrowserUrl("librenms", cfg.url),
     });
   });
 }

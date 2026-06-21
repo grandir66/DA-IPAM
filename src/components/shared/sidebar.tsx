@@ -34,6 +34,7 @@ import {
   Ban,
   ShieldCheck,
   KeyRound,
+  Globe,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -380,7 +381,22 @@ export function Sidebar() {
           Launchpad
         </Link>
 
-        {/* Network Services — DNS+DHCP+AdBlock+Resolver gateway (ADR-0007) */}
+        {/* DNS & Filtri — AdGuard + Unbound (ADR-0007) */}
+        <Link
+          href="/dns"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            pathname.startsWith("/dns")
+              ? "bg-sidebar-primary text-sidebar-primary-foreground"
+              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <Globe className="h-4 w-4" />
+          DNS &amp; Filtri
+        </Link>
+
+        {/* Network Services — DNS auth, DHCP, toggle servizi (ADR-0007) */}
         <Link
           href="/network-services"
           onClick={() => setMobileOpen(false)}

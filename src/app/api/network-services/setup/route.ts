@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getCurrentTenantCode } from "@/lib/db-tenant";
 import {
@@ -19,7 +19,7 @@ const SetupSchema = z.object({
  */
 export async function GET() {
   return withTenantFromSession(async () => {
-    const auth = await requireAdmin();
+    const auth = await requireAuth();
     if (isAuthError(auth)) return auth;
     const tenantCode = getCurrentTenantCode();
     if (!tenantCode) return NextResponse.json({ error: "Tenant non risolto" }, { status: 400 });

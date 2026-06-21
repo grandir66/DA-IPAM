@@ -532,7 +532,7 @@ export function DeviceFormFields({
             <Checkbox
               id={`${idPrefix}-use-arp`}
               checked={useForArpPoll ?? defaultUseForArpPoll ?? false}
-              onCheckedChange={(v) => onUseForArpPollChange?.(v === true)}
+              onCheckedChange={(v) => onUseForArpPollChange?.(Boolean(v))}
             />
             <Label htmlFor={`${idPrefix}-use-arp`} className="text-sm font-medium cursor-pointer">
               Usa come sorgente ARP/MAC

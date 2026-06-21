@@ -31,6 +31,7 @@ import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import { getClassificationLabel } from "@/lib/device-classifications";
 import { vendorSubtypeFromProductProfile, type ProductProfileId } from "@/lib/device-product-profiles";
+import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { toast } from "sonner";
 import type { NetworkDevice } from "@/types";
 
@@ -50,6 +51,7 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
   const [editScanTarget, setEditScanTarget] = useState<string | null>((device as { scan_target?: string | null }).scan_target ?? null);
   const [editProductProfile, setEditProductProfile] = useState<string | null>((device as { product_profile?: string | null }).product_profile ?? null);
   const [editClassification, setEditClassification] = useState<string>((device as { classification?: string | null }).classification ?? "");
+  const [editUseForArpPoll, setEditUseForArpPoll] = useState<boolean>(() => networkDeviceUsesArpPoll(device));
   const [editSaving, setEditSaving] = useState(false);
   const [credentials, setCredentials] = useState<Array<{ id: number; name: string; credential_type: string }>>([]);
 
@@ -63,6 +65,7 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
     setEditScanTarget((device as { scan_target?: string | null }).scan_target ?? null);
     setEditProductProfile((device as { product_profile?: string | null }).product_profile ?? null);
     setEditClassification((device as { classification?: string | null }).classification ?? "");
+    setEditUseForArpPoll(networkDeviceUsesArpPoll(device));
   }, [device]);
 
   // Carica credenziali quando il modale si apre
@@ -91,6 +94,7 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
     };
     if (editProductProfile) body.product_profile = editProductProfile;
     if (editClassification) body.classification = editClassification;
+    body.use_for_arp_poll = editUseForArpPoll ? 1 : 0;
     formData.forEach((val, key) => {
       if (key === "password" || key === "community_string") {
         if (val && String(val).trim()) body[key] = val;
@@ -204,6 +208,9 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
                 setEditProductProfile(v);
                 setEditVendorSubtype(vendorSubtypeFromProductProfile(v as ProductProfileId));
               }}
+              useForArpPoll={editUseForArpPoll}
+              onUseForArpPollChange={setEditUseForArpPoll}
+              defaultUseForArpPoll={editClassification === "router" || editClassification === "firewall"}
             />
 
             <DeviceCredentialsTable deviceId={device.id} />

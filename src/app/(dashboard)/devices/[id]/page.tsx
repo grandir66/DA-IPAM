@@ -601,6 +601,7 @@ function DeviceDetailPage() {
   const [editScanTarget, setEditScanTarget] = useState<string | null>(null);
   const [editProductProfile, setEditProductProfile] = useState<string | null>(null);
   const [editClassification, setEditClassification] = useState<string>("");
+  const [editUseForArpPoll, setEditUseForArpPoll] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
 
   // MikroTik
@@ -618,6 +619,7 @@ function DeviceDetailPage() {
       setEditSnmpCredentialId(device.snmp_credential_id != null ? String(device.snmp_credential_id) : null);
       setEditScanTarget((device as { scan_target?: string | null }).scan_target ?? null);
       setEditClassification((device as { classification?: string | null }).classification ?? "");
+      setEditUseForArpPoll(networkDeviceUsesArpPoll(device));
       setEditProductProfile(
         device.product_profile ?? inferProductProfileFromLegacy(device.vendor, device.device_type, device.vendor_subtype, device.scan_target)
       );
@@ -878,6 +880,7 @@ function DeviceDetailPage() {
     };
     if (editProductProfile) body.product_profile = editProductProfile;
     if (editClassification) body.classification = editClassification;
+    body.use_for_arp_poll = editUseForArpPoll ? 1 : 0;
     formData.forEach((val, key) => {
       if (key === "password" || key === "community_string") {
         if (val && String(val).trim()) body[key] = val;
@@ -1976,6 +1979,9 @@ function DeviceDetailPage() {
                 setEditProductProfile(v);
                 setEditVendorSubtype(vendorSubtypeFromProductProfile(v as ProductProfileId));
               }}
+              useForArpPoll={editUseForArpPoll}
+              onUseForArpPollChange={setEditUseForArpPoll}
+              defaultUseForArpPoll={editClassification === "router" || editClassification === "firewall"}
             />
             <DeviceCredentialsTable deviceId={device.id} />
             <Button type="submit" className="w-full" disabled={editSaving}>

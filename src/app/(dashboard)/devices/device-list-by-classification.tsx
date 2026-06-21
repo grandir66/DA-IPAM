@@ -1515,6 +1515,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     }}
                     useForArpPoll={editUseForArpPoll}
                     onUseForArpPollChange={setEditUseForArpPoll}
+                    defaultUseForArpPoll={editClassification === "router" || editClassification === "firewall"}
                   />
                 )}
                 {editingDevice && !isHostItem(editingDevice) && typeof editingDevice.id === "number" && (

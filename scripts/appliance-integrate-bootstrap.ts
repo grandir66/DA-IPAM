@@ -10,6 +10,7 @@ import { installNetServices } from "../src/lib/network-services/feature";
 
 const edgeToken = process.env.EDGE_TOKEN?.trim();
 const librenmsToken = process.env.LIBRENMS_TOKEN?.trim();
+const librenmsAdminPassword = process.env.LIBRENMS_ADMIN_PASSWORD?.trim();
 const netUrl = process.env.NET_URL?.trim();
 const netToken = process.env.NET_TOKEN?.trim();
 
@@ -30,6 +31,7 @@ setIntegrationConfig("librenms", {
   apiToken: librenmsToken,
   containerName: "appliance-librenms",
   ...(librenmsUi ? { uiUrl: librenmsUi } : {}),
+  ...(librenmsAdminPassword ? { adminPassword: librenmsAdminPassword } : {}),
 });
 console.log("[bootstrap] librenms → API http://127.0.0.1:8000", librenmsUi ? `UI ${librenmsUi}` : "");
 

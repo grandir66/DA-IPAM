@@ -1,18 +1,17 @@
 /**
- * Reverse proxy verso LibreNMS.
+ * Reverse proxy verso LibreNMS con SSO DA-IPAM.
  *
- * Espone l'UI LibreNMS sotto `/api/integrations/proxy/librenms/*` rimuovendo
- * `X-Frame-Options` e `Content-Security-Policy`, così che l'iframe della
- * pagina "Integrazioni" possa caricarla anche quando LibreNMS la blocca
- * tramite la sua configurazione di default (`frame_options = "DENY"`).
- *
- * Autenticazione: usiamo le credenziali sessione che LibreNMS già accetta
- * (cookie). Per le richieste API che richiedono `X-Auth-Token` il client
- * dovrebbe usarle direttamente; qui non iniettiamo token globali per non
- * disturbare il flusso di login web.
+ * Se `integration_librenms_admin_password` è configurata, effettua login
+ * server-side e inietta i cookie Laravel — l'operatore già autenticato in
+ * DA-IPAM accede all'UI senza seconda password.
  */
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
+import {
+  librenmsAutologinEnabled,
+  librenmsProxyHostHeader,
+  withLibreNMSAutologin,
+} from "@/lib/integrations/librenms-proxy-auth";
 import { proxyRequest } from "@/lib/integrations/reverse-proxy";
 
 const BASE_PATH = "/api/integrations/proxy/librenms";
@@ -29,14 +28,15 @@ async function handle(req: Request): Promise<Response> {
     return new Response("LibreNMS non configurato", { status: 404 });
   }
 
-  return proxyRequest(req, {
+  const proxiedReq = librenmsAutologinEnabled() ? await withLibreNMSAutologin(req) : req;
+  const hostHeader = librenmsProxyHostHeader();
+
+  return proxyRequest(proxiedReq, {
     upstreamOrigin: cfg.url.replace(/\/+$/, ""),
     basePath: BASE_PATH,
-    // LibreNMS è solitamente HTTP locale; lasciamo che la lib gestisca
-    // automaticamente il flag in base allo schema. Se l'utente ha messo
-    // https self-signed nel campo URL, lo accettiamo comunque.
     insecureTls: true,
     timeoutMs: 30_000,
+    extraRequestHeaders: hostHeader ? { Host: hostHeader } : undefined,
   });
 }
 

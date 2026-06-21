@@ -19,6 +19,7 @@ read_secret() {
 # Token API edge: edge.token (Bearer UI/API). NON scanner-edge.secret_key (chiave interna container).
 EDGE_TOKEN="$(read_secret "$SECRETS_DIR/edge.token")"
 LIBRENMS_TOKEN="$(read_secret "$SECRETS_DIR/librenms.token")"
+LIBRENMS_ADMIN_PASSWORD="$(read_secret "$SECRETS_DIR/librenms.admin_password")"
 NET_TOKEN="$(read_secret "$SECRETS_DIR/net-services.token")"
 CANONICAL_KEY="$(read_secret "$SECRETS_DIR/ipam.encryption_key")"
 if [ ! -f "$SECRETS_DIR/export_passphrase" ]; then
@@ -127,6 +128,7 @@ ssh_app "docker exec \
   -e EDGE_TOKEN='${EDGE_TOKEN}' \
   -e APPLIANCE_HOST='${APPLIANCE_HOST}' \
   -e LIBRENMS_TOKEN='${LIBRENMS_TOKEN}' \
+  -e LIBRENMS_ADMIN_PASSWORD='${LIBRENMS_ADMIN_PASSWORD}' \
   -e NET_URL='https://${NET_SERVICES_HOST}:8443' \
   -e NET_TOKEN='${NET_TOKEN}' \
   -w /opt/da-ipam appliance-ipam \

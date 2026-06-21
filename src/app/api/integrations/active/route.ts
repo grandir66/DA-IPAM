@@ -74,11 +74,18 @@ export async function GET() {
   const librenms = getIntegrationConfig("librenms");
   if (librenms.mode !== "disabled" && librenms.url) {
     const browserBase = resolveLanUrl("librenms", librenms.url);
+    const proxyUrl = "/api/integrations/proxy/librenms/";
+    const sso = !!librenms.adminPassword?.trim();
     result.librenms = {
       enabled: true,
-      url: "/api/integrations/proxy/librenms/",
-      directUrl: browserBase,
+      url: proxyUrl,
+      directUrl: sso ? proxyUrl : browserBase,
       label: "LibreNMS",
+      iframeNeedsHandshake: !sso && browserBase.startsWith("https://"),
+      ...( !sso && browserBase.startsWith("https://") && {
+        handshakeReason:
+          "Accetta il certificato self-signed su :7443 oppure configura integration_librenms_admin_password per SSO via DA-IPAM.",
+      }),
     };
   } else {
     result.librenms = { enabled: false, url: "", directUrl: "", label: "LibreNMS" };

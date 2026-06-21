@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getCurrentTenantCode } from "@/lib/db-tenant";
 import {
@@ -7,19 +7,10 @@ import {
   INVENTORY_AGENT_FEATURE_KEY,
 } from "@/lib/inventory-agent/feature";
 import { listInvAgentEndpoints } from "@/lib/inventory-agent/db";
+import { getGlpiClientDownloads } from "@/lib/inventory-agent/client-downloads";
+import { publicHubOrigin, publicIngestUrl } from "@/lib/inventory-agent/public-url";
 
 const NO_CACHE = { "Cache-Control": "no-store" };
-
-function publicIngestUrl(request: Request): string {
-  const env = process.env.DA_IPAM_PUBLIC_URL?.trim();
-  if (env) return `${env.replace(/\/$/, "")}/api/inventory/ingest`;
-  try {
-    const u = new URL(request.url);
-    return `${u.origin}/api/inventory/ingest`;
-  } catch {
-    return "/api/inventory/ingest";
-  }
-}
 
 export async function GET(request: Request) {
   return withTenantFromSession(async () => {
@@ -31,10 +22,18 @@ export async function GET(request: Request) {
     }
     const state = await getInventoryAgentState(tenantCode);
     const endpoints = state.enabled ? listInvAgentEndpoints(50) : [];
+    const hubOrigin = publicHubOrigin(request);
     return NextResponse.json(
       {
         feature: INVENTORY_AGENT_FEATURE_KEY,
         ingestUrl: publicIngestUrl(request),
+        hubOrigin,
+        installScripts: {
+          linux: `${hubOrigin}/api/integrations/inventory-agent/install/linux.sh`,
+          windows: `${hubOrigin}/api/integrations/inventory-agent/install/windows.ps1`,
+          macos: `${hubOrigin}/api/integrations/inventory-agent/install/macos.sh`,
+        },
+        glpiDownloads: getGlpiClientDownloads(),
         ...state,
         endpoints,
       },

@@ -84,6 +84,7 @@ export const authConfig: NextAuthConfig = {
         pathname === "/api/test-snmp" ||
         pathname === "/api/test-arp" ||
         pathname === "/api/inventory/ingest" ||
+        pathname.startsWith("/api/integrations/inventory-agent/install/") ||
         pathname === "/agent-install.sh"
       ) {
         return true;

@@ -83,6 +83,7 @@ export const authConfig: NextAuthConfig = {
         pathname === "/api/version" ||
         pathname === "/api/test-snmp" ||
         pathname === "/api/test-arp" ||
+        pathname === "/api/inventory/ingest" ||
         pathname === "/agent-install.sh"
       ) {
         return true;

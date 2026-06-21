@@ -19,9 +19,10 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { inferNetworkDeviceVendorFromHostHint } from "@/lib/device-vendor-infer";
 import type { NetworkDevice } from "@/types";
 import {
-  getDefaultProductProfileForVendor,
   PRODUCT_PROFILE_IDS,
-  suggestDeviceTypeFromProductProfile,
+  suggestProductProfileForClassification,
+  resolveDeviceTypeForCreate,
+  resolveUseForArpPoll,
   vendorSubtypeFromProductProfile,
   scanTargetHintFromProductProfile,
   type ProductProfileId,
@@ -66,6 +67,10 @@ const BulkDeviceSchema = z.object({
   scan_target: z.enum(["proxmox", "vmware", "windows", "linux"]).optional().nullable(),
   product_profile: productProfileEnum.optional().nullable(),
   inherit_host_credentials: z.boolean().optional(),
+  use_for_arp_poll: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : v === true || v === 1 || v === "1" || v === "true" ? 1 : 0),
+    z.union([z.literal(0), z.literal(1)]).optional()
+  ),
 });
 
 /**
@@ -87,7 +92,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { host_ids, classification, vendor, protocol, credential_id, snmp_credential_id, port, scan_target, product_profile, inherit_host_credentials } =
+    const { host_ids, classification, vendor, protocol, credential_id, snmp_credential_id, port, scan_target, product_profile, inherit_host_credentials, use_for_arp_poll } =
       parsed.data;
 
     const hasCred = credential_id && credential_id > 0;
@@ -132,8 +137,17 @@ export async function POST(request: Request) {
 
       const name = host.custom_name || host.hostname || host.ip;
       const deviceVendor = resolveVendorForHost(host);
-      const profileId = (product_profile ?? getDefaultProductProfileForVendor(deviceVendor)) as ProductProfileId;
-      const deviceType = suggestDeviceTypeFromProductProfile(profileId);
+      const profileId = suggestProductProfileForClassification(deviceVendor, classification, product_profile) as ProductProfileId;
+      const deviceType = resolveDeviceTypeForCreate({
+        product_profile: profileId,
+        classification,
+      });
+      const arpPoll = resolveUseForArpPoll({
+        use_for_arp_poll,
+        device_type: deviceType,
+        classification,
+        vendor: deviceVendor,
+      });
       const device = createNetworkDevice({
         name,
         host: host.ip,
@@ -154,6 +168,7 @@ export async function POST(request: Request) {
         classification,
         scan_target: scan_target ?? scanTargetHintFromProductProfile(profileId) ?? null,
         product_profile: profileId,
+        use_for_arp_poll: arpPoll,
       });
 
       created.push({ id: device.id, name: device.name, host: device.host });

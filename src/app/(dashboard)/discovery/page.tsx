@@ -1022,6 +1022,7 @@ export default function DiscoveryPage() {
       };
       if (addProductProfile) body.product_profile = addProductProfile;
       if (addVendorSubtype) body.vendor_subtype = addVendorSubtype;
+      if (addUseForArpPoll) body.use_for_arp_poll = 1;
       if (addCredentialId && addCredentialId !== "none") body.credential_id = Number(addCredentialId);
       if (addSnmpCredentialId && addSnmpCredentialId !== "none") body.snmp_credential_id = Number(addSnmpCredentialId);
       const res = await fetch("/api/devices/bulk", {

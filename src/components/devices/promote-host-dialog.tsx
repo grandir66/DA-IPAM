@@ -116,14 +116,15 @@ function buildInitialForm(host: HostDetail): DeviceFormState {
     : "ssh";
   const matchingCred = host.host_credentials?.find((hc) => hc.protocol_type === protoTypeForCred && hc.validated === 1);
   const matchingSnmpCred = host.host_credentials?.find((hc) => hc.protocol_type === "snmp" && hc.validated === 1);
+  const classification = (hasInferred && inferredClassification) ? inferredClassification
+    : (host.classification !== "unknown" ? host.classification : "");
 
   return {
     name: snmp?.sysName || host.custom_name || host.hostname || host.ip,
     vendor,
     protocol,
     device_type,
-    classification: (hasInferred && inferredClassification) ? inferredClassification
-      : (host.classification !== "unknown" ? host.classification : ""),
+    classification,
     port,
     model: snmp?.model || host.model || "",
     serial_number: snmp?.serialNumber || host.serial_number || "",
@@ -136,7 +137,7 @@ function buildInitialForm(host: HostDetail): DeviceFormState {
     scanTarget: inferredClassification,
     credentialId: matchingCred ? String(matchingCred.credential_id) : null,
     snmpCredentialId: matchingSnmpCred ? String(matchingSnmpCred.credential_id) : null,
-    useForArpPoll: false,
+    useForArpPoll: classification === "router" || classification === "firewall",
   };
 }
 
@@ -188,6 +189,7 @@ export function PromoteHostDialog({ host, open, onOpenChange, onCreated }: Promo
       sysname: form.sysname || undefined,
       sysdescr: form.sysdescr || undefined,
       community_string: form.community_string || undefined,
+      use_for_arp_poll: form.useForArpPoll ? 1 : undefined,
     };
     if (form.credentialId && form.credentialId !== "none") {
       body.credential_id = Number(form.credentialId);

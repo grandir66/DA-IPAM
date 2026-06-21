@@ -11,6 +11,7 @@ export const PRODUCT_PROFILE_IDS = [
   "ubiquiti_switch_base",
   "ubiquiti_switch_managed",
   "ubiquiti_access_point",
+  "ubiquiti_router",
   "ubiquiti_other",
   "windows_server",
   "windows_client",
@@ -51,6 +52,7 @@ export const PRODUCT_PROFILE_LABELS: Record<ProductProfileId, string> = {
   ubiquiti_switch_base: "Switch base",
   ubiquiti_switch_managed: "Switch gestito",
   ubiquiti_access_point: "Access Point",
+  ubiquiti_router: "Router / Gateway",
   ubiquiti_other: "Altro",
   windows_server: "Server",
   windows_client: "Client",
@@ -85,7 +87,7 @@ export const PRODUCT_PROFILE_LABELS: Record<ProductProfileId, string> = {
 /** Vendor DB → elenco profili ammessi */
 export const PRODUCT_PROFILES_BY_VENDOR: Record<NetworkDevice["vendor"], readonly ProductProfileId[]> = {
   mikrotik: ["mikrotik_router", "mikrotik_switch", "mikrotik_other"],
-  ubiquiti: ["ubiquiti_switch_base", "ubiquiti_switch_managed", "ubiquiti_access_point", "ubiquiti_other"],
+  ubiquiti: ["ubiquiti_router", "ubiquiti_switch_base", "ubiquiti_switch_managed", "ubiquiti_access_point", "ubiquiti_other"],
   windows: ["windows_server", "windows_client"],
   linux: ["linux_server", "linux_client"],
   proxmox: ["proxmox_ve", "proxmox_pbs"],
@@ -126,7 +128,8 @@ export function suggestDeviceTypeFromProductProfile(profile: ProductProfileId): 
   if (
     profile === "mikrotik_router" ||
     profile === "qnap_router" ||
-    profile === "cisco_router"
+    profile === "cisco_router" ||
+    profile === "ubiquiti_router"
   ) {
     return "router";
   }
@@ -138,6 +141,60 @@ export function suggestDeviceTypeFromProductProfile(profile: ProductProfileId): 
     return "hypervisor";
   }
   return "switch";
+}
+
+/** Profilo prodotto coerente con classification + vendor quando l'UI non ne invia uno. */
+export function suggestProductProfileForClassification(
+  vendor: NetworkDevice["vendor"],
+  classification: string | null | undefined,
+  explicit?: string | null
+): ProductProfileId {
+  if (explicit && isValidProductProfileForVendor(vendor, explicit)) {
+    return explicit as ProductProfileId;
+  }
+  if (classification === "router") {
+    const byVendor: Partial<Record<NetworkDevice["vendor"], ProductProfileId>> = {
+      mikrotik: "mikrotik_router",
+      ubiquiti: "ubiquiti_router",
+      cisco: "cisco_router",
+      qnap: "qnap_router",
+    };
+    const mapped = byVendor[vendor];
+    if (mapped) return mapped;
+  }
+  if (classification === "firewall" && vendor === "stormshield") {
+    return "stormshield_firewall";
+  }
+  return getDefaultProductProfileForVendor(vendor);
+}
+
+/** device_type effettivo in create/update: classification ha priorità sul profilo switch di default. */
+export function resolveDeviceTypeForCreate(input: {
+  product_profile: ProductProfileId;
+  device_type?: NetworkDevice["device_type"];
+  classification?: string | null;
+}): NetworkDevice["device_type"] {
+  if (input.classification === "router") return "router";
+  if (input.classification === "firewall") return "firewall";
+  if (input.classification === "hypervisor") return "hypervisor";
+  if (input.classification === "switch") return "switch";
+  if (input.device_type) return input.device_type;
+  return suggestDeviceTypeFromProductProfile(input.product_profile);
+}
+
+/** Flag ARP: rispetta scelta esplicita; altrimenti default per router/firewall/stormshield. */
+export function resolveUseForArpPoll(input: {
+  use_for_arp_poll?: number | boolean | null;
+  device_type: NetworkDevice["device_type"];
+  classification?: string | null;
+  vendor?: NetworkDevice["vendor"];
+}): number {
+  if (input.use_for_arp_poll === 1 || input.use_for_arp_poll === true) return 1;
+  if (input.use_for_arp_poll === 0 || input.use_for_arp_poll === false) return 0;
+  if (input.classification === "router" || input.classification === "firewall") return 1;
+  if (input.device_type === "router" || input.device_type === "firewall") return 1;
+  if (input.vendor === "stormshield") return 1;
+  return 0;
 }
 
 /**
@@ -213,6 +270,12 @@ export const PRODUCT_PROFILE_KNOWLEDGE: Record<ProductProfileId, ProductProfileM
     acquisitionPriority: ["snmp", "ssh"],
     credentialHint: "SNMP; credenziali device se serve CLI/debug.",
     notes: "Dettagli client e RF spesso nel controller; sul singolo AP restano contatori e stato radio via SNMP dove esposto.",
+  },
+  ubiquiti_router: {
+    intent: "Router/gateway UniFi (UDM, UDM-Pro, USG, EdgeRouter): routing, NAT, DHCP relay, ARP.",
+    acquisitionPriority: ["ssh", "snmp", "api"],
+    credentialHint: "SSH (EdgeRouter) o SNMP read-only; API UniFi OS se abilitata.",
+    notes: "Per polling ARP/MAC abilitare «Usa come sorgente ARP» e protocollo SSH su EdgeRouter o SNMP su USG/UDM.",
   },
   ubiquiti_other: {
     intent: "Ecosistema UniFi non switch/AP (gateway UDM, ecc.) o classificazione generica.",
@@ -409,6 +472,10 @@ export const PRODUCT_PROFILE_INVENTORY_HINTS: Record<
   ubiquiti_access_point: {
     summary: "Radio 2.4/5/6 GHz, SSID, client, canale, potenza",
     specificFields: ["wifi", "ssid", "clients", "channel", "tx_power"],
+  },
+  ubiquiti_router: {
+    summary: "Interfacce, route, NAT, firewall, DHCP relay, ARP",
+    specificFields: ["interfaces", "routes", "nat", "firewall", "dhcp", "arp"],
   },
   ubiquiti_other: { summary: "Sistema, servizi, ruolo", specificFields: ["system", "services", "role"] },
   windows_server: {

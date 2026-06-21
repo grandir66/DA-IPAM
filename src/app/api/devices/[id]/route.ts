@@ -3,6 +3,7 @@ import { getNetworkDeviceById, updateNetworkDevice, deleteNetworkDevice, getArpE
 import {
   isValidProductProfileForVendor,
   suggestDeviceTypeFromProductProfile,
+  resolveUseForArpPoll,
   vendorSubtypeFromProductProfile,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
@@ -161,6 +162,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (body.port !== undefined) updates.port = body.port;
     if (body.enabled !== undefined) updates.enabled = body.enabled;
     if (body.scan_target !== undefined) updates.scan_target = body.scan_target;
+    if (body.use_for_arp_poll !== undefined) {
+      updates.use_for_arp_poll = body.use_for_arp_poll === 1 || body.use_for_arp_poll === true ? 1 : 0;
+    }
 
     if (body.product_profile !== undefined) {
       const vendorForProfile = (body.vendor !== undefined ? body.vendor : existing.vendor) as import("@/types").NetworkDevice["vendor"];
@@ -178,6 +182,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         updates.device_type = suggestDeviceTypeFromProductProfile(pid);
         updates.vendor_subtype = vendorSubtypeFromProductProfile(pid);
       }
+    }
+    if (body.classification !== undefined && body.use_for_arp_poll === undefined) {
+      const nextType = (updates.device_type ?? existing.device_type) as import("@/types").NetworkDevice["device_type"];
+      const nextVendor = (body.vendor ?? existing.vendor) as import("@/types").NetworkDevice["vendor"];
+      updates.use_for_arp_poll = resolveUseForArpPoll({
+        device_type: nextType,
+        classification: body.classification as string,
+        vendor: nextVendor,
+      });
     }
 
     const device = updateNetworkDevice(Number(id), updates as Partial<import("@/types").NetworkDevice>);

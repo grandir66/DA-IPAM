@@ -32,6 +32,7 @@ export function buildPersonalizedOneLiner(
   const { ingestUrl, ingestToken, hubOrigin } = params;
   if (platform === "windows") {
     return [
+      `[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }`,
       `$env:INGEST_URL = ${psQuote(ingestUrl)}`,
       `$env:INGEST_TOKEN = ${psQuote(ingestToken)}`,
       `$env:PUSH_INTERVAL_HOURS = '${interval}'`,
@@ -43,7 +44,7 @@ export function buildPersonalizedOneLiner(
       ? `${hubOrigin}/api/integrations/inventory-agent/install/macos.sh`
       : `${hubOrigin}/api/integrations/inventory-agent/install/linux.sh`;
   return [
-    `curl -fsSL ${bashQuote(scriptPath)} \\`,
+    `curl -fsSk ${bashQuote(scriptPath)} \\`,
     `  | sudo INGEST_URL=${bashQuote(ingestUrl)} \\`,
     `       INGEST_TOKEN=${bashQuote(ingestToken)} \\`,
     `       PUSH_INTERVAL_HOURS='${interval}' \\`,
@@ -108,7 +109,7 @@ command -v glpi-inventory >/dev/null 2>&1 || { echo "glpi-inventory non trovato"
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 glpi-inventory --json >"$TMP" 2>/dev/null
-HTTP="$(curl -fsS -o /dev/null -w '%{http_code}' -X POST \\
+HTTP="$(curl -fsSk -o /dev/null -w '%{http_code}' -X POST \\
   -H "Authorization: Bearer \${INGEST_TOKEN}" \\
   -H "Content-Type: application/json" \\
   --data-binary @"$TMP" \\
@@ -134,6 +135,9 @@ echo ">>> OK — log: /var/log/domarc-inventory-agent.log"
 const WINDOWS_PUSH_SCRIPT_BODY = [
   "param([string]$IngestUrl, [string]$IngestToken)",
   '$ErrorActionPreference = "Stop"',
+  "if ($env:DA_IPAM_INSECURE_SSL -ne '0') {",
+  "  [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }",
+  "}",
   "$glpi = @(",
   '  "$env:ProgramFiles\\GLPI-Agent\\glpi-inventory.exe",',
   '  "${env:ProgramFiles(x86)}\\GLPI-Agent\\glpi-inventory.exe"',
@@ -164,6 +168,9 @@ $IntervalHours = if ($env:PUSH_INTERVAL_HOURS) { [int]$env:PUSH_INTERVAL_HOURS }
   return `# GLPI Agent ${dl.version} + push inventario → DA-IPAM (Windows)
 #Requires -RunAsAdministrator
 $ErrorActionPreference = "Stop"
+if ($env:DA_IPAM_INSECURE_SSL -ne '0') {
+  [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+}
 
 ${initBlock}
 $DomarcDir = "C:\\ProgramData\\Domarc\\inventory-agent"
@@ -255,7 +262,7 @@ fi
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 "$GLPI" --json >"$TMP" 2>/dev/null
-HTTP="$(curl -fsS -o /dev/null -w '%{http_code}' -X POST \\
+HTTP="$(curl -fsSk -o /dev/null -w '%{http_code}' -X POST \\
   -H "Authorization: Bearer \${INGEST_TOKEN}" \\
   -H "Content-Type: application/json" \\
   --data-binary @"$TMP" \\

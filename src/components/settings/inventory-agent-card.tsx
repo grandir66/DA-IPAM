@@ -259,9 +259,9 @@ export function InventoryAgentCard({
       macos: `${hub}/api/integrations/inventory-agent/install/macos.sh`,
     };
     return {
-      windows: `$env:INGEST_URL = '${ingestUrl}'\n$env:INGEST_TOKEN = '<TOKEN>'\n$env:PUSH_INTERVAL_HOURS = '${intervalHours}'\nirm ${installScripts.windows} | iex`,
-      linux: `curl -fsSL '${installScripts.linux}' \\\n  | sudo INGEST_URL='${ingestUrl}' \\\n       INGEST_TOKEN='<TOKEN>' \\\n       PUSH_INTERVAL_HOURS='${intervalHours}' \\\n       bash`,
-      macos: `curl -fsSL '${installScripts.macos}' \\\n  | sudo INGEST_URL='${ingestUrl}' \\\n       INGEST_TOKEN='<TOKEN>' \\\n       PUSH_INTERVAL_HOURS='${intervalHours}' \\\n       bash`,
+      windows: `[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }\n$env:INGEST_URL = '${ingestUrl}'\n$env:INGEST_TOKEN = '<TOKEN>'\n$env:PUSH_INTERVAL_HOURS = '${intervalHours}'\nirm ${installScripts.windows} | iex`,
+      linux: `curl -fsSk '${installScripts.linux}' \\\n  | sudo INGEST_URL='${ingestUrl}' \\\n       INGEST_TOKEN='<TOKEN>' \\\n       PUSH_INTERVAL_HOURS='${intervalHours}' \\\n       bash`,
+      macos: `curl -fsSk '${installScripts.macos}' \\\n  | sudo INGEST_URL='${ingestUrl}' \\\n       INGEST_TOKEN='<TOKEN>' \\\n       PUSH_INTERVAL_HOURS='${intervalHours}' \\\n       bash`,
     };
   }, [state, intervalHours]);
 
@@ -374,8 +374,8 @@ export function InventoryAgentCard({
 
               <TabsContent value="install" className="space-y-4 mt-3">
                 <p className="text-xs text-muted-foreground">
-                  Gli script scaricano GLPI Agent, installano solo il task <strong>Inventory</strong>, configurano push verso{" "}
-                  <code>{displayIngestUrl}</code> e schedulano l&apos;invio ogni {intervalHours}h.
+                  Push verso <code>{displayIngestUrl}</code> ogni {intervalHours}h. Certificato self-signed:
+                  script con <code>curl -k</code> (hub) — download GLPI da GitHub resta verificato.
                 </p>
 
                 {templateOneLiners && (

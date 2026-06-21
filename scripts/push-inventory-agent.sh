@@ -27,7 +27,7 @@ glpi-inventory --json >"$TMP" 2>/dev/null || {
   exit 1
 }
 
-HTTP_CODE="$(curl -fsS -o /dev/null -w '%{http_code}' -X POST \
+HTTP_CODE="$(curl -fsSk -o /dev/null -w '%{http_code}' -X POST \
   -H "Authorization: Bearer ${INGEST_TOKEN}" \
   -H "Content-Type: application/json" \
   --data-binary @"$TMP" \

@@ -15,6 +15,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ($env:DA_IPAM_INSECURE_SSL -ne '0') {
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+}
+
 if ([string]::IsNullOrWhiteSpace($IngestUrl)) { throw "INGEST_URL obbligatorio" }
 if ([string]::IsNullOrWhiteSpace($IngestToken)) { throw "INGEST_TOKEN obbligatorio" }
 

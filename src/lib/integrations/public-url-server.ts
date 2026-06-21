@@ -79,6 +79,14 @@ export function resolveIntegrationBrowserUrl(
   kind: IntegrationComponent,
   apiUrl?: string | null,
 ): string {
+  // SSO LibreNMS: sempre proxy same-origin (no secondo login su :7443).
+  if (kind === "librenms") {
+    const adminPw = getSetting("integration_librenms_admin_password")?.trim();
+    if (adminPw && PROXY_BASE.librenms) {
+      return PROXY_BASE.librenms;
+    }
+  }
+
   const explicit = getSetting(`integration_${kind}_ui_url`)?.trim();
   if (explicit && !isInternalIntegrationUrl(explicit)) {
     return explicit.replace(/\/+$/, "");

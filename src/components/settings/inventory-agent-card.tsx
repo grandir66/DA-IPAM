@@ -58,6 +58,7 @@ interface InventoryAgentState {
   activeTokens: number;
   ingestUrl: string;
   hubOrigin: string;
+  publicUrlSource?: string;
   installScripts: { linux: string; windows: string; macos: string };
   glpiDownloads: GlpiDownloads;
   endpoints: Array<{
@@ -70,6 +71,25 @@ interface InventoryAgentState {
 }
 
 type Platform = "windows" | "linux" | "macos";
+
+function isBadIngestUrl(url: string): boolean {
+  return /0\.0\.0\.0|:3001\b|localhost|127\.0\.0\.1/i.test(url);
+}
+
+function effectiveHubBase(state: InventoryAgentState | null): string {
+  if (!state) return "";
+  if (state.hubOrigin && !isBadIngestUrl(state.hubOrigin)) return state.hubOrigin;
+  if (typeof window !== "undefined" && window.location.origin && !isBadIngestUrl(window.location.origin)) {
+    return window.location.origin;
+  }
+  return state.hubOrigin;
+}
+
+function effectiveIngestUrl(state: InventoryAgentState | null): string {
+  const base = effectiveHubBase(state);
+  if (base) return `${base.replace(/\/$/, "")}/api/inventory/ingest`;
+  return state?.ingestUrl ?? "";
+}
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -231,13 +251,22 @@ export function InventoryAgentCard({
 
   const templateOneLiners = useMemo(() => {
     if (!state) return null;
-    const { ingestUrl, installScripts } = state;
+    const ingestUrl = effectiveIngestUrl(state);
+    const hub = effectiveHubBase(state);
+    const installScripts = {
+      linux: `${hub}/api/integrations/inventory-agent/install/linux.sh`,
+      windows: `${hub}/api/integrations/inventory-agent/install/windows.ps1`,
+      macos: `${hub}/api/integrations/inventory-agent/install/macos.sh`,
+    };
     return {
       windows: `$env:INGEST_URL = '${ingestUrl}'\n$env:INGEST_TOKEN = '<TOKEN>'\n$env:PUSH_INTERVAL_HOURS = '${intervalHours}'\nirm ${installScripts.windows} | iex`,
       linux: `curl -fsSL '${installScripts.linux}' \\\n  | sudo INGEST_URL='${ingestUrl}' \\\n       INGEST_TOKEN='<TOKEN>' \\\n       PUSH_INTERVAL_HOURS='${intervalHours}' \\\n       bash`,
       macos: `curl -fsSL '${installScripts.macos}' \\\n  | sudo INGEST_URL='${ingestUrl}' \\\n       INGEST_TOKEN='<TOKEN>' \\\n       PUSH_INTERVAL_HOURS='${intervalHours}' \\\n       bash`,
     };
   }, [state, intervalHours]);
+
+  const displayIngestUrl = state ? effectiveIngestUrl(state) : "";
+  const ingestUrlLooksWrong = Boolean(state?.ingestUrl && isBadIngestUrl(state.ingestUrl));
 
   return (
     <>
@@ -287,8 +316,8 @@ export function InventoryAgentCard({
               <div>
                 <div className="text-xs text-muted-foreground mb-1">URL ingest</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-xs break-all">{state.ingestUrl}</code>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => void copyText(state.ingestUrl, "URL ingest")}>
+                  <code className="text-xs break-all">{displayIngestUrl}</code>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => void copyText(displayIngestUrl, "URL ingest")}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -304,6 +333,15 @@ export function InventoryAgentCard({
                 </div>
               </div>
             </div>
+
+            {ingestUrlLooksWrong && (
+              <p className="text-xs text-amber-700 dark:text-amber-400 rounded-md border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2">
+                L&apos;URL rilevato dal server era interno ({state.ingestUrl}). In UI usiamo{" "}
+                <code>{displayIngestUrl}</code>. Per script/API permanenti imposta{" "}
+                <strong>URL pubblico hub</strong> in Agenti remoti oppure env{" "}
+                <code>APPLIANCE_LAN_IP</code> / <code>DA_IPAM_PUBLIC_URL</code>.
+              </p>
+            )}
 
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1">
@@ -337,7 +375,7 @@ export function InventoryAgentCard({
               <TabsContent value="install" className="space-y-4 mt-3">
                 <p className="text-xs text-muted-foreground">
                   Gli script scaricano GLPI Agent, installano solo il task <strong>Inventory</strong>, configurano push verso{" "}
-                  <code>{state.ingestUrl}</code> e schedulano l&apos;invio ogni {intervalHours}h.
+                  <code>{displayIngestUrl}</code> e schedulano l&apos;invio ogni {intervalHours}h.
                 </p>
 
                 {templateOneLiners && (
@@ -459,7 +497,7 @@ export function InventoryAgentCard({
             <div className="text-xs space-y-1">
               <div>
                 <span className="text-muted-foreground">Ingest URL: </span>
-                <code>{state.ingestUrl}</code>
+                <code>{displayIngestUrl}</code>
               </div>
             </div>
           )}

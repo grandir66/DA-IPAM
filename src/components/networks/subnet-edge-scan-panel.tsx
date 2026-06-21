@@ -213,12 +213,12 @@ export function SubnetEdgeScanPanel({ networkId, disabled }: SubnetEdgeScanPanel
             : null;
 
   const triggerButtonClass =
-    "w-full font-medium bg-purple-700 hover:bg-purple-800 dark:bg-purple-600 dark:hover:bg-purple-700";
+    "w-full h-8 min-h-8 px-2.5 text-xs font-medium bg-purple-700 hover:bg-purple-800 dark:bg-purple-600 dark:hover:bg-purple-700";
 
   if (loading) {
     return (
       <Button size="default" variant="default" className={triggerButtonClass} disabled>
-        <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1 shrink-0" />
         VA Scan…
       </Button>
     );
@@ -249,12 +249,12 @@ export function SubnetEdgeScanPanel({ networkId, disabled }: SubnetEdgeScanPanel
         disabled={disabled}
         title="Avvia o schedula VA Scan su questa subnet"
       >
-        <ShieldAlert className="h-4 w-4 mr-1.5" />
+        <ShieldAlert className="h-3.5 w-3.5 mr-1 shrink-0" />
         VA Scan
         {summaryBadge && (
           <Badge
             variant="outline"
-            className="ml-2 h-5 px-1.5 text-[10px] font-semibold border-white/40 text-white bg-white/10"
+            className="ml-1.5 h-5 px-1.5 text-[10px] font-semibold border-white/40 text-white bg-white/10"
           >
             {summaryBadge}
           </Badge>

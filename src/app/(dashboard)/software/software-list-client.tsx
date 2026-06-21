@@ -31,7 +31,7 @@ import { SortableTableHead, type SortDirection } from "@/components/shared/sorta
 import { Pagination } from "@/components/shared/pagination";
 import { SourcesBadges } from "@/components/shared/vuln-badges";
 
-type SoftwareSource = "Wazuh" | "Probe";
+type SoftwareSource = "Wazuh" | "Probe" | "Agent";
 
 interface SoftwareHostRef {
   host_id: number;
@@ -80,7 +80,7 @@ interface ApiResponse {
 }
 
 const PAGE_SIZE = 50;
-const SOURCE_FILTERS: SoftwareSource[] = ["Wazuh", "Probe"];
+const SOURCE_FILTERS: SoftwareSource[] = ["Wazuh", "Probe", "Agent"];
 type OsFamily = "Windows" | "Linux" | "Apple" | "Unknown";
 const OS_FILTERS: OsFamily[] = ["Windows", "Linux", "Apple", "Unknown"];
 
@@ -362,7 +362,7 @@ export function SoftwareListClient() {
                     <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
                       {hasFilters
                         ? "Nessun software trovato con questi filtri."
-                        : "Nessun software inventariato. Esegui scan probe (Windows/Linux) o configura Wazuh."}
+                        : "Nessun software inventariato. Esegui scan probe (Windows/Linux), configura Wazuh o installa GLPI Agent."}
                     </TableCell>
                   </TableRow>
                 )}

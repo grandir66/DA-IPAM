@@ -23,6 +23,8 @@ export interface InvAgentEndpointRow {
   agent_tag: string | null;
   last_report_id: number | null;
   last_seen_at: string;
+  apps_count?: number | null;
+  match_status?: string | null;
 }
 
 export interface InvAgentSoftwareRow {
@@ -179,6 +181,12 @@ export function getCurrentInvAgentSoftware(hostId: number): {
 
 export function listInvAgentEndpoints(limit = 100): InvAgentEndpointRow[] {
   return db()
-    .prepare("SELECT * FROM inv_agent_endpoint ORDER BY last_seen_at DESC LIMIT ?")
+    .prepare(
+      `SELECT e.*, r.apps_count, r.match_status
+       FROM inv_agent_endpoint e
+       LEFT JOIN inv_agent_report r ON r.id = e.last_report_id
+       ORDER BY e.last_seen_at DESC
+       LIMIT ?`,
+    )
     .all(limit) as InvAgentEndpointRow[];
 }

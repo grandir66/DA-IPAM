@@ -5834,7 +5834,7 @@ export interface AggregatedVulnResult {
   severity_rollup: { Critical: number; High: number; Medium: number; Low: number };
 }
 
-export type SoftwareSource = "Wazuh" | "Probe";
+export type SoftwareSource = "Wazuh" | "Probe" | "Agent";
 
 export interface AggregatedSoftwareHostRef {
   host_id: number;
@@ -6240,6 +6240,56 @@ function softwareKeyOf(name: string): string {
   return name.toLowerCase();
 }
 
+function invAgentSoftwareTableExists(): boolean {
+  const row = db()
+    .prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'inv_agent_software'")
+    .get() as { ok: number } | undefined;
+  return row?.ok === 1;
+}
+
+function fetchInvAgentSoftwareRows(
+  osActive: boolean,
+  osList: OsFamily[],
+): Array<{
+  name: string;
+  version: string | null;
+  publisher: string | null;
+  host_id: number;
+  ip: string;
+  install_date: string | null;
+  scanned_at: string | null;
+  source: SoftwareSource;
+}> {
+  if (!invAgentSoftwareTableExists()) return [];
+  const osPlaceholders = osList.map(() => "?").join(",");
+  const agentOsClause = osActive ? `AND h.os_family IN (${osPlaceholders})` : "";
+  return db()
+    .prepare(
+      `SELECT sw.name, sw.version, sw.publisher,
+              e.host_id, COALESCE(h.ip, e.primary_ip, '') AS ip,
+              sw.install_date,
+              r.received_at AS scanned_at,
+              'Agent' AS source
+         FROM inv_agent_software sw
+         JOIN inv_agent_report r ON r.id = sw.report_id
+         JOIN inv_agent_endpoint e ON e.device_id = r.device_id AND e.last_report_id = r.id
+         JOIN hosts h ON h.id = e.host_id
+        WHERE e.host_id IS NOT NULL
+          AND sw.name IS NOT NULL AND TRIM(sw.name) != ''
+          ${agentOsClause}`,
+    )
+    .all(...(osActive ? osList : [])) as Array<{
+      name: string;
+      version: string | null;
+      publisher: string | null;
+      host_id: number;
+      ip: string;
+      install_date: string | null;
+      scanned_at: string | null;
+      source: SoftwareSource;
+    }>;
+}
+
 export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedSoftwareResult {
   // Filtro OS via SQL nativo (indice idx_hosts_os_family). Quando attivo:
   // - wazuh: aggiunge JOIN hosts h ON h.id = a.host_id AND h.os_family IN (...)
@@ -6306,9 +6356,12 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
       scanned_at: string | null; source: SoftwareSource;
     }>;
 
+  const agentRows = fetchInvAgentSoftwareRows(osActive, osList);
+
   const all: RawSoftwareRow[] = [
     ...wazuhRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
     ...probeRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
+    ...agentRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
   ];
 
   interface AggInternal extends AggregatedSoftware {
@@ -6337,7 +6390,7 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
     }
     if (!entry.sources.includes(r.source)) entry.sources.push(r.source);
     if (r.publisher) {
-      if (r.source === "Probe") entry.publisher = r.publisher;
+      if (r.source === "Probe" || r.source === "Agent") entry.publisher = r.publisher;
       else if (!entry.publisher && r.source === "Wazuh") entry.publisher = r.publisher;
     }
     if (r.scanned_at && (!entry.latest_seen_at || r.scanned_at > entry.latest_seen_at)) {
@@ -6362,7 +6415,9 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
         entry._hostMap.set(r.host_id, h);
       }
       h.sources.add(r.source);
-      if (r.publisher && (!h.publisher || r.source === "Probe")) h.publisher = r.publisher;
+      if (r.publisher && (!h.publisher || r.source === "Probe" || r.source === "Agent")) {
+        h.publisher = r.publisher;
+      }
       if (r.install_date && !h.install_date) h.install_date = r.install_date;
       if (r.scanned_at && (!h.scanned_at || r.scanned_at > h.scanned_at)) h.scanned_at = r.scanned_at;
       if (r.ip && !h.ip) h.ip = r.ip;
@@ -6568,7 +6623,28 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
       install_date: string | null; scanned_at: string | null; version: string | null; source: SoftwareSource;
     }>;
 
-  const merged = [...wazuhRows, ...probeRows];
+  let agentRows: typeof wazuhRows = [];
+  if (invAgentSoftwareTableExists()) {
+    agentRows = db()
+      .prepare(
+        `SELECT e.host_id, COALESCE(h.ip, e.primary_ip, '') AS ip,
+                sw.publisher,
+                sw.install_date,
+                r.received_at AS scanned_at,
+                sw.version AS version,
+                'Agent' AS source
+           FROM inv_agent_software sw
+           JOIN inv_agent_report r ON r.id = sw.report_id
+           JOIN inv_agent_endpoint e ON e.device_id = r.device_id AND e.last_report_id = r.id
+           JOIN hosts h ON h.id = e.host_id
+          WHERE e.host_id IS NOT NULL
+            AND LOWER(sw.name) = ?
+          LIMIT ?`,
+      )
+      .all(nameLower, limit) as typeof wazuhRows;
+  }
+
+  const merged = [...wazuhRows, ...probeRows, ...agentRows];
   const ids = [...new Set(merged.map((r) => r.host_id))];
   const meta = loadHostsMeta(ids);
 
@@ -6595,7 +6671,9 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
       byHostVer.set(k, h);
     }
     if (!h.sources.includes(r.source)) h.sources.push(r.source);
-    if (r.publisher && (!h.publisher || r.source === "Probe")) h.publisher = r.publisher;
+    if (r.publisher && (!h.publisher || r.source === "Probe" || r.source === "Agent")) {
+      h.publisher = r.publisher;
+    }
     if (r.install_date && !h.install_date) h.install_date = r.install_date;
     if (r.scanned_at && (!h.scanned_at || r.scanned_at > h.scanned_at)) h.scanned_at = r.scanned_at;
   }

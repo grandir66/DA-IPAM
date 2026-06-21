@@ -419,6 +419,11 @@ export default function ObjectDetailPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const defaultObjectTab = (() => {
+    const t = searchParams?.get("tab");
+    const allowed = new Set(["generale", "sistema", "network", "vulnerabilita", "software", "asset", "storico"]);
+    return t && allowed.has(t) ? t : "generale";
+  })();
   const hostId = typeof params.id === "string" ? Number(params.id) : NaN;
 
   const [host, setHost] = useState<HostDetail | null>(null);
@@ -879,7 +884,7 @@ export default function ObjectDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="generale" className="space-y-4">
+      <Tabs defaultValue={defaultObjectTab} className="space-y-4">
         <TabsList className="!h-10 p-1 gap-1 bg-muted border border-border flex-wrap">
           <TabsTrigger value="generale" className="px-3 py-1.5 text-sm">
             <Boxes className="h-4 w-4 mr-1.5" />

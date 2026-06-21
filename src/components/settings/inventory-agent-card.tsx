@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -67,6 +68,8 @@ interface InventoryAgentState {
     primary_ip: string | null;
     last_seen_at: string;
     host_id: number | null;
+    apps_count?: number | null;
+    match_status?: string | null;
   }>;
 }
 
@@ -443,26 +446,48 @@ export function InventoryAgentCard({
 
             {(state.endpoints?.length ?? 0) > 0 && (
               <div>
-                <div className="text-xs font-medium text-muted-foreground mb-2">
-                  Endpoint recenti ({state.endpoints.length})
+                <div className="text-xs font-medium text-muted-foreground mb-1">
+                  Endpoint registrati ({state.endpoints.length})
                 </div>
+                <p className="text-[11px] text-muted-foreground mb-2">
+                  Il dettaglio pacchetti si apre dall&apos;oggetto di rete → tab <strong>Software</strong> →
+                  sezione GLPI Agent.
+                </p>
                 <div className="rounded-md border overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead className="bg-muted/50">
                       <tr>
                         <th className="text-left p-2">Hostname</th>
                         <th className="text-left p-2">IP</th>
-                        <th className="text-left p-2">Host IPAM</th>
+                        <th className="text-left p-2">Match</th>
+                        <th className="text-left p-2">Software</th>
                         <th className="text-left p-2">Ultimo report</th>
+                        <th className="text-left p-2"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {state.endpoints.map((ep) => (
                         <tr key={ep.device_id} className="border-t">
-                          <td className="p-2">{ep.hostname ?? ep.device_id.slice(0, 12)}</td>
+                          <td className="p-2">{ep.hostname ?? ep.device_id.slice(0, 16)}</td>
                           <td className="p-2 font-mono">{ep.primary_ip ?? "—"}</td>
-                          <td className="p-2">{ep.host_id != null ? `#${ep.host_id}` : "—"}</td>
+                          <td className="p-2">
+                            {ep.match_status === "matched" ? (
+                              <Badge variant="outline" className="text-[10px] text-emerald-700">matched</Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px]">unmatched</Badge>
+                            )}
+                          </td>
+                          <td className="p-2 font-mono">{ep.apps_count ?? 0}</td>
                           <td className="p-2">{formatDate(ep.last_seen_at)}</td>
+                          <td className="p-2">
+                            {ep.host_id != null ? (
+                              <Button variant="link" size="sm" className="h-7 px-0 text-xs" nativeButton={false} render={<Link href={`/objects/${ep.host_id}?tab=software`} />}>
+                                Oggetto #{ep.host_id}
+                              </Button>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

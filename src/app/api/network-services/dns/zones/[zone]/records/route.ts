@@ -9,19 +9,19 @@ import {
 } from "@/lib/network-services/client";
 
 const ZoneRE = /^[a-zA-Z0-9._-]+$/;
-const NameRE = /^[a-zA-Z0-9._*-]+$/;
-const RECORD_TYPES = ["A", "AAAA", "CNAME", "TXT", "MX", "NS", "PTR", "SRV", "CAA"] as const;
+const NameRE = /^[@a-zA-Z0-9._*-]+$/;
+const TypeRE = /^[A-Z0-9]+$/;
 
 const AddSchema = z.object({
   name: z.string().regex(NameRE, "name invalido").max(253),
-  type: z.enum(RECORD_TYPES),
+  type: z.string().regex(TypeRE, "type invalido").max(16),
   contents: z.array(z.string().min(1).max(512)).min(1).max(16),
   ttl: z.number().int().min(0).max(2147483647).default(3600),
 });
 
 const DeleteSchema = z.object({
   name: z.string().regex(NameRE).max(253),
-  type: z.enum(RECORD_TYPES),
+  type: z.string().regex(TypeRE).max(16),
 });
 
 function tenantOrError(): { tenantCode: string } | NextResponse {

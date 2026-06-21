@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Server, Plus, Trash2, RefreshCw, ChevronRight } from "lucide-react";
+import { Server, Plus, Trash2, RefreshCw, ChevronRight, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -35,7 +35,7 @@ import {
   type PtrProposal,
 } from "@/lib/network-services/dns-ptr";
 
-const RECORD_TYPES = ["A", "AAAA", "CNAME", "TXT", "MX", "NS", "PTR", "SRV", "CAA"];
+const RECORD_TYPES = ["A", "AAAA", "CNAME", "TXT", "MX", "NS", "PTR", "SRV", "CAA", "SOA"];
 
 interface Props {
   isAdmin: boolean;
@@ -61,6 +61,8 @@ export function DnsSection({ isAdmin, active }: Props) {
     contents: string[];
     ttl: number;
   } | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editRec, setEditRec] = useState({ name: "", type: "", content: "", ttl: "3600" });
 
   async function fetchZoneRecords(zone: string): Promise<DnsRecord[]> {
     const z = encodeURIComponent(stripDnsDot(zone));
@@ -312,10 +314,14 @@ export function DnsSection({ isAdmin, active }: Props) {
 
   function removeRecord(name: string, type: string) {
     if (!selected) return;
-    if (!confirm(`Rimuovere il record ${type} ${name}?`)) return;
+    const critical = type === "SOA" || type === "NS";
+    const msg = critical
+      ? `ATTENZIONE: rimuovere ${type} ${name} può rendere la zona non risolvibile. Procedere?`
+      : `Rimuovere il record ${type} ${name}?`;
+    if (!confirm(msg)) return;
     startTransition(async () => {
       const r = await fetch(
-        `/api/network-services/dns/zones/${encodeURIComponent(selected)}/records`,
+        `/api/network-services/dns/zones/${encodeURIComponent(stripDnsDot(selected))}/records`,
         {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
@@ -324,10 +330,56 @@ export function DnsSection({ isAdmin, active }: Props) {
       );
       const d = await r.json();
       if (!r.ok || d.ok === false) {
-        toast.error(`Rimozione fallita: ${d.error || r.statusText}`);
+        const err =
+          typeof d.error === "string"
+            ? d.error
+            : Array.isArray(d.error)
+              ? JSON.stringify(d.error)
+              : d.detail || r.statusText;
+        toast.error(`Rimozione fallita: ${err}`);
         return;
       }
       toast.success("Record rimosso");
+      await loadRecords(selected);
+    });
+  }
+
+  function openEditRecord(rec: DnsRecord) {
+    setEditRec({
+      name: rec.name,
+      type: rec.type,
+      content: rec.contents.join("\n"),
+      ttl: String(rec.ttl ?? 3600),
+    });
+    setEditOpen(true);
+  }
+
+  function saveEditRecord() {
+    if (!selected || !editRec.name.trim() || !editRec.content.trim()) {
+      toast.error("Compila nome e valore");
+      return;
+    }
+    const contents = editRec.content.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+    if (contents.length === 0) return;
+    startTransition(async () => {
+      const zone = stripDnsDot(selected);
+      const r = await fetch(`/api/network-services/dns/zones/${encodeURIComponent(zone)}/records`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editRec.name.trim(),
+          type: editRec.type,
+          contents,
+          ttl: Number(editRec.ttl) || 3600,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok || d.ok === false) {
+        toast.error(`Modifica fallita: ${d.error || d.body || r.statusText}`);
+        return;
+      }
+      toast.success("Record aggiornato");
+      setEditOpen(false);
       await loadRecords(selected);
     });
   }
@@ -467,15 +519,27 @@ export function DnsSection({ isAdmin, active }: Props) {
                             TTL {rec.ttl}
                           </span>
                         </div>
-                        {isAdmin && rec.type !== "SOA" && rec.type !== "NS" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => removeRecord(rec.name, rec.type)}
-                            disabled={pending}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                        {isAdmin && (
+                          <div className="flex shrink-0 gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openEditRecord(rec)}
+                              disabled={pending}
+                              title="Modifica record"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => removeRecord(rec.name, rec.type)}
+                              disabled={pending}
+                              title="Elimina record"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         )}
                       </div>
                     ))}
@@ -596,6 +660,49 @@ export function DnsSection({ isAdmin, active }: Props) {
             </Button>
             <Button onClick={confirmWithPtr} disabled={pending || (!ptrProposal?.reverseZoneExists && !createReverseZoneToo)}>
               A + PTR
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Modifica record {editRec.type}</DialogTitle>
+            <DialogDescription>
+              Aggiorna valore e TTL (upsert PowerDNS).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Nome (FQDN)</Label>
+              <Input
+                value={editRec.name}
+                onChange={(e) => setEditRec({ ...editRec, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Valore</Label>
+              <Input
+                value={editRec.content}
+                onChange={(e) => setEditRec({ ...editRec, content: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">TTL</Label>
+              <Input
+                type="number"
+                value={editRec.ttl}
+                onChange={(e) => setEditRec({ ...editRec, ttl: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>
+              Annulla
+            </Button>
+            <Button onClick={saveEditRecord} disabled={pending}>
+              Salva
             </Button>
           </DialogFooter>
         </DialogContent>

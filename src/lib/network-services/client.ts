@@ -29,13 +29,17 @@ function httpsRequest(
   return new Promise((resolve, reject) => {
     let u: URL;
     try { u = new URL(rawUrl); } catch (e) { reject(e as Error); return; }
+    const headers: Record<string, string> = { ...(opts.headers ?? {}) };
+    if (opts.body && !headers["Content-Length"] && !headers["content-length"]) {
+      headers["Content-Length"] = String(Buffer.byteLength(opts.body));
+    }
     const req = https.request(
       {
         hostname: u.hostname,
         port: u.port || 443,
         path: `${u.pathname}${u.search}`,
         method: opts.method || "GET",
-        headers: opts.headers,
+        headers,
         agent: insecureAgent,
         timeout: opts.timeoutMs ?? 8000,
       },

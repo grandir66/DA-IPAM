@@ -381,7 +381,7 @@ export function Sidebar() {
           Launchpad
         </Link>
 
-        {/* DNS & Filtri — AdGuard + Unbound (ADR-0007) */}
+        {/* DNS — zone, filtro, resolver (ADR-0007) */}
         <Link
           href="/dns"
           onClick={() => setMobileOpen(false)}
@@ -393,10 +393,10 @@ export function Sidebar() {
           )}
         >
           <Globe className="h-4 w-4" />
-          DNS &amp; Filtri
+          DNS
         </Link>
 
-        {/* Network Services — DNS auth, DHCP, toggle servizi (ADR-0007) */}
+        {/* Network Services — DHCP e stato VM bridge */}
         <Link
           href="/network-services"
           onClick={() => setMobileOpen(false)}

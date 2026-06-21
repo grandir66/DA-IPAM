@@ -3,24 +3,15 @@
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Shield, Globe, Server, Wifi, RefreshCw, Power } from "lucide-react";
+import { Shield, Globe, Server, Wifi, RefreshCw, Power, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type {
-  BridgeStatus,
-  ResolverStatus,
-  AdBlockStats,
-  AdBlockRules,
-} from "@/lib/network-services/client";
+import type { BridgeStatus } from "@/lib/network-services/client";
 
 import { NetworkServicesSettings } from "./network-services-setup";
-import { DnsSection } from "./dns-section";
 import { DhcpSection } from "./dhcp-section";
-import { DnsChainCard } from "./dns-chain-card";
-import { ResolverPanel } from "./resolver-panel";
-import { AdblockPanel } from "./adblock-panel";
 
 type ServiceKey = "resolver" | "adblock" | "dns" | "dhcp";
 
@@ -28,29 +19,30 @@ interface Props {
   apiBase: string;
   isAdmin?: boolean;
   initialBridge: BridgeStatus | null;
-  initialResolver: ResolverStatus | null;
-  initialAdblock: AdBlockStats | null;
   initialError: string | null;
 }
 
 const SERVICE_META: Record<
   ServiceKey,
-  { label: string; description: string; icon: typeof Shield }
+  { label: string; description: string; icon: typeof Shield; dnsHref?: string }
 > = {
   resolver: {
     label: "Resolver",
     description: "Unbound recursive (forward zones, upstream, cache)",
     icon: Globe,
+    dnsHref: "/dns?tab=resolver",
   },
   adblock: {
     label: "AdBlock",
     description: "AdGuard Home — frontend DNS :53 + filtri",
     icon: Shield,
+    dnsHref: "/dns?tab=filtro",
   },
   dns: {
     label: "DNS Authoritative",
     description: "PowerDNS — zone forward/reverse + record",
     icon: Server,
+    dnsHref: "/dns?tab=zone",
   },
   dhcp: {
     label: "DHCP",
@@ -62,15 +54,10 @@ const SERVICE_META: Record<
 export function NetworkServicesClient({
   apiBase,
   initialBridge,
-  initialResolver,
-  initialAdblock,
   initialError,
   isAdmin = false,
 }: Props) {
   const [bridge, setBridge] = useState(initialBridge);
-  const [resolver, setResolver] = useState(initialResolver);
-  const [adblock, setAdblock] = useState(initialAdblock);
-  const [adblockRules, setAdblockRules] = useState<AdBlockRules | null>(null);
   const [error, setError] = useState(initialError);
   const [pending, startTransition] = useTransition();
 
@@ -80,18 +67,9 @@ export function NetworkServicesClient({
       const data = await r.json();
       if (!data.ok) throw new Error(data.error || "status fetch failed");
       setBridge(data.bridge);
-      setResolver(data.resolver);
-      setAdblock(data.adblock);
       setError(null);
     } catch (e) {
       setError(String(e));
-    }
-    try {
-      const r = await fetch("/api/network-services/adblock/rules", { cache: "no-store" });
-      const data = await r.json();
-      if (data.ok) setAdblockRules(data);
-    } catch {
-      /* ignore */
     }
   }
 
@@ -128,9 +106,6 @@ export function NetworkServicesClient({
     });
   }
 
-  const resolverActive = bridge?.services?.resolver?.active === "active";
-  const adblockActive = bridge?.services?.adblock?.active === "active";
-  const dnsActive = bridge?.services?.dns?.active === "active";
   const dhcpActive = bridge?.services?.dhcp?.active === "active";
 
   return (
@@ -139,9 +114,9 @@ export function NetworkServicesClient({
         <div>
           <h1 className="text-2xl font-semibold">Network Services</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            DNS auth, DHCP, toggle servizi — VM <code>{apiBase}</code> ·{" "}
+            DHCP e stato servizi VM — <code>{apiBase}</code> ·{" "}
             <Link href="/dns" className="text-primary hover:underline">
-              Monitoraggio DNS &amp; Filtri →
+              Gestione DNS →
             </Link>
           </p>
         </div>
@@ -160,14 +135,20 @@ export function NetworkServicesClient({
       <Tabs defaultValue="overview">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="overview">Panorama</TabsTrigger>
-          <TabsTrigger value="resolver">Resolver</TabsTrigger>
-          <TabsTrigger value="adblock">AdBlock</TabsTrigger>
-          <TabsTrigger value="dns">DNS auth</TabsTrigger>
           <TabsTrigger value="dhcp">DHCP</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4 mt-4">
-          <DnsChainCard apiBase={apiBase} />
+          <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm">
+            <p className="font-medium">DNS, filtro e resolver</p>
+            <p className="text-muted-foreground mt-1">
+              Zone forward/reverse, AdGuard e Unbound sono gestiti centralmente in{" "}
+              <Link href="/dns" className="text-primary underline font-medium">
+                DNS
+              </Link>
+              .
+            </p>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {(Object.keys(SERVICE_META) as ServiceKey[]).map((svc) => {
@@ -187,7 +168,16 @@ export function NetworkServicesClient({
                     <CardTitle className="text-base mt-2">{meta.label}</CardTitle>
                     <CardDescription className="text-xs">{meta.description}</CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-2">
+                    {meta.dnsHref && (
+                      <Link
+                        href={meta.dnsHref}
+                        className="inline-flex items-center text-xs text-primary hover:underline"
+                      >
+                        Apri in DNS
+                        <ExternalLink className="h-3 w-3 ml-1" />
+                      </Link>
+                    )}
                     {isAdmin ? (
                       <Button
                         size="sm"
@@ -209,29 +199,6 @@ export function NetworkServicesClient({
           </div>
 
           {isAdmin && <NetworkServicesSettings apiUrl={apiBase} />}
-        </TabsContent>
-
-        <TabsContent value="resolver" className="mt-4">
-          <ResolverPanel
-            isAdmin={isAdmin}
-            active={resolverActive}
-            resolver={resolver}
-            onRefresh={refreshAll}
-          />
-        </TabsContent>
-
-        <TabsContent value="adblock" className="mt-4">
-          <AdblockPanel
-            isAdmin={isAdmin}
-            active={adblockActive}
-            adblock={adblock}
-            adblockRules={adblockRules}
-            onRefresh={refreshAll}
-          />
-        </TabsContent>
-
-        <TabsContent value="dns" className="mt-4">
-          <DnsSection isAdmin={isAdmin} active={dnsActive} />
         </TabsContent>
 
         <TabsContent value="dhcp" className="mt-4">

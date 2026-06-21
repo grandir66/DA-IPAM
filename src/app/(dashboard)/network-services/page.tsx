@@ -14,11 +14,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Loader2, Network, ServerCog } from "lucide-react";
 import { NetworkServicesClient } from "./network-services-client";
-import type {
-  BridgeStatus,
-  ResolverStatus,
-  AdBlockStats,
-} from "@/lib/network-services/client";
+import type { BridgeStatus } from "@/lib/network-services/client";
 
 interface SetupState {
   installed: boolean;
@@ -35,8 +31,6 @@ export default function NetworkServicesPage() {
   const [loading, setLoading] = useState(true);
   const [setupState, setSetupState] = useState<SetupState | null>(null);
   const [bridge, setBridge] = useState<BridgeStatus | null>(null);
-  const [resolver, setResolver] = useState<ResolverStatus | null>(null);
-  const [adblock, setAdblock] = useState<AdBlockStats | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,8 +57,6 @@ export default function NetworkServicesPage() {
           if (cancelled) return;
           if (sdata.ok) {
             setBridge(sdata.bridge);
-            setResolver(sdata.resolver);
-            setAdblock(sdata.adblock);
           } else {
             setStatusError(sdata.error ?? "Bridge non raggiungibile");
           }
@@ -141,8 +133,6 @@ export default function NetworkServicesPage() {
     <NetworkServicesClient
       apiBase={setupState.apiUrl}
       initialBridge={bridge}
-      initialResolver={resolver}
-      initialAdblock={adblock}
       initialError={statusError}
       isAdmin={isAdmin}
     />

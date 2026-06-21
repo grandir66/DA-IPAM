@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Loader2, Globe, ServerCog, ExternalLink } from "lucide-react";
@@ -84,9 +84,9 @@ export default function DnsPage() {
         <div className="flex items-center gap-3 mb-6">
           <Globe className="h-7 w-7 text-muted-foreground" />
           <div>
-            <h1 className="text-2xl font-semibold">DNS &amp; Filtri</h1>
+            <h1 className="text-2xl font-semibold">DNS</h1>
             <p className="text-sm text-muted-foreground">
-              Filtro DNS (AdGuard) e resolver ricorsivo (Unbound) sulla VM Network Services.
+              Zone forward/reverse, filtro DNS (AdGuard) e resolver (Unbound) — VM Network Services.
             </p>
           </div>
         </div>
@@ -116,18 +116,22 @@ export default function DnsPage() {
     );
   }
 
-  const adblockActive = bridge?.services?.adblock?.active === "active";
-  const resolverActive = bridge?.services?.resolver?.active === "active";
-
   return (
-    <DnsDashboardClient
-      apiBase={setupState.apiUrl}
-      isAdmin={isAdmin}
-      initialResolver={resolver}
-      initialAdblock={adblock}
-      initialError={statusError}
-      adblockActive={adblockActive}
-      resolverActive={resolverActive}
-    />
+    <Suspense
+      fallback={
+        <div className="container mx-auto p-6 flex items-center justify-center min-h-[40vh]">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <DnsDashboardClient
+        apiBase={setupState.apiUrl}
+        isAdmin={isAdmin}
+        initialBridge={bridge}
+        initialResolver={resolver}
+        initialAdblock={adblock}
+        initialError={statusError}
+      />
+    </Suspense>
   );
 }

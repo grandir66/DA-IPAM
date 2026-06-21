@@ -1,9 +1,7 @@
 "use client";
 
 /**
- * Sezione "DNS autoritativo" (PowerDNS) della pagina Network Services.
- * CRUD completo: zone (create + list, NO delete — non esposto dal bridge),
- * record (list + add + delete) per la zona selezionata.
+ * Sezione zone DNS autoritativo (PowerDNS): forward, reverse e record.
  */
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -363,8 +361,12 @@ export function DnsSection({ isAdmin, active }: Props) {
       </CardHeader>
       <CardContent className="space-y-4">
         {!active && (
-          <div className="rounded border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-900">
-            DNS autoritativo disabilitato. Attiva il servizio <code>dns</code> dal toggle in alto.
+          <div className="rounded border border-yellow-300 bg-yellow-50 dark:bg-yellow-950/20 p-3 text-sm text-yellow-900 dark:text-yellow-100">
+            DNS autoritativo disabilitato. Abilitalo da{" "}
+            <a href="/dns?tab=panorama" className="underline font-medium">
+              DNS → Panorama
+            </a>
+            {isAdmin ? " (toggle servizi)." : " (solo admin)."}
           </div>
         )}
 

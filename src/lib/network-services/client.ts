@@ -200,7 +200,27 @@ interface RawRrset {
   records?: Array<{ content: string; disabled?: boolean }>;
 }
 
-// ── DHCP (Kea, read-only) ──
+// ── DHCP (Kea) ──
+
+export interface DhcpSubnet {
+  id: number;
+  subnet: string;
+  pools?: Array<{ pool: string }>;
+  "option-data"?: Array<{ name: string; data: string }>;
+  "valid-lifetime"?: number;
+  "renew-timer"?: number;
+  "rebind-timer"?: number;
+}
+
+export interface DhcpSubnetsResp {
+  running: boolean;
+  subnets: DhcpSubnet[];
+  count: number;
+  note?: string;
+  "valid-lifetime"?: number;
+  "renew-timer"?: number;
+  "rebind-timer"?: number;
+}
 
 export interface DhcpLease {
   /** Campi Kea grezzi (ip-address, hw-address, hostname, valid-lft, cltt, ...). */
@@ -342,9 +362,49 @@ export async function makeNetServicesClient(tenantCode: string) {
         { method: "DELETE", body: JSON.stringify({ name, type }) },
       ),
 
-    // ── DHCP (Kea): SOLO LETTURA ──
+    // ── DHCP (Kea) ──
     dhcpLeases: () => call<DhcpLeasesResp>("/api/v1/leases"),
-    dhcpReservations: () => call<DhcpReservationsResp>("/api/v1/reservations"),
+    dhcpReservations: (subnetId?: number) =>
+      call<DhcpReservationsResp>(
+        subnetId != null ? `/api/v1/reservations?subnet_id=${subnetId}` : "/api/v1/reservations",
+      ),
+    addDhcpReservation: (payload: {
+      ip_address: string;
+      hw_address?: string;
+      client_id?: string;
+      hostname?: string;
+      subnet_id?: number;
+    }) =>
+      call<{ ok: boolean; error?: string; text?: string }>("/api/v1/reservations", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    deleteDhcpReservation: (payload: {
+      ip_address?: string;
+      hw_address?: string;
+      client_id?: string;
+      subnet_id?: number;
+    }) =>
+      call<{ ok: boolean; error?: string; text?: string }>("/api/v1/reservations", {
+        method: "DELETE",
+        body: JSON.stringify(payload),
+      }),
+    dhcpSubnets: () => call<DhcpSubnetsResp>("/api/v1/subnets"),
+    addDhcpSubnet: (payload: Record<string, unknown>) =>
+      call<{ ok: boolean; subnet?: DhcpSubnet; error?: string; text?: string }>(
+        "/api/v1/subnets",
+        { method: "POST", body: JSON.stringify(payload) },
+      ),
+    updateDhcpSubnet: (subnetId: number, payload: Record<string, unknown>) =>
+      call<{ ok: boolean; subnet?: DhcpSubnet; error?: string; text?: string }>(
+        `/api/v1/subnets/${subnetId}`,
+        { method: "PATCH", body: JSON.stringify(payload) },
+      ),
+    deleteDhcpSubnet: (subnetId: number) =>
+      call<{ ok: boolean; error?: string; text?: string }>(
+        `/api/v1/subnets/${subnetId}`,
+        { method: "DELETE" },
+      ),
 
     adblockStats: () => call<AdBlockStats>("/api/v1/adblock/stats"),
     adblockRules: () => call<AdBlockRules>("/api/v1/adblock/rules"),

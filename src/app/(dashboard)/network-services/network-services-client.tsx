@@ -11,7 +11,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { BridgeStatus } from "@/lib/network-services/client";
 
 import { NetworkServicesSettings } from "./network-services-setup";
-import { DhcpSection } from "./dhcp-section";
 
 type ServiceKey = "resolver" | "adblock" | "dns" | "dhcp";
 
@@ -24,30 +23,31 @@ interface Props {
 
 const SERVICE_META: Record<
   ServiceKey,
-  { label: string; description: string; icon: typeof Shield; dnsHref?: string }
+  { label: string; description: string; icon: typeof Shield; hubHref?: string }
 > = {
   resolver: {
     label: "Resolver",
     description: "Unbound recursive (forward zones, upstream, cache)",
     icon: Globe,
-    dnsHref: "/dns?tab=resolver",
+    hubHref: "/dns?tab=resolver",
   },
   adblock: {
     label: "AdBlock",
     description: "AdGuard Home — frontend DNS :53 + filtri",
     icon: Shield,
-    dnsHref: "/dns?tab=filtro",
+    hubHref: "/dns?tab=filtro",
   },
   dns: {
     label: "DNS Authoritative",
     description: "PowerDNS — zone forward/reverse + record",
     icon: Server,
-    dnsHref: "/dns?tab=zone",
+    hubHref: "/dns?tab=zone",
   },
   dhcp: {
     label: "DHCP",
-    description: "Kea DHCP4 — lease (configurazione in arrivo)",
+    description: "Kea DHCP4 — scope, lease e IP statici",
     icon: Wifi,
+    hubHref: "/dhcp",
   },
 };
 
@@ -106,17 +106,19 @@ export function NetworkServicesClient({
     });
   }
 
-  const dhcpActive = bridge?.services?.dhcp?.active === "active";
-
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Network Services</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            DHCP e stato servizi VM — <code>{apiBase}</code> ·{" "}
+            Stato VM bridge — <code>{apiBase}</code> ·{" "}
             <Link href="/dns" className="text-primary hover:underline">
-              Gestione DNS →
+              DNS
+            </Link>
+            {" · "}
+            <Link href="/dhcp" className="text-primary hover:underline">
+              DHCP
             </Link>
           </p>
         </div>
@@ -133,20 +135,23 @@ export function NetworkServicesClient({
       )}
 
       <Tabs defaultValue="overview">
-        <TabsList className="flex-wrap h-auto">
+        <TabsList>
           <TabsTrigger value="overview">Panorama</TabsTrigger>
-          <TabsTrigger value="dhcp">DHCP</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4 mt-4">
-          <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm">
-            <p className="font-medium">DNS, filtro e resolver</p>
-            <p className="text-muted-foreground mt-1">
-              Zone forward/reverse, AdGuard e Unbound sono gestiti centralmente in{" "}
+          <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm space-y-2">
+            <p>
+              <strong>DNS</strong> — zone, filtro e resolver in{" "}
               <Link href="/dns" className="text-primary underline font-medium">
-                DNS
+                /dns
               </Link>
-              .
+            </p>
+            <p>
+              <strong>DHCP</strong> — scope, lease dinamici e IP statici in{" "}
+              <Link href="/dhcp" className="text-primary underline font-medium">
+                /dhcp
+              </Link>
             </p>
           </div>
 
@@ -169,12 +174,12 @@ export function NetworkServicesClient({
                     <CardDescription className="text-xs">{meta.description}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    {meta.dnsHref && (
+                    {meta.hubHref && (
                       <Link
-                        href={meta.dnsHref}
+                        href={meta.hubHref}
                         className="inline-flex items-center text-xs text-primary hover:underline"
                       >
-                        Apri in DNS
+                        Apri hub
                         <ExternalLink className="h-3 w-3 ml-1" />
                       </Link>
                     )}
@@ -199,10 +204,6 @@ export function NetworkServicesClient({
           </div>
 
           {isAdmin && <NetworkServicesSettings apiUrl={apiBase} />}
-        </TabsContent>
-
-        <TabsContent value="dhcp" className="mt-4">
-          <DhcpSection active={dhcpActive} />
         </TabsContent>
       </Tabs>
     </div>

@@ -35,6 +35,7 @@ import {
   ShieldCheck,
   KeyRound,
   Globe,
+  Wifi,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -64,7 +65,7 @@ const networkSubItems: readonly NetworkItem[] = [
   { href: "/active-directory", label: "Active Directory", icon: FolderTree },
   { href: "/credentials", label: "Credenziali", icon: Key },
   { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered, divider: "Diagnostica" },
-  { href: "/dhcp", label: "Tabella DHCP", icon: Server },
+  { href: "/dhcp/sources", label: "Sorgenti DHCP", icon: Server },
   { href: "/scans", label: "Scansioni", icon: Scan },
   { href: "/excluded-ips", label: "IP esclusi", icon: Ban },
 ] as const;
@@ -396,7 +397,22 @@ export function Sidebar() {
           DNS
         </Link>
 
-        {/* Network Services — DHCP e stato VM bridge */}
+        {/* DHCP — Kea scope, lease, statici */}
+        <Link
+          href="/dhcp"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            pathname.startsWith("/dhcp")
+              ? "bg-sidebar-primary text-sidebar-primary-foreground"
+              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <Wifi className="h-4 w-4" />
+          DHCP
+        </Link>
+
+        {/* Network Services — stato VM bridge */}
         <Link
           href="/network-services"
           onClick={() => setMobileOpen(false)}

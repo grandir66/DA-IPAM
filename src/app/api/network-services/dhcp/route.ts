@@ -8,9 +8,7 @@ import {
 } from "@/lib/network-services/client";
 
 /**
- * DHCP Kea SOLO LETTURA: lease attivi + reservation statiche.
- * Il bridge non espone write su DHCP (le reservation si gestiscono via DA-IPAM
- * altrove). Qui esponiamo solo lo stato per la pagina Network Services.
+ * DHCP Kea: lease attivi + reservation statiche (aggregato).
  */
 export async function GET() {
   return withTenantFromSession(async () => {

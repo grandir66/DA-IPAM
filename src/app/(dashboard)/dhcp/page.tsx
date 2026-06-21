@@ -1,551 +1,138 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  RefreshCw,
-  Search,
-  Server,
-  Router,
-  Database,
-} from "lucide-react";
-import { toast } from "sonner";
+import { Suspense, useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { Pagination } from "@/components/shared/pagination";
-import { SkeletonTable } from "@/components/shared/skeleton-table";
-import { SortableTableHead } from "@/components/shared/sortable-table-head";
-import type { SortDirection } from "@/lib/table-sort";
+import { Loader2, Wifi, ServerCog, ExternalLink } from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { DhcpDashboardClient } from "./dhcp-dashboard-client";
+import type { BridgeStatus } from "@/lib/network-services/client";
 
-interface DhcpLease {
-  id: number;
-  source_type: string;
-  source_device_id: number | null;
-  source_name: string | null;
-  server_name: string | null;
-  scope_id: string | null;
-  scope_name: string | null;
-  ip_address: string;
-  mac_address: string;
-  hostname: string | null;
-  status: string | null;
-  lease_start: string | null;
-  lease_expires: string | null;
-  description: string | null;
-  dynamic_lease: number | null;
-  // v0.2.659: ultimo "visto" dal DHCP server (ISO timestamp). Mikrotik = now - last-seen;
-  // Windows = LeaseExpiryTime - LeaseDuration. Null per lease senza dato (reservation inattive).
-  last_seen: string | null;
-  host_id: number | null;
-  network_id: number | null;
-  last_synced: string;
-  host_hostname?: string | null;
-  network_name?: string | null;
-  network_cidr?: string | null;
-  device_name?: string | null;
+interface SetupState {
+  installed: boolean;
+  configured: boolean;
+  apiUrl: string;
+  hasToken: boolean;
 }
-
-interface DhcpSource {
-  id: number;
-  name: string;
-  host: string;
-  vendor: string;
-  type: string;
-}
-
-interface DhcpStats {
-  total: number;
-  bySource: Record<string, number>;
-  byNetwork: Array<{ network_id: number; network_name: string; count: number }>;
-}
-
-const SOURCE_TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  mikrotik: { label: "MikroTik", color: "bg-blue-500" },
-  windows: { label: "Windows DHCP", color: "bg-purple-500" },
-  cisco: { label: "Cisco", color: "bg-green-500" },
-  other: { label: "Altro", color: "bg-gray-500" },
-};
 
 export default function DhcpPage() {
-  const [leases, setLeases] = useState<DhcpLease[]>([]);
+  const session = useSession();
+  const role = (session.data?.user as { role?: string } | undefined)?.role;
+  const isAdmin = role === "admin" || role === "superadmin";
+
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [syncingDevice, setSyncingDevice] = useState<number | null>(null);
-
-  const [sources, setSources] = useState<DhcpSource[]>([]);
-  const [stats, setStats] = useState<DhcpStats | null>(null);
-
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(50);
-  const [total, setTotal] = useState(0);
-  const [searchTerm, setSearchTerm] = useState("");
-  // v0.2.659: filtro "solo attivi recenti" — lease visti negli ultimi N giorni.
-  // v0.2.661: default OFF per evitare di nascondere tutti i lease quando il
-  // DB legacy ha last_seen=null (es. sync Mikrotik pre-fix). L'utente lo attiva
-  // manualmente quando vuole filtrare i relitti.
-  const [onlyRecent, setOnlyRecent] = useState(false);
-  const [recentDays, setRecentDays] = useState(30);
-  const [sourceTypeFilter, setSourceTypeFilter] = useState<string>("all");
-  const [sourceDeviceFilter, setSourceDeviceFilter] = useState<string>("all");
-  const [sortColumn, setSortColumn] = useState<string | null>("last_synced");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-
-  const fetchLeases = useCallback(async () => {
-    try {
-      const params = new URLSearchParams({
-        page: String(page),
-        pageSize: String(pageSize),
-      });
-      if (searchTerm) params.set("search", searchTerm);
-      if (sourceTypeFilter !== "all") params.set("sourceType", sourceTypeFilter);
-      if (sourceDeviceFilter !== "all") params.set("sourceDeviceId", sourceDeviceFilter);
-      if (sortColumn) {
-        params.set("sortBy", sortColumn);
-        params.set("sortOrder", sortDirection);
-      }
-
-      const res = await fetch(`/api/dhcp-leases?${params}`);
-      if (!res.ok) throw new Error("Errore caricamento");
-      const data = await res.json();
-      setLeases(data.leases || []);
-      setTotal(data.total || 0);
-    } catch {
-      toast.error("Impossibile caricare i lease DHCP");
-    } finally {
-      setLoading(false);
-    }
-  }, [page, pageSize, searchTerm, sourceTypeFilter, sourceDeviceFilter, sortColumn, sortDirection]);
-
-  const fetchSources = useCallback(async () => {
-    try {
-      const res = await fetch("/api/dhcp-leases?action=sources");
-      if (res.ok) {
-        const data = await res.json();
-        setSources(data.sources || []);
-      }
-    } catch { /* ignore */ }
-  }, []);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await fetch("/api/dhcp-leases?action=stats");
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
-      }
-    } catch { /* ignore */ }
-  }, []);
+  const [setupState, setSetupState] = useState<SetupState | null>(null);
+  const [bridge, setBridge] = useState<BridgeStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchLeases();
-  }, [fetchLeases]);
+    let cancelled = false;
 
-  const handleSortColumn = useCallback(
-    (columnId: string) => {
-      if (sortColumn === columnId) {
-        setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
-      } else {
-        setSortColumn(columnId);
-        setSortDirection(columnId === "last_synced" ? "desc" : "asc");
+    async function load() {
+      setLoading(true);
+      try {
+        const r = await fetch("/api/network-services/setup", { cache: "no-store" });
+        if (r.status === 401) {
+          if (!cancelled) {
+            setSetupState({ installed: false, configured: false, apiUrl: "", hasToken: false });
+            setLoading(false);
+          }
+          return;
+        }
+        const data = (await r.json()) as SetupState;
+        if (cancelled) return;
+        setSetupState(data);
+
+        if (data.installed && data.configured) {
+          const sr = await fetch("/api/network-services/status", { cache: "no-store" });
+          const sdata = await sr.json();
+          if (cancelled) return;
+          if (sdata.ok) {
+            setBridge(sdata.bridge);
+          } else {
+            setStatusError(sdata.error ?? sdata.message ?? "Bridge non raggiungibile");
+          }
+        }
+      } catch (e) {
+        if (!cancelled) setStatusError(String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setPage(1);
-    },
-    [sortColumn]
-  );
-
-  useEffect(() => {
-    fetchSources();
-    fetchStats();
-  }, [fetchSources, fetchStats]);
-
-  const handleSyncAll = async () => {
-    setSyncing(true);
-    try {
-      const res = await fetch("/api/dhcp-leases?action=sync-all", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      toast.success(`Sync completato: ${data.inserted} nuovi, ${data.updated} aggiornati`);
-      fetchLeases();
-      fetchStats();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Errore sync");
-    } finally {
-      setSyncing(false);
     }
-  };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const handleSyncDevice = async (deviceId: number) => {
-    setSyncingDevice(deviceId);
-    try {
-      const res = await fetch("/api/dhcp-leases?action=sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      toast.success(`${data.deviceName}: ${data.inserted} nuovi, ${data.updated} aggiornati`);
-      fetchLeases();
-      fetchStats();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Errore sync");
-    } finally {
-      setSyncingDevice(null);
-    }
-  };
+  if (loading) {
+    return (
+      <div className="container mx-auto p-6 flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPage(1);
-    fetchLeases();
-  };
-
-  const totalPages = Math.ceil(total / pageSize);
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Tabella DHCP</h1>
-          <p className="text-muted-foreground">Lease DHCP acquisiti da router e server</p>
+  if (!setupState?.installed || !setupState.configured) {
+    return (
+      <div className="container mx-auto p-6 max-w-3xl">
+        <div className="flex items-center gap-3 mb-6">
+          <Wifi className="h-7 w-7 text-muted-foreground" />
+          <div>
+            <h1 className="text-2xl font-semibold">DHCP</h1>
+            <p className="text-sm text-muted-foreground">
+              Scope, lease e IP statici via Kea — VM Network Services.
+            </p>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={handleSyncAll} disabled={syncing || sources.length === 0}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Sincronizzazione..." : "Sincronizza tutti"}
-          </Button>
+
+        <div className="rounded-lg border border-border bg-card p-6 space-y-4">
+          <div className="flex items-start gap-3">
+            <ServerCog className="h-6 w-6 mt-0.5 text-muted-foreground shrink-0" />
+            <div className="space-y-2">
+              <h2 className="text-lg font-semibold">Modulo non disponibile</h2>
+              <p className="text-sm text-muted-foreground">
+                La VM Network Services non è configurata. Il modulo viene registrato dal bundle
+                Deploy-Appliance.
+              </p>
+              <Link
+                href="/dhcp/sources"
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }), "inline-flex items-center mr-2")}
+              >
+                Tabella sorgenti esterne
+                <ExternalLink className="h-3.5 w-3.5 ml-1.5" />
+              </Link>
+              {isAdmin && (
+                <Link
+                  href="/settings?tab=modules"
+                  className={cn(buttonVariants({ variant: "outline", size: "sm" }), "inline-flex items-center")}
+                >
+                  Impostazioni moduli
+                  <ExternalLink className="h-3.5 w-3.5 ml-1.5" />
+                </Link>
+              )}
+            </div>
+          </div>
         </div>
       </div>
+    );
+  }
 
-      {/* Stats */}
-      {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2">
-                <Database className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <p className="text-2xl font-bold">{stats.total}</p>
-                  <p className="text-xs text-muted-foreground">Lease totali</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          {Object.entries(stats.bySource).map(([type, count]) => (
-            <Card key={type}>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${SOURCE_TYPE_LABELS[type]?.color || "bg-gray-400"}`} />
-                  <div>
-                    <p className="text-2xl font-bold">{count}</p>
-                    <p className="text-xs text-muted-foreground">{SOURCE_TYPE_LABELS[type]?.label || type}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+  return (
+    <Suspense
+      fallback={
+        <div className="container mx-auto p-6 flex items-center justify-center min-h-[40vh]">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-      )}
-
-      {/* Sources - Router MikroTik */}
-      {sources.length > 0 && (
-        <Card>
-          <CardHeader className="py-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Router className="h-4 w-4" />
-              Sorgenti DHCP ({sources.length})
-            </CardTitle>
-            <CardDescription>Router configurati per acquisizione lease DHCP</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Host</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead className="w-32">Azioni</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sources.map((source) => (
-                  <TableRow key={source.id}>
-                    <TableCell className="font-medium">
-                      <Link href={`/devices/${source.id}`} className="hover:underline text-primary">
-                        {source.name}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="font-mono text-sm">{source.host}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{SOURCE_TYPE_LABELS[source.type]?.label || source.type}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSyncDevice(source.id)}
-                        disabled={syncingDevice === source.id}
-                      >
-                        <RefreshCw className={`h-3 w-3 mr-1 ${syncingDevice === source.id ? "animate-spin" : ""}`} />
-                        Sync
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Filtri */}
-      <Card>
-        <CardHeader className="py-3">
-          <CardTitle className="text-base">Lease DHCP</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-4 mb-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Cerca per IP, MAC o hostname..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <Select value={sourceTypeFilter} onValueChange={(v) => v && setSourceTypeFilter(v)}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Sorgente" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tutte le fonti</SelectItem>
-                <SelectItem value="mikrotik">MikroTik</SelectItem>
-                <SelectItem value="windows">Windows</SelectItem>
-                <SelectItem value="cisco">Cisco</SelectItem>
-                <SelectItem value="other">Altro</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={sourceDeviceFilter} onValueChange={(v) => v && setSourceDeviceFilter(v)}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Device" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tutti i device</SelectItem>
-                {sources.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button type="submit" variant="secondary">
-              <Search className="h-4 w-4 mr-1" />
-              Cerca
-            </Button>
-            {/* v0.2.659: filtro "solo lease recenti" — nasconde relitti vecchi */}
-            <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground ml-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={onlyRecent}
-                onChange={(e) => setOnlyRecent(e.target.checked)}
-                className="h-3.5 w-3.5"
-              />
-              Solo attivi negli ultimi
-            </label>
-            <Select value={String(recentDays)} onValueChange={(v) => v && setRecentDays(parseInt(v, 10))} disabled={!onlyRecent}>
-              <SelectTrigger className="w-[110px] h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">1 giorno</SelectItem>
-                <SelectItem value="7">7 giorni</SelectItem>
-                <SelectItem value="30">30 giorni</SelectItem>
-                <SelectItem value="90">90 giorni</SelectItem>
-                <SelectItem value="365">1 anno</SelectItem>
-              </SelectContent>
-            </Select>
-          </form>
-
-          {loading ? (
-            <SkeletonTable columns={8} rows={10} />
-          ) : leases.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <Server className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg">Nessun lease DHCP trovato</p>
-              <p className="text-sm mt-1">Clicca &quot;Sincronizza tutti&quot; per acquisire i lease dai router</p>
-            </div>
-          ) : (() => {
-              // v0.2.661: se il filtro "solo attivi recenti" nasconde TUTTI i lease,
-              // mostra un messaggio chiaro invece di tabella vuota silenziosa.
-              const visibleCount = onlyRecent
-                ? leases.filter((l) => l.last_seen && (Date.now() - Date.parse(l.last_seen)) / 86400000 <= recentDays).length
-                : leases.length;
-              if (visibleCount === 0 && onlyRecent) {
-                return (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Server className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-lg">Nessun lease attivo negli ultimi {recentDays} {recentDays === 1 ? "giorno" : "giorni"}</p>
-                    <p className="text-sm mt-1">{leases.length} lease totali nascosti dal filtro. Disabilita &quot;Solo attivi&quot; o aumenta la finestra.</p>
-                    <Button variant="link" onClick={() => setOnlyRecent(false)} className="mt-2">Mostra tutti</Button>
-                  </div>
-                );
-              }
-              return null;
-            })() || (
-            <>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <SortableTableHead columnId="ip_address" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
-                        IP
-                      </SortableTableHead>
-                      <SortableTableHead columnId="mac_address" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
-                        MAC
-                      </SortableTableHead>
-                      <SortableTableHead columnId="source_type" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn} className="w-14">
-                        Tipo
-                      </SortableTableHead>
-                      <SortableTableHead columnId="hostname" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
-                        Hostname
-                      </SortableTableHead>
-                      <SortableTableHead columnId="device_name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
-                        Sorgente
-                      </SortableTableHead>
-                      <SortableTableHead columnId="network_name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
-                        Rete
-                      </SortableTableHead>
-                      <SortableTableHead columnId="status" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
-                        Stato
-                      </SortableTableHead>
-                      {/* v0.2.659: ultimo "visto" lease vs sync DA-IPAM. Distingue
-                          attivi recenti da relitti accumulati nel server DHCP. */}
-                      <SortableTableHead columnId="last_seen" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
-                        Ultimo visto
-                      </SortableTableHead>
-                      <SortableTableHead columnId="last_synced" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
-                        Ultimo sync
-                      </SortableTableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {leases
-                      .filter((lease) => {
-                        if (!onlyRecent) return true;
-                        if (!lease.last_seen) return false;
-                        const ageDays = (Date.now() - Date.parse(lease.last_seen)) / 86400000;
-                        return ageDays <= recentDays;
-                      })
-                      .map((lease) => (
-                      <TableRow key={lease.id}>
-                        <TableCell className="font-mono">
-                          {lease.host_id ? (
-                            <Link href={`/hosts/${lease.host_id}`} className="text-primary hover:underline">
-                              {lease.ip_address}
-                            </Link>
-                          ) : (
-                            lease.ip_address
-                          )}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">{lease.mac_address}</TableCell>
-                        <TableCell>
-                          {lease.dynamic_lease === 1 ? (
-                            <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">DYN</Badge>
-                          ) : lease.dynamic_lease === 0 ? (
-                            <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">STAT</Badge>
-                          ) : null}
-                        </TableCell>
-                        <TableCell>{lease.hostname || <span className="text-muted-foreground">—</span>}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${SOURCE_TYPE_LABELS[lease.source_type]?.color || "bg-gray-400"}`} />
-                            <span className="text-sm">{lease.device_name || lease.source_name || "—"}</span>
-                          </div>
-                          {lease.server_name && (
-                            <p className="text-xs text-muted-foreground">{lease.server_name}</p>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {lease.network_name ? (
-                            <Link href={`/networks/${lease.network_id}`} className="text-primary hover:underline text-sm">
-                              {lease.network_name}
-                            </Link>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {lease.status && (
-                            <Badge variant={lease.status === "bound" ? "default" : "secondary"} className="text-xs">
-                              {lease.status}
-                            </Badge>
-                          )}
-                          {lease.lease_expires && (
-                            <p className="text-xs text-muted-foreground mt-0.5">{lease.lease_expires}</p>
-                          )}
-                        </TableCell>
-                        {/* v0.2.659: ultimo visto dal DHCP server + badge color by age */}
-                        <TableCell className="text-xs">
-                          {lease.last_seen ? (() => {
-                            const ageMs = Date.now() - Date.parse(lease.last_seen);
-                            const ageDays = ageMs / 86400000;
-                            const color =
-                              ageDays < 7 ? "bg-emerald-50 text-emerald-700 border-emerald-300" :
-                              ageDays < 30 ? "bg-yellow-50 text-yellow-700 border-yellow-300" :
-                              ageDays < 90 ? "bg-orange-50 text-orange-700 border-orange-300" :
-                              "bg-red-50 text-red-700 border-red-300";
-                            const label =
-                              ageDays < 1 ? `${Math.round(ageMs / 3600000)}h fa` :
-                              ageDays < 30 ? `${Math.round(ageDays)}g fa` :
-                              ageDays < 365 ? `${Math.round(ageDays / 30)}mesi fa` :
-                              `${(ageDays / 365).toFixed(1)}a fa`;
-                            return (
-                              <Badge variant="outline" className={`text-xs ${color}`} title={new Date(lease.last_seen).toLocaleString("it-IT")}>
-                                {label}
-                              </Badge>
-                            );
-                          })() : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {new Date(lease.last_synced).toLocaleString("it-IT")}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {totalPages > 1 && (
-                <div className="mt-4">
-                  <Pagination
-                    page={page}
-                    totalPages={totalPages}
-                    onPageChange={setPage}
-                  />
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+      }
+    >
+      <DhcpDashboardClient
+        apiBase={setupState.apiUrl}
+        isAdmin={isAdmin}
+        initialBridge={bridge}
+        initialError={statusError}
+      />
+    </Suspense>
   );
 }

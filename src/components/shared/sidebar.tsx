@@ -70,6 +70,7 @@ const networkSubItems: readonly NetworkItem[] = [
 ] as const;
 
 const networkServicesSubItems = [
+  { href: "/network-services", label: "Panoramica", icon: ServerCog },
   { href: "/dns", label: "DNS", icon: Globe },
   { href: "/dhcp", label: "DHCP", icon: Wifi },
 ] as const;
@@ -93,8 +94,7 @@ export function Sidebar() {
     inventorySubItems.some((d) => pathname.startsWith(d.href))
   );
   const [networkServicesOpen, setNetworkServicesOpen] = useState(() =>
-    networkServicesSubItems.some((d) => pathname.startsWith(d.href)) ||
-    pathname.startsWith("/network-services")
+    networkServicesSubItems.some((d) => pathname.startsWith(d.href))
   );
   const [unackedAnomalies, setUnackedAnomalies] = useState(0);
   const [patchEnabled, setPatchEnabled] = useState(false);
@@ -310,8 +310,7 @@ export function Sidebar() {
             onClick={() => setNetworkServicesOpen((o) => !o)}
             className={cn(
               "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full",
-              networkServicesSubItems.some((d) => pathname.startsWith(d.href)) ||
-                pathname.startsWith("/network-services")
+              networkServicesSubItems.some((d) => pathname.startsWith(d.href))
                 ? "bg-sidebar-primary/20 text-sidebar-foreground"
                 : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             )}

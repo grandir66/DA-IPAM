@@ -17,6 +17,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 APP_DIR="${DA_INVENT_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 cd "$APP_DIR"
 
+# Canale da .env.local se DA_INVENT_BRANCH non è in ambiente (update manuale via SSH).
+if [ -z "${DA_INVENT_BRANCH:-}" ] && [ -f "$APP_DIR/.env.local" ]; then
+  DA_INVENT_BRANCH="$(grep -E '^[[:space:]]*DA_INVENT_BRANCH=' "$APP_DIR/.env.local" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"'" | tr -d '[:space:]')"
+  export DA_INVENT_BRANCH
+fi
+
 echo "=== DA-INVENT Update ==="
 echo "Directory: $APP_DIR"
 echo ""

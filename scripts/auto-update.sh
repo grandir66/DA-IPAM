@@ -19,6 +19,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 APP_DIR="${DA_INVENT_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 cd "$APP_DIR"
 
+if [ -z "${DA_INVENT_BRANCH:-}" ] && [ -f "$APP_DIR/.env.local" ]; then
+  DA_INVENT_BRANCH="$(grep -E '^[[:space:]]*DA_INVENT_BRANCH=' "$APP_DIR/.env.local" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"'" | tr -d '[:space:]')"
+  export DA_INVENT_BRANCH
+fi
+
 if [ ! -d .git ]; then
   echo "[auto-update] '$APP_DIR' non è un repo Git: skip (installazione non-git)."
   exit 0

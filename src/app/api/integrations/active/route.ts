@@ -2,21 +2,21 @@ import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
-import { isInternalIntegrationUrl } from "@/lib/integrations/public-url";
+import { isInternalIntegrationUrl, deriveDefaultIntegrationUiUrl } from "@/lib/integrations/public-url";
 import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
 import { listCredentials } from "@/lib/credentials-vault";
 import type { IntegrationComponent } from "@/lib/integrations/types";
 
 /**
  * Risolve un URL LAN-accessible per un kind di integrazione.
- * Preferisce `integration_*_ui_url`, launchpad Dashboard, env, proxy same-origin.
+ * Preferisce `integration_*_ui_url`, launchpad Dashboard, env (:7443 nginx).
  */
 function resolveLanUrl(kind: IntegrationComponent, fallback: string): string {
   const resolved = resolveIntegrationBrowserUrl(kind, fallback);
   if (resolved && !isInternalIntegrationUrl(resolved)) return resolved;
-  // Mai restituire l'URL API interno al browser — proxy same-origin come ultima risorsa.
-  if (kind === "librenms") return "/api/integrations/proxy/librenms";
-  return resolved || "";
+  const derived = deriveDefaultIntegrationUiUrl(kind);
+  if (derived && !isInternalIntegrationUrl(derived)) return derived.replace(/\/+$/, "");
+  return "";
 }
 
 function isInternalUrl(url: string | null | undefined): boolean {
@@ -69,22 +69,19 @@ export async function GET() {
 
   const result: Record<string, ActiveIntegrationInfo> = {};
 
-  // LibreNMS — sempre via reverse proxy quando configurato, così l'iframe
-  // funziona anche con `frame_options = "DENY"` (default LibreNMS).
+  // LibreNMS — URL diretto nginx :7443 (proxy same-origin rompe asset/CSS).
   const librenms = getIntegrationConfig("librenms");
   if (librenms.mode !== "disabled" && librenms.url) {
     const browserBase = resolveLanUrl("librenms", librenms.url);
-    const proxyUrl = "/api/integrations/proxy/librenms/";
-    const sso = !!librenms.adminPassword?.trim();
     result.librenms = {
       enabled: true,
-      url: proxyUrl,
-      directUrl: sso ? proxyUrl : browserBase,
+      url: browserBase,
+      directUrl: browserBase,
       label: "LibreNMS",
-      iframeNeedsHandshake: !sso && browserBase.startsWith("https://"),
-      ...( !sso && browserBase.startsWith("https://") && {
+      iframeNeedsHandshake: browserBase.startsWith("https://"),
+      ...(browserBase.startsWith("https://") && {
         handshakeReason:
-          "Accetta il certificato self-signed su :7443 oppure configura integration_librenms_admin_password per SSO via DA-IPAM.",
+          "Accetta il certificato self-signed su :7443 al primo accesso.",
       }),
     };
   } else {

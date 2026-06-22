@@ -12,10 +12,6 @@ import {
   librenmsDevicePath,
 } from "./public-url";
 
-const PROXY_BASE: Partial<Record<IntegrationComponent, string>> = {
-  librenms: "/api/integrations/proxy/librenms",
-};
-
 const DEFAULT_UI_PORTS: Partial<Record<IntegrationComponent, number>> = {
   librenms: 7443,
   graylog: 9000,
@@ -74,19 +70,13 @@ export function backfillAllIntegrationUiUrls(): void {
 
 /**
  * Base URL da usare nei link browser (Apri dashboard, device LibreNMS, …).
+ * Preferisce sempre l'URL LAN diretto (:7443 nginx) — il proxy same-origin
+ * rompe CSS/asset LibreNMS in appliance consolidated (2026-06-22).
  */
 export function resolveIntegrationBrowserUrl(
   kind: IntegrationComponent,
   apiUrl?: string | null,
 ): string {
-  // SSO LibreNMS: sempre proxy same-origin (no secondo login su :7443).
-  if (kind === "librenms") {
-    const adminPw = getSetting("integration_librenms_admin_password")?.trim();
-    if (adminPw && PROXY_BASE.librenms) {
-      return PROXY_BASE.librenms;
-    }
-  }
-
   const explicit = getSetting(`integration_${kind}_ui_url`)?.trim();
   if (explicit && !isInternalIntegrationUrl(explicit)) {
     return explicit.replace(/\/+$/, "");
@@ -109,12 +99,17 @@ export function resolveIntegrationBrowserUrl(
     return `https://${pubHost}:${port}`;
   }
 
+  const derived = deriveDefaultIntegrationUiUrl(kind);
+  if (derived && !isInternalIntegrationUrl(derived)) {
+    return derived.replace(/\/+$/, "");
+  }
+
   const api = (apiUrl ?? getSetting(`integration_${kind}_url`) ?? "").trim();
   if (api && !isInternalIntegrationUrl(api)) {
     return api.replace(/\/+$/, "");
   }
 
-  return PROXY_BASE[kind] ?? "";
+  return "";
 }
 
 export function librenmsDeviceUrl(deviceId: number | string, apiUrl?: string | null): string {

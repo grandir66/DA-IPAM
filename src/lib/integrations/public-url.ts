@@ -5,10 +5,6 @@
 
 import type { IntegrationComponent } from "./types";
 
-const PROXY_BASE: Partial<Record<IntegrationComponent, string>> = {
-  librenms: "/api/integrations/proxy/librenms",
-};
-
 const DEFAULT_UI_PORTS: Partial<Record<IntegrationComponent, number>> = {
   librenms: 7443,
   graylog: 9000,
@@ -64,7 +60,7 @@ export function deriveDefaultIntegrationUiUrl(kind: IntegrationComponent): strin
   const port = DEFAULT_UI_PORTS[kind];
   if (pubHost && port) return `https://${pubHost}:${port}`;
 
-  return PROXY_BASE[kind] ?? null;
+  return null;
 }
 
 /** Path relativo o assoluto alla pagina device LibreNMS (client-safe, no DB). */

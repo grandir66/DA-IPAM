@@ -29,9 +29,9 @@ export interface DeviceAcquisitionPlan {
 }
 
 export type DeviceAcquisitionInput = {
-  vendor?: NetworkDevice["vendor"];
-  protocol?: NetworkDevice["protocol"];
-  device_type?: NetworkDevice["device_type"];
+  vendor?: string;
+  protocol?: string;
+  device_type?: string;
   classification?: string | null;
   community_string?: string | null;
   snmp_credential_id?: number | null;
@@ -161,8 +161,8 @@ export function resolveDeviceAcquisition(device: DeviceAcquisitionInput): Device
   }
 
   if (networkDeviceUsesArpPoll({
-    device_type: device.device_type ?? "switch",
-    vendor: device.vendor ?? "other",
+    device_type: (device.device_type ?? "switch") as NetworkDevice["device_type"],
+    vendor: (device.vendor ?? "other") as NetworkDevice["vendor"],
     use_for_arp_poll: device.use_for_arp_poll,
   })) {
     return {

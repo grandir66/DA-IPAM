@@ -57,6 +57,7 @@ interface InventoryAgentState {
   enabledAt: string | null;
   hasToken: boolean;
   activeTokens: number;
+  tokenGeneratedAt?: string | null;
   ingestUrl: string;
   hubOrigin: string;
   publicUrlSource?: string;
@@ -148,11 +149,12 @@ export function InventoryAgentCard({
   const [tokenBusy, setTokenBusy] = useState(false);
   const [scriptBusy, setScriptBusy] = useState<Platform | null>(null);
   const [intervalHours, setIntervalHours] = useState(6);
-  const [tokenDialog, setTokenDialog] = useState<{
-    open: boolean;
-    token: string | null;
-    oneLiners: Partial<Record<Platform, string>>;
-  }>({ open: false, token: null, oneLiners: {} });
+  const [tokenDialog, setTokenDialog] = useState<{ open: boolean; token: string | null; regenerated: boolean }>({
+    open: false,
+    token: null,
+    regenerated: false,
+  });
+  const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false);
 
   const fetchState = useCallback(async () => {
     if (!installed) {
@@ -184,35 +186,37 @@ export function InventoryAgentCard({
     }
   };
 
-  const fetchOneLiners = async (token: string) => {
-    const platforms: Platform[] = ["windows", "linux", "macos"];
-    const oneLiners: Partial<Record<Platform, string>> = {};
-    await Promise.all(
-      platforms.map(async (platform) => {
-        const r = await fetch("/api/integrations/inventory-agent/install-script", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ platform, token, intervalHours, download: false }),
-        });
-        if (!r.ok) return;
-        const data = (await r.json()) as { oneLiner?: string };
-        if (data.oneLiner) oneLiners[platform] = data.oneLiner;
-      }),
-    );
-    return oneLiners;
+  const fetchPersonalizedOneLiner = async (platform: Platform): Promise<string | null> => {
+    const r = await fetch("/api/integrations/inventory-agent/install-script", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ platform, useStoredToken: true, intervalHours, download: false }),
+    });
+    if (!r.ok) return null;
+    const data = (await r.json()) as { oneLiner?: string };
+    return data.oneLiner ?? null;
   };
 
-  const handleGenerateToken = async () => {
+  const handleCreateToken = async (regenerate: boolean) => {
     setTokenBusy(true);
     try {
-      const r = await fetch("/api/integrations/inventory-agent/token", { method: "POST" });
-      const data = (await r.json()) as { token?: string; error?: string };
+      const r = await fetch("/api/integrations/inventory-agent/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(regenerate ? { regenerate: true } : {}),
+      });
+      const data = (await r.json()) as { token?: string; error?: string; code?: string };
+      if (r.status === 409) {
+        toast.message("Token già attivo — usa «Rigenera token» solo se necessario");
+        return;
+      }
       if (!r.ok || !data.token) {
         throw new Error(data.error ?? `HTTP ${r.status}`);
       }
-      const oneLiners = await fetchOneLiners(data.token);
-      setTokenDialog({ open: true, token: data.token, oneLiners });
+      setTokenDialog({ open: true, token: data.token, regenerated: regenerate });
+      if (regenerate) setRegenerateConfirmOpen(false);
       await fetchState();
+      toast.success(regenerate ? "Token rigenerato" : "Token creato");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Errore generazione token");
     } finally {
@@ -220,13 +224,13 @@ export function InventoryAgentCard({
     }
   };
 
-  const handleDownloadScript = async (platform: Platform, token: string) => {
+  const handleDownloadScript = async (platform: Platform) => {
     setScriptBusy(platform);
     try {
       const r = await fetch("/api/integrations/inventory-agent/install-script", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, token, intervalHours, download: true }),
+        body: JSON.stringify({ platform, useStoredToken: true, intervalHours, download: true }),
       });
       if (!r.ok) {
         const err = (await r.json().catch(() => null)) as { error?: string } | null;
@@ -326,14 +330,42 @@ export function InventoryAgentCard({
                 </div>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground mb-1">Token attivi</div>
+                <div className="text-xs text-muted-foreground mb-1">Token ingest</div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span>{state.activeTokens}</span>
-                  <Button size="sm" variant="secondary" disabled={!isAdmin || tokenBusy} onClick={() => void handleGenerateToken()}>
-                    {tokenBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <KeyRound className="h-3.5 w-3.5 mr-1" />}
-                    Genera token + script
-                  </Button>
+                  {state.hasToken ? (
+                    <>
+                      <Badge variant="outline" className="text-emerald-700 border-emerald-600/40">
+                        Configurato
+                      </Badge>
+                      {state.tokenGeneratedAt && (
+                        <span className="text-xs text-muted-foreground">
+                          da {formatDate(state.tokenGeneratedAt)}
+                        </span>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!isAdmin || tokenBusy}
+                        onClick={() => setRegenerateConfirmOpen(true)}
+                      >
+                        Rigenera token…
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={!isAdmin || tokenBusy}
+                      onClick={() => void handleCreateToken(false)}
+                    >
+                      {tokenBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <KeyRound className="h-3.5 w-3.5 mr-1" />}
+                      Genera token
+                    </Button>
+                  )}
                 </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Un token condiviso per tutte le postazioni. Non viene rigenerato automaticamente.
+                </p>
               </div>
             </div>
 
@@ -377,8 +409,11 @@ export function InventoryAgentCard({
 
               <TabsContent value="install" className="space-y-4 mt-3">
                 <p className="text-xs text-muted-foreground">
-                  Push verso <code>{displayIngestUrl}</code> ogni {intervalHours}h. Certificato self-signed:
-                  script con <code>curl -k</code> (hub) — download GLPI da GitHub resta verificato.
+                  Push verso <code>{displayIngestUrl}</code> ogni {intervalHours}h. I template con{" "}
+                  <code>&lt;TOKEN&gt;</code> sono sempre disponibili.
+                  {state.hasToken
+                    ? " Con token configurato puoi scaricare script già precompilati (token incluso, non mostrato di nuovo)."
+                    : " Genera il token una volta, poi scarica gli script precompilati da qui."}
                 </p>
 
                 {templateOneLiners && (
@@ -389,20 +424,53 @@ export function InventoryAgentCard({
                       <TabsTrigger value="macos" className="text-xs">macOS</TabsTrigger>
                     </TabsList>
                     {(["linux", "windows", "macos"] as const).map((p) => (
-                      <TabsContent key={p} value={p} className="space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-medium flex items-center gap-1">
-                            <Terminal className="h-3.5 w-3.5" />
-                            One-liner (sostituisci <code>&lt;TOKEN&gt;</code> dopo aver generato il token)
-                          </span>
-                          <Button variant="outline" size="sm" className="h-7" onClick={() => void copyText(templateOneLiners[p], "Comando")}>
-                            <Copy className="h-3 w-3 mr-1" />
-                            Copia
-                          </Button>
+                      <TabsContent key={p} value={p} className="space-y-3">
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="text-xs font-medium flex items-center gap-1">
+                              <Terminal className="h-3.5 w-3.5" />
+                              Template (sostituisci <code>&lt;TOKEN&gt;</code>)
+                            </span>
+                            <Button variant="outline" size="sm" className="h-7" onClick={() => void copyText(templateOneLiners[p], "Template")}>
+                              <Copy className="h-3 w-3 mr-1" />
+                              Copia
+                            </Button>
+                          </div>
+                          <Textarea readOnly className="font-mono text-[11px] min-h-[88px]" value={templateOneLiners[p]} />
                         </div>
-                        <Textarea readOnly className="font-mono text-[11px] min-h-[100px]" value={templateOneLiners[p]} />
+
+                        {state.hasToken && isAdmin && (
+                          <div className="flex flex-wrap gap-2 pt-1 border-t border-dashed">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={scriptBusy === p}
+                              onClick={async () => {
+                                const oneLiner = await fetchPersonalizedOneLiner(p);
+                                if (oneLiner) void copyText(oneLiner, "One-liner con token");
+                                else toast.error("Impossibile generare one-liner — verifica il token");
+                              }}
+                            >
+                              <Copy className="h-3.5 w-3.5 mr-1" />
+                              Copia one-liner con token
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={scriptBusy === p}
+                              onClick={() => void handleDownloadScript(p)}
+                            >
+                              {scriptBusy === p ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                              ) : (
+                                <Download className="h-3.5 w-3.5 mr-1" />
+                              )}
+                              Scarica script completo
+                            </Button>
+                          </div>
+                        )}
+
                         <p className="text-[10px] text-muted-foreground">
-                          Script template:{" "}
+                          Script template pubblico:{" "}
                           <a href={state.installScripts[p]} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">
                             {state.installScripts[p]}
                           </a>
@@ -413,8 +481,9 @@ export function InventoryAgentCard({
                 )}
 
                 {!state.hasToken && (
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
-                    Genera un token per ottenere script precompilati con URL ingest e Bearer già inclusi.
+                  <p className="text-xs text-amber-700 dark:text-amber-400 rounded-md border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2">
+                    Genera il token (sezione sopra) per abilitare download e one-liner precompilati. I template con{" "}
+                    <code>&lt;TOKEN&gt;</code> restano utilizzabili subito.
                   </p>
                 )}
               </TabsContent>
@@ -499,12 +568,16 @@ export function InventoryAgentCard({
         )}
       </Card>
 
-      <Dialog open={tokenDialog.open} onOpenChange={(open) => !open && setTokenDialog({ open: false, token: null, oneLiners: {} })}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <Dialog
+        open={tokenDialog.open}
+        onOpenChange={(open) => !open && setTokenDialog({ open: false, token: null, regenerated: false })}
+      >
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Token e script di installazione</DialogTitle>
+            <DialogTitle>{tokenDialog.regenerated ? "Nuovo token ingest" : "Token ingest creato"}</DialogTitle>
             <DialogDescription>
-              Il token non verrà mostrato di nuovo. Gli script includono download GLPI Agent, push schedulato e credenziali ingest.
+              Copia e conserva il token in un vault. Non verrà mostrato di nuovo in chiaro.
+              Gli script precompilati restano scaricabili dalla tab <strong>Script installazione</strong>.
             </DialogDescription>
           </DialogHeader>
 
@@ -519,56 +592,35 @@ export function InventoryAgentCard({
           </div>
 
           {state && (
-            <div className="text-xs space-y-1">
-              <div>
-                <span className="text-muted-foreground">Ingest URL: </span>
-                <code>{displayIngestUrl}</code>
-              </div>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Ingest URL: <code className="break-all">{displayIngestUrl}</code>
+            </p>
           )}
 
-          <Tabs defaultValue="linux">
-            <TabsList>
-              <TabsTrigger value="linux">Linux</TabsTrigger>
-              <TabsTrigger value="windows">Windows</TabsTrigger>
-              <TabsTrigger value="macos">macOS</TabsTrigger>
-            </TabsList>
-            {(["linux", "windows", "macos"] as const).map((p) => (
-              <TabsContent key={p} value={p} className="space-y-3">
-                {tokenDialog.oneLiners[p] ? (
-                  <>
-                    <Textarea readOnly className="font-mono text-[11px] min-h-[120px]" value={tokenDialog.oneLiners[p]} />
-                    <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" size="sm" onClick={() => void copyText(tokenDialog.oneLiners[p]!, "Comando install")}>
-                        <Copy className="h-3.5 w-3.5 mr-1" />
-                        Copia one-liner
-                      </Button>
-                      {tokenDialog.token && (
-                        <Button
-                          size="sm"
-                          disabled={scriptBusy === p}
-                          onClick={() => void handleDownloadScript(p, tokenDialog.token!)}
-                        >
-                          {scriptBusy === p ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                          ) : (
-                            <Download className="h-3.5 w-3.5 mr-1" />
-                          )}
-                          Scarica script completo
-                        </Button>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">One-liner non disponibile.</p>
-                )}
-              </TabsContent>
-            ))}
-          </Tabs>
-
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setTokenDialog({ open: false, token: null, oneLiners: {} })}>
+            <Button variant="secondary" onClick={() => setTokenDialog({ open: false, token: null, regenerated: false })}>
               Chiudi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={regenerateConfirmOpen} onOpenChange={setRegenerateConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rigenerare il token ingest?</DialogTitle>
+            <DialogDescription>
+              Il token attuale verrà <strong>revocato</strong>. Tutte le postazioni già configurate smetteranno di
+              inviare inventario finché non aggiorni <code>INGEST_TOKEN</code> negli script o nel cron.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setRegenerateConfirmOpen(false)}>
+              Annulla
+            </Button>
+            <Button variant="destructive" disabled={tokenBusy} onClick={() => void handleCreateToken(true)}>
+              {tokenBusy ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Rigenera token
             </Button>
           </DialogFooter>
         </DialogContent>

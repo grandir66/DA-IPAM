@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getCurrentTenantCode } from "@/lib/db-tenant";
-import { isInventoryAgentEnabled } from "@/lib/inventory-agent/feature";
+import { isInventoryAgentEnabled, getStoredInventoryIngestTokenPlaintext } from "@/lib/inventory-agent/feature";
 import { publicHubOrigin, publicIngestUrl } from "@/lib/inventory-agent/public-url";
 import {
   buildInstallScript,
@@ -17,6 +17,8 @@ import {
 const bodySchema = z.object({
   platform: z.enum(["windows", "linux", "macos"]),
   token: z.string().min(16).optional(),
+  /** Usa il token ingest già salvato per il tenant (admin). */
+  useStoredToken: z.boolean().optional(),
   intervalHours: z.number().int().min(1).max(168).optional(),
   /** true = file con token embedded; false = solo one-liner template */
   download: z.boolean().optional(),
@@ -50,13 +52,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Parametri non validi", details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { platform, token, intervalHours, download } = parsed.data;
+    const { platform, token, useStoredToken, intervalHours, download } = parsed.data;
     if (!isInventoryInstallPlatform(platform)) {
       return NextResponse.json({ error: "Platform non valida" }, { status: 400 });
     }
-    if (!token) {
+
+    let resolvedToken = token;
+    if (useStoredToken) {
+      resolvedToken = getStoredInventoryIngestTokenPlaintext(tenantCode) ?? undefined;
+    }
+    if (!resolvedToken) {
       return NextResponse.json(
-        { error: "Token obbligatorio — genera prima un token ingest" },
+        {
+          error: useStoredToken
+            ? "Token ingest non disponibile — genera prima un token in Impostazioni"
+            : "Token obbligatorio — genera prima un token ingest oppure usa useStoredToken",
+        },
         { status: 400 },
       );
     }
@@ -65,7 +76,7 @@ export async function POST(request: Request) {
     const hubOrigin = publicHubOrigin(request);
     const params = {
       ingestUrl,
-      ingestToken: token,
+      ingestToken: resolvedToken,
       hubOrigin,
       intervalHours: normalizePushIntervalHours(intervalHours),
     };

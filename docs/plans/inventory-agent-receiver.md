@@ -31,7 +31,10 @@ GLPI Agent (inventory-only)
 ## Autenticazione ingest
 
 - Header: `Authorization: Bearer <token>` oppure `X-Domarc-Ingest-Token`
-- Token generato in **Impostazioni → Inventory Agent** (per tenant)
+- Token generato in **Impostazioni → Inventory Agent** (per tenant, condiviso tra tutte le postazioni)
+- **Prima generazione**: pulsante «Genera token» — mostra il valore una sola volta
+- **Rigenerazione**: solo tramite «Rigenera token…» con conferma (revoca il precedente)
+- Script installazione: sempre visibili (template `<TOKEN>`); download precompilato usa token salvato server-side
 - Lookup hub: `inventory_ingest_tokens(token_sha256 → tenant_code)`
 - Feature flag hub: `tenant_features.inventory_agent`
 

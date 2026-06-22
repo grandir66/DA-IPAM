@@ -2,7 +2,7 @@
  * Feature flag + ingest token lifecycle (hub tenant_features).
  */
 import crypto from "node:crypto";
-import { encrypt } from "@/lib/crypto";
+import { encrypt, decrypt } from "@/lib/crypto";
 import { getHubDb } from "@/lib/db-hub";
 import {
   getFeatureStatus,
@@ -39,12 +39,46 @@ export async function getInventoryAgentState(tenantCode: string) {
   const tokenCount = getHubDb()
     .prepare("SELECT COUNT(*) AS c FROM inventory_ingest_tokens WHERE tenant_code = ?")
     .get(tenantCode) as { c: number };
+  let tokenGeneratedAt: string | null = null;
+  if (status.configJson) {
+    try {
+      const cfg = JSON.parse(status.configJson) as InventoryAgentConfig;
+      tokenGeneratedAt = cfg.generatedAt ?? null;
+    } catch {
+      tokenGeneratedAt = null;
+    }
+  }
   return {
     enabled: status.enabled,
     enabledAt: status.enabledAt,
     hasToken,
     activeTokens: tokenCount.c,
+    tokenGeneratedAt,
   };
+}
+
+/** Token ingest salvato cifrato in hub (solo server-side, es. script precompilati). */
+export function getStoredInventoryIngestTokenPlaintext(tenantCode: string): string | null {
+  const row = getHubDb()
+    .prepare(
+      "SELECT config_json FROM tenant_features WHERE tenant_code = ? AND feature_key = ?",
+    )
+    .get(tenantCode, INVENTORY_AGENT_FEATURE_KEY) as { config_json: string | null } | undefined;
+  if (!row?.config_json) return null;
+  try {
+    const cfg = JSON.parse(row.config_json) as InventoryAgentConfig;
+    if (!cfg.ingestTokenEnc) return null;
+    return decrypt(cfg.ingestTokenEnc);
+  } catch {
+    return null;
+  }
+}
+
+export function tenantHasActiveIngestToken(tenantCode: string): boolean {
+  const row = getHubDb()
+    .prepare("SELECT COUNT(*) AS c FROM inventory_ingest_tokens WHERE tenant_code = ?")
+    .get(tenantCode) as { c: number };
+  return row.c > 0;
 }
 
 export function installInventoryAgentFeature(tenantCode: string, userId: number | null): void {

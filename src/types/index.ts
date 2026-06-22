@@ -769,7 +769,7 @@ export interface HostInput {
 }
 
 export interface HostUpdate {
-  custom_name?: string;
+  custom_name?: string | null;
   classification?: string;
   inventory_code?: string;
   notes?: string;

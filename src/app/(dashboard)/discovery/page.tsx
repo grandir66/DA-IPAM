@@ -72,12 +72,12 @@ const DEFAULT_CLASS_PRESETS: ClassPreset[] = [
   { filter: "switch",         label: "Switch",     iconName: "Cable",     match: ["switch"], builtin: true },
   { filter: "access_point",   label: "AP",         iconName: "Wifi",      match: ["access_point"], builtin: true },
   { filter: "firewall",       label: "Firewall",   iconName: "Shield",    match: ["firewall"], builtin: true },
-  { filter: "group:net",      label: "NET",        iconName: "Network",   match: ["bridge", "repeater", "modem", "ont", "load_balancer", "vpn_gateway", "proxy", "rete_ot"], builtin: true },
+  { filter: "group:net",      label: "NET",        iconName: "Network",   match: ["bridge", "repeater", "modem", "ont", "load_balancer", "vpn_gateway", "proxy", "rete_ot", "controller_wifi", "network_controller"], builtin: true },
   { filter: "ups",            label: "UPS",        iconName: "BatteryCharging", match: ["ups"], builtin: true },
   { filter: "group:tel",      label: "TEL",        iconName: "Phone",     match: ["voip"], builtin: true },
   { filter: "group:print",    label: "PRINT",      iconName: "Printer",   match: ["stampante", "scanner", "fotocopiatrice", "multifunzione"], builtin: true },
   { filter: "group:cam",      label: "CAM",        iconName: "Camera",    match: ["telecamera"], builtin: true },
-  { filter: "group:iot",      label: "IOT",        iconName: "Cpu",       match: ["iot", "smart_tv", "console", "sensore", "plc", "hmi", "controller"], builtin: true },
+  { filter: "group:iot",      label: "IOT",        iconName: "Cpu",       match: ["iot", "domotica", "smart_tv", "console", "sensore", "plc", "hmi", "controller"], builtin: true },
   { filter: "group:mobile",   label: "MOBILE",     iconName: "Smartphone",match: ["tablet", "smartphone"], builtin: true },
   { filter: "group:storage",  label: "STORAGE",    iconName: "Database",  match: ["storage", "nas", "nas_synology", "nas_qnap"], builtin: true },
   { filter: "group:multihomed", label: "MH",       iconName: "Link2",     match: [] /* speciale: h.multihomed != null */, builtin: true },
@@ -1414,8 +1414,23 @@ export default function DiscoveryPage() {
             {h.ip} <ExternalLink className="h-3 w-3 opacity-50" />
           </Link>
         );
-      case "hostname":
-        return <span className="font-medium truncate max-w-[200px] block" title={displayName(h)}>{displayName(h) || "—"}</span>;
+      case "hostname": {
+        const autoName = h.hostname || h.dns_reverse || h.ad_dns_host_name || "";
+        return (
+          <InlineEditCell
+            mode="text"
+            value={h.custom_name ?? ""}
+            placeholder={autoName || "Nome host…"}
+            onSave={(v) => saveHostFieldInline(h.id, { custom_name: v.trim() ? v.trim() : null })}
+            display={
+              displayName(h)
+                ? <span className="font-medium truncate max-w-[200px] block" title={displayName(h)}>{displayName(h)}</span>
+                : <span className="text-muted-foreground text-xs">—</span>
+            }
+            title="Clicca per modificare il nome visualizzato"
+          />
+        );
+      }
       case "status":
         return (
           <StatusBadge

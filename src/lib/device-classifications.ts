@@ -64,6 +64,9 @@ export const DEVICE_CLASSIFICATIONS = [
   "hmi",
   "sensore",
   "controller",
+  "domotica",
+  "controller_wifi",
+  "network_controller",
   "bridge",
   "repeater",
   "modem",
@@ -84,6 +87,9 @@ const CLASSIFICATION_LABELS: Record<string, string> = {
   server_linux: "Server Linux",
   access_point: "Access Point",
   storage: "Storage",
+  domotica: "Domotica",
+  controller_wifi: "Controller WiFi",
+  network_controller: "Controller di rete",
 };
 
 /** Restituisce l'etichetta leggibile per una classificazione (es. workstation → "PC") */
@@ -162,6 +168,9 @@ const GROUP_BY_CLASSIFICATION: Record<string, DeviceCategoryGroup> = {
   hmi: "iot_ot",
   sensore: "iot_ot",
   controller: "iot_ot",
+  domotica: "iot_ot",
+  controller_wifi: "infrastructure",
+  network_controller: "infrastructure",
   smart_tv: "media",
   console: "media",
   media_player: "media",

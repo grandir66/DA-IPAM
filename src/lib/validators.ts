@@ -56,7 +56,7 @@ export const HostSchema = z.object({
 });
 
 export const HostUpdateSchema = z.object({
-  custom_name: z.string().max(200).optional(),
+  custom_name: z.string().max(200).optional().nullable(),
   classification: z.string().max(100).optional(),
   inventory_code: z.string().max(100).optional(),
   notes: z.string().max(2000).optional(),

@@ -38,6 +38,8 @@ import { ScannerEdgeCard } from "./scanner-edge-card";
 import { WazuhCard } from "./wazuh-card";
 import { InventoryAgentCard } from "./inventory-agent-card";
 import { ModuleJsonImport } from "./module-json-import";
+import { IntegrationViewer } from "@/components/integrations/integration-viewer";
+import { CredentialsVaultPanel } from "./credentials-vault-panel";
 import type { InstallJob } from "@/lib/integrations/types";
 import type { ModuleKey } from "@/lib/modules/registry";
 
@@ -434,7 +436,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
         <IntegrationCard
           component="librenms"
           title="LibreNMS"
-          description="Monitoring SNMP e metriche di rete. I grafici device sono embeddati in DA-IPAM; la dashboard completa si apre dalla Launchpad."
+          description="Monitoring SNMP e metriche di rete. I grafici device sono embeddati in DA-IPAM; la dashboard completa si apre dal Launchpad o da qui."
           dockerAvailable={dockerAvailable ?? false}
           showSyncButton
         />
@@ -470,6 +472,10 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
           dockerAvailable={dockerAvailable ?? false}
         />
       </section>
+
+      <IntegrationViewer />
+
+      <CredentialsVaultPanel isAdmin={isAdmin} />
 
       <Dialog
         open={uninstallDialog.open}

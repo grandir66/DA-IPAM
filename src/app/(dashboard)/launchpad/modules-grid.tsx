@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import type { ModuleState, ModuleKey } from "@/lib/modules/registry";
 import type { ModuleHealth, ModuleHealthStatus, ModuleVerdict } from "@/lib/modules/health";
+import { isModuleLaunchable } from "@/lib/modules/launchable";
 
 const ICONS: Record<string, LucideIcon> = {
   ShieldAlert,
@@ -78,7 +79,12 @@ function relativeTime(iso: string | null): string | null {
   return `${Math.round(h / 24)}g fa`;
 }
 
-export function ModulesGrid() {
+interface ModulesGridProps {
+  /** launchpad = solo moduli attivi; full = tutti (debug/admin). */
+  mode?: "launchpad" | "full";
+}
+
+export function ModulesGrid({ mode = "full" }: ModulesGridProps) {
   const [modules, setModules] = useState<ModuleState[] | null>(null);
   const [health, setHealth] = useState<Map<ModuleKey, ModuleHealth>>(new Map());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -114,26 +120,52 @@ export function ModulesGrid() {
     };
   }, [loadHealth]);
 
+  const visibleModules =
+    modules === null
+      ? null
+      : mode === "launchpad"
+        ? modules.filter((m) => isModuleLaunchable(m, health.get(m.key)))
+        : modules;
+
+  const skeletonCount = mode === "launchpad" ? 3 : 6;
+
   return (
     <div>
-      <div className="mb-3">
-        <h2 className="text-lg font-semibold">Moduli</h2>
-        <p className="text-sm text-muted-foreground">
-          Apri la gestione di ogni modulo o vai alla configurazione. Lo stato si aggiorna
-          ogni 60s.
-        </p>
-      </div>
+      {mode === "full" && (
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold">Moduli</h2>
+          <p className="text-sm text-muted-foreground">
+            Apri la gestione di ogni modulo o vai alla configurazione. Lo stato si aggiorna
+            ogni 60s.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {modules === null
-          ? Array.from({ length: 6 }).map((_, i) => (
+        {visibleModules === null
+          ? Array.from({ length: skeletonCount }).map((_, i) => (
               <div key={i} className="h-32 rounded-lg border border-border bg-card animate-pulse" />
             ))
-          : modules.map((m) => (
+          : visibleModules.length === 0
+            ? (
+              <div className="col-span-full rounded-lg border border-dashed border-border bg-muted/20 px-6 py-10 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Nessun modulo attivo al momento.
+                </p>
+                <Link
+                  href="/settings?tab=moduli"
+                  className="inline-block mt-3 text-sm text-primary underline-offset-2 hover:underline"
+                >
+                  Configura i moduli →
+                </Link>
+              </div>
+            )
+            : visibleModules.map((m) => (
               <ModuleTile
                 key={m.key}
                 module={m}
                 health={health.get(m.key)}
                 onHealthUpdate={mergeHealth}
+                compact={mode === "launchpad"}
               />
             ))}
       </div>
@@ -145,10 +177,12 @@ function ModuleTile({
   module: m,
   health,
   onHealthUpdate,
+  compact = false,
 }: {
   module: ModuleState;
   health?: ModuleHealth;
   onHealthUpdate: (h: ModuleHealth) => void;
+  compact?: boolean;
 }) {
   const router = useRouter();
   const Icon = ICONS[m.icon] ?? Activity;
@@ -274,14 +308,16 @@ function ModuleTile({
             Apri
           </span>
         )}
-        <Link
-          href={m.configHref}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors"
-        >
-          <Settings2 className="h-3.5 w-3.5" />
-          Configura
-        </Link>
-        {m.installed && (
+        {!compact && (
+          <Link
+            href={m.configHref}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            Configura
+          </Link>
+        )}
+        {!compact && m.installed && (
           <button
             type="button"
             onClick={() => void verify()}
@@ -293,7 +329,7 @@ function ModuleTile({
             {verifying ? "Verifico…" : "Verifica"}
           </button>
         )}
-        {showRepair && (
+        {showRepair && !compact && (
           <button
             type="button"
             onClick={() => void repair()}

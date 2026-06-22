@@ -75,14 +75,11 @@ fi
 
 # ─── Venv pywinrm per winrm-bridge.py ───────────────────────────────────────
 
-log "Setup venv pywinrm in $WINRM_VENV"
-if [ ! -x "$WINRM_VENV/bin/python" ]; then
-    python3 -m venv "$WINRM_VENV"
-fi
-"$WINRM_VENV/bin/pip" install --upgrade pip --quiet
-"$WINRM_VENV/bin/pip" install "pywinrm[kerberos]" pyspnego --quiet
-WINRM_VER="$("$WINRM_VENV/bin/python" -c 'import winrm; print(winrm.__version__)')"
-ok "pywinrm $WINRM_VER pronto"
+log "Setup venv WinRM (scripts/setup-winrm-venv.sh)"
+WINRM_VENV="${WINRM_VENV:-/root/.da-invent-venv}" \
+  bash "${APP_DIR}/scripts/setup-winrm-venv.sh"
+WINRM_VER="$("${WINRM_VENV}/bin/python" -c 'import winrm; print(winrm.__version__)')"
+ok "pywinrm ${WINRM_VER} pronto in ${WINRM_VENV}"
 
 # ─── Node.js / npm presence ─────────────────────────────────────────────────
 

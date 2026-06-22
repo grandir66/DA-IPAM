@@ -48,9 +48,9 @@ fi
 ln -sfn "${SECRETS_FILE}" "${CWD_SECRETS}"
 
 # Venv pywinrm — stesso path del hub 192.168.4.8: /root/.da-invent-venv
-if [ -x "${APP_DIR}/deploy/docker/setup-winrm-venv.sh" ]; then
+if [ -x "${APP_DIR}/scripts/setup-winrm-venv.sh" ]; then
   WINRM_VENV="${WINRM_VENV:-/root/.da-invent-venv}" HOME="${HOME:-/root}" \
-    "${APP_DIR}/deploy/docker/setup-winrm-venv.sh" || \
+    bash "${APP_DIR}/scripts/setup-winrm-venv.sh" || \
     echo "[entrypoint] Avviso: setup venv WinRM fallito — scan Windows non disponibili." >&2
 fi
 export WINRM_PYTHON="${WINRM_PYTHON:-/root/.da-invent-venv/bin/python3}"

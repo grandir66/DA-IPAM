@@ -14,8 +14,8 @@ export function findBridgePython(): string {
   const cwd = process.cwd();
 
   const candidates = [
-    path.join(appDir, ".venv-winrm", "bin", "python3"),
     path.join(home, ".da-invent-venv", "bin", "python3"),
+    path.join(appDir, ".venv-winrm", "bin", "python3"),
     path.join(home, ".da-inventory-venv", "bin", "python3"),
     path.join(home, ".da-ipam-venv", "bin", "python3"),
     path.join(cwd, ".venv-winrm", "bin", "python3"),

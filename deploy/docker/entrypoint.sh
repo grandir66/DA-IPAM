@@ -47,13 +47,14 @@ fi
 
 ln -sfn "${SECRETS_FILE}" "${CWD_SECRETS}"
 
-# Venv pywinrm (WinRM/WMI/SSH verso Windows): idempotente, ripara container senza rebuild
+# Venv pywinrm — stesso path del hub 192.168.4.8: /root/.da-invent-venv
 if [ -x "${APP_DIR}/deploy/docker/setup-winrm-venv.sh" ]; then
-  WINRM_VENV="${APP_DIR}/.venv-winrm" "${APP_DIR}/deploy/docker/setup-winrm-venv.sh" || \
+  WINRM_VENV="${WINRM_VENV:-/root/.da-invent-venv}" HOME="${HOME:-/root}" \
+    "${APP_DIR}/deploy/docker/setup-winrm-venv.sh" || \
     echo "[entrypoint] Avviso: setup venv WinRM fallito — scan Windows non disponibili." >&2
 fi
-export WINRM_PYTHON="${WINRM_PYTHON:-${APP_DIR}/.venv-winrm/bin/python3}"
-export SSH_PYTHON="${SSH_PYTHON:-${APP_DIR}/.venv-winrm/bin/python3}"
+export WINRM_PYTHON="${WINRM_PYTHON:-/root/.da-invent-venv/bin/python3}"
+export SSH_PYTHON="${SSH_PYTHON:-/root/.da-invent-venv/bin/python3}"
 
 echo "[entrypoint] DA-IPAM container — secrets=${SECRETS_FILE} data=${DATA_DIR} winrm=${WINRM_PYTHON}"
 

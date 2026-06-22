@@ -1,10 +1,9 @@
 #!/bin/bash
-# Crea/aggiorna venv Python per bridge WinRM/WMI/SSH (pywinrm, impacket, paramiko).
-# Usato da: deploy/docker/Dockerfile (build) e entrypoint.sh (bootstrap su container esistenti).
+# Crea/aggiorna venv Python per bridge WinRM/WMI/SSH — parità con hub 192.168.4.8
+# (/root/.da-invent-venv, pywinrm + Kerberos via pyspnego/gssapi).
 set -euo pipefail
 
-APP_DIR="${DA_INVENT_APP_DIR:-/opt/da-ipam}"
-WINRM_VENV="${WINRM_VENV:-${APP_DIR}/.venv-winrm}"
+WINRM_VENV="${WINRM_VENV:-${HOME:-/root}/.da-invent-venv}"
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "[setup-winrm-venv] python3 non installato — salto (installare python3 python3-venv)." >&2
@@ -21,10 +20,10 @@ PY="${WINRM_VENV}/bin/python3"
 
 "${PIP}" install --quiet --upgrade pip
 
-echo "[setup-winrm-venv] Installazione pywinrm + dipendenze..."
-if ! "${PIP}" install --quiet pywinrm requests-ntlm requests-credssp paramiko impacket; then
-  echo "[setup-winrm-venv] ERRORE: install base fallita." >&2
-  exit 1
+echo "[setup-winrm-venv] Installazione pywinrm + dipendenze (come hub 192.168.4.8)..."
+if ! "${PIP}" install --quiet "pywinrm[kerberos]" pyspnego requests-ntlm requests-credssp paramiko impacket; then
+  echo "[setup-winrm-venv] pywinrm[kerberos] fallito — retry minimale..."
+  "${PIP}" install --quiet pywinrm requests-ntlm requests-credssp paramiko impacket
 fi
 
 # Kerberos opzionale (gssapi richiede libkrb5-dev a build-time)

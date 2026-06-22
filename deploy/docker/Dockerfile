@@ -46,11 +46,13 @@ WORKDIR /opt/da-ipam
 
 COPY --from=builder /build /opt/da-ipam
 
-ENV WINRM_PYTHON=/opt/da-ipam/.venv-winrm/bin/python3 \
-    SSH_PYTHON=/opt/da-ipam/.venv-winrm/bin/python3
+ENV HOME=/root \
+    WINRM_VENV=/root/.da-invent-venv \
+    WINRM_PYTHON=/root/.da-invent-venv/bin/python3 \
+    SSH_PYTHON=/root/.da-invent-venv/bin/python3
 
 RUN chmod +x /opt/da-ipam/deploy/docker/setup-winrm-venv.sh \
-    && /opt/da-ipam/deploy/docker/setup-winrm-venv.sh
+    && WINRM_VENV=/root/.da-invent-venv /opt/da-ipam/deploy/docker/setup-winrm-venv.sh
 
 # Nessun .env.local nell'immagine — solo volume /data
 RUN rm -f /opt/da-ipam/.env.local /opt/da-ipam/.env \

@@ -355,6 +355,7 @@ import { getTenantDb } from "./db-tenant";
 import { getActiveTenants } from "./db-hub";
 import { isInternalIntegrationUrl } from "./integrations/public-url";
 import { resolveIntegrationBrowserUrl } from "./integrations/public-url-server";
+import { resolveLibreNMSOperatorUrl } from "./integrations/librenms-proxy-auth";
 
 /**
  * Importa le credenziali esistenti nel vault cifrato.
@@ -467,16 +468,27 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
   );
   const lnmsApi = getSetting("integration_librenms_url") ?? undefined;
   const lnmsUi = resolveIntegrationBrowserUrl("librenms", lnmsApi);
-  if (lnmsUi && lnmsUi !== lnmsApi && !byKind.has("librenms:LibreNMS Dashboard")) {
-    createCredential({
-      kind: "librenms",
-      label: "LibreNMS Dashboard",
-      url: lnmsUi,
-      username: "admin",
-      password: getSetting("integration_librenms_admin_password") ?? null,
-      notes: "UI nginx LAN (browser). L'URL API interno resta in Impostazioni → Moduli.",
-    });
-    created++;
+  const lnmsLaunch = lnmsUi ? resolveLibreNMSOperatorUrl(lnmsUi) : lnmsUi;
+  if (lnmsLaunch && lnmsUi) {
+    const uiNorm = lnmsUi.replace(/\/+$/, "");
+    for (const cred of existing) {
+      if (cred.kind !== "librenms" || !cred.url || cred.url === lnmsLaunch) continue;
+      const credNorm = cred.url.replace(/\/+$/, "");
+      if (credNorm === uiNorm || cred.url.startsWith(`${uiNorm}/`)) {
+        updateCredential(cred.id, { url: lnmsLaunch });
+      }
+    }
+    if (!byKind.has("librenms:LibreNMS Dashboard")) {
+      createCredential({
+        kind: "librenms",
+        label: "LibreNMS Dashboard",
+        url: lnmsLaunch,
+        username: "admin",
+        password: getSetting("integration_librenms_admin_password") ?? null,
+        notes: "UI nginx LAN (browser). L'URL API interno resta in Impostazioni → Moduli.",
+      });
+      created++;
+    }
   }
 
   // Graylog (settings legacy plain-text)

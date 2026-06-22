@@ -107,9 +107,32 @@ export function librenmsAutologinEnabled(): boolean {
   );
 }
 
+/** Path same-origin per SSO → redirect a ui_url :7443 con cookie Laravel. */
+export function librenmsSsoEntryPath(): string {
+  return "/api/integrations/librenms/sso";
+}
+
+/**
+ * URL da usare in Launchpad / link operatore: SSO se configurato, altrimenti dashboard diretta.
+ */
+export function resolveLibreNMSOperatorUrl(browserUrl: string): string {
+  if (librenmsAutologinEnabled() && browserUrl) {
+    return librenmsSsoEntryPath();
+  }
+  return browserUrl;
+}
+
 /** Cookie da impostare nel browser (Path = proxy base). */
 export function buildBrowserSetCookies(cookieHeader: string, basePath: string): string[] {
-  const path = basePath.replace(/\/+$/, "") || "/";
+  return buildLibreNMSSetCookies(cookieHeader, basePath.replace(/\/+$/, "") || "/");
+}
+
+/** Cookie sessione LibreNMS per accesso diretto nginx :7443 (Path=/, stesso host). */
+export function buildDirectLibreNMSSetCookies(cookieHeader: string): string[] {
+  return buildLibreNMSSetCookies(cookieHeader, "/");
+}
+
+function buildLibreNMSSetCookies(cookieHeader: string, path: string): string[] {
   const out: string[] = [];
   for (const part of cookieHeader.split(";")) {
     const trimmed = part.trim();

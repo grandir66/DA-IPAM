@@ -4,6 +4,10 @@ import { getIntegrationConfig } from "@/lib/integrations/config";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { isInternalIntegrationUrl, deriveDefaultIntegrationUiUrl } from "@/lib/integrations/public-url";
 import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
+import {
+  librenmsAutologinEnabled,
+  resolveLibreNMSOperatorUrl,
+} from "@/lib/integrations/librenms-proxy-auth";
 import { listCredentials } from "@/lib/credentials-vault";
 import type { IntegrationComponent } from "@/lib/integrations/types";
 
@@ -69,19 +73,23 @@ export async function GET() {
 
   const result: Record<string, ActiveIntegrationInfo> = {};
 
-  // LibreNMS — URL diretto nginx :7443 (proxy same-origin rompe asset/CSS).
+  // LibreNMS — SSO same-origin poi redirect :7443 (evita login ripetuto; proxy rompe CSS).
   const librenms = getIntegrationConfig("librenms");
   if (librenms.mode !== "disabled" && librenms.url) {
     const browserBase = resolveLanUrl("librenms", librenms.url);
+    const openUrl = browserBase ? resolveLibreNMSOperatorUrl(browserBase) : "";
     result.librenms = {
       enabled: true,
-      url: browserBase,
+      url: openUrl || browserBase,
       directUrl: browserBase,
       label: "LibreNMS",
       iframeNeedsHandshake: browserBase.startsWith("https://"),
-      ...(browserBase.startsWith("https://") && {
+      ...(browserBase.startsWith("https://") && !librenmsAutologinEnabled() && {
         handshakeReason:
           "Accetta il certificato self-signed su :7443 al primo accesso.",
+      }),
+      ...(librenmsAutologinEnabled() && {
+        handshakeReason: "Accesso automatico con credenziali appliance (SSO).",
       }),
     };
   } else {

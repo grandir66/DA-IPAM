@@ -20,6 +20,7 @@
  */
 import { listCredentials } from "@/lib/credentials-vault";
 import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
+import { resolveLibreNMSOperatorUrl } from "@/lib/integrations/librenms-proxy-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { getNetServicesState } from "@/lib/network-services/feature";
@@ -235,6 +236,7 @@ export async function resolveModules(tenantCode: string): Promise<ModuleState[]>
     const cfg = getIntegrationConfig("librenms");
     const entry = findLaunchpadEntry(creds, "librenms", "LibreNMS");
     const browserUrl = resolveIntegrationBrowserUrl("librenms", cfg.url);
+    const launchUrl = browserUrl ? resolveLibreNMSOperatorUrl(browserUrl) : null;
     const installed = cfg.mode !== "disabled" || !!entry;
     const configured = cfg.mode !== "disabled" && !!cfg.url;
     out.push({
@@ -242,7 +244,7 @@ export async function resolveModules(tenantCode: string): Promise<ModuleState[]>
       installed,
       configured,
       enabled: configured,
-      uiUrl: browserUrl || entry?.url || null,
+      uiUrl: launchUrl || entry?.url || null,
       uiIsInternal: false,
       note: installed ? undefined : "Non configurato. Importa il JSON dell'installer LibreNMS.",
     });

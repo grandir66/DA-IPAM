@@ -207,7 +207,7 @@ Environment=PORT=$PORT
 Environment=WINRM_PYTHON=$HOME/.da-invent-venv/bin/python3
 Environment=SSH_PYTHON=$HOME/.da-invent-venv/bin/python3
 EnvironmentFile=$APP_DIR/.env.local
-ExecStart=$(which node) $APP_DIR/node_modules/next/dist/bin/next start -p $PORT -H 0.0.0.0
+ExecStart=$APP_DIR/node_modules/.bin/tsx $APP_DIR/server.ts
 Restart=on-failure
 RestartSec=5
 # No PrivateTmp: su molti LXC/Proxmox CT systemd fallisce con status=226/NAMESPACE

@@ -295,7 +295,8 @@ echo ">>> Verifica post-install (venv WinRM)..."
 if bash "$APP_DIR/scripts/verify-install.sh"; then
   echo "    Verifica OK."
 else
-  echo "    AVVISO: verifica fallita — controllare scripts/setup-winrm-venv.sh"
+  echo "    ERRORE: verifica fallita — controllare scripts/setup-winrm-venv.sh" >&2
+  exit 1
 fi
 
 echo ""

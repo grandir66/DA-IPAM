@@ -123,6 +123,18 @@ if [ "$RESTART" = true ]; then
   fi
 fi
 
+if [ -f "$APP_DIR/scripts/verify-install.sh" ]; then
+  echo ">>> verify-install..."
+  VERIFY_ARGS=()
+  if systemctl is-active --quiet da-invent 2>/dev/null; then
+    PORT="$(grep -E '^PORT=' "$APP_DIR/.env.local" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+    VERIFY_ARGS=(--url "http://127.0.0.1:${PORT:-3001}")
+  fi
+  bash "$APP_DIR/scripts/verify-install.sh" "${VERIFY_ARGS[@]}" || {
+    echo "AVVISO: verify-install fallito — controllare scripts/setup-winrm-venv.sh" >&2
+  }
+fi
+
 # Mostra versione e commit (la versione è quella nel package.json dopo git pull = branch remoto)
 VERSION=$(node -e "console.log(require('./package.json').version)")
 SHORT=$(git rev-parse --short HEAD 2>/dev/null || echo "?")

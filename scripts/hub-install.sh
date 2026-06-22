@@ -111,6 +111,12 @@ if [ -n "$MISSING" ]; then
 fi
 ok "Tutti i tool di scan presenti"
 
+log "Verifica venv WinRM (verify-install.sh)"
+bash "${APP_DIR}/scripts/verify-install.sh" || {
+  echo "ERROR: verify-install fallito — controllare scripts/setup-winrm-venv.sh" >&2
+  exit 4
+}
+
 cat <<INFO
 
 ╔══════════════════════════════════════════════════════════════╗

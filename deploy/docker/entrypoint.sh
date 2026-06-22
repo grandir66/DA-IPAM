@@ -47,6 +47,14 @@ fi
 
 ln -sfn "${SECRETS_FILE}" "${CWD_SECRETS}"
 
-echo "[entrypoint] DA-IPAM container — secrets=${SECRETS_FILE} data=${DATA_DIR}"
+# Venv pywinrm (WinRM/WMI/SSH verso Windows): idempotente, ripara container senza rebuild
+if [ -x "${APP_DIR}/deploy/docker/setup-winrm-venv.sh" ]; then
+  WINRM_VENV="${APP_DIR}/.venv-winrm" "${APP_DIR}/deploy/docker/setup-winrm-venv.sh" || \
+    echo "[entrypoint] Avviso: setup venv WinRM fallito — scan Windows non disponibili." >&2
+fi
+export WINRM_PYTHON="${WINRM_PYTHON:-${APP_DIR}/.venv-winrm/bin/python3}"
+export SSH_PYTHON="${SSH_PYTHON:-${APP_DIR}/.venv-winrm/bin/python3}"
+
+echo "[entrypoint] DA-IPAM container — secrets=${SECRETS_FILE} data=${DATA_DIR} winrm=${WINRM_PYTHON}"
 
 exec "$@"

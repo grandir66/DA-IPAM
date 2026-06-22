@@ -13,6 +13,7 @@ import path from "path";
 
 import { checkWinrmReachability } from "./tcp-precheck";
 import { classifyWinrmError, formatWinrmError, type WinrmErrorCode } from "./winrm-errors";
+import { findBridgePython } from "./find-bridge-python";
 
 const TIMEOUT_MS = 120_000;
 const TCP_PRECHECK_TIMEOUT_MS = 3000;
@@ -40,25 +41,6 @@ const BRIDGE_SCRIPT = path.resolve(
   process.cwd(),
   "src/lib/devices/winrm-bridge.py"
 );
-
-function findPython(): string {
-  if (process.env.WINRM_PYTHON) return process.env.WINRM_PYTHON;
-  const fs = require("fs");
-  const cwd = process.cwd();
-  const home = process.env.HOME || "/root";
-  const candidates = [
-    path.join(home, ".da-invent-venv", "bin", "python3"),
-    path.join(home, ".da-inventory-venv", "bin", "python3"),
-    path.join(home, ".da-ipam-venv", "bin", "python3"),
-    path.join(cwd, ".venv", "bin", "python3"),
-    "/opt/dadude-agent/venv/bin/python3",
-    "/usr/bin/python3",
-  ];
-  for (const c of candidates) {
-    try { if (fs.existsSync(c)) return c; } catch { /* skip */ }
-  }
-  return "python3";
-}
 
 /**
  * Esegue un comando su un host Windows tramite WinRM.
@@ -102,7 +84,7 @@ export async function runWinrmCommand(
   }
 
   return new Promise((resolve, reject) => {
-    const pythonBin = findPython();
+    const pythonBin = findBridgePython();
     const input = JSON.stringify({
       host, port, username, password, command, usePowershell,
       realm: realm || "",
@@ -119,7 +101,7 @@ export async function runWinrmCommand(
             reject(new WinrmError({
               code: "PYWINRM_MISSING",
               message: `Python non trovato: ${pythonBin}.`,
-              hint: "Installa pywinrm: ~/.da-invent-venv/bin/pip install pywinrm requests-ntlm requests-credssp gssapi",
+              hint: "Esegui scripts/install.sh oppure rebuild immagine Docker (deploy/docker/setup-winrm-venv.sh).",
               original: msg,
             }));
           } else if (msg.includes("ETIMEDOUT") || msg.includes("timeout") || error.killed) {

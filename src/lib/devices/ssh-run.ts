@@ -9,36 +9,13 @@
 
 import { execFile } from "child_process";
 import path from "path";
-import fs from "fs";
+import { findBridgePython } from "./find-bridge-python";
 
 const HARD_TIMEOUT_MS = 120_000;
 const BRIDGE_SCRIPT = path.resolve(
   process.cwd(),
   "src/lib/devices/ssh-bridge.py"
 );
-
-function findPython(): string {
-  if (process.env.SSH_PYTHON) return process.env.SSH_PYTHON;
-  if (process.env.WINRM_PYTHON) return process.env.WINRM_PYTHON;
-  const cwd = process.cwd();
-  const home = process.env.HOME || "/root";
-  const candidates = [
-    path.join(home, ".da-invent-venv", "bin", "python3"),
-    path.join(home, ".da-inventory-venv", "bin", "python3"),
-    path.join(home, ".da-ipam-venv", "bin", "python3"),
-    path.join(cwd, ".venv", "bin", "python3"),
-    "/opt/dadude-agent/venv/bin/python3",
-    "/usr/bin/python3",
-  ];
-  for (const c of candidates) {
-    try {
-      if (fs.existsSync(c)) return c;
-    } catch {
-      /* skip */
-    }
-  }
-  return "python3";
-}
 
 export interface SshRunResult {
   stdout: string;
@@ -64,7 +41,7 @@ export interface SshRunOptions {
  */
 export function runSshCommand(opts: SshRunOptions): Promise<SshRunResult> {
   return new Promise((resolve, reject) => {
-    const pythonBin = findPython();
+    const pythonBin = findBridgePython();
     const timeoutSec =
       opts.timeoutSec && opts.timeoutSec > 0 ? Math.trunc(opts.timeoutSec) : 60;
 

@@ -34,15 +34,23 @@ ENV NODE_ENV=production \
     PORT=3001 \
     AUTH_TRUST_HOST=true
 
-# Tool di rete per scan (network_mode: host + CAP_NET_RAW consigliati nel compose)
+# Tool di rete per scan + Python bridge WinRM/WMI/SSH
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl sqlite3 \
       iputils-ping nmap iproute2 snmp \
+      python3 python3-venv python3-dev python3-pip \
+      libffi-dev libkrb5-dev gcc \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/da-ipam
 
 COPY --from=builder /build /opt/da-ipam
+
+ENV WINRM_PYTHON=/opt/da-ipam/.venv-winrm/bin/python3 \
+    SSH_PYTHON=/opt/da-ipam/.venv-winrm/bin/python3
+
+RUN chmod +x /opt/da-ipam/deploy/docker/setup-winrm-venv.sh \
+    && /opt/da-ipam/deploy/docker/setup-winrm-venv.sh
 
 # Nessun .env.local nell'immagine — solo volume /data
 RUN rm -f /opt/da-ipam/.env.local /opt/da-ipam/.env \

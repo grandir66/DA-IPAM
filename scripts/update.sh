@@ -79,7 +79,7 @@ if [ -n "$DIRTY" ]; then
   echo ">>> Modifiche locali rilevate: stash automatico 'autoupdate-$STAMP'"
   echo ">>> File interessati:"
   git status --porcelain | sed 's/^/    /' | head -20
-  git stash push -u -m "autoupdate-$STAMP" || {
+  git stash push -u -m "autoupdate-$STAMP" -- . ':!data' ':!data/**' ':!data.wrong-*' ':!data.wrong-*/**' || {
     echo "Errore: stash fallito. Pulisci manualmente: 'git status' e 'git restore' / 'rm'."
     exit 1
   }

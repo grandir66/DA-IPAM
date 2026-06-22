@@ -81,6 +81,15 @@ export function enrichHostFromInventoryAgent(hostId: number, parsed: ParsedGlpiI
     values.push(manufacturer);
   }
 
+  const firmware =
+    parsed.profile.firmwares.find((f) => f.version)?.version ??
+    parsed.profile.bios?.version ??
+    null;
+  if (firmware && !host.firmware) {
+    fields.push("firmware = ?");
+    values.push(firmware);
+  }
+
   const osFamilyMap: Record<ParsedGlpiInventory["os_family"], string> = {
     windows: "windows",
     linux: "linux",

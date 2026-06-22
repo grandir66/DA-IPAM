@@ -43,6 +43,31 @@ export interface InvAgentSoftwareRow {
   size_bytes: number | null;
 }
 
+export interface InvAgentLicenseRow {
+  id: number;
+  report_id: number;
+  name: string;
+  full_name: string | null;
+  product_id: string | null;
+  license_key: string | null;
+  components: string | null;
+  trial: number | null;
+  activation_date: string | null;
+}
+
+export interface InvAgentRuntimeRow {
+  id: number;
+  report_id: number;
+  category: "database" | "remote_mgmt" | "firewall" | "process";
+  name: string;
+  version: string | null;
+  status: string | null;
+  port: number | null;
+  user_name: string | null;
+  command_line: string | null;
+  is_active: number | null;
+}
+
 function matchHostId(parsed: ParsedGlpiInventory): number | null {
   if (parsed.primary_ip) {
     const h = getHostByIp(parsed.primary_ip);
@@ -155,6 +180,43 @@ export function ingestInventoryReport(parsed: ParsedGlpiInventory): {
       );
     }
 
+    const insLic = d.prepare(
+      `INSERT INTO inv_agent_license (
+         report_id, name, full_name, product_id, license_key, components, trial, activation_date
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const lic of parsed.profile.licenses) {
+      insLic.run(
+        reportId,
+        lic.name,
+        lic.full_name,
+        lic.product_id,
+        lic.license_key,
+        lic.components,
+        lic.trial === true ? 1 : lic.trial === false ? 0 : null,
+        lic.activation_date,
+      );
+    }
+
+    const insRt = d.prepare(
+      `INSERT INTO inv_agent_runtime (
+         report_id, category, name, version, status, port, user_name, command_line, is_active
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const rt of parsed.profile.runtime) {
+      insRt.run(
+        reportId,
+        rt.category,
+        rt.name,
+        rt.version,
+        rt.status,
+        rt.port,
+        rt.user_name,
+        rt.command_line,
+        rt.is_active === true ? 1 : rt.is_active === false ? 0 : null,
+      );
+    }
+
     return {
       reportId,
       deviceId: parsed.device_id,
@@ -177,22 +239,58 @@ export function getInvAgentByHostId(hostId: number): InvAgentEndpointRow | undef
     .get(hostId) as InvAgentEndpointRow | undefined;
 }
 
-export function getCurrentInvAgentSoftware(hostId: number): {
+export function getCurrentInvAgentInventory(hostId: number): {
   endpoint: InvAgentEndpointRow | null;
   software: InvAgentSoftwareRow[];
+  licenses: InvAgentLicenseRow[];
+  runtime: InvAgentRuntimeRow[];
   profile: ParsedGlpiInventory["profile"] | null;
+  process_count: number;
 } {
   const endpoint = getInvAgentByHostId(hostId);
   if (!endpoint?.last_report_id) {
-    return { endpoint: endpoint ?? null, software: [], profile: parseProfileJson(endpoint?.inventory_json) };
+    return {
+      endpoint: endpoint ?? null,
+      software: [],
+      licenses: [],
+      runtime: [],
+      profile: parseProfileJson(endpoint?.inventory_json),
+      process_count: parseProfileJson(endpoint?.inventory_json)?.process_count ?? 0,
+    };
   }
+  const reportId = endpoint.last_report_id;
   const software = db()
     .prepare("SELECT * FROM inv_agent_software WHERE report_id = ? ORDER BY name COLLATE NOCASE")
-    .all(endpoint.last_report_id) as InvAgentSoftwareRow[];
+    .all(reportId) as InvAgentSoftwareRow[];
+  const licenses = db()
+    .prepare("SELECT * FROM inv_agent_license WHERE report_id = ? ORDER BY name COLLATE NOCASE")
+    .all(reportId) as InvAgentLicenseRow[];
+  const runtime = db()
+    .prepare(
+      `SELECT * FROM inv_agent_runtime WHERE report_id = ?
+       ORDER BY CASE category
+         WHEN 'remote_mgmt' THEN 1 WHEN 'database' THEN 2 WHEN 'firewall' THEN 3 ELSE 4 END,
+         name COLLATE NOCASE`,
+    )
+    .all(reportId) as InvAgentRuntimeRow[];
+  const profile = parseProfileJson(endpoint.inventory_json);
   return {
     endpoint,
     software,
-    profile: parseProfileJson(endpoint.inventory_json),
+    licenses,
+    runtime,
+    profile,
+    process_count: profile?.process_count ?? runtime.filter((r) => r.category === "process").length,
+  };
+}
+
+/** @deprecated Usare getCurrentInvAgentInventory */
+export function getCurrentInvAgentSoftware(hostId: number) {
+  const data = getCurrentInvAgentInventory(hostId);
+  return {
+    endpoint: data.endpoint,
+    software: data.software,
+    profile: data.profile,
   };
 }
 

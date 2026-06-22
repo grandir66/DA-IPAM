@@ -103,6 +103,52 @@ export interface ParsedGlpiMonitor {
   height: number | null;
 }
 
+export interface ParsedGlpiLicense {
+  name: string;
+  full_name: string | null;
+  product_id: string | null;
+  license_key: string | null;
+  components: string | null;
+  trial: boolean | null;
+  activation_date: string | null;
+}
+
+export type ParsedGlpiRuntimeCategory = "database" | "remote_mgmt" | "firewall" | "process";
+
+export interface ParsedGlpiRuntimeItem {
+  category: ParsedGlpiRuntimeCategory;
+  name: string;
+  version: string | null;
+  status: string | null;
+  port: number | null;
+  user_name: string | null;
+  command_line: string | null;
+  is_active: boolean | null;
+}
+
+export interface ParsedGlpiController {
+  name: string | null;
+  manufacturer: string | null;
+  type: string | null;
+  version: string | null;
+}
+
+export interface ParsedGlpiFirmware {
+  name: string | null;
+  manufacturer: string | null;
+  version: string | null;
+  type: string | null;
+  date: string | null;
+}
+
+export interface ParsedGlpiBattery {
+  name: string | null;
+  manufacturer: string | null;
+  chemistry: string | null;
+  capacity_mwh: number | null;
+  real_capacity_mwh: number | null;
+}
+
 export interface ParsedGlpiInventoryProfile {
   hardware: ParsedGlpiHardwareProfile;
   bios: ParsedGlpiBios | null;
@@ -113,6 +159,12 @@ export interface ParsedGlpiInventoryProfile {
   users: ParsedGlpiUser[];
   antivirus: ParsedGlpiAntivirus[];
   monitors: ParsedGlpiMonitor[];
+  controllers: ParsedGlpiController[];
+  firmwares: ParsedGlpiFirmware[];
+  batteries: ParsedGlpiBattery[];
+  licenses: ParsedGlpiLicense[];
+  runtime: ParsedGlpiRuntimeItem[];
+  process_count: number;
 }
 
 export interface ParsedGlpiInventory {
@@ -128,6 +180,9 @@ export interface ParsedGlpiInventory {
   software: ParsedGlpiSoftware[];
   profile: ParsedGlpiInventoryProfile;
 }
+
+/** Limite processi persistiti per report (payload GLPI può essere molto grande). */
+export const GLPI_MAX_STORED_PROCESSES = 300;
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
@@ -250,6 +305,84 @@ function parseHardwareProfile(hw: Record<string, unknown> | null, bios: ParsedGl
 function parseInventoryProfile(content: Record<string, unknown>): ParsedGlpiInventoryProfile {
   const hw = asRecord(content.hardware);
   const bios = parseBios(asRecord(content.bios));
+  const licenses = parseArray(content.licenseinfos, (row) => {
+    const name = str(row.name ?? row.fullname);
+    if (!name) return null;
+    return {
+      name,
+      full_name: str(row.fullname),
+      product_id: str(row.productid),
+      license_key: str(row.key),
+      components: str(row.components),
+      trial: bool(row.trial),
+      activation_date: str(row.activation_date ?? row.update),
+    };
+  });
+
+  const runtime: ParsedGlpiRuntimeItem[] = [];
+  for (const item of parseArray(content.databases_services, (row) => row)) {
+    const name = str(item.name);
+    if (!name) continue;
+    runtime.push({
+      category: "database",
+      name,
+      version: str(item.version),
+      status: item.is_active === true ? "active" : item.is_active === false ? "inactive" : null,
+      port: int(item.port),
+      user_name: null,
+      command_line: str(item.path),
+      is_active: bool(item.is_active),
+    });
+  }
+  for (const item of parseArray(content.remote_mgmt, (row) => row)) {
+    const name = str(item.type) ?? str(item.id);
+    if (!name) continue;
+    runtime.push({
+      category: "remote_mgmt",
+      name,
+      version: str(item.version),
+      status: "detected",
+      port: null,
+      user_name: null,
+      command_line: str(item.id),
+      is_active: true,
+    });
+  }
+  for (const item of parseArray(content.firewalls, (row) => row)) {
+    const profile = str(item.profile) ?? str(item.description) ?? "firewall";
+    runtime.push({
+      category: "firewall",
+      name: profile,
+      version: null,
+      status: str(item.status),
+      port: null,
+      user_name: null,
+      command_line: str(item.ipaddress ?? item.ipaddress6),
+      is_active: str(item.status)?.toLowerCase() === "on" ? true : null,
+    });
+  }
+
+  const processesRaw = Array.isArray(content.processes) ? content.processes : [];
+  const process_count = processesRaw.length;
+  const processRows = processesRaw
+    .map((item) => asRecord(item))
+    .filter((row): row is Record<string, unknown> => row != null)
+    .slice(0, GLPI_MAX_STORED_PROCESSES);
+  for (const row of processRows) {
+    const cmd = str(row.cmd);
+    if (!cmd) continue;
+    runtime.push({
+      category: "process",
+      name: cmd.split(/\s+/)[0]?.split("/").pop() ?? cmd.slice(0, 64),
+      version: null,
+      status: str(row.mem) ? `mem ${str(row.mem)}%` : null,
+      port: int(row.pid),
+      user_name: str(row.user),
+      command_line: cmd.length > 500 ? `${cmd.slice(0, 497)}…` : cmd,
+      is_active: true,
+    });
+  }
+
   return {
     hardware: parseHardwareProfile(hw, bios),
     bios,
@@ -306,6 +439,29 @@ function parseInventoryProfile(content: Record<string, unknown>): ParsedGlpiInve
       width: int(row.width),
       height: int(row.height),
     })),
+    controllers: parseArray(content.controllers, (row) => ({
+      name: str(row.name),
+      manufacturer: str(row.manufacturer),
+      type: str(row.type ?? row.subsystem),
+      version: str(row.firmware ?? row.version),
+    })),
+    firmwares: parseArray(content.firmwares, (row) => ({
+      name: str(row.name),
+      manufacturer: str(row.manufacturer),
+      version: str(row.version),
+      type: str(row.type),
+      date: str(row.date),
+    })),
+    batteries: parseArray(content.batteries, (row) => ({
+      name: str(row.name),
+      manufacturer: str(row.manufacturer),
+      chemistry: str(row.chemistry),
+      capacity_mwh: int(row.capacity),
+      real_capacity_mwh: int(row.real_capacity),
+    })),
+    licenses,
+    runtime,
+    process_count,
   };
 }
 

@@ -5,6 +5,8 @@
 import type { Database } from "better-sqlite3";
 
 export const INVENTORY_AGENT_TABLES = [
+  "inv_agent_runtime",
+  "inv_agent_license",
   "inv_agent_software",
   "inv_agent_report",
   "inv_agent_endpoint",
@@ -51,6 +53,31 @@ CREATE TABLE IF NOT EXISTS inv_agent_software (
   architecture TEXT,
   size_bytes INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS inv_agent_license (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  report_id INTEGER NOT NULL REFERENCES inv_agent_report(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  full_name TEXT,
+  product_id TEXT,
+  license_key TEXT,
+  components TEXT,
+  trial INTEGER,
+  activation_date TEXT
+);
+
+CREATE TABLE IF NOT EXISTS inv_agent_runtime (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  report_id INTEGER NOT NULL REFERENCES inv_agent_report(id) ON DELETE CASCADE,
+  category TEXT NOT NULL CHECK(category IN ('database','remote_mgmt','firewall','process')),
+  name TEXT NOT NULL,
+  version TEXT,
+  status TEXT,
+  port INTEGER,
+  user_name TEXT,
+  command_line TEXT,
+  is_active INTEGER
+);
 `;
 
 export const INVENTORY_AGENT_INDEXES_SQL = `
@@ -58,13 +85,61 @@ CREATE INDEX IF NOT EXISTS idx_inv_agent_endpoint_host ON inv_agent_endpoint(hos
 CREATE INDEX IF NOT EXISTS idx_inv_agent_report_device ON inv_agent_report(device_id, received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_inv_agent_software_report ON inv_agent_software(report_id);
 CREATE INDEX IF NOT EXISTS idx_inv_agent_software_name ON inv_agent_software(name, version);
+CREATE INDEX IF NOT EXISTS idx_inv_agent_license_report ON inv_agent_license(report_id);
+CREATE INDEX IF NOT EXISTS idx_inv_agent_license_name ON inv_agent_license(name);
+CREATE INDEX IF NOT EXISTS idx_inv_agent_runtime_report ON inv_agent_runtime(report_id);
+CREATE INDEX IF NOT EXISTS idx_inv_agent_runtime_category ON inv_agent_runtime(category, name);
 `;
 
 export function applyInventoryAgentMigrations(db: Database): { tablesCreated: string[] } {
   db.exec(INVENTORY_AGENT_SCHEMA_SQL);
   db.exec(INVENTORY_AGENT_INDEXES_SQL);
   ensureInventoryAgentColumns(db);
+  ensureInventoryAgentTables(db);
   return { tablesCreated: [...INVENTORY_AGENT_TABLES] };
+}
+
+function ensureInventoryAgentTables(db: Database): void {
+  const names = new Set(
+    (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map(
+      (r) => r.name,
+    ),
+  );
+  if (!names.has("inv_agent_license")) {
+    db.exec(`
+      CREATE TABLE inv_agent_license (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id INTEGER NOT NULL REFERENCES inv_agent_report(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        full_name TEXT,
+        product_id TEXT,
+        license_key TEXT,
+        components TEXT,
+        trial INTEGER,
+        activation_date TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_inv_agent_license_report ON inv_agent_license(report_id);
+      CREATE INDEX IF NOT EXISTS idx_inv_agent_license_name ON inv_agent_license(name);
+    `);
+  }
+  if (!names.has("inv_agent_runtime")) {
+    db.exec(`
+      CREATE TABLE inv_agent_runtime (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id INTEGER NOT NULL REFERENCES inv_agent_report(id) ON DELETE CASCADE,
+        category TEXT NOT NULL CHECK(category IN ('database','remote_mgmt','firewall','process')),
+        name TEXT NOT NULL,
+        version TEXT,
+        status TEXT,
+        port INTEGER,
+        user_name TEXT,
+        command_line TEXT,
+        is_active INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_inv_agent_runtime_report ON inv_agent_runtime(report_id);
+      CREATE INDEX IF NOT EXISTS idx_inv_agent_runtime_category ON inv_agent_runtime(category, name);
+    `);
+  }
 }
 
 function ensureInventoryAgentColumns(db: Database): void {
@@ -81,6 +156,7 @@ function ensureInventoryAgentColumns(db: Database): void {
 /** Migrazioni incrementali (idempotente) — chiamare anche su tenant già installati. */
 export function migrateInventoryAgentSchema(db: Database): void {
   ensureInventoryAgentColumns(db);
+  ensureInventoryAgentTables(db);
 }
 
 export function dropInventoryAgentSchema(db: Database): void {

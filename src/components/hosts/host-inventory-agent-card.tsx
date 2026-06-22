@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
-import { Cpu, HardDrive, Loader2, Monitor, Network, PackageSearch, RefreshCw, Search, Shield, User } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import Link from "next/link";
+import { Cpu, HardDrive, Loader2, Monitor, Network, PackageSearch, RefreshCw, Search, Server, Shield, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import type { ParsedGlpiInventoryProfile } from "@/lib/inventory-agent/parse-glpi-inventory";
 
@@ -14,6 +16,35 @@ interface InvSoftwareRow {
   version: string | null;
   publisher: string | null;
   install_date: string | null;
+}
+
+interface InvLicenseRow {
+  id: number;
+  name: string;
+  full_name: string | null;
+  product_id: string | null;
+  license_key: string | null;
+  trial: number | null;
+  activation_date: string | null;
+}
+
+interface InvRuntimeRow {
+  id: number;
+  category: "database" | "remote_mgmt" | "firewall" | "process";
+  name: string;
+  version: string | null;
+  status: string | null;
+  port: number | null;
+  user_name: string | null;
+  command_line: string | null;
+}
+
+interface VulnSummary {
+  max_severity: string;
+  critical: number;
+  high: number;
+  medium: number;
+  total: number;
 }
 
 interface InvEndpoint {
@@ -29,7 +60,18 @@ interface InvAgentResponse {
   enabled: boolean;
   endpoint: InvEndpoint | null;
   software: InvSoftwareRow[];
+  licenses: InvLicenseRow[];
+  runtime: InvRuntimeRow[];
   profile: ParsedGlpiInventoryProfile | null;
+  process_count?: number;
+  vuln_summary?: VulnSummary | null;
+  security_flags?: {
+    remote_mgmt_count: number;
+    firewall_off: boolean;
+    av_disabled: boolean;
+    av_outdated: boolean;
+  };
+  license_keys_visible?: boolean;
 }
 
 function formatDate(iso: string | null): string {
@@ -54,7 +96,7 @@ function ProfileSection({
 }: {
   title: string;
   icon: ComponentType<{ className?: string }>;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="rounded-md border p-3 space-y-2">
@@ -256,6 +298,11 @@ export function HostInventoryAgentCard({ hostId }: { hostId: number }) {
   const ep = data.endpoint;
   const total = data.software.length;
   const profile = data.profile;
+  const licenses = data.licenses ?? [];
+  const runtime = data.runtime ?? [];
+  const securityRuntime = runtime.filter((r) => r.category !== "process");
+  const processes = runtime.filter((r) => r.category === "process");
+  const processTotal = data.process_count ?? processes.length;
 
   return (
     <div className="space-y-4">
@@ -265,7 +312,15 @@ export function HostInventoryAgentCard({ hostId }: { hostId: number }) {
             <PackageSearch className="h-3 w-3" />
             GLPI Agent push
           </Badge>
-          <Badge variant="secondary">{total} pacchetti</Badge>
+          <Badge variant="secondary">{total} software</Badge>
+          {licenses.length > 0 && <Badge variant="secondary">{licenses.length} licenze</Badge>}
+          {data.vuln_summary && data.vuln_summary.total > 0 && (
+            <Link href="/vulnerabilities" className="inline-flex">
+              <Badge variant="destructive" className="gap-1">
+                {data.vuln_summary.critical + data.vuln_summary.high} CVE Critical/High
+              </Badge>
+            </Link>
+          )}
           <span>Ultimo report: {formatDate(ep.last_seen_at)}</span>
           {ep.os_name && (
             <span>
@@ -278,58 +333,184 @@ export function HostInventoryAgentCard({ hostId }: { hostId: number }) {
         </Button>
       </div>
 
-      {profile ? (
-        <InventoryProfilePanel profile={profile} />
-      ) : (
-        <p className="text-xs text-muted-foreground rounded-md border border-dashed p-3">
-          Profilo hardware non disponibile su report precedenti. Al prossimo push GLPI Agent verranno acquisiti
-          CPU, RAM, dischi, rete, utenti e antivirus e propagati anche nella scheda oggetto.
-        </p>
-      )}
+      {data.security_flags &&
+        (data.security_flags.firewall_off ||
+          data.security_flags.av_disabled ||
+          data.security_flags.av_outdated ||
+          data.security_flags.remote_mgmt_count > 0) && (
+          <div className="flex flex-wrap gap-2 text-[10px]">
+            {data.security_flags.remote_mgmt_count > 0 && (
+              <Badge variant="outline">Remote mgmt: {data.security_flags.remote_mgmt_count}</Badge>
+            )}
+            {data.security_flags.firewall_off && <Badge variant="destructive">Firewall off</Badge>}
+            {data.security_flags.av_disabled && <Badge variant="destructive">AV disattivo</Badge>}
+            {data.security_flags.av_outdated && <Badge variant="secondary">AV non aggiornato</Badge>}
+          </div>
+        )}
 
-      {total === 0 ? (
-        <p className="text-sm text-muted-foreground">Report ricevuto ma senza voci software nel parser.</p>
-      ) : (
-        <>
-          <div className="relative max-w-sm">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              className="h-8 pl-8 text-xs"
-              placeholder="Filtra software…"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            />
-          </div>
-          <div className="rounded-md border overflow-x-auto max-h-80 overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-muted/50 sticky top-0">
-                <tr>
-                  <th className="text-left p-2">Software</th>
-                  <th className="text-left p-2">Versione</th>
-                  <th className="text-left p-2">Publisher</th>
-                  <th className="text-left p-2">Installato</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSoftware.map((sw) => (
-                  <tr key={sw.id} className="border-t">
-                    <td className="p-2">{sw.name}</td>
-                    <td className="p-2 font-mono">{sw.version ?? "—"}</td>
-                    <td className="p-2">{sw.publisher ?? "—"}</td>
-                    <td className="p-2">{sw.install_date ?? "—"}</td>
+      <Tabs defaultValue="hardware">
+        <TabsList className="h-8">
+          <TabsTrigger value="hardware" className="text-xs">Hardware</TabsTrigger>
+          <TabsTrigger value="software" className="text-xs">Software ({total})</TabsTrigger>
+          <TabsTrigger value="licenses" className="text-xs">Licenze ({licenses.length})</TabsTrigger>
+          <TabsTrigger value="runtime" className="text-xs">Runtime ({securityRuntime.length + (processTotal > 0 ? 1 : 0)})</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="hardware" className="mt-3">
+          {profile ? (
+            <InventoryProfilePanel profile={profile} />
+          ) : (
+            <p className="text-xs text-muted-foreground rounded-md border border-dashed p-3">
+              Profilo hardware non disponibile su report precedenti. Al prossimo push GLPI Agent verranno acquisiti
+              CPU, RAM, dischi, rete, utenti e antivirus.
+            </p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="software" className="mt-3 space-y-3">
+          {total === 0 ? (
+            <p className="text-sm text-muted-foreground">Nessun software nel report.</p>
+          ) : (
+            <>
+              <div className="relative max-w-sm">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  className="h-8 pl-8 text-xs"
+                  placeholder="Filtra software…"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                />
+              </div>
+              <div className="rounded-md border overflow-x-auto max-h-80 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50 sticky top-0">
+                    <tr>
+                      <th className="text-left p-2">Software</th>
+                      <th className="text-left p-2">Versione</th>
+                      <th className="text-left p-2">Publisher</th>
+                      <th className="text-left p-2">Installato</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSoftware.map((sw) => (
+                      <tr key={sw.id} className="border-t">
+                        <td className="p-2">{sw.name}</td>
+                        <td className="p-2 font-mono">{sw.version ?? "—"}</td>
+                        <td className="p-2">{sw.publisher ?? "—"}</td>
+                        <td className="p-2">{sw.install_date ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="licenses" className="mt-3">
+          {licenses.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nessuna licenza nel report GLPI.</p>
+          ) : (
+            <div className="rounded-md border overflow-x-auto max-h-80 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50 sticky top-0">
+                  <tr>
+                    <th className="text-left p-2">Prodotto</th>
+                    <th className="text-left p-2">Product ID</th>
+                    <th className="text-left p-2">Chiave</th>
+                    <th className="text-left p-2">Attivazione</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="text-[10px] text-muted-foreground">
-            {filter.trim()
-              ? `${filteredSoftware.length} / ${total} pacchetti`
-              : `${total} pacchetti`}{" "}
-            · device_id <code>{ep.device_id}</code>
-          </p>
-        </>
-      )}
+                </thead>
+                <tbody>
+                  {licenses.map((lic) => (
+                    <tr key={lic.id} className="border-t">
+                      <td className="p-2">{lic.full_name ?? lic.name}</td>
+                      <td className="p-2 font-mono">{lic.product_id ?? "—"}</td>
+                      <td className="p-2 font-mono">{lic.license_key ?? "—"}</td>
+                      <td className="p-2">{lic.activation_date ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!data.license_keys_visible && (
+                <p className="text-[10px] text-muted-foreground p-2 border-t">Chiavi mascherate (solo admin vede il valore completo).</p>
+              )}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="runtime" className="mt-3 space-y-3">
+          {securityRuntime.length === 0 && processes.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nessun servizio/database/processi nel report.</p>
+          ) : (
+            <>
+              {securityRuntime.length > 0 && (
+                <div className="rounded-md border overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left p-2">Tipo</th>
+                        <th className="text-left p-2">Nome</th>
+                        <th className="text-left p-2">Versione</th>
+                        <th className="text-left p-2">Stato</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {securityRuntime.map((rt) => (
+                        <tr key={rt.id} className="border-t">
+                          <td className="p-2">
+                            <Badge variant="outline" className="text-[10px]">{rt.category}</Badge>
+                          </td>
+                          <td className="p-2">{rt.name}</td>
+                          <td className="p-2 font-mono">{rt.version ?? "—"}</td>
+                          <td className="p-2">{rt.status ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {processes.length > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-xs font-medium">
+                    <Server className="h-3.5 w-3.5" />
+                    Processi ({processTotal > processes.length ? `${processes.length}/${processTotal}` : processes.length})
+                  </div>
+                  <div className="rounded-md border overflow-x-auto max-h-48 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/50 sticky top-0">
+                        <tr>
+                          <th className="text-left p-2">PID</th>
+                          <th className="text-left p-2">User</th>
+                          <th className="text-left p-2">Comando</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {processes.map((p) => (
+                          <tr key={p.id} className="border-t">
+                            <td className="p-2 font-mono">{p.port ?? "—"}</td>
+                            <td className="p-2">{p.user_name ?? "—"}</td>
+                            <td className="p-2 font-mono truncate max-w-md" title={p.command_line ?? undefined}>
+                              {p.command_line ?? p.name}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <p className="text-[10px] text-muted-foreground">
+        device_id <code>{ep.device_id}</code>
+        {data.vuln_summary && data.vuln_summary.total > 0 && (
+          <> · incrocia software installati con CVE in <Link href="/vulnerabilities" className="text-primary hover:underline">Vulnerabilità</Link></>
+        )}
+      </p>
     </div>
   );
 }

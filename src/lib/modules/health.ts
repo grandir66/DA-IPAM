@@ -83,6 +83,14 @@ function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   ]);
 }
 
+/** Come withTimeout ma scarta il probe con reject (evita Promise.reject() eager). */
+function withTimeoutReject<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ]);
+}
+
 /** verdict → status storico (per i consumer che usano ancora `status`). */
 function verdictToStatus(v: ModuleVerdict, configured: boolean): ModuleHealthStatus {
   if (!configured) return "never";
@@ -191,7 +199,7 @@ async function probeWazuh(probedAt: string): Promise<ModuleHealth> {
 
   let mgrReach = false, mgrAuth = false, mgrErr: string | null = null;
   try {
-    await withTimeout(mgr.ping(), PROBE_TIMEOUT_MS, Promise.reject(new Error("Timeout manager")) as never);
+    await withTimeoutReject(mgr.ping(), PROBE_TIMEOUT_MS, "Timeout manager");
     mgrReach = true; mgrAuth = true;
   } catch (e) {
     const msg = e instanceof Error ? e.message : "errore";
@@ -208,7 +216,7 @@ async function probeWazuh(probedAt: string): Promise<ModuleHealth> {
     });
     if (idx) {
       try {
-        await withTimeout(idx.ping(), PROBE_TIMEOUT_MS, Promise.reject(new Error("Timeout indexer")) as never);
+        await withTimeoutReject(idx.ping(), PROBE_TIMEOUT_MS, "Timeout indexer");
         idxOk = true;
       } catch (e) {
         idxOk = false;
@@ -247,10 +255,10 @@ async function probeHttpIntegration(
   const headers: Record<string, string> =
     key === "librenms" && cfg.apiToken ? { "X-Auth-Token": cfg.apiToken } : {};
   try {
-    const res = await withTimeout(
+    const res = await withTimeoutReject(
       fetch(testUrl, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS), headers }),
       PROBE_TIMEOUT_MS + 1_000,
-      Promise.reject(new Error("Timeout")) as never,
+      "Timeout",
     );
     const reachable = res.status < 500;
     const authOk = res.status < 400;

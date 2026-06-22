@@ -73,6 +73,12 @@ fi
 sed -i '/^DA_INVENT_CONTAINER=/d' "$SECRETS" 2>/dev/null || true
 
 ln -sfn "$SECRETS" "$APP_DIR/.env.local"
+# Se data/ esiste come directory (clone git o install precedente), ln -sfn creerebbe
+# un symlink *dentro* data/_data invece di puntare al volume persistente.
+if [ -e "$APP_DIR/data" ] && [ ! -L "$APP_DIR/data" ]; then
+  echo ">>> Rimuovo $APP_DIR/data (directory locale) → symlink a $DATA_DIR"
+  rm -rf "$APP_DIR/data"
+fi
 ln -sfn "$DATA_DIR" "$APP_DIR/data"
 chmod 600 "$SECRETS"
 

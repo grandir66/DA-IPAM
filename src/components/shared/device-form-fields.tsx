@@ -99,6 +99,7 @@ const SCAN_TARGETS = [
   { value: "vmware", label: "VMware" },
   { value: "windows", label: "Windows" },
   { value: "linux", label: "Linux" },
+  { value: "macos", label: "macOS" },
 ] as const;
 
 export type DeviceFormMode = "create" | "edit" | "bulk";
@@ -261,10 +262,10 @@ export function DeviceFormFields({
   }, [vendor]);
   const productProfileOptions = useMemo(
     () =>
-      [...getProductProfilesForVendor(vendor || "other")].sort((a, b) =>
+      [...getProductProfilesForVendor(vendor || "other", classification || null)].sort((a, b) =>
         a.label.localeCompare(b.label, "it", { sensitivity: "base" })
       ),
-    [vendor]
+    [vendor, classification]
   );
 
   const vendorOptionsSorted = useMemo(
@@ -282,14 +283,19 @@ export function DeviceFormFields({
     if (nextS !== (scanTarget ?? null)) onScanTargetChange?.(nextS);
   }, [vendor, isBulk, protocol, scanTarget, onProtocolChange, onScanTargetChange]);
 
-  // Profilo prodotto coerente con la marca
+  // Profilo prodotto coerente con marca + classificazione
   useEffect(() => {
     if (!onProductProfileChange) return;
     const pv = vendor || "other";
     if (!productProfile || !isValidProductProfileForVendor(pv, productProfile)) {
-      onProductProfileChange(getDefaultProductProfileForVendor(pv));
+      onProductProfileChange(getDefaultProductProfileForVendor(pv, classification || null));
+      return;
     }
-  }, [vendor, productProfile, onProductProfileChange]);
+    const allowed = getProductProfilesForVendor(pv, classification || null);
+    if (!allowed.some((p) => p.id === productProfile)) {
+      onProductProfileChange(getDefaultProductProfileForVendor(pv, classification || null));
+    }
+  }, [vendor, classification, productProfile, onProductProfileChange]);
 
   const vendorMarcaTip =
     "Solo la marca del dispositivo. Protocollo, tipo scansione e credenziali seguono il profilo vendor; le scansioni non modificano la marca. " +
@@ -391,7 +397,7 @@ export function DeviceFormFields({
                   if (nextProto !== protocol) onProtocolChange?.(nextProto);
                   const nextSt = coerceScanTargetForVendor(nv, scanTarget ?? undefined);
                   if (nextSt !== (scanTarget ?? null)) onScanTargetChange?.(nextSt);
-                  const defP = getDefaultProductProfileForVendor(nv);
+                  const defP = getDefaultProductProfileForVendor(nv, classification || null);
                   onProductProfileChange?.(defP);
                   onVendorSubtypeChange?.(vendorSubtypeFromProductProfile(defP as ProductProfileId));
                 }}
@@ -422,7 +428,7 @@ export function DeviceFormFields({
               tipWide
             >
               <Select
-                value={productProfile ?? getDefaultProductProfileForVendor(vendor)}
+                value={productProfile ?? getDefaultProductProfileForVendor(vendor, classification || null)}
                 onValueChange={(v) => {
                   if (!v) return;
                   onProductProfileChange(v);

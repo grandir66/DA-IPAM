@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   createNetworkDevice,
   getHostBasic,
+  getHostById,
   getNetworkDeviceByHost,
   getNetworkDeviceById,
   getCredentialCommunityString,
@@ -27,6 +28,8 @@ import {
   scanTargetHintFromProductProfile,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
+import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
+import { isMacOsHost } from "@/lib/host-platform-detect";
 
 const productProfileEnum = z.enum(PRODUCT_PROFILE_IDS as unknown as [string, ...string[]]);
 
@@ -111,6 +114,19 @@ export async function POST(request: Request) {
      *  Prima SNMP forzava sempre "other" e l'UI non inviava vendor → Ubiquiti/Cisco persi. */
     function resolveVendorForHost(hostRow: NonNullable<ReturnType<typeof getHostBasic>>): NetworkDevice["vendor"] {
       if (vendor) return vendor;
+      const full = getHostById(hostRow.id);
+      if (
+        full &&
+        isMacOsHost({
+          os_info: full.os_info,
+          inferred_os_family: full.inferred_os_family,
+          device_manufacturer: full.device_manufacturer,
+          model: full.model,
+          vendor: full.vendor,
+        })
+      ) {
+        return "apple";
+      }
       const fromHost = inferNetworkDeviceVendorFromHostHint(hostRow.vendor ?? hostRow.device_manufacturer);
       if (fromHost) return fromHost;
       if (protocol === "winrm") return "windows";
@@ -205,6 +221,11 @@ export async function POST(request: Request) {
       }
 
       updateHost(host.id, { classification });
+      try {
+        linkInvAgentEndpointToHost(host.id);
+      } catch {
+        /* inventory agent opzionale */
+      }
       ensureInventoryAssetForNetworkDevice(device);
     }
 

@@ -180,7 +180,7 @@ export interface NetworkDevice {
   host: string;
   device_type: "router" | "switch" | "firewall" | "hypervisor";
   classification: string | null;
-  vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "other";
+  vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "apple" | "other";
   vendor_subtype: "procurve" | "comware" | null;
   protocol: "ssh" | "snmp_v2" | "snmp_v3" | "api" | "winrm";
   credential_id: number | null;
@@ -203,7 +203,7 @@ export interface NetworkDevice {
   stp_info: string | null;
   last_proxmox_scan_at: string | null;
   last_proxmox_scan_result: string | null;
-  scan_target: "proxmox" | "vmware" | "windows" | "linux" | null;
+  scan_target: "proxmox" | "vmware" | "windows" | "linux" | "macos" | null;
   /** Profilo prodotto (marca + tipologia), assegnazione manuale per scan e inventario dedicati */
   product_profile: string | null;
   use_for_arp_poll: number;
@@ -789,7 +789,7 @@ export interface NetworkDeviceInput {
   name: string;
   host: string;
   device_type: "router" | "switch" | "firewall";
-  vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "other";
+  vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "apple" | "other";
   vendor_subtype?: "procurve" | "comware" | null;
   protocol: "ssh" | "snmp_v2" | "snmp_v3" | "api" | "winrm";
   credential_id?: number | null;

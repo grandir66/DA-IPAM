@@ -24,6 +24,7 @@ export const VENDOR_FROM_MANUFACTURER: Record<string, string> = {
   qnap: "qnap",
   windows: "windows",
   linux: "linux",
+  apple: "apple",
 };
 
 export function inferVendorFromManufacturer(m: string | null | undefined): string {

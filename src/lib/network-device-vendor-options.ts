@@ -19,6 +19,7 @@ export const NETWORK_DEVICE_VENDOR_BASE_LABELS: Record<NetworkDevice["vendor"], 
   windows: "Windows",
   synology: "Synology",
   qnap: "QNAP",
+  apple: "Apple",
   other: "Altro",
 };
 
@@ -28,6 +29,7 @@ export const NETWORK_DEVICE_VENDOR_ORDER: readonly NetworkDevice["vendor"][] = [
   "ubiquiti",
   "windows",
   "linux",
+  "apple",
   "proxmox",
   "synology",
   "qnap",

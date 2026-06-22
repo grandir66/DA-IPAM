@@ -36,6 +36,9 @@ export const PRODUCT_PROFILE_IDS = [
   "cisco_router",
   "cisco_telefono",
   "vmware_vsphere",
+  "macos_notebook",
+  "macos_desktop",
+  "macos_server",
   "generic_ups",
   "generic_voip",
   "generic_cam",
@@ -77,6 +80,9 @@ export const PRODUCT_PROFILE_LABELS: Record<ProductProfileId, string> = {
   cisco_router: "Router",
   cisco_telefono: "Telefono",
   vmware_vsphere: "vSphere / ESXi",
+  macos_notebook: "Notebook Mac",
+  macos_desktop: "Desktop Mac",
+  macos_server: "Server Mac",
   generic_ups: "UPS",
   generic_voip: "Telefono VoIP",
   generic_cam: "Telecamera",
@@ -98,17 +104,62 @@ export const PRODUCT_PROFILES_BY_VENDOR: Record<NetworkDevice["vendor"], readonl
   stormshield: ["stormshield_firewall"],
   cisco: ["cisco_switch", "cisco_router", "cisco_telefono"],
   vmware: ["vmware_vsphere"],
+  apple: ["macos_notebook", "macos_desktop", "macos_server"],
   other: ["generic_ups", "generic_voip", "generic_cam", "generic_stampante", "generic_iot"],
 };
 
-export function getProductProfilesForVendor(vendor: string | null | undefined): { id: ProductProfileId; label: string }[] {
+const PERIPHERAL_ONLY_PROFILES = new Set<ProductProfileId>([
+  "generic_ups",
+  "generic_voip",
+  "generic_cam",
+  "generic_stampante",
+]);
+
+const ENDPOINT_CLASSIFICATIONS = new Set([
+  "notebook",
+  "workstation",
+  "tablet",
+  "smartphone",
+  "vm",
+]);
+
+export function getProductProfilesForVendor(
+  vendor: string | null | undefined,
+  classification?: string | null,
+): { id: ProductProfileId; label: string }[] {
   const v = (vendor || "other") as NetworkDevice["vendor"];
-  const ids = PRODUCT_PROFILES_BY_VENDOR[v] ?? PRODUCT_PROFILES_BY_VENDOR.other;
+  let ids = [...(PRODUCT_PROFILES_BY_VENDOR[v] ?? PRODUCT_PROFILES_BY_VENDOR.other)];
+
+  if (v === "other" && classification) {
+    if (classification === "ups") {
+      ids = ids.filter((id) => id === "generic_ups");
+    } else if (ENDPOINT_CLASSIFICATIONS.has(classification)) {
+      ids = ids.filter((id) => !PERIPHERAL_ONLY_PROFILES.has(id));
+    } else if (["stampante", "telecamera", "voip", "iot"].includes(classification)) {
+      const map: Partial<Record<string, ProductProfileId>> = {
+        stampante: "generic_stampante",
+        telecamera: "generic_cam",
+        voip: "generic_voip",
+        iot: "generic_iot",
+      };
+      const preferred = map[classification];
+      ids = preferred ? ids.filter((id) => id === preferred) : ids;
+    }
+  }
+
   return ids.map((id) => ({ id, label: PRODUCT_PROFILE_LABELS[id] }));
 }
 
-export function getDefaultProductProfileForVendor(vendor: string | null | undefined): ProductProfileId {
-  const list = getProductProfilesForVendor(vendor);
+export function getDefaultProductProfileForVendor(
+  vendor: string | null | undefined,
+  classification?: string | null,
+): ProductProfileId {
+  if (vendor === "apple") {
+    if (classification === "workstation") return "macos_desktop";
+    if (classification === "server" || classification === "server_linux") return "macos_server";
+    return "macos_notebook";
+  }
+  const list = getProductProfilesForVendor(vendor, classification);
   return list[0]?.id ?? "generic_iot";
 }
 
@@ -117,7 +168,9 @@ export function isValidProductProfileForVendor(
   profile: string | null | undefined
 ): profile is ProductProfileId {
   if (!profile) return false;
-  const allowed = new Set(PRODUCT_PROFILES_BY_VENDOR[(vendor || "other") as NetworkDevice["vendor"]] ?? []);
+  const allowed = new Set(
+    getProductProfilesForVendor(vendor).map((p) => p.id),
+  );
   return allowed.has(profile as ProductProfileId);
 }
 
@@ -165,7 +218,10 @@ export function suggestProductProfileForClassification(
   if (classification === "firewall" && vendor === "stormshield") {
     return "stormshield_firewall";
   }
-  return getDefaultProductProfileForVendor(vendor);
+  if (vendor === "apple") {
+    return getDefaultProductProfileForVendor("apple", classification);
+  }
+  return getDefaultProductProfileForVendor(vendor, classification);
 }
 
 /** device_type effettivo in create/update: classification ha priorità sul profilo switch di default. */
@@ -212,6 +268,7 @@ export function vendorSubtypeFromProductProfile(profile: ProductProfileId): "pro
 export function scanTargetHintFromProductProfile(profile: ProductProfileId): NetworkDevice["scan_target"] | null {
   if (profile === "proxmox_ve") return "proxmox";
   if (profile === "proxmox_pbs") return "linux";
+  if (profile === "macos_notebook" || profile === "macos_desktop" || profile === "macos_server") return "macos";
   return null;
 }
 
@@ -421,6 +478,24 @@ export const PRODUCT_PROFILE_KNOWLEDGE: Record<ProductProfileId, ProductProfileM
     credentialHint: "Account ESXi locale o AD; API vSphere per inventario completo; SNMP limitato su host.",
     notes: "vCenter centralizza: inventario ‘vero’ spesso da API vCenter, non solo host singolo.",
   },
+  macos_notebook: {
+    intent: "Notebook Apple (MacBook): hardware, macOS, software via GLPI Agent push.",
+    acquisitionPriority: ["ssh"],
+    credentialHint: "Inventario software via GLPI Agent; SSH opzionale per gestione remota.",
+    notes: "Preferire push GLPI Agent. SSH richiede Remote Login abilitato sul Mac.",
+  },
+  macos_desktop: {
+    intent: "Desktop Apple (iMac, Mac mini, Mac Studio): inventario via GLPI Agent.",
+    acquisitionPriority: ["ssh"],
+    credentialHint: "GLPI Agent per applicazioni, licenze e runtime.",
+    notes: "Non usare profili SNMP generici (UPS/IoT) su postazioni Mac.",
+  },
+  macos_server: {
+    intent: "Postazione/server macOS amministrata.",
+    acquisitionPriority: ["ssh"],
+    credentialHint: "GLPI Agent + SSH amministrativo.",
+    notes: "Per fleet MDM valutare integrazioni esterne oltre all'agent.",
+  },
   generic_ups: {
     intent: "UPS/PDU intelligenti: stato batteria, carico, eventi, autonomia.",
     acquisitionPriority: ["snmp", "https"],
@@ -539,6 +614,18 @@ export const PRODUCT_PROFILE_INVENTORY_HINTS: Record<
   vmware_vsphere: {
     summary: "Host, VM, datastore, vSwitch/portgroup, risorse",
     specificFields: ["hosts", "vms", "datastores", "networking", "resources"],
+  },
+  macos_notebook: {
+    summary: "Hardware Apple, macOS, software e licenze (GLPI Agent)",
+    specificFields: ["hardware", "os", "software", "licenses", "runtime"],
+  },
+  macos_desktop: {
+    summary: "Desktop Mac, macOS, applicazioni installate",
+    specificFields: ["hardware", "os", "software", "licenses"],
+  },
+  macos_server: {
+    summary: "macOS gestito, inventario via agent",
+    specificFields: ["hardware", "os", "software", "services"],
   },
   generic_ups: { summary: "Stato UPS, batteria, carico, eventi, test autonomia", specificFields: ["status", "battery", "load", "events", "runtime"] },
   generic_voip: { summary: "Registrazione SIP, account, codec, NAT", specificFields: ["sip", "accounts", "codec", "nat"] },

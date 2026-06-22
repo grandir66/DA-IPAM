@@ -10,6 +10,7 @@ import {
   vendorSubtypeFromProductProfile,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
+import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 import { getTenantMode, withTenantFromSession } from "@/lib/api-tenant";
 import { queryAllTenants } from "@/lib/db-tenant";
@@ -209,7 +210,14 @@ export async function POST(request: Request) {
     }
 
     const host = getHostByIp(data.host);
-    if (host) updateHost(host.id, { classification: deviceClassification });
+    if (host) {
+      updateHost(host.id, { classification: deviceClassification });
+      try {
+        linkInvAgentEndpointToHost(host.id);
+      } catch {
+        /* inventory agent opzionale */
+      }
+    }
 
     ensureInventoryAssetForNetworkDevice(device);
 

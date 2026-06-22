@@ -1,7 +1,7 @@
 import type { NetworkDevice } from "@/types";
 
 export type DeviceProtocol = NetworkDevice["protocol"];
-export type ScanTargetKey = "none" | "proxmox" | "vmware" | "windows" | "linux";
+export type ScanTargetKey = "none" | "proxmox" | "vmware" | "windows" | "linux" | "macos";
 
 /**
  * Profilo operativo per vendor: protocolli ammessi (ordine = priorità suggerita in UI),
@@ -127,7 +127,7 @@ const PROFILES: Record<NetworkDevice["vendor"], VendorDeviceProfile> = {
     credentialSshFilter: "ssh_api",
     shortHint: "SSH (QTS) e SNMP.",
   },
-  /** GENERICO: solo SNMP */
+  /** GENERICO: solo SNMP (periferiche) */
   other: {
     allowedProtocols: SNMP,
     defaultProtocol: "snmp_v2",
@@ -135,6 +135,15 @@ const PROFILES: Record<NetworkDevice["vendor"], VendorDeviceProfile> = {
     defaultScanTarget: "none",
     credentialSshFilter: "ssh_api",
     shortHint: "Solo SNMP per UPS, VoIP, cam, stampanti, IoT (tipologia sotto).",
+  },
+  /** APPLE / macOS: inventario via GLPI Agent push, opz. SSH */
+  apple: {
+    allowedProtocols: ["ssh"],
+    defaultProtocol: "ssh",
+    allowedScanTargets: ["none", "macos"],
+    defaultScanTarget: "macos",
+    credentialSshFilter: "ssh_api",
+    shortHint: "macOS: inventario software via GLPI Agent (push). SSH opzionale per gestione remota.",
   },
 };
 

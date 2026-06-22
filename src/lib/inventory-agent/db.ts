@@ -2,7 +2,7 @@
  * CRUD tenant DB — inventory agent ingest.
  */
 import { createHash } from "node:crypto";
-import { getTenantDb, getCurrentTenantCode, getHostByIp, getHostByMac } from "@/lib/db-tenant";
+import { getTenantDb, getCurrentTenantCode, getHostByIp, getHostByMac, getHostById } from "@/lib/db-tenant";
 import type { ParsedGlpiInventory, ParsedGlpiSoftware } from "@/lib/inventory-agent/parse-glpi-inventory";
 import { enrichHostFromInventoryAgent } from "@/lib/inventory-agent/enrich-host";
 import { migrateInventoryAgentSchema } from "@/lib/inventory-agent/schema";
@@ -234,9 +234,40 @@ export function ingestInventoryReport(parsed: ParsedGlpiInventory): {
 }
 
 export function getInvAgentByHostId(hostId: number): InvAgentEndpointRow | undefined {
-  return db()
+  const d = db();
+  migrateInventoryAgentSchema(d);
+
+  const direct = d
     .prepare("SELECT * FROM inv_agent_endpoint WHERE host_id = ? ORDER BY last_seen_at DESC LIMIT 1")
     .get(hostId) as InvAgentEndpointRow | undefined;
+  if (direct) return direct;
+
+  const host = getHostById(hostId);
+  if (!host?.ip) return undefined;
+
+  const byIp = d
+    .prepare(
+      `SELECT * FROM inv_agent_endpoint
+       WHERE primary_ip = ?
+       ORDER BY last_seen_at DESC LIMIT 1`,
+    )
+    .get(host.ip) as InvAgentEndpointRow | undefined;
+
+  if (byIp && !byIp.host_id) {
+    d.prepare("UPDATE inv_agent_endpoint SET host_id = ? WHERE device_id = ?").run(hostId, byIp.device_id);
+    d.prepare(
+      "UPDATE inv_agent_report SET host_id = ? WHERE device_id = ? AND (host_id IS NULL OR host_id = ?)",
+    ).run(hostId, byIp.device_id, hostId);
+    return { ...byIp, host_id: hostId };
+  }
+
+  return byIp;
+}
+
+/** Ricollega endpoint GLPI Agent a host (es. dopo promozione a device). */
+export function linkInvAgentEndpointToHost(hostId: number): boolean {
+  const row = getInvAgentByHostId(hostId);
+  return row != null;
 }
 
 export function getCurrentInvAgentInventory(hostId: number): {

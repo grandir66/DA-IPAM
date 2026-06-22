@@ -194,6 +194,95 @@ function str(v: unknown): string | null {
   return s.length ? s : null;
 }
 
+/** Legge la prima chiave presente (case-insensitive). */
+function pickStr(obj: Record<string, unknown> | null | undefined, ...keys: string[]): string | null {
+  if (!obj) return null;
+  for (const key of keys) {
+    const direct = str(obj[key]);
+    if (direct) return direct;
+    const alt = Object.keys(obj).find((k) => k.toLowerCase() === key.toLowerCase());
+    if (alt) {
+      const v = str(obj[alt]);
+      if (v) return v;
+    }
+  }
+  return null;
+}
+
+const OS_PRODUCT_NAMES = /^(macos|mac os x|macosx|os x|windows|linux|ubuntu|debian|fedora|centos|freebsd)$/i;
+
+function looksLikeOsProductName(value: string | null): boolean {
+  return value != null && OS_PRODUCT_NAMES.test(value.trim());
+}
+
+/** GLPI Agent macOS: deviceid = hostname.local-YYYY-MM-DD-HH-MM-SS */
+function hostnameFromDeviceId(deviceId: string): string | null {
+  const m = deviceId.match(/^(.+)-(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})$/);
+  if (!m?.[1]) return null;
+  return m[1].replace(/\.local$/i, "") || m[1];
+}
+
+function resolveInventoryHostname(
+  deviceId: string,
+  os: Record<string, unknown> | null,
+  hw: Record<string, unknown> | null,
+  content: Record<string, unknown>,
+  root: Record<string, unknown>,
+): string | null {
+  const fqdn = pickStr(os, "fqdn", "FQDN");
+  if (fqdn) {
+    const short = fqdn.split(".")[0];
+    if (short && !looksLikeOsProductName(short)) return short;
+  }
+  const osHost = pickStr(os, "hostname", "HOSTNAME");
+  if (osHost && !looksLikeOsProductName(osHost)) return osHost;
+
+  const fromDevice = hostnameFromDeviceId(deviceId);
+  if (fromDevice) return fromDevice;
+
+  const hwName = pickStr(hw, "name", "NAME");
+  if (hwName && !looksLikeOsProductName(hwName)) return hwName;
+
+  return pickStr(content, "name") ?? pickStr(root, "name");
+}
+
+function resolveOsFields(os: Record<string, unknown> | null, osFamily: ParsedGlpiInventory["os_family"]) {
+  const fullName = pickStr(os, "full_name", "fullname", "FULL_NAME");
+  const shortName = pickStr(os, "name", "NAME", "osname");
+  const version = pickStr(
+    os,
+    "version",
+    "VERSION",
+    "build_version",
+    "service_pack",
+    "kernel_version",
+    "KERNEL_VERSION",
+  );
+
+  let os_name = fullName ?? shortName;
+  if (!fullName && shortName?.toLowerCase() === "macosx") {
+    os_name = "macOS";
+  } else if (!os_name && osFamily === "macos") {
+    os_name = "macOS";
+  }
+
+  return { os_name, os_version: version };
+}
+
+function buildOsInfoLabel(osName: string | null, osVersion: string | null): string | null {
+  if (!osName && !osVersion) return null;
+  if (osName && osVersion) {
+    if (osName.includes(osVersion)) return osName;
+    return `${osName} ${osVersion}`.trim();
+  }
+  return osName ?? osVersion;
+}
+
+/** Etichetta OS unificata per hosts.os_info e UI. */
+export function formatGlpiOsInfo(osName: string | null, osVersion: string | null): string | null {
+  return buildOsInfoLabel(osName, osVersion);
+}
+
 function normalizeMac(mac: string | null): string | null {
   if (!mac) return null;
   const hex = mac.replace(/[^a-fA-F0-9]/g, "").toLowerCase();
@@ -271,40 +360,67 @@ function parseArray<T>(raw: unknown, map: (row: Record<string, unknown>) => T | 
 function parseBios(raw: Record<string, unknown> | null): ParsedGlpiBios | null {
   if (!raw) return null;
   return {
-    manufacturer: str(raw.bmanufacturer),
-    system_manufacturer: str(raw.smanufacturer),
-    system_model: str(raw.smodel),
-    system_serial: str(raw.ssn ?? raw.biosserial ?? raw.enclosureserial),
-    motherboard_manufacturer: str(raw.mmanufacturer),
-    motherboard_model: str(raw.mmodel),
-    motherboard_serial: str(raw.msn),
-    version: str(raw.bversion),
-    date: str(raw.bdate),
-    asset_tag: str(raw.assettag),
+    manufacturer: pickStr(raw, "bmanufacturer", "BMANUFACTURER"),
+    system_manufacturer: pickStr(raw, "smanufacturer", "SMANUFACTURER", "manufacturer"),
+    system_model: pickStr(raw, "smodel", "SMODEL", "model"),
+    system_serial: pickStr(raw, "ssn", "SSN", "serial_number", "biosserial", "enclosureserial"),
+    motherboard_manufacturer: pickStr(raw, "mmanufacturer", "MMANUFACTURER"),
+    motherboard_model: pickStr(raw, "mmodel", "MMODEL"),
+    motherboard_serial: pickStr(raw, "msn", "MSN"),
+    version: pickStr(raw, "bversion", "BVERSION", "version"),
+    date: pickStr(raw, "bdate", "BDATE", "date"),
+    asset_tag: pickStr(raw, "assettag", "ASSETTAG", "asset_tag"),
   };
 }
 
-function parseHardwareProfile(hw: Record<string, unknown> | null, bios: ParsedGlpiBios | null): ParsedGlpiHardwareProfile {
+function parseHardwareProfile(
+  hw: Record<string, unknown> | null,
+  bios: ParsedGlpiBios | null,
+  osFamily: ParsedGlpiInventory["os_family"],
+): ParsedGlpiHardwareProfile {
+  const hwName = pickStr(hw, "name", "NAME");
+  const hwModel = pickStr(hw, "model", "MODEL", "description", "DESCRIPTION");
+  const biosModel = bios?.system_model ?? bios?.motherboard_model ?? null;
+  const serial =
+    bios?.system_serial ??
+    bios?.motherboard_serial ??
+    pickStr(hw, "serial", "serialnumber", "serial_number", "SERIALNUMBER", "SSN") ??
+    null;
+
+  let model = biosModel ?? hwModel ?? null;
+  if (!model && hwName && !looksLikeOsProductName(hwName)) {
+    model = hwName;
+  }
+
+  let manufacturer =
+    bios?.system_manufacturer ??
+    bios?.motherboard_manufacturer ??
+    pickStr(hw, "manufacturer", "MANUFACTURER") ??
+    null;
+  if (!manufacturer && osFamily === "macos") {
+    manufacturer = "Apple Inc.";
+  }
+
   return {
-    name: str(hw?.name),
-    uuid: str(hw?.uuid),
-    chassis_type: str(hw?.chassis_type ?? hw?.type),
-    memory_mb: int(hw?.memory),
-    swap_mb: int(hw?.swap),
-    default_gateway: str(hw?.defaultgateway),
-    dns: str(hw?.dns),
-    last_logged_user: str(hw?.lastloggeduser),
-    workgroup: str(hw?.workgroup),
-    vm_system: str(hw?.vmsystem),
-    manufacturer: str(bios?.system_manufacturer ?? bios?.motherboard_manufacturer),
-    model: str(bios?.system_model ?? bios?.motherboard_model ?? hw?.description),
-    serial: str(bios?.system_serial ?? bios?.motherboard_serial ?? hw?.uuid),
+    name: hwName,
+    uuid: pickStr(hw, "uuid", "UUID"),
+    chassis_type: pickStr(hw, "chassis_type", "type", "TYPE", "vmsystem", "VMSYSTEM"),
+    memory_mb: int(hw?.memory ?? hw?.MEMORY),
+    swap_mb: int(hw?.swap ?? hw?.SWAP),
+    default_gateway: pickStr(hw, "defaultgateway", "default_gateway", "DEFAULTGATEWAY"),
+    dns: pickStr(hw, "dns", "DNS"),
+    last_logged_user: pickStr(hw, "lastloggeduser", "last_logged_user", "LASTLOGGEDUSER"),
+    workgroup: pickStr(hw, "workgroup", "WORKGROUP"),
+    vm_system: pickStr(hw, "vmsystem", "VMSYSTEM"),
+    manufacturer,
+    model,
+    serial,
   };
 }
 
-function parseInventoryProfile(content: Record<string, unknown>): ParsedGlpiInventoryProfile {
-  const hw = asRecord(content.hardware);
-  const bios = parseBios(asRecord(content.bios));
+function parseInventoryProfile(content: Record<string, unknown>, osFamily: ParsedGlpiInventory["os_family"]): ParsedGlpiInventoryProfile {
+  const hw = asRecord(content.hardware) ?? asRecord(content.HARDWARE);
+  const bios = parseBios(asRecord(content.bios) ?? asRecord(content.BIOS));
   const licenses = parseArray(content.licenseinfos, (row) => {
     const name = str(row.name ?? row.fullname);
     if (!name) return null;
@@ -384,7 +500,7 @@ function parseInventoryProfile(content: Record<string, unknown>): ParsedGlpiInve
   }
 
   return {
-    hardware: parseHardwareProfile(hw, bios),
+    hardware: parseHardwareProfile(hw, bios, osFamily),
     bios,
     cpus: parseArray(content.cpus, (row) => ({
       name: str(row.name ?? row.type),
@@ -506,33 +622,35 @@ export function parseGlpiInventory(body: unknown): ParsedGlpiInventory {
   if (!root) throw new Error("Payload JSON non valido");
 
   const content = asRecord(root.content) ?? root;
-  const hw = asRecord(content.hardware) ?? asRecord(root.hardware);
-  const os = asRecord(content.operatingsystem) ?? asRecord(content.operatingsystem) ?? asRecord(root.operatingsystem);
+  const hw = asRecord(content.hardware) ?? asRecord(content.HARDWARE) ?? asRecord(root.hardware);
+  const os =
+    asRecord(content.operatingsystem) ??
+    asRecord(content.operating_system) ??
+    asRecord(content.OPERATINGSYSTEM) ??
+    asRecord(root.operatingsystem);
   const versionBlock = asRecord(root.version) ?? asRecord(content.version);
 
   const device_id =
-    str(root.deviceid) ??
-    str(hw?.uuid) ??
-    str(hw?.name) ??
-    str(content.name) ??
-    str(root.name) ??
+    pickStr(root, "deviceid", "device_id", "DEVICEID") ??
+    pickStr(hw, "uuid", "UUID") ??
+    pickStr(hw, "name", "NAME") ??
+    pickStr(content, "name") ??
+    pickStr(root, "name") ??
     `unknown-${Date.now()}`;
 
-  const hostname =
-    str(os?.hostname) ??
-    str(hw?.name) ??
-    str(content.name) ??
-    str(root.name);
+  const os_family = mapOsFamily(
+    pickStr(os, "full_name", "fullname", "name", "NAME"),
+    pickStr(os, "kernel_name", "KERNEL_NAME"),
+  );
+  const { os_name, os_version } = resolveOsFields(os, os_family);
 
-  const networks = content.networks ?? root.networks;
+  const hostname = resolveInventoryHostname(device_id, os, hw, content, root);
+
+  const networks = content.networks ?? content.NETWORKS ?? root.networks;
   const primary_ip = pickIp(networks);
   const primary_mac = pickMac(networks);
 
-  const os_name = str(os?.fullname ?? os?.name ?? os?.osname);
-  const os_version = str(os?.version ?? os?.kernel_version);
-  const os_family = mapOsFamily(os_name, str(os?.kernel_name));
-
-  const profile = parseInventoryProfile(content);
+  const profile = parseInventoryProfile(content, os_family);
 
   const softwaresRaw = content.softwares ?? content.software ?? root.softwares;
   const software: ParsedGlpiSoftware[] = [];

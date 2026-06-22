@@ -5,6 +5,7 @@ import { getHostById, getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant"
 import { lookupVendorSync } from "@/lib/scanner/mac-vendor";
 import { normalizeMacForStorage } from "@/lib/utils";
 import type { ParsedGlpiInventory } from "@/lib/inventory-agent/parse-glpi-inventory";
+import { formatGlpiOsInfo } from "@/lib/inventory-agent/parse-glpi-inventory";
 
 const HOSTNAME_PRIORITY: Record<string, number> = {
   manual: 6,
@@ -22,6 +23,11 @@ function db() {
   return getTenantDb(code);
 }
 
+function isPlaceholderOsInfo(value: string | null | undefined): boolean {
+  if (!value?.trim()) return true;
+  return /^(linux generico|unknown|sconosciuto|n\/a|generico)$/i.test(value.trim());
+}
+
 /** Aggiorna hosts.* con dati agent quando il campo è vuoto o la sorgente hostname ha priorità inferiore. */
 export function enrichHostFromInventoryAgent(hostId: number, parsed: ParsedGlpiInventory): void {
   const host = getHostById(hostId);
@@ -32,11 +38,10 @@ export function enrichHostFromInventoryAgent(hostId: number, parsed: ParsedGlpiI
   const model =
     hw.model ?? bios?.system_model ?? bios?.motherboard_model ?? null;
   const serial =
-    hw.serial ?? bios?.system_serial ?? bios?.motherboard_serial ?? hw.uuid ?? null;
+    hw.serial ?? bios?.system_serial ?? bios?.motherboard_serial ?? null;
   const manufacturer =
     hw.manufacturer ?? bios?.system_manufacturer ?? bios?.motherboard_manufacturer ?? null;
-  const osInfo =
-    [parsed.os_name, parsed.os_version].filter(Boolean).join(" ").trim() || null;
+  const osInfo = formatGlpiOsInfo(parsed.os_name, parsed.os_version);
 
   const fields: string[] = ["updated_at = datetime('now')", "last_seen = datetime('now')"];
   const values: unknown[] = [];
@@ -64,7 +69,7 @@ export function enrichHostFromInventoryAgent(hostId: number, parsed: ParsedGlpiI
     }
   }
 
-  if (osInfo && !host.os_info) {
+  if (osInfo && (isPlaceholderOsInfo(host.os_info) || !host.os_info)) {
     fields.push("os_info = ?");
     values.push(osInfo);
   }
@@ -76,7 +81,7 @@ export function enrichHostFromInventoryAgent(hostId: number, parsed: ParsedGlpiI
     fields.push("serial_number = ?");
     values.push(serial);
   }
-  if (manufacturer && !host.device_manufacturer) {
+  if (manufacturer && (!host.device_manufacturer || host.device_manufacturer === "Apple" && !host.model)) {
     fields.push("device_manufacturer = ?");
     values.push(manufacturer);
   }

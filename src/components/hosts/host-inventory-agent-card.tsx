@@ -126,6 +126,11 @@ function ProfileGrid({ items }: { items: Array<{ label: string; value: string | 
 
 function InventoryProfilePanel({ profile }: { profile: ParsedGlpiInventoryProfile }) {
   const hw = profile.hardware;
+  const bios = profile.bios;
+  const serial = hw.serial ?? bios?.system_serial ?? bios?.motherboard_serial ?? null;
+  const model = hw.model ?? bios?.system_model ?? bios?.motherboard_model ?? null;
+  const manufacturer =
+    hw.manufacturer ?? bios?.system_manufacturer ?? bios?.motherboard_manufacturer ?? null;
   const totalRamMb =
     profile.memories.reduce((s, m) => s + (m.capacity_mb ?? 0), 0) || hw.memory_mb;
   const totalDiskMb = profile.storages.reduce((s, d) => s + (d.size_mb ?? 0), 0);
@@ -135,11 +140,11 @@ function InventoryProfilePanel({ profile }: { profile: ParsedGlpiInventoryProfil
       <ProfileSection title="Sistema" icon={Monitor}>
         <ProfileGrid
           items={[
-            { label: "Modello", value: hw.model },
-            { label: "Produttore", value: hw.manufacturer },
-            { label: "Serial", value: hw.serial },
+            { label: "Modello hardware", value: model },
+            { label: "Produttore", value: manufacturer },
+            { label: "Numero di serie", value: serial },
+            { label: "Tipo prodotto", value: hw.chassis_type },
             { label: "UUID", value: hw.uuid },
-            { label: "Form factor", value: hw.chassis_type },
             { label: "VM/Hypervisor", value: hw.vm_system },
             { label: "Utente loggato", value: hw.last_logged_user },
             { label: "Workgroup/AD", value: hw.workgroup },
@@ -149,6 +154,18 @@ function InventoryProfilePanel({ profile }: { profile: ParsedGlpiInventoryProfil
           ]}
         />
       </ProfileSection>
+
+      {bios && (bios.version || bios.date || bios.asset_tag) && (
+        <ProfileSection title="BIOS / firmware" icon={Shield}>
+          <ProfileGrid
+            items={[
+              { label: "Versione firmware", value: bios.version },
+              { label: "Data firmware", value: bios.date },
+              { label: "Asset tag", value: bios.asset_tag },
+            ]}
+          />
+        </ProfileSection>
+      )}
 
       {profile.cpus.length > 0 && (
         <ProfileSection title="CPU" icon={Cpu}>

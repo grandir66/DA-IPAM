@@ -1,5 +1,5 @@
 /**
- * Propaga dati GLPI Agent verso hosts (campi anagrafica) con preserve_existing.
+ * Propaga dati GLPI Agent verso hosts — priorità superiore ai detect di scan (nmap/SNMP/ARP/DNS).
  */
 import { getHostById, getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { lookupVendorSync } from "@/lib/scanner/mac-vendor";
@@ -11,11 +11,32 @@ const HOSTNAME_PRIORITY: Record<string, number> = {
   manual: 6,
   dhcp: 5,
   glpi_agent: 5,
+  ad: 5,
   snmp: 4,
   nmap: 3,
+  scan: 3,
   dns: 2,
   arp: 1,
 };
+
+function hostnameSourcePriority(source: string | null | undefined): number {
+  return HOSTNAME_PRIORITY[source ?? ""] ?? 0;
+}
+
+/** L'agent GLPI ha priorità sui detect (nmap/SNMP/ARP/DNS); il solo hostname manuale resta intoccabile. */
+function shouldAgentSetHostname(
+  existing: string | null | undefined,
+  existingSource: string | null | undefined,
+  _agentHostname: string,
+): boolean {
+  if (existingSource === "manual") return false;
+  if (!existing?.trim()) return true;
+  return hostnameSourcePriority("glpi_agent") >= hostnameSourcePriority(existingSource);
+}
+
+function shouldAgentSetAnagraphic(agentValue: string | null | undefined): boolean {
+  return Boolean(agentValue?.trim());
+}
 
 function db() {
   const code = getCurrentTenantCode();
@@ -23,12 +44,7 @@ function db() {
   return getTenantDb(code);
 }
 
-function isPlaceholderOsInfo(value: string | null | undefined): boolean {
-  if (!value?.trim()) return true;
-  return /^(linux generico|unknown|sconosciuto|n\/a|generico)$/i.test(value.trim());
-}
-
-/** Aggiorna hosts.* con dati agent quando il campo è vuoto o la sorgente hostname ha priorità inferiore. */
+/** Aggiorna hosts.* con dati agent (priorità superiore ai detect di scan). */
 export function enrichHostFromInventoryAgent(hostId: number, parsed: ParsedGlpiInventory): void {
   const host = getHostById(hostId);
   if (!host) return;
@@ -49,39 +65,37 @@ export function enrichHostFromInventoryAgent(hostId: number, parsed: ParsedGlpiI
   const macNorm = parsed.primary_mac
     ? normalizeMacForStorage(parsed.primary_mac)
     : null;
-  if (macNorm && !host.mac) {
+  if (macNorm && shouldAgentSetAnagraphic(macNorm)) {
     fields.push("mac = ?");
     values.push(macNorm);
     const vendor = lookupVendorSync(macNorm);
-    if (vendor && !host.vendor) {
+    if (vendor && shouldAgentSetAnagraphic(vendor)) {
       fields.push("vendor = ?");
       values.push(vendor);
     }
   }
 
-  if (parsed.hostname) {
-    const existingSource = host.hostname_source ?? null;
-    const newPriority = HOSTNAME_PRIORITY.glpi_agent;
-    const oldPriority = HOSTNAME_PRIORITY[existingSource ?? ""] ?? 0;
-    if (!host.hostname || newPriority >= oldPriority) {
-      fields.push("hostname = ?", "hostname_source = ?");
-      values.push(parsed.hostname, "glpi_agent");
-    }
+  if (
+    parsed.hostname &&
+    shouldAgentSetHostname(host.hostname, host.hostname_source, parsed.hostname)
+  ) {
+    fields.push("hostname = ?", "hostname_source = ?");
+    values.push(parsed.hostname, "glpi_agent");
   }
 
-  if (osInfo && (isPlaceholderOsInfo(host.os_info) || !host.os_info)) {
+  if (osInfo && shouldAgentSetAnagraphic(osInfo)) {
     fields.push("os_info = ?");
     values.push(osInfo);
   }
-  if (model && !host.model) {
+  if (model && shouldAgentSetAnagraphic(model)) {
     fields.push("model = ?");
     values.push(model);
   }
-  if (serial && !host.serial_number) {
+  if (serial && shouldAgentSetAnagraphic(serial)) {
     fields.push("serial_number = ?");
     values.push(serial);
   }
-  if (manufacturer && (!host.device_manufacturer || host.device_manufacturer === "Apple" && !host.model)) {
+  if (manufacturer && shouldAgentSetAnagraphic(manufacturer)) {
     fields.push("device_manufacturer = ?");
     values.push(manufacturer);
   }
@@ -90,7 +104,7 @@ export function enrichHostFromInventoryAgent(hostId: number, parsed: ParsedGlpiI
     parsed.profile.firmwares.find((f) => f.version)?.version ??
     parsed.profile.bios?.version ??
     null;
-  if (firmware && !host.firmware) {
+  if (firmware && shouldAgentSetAnagraphic(firmware)) {
     fields.push("firmware = ?");
     values.push(firmware);
   }
@@ -102,7 +116,7 @@ export function enrichHostFromInventoryAgent(hostId: number, parsed: ParsedGlpiI
     other: "unknown",
   };
   const inferred = osFamilyMap[parsed.os_family];
-  if (inferred && inferred !== "unknown" && !host.inferred_os_family) {
+  if (inferred && inferred !== "unknown" && shouldAgentSetAnagraphic(inferred)) {
     fields.push("inferred_os_family = ?", "inferred_at = datetime('now')");
     values.push(inferred);
   }

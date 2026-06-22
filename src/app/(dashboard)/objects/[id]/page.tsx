@@ -641,6 +641,28 @@ export default function ObjectDetailPage() {
     }
     setRefreshing(true);
     try {
+      const scanTarget = device.scan_target;
+      const isProxmox =
+        scanTarget === "proxmox" ||
+        device.device_type === "hypervisor" ||
+        (device.classification === "hypervisor" && (device.protocol === "api" || device.protocol === "ssh"));
+
+      if (isProxmox) {
+        toast.info("Scan Proxmox VE in corso (API + SSH)...");
+        const pxRes = await fetch(`/api/devices/${device.id}/proxmox-scan`, { method: "POST" });
+        const pxData = (await pxRes.json()) as { hosts?: unknown[]; vms?: unknown[]; error?: string; avvisi?: string[] };
+        if (!pxRes.ok) {
+          toast.error(pxData.error ?? "Errore scan Proxmox");
+          return;
+        }
+        toast.success(`Proxmox: ${pxData.hosts?.length ?? 0} nodi, ${pxData.vms?.length ?? 0} VM/CT`);
+        if (pxData.avvisi?.length) {
+          toast.warning(`Avvisi scan: ${pxData.avvisi.join(" | ")}`, { duration: 8000 });
+        }
+        await fetchAll();
+        return;
+      }
+
       const qr = await fetch(`/api/devices/${device.id}/query`, { method: "POST" });
       const qd = (await qr.json()) as { id?: string; error?: string };
       if (!qr.ok) {
@@ -862,7 +884,9 @@ export default function ObjectDetailPage() {
                 onClick={handleUpdateAll}
                 disabled={refreshing || testingConnection}
                 className="bg-primary hover:bg-primary/90"
-                title="Test connessione → query SNMP/ARP → inventario software"
+                title={device?.device_type === "hypervisor" || device?.scan_target === "proxmox"
+                  ? "Scan Proxmox VE (API + SSH): nodi cluster, VM/CT, storage"
+                  : "Test connessione → query SNMP/ARP → inventario software"}
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
                 {refreshing ? "Aggiornamento..." : "Aggiorna tutto"}

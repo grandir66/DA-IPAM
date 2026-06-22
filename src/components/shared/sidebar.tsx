@@ -30,7 +30,6 @@ import {
   ShieldAlert,
   Workflow,
   BookOpen,
-  Network as NetworkIcon,
   Ban,
   ShieldCheck,
   KeyRound,
@@ -70,6 +69,11 @@ const networkSubItems: readonly NetworkItem[] = [
   { href: "/excluded-ips", label: "IP esclusi", icon: Ban },
 ] as const;
 
+const networkServicesSubItems = [
+  { href: "/dns", label: "DNS", icon: Globe },
+  { href: "/dhcp", label: "DHCP", icon: Wifi },
+] as const;
+
 export function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
@@ -87,6 +91,10 @@ export function Sidebar() {
   );
   const [inventoryOpen, setInventoryOpen] = useState(() =>
     inventorySubItems.some((d) => pathname.startsWith(d.href))
+  );
+  const [networkServicesOpen, setNetworkServicesOpen] = useState(() =>
+    networkServicesSubItems.some((d) => pathname.startsWith(d.href)) ||
+    pathname.startsWith("/network-services")
   );
   const [unackedAnomalies, setUnackedAnomalies] = useState(0);
   const [patchEnabled, setPatchEnabled] = useState(false);
@@ -295,6 +303,60 @@ export function Sidebar() {
           )}
         </div>
 
+        {/* Network Services — DNS / DHCP / bridge (stesso livello di Network e Inventario) */}
+        <div className="pt-1">
+          <button
+            type="button"
+            onClick={() => setNetworkServicesOpen((o) => !o)}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full",
+              networkServicesSubItems.some((d) => pathname.startsWith(d.href)) ||
+                pathname.startsWith("/network-services")
+                ? "bg-sidebar-primary/20 text-sidebar-foreground"
+                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            )}
+          >
+            {networkServicesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            <ServerCog className="h-4 w-4" />
+            Network Services
+          </button>
+          {networkServicesOpen && (
+            <div className="ml-4 mt-1 space-y-0.5 border-l border-sidebar-border pl-2">
+              {networkServicesSubItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
+                    isActive(item.href)
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  )}
+                >
+                  <item.icon className="h-3.5 w-3.5" />
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Launchpad — accesso rapido moduli attivi */}
+        <Link
+          href="/launchpad"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            pathname.startsWith("/launchpad")
+              ? "bg-sidebar-primary text-sidebar-primary-foreground"
+              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <KeyRound className="h-4 w-4" />
+          Launchpad
+        </Link>
+
         {/* Anomalie */}
         <Link
           href="/analytics"
@@ -367,74 +429,13 @@ export function Sidebar() {
           </div>
         </div>
 
-        {/* Launchpad — entry point unificato per accesso ai sistemi della stack */}
-        <Link
-          href="/launchpad"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname.startsWith("/launchpad")
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <KeyRound className="h-4 w-4" />
-          Launchpad
-        </Link>
-
-        {/* DNS — zone, filtro, resolver (ADR-0007) */}
-        <Link
-          href="/dns"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname.startsWith("/dns")
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <Globe className="h-4 w-4" />
-          DNS
-        </Link>
-
-        {/* DHCP — Kea scope, lease, statici */}
-        <Link
-          href="/dhcp"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname.startsWith("/dhcp")
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <Wifi className="h-4 w-4" />
-          DHCP
-        </Link>
-
-        {/* Network Services — stato VM bridge */}
-        <Link
-          href="/network-services"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname.startsWith("/network-services")
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <NetworkIcon className="h-4 w-4" />
-          Network Services
-        </Link>
-
-
         {/* Impostazioni (globale) */}
         <Link
           href="/settings"
           onClick={() => setMobileOpen(false)}
           className={cn(
             "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname === "/settings"
+            pathname.startsWith("/settings")
               ? "bg-sidebar-primary text-sidebar-primary-foreground"
               : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           )}

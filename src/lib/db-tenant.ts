@@ -171,6 +171,49 @@ export function getTenantDb(tenantCode: string): Database.Database {
       END
     ) VIRTUAL
   `;
+
+  /** Ricrea hosts senza os_family corrotta (double-quote legacy) — DROP COLUMN fallisce. */
+  function rebuildHostsOsFamilyLegacy(): boolean {
+    const hostsTableSql =
+      (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='hosts'").get() as
+        | { sql?: string }
+        | undefined)?.sql ?? "";
+    if (!hostsTableSql.includes('"Unknown"') && !hostsTableSql.includes('"Windows"')) {
+      return false;
+    }
+    const colRows = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: string | null;
+      pk: number;
+    }>;
+    const dataCols = colRows.filter((c) => c.name !== "os_family");
+    if (dataCols.length === 0) return false;
+
+    const colDefs = dataCols
+      .map((c) => {
+        if (c.name === "id" && c.pk === 1) {
+          return "id INTEGER PRIMARY KEY AUTOINCREMENT";
+        }
+        let sql = `"${c.name}" ${c.type || "TEXT"}`;
+        if (c.notnull && c.pk !== 1) sql += " NOT NULL";
+        if (c.dflt_value != null && c.pk !== 1) sql += ` DEFAULT ${c.dflt_value}`;
+        return sql;
+      })
+      .join(", ");
+    const selectList = dataCols.map((c) => `"${c.name}"`).join(", ");
+
+    newDb.pragma("foreign_keys = OFF");
+    newDb.exec(`CREATE TABLE hosts__os_fix (${colDefs}, UNIQUE(network_id, ip))`);
+    newDb.exec(`INSERT INTO hosts__os_fix (${selectList}) SELECT ${selectList} FROM hosts`);
+    newDb.exec("DROP TABLE hosts");
+    newDb.exec("ALTER TABLE hosts__os_fix RENAME TO hosts");
+    newDb.exec(`ALTER TABLE hosts ADD COLUMN os_family TEXT ${OS_FAMILY_GENERATED_SQL}`);
+    newDb.pragma("foreign_keys = ON");
+    return true;
+  }
+
   try {
     // table_xinfo include anche le GENERATED VIRTUAL columns (table_info NO).
     const hostCols = newDb.prepare("PRAGMA table_xinfo(hosts)").all() as Array<{ name: string }>;
@@ -186,9 +229,9 @@ export function getTenantDb(tenantCode: string): Database.Database {
       const hostsTableSql = (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='hosts'").get() as { sql?: string } | undefined)?.sql ?? "";
       if (hostsTableSql.includes('"Unknown"') || hostsTableSql.includes('"Windows"')) {
         try {
-          newDb.exec("ALTER TABLE hosts DROP COLUMN os_family");
-          newDb.exec(`ALTER TABLE hosts ADD COLUMN os_family TEXT ${OS_FAMILY_GENERATED_SQL}`);
-          console.info(`[db-tenant] ${tenantCode}: hosts.os_family ricreata (fix double-quote legacy)`);
+          if (rebuildHostsOsFamilyLegacy()) {
+            console.info(`[db-tenant] ${tenantCode}: hosts.os_family ricreata (fix double-quote legacy, table rebuild)`);
+          }
         } catch (e) {
           console.warn(`[db-tenant] ${tenantCode}: fix double-quote os_family fallito:`, e);
         }

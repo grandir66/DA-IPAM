@@ -54,7 +54,7 @@ log "Installa dipendenze APT (idempotente)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
-    nmap snmp snmp-mibs-downloader \
+    nmap snmp \
     fping iputils-arping iputils-ping mtr-tiny \
     openssh-client \
     libkrb5-dev krb5-config krb5-user libffi-dev \
@@ -62,6 +62,11 @@ apt-get install -y -qq \
     build-essential pkg-config \
     sqlite3 \
     git rsync ca-certificates >/dev/null
+if apt-cache show snmp-mibs-downloader >/dev/null 2>&1; then
+    apt-get install -y -qq snmp-mibs-downloader >/dev/null || warn "snmp-mibs-downloader non installato (continue)"
+else
+    warn "snmp-mibs-downloader non disponibile su questo release Debian/Ubuntu (SNMP ok, MIB opzionali)"
+fi
 ok "APT deps OK"
 
 # ─── Capabilities su nmap ────────────────────────────────────────────────────

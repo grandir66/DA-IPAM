@@ -35,9 +35,12 @@ import {
   getDefaultProductProfileForVendor,
   isValidProductProfileForVendor,
   vendorSubtypeFromProductProfile,
+  applyProductProfileScanDefaults,
+  suggestDeviceTypeFromProductProfile,
   productProfileRequiresNamedCredential,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
+import { describeDeviceAcquisition } from "@/lib/devices/device-acquisition-resolve";
 import type { NetworkDevice } from "@/types";
 import {
   getDefaultNetworkDeviceVendorOptions,
@@ -260,6 +263,28 @@ export function DeviceFormFields({
       a.label.localeCompare(b.label, "it", { sensitivity: "base" })
     );
   }, [vendor]);
+  const acquisitionPreview = useMemo(() => {
+    if (isBulk) return null;
+    const previewDeviceType: NetworkDevice["device_type"] = productProfile
+      ? suggestDeviceTypeFromProductProfile(productProfile as ProductProfileId)
+      : classification === "router"
+        ? "router"
+        : classification === "firewall"
+          ? "firewall"
+          : classification === "hypervisor"
+            ? "hypervisor"
+            : "switch";
+    return describeDeviceAcquisition({
+      vendor: vendor as NetworkDevice["vendor"],
+      protocol: (protocol || defaultProtocol) as NetworkDevice["protocol"],
+      scan_target: scanTarget,
+      product_profile: productProfile,
+      classification: classification || null,
+      device_type: previewDeviceType,
+      use_for_arp_poll: useForArpPoll ? 1 : 0,
+    });
+  }, [isBulk, vendor, protocol, defaultProtocol, scanTarget, productProfile, classification, useForArpPoll]);
+
   const productProfileOptions = useMemo(
     () =>
       [...getProductProfilesForVendor(vendor || "other", classification || null)].sort((a, b) =>
@@ -400,6 +425,14 @@ export function DeviceFormFields({
                   const defP = getDefaultProductProfileForVendor(nv, classification || null);
                   onProductProfileChange?.(defP);
                   onVendorSubtypeChange?.(vendorSubtypeFromProductProfile(defP as ProductProfileId));
+                  const defaults = applyProductProfileScanDefaults(
+                    defP as ProductProfileId,
+                    nv as NetworkDevice["vendor"],
+                    classification || null
+                  );
+                  if (defaults.scan_target != null) onScanTargetChange?.(defaults.scan_target);
+                  if (defaults.protocol) onProtocolChange?.(coerceProtocolForVendor(nv, defaults.protocol));
+                  if (onUseForArpPollChange) onUseForArpPollChange(defaults.use_for_arp_poll === 1);
                 }}
               >
                 <SelectTrigger className="w-full">
@@ -431,8 +464,23 @@ export function DeviceFormFields({
                 value={productProfile ?? getDefaultProductProfileForVendor(vendor, classification || null)}
                 onValueChange={(v) => {
                   if (!v) return;
+                  const pid = v as ProductProfileId;
                   onProductProfileChange(v);
-                  onVendorSubtypeChange?.(vendorSubtypeFromProductProfile(v as ProductProfileId));
+                  onVendorSubtypeChange?.(vendorSubtypeFromProductProfile(pid));
+                  const defaults = applyProductProfileScanDefaults(
+                    pid,
+                    vendor as NetworkDevice["vendor"],
+                    classification || null
+                  );
+                  if (defaults.scan_target != null) {
+                    onScanTargetChange?.(defaults.scan_target);
+                  }
+                  if (defaults.protocol) {
+                    onProtocolChange?.(coerceProtocolForVendor(vendor, defaults.protocol));
+                  }
+                  if (onUseForArpPollChange) {
+                    onUseForArpPollChange(defaults.use_for_arp_poll === 1);
+                  }
                 }}
               >
                 <SelectTrigger className="w-full">
@@ -508,6 +556,11 @@ export function DeviceFormFields({
               </Select>
             </FieldRow>
           </div>
+          {acquisitionPreview && (
+            <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200/80 rounded px-2.5 py-1.5 leading-snug">
+              <span className="font-medium">Acquisizione attiva:</span> {acquisitionPreview}
+            </p>
+          )}
         </div>
       )}
 

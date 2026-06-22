@@ -64,6 +64,7 @@ import {
   Server,
   Layers,
 } from "lucide-react";
+import { runDeviceAcquisitionScan } from "@/lib/devices/device-scan-client";
 import { toast } from "sonner";
 import type { HostDetail, HostSnmpData, InventoryAsset, NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 
@@ -641,64 +642,13 @@ export default function ObjectDetailPage() {
     }
     setRefreshing(true);
     try {
-      const scanTarget = device.scan_target;
-      const isProxmox =
-        scanTarget === "proxmox" ||
-        device.device_type === "hypervisor" ||
-        (device.classification === "hypervisor" && (device.protocol === "api" || device.protocol === "ssh"));
-
-      if (isProxmox) {
-        toast.info("Scan Proxmox VE in corso (API + SSH)...");
-        const pxRes = await fetch(`/api/devices/${device.id}/proxmox-scan`, { method: "POST" });
-        const pxData = (await pxRes.json()) as { hosts?: unknown[]; vms?: unknown[]; error?: string; avvisi?: string[] };
-        if (!pxRes.ok) {
-          toast.error(pxData.error ?? "Errore scan Proxmox");
-          return;
-        }
-        toast.success(`Proxmox: ${pxData.hosts?.length ?? 0} nodi, ${pxData.vms?.length ?? 0} VM/CT`);
-        if (pxData.avvisi?.length) {
-          toast.warning(`Avvisi scan: ${pxData.avvisi.join(" | ")}`, { duration: 8000 });
-        }
-        await fetchAll();
+      const scanResult = await runDeviceAcquisitionScan(device.id, device);
+      if (!scanResult.ok) {
+        toast.error(scanResult.error ?? "Errore scan");
         return;
       }
+      toast.success(scanResult.message ?? "Scan completato");
 
-      const qr = await fetch(`/api/devices/${device.id}/query`, { method: "POST" });
-      const qd = (await qr.json()) as { id?: string; error?: string };
-      if (!qr.ok) {
-        toast.error(qd.error ?? "Errore avvio query");
-        return;
-      }
-      if (qd.id) {
-        // v0.2.636 audit B2: polling con max-attempts. Senza limite il setInterval
-        // poteva girare per sempre se lo scan restava bloccato in 'running' —
-        // il bottone "Refresh" restava in spinner indefinitamente.
-        const POLL_INTERVAL_MS = 1500;
-        const POLL_MAX_ATTEMPTS = 400; // ≈ 10 minuti
-        await new Promise<void>((resolve) => {
-          let attempts = 0;
-          const poll = setInterval(async () => {
-            attempts++;
-            if (attempts >= POLL_MAX_ATTEMPTS) {
-              clearInterval(poll);
-              toast.error("Query timeout dopo 10 minuti");
-              resolve();
-              return;
-            }
-            try {
-              const pr = await fetch(`/api/scans/progress/${qd.id}`);
-              if (!pr.ok) return;
-              const pd = (await pr.json()) as { status: string; phase?: string };
-              if (pd.status === "completed" || pd.status === "failed") {
-                clearInterval(poll);
-                if (pd.status === "completed") toast.success(pd.phase ?? "Query OK");
-                else toast.error(pd.phase ?? "Query fallita");
-                resolve();
-              }
-            } catch { /* ignore: il prossimo tick riproverà fino al max */ }
-          }, POLL_INTERVAL_MS);
-        });
-      }
       if (device.vendor === "windows" || device.vendor === "linux") {
         toast.info("Inventario software in corso...");
         const sr = await fetch(`/api/devices/${device.id}/software-scan`, {

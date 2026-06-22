@@ -36,6 +36,8 @@ import {
 } from "@/components/ui/tooltip";
 import { ArrowLeft, RefreshCw, Zap, ZapOff, Cable, Minus, Pencil, Key, Server, Wifi, Database, Activity, Radio, Package, ExternalLink, Plus, Monitor, Cpu, HardDrive, Shield, Users, Clock, Award, Layers, Info, Download, Link2 } from "lucide-react";
 
+import { runDeviceAcquisitionScan } from "@/lib/devices/device-scan-client";
+import { describeDeviceAcquisition } from "@/lib/devices/device-acquisition-resolve";
 import { toast } from "sonner";
 import { getClassificationLabel } from "@/lib/device-classifications";
 import {
@@ -749,63 +751,22 @@ function DeviceDetailPage() {
    */
   async function handleQuery(onAfter?: () => Promise<void>): Promise<boolean> {
     if (!device) return false;
-    const target = (device as { scan_target?: string | null }).scan_target;
-    if (target === "vmware") {
-      toast.info("Scansione VMware non ancora implementata (API vCenter). Usa SSH sul singolo ESXi se configurato come dispositivo Linux.");
-      return false;
-    }
-    const useProxmox = target === "proxmox" || (device.device_type === "hypervisor" && !target);
-    const endpoint = useProxmox
-      ? `/api/devices/${params.id}/proxmox-scan`
-      : `/api/devices/${params.id}/query`;
 
     setQuerying(true);
     try {
-      const res = await fetch(endpoint, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error);
+      const result = await runDeviceAcquisitionScan(Number(params.id), device, {
+        onProgress: (p) => setQueryProgress(p as ScanProgressType),
+      });
+      if (!result.ok) {
+        toast.error(result.error ?? "Errore scan");
         setQuerying(false);
         return false;
       }
-
-      // Se l'endpoint ritorna progress con id → polling asincrono, attende completamento via Promise
-      if (data.id && data.progress) {
-        setQueryProgress(data.progress as ScanProgressType);
-        const ok: boolean = await new Promise<boolean>((resolve) => {
-          if (queryPollRef.current) clearInterval(queryPollRef.current);
-          queryPollRef.current = setInterval(async () => {
-            try {
-              const progressRes = await fetch(`/api/scans/progress/${data.id}`);
-              if (!progressRes.ok) return;
-              const prog = await progressRes.json() as ScanProgressType;
-              setQueryProgress(prog);
-              if (prog.status === "completed" || prog.status === "failed") {
-                if (queryPollRef.current) { clearInterval(queryPollRef.current); queryPollRef.current = null; }
-                if (prog.status === "completed") {
-                  toast.success(prog.phase);
-                  resolve(true);
-                } else {
-                  toast.error(prog.phase || "Errore nella scansione");
-                  resolve(false);
-                }
-              }
-            } catch { /* ignore poll errors */ }
-          }, 1000);
-        });
-        fetchDevice();
-        if (ok && onAfter) await onAfter();
-        setQuerying(false);
-        return ok;
-      } else {
-        // Risposta sincrona (Proxmox o legacy)
-        const msg = useProxmox ? "Scan Proxmox completato" : data.message;
-        toast.success(msg);
-        fetchDevice();
-        if (onAfter) await onAfter();
-        setQuerying(false);
-        return true;
-      }
+      toast.success(result.message ?? "Scan completato");
+      fetchDevice();
+      if (onAfter) await onAfter();
+      setQuerying(false);
+      return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore nella scansione");
       setQuerying(false);

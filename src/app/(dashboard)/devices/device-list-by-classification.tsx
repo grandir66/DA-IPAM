@@ -614,13 +614,19 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
 
   async function handleQuery(id: number) {
     setQuerying(id);
-    const res = await fetch(`/api/devices/${id}/query`, { method: "POST" });
-    const data = await res.json();
-    if (res.ok) {
-      toast.success(data.message);
+    const dev = devices.find((d) => !isHostItem(d) && Number(d.id) === id) as NetworkDevice | undefined;
+    if (!dev) {
+      toast.error("Dispositivo non trovato");
+      setQuerying(null);
+      return;
+    }
+    const { runDeviceAcquisitionScan } = await import("@/lib/devices/device-scan-client");
+    const result = await runDeviceAcquisitionScan(id, dev);
+    if (result.ok) {
+      toast.success(result.message ?? "Scan completato");
       fetchDevices();
     } else {
-      toast.error(data.error || "Errore nella query");
+      toast.error(result.error ?? "Errore nella query");
     }
     setQuerying(null);
   }

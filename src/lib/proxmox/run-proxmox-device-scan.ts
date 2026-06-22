@@ -8,7 +8,7 @@ import {
   proxmoxSshUsername,
   resolveProxmoxTargetIps,
 } from "@/lib/proxmox/proxmox-targets";
-import type { NetworkDevice } from "@/types";
+import { isProxmoxVeDevice } from "@/lib/devices/device-acquisition-resolve";
 
 export interface ProxmoxDeviceScanResult {
   hosts: ProxmoxHostInfo[];
@@ -17,14 +17,11 @@ export interface ProxmoxDeviceScanResult {
   avvisi?: string[];
 }
 
-function assertProxmoxDevice(device: NetworkDevice): void {
-  const scanTarget = device.scan_target;
-  const isProxmox =
-    scanTarget === "proxmox" ||
-    device.device_type === "hypervisor" ||
-    (device.classification === "hypervisor" && (device.protocol === "api" || device.protocol === "ssh"));
-  if (!isProxmox) {
-    throw new Error("Questo dispositivo non è configurato come Proxmox. Imposta 'Tipo di scansione' su Proxmox in Modifica.");
+function assertProxmoxDevice(device: import("@/types").NetworkDevice): void {
+  if (!isProxmoxVeDevice(device)) {
+    throw new Error(
+      "Questo dispositivo non è configurato come Proxmox VE. Imposta vendor Proxmox, tipologia proxmox_ve e tipo scansione Proxmox."
+    );
   }
   if (!device.enabled) {
     throw new Error("Dispositivo disabilitato");

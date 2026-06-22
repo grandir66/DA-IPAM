@@ -11,6 +11,7 @@ import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { isProxmoxDevice } from "@/lib/devices/device-connection-test";
+import { resolveDeviceAcquisition } from "@/lib/devices/device-acquisition-resolve";
 import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { getScanProgress } from "@/lib/scanner/discovery";
 import type { ScanProgress } from "@/types";
@@ -501,6 +502,15 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           message: `Device secondary di un gruppo multihomed (${mh.peers_count} IF). Scan saltato: esegui sul primary (${mh.primary_ip}) o forza con ?force=1.`,
           multihomed: { group_id: mh.group_id, primary_host_id: mh.primary_host_id, primary_ip: mh.primary_ip, peers_count: mh.peers_count },
         }, { status: 409 });
+      }
+
+      const acquisition = resolveDeviceAcquisition(device);
+
+      if (!acquisition.implemented) {
+        return NextResponse.json(
+          { error: acquisition.notImplementedHint ?? `${acquisition.label} non ancora disponibile` },
+          { status: 501 }
+        );
       }
 
       if (isProxmoxDevice(device)) {

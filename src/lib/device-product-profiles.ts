@@ -269,7 +269,55 @@ export function scanTargetHintFromProductProfile(profile: ProductProfileId): Net
   if (profile === "proxmox_ve") return "proxmox";
   if (profile === "proxmox_pbs") return "linux";
   if (profile === "macos_notebook" || profile === "macos_desktop" || profile === "macos_server") return "macos";
+  if (profile === "vmware_vsphere") return "vmware";
+  if (profile === "windows_server" || profile === "windows_client") return "windows";
+  if (profile === "linux_server" || profile === "linux_client") return "linux";
   return null;
+}
+
+/** Protocollo principale suggerito dal profilo (prima voce di acquisitionPriority). */
+export function protocolHintFromProductProfile(profile: ProductProfileId): NetworkDevice["protocol"] | null {
+  const prio = PRODUCT_PROFILE_KNOWLEDGE[profile]?.acquisitionPriority[0];
+  if (!prio) return null;
+  switch (prio) {
+    case "winrm":
+      return "winrm";
+    case "ssh":
+      return "ssh";
+    case "snmp":
+      return "snmp_v2";
+    case "api":
+      return "api";
+    case "https":
+      return "api";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Campi coerenti con il profilo prodotto scelto (scan_target, protocollo, device_type, ARP).
+ * Usato da form UI e PUT /api/devices/[id] quando cambia product_profile.
+ */
+export function applyProductProfileScanDefaults(
+  profile: ProductProfileId,
+  vendor: NetworkDevice["vendor"],
+  classification?: string | null
+): {
+  device_type: NetworkDevice["device_type"];
+  scan_target: NetworkDevice["scan_target"] | null;
+  protocol: NetworkDevice["protocol"] | null;
+  vendor_subtype: ReturnType<typeof vendorSubtypeFromProductProfile>;
+  use_for_arp_poll: number;
+} {
+  const device_type = resolveDeviceTypeForCreate({ product_profile: profile, classification });
+  return {
+    device_type,
+    scan_target: scanTargetHintFromProductProfile(profile),
+    protocol: protocolHintFromProductProfile(profile),
+    vendor_subtype: vendorSubtypeFromProductProfile(profile),
+    use_for_arp_poll: resolveUseForArpPoll({ device_type, classification, vendor }),
+  };
 }
 
 /** Protocolli/trasporti tipici per orchestrare acquisizione (ordine = priorità suggerita). */

@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { getNetworkDeviceById, updateNetworkDevice, deleteNetworkDevice, getArpEntriesByDevice, getMacPortEntriesByDevice, getSwitchPortsByDevice, getNeighborsByDevice, getRoutesByDevice, getDeviceCredentialBindings, getDhcpLeasesByDevice } from "@/lib/db";
 import {
   isValidProductProfileForVendor,
-  suggestDeviceTypeFromProductProfile,
+  resolveDeviceTypeForCreate,
   resolveUseForArpPoll,
-  vendorSubtypeFromProductProfile,
+  applyProductProfileScanDefaults,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
+import { coerceProtocolForVendor } from "@/lib/vendor-device-profile";
 import { encrypt } from "@/lib/crypto";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -179,8 +180,28 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       updates.product_profile = pp;
       if (pp) {
         const pid = pp as ProductProfileId;
-        updates.device_type = suggestDeviceTypeFromProductProfile(pid);
-        updates.vendor_subtype = vendorSubtypeFromProductProfile(pid);
+        const defaults = applyProductProfileScanDefaults(pid, vendorForProfile, (body.classification ?? existing.classification) as string | null);
+        updates.device_type = defaults.device_type;
+        updates.vendor_subtype = defaults.vendor_subtype;
+        if (body.scan_target === undefined && defaults.scan_target != null) {
+          updates.scan_target = defaults.scan_target;
+        }
+        if (body.protocol === undefined && defaults.protocol) {
+          updates.protocol = coerceProtocolForVendor(vendorForProfile, defaults.protocol);
+        }
+        if (body.use_for_arp_poll === undefined) {
+          updates.use_for_arp_poll = defaults.use_for_arp_poll;
+        }
+      }
+    }
+    if (body.classification !== undefined && body.product_profile === undefined) {
+      const vendorForClass = (body.vendor ?? existing.vendor) as import("@/types").NetworkDevice["vendor"];
+      const profile = (existing.product_profile ?? null) as ProductProfileId | null;
+      if (profile && isValidProductProfileForVendor(vendorForClass, profile)) {
+        updates.device_type = resolveDeviceTypeForCreate({
+          product_profile: profile,
+          classification: body.classification as string,
+        });
       }
     }
     if (body.classification !== undefined && body.use_for_arp_poll === undefined) {

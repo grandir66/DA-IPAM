@@ -30,7 +30,8 @@ import { Button } from "@/components/ui/button";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import { getClassificationLabel } from "@/lib/device-classifications";
-import { vendorSubtypeFromProductProfile, type ProductProfileId } from "@/lib/device-product-profiles";
+import { isProxmoxVeDevice } from "@/lib/devices/device-acquisition-resolve";
+import { applyProductProfileScanDefaults, type ProductProfileId } from "@/lib/device-product-profiles";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { toast } from "sonner";
 import type { NetworkDevice } from "@/types";
@@ -128,8 +129,13 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
   }
 
   const isHypervisorOrProxmox =
-    device.device_type === "hypervisor" ||
-    (device as { scan_target?: string }).scan_target === "proxmox";
+    isProxmoxVeDevice({
+      vendor: editVendor,
+      protocol: editProtocol,
+      scan_target: editScanTarget,
+      product_profile: editProductProfile,
+      classification: editClassification || device.classification,
+    }) || device.device_type === "hypervisor";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -206,7 +212,13 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
               onScanTargetChange={setEditScanTarget}
               onProductProfileChange={(v) => {
                 setEditProductProfile(v);
-                setEditVendorSubtype(vendorSubtypeFromProductProfile(v as ProductProfileId));
+                if (!v) return;
+                const pid = v as ProductProfileId;
+                const defaults = applyProductProfileScanDefaults(pid, editVendor, editClassification || null);
+                setEditVendorSubtype(defaults.vendor_subtype);
+                if (defaults.scan_target != null) setEditScanTarget(defaults.scan_target);
+                if (defaults.protocol) setEditProtocol(defaults.protocol);
+                setEditUseForArpPoll(defaults.use_for_arp_poll === 1);
               }}
               useForArpPoll={editUseForArpPoll}
               onUseForArpPollChange={setEditUseForArpPoll}

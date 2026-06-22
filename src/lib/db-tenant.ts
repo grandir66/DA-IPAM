@@ -198,7 +198,6 @@ export function getTenantDb(tenantCode: string): Database.Database {
         }
         let sql = `"${c.name}" ${c.type || "TEXT"}`;
         if (c.notnull && c.pk !== 1) sql += " NOT NULL";
-        if (c.dflt_value != null && c.pk !== 1) sql += ` DEFAULT ${c.dflt_value}`;
         return sql;
       })
       .join(", ");
@@ -209,7 +208,7 @@ export function getTenantDb(tenantCode: string): Database.Database {
     newDb.exec(`INSERT INTO hosts__os_fix (${selectList}) SELECT ${selectList} FROM hosts`);
     newDb.exec("DROP TABLE hosts");
     newDb.exec("ALTER TABLE hosts__os_fix RENAME TO hosts");
-    newDb.exec(`ALTER TABLE hosts ADD COLUMN os_family TEXT ${OS_FAMILY_GENERATED_SQL}`);
+    newDb.exec(`ALTER TABLE hosts ADD COLUMN os_family TEXT ${OS_FAMILY_GENERATED_SQL.trim()}`);
     newDb.pragma("foreign_keys = ON");
     return true;
   }

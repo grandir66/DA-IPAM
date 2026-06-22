@@ -55,6 +55,19 @@ if (existing) {
   console.log("[bootstrap] vuln_scanners creato");
 }
 
+// Cron vuln_sync: il bootstrap appliance registra lo scanner ma senza questo
+// job i findings restano solo sull'edge (stesso pattern di POST /api/integrations/scanner-edge).
+const vulnJob = db
+  .prepare("SELECT id FROM scheduled_jobs WHERE job_type = 'vuln_sync' AND network_id IS NULL")
+  .get() as { id: number } | undefined;
+if (!vulnJob) {
+  db.prepare(
+    `INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config)
+     VALUES (NULL, 'vuln_sync', 30, 1, '{}')`,
+  ).run();
+  console.log("[bootstrap] scheduled_jobs vuln_sync creato (30 min)");
+}
+
 if (netUrl && netToken) {
   installNetServices(tenantCode, null, { apiUrl: netUrl, apiToken: netToken });
   console.log("[bootstrap] network_services →", netUrl);

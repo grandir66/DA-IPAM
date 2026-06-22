@@ -58,4 +58,10 @@ export SSH_PYTHON="${SSH_PYTHON:-/root/.da-invent-venv/bin/python3}"
 
 echo "[entrypoint] DA-IPAM container — secrets=${SECRETS_FILE} data=${DATA_DIR} winrm=${WINRM_PYTHON}"
 
+# Idempotente: se lo scanner-edge è registrato ma manca vuln_sync (connect fallito).
+if [ -f "${APP_DIR}/scripts/ensure-vuln-sync.ts" ]; then
+  npx tsx "${APP_DIR}/scripts/ensure-vuln-sync.ts" 2>/dev/null \
+    || echo "[entrypoint] Avviso: ensure-vuln-sync skip." >&2
+fi
+
 exec "$@"

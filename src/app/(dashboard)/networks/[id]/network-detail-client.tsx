@@ -733,11 +733,17 @@ export function NetworkDetailClient({
     if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
 
     return await new Promise((resolve) => {
+      // R4 2026-06-23: il progress vive in una mappa in-memory persa al restart
+      // del processo → dopo un restart la GET dà 404 e il poller girava all'INFINITO
+      // (lo spinner "scansione in corso" non si risolveva mai). Contiamo i 404
+      // consecutivi e terminiamo dopo qualche tentativo.
+      let notFoundCount = 0;
       const interval = setInterval(() => {
         void (async () => {
           try {
             const progressRes = await fetch(`/api/scans/progress/${data.id}`);
             if (progressRes.ok) {
+              notFoundCount = 0;
               const progress = (await progressRes.json()) as ScanProgressType;
               setScanning(progress);
               if (progress.status === "completed" || progress.status === "failed") {
@@ -752,6 +758,12 @@ export function NetworkDetailClient({
                   lastProgress: progress,
                 });
               }
+            } else if (++notFoundCount >= 5) {
+              // progress non più disponibile (restart) → termina invece di pollare all'infinito
+              clearInterval(interval);
+              scanIntervalRef.current = null;
+              setScanning(null);
+              resolve({ ok: false, lastProgress: null });
             }
           } catch {
             clearInterval(interval);

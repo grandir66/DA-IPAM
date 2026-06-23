@@ -1837,6 +1837,10 @@ async function runDiscovery(
         || (host.classification ?? "") === "workstation"
         || (host.os_info ?? "").toLowerCase().includes("windows");
 
+      // Protocolli già validati per QUESTO host: una volta trovata la cred giusta
+      // per un protocollo, NON provare le altre (fix C2 2026-06-23: senza, ogni
+      // credenziale sbagliata era un logon fallito reale su ogni host → lockout AD).
+      const validatedProtos = new Set<string>();
       for (const nc of netCreds) {
         const credType = nc.credential_type.toLowerCase();
         const credId = nc.credential_id;
@@ -1851,7 +1855,7 @@ async function runDiscovery(
             || (host.classification ?? "") === "networking"
             || (host.os_info ?? "").toLowerCase().includes("linux")
           ));
-        if ((credType === "ssh" || credType === "linux") && hasSshIndicator) {
+        if ((credType === "ssh" || credType === "linux") && hasSshIndicator && !validatedProtos.has("ssh")) {
           const sshPort = openPorts.find((p) => p.port === 22 || p.service === "ssh")?.port ?? 22;
           const creds = getSshLinuxCredentialPair(credId);
           if (!creds) continue;
@@ -1864,13 +1868,14 @@ async function runDiscovery(
             autoBindCredentialToDevice(ip, credId, "ssh", sshPort);
             log(`✓ ${ip}:${sshPort} SSH cred#${credId} (${nc.credential_name})`);
             validated++;
+            validatedProtos.add("ssh");
           } catch (e) {
             const msg = e instanceof SshError ? `[${e.kind}] ${e.message}` : (e as Error).message ?? String(e);
             log(`✗ ${ip}:${sshPort} SSH cred#${credId}: ${msg.slice(0, 160)}`);
           }
         }
 
-        if (credType === "snmp") {
+        if (credType === "snmp" && !validatedProtos.has("snmp")) {
           const com = getCredentialCommunityString(credId);
           if (!com) continue;
           try {
@@ -1880,6 +1885,7 @@ async function runDiscovery(
               autoBindCredentialToDevice(ip, credId, "snmp", 161);
               log(`✓ ${ip}:161 SNMP cred#${credId} (${nc.credential_name})`);
               validated++;
+              validatedProtos.add("snmp");
             } else {
               log(`✗ ${ip}:161 SNMP cred#${credId}: nessuna risposta`);
             }
@@ -1888,7 +1894,7 @@ async function runDiscovery(
           }
         }
 
-        if (credType === "windows" && hasWindowsIndicator) {
+        if (credType === "windows" && hasWindowsIndicator && !validatedProtos.has("winrm")) {
           // Porta WinRM: preferisci porta esplicita, fallback a 5985
           const winrmPort = openPorts.find((p) => [5985, 5986].includes(p.port))?.port ?? 5985;
           const creds = getCredentialLoginPair(credId, "windows");
@@ -1901,6 +1907,7 @@ async function runDiscovery(
               autoBindCredentialToDevice(ip, credId, "winrm", winrmPort);
               log(`✓ ${ip}:${winrmPort} WinRM cred#${credId} (${nc.credential_name})`);
               validated++;
+              validatedProtos.add("winrm");
             } else {
               log(`✗ ${ip}:${winrmPort} WinRM cred#${credId}: risposta vuota`);
             }
@@ -2313,6 +2320,10 @@ async function runDiscovery(
       });
     }
 
+    // Persistenza per-host in try/catch (fix C4 2026-06-23): un singolo host che
+    // fa throw (constraint, MAC mojibake, ecc.) NON deve abortire l'intero scan
+    // né saltare l'offline-marking post-scan — come già fanno gli sweep fast/icmp.
+    try {
     const host = upsertHost({
       network_id: networkId,
       ip,
@@ -2366,6 +2377,9 @@ async function runDiscovery(
       raw_output: nmapData?.os || null,
       duration_ms: null,
     });
+    } catch (e) {
+      log(`✗ persist host ${ip}: ${(e as Error).message?.slice(0, 120)}`);
+    }
 
     progress.scanned = i + 1;
     progress.phase = `Elaborazione host — ${i + 1}/${onlineIps.length} (${ip})`;

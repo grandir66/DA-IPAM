@@ -85,8 +85,16 @@ export async function runWinrmCommand(
 
   return new Promise((resolve, reject) => {
     const pythonBin = findBridgePython();
+    // R1 2026-06-23: WinRM con local-admin NON-builtin richiede il prefisso '.\'
+    // (LocalAccountTokenFilterPolicy) per ottenere un token elevato; senza, 401
+    // → l'host Windows contribuiva VUOTO ma lo scan risultava "ok". Prefissiamo
+    // '.\' SOLO a username "bare": niente per UPN (user@dominio), DOMAIN\user, o
+    // se c'è un realm Kerberos (login di dominio).
+    const authUser = (!username.includes("\\") && !username.includes("@") && !(realm && realm.trim()))
+      ? `.\\${username}`
+      : username;
     const input = JSON.stringify({
-      host, port, username, password, command, usePowershell,
+      host, port, username: authUser, password, command, usePowershell,
       realm: realm || "",
     });
 

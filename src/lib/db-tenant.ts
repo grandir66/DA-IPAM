@@ -824,6 +824,31 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.warn(`[db-tenant] ${tenantCode}: patch_operations recovery fallito:`, e);
   }
 
+  // Watchdog software_scans (fix R3 2026-06-23): come patch_operations, uno scan
+  // software interrotto da un restart del processo restava 'running' per sempre
+  // (nessun try/finally nel runner) → UI in-progress perenne, re-scan bloccato.
+  try {
+    const hasTable = newDb.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='software_scans'"
+    ).get();
+    if (hasTable) {
+      // NB: il CHECK di software_scans.status ammette solo
+      // running/ok/error/timeout/cancelled → usiamo 'error' (non 'failed').
+      const r = newDb.prepare(
+        `UPDATE software_scans
+         SET status = 'error',
+             finished_at = datetime('now')
+         WHERE status = 'running'
+           AND substr(replace(replace(started_at,'T',' '),'Z',''),1,19) < datetime('now', '-10 minutes')`
+      ).run() as { changes: number };
+      if (r.changes > 0) {
+        console.info(`[db-tenant] ${tenantCode}: software_scans recovery — ${r.changes} scan orfani segnati failed`);
+      }
+    }
+  } catch (e) {
+    console.warn(`[db-tenant] ${tenantCode}: software_scans recovery fallito:`, e);
+  }
+
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
   return newDb;
 }

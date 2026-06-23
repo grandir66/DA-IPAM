@@ -5,6 +5,7 @@ import { discoverNetwork } from "@/lib/scanner/discovery";
 import { buildCustomScanArgs } from "@/lib/scanner/ports";
 import { runArpPoll, runDhcpPollForNetwork, runDnsResolve } from "@/lib/cron/jobs";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 function resolveTargetIps(networkId: number, hostIds: number[] | undefined): string[] | undefined {
   if (!hostIds?.length) return undefined;
@@ -20,6 +21,10 @@ const MANUAL_SCAN_TYPES = new Set<string>(["nmap", "snmp", "windows", "ssh", "dn
 
 export async function POST(request: Request) {
   const result = await withTenantFromSession(async () => {
+    // requireAdmin: lanciare scan attivi (nmap/snmp/arp/dns) è azione mutante →
+    // non deve bastare un viewer loggato (privilege escalation).
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     try {
       const body = await request.json();
       const parsed = ScanTriggerSchema.safeParse(body);

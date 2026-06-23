@@ -318,15 +318,41 @@ async function probePatch(tenantCode: string, probedAt: string): Promise<ModuleH
 async function compute(tenantCode: string): Promise<ModuleHealth[]> {
   const probedAt = new Date().toISOString();
   // I probe per-modulo sono indipendenti → in parallelo (ognuno bounded).
-  const [edge, wazuh, librenms, graylog, net, patch] = await Promise.all([
-    withTenant(tenantCode, () => probeEdge(tenantCode, probedAt)),
-    probeWazuh(probedAt),
-    probeHttpIntegration("librenms", probedAt),
-    probeHttpIntegration("graylog", probedAt),
-    probeNetServices(tenantCode, probedAt),
-    probePatch(tenantCode, probedAt),
-  ]);
-  return [edge, librenms, wazuh, graylog, patch, net];
+  // allSettled (NON all): se un probe RIGETTA (es. lettura DB fuori try su
+  // disk-full / integrity-check failed) NON deve abbattere l'intera health API
+  // né la home dashboard SSR che la consuma. Il probe fallito → verdict "fail".
+  const tasks: Array<[ModuleKey, Promise<ModuleHealth>]> = [
+    ["edge", withTenant(tenantCode, () => probeEdge(tenantCode, probedAt))],
+    ["wazuh", probeWazuh(probedAt)],
+    ["librenms", probeHttpIntegration("librenms", probedAt)],
+    ["graylog", probeHttpIntegration("graylog", probedAt)],
+    ["network_services", probeNetServices(tenantCode, probedAt)],
+    ["patch_management", probePatch(tenantCode, probedAt)],
+  ];
+  const settled = await Promise.allSettled(tasks.map(([, p]) => p));
+  const byKey = {} as Record<ModuleKey, ModuleHealth>;
+  settled.forEach((res, i) => {
+    const key = tasks[i][0];
+    if (res.status === "fulfilled") {
+      byKey[key] = res.value;
+    } else {
+      const reason = res.reason instanceof Error ? res.reason.message : String(res.reason);
+      byKey[key] = mk(key, probedAt, {
+        reachable: false,
+        authOk: false,
+        verdict: "fail",
+        detail: `probe error: ${reason}`,
+      });
+    }
+  });
+  return [
+    byKey.edge,
+    byKey.librenms,
+    byKey.wazuh,
+    byKey.graylog,
+    byKey.patch_management,
+    byKey.network_services,
+  ];
 }
 
 /**

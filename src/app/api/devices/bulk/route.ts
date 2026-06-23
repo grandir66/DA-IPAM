@@ -253,6 +253,9 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   return withTenantFromSession(async () => {
+  // requireAdmin: bulk-update muta device/host (coerente col POST sopra).
+  const adminCheck = await requireAdmin();
+  if (isAuthError(adminCheck)) return adminCheck;
   try {
     const body = await request.json();
     const parsed = BulkUpdateSchema.safeParse(body);

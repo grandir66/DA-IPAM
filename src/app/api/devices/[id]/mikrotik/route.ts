@@ -6,7 +6,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, isAuthError } from "@/lib/api-auth";
+import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import {
   getNetworkDeviceById,
   buildNetworkLookup,
@@ -107,6 +107,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   return withTenantFromSession(async () => {
+  // requireAdmin: POST mikrotik (import-dhcp) scrive IPAM → azione mutante.
+  const adminCheck = await requireAdmin();
+  if (isAuthError(adminCheck)) return adminCheck;
   const { id } = await params;
   const deviceId = parseInt(id, 10);
   if (isNaN(deviceId)) {

@@ -40,10 +40,13 @@ export async function PUT(
       );
     }
 
-    // Protezione: non declassare l'ultimo superadmin/admin
+    // Protezione: non declassare l'ultimo superadmin/admin.
+    // Gli utenti vivono in hub.db (db-hub) → usare getHubDb(), NON getDb()
+    // (che senza contesto tenant cade su DEFAULT.db dove la tabella users non
+    // esiste → 'no such table: users' → 500 e il guard non protegge mai nulla).
     if (user.role === "superadmin" && role !== "superadmin") {
-      const { getDb } = await import("@/lib/db");
-      const supers = getDb().prepare("SELECT COUNT(*) as c FROM users WHERE role = 'superadmin'").get() as { c: number };
+      const { getHubDb } = await import("@/lib/db-hub");
+      const supers = getHubDb().prepare("SELECT COUNT(*) as c FROM users WHERE role = 'superadmin'").get() as { c: number };
       if (supers.c <= 1) {
         return NextResponse.json(
           { error: "Impossibile modificare il ruolo dell'ultimo super amministratore" },
@@ -52,8 +55,8 @@ export async function PUT(
       }
     }
     if (user.role === "admin" && role === "viewer") {
-      const { getDb } = await import("@/lib/db");
-      const admins = getDb().prepare("SELECT COUNT(*) as c FROM users WHERE role IN ('admin', 'superadmin')").get() as { c: number };
+      const { getHubDb } = await import("@/lib/db-hub");
+      const admins = getHubDb().prepare("SELECT COUNT(*) as c FROM users WHERE role IN ('admin', 'superadmin')").get() as { c: number };
       if (admins.c <= 1) {
         return NextResponse.json(
           { error: "Impossibile rimuovere il ruolo admin dall'ultimo amministratore" },

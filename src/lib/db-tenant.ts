@@ -813,7 +813,8 @@ export function getTenantDb(tenantCode: string): Database.Database {
                     THEN 'Service restart durante esecuzione: job non ripreso al riavvio. Ricrea l''operazione.'
                     ELSE '' END
          WHERE status IN ('queued', 'running')
-           AND (started_at IS NULL OR started_at < datetime('now', '-10 minutes'))`
+           AND (started_at IS NULL OR
+                substr(replace(replace(started_at,'T',' '),'Z',''),1,19) < datetime('now', '-10 minutes'))`
       ).run() as { changes: number };
       if (r.changes > 0) {
         console.info(`[db-tenant] ${tenantCode}: patch_operations recovery — ${r.changes} job orfani segnati failed`);
@@ -1362,10 +1363,20 @@ export function getKnownHosts(networkId?: number | null): Host[] {
   return db().prepare("SELECT * FROM hosts WHERE known_host = 1").all() as Host[];
 }
 
-export function getHostByMac(mac: string): Host | undefined {
+export function getHostByMac(mac: string, preferIp?: string): Host | undefined {
   const hex = macToHex(mac);
   if (hex.length < 12) return undefined;
-  return db().prepare(`SELECT * FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1`).get(hex) as Host | undefined;
+  // MAC NON è unique in hosts (multi-homed / VRRP-HSRP / VM clone): un LIMIT 1
+  // senza ORDER BY restituiva una riga ARBITRARIA → Wazuh attribuiva CVE/software
+  // all'host sbagliato (fix B4 2026-06-23). Disambigua con l'IP se fornito,
+  // altrimenti ritorna il match deterministico (id minore).
+  const rows = db().prepare(`SELECT * FROM hosts WHERE ${MAC_HEX("mac")} = ? ORDER BY id`).all(hex) as Host[];
+  if (rows.length <= 1) return rows[0];
+  if (preferIp) {
+    const exact = rows.find((r) => r.ip === preferIp);
+    if (exact) return exact;
+  }
+  return rows[0];
 }
 
 export function resolveMacToNetworkDevice(mac: string, excludeDeviceId?: number): { device_id: number; device_name: string; device_type: string } | null {
@@ -1449,12 +1460,16 @@ export function getHostById(id: number): HostDetail | undefined {
     ORDER BY ae.timestamp DESC LIMIT 1
   `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; last_query: string } | undefined : undefined;
 
+  // Tie-breaker MAX(rowid), NON timestamp (fix D1 2026-06-23): (mac,timestamp)
+  // non è unique e datetime('now') ha risoluzione 1s → lo stesso MAC su più
+  // switch nello stesso scan dava una porta ARBITRARIA che cambiava a ogni
+  // refresh (es. porta trunk del core invece dell'access). rowid è monotono.
   const switchPort = host.mac ? db().prepare(`
     SELECT nd.name as device_name, nd.vendor as device_vendor, mpe.port_name, mpe.vlan
     FROM mac_port_entries mpe
     JOIN network_devices nd ON nd.id = mpe.device_id
     WHERE ${MAC_HEX("mpe.mac")} = ? AND nd.device_type = 'switch'
-    ORDER BY mpe.timestamp DESC LIMIT 1
+    ORDER BY mpe.rowid DESC LIMIT 1
   `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; port_name: string; vlan: number | null } | undefined : undefined;
 
   // F4: prefer FK lookup (network_devices.host_id) over fragile IP string match;
@@ -4737,7 +4752,7 @@ export function getAdComputersPaginated(integrationId: number, page: number, pag
   let whereClause = "WHERE integration_id = ?";
   const params: unknown[] = [integrationId];
   if (search?.trim()) { whereClause += " AND (sam_account_name LIKE ? OR dns_host_name LIKE ? OR display_name LIKE ? OR operating_system LIKE ?)"; const s = `%${search.trim()}%`; params.push(s, s, s, s); }
-  if (activeDays && activeDays > 0) { whereClause += ` AND last_logon_at IS NOT NULL AND last_logon_at >= datetime('now', '-${activeDays} days')`; }
+  if (activeDays && activeDays > 0) { whereClause += ` AND last_logon_at IS NOT NULL AND substr(replace(replace(last_logon_at,'T',' '),'Z',''),1,19) >= datetime('now', '-${activeDays} days')`; }
   const total = (db().prepare(`SELECT COUNT(*) as c FROM ad_computers ${whereClause}`).get(...params) as { c: number }).c;
   const rows = db().prepare(`SELECT * FROM ad_computers ${whereClause} ORDER BY sam_account_name LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdComputer[];
   return { rows, total };
@@ -5013,7 +5028,7 @@ export function getAdUsersPaginated(integrationId: number, page: number, pageSiz
   let whereClause = "WHERE integration_id = ?";
   const params: unknown[] = [integrationId];
   if (search?.trim()) { whereClause += " AND (sam_account_name LIKE ? OR user_principal_name LIKE ? OR display_name LIKE ? OR email LIKE ? OR department LIKE ?)"; const s = `%${search.trim()}%`; params.push(s, s, s, s, s); }
-  if (activeDays && activeDays > 0) { whereClause += ` AND last_logon_at IS NOT NULL AND last_logon_at >= datetime('now', '-${activeDays} days')`; }
+  if (activeDays && activeDays > 0) { whereClause += ` AND last_logon_at IS NOT NULL AND substr(replace(replace(last_logon_at,'T',' '),'Z',''),1,19) >= datetime('now', '-${activeDays} days')`; }
   const total = (db().prepare(`SELECT COUNT(*) as c FROM ad_users ${whereClause}`).get(...params) as { c: number }).c;
   const rows = db().prepare(`SELECT * FROM ad_users ${whereClause} ORDER BY sam_account_name LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdUser[];
   return { rows, total };

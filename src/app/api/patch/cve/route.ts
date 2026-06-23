@@ -126,7 +126,13 @@ export async function GET(request: Request) {
         SELECT
           cu.cve_id                                AS cve_id,
           MAX(cu.cvss_score)                       AS cvss_score,
-          MAX(cu.severity)                         AS severity,
+          -- severity per RANK, non MAX lessicografico (fix B2 2026-06-23):
+          -- MAX('Critical','High','Low') dava 'Low' (M>L>H>C) → Critical mai mostrato.
+          CASE MAX(CASE cu.severity
+                     WHEN 'Critical' THEN 4 WHEN 'High' THEN 3
+                     WHEN 'Medium' THEN 2 WHEN 'Low' THEN 1 ELSE 0 END)
+            WHEN 4 THEN 'Critical' WHEN 3 THEN 'High'
+            WHEN 2 THEN 'Medium' WHEN 1 THEN 'Low' ELSE 'Unknown' END AS severity,
           MAX(cu.title)                            AS title,
           COUNT(DISTINCT cu.host_id)               AS host_count,
           CASE WHEN COUNT(pct.software_id) > 0 THEN 1 ELSE 0 END AS fix_available

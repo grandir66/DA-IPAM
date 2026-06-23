@@ -100,7 +100,9 @@ async function matchAgentToHost(
       if (mac === "00:00:00:00:00:00") continue;
       if (!primaryMac) primaryMac = mac;
       if (!hostId) {
-        const hm = getHostByMac(mac);
+        // passa l'IP agent per disambiguare MAC duplicati (fix B4): evita di
+        // attribuire le CVE all'host sbagliato su MAC condiviso.
+        const hm = getHostByMac(mac, ip ?? undefined);
         if (hm) hostId = hm.id;
       }
     }
@@ -292,7 +294,21 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
       result.portRows += replacePortsForAgent(agent.id, ports);
       result.hotfixRows += replaceHotfixesForAgent(agent.id, hotfixes);
       result.netaddrRows += replaceNetaddrsForAgent(agent.id, netaddrs);
-      result.vulnRows += replaceVulnsForAgent(agent.id, vulns);
+      // Guard B3 2026-06-23: un risultato vulns VUOTO (HTTP 200, 0 hit) NON deve
+      // cancellare le CVE dell'agent se l'indice è inaffidabile (ISM rollover /
+      // reindex di wazuh-states-vulnerabilities-*) → falso "0 vulnerabilità".
+      // Wipe solo se è un vero-0: indice presente con documenti.
+      if (vulns.length === 0 && indexer) {
+        let indexHasDocs = false;
+        try { indexHasDocs = (await indexer.totalVulnDocs()) > 0; } catch { indexHasDocs = false; }
+        if (!indexHasDocs) {
+          console.warn(`[wazuh-sync] vulns vuote per agent ${agent.id} ma indice CVE non affidabile (0 doc/err) → skip wipe`);
+        } else {
+          result.vulnRows += replaceVulnsForAgent(agent.id, vulns);
+        }
+      } else {
+        result.vulnRows += replaceVulnsForAgent(agent.id, vulns);
+      }
       result.processRows += replaceProcessesForAgent(agent.id, processes);
       result.serviceRows += replaceServicesForAgent(agent.id, services);
       result.netprotoRows += replaceNetprotoForAgent(agent.id, netproto);

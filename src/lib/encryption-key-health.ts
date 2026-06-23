@@ -10,6 +10,12 @@ function resolveTenantsDir(): string {
   return join(process.cwd(), "data", "tenants");
 }
 
+function resolveHubDbPath(): string {
+  const dataDir = process.env.DA_INVENT_DATA_DIR?.trim();
+  if (dataDir) return join(dataDir, "hub.db");
+  return join(process.cwd(), "data", "hub.db");
+}
+
 export type EncryptionKeyHealth = {
   configured: boolean;
   fingerprint: string | null;
@@ -43,40 +49,65 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
     };
   }
 
-  const tenantsDir = resolveTenantsDir();
-  if (!existsSync(tenantsDir)) {
-    return {
-      configured: true,
-      fingerprint,
-      credentialCount: 0,
-      decryptOkCount: 0,
-      ok: true,
-      detail: null,
-    };
-  }
-
   let credentialCount = 0;
   let decryptOkCount = 0;
 
-  for (const file of readdirSync(tenantsDir)) {
-    if (!file.endsWith(".db")) continue;
-    const dbPath = join(tenantsDir, file);
+  // 1. Credenziali per-tenant (tenants/*.db → credentials.encrypted_password).
+  const tenantsDir = resolveTenantsDir();
+  if (existsSync(tenantsDir)) {
+    for (const file of readdirSync(tenantsDir)) {
+      if (!file.endsWith(".db")) continue;
+      const dbPath = join(tenantsDir, file);
+      let db: Database.Database | null = null;
+      try {
+        db = new Database(dbPath, { readonly: true, fileMustExist: true });
+        const rows = db
+          .prepare(
+            `SELECT encrypted_password FROM credentials
+             WHERE encrypted_password IS NOT NULL AND trim(encrypted_password) != ''
+             LIMIT 50`
+          )
+          .all() as { encrypted_password: string }[];
+        for (const row of rows) {
+          credentialCount++;
+          if (safeDecrypt(row.encrypted_password)) decryptOkCount++;
+        }
+      } catch {
+        /* DB tenant vuoto o schema non ancora migrato */
+      } finally {
+        db?.close();
+      }
+    }
+  }
+
+  // 2. Credenziali integrazioni nel vault hub (hub.db → system_credentials).
+  //    Coprirle evita un falso senso di sicurezza: un drift di ENCRYPTION_KEY
+  //    le renderebbe illeggibili anche quando nessun tenant ha ancora salvato
+  //    credenziali per-rete (incident-class "ENCRYPTION_KEY rigenerata").
+  const hubDb = resolveHubDbPath();
+  if (existsSync(hubDb)) {
     let db: Database.Database | null = null;
     try {
-      db = new Database(dbPath, { readonly: true, fileMustExist: true });
+      db = new Database(hubDb, { readonly: true, fileMustExist: true });
       const rows = db
         .prepare(
-          `SELECT encrypted_password FROM credentials
-           WHERE encrypted_password IS NOT NULL AND trim(encrypted_password) != ''
-           LIMIT 50`
+          `SELECT password_enc, api_token_enc, extra_json_enc FROM system_credentials`
         )
-        .all() as { encrypted_password: string }[];
+        .all() as {
+        password_enc: string | null;
+        api_token_enc: string | null;
+        extra_json_enc: string | null;
+      }[];
       for (const row of rows) {
-        credentialCount++;
-        if (safeDecrypt(row.encrypted_password)) decryptOkCount++;
+        for (const enc of [row.password_enc, row.api_token_enc, row.extra_json_enc]) {
+          if (enc && enc.trim()) {
+            credentialCount++;
+            if (safeDecrypt(enc)) decryptOkCount++;
+          }
+        }
       }
     } catch {
-      /* DB tenant vuoto o schema non ancora migrato */
+      /* tabella system_credentials assente o schema non migrato */
     } finally {
       db?.close();
     }

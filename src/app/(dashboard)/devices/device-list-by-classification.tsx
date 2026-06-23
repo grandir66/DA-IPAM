@@ -219,9 +219,18 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   }, [editingDevice, effectiveClassification]);
 
   const fetchDevices = useCallback(async () => {
-    const res = await fetch(`/api/devices?classification=${encodeURIComponent(effectiveClassification)}`, { cache: "no-store" });
-    setDevices(await res.json());
-    setLoading(false);
+    // Guard r.ok + Array.isArray + finally (fix UI#3 2026-06-23): su 500 (es.
+    // tenant context mancante) il body {error} crashava devices.map; su throw
+    // di rete setLoading(false) non veniva mai eseguito → spinner infinito.
+    try {
+      const res = await fetch(`/api/devices?classification=${encodeURIComponent(effectiveClassification)}`, { cache: "no-store" });
+      const data = res.ok ? await res.json() : null;
+      setDevices(Array.isArray(data) ? data : []);
+    } catch {
+      setDevices([]);
+    } finally {
+      setLoading(false);
+    }
   }, [effectiveClassification]);
 
   const fetchCredentials = useCallback(async () => {

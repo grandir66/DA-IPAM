@@ -20,9 +20,11 @@ export default function ScansPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Guard r.ok + Array.isArray (fix UI#1 2026-06-23): su 401 (sessione scaduta)
+    // o 500 il body è {error} → history.map crashava la pagina.
     fetch("/api/scans/history?limit=200")
-      .then((r) => r.json())
-      .then((data) => { setHistory(data); setLoading(false); })
+      .then(async (r) => (r.ok ? r.json() : null))
+      .then((data) => { setHistory(Array.isArray(data) ? data : []); setLoading(false); })
       .catch(() => { setLoading(false); });
   }, []);
 

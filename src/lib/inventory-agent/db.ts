@@ -69,12 +69,17 @@ export interface InvAgentRuntimeRow {
 }
 
 function matchHostId(parsed: ParsedGlpiInventory): number | null {
-  if (parsed.primary_ip) {
-    const h = getHostByIp(parsed.primary_ip);
+  // MAC PRIMA dell'IP (fix 2026-06-23): il MAC è l'anchor STABILE del device
+  // fisico, l'IP cambia col network. Con l'IP-first un device GLPI che cambiava
+  // rete non veniva più riconosciuto come lo stesso host → appariva "riregistrato"
+  // a ogni cambio di network. getHostByMac usa ORDER BY id (host originale) e
+  // disambigua per IP se il MAC è su più host.
+  if (parsed.primary_mac) {
+    const h = getHostByMac(parsed.primary_mac, parsed.primary_ip ?? undefined);
     if (h) return h.id;
   }
-  if (parsed.primary_mac) {
-    const h = getHostByMac(parsed.primary_mac);
+  if (parsed.primary_ip) {
+    const h = getHostByIp(parsed.primary_ip);
     if (h) return h.id;
   }
   if (parsed.hostname) {

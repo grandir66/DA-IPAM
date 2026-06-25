@@ -94,7 +94,7 @@ export default function TransferPage() {
       const json = await res.json();
       const r = json.result;
       const totalRows = r?.tables ? Object.values(r.tables).reduce<number>((a, b) => a + (b as number), 0) : 0;
-      setMsg({ text: `Import completato: ${totalRows} righe, ${r?.rekeyedSecrets ?? 0} segreti ri-cifrati, ${r?.profilesMerged ?? 0} profili e ${r?.vaultMerged ?? 0} credenziali sistema uniti.`, ok: true });
+      setMsg({ text: `Import completato: ${totalRows} righe, ${r?.rekeyedSecrets ?? 0} segreti ri-cifrati, ${r?.profilesMerged ?? 0} profili e ${r?.vaultMerged ?? 0} credenziali sistema uniti, ${r?.fkViolations ?? 0} riferimenti orfani preservati.`, ok: true });
     } catch (e) {
       setMsg({ text: "Errore di rete: " + (e instanceof Error ? e.message : String(e)), ok: false });
     } finally {

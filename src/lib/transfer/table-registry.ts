@@ -81,7 +81,7 @@ export const HUB_TABLES: TableSpec[] = [
   { table: "snmp_vendor_profiles", scope: "hub-global", tier: "config", mergeKey: ["name"] },
   { table: "device_fingerprint_rules", scope: "hub-global", tier: "config", mergeKey: ["name"] },
   { table: "fingerprint_classification_map", scope: "hub-global", tier: "config", mergeKey: ["fingerprint"] },
-  { table: "sysobj_lookup", scope: "hub-global", tier: "config", mergeKey: ["sys_object_id"] },
+  { table: "sysobj_lookup", scope: "hub-global", tier: "config", mergeKey: ["oid"] },
 ];
 
 /** Tabelle tenant volutamente NON esportate (nessuna oggi: tutte classificate). */

@@ -42,7 +42,7 @@ export function importTenant(args: ImportArgs): ImportResult {
     byTable.get(tbl)!.push(row);
   }
 
-  const result: ImportResult = { tables: {}, profilesMerged: 0, vaultMerged: 0, rekeyedSecrets: 0 };
+  const result: ImportResult = { tables: {}, profilesMerged: 0, vaultMerged: 0, rekeyedSecrets: 0, fkViolations: 0 };
 
   // --- Import tabelle TENANT (replace) in un'unica transazione ---
   // PRAGMA foreign_keys è no-op dentro una transazione aperta: il toggle va FUORI
@@ -63,7 +63,8 @@ export function importTenant(args: ImportArgs): ImportResult {
       }
 
       const fk = tenantDb.pragma("foreign_key_check") as unknown[];
-      if (fk.length > 0) throw new Error(`foreign_key_check fallito: ${JSON.stringify(fk.slice(0, 5))}`);
+      result.fkViolations = fk.length;            // pre-existing orphans, reproduced faithfully — NOT fatal
+      if (fk.length > 0) console.warn(`[transfer] import: ${fk.length} riferimenti FK orfani preservati (come nella sorgente)`);
       const integ = tenantDb.pragma("integrity_check", { simple: true });
       if (integ !== "ok") throw new Error(`integrity_check: ${integ}`);
     });

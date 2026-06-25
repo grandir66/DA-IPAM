@@ -58,6 +58,7 @@ export interface ImportResult {
   profilesMerged: number;
   vaultMerged: number;
   rekeyedSecrets: number;
+  fkViolations: number;
 }
 
 export const BUNDLE_FORMAT = "da-ipam-tenant-bundle" as const;

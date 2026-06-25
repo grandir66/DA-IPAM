@@ -80,12 +80,13 @@ export default function TransferPage() {
       fd.set("wipe", String(wipe));
       const res = await fetch("/api/tenant/import", { method: "POST", body: fd });
       if (!res.ok) {
-        let errMsg = res.statusText;
+        // Leggi il body UNA sola volta come testo, poi prova a estrarre .error se è JSON.
+        const bodyText = await res.text();
+        let errMsg = bodyText || res.statusText;
         try {
-          const j = await res.json();
-          errMsg = j.error ?? errMsg;
+          errMsg = ((JSON.parse(bodyText) as { error?: string }).error) ?? errMsg;
         } catch {
-          errMsg = (await res.text()) || errMsg;
+          /* body non-JSON: tieni il testo grezzo */
         }
         setMsg({ text: "Errore import: " + errMsg, ok: false });
         return;

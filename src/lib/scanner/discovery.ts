@@ -844,7 +844,7 @@ async function runDiscovery(
       }
       progress.found = onlineIps.length;
     } else if (!nmapAvailable) {
-      log("Nmap non disponibile: solo ICMP (nessuna scansione TCP)");
+      log("⚠️ nmap NON installato sul server: port scan TCP SALTATO — nessuna porta verrà rilevata (solo host via ICMP). Installare con: sudo apt-get install -y nmap");
     }
 
     // ── SNMP sysObjectID quick probe: identifica vendor/prodotto con un singolo GET ──
@@ -1261,7 +1261,7 @@ async function runDiscovery(
       progress.found = onlineIps.length;
       log(`Nmap: ${nmapResults.size} host con porte aperte`);
     } else if (!nmapAvailable) {
-      log("Nmap non disponibile: salto fase TCP");
+      log("⚠️ nmap NON installato sul server: fase TCP SALTATA — nessuna porta verrà rilevata. Installare con: sudo apt-get install -y nmap");
     }
 
     // Fase 3: SNMP discovery leggero

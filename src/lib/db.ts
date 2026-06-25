@@ -4888,8 +4888,10 @@ export function upsertNeighbors(
 ): void {
   const db = getDb();
   const del = db.prepare("DELETE FROM device_neighbors WHERE device_id = ?");
+  // OR IGNORE: vedi nota in db-tenant.ts — duplicati di chiave nello stesso
+  // batch LLDP/CDP non devono interrompere la persistenza dei vicini.
   const ins = db.prepare(`
-    INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform)
+    INSERT OR IGNORE INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   db.transaction(() => {

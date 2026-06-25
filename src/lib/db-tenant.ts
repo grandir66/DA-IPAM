@@ -3451,8 +3451,12 @@ export function upsertNeighbors(
 ): void {
   const d = db();
   const del = d.prepare("DELETE FROM device_neighbors WHERE device_id = ?");
+  // OR IGNORE: lo stesso batch LLDP/CDP può contenere due vicini con identica
+  // chiave (device_id, local_port, remote_device_name, remote_port) — es. doppio
+  // annuncio CDP/LLDP sulla stessa porta. Senza OR IGNORE il 2° INSERT lancia
+  // UNIQUE constraint e interrompe la persistenza dei vicini del device.
   const ins = d.prepare(`
-    INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform)
+    INSERT OR IGNORE INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   d.transaction(() => {

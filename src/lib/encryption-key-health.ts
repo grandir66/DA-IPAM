@@ -3,17 +3,14 @@ import { existsSync, readdirSync } from "fs";
 import { join } from "path";
 import Database from "better-sqlite3";
 import { safeDecrypt } from "@/lib/crypto";
+import { resolveDataDir } from "./data-dir";
 
 function resolveTenantsDir(): string {
-  const dataDir = process.env.DA_INVENT_DATA_DIR?.trim();
-  if (dataDir) return join(dataDir, "tenants");
-  return join(process.cwd(), "data", "tenants");
+  return join(resolveDataDir(), "tenants");
 }
 
 function resolveHubDbPath(): string {
-  const dataDir = process.env.DA_INVENT_DATA_DIR?.trim();
-  if (dataDir) return join(dataDir, "hub.db");
-  return join(process.cwd(), "data", "hub.db");
+  return join(resolveDataDir(), "hub.db");
 }
 
 export type EncryptionKeyHealth = {

@@ -11,6 +11,7 @@
 
 import Database from "better-sqlite3";
 import path from "path";
+import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -72,7 +73,7 @@ export function getCurrentTenantCode(): string | null {
 // TENANT DB CONNECTION CACHE (LRU)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const TENANTS_DIR = path.join(process.cwd(), "data", "tenants");
+const TENANTS_DIR = path.join(resolveDataDir(), "tenants");
 const MAX_OPEN_DBS = 20;
 const tenantDbs = new Map<string, { db: Database.Database; lastUsed: number }>();
 

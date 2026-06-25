@@ -10,6 +10,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { resolveDataDir } from "./data-dir";
 
 // ─────────────────────────────────────────────
 // Types
@@ -227,7 +228,7 @@ export interface ClientConfig {
 // Filesystem I/O
 // ─────────────────────────────────────────────
 
-const DATA_DIR = path.join(process.cwd(), "data", "client-configs");
+const DATA_DIR = path.join(resolveDataDir(), "client-configs");
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {

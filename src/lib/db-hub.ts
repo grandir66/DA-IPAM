@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import { resolveDataDir } from "./data-dir";
 import { HUB_SCHEMA_SQL, HUB_INDEXES_SQL } from "./db-hub-schema";
 import { backfillAllIntegrationUiUrls } from "./integrations/public-url-server";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
@@ -9,7 +10,7 @@ import type { FingerprintUserRule } from "./device-fingerprint-classification";
 // Hub DB singleton (tenants, users, settings, profiles)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = resolveDataDir();
 const HUB_DB_PATH = process.env.DA_IPAM_HUB_DB_PATH?.trim()
   ? path.resolve(process.env.DA_IPAM_HUB_DB_PATH.trim())
   : path.join(DATA_DIR, "hub.db");

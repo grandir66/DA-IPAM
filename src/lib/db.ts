@@ -18,6 +18,7 @@
  */
 import Database from "better-sqlite3";
 import path from "path";
+import { resolveDataDir } from "./data-dir";
 import fs from "fs";
 import { SCHEMA_SQL } from "./db-schema";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -54,7 +55,7 @@ import type {
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
 const DB_PATH = process.env.DA_IPAM_DB_PATH?.trim()
   ? path.resolve(process.env.DA_IPAM_DB_PATH.trim())

@@ -32,7 +32,7 @@ export function importTenant(args: ImportArgs): ImportResult {
   }
 
   const lines = payloadPlain.length
-    ? payloadPlain.toString("utf8").split("\n").map((l) => JSON.parse(l) as PayloadLine)
+    ? payloadPlain.toString("utf8").split("\n").filter((l) => l.length > 0).map((l) => JSON.parse(l) as PayloadLine)
     : [];
 
   // Raggruppa righe per tabella
@@ -45,29 +45,32 @@ export function importTenant(args: ImportArgs): ImportResult {
   const result: ImportResult = { tables: {}, profilesMerged: 0, vaultMerged: 0, rekeyedSecrets: 0 };
 
   // --- Import tabelle TENANT (replace) in un'unica transazione ---
-  const tenantTx = tenantDb.transaction(() => {
-    tenantDb.pragma("foreign_keys = OFF");
-
-    if (options.wipe) {
-      for (const spec of [...TENANT_TABLES].reverse()) {
-        if (tableExists(tenantDb, spec.table)) tenantDb.prepare(`DELETE FROM "${spec.table}"`).run();
+  // PRAGMA foreign_keys è no-op dentro una transazione aperta: il toggle va FUORI
+  tenantDb.pragma("foreign_keys = OFF");
+  try {
+    const tenantTx = tenantDb.transaction(() => {
+      if (options.wipe) {
+        for (const spec of [...TENANT_TABLES].reverse()) {
+          if (tableExists(tenantDb, spec.table)) tenantDb.prepare(`DELETE FROM "${spec.table}"`).run();
+        }
       }
-    }
 
-    for (const [tbl, rows] of byTable) {
-      const spec = tableSpec(tbl);
-      if (!spec || spec.scope !== "tenant") continue;
-      if (!tableExists(tenantDb, tbl)) continue; // target più vecchio: salta tabella sconosciuta
-      result.tables[tbl] = insertRows(tenantDb, tbl, rows, transportKey, result);
-    }
+      for (const [tbl, rows] of byTable) {
+        const spec = tableSpec(tbl);
+        if (!spec || spec.scope !== "tenant") continue;
+        if (!tableExists(tenantDb, tbl)) continue; // target più vecchio: salta tabella sconosciuta
+        result.tables[tbl] = insertRows(tenantDb, tbl, rows, transportKey, result);
+      }
 
+      const fk = tenantDb.pragma("foreign_key_check") as unknown[];
+      if (fk.length > 0) throw new Error(`foreign_key_check fallito: ${JSON.stringify(fk.slice(0, 5))}`);
+      const integ = tenantDb.pragma("integrity_check", { simple: true });
+      if (integ !== "ok") throw new Error(`integrity_check: ${integ}`);
+    });
+    tenantTx();
+  } finally {
     tenantDb.pragma("foreign_keys = ON");
-    const fk = tenantDb.pragma("foreign_key_check") as unknown[];
-    if (fk.length > 0) throw new Error(`foreign_key_check fallito: ${JSON.stringify(fk.slice(0, 5))}`);
-    const integ = tenantDb.pragma("integrity_check", { simple: true });
-    if (integ !== "ok") throw new Error(`integrity_check: ${integ}`);
-  });
-  tenantTx();
+  }
 
   // --- Import tabelle HUB (merge, non distruttivo) ---
   const hubTx = hubDb.transaction(() => {

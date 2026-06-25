@@ -75,7 +75,7 @@ export const TENANT_TABLES: TableSpec[] = [
 /** Tabelle hub incluse nel bundle per-tenant. */
 export const HUB_TABLES: TableSpec[] = [
   { table: "tenants", scope: "hub-tenant", tier: "config", tenantColumn: "codice_cliente", mergeKey: ["codice_cliente"] },
-  { table: "tenant_features", scope: "hub-tenant", tier: "config", tenantColumn: "tenant_code" },
+  { table: "tenant_features", scope: "hub-tenant", tier: "config", tenantColumn: "tenant_code", mergeKey: ["tenant_code", "feature_key"] },
   { table: "system_credentials", scope: "hub-vault", tier: "config", mergeKey: ["kind", "label"] },
   { table: "nmap_profiles", scope: "hub-global", tier: "config", mergeKey: ["name"] },
   { table: "snmp_vendor_profiles", scope: "hub-global", tier: "config", mergeKey: ["name"] },

@@ -107,7 +107,11 @@ function insertRows(
 ): number {
   if (rows.length === 0) return 0;
   const targetCols = new Set(writableColumns(db, table));
-  const rekeys = new Set(rekeyColumns(db, table));
+  const spec = tableSpec(table);
+  const rekeys = new Set([
+    ...rekeyColumns(db, table),
+    ...((spec?.secretColumns ?? []).filter((c) => targetCols.has(c))),
+  ]);
   let n = 0;
   for (const row of rows) {
     const cols = Object.keys(row).filter((c) => targetCols.has(c));
@@ -127,7 +131,11 @@ function mergeRows(
 ): number {
   if (rows.length === 0) return 0;
   const targetCols = new Set(writableColumns(db, table));
-  const rekeys = new Set(rekeyColumns(db, table));
+  const spec = tableSpec(table);
+  const rekeys = new Set([
+    ...rekeyColumns(db, table),
+    ...((spec?.secretColumns ?? []).filter((c) => targetCols.has(c))),
+  ]);
   const where = mergeKey.map((k) => `"${k}" = ?`).join(" AND ");
   const exists = db.prepare(`SELECT 1 FROM "${table}" WHERE ${where} LIMIT 1`);
   let n = 0;

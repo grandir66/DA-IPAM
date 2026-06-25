@@ -32,7 +32,11 @@ export function exportTenant(args: ExportArgs): Buffer {
     if (!tableExists(db, spec.table)) continue; // schema più vecchio: salta
 
     const cols = writableColumns(db, spec.table);
-    const rekeys = new Set(rekeyColumns(db, spec.table));
+    const writableCols = new Set(cols);
+    const rekeys = new Set([
+      ...rekeyColumns(db, spec.table),
+      ...(spec.secretColumns ?? []).filter((c) => writableCols.has(c)),
+    ]);
 
     let sql = `SELECT ${cols.map((c) => `"${c}"`).join(", ")} FROM "${spec.table}"`;
     const params: unknown[] = [];

@@ -16,6 +16,12 @@ export interface TableSpec {
   tenantColumn?: string;
   /** chiave naturale per merge (hub-global / hub-vault) */
   mergeKey?: string[];
+  /**
+   * Colonne cifrate con la chiave d'installazione che il name-heuristic
+   * `/encrypt|_enc$/i` NON rileva. Vanno ri-cifrate come quelle heuristic.
+   * Usare solo per i casi che sfuggono all'heuristic (es. community_string, api_token).
+   */
+  secretColumns?: string[];
 }
 
 export interface BundleManifest {

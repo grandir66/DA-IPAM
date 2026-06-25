@@ -130,3 +130,38 @@ Upsert/merge idempotente · push automatico verso collector · UI aggregazione c
 - Import su install fresco con chiave diversa → tutti i secret decifrabili e usabili (connessioni/integrazioni funzionanti), `foreign_key_check` e `integrity_check` puliti.
 - Nessun plaintext di secret né passphrase su disco o nei log.
 - Aggiungere una tabella allo schema senza classificarla nel registry → il test fallisce.
+
+## Note di implementazione & limitazioni note (post-build)
+
+Decisioni emerse durante l'implementazione e la validazione E2E su dati reali:
+
+- **`foreign_key_check` è un WARNING, non fatale.** I DB tenant reali contengono
+  referenze orfane pre-esistenti che l'app tollera da sempre (SQLite con
+  `foreign_keys=ON` enforce solo sulle *scritture*, non retroattivamente — es.
+  DEFAULT.db ha ~1355 orfani in `device_credential_bindings`). L'import le
+  riproduce fedelmente e ne riporta il conteggio (`ImportResult.fkViolations`);
+  **`integrity_check` resta fatale** (corruzione strutturale = bundle rotto).
+  Rendere `foreign_key_check` fatale renderebbe il tool inutilizzabile su
+  qualsiasi DB maturo.
+- **Colonne secret: heuristica + lista autoritativa.** Il re-key copre l'unione di
+  `/encrypt|_enc$/i` **e** una lista esplicita `secretColumns` per-tabella nel
+  registry. Necessaria perché `network_devices.community_string` e
+  `network_devices.api_token` sono cifrate at-rest ma non matchano l'heuristica
+  (bug critico trovato in review finale). Un **guard test** blocca l'intero set
+  noto di colonne cifrate: aggiungere una colonna cifrata senza dichiararla fa
+  fallire il test.
+- **LIMITAZIONE — secret annidati in `tenant_features.config_json`.** Le config
+  delle feature plugin (net-services, inventory-agent) salvano token cifrati
+  *dentro* il blob JSON `config_json`, non come colonna → il re-key per-colonna
+  non li tocca. In una migrazione **cross-install (chiave diversa)** questi token
+  restano cifrati con la chiave sorgente e diventano illeggibili sul target
+  (degradano a `null` via `safeDecrypt` → la feature risulta "da riconfigurare").
+  Inoltre le config feature sono **install-specific** (puntano a host/endpoint di
+  quell'install). **Azione operatore**: dopo una migrazione cross-install,
+  ri-validare/re-inserire le integrazioni dei moduli. Nel flusso primario
+  (import su tenant vuoto, stessa chiave per DR) il problema non si presenta.
+- **`schemaVersion` compat**: non esiste un `user_version` nel DB; la
+  compatibilità è gestita per **intersezione di colonne** all'import (si scrivono
+  solo le colonne presenti sia nel bundle sia nel target) + skip delle tabelle
+  assenti nel target. Più robusto di un intero di versione dato il modello
+  "migra-in-avanti-al-boot".

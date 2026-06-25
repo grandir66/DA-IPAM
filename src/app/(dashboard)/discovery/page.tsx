@@ -1547,11 +1547,11 @@ export default function DiscoveryPage() {
         );
       }
       case "model":
-        return <span className="text-sm">{h.model ?? "—"}</span>;
+        return <span className="text-sm truncate max-w-[160px] block" title={h.model ?? ""}>{h.model ?? "—"}</span>;
       case "serial_number":
-        return <span className="text-xs font-mono">{h.serial_number ?? "—"}</span>;
+        return <span className="text-xs font-mono truncate max-w-[160px] block" title={h.serial_number ?? ""}>{h.serial_number ?? "—"}</span>;
       case "firmware":
-        return <span className="text-xs">{h.firmware ?? "—"}</span>;
+        return <span className="text-xs truncate max-w-[160px] block" title={h.firmware ?? ""}>{h.firmware ?? "—"}</span>;
       case "last_seen":
         return <span className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(h.last_seen)}</span>;
       case "first_seen":

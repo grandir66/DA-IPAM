@@ -1369,7 +1369,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                           {h.hardware_serial && (
                             <div>
                               <p className="text-xs text-muted-foreground uppercase">Seriale</p>
-                              <p className="font-mono text-xs">{h.hardware_serial}</p>
+                              <p className="font-mono text-xs break-all">{h.hardware_serial}</p>
                             </div>
                           )}
                           {h.subscription && (

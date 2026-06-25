@@ -30,6 +30,7 @@ function main() {
   const tenantPath = path.join(dataDir, "tenants", `${tenantCode}.db`);
   const hubPath = path.join(dataDir, "hub.db");
   if (!fs.existsSync(tenantPath)) { console.error(`DB tenant non trovato: ${tenantPath}`); process.exit(1); }
+  if (!fs.existsSync(hubPath)) { console.error(`DB hub non trovato: ${hubPath}`); process.exit(1); }
 
   const tiers = (arg("tiers")?.split(",").map((s) => s.trim()).filter(Boolean) as Tier[]) || (["asset", "mirror"] as Tier[]);
   const tenantDb = new Database(tenantPath, { readonly: true });
@@ -43,8 +44,12 @@ function main() {
   });
 
   const outPath = arg("out") || `${tenantCode}-${exportedAt.replace(/[:.]/g, "-")}.dab`;
-  fs.writeFileSync(outPath, bundle);
-  tenantDb.close(); hubDb.close();
+  try {
+    fs.writeFileSync(outPath, bundle);
+  } finally {
+    tenantDb.close();
+    hubDb.close();
+  }
   console.log(`OK: ${outPath} (${(bundle.length / 1024).toFixed(1)} KB)`);
 }
 main();

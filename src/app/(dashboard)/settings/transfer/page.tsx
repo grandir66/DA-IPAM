@@ -79,12 +79,21 @@ export default function TransferPage() {
       fd.set("passphrase", impPass);
       fd.set("wipe", String(wipe));
       const res = await fetch("/api/tenant/import", { method: "POST", body: fd });
-      const json = await res.json();
       if (!res.ok) {
-        setMsg({ text: "Errore import: " + (json.error ?? res.statusText), ok: false });
+        let errMsg = res.statusText;
+        try {
+          const j = await res.json();
+          errMsg = j.error ?? errMsg;
+        } catch {
+          errMsg = (await res.text()) || errMsg;
+        }
+        setMsg({ text: "Errore import: " + errMsg, ok: false });
         return;
       }
-      setMsg({ text: "Import completato. " + JSON.stringify(json.result), ok: true });
+      const json = await res.json();
+      const r = json.result;
+      const totalRows = r?.tables ? Object.values(r.tables).reduce<number>((a, b) => a + (b as number), 0) : 0;
+      setMsg({ text: `Import completato: ${totalRows} righe, ${r?.rekeyedSecrets ?? 0} segreti ri-cifrati, ${r?.profilesMerged ?? 0} profili e ${r?.vaultMerged ?? 0} credenziali sistema uniti.`, ok: true });
     } catch (e) {
       setMsg({ text: "Errore di rete: " + (e instanceof Error ? e.message : String(e)), ok: false });
     } finally {

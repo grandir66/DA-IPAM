@@ -205,7 +205,15 @@ const GROUP_LABELS: Record<string, string> = {
 };
 
 const STORAGE_KEY = "discovery-columns";
-const PAGE_SIZE = 50;
+const PAGE_SIZE_KEY = "discovery-page-size";
+const PAGE_SIZE_OPTIONS = [15, 50, 100, 500];
+const DEFAULT_PAGE_SIZE = 50;
+
+function loadPageSize(): number {
+  if (typeof window === "undefined") return DEFAULT_PAGE_SIZE;
+  const raw = Number(window.localStorage.getItem(PAGE_SIZE_KEY));
+  return PAGE_SIZE_OPTIONS.includes(raw) ? raw : DEFAULT_PAGE_SIZE;
+}
 
 // Colonne che devono essere sempre visibili indipendentemente dal localStorage.
 // Profilo è il pivot della UI (ospita le icone di promozione e i link verso
@@ -402,6 +410,7 @@ export default function DiscoveryPage() {
   const [networkFilter, setNetworkFilter] = useState("");
   const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(loadPageSize);
   const [columnOrder, setColumnOrder] = useState<string[]>(loadColumnOrder);
   // v0.2.624: column manager in Dialog separato (Base UI Menu non ammette
   // <button> arbitrari come children → errore #31).
@@ -920,15 +929,22 @@ export default function DiscoveryPage() {
   );
 
   // ---------- pagination ----------
-  const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
   const safeP = Math.min(page, totalPages);
   const pagedRows = useMemo(
-    () => sortedRows.slice((safeP - 1) * PAGE_SIZE, safeP * PAGE_SIZE),
-    [sortedRows, safeP],
+    () => sortedRows.slice((safeP - 1) * pageSize, safeP * pageSize),
+    [sortedRows, safeP, pageSize],
   );
 
   // reset page on filter change
   useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, networkFilter]);
+
+  // persiste la dimensione pagina e torna a pagina 1 quando cambia
+  const handlePageSizeChange = useCallback((size: number) => {
+    setPageSize(size);
+    setPage(1);
+    if (typeof window !== "undefined") window.localStorage.setItem(PAGE_SIZE_KEY, String(size));
+  }, []);
 
   // ---------- selection helpers ----------
   function toggleSelect(id: number) {
@@ -2240,7 +2256,15 @@ export default function DiscoveryPage() {
         </CardContent>
       </Card>
 
-      <Pagination page={safeP} totalPages={totalPages} onPageChange={setPage} />
+      <Pagination
+        page={safeP}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        pageSize={pageSize}
+        onPageSizeChange={handlePageSizeChange}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        total={sortedRows.length}
+      />
 
       {/* ════════════════ DIALOG MODIFICA MULTIPLA HOST ════════════════ */}
       <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>

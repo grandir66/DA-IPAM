@@ -215,6 +215,23 @@ function looksLikeOsProductName(value: string | null): boolean {
   return value != null && OS_PRODUCT_NAMES.test(value.trim());
 }
 
+/**
+ * UUID hardware NON utilizzabili come identità stabile del device: placeholder
+ * SMBIOS comuni (VM/OEM non popolati) e all-zero/all-FF. Se l'UUID non è valido
+ * si ricade sul deviceid GLPI.
+ */
+const INVALID_HW_UUIDS = new Set([
+  "00000000-0000-0000-0000-000000000000",
+  "ffffffff-ffff-ffff-ffff-ffffffffffff",
+  "not settable", "not present", "not available", "none", "0",
+  "to be filled by o.e.m.", "system serial number", "default string",
+]);
+function isValidHardwareUuid(u: string | null): boolean {
+  if (!u) return false;
+  const t = u.trim().toLowerCase();
+  return t.length >= 8 && !INVALID_HW_UUIDS.has(t);
+}
+
 /** GLPI Agent macOS: deviceid = hostname.local-YYYY-MM-DD-HH-MM-SS */
 function hostnameFromDeviceId(deviceId: string): string | null {
   const m = deviceId.match(/^(.+)-(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})$/);
@@ -630,9 +647,15 @@ export function parseGlpiInventory(body: unknown): ParsedGlpiInventory {
     asRecord(root.operatingsystem);
   const versionBlock = asRecord(root.version) ?? asRecord(content.version);
 
+  // device_id = ANCORA STABILE del device fisico. L'UUID hardware è preferito al
+  // deviceid GLPI: quest'ultimo su macOS è `hostname.local-YYYY-MM-DD-HH-MM-SS` e
+  // cambia se l'agent rigenera l'id o se cambia hostname → lo stesso Mac, visto da
+  // network/hostname diversi, veniva registrato come endpoint DISTINTI (PK device_id).
+  // L'UUID (normalizzato lowercase) sopravvive a cambio IP/MAC/hostname e reinstall.
+  const hwUuid = pickStr(hw, "uuid", "UUID");
   const device_id =
+    (isValidHardwareUuid(hwUuid) ? hwUuid!.trim().toLowerCase() : null) ??
     pickStr(root, "deviceid", "device_id", "DEVICEID") ??
-    pickStr(hw, "uuid", "UUID") ??
     pickStr(hw, "name", "NAME") ??
     pickStr(content, "name") ??
     pickStr(root, "name") ??

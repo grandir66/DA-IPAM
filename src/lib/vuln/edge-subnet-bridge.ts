@@ -189,6 +189,35 @@ function hostsForEdgeSync(networkId: number) {
     }));
 }
 
+/**
+ * Aggiorna l'inventario host sull'edge per una rete (solo /ensure, senza avviare scan).
+ * Usato dal job ricorrente vuln_sync per mantenere freschi i targeting_mode
+ * `found_ips` e `populated_24`.
+ *
+ * Lancia un'eccezione in caso di errore (il chiamante deve wrappare in try/catch).
+ */
+export async function pushHostsToEdge(networkId: number): Promise<void> {
+  const scanner = getActiveEdgeScanner();
+  if (!scanner || scanner.enabled !== 1) {
+    throw new Error("Scanner-Edge non configurato o disabilitato");
+  }
+
+  const network = getNetworkById(networkId);
+  if (!network) {
+    throw new Error(`Rete ${networkId} non trovata`);
+  }
+
+  const targetingMode: EdgeTargetingMode =
+    (network.targeting_mode as EdgeTargetingMode | null) ?? "full_subnet";
+
+  await edgeApiPost<{ ok: boolean; network_id: number; host_count: number }>(
+    scanner,
+    "/api/v1/networks/ensure",
+    buildEdgeEnsureBody(networkId, { syncHosts: true, syncCredentials: false, targetingMode }),
+    { timeoutMs: 60000 },
+  );
+}
+
 export async function triggerSubnetEdgeScan(
   networkId: number,
   opts: {

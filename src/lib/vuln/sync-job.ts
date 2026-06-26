@@ -15,6 +15,7 @@
  */
 
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
+import { getNetworks } from "@/lib/db";
 import {
   EdgeClientError,
   listScans,
@@ -23,6 +24,7 @@ import {
   type EdgeScan,
   type VulnScannerRow,
 } from "./scanner-edge-client";
+import { pushHostsToEdge } from "./edge-subnet-bridge";
 
 interface HostMatchRow {
   id: number;
@@ -176,6 +178,27 @@ export async function runVulnSync(): Promise<{
         // safety: protezione runaway, oltre questo soglia c'è un bug
         console.warn(`[vuln-sync] offset > 100k su scanner ${scanner.id}, abort`);
         break;
+      }
+    }
+
+    // Push-hosts periodico: aggiorna inventario sull'edge per le reti con
+    // targeting_mode dinamico (found_ips / populated_24). Le reti full_subnet
+    // non ne hanno bisogno (scansionano l'intero CIDR direttamente).
+    // Best-effort: un singolo fallimento non blocca il resto del job né il sync.
+    // Nota: iteriamo su tutte le reti con targeting_mode ≠ full_subnet senza
+    // verificare se la rete ha uno schedule edge attivo (quella info richiederebbe
+    // un round-trip verso l'edge per ogni rete). La scelta è conservativa:
+    // si fa push anche per reti senza schedule — overhead trascurabile, nessun danno.
+    const allNetworks = getNetworks();
+    for (const net of allNetworks) {
+      const mode = net.targeting_mode ?? "full_subnet";
+      if (mode === "full_subnet") continue;
+      try {
+        await pushHostsToEdge(net.id);
+      } catch (pushErr) {
+        // Log solo metadati (no IP/hostname), mai propagare l'errore.
+        const msg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+        console.warn(`[vuln-sync] push-hosts rete #${net.id} (${mode}) fallito: ${msg}`);
       }
     }
 

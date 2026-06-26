@@ -196,8 +196,14 @@ export async function runVulnSync(): Promise<{
       try {
         await pushHostsToEdge(net.id);
       } catch (pushErr) {
-        // Log solo metadati (no IP/hostname), mai propagare l'errore.
-        const msg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+        // Log solo metadati (no IP/hostname): per EdgeClientError logghiamo
+        // solo lo status HTTP, non il body (può echeggiare campi della richiesta).
+        const msg =
+          pushErr instanceof EdgeClientError
+            ? `edge HTTP ${pushErr.status}`
+            : pushErr instanceof Error
+              ? pushErr.message
+              : "errore sconosciuto";
         console.warn(`[vuln-sync] push-hosts rete #${net.id} (${mode}) fallito: ${msg}`);
       }
     }

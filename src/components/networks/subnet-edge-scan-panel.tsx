@@ -24,7 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Clock, ExternalLink, Loader2, Save, ShieldAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { EdgeScanProfile, EdgeSubnetStatus } from "@/lib/vuln/edge-subnet-bridge";
+import type { EdgeScanProfile, EdgeSubnetStatus, EdgeTargetingMode } from "@/lib/vuln/edge-subnet-bridge";
 
 const SLOT_LABELS: Record<string, string> = {
   ssh: "SSH / Linux",
@@ -37,6 +37,26 @@ const PROFILE_LABELS: Record<EdgeScanProfile, string> = {
   balanced: "Bilanciato (~1–3 h /24)",
   deep: "Profondo (~8–24 h /24)",
 };
+
+const TARGETING_MODE_LABELS: Record<EdgeTargetingMode, string> = {
+  full_subnet: "Tutta la subnet",
+  found_ips: "Solo IP trovati",
+  populated_24: "Solo /24 popolate",
+};
+
+function cidrAddressCount(cidr: string): number {
+  const slash = cidr.lastIndexOf("/");
+  if (slash === -1) return 0;
+  const prefix = parseInt(cidr.slice(slash + 1), 10);
+  if (Number.isNaN(prefix) || prefix < 0 || prefix > 32) return 0;
+  return Math.max(0, (1 << (32 - prefix)) - 2);
+}
+
+function get24Prefix(ip: string): string {
+  const parts = ip.split(".");
+  if (parts.length < 3) return ip;
+  return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
+}
 
 const VA_INTERVAL_OPTIONS = [
   { value: 360, label: "Ogni 6 ore" },
@@ -67,9 +87,11 @@ function intervalLabel(min: number): string {
 interface SubnetEdgeScanPanelProps {
   networkId: number;
   disabled?: boolean;
+  hosts?: Array<{ ip: string; status: string }>;
+  cidr?: string;
 }
 
-export function SubnetEdgeScanPanel({ networkId, disabled }: SubnetEdgeScanPanelProps) {
+export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: SubnetEdgeScanPanelProps) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<EdgeSubnetStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,11 +101,24 @@ export function SubnetEdgeScanPanel({ networkId, disabled }: SubnetEdgeScanPanel
   const [profile, setProfile] = useState<EdgeScanProfile>("balanced");
   const [syncHosts, setSyncHosts] = useState(true);
   const [syncCredentials, setSyncCredentials] = useState(true);
+  const [targetingMode, setTargetingMode] = useState<EdgeTargetingMode>("full_subnet");
 
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleInterval, setScheduleInterval] = useState(1440);
   const [scheduleProfile, setScheduleProfile] = useState<EdgeScanProfile>("balanced");
   const [hasSchedule, setHasSchedule] = useState(false);
+
+  // Live counts from hosts prop (when available)
+  const foundCount = hosts ? hosts.filter((h) => h.status !== "offline").length : null;
+  const populated24Count = hosts
+    ? new Set(
+        hosts
+          .filter((h) => h.status !== "offline")
+          .map((h) => get24Prefix(h.ip)),
+      ).size
+    : null;
+  const resolvedCidr = cidr ?? status?.edgeNetwork?.cidr;
+  const fullSubnetCount = resolvedCidr ? cidrAddressCount(resolvedCidr) : null;
 
   const refresh = useCallback(async () => {
     try {
@@ -91,6 +126,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled }: SubnetEdgeScanPanel
       if (r.ok) {
         const data = (await r.json()) as EdgeSubnetStatus;
         setStatus(data);
+        setTargetingMode(data.targeting_mode ?? "full_subnet");
         const sched = data.edgeNetwork?.schedule;
         if (sched) {
           setHasSchedule(true);
@@ -123,7 +159,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled }: SubnetEdgeScanPanel
       const r = await fetch(`/api/networks/${networkId}/edge-scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile, sync_hosts: syncHosts, sync_credentials: syncCredentials }),
+        body: JSON.stringify({ profile, sync_hosts: syncHosts, sync_credentials: syncCredentials, targeting_mode: targetingMode }),
       });
       const d = (await r.json()) as { ok?: boolean; scan_id?: number; host_count?: number; error?: string };
       if (r.ok && d.ok) {
@@ -152,6 +188,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled }: SubnetEdgeScanPanel
           enabled: scheduleEnabled,
           interval_minutes: scheduleInterval,
           profile: scheduleProfile,
+          targeting_mode: targetingMode,
         }),
       });
       const d = (await r.json()) as EdgeSubnetStatus & { ok?: boolean; error?: string };
@@ -291,6 +328,51 @@ export function SubnetEdgeScanPanel({ networkId, disabled }: SubnetEdgeScanPanel
           )}
 
           <div className="space-y-4">
+            {/* ─── Modalità targeting (condivisa tra scan manuale e schedulazione) ─── */}
+            <div>
+              <p className="text-sm font-medium mb-2">Modalità targeting</p>
+              <div className="space-y-1.5">
+                {(Object.keys(TARGETING_MODE_LABELS) as EdgeTargetingMode[]).map((mode) => {
+                  const isActive = targetingMode === mode;
+                  let countLabel = "";
+                  if (mode === "found_ips") {
+                    countLabel = foundCount !== null ? ` · ${foundCount} host` : "";
+                  } else if (mode === "populated_24") {
+                    const est = populated24Count !== null ? populated24Count * 254 : null;
+                    countLabel =
+                      populated24Count !== null
+                        ? ` · ${populated24Count} /24${est !== null ? ` · ~${est} indirizzi` : ""}`
+                        : "";
+                  } else if (mode === "full_subnet") {
+                    countLabel = fullSubnetCount !== null && fullSubnetCount > 0 ? ` · ${fullSubnetCount} indirizzi` : resolvedCidr ? ` · ${resolvedCidr}` : "";
+                  }
+                  return (
+                    <label
+                      key={mode}
+                      className={`flex items-center gap-2.5 rounded-md border px-3 py-2 cursor-pointer transition-colors ${isActive ? "border-purple-500 bg-purple-500/10" : "border-border bg-muted/20 hover:bg-muted/40"}`}
+                    >
+                      <input
+                        type="radio"
+                        name={`targeting-mode-${networkId}`}
+                        value={mode}
+                        checked={isActive}
+                        onChange={() => setTargetingMode(mode)}
+                        className="accent-purple-600"
+                      />
+                      <span className="text-sm">
+                        {TARGETING_MODE_LABELS[mode]}
+                        {countLabel && (
+                          <span className="text-xs text-muted-foreground ml-1">{countLabel}</span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <Separator />
+
             <div>
               <p className="text-sm font-medium mb-2">VA Scan manuale</p>
               <div className="grid gap-3 sm:grid-cols-2">

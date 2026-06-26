@@ -1133,7 +1133,7 @@ export function NetworkDetailClient({
                 VA Scan
               </p>
               <div className="mt-auto">
-                <SubnetEdgeScanPanel networkId={network.id} disabled={!!scanning || enriching} />
+                <SubnetEdgeScanPanel networkId={network.id} disabled={!!scanning || enriching} hosts={hosts} cidr={network.cidr} />
               </div>
             </div>
 

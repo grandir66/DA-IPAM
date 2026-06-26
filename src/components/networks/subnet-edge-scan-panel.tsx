@@ -49,10 +49,13 @@ function cidrAddressCount(cidr: string): number {
   if (slash === -1) return 0;
   const prefix = parseInt(cidr.slice(slash + 1), 10);
   if (Number.isNaN(prefix) || prefix < 0 || prefix > 32) return 0;
-  return Math.max(0, (1 << (32 - prefix)) - 2);
+  // 2 ** (...) evita l'overflow a 32 bit di `1 << (32 - prefix)` (errato per /0, /1).
+  return Math.max(0, 2 ** (32 - prefix) - 2);
 }
 
 function get24Prefix(ip: string): string {
+  // Solo IPv4: un IPv6 (con ':') non va raggruppato per /24.
+  if (!ip.includes(".")) return ip;
   const parts = ip.split(".");
   if (parts.length < 3) return ip;
   return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { signOut, useSession } from "next-auth/react";
 import { TenantSwitcher } from "./tenant-switcher";
+import { useSidebar } from "./sidebar-context";
 import {
   LayoutDashboard,
   Network,
@@ -35,11 +36,22 @@ import {
   KeyRound,
   Globe,
   Wifi,
+  PanelLeftClose,
+  PanelLeftOpen,
+  type LucideIcon,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 
-const inventorySubItems = [
+type SubItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  /** Inserisce un separatore visivo PRIMA di questa voce. */
+  divider?: string;
+};
+
+const inventorySubItems: readonly SubItem[] = [
   { href: "/inventory", label: "Asset", icon: Package },
   { href: "/software", label: "Software", icon: Package },
   { href: "/inventory/assignees", label: "Assegnatari", icon: User },
@@ -48,15 +60,7 @@ const inventorySubItems = [
   { href: "/services", label: "Servizi NIS2", icon: Workflow },
 ] as const;
 
-type NetworkItem = {
-  href: string;
-  label: string;
-  icon: typeof Network;
-  /** Inserisce un separatore visivo "Diagnostica" PRIMA di questa voce. */
-  divider?: string;
-};
-
-const networkSubItems: readonly NetworkItem[] = [
+const networkSubItems: readonly SubItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
   { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert },
@@ -69,15 +73,184 @@ const networkSubItems: readonly NetworkItem[] = [
   { href: "/excluded-ips", label: "IP esclusi", icon: Ban },
 ] as const;
 
-const networkServicesSubItems = [
+const networkServicesSubItems: readonly SubItem[] = [
   { href: "/network-services", label: "Panoramica", icon: ServerCog },
   { href: "/dns", label: "DNS", icon: Globe },
   { href: "/dhcp", label: "DHCP", icon: Wifi },
 ] as const;
 
+const ITEM_BASE =
+  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors";
+const ITEM_ACTIVE = "bg-sidebar-primary text-sidebar-primary-foreground";
+const ITEM_INACTIVE =
+  "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
+
+/** Voce di menu singola: icona + label. In modalità collassata (desktop) mostra solo l'icona. */
+function NavItem({
+  href,
+  icon: Icon,
+  label,
+  active,
+  collapsed,
+  onNavigate,
+  badgeCount,
+}: {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  active: boolean;
+  collapsed: boolean;
+  onNavigate: () => void;
+  badgeCount?: number;
+}) {
+  const hasBadge = badgeCount != null && badgeCount > 0;
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      title={collapsed ? label : undefined}
+      className={cn(
+        ITEM_BASE,
+        "relative",
+        active ? ITEM_ACTIVE : ITEM_INACTIVE,
+        collapsed && "md:justify-center md:px-0"
+      )}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      <span className={cn("flex-1", collapsed && "md:hidden")}>{label}</span>
+      {hasBadge && (
+        <>
+          <span
+            className={cn(
+              "ml-auto inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] px-1",
+              collapsed && "md:hidden"
+            )}
+          >
+            {badgeCount > 99 ? "99+" : badgeCount}
+          </span>
+          {collapsed && (
+            <span className="hidden md:block absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500" />
+          )}
+        </>
+      )}
+    </Link>
+  );
+}
+
+/** Lista di sottovoci (riusata sia inline sia nel flyout). */
+function SubList({
+  items,
+  isActive,
+  onNavigate,
+}: {
+  items: readonly SubItem[];
+  isActive: (href: string) => boolean;
+  onNavigate: () => void;
+}) {
+  return (
+    <>
+      {items.map((item) => (
+        <div key={item.href}>
+          {item.divider && (
+            <div className="pt-2 pb-1 px-2.5">
+              <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
+                {item.divider}
+              </p>
+            </div>
+          )}
+          <Link
+            href={item.href}
+            onClick={onNavigate}
+            className={cn(
+              "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
+              isActive(item.href) ? ITEM_ACTIVE : ITEM_INACTIVE
+            )}
+          >
+            <item.icon className="h-3.5 w-3.5 shrink-0" />
+            {item.label}
+          </Link>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Gruppo collassabile. Espanso: toggle inline con chevron.
+ * Collassato (desktop): solo icona + flyout al hover con le sottovoci.
+ * Su mobile resta sempre l'espansione inline (collapsed non si applica).
+ */
+function NavGroup({
+  icon: Icon,
+  label,
+  items,
+  open,
+  setOpen,
+  collapsed,
+  isActive,
+  onNavigate,
+}: {
+  icon: LucideIcon;
+  label: string;
+  items: readonly SubItem[];
+  open: boolean;
+  setOpen: (fn: (o: boolean) => boolean) => void;
+  collapsed: boolean;
+  isActive: (href: string) => boolean;
+  onNavigate: () => void;
+}) {
+  const anyActive = items.some((d) => isActive(d.href));
+  return (
+    <div className="pt-1 relative group">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title={collapsed ? label : undefined}
+        className={cn(
+          ITEM_BASE,
+          "w-full",
+          anyActive ? "bg-sidebar-primary/20 text-sidebar-foreground" : ITEM_INACTIVE,
+          collapsed && "md:justify-center md:px-0"
+        )}
+      >
+        <span className={cn(collapsed && "md:hidden")}>
+          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </span>
+        <Icon className="h-4 w-4 shrink-0" />
+        <span className={cn("flex-1 text-left", collapsed && "md:hidden")}>{label}</span>
+      </button>
+
+      {/* Espansione inline (mobile sempre; desktop solo se NON collassato) */}
+      {open && (
+        <div
+          className={cn(
+            "ml-4 mt-1 space-y-0.5 border-l border-sidebar-border pl-2",
+            collapsed && "md:hidden"
+          )}
+        >
+          <SubList items={items} isActive={isActive} onNavigate={onNavigate} />
+        </div>
+      )}
+
+      {/* Flyout al hover (solo desktop collassato) */}
+      {collapsed && (
+        <div className="absolute left-full top-0 z-50 hidden md:group-hover:block pl-2">
+          <div className="min-w-[210px] rounded-lg bg-sidebar border border-sidebar-border shadow-xl p-2 space-y-0.5">
+            <p className="px-2.5 pt-1 pb-1.5 text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
+              {label}
+            </p>
+            <SubList items={items} isActive={isActive} onNavigate={onNavigate} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { collapsed, toggle } = useSidebar();
   const userRole = (session?.user as { role?: string } | undefined)?.role;
   const isSuperadmin = userRole === "superadmin";
   const tenantCode = (session?.user as { tenantCode?: string } | undefined)?.tenantCode;
@@ -131,20 +304,27 @@ export function Sidebar() {
     if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
   };
+  const closeMobile = () => setMobileOpen(false);
 
   const nav = (
     <>
       {/* Header: Logo */}
       <div className="shrink-0 p-4 border-b border-sidebar-border text-center">
-        <div className="w-full flex justify-center">
+        <div className={cn("w-full flex justify-center", collapsed && "md:hidden")}>
           <img
             src="/logo-white.png"
             alt="Logo"
             className="w-full max-w-[220px] h-14 object-contain object-center"
           />
         </div>
-        <h1 className="text-xl font-bold text-primary mt-3">DA-INVENT</h1>
-        <p className="text-xs text-sidebar-foreground/60 mt-0.5">IP Address Management</p>
+        {/* Logo compatto (solo desktop collassato) */}
+        <img
+          src="/logo-white.png"
+          alt="Logo"
+          className={cn("h-9 mx-auto object-contain", collapsed ? "hidden md:block" : "hidden")}
+        />
+        <h1 className={cn("text-xl font-bold text-primary mt-3", collapsed && "md:hidden")}>DA-INVENT</h1>
+        <p className={cn("text-xs text-sidebar-foreground/60 mt-0.5", collapsed && "md:hidden")}>IP Address Management</p>
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3 space-y-1 min-h-0">
@@ -152,37 +332,13 @@ export function Sidebar() {
         {/* ═══ GESTIONE CLIENTI (solo superadmin) ═══ */}
         {isSuperadmin && (
           <>
-            <Link
-              href="/tenants"
-              onClick={() => setMobileOpen(false)}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                isActive("/tenants")
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}
-            >
-              <Building2 className="h-4 w-4" />
-              Clienti
-            </Link>
-            <Link
-              href="/agents"
-              onClick={() => setMobileOpen(false)}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                isActive("/agents")
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}
-            >
-              <ServerCog className="h-4 w-4" />
-              Agenti remoti
-            </Link>
+            <NavItem href="/tenants" icon={Building2} label="Clienti" active={isActive("/tenants")} collapsed={collapsed} onNavigate={closeMobile} />
+            <NavItem href="/agents" icon={ServerCog} label="Agenti remoti" active={isActive("/agents")} collapsed={collapsed} onNavigate={closeMobile} />
           </>
         )}
 
-        {/* ═══ TENANT SWITCHER + SEPARATORE ═══ */}
-        <div className="pt-2 pb-1">
+        {/* ═══ TENANT SWITCHER + SEPARATORE (nascosti se collassato) ═══ */}
+        <div className={cn("pt-2 pb-1", collapsed && "md:hidden")}>
           <TenantSwitcher />
           {currentTenantName && (
             <div className="mt-2 px-3">
@@ -198,65 +354,10 @@ export function Sidebar() {
         {/* ═══ VOCI DIPENDENTI DAL TENANT ═══ */}
 
         {/* Dashboard */}
-        <Link
-          href="/"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname === "/"
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <LayoutDashboard className="h-4 w-4" />
-          Dashboard
-        </Link>
+        <NavItem href="/" icon={LayoutDashboard} label="Dashboard" active={pathname === "/"} collapsed={collapsed} onNavigate={closeMobile} />
 
-        {/* Network collapsible */}
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={() => setNetworkOpen((o) => !o)}
-            className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full",
-              networkSubItems.some((d) => pathname.startsWith(d.href))
-                ? "bg-sidebar-primary/20 text-sidebar-foreground"
-                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            )}
-          >
-            {networkOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            <Network className="h-4 w-4" />
-            Network
-          </button>
-          {networkOpen && (
-            <div className="ml-4 mt-1 space-y-0.5 border-l border-sidebar-border pl-2">
-              {networkSubItems.map((item) => (
-                <div key={item.href}>
-                  {item.divider && (
-                    <div className="pt-2 pb-1 px-2.5">
-                      <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
-                        {item.divider}
-                      </p>
-                    </div>
-                  )}
-                  <Link
-                    href={item.href}
-                    onClick={() => setMobileOpen(false)}
-                    className={cn(
-                      "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
-                      isActive(item.href)
-                        ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                    )}
-                  >
-                    <item.icon className="h-3.5 w-3.5" />
-                    {item.label}
-                  </Link>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Network */}
+        <NavGroup icon={Network} label="Network" items={networkSubItems} open={networkOpen} setOpen={setNetworkOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 
         {/*
           Voce "Dispositivi" non in sidebar: l'entrypoint unico per host/device
@@ -265,162 +366,42 @@ export function Sidebar() {
           come gestione dettagliata; verranno sostituite da azioni inline in Fase 3.
         */}
 
-        {/* Inventario collapsible */}
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={() => setInventoryOpen((o) => !o)}
-            className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full",
-              inventorySubItems.some((d) => pathname.startsWith(d.href))
-                ? "bg-sidebar-primary/20 text-sidebar-foreground"
-                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            )}
-          >
-            {inventoryOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            <Package className="h-4 w-4" />
-            Inventario
-          </button>
-          {inventoryOpen && (
-            <div className="ml-4 mt-1 space-y-0.5 border-l border-sidebar-border pl-2">
-              {inventorySubItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={cn(
-                    "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
-                    isActive(item.href)
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                  )}
-                >
-                  <item.icon className="h-3.5 w-3.5" />
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Inventario */}
+        <NavGroup icon={Package} label="Inventario" items={inventorySubItems} open={inventoryOpen} setOpen={setInventoryOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 
         {/* Network Services — DNS / DHCP / bridge (stesso livello di Network e Inventario) */}
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={() => setNetworkServicesOpen((o) => !o)}
-            className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full",
-              networkServicesSubItems.some((d) => pathname.startsWith(d.href))
-                ? "bg-sidebar-primary/20 text-sidebar-foreground"
-                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            )}
-          >
-            {networkServicesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            <ServerCog className="h-4 w-4" />
-            Network Services
-          </button>
-          {networkServicesOpen && (
-            <div className="ml-4 mt-1 space-y-0.5 border-l border-sidebar-border pl-2">
-              {networkServicesSubItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={cn(
-                    "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
-                    isActive(item.href)
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                  )}
-                >
-                  <item.icon className="h-3.5 w-3.5" />
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+        <NavGroup icon={ServerCog} label="Network Services" items={networkServicesSubItems} open={networkServicesOpen} setOpen={setNetworkServicesOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 
         {/* Launchpad — accesso rapido moduli attivi */}
-        <Link
-          href="/launchpad"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname.startsWith("/launchpad")
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <KeyRound className="h-4 w-4" />
-          Launchpad
-        </Link>
+        <NavItem href="/launchpad" icon={KeyRound} label="Launchpad" active={pathname.startsWith("/launchpad")} collapsed={collapsed} onNavigate={closeMobile} />
 
         {/* Anomalie */}
-        <Link
-          href="/analytics"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            isActive("/analytics")
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <AlertTriangle className="h-4 w-4" />
-          <span className="flex-1">Anomalie</span>
-          {unackedAnomalies > 0 && (
-            <span className="ml-auto inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] px-1">
-              {unackedAnomalies > 99 ? "99+" : unackedAnomalies}
-            </span>
-          )}
-        </Link>
+        <NavItem href="/analytics" icon={AlertTriangle} label="Anomalie" active={isActive("/analytics")} collapsed={collapsed} onNavigate={closeMobile} badgeCount={unackedAnomalies} />
 
         {/* Active Directory: spostato come voce di Network */}
 
         {/* Config Cliente — disabilitato, da rifare con UX guidata */}
         <div
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/40 cursor-not-allowed"
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/40 cursor-not-allowed",
+            collapsed && "md:justify-center md:px-0"
+          )}
           title="In arrivo"
         >
-          <ClipboardList className="h-4 w-4" />
-          Config Cliente
+          <ClipboardList className="h-4 w-4 shrink-0" />
+          <span className={cn(collapsed && "md:hidden")}>Config Cliente</span>
         </div>
 
         {/* Patch Management — visibile solo se la feature è installata per il tenant */}
         {patchEnabled && (
-          <Link
-            href="/patch-management"
-            onClick={() => setMobileOpen(false)}
-            className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-              isActive("/patch-management")
-                ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            )}
-          >
-            <ShieldCheck className="h-4 w-4" />
-            Patch Management
-          </Link>
+          <NavItem href="/patch-management" icon={ShieldCheck} label="Patch Management" active={isActive("/patch-management")} collapsed={collapsed} onNavigate={closeMobile} />
         )}
 
         {/* Manuale in-app: viewer markdown dei doc in /docs */}
-        <Link
-          href="/manual"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            isActive("/manual")
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <BookOpen className="h-4 w-4" />
-          Manuale
-        </Link>
+        <NavItem href="/manual" icon={BookOpen} label="Manuale" active={isActive("/manual")} collapsed={collapsed} onNavigate={closeMobile} />
 
-        {/* ═══ SEPARATORE SISTEMA ═══ */}
-        <div className="pt-3 px-3">
+        {/* ═══ SEPARATORE SISTEMA (nascosto se collassato) ═══ */}
+        <div className={cn("pt-3 px-3", collapsed && "md:hidden")}>
           <div className="border-t border-sidebar-border pt-2">
             <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
               Sistema
@@ -429,30 +410,34 @@ export function Sidebar() {
         </div>
 
         {/* Impostazioni (globale) */}
-        <Link
-          href="/settings"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-            pathname.startsWith("/settings")
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <Settings className="h-4 w-4" />
-          Impostazioni
-        </Link>
+        <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings")} collapsed={collapsed} onNavigate={closeMobile} />
 
       </nav>
 
-      {/* Footer: Logout */}
-      <div className="shrink-0 p-3 border-t border-sidebar-border">
+      {/* Footer: toggle collapse (desktop) + Logout */}
+      <div className="shrink-0 p-3 border-t border-sidebar-border space-y-1">
+        <button
+          type="button"
+          onClick={toggle}
+          title={collapsed ? "Espandi menu" : "Comprimi menu"}
+          className={cn(
+            "hidden md:flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full",
+            collapsed && "md:justify-center md:px-0"
+          )}
+        >
+          {collapsed ? <PanelLeftOpen className="h-4 w-4 shrink-0" /> : <PanelLeftClose className="h-4 w-4 shrink-0" />}
+          <span className={cn(collapsed && "md:hidden")}>Comprimi menu</span>
+        </button>
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full"
+          title={collapsed ? "Esci" : undefined}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full",
+            collapsed && "md:justify-center md:px-0"
+          )}
         >
-          <LogOut className="h-4 w-4" />
-          Esci
+          <LogOut className="h-4 w-4 shrink-0" />
+          <span className={cn(collapsed && "md:hidden")}>Esci</span>
         </button>
       </div>
     </>
@@ -481,8 +466,9 @@ export function Sidebar() {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed left-0 top-0 h-screen w-64 bg-sidebar text-sidebar-foreground flex flex-col z-40 transition-transform duration-200",
+          "fixed left-0 top-0 h-screen w-64 bg-sidebar text-sidebar-foreground flex flex-col z-40 transition-[transform,width] duration-200",
           "md:translate-x-0",
+          collapsed ? "md:w-16" : "md:w-64",
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >

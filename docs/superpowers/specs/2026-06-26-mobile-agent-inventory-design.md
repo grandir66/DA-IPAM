@@ -190,9 +190,14 @@ Lo sviluppo del connettore (B) richiede un hmdm-server raggiungibile. Per sblocc
 A: avviare hmdm via Docker ufficiale in locale (un comando) e arruolare un device/emulatore di test, OPPURE
 mockare le risposte REST a partire dallo Swagger. Il modulo appliance (A) finalizza il deploy di produzione.
 
-## 9. Mapping campi (CONFERMATO dai DTO sorgente hmdm-server master, 2026-06-26)
+## 9. Mapping campi (CONFERMATO a RUNTIME su istanza reale, 2026-06-26)
 
-Fonti: `common/.../rest/json/DeviceInfo.java`, `.../persistence/domain/Device.java`,
+> Contratto REST verificato su un'istanza `headwindmdm/hmdm:0.1.8` installata su 192.168.99.50:8088.
+> Dettaglio completo (endpoint + tutti i modelli) → [docs/integrations/hmdm/hmdm-rest-contract.md](../../integrations/hmdm/hmdm-rest-contract.md)
+> + spec OpenAPI archiviata `hmdm-swagger-0.1.8.json`. Strategia connettore a 2 chiamate:
+> `POST /rest/private/devices/search` (DeviceView, no `model`) + `GET /rest/plugins/deviceinfo/deviceinfo/private/{number}` (DeviceInfoView con model + apps).
+
+Fonti DTO: `common/.../rest/json/DeviceInfo.java`, `.../persistence/domain/Device.java`,
 `plugins/deviceinfo/.../rest/json/DeviceInfoApplication.java`.
 
 L'entità `Device` espone `info` come **stringa JSON serializzata** → va parsata (try/catch) per

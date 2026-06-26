@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS mdm_config (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   base_url TEXT, username TEXT, password_encrypted TEXT,
   jwt_cached TEXT, jwt_expires_at TEXT,
+  user_field TEXT DEFAULT 'description',   -- 'description'|'custom1'|'custom2'|'custom3': da dove leggere l'utente
   enabled INTEGER DEFAULT 0, last_sync_at TEXT, last_error TEXT,
   consecutive_errors INTEGER DEFAULT 0
 );
@@ -111,20 +112,24 @@ CREATE TABLE IF NOT EXISTS mobile_devices (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Campi allineati a ciò che Headwind ESPONE realmente (DeviceInfo DTO).
+-- NON disponibili da Headwind: manufacturer, security_patch, storage_*, MAC → omessi (no colonne fantasma).
 CREATE TABLE IF NOT EXISTS mobile_device_inventory (
   device_id INTEGER PRIMARY KEY REFERENCES mobile_devices(id) ON DELETE CASCADE,
-  serial TEXT, model TEXT, manufacturer TEXT,
-  os_family TEXT, os_version TEXT, security_patch TEXT,
-  user_profile TEXT, imei TEXT,
-  storage_total_mb INTEGER, storage_free_mb INTEGER,
-  primary_mac TEXT, snapshot_sha256 TEXT, last_inventory_at TEXT
+  serial TEXT, model TEXT,
+  os_family TEXT, os_version TEXT,        -- os_family derivato ('android'); os_version = androidVersion
+  user_profile TEXT,                      -- da Device.description o customN (configurabile)
+  imei TEXT, imei2 TEXT, phone TEXT, cpu TEXT, battery_level INTEGER,
+  snapshot_sha256 TEXT, last_inventory_at TEXT
 );
 
+-- Per-app limitato ai 4 campi di DeviceInfoApplication (plugin deviceinfo).
 CREATE TABLE IF NOT EXISTS mobile_device_apps (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   device_id INTEGER NOT NULL REFERENCES mobile_devices(id) ON DELETE CASCADE,
-  package_name TEXT NOT NULL, app_name TEXT,
-  version_name TEXT, version_code INTEGER, system_app INTEGER DEFAULT 0,
+  package_name TEXT NOT NULL,             -- applicationPkg
+  app_name TEXT,                          -- applicationName
+  version_name TEXT,                      -- versionInstalled (stringa, no versionCode)
   first_seen TEXT, last_seen TEXT,
   UNIQUE(device_id, package_name)
 );
@@ -185,17 +190,38 @@ Lo sviluppo del connettore (B) richiede un hmdm-server raggiungibile. Per sblocc
 A: avviare hmdm via Docker ufficiale in locale (un comando) e arruolare un device/emulatore di test, OPPURE
 mockare le risposte REST a partire dallo Swagger. Il modulo appliance (A) finalizza il deploy di produzione.
 
-## 9. Mapping campi (da confermare su Swagger del server installato)
+## 9. Mapping campi (CONFERMATO dai DTO sorgente hmdm-server master, 2026-06-26)
 
-| DA-IPAM | Headwind (atteso) | Note |
+Fonti: `common/.../rest/json/DeviceInfo.java`, `.../persistence/domain/Device.java`,
+`plugins/deviceinfo/.../rest/json/DeviceInfoApplication.java`.
+
+L'entità `Device` espone `info` come **stringa JSON serializzata** → va parsata (try/catch) per
+ottenere il `DeviceInfo`. La lista app completa richiede il **plugin `deviceinfo` abilitato**.
+
+| DA-IPAM | Headwind (campo reale) | Note |
 |---|---|---|
-| serial | device.serial / imeiOrSerial | confermare nome campo |
-| model | device.model | |
-| os_version | device.androidVersion / osVersion | |
-| user_profile | device.user / employee | |
-| imei | device.imei | |
-| apps[] | device installed apps / ApplicationResource | lista completa (Device Owner) |
-| last_seen_at | device.lastSeen | |
+| hmdm_device_id | Device.id / Device.number | `number` è l'id univoco device |
+| serial | DeviceInfo.serial | dentro `info` JSON |
+| model | DeviceInfo.model | manufacturer NON esiste |
+| os_family | derivato = `'android'` | Headwind è Android-only |
+| os_version | DeviceInfo.androidVersion | |
+| imei / imei2 / phone | DeviceInfo.imei / imei2 / phone | |
+| cpu / battery_level | DeviceInfo.cpu / batteryLevel | |
+| user_profile | Device.description o customN | NON nativo → configurabile in `mdm_config` |
+| last_seen_at | Device.lastUpdate (epoch ms) | convertire in ISO |
+| apps[].package_name | DeviceInfoApplication.applicationPkg | plugin deviceinfo |
+| apps[].app_name | DeviceInfoApplication.applicationName | |
+| apps[].version_name | DeviceInfoApplication.versionInstalled | stringa, niente versionCode/system flag |
+
+**Conseguenze architetturali:**
+- **Merge host first-class per `serial` (primario) → `imei` → `number`**, NON per MAC (Headwind non
+  espone il MAC). Se l'host già esiste con quel serial/imei lo si arricchisce; altrimenti si crea.
+- Campi non disponibili da Headwind (manufacturer, security_patch, storage, MAC) restano `null`:
+  eventualmente arricchibili in futuro incrociando con la discovery di rete (stesso host).
+- `mdm_config` aggiunge `user_field` (`description` | `custom1` | `custom2` | `custom3`) per scegliere
+  da dove leggere l'utente assegnato.
+- Dipendenza: il connettore richiede gli endpoint del **plugin deviceinfo** (`DeviceInfoResource`) per
+  l'inventario esteso + app; la lista app dei soli managed-apps via core non basta per "lista completa".
 
 ## 10. Fase futura — Apple/iOS
 

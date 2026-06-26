@@ -344,7 +344,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: Subnet
                     const est = populated24Count !== null ? populated24Count * 254 : null;
                     countLabel =
                       populated24Count !== null
-                        ? ` · ${populated24Count} /24${est !== null ? ` · ~${est} indirizzi` : ""}`
+                        ? ` · ${populated24Count} /24${est !== null ? ` · fino a ~${est} indirizzi` : ""}`
                         : "";
                   } else if (mode === "full_subnet") {
                     countLabel = fullSubnetCount !== null && fullSubnetCount > 0 ? ` · ${fullSubnetCount} indirizzi` : resolvedCidr ? ` · ${resolvedCidr}` : "";

@@ -239,3 +239,125 @@ Tutte le scritture in transazione singola per push.
 7. `scripts/test-mobile-agent.ts`.
 
 > Branch governance DA-IPAM: sviluppo su `dev`, mai push diretta su `main` (promote via UI).
+
+---
+
+## 11. Contratto API (dettaglio per l'app)
+
+Riferimento normativo per chi sviluppa l'app Android. Tutti gli endpoint:
+`Content-Type: application/json`, TLS, base URL = quella ricevuta nel QR di enrollment.
+Convenzione errori: `{ "error": string, "details"?: unknown }`.
+
+### 11.1 `POST /api/mobile-agents/enroll`
+
+One-shot al primo avvio dopo il provisioning Device Owner. Scambia l'**enrollment token**
+(dal QR) con un **per-device token** usato per tutte le chiamate successive.
+
+**Auth**: `Authorization: Bearer <enrollment_token>` (il token del QR).
+
+**Request body**:
+```json
+{
+  "device_fingerprint": "a1b2c3...",   // string, obbligatorio — id stabile generato dall'app (es. hash androidId+serial)
+  "platform": "android",                // "android" | "ios", obbligatorio
+  "enrollment_mode": "device_owner",    // "device_owner" | "work_profile" | "unmanaged", obbligatorio
+  "agent_version": "1.0.0",             // string, obbligatorio
+  "model": "Pixel 8",                   // string, opzionale (anticipo, utile per label)
+  "label": "Telefono Mario Rossi"       // string, opzionale — se assente il server usa model
+}
+```
+
+**Response 200**:
+```json
+{
+  "agent_id": 42,                       // int
+  "device_token": "kP3...base64url",    // string — usare come Bearer in TUTTE le chiamate successive
+  "heartbeat_interval_sec": 900,        // int — cadenza heartbeat consigliata
+  "inventory_interval_sec": 86400       // int — cadenza push inventario consigliata
+}
+```
+Il `device_token` è mostrato **una sola volta**: l'app lo persiste in modo sicuro (Keystore).
+Idempotenza: se lo stesso `device_fingerprint` ri-enrolla, il server **ruota** il device_token e
+ritorna lo stesso `agent_id` (re-provisioning del device, non un duplicato).
+
+**Errori**: `401` enrollment token non valido/revocato · `400` body non valido (Zod `.issues`).
+
+### 11.2 `POST /api/mobile-agents/inventory`
+
+Push completa dell'inventario. **Auth**: `Authorization: Bearer <device_token>`.
+
+**Request body**:
+```json
+{
+  "snapshot_sha256": "9f86d0...",       // string, obbligatorio — sha256 del JSON canonico di "device"+"apps" (idempotenza)
+  "captured_at": "2026-06-26T10:00:00Z",// string ISO-8601, obbligatorio — quando l'app ha raccolto i dati
+  "device": {
+    "serial": "RZ8…",                   // string|null — null se non Device Owner
+    "model": "Pixel 8",                 // string, obbligatorio
+    "manufacturer": "Google",           // string, obbligatorio
+    "os_family": "android",             // "android" | "ios", obbligatorio
+    "os_version": "15",                 // string, obbligatorio
+    "security_patch": "2026-05-01",     // string|null — security patch level
+    "user_profile": "mario.rossi",      // string|null — owner/utente assegnato
+    "imei": "3567…",                    // string|null — opzionale
+    "primary_mac": "AA:BB:CC:DD:EE:FF", // string|null — per merge con host di rete (può essere randomizzato)
+    "storage_total_mb": 128000,         // int|null
+    "storage_free_mb": 64000            // int|null
+  },
+  "apps": [                             // array, obbligatorio (può essere vuoto) — LISTA COMPLETA, non un delta
+    {
+      "package_name": "com.whatsapp",   // string, obbligatorio
+      "app_name": "WhatsApp",           // string|null
+      "version_name": "2.26.1",         // string|null
+      "version_code": 261000,           // int|null
+      "system_app": false               // bool, default false
+    }
+  ]
+}
+```
+
+> L'array `apps` è sempre lo **stato completo** corrente. Il server calcola lui il diff
+> (added/removed/updated) confrontando con lo snapshot precedente: l'app NON deve mandare delta.
+
+**Response 200 (applicato)**:
+```json
+{ "deduped": false, "agent_id": 42, "changes": 3, "host_id": 117 }
+```
+**Response 200 (già visto — stesso snapshot_sha256)**:
+```json
+{ "deduped": true, "agent_id": 42 }
+```
+In caso `deduped:true` il server aggiorna solo `last_seen_at`/`last_inventory_at`, nessuna scrittura
+storico. Questo rende sicuro il retry dalla coda offline dell'app.
+
+**Errori**: `401` device_token non valido/revocato · `400` JSON/Zod invalido · `413` payload troppo
+grande (limite app list, da definire, es. 5 MB).
+
+### 11.3 `POST /api/mobile-agents/heartbeat`
+
+Keepalive leggero per definire l'**ultimo visto** anche quando l'inventario non cambia.
+**Auth**: `Authorization: Bearer <device_token>`.
+
+**Request body**:
+```json
+{ "agent_version": "1.0.0" }           // string, opzionale
+```
+
+**Response 200**:
+```json
+{ "ok": true, "server_time": "2026-06-26T10:05:00Z" }
+```
+Effetto: aggiorna solo `mobile_agents.last_seen_at` (+ `agent_version` se presente). Nessun altro
+side-effect.
+
+**Errori**: `401` device_token non valido/revocato.
+
+### 11.4 Note di comportamento per l'app
+
+- **Coda offline**: l'app accumula gli snapshot quando fuori dalla rete aziendale e li invia al
+  ritorno in LAN. Grazie a `snapshot_sha256` i re-invii non duplicano lo storico.
+- **Ordine**: l'app fa `enroll` una volta, poi alterna `heartbeat` (frequente) e `inventory`
+  (raro o on-change). Non serve heartbeat subito dopo un inventory.
+- **Sicurezza token**: `device_token` in Android Keystore; mai in log/SharedPreferences in chiaro.
+- **TLS pinning**: l'app pinna l'SPKI del cert hub ricevuto nel QR (TOFU); rifiuta connessioni con
+  pin diverso.

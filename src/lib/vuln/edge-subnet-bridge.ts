@@ -18,6 +18,7 @@ import {
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 
 export type EdgeScanProfile = "fast" | "balanced" | "deep";
+export type EdgeTargetingMode = "full_subnet" | "found_ips" | "populated_24";
 
 export interface EdgeSubnetLastScan {
   id: number;
@@ -128,7 +129,7 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
 
 function buildEdgeEnsureBody(
   networkId: number,
-  opts: { syncHosts?: boolean; syncCredentials?: boolean } = {},
+  opts: { syncHosts?: boolean; syncCredentials?: boolean; targetingMode?: EdgeTargetingMode } = {},
 ): Record<string, unknown> {
   const network = getNetworkById(networkId);
   if (!network) throw new Error("Rete non trovata");
@@ -162,6 +163,10 @@ function buildEdgeEnsureBody(
     }
   }
 
+  if (opts.targetingMode != null) {
+    body.targeting_mode = opts.targetingMode;
+  }
+
   return body;
 }
 
@@ -183,6 +188,7 @@ export async function triggerSubnetEdgeScan(
     syncHosts?: boolean;
     syncCredentials?: boolean;
     runArp?: boolean;
+    targetingMode?: EdgeTargetingMode;
   } = {},
 ): Promise<{
   ok: boolean;
@@ -214,7 +220,7 @@ export async function triggerSubnetEdgeScan(
     }>(
       scanner,
       "/api/v1/networks/ensure",
-      buildEdgeEnsureBody(networkId, { syncHosts, syncCredentials }),
+      buildEdgeEnsureBody(networkId, { syncHosts, syncCredentials, targetingMode: opts.targetingMode }),
       { timeoutMs: 120000 },
     );
 
@@ -224,7 +230,11 @@ export async function triggerSubnetEdgeScan(
     }>(
       scanner,
       `/api/v1/networks/${ensured.network_id}/scan`,
-      { profile, run_arp: opts.runArp === true },
+      {
+        profile,
+        run_arp: opts.runArp === true,
+        ...(opts.targetingMode != null ? { targeting_mode: opts.targetingMode } : {}),
+      },
       { timeoutMs: 120000 },
     );
 
@@ -251,6 +261,7 @@ export async function saveEdgeSubnetSchedule(
     enabled: boolean;
     intervalMinutes: number;
     profile: EdgeScanProfile;
+    targetingMode?: EdgeTargetingMode;
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const scanner = getActiveEdgeScanner();
@@ -267,7 +278,7 @@ export async function saveEdgeSubnetSchedule(
     const ensured = await edgeApiPost<{ ok: boolean; network_id: number }>(
       scanner,
       "/api/v1/networks/ensure",
-      buildEdgeEnsureBody(networkId, { syncHosts: false, syncCredentials: true }),
+      buildEdgeEnsureBody(networkId, { syncHosts: false, syncCredentials: true, targetingMode: opts.targetingMode }),
       { timeoutMs: 120000 },
     );
 
@@ -278,6 +289,7 @@ export async function saveEdgeSubnetSchedule(
         enabled: opts.enabled,
         interval_minutes: opts.intervalMinutes,
         profile: opts.profile,
+        ...(opts.targetingMode != null ? { targeting_mode: opts.targetingMode } : {}),
       },
       { timeoutMs: 30000 },
     );

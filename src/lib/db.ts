@@ -173,6 +173,9 @@ export function getDb(): Database.Database {
     _db.exec("ALTER TABLE networks ADD COLUMN dns_server TEXT");
   } catch { /* column already exists */ }
   try {
+    _db.exec("ALTER TABLE networks ADD COLUMN targeting_mode TEXT DEFAULT 'full_subnet'");
+  } catch { /* column already exists */ }
+  try {
     _db.exec("ALTER TABLE hosts ADD COLUMN known_host INTEGER DEFAULT 0");
   } catch { /* column already exists */ }
   try {
@@ -2282,6 +2285,15 @@ export function updateNetwork(id: number, input: Partial<NetworkInput>): Network
 export function deleteNetwork(id: number): boolean {
   const result = getDb().prepare("DELETE FROM networks WHERE id = ?").run(id);
   return result.changes > 0;
+}
+
+export function setNetworkTargetingMode(
+  id: number,
+  mode: "full_subnet" | "found_ips" | "populated_24",
+): void {
+  getDb()
+    .prepare("UPDATE networks SET targeting_mode = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(mode, id);
 }
 
 // ========================

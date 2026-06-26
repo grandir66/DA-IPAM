@@ -2,7 +2,7 @@
  * Bridge subnet DA-IPAM → scanner-edge (ensure network + trigger Greenbone scan).
  */
 
-import { getNetworkById, getHostsByNetwork } from "@/lib/db";
+import { getNetworkById, getHostsByNetwork, setNetworkTargetingMode } from "@/lib/db";
 import {
   collectEdgeCredentialsForNetwork,
   type EdgeCredentialPreview,
@@ -46,6 +46,7 @@ export interface EdgeSubnetStatus {
   edgeEnabled: boolean;
   scannerName: string | null;
   ipamCredentials: EdgeCredentialPreview[];
+  targeting_mode: EdgeTargetingMode;
   edgeNetwork: {
     network_id: number;
     cidr: string;
@@ -65,12 +66,16 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
   const scanner = getActiveEdgeScanner();
   const network = getNetworkById(networkId);
   const { preview: ipamCredentials } = collectEdgeCredentialsForNetwork(networkId);
+  const targetingMode: EdgeTargetingMode =
+    (network?.targeting_mode as EdgeTargetingMode | null) ?? "full_subnet";
+
   if (!network || !scanner) {
     return {
       edgeConfigured: !!scanner,
       edgeEnabled: scanner?.enabled === 1,
       scannerName: scanner?.name ?? null,
       ipamCredentials,
+      targeting_mode: targetingMode,
       edgeNetwork: null,
     };
   }
@@ -97,6 +102,7 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
         edgeEnabled: scanner.enabled === 1,
         scannerName: scanner.name,
         ipamCredentials,
+        targeting_mode: targetingMode,
         edgeNetwork: null,
       };
     }
@@ -106,6 +112,7 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
       edgeEnabled: scanner.enabled === 1,
       scannerName: scanner.name,
       ipamCredentials,
+      targeting_mode: targetingMode,
       edgeNetwork: {
         network_id: lookup.network_id,
         cidr: lookup.cidr ?? network.cidr,
@@ -122,6 +129,7 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
       edgeEnabled: scanner.enabled === 1,
       scannerName: scanner.name,
       ipamCredentials,
+      targeting_mode: targetingMode,
       edgeNetwork: null,
     };
   }
@@ -238,6 +246,10 @@ export async function triggerSubnetEdgeScan(
       { timeoutMs: 120000 },
     );
 
+    if (opts.targetingMode != null) {
+      setNetworkTargetingMode(networkId, opts.targetingMode);
+    }
+
     return {
       ok: true,
       scan_id: scan.scan_id,
@@ -293,6 +305,10 @@ export async function saveEdgeSubnetSchedule(
       },
       { timeoutMs: 30000 },
     );
+
+    if (opts.targetingMode != null) {
+      setNetworkTargetingMode(networkId, opts.targetingMode);
+    }
 
     return { ok: true };
   } catch (e) {

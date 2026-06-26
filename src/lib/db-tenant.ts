@@ -850,6 +850,18 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.warn(`[db-tenant] ${tenantCode}: software_scans recovery fallito:`, e);
   }
 
+  // v0.2.694: networks.targeting_mode — colonna additiva per persistere la
+  // modalità targeting VA per subnet (full_subnet / found_ips / populated_24).
+  try {
+    const netCols = newDb.prepare("PRAGMA table_info(networks)").all() as Array<{ name: string }>;
+    if (netCols.length > 0 && !netCols.some((c) => c.name === "targeting_mode")) {
+      newDb.exec("ALTER TABLE networks ADD COLUMN targeting_mode TEXT DEFAULT 'full_subnet'");
+      console.info(`[db-tenant] ${tenantCode}: aggiunta networks.targeting_mode`);
+    }
+  } catch (e) {
+    console.warn(`[db-tenant] ${tenantCode}: migrazione networks.targeting_mode fallita:`, e);
+  }
+
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
   return newDb;
 }
@@ -1161,6 +1173,15 @@ export function updateNetwork(id: number, input: Partial<NetworkInput>): Network
 
   db().prepare(`UPDATE networks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
   return getNetworkById(id);
+}
+
+export function setNetworkTargetingMode(
+  id: number,
+  mode: "full_subnet" | "found_ips" | "populated_24",
+): void {
+  db()
+    .prepare("UPDATE networks SET targeting_mode = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(mode, id);
 }
 
 export function deleteNetwork(id: number): boolean {

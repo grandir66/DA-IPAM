@@ -21,6 +21,7 @@ export interface Network {
   location: string;
   snmp_community: string | null;
   dns_server: string | null;
+  targeting_mode: "full_subnet" | "found_ips" | "populated_24" | null;
   created_at: string;
   updated_at: string;
 }

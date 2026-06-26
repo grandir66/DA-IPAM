@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS networks (
   location TEXT DEFAULT '',
   snmp_community TEXT,
   dns_server TEXT,
+  targeting_mode TEXT DEFAULT 'full_subnet',
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

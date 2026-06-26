@@ -19,12 +19,14 @@ const postSchema = z.object({
   sync_hosts: z.boolean().optional(),
   sync_credentials: z.boolean().optional(),
   run_arp: z.boolean().optional(),
+  targeting_mode: z.enum(["full_subnet", "found_ips", "populated_24"]).optional(),
 });
 
 const scheduleSchema = z.object({
   enabled: z.boolean(),
   interval_minutes: z.number().int().min(60).max(10080),
   profile: z.enum(["fast", "balanced", "deep"]),
+  targeting_mode: z.enum(["full_subnet", "found_ips", "populated_24"]).optional(),
 });
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -66,6 +68,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       syncHosts: body.sync_hosts,
       syncCredentials: body.sync_credentials,
       runArp: body.run_arp,
+      targetingMode: body.targeting_mode,
     });
 
     if (!result.ok) {
@@ -98,6 +101,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       enabled: body.enabled,
       intervalMinutes: body.interval_minutes,
       profile: body.profile,
+      targetingMode: body.targeting_mode,
     });
 
     if (!result.ok) {

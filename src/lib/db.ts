@@ -18,6 +18,7 @@
  */
 import Database from "better-sqlite3";
 import path from "path";
+import { resolveDataDir } from "./data-dir";
 import fs from "fs";
 import { SCHEMA_SQL } from "./db-schema";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -54,7 +55,7 @@ import type {
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
 const DB_PATH = process.env.DA_IPAM_DB_PATH?.trim()
   ? path.resolve(process.env.DA_IPAM_DB_PATH.trim())
@@ -3903,7 +3904,12 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     (input as { classification?: string | null }).classification ?? null,
     (input as { scan_target?: string | null }).scan_target ?? null,
     (input as { product_profile?: string | null }).product_profile ?? null,
-    (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === 1 || (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === true ? 1 : 0,
+    ((): number => {
+      const f = (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll;
+      if (f === 1 || f === true) return 1;
+      if (f === 0 || f === false) return 0;
+      return input.device_type === "router" || input.device_type === "firewall" || input.vendor === "stormshield" ? 1 : 0;
+    })(),
     hostId
   );
   return getDb().prepare("SELECT * FROM network_devices WHERE id = ?").get(result.lastInsertRowid) as NetworkDevice;
@@ -4883,8 +4889,10 @@ export function upsertNeighbors(
 ): void {
   const db = getDb();
   const del = db.prepare("DELETE FROM device_neighbors WHERE device_id = ?");
+  // OR IGNORE: vedi nota in db-tenant.ts — duplicati di chiave nello stesso
+  // batch LLDP/CDP non devono interrompere la persistenza dei vicini.
   const ins = db.prepare(`
-    INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform)
+    INSERT OR IGNORE INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   db.transaction(() => {

@@ -72,17 +72,28 @@ export async function POST() {
   if (isAuthError(adminCheck)) return adminCheck;
 
   const existing = listCredentials();
-  const existingByKindAndPlaceholder = new Set(
-    existing
-      .filter((c) => c.label.toLowerCase().includes("(placeholder)"))
-      .map((c) => `${c.kind}|${c.label}`),
+  // v0.2.671: dedup più robusto.
+  //  - normalizeLabel rimuove "(placeholder)" e " (api interna)" + lower-case
+  //    in modo che "LibreNMS" matchi "LibreNMS (placeholder)" e
+  //    "LibreNMS (API interna)" — evitando il bug classico delle 2 card
+  //    LibreNMS (una creata da sync, l'altra da seed-defaults).
+  //  - Si confronta sempre kind+normalizedLabel, mai solo label.
+  const normalizeLabel = (s: string): string =>
+    s
+      .toLowerCase()
+      .replace(/\s*\(placeholder\)\s*/gi, "")
+      .replace(/\s*\(api interna\)\s*/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  const existingKey = new Set(
+    existing.map((c) => `${c.kind}|${normalizeLabel(c.label)}`),
   );
 
   let created = 0;
   let skipped = 0;
   for (const entry of SEED) {
-    const key = `${entry.kind}|${entry.label}`;
-    if (existingByKindAndPlaceholder.has(key)) {
+    const key = `${entry.kind}|${normalizeLabel(entry.label)}`;
+    if (existingKey.has(key)) {
       skipped++;
       continue;
     }

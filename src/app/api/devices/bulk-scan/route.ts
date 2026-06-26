@@ -1,4 +1,5 @@
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { resolveDeviceAcquisition, deviceScanApiPath } from "@/lib/devices/device-acquisition-resolve";
 import { NextResponse } from "next/server";
 import { getNetworkDeviceById, getMultihomedStatusByDeviceId } from "@/lib/db";
 import { z } from "zod";
@@ -69,16 +70,18 @@ export async function POST(request: Request) {
         continue;
       }
 
-      // 2. Esegui scansione appropriata
-      const scanTarget = (device as { scan_target?: string | null }).scan_target;
-      const isProxmox =
-        scanTarget === "proxmox" ||
-        device.device_type === "hypervisor" ||
-        (device.classification === "hypervisor" && device.protocol === "api");
+      const plan = resolveDeviceAcquisition(device);
+      if (!plan.implemented) {
+        failed.push({
+          id,
+          name: device.name,
+          error: plan.notImplementedHint ?? `${plan.label} non disponibile`,
+        });
+        continue;
+      }
 
-      const scanUrl = isProxmox
-        ? `${base}/api/devices/${id}/proxmox-scan`
-        : `${base}/api/devices/${id}/query`;
+      const scanPath = deviceScanApiPath(id, device);
+      const scanUrl = `${base}${scanPath}`;
       const scanRes = await fetch(scanUrl, { method: "POST", cache: "no-store" });
       const scanData = await scanRes.json();
 
@@ -86,12 +89,12 @@ export async function POST(request: Request) {
         scanRes.ok &&
         !scanData?.error &&
         (scanData?.message ||
-          (isProxmox && (Array.isArray(scanData?.hosts) || Array.isArray(scanData?.vms))));
+          (plan.scanEndpoint === "proxmox-scan" && (Array.isArray(scanData?.hosts) || Array.isArray(scanData?.vms))));
       if (scanOk) {
         const msg =
           typeof scanData?.message === "string"
             ? scanData.message
-            : isProxmox
+            : plan.scanEndpoint === "proxmox-scan"
               ? `Proxmox: ${scanData?.hosts?.length ?? 0} nodi, ${scanData?.vms?.length ?? 0} VM/CT`
               : "OK";
         scanned.push({ id, name: device.name, message: msg });

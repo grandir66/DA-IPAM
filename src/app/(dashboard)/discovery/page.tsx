@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { librenmsDevicePath } from "@/lib/integrations/public-url";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -71,12 +72,12 @@ const DEFAULT_CLASS_PRESETS: ClassPreset[] = [
   { filter: "switch",         label: "Switch",     iconName: "Cable",     match: ["switch"], builtin: true },
   { filter: "access_point",   label: "AP",         iconName: "Wifi",      match: ["access_point"], builtin: true },
   { filter: "firewall",       label: "Firewall",   iconName: "Shield",    match: ["firewall"], builtin: true },
-  { filter: "group:net",      label: "NET",        iconName: "Network",   match: ["bridge", "repeater", "modem", "ont", "load_balancer", "vpn_gateway", "proxy", "rete_ot"], builtin: true },
+  { filter: "group:net",      label: "NET",        iconName: "Network",   match: ["bridge", "repeater", "modem", "ont", "load_balancer", "vpn_gateway", "proxy", "rete_ot", "controller_wifi", "network_controller"], builtin: true },
   { filter: "ups",            label: "UPS",        iconName: "BatteryCharging", match: ["ups"], builtin: true },
   { filter: "group:tel",      label: "TEL",        iconName: "Phone",     match: ["voip"], builtin: true },
   { filter: "group:print",    label: "PRINT",      iconName: "Printer",   match: ["stampante", "scanner", "fotocopiatrice", "multifunzione"], builtin: true },
   { filter: "group:cam",      label: "CAM",        iconName: "Camera",    match: ["telecamera"], builtin: true },
-  { filter: "group:iot",      label: "IOT",        iconName: "Cpu",       match: ["iot", "smart_tv", "console", "sensore", "plc", "hmi", "controller"], builtin: true },
+  { filter: "group:iot",      label: "IOT",        iconName: "Cpu",       match: ["iot", "domotica", "smart_tv", "console", "sensore", "plc", "hmi", "controller"], builtin: true },
   { filter: "group:mobile",   label: "MOBILE",     iconName: "Smartphone",match: ["tablet", "smartphone"], builtin: true },
   { filter: "group:storage",  label: "STORAGE",    iconName: "Database",  match: ["storage", "nas", "nas_synology", "nas_qnap"], builtin: true },
   { filter: "group:multihomed", label: "MH",       iconName: "Link2",     match: [] /* speciale: h.multihomed != null */, builtin: true },
@@ -204,7 +205,15 @@ const GROUP_LABELS: Record<string, string> = {
 };
 
 const STORAGE_KEY = "discovery-columns";
-const PAGE_SIZE = 50;
+const PAGE_SIZE_KEY = "discovery-page-size";
+const PAGE_SIZE_OPTIONS = [15, 50, 100, 500];
+const DEFAULT_PAGE_SIZE = 50;
+
+function loadPageSize(): number {
+  if (typeof window === "undefined") return DEFAULT_PAGE_SIZE;
+  const raw = Number(window.localStorage.getItem(PAGE_SIZE_KEY));
+  return PAGE_SIZE_OPTIONS.includes(raw) ? raw : DEFAULT_PAGE_SIZE;
+}
 
 // Colonne che devono essere sempre visibili indipendentemente dal localStorage.
 // Profilo è il pivot della UI (ospita le icone di promozione e i link verso
@@ -401,6 +410,7 @@ export default function DiscoveryPage() {
   const [networkFilter, setNetworkFilter] = useState("");
   const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(loadPageSize);
   const [columnOrder, setColumnOrder] = useState<string[]>(loadColumnOrder);
   // v0.2.624: column manager in Dialog separato (Base UI Menu non ammette
   // <button> arbitrari come children → errore #31).
@@ -793,8 +803,12 @@ export default function DiscoveryPage() {
       setAddCredentials(data);
       if (Array.isArray(data)) setCredentials(data);
     }).catch(() => {});
-    fetch("/api/integrations/active").then((r) => r.json()).then((data: Record<string, { enabled: boolean; url: string }>) => {
-      if (data?.librenms?.enabled && data.librenms.url) setLibrenmsUrl(data.librenms.url.replace(/\/+$/, ""));
+    fetch("/api/integrations/active").then((r) => r.json()).then((data: Record<string, { enabled: boolean; directUrl?: string; url: string }>) => {
+      const lnms = data?.librenms;
+      if (lnms?.enabled) {
+        const base = (lnms.directUrl || "").replace(/\/+$/, "");
+        if (base) setLibrenmsUrl(base);
+      }
     }).catch(() => {});
   }, []);
 
@@ -915,15 +929,22 @@ export default function DiscoveryPage() {
   );
 
   // ---------- pagination ----------
-  const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
   const safeP = Math.min(page, totalPages);
   const pagedRows = useMemo(
-    () => sortedRows.slice((safeP - 1) * PAGE_SIZE, safeP * PAGE_SIZE),
-    [sortedRows, safeP],
+    () => sortedRows.slice((safeP - 1) * pageSize, safeP * pageSize),
+    [sortedRows, safeP, pageSize],
   );
 
   // reset page on filter change
   useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, networkFilter]);
+
+  // persiste la dimensione pagina e torna a pagina 1 quando cambia
+  const handlePageSizeChange = useCallback((size: number) => {
+    setPageSize(size);
+    setPage(1);
+    if (typeof window !== "undefined") window.localStorage.setItem(PAGE_SIZE_KEY, String(size));
+  }, []);
 
   // ---------- selection helpers ----------
   function toggleSelect(id: number) {
@@ -1017,6 +1038,7 @@ export default function DiscoveryPage() {
       };
       if (addProductProfile) body.product_profile = addProductProfile;
       if (addVendorSubtype) body.vendor_subtype = addVendorSubtype;
+      if (addUseForArpPoll) body.use_for_arp_poll = 1;
       if (addCredentialId && addCredentialId !== "none") body.credential_id = Number(addCredentialId);
       if (addSnmpCredentialId && addSnmpCredentialId !== "none") body.snmp_credential_id = Number(addSnmpCredentialId);
       const res = await fetch("/api/devices/bulk", {
@@ -1408,8 +1430,23 @@ export default function DiscoveryPage() {
             {h.ip} <ExternalLink className="h-3 w-3 opacity-50" />
           </Link>
         );
-      case "hostname":
-        return <span className="font-medium truncate max-w-[200px] block" title={displayName(h)}>{displayName(h) || "—"}</span>;
+      case "hostname": {
+        const autoName = h.hostname || h.dns_reverse || h.ad_dns_host_name || "";
+        return (
+          <InlineEditCell
+            mode="text"
+            value={h.custom_name ?? ""}
+            placeholder={autoName || "Nome host…"}
+            onSave={(v) => saveHostFieldInline(h.id, { custom_name: v.trim() ? v.trim() : null })}
+            display={
+              displayName(h)
+                ? <span className="font-medium truncate max-w-[200px] block" title={displayName(h)}>{displayName(h)}</span>
+                : <span className="text-muted-foreground text-xs">—</span>
+            }
+            title="Clicca per modificare il nome visualizzato"
+          />
+        );
+      }
       case "status":
         return (
           <StatusBadge
@@ -1526,11 +1563,11 @@ export default function DiscoveryPage() {
         );
       }
       case "model":
-        return <span className="text-sm">{h.model ?? "—"}</span>;
+        return <span className="text-sm truncate max-w-[160px] block" title={h.model ?? ""}>{h.model ?? "—"}</span>;
       case "serial_number":
-        return <span className="text-xs font-mono">{h.serial_number ?? "—"}</span>;
+        return <span className="text-xs font-mono truncate max-w-[160px] block" title={h.serial_number ?? ""}>{h.serial_number ?? "—"}</span>;
       case "firmware":
-        return <span className="text-xs">{h.firmware ?? "—"}</span>;
+        return <span className="text-xs truncate max-w-[160px] block" title={h.firmware ?? ""}>{h.firmware ?? "—"}</span>;
       case "last_seen":
         return <span className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(h.last_seen)}</span>;
       case "first_seen":
@@ -1630,7 +1667,7 @@ export default function DiscoveryPage() {
         const isAsset = !!h.asset_id;
         const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
         const lnmsDeviceLink = lnms && librenmsUrl
-          ? `${librenmsUrl}/device/device=${lnms.librenms_device_id}/`
+          ? librenmsDevicePath(librenmsUrl, lnms.librenms_device_id)
           : null;
 
         return (
@@ -2066,7 +2103,7 @@ export default function DiscoveryPage() {
                             ? `Secondary multihomed — esegui sul primary ${mhPrimaryIp}`
                             : "Secondary multihomed — esegui sul primary";
                           const lnmsDeviceLink = lnms && librenmsUrl
-                            ? `${librenmsUrl}/device/device=${lnms.librenms_device_id}/`
+                            ? librenmsDevicePath(librenmsUrl, lnms.librenms_device_id)
                             : null;
                           return (
                             <div onClick={(e) => e.stopPropagation()} className="inline-flex">
@@ -2219,7 +2256,15 @@ export default function DiscoveryPage() {
         </CardContent>
       </Card>
 
-      <Pagination page={safeP} totalPages={totalPages} onPageChange={setPage} />
+      <Pagination
+        page={safeP}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        pageSize={pageSize}
+        onPageSizeChange={handlePageSizeChange}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        total={sortedRows.length}
+      />
 
       {/* ════════════════ DIALOG MODIFICA MULTIPLA HOST ════════════════ */}
       <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>

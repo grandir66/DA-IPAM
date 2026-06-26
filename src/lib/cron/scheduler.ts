@@ -33,14 +33,26 @@ export function initializeScheduler(): void {
 }
 
 function intervalToCron(minutes: number): string {
+  // Fix B1 2026-06-23: la vecchia versione collassava ogni intervallo ≥1440min
+  // (3 giorni, settimana) in "0 0 * * *" = GIORNALIERO → VA scan 7× troppo
+  // frequenti; e `*/N` per N che non divide il campo dava cadenza irregolare.
+  // Mappiamo onestamente su minuti/ore/giorni divisori; per il resto, fallback
+  // alla granularità più vicina che NON sovra-esegua (arrotonda PER ECCESSO).
   if (minutes < 60) {
-    return `*/${minutes} * * * *`;
+    const m = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30].find((d) => d >= minutes) ?? 30;
+    return `*/${m} * * * *`;
   }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `0 */${hours} * * *`;
+  if (minutes < 1440) {
+    const hours = Math.round(minutes / 60);
+    const h = [1, 2, 3, 4, 6, 8, 12].find((d) => d >= hours) ?? 12;
+    return `0 */${h} * * *`;
   }
-  return `0 0 * * *`;
+  // ≥ 1 giorno: esegui ogni N giorni (N≥1). cron `*/d` sul campo day-of-month
+  // approssima "ogni d giorni" (reset a inizio mese, ma niente più 7× al giorno).
+  const days = Math.max(1, Math.round(minutes / 1440));
+  if (days === 1) return `0 3 * * *`;       // giornaliero alle 03:00
+  if (days >= 7) return `0 3 * * 1`;        // settimanale: lunedì 03:00
+  return `0 3 */${days} * *`;               // ogni N giorni alle 03:00
 }
 
 export function scheduleJob(

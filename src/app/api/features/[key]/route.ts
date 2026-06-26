@@ -4,7 +4,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { getCurrentTenantCode } from "@/lib/db-tenant";
 import { getFeatureStatus } from "@/lib/patch/feature";
 
-const ALLOWED_FEATURES = new Set<string>(["patch_management"]);
+const ALLOWED_FEATURES = new Set<string>(["patch_management", "inventory_agent"]);
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 

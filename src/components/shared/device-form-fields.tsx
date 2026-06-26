@@ -35,9 +35,12 @@ import {
   getDefaultProductProfileForVendor,
   isValidProductProfileForVendor,
   vendorSubtypeFromProductProfile,
+  applyProductProfileScanDefaults,
+  suggestDeviceTypeFromProductProfile,
   productProfileRequiresNamedCredential,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
+import { describeDeviceAcquisition } from "@/lib/devices/device-acquisition-resolve";
 import type { NetworkDevice } from "@/types";
 import {
   getDefaultNetworkDeviceVendorOptions,
@@ -99,6 +102,7 @@ const SCAN_TARGETS = [
   { value: "vmware", label: "VMware" },
   { value: "windows", label: "Windows" },
   { value: "linux", label: "Linux" },
+  { value: "macos", label: "macOS" },
 ] as const;
 
 export type DeviceFormMode = "create" | "edit" | "bulk";
@@ -259,12 +263,34 @@ export function DeviceFormFields({
       a.label.localeCompare(b.label, "it", { sensitivity: "base" })
     );
   }, [vendor]);
+  const acquisitionPreview = useMemo(() => {
+    if (isBulk) return null;
+    const previewDeviceType: NetworkDevice["device_type"] = productProfile
+      ? suggestDeviceTypeFromProductProfile(productProfile as ProductProfileId)
+      : classification === "router"
+        ? "router"
+        : classification === "firewall"
+          ? "firewall"
+          : classification === "hypervisor"
+            ? "hypervisor"
+            : "switch";
+    return describeDeviceAcquisition({
+      vendor: vendor as NetworkDevice["vendor"],
+      protocol: (protocol || defaultProtocol) as NetworkDevice["protocol"],
+      scan_target: scanTarget,
+      product_profile: productProfile,
+      classification: classification || null,
+      device_type: previewDeviceType,
+      use_for_arp_poll: useForArpPoll ? 1 : 0,
+    });
+  }, [isBulk, vendor, protocol, defaultProtocol, scanTarget, productProfile, classification, useForArpPoll]);
+
   const productProfileOptions = useMemo(
     () =>
-      [...getProductProfilesForVendor(vendor || "other")].sort((a, b) =>
+      [...getProductProfilesForVendor(vendor || "other", classification || null)].sort((a, b) =>
         a.label.localeCompare(b.label, "it", { sensitivity: "base" })
       ),
-    [vendor]
+    [vendor, classification]
   );
 
   const vendorOptionsSorted = useMemo(
@@ -282,14 +308,19 @@ export function DeviceFormFields({
     if (nextS !== (scanTarget ?? null)) onScanTargetChange?.(nextS);
   }, [vendor, isBulk, protocol, scanTarget, onProtocolChange, onScanTargetChange]);
 
-  // Profilo prodotto coerente con la marca
+  // Profilo prodotto coerente con marca + classificazione
   useEffect(() => {
     if (!onProductProfileChange) return;
     const pv = vendor || "other";
     if (!productProfile || !isValidProductProfileForVendor(pv, productProfile)) {
-      onProductProfileChange(getDefaultProductProfileForVendor(pv));
+      onProductProfileChange(getDefaultProductProfileForVendor(pv, classification || null));
+      return;
     }
-  }, [vendor, productProfile, onProductProfileChange]);
+    const allowed = getProductProfilesForVendor(pv, classification || null);
+    if (!allowed.some((p) => p.id === productProfile)) {
+      onProductProfileChange(getDefaultProductProfileForVendor(pv, classification || null));
+    }
+  }, [vendor, classification, productProfile, onProductProfileChange]);
 
   const vendorMarcaTip =
     "Solo la marca del dispositivo. Protocollo, tipo scansione e credenziali seguono il profilo vendor; le scansioni non modificano la marca. " +
@@ -391,9 +422,17 @@ export function DeviceFormFields({
                   if (nextProto !== protocol) onProtocolChange?.(nextProto);
                   const nextSt = coerceScanTargetForVendor(nv, scanTarget ?? undefined);
                   if (nextSt !== (scanTarget ?? null)) onScanTargetChange?.(nextSt);
-                  const defP = getDefaultProductProfileForVendor(nv);
+                  const defP = getDefaultProductProfileForVendor(nv, classification || null);
                   onProductProfileChange?.(defP);
                   onVendorSubtypeChange?.(vendorSubtypeFromProductProfile(defP as ProductProfileId));
+                  const defaults = applyProductProfileScanDefaults(
+                    defP as ProductProfileId,
+                    nv as NetworkDevice["vendor"],
+                    classification || null
+                  );
+                  if (defaults.scan_target != null) onScanTargetChange?.(defaults.scan_target);
+                  if (defaults.protocol) onProtocolChange?.(coerceProtocolForVendor(nv, defaults.protocol));
+                  if (onUseForArpPollChange) onUseForArpPollChange(defaults.use_for_arp_poll === 1);
                 }}
               >
                 <SelectTrigger className="w-full">
@@ -422,11 +461,26 @@ export function DeviceFormFields({
               tipWide
             >
               <Select
-                value={productProfile ?? getDefaultProductProfileForVendor(vendor)}
+                value={productProfile ?? getDefaultProductProfileForVendor(vendor, classification || null)}
                 onValueChange={(v) => {
                   if (!v) return;
+                  const pid = v as ProductProfileId;
                   onProductProfileChange(v);
-                  onVendorSubtypeChange?.(vendorSubtypeFromProductProfile(v as ProductProfileId));
+                  onVendorSubtypeChange?.(vendorSubtypeFromProductProfile(pid));
+                  const defaults = applyProductProfileScanDefaults(
+                    pid,
+                    vendor as NetworkDevice["vendor"],
+                    classification || null
+                  );
+                  if (defaults.scan_target != null) {
+                    onScanTargetChange?.(defaults.scan_target);
+                  }
+                  if (defaults.protocol) {
+                    onProtocolChange?.(coerceProtocolForVendor(vendor, defaults.protocol));
+                  }
+                  if (onUseForArpPollChange) {
+                    onUseForArpPollChange(defaults.use_for_arp_poll === 1);
+                  }
                 }}
               >
                 <SelectTrigger className="w-full">
@@ -502,6 +556,11 @@ export function DeviceFormFields({
               </Select>
             </FieldRow>
           </div>
+          {acquisitionPreview && (
+            <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200/80 rounded px-2.5 py-1.5 leading-snug">
+              <span className="font-medium">Acquisizione attiva:</span> {acquisitionPreview}
+            </p>
+          )}
         </div>
       )}
 
@@ -532,7 +591,7 @@ export function DeviceFormFields({
             <Checkbox
               id={`${idPrefix}-use-arp`}
               checked={useForArpPoll ?? defaultUseForArpPoll ?? false}
-              onCheckedChange={(v) => onUseForArpPollChange?.(v === true)}
+              onCheckedChange={(v) => onUseForArpPollChange?.(Boolean(v))}
             />
             <Label htmlFor={`${idPrefix}-use-arp`} className="text-sm font-medium cursor-pointer">
               Usa come sorgente ARP/MAC

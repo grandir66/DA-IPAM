@@ -47,7 +47,6 @@ import {
   Monitor,
   Users,
   Shield,
-  Tags,
   ArrowUpCircle,
   Sparkles,
   Play,
@@ -61,7 +60,6 @@ import { toast } from "sonner";
 import type { ScheduledJob, NetworkWithStats } from "@/types";
 import { ScanConfigTab } from "@/components/settings/scan-config-tab";
 import { DeviceIdentificationTab } from "@/components/settings/device-identification-tab";
-import { IntegrationsTab } from "@/components/settings/integrations-tab";
 import { ModulesTab } from "@/components/settings/modules-tab";
 import { UpdatesTab } from "@/components/settings/updates-tab";
 
@@ -105,7 +103,6 @@ type TabKey =
   | "scansione"
   | "identificazione"
   | "jobs"
-  | "integrazioni"
   | "https"
   | "moduli"
   | "aggiornamenti"
@@ -120,8 +117,9 @@ const TAB_ALIASES: Record<string, TabKey> = {
   fingerprint: "identificazione",
   jobs: "jobs",
   job: "jobs",
-  integrazioni: "integrazioni",
-  integrations: "integrazioni",
+  // ex-tab "integrazioni" consolidata in "moduli" (config unica dei moduli)
+  integrazioni: "moduli",
+  integrations: "moduli",
   https: "https",
   tls: "https",
   moduli: "moduli",
@@ -211,6 +209,7 @@ function SettingsPageInner() {
   // === Reset state (full reconfig) ===
   const [resetting, setResetting] = useState(false);
   const [openingWizard, setOpeningWizard] = useState(false);
+  const [resettingLabConfig, setResettingLabConfig] = useState(false);
 
   // === Users ===
   const [users, setUsers] = useState<UserWithAccess[]>([]);
@@ -316,6 +315,33 @@ function SettingsPageInner() {
       toast.error("Errore di rete");
     } finally {
       setOpeningWizard(false);
+    }
+  }
+
+  async function handleResetLabNetworkConfig() {
+    if (
+      !confirm(
+        "Azzerare reti, host, ARP, DHCP, credenziali di discovery, AD e inventario del tenant corrente?\n\n" +
+          "Restano intatti: integrazioni appliance (Edge, LibreNMS, Network Services), admin, Launchpad e moduli.\n\n" +
+          "Verrai reindirizzato al wizard di pre-configurazione. Procedere?",
+      )
+    ) {
+      return;
+    }
+    setResettingLabConfig(true);
+    try {
+      const res = await fetch("/api/lab-config/reset", { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Reset lab non riuscito");
+        return;
+      }
+      toast.success(data.message ?? "Configurazione di rete azzerata");
+      router.push("/onboarding");
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setResettingLabConfig(false);
     }
   }
 
@@ -562,7 +588,6 @@ function SettingsPageInner() {
     { key: "scansione", label: "Scansione", icon: Radar },
     { key: "identificazione", label: "Identificazione", icon: Fingerprint },
     { key: "jobs", label: "Job pianificati", icon: Clock },
-    { key: "integrazioni", label: "Integrazioni", icon: Tags },
     { key: "https", label: "HTTPS", icon: Shield },
     { key: "moduli", label: "Moduli", icon: PackageOpen },
     { key: "aggiornamenti", label: "Aggiornamenti", icon: ArrowUpCircle },
@@ -1015,7 +1040,6 @@ function SettingsPageInner() {
       )}
 
       {/* === Tab: Integrazioni === */}
-      {activeTab === "integrazioni" && <IntegrationsTab />}
 
       {/* === Tab: HTTPS === */}
       {activeTab === "https" && (
@@ -1084,7 +1108,7 @@ function SettingsPageInner() {
       )}
 
       {/* === Tab: Moduli === */}
-      {activeTab === "moduli" && <ModulesTab />}
+      {activeTab === "moduli" && <ModulesTab isAdmin={isAdmin} />}
 
       {/* === Tab: Aggiornamenti === */}
       {activeTab === "aggiornamenti" && <UpdatesTab />}
@@ -1157,6 +1181,35 @@ function SettingsPageInner() {
                 >
                   <Sparkles className={`h-4 w-4 ${openingWizard ? "animate-pulse" : ""}`} />
                   {openingWizard ? "Apertura in corso…" : "Apri wizard di configurazione"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {isAdmin && (
+            <Card className="border-amber-500/30">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Radar className="h-5 w-5 text-amber-600" />
+                  <CardTitle className="text-base">Reset lab / pre-consegna</CardTitle>
+                </div>
+                <CardDescription>
+                  Azzera <strong>solo i dati di rete e discovery</strong> (subnet, host, ARP, DHCP,
+                  credenziali scan, AD, inventario) per ripartire con il wizard e pre-configurare
+                  l&apos;appliance in lab prima del cliente. Integrazioni moduli, admin e Launchpad
+                  restano attivi.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2 border-amber-500/50 text-amber-800 dark:text-amber-400 hover:bg-amber-500/10"
+                  onClick={() => void handleResetLabNetworkConfig()}
+                  disabled={resettingLabConfig}
+                >
+                  <RotateCcw className={`h-4 w-4 ${resettingLabConfig ? "animate-spin" : ""}`} />
+                  {resettingLabConfig ? "Reset in corso…" : "Azzera config rete e riparti da zero"}
                 </Button>
               </CardContent>
             </Card>

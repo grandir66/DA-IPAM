@@ -17,6 +17,7 @@ export const SOURCE_BADGE_STYLE: Record<string, string> = {
   Wazuh: "bg-violet-600 text-white",
   Edge: "bg-emerald-700 text-white",
   Probe: "bg-sky-600 text-white",
+  Agent: "bg-teal-600 text-white",
 };
 
 export const SEVERITY_RANK: Record<string, number> = {

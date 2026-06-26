@@ -54,6 +54,7 @@ install_system_deps() {
     pkg-config \
     python3 \
     python3-venv \
+    python3-dev \
     python3-pip \
     net-tools \
     nmap \
@@ -96,44 +97,10 @@ install_node() {
   echo "    Node.js $(node -v) installato."
 }
 
-# Setup Python venv per WinRM (pywinrm + Kerberos via gssapi)
-# Richiede pacchetti di sistema: libkrb5-dev, krb5-config, libffi-dev, build-essential, python3-dev
-# (installati da install_system_deps).
+# Setup Python venv WinRM/WMI/SSH — script canonico condiviso con Docker/hub-install
 setup_winrm_venv() {
-  local venv_dir="$HOME/.da-invent-venv"
-  if [ ! -f "$venv_dir/bin/python3" ]; then
-    echo ">>> Creazione venv Python per WinRM..."
-    python3 -m venv "$venv_dir" || {
-      echo "    Errore: creazione venv fallita. Installa python3-venv (apt-get install python3-venv)."
-      return 1
-    }
-  fi
-  if [ ! -f "$venv_dir/bin/pip" ]; then
-    echo "    Errore: pip non disponibile nel venv $venv_dir."
-    return 1
-  fi
-  echo ">>> Installazione pywinrm + dipendenze Kerberos nel venv..."
-  "$venv_dir/bin/pip" install --quiet --upgrade pip
-  if "$venv_dir/bin/pip" install --quiet pywinrm requests-ntlm requests-credssp gssapi; then
-    echo "    Venv WinRM pronto in $venv_dir (pywinrm + gssapi/Kerberos)."
-  else
-    echo "    Avviso: build di gssapi fallita. WinRM funziona via NTLM/CredSSP, ma Kerberos non è disponibile."
-    echo "    Per abilitare Kerberos: apt-get install libkrb5-dev krb5-config krb5-user libffi-dev e rilancia l'installer."
-    "$venv_dir/bin/pip" install --quiet pywinrm requests-ntlm requests-credssp || {
-      echo "    Errore: anche l'install minimale di pywinrm è fallita."
-      return 1
-    }
-  fi
-
-  # impacket: fallback WMI/DCOM (porta 135) quando WinRM (5985/5986) è disabilitato sul target.
-  # Modalità degradata: recupera OS, hardware, rete, hotfix, antivirus — niente registry né AD.
-  echo ">>> Installazione impacket nel venv (fallback WMI/DCOM)..."
-  if "$venv_dir/bin/pip" install --quiet impacket; then
-    echo "    impacket pronto: fallback WMI disponibile su porta 135."
-  else
-    echo "    Avviso: install di impacket fallito. Il fallback WMI non sarà disponibile;"
-    echo "    DA-IPAM continuerà a funzionare via WinRM dove configurato."
-  fi
+  echo ">>> Setup venv WinRM (scripts/setup-winrm-venv.sh)..."
+  bash "$APP_DIR/scripts/setup-winrm-venv.sh"
 }
 
 # npm install e build
@@ -169,6 +136,8 @@ setup_env() {
     local domarc_pass=$(openssl rand -base64 20 | tr -dc 'A-Za-z0-9' | head -c 20)
     {
       echo "# DA-INVENT — generato dall'installer"
+      echo "# ENCRYPTION_KEY: NON duplicare con valore diverso in Docker/env esterno."
+      echo "# Vedi docs/playbooks/APPLIANCE-DEPLOY.md per appliance container."
       echo "ENCRYPTION_KEY=$key"
       echo "AUTH_SECRET=$secret"
       echo "PORT=$PORT"
@@ -235,8 +204,10 @@ Group=$SERVICE_GROUP
 WorkingDirectory=$APP_DIR
 Environment=NODE_ENV=production
 Environment=PORT=$PORT
+Environment=WINRM_PYTHON=$HOME/.da-invent-venv/bin/python3
+Environment=SSH_PYTHON=$HOME/.da-invent-venv/bin/python3
 EnvironmentFile=$APP_DIR/.env.local
-ExecStart=$(which node) $APP_DIR/node_modules/next/dist/bin/next start -p $PORT -H 0.0.0.0
+ExecStart=$APP_DIR/node_modules/.bin/tsx $APP_DIR/server.ts
 Restart=on-failure
 RestartSec=5
 # No PrivateTmp: su molti LXC/Proxmox CT systemd fallisce con status=226/NAMESPACE
@@ -320,6 +291,15 @@ setup_env
 install_systemd_service
 
 echo ""
+echo ">>> Verifica post-install (venv WinRM)..."
+if bash "$APP_DIR/scripts/verify-install.sh"; then
+  echo "    Verifica OK."
+else
+  echo "    ERRORE: verifica fallita — controllare scripts/setup-winrm-venv.sh" >&2
+  exit 1
+fi
+
+echo ""
 echo "=== Installazione completata ==="
 echo ""
 echo "Avvio rapido (senza systemd):"
@@ -331,9 +311,8 @@ echo ""
 echo "Accedi a: http://<indirizzo-ip>:$PORT"
 echo "Al primo avvio completa il setup dalla pagina /setup"
 echo ""
-echo "WinRM verso host Windows: venv pywinrm in \$HOME/.da-invent-venv (Kerberos via gssapi se libkrb5-dev presente)."
-echo "Fallback WMI/DCOM su porta 135 via impacket (modalità degradata se WinRM è chiuso sul target)."
-echo "Se la scansione WinRM/WMI fallisce, ricrea il venv:"
-echo "  rm -rf ~/.da-invent-venv && python3 -m venv ~/.da-invent-venv && \\"
-echo "    ~/.da-invent-venv/bin/pip install pywinrm requests-ntlm requests-credssp gssapi impacket"
+echo "WinRM verso host Windows: venv in \$HOME/.da-invent-venv (creato da scripts/setup-winrm-venv.sh)."
+echo "Verifica: bash scripts/verify-install.sh --url http://127.0.0.1:$PORT"
+echo "Se la scansione WinRM fallisce, ricrea il venv:"
+echo "  bash scripts/setup-winrm-venv.sh"
 echo ""

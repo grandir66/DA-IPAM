@@ -1,0 +1,51 @@
+# Fragmento compose — servizio da-ipam (incollare in appliance-stack/compose.yml)
+#
+# Prerequisito host: bash scripts/appliance-env-init.sh /opt/appliance-stack/.env
+#
+# Parità con hub systemd (192.168.4.8):
+#   systemd EnvironmentFile=/opt/da-invent/.env.local
+#   container ENCRYPTION_KEY da .env host → /data/.env.local (volume)
+
+services:
+  da-ipam:
+    build:
+      context: ../DA-IPAM
+      dockerfile: deploy/docker/Dockerfile
+    image: appliance/da-ipam:latest
+    container_name: appliance-ipam
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    env_file:
+      - .env
+    environment:
+      DA_INVENT_CONTAINER: "1"
+      DA_INVENT_DATA_DIR: /data
+      NODE_ENV: production
+      PORT: "3001"
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY mancante in .env host}
+      AUTH_SECRET: ${AUTH_SECRET:-${NEXTAUTH_SECRET:-}}
+      LIBRENMS_API_URL: http://127.0.0.1:8000
+      LIBRENMS_UI_URL: https://${APPLIANCE_LAN_IP:-localhost}:7443
+      DA_INVENT_PUBLIC_HOST: ${APPLIANCE_LAN_IP:-}
+      LIBRENMS_API_TOKEN: ${LIBRENMS_API_TOKEN:-}
+      NET_SERVICES_API_URL: ${NET_SERVICES_API_URL:-}
+      NET_SERVICES_API_TOKEN: ${NET_SERVICES_API_TOKEN:-}
+      EDGE_INTERNAL_URL: http://127.0.0.1:8080
+      EDGE_API_TOKEN: ${EDGE_API_TOKEN:-}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-https://${APPLIANCE_LAN_IP:-localhost}/}
+      AUTH_TRUST_HOST: ${AUTH_TRUST_HOST:-true}
+    volumes:
+      - ipam_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3001/api/health"]
+      interval: 30s
+      timeout: 8s
+      retries: 5
+      start_period: 45s
+
+volumes:
+  ipam_data:

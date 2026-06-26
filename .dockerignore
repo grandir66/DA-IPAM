@@ -1,0 +1,14 @@
+# DA-IPAM — build context esclude segreti e artefatti locali (deterministico)
+.env
+.env.*
+!.env.example
+.git
+.next
+node_modules
+data
+*.db
+*.db-*
+coverage
+.DS_Store
+*.log
+tmp-*.ts

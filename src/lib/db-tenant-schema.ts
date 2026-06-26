@@ -905,6 +905,61 @@ CREATE TABLE IF NOT EXISTS wazuh_netaddr (
   UNIQUE(agent_id, iface, address)
 );
 
+-- Processi in esecuzione (syscollector/{id}/processes). Snapshot ultima scansione:
+-- DELETE+INSERT per agent_id ad ogni sync (PID si ricicla, niente storico utile).
+-- Volume tipico Windows: ~150-250 righe per agent.
+CREATE TABLE IF NOT EXISTS wazuh_process (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL REFERENCES wazuh_agent(agent_id) ON DELETE CASCADE,
+  pid INTEGER NOT NULL,
+  ppid INTEGER,
+  name TEXT,
+  cmd TEXT,                              -- comando completo con path
+  argvs TEXT,                            -- argomenti
+  vm_size INTEGER,                       -- virtual memory KB
+  resident_size INTEGER,                 -- resident size (campo 'size')
+  priority INTEGER,
+  nlwp INTEGER,                          -- num threads
+  start_time INTEGER,                    -- unix epoch
+  utime INTEGER,
+  stime INTEGER,
+  scan_time TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(agent_id, pid)
+);
+
+-- Servizi (syscollector/{id}/services). Wazuh ≥ 4.13. Snapshot.
+-- Su Windows ~150-300 servizi, su Linux ~30-80 unit systemd.
+CREATE TABLE IF NOT EXISTS wazuh_service (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL REFERENCES wazuh_agent(agent_id) ON DELETE CASCADE,
+  service_id TEXT NOT NULL,              -- nome servizio (es. "Dnscache", "ssh.service")
+  enabled TEXT,                          -- "true"/"false"/" " (Wazuh raw)
+  start_type TEXT,                       -- auto|manual|disabled|boot|system
+  service_type TEXT,                     -- own|share|kernel_driver|...
+  exit_code INTEGER,
+  process_pid INTEGER,
+  process_executable TEXT,
+  process_args TEXT,
+  scan_time TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(agent_id, service_id)
+);
+
+-- Routing/protocol config (syscollector/{id}/netproto). Tipicamente 2-3 righe per agent.
+CREATE TABLE IF NOT EXISTS wazuh_netproto (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL REFERENCES wazuh_agent(agent_id) ON DELETE CASCADE,
+  iface TEXT,
+  type TEXT,                             -- ipv4|ipv6
+  gateway TEXT,
+  dhcp TEXT,                             -- enabled|disabled|unknown
+  metric TEXT,
+  scan_time TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(agent_id, iface, type)
+);
+
 -- ───────────────────────────────────────────────────────────────────────────
 -- Integrazione Scanner-Edge (DA-Vul-can) — singleton applicativo per tenant.
 -- DA-IPAM consuma /api/v1/cve dello scanner-edge sulla stessa LAN cliente,
@@ -1195,6 +1250,11 @@ CREATE INDEX IF NOT EXISTS idx_wazuh_hotfix_agent ON wazuh_hotfix(agent_id);
 CREATE INDEX IF NOT EXISTS idx_wazuh_netiface_agent ON wazuh_netiface(agent_id);
 CREATE INDEX IF NOT EXISTS idx_wazuh_netaddr_agent ON wazuh_netaddr(agent_id);
 CREATE INDEX IF NOT EXISTS idx_wazuh_netaddr_address ON wazuh_netaddr(address);
+CREATE INDEX IF NOT EXISTS idx_wazuh_process_agent ON wazuh_process(agent_id);
+CREATE INDEX IF NOT EXISTS idx_wazuh_process_name ON wazuh_process(name);
+CREATE INDEX IF NOT EXISTS idx_wazuh_service_agent ON wazuh_service(agent_id);
+CREATE INDEX IF NOT EXISTS idx_wazuh_service_enabled ON wazuh_service(agent_id, enabled);
+CREATE INDEX IF NOT EXISTS idx_wazuh_netproto_agent ON wazuh_netproto(agent_id);
 
 -- Vulnerability findings (scanner-edge integration)
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_host ON vuln_findings(host_id, scanned_at DESC);

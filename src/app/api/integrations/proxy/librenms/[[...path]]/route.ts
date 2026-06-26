@@ -1,24 +1,46 @@
 /**
- * Reverse proxy verso LibreNMS.
- *
- * Espone l'UI LibreNMS sotto `/api/integrations/proxy/librenms/*` rimuovendo
- * `X-Frame-Options` e `Content-Security-Policy`, così che l'iframe della
- * pagina "Integrazioni" possa caricarla anche quando LibreNMS la blocca
- * tramite la sua configurazione di default (`frame_options = "DENY"`).
- *
- * Autenticazione: usiamo le credenziali sessione che LibreNMS già accetta
- * (cookie). Per le richieste API che richiedono `X-Auth-Token` il client
- * dovrebbe usarle direttamente; qui non iniettiamo token globali per non
- * disturbare il flusso di login web.
+ * Reverse proxy verso LibreNMS con SSO DA-IPAM.
  */
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
-import { proxyRequest } from "@/lib/integrations/reverse-proxy";
+import {
+  attachLibreNMSCookiesToResponse,
+  librenmsAutologinEnabled,
+  librenmsAutologinCookieHeader,
+  librenmsProxyHostHeader,
+  withLibreNMSAutologin,
+} from "@/lib/integrations/librenms-proxy-auth";
+import { proxyRequest, type ReverseProxyOptions } from "@/lib/integrations/reverse-proxy";
+import type { ComponentConfig } from "@/lib/integrations/types";
 
 const BASE_PATH = "/api/integrations/proxy/librenms";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+function librenmsHtmlRewriteHosts(cfg: ComponentConfig): string[] {
+  const hosts: string[] = [];
+  for (const raw of [cfg.uiUrl, process.env.LIBRENMS_UI_URL]) {
+    if (!raw?.trim()) continue;
+    try {
+      hosts.push(new URL(raw.trim()).host);
+    } catch {
+      /* skip */
+    }
+  }
+  return hosts;
+}
+
+function librenmsProxyOpts(cfg: ComponentConfig, hostHeader?: string): ReverseProxyOptions {
+  return {
+    upstreamOrigin: cfg.url.replace(/\/+$/, ""),
+    basePath: BASE_PATH,
+    insecureTls: true,
+    timeoutMs: 30_000,
+    extraRequestHeaders: hostHeader ? { Host: hostHeader } : undefined,
+    extraHtmlRewriteHosts: librenmsHtmlRewriteHosts(cfg),
+  };
+}
 
 async function handle(req: Request): Promise<Response> {
   const authCheck = await requireAuth();
@@ -29,15 +51,45 @@ async function handle(req: Request): Promise<Response> {
     return new Response("LibreNMS non configurato", { status: 404 });
   }
 
-  return proxyRequest(req, {
-    upstreamOrigin: cfg.url.replace(/\/+$/, ""),
-    basePath: BASE_PATH,
-    // LibreNMS è solitamente HTTP locale; lasciamo che la lib gestisca
-    // automaticamente il flag in base allo schema. Se l'utente ha messo
-    // https self-signed nel campo URL, lo accettiamo comunque.
-    insecureTls: true,
-    timeoutMs: 30_000,
-  });
+  const sso = librenmsAutologinEnabled();
+  let autologinCookies: string | null = null;
+
+  if (sso) {
+    autologinCookies = await librenmsAutologinCookieHeader();
+    if (!autologinCookies) {
+      return new Response(
+        "SSO LibreNMS non disponibile — verifica integration_librenms_admin_password",
+        { status: 502, headers: { "content-type": "text/plain; charset=utf-8" } },
+      );
+    }
+  }
+
+  const proxiedReq = autologinCookies
+    ? await withLibreNMSAutologin(req, autologinCookies)
+    : req;
+  const hostHeader = librenmsProxyHostHeader();
+  const proxyOpts = librenmsProxyOpts(cfg, hostHeader);
+
+  let resp = await proxyRequest(proxiedReq, proxyOpts);
+
+  // Login page dopo autologin → redirect alla home proxy con cookie impostati.
+  const reqPath = new URL(req.url).pathname;
+  if (
+    autologinCookies &&
+    (reqPath.endsWith("/login") || resp.headers.get("location")?.includes("/login"))
+  ) {
+    const overviewReq = new Request(
+      new URL(`${BASE_PATH}/`, req.url),
+      { method: "GET", headers: proxiedReq.headers },
+    );
+    resp = await proxyRequest(overviewReq, proxyOpts);
+  }
+
+  if (autologinCookies) {
+    return attachLibreNMSCookiesToResponse(resp, autologinCookies, BASE_PATH);
+  }
+
+  return resp;
 }
 
 export { handle as GET, handle as POST, handle as PUT, handle as PATCH, handle as DELETE, handle as HEAD, handle as OPTIONS };

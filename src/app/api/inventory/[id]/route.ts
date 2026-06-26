@@ -35,6 +35,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   return withTenantFromSession(async () => {
+    // requireAdmin: PATCH muta l'asset inventario (coerente col DELETE sotto).
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
     try {
       const { id } = await params;
       const asset = getInventoryAssetById(Number(id));

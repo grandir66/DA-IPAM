@@ -30,6 +30,10 @@ interface UpdateInfo {
   lastCheck: string;
   changelog?: string[];
   error?: string;
+  updateSupported?: boolean;
+  deployMode?: "container" | "systemd";
+  configuredBranch?: string;
+  gitBranch?: string | null;
 }
 
 interface ChannelStatus {
@@ -248,7 +252,7 @@ export function UpdatesTab() {
           {info?.error && (
             <p className="text-sm text-destructive mt-3">{info.error}</p>
           )}
-          {info?.updateAvailable && !driftDetected && (
+          {info?.updateAvailable && !driftDetected && info.updateSupported !== false && (
             <div className="mt-4 flex items-center gap-3 pt-3 border-t">
               <Badge className="bg-orange-500 text-white">
                 <ArrowUpCircle className="h-3 w-3 mr-1" />
@@ -272,6 +276,16 @@ export function UpdatesTab() {
             <p className="mt-3 text-sm text-green-700 dark:text-green-400 flex items-center gap-1.5">
               <CheckCircle2 className="h-4 w-4" />
               Appliance allineata al canale.
+            </p>
+          )}
+          {info?.deployMode === "container" && info.updateSupported === false && (
+            <p className="mt-3 text-sm text-amber-800 dark:text-amber-300 border border-amber-500/30 rounded-md p-3">
+              Modalità <strong>Docker</strong>: l&apos;aggiornamento automatico da UI non è disponibile
+              (nessun repository git nel container). Canale configurato:{" "}
+              <code className="text-xs">{info.configuredBranch ?? "main"}</code>.
+              Sul host VM esegui{" "}
+              <code className="text-xs">sudo bash scripts/appliance-systemd-install.sh</code>{" "}
+              per passare a systemd+git con auto-update ogni 15 min (un solo codice da GitHub).
             </p>
           )}
         </CardContent>

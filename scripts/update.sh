@@ -17,6 +17,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 APP_DIR="${DA_INVENT_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 cd "$APP_DIR"
 
+# Canale da .env.local se DA_INVENT_BRANCH non è in ambiente (update manuale via SSH).
+if [ -z "${DA_INVENT_BRANCH:-}" ] && [ -f "$APP_DIR/.env.local" ]; then
+  DA_INVENT_BRANCH="$(grep -E '^[[:space:]]*DA_INVENT_BRANCH=' "$APP_DIR/.env.local" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"'" | tr -d '[:space:]')"
+  export DA_INVENT_BRANCH
+fi
+
 echo "=== DA-INVENT Update ==="
 echo "Directory: $APP_DIR"
 echo ""
@@ -73,7 +79,7 @@ if [ -n "$DIRTY" ]; then
   echo ">>> Modifiche locali rilevate: stash automatico 'autoupdate-$STAMP'"
   echo ">>> File interessati:"
   git status --porcelain | sed 's/^/    /' | head -20
-  git stash push -u -m "autoupdate-$STAMP" || {
+  git stash push -u -m "autoupdate-$STAMP" -- . ':!data' ':!data/**' ':!data.wrong-*' ':!data.wrong-*/**' || {
     echo "Errore: stash fallito. Pulisci manualmente: 'git status' e 'git restore' / 'rm'."
     exit 1
   }
@@ -90,10 +96,10 @@ git pull origin "$BRANCH"
 echo ">>> npm install --include=dev..."
 npm install --include=dev
 
-# Venv Python WinRM (stesso set di install.sh): aggiorna dopo git pull
-if [ -f "${HOME}/.da-invent-venv/bin/pip" ]; then
-  echo ">>> pip WinRM (venv ~/.da-invent-venv)..."
-  "${HOME}/.da-invent-venv/bin/pip" install -q -U pywinrm requests-ntlm requests-credssp gssapi 2>/dev/null || true
+# Venv Python WinRM/WMI/SSH (script canonico condiviso con install.sh)
+if [ -f "$APP_DIR/scripts/setup-winrm-venv.sh" ]; then
+  echo ">>> setup-winrm-venv..."
+  bash "$APP_DIR/scripts/setup-winrm-venv.sh"
 fi
 
 # Build
@@ -121,6 +127,18 @@ if [ "$RESTART" = true ]; then
   else
     echo ">>> Servizio da-invent non attivo, skip restart."
   fi
+fi
+
+if [ -f "$APP_DIR/scripts/verify-install.sh" ]; then
+  echo ">>> verify-install..."
+  VERIFY_ARGS=()
+  if systemctl is-active --quiet da-invent 2>/dev/null; then
+    PORT="$(grep -E '^PORT=' "$APP_DIR/.env.local" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+    VERIFY_ARGS=(--url "http://127.0.0.1:${PORT:-3001}")
+  fi
+  bash "$APP_DIR/scripts/verify-install.sh" "${VERIFY_ARGS[@]}" || {
+    echo "AVVISO: verify-install fallito — controllare scripts/setup-winrm-venv.sh" >&2
+  }
 fi
 
 # Mostra versione e commit (la versione è quella nel package.json dopo git pull = branch remoto)

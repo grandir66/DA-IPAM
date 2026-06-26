@@ -18,8 +18,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ListOrdered, Search, RefreshCw } from "lucide-react";
+import { ListOrdered, Search, RefreshCw, RadioTower } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import type { MacIpMapping } from "@/types";
 import type { Network } from "@/types";
 import { useClientTableSort } from "@/hooks/use-table-sort";
@@ -36,6 +37,7 @@ export default function ArpTablePage() {
   const [mappings, setMappings] = useState<MacIpMapping[]>([]);
   const [networks, setNetworks] = useState<Network[]>([]);
   const [loading, setLoading] = useState(true);
+  const [polling, setPolling] = useState(false);
   const [q, setQ] = useState("");
   const [networkId, setNetworkId] = useState<string>("");
   const [source, setSource] = useState<string>("");
@@ -59,6 +61,48 @@ export default function ArpTablePage() {
       setLoading(false);
     }
   }, [networkId, source, q]);
+
+  /**
+   * Forza il poll ARP/DHCP reale sul router: interroga il dispositivo via SSH/SNMP
+   * e ripopola arp_entries + dhcp_leases. Se è filtrata una rete specifica interroga
+   * solo quella; altrimenti tenta tutte le reti (le reti senza router vengono saltate).
+   * Diverso dal pulsante refresh, che ricarica solo i dati già in cache.
+   */
+  const forcePoll = useCallback(async () => {
+    setPolling(true);
+    const tId = toast.loading("Interrogo il router per ARP/DHCP…");
+    try {
+      const targets = networkId ? [Number(networkId)] : networks.map((n) => n.id);
+      if (targets.length === 0) {
+        toast.error("Nessuna rete disponibile", { id: tId });
+        return;
+      }
+      let ok = 0;
+      const errors: string[] = [];
+      for (const nid of targets) {
+        try {
+          const res = await fetch("/api/scans/trigger", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ network_id: nid, scan_type: "scan_enrich" }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data?.progress?.status !== "failed") ok++;
+          else if (data?.error) errors.push(data.error);
+        } catch {
+          errors.push("errore di rete");
+        }
+      }
+      if (ok > 0) {
+        toast.success(`Poll completato su ${ok}/${targets.length} reti`, { id: tId });
+      } else {
+        toast.error(`Poll fallito: ${errors[0] || "nessun router raggiungibile"}`, { id: tId });
+      }
+      await fetchData();
+    } finally {
+      setPolling(false);
+    }
+  }, [networkId, networks, fetchData]);
 
   useEffect(() => {
     fetch("/api/networks")
@@ -154,7 +198,17 @@ export default function ArpTablePage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="icon" onClick={fetchData} disabled={loading}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void forcePoll()}
+                disabled={polling || loading}
+                title="Interroga il router via SSH/SNMP e ripopola ARP/DHCP (più lento del semplice refresh)"
+              >
+                <RadioTower className={`h-4 w-4 mr-1.5 ${polling ? "animate-pulse" : ""}`} />
+                {polling ? "Poll…" : "Forza poll router"}
+              </Button>
+              <Button variant="outline" size="icon" onClick={fetchData} disabled={loading} title="Ricarica dati dalla cache">
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
             </div>

@@ -13,6 +13,8 @@ Group=root
 WorkingDirectory=/opt/da-invent
 Environment=NODE_ENV=production
 Environment=PORT=3001
+Environment=WINRM_PYTHON=/root/.da-invent-venv/bin/python3
+Environment=SSH_PYTHON=/root/.da-invent-venv/bin/python3
 EnvironmentFile=/opt/da-invent/.env.local
 ExecStart=/opt/da-invent/node_modules/.bin/tsx /opt/da-invent/server.ts
 Restart=on-failure

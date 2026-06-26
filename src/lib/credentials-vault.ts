@@ -353,6 +353,9 @@ export function listCredentialEvents(opts: { credentialId?: number; limit?: numb
 import { getSetting } from "./db-hub";
 import { getTenantDb } from "./db-tenant";
 import { getActiveTenants } from "./db-hub";
+import { isInternalIntegrationUrl } from "./integrations/public-url";
+import { resolveIntegrationBrowserUrl } from "./integrations/public-url-server";
+import { resolveLibreNMSOperatorUrl } from "./integrations/librenms-proxy-auth";
 
 /**
  * Importa le credenziali esistenti nel vault cifrato.
@@ -367,7 +370,22 @@ import { getActiveTenants } from "./db-hub";
  */
 export function syncFromLegacySettings(): { created: number; skipped: number } {
   const existing = listCredentials();
+  // v0.2.671: normalizza label per match cross-suffix (placeholder/API interna).
+  // Evita di creare "LibreNMS (API interna)" se esiste già "LibreNMS (placeholder)".
+  const normalizeLabel = (s: string): string =>
+    s
+      .toLowerCase()
+      .replace(/\s*\(placeholder\)\s*/gi, "")
+      .replace(/\s*\(api interna\)\s*/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
   const byKind = new Map(existing.map((c) => [`${c.kind}:${c.label}`, c]));
+  const byKindNormalized = new Set(
+    existing.map((c) => `${c.kind}|${normalizeLabel(c.label)}`),
+  );
+  const byKindAndUrl = new Set(
+    existing.filter((c) => c.url).map((c) => `${c.kind}|${(c.url ?? "").toLowerCase()}`),
+  );
   let created = 0;
   let skipped = 0;
 
@@ -377,21 +395,7 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
   //  2) port-based: 55000 (Wazuh API), 9200 (OpenSearch), 3001 (Next dev) sono
   //     porte API che NON servono UI HTML. 8080 può essere UI (scanner-edge)
   //     quindi NON è in lista. 443/80/altri suffissi /dashboard restano lanciabili.
-  const isInternalUrl = (u: string | undefined): boolean => {
-    if (!u) return false;
-    if (/^(https?:\/\/)?(librenms|graylog|loki|host\.docker\.internal|10\.255\.255\.|172\.|appliance-)/.test(u)) {
-      return true;
-    }
-    // Port heuristic (API-only ports)
-    const m = u.match(/:(\d+)(\/|$)/);
-    if (m) {
-      const port = parseInt(m[1], 10);
-      // Porte note solo-API: Wazuh Manager (55000), OpenSearch/Indexer (9200),
-      // Next.js dev (3001), Greenbone GMP (9390/9392)
-      if ([55000, 9200, 3001, 9390, 9392].includes(port)) return true;
-    }
-    return false;
-  };
+  const isInternalUrl = (u: string | undefined): boolean => isInternalIntegrationUrl(u);
 
   // Sintetizza URL Dashboard probabile da un URL API "https://host:55000" → "https://host/"
   // (Wazuh Dashboard è di solito su root path su 443/8443 dietro nginx).
@@ -424,6 +428,17 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
       skipped++;
       return;
     }
+    // Match cross-suffix: lo stesso kind con label normalizzato uguale
+    // (es. "LibreNMS" già presente come placeholder) → skip.
+    if (byKindNormalized.has(`${kind}|${normalizeLabel(finalLabel)}`)) {
+      skipped++;
+      return;
+    }
+    // Match stesso kind + stesso URL (anche con label diversi) → skip.
+    if (byKindAndUrl.has(`${kind}|${url.toLowerCase()}`)) {
+      skipped++;
+      return;
+    }
     if (!fields.password && !fields.api_token) {
       skipped++;
       return;
@@ -451,6 +466,30 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
       password: getSetting("integration_librenms_admin_password") ?? undefined,
     },
   );
+  const lnmsApi = getSetting("integration_librenms_url") ?? undefined;
+  const lnmsUi = resolveIntegrationBrowserUrl("librenms", lnmsApi);
+  const lnmsLaunch = lnmsUi ? resolveLibreNMSOperatorUrl(lnmsUi) : lnmsUi;
+  if (lnmsLaunch && lnmsUi) {
+    const uiNorm = lnmsUi.replace(/\/+$/, "");
+    for (const cred of existing) {
+      if (cred.kind !== "librenms" || !cred.url || cred.url === lnmsLaunch) continue;
+      const credNorm = cred.url.replace(/\/+$/, "");
+      if (credNorm === uiNorm || cred.url.startsWith(`${uiNorm}/`)) {
+        updateCredential(cred.id, { url: lnmsLaunch });
+      }
+    }
+    if (!byKind.has("librenms:LibreNMS Dashboard")) {
+      createCredential({
+        kind: "librenms",
+        label: "LibreNMS Dashboard",
+        url: lnmsLaunch,
+        username: "admin",
+        password: getSetting("integration_librenms_admin_password") ?? null,
+        notes: "UI nginx LAN (browser). L'URL API interno resta in Impostazioni → Moduli.",
+      });
+      created++;
+    }
+  }
 
   // Graylog (settings legacy plain-text)
   addOrInternalNote(

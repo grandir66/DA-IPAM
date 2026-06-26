@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   createNetworkDevice,
   getHostBasic,
+  getHostById,
   getNetworkDeviceByHost,
   getNetworkDeviceById,
   getCredentialCommunityString,
@@ -19,13 +20,16 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { inferNetworkDeviceVendorFromHostHint } from "@/lib/device-vendor-infer";
 import type { NetworkDevice } from "@/types";
 import {
-  getDefaultProductProfileForVendor,
   PRODUCT_PROFILE_IDS,
-  suggestDeviceTypeFromProductProfile,
+  suggestProductProfileForClassification,
+  resolveDeviceTypeForCreate,
+  resolveUseForArpPoll,
   vendorSubtypeFromProductProfile,
   scanTargetHintFromProductProfile,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
+import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
+import { isMacOsHost } from "@/lib/host-platform-detect";
 
 const productProfileEnum = z.enum(PRODUCT_PROFILE_IDS as unknown as [string, ...string[]]);
 
@@ -66,6 +70,10 @@ const BulkDeviceSchema = z.object({
   scan_target: z.enum(["proxmox", "vmware", "windows", "linux"]).optional().nullable(),
   product_profile: productProfileEnum.optional().nullable(),
   inherit_host_credentials: z.boolean().optional(),
+  use_for_arp_poll: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : v === true || v === 1 || v === "1" || v === "true" ? 1 : 0),
+    z.union([z.literal(0), z.literal(1)]).optional()
+  ),
 });
 
 /**
@@ -87,7 +95,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { host_ids, classification, vendor, protocol, credential_id, snmp_credential_id, port, scan_target, product_profile, inherit_host_credentials } =
+    const { host_ids, classification, vendor, protocol, credential_id, snmp_credential_id, port, scan_target, product_profile, inherit_host_credentials, use_for_arp_poll } =
       parsed.data;
 
     const hasCred = credential_id && credential_id > 0;
@@ -106,6 +114,19 @@ export async function POST(request: Request) {
      *  Prima SNMP forzava sempre "other" e l'UI non inviava vendor → Ubiquiti/Cisco persi. */
     function resolveVendorForHost(hostRow: NonNullable<ReturnType<typeof getHostBasic>>): NetworkDevice["vendor"] {
       if (vendor) return vendor;
+      const full = getHostById(hostRow.id);
+      if (
+        full &&
+        isMacOsHost({
+          os_info: full.os_info,
+          inferred_os_family: full.inferred_os_family,
+          device_manufacturer: full.device_manufacturer,
+          model: full.model,
+          vendor: full.vendor,
+        })
+      ) {
+        return "apple";
+      }
       const fromHost = inferNetworkDeviceVendorFromHostHint(hostRow.vendor ?? hostRow.device_manufacturer);
       if (fromHost) return fromHost;
       if (protocol === "winrm") return "windows";
@@ -132,8 +153,17 @@ export async function POST(request: Request) {
 
       const name = host.custom_name || host.hostname || host.ip;
       const deviceVendor = resolveVendorForHost(host);
-      const profileId = (product_profile ?? getDefaultProductProfileForVendor(deviceVendor)) as ProductProfileId;
-      const deviceType = suggestDeviceTypeFromProductProfile(profileId);
+      const profileId = suggestProductProfileForClassification(deviceVendor, classification, product_profile) as ProductProfileId;
+      const deviceType = resolveDeviceTypeForCreate({
+        product_profile: profileId,
+        classification,
+      });
+      const arpPoll = resolveUseForArpPoll({
+        use_for_arp_poll,
+        device_type: deviceType,
+        classification,
+        vendor: deviceVendor,
+      });
       const device = createNetworkDevice({
         name,
         host: host.ip,
@@ -154,6 +184,7 @@ export async function POST(request: Request) {
         classification,
         scan_target: scan_target ?? scanTargetHintFromProductProfile(profileId) ?? null,
         product_profile: profileId,
+        use_for_arp_poll: arpPoll,
       });
 
       created.push({ id: device.id, name: device.name, host: device.host });
@@ -190,6 +221,11 @@ export async function POST(request: Request) {
       }
 
       updateHost(host.id, { classification });
+      try {
+        linkInvAgentEndpointToHost(host.id);
+      } catch {
+        /* inventory agent opzionale */
+      }
       ensureInventoryAssetForNetworkDevice(device);
     }
 
@@ -217,6 +253,9 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   return withTenantFromSession(async () => {
+  // requireAdmin: bulk-update muta device/host (coerente col POST sopra).
+  const adminCheck = await requireAdmin();
+  if (isAuthError(adminCheck)) return adminCheck;
   try {
     const body = await request.json();
     const parsed = BulkUpdateSchema.safeParse(body);

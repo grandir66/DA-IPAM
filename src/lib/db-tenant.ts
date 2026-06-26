@@ -11,11 +11,13 @@
 
 import Database from "better-sqlite3";
 import path from "path";
+import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
+import { lookupVendorSync } from "./scanner/mac-vendor";
 import { sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
@@ -71,7 +73,7 @@ export function getCurrentTenantCode(): string | null {
 // TENANT DB CONNECTION CACHE (LRU)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const TENANTS_DIR = path.join(process.cwd(), "data", "tenants");
+const TENANTS_DIR = path.join(resolveDataDir(), "tenants");
 const MAX_OPEN_DBS = 20;
 const tenantDbs = new Map<string, { db: Database.Database; lastUsed: number }>();
 
@@ -170,6 +172,48 @@ export function getTenantDb(tenantCode: string): Database.Database {
       END
     ) VIRTUAL
   `;
+
+  /** Ricrea hosts senza os_family corrotta (double-quote legacy) — DROP COLUMN fallisce. */
+  function rebuildHostsOsFamilyLegacy(): boolean {
+    const hostsTableSql =
+      (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='hosts'").get() as
+        | { sql?: string }
+        | undefined)?.sql ?? "";
+    if (!hostsTableSql.includes('"Unknown"') && !hostsTableSql.includes('"Windows"')) {
+      return false;
+    }
+    const colRows = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: string | null;
+      pk: number;
+    }>;
+    const dataCols = colRows.filter((c) => c.name !== "os_family");
+    if (dataCols.length === 0) return false;
+
+    const colDefs = dataCols
+      .map((c) => {
+        if (c.name === "id" && c.pk === 1) {
+          return "id INTEGER PRIMARY KEY AUTOINCREMENT";
+        }
+        let sql = `"${c.name}" ${c.type || "TEXT"}`;
+        if (c.notnull && c.pk !== 1) sql += " NOT NULL";
+        return sql;
+      })
+      .join(", ");
+    const selectList = dataCols.map((c) => `"${c.name}"`).join(", ");
+
+    newDb.pragma("foreign_keys = OFF");
+    newDb.exec(`CREATE TABLE hosts__os_fix (${colDefs}, UNIQUE(network_id, ip))`);
+    newDb.exec(`INSERT INTO hosts__os_fix (${selectList}) SELECT ${selectList} FROM hosts`);
+    newDb.exec("DROP TABLE hosts");
+    newDb.exec("ALTER TABLE hosts__os_fix RENAME TO hosts");
+    newDb.exec(`ALTER TABLE hosts ADD COLUMN os_family TEXT ${OS_FAMILY_GENERATED_SQL.trim()}`);
+    newDb.pragma("foreign_keys = ON");
+    return true;
+  }
+
   try {
     // table_xinfo include anche le GENERATED VIRTUAL columns (table_info NO).
     const hostCols = newDb.prepare("PRAGMA table_xinfo(hosts)").all() as Array<{ name: string }>;
@@ -185,9 +229,9 @@ export function getTenantDb(tenantCode: string): Database.Database {
       const hostsTableSql = (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='hosts'").get() as { sql?: string } | undefined)?.sql ?? "";
       if (hostsTableSql.includes('"Unknown"') || hostsTableSql.includes('"Windows"')) {
         try {
-          newDb.exec("ALTER TABLE hosts DROP COLUMN os_family");
-          newDb.exec(`ALTER TABLE hosts ADD COLUMN os_family TEXT ${OS_FAMILY_GENERATED_SQL}`);
-          console.info(`[db-tenant] ${tenantCode}: hosts.os_family ricreata (fix double-quote legacy)`);
+          if (rebuildHostsOsFamilyLegacy()) {
+            console.info(`[db-tenant] ${tenantCode}: hosts.os_family ricreata (fix double-quote legacy, table rebuild)`);
+          }
         } catch (e) {
           console.warn(`[db-tenant] ${tenantCode}: fix double-quote os_family fallito:`, e);
         }
@@ -770,7 +814,8 @@ export function getTenantDb(tenantCode: string): Database.Database {
                     THEN 'Service restart durante esecuzione: job non ripreso al riavvio. Ricrea l''operazione.'
                     ELSE '' END
          WHERE status IN ('queued', 'running')
-           AND (started_at IS NULL OR started_at < datetime('now', '-10 minutes'))`
+           AND (started_at IS NULL OR
+                substr(replace(replace(started_at,'T',' '),'Z',''),1,19) < datetime('now', '-10 minutes'))`
       ).run() as { changes: number };
       if (r.changes > 0) {
         console.info(`[db-tenant] ${tenantCode}: patch_operations recovery — ${r.changes} job orfani segnati failed`);
@@ -778,6 +823,31 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.warn(`[db-tenant] ${tenantCode}: patch_operations recovery fallito:`, e);
+  }
+
+  // Watchdog software_scans (fix R3 2026-06-23): come patch_operations, uno scan
+  // software interrotto da un restart del processo restava 'running' per sempre
+  // (nessun try/finally nel runner) → UI in-progress perenne, re-scan bloccato.
+  try {
+    const hasTable = newDb.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='software_scans'"
+    ).get();
+    if (hasTable) {
+      // NB: il CHECK di software_scans.status ammette solo
+      // running/ok/error/timeout/cancelled → usiamo 'error' (non 'failed').
+      const r = newDb.prepare(
+        `UPDATE software_scans
+         SET status = 'error',
+             finished_at = datetime('now')
+         WHERE status = 'running'
+           AND substr(replace(replace(started_at,'T',' '),'Z',''),1,19) < datetime('now', '-10 minutes')`
+      ).run() as { changes: number };
+      if (r.changes > 0) {
+        console.info(`[db-tenant] ${tenantCode}: software_scans recovery — ${r.changes} scan orfani segnati failed`);
+      }
+    }
+  } catch (e) {
+    console.warn(`[db-tenant] ${tenantCode}: software_scans recovery fallito:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -1319,10 +1389,20 @@ export function getKnownHosts(networkId?: number | null): Host[] {
   return db().prepare("SELECT * FROM hosts WHERE known_host = 1").all() as Host[];
 }
 
-export function getHostByMac(mac: string): Host | undefined {
+export function getHostByMac(mac: string, preferIp?: string): Host | undefined {
   const hex = macToHex(mac);
   if (hex.length < 12) return undefined;
-  return db().prepare(`SELECT * FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1`).get(hex) as Host | undefined;
+  // MAC NON è unique in hosts (multi-homed / VRRP-HSRP / VM clone): un LIMIT 1
+  // senza ORDER BY restituiva una riga ARBITRARIA → Wazuh attribuiva CVE/software
+  // all'host sbagliato (fix B4 2026-06-23). Disambigua con l'IP se fornito,
+  // altrimenti ritorna il match deterministico (id minore).
+  const rows = db().prepare(`SELECT * FROM hosts WHERE ${MAC_HEX("mac")} = ? ORDER BY id`).all(hex) as Host[];
+  if (rows.length <= 1) return rows[0];
+  if (preferIp) {
+    const exact = rows.find((r) => r.ip === preferIp);
+    if (exact) return exact;
+  }
+  return rows[0];
 }
 
 export function resolveMacToNetworkDevice(mac: string, excludeDeviceId?: number): { device_id: number; device_name: string; device_type: string } | null {
@@ -1406,12 +1486,16 @@ export function getHostById(id: number): HostDetail | undefined {
     ORDER BY ae.timestamp DESC LIMIT 1
   `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; last_query: string } | undefined : undefined;
 
+  // Tie-breaker MAX(rowid), NON timestamp (fix D1 2026-06-23): (mac,timestamp)
+  // non è unique e datetime('now') ha risoluzione 1s → lo stesso MAC su più
+  // switch nello stesso scan dava una porta ARBITRARIA che cambiava a ogni
+  // refresh (es. porta trunk del core invece dell'access). rowid è monotono.
   const switchPort = host.mac ? db().prepare(`
     SELECT nd.name as device_name, nd.vendor as device_vendor, mpe.port_name, mpe.vlan
     FROM mac_port_entries mpe
     JOIN network_devices nd ON nd.id = mpe.device_id
     WHERE ${MAC_HEX("mpe.mac")} = ? AND nd.device_type = 'switch'
-    ORDER BY mpe.timestamp DESC LIMIT 1
+    ORDER BY mpe.rowid DESC LIMIT 1
   `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; port_name: string; vlan: number | null } | undefined : undefined;
 
   // F4: prefer FK lookup (network_devices.host_id) over fragile IP string match;
@@ -1514,7 +1598,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     }
     if (input.vendor !== undefined) { fields.push("vendor = ?"); values.push(input.vendor); }
     if (input.hostname !== undefined) {
-      const HOSTNAME_PRIORITY: Record<string, number> = { manual: 6, dhcp: 5, snmp: 4, nmap: 3, dns: 2, arp: 1 };
+      const HOSTNAME_PRIORITY: Record<string, number> = { manual: 6, dhcp: 5, glpi_agent: 5, snmp: 4, nmap: 3, dns: 2, arp: 1 };
       const existingSource = (db().prepare("SELECT hostname_source FROM hosts WHERE id = ?").get(existing.id) as { hostname_source?: string })?.hostname_source;
       const newPriority = HOSTNAME_PRIORITY[input.hostname_source ?? ""] ?? 0;
       const oldPriority = HOSTNAME_PRIORITY[existingSource ?? ""] ?? 0;
@@ -2137,7 +2221,15 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     (input as { classification?: string | null }).classification ?? null,
     (input as { scan_target?: string | null }).scan_target ?? null,
     (input as { product_profile?: string | null }).product_profile ?? null,
-    (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === 1 || (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll === true ? 1 : 0,
+    // use_for_arp_poll: rispetta il flag esplicito se fornito; altrimenti default
+    // by-type (router/firewall/stormshield → 1). Evita il trap "router creato da un
+    // percorso che non setta il flag → ARP poll mai eseguito" (incident 2026-06-20).
+    ((): number => {
+      const f = (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll;
+      if (f === 1 || f === true) return 1;
+      if (f === 0 || f === false) return 0;
+      return input.device_type === "router" || input.device_type === "firewall" || input.vendor === "stormshield" ? 1 : 0;
+    })(),
     hostId
   );
   return db().prepare("SELECT * FROM network_devices WHERE id = ?").get(result.lastInsertRowid) as NetworkDevice;
@@ -3046,6 +3138,31 @@ export function upsertArpEntries(
       stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name);
       if (entry.ip && entry.mac) {
         const networkId = getNetworkIdForIp?.(entry.ip) ?? null;
+        // Propaga il MAC all'host ESISTENTE per quell'IP (by-IP, non by-MAC):
+        // l'ARP table del gateway è autoritativa sul MAC. Senza questo, un host
+        // creato dal discovery nmap SENZA MAC restava a mac=NULL anche se il
+        // gateway ne conosce il MAC (incident 2026-06-21: 20/29 host senza MAC
+        // pur essendo in arp_entries). Aggiorna solo se l'host esiste già e ha
+        // MAC mancante/diverso. NON crea host (resta fonte passiva).
+        if (networkId != null) {
+          const normMac = normalizeMacForStorage(entry.mac);
+          if (normMac) {
+            d.prepare(
+              `UPDATE hosts SET mac = ?, updated_at = datetime('now')
+               WHERE network_id = ? AND ip = ? AND (mac IS NULL OR mac = '' OR mac != ?)`
+            ).run(normMac, networkId, entry.ip, normMac);
+            // Propaga anche il VENDOR (OUI) by-IP se l'host esiste e non ne ha uno.
+            // Stesso incident MAC 2026-06-21: gli host popolati col MAC ma senza
+            // vendor (updateHostIfExists non li aggiornava) restavano senza marca.
+            const vnd = lookupVendorSync(normMac);
+            if (vnd) {
+              d.prepare(
+                `UPDATE hosts SET vendor = ?, updated_at = datetime('now')
+                 WHERE network_id = ? AND ip = ? AND (vendor IS NULL OR vendor = '')`
+              ).run(vnd, networkId, entry.ip);
+            }
+          }
+        }
         try {
           upsertMacIpMapping({
             mac: entry.mac,
@@ -3335,8 +3452,12 @@ export function upsertNeighbors(
 ): void {
   const d = db();
   const del = d.prepare("DELETE FROM device_neighbors WHERE device_id = ?");
+  // OR IGNORE: lo stesso batch LLDP/CDP può contenere due vicini con identica
+  // chiave (device_id, local_port, remote_device_name, remote_port) — es. doppio
+  // annuncio CDP/LLDP sulla stessa porta. Senza OR IGNORE il 2° INSERT lancia
+  // UNIQUE constraint e interrompe la persistenza dei vicini del device.
   const ins = d.prepare(`
-    INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform)
+    INSERT OR IGNORE INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   d.transaction(() => {
@@ -4661,7 +4782,7 @@ export function getAdComputersPaginated(integrationId: number, page: number, pag
   let whereClause = "WHERE integration_id = ?";
   const params: unknown[] = [integrationId];
   if (search?.trim()) { whereClause += " AND (sam_account_name LIKE ? OR dns_host_name LIKE ? OR display_name LIKE ? OR operating_system LIKE ?)"; const s = `%${search.trim()}%`; params.push(s, s, s, s); }
-  if (activeDays && activeDays > 0) { whereClause += ` AND last_logon_at IS NOT NULL AND last_logon_at >= datetime('now', '-${activeDays} days')`; }
+  if (activeDays && activeDays > 0) { whereClause += ` AND last_logon_at IS NOT NULL AND substr(replace(replace(last_logon_at,'T',' '),'Z',''),1,19) >= datetime('now', '-${activeDays} days')`; }
   const total = (db().prepare(`SELECT COUNT(*) as c FROM ad_computers ${whereClause}`).get(...params) as { c: number }).c;
   const rows = db().prepare(`SELECT * FROM ad_computers ${whereClause} ORDER BY sam_account_name LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdComputer[];
   return { rows, total };
@@ -4937,7 +5058,7 @@ export function getAdUsersPaginated(integrationId: number, page: number, pageSiz
   let whereClause = "WHERE integration_id = ?";
   const params: unknown[] = [integrationId];
   if (search?.trim()) { whereClause += " AND (sam_account_name LIKE ? OR user_principal_name LIKE ? OR display_name LIKE ? OR email LIKE ? OR department LIKE ?)"; const s = `%${search.trim()}%`; params.push(s, s, s, s, s); }
-  if (activeDays && activeDays > 0) { whereClause += ` AND last_logon_at IS NOT NULL AND last_logon_at >= datetime('now', '-${activeDays} days')`; }
+  if (activeDays && activeDays > 0) { whereClause += ` AND last_logon_at IS NOT NULL AND substr(replace(replace(last_logon_at,'T',' '),'Z',''),1,19) >= datetime('now', '-${activeDays} days')`; }
   const total = (db().prepare(`SELECT COUNT(*) as c FROM ad_users ${whereClause}`).get(...params) as { c: number }).c;
   const rows = db().prepare(`SELECT * FROM ad_users ${whereClause} ORDER BY sam_account_name LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdUser[];
   return { rows, total };
@@ -5800,7 +5921,7 @@ export interface AggregatedVulnResult {
   severity_rollup: { Critical: number; High: number; Medium: number; Low: number };
 }
 
-export type SoftwareSource = "Wazuh" | "Probe";
+export type SoftwareSource = "Wazuh" | "Probe" | "Agent";
 
 export interface AggregatedSoftwareHostRef {
   host_id: number;
@@ -6206,6 +6327,56 @@ function softwareKeyOf(name: string): string {
   return name.toLowerCase();
 }
 
+function invAgentSoftwareTableExists(): boolean {
+  const row = db()
+    .prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'inv_agent_software'")
+    .get() as { ok: number } | undefined;
+  return row?.ok === 1;
+}
+
+function fetchInvAgentSoftwareRows(
+  osActive: boolean,
+  osList: OsFamily[],
+): Array<{
+  name: string;
+  version: string | null;
+  publisher: string | null;
+  host_id: number;
+  ip: string;
+  install_date: string | null;
+  scanned_at: string | null;
+  source: SoftwareSource;
+}> {
+  if (!invAgentSoftwareTableExists()) return [];
+  const osPlaceholders = osList.map(() => "?").join(",");
+  const agentOsClause = osActive ? `AND h.os_family IN (${osPlaceholders})` : "";
+  return db()
+    .prepare(
+      `SELECT sw.name, sw.version, sw.publisher,
+              e.host_id, COALESCE(h.ip, e.primary_ip, '') AS ip,
+              sw.install_date,
+              r.received_at AS scanned_at,
+              'Agent' AS source
+         FROM inv_agent_software sw
+         JOIN inv_agent_report r ON r.id = sw.report_id
+         JOIN inv_agent_endpoint e ON e.device_id = r.device_id AND e.last_report_id = r.id
+         JOIN hosts h ON h.id = e.host_id
+        WHERE e.host_id IS NOT NULL
+          AND sw.name IS NOT NULL AND TRIM(sw.name) != ''
+          ${agentOsClause}`,
+    )
+    .all(...(osActive ? osList : [])) as Array<{
+      name: string;
+      version: string | null;
+      publisher: string | null;
+      host_id: number;
+      ip: string;
+      install_date: string | null;
+      scanned_at: string | null;
+      source: SoftwareSource;
+    }>;
+}
+
 export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedSoftwareResult {
   // Filtro OS via SQL nativo (indice idx_hosts_os_family). Quando attivo:
   // - wazuh: aggiunge JOIN hosts h ON h.id = a.host_id AND h.os_family IN (...)
@@ -6272,9 +6443,12 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
       scanned_at: string | null; source: SoftwareSource;
     }>;
 
+  const agentRows = fetchInvAgentSoftwareRows(osActive, osList);
+
   const all: RawSoftwareRow[] = [
     ...wazuhRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
     ...probeRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
+    ...agentRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
   ];
 
   interface AggInternal extends AggregatedSoftware {
@@ -6303,7 +6477,7 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
     }
     if (!entry.sources.includes(r.source)) entry.sources.push(r.source);
     if (r.publisher) {
-      if (r.source === "Probe") entry.publisher = r.publisher;
+      if (r.source === "Probe" || r.source === "Agent") entry.publisher = r.publisher;
       else if (!entry.publisher && r.source === "Wazuh") entry.publisher = r.publisher;
     }
     if (r.scanned_at && (!entry.latest_seen_at || r.scanned_at > entry.latest_seen_at)) {
@@ -6328,7 +6502,9 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
         entry._hostMap.set(r.host_id, h);
       }
       h.sources.add(r.source);
-      if (r.publisher && (!h.publisher || r.source === "Probe")) h.publisher = r.publisher;
+      if (r.publisher && (!h.publisher || r.source === "Probe" || r.source === "Agent")) {
+        h.publisher = r.publisher;
+      }
       if (r.install_date && !h.install_date) h.install_date = r.install_date;
       if (r.scanned_at && (!h.scanned_at || r.scanned_at > h.scanned_at)) h.scanned_at = r.scanned_at;
       if (r.ip && !h.ip) h.ip = r.ip;
@@ -6534,7 +6710,28 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
       install_date: string | null; scanned_at: string | null; version: string | null; source: SoftwareSource;
     }>;
 
-  const merged = [...wazuhRows, ...probeRows];
+  let agentRows: typeof wazuhRows = [];
+  if (invAgentSoftwareTableExists()) {
+    agentRows = db()
+      .prepare(
+        `SELECT e.host_id, COALESCE(h.ip, e.primary_ip, '') AS ip,
+                sw.publisher,
+                sw.install_date,
+                r.received_at AS scanned_at,
+                sw.version AS version,
+                'Agent' AS source
+           FROM inv_agent_software sw
+           JOIN inv_agent_report r ON r.id = sw.report_id
+           JOIN inv_agent_endpoint e ON e.device_id = r.device_id AND e.last_report_id = r.id
+           JOIN hosts h ON h.id = e.host_id
+          WHERE e.host_id IS NOT NULL
+            AND LOWER(sw.name) = ?
+          LIMIT ?`,
+      )
+      .all(nameLower, limit) as typeof wazuhRows;
+  }
+
+  const merged = [...wazuhRows, ...probeRows, ...agentRows];
   const ids = [...new Set(merged.map((r) => r.host_id))];
   const meta = loadHostsMeta(ids);
 
@@ -6561,7 +6758,9 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
       byHostVer.set(k, h);
     }
     if (!h.sources.includes(r.source)) h.sources.push(r.source);
-    if (r.publisher && (!h.publisher || r.source === "Probe")) h.publisher = r.publisher;
+    if (r.publisher && (!h.publisher || r.source === "Probe" || r.source === "Agent")) {
+      h.publisher = r.publisher;
+    }
     if (r.install_date && !h.install_date) h.install_date = r.install_date;
     if (r.scanned_at && (!h.scanned_at || r.scanned_at > h.scanned_at)) h.scanned_at = r.scanned_at;
   }

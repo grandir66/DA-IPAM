@@ -10,8 +10,13 @@ import {
   dropPatchModuleSchema,
   patchModuleTablesExist,
 } from "@/lib/patch/schema";
+import {
+  dropInventoryAgentSchema,
+  INVENTORY_AGENT_TABLES,
+} from "@/lib/inventory-agent/schema";
+import { uninstallInventoryAgentFeature } from "@/lib/inventory-agent/feature";
 
-const ALLOWED_FEATURES = new Set<string>(["patch_management"]);
+const ALLOWED_FEATURES = new Set<string>(["patch_management", "inventory_agent"]);
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -61,13 +66,20 @@ export async function POST(
       let dataDropped = false;
       if (dropData) {
         const tenantDb = getTenantDb(tenantCode);
-        if (patchModuleTablesExist(tenantDb)) {
+        if (key === "patch_management" && patchModuleTablesExist(tenantDb)) {
           const dropResult = dropPatchModuleSchema(tenantDb);
           dataDropped = dropResult.tablesDropped.length > 0;
+        } else if (key === "inventory_agent") {
+          dropInventoryAgentSchema(tenantDb);
+          dataDropped = INVENTORY_AGENT_TABLES.length > 0;
         }
       }
 
-      setFeatureDisabled(tenantCode, key);
+      if (key === "inventory_agent") {
+        uninstallInventoryAgentFeature(tenantCode);
+      } else {
+        setFeatureDisabled(tenantCode, key);
+      }
       invalidateFeatureCache(tenantCode, key);
 
       const payload: UninstallResponse = {

@@ -133,6 +133,30 @@ function TechnicalDataCard({ data }: { data: string }) {
   );
 }
 
+// Mapping asset → form, riusato all'init e dopo "Sync da discovery" (fix UI#4
+// 2026-06-23): prima il sync aggiornava solo `asset`, non `form` → i campi negli
+// input restavano vecchi e il Save successivo sovrascriveva i dati appena sincronizzati.
+function assetToForm(data: InventoryAsset): Partial<InventoryAssetInput> {
+  return {
+    asset_tag: data.asset_tag, serial_number: data.serial_number, hostname: data.hostname,
+    nome_prodotto: data.nome_prodotto, categoria: data.categoria, marca: data.marca,
+    modello: data.modello, sede: data.sede, reparto: data.reparto,
+    asset_assignee_id: data.asset_assignee_id, location_id: data.location_id,
+    in_scope_gdpr: data.in_scope_gdpr, in_scope_nis2: data.in_scope_nis2,
+    classificazione_dati: data.classificazione_dati, ultimo_audit: data.ultimo_audit,
+    posizione_fisica: data.posizione_fisica, stato: data.stato, data_acquisto: data.data_acquisto,
+    data_installazione: data.data_installazione, data_dismissione: data.data_dismissione,
+    fine_garanzia: data.fine_garanzia, fine_supporto: data.fine_supporto,
+    firmware_version: data.firmware_version, sistema_operativo: data.sistema_operativo,
+    versione_os: data.versione_os, vlan: data.vlan, cpu: data.cpu, ram_gb: data.ram_gb,
+    storage_gb: data.storage_gb, storage_tipo: data.storage_tipo, mac_address: data.mac_address,
+    ip_address: data.ip_address, crittografia_disco: data.crittografia_disco, antivirus: data.antivirus,
+    gestito_da_mdr: data.gestito_da_mdr, prezzo_acquisto: data.prezzo_acquisto, fornitore: data.fornitore,
+    contratto_supporto: data.contratto_supporto, contatto_supporto: data.contatto_supporto,
+    note_tecniche: data.note_tecniche,
+  };
+}
+
 export default function InventoryAssetPage() {
   const params = useParams();
   const id = params.id as string;
@@ -166,48 +190,7 @@ export default function InventoryAssetPage() {
       .then((data) => {
         setAsset(data);
         if (data) {
-          setForm({
-            asset_tag: data.asset_tag,
-            serial_number: data.serial_number,
-            hostname: data.hostname,
-            nome_prodotto: data.nome_prodotto,
-            categoria: data.categoria,
-            marca: data.marca,
-            modello: data.modello,
-            sede: data.sede,
-            reparto: data.reparto,
-            asset_assignee_id: data.asset_assignee_id,
-            location_id: data.location_id,
-            in_scope_gdpr: data.in_scope_gdpr,
-            in_scope_nis2: data.in_scope_nis2,
-            classificazione_dati: data.classificazione_dati,
-            ultimo_audit: data.ultimo_audit,
-            posizione_fisica: data.posizione_fisica,
-            stato: data.stato,
-            data_acquisto: data.data_acquisto,
-            data_installazione: data.data_installazione,
-            data_dismissione: data.data_dismissione,
-            fine_garanzia: data.fine_garanzia,
-            fine_supporto: data.fine_supporto,
-            firmware_version: data.firmware_version,
-            sistema_operativo: data.sistema_operativo,
-            versione_os: data.versione_os,
-            vlan: data.vlan,
-            cpu: data.cpu,
-            ram_gb: data.ram_gb,
-            storage_gb: data.storage_gb,
-            storage_tipo: data.storage_tipo,
-            mac_address: data.mac_address,
-            ip_address: data.ip_address,
-            crittografia_disco: data.crittografia_disco,
-            antivirus: data.antivirus,
-            gestito_da_mdr: data.gestito_da_mdr,
-            prezzo_acquisto: data.prezzo_acquisto,
-            fornitore: data.fornitore,
-            contratto_supporto: data.contratto_supporto,
-            contatto_supporto: data.contatto_supporto,
-            note_tecniche: data.note_tecniche,
-          });
+          setForm(assetToForm(data));
         }
       })
       .finally(() => setLoading(false));
@@ -236,6 +219,12 @@ export default function InventoryAssetPage() {
     if (!/^\d+$/.test(id)) return;
     fetch(`/api/inventory/${id}/licenses`).then((r) => r.ok ? r.json() : []).then(setAssetLicenses).catch(() => {});
   };
+  // Refetch del catalogo licenze (free_seats aggiornati) — fix UI#5 2026-06-23:
+  // assign/unassign aggiornavano solo le licenze dell'asset, non i posti liberi
+  // del catalogo → dropdown stale → rischio over-assignment / posti liberati nascosti.
+  const refreshLicenses = () => {
+    fetch("/api/licenses").then((r) => r.ok ? r.json() : []).then(setLicenses).catch(() => {});
+  };
 
   useEffect(() => {
     if (!/^\d+$/.test(id)) return;
@@ -254,6 +243,7 @@ export default function InventoryAssetPage() {
       if (res.ok) {
         toast.success("Licenza assegnata");
         refreshAssetLicenses();
+        refreshLicenses();
       } else {
         const data = await res.json();
         toast.error(data.error ?? "Errore");
@@ -269,6 +259,7 @@ export default function InventoryAssetPage() {
       if (res.ok) {
         toast.success("Assegnazione rimossa");
         refreshAssetLicenses();
+        refreshLicenses();
       } else {
         toast.error("Errore");
       }
@@ -317,9 +308,10 @@ export default function InventoryAssetPage() {
         toast.info("Nessun host/device collegato all'asset: niente da sincronizzare.");
       } else if (data.updated) {
         toast.success(`Aggiornati ${data.fields_updated.length} campi: ${data.fields_updated.join(", ")}`);
-        // reload asset
+        // reload asset + RE-IDRATA il form (fix UI#4): senza setForm i campi
+        // sincronizzati venivano sovrascritti dal Save successivo.
         const r = await fetch(`/api/inventory/${asset.id}`, { cache: "no-store" });
-        if (r.ok) setAsset(await r.json());
+        if (r.ok) { const na = await r.json() as InventoryAsset; setAsset(na); setForm(assetToForm(na)); }
       } else {
         toast.info(`Nessun cambiamento. Sorgente: ${data.source ?? "—"}`);
       }

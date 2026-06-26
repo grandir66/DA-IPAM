@@ -9,20 +9,19 @@ import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { execSync, spawn } from "child_process";
 import path from "path";
 import fs from "fs";
+import { isContainerDeploy } from "@/lib/env-secrets";
+import {
+  getConfiguredUpdateBranch,
+  getGitBranch,
+  isGitUpdateSupported,
+} from "@/lib/update-branch";
 
 const REPO_API_URL = "https://api.github.com/repos/grandir66/DA-IPAM";
 const REPO_RAW_URL = "https://raw.githubusercontent.com/grandir66/DA-IPAM";
 
-/** Branch da cui leggere la versione "disponibile" su GitHub. Allineato al
- *  branch git corrente, che il timer auto-update mantiene a DA_INVENT_BRANCH.
- *  Fallback "main" se git non è disponibile o ritorna ref invalida.
- */
+/** @deprecated use getConfiguredUpdateBranch */
 function getCurrentBranch(): string {
-  try {
-    const out = execSync("git rev-parse --abbrev-ref HEAD", { cwd: getProjectRoot(), encoding: "utf-8", timeout: 5000 }).trim();
-    if (/^[a-z][a-z0-9_\-/]*$/i.test(out)) return out;
-  } catch { /* ignora */ }
-  return "main";
+  return getConfiguredUpdateBranch(getProjectRoot());
 }
 
 interface UpdateInfo {
@@ -32,6 +31,11 @@ interface UpdateInfo {
   lastCheck: string;
   changelog?: string[];
   error?: string;
+  /** systemd+git: aggiornamento da UI; container senza git: solo check versione */
+  updateSupported?: boolean;
+  deployMode?: "container" | "systemd";
+  configuredBranch?: string;
+  gitBranch?: string | null;
 }
 
 interface UpdateStatus {
@@ -257,15 +261,24 @@ export async function GET(request: NextRequest) {
   const action = url.searchParams.get("action");
 
   if (action === "status") {
+    const root = getProjectRoot();
     const gitStatus = getGitStatus();
     return NextResponse.json({
       currentVersion: getCurrentVersion(),
-      gitBranch: gitStatus.branch,
+      gitBranch: getGitBranch(root) ?? gitStatus.branch,
+      configuredBranch: getConfiguredUpdateBranch(root),
       gitClean: gitStatus.clean,
       dirtyFiles: gitStatus.dirtyFiles,
-      projectRoot: getProjectRoot(),
+      projectRoot: root,
+      updateSupported: isGitUpdateSupported(root),
+      deployMode: isContainerDeploy() ? "container" : "systemd",
     });
   }
+
+  const root = getProjectRoot();
+  const configuredBranch = getConfiguredUpdateBranch(root);
+  const gitSupported = isGitUpdateSupported(root);
+  const deployMode = isContainerDeploy() ? "container" : "systemd";
 
   try {
     const currentVersion = getCurrentVersion();
@@ -277,6 +290,10 @@ export async function GET(request: NextRequest) {
         remoteVersion: null,
         updateAvailable: false,
         lastCheck: new Date().toISOString(),
+        updateSupported: gitSupported,
+        deployMode,
+        configuredBranch,
+        gitBranch: getGitBranch(root),
         error:
           "Impossibile leggere la versione remota (HTTPS GitHub e git locale). " +
           "Serve accesso in uscita a github.com oppure una cartella installazione con .git e remote origin; " +
@@ -292,6 +309,17 @@ export async function GET(request: NextRequest) {
       updateAvailable,
       lastCheck: new Date().toISOString(),
       changelog: remote.changelog,
+      updateSupported: gitSupported,
+      deployMode,
+      configuredBranch,
+      gitBranch: getGitBranch(root),
+      ...(deployMode === "container" &&
+        !gitSupported &&
+        updateAvailable && {
+          error:
+            "Aggiornamento disponibile su GitHub ma questa istanza gira in Docker senza repository git. " +
+            "Esegui sul host: sudo bash scripts/appliance-systemd-install.sh (consigliato) oppure rebuild immagine da PVE.",
+        }),
     } satisfies UpdateInfo);
   } catch (error) {
     return NextResponse.json({
@@ -329,6 +357,18 @@ export async function POST(request: NextRequest) {
 
   if (action === "apply") {
     const root = getProjectRoot();
+    if (!isGitUpdateSupported(root)) {
+      return NextResponse.json({
+        error:
+          isContainerDeploy()
+            ? "Aggiornamento da UI non disponibile in modalità Docker (nessun repository git). " +
+              "Sul host VM esegui: sudo DA_INVENT_BRANCH=dev bash /opt/da-ipam/scripts/appliance-systemd-install.sh " +
+              "per migrare a systemd+git con auto-update, oppure rebuild l'immagine da PVE."
+            : "Directory installazione senza .git — impossibile git pull. Reinstalla con git clone o usa scripts/update.sh.",
+        status: "error" as const,
+      }, { status: 400 });
+    }
+
     let gitStatus = getGitStatus();
     if (!gitStatus.clean) {
       if (tryRestoreKnownDirtyFiles(root)) {

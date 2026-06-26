@@ -3,8 +3,7 @@
  *
  * Vista globale aggregata di TUTTI i software del tenant deduplicati per
  * `(name, version)` con conteggio host e count CVE associate.
- * Sorgenti: wazuh_software + software_inventory (probe) + estrazione
- * best-effort da vuln_findings.nvt_name (Greenbone).
+ * Sorgenti: wazuh_software + software_inventory (probe) + inv_agent_software (GLPI Agent).
  */
 
 import { NextResponse } from "next/server";
@@ -18,7 +17,7 @@ import {
   type OsFamily,
 } from "@/lib/db-tenant";
 
-const SourceEnum = z.enum(["Wazuh", "Probe"]);
+const SourceEnum = z.enum(["Wazuh", "Probe", "Agent"]);
 const OsFamilyEnum = z.enum(["Windows", "Linux", "Apple", "Unknown"]);
 
 const QuerySchema = z.object({

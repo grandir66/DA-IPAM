@@ -218,11 +218,38 @@ export async function snmpGet(
     const t = setTimeout(() => finish([]), timeoutMs);
 
     session.get(oids, (error: Error | null, varbinds: Array<{ oid: string; value: unknown; type?: number }>) => {
-      clearTimeout(t);
       if (error) {
-        finish([]);
+        // R2 fix 2026-06-24: un GET MULTI-OID può fallire con errorStatus
+        // (noSuchName/genErr) su agenti embedded/vecchi ANCHE se il device
+        // risponde. Prima scartavamo TUTTO → device SNMP validi spariti come
+        // "non risponde". Ora, se c'è più di un OID, riproviamo OID-per-OID
+        // sulla stessa sessione e raccogliamo quelli che rispondono.
+        // SOLO su RequestFailedError (errorStatus): su timeout/altri errori i
+        // retry singoli andrebbero anch'essi in timeout → inutile rallentamento.
+        const RequestFailedError = (snmp as { RequestFailedError?: new () => Error }).RequestFailedError;
+        const isReqFailed = error.name === "RequestFailedError"
+          || (RequestFailedError ? error instanceof RequestFailedError : false);
+        if (oids.length <= 1 || !isReqFailed) {
+          clearTimeout(t);
+          finish([]);
+          return;
+        }
+        const collected: Array<{ oid: string; value: unknown; type?: number }> = [];
+        let remaining = oids.length;
+        for (const oid of oids) {
+          session.get([oid], (e2: Error | null, vb2: Array<{ oid: string; value: unknown; type?: number }>) => {
+            if (done) return; // timeout globale già scattato
+            if (!e2 && vb2) collected.push(...vb2);
+            remaining -= 1;
+            if (remaining === 0) {
+              clearTimeout(t);
+              finish(collected);
+            }
+          });
+        }
         return;
       }
+      clearTimeout(t);
       finish(varbinds || []);
     });
   });

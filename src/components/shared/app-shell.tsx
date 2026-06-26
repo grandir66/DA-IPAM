@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "./sidebar";
+import { SidebarProvider, useSidebar } from "./sidebar-context";
 import { PageTransition } from "./page-transition";
 import { GlobalSearch } from "./global-search";
 import { ThemeToggle } from "./theme-toggle";
@@ -60,10 +61,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
+    <SidebarProvider>
+      <AppShellInner>{children}</AppShellInner>
+    </SidebarProvider>
+  );
+}
+
+function AppShellInner({ children }: { children: React.ReactNode }) {
+  const { collapsed } = useSidebar();
+  return (
     <div className="min-h-screen bg-background">
         <UpdateChecker />
         <Sidebar />
-        <main className="md:ml-64 min-h-screen flex flex-col">
+        <main className={`${collapsed ? "md:ml-16" : "md:ml-64"} min-h-screen flex flex-col transition-[margin] duration-200`}>
           {/* Top bar */}
           <div className="sticky top-0 z-20 shrink-0 bg-background/80 backdrop-blur-sm border-b border-border">
             <div className="flex items-center gap-3 px-3 py-2">

@@ -23,6 +23,8 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Settings as SettingsIcon,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -47,6 +49,60 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { CredentialKind, SystemCredential } from "@/lib/credentials-vault";
+
+/**
+ * Mappa kind+label → URL della pagina di configurazione corrispondente.
+ * Le integrazioni Docker (Wazuh, LibreNMS, Graylog, Scanner-Edge, Loki) vivono
+ * tutte sotto /settings?tab=moduli#module-<anchor>. Il Hub URL pubblico
+ * (usato per enrollment agenti) vive invece in /agents#hub-url-config.
+ *
+ * Ritorna l'URL completo (deep-link diretto) oppure null se la entry vault è
+ * "stand-alone" (nessuna pagina di config dedicata — usato come hint testuale
+ * via getCredentialUsageHint).
+ */
+function getIntegrationConfigHref(item: SystemCredential): string | null {
+  const label = item.label.toLowerCase();
+  switch (item.kind) {
+    case "wazuh": return "/settings?tab=moduli#module-wazuh";
+    case "librenms": return "/settings?tab=moduli#module-librenms";
+    case "graylog": return "/settings?tab=moduli#module-graylog";
+    case "edge": return "/settings?tab=moduli#module-edge";
+    case "hub": return "/agents#hub-url-config";
+    case "other":
+      if (label.includes("loki")) return "/settings?tab=moduli#module-loki";
+      return null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Per i kind senza pagina di config (Tailscale, Proxmox, TrueNAS, "other" non-Loki)
+ * ritorna una breve descrizione di dove la credenziale viene usata in DA-IPAM.
+ * Aiuta l'utente a capire cosa farà la credenziale prima di salvarla.
+ */
+function getCredentialUsageHint(item: SystemCredential): string | null {
+  switch (item.kind) {
+    case "tailscale":
+      return "Tailscale auth key — usato dal wizard nuovo agente per join automatico VPN. Nessuna pagina config: la credenziale viene letta solo al momento dell'enrollment.";
+    case "pve":
+      return "Proxmox API — letto da /devices durante match per-device (Proxmox-targets). Nessuna pagina config centralizzata.";
+    case "truenas":
+      return "TrueNAS target — riservato a backup remoti futuri. Oggi solo storage del secret, integrazione non ancora attiva.";
+    case "other":
+      return "Credenziale generica — usata da script/integrazioni custom. Nessuna pagina config standard.";
+    default:
+      return null;
+  }
+}
+
+/** Una entry vault è "incompleta" quando non può completare un test di
+ *  connessione: manca URL oppure mancano sia password che api_token. */
+function isCredentialIncomplete(item: SystemCredential): boolean {
+  if (!item.url && !item.api_url) return true;
+  if (!item.has_password && !item.has_api_token) return true;
+  return false;
+}
 
 const KIND_META: Record<CredentialKind, { icon: typeof Shield; label: string; color: string }> = {
   wazuh: { icon: Shield, label: "Wazuh", color: "text-blue-600" },
@@ -89,7 +145,15 @@ const EMPTY_FORM: EditFormState = {
   notes: "",
 };
 
-export function LaunchpadClient({ initialItems }: { initialItems: SystemCredential[] }) {
+interface LaunchpadClientProps {
+  initialItems: SystemCredential[];
+  /** Quando true, nasconde l'header pagina (titolo + descrizione) per embed
+   *  dentro un'altra pagina (es. /settings?tab=integrazioni). I bottoni
+   *  Importa/Dedup/Aggiungi restano per gli admin. */
+  embedded?: boolean;
+}
+
+export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadClientProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const isAdmin = ["admin", "superadmin"].includes(
@@ -114,7 +178,7 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
   // Nascoste di default; toggle per esporle quando servono per debug/curl.
   const isApiOnlyUrl = (url: string | null): boolean => {
     if (!url) return false;
-    if (/^(https?:\/\/)?(librenms|graylog|loki|host\.docker\.internal|10\.255\.255\.|172\.|appliance-)/.test(url)) {
+    if (/^(https?:\/\/)?(librenms|graylog|loki|host\.docker\.internal|10\.255\.255\.|172\.|appliance-|127\.0\.0\.1|localhost)/.test(url)) {
       return true;
     }
     const m = url.match(/:(\d+)(\/|$)/);
@@ -149,6 +213,27 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
         return;
       }
       toast.success(`Importate ${data.created} credenziali (${data.skipped} già presenti)`);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDedup() {
+    if (!confirm("Cerca entry duplicate (stesso kind+label o stesso kind+URL host) e tiene solo la migliore. Eliminazioni loggate in audit. Procedere?")) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/system-credentials/dedup", { method: "POST" });
+      const data: { deleted: number; groups_with_duplicates: number; error?: string } = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Errore dedup");
+        return;
+      }
+      if (data.deleted === 0) {
+        toast.info("Nessun duplicato trovato");
+      } else {
+        toast.success(`Eliminati ${data.deleted} duplicati in ${data.groups_with_duplicates} gruppi`);
+      }
       await refresh();
     } finally {
       setBusy(false);
@@ -315,18 +400,32 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className={embedded ? "space-y-4" : "space-y-6 p-6"}>
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <KeyRound className="h-6 w-6" />
-            Launchpad
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Entry point unificato per accesso ai sistemi della stack security.
-            Le credenziali sono cifrate (AES-GCM) in DA-IPAM. Ogni reveal è loggato.
-          </p>
-        </div>
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <KeyRound className="h-6 w-6" />
+              Launchpad
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Entry point unificato per accesso ai sistemi della stack security.
+              Le credenziali sono cifrate (AES-GCM) in DA-IPAM. Ogni reveal è loggato.
+            </p>
+          </div>
+        )}
+        {embedded && (
+          <div>
+            <h3 className="text-base font-semibold flex items-center gap-2">
+              <KeyRound className="h-4 w-4" />
+              Accessi & credenziali (vault cifrato)
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Vault AES-GCM con URL, user, password/token e test connessione.
+              Reveal loggato in audit. Solo admin può modificare.
+            </p>
+          </div>
+        )}
         {isAdmin && (
           <div className="flex gap-2 items-center">
             {internalCount > 0 && (
@@ -343,6 +442,10 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
             <Button variant="outline" onClick={handleSync} disabled={busy}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Importa legacy
+            </Button>
+            <Button variant="outline" onClick={handleDedup} disabled={busy} title="Cerca e rimuove entry duplicate (kind+label normalizzato o kind+URL host)">
+              <Trash2 className="h-4 w-4 mr-2" />
+              Dedup
             </Button>
             <Button onClick={openAdd} disabled={busy}>
               <Plus className="h-4 w-4 mr-2" />
@@ -473,6 +576,58 @@ export function LaunchpadClient({ initialItems }: { initialItems: SystemCredenti
                       </div>
                     </div>
                   )}
+
+                  {/* Link → pagina di configurazione (deep-link). Variante
+                      warning se entry incompleta. Per i kind senza pagina di
+                      config dedicata mostriamo invece una nota testuale che
+                      spiega dove la credenziale viene effettivamente usata. */}
+                  {(() => {
+                    const href = getIntegrationConfigHref(item);
+                    if (href) {
+                      const incomplete = isCredentialIncomplete(item);
+                      // Label dinamico: "Impostazioni" per /settings,
+                      // "wizard agenti" per /agents (Hub URL config sta lì).
+                      const destinationLabel = href.startsWith("/agents")
+                        ? "wizard agenti"
+                        : "Impostazioni";
+                      if (incomplete) {
+                        return (
+                          <a
+                            href={href}
+                            className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-2 py-1.5 text-xs text-amber-900 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/40 transition-colors"
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            <span className="flex-1 leading-tight">
+                              Config incompleta — vai a {destinationLabel}
+                            </span>
+                            <SettingsIcon className="h-3.5 w-3.5 shrink-0" />
+                          </a>
+                        );
+                      }
+                      const linkLabel = href.startsWith("/agents")
+                        ? "Hub URL & enrollment →"
+                        : "Configura integrazione →";
+                      return (
+                        <a
+                          href={href}
+                          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <SettingsIcon className="h-3 w-3" />
+                          {linkLabel}
+                        </a>
+                      );
+                    }
+                    // Nessuna pagina di config: mostra hint d'uso (se disponibile).
+                    const hint = getCredentialUsageHint(item);
+                    if (hint) {
+                      return (
+                        <p className="text-[11px] text-muted-foreground italic leading-snug">
+                          {hint}
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
 
                   <div className="flex items-center gap-1 pt-2 border-t mt-2">
                     {item.url && (

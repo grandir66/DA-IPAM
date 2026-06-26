@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -153,6 +153,26 @@ export default function AgentsOverviewPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Deep-link: /agents#hub-url-config scrolla alla card Hub URL e apre il
+  // <details>. Riferimento dal Launchpad (kind=hub → Configura integrazione).
+  const hubUrlDetailsRef = useRef<HTMLDetailsElement | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#hub-url-config") return;
+    if (loading) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (hubUrlDetailsRef.current) hubUrlDetailsRef.current.open = true;
+        const el = document.getElementById("hub-url-config");
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+          el.classList.add("ring-2", "ring-primary", "ring-offset-2");
+          setTimeout(() => el.classList.remove("ring-2", "ring-primary", "ring-offset-2"), 2200);
+        }
+      });
+    });
+  }, [loading]);
 
   const testOne = async (agentId: number): Promise<void> => {
     setRowState((s) => ({ ...s, [agentId]: { status: "testing" } }));
@@ -396,9 +416,9 @@ export default function AgentsOverviewPage() {
       </div>
 
       {canEdit && (
-        <Card>
+        <Card id="hub-url-config" className="scroll-mt-20">
           <CardHeader>
-            <details>
+            <details ref={hubUrlDetailsRef}>
               <summary className="cursor-pointer list-none flex items-center gap-2 text-base font-semibold">
                 <Settings2 className="h-4 w-4 text-primary" />
                 Hub URL pubblico (per one-liner install agenti)

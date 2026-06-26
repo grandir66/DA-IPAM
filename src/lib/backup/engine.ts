@@ -20,6 +20,7 @@
 
 import path from "path";
 import fs from "fs";
+import { resolveDataDir } from "../data-dir";
 import os from "os";
 import zlib from "zlib";
 import crypto from "crypto";
@@ -50,7 +51,7 @@ export interface BackupManifest {
 
 const DEFAULT_BACKUP_ROOT = "/var/backups/da-invent";
 const DEFAULT_RETENTION_DAYS = 30;
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = resolveDataDir();
 
 function getBackupRoot(): string {
   return process.env.DA_INVENT_BACKUP_ROOT || DEFAULT_BACKUP_ROOT;

@@ -23,6 +23,7 @@ export function inferNetworkDeviceVendorFromHostHint(
     { test: (t) => /qnap/.test(t), vendor: "qnap" },
     { test: (t) => /microsoft|windows/.test(t), vendor: "windows" },
     { test: (t) => /linux|ubuntu|debian|red\s*hat|centos|alma|rocky/.test(t), vendor: "linux" },
+    { test: (t) => /apple|macbook|macos|mac os|imac|mac mini|mac studio|mac pro/.test(t), vendor: "apple" },
   ];
 
   for (const { test, vendor } of rules) {

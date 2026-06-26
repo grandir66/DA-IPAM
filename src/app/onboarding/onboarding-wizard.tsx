@@ -90,7 +90,14 @@ export function OnboardingWizard() {
   const finishAndExit = useCallback(async () => {
     setBusy(true);
     try {
-      await fetch("/api/onboarding/complete", { method: "POST" });
+      // Verifica res.ok: fetch NON lancia su HTTP 4xx/5xx. Senza questo check, se
+      // /api/onboarding/complete fallisce il redirect avverrebbe comunque, l'app-shell
+      // rimanderebbe al wizard e l'utente non capirebbe perché (nessun errore mostrato).
+      const res = await fetch("/api/onboarding/complete", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data.error === "string" ? data.error : "Errore nel completamento della configurazione");
+      }
       window.location.assign("/");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Errore");

@@ -11,6 +11,7 @@ export const PRODUCT_PROFILE_IDS = [
   "ubiquiti_switch_base",
   "ubiquiti_switch_managed",
   "ubiquiti_access_point",
+  "ubiquiti_router",
   "ubiquiti_other",
   "windows_server",
   "windows_client",
@@ -35,6 +36,9 @@ export const PRODUCT_PROFILE_IDS = [
   "cisco_router",
   "cisco_telefono",
   "vmware_vsphere",
+  "macos_notebook",
+  "macos_desktop",
+  "macos_server",
   "generic_ups",
   "generic_voip",
   "generic_cam",
@@ -51,6 +55,7 @@ export const PRODUCT_PROFILE_LABELS: Record<ProductProfileId, string> = {
   ubiquiti_switch_base: "Switch base",
   ubiquiti_switch_managed: "Switch gestito",
   ubiquiti_access_point: "Access Point",
+  ubiquiti_router: "Router / Gateway",
   ubiquiti_other: "Altro",
   windows_server: "Server",
   windows_client: "Client",
@@ -75,6 +80,9 @@ export const PRODUCT_PROFILE_LABELS: Record<ProductProfileId, string> = {
   cisco_router: "Router",
   cisco_telefono: "Telefono",
   vmware_vsphere: "vSphere / ESXi",
+  macos_notebook: "Notebook Mac",
+  macos_desktop: "Desktop Mac",
+  macos_server: "Server Mac",
   generic_ups: "UPS",
   generic_voip: "Telefono VoIP",
   generic_cam: "Telecamera",
@@ -85,7 +93,7 @@ export const PRODUCT_PROFILE_LABELS: Record<ProductProfileId, string> = {
 /** Vendor DB → elenco profili ammessi */
 export const PRODUCT_PROFILES_BY_VENDOR: Record<NetworkDevice["vendor"], readonly ProductProfileId[]> = {
   mikrotik: ["mikrotik_router", "mikrotik_switch", "mikrotik_other"],
-  ubiquiti: ["ubiquiti_switch_base", "ubiquiti_switch_managed", "ubiquiti_access_point", "ubiquiti_other"],
+  ubiquiti: ["ubiquiti_router", "ubiquiti_switch_base", "ubiquiti_switch_managed", "ubiquiti_access_point", "ubiquiti_other"],
   windows: ["windows_server", "windows_client"],
   linux: ["linux_server", "linux_client"],
   proxmox: ["proxmox_ve", "proxmox_pbs"],
@@ -96,17 +104,62 @@ export const PRODUCT_PROFILES_BY_VENDOR: Record<NetworkDevice["vendor"], readonl
   stormshield: ["stormshield_firewall"],
   cisco: ["cisco_switch", "cisco_router", "cisco_telefono"],
   vmware: ["vmware_vsphere"],
+  apple: ["macos_notebook", "macos_desktop", "macos_server"],
   other: ["generic_ups", "generic_voip", "generic_cam", "generic_stampante", "generic_iot"],
 };
 
-export function getProductProfilesForVendor(vendor: string | null | undefined): { id: ProductProfileId; label: string }[] {
+const PERIPHERAL_ONLY_PROFILES = new Set<ProductProfileId>([
+  "generic_ups",
+  "generic_voip",
+  "generic_cam",
+  "generic_stampante",
+]);
+
+const ENDPOINT_CLASSIFICATIONS = new Set([
+  "notebook",
+  "workstation",
+  "tablet",
+  "smartphone",
+  "vm",
+]);
+
+export function getProductProfilesForVendor(
+  vendor: string | null | undefined,
+  classification?: string | null,
+): { id: ProductProfileId; label: string }[] {
   const v = (vendor || "other") as NetworkDevice["vendor"];
-  const ids = PRODUCT_PROFILES_BY_VENDOR[v] ?? PRODUCT_PROFILES_BY_VENDOR.other;
+  let ids = [...(PRODUCT_PROFILES_BY_VENDOR[v] ?? PRODUCT_PROFILES_BY_VENDOR.other)];
+
+  if (v === "other" && classification) {
+    if (classification === "ups") {
+      ids = ids.filter((id) => id === "generic_ups");
+    } else if (ENDPOINT_CLASSIFICATIONS.has(classification)) {
+      ids = ids.filter((id) => !PERIPHERAL_ONLY_PROFILES.has(id));
+    } else if (["stampante", "telecamera", "voip", "iot"].includes(classification)) {
+      const map: Partial<Record<string, ProductProfileId>> = {
+        stampante: "generic_stampante",
+        telecamera: "generic_cam",
+        voip: "generic_voip",
+        iot: "generic_iot",
+      };
+      const preferred = map[classification];
+      ids = preferred ? ids.filter((id) => id === preferred) : ids;
+    }
+  }
+
   return ids.map((id) => ({ id, label: PRODUCT_PROFILE_LABELS[id] }));
 }
 
-export function getDefaultProductProfileForVendor(vendor: string | null | undefined): ProductProfileId {
-  const list = getProductProfilesForVendor(vendor);
+export function getDefaultProductProfileForVendor(
+  vendor: string | null | undefined,
+  classification?: string | null,
+): ProductProfileId {
+  if (vendor === "apple") {
+    if (classification === "workstation") return "macos_desktop";
+    if (classification === "server" || classification === "server_linux") return "macos_server";
+    return "macos_notebook";
+  }
+  const list = getProductProfilesForVendor(vendor, classification);
   return list[0]?.id ?? "generic_iot";
 }
 
@@ -115,7 +168,9 @@ export function isValidProductProfileForVendor(
   profile: string | null | undefined
 ): profile is ProductProfileId {
   if (!profile) return false;
-  const allowed = new Set(PRODUCT_PROFILES_BY_VENDOR[(vendor || "other") as NetworkDevice["vendor"]] ?? []);
+  const allowed = new Set(
+    getProductProfilesForVendor(vendor).map((p) => p.id),
+  );
   return allowed.has(profile as ProductProfileId);
 }
 
@@ -126,7 +181,8 @@ export function suggestDeviceTypeFromProductProfile(profile: ProductProfileId): 
   if (
     profile === "mikrotik_router" ||
     profile === "qnap_router" ||
-    profile === "cisco_router"
+    profile === "cisco_router" ||
+    profile === "ubiquiti_router"
   ) {
     return "router";
   }
@@ -138,6 +194,63 @@ export function suggestDeviceTypeFromProductProfile(profile: ProductProfileId): 
     return "hypervisor";
   }
   return "switch";
+}
+
+/** Profilo prodotto coerente con classification + vendor quando l'UI non ne invia uno. */
+export function suggestProductProfileForClassification(
+  vendor: NetworkDevice["vendor"],
+  classification: string | null | undefined,
+  explicit?: string | null
+): ProductProfileId {
+  if (explicit && isValidProductProfileForVendor(vendor, explicit)) {
+    return explicit as ProductProfileId;
+  }
+  if (classification === "router") {
+    const byVendor: Partial<Record<NetworkDevice["vendor"], ProductProfileId>> = {
+      mikrotik: "mikrotik_router",
+      ubiquiti: "ubiquiti_router",
+      cisco: "cisco_router",
+      qnap: "qnap_router",
+    };
+    const mapped = byVendor[vendor];
+    if (mapped) return mapped;
+  }
+  if (classification === "firewall" && vendor === "stormshield") {
+    return "stormshield_firewall";
+  }
+  if (vendor === "apple") {
+    return getDefaultProductProfileForVendor("apple", classification);
+  }
+  return getDefaultProductProfileForVendor(vendor, classification);
+}
+
+/** device_type effettivo in create/update: classification ha priorità sul profilo switch di default. */
+export function resolveDeviceTypeForCreate(input: {
+  product_profile: ProductProfileId;
+  device_type?: NetworkDevice["device_type"];
+  classification?: string | null;
+}): NetworkDevice["device_type"] {
+  if (input.classification === "router") return "router";
+  if (input.classification === "firewall") return "firewall";
+  if (input.classification === "hypervisor") return "hypervisor";
+  if (input.classification === "switch") return "switch";
+  if (input.device_type) return input.device_type;
+  return suggestDeviceTypeFromProductProfile(input.product_profile);
+}
+
+/** Flag ARP: rispetta scelta esplicita; altrimenti default per router/firewall/stormshield. */
+export function resolveUseForArpPoll(input: {
+  use_for_arp_poll?: number | boolean | null;
+  device_type: NetworkDevice["device_type"];
+  classification?: string | null;
+  vendor?: NetworkDevice["vendor"];
+}): number {
+  if (input.use_for_arp_poll === 1 || input.use_for_arp_poll === true) return 1;
+  if (input.use_for_arp_poll === 0 || input.use_for_arp_poll === false) return 0;
+  if (input.classification === "router" || input.classification === "firewall") return 1;
+  if (input.device_type === "router" || input.device_type === "firewall") return 1;
+  if (input.vendor === "stormshield") return 1;
+  return 0;
 }
 
 /**
@@ -155,7 +268,56 @@ export function vendorSubtypeFromProductProfile(profile: ProductProfileId): "pro
 export function scanTargetHintFromProductProfile(profile: ProductProfileId): NetworkDevice["scan_target"] | null {
   if (profile === "proxmox_ve") return "proxmox";
   if (profile === "proxmox_pbs") return "linux";
+  if (profile === "macos_notebook" || profile === "macos_desktop" || profile === "macos_server") return "macos";
+  if (profile === "vmware_vsphere") return "vmware";
+  if (profile === "windows_server" || profile === "windows_client") return "windows";
+  if (profile === "linux_server" || profile === "linux_client") return "linux";
   return null;
+}
+
+/** Protocollo principale suggerito dal profilo (prima voce di acquisitionPriority). */
+export function protocolHintFromProductProfile(profile: ProductProfileId): NetworkDevice["protocol"] | null {
+  const prio = PRODUCT_PROFILE_KNOWLEDGE[profile]?.acquisitionPriority[0];
+  if (!prio) return null;
+  switch (prio) {
+    case "winrm":
+      return "winrm";
+    case "ssh":
+      return "ssh";
+    case "snmp":
+      return "snmp_v2";
+    case "api":
+      return "api";
+    case "https":
+      return "api";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Campi coerenti con il profilo prodotto scelto (scan_target, protocollo, device_type, ARP).
+ * Usato da form UI e PUT /api/devices/[id] quando cambia product_profile.
+ */
+export function applyProductProfileScanDefaults(
+  profile: ProductProfileId,
+  vendor: NetworkDevice["vendor"],
+  classification?: string | null
+): {
+  device_type: NetworkDevice["device_type"];
+  scan_target: NetworkDevice["scan_target"] | null;
+  protocol: NetworkDevice["protocol"] | null;
+  vendor_subtype: ReturnType<typeof vendorSubtypeFromProductProfile>;
+  use_for_arp_poll: number;
+} {
+  const device_type = resolveDeviceTypeForCreate({ product_profile: profile, classification });
+  return {
+    device_type,
+    scan_target: scanTargetHintFromProductProfile(profile),
+    protocol: protocolHintFromProductProfile(profile),
+    vendor_subtype: vendorSubtypeFromProductProfile(profile),
+    use_for_arp_poll: resolveUseForArpPoll({ device_type, classification, vendor }),
+  };
 }
 
 /** Protocolli/trasporti tipici per orchestrare acquisizione (ordine = priorità suggerita). */
@@ -213,6 +375,12 @@ export const PRODUCT_PROFILE_KNOWLEDGE: Record<ProductProfileId, ProductProfileM
     acquisitionPriority: ["snmp", "ssh"],
     credentialHint: "SNMP; credenziali device se serve CLI/debug.",
     notes: "Dettagli client e RF spesso nel controller; sul singolo AP restano contatori e stato radio via SNMP dove esposto.",
+  },
+  ubiquiti_router: {
+    intent: "Router/gateway UniFi (UDM, UDM-Pro, USG, EdgeRouter): routing, NAT, DHCP relay, ARP.",
+    acquisitionPriority: ["ssh", "snmp", "api"],
+    credentialHint: "SSH (EdgeRouter) o SNMP read-only; API UniFi OS se abilitata.",
+    notes: "Per polling ARP/MAC abilitare «Usa come sorgente ARP» e protocollo SSH su EdgeRouter o SNMP su USG/UDM.",
   },
   ubiquiti_other: {
     intent: "Ecosistema UniFi non switch/AP (gateway UDM, ecc.) o classificazione generica.",
@@ -358,6 +526,24 @@ export const PRODUCT_PROFILE_KNOWLEDGE: Record<ProductProfileId, ProductProfileM
     credentialHint: "Account ESXi locale o AD; API vSphere per inventario completo; SNMP limitato su host.",
     notes: "vCenter centralizza: inventario ‘vero’ spesso da API vCenter, non solo host singolo.",
   },
+  macos_notebook: {
+    intent: "Notebook Apple (MacBook): hardware, macOS, software via GLPI Agent push.",
+    acquisitionPriority: ["ssh"],
+    credentialHint: "Inventario software via GLPI Agent; SSH opzionale per gestione remota.",
+    notes: "Preferire push GLPI Agent. SSH richiede Remote Login abilitato sul Mac.",
+  },
+  macos_desktop: {
+    intent: "Desktop Apple (iMac, Mac mini, Mac Studio): inventario via GLPI Agent.",
+    acquisitionPriority: ["ssh"],
+    credentialHint: "GLPI Agent per applicazioni, licenze e runtime.",
+    notes: "Non usare profili SNMP generici (UPS/IoT) su postazioni Mac.",
+  },
+  macos_server: {
+    intent: "Postazione/server macOS amministrata.",
+    acquisitionPriority: ["ssh"],
+    credentialHint: "GLPI Agent + SSH amministrativo.",
+    notes: "Per fleet MDM valutare integrazioni esterne oltre all'agent.",
+  },
   generic_ups: {
     intent: "UPS/PDU intelligenti: stato batteria, carico, eventi, autonomia.",
     acquisitionPriority: ["snmp", "https"],
@@ -409,6 +595,10 @@ export const PRODUCT_PROFILE_INVENTORY_HINTS: Record<
   ubiquiti_access_point: {
     summary: "Radio 2.4/5/6 GHz, SSID, client, canale, potenza",
     specificFields: ["wifi", "ssid", "clients", "channel", "tx_power"],
+  },
+  ubiquiti_router: {
+    summary: "Interfacce, route, NAT, firewall, DHCP relay, ARP",
+    specificFields: ["interfaces", "routes", "nat", "firewall", "dhcp", "arp"],
   },
   ubiquiti_other: { summary: "Sistema, servizi, ruolo", specificFields: ["system", "services", "role"] },
   windows_server: {
@@ -472,6 +662,18 @@ export const PRODUCT_PROFILE_INVENTORY_HINTS: Record<
   vmware_vsphere: {
     summary: "Host, VM, datastore, vSwitch/portgroup, risorse",
     specificFields: ["hosts", "vms", "datastores", "networking", "resources"],
+  },
+  macos_notebook: {
+    summary: "Hardware Apple, macOS, software e licenze (GLPI Agent)",
+    specificFields: ["hardware", "os", "software", "licenses", "runtime"],
+  },
+  macos_desktop: {
+    summary: "Desktop Mac, macOS, applicazioni installate",
+    specificFields: ["hardware", "os", "software", "licenses"],
+  },
+  macos_server: {
+    summary: "macOS gestito, inventario via agent",
+    specificFields: ["hardware", "os", "software", "services"],
   },
   generic_ups: { summary: "Stato UPS, batteria, carico, eventi, test autonomia", specificFields: ["status", "battery", "load", "events", "runtime"] },
   generic_voip: { summary: "Registrazione SIP, account, codec, NAT", specificFields: ["sip", "accounts", "codec", "nat"] },

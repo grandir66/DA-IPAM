@@ -13,9 +13,12 @@ import type {
   WazuhSyscollectorHw,
   WazuhSyscollectorNetaddr,
   WazuhSyscollectorNetiface,
+  WazuhSyscollectorNetproto,
   WazuhSyscollectorOs,
   WazuhSyscollectorPackage,
   WazuhSyscollectorPort,
+  WazuhSyscollectorProcess,
+  WazuhSyscollectorService,
   WazuhVulnerability,
 } from "./wazuh-api";
 
@@ -137,6 +140,52 @@ export interface WazuhNetaddrRow {
   address: string;
   netmask: string | null;
   broadcast: string | null;
+  scan_time: string | null;
+  synced_at: string;
+}
+
+export interface WazuhProcessRow {
+  id: number;
+  agent_id: string;
+  pid: number;
+  ppid: number | null;
+  name: string | null;
+  cmd: string | null;
+  argvs: string | null;
+  vm_size: number | null;
+  resident_size: number | null;
+  priority: number | null;
+  nlwp: number | null;
+  start_time: number | null;
+  utime: number | null;
+  stime: number | null;
+  scan_time: string | null;
+  synced_at: string;
+}
+
+export interface WazuhServiceRow {
+  id: number;
+  agent_id: string;
+  service_id: string;
+  enabled: string | null;
+  start_type: string | null;
+  service_type: string | null;
+  exit_code: number | null;
+  process_pid: number | null;
+  process_executable: string | null;
+  process_args: string | null;
+  scan_time: string | null;
+  synced_at: string;
+}
+
+export interface WazuhNetprotoRow {
+  id: number;
+  agent_id: string;
+  iface: string | null;
+  type: string | null;
+  gateway: string | null;
+  dhcp: string | null;
+  metric: string | null;
   scan_time: string | null;
   synced_at: string;
 }
@@ -549,6 +598,146 @@ export function listWazuhNetaddrs(agentId: string): WazuhNetaddrRow[] {
     .all(agentId) as WazuhNetaddrRow[];
 }
 
+/**
+ * Snapshot processi: DELETE+INSERT in transazione. PID si ricicla → niente
+ * storico. Volume tipico Windows ~150-250 entry/agent.
+ */
+export function replaceProcessesForAgent(agentId: string, procs: WazuhSyscollectorProcess[]): number {
+  const d = db();
+  const insert = d.prepare(
+    `INSERT OR IGNORE INTO wazuh_process (
+       agent_id, pid, ppid, name, cmd, argvs, vm_size, resident_size,
+       priority, nlwp, start_time, utime, stime, scan_time, synced_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+  );
+  let inserted = 0;
+  const tx = d.transaction(() => {
+    d.prepare("DELETE FROM wazuh_process WHERE agent_id = ?").run(agentId);
+    for (const p of procs) {
+      const pidRaw = p.pid;
+      const pid = typeof pidRaw === "string" ? parseInt(pidRaw, 10) : (pidRaw as unknown as number);
+      if (!Number.isFinite(pid)) continue;
+      const r = insert.run(
+        agentId,
+        pid,
+        p.ppid ?? null,
+        p.name ?? null,
+        p.cmd ?? null,
+        p.argvs ?? null,
+        p.vm_size ?? null,
+        p.size ?? null,
+        p.priority ?? null,
+        p.nlwp ?? null,
+        p.start_time ?? null,
+        p.utime ?? null,
+        p.stime ?? null,
+        p.scan?.time ?? null,
+      );
+      if (r.changes) inserted++;
+    }
+  });
+  tx();
+  return inserted;
+}
+
+/**
+ * Snapshot servizi: DELETE+INSERT. Disponibile su Wazuh ≥ 4.13 (su agent older
+ * il client ritorna [] e la tabella resta vuota per quell'agent).
+ */
+export function replaceServicesForAgent(agentId: string, services: WazuhSyscollectorService[]): number {
+  const d = db();
+  const insert = d.prepare(
+    `INSERT OR IGNORE INTO wazuh_service (
+       agent_id, service_id, enabled, start_type, service_type, exit_code,
+       process_pid, process_executable, process_args, scan_time, synced_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+  );
+  let inserted = 0;
+  const tx = d.transaction(() => {
+    d.prepare("DELETE FROM wazuh_service WHERE agent_id = ?").run(agentId);
+    for (const s of services) {
+      const id = (s.service?.id ?? "").trim();
+      if (!id) continue;
+      const enabled = s.service?.enabled?.trim() || null;
+      const r = insert.run(
+        agentId,
+        id,
+        enabled,
+        s.service?.start_type ?? null,
+        s.service?.type ?? null,
+        s.service?.exit_code ?? null,
+        s.process?.pid ?? null,
+        s.process?.executable ?? null,
+        s.process?.args ?? null,
+        s.scan?.time ?? null,
+      );
+      if (r.changes) inserted++;
+    }
+  });
+  tx();
+  return inserted;
+}
+
+/**
+ * Snapshot configurazione protocolli/routing per interfaccia.
+ */
+export function replaceNetprotoForAgent(agentId: string, entries: WazuhSyscollectorNetproto[]): number {
+  const d = db();
+  const insert = d.prepare(
+    `INSERT OR IGNORE INTO wazuh_netproto (
+       agent_id, iface, type, gateway, dhcp, metric, scan_time, synced_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+  );
+  let inserted = 0;
+  const tx = d.transaction(() => {
+    d.prepare("DELETE FROM wazuh_netproto WHERE agent_id = ?").run(agentId);
+    for (const n of entries) {
+      const iface = (n.iface ?? "").trim();
+      const type = (n.type ?? "").trim();
+      if (!iface || !type) continue;
+      const r = insert.run(
+        agentId,
+        iface,
+        type,
+        n.gateway ?? null,
+        n.dhcp ?? null,
+        n.metric ?? null,
+        n.scan?.time ?? null,
+      );
+      if (r.changes) inserted++;
+    }
+  });
+  tx();
+  return inserted;
+}
+
+/**
+ * Top-N processi per memoria (UI). Default 20.
+ */
+export function listWazuhProcesses(agentId: string, limit = 20): WazuhProcessRow[] {
+  return db()
+    .prepare(
+      "SELECT * FROM wazuh_process WHERE agent_id = ? ORDER BY COALESCE(vm_size, 0) DESC, COALESCE(resident_size, 0) DESC LIMIT ?",
+    )
+    .all(agentId, limit) as WazuhProcessRow[];
+}
+
+/**
+ * Lista servizi. enabledOnly=true filtra "true" (Wazuh raw, Windows: AutoStart enabled).
+ */
+export function listWazuhServices(agentId: string, enabledOnly = false): WazuhServiceRow[] {
+  const sql = enabledOnly
+    ? "SELECT * FROM wazuh_service WHERE agent_id = ? AND enabled = 'true' ORDER BY service_id COLLATE NOCASE"
+    : "SELECT * FROM wazuh_service WHERE agent_id = ? ORDER BY service_id COLLATE NOCASE";
+  return db().prepare(sql).all(agentId) as WazuhServiceRow[];
+}
+
+export function listWazuhNetproto(agentId: string): WazuhNetprotoRow[] {
+  return db()
+    .prepare("SELECT * FROM wazuh_netproto WHERE agent_id = ? ORDER BY iface, type")
+    .all(agentId) as WazuhNetprotoRow[];
+}
+
 export function listWazuhSoftware(agentId: string): WazuhSoftwareRow[] {
   return db().prepare(
     "SELECT * FROM wazuh_software WHERE agent_id = ? ORDER BY name COLLATE NOCASE",
@@ -570,7 +759,11 @@ export function listWazuhVulns(agentId: string): WazuhVulnRow[] {
   ).all(agentId) as WazuhVulnRow[];
 }
 
-export function countsForAgent(agentId: string): { software: number; vulns: number; vulnsCritical: number; vulnsHigh: number; ports: number; hotfixes: number; netifaces: number; netaddrs: number } {
+export function countsForAgent(agentId: string): {
+  software: number; vulns: number; vulnsCritical: number; vulnsHigh: number;
+  ports: number; hotfixes: number; netifaces: number; netaddrs: number;
+  processes: number; services: number; netproto: number;
+} {
   const d = db();
   const sw = d.prepare("SELECT COUNT(*) AS c FROM wazuh_software WHERE agent_id = ?").get(agentId) as { c: number };
   const vAll = d.prepare("SELECT COUNT(*) AS c FROM wazuh_vuln WHERE agent_id = ?").get(agentId) as { c: number };
@@ -580,7 +773,14 @@ export function countsForAgent(agentId: string): { software: number; vulns: numb
   const hf = d.prepare("SELECT COUNT(*) AS c FROM wazuh_hotfix WHERE agent_id = ?").get(agentId) as { c: number };
   const nif = d.prepare("SELECT COUNT(*) AS c FROM wazuh_netiface WHERE agent_id = ?").get(agentId) as { c: number };
   const nad = d.prepare("SELECT COUNT(*) AS c FROM wazuh_netaddr WHERE agent_id = ?").get(agentId) as { c: number };
-  return { software: sw.c, vulns: vAll.c, vulnsCritical: vCrit.c, vulnsHigh: vHigh.c, ports: pts.c, hotfixes: hf.c, netifaces: nif.c, netaddrs: nad.c };
+  const proc = d.prepare("SELECT COUNT(*) AS c FROM wazuh_process WHERE agent_id = ?").get(agentId) as { c: number };
+  const svc = d.prepare("SELECT COUNT(*) AS c FROM wazuh_service WHERE agent_id = ?").get(agentId) as { c: number };
+  const np = d.prepare("SELECT COUNT(*) AS c FROM wazuh_netproto WHERE agent_id = ?").get(agentId) as { c: number };
+  return {
+    software: sw.c, vulns: vAll.c, vulnsCritical: vCrit.c, vulnsHigh: vHigh.c,
+    ports: pts.c, hotfixes: hf.c, netifaces: nif.c, netaddrs: nad.c,
+    processes: proc.c, services: svc.c, netproto: np.c,
+  };
 }
 
 export function deleteWazuhAgentsExcept(activeAgentIds: string[]): number {

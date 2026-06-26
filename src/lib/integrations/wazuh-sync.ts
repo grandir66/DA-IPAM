@@ -31,6 +31,9 @@ import {
   replaceHotfixesForAgent,
   replaceNetifacesForAgent,
   replaceNetaddrsForAgent,
+  replaceProcessesForAgent,
+  replaceServicesForAgent,
+  replaceNetprotoForAgent,
   deleteWazuhAgentsExcept,
   enrichHostFromWazuh,
   getWazuhAgentByHostId,
@@ -49,6 +52,9 @@ export interface WazuhSyncResult {
   portRows: number;
   hotfixRows: number;
   netaddrRows: number;
+  processRows: number;
+  serviceRows: number;
+  netprotoRows: number;
   hostsEnriched: number;
   removedAgents: number;
   errors: string[];
@@ -94,7 +100,9 @@ async function matchAgentToHost(
       if (mac === "00:00:00:00:00:00") continue;
       if (!primaryMac) primaryMac = mac;
       if (!hostId) {
-        const hm = getHostByMac(mac);
+        // passa l'IP agent per disambiguare MAC duplicati (fix B4): evita di
+        // attribuire le CVE all'host sbagliato su MAC condiviso.
+        const hm = getHostByMac(mac, ip ?? undefined);
         if (hm) hostId = hm.id;
       }
     }
@@ -160,7 +168,7 @@ export async function syncSingleAgent(agentId: string): Promise<void> {
   upsertWazuhAgent(agent, hostId, primaryMac);
   replaceNetifacesForAgent(agent.id, netifaces);
 
-  const [hw, os, pkgs, ports, hotfixes, netaddrs, vulns] = await Promise.all([
+  const [hw, os, pkgs, ports, hotfixes, netaddrs, vulns, processes, services, netproto] = await Promise.all([
     client.getHardware(agent.id),
     client.getOs(agent.id),
     client.getPackages(agent.id),
@@ -168,6 +176,9 @@ export async function syncSingleAgent(agentId: string): Promise<void> {
     client.getHotfixes(agent.id),
     client.getNetaddrs(agent.id),
     fetchVulnsForAgent(agent.id, client, indexer),
+    client.getProcesses(agent.id),
+    client.getServices(agent.id),
+    client.getNetproto(agent.id),
   ]);
   if (hw) upsertWazuhHw(agent.id, hw);
   if (os) upsertWazuhOs(agent.id, os);
@@ -177,6 +188,9 @@ export async function syncSingleAgent(agentId: string): Promise<void> {
   replaceHotfixesForAgent(agent.id, hotfixes);
   replaceNetaddrsForAgent(agent.id, netaddrs);
   replaceVulnsForAgent(agent.id, vulns);
+  replaceProcessesForAgent(agent.id, processes);
+  replaceServicesForAgent(agent.id, services);
+  replaceNetprotoForAgent(agent.id, netproto);
 }
 
 /**
@@ -199,6 +213,9 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
     portRows: 0,
     hotfixRows: 0,
     netaddrRows: 0,
+    processRows: 0,
+    serviceRows: 0,
+    netprotoRows: 0,
     hostsEnriched: 0,
     removedAgents: 0,
     errors: [],
@@ -255,7 +272,7 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
 
       replaceNetifacesForAgent(agent.id, netifaces);
 
-      const [hw, os, pkgs, ports, hotfixes, netaddrs, vulns] = await Promise.all([
+      const [hw, os, pkgs, ports, hotfixes, netaddrs, vulns, processes, services, netproto] = await Promise.all([
         wzClient.getHardware(agent.id),
         wzClient.getOs(agent.id),
         wzClient.getPackages(agent.id),
@@ -263,6 +280,9 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
         wzClient.getHotfixes(agent.id),
         wzClient.getNetaddrs(agent.id),
         fetchVulnsForAgent(agent.id, wzClient, indexer),
+        wzClient.getProcesses(agent.id),
+        wzClient.getServices(agent.id),
+        wzClient.getNetproto(agent.id),
       ]);
 
       if (hw) upsertWazuhHw(agent.id, hw);
@@ -274,7 +294,24 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
       result.portRows += replacePortsForAgent(agent.id, ports);
       result.hotfixRows += replaceHotfixesForAgent(agent.id, hotfixes);
       result.netaddrRows += replaceNetaddrsForAgent(agent.id, netaddrs);
-      result.vulnRows += replaceVulnsForAgent(agent.id, vulns);
+      // Guard B3 2026-06-23: un risultato vulns VUOTO (HTTP 200, 0 hit) NON deve
+      // cancellare le CVE dell'agent se l'indice è inaffidabile (ISM rollover /
+      // reindex di wazuh-states-vulnerabilities-*) → falso "0 vulnerabilità".
+      // Wipe solo se è un vero-0: indice presente con documenti.
+      if (vulns.length === 0 && indexer) {
+        let indexHasDocs = false;
+        try { indexHasDocs = (await indexer.totalVulnDocs()) > 0; } catch { indexHasDocs = false; }
+        if (!indexHasDocs) {
+          console.warn(`[wazuh-sync] vulns vuote per agent ${agent.id} ma indice CVE non affidabile (0 doc/err) → skip wipe`);
+        } else {
+          result.vulnRows += replaceVulnsForAgent(agent.id, vulns);
+        }
+      } else {
+        result.vulnRows += replaceVulnsForAgent(agent.id, vulns);
+      }
+      result.processRows += replaceProcessesForAgent(agent.id, processes);
+      result.serviceRows += replaceServicesForAgent(agent.id, services);
+      result.netprotoRows += replaceNetprotoForAgent(agent.id, netproto);
     } catch (e) {
       result.errors.push(`agent ${agent.id} (${agent.name ?? "?"}): ${(e as Error).message}`);
     }

@@ -34,6 +34,7 @@ const LinkIpsDialog = dynamic(() => import("@/components/devices/link-ips-dialog
 const EditDeviceDialog = dynamic(() => import("@/components/devices/edit-device-dialog").then((m) => ({ default: m.EditDeviceDialog })), { ssr: false });
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
+import { HostInventoryAgentCard } from "@/components/hosts/host-inventory-agent-card";
 const UptimeTimeline = dynamic(() => import("@/components/shared/uptime-timeline").then((m) => ({ default: m.UptimeTimeline })), { ssr: false });
 const LatencyChart = dynamic(() => import("@/app/(dashboard)/hosts/[id]/latency-chart").then((m) => ({ default: m.LatencyChart })), { ssr: false });
 const LibreNMSDeviceGraphs = dynamic(() => import("@/components/integrations/librenms-device-graphs").then((m) => ({ default: m.LibreNMSDeviceGraphs })), { ssr: false });
@@ -63,6 +64,7 @@ import {
   Server,
   Layers,
 } from "lucide-react";
+import { runDeviceAcquisitionScan } from "@/lib/devices/device-scan-client";
 import { toast } from "sonner";
 import type { HostDetail, HostSnmpData, InventoryAsset, NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 
@@ -109,6 +111,7 @@ interface DeviceExtras {
 
 type DeviceFull = NetworkDevice & DeviceExtras;
 import { getClassificationLabel, DEVICE_CLASSIFICATIONS_ORDERED, sortClassificationsByDisplayLabel } from "@/lib/device-classifications";
+import { isMacOsHost } from "@/lib/host-platform-detect";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -418,6 +421,11 @@ export default function ObjectDetailPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const defaultObjectTab = (() => {
+    const t = searchParams?.get("tab");
+    const allowed = new Set(["generale", "sistema", "network", "vulnerabilita", "software", "asset", "storico"]);
+    return t && allowed.has(t) ? t : "generale";
+  })();
   const hostId = typeof params.id === "string" ? Number(params.id) : NaN;
 
   const [host, setHost] = useState<HostDetail | null>(null);
@@ -634,42 +642,13 @@ export default function ObjectDetailPage() {
     }
     setRefreshing(true);
     try {
-      const qr = await fetch(`/api/devices/${device.id}/query`, { method: "POST" });
-      const qd = (await qr.json()) as { id?: string; error?: string };
-      if (!qr.ok) {
-        toast.error(qd.error ?? "Errore avvio query");
+      const scanResult = await runDeviceAcquisitionScan(device.id, device);
+      if (!scanResult.ok) {
+        toast.error(scanResult.error ?? "Errore scan");
         return;
       }
-      if (qd.id) {
-        // v0.2.636 audit B2: polling con max-attempts. Senza limite il setInterval
-        // poteva girare per sempre se lo scan restava bloccato in 'running' —
-        // il bottone "Refresh" restava in spinner indefinitamente.
-        const POLL_INTERVAL_MS = 1500;
-        const POLL_MAX_ATTEMPTS = 400; // ≈ 10 minuti
-        await new Promise<void>((resolve) => {
-          let attempts = 0;
-          const poll = setInterval(async () => {
-            attempts++;
-            if (attempts >= POLL_MAX_ATTEMPTS) {
-              clearInterval(poll);
-              toast.error("Query timeout dopo 10 minuti");
-              resolve();
-              return;
-            }
-            try {
-              const pr = await fetch(`/api/scans/progress/${qd.id}`);
-              if (!pr.ok) return;
-              const pd = (await pr.json()) as { status: string; phase?: string };
-              if (pd.status === "completed" || pd.status === "failed") {
-                clearInterval(poll);
-                if (pd.status === "completed") toast.success(pd.phase ?? "Query OK");
-                else toast.error(pd.phase ?? "Query fallita");
-                resolve();
-              }
-            } catch { /* ignore: il prossimo tick riproverà fino al max */ }
-          }, POLL_INTERVAL_MS);
-        });
-      }
+      toast.success(scanResult.message ?? "Scan completato");
+
       if (device.vendor === "windows" || device.vendor === "linux") {
         toast.info("Inventario software in corso...");
         const sr = await fetch(`/api/devices/${device.id}/software-scan`, {
@@ -770,6 +749,15 @@ export default function ObjectDetailPage() {
   const isManaged = !!device;
   const isAsset = !!asset;
   const isWindowsOrLinux = device?.vendor === "windows" || device?.vendor === "linux";
+  const isMacPlatform =
+    device?.vendor === "apple" ||
+    isMacOsHost({
+      os_info: host.os_info,
+      inferred_os_family: host.inferred_os_family,
+      device_manufacturer: host.device_manufacturer,
+      model: host.model,
+      vendor: host.vendor,
+    });
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
@@ -846,7 +834,9 @@ export default function ObjectDetailPage() {
                 onClick={handleUpdateAll}
                 disabled={refreshing || testingConnection}
                 className="bg-primary hover:bg-primary/90"
-                title="Test connessione → query SNMP/ARP → inventario software"
+                title={device?.device_type === "hypervisor" || device?.scan_target === "proxmox"
+                  ? "Scan Proxmox VE (API + SSH): nodi cluster, VM/CT, storage"
+                  : "Test connessione → query SNMP/ARP → inventario software"}
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
                 {refreshing ? "Aggiornamento..." : "Aggiorna tutto"}
@@ -878,7 +868,7 @@ export default function ObjectDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="generale" className="space-y-4">
+      <Tabs defaultValue={defaultObjectTab} className="space-y-4">
         <TabsList className="!h-10 p-1 gap-1 bg-muted border border-border flex-wrap">
           <TabsTrigger value="generale" className="px-3 py-1.5 text-sm">
             <Boxes className="h-4 w-4 mr-1.5" />
@@ -2453,17 +2443,30 @@ export default function ObjectDetailPage() {
         {/* ═══════════════ TAB: SOFTWARE ═══════════════ */}
         <TabsContent value="software" className="space-y-4">
 
+      <Section icon={<HardDrive className="h-4 w-4" />} title="Software da GLPI Agent (push)">
+        <HostInventoryAgentCard hostId={host.id} />
+      </Section>
+
       {/* ─── 4. Software inventory (solo se device + windows/linux) ─── */}
       {isManaged && isWindowsOrLinux && device && (
-        <Section icon={<HardDrive className="h-4 w-4" />} title="Software installato">
+        <Section icon={<HardDrive className="h-4 w-4" />} title="Software installato (scansione remota)">
           <DeviceSoftwareCard deviceId={device.id} osHint={device.vendor as "windows" | "linux"} />
         </Section>
       )}
-      {isManaged && !isWindowsOrLinux && (
+      {isManaged && isMacPlatform && (
+        <Section icon={<HardDrive className="h-4 w-4" />} title="Scansione remota software">
+          <p className="text-sm text-muted-foreground">
+            Su macOS l&apos;elenco applicazioni proviene dal <strong>GLPI Agent</strong> (sezione sopra).
+            WinRM/WMI e scan remoto non sono applicabili; installa o verifica l&apos;agent in Impostazioni → Moduli.
+          </p>
+        </Section>
+      )}
+      {isManaged && !isWindowsOrLinux && !isMacPlatform && (
         <Section icon={<HardDrive className="h-4 w-4" />} title="Software installato">
           <p className="text-sm text-muted-foreground">
             Inventario software non applicabile per vendor <Badge variant="outline">{device?.vendor}</Badge>.
-            Disponibile solo per device <Badge variant="outline">windows</Badge> o <Badge variant="outline">linux</Badge>.
+            Disponibile per device <Badge variant="outline">windows</Badge>, <Badge variant="outline">linux</Badge> o{" "}
+            <Badge variant="outline">apple</Badge> (via GLPI Agent).
           </p>
         </Section>
       )}

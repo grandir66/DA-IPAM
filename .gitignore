@@ -46,6 +46,10 @@ data/*
 !data/ipam.empty.db
 !data/README.md
 !data/package-dictionary.json
+# Backup data-dir generati dai fix runtime (es. data.wrong-*, data.backup-*):
+# non devono mai sporcare la working tree e bloccare l'auto-update.
+data.wrong-*
+data.backup-*
 .env.local
 
 # Libreria OID SNMP: dati di ambiente / inventario (non versionare)

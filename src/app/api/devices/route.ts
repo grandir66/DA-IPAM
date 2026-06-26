@@ -3,12 +3,14 @@ import { getNetworkDevices, getRouters, getSwitches, getDevicesByClassificationO
 import { NetworkDeviceSchema } from "@/lib/validators";
 import { encrypt } from "@/lib/crypto";
 import {
-  getDefaultProductProfileForVendor,
-  suggestDeviceTypeFromProductProfile,
+  suggestProductProfileForClassification,
+  resolveDeviceTypeForCreate,
+  resolveUseForArpPoll,
   scanTargetHintFromProductProfile,
   vendorSubtypeFromProductProfile,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
+import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 import { getTenantMode, withTenantFromSession } from "@/lib/api-tenant";
 import { queryAllTenants } from "@/lib/db-tenant";
@@ -142,11 +144,25 @@ export async function POST(request: Request) {
     }
 
     const data = parsed.data;
-    const productProfile = (data.product_profile ?? getDefaultProductProfileForVendor(data.vendor)) as ProductProfileId;
-    const deviceType = suggestDeviceTypeFromProductProfile(productProfile);
     const deviceClassification =
       data.classification ??
-      (deviceType === "router" ? "router" : deviceType === "switch" ? "switch" : "hypervisor");
+      (data.device_type === "router" ? "router" : data.device_type === "switch" ? "switch" : "hypervisor");
+    const productProfile = suggestProductProfileForClassification(
+      data.vendor,
+      deviceClassification,
+      data.product_profile
+    ) as ProductProfileId;
+    const deviceType = resolveDeviceTypeForCreate({
+      product_profile: productProfile,
+      device_type: data.device_type,
+      classification: deviceClassification,
+    });
+    const useForArpPoll = resolveUseForArpPoll({
+      use_for_arp_poll: data.use_for_arp_poll,
+      device_type: deviceType,
+      classification: deviceClassification,
+      vendor: data.vendor,
+    });
     const defaultPort =
       data.protocol === "ssh" ? 22 : data.protocol === "api" ? (deviceType === "hypervisor" ? 8006 : 443) : data.protocol === "winrm" ? 5985 : 161;
     const scanTarget =
@@ -170,6 +186,7 @@ export async function POST(request: Request) {
       enabled: 1,
       scan_target: scanTarget,
       product_profile: productProfile,
+      use_for_arp_poll: useForArpPoll,
     });
 
     // Crea bindings credenziali nella nuova tabella
@@ -193,7 +210,14 @@ export async function POST(request: Request) {
     }
 
     const host = getHostByIp(data.host);
-    if (host) updateHost(host.id, { classification: deviceClassification });
+    if (host) {
+      updateHost(host.id, { classification: deviceClassification });
+      try {
+        linkInvAgentEndpointToHost(host.id);
+      } catch {
+        /* inventory agent opzionale */
+      }
+    }
 
     ensureInventoryAssetForNetworkDevice(device);
 

@@ -19,6 +19,9 @@ import {
   listWazuhHotfixes,
   listWazuhNetifaces,
   listWazuhNetaddrs,
+  listWazuhProcesses,
+  listWazuhServices,
+  listWazuhNetproto,
   countsForAgent,
 } from "@/lib/integrations/wazuh-db";
 import { syncSingleAgent } from "@/lib/integrations/wazuh-sync";
@@ -59,7 +62,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ hostId: string 
     if (include.includes("network")) {
       payload.netifaces = listWazuhNetifaces(agent.agent_id);
       payload.netaddrs = listWazuhNetaddrs(agent.agent_id);
+      payload.netproto = listWazuhNetproto(agent.agent_id);
     }
+    if (include.includes("processes")) payload.processes = listWazuhProcesses(agent.agent_id, 50);
+    if (include.includes("services")) payload.services = listWazuhServices(agent.agent_id);
     return NextResponse.json(payload);
   });
 }

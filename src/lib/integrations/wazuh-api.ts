@@ -129,6 +129,52 @@ export interface WazuhSyscollectorHotfix {
   hotfix?: string;                      // es. "KB5012170"
 }
 
+export interface WazuhSyscollectorProcess {
+  scan?: { time?: string };
+  pid?: string;                         // Wazuh restituisce pid come stringa
+  ppid?: number;
+  name?: string;
+  cmd?: string;
+  argvs?: string;
+  vm_size?: number;                     // KB virtual memory
+  size?: number;                        // resident size
+  priority?: number;
+  nlwp?: number;                        // num threads
+  start_time?: number;                  // unix epoch
+  session?: number;
+  utime?: number;
+  stime?: number;
+}
+
+export interface WazuhSyscollectorService {
+  scan?: { time?: string };
+  service?: {
+    id?: string;                        // service name (es. "Dnscache")
+    enabled?: string;                   // "true"/"false"/" "
+    start_type?: string;                // auto|manual|disabled|boot|system
+    type?: string;                      // own|share|kernel_driver|...
+    exit_code?: number;
+    following?: string;
+    frequency?: number;
+    inetd_compatibility?: number;
+  };
+  process?: {
+    pid?: number;
+    executable?: string;
+    args?: string;
+    group_name?: string;
+  };
+}
+
+export interface WazuhSyscollectorNetproto {
+  scan?: { time?: string };
+  iface?: string;
+  type?: string;                        // ipv4|ipv6
+  gateway?: string;
+  dhcp?: string;                        // enabled|disabled|unknown
+  metric?: string;
+}
+
 export interface WazuhVulnerability {
   cve?: string;
   severity?: string;
@@ -364,6 +410,45 @@ export class WazuhClient {
     } catch (e) {
       // v0.2.638 audit B5: solo 404 → lista vuota legittima; altri 4xx/5xx
       // propagano per non perdere dati storici a causa di token scaduto o errore transient.
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
+      throw e;
+    }
+  }
+
+  /**
+   * Processi in esecuzione (syscollector). Vol significativo su Windows (~200 entry).
+   * 404 → []. Disponibile su tutti i Wazuh ≥ 4.x.
+   */
+  async getProcesses(agentId: string): Promise<WazuhSyscollectorProcess[]> {
+    try {
+      return await this.getPaged<WazuhSyscollectorProcess>(`/syscollector/${agentId}/processes`);
+    } catch (e) {
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
+      throw e;
+    }
+  }
+
+  /**
+   * Servizi installati (syscollector). Endpoint disponibile da Wazuh 4.13+.
+   * Su agent <4.13 il manager risponde 404 → [] silenzioso.
+   */
+  async getServices(agentId: string): Promise<WazuhSyscollectorService[]> {
+    try {
+      return await this.getPaged<WazuhSyscollectorService>(`/syscollector/${agentId}/services`);
+    } catch (e) {
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
+      throw e;
+    }
+  }
+
+  /**
+   * Configurazione protocolli di rete per interfaccia: gateway, dhcp, type ipv4/ipv6.
+   * Tipicamente 2-3 righe per agent (una per protocollo per iface attiva).
+   */
+  async getNetproto(agentId: string): Promise<WazuhSyscollectorNetproto[]> {
+    try {
+      return await this.getPaged<WazuhSyscollectorNetproto>(`/syscollector/${agentId}/netproto`);
+    } catch (e) {
       if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
       throw e;
     }

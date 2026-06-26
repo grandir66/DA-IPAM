@@ -10,11 +10,11 @@
  */
 
 import { execFile } from "child_process";
-import { existsSync } from "fs";
 import path from "path";
 
 import { probeTcpPort } from "./tcp-precheck";
 import { formatWinrmError, type WinrmErrorCode } from "./winrm-errors";
+import { findBridgePython } from "./find-bridge-python";
 
 const TIMEOUT_MS = 90_000;
 const TCP_PRECHECK_TIMEOUT_MS = 3000;
@@ -31,24 +31,6 @@ export class WmiError extends Error {
     this.hint = info.hint;
     this.original = info.original;
   }
-}
-
-function findPython(): string {
-  if (process.env.WINRM_PYTHON) return process.env.WINRM_PYTHON;
-  const cwd = process.cwd();
-  const home = process.env.HOME || "/root";
-  const candidates = [
-    path.join(home, ".da-invent-venv", "bin", "python3"),
-    path.join(home, ".da-inventory-venv", "bin", "python3"),
-    path.join(home, ".da-ipam-venv", "bin", "python3"),
-    path.join(cwd, ".venv", "bin", "python3"),
-    "/opt/dadude-agent/venv/bin/python3",
-    "/usr/bin/python3",
-  ];
-  for (const c of candidates) {
-    try { if (existsSync(c)) return c; } catch { /* skip */ }
-  }
-  return "python3";
 }
 
 export interface WmiProbeData {
@@ -83,7 +65,7 @@ export async function runWmiProbe(
   }
 
   return new Promise((resolve, reject) => {
-    const pythonBin = findPython();
+    const pythonBin = findBridgePython();
     const input = JSON.stringify({ host, username, password });
 
     const child = execFile(

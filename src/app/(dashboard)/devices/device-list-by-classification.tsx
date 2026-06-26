@@ -219,9 +219,18 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   }, [editingDevice, effectiveClassification]);
 
   const fetchDevices = useCallback(async () => {
-    const res = await fetch(`/api/devices?classification=${encodeURIComponent(effectiveClassification)}`, { cache: "no-store" });
-    setDevices(await res.json());
-    setLoading(false);
+    // Guard r.ok + Array.isArray + finally (fix UI#3 2026-06-23): su 500 (es.
+    // tenant context mancante) il body {error} crashava devices.map; su throw
+    // di rete setLoading(false) non veniva mai eseguito → spinner infinito.
+    try {
+      const res = await fetch(`/api/devices?classification=${encodeURIComponent(effectiveClassification)}`, { cache: "no-store" });
+      const data = res.ok ? await res.json() : null;
+      setDevices(Array.isArray(data) ? data : []);
+    } catch {
+      setDevices([]);
+    } finally {
+      setLoading(false);
+    }
   }, [effectiveClassification]);
 
   const fetchCredentials = useCallback(async () => {
@@ -614,13 +623,19 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
 
   async function handleQuery(id: number) {
     setQuerying(id);
-    const res = await fetch(`/api/devices/${id}/query`, { method: "POST" });
-    const data = await res.json();
-    if (res.ok) {
-      toast.success(data.message);
+    const dev = devices.find((d) => !isHostItem(d) && Number(d.id) === id) as NetworkDevice | undefined;
+    if (!dev) {
+      toast.error("Dispositivo non trovato");
+      setQuerying(null);
+      return;
+    }
+    const { runDeviceAcquisitionScan } = await import("@/lib/devices/device-scan-client");
+    const result = await runDeviceAcquisitionScan(id, dev);
+    if (result.ok) {
+      toast.success(result.message ?? "Scan completato");
       fetchDevices();
     } else {
-      toast.error(data.error || "Errore nella query");
+      toast.error(result.error ?? "Errore nella query");
     }
     setQuerying(null);
   }
@@ -1354,7 +1369,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                           {h.hardware_serial && (
                             <div>
                               <p className="text-xs text-muted-foreground uppercase">Seriale</p>
-                              <p className="font-mono text-xs">{h.hardware_serial}</p>
+                              <p className="font-mono text-xs break-all">{h.hardware_serial}</p>
                             </div>
                           )}
                           {h.subscription && (
@@ -1515,6 +1530,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     }}
                     useForArpPoll={editUseForArpPoll}
                     onUseForArpPollChange={setEditUseForArpPoll}
+                    defaultUseForArpPoll={editClassification === "router" || editClassification === "firewall"}
                   />
                 )}
                 {editingDevice && !isHostItem(editingDevice) && typeof editingDevice.id === "number" && (

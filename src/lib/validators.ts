@@ -56,7 +56,7 @@ export const HostSchema = z.object({
 });
 
 export const HostUpdateSchema = z.object({
-  custom_name: z.string().max(200).optional(),
+  custom_name: z.string().max(200).optional().nullable(),
   classification: z.string().max(100).optional(),
   inventory_code: z.string().max(100).optional(),
   notes: z.string().max(2000).optional(),
@@ -102,7 +102,7 @@ export const NetworkDeviceSchema = z.object({
   host: z.string().min(1, "Host richiesto").max(2000),
   device_type: z.enum(["router", "switch", "firewall", "hypervisor"]),
   classification: z.preprocess(emptyToUndefined, z.string().max(100).optional().nullable()),
-  vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"]),
+  vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "apple", "other"]),
   vendor_subtype: z.preprocess(emptyToUndefined, z.enum(["procurve", "comware"]).optional().nullable()),
   /** Profilo prodotto (marca + tipologia), obbligatorio per scan e inventario dedicati */
   product_profile: z.preprocess(emptyToUndefined, productProfileEnum.optional().nullable()),
@@ -121,7 +121,7 @@ export const NetworkDeviceSchema = z.object({
   api_token: z.string().max(500).optional(),
   api_url: z.preprocess(emptyToUndefined, z.string().url().optional()),
   port: z.coerce.number().int().min(1).max(65535).optional(),
-  scan_target: z.preprocess(emptyToUndefined, z.enum(["proxmox", "vmware", "windows", "linux"]).optional().nullable()),
+  scan_target: z.preprocess(emptyToUndefined, z.enum(["proxmox", "vmware", "windows", "linux", "macos"]).optional().nullable()),
   use_for_arp_poll: z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : v === true || v === 1 || v === "1" || v === "true" ? 1 : 0), z.union([z.literal(0), z.literal(1)]).optional()),
 });
 

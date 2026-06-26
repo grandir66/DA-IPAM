@@ -374,6 +374,58 @@ async function edgeFetchWithRawToken(
   }
 }
 
+export async function edgeApiGet<T>(
+  scanner: Pick<VulnScannerRow, "base_url" | "token_encrypted" | "cert_pin">,
+  path: string,
+  opts: { timeoutMs?: number } = {},
+): Promise<T> {
+  return edgeFetch<T>(scanner, path, {}, opts);
+}
+
+export async function edgeApiPost<T>(
+  scanner: Pick<VulnScannerRow, "base_url" | "token_encrypted" | "cert_pin">,
+  path: string,
+  body: unknown,
+  opts: { timeoutMs?: number } = {},
+): Promise<T> {
+  return edgeFetch<T>(
+    scanner,
+    path,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    opts,
+  );
+}
+
+export async function edgeApiPut<T>(
+  scanner: Pick<VulnScannerRow, "base_url" | "token_encrypted" | "cert_pin">,
+  path: string,
+  body: unknown,
+  opts: { timeoutMs?: number } = {},
+): Promise<T> {
+  return edgeFetch<T>(
+    scanner,
+    path,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    opts,
+  );
+}
+
+export async function edgeApiDelete<T>(
+  scanner: Pick<VulnScannerRow, "base_url" | "token_encrypted" | "cert_pin">,
+  path: string,
+  opts: { timeoutMs?: number } = {},
+): Promise<T> {
+  return edgeFetch<T>(scanner, path, { method: "DELETE" }, opts);
+}
+
 export async function listScans(
   scanner: VulnScannerRow,
   since?: string,

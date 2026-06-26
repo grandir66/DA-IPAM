@@ -21,6 +21,7 @@ import {
   vendorSubtypeFromProductProfile,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
+import { isProxmoxVeDevice } from "@/lib/devices/device-acquisition-resolve";
 
 export interface DeviceTestResult {
   success: boolean;
@@ -32,10 +33,14 @@ export interface DeviceTestResult {
   proxmox_targets?: { ip: string; api: boolean; ssh: boolean }[];
 }
 
-export function isProxmoxDevice(device: { device_type?: string; protocol?: string; scan_target?: string | null; vendor?: string }): boolean {
-  const scanTarget = device.scan_target;
-  if (scanTarget === "windows" || scanTarget === "vmware" || scanTarget === "linux") return false;
-  return scanTarget === "proxmox" || device.device_type === "hypervisor" || device.vendor === "proxmox";
+export function isProxmoxDevice(device: {
+  device_type?: string;
+  protocol?: string;
+  scan_target?: string | null;
+  vendor?: string;
+  product_profile?: string | null;
+}): boolean {
+  return isProxmoxVeDevice(device);
 }
 
 export function isWindowsDevice(device: { vendor?: string; protocol?: string; scan_target?: string | null }): boolean {

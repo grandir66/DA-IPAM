@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { getIntegrationConfig, setIntegrationConfig } from "@/lib/integrations/config";
 import { getContainerStatus } from "@/lib/integrations/docker";
+import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
 import type { IntegrationComponent } from "@/lib/integrations/types";
 import { z } from "zod";
 
@@ -31,7 +32,12 @@ export async function GET(
     containerStatus = await getContainerStatus(cfg.containerName);
   }
 
-  return NextResponse.json({ component, config: cfg, containerStatus });
+  return NextResponse.json({
+    component,
+    config: cfg,
+    browserUrl: cfg.browserUrl ?? resolveIntegrationBrowserUrl(component, cfg.url),
+    containerStatus,
+  });
 }
 
 const ConfigSchema = z.object({
@@ -41,6 +47,7 @@ const ConfigSchema = z.object({
   username: z.string().optional(),
   password: z.string().optional(),
   containerName: z.string().optional(),
+  uiUrl: z.string().optional(),
 });
 
 export async function PUT(

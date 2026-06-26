@@ -32,6 +32,8 @@ import {
 } from "@/components/ui/dialog";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { inferVendorFromManufacturer } from "@/lib/vendor-inference";
+import { isMacOsHost, suggestEndpointClassification } from "@/lib/host-platform-detect";
+import { getDefaultProductProfileForVendor } from "@/lib/device-product-profiles";
 import { toast } from "sonner";
 import type { HostDetail, HostSnmpData, NetworkDevice } from "@/types";
 
@@ -78,29 +80,41 @@ function buildInitialForm(host: HostDetail): DeviceFormState {
   let snmp: HostSnmpData | null = null;
   try { if (host.snmp_data) snmp = JSON.parse(host.snmp_data) as HostSnmpData; } catch { /* ignore */ }
 
-  // F1: prefer server-side auto-classify (inferred_*) over client-side heuristics.
+  const isMac = isMacOsHost({
+    os_info: host.os_info,
+    inferred_os_family: host.inferred_os_family,
+    device_manufacturer: host.device_manufacturer,
+    model: host.model,
+    vendor: host.vendor,
+  });
+
   const hasInferred = !!host.inferred_at;
   const inferredVendor = host.inferred_vendor ?? null;
   const inferredProtocol = host.inferred_protocol ?? null;
   const inferredDeviceType = host.inferred_device_type ?? null;
-  const inferredClassification = host.inferred_scan_target ?? null;
+  const inferredScanTarget = host.inferred_scan_target ?? null;
 
   const vendorOptions = new Set([
     "cisco", "mikrotik", "juniper", "ubiquiti", "fortinet", "stormshield", "sonicwall", "draytek",
     "synology", "qnap", "vmware", "proxmox", "hp", "dell", "lenovo", "microsoft", "apple", "other",
   ]);
-  const mappedInferredVendor = inferredVendor && vendorOptions.has(inferredVendor) ? inferredVendor : null;
-  const vendor = mappedInferredVendor ?? inferVendorFromManufacturer(snmp?.manufacturer ?? host.device_manufacturer ?? null);
+  let vendor = isMac
+    ? "apple"
+    : (inferredVendor && vendorOptions.has(inferredVendor) ? inferredVendor : null)
+      ?? inferVendorFromManufacturer(snmp?.manufacturer ?? host.device_manufacturer ?? null);
 
   const protocolOptions = new Set(["ssh", "snmp_v2", "snmp_v3", "winrm", "api"]);
-  const protocol = (inferredProtocol && protocolOptions.has(inferredProtocol) ? inferredProtocol : null) ?? inferProtocolFromSnmp(snmp);
+  let protocol = isMac
+    ? "ssh"
+    : (inferredProtocol && protocolOptions.has(inferredProtocol) ? inferredProtocol : null)
+      ?? inferProtocolFromSnmp(snmp);
 
   let device_type: "router" | "switch" | "hypervisor";
   if (inferredDeviceType === "router" || inferredDeviceType === "switch" || inferredDeviceType === "hypervisor") {
     device_type = inferredDeviceType;
   } else if (inferredDeviceType === "firewall") {
     device_type = "router";
-  } else if (inferredDeviceType === "workstation" || inferredDeviceType === "server") {
+  } else if (inferredDeviceType === "workstation" || inferredDeviceType === "server" || inferredDeviceType === "notebook") {
     device_type = "hypervisor";
   } else {
     device_type = inferDeviceTypeFromClassification(host.classification);
@@ -117,13 +131,26 @@ function buildInitialForm(host: HostDetail): DeviceFormState {
   const matchingCred = host.host_credentials?.find((hc) => hc.protocol_type === protoTypeForCred && hc.validated === 1);
   const matchingSnmpCred = host.host_credentials?.find((hc) => hc.protocol_type === "snmp" && hc.validated === 1);
 
+  const macClass = suggestEndpointClassification({
+    os_info: host.os_info,
+    inferred_os_family: host.inferred_os_family,
+    classification: host.classification,
+    model: host.model,
+  });
+  let classification = macClass
+    ?? (hasInferred && inferredDeviceType && inferredDeviceType !== "unknown" ? inferredDeviceType : null)
+    ?? (host.classification !== "unknown" ? host.classification : "");
+  if (classification === "macos") classification = "notebook";
+
+  const productProfile = getDefaultProductProfileForVendor(vendor, classification || null);
+  const scanTarget = isMac ? "macos" : (inferredScanTarget === "macos" ? "macos" : inferredScanTarget);
+
   return {
     name: snmp?.sysName || host.custom_name || host.hostname || host.ip,
     vendor,
     protocol,
     device_type,
-    classification: (hasInferred && inferredClassification) ? inferredClassification
-      : (host.classification !== "unknown" ? host.classification : ""),
+    classification,
     port,
     model: snmp?.model || host.model || "",
     serial_number: snmp?.serialNumber || host.serial_number || "",
@@ -132,11 +159,11 @@ function buildInitialForm(host: HostDetail): DeviceFormState {
     sysdescr: snmp?.sysDescr || host.os_info || "",
     community_string: snmp?.community || "",
     vendorSubtype: null,
-    productProfile: null,
-    scanTarget: inferredClassification,
+    productProfile,
+    scanTarget,
     credentialId: matchingCred ? String(matchingCred.credential_id) : null,
     snmpCredentialId: matchingSnmpCred ? String(matchingSnmpCred.credential_id) : null,
-    useForArpPoll: false,
+    useForArpPoll: classification === "router" || classification === "firewall",
   };
 }
 
@@ -188,6 +215,7 @@ export function PromoteHostDialog({ host, open, onOpenChange, onCreated }: Promo
       sysname: form.sysname || undefined,
       sysdescr: form.sysdescr || undefined,
       community_string: form.community_string || undefined,
+      use_for_arp_poll: form.useForArpPoll ? 1 : undefined,
     };
     if (form.credentialId && form.credentialId !== "none") {
       body.credential_id = Number(form.credentialId);
@@ -258,7 +286,28 @@ export function PromoteHostDialog({ host, open, onOpenChange, onCreated }: Promo
               credentialId={form.credentialId}
               snmpCredentialId={form.snmpCredentialId}
               useForArpPoll={form.useForArpPoll}
-              onClassificationChange={(v) => setForm((f) => ({ ...f, classification: v }))}
+              onClassificationChange={(v) => {
+                setForm((f) => {
+                  const nextVendor =
+                    isMacOsHost({
+                      os_info: host.os_info,
+                      inferred_os_family: host.inferred_os_family,
+                      device_manufacturer: host.device_manufacturer,
+                      model: host.model,
+                      vendor: host.vendor,
+                    }) && (v === "notebook" || v === "workstation")
+                      ? "apple"
+                      : f.vendor;
+                  return {
+                    ...f,
+                    classification: v,
+                    vendor: nextVendor,
+                    productProfile: getDefaultProductProfileForVendor(nextVendor, v),
+                    protocol: nextVendor === "apple" ? "ssh" : f.protocol,
+                    scanTarget: nextVendor === "apple" ? "macos" : f.scanTarget,
+                  };
+                });
+              }}
               onVendorChange={(v) => setForm((f) => ({ ...f, vendor: v, vendorSubtype: v !== "hp" ? null : f.vendorSubtype }))}
               onVendorSubtypeChange={(v) => setForm((f) => ({ ...f, vendorSubtype: v }))}
               onProtocolChange={(v) => setForm((f) => ({ ...f, protocol: v, port: v === "snmp_v2" || v === "snmp_v3" ? 161 : v === "winrm" ? 5985 : 22 }))}
@@ -267,9 +316,9 @@ export function PromoteHostDialog({ host, open, onOpenChange, onCreated }: Promo
               onCredentialIdChange={(v) => setForm((f) => ({ ...f, credentialId: v }))}
               onSnmpCredentialIdChange={(v) => setForm((f) => ({ ...f, snmpCredentialId: v }))}
               onUseForArpPollChange={(v) => setForm((f) => ({ ...f, useForArpPoll: v }))}
-              defaultClassification="server"
-              defaultVendor="other"
-              defaultProtocol="ssh"
+              defaultClassification={form.classification || "notebook"}
+              defaultVendor={form.vendor || "other"}
+              defaultProtocol={form.protocol || "ssh"}
             />
 
             <Separator />

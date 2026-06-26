@@ -54,7 +54,7 @@ log "Installa dipendenze APT (idempotente)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
-    nmap snmp snmp-mibs-downloader \
+    nmap snmp \
     fping iputils-arping iputils-ping mtr-tiny \
     openssh-client \
     libkrb5-dev krb5-config krb5-user libffi-dev \
@@ -62,6 +62,11 @@ apt-get install -y -qq \
     build-essential pkg-config \
     sqlite3 \
     git rsync ca-certificates >/dev/null
+if apt-cache show snmp-mibs-downloader >/dev/null 2>&1; then
+    apt-get install -y -qq snmp-mibs-downloader >/dev/null || warn "snmp-mibs-downloader non installato (continue)"
+else
+    warn "snmp-mibs-downloader non disponibile su questo release Debian/Ubuntu (SNMP ok, MIB opzionali)"
+fi
 ok "APT deps OK"
 
 # ─── Capabilities su nmap ────────────────────────────────────────────────────
@@ -75,14 +80,11 @@ fi
 
 # ─── Venv pywinrm per winrm-bridge.py ───────────────────────────────────────
 
-log "Setup venv pywinrm in $WINRM_VENV"
-if [ ! -x "$WINRM_VENV/bin/python" ]; then
-    python3 -m venv "$WINRM_VENV"
-fi
-"$WINRM_VENV/bin/pip" install --upgrade pip --quiet
-"$WINRM_VENV/bin/pip" install "pywinrm[kerberos]" pyspnego --quiet
-WINRM_VER="$("$WINRM_VENV/bin/python" -c 'import winrm; print(winrm.__version__)')"
-ok "pywinrm $WINRM_VER pronto"
+log "Setup venv WinRM (scripts/setup-winrm-venv.sh)"
+WINRM_VENV="${WINRM_VENV:-/root/.da-invent-venv}" \
+  bash "${APP_DIR}/scripts/setup-winrm-venv.sh"
+WINRM_VER="$("${WINRM_VENV}/bin/python" -c 'import winrm; print(winrm.__version__)')"
+ok "pywinrm ${WINRM_VER} pronto in ${WINRM_VENV}"
 
 # ─── Node.js / npm presence ─────────────────────────────────────────────────
 
@@ -113,6 +115,12 @@ if [ -n "$MISSING" ]; then
     exit 3
 fi
 ok "Tutti i tool di scan presenti"
+
+log "Verifica venv WinRM (verify-install.sh)"
+bash "${APP_DIR}/scripts/verify-install.sh" || {
+  echo "ERROR: verify-install fallito — controllare scripts/setup-winrm-venv.sh" >&2
+  exit 4
+}
 
 cat <<INFO
 

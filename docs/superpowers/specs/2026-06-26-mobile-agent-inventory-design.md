@@ -1,363 +1,207 @@
-# Mobile Agent Inventory — Backend DA-IPAM + contratto API
+# Mobile Device Inventory — Modulo MDM integrato (Headwind) in DA-IPAM
 
-> Data: 2026-06-26 · Stato: design approvato (brainstorming) · Scope: **solo backend DA-IPAM + contratto API**. L'app Android DPC è una spec separata che si sviluppa contro questo contratto.
+> Data: 2026-06-26 · Stato: design approvato (brainstorming) · Revisione 2: **adopt invece di build**.
+> Decisione: NON costruiamo un agente/MDM custom. Adottiamo **Headwind MDM** (Apache-2.0) come
+> modulo Docker integrato di default nell'appliance, e DA-IPAM consuma l'inventario via REST pull.
+> Apple = fase futura, candidato **Commandment** (MIT).
 
 ## 1. Problema e obiettivo
 
-DA-IPAM oggi classifica i device via discovery agentless (nmap/SNMP/ARP/MAC OUI) e via agente
-(Wazuh/GLPI), ma entrambi i percorsi agente assumono un OS desktop/server (Windows/Linux/macOS).
-I **device mobili aziendali (Android, e marginalmente iOS)** restano `unknown` o privi di
-inventario profondo.
+DA-IPAM classifica i device via discovery agentless e via agente (Wazuh/GLPI), ma quei percorsi
+assumono OS desktop/server. I **device mobili aziendali (Android)** restano `unknown` o privi di
+inventario profondo (seriale, modello, OS, app, utente) — dati richiesti per asset management / NIS2.
 
-Vincoli tecnici accertati durante il brainstorming:
+Vincoli accertati nel brainstorming:
 
-- Seriale HW, lista app, profilo utente di un mobile **non sono ottenibili dalla rete** (niente
-  SNMP/porte/WMI). Esistono solo on-device.
-- Su **Android**, seriale HW (`Build.getSerial()`) + **lista completa app** richiedono che l'app
-  sia **Device Owner (Fully Managed)** — Android 10+. I device sono 100% aziendali, quindi il
-  provisioning Device Owner (QR/NFC) è accettabile.
-- Su **iOS** un'app normale non può leggere seriale né app installate (muro Apple: serve essere un
-  MDM con Apple Business Manager). iOS resta quindi **best-effort** (modello/OS/nome device) e
-  non bloccante per questa spec.
+- Seriale/modello/app/utente di un mobile **non sono ottenibili dalla rete**: esistono solo on-device.
+- Su Android serve un **agente Device Owner** (provisioning QR/zero-touch) per seriale + lista app completa.
+- **Google Play Protect (2026)** blocca i launcher DPC custom sui device GMS: vale per *qualunque*
+  agente custom, **incluso uno costruito da noi** → costruire da zero non dà vantaggi, solo lavoro.
+- Esiste già una soluzione open-source matura e self-hostable: **Headwind MDM** (agente + server,
+  Apache-2.0, v6.36 maggio 2026, Docker ufficiale). Flyve MDM scartato (archiviato 2021, solo Android ≤7).
 
-**Obiettivo**: i mobili aziendali compaiono nell'inventario **come PC/server (host first-class)**,
-con un **profilo dati dedicato** (seriale, modello, OS, security patch level, app installate,
-utente), e con **storico delle modifiche nel tempo** (per requisiti NIS2). I dati arrivano via
-**push dell'agente quando il device è sulla rete aziendale**.
+**Obiettivo**: i mobili aziendali compaiono nell'inventario DA-IPAM **come PC/server (host
+first-class)** con un **profilo dati dedicato** (seriale, modello, OS, security patch, app, utente) e
+**storico modifiche**. La gestione device (enrollment, policy) la fa Headwind; **DA-IPAM consuma
+l'inventario** via pull REST e lo fonde nell'asset inventory.
 
-### Non-goal (esplicitamente fuori scope)
+### Non-goal
 
-- L'app Android DPC (build Kotlin, provisioning, firma, distribuzione) → spec separata.
-- Scansione VA sui mobili (basso valore: i telefoni espongono pochissimo).
-- MDM completo (policy push, wipe, configurazione) — qui solo **inventario**.
-- iOS deep inventory (richiede essere MDM ABM).
+- Costruire un agente Android o un MDM da zero (lo fa Headwind).
+- Policy/wipe/kiosk management dentro DA-IPAM (resta nel pannello Headwind; DA-IPAM ci linka).
+- Apple/iOS in questa fase (candidato futuro: Commandment, vedi §10).
 
 ## 2. Architettura d'insieme
 
-Tre attori:
+```
+[Android Device Owner]──HTTPS 443 + 31000──►[hmdm-server (Tomcat9)]──►[Postgres hmdm]
+  (agente Headwind)                                ▲
+                                                   │ REST + JWT (pull cron)
+                                       [DA-IPAM connettore MDM]──► mobile_* tables + hosts (first-class)
+```
 
-1. **App Android DPC (Device Owner)** — client, fuori scope. Raccoglie inventario e fa **push
-   HTTPS** verso DA-IPAM quando rileva la rete aziendale. Mantiene coda offline + retry (lato app).
-2. **Backend DA-IPAM** (questa spec): enrollment, ingest idempotente, data model, storico, UI.
-3. **Inventario host/device esistente**: i mobili confluiscono nelle tabelle `hosts`/`devices`
-   già presenti. `os_family` esteso a `android`/`ios`; `device_type` = `smartphone`/`tablet`
-   (categorie già esistenti in `device-classifications.ts`). Le info profonde vanno in **tabelle
-   mobile dedicate** collegate all'host.
+Due sotto-progetti, repo separati (regola separazione progetti):
 
-Direzione dati: **push** (il telefono è dietro NAT/rete mobile, non pollabile). Modello di
-sicurezza **riusato da scanner-edge** (Bearer token per-device, bcrypt hash sul hub), ma direzione
-opposta (agent→hub invece di hub→edge).
+- **A — Modulo Docker `mdm`** (repo Deploy-Appliance): porta su nel container `hmdm-server` + Postgres
+  dedicato, integrato di default nello stack appliance, togglabile.
+- **B — Connettore MDM DA-IPAM** (repo DA-IPAM, questa spec è focalizzata qui): pull REST/JWT dal
+  server hmdm, data model mobile, merge host first-class, UI inventario + timeline, link al pannello hmdm.
 
-**Esposizione di rete**: il hub è raggiungibile **solo sulla LAN aziendale**. Nessun endpoint
-pubblico, niente NAT traversal. La push avviene opportunisticamente quando l'app vede la rete
-aziendale; `last_seen_at` riflette l'ultimo contatto sulla LAN.
+Topologia: appliance single-tenant su LAN aziendale. Headwind richiede Postgres (separato dallo
+SQLite di DA-IPAM). I device si arruolano quando sono in rete aziendale (combacia col requisito utente).
 
-### Risoluzione tenant (decisione architetturale)
+### Esposizione di rete (decisione)
 
-Una push da mobile **non ha sessione NextAuth**, quindi il token deve risolvere il tenant.
-Introduciamo un **indice globale `mobile_agent_registry`** (DB condiviso, non tenant) che mappa
-`token_hash → tenant_id + agent_id`. Il middleware autentica la push contro l'indice, poi entra nel
-contesto tenant (`withTenant`) per scrivere l'inventario. Il record completo dell'agente vive nel
-**DB del tenant** (`mobile_agents`). Su appliance single-tenant l'indice collassa sul tenant
-`DEFAULT` (nessuna complessità aggiunta in quel deployment).
+**Stesso dominio, porta dedicata.** hmdm-server è servito su `https://<dominio-appliance>:8443`
+(pannello/REST) + porta **31000** per device comms, accanto a DA-IPAM su `:443`. Nessun DNS extra;
+si aprono/instradano le due porte sulla LAN. Cert: riuso del cert appliance esistente (SAN copre il
+dominio). Device port 31000 raggiungibile sulla LAN aziendale.
 
-## 3. Enrollment
+## 3. Componente A — Modulo Docker appliance (sintesi; spec dettagliata in Deploy-Appliance)
 
-- Admin, in `/settings` del tenant, crea un **Mobile Agent**:
-  - Genera token: `crypto.randomBytes(32).toString("base64url")` (mostrato **una volta**).
-  - Salva `token_hash` (bcrypt cost 12) + `token_encrypted` (AES-GCM, per re-display) nel DB tenant.
-  - Inserisce riga in `mobile_agent_registry` (token_hash → tenant + agent_id), `state='active'`.
-- La UI mostra un **QR di enrollment** che incapsula: `{ hub_base_url, enrollment_token, cert_pin }`.
-  L'app Android lo scansiona durante il provisioning Device Owner.
-- **Revoca** per-device: `state='revoked'` su `mobile_agents` + registry → il bearer successivo dà 401.
+- Service `hmdm` (immagine ufficiale `headwindmdm/hmdm`, Ubuntu22+Tomcat9) + service `hmdm-postgres`.
+- Env richiesti: `SQL_HOST/SQL_BASE/SQL_USER/SQL_PASS`, `BASE_DOMAIN`, `PROTOCOL=https`, `ADMIN_EMAIL`.
+- DB Postgres creato esternamente + init automatica al primo avvio (entrypoint hmdm).
+- Cert: monta il cert appliance (no certbot, già gestito a monte) o certbot opzionale.
+- Toggle modulo come edge/wazuh/net-services; default ON nel profilo appliance.
+- Healthcheck su `:8443/swagger-ui.html` (o endpoint health hmdm).
 
-## 4. Transport / Auth
+> Questa spec (DA-IPAM) tratta A solo come dipendenza. Il piano dettagliato del modulo Docker è una
+> spec separata nel repo Deploy-Appliance.
 
-Endpoint (nessun layer NextAuth, come `edge-bridges`):
+## 4. Componente B — Connettore MDM DA-IPAM (focus di questa spec)
 
-| Endpoint | Metodo | Auth | Scopo |
-|---|---|---|---|
-| `/api/mobile-agents/enroll` | POST | enrollment token | One-shot: l'app conferma enrollment, riceve metadata (agent_id, config push interval). |
-| `/api/mobile-agents/inventory` | POST | Bearer per-device | Push periodica dell'inventario (JSON). Idempotente. |
-| `/api/mobile-agents/heartbeat` | POST | Bearer per-device | (opt) keepalive leggero, solo `last_seen_at`. |
+### 4.1 Configurazione
 
-Middleware `authenticateMobileAgent(req)` — clone di `authenticateBridge` (DA-Vul-can
-`src/lib/edge-bridges/auth.ts`):
+Tabella `mdm_config` (DB tenant): `base_url`, `username`, `password_encrypted` (AES-GCM via
+`encrypt()`), `jwt_cached`, `jwt_expires_at`, `enabled`, `last_sync_at`, `last_error`,
+`consecutive_errors`. Default `base_url` = service Docker locale.
 
-1. Estrae `Authorization: Bearer <token>`.
-2. Lookup in `mobile_agent_registry` (solo `state='active'`).
-3. `bcrypt.compare(plaintext, token_hash)`.
-4. Match → risolve `tenant_id`, aggiorna `last_seen_at`, ritorna `{ tenantId, agentId }`.
-5. No match → `401` + `WWW-Authenticate: Bearer`.
+### 4.2 Autenticazione
 
-TLS: nginx davanti al hub; TOFU/SPKI pinning lato app (riuso pattern
-`scanner-edge-client.ts`), cert pin distribuito nel QR di enrollment.
+Login JWT verso hmdm (`POST /rest/public/jwt/login` o equivalente — confermare su Swagger del server
+installato), cache del token + refresh on 401. Password cifrata at-rest, mai loggata.
 
-**Idempotenza ingest**: ogni payload porta uno `snapshot_sha256`. Dedup come
-`edge_uploads UNIQUE(sha256, agent_id)`: una push ripetuta (retry coda offline) non duplica storico.
+### 4.3 Pull
 
-## 5. Data model
+Cron staggered su `scheduled_jobs` (riuso pattern Wazuh/LibreNMS), ogni N minuti:
 
-### Indice globale (DB condiviso)
+1. GET lista device (`DeviceResource`) → per ciascun device: numero seriale, IMEI, modello,
+   manufacturer, versione OS/Android, utente/employee, last seen.
+2. GET app installate per device (`ApplicationResource` o campo del device sync).
+3. Map → `mobile_device_inventory` + `mobile_device_apps`, diff → `mobile_inventory_history`,
+   merge host first-class.
+
+### 4.4 Data model (DB tenant — migrazioni in `db-tenant-schema.ts`)
 
 ```sql
-CREATE TABLE mobile_agent_registry (
-  token_hash   TEXT PRIMARY KEY,   -- bcrypt
-  tenant_id    TEXT NOT NULL,
-  agent_id     INTEGER NOT NULL,   -- FK logica verso mobile_agents nel DB tenant
-  state        TEXT NOT NULL DEFAULT 'active',  -- 'active' | 'revoked'
-  created_at   TEXT DEFAULT (datetime('now'))
-);
-CREATE INDEX idx_mobile_registry_state ON mobile_agent_registry(state);
-```
-
-### DB tenant (migrazioni in `db-tenant-schema.ts` → `applyMigrations()`)
-
-```sql
--- Agente registrato (1:1 con un host mobile)
-CREATE TABLE mobile_agents (
-  id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  label             TEXT NOT NULL,
-  host_id           INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
-  token_hash        TEXT NOT NULL,
-  token_encrypted   TEXT NOT NULL,
-  platform          TEXT,            -- 'android' | 'ios'
-  enrollment_mode   TEXT,            -- 'device_owner' | 'work_profile' | 'unmanaged'
-  agent_version     TEXT,
-  state             TEXT NOT NULL DEFAULT 'active',  -- 'active' | 'revoked'
-  enrolled_at       TEXT,
-  last_seen_at      TEXT,
-  last_inventory_at TEXT,
-  created_at        TEXT DEFAULT (datetime('now')),
-  updated_at        TEXT DEFAULT (datetime('now'))
+CREATE TABLE IF NOT EXISTS mdm_config (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  base_url TEXT, username TEXT, password_encrypted TEXT,
+  jwt_cached TEXT, jwt_expires_at TEXT,
+  enabled INTEGER DEFAULT 0, last_sync_at TEXT, last_error TEXT,
+  consecutive_errors INTEGER DEFAULT 0
 );
 
--- Snapshot corrente del profilo device (1:1 con agente)
-CREATE TABLE mobile_device_inventory (
-  agent_id            INTEGER PRIMARY KEY REFERENCES mobile_agents(id) ON DELETE CASCADE,
-  serial              TEXT,
-  model               TEXT,
-  manufacturer        TEXT,
-  os_family           TEXT,          -- 'android' | 'ios'
-  os_version          TEXT,
-  security_patch      TEXT,          -- es. '2026-05-01'
-  user_profile        TEXT,          -- utente/owner assegnato
-  imei                TEXT,          -- opzionale
-  storage_total_mb    INTEGER,
-  storage_free_mb     INTEGER,
-  primary_mac         TEXT,          -- per merge con host di rete
-  snapshot_sha256     TEXT,          -- ultimo snapshot applicato (idempotenza)
-  last_inventory_at   TEXT
+CREATE TABLE IF NOT EXISTS mobile_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  hmdm_device_id TEXT UNIQUE,        -- id/number del device su Headwind (chiave di sync)
+  host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+  label TEXT, last_seen_at TEXT, last_sync_at TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
 );
 
--- Lista completa app installate (stato corrente)
-CREATE TABLE mobile_device_apps (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  agent_id      INTEGER NOT NULL REFERENCES mobile_agents(id) ON DELETE CASCADE,
-  package_name  TEXT NOT NULL,
-  app_name      TEXT,
-  version_name  TEXT,
-  version_code  INTEGER,
-  system_app    INTEGER DEFAULT 0,
-  first_seen    TEXT,
-  last_seen     TEXT,
-  UNIQUE(agent_id, package_name)
+CREATE TABLE IF NOT EXISTS mobile_device_inventory (
+  device_id INTEGER PRIMARY KEY REFERENCES mobile_devices(id) ON DELETE CASCADE,
+  serial TEXT, model TEXT, manufacturer TEXT,
+  os_family TEXT, os_version TEXT, security_patch TEXT,
+  user_profile TEXT, imei TEXT,
+  storage_total_mb INTEGER, storage_free_mb INTEGER,
+  primary_mac TEXT, snapshot_sha256 TEXT, last_inventory_at TEXT
 );
 
--- Storico append-only delle modifiche (NIS2)
-CREATE TABLE mobile_inventory_history (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  agent_id    INTEGER NOT NULL REFERENCES mobile_agents(id) ON DELETE CASCADE,
-  changed_at  TEXT DEFAULT (datetime('now')),
-  change_type TEXT NOT NULL,    -- 'os_update'|'patch_update'|'app_added'|'app_removed'|'user_change'|'field_change'
-  field       TEXT,             -- nome campo o package_name
-  old_value   TEXT,
-  new_value   TEXT
+CREATE TABLE IF NOT EXISTS mobile_device_apps (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER NOT NULL REFERENCES mobile_devices(id) ON DELETE CASCADE,
+  package_name TEXT NOT NULL, app_name TEXT,
+  version_name TEXT, version_code INTEGER, system_app INTEGER DEFAULT 0,
+  first_seen TEXT, last_seen TEXT,
+  UNIQUE(device_id, package_name)
 );
-CREATE INDEX idx_mobile_history_agent ON mobile_inventory_history(agent_id, changed_at);
+
+CREATE TABLE IF NOT EXISTS mobile_inventory_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER NOT NULL REFERENCES mobile_devices(id) ON DELETE CASCADE,
+  changed_at TEXT DEFAULT (datetime('now')),
+  change_type TEXT NOT NULL,   -- 'os_update'|'patch_update'|'app_added'|'app_removed'|'user_change'|'field_change'
+  field TEXT, old_value TEXT, new_value TEXT
+);
 ```
 
-`os_family` deve accettare `android`/`ios`: estendere `auto-classify.ts` (oggi iOS→macos) e i
-mapping di `device-classifications.ts` per riconoscerli come valori first-class.
+`hosts.os_family` è una colonna **GENERATED VIRTUAL** derivata da `os_info` (oggi solo
+Windows/Apple/Linux/Unknown). Va esteso il CASE per emettere `Android`/`iOS` quando `os_info` contiene
+android/ios — operazione che tocca il noto "os_family ALTER bomb" (recovery via rebuild hosts, già
+presente in `db-tenant.ts`). L'ingest scrive `os_info = "Android 15"`.
 
-## 6. Ingest & tracking
+### 4.5 Ingest & tracking
 
-Su `POST /api/mobile-agents/inventory`:
+Per device pullato: dedup per `snapshot_sha256` (no scrittura se invariato); diff campi/app →
+`mobile_inventory_history`; upsert inventory+apps; merge in `hosts` per `primary_mac`/`serial`
+(riuso `upsertHost`), set `os_info`/`os_family`, lega `mobile_devices.host_id`. Tutto in transazione.
 
-1. Auth via `authenticateMobileAgent` → `{ tenantId, agentId }`.
-2. `try/catch` su `req.json()`; validazione **Zod v4** del payload.
-3. Calcolo/confronto `snapshot_sha256`: se identico all'ultimo applicato → `200 { deduped: true }`,
-   aggiorna solo `last_seen_at`/`last_inventory_at`, nessuna scrittura storico.
-4. Diff vs stato precedente:
-   - Campi profilo (`os_version`, `security_patch`, `user_profile`, …) cambiati → riga
-     `mobile_inventory_history` (`field_change`/`os_update`/`patch_update`/`user_change`).
-   - App: confronto per `package_name` → `app_added` / `app_removed` / aggiornamento `version`.
-5. Upsert `mobile_device_inventory` + `mobile_device_apps`.
-6. **Merge host first-class**: trova/crea `hosts` per `primary_mac`/`serial` (riuso pattern
-   `enrichHost*`), setta `os_family`, `device_type`, lega `mobile_agents.host_id`. Il mobile
-   appare in inventario/subnet come un PC.
+### 4.6 UI
 
-Tutte le scritture in transazione singola per push.
+- **Inventario**: i mobili nella lista host esistente (badge smartphone/tablet, os_family android/ios).
+- **Dettaglio host mobile**: profilo dedicato (seriale/modello/OS/patch/utente) + lista app + timeline storico.
+- **`/settings/mdm`**: config connessione hmdm (URL/credenziali/enable), stato sync (`last_sync_at`,
+  errori), **link al pannello Headwind** per gestione device/enrollment (QR lo genera hmdm, non DA-IPAM).
 
-## 7. UI
+## 5. Error handling
 
-- **Inventario**: i mobili compaiono nella lista host/device esistente (badge `smartphone`/`tablet`,
-  `os_family` android/ios), filtrabili come gli altri.
-- **Dettaglio host mobile**: pannello/profilo dedicato con seriale, modello, OS, security patch,
-  utente, **lista app completa**, e **timeline modifiche** da `mobile_inventory_history`.
-- **`/settings` → Mobile Agents**: crea agente (mostra QR + token one-time), lista agenti con
-  `last_seen_at`/versione/stato, azione **revoca**.
+- `req.json()` in try/catch → 400. Zod `.issues`. Route admin con `requireAdmin()`; route lettura `requireAuth()`.
+- Connettore: timeout + retry su pull; `consecutive_errors` con auto-disable (pattern `vuln_scanners`);
+  JWT refresh on 401; password via `safeDecrypt()`; nessun PII/credenziale nei log.
+- Tutte le scritture tenant dentro `withTenant`/`withTenantFromSession` (no fallback `DEFAULT.db`).
 
-## 8. Error handling
+## 6. Testing
 
-- `req.json()` sempre in `try/catch` → `400 Invalid JSON`.
-- Validazione Zod → `400 { error: issues }` (`.issues`, non `.errors`).
-- Auth fallita → `401` + `WWW-Authenticate: Bearer`.
-- `decrypt()` token via `safeDecrypt()` nei path non critici.
-- Tutte le route sotto `withTenantFromSession`/contesto tenant esplicito per evitare il fallback
-  silenzioso su `DEFAULT.db` (vedi reference getDb tenant fallback).
+`scripts/test-mdm-connector.ts`: contro un hmdm-server (Docker locale o mock) con ≥1 device arruolato,
+verifica login JWT, pull, creazione host first-class, popolamento inventory+apps, dedup su 2° pull,
+diff/history su device modificato. Mapping campi `DeviceResource` confermato leggendo lo Swagger reale.
 
-## 9. Testing (senza app)
+## 7. Sequenza implementazione (componente B)
 
-`scripts/test-mobile-agent.ts` (o curl) simula l'intero flusso contro un dev server:
+1. Migrazioni schema (`mdm_config` + 4 tabelle mobile) + estensione os_family android/ios.
+2. Client hmdm (`src/lib/integrations/hmdm-client.ts`): login JWT, list devices, get apps.
+3. Mapper + ingest (dedup/diff/history/host-merge) in `src/lib/integrations/mdm-sync.ts`.
+4. Cron job staggered + registrazione in `scheduled_jobs`.
+5. Endpoint `/api/mdm/*` (config CRUD admin, trigger sync manuale).
+6. UI `/settings/mdm` + profilo mobile + timeline nel dettaglio host.
+7. `scripts/test-mdm-connector.ts`.
 
-1. Admin crea agente → ottiene token.
-2. `enroll` con enrollment token.
-3. `inventory` push #1 (profilo + 50 app) → verifica host creato, profilo popolato, app inserite.
-4. Push #2 identica → `deduped: true`, nessuna riga storico.
-5. Push #3 con OS aggiornato + 1 app aggiunta + 1 rimossa → verifica 3 righe `mobile_inventory_history`.
-6. Revoca agente → push successiva `401`.
+## 8. Dipendenza dal componente A
 
-## 10. Sequenza implementazione suggerita
+Lo sviluppo del connettore (B) richiede un hmdm-server raggiungibile. Per sbloccare B in parallelo ad
+A: avviare hmdm via Docker ufficiale in locale (un comando) e arruolare un device/emulatore di test, OPPURE
+mockare le risposte REST a partire dallo Swagger. Il modulo appliance (A) finalizza il deploy di produzione.
 
-1. Migrazioni schema (registry globale + 4 tabelle tenant) in `applyMigrations()`.
-2. `os_family` android/ios in `auto-classify.ts` + `device-classifications.ts`.
-3. Middleware `authenticateMobileAgent` + helper DB (registry + tenant).
-4. Endpoint enroll / inventory / heartbeat con Zod + dedup + diff/history.
-5. Merge host first-class.
-6. UI: settings (CRUD agenti + QR) + profilo mobile + timeline nel dettaglio host.
-7. `scripts/test-mobile-agent.ts`.
+## 9. Mapping campi (da confermare su Swagger del server installato)
 
-> Branch governance DA-IPAM: sviluppo su `dev`, mai push diretta su `main` (promote via UI).
+| DA-IPAM | Headwind (atteso) | Note |
+|---|---|---|
+| serial | device.serial / imeiOrSerial | confermare nome campo |
+| model | device.model | |
+| os_version | device.androidVersion / osVersion | |
+| user_profile | device.user / employee | |
+| imei | device.imei | |
+| apps[] | device installed apps / ApplicationResource | lista completa (Device Owner) |
+| last_seen_at | device.lastSeen | |
 
----
+## 10. Fase futura — Apple/iOS
 
-## 11. Contratto API (dettaglio per l'app)
-
-Riferimento normativo per chi sviluppa l'app Android. Tutti gli endpoint:
-`Content-Type: application/json`, TLS, base URL = quella ricevuta nel QR di enrollment.
-Convenzione errori: `{ "error": string, "details"?: unknown }`.
-
-### 11.1 `POST /api/mobile-agents/enroll`
-
-One-shot al primo avvio dopo il provisioning Device Owner. Scambia l'**enrollment token**
-(dal QR) con un **per-device token** usato per tutte le chiamate successive.
-
-**Auth**: `Authorization: Bearer <enrollment_token>` (il token del QR).
-
-**Request body**:
-```json
-{
-  "device_fingerprint": "a1b2c3...",   // string, obbligatorio — id stabile generato dall'app (es. hash androidId+serial)
-  "platform": "android",                // "android" | "ios", obbligatorio
-  "enrollment_mode": "device_owner",    // "device_owner" | "work_profile" | "unmanaged", obbligatorio
-  "agent_version": "1.0.0",             // string, obbligatorio
-  "model": "Pixel 8",                   // string, opzionale (anticipo, utile per label)
-  "label": "Telefono Mario Rossi"       // string, opzionale — se assente il server usa model
-}
-```
-
-**Response 200**:
-```json
-{
-  "agent_id": 42,                       // int
-  "device_token": "kP3...base64url",    // string — usare come Bearer in TUTTE le chiamate successive
-  "heartbeat_interval_sec": 900,        // int — cadenza heartbeat consigliata
-  "inventory_interval_sec": 86400       // int — cadenza push inventario consigliata
-}
-```
-Il `device_token` è mostrato **una sola volta**: l'app lo persiste in modo sicuro (Keystore).
-Idempotenza: se lo stesso `device_fingerprint` ri-enrolla, il server **ruota** il device_token e
-ritorna lo stesso `agent_id` (re-provisioning del device, non un duplicato).
-
-**Errori**: `401` enrollment token non valido/revocato · `400` body non valido (Zod `.issues`).
-
-### 11.2 `POST /api/mobile-agents/inventory`
-
-Push completa dell'inventario. **Auth**: `Authorization: Bearer <device_token>`.
-
-**Request body**:
-```json
-{
-  "snapshot_sha256": "9f86d0...",       // string, obbligatorio — sha256 del JSON canonico di "device"+"apps" (idempotenza)
-  "captured_at": "2026-06-26T10:00:00Z",// string ISO-8601, obbligatorio — quando l'app ha raccolto i dati
-  "device": {
-    "serial": "RZ8…",                   // string|null — null se non Device Owner
-    "model": "Pixel 8",                 // string, obbligatorio
-    "manufacturer": "Google",           // string, obbligatorio
-    "os_family": "android",             // "android" | "ios", obbligatorio
-    "os_version": "15",                 // string, obbligatorio
-    "security_patch": "2026-05-01",     // string|null — security patch level
-    "user_profile": "mario.rossi",      // string|null — owner/utente assegnato
-    "imei": "3567…",                    // string|null — opzionale
-    "primary_mac": "AA:BB:CC:DD:EE:FF", // string|null — per merge con host di rete (può essere randomizzato)
-    "storage_total_mb": 128000,         // int|null
-    "storage_free_mb": 64000            // int|null
-  },
-  "apps": [                             // array, obbligatorio (può essere vuoto) — LISTA COMPLETA, non un delta
-    {
-      "package_name": "com.whatsapp",   // string, obbligatorio
-      "app_name": "WhatsApp",           // string|null
-      "version_name": "2.26.1",         // string|null
-      "version_code": 261000,           // int|null
-      "system_app": false               // bool, default false
-    }
-  ]
-}
-```
-
-> L'array `apps` è sempre lo **stato completo** corrente. Il server calcola lui il diff
-> (added/removed/updated) confrontando con lo snapshot precedente: l'app NON deve mandare delta.
-
-**Response 200 (applicato)**:
-```json
-{ "deduped": false, "agent_id": 42, "changes": 3, "host_id": 117 }
-```
-**Response 200 (già visto — stesso snapshot_sha256)**:
-```json
-{ "deduped": true, "agent_id": 42 }
-```
-In caso `deduped:true` il server aggiorna solo `last_seen_at`/`last_inventory_at`, nessuna scrittura
-storico. Questo rende sicuro il retry dalla coda offline dell'app.
-
-**Errori**: `401` device_token non valido/revocato · `400` JSON/Zod invalido · `413` payload troppo
-grande (limite app list, da definire, es. 5 MB).
-
-### 11.3 `POST /api/mobile-agents/heartbeat`
-
-Keepalive leggero per definire l'**ultimo visto** anche quando l'inventario non cambia.
-**Auth**: `Authorization: Bearer <device_token>`.
-
-**Request body**:
-```json
-{ "agent_version": "1.0.0" }           // string, opzionale
-```
-
-**Response 200**:
-```json
-{ "ok": true, "server_time": "2026-06-26T10:05:00Z" }
-```
-Effetto: aggiorna solo `mobile_agents.last_seen_at` (+ `agent_version` se presente). Nessun altro
-side-effect.
-
-**Errori**: `401` device_token non valido/revocato.
-
-### 11.4 Note di comportamento per l'app
-
-- **Coda offline**: l'app accumula gli snapshot quando fuori dalla rete aziendale e li invia al
-  ritorno in LAN. Grazie a `snapshot_sha256` i re-invii non duplicano lo storico.
-- **Ordine**: l'app fa `enroll` una volta, poi alterna `heartbeat` (frequente) e `inventory`
-  (raro o on-change). Non serve heartbeat subito dopo un inventory.
-- **Sicurezza token**: `device_token` in Android Keystore; mai in log/SharedPreferences in chiaro.
-- **TLS pinning**: l'app pinna l'SPKI del cert hub ricevuto nel QR (TOFU); rifiuta connessioni con
-  pin diverso.
+Candidato: **Commandment** (`cmdmnt/commandment`, **MIT**, Python+TS). Copre iOS/macOS via protocollo
+Apple MDM + APNs (unica via sanzionata da Apple). Richiede **Apple MDM Push Certificate** +
+TLS fidato + (per supervisione piena) Apple Business Manager. Manutenzione viva ma senza release
+recenti → **valutarne la maturità quando si apre la fase Apple**. Architettura prevista identica:
+Commandment come modulo Docker appliance + connettore pull DA-IPAM che riusa lo stesso data model
+mobile (os_family già pronto per `iOS`). Nessun lavoro Apple in questa fase.

@@ -200,9 +200,23 @@ function NavGroup({
   onNavigate: () => void;
 }) {
   const anyActive = items.some((d) => isActive(d.href));
+  const btnRef = useRef<HTMLButtonElement>(null);
+  // Flyout in position:fixed (sfugge al clip orizzontale di nav overflow-y-auto).
+  const [flyout, setFlyout] = useState<{ top: number; left: number } | null>(null);
+
+  const showFlyout = () => {
+    if (!collapsed) return;
+    const el = btnRef.current;
+    if (!el || typeof window === "undefined" || window.innerWidth < 768) return; // solo desktop
+    const r = el.getBoundingClientRect();
+    setFlyout({ top: r.top, left: r.right });
+  };
+  const hideFlyout = () => setFlyout(null);
+
   return (
-    <div className="pt-1 relative group">
+    <div className="pt-1 relative" onMouseEnter={showFlyout} onMouseLeave={hideFlyout}>
       <button
+        ref={btnRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         title={collapsed ? label : undefined}
@@ -232,9 +246,12 @@ function NavGroup({
         </div>
       )}
 
-      {/* Flyout al hover (solo desktop collassato) */}
-      {collapsed && (
-        <div className="absolute left-full top-0 z-50 hidden md:group-hover:block pl-2">
+      {/* Flyout al hover (solo desktop collassato), fixed per non essere clippato */}
+      {collapsed && flyout && (
+        <div
+          style={{ position: "fixed", top: flyout.top, left: flyout.left }}
+          className="z-50 pl-2"
+        >
           <div className="min-w-[210px] rounded-lg bg-sidebar border border-sidebar-border shadow-xl p-2 space-y-0.5">
             <p className="px-2.5 pt-1 pb-1.5 text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
               {label}

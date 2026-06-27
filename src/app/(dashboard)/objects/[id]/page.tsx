@@ -35,6 +35,7 @@ const EditDeviceDialog = dynamic(() => import("@/components/devices/edit-device-
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
 import { HostInventoryAgentCard } from "@/components/hosts/host-inventory-agent-card";
+import { MobileProfilePanel } from "@/components/mobile/MobileProfilePanel";
 const UptimeTimeline = dynamic(() => import("@/components/shared/uptime-timeline").then((m) => ({ default: m.UptimeTimeline })), { ssr: false });
 const LatencyChart = dynamic(() => import("@/app/(dashboard)/hosts/[id]/latency-chart").then((m) => ({ default: m.LatencyChart })), { ssr: false });
 const LibreNMSDeviceGraphs = dynamic(() => import("@/components/integrations/librenms-device-graphs").then((m) => ({ default: m.LibreNMSDeviceGraphs })), { ssr: false });
@@ -902,6 +903,11 @@ export default function ObjectDetailPage() {
 
         {/* ═══════════════ TAB: GENERALE ═══════════════ */}
         <TabsContent value="generale" className="space-y-4">
+
+      {/* Profilo MDM (Mobile): si auto-nasconde se l'host non ha dati MDM associati
+          (l'endpoint by-host ritorna detail=null). Non gatiamo sulla classificazione
+          perché os_family generata 'Android' ≠ inferred_os_family. */}
+      <MobileProfilePanel hostId={host.id} />
 
       {/* ─── v0.2.608: Stato runtime condensato — 3 righe invece di 8. */}
       <Section

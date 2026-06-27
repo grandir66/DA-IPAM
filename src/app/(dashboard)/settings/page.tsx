@@ -55,6 +55,7 @@ import {
   KeyRound,
   PackageOpen,
   Wrench,
+  Smartphone,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { ScheduledJob, NetworkWithStats } from "@/types";
@@ -1214,6 +1215,29 @@ function SettingsPageInner() {
               </CardContent>
             </Card>
           )}
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Smartphone className="h-5 w-5 text-primary" />
+                <CardTitle className="text-base">MDM (Headwind)</CardTitle>
+              </div>
+              <CardDescription>
+                Configura la connessione al server Headwind MDM per importare i dispositivi mobili (Android/iOS) come host e sincronizzarne l&apos;inventario.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.push("/settings/mdm")}
+                className="gap-2"
+              >
+                <Smartphone className="h-4 w-4" />
+                Configura MDM
+              </Button>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

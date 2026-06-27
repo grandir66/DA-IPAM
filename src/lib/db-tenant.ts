@@ -160,6 +160,9 @@ export function getTenantDb(tenantCode: string): Database.Database {
       CASE
         WHEN os_info IS NULL OR TRIM(os_info) = '' THEN 'Unknown'
         WHEN LOWER(os_info) LIKE '%windows%' THEN 'Windows'
+        WHEN LOWER(os_info) LIKE '%android%' THEN 'Android'
+        WHEN LOWER(os_info) LIKE 'ios%' OR LOWER(os_info) LIKE '%ipados%'
+          OR LOWER(os_info) LIKE '%iphone%' OR LOWER(os_info) LIKE '%ipad%' THEN 'iOS'
         WHEN LOWER(os_info) LIKE '%macos%' OR LOWER(os_info) LIKE '%mac os%'
           OR LOWER(os_info) LIKE '%darwin%' OR LOWER(os_info) LIKE '%osx%' THEN 'Apple'
         WHEN LOWER(os_info) LIKE '%linux%' OR LOWER(os_info) LIKE '%ubuntu%'
@@ -173,13 +176,19 @@ export function getTenantDb(tenantCode: string): Database.Database {
     ) VIRTUAL
   `;
 
-  /** Ricrea hosts senza os_family corrotta (double-quote legacy) — DROP COLUMN fallisce. */
+  /**
+   * Ricrea hosts per riapplicare la definizione GENERATED di os_family corrente.
+   * Trigger: (a) os_family corrotta double-quote legacy (DROP COLUMN fallisce), oppure
+   * (b) definizione obsoleta priva dei rami Android/iOS (aggiunti per il modulo MDM).
+   */
   function rebuildHostsOsFamilyLegacy(): boolean {
     const hostsTableSql =
       (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='hosts'").get() as
         | { sql?: string }
         | undefined)?.sql ?? "";
-    if (!hostsTableSql.includes('"Unknown"') && !hostsTableSql.includes('"Windows"')) {
+    const isDoubleQuoteLegacy = hostsTableSql.includes('"Unknown"') || hostsTableSql.includes('"Windows"');
+    const missingAndroidBranch = hostsTableSql.includes("os_family") && !hostsTableSql.includes("'Android'");
+    if (!isDoubleQuoteLegacy && !missingAndroidBranch) {
       return false;
     }
     const colRows = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{
@@ -227,13 +236,16 @@ export function getTenantDb(tenantCode: string): Database.Database {
       // triggera integrity check e fallisce con "no such column: \"\"".
       // Detect + ricreate con single quotes.
       const hostsTableSql = (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='hosts'").get() as { sql?: string } | undefined)?.sql ?? "";
-      if (hostsTableSql.includes('"Unknown"') || hostsTableSql.includes('"Windows"')) {
+      const isDoubleQuoteLegacy = hostsTableSql.includes('"Unknown"') || hostsTableSql.includes('"Windows"');
+      const missingAndroidBranch = !hostsTableSql.includes("'Android'");
+      if (isDoubleQuoteLegacy || missingAndroidBranch) {
         try {
           if (rebuildHostsOsFamilyLegacy()) {
-            console.info(`[db-tenant] ${tenantCode}: hosts.os_family ricreata (fix double-quote legacy, table rebuild)`);
+            const reason = isDoubleQuoteLegacy ? "fix double-quote legacy" : "aggiunti rami Android/iOS";
+            console.info(`[db-tenant] ${tenantCode}: hosts.os_family ricreata (${reason}, table rebuild)`);
           }
         } catch (e) {
-          console.warn(`[db-tenant] ${tenantCode}: fix double-quote os_family fallito:`, e);
+          console.warn(`[db-tenant] ${tenantCode}: rebuild os_family fallito:`, e);
         }
       }
     }

@@ -7,11 +7,25 @@
 
 Base path REST: **`/rest`** (es. `http://host:port/rest/...`). Pannello su `/`.
 
-## Autenticazione
+## Autenticazione ⚠️ (verificato a runtime — 3 gotcha critici)
 
-- `POST /rest/public/jwt/login` — body `{"login": "...", "password": "..."}` → JWT.
-  (admin/admin di default NON valido sull'install di test: l'admin imposta le credenziali al
-  primo setup; il connettore le riceve in config.) Header successivi: `Authorization: Bearer <jwt>`.
+- `POST /rest/public/jwt/login` — body `{"login": "...", "password": "<MD5_HEX>"}`.
+  **Il campo `password` NON è il plaintext: è l'MD5 (hex lowercase) della password** — il web UI fa
+  l'MD5 in JS prima di inviare. Verifica server: `SHA1(md5 + "5YdSYHyg2U")` case-insensitive
+  (`PasswordUtil.getHashFromMd5`). Inviare il plaintext → **401**.
+- Risposta: `{"id_token": "<JWT>"}` — il token è in **`id_token`** (non `authToken`/`token`).
+- Header successivi: `Authorization: Bearer <id_token>`.
+- **Paginazione `pageNum` è 1-based**: `pageNum:0` → 500 `OFFSET must not be negative`. Iniziare da 1.
+- Risposta search: `{"status":"OK","data":{"devices":{...,"items":[...]}, "configurations":{...}}}`.
+
+### Reset/imposta password admin via DB (utile in lab)
+
+```sql
+-- dbhash = SHA1( md5_lowercase(plaintext) + '5YdSYHyg2U' ) uppercase
+UPDATE users SET password='<dbhash>', lastloginfail=0, passwordreset=false WHERE login='admin';
+```
+`passwordreset` è BOOLEAN (`false`, non `0`). `lastloginfail` va azzerato per togliere il lockout.
+Istanza test: admin / `Domarc2026xZ`.
 
 ## Endpoint usati dal connettore DA-IPAM
 

@@ -190,15 +190,20 @@ export interface DeviceInfoView {
 
 function base(u: string) { return u.replace(/\/+$/, ""); }
 
+import crypto from "node:crypto";
+// Headwind expects password = MD5(plaintext) hex lowercase (web UI hashes client-side);
+// server verifies SHA1(md5 + "5YdSYHyg2U"). Sending plaintext → 401. Token is in `id_token`.
+function md5hex(s: string) { return crypto.createHash("md5").update(s).digest("hex"); }
+
 export async function loginJwt(c: HmdmCreds): Promise<string> {
   const res = await fetch(`${base(c.baseUrl)}/rest/public/jwt/login`, {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ login: c.username, password: c.password }),
+    body: JSON.stringify({ login: c.username, password: md5hex(c.password) }),
   });
   if (!res.ok) throw new Error(`hmdm login failed: ${res.status}`);
   const j = await res.json();
-  const token = j?.data?.authToken ?? j?.authToken ?? j?.token;
-  if (!token) throw new Error("hmdm login: no token in response");
+  const token = j?.id_token ?? j?.data?.id_token;
+  if (!token) throw new Error("hmdm login: no id_token in response");
   return token as string;
 }
 
@@ -573,7 +578,7 @@ export async function runMdmSync(): Promise<{ devices: number; changed: number; 
   if (!creds) { recordSync(false, "no credentials"); return { devices: 0, changed: 0, error: "no credentials" }; }
   try {
     const jwt = await loginJwt(creds);
-    let page = 0; const pageSize = 50; let total = 0; let changed = 0;
+    let page = 1; const pageSize = 50; let total = 0; let changed = 0;   // hmdm pageNum is 1-based (0 → 500 OFFSET error)
     for (;;) {
       const batch = await searchDevices(creds.baseUrl, jwt, page, pageSize);
       if (batch.length === 0) break;
@@ -738,7 +743,7 @@ async function main() {
   const baseUrl = process.env.HMDM_URL!, username = process.env.HMDM_USER!, password = process.env.HMDM_PASS!;
   const jwt = await loginJwt({ baseUrl, username, password });
   console.log("login OK, jwt len", jwt.length);
-  const devices = await searchDevices(baseUrl, jwt, 0, 50);
+  const devices = await searchDevices(baseUrl, jwt, 1, 50); // 1-based
   console.log("devices:", devices.length, devices.map((d) => d.number));
   if (devices[0]) {
     const di = await getDeviceInfo(baseUrl, jwt, devices[0].number);

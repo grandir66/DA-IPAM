@@ -9,10 +9,12 @@ Base path REST: **`/rest`** (es. `http://host:port/rest/...`). Pannello su `/`.
 
 ## Autenticazione ⚠️ (verificato a runtime — 3 gotcha critici)
 
-- `POST /rest/public/jwt/login` — body `{"login": "...", "password": "<MD5_HEX>"}`.
-  **Il campo `password` NON è il plaintext: è l'MD5 (hex lowercase) della password** — il web UI fa
-  l'MD5 in JS prima di inviare. Verifica server: `SHA1(md5 + "5YdSYHyg2U")` case-insensitive
-  (`PasswordUtil.getHashFromMd5`). Inviare il plaintext → **401**.
+- `POST /rest/public/jwt/login` — body `{"login": "...", "password": "<MD5_HEX_UPPERCASE>"}`.
+  **Il campo `password` NON è il plaintext: è l'MD5 in hex MAIUSCOLO** — il web UI fa
+  `md5(password).toUpperCase()` (login.controller.js). Il case conta perché l'MD5 è input al SHA1
+  server: `SHA1(md5_UPPER + "5YdSYHyg2U")` confronto case-insensitive (`PasswordUtil.getHashFromMd5`).
+  Inviare plaintext o MD5 lowercase → **401**. (Se il server espone una publicKey, la UI usa RSA invece
+  dell'MD5: il connettore headless usa sempre il path MD5.)
 - Risposta: `{"id_token": "<JWT>"}` — il token è in **`id_token`** (non `authToken`/`token`).
 - Header successivi: `Authorization: Bearer <id_token>`.
 - **Paginazione `pageNum` è 1-based**: `pageNum:0` → 500 `OFFSET must not be negative`. Iniziare da 1.

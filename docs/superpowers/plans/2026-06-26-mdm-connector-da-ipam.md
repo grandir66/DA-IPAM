@@ -191,14 +191,15 @@ export interface DeviceInfoView {
 function base(u: string) { return u.replace(/\/+$/, ""); }
 
 import crypto from "node:crypto";
-// Headwind expects password = MD5(plaintext) hex lowercase (web UI hashes client-side);
-// server verifies SHA1(md5 + "5YdSYHyg2U"). Sending plaintext → 401. Token is in `id_token`.
-function md5hex(s: string) { return crypto.createHash("md5").update(s).digest("hex"); }
+// Headwind expects password = MD5(plaintext) hex UPPERCASE (web UI does md5().toUpperCase());
+// server verifies SHA1(md5_upper + "5YdSYHyg2U") case-insensitive. Lowercase md5 or plaintext → 401.
+// Token is in `id_token`.
+function md5hexUpper(s: string) { return crypto.createHash("md5").update(s).digest("hex").toUpperCase(); }
 
 export async function loginJwt(c: HmdmCreds): Promise<string> {
   const res = await fetch(`${base(c.baseUrl)}/rest/public/jwt/login`, {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ login: c.username, password: md5hex(c.password) }),
+    body: JSON.stringify({ login: c.username, password: md5hexUpper(c.password) }),
   });
   if (!res.ok) throw new Error(`hmdm login failed: ${res.status}`);
   const j = await res.json();

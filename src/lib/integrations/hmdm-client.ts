@@ -118,7 +118,7 @@ export async function searchDevices(
   const res = await fetch(`${base(baseUrl)}/rest/private/devices/search`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${jwt}` },
-    body: JSON.stringify({ pageNum, pageSize, sortBy: "number", sortDir: "ASC", value: "" }),
+    body: JSON.stringify({ pageNum, pageSize, value: "" }),
   });
   if (!res.ok) throw new Error(`hmdm device search failed: ${res.status}`);
   return parseDeviceSearchResponse(await res.json());

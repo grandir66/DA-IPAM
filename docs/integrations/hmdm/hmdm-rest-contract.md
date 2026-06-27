@@ -25,7 +25,7 @@ Base path REST: **`/rest`** (es. `http://host:port/rest/...`). Pannello su `/`.
 UPDATE users SET password='<dbhash>', lastloginfail=0, passwordreset=false WHERE login='admin';
 ```
 `passwordreset` è BOOLEAN (`false`, non `0`). `lastloginfail` va azzerato per togliere il lockout.
-Istanza test: admin / `Domarc2026xZ`.
+Istanza test: utente `admin`, password **fuori dal repo** (vault locale `~/Documents/da-appliance-credentials/`).
 
 ## Endpoint usati dal connettore DA-IPAM
 

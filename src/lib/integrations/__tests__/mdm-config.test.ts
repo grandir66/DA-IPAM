@@ -15,7 +15,7 @@ test("config save/read + creds decrypt + auto-disable", () => {
     assert.equal(cfg.base_url, "http://h:8088");
     assert.equal(cfg.username, "admin");
     assert.equal(cfg.enabled, true);
-    assert.equal((cfg as Record<string, unknown>).password_encrypted, undefined); // never leaked
+    assert.equal((cfg as unknown as Record<string, unknown>).password_encrypted, undefined); // never leaked
 
     const creds = getMdmCreds();
     assert.equal(creds!.password, "secret");

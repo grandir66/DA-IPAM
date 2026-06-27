@@ -375,6 +375,35 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione wazuh_sync fallita:`, e);
   }
 
+  // Migrazione runtime: scheduled_jobs.job_type CHECK include 'mdm_sync'
+  // (sync periodico device mobili da Headwind MDM).
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as { sql?: string } | undefined;
+    if (row?.sql && !row.sql.includes("'mdm_sync'")) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS scheduled_jobs_v5");
+      newDb.exec(`CREATE TABLE scheduled_jobs_v5 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync', 'vuln_sync', 'wazuh_sync', 'mdm_sync')),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      newDb.exec("INSERT INTO scheduled_jobs_v5 SELECT * FROM scheduled_jobs");
+      newDb.exec("DROP TABLE scheduled_jobs");
+      newDb.exec("ALTER TABLE scheduled_jobs_v5 RENAME TO scheduled_jobs");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'mdm_sync'`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione mdm_sync fallita:`, e);
+  }
+
   // Migrazione runtime: vuln_scanners.{cert_pin,cert_fingerprint} per
   // TOFU pinning HTTPS sull'edge. Additivo (ALTER ADD COLUMN).
   try {

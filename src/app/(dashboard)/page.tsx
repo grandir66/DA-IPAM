@@ -36,7 +36,13 @@ export default async function DashboardPage() {
       key: h.key,
       label: d?.label ?? h.key,
       status: h.status === "unknown" ? "stale" : h.status,
-      lastSync: h.lastSync,
+      // La colonna timestamp = "ultima verifica" del modulo. Solo il probe `edge`
+      // espone un last_sync_at reale; gli altri probe sono live ma senza timestamp
+      // di data-sync → senza fallback un modulo CONNESSO mostrava "Mai eseguita"
+      // (l'utente lo leggeva come "non sincronizzato"). Fallback al `probedAt`
+      // (istante dell'health-check) per i moduli configurati; i moduli non
+      // configurati (status "never") restano senza timestamp → "Mai eseguita".
+      lastSync: h.lastSync ?? (h.status === "never" ? null : h.probedAt),
       message: h.message,
       href: d?.configHref ?? "/settings?tab=moduli",
     };

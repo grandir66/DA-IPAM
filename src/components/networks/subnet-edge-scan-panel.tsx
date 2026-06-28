@@ -380,7 +380,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ShieldAlert className="h-5 w-5 text-purple-600" />
@@ -408,249 +408,257 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
             </div>
           )}
 
-          <div className="space-y-4">
-            {/* ─── Modalità targeting (condivisa tra scan manuale e schedulazione) ─── */}
-            <div>
-              <p className="text-sm font-medium mb-2">Modalità targeting</p>
-              <div className="space-y-1.5">
-                {(Object.keys(TARGETING_MODE_LABELS) as EdgeTargetingMode[]).map((mode) => {
-                  const isActive = targetingMode === mode;
-                  let countLabel = "";
-                  if (mode === "found_ips") {
-                    countLabel = foundCount !== null ? ` · ${foundCount} host` : "";
-                  } else if (mode === "populated_24") {
-                    const est = populated24Count !== null ? populated24Count * 254 : null;
-                    countLabel =
-                      populated24Count !== null
-                        ? ` · ${populated24Count} /24${est !== null ? ` · fino a ~${est} indirizzi` : ""}`
-                        : "";
-                  } else if (mode === "full_subnet") {
-                    countLabel = fullSubnetCount !== null && fullSubnetCount > 0 ? ` · ${fullSubnetCount} indirizzi` : resolvedCidr ? ` · ${resolvedCidr}` : "";
-                  }
-                  return (
-                    <label
-                      key={mode}
-                      className={`flex items-start gap-2.5 rounded-md border px-3 py-2 cursor-pointer transition-colors ${isActive ? "border-purple-500 bg-purple-500/10" : "border-border bg-muted/20 hover:bg-muted/40"}`}
-                    >
-                      <input
-                        type="radio"
-                        name={`targeting-mode-${networkId}`}
-                        value={mode}
-                        checked={isActive}
-                        onChange={() => setTargetingMode(mode)}
-                        className="accent-purple-600 mt-0.5"
-                      />
-                      <span className="min-w-0">
-                        <span className="text-sm font-medium">
-                          {TARGETING_MODE_LABELS[mode].label}
-                          {countLabel && (
-                            <span className="text-xs font-normal text-muted-foreground ml-1">{countLabel}</span>
-                          )}
-                        </span>
-                        <span className="block text-xs text-muted-foreground">
-                          {TARGETING_MODE_LABELS[mode].desc}
-                        </span>
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            <Separator />
-
-            <div>
-              <p className="text-sm font-medium mb-2">VA Scan manuale</p>
-              <div className="grid gap-3 sm:grid-cols-2">
+          {/* Layout a 2 colonne: sinistra = scope + scan manuale + credenziali, destra = schedulazione */}
+          <div className="grid gap-x-6 gap-y-4 md:grid-cols-2">
+            {/* ─────────────── Colonna sinistra ─────────────── */}
+            <div className="space-y-4">
+              {/* ─── Modalità targeting (condivisa tra scan manuale e schedulazione) ─── */}
+              <div>
+                <p className="text-sm font-medium mb-2">Modalità targeting</p>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Profilo</Label>
-                  <Select value={profile} onValueChange={(v) => setProfile(v as EdgeScanProfile)}>
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(Object.keys(PROFILE_LABELS) as EdgeScanProfile[]).map((p) => (
-                        <SelectItem key={p} value={p}>
-                          {PROFILE_LABELS[p]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-end gap-2 pb-0.5 sm:col-span-2">
-                  <Switch
-                    id={`edge-sync-modal-${networkId}`}
-                    checked={syncHosts}
-                    onCheckedChange={setSyncHosts}
-                    disabled={scanning || disabled || !status.edgeEnabled}
-                  />
-                  <Label htmlFor={`edge-sync-modal-${networkId}`} className="text-xs leading-snug cursor-pointer">
-                    Sync host online da IPAM prima dello scan
-                  </Label>
-                </div>
-                <div className="flex items-end gap-2 pb-0.5 sm:col-span-2">
-                  <Switch
-                    id={`edge-cred-sync-${networkId}`}
-                    checked={syncCredentials}
-                    onCheckedChange={setSyncCredentials}
-                    disabled={scanning || disabled || !status.edgeEnabled}
-                  />
-                  <Label htmlFor={`edge-cred-sync-${networkId}`} className="text-xs leading-snug cursor-pointer">
-                    Trasferisci credenziali subnet allo scanner (SSH / WinRM / SNMP)
-                  </Label>
+                  {(Object.keys(TARGETING_MODE_LABELS) as EdgeTargetingMode[]).map((mode) => {
+                    const isActive = targetingMode === mode;
+                    let countLabel = "";
+                    if (mode === "found_ips") {
+                      countLabel = foundCount !== null ? ` · ${foundCount} host` : "";
+                    } else if (mode === "populated_24") {
+                      const est = populated24Count !== null ? populated24Count * 254 : null;
+                      countLabel =
+                        populated24Count !== null
+                          ? ` · ${populated24Count} /24${est !== null ? ` · fino a ~${est} indirizzi` : ""}`
+                          : "";
+                    } else if (mode === "full_subnet") {
+                      countLabel = fullSubnetCount !== null && fullSubnetCount > 0 ? ` · ${fullSubnetCount} indirizzi` : resolvedCidr ? ` · ${resolvedCidr}` : "";
+                    }
+                    return (
+                      <label
+                        key={mode}
+                        className={`flex items-start gap-2.5 rounded-md border px-3 py-1.5 cursor-pointer transition-colors ${isActive ? "border-purple-500 bg-purple-500/10" : "border-border bg-muted/20 hover:bg-muted/40"}`}
+                      >
+                        <input
+                          type="radio"
+                          name={`targeting-mode-${networkId}`}
+                          value={mode}
+                          checked={isActive}
+                          onChange={() => setTargetingMode(mode)}
+                          className="accent-purple-600 mt-0.5"
+                        />
+                        <span className="min-w-0">
+                          <span className="text-sm font-medium">
+                            {TARGETING_MODE_LABELS[mode].label}
+                            {countLabel && (
+                              <span className="text-xs font-normal text-muted-foreground ml-1">{countLabel}</span>
+                            )}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {TARGETING_MODE_LABELS[mode].desc}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
-              <Button
-                className="mt-3 w-full sm:w-auto bg-purple-700 hover:bg-purple-800 dark:bg-purple-600"
-                onClick={() => void handleScan()}
-                disabled={scanning || disabled || !status.edgeEnabled}
-              >
-                {scanning ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <ShieldAlert className="h-4 w-4 mr-2" />
-                )}
-                Avvia VA Scan
-              </Button>
+
+              <Separator />
+
+              {/* ─── VA Scan manuale ─── */}
+              <div>
+                <p className="text-sm font-medium mb-2">VA Scan manuale</p>
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Profilo</Label>
+                    <Select value={profile} onValueChange={(v) => setProfile(v as EdgeScanProfile)}>
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(PROFILE_LABELS) as EdgeScanProfile[]).map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {PROFILE_LABELS[p]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id={`edge-sync-modal-${networkId}`}
+                        checked={syncHosts}
+                        onCheckedChange={setSyncHosts}
+                        disabled={scanning || disabled || !status.edgeEnabled}
+                      />
+                      <Label htmlFor={`edge-sync-modal-${networkId}`} className="text-xs leading-snug cursor-pointer">
+                        Sync host online da IPAM prima dello scan
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id={`edge-cred-sync-${networkId}`}
+                        checked={syncCredentials}
+                        onCheckedChange={setSyncCredentials}
+                        disabled={scanning || disabled || !status.edgeEnabled}
+                      />
+                      <Label htmlFor={`edge-cred-sync-${networkId}`} className="text-xs leading-snug cursor-pointer">
+                        Trasferisci credenziali subnet allo scanner (SSH / WinRM / SNMP)
+                      </Label>
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  className="mt-3 w-full bg-purple-700 hover:bg-purple-800 dark:bg-purple-600"
+                  onClick={() => void handleScan()}
+                  disabled={scanning || disabled || !status.edgeEnabled}
+                >
+                  {scanning ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <ShieldAlert className="h-4 w-4 mr-2" />
+                  )}
+                  Avvia VA Scan
+                </Button>
+              </div>
+
+              {(ipamCreds.length > 0 || edgeCreds) && (
+                <>
+                  <Separator />
+                  <div>
+                    <p className="text-sm font-medium mb-2">Credenziali subnet</p>
+                    {ipamCreds.length > 0 ? (
+                      <ul className="text-xs space-y-1 rounded-md border bg-muted/20 p-2 max-h-36 overflow-y-auto">
+                        {ipamCreds.map((c, i) => (
+                          <li key={`${c.credential_id ?? "c"}-${i}`} className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="outline" className="text-[10px] h-5">
+                              {c.credential_type}
+                            </Badge>
+                            <span className="font-medium">{c.name}</span>
+                            {c.slot && (
+                              <span className="text-muted-foreground">
+                                → {SLOT_LABELS[c.slot] ?? c.slot}
+                                {c.selected_for_scan ? " (attiva scan)" : ""}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Nessuna credenziale associata a questa subnet in IPAM.
+                      </p>
+                    )}
+                    {edgeCreds && (
+                      <p className="text-[11px] text-muted-foreground mt-2">
+                        Credenziali attive sullo scanner:{" "}
+                        {[
+                          edgeCreds.ssh?.name && `SSH=${edgeCreds.ssh.name}`,
+                          edgeCreds.smb?.name && `SMB=${edgeCreds.smb.name}`,
+                          edgeCreds.snmp?.name && `SNMP=${edgeCreds.snmp.name}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "nessuna assegnata"}
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
 
-            {(ipamCreds.length > 0 || edgeCreds) && (
-              <>
-                <Separator />
-                <div>
-                  <p className="text-sm font-medium mb-2">Credenziali subnet</p>
-                  {ipamCreds.length > 0 ? (
-                    <ul className="text-xs space-y-1 rounded-md border bg-muted/20 p-2 max-h-36 overflow-y-auto">
-                      {ipamCreds.map((c, i) => (
-                        <li key={`${c.credential_id ?? "c"}-${i}`} className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline" className="text-[10px] h-5">
-                            {c.credential_type}
-                          </Badge>
-                          <span className="font-medium">{c.name}</span>
-                          {c.slot && (
-                            <span className="text-muted-foreground">
-                              → {SLOT_LABELS[c.slot] ?? c.slot}
-                              {c.selected_for_scan ? " (attiva scan)" : ""}
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Nessuna credenziale associata a questa subnet in IPAM.
-                    </p>
-                  )}
-                  {edgeCreds && (
-                    <p className="text-[11px] text-muted-foreground mt-2">
-                      Credenziali attive sullo scanner:{" "}
-                      {[
-                        edgeCreds.ssh?.name && `SSH=${edgeCreds.ssh.name}`,
-                        edgeCreds.smb?.name && `SMB=${edgeCreds.smb.name}`,
-                        edgeCreds.snmp?.name && `SNMP=${edgeCreds.snmp.name}`,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || "nessuna assegnata"}
-                    </p>
-                  )}
-                </div>
-              </>
-            )}
+            {/* ─────────────── Colonna destra: schedulazione ─────────────── */}
+            <div className="md:border-l md:pl-6">
+              <div>
+                <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
+                  <Clock className="h-4 w-4 text-amber-600" />
+                  Schedulazione ricorrente
+                </p>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Lo scan parte sull&apos;edge alla cadenza scelta (orario notturno consigliato per profili bilanciato/profondo).
+                </p>
 
-            <Separator />
+                <div className="space-y-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={scheduleEnabled}
+                        onCheckedChange={setScheduleEnabled}
+                        disabled={savingSchedule || !status.edgeEnabled}
+                      />
+                      <Label className="text-sm">Attiva</Label>
+                    </div>
+                    <Select
+                      value={scheduleProfile}
+                      onValueChange={(v) => setScheduleProfile(v as EdgeScanProfile)}
+                      disabled={savingSchedule || !status.edgeEnabled}
+                    >
+                      <SelectTrigger className="w-[180px] h-9">
+                        <SelectValue placeholder="Profilo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(PROFILE_LABELS) as EdgeScanProfile[]).map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {PROFILE_LABELS[p]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-            <div>
-              <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
-                <Clock className="h-4 w-4 text-amber-600" />
-                Schedulazione ricorrente
-              </p>
-              <p className="text-xs text-muted-foreground mb-3">
-                Lo scan parte sull&apos;edge alla cadenza scelta (orario notturno consigliato per profili bilanciato/profondo).
-              </p>
+                  <ScheduleBuilder value={sched} onChange={setSched} />
 
-              <div className="space-y-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={scheduleEnabled}
-                      onCheckedChange={setScheduleEnabled}
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`edge-job-name-${networkId}`} className="text-xs">
+                      Nome job/report
+                    </Label>
+                    <Input
+                      id={`edge-job-name-${networkId}`}
+                      value={jobName}
+                      onChange={(e) => {
+                        setJobNameTouched(true);
+                        setJobName(e.target.value);
+                      }}
+                      placeholder="es. rete-uffici_10-0-0-0-24_tutto-cidr_mensile"
+                      className="h-9 text-sm"
                       disabled={savingSchedule || !status.edgeEnabled}
                     />
-                    <Label className="text-sm">Attiva</Label>
                   </div>
-                  <Select
-                    value={scheduleProfile}
-                    onValueChange={(v) => setScheduleProfile(v as EdgeScanProfile)}
-                    disabled={savingSchedule || !status.edgeEnabled}
-                  >
-                    <SelectTrigger className="w-[180px] h-9">
-                      <SelectValue placeholder="Profilo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(Object.keys(PROFILE_LABELS) as EdgeScanProfile[]).map((p) => (
-                        <SelectItem key={p} value={p}>
-                          {PROFILE_LABELS[p]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
 
-                <ScheduleBuilder value={sched} onChange={setSched} />
+                  {schedRun && (
+                    <p className="text-xs text-muted-foreground">
+                      Ultima esecuzione: <strong>{formatRelative(schedRun.last_run_at)}</strong>
+                      {schedRun.last_run_status && ` (${schedRun.last_run_status})`}
+                      {scheduleActive && schedRun.next_run_at && (
+                        <> · Prossima: <strong>{formatRelative(schedRun.next_run_at)}</strong></>
+                      )}
+                    </p>
+                  )}
 
-                <div className="space-y-1.5">
-                  <Label htmlFor={`edge-job-name-${networkId}`} className="text-xs">
-                    Nome job/report
-                  </Label>
-                  <Input
-                    id={`edge-job-name-${networkId}`}
-                    value={jobName}
-                    onChange={(e) => {
-                      setJobNameTouched(true);
-                      setJobName(e.target.value);
-                    }}
-                    placeholder="es. rete-uffici_10-0-0-0-24_tutto-cidr_mensile"
-                    className="h-9 text-sm"
-                    disabled={savingSchedule || !status.edgeEnabled}
-                  />
-                </div>
-
-                {schedRun && (
-                  <p className="text-xs text-muted-foreground">
-                    Ultima esecuzione: <strong>{formatRelative(schedRun.last_run_at)}</strong>
-                    {schedRun.last_run_status && ` (${schedRun.last_run_status})`}
-                    {scheduleActive && schedRun.next_run_at && (
-                      <> · Prossima: <strong>{formatRelative(schedRun.next_run_at)}</strong></>
-                    )}
-                  </p>
-                )}
-
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => void handleSaveSchedule()}
-                    disabled={savingSchedule || !status.edgeEnabled}
-                    className="bg-amber-500 hover:bg-amber-600 text-white"
-                  >
-                    {savingSchedule ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                    ) : (
-                      <Save className="h-4 w-4 mr-1" />
-                    )}
-                    {hasSchedule ? "Salva schedulazione" : "Crea schedulazione"}
-                  </Button>
-                  {hasSchedule && (
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       size="sm"
-                      variant="ghost"
-                      className="text-destructive"
-                      onClick={() => void handleRemoveSchedule()}
-                      disabled={savingSchedule}
+                      onClick={() => void handleSaveSchedule()}
+                      disabled={savingSchedule || !status.edgeEnabled}
+                      className="bg-amber-500 hover:bg-amber-600 text-white"
                     >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Rimuovi
+                      {savingSchedule ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                      ) : (
+                        <Save className="h-4 w-4 mr-1" />
+                      )}
+                      {hasSchedule ? "Salva schedulazione" : "Crea schedulazione"}
                     </Button>
-                  )}
+                    {hasSchedule && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive"
+                        onClick={() => void handleRemoveSchedule()}
+                        disabled={savingSchedule}
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Rimuovi
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

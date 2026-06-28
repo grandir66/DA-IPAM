@@ -16,6 +16,8 @@ import {
   edgeApiDelete,
 } from "@/lib/vuln/scanner-edge-client";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
+import { saveEdgeSchedule } from "@/lib/vuln/edge-schedule-store";
+import { nearestIntervalForFrequency, type Frequency } from "@/lib/vuln/cron-builder";
 
 export type EdgeScanProfile = "fast" | "balanced" | "deep";
 export type EdgeTargetingMode = "full_subnet" | "found_ips" | "populated_24";
@@ -137,7 +139,7 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
 
 function buildEdgeEnsureBody(
   networkId: number,
-  opts: { syncHosts?: boolean; syncCredentials?: boolean; targetingMode?: EdgeTargetingMode } = {},
+  opts: { syncHosts?: boolean; syncCredentials?: boolean; targetingMode?: EdgeTargetingMode; label?: string } = {},
 ): Record<string, unknown> {
   const network = getNetworkById(networkId);
   if (!network) throw new Error("Rete non trovata");
@@ -147,7 +149,7 @@ function buildEdgeEnsureBody(
 
   const body: Record<string, unknown> = {
     cidr: network.cidr,
-    label: network.name || network.description || `IPAM #${network.id}`,
+    label: opts.label ?? (network.name || network.description || `IPAM #${network.id}`),
     ipam_network_id: network.id,
   };
 
@@ -300,11 +302,16 @@ export async function saveEdgeSubnetSchedule(
   networkId: number,
   opts: {
     enabled: boolean;
-    intervalMinutes: number;
     profile: EdgeScanProfile;
     targetingMode?: EdgeTargetingMode;
+    cronExpr: string;
+    jobName: string;
+    frequency: Frequency;
+    atTime: string;
+    daysOfWeek?: number[];
+    dayOfMonth?: number;
   },
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; degraded?: boolean; warning?: string }> {
   const scanner = getActiveEdgeScanner();
   if (!scanner || scanner.enabled !== 1) {
     return { ok: false, error: "Scanner-Edge non configurato o disabilitato" };
@@ -319,27 +326,69 @@ export async function saveEdgeSubnetSchedule(
     const ensured = await edgeApiPost<{ ok: boolean; network_id: number }>(
       scanner,
       "/api/v1/networks/ensure",
-      buildEdgeEnsureBody(networkId, { syncHosts: false, syncCredentials: true, targetingMode: opts.targetingMode }),
+      buildEdgeEnsureBody(networkId, {
+        syncHosts: false,
+        syncCredentials: true,
+        targetingMode: opts.targetingMode,
+        label: opts.jobName,
+      }),
       { timeoutMs: 120000 },
     );
 
-    await edgeApiPut(
-      scanner,
-      `/api/v1/networks/${ensured.network_id}/schedule`,
-      {
-        enabled: opts.enabled,
-        interval_minutes: opts.intervalMinutes,
-        profile: opts.profile,
-        ...(opts.targetingMode != null ? { targeting_mode: opts.targetingMode } : {}),
-      },
-      { timeoutMs: 30000 },
-    );
+    let degraded = false;
+    let warning: string | undefined;
+    try {
+      await edgeApiPut(
+        scanner,
+        `/api/v1/networks/${ensured.network_id}/schedule`,
+        {
+          enabled: opts.enabled,
+          cron_expr: opts.cronExpr,
+          profile: opts.profile,
+          ...(opts.targetingMode != null ? { targeting_mode: opts.targetingMode } : {}),
+        },
+        { timeoutMs: 30000 },
+      );
+    } catch (e) {
+      // Edge senza supporto cron (sub-progetto A non ancora deployato): fallback a intervallo preset.
+      if (e instanceof EdgeClientError && e.status === 400) {
+        degraded = true;
+        warning =
+          "Edge non supporta ancora la pianificazione cron: applicato l'intervallo più vicino. Aggiorna l'edge per orari/giorni precisi.";
+        await edgeApiPut(
+          scanner,
+          `/api/v1/networks/${ensured.network_id}/schedule`,
+          {
+            enabled: opts.enabled,
+            interval_minutes: nearestIntervalForFrequency(opts.frequency),
+            profile: opts.profile,
+            ...(opts.targetingMode != null ? { targeting_mode: opts.targetingMode } : {}),
+          },
+          { timeoutMs: 30000 },
+        );
+      } else {
+        throw e;
+      }
+    }
 
     if (opts.targetingMode != null) {
       setNetworkTargetingMode(networkId, opts.targetingMode);
     }
 
-    return { ok: true };
+    saveEdgeSchedule({
+      network_id: networkId,
+      job_name: opts.jobName,
+      frequency: opts.frequency,
+      at_time: opts.atTime,
+      days_of_week: opts.daysOfWeek?.length ? opts.daysOfWeek.join(",") : null,
+      day_of_month: opts.dayOfMonth ?? null,
+      cron_expr: opts.cronExpr,
+      profile: opts.profile,
+      targeting_mode: opts.targetingMode ?? null,
+      enabled: opts.enabled,
+    });
+
+    return { ok: true, degraded, warning };
   } catch (e) {
     const msg =
       e instanceof EdgeClientError

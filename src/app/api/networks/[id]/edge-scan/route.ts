@@ -13,6 +13,8 @@ import {
   type EdgeScanProfile,
 } from "@/lib/vuln/edge-subnet-bridge";
 import { z } from "zod";
+import { buildCron } from "@/lib/vuln/cron-builder";
+import { getEdgeSchedule, deleteEdgeSchedule } from "@/lib/vuln/edge-schedule-store";
 
 const postSchema = z.object({
   profile: z.enum(["fast", "balanced", "deep"]).optional(),
@@ -24,9 +26,13 @@ const postSchema = z.object({
 
 const scheduleSchema = z.object({
   enabled: z.boolean(),
-  interval_minutes: z.number().int().min(60).max(10080),
   profile: z.enum(["fast", "balanced", "deep"]),
   targeting_mode: z.enum(["full_subnet", "found_ips", "populated_24"]).optional(),
+  job_name: z.string().min(1).max(120),
+  frequency: z.enum(["daily", "weekly", "monthly"]),
+  at_time: z.string().regex(/^\d{1,2}:\d{2}$/),
+  days_of_week: z.array(z.number().int().min(0).max(6)).optional(),
+  day_of_month: z.number().int().min(1).max(28).optional(),
 });
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -40,7 +46,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: "ID rete non valido" }, { status: 400 });
     }
     const status = await loadEdgeSubnetStatus(networkId);
-    return NextResponse.json(status);
+    return NextResponse.json({ ...status, savedSchedule: getEdgeSchedule(networkId) });
   });
 }
 
@@ -97,11 +103,23 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: "Body JSON non valido" }, { status: 400 });
     }
 
+    const cronExpr = buildCron({
+      frequency: body.frequency,
+      at: body.at_time,
+      daysOfWeek: body.days_of_week,
+      dayOfMonth: body.day_of_month,
+    });
+
     const result = await saveEdgeSubnetSchedule(networkId, {
       enabled: body.enabled,
-      intervalMinutes: body.interval_minutes,
       profile: body.profile,
       targetingMode: body.targeting_mode,
+      cronExpr,
+      jobName: body.job_name,
+      frequency: body.frequency,
+      atTime: body.at_time,
+      daysOfWeek: body.days_of_week,
+      dayOfMonth: body.day_of_month,
     });
 
     if (!result.ok) {
@@ -109,7 +127,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
 
     const status = await loadEdgeSubnetStatus(networkId);
-    return NextResponse.json({ ok: true, ...status });
+    return NextResponse.json({ ok: true, degraded: result.degraded ?? false, warning: result.warning, ...status });
   });
 }
 
@@ -128,6 +146,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     if (!result.ok) {
       return NextResponse.json({ ok: false, error: result.error }, { status: 502 });
     }
+    deleteEdgeSchedule(networkId);
 
     const status = await loadEdgeSubnetStatus(networkId);
     return NextResponse.json({ ok: true, ...status });

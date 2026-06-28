@@ -1155,6 +1155,24 @@ CREATE TABLE IF NOT EXISTS mobile_inventory_history (
   old_value TEXT,
   new_value TEXT
 );
+
+-- ============================================================================
+-- Edge scan schedule (builder DA-IPAM): config leggibile per ricostruire il
+-- builder in modifica + cron derivato inviato all'edge.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS edge_scan_schedules (
+  network_id INTEGER PRIMARY KEY REFERENCES networks(id) ON DELETE CASCADE,
+  job_name TEXT,
+  frequency TEXT,
+  at_time TEXT,
+  days_of_week TEXT,
+  day_of_month INTEGER,
+  cron_expr TEXT,
+  profile TEXT,
+  targeting_mode TEXT,
+  enabled INTEGER DEFAULT 1,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
 `;
 
 export const TENANT_INDEXES_SQL = `

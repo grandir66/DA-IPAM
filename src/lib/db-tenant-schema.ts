@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS networks (
   location TEXT DEFAULT '',
   snmp_community TEXT,
   dns_server TEXT,
+  targeting_mode TEXT DEFAULT 'full_subnet',
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -63,6 +64,9 @@ CREATE TABLE IF NOT EXISTS hosts (
     CASE
       WHEN os_info IS NULL OR TRIM(os_info) = '' THEN 'Unknown'
       WHEN LOWER(os_info) LIKE '%windows%' THEN 'Windows'
+      WHEN LOWER(os_info) LIKE '%android%' THEN 'Android'
+      WHEN LOWER(os_info) LIKE 'ios%' OR LOWER(os_info) LIKE '%ipados%'
+        OR LOWER(os_info) LIKE '%iphone%' OR LOWER(os_info) LIKE '%ipad%' THEN 'iOS'
       WHEN LOWER(os_info) LIKE '%macos%' OR LOWER(os_info) LIKE '%mac os%'
         OR LOWER(os_info) LIKE '%darwin%' OR LOWER(os_info) LIKE '%osx%' THEN 'Apple'
       WHEN LOWER(os_info) LIKE '%linux%' OR LOWER(os_info) LIKE '%ubuntu%'
@@ -255,7 +259,7 @@ CREATE TABLE IF NOT EXISTS switch_ports (
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync', 'vuln_sync', 'wazuh_sync')),
+  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync', 'vuln_sync', 'wazuh_sync', 'mdm_sync')),
   interval_minutes INTEGER NOT NULL DEFAULT 60,
   last_run TEXT,
   next_run TEXT,
@@ -1090,6 +1094,85 @@ CREATE TABLE IF NOT EXISTS device_classifications_custom (
   CHECK (slug GLOB '[a-z]*'),
   CHECK (length(label) >= 1 AND length(label) <= 80)
 );
+
+-- ============================================================================
+-- MDM (Headwind) — modulo gestione device mobili. Connettore pull verso hmdm-server.
+-- I mobili confluiscono in hosts (first-class) via merge per serial/imei/number.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS mdm_config (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  base_url TEXT,
+  username TEXT,
+  password_encrypted TEXT,
+  jwt_cached TEXT,
+  jwt_expires_at TEXT,
+  user_field TEXT DEFAULT 'description',
+  enabled INTEGER DEFAULT 0,
+  last_sync_at TEXT,
+  last_error TEXT,
+  consecutive_errors INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS mobile_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  hmdm_device_id TEXT UNIQUE,
+  host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+  label TEXT,
+  last_seen_at TEXT,
+  last_sync_at TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS mobile_device_inventory (
+  device_id INTEGER PRIMARY KEY REFERENCES mobile_devices(id) ON DELETE CASCADE,
+  serial TEXT,
+  model TEXT,
+  os_family TEXT,
+  os_version TEXT,
+  user_profile TEXT,
+  imei TEXT,
+  imei2 TEXT,
+  phone TEXT,
+  cpu TEXT,
+  battery_level INTEGER,
+  snapshot_sha256 TEXT,
+  last_inventory_at TEXT
+);
+CREATE TABLE IF NOT EXISTS mobile_device_apps (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER NOT NULL REFERENCES mobile_devices(id) ON DELETE CASCADE,
+  package_name TEXT NOT NULL,
+  app_name TEXT,
+  version_name TEXT,
+  first_seen TEXT,
+  last_seen TEXT,
+  UNIQUE(device_id, package_name)
+);
+CREATE TABLE IF NOT EXISTS mobile_inventory_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER NOT NULL REFERENCES mobile_devices(id) ON DELETE CASCADE,
+  changed_at TEXT DEFAULT (datetime('now')),
+  change_type TEXT NOT NULL,
+  field TEXT,
+  old_value TEXT,
+  new_value TEXT
+);
+
+-- ============================================================================
+-- Edge scan schedule (builder DA-IPAM): config leggibile per ricostruire il
+-- builder in modifica + cron derivato inviato all'edge.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS edge_scan_schedules (
+  network_id INTEGER PRIMARY KEY REFERENCES networks(id) ON DELETE CASCADE,
+  job_name TEXT,
+  frequency TEXT,
+  at_time TEXT,
+  days_of_week TEXT,
+  day_of_month INTEGER,
+  cron_expr TEXT,
+  profile TEXT,
+  targeting_mode TEXT,
+  enabled INTEGER DEFAULT 1,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
 `;
 
 export const TENANT_INDEXES_SQL = `
@@ -1317,4 +1400,9 @@ CREATE INDEX IF NOT EXISTS idx_network_devices_physical_device_id ON network_dev
 CREATE INDEX IF NOT EXISTS idx_scan_history_timestamp ON scan_history(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_wazuh_vuln_agent_severity ON wazuh_vuln(agent_id, severity);
 CREATE INDEX IF NOT EXISTS idx_ad_computers_host_dns ON ad_computers(host_id, dns_host_name);
+
+-- MDM (Headwind)
+CREATE INDEX IF NOT EXISTS idx_mobile_hist_dev ON mobile_inventory_history(device_id, changed_at);
+CREATE INDEX IF NOT EXISTS idx_mobile_apps_dev ON mobile_device_apps(device_id);
+CREATE INDEX IF NOT EXISTS idx_mobile_devices_host ON mobile_devices(host_id);
 `;

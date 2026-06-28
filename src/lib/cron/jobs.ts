@@ -113,6 +113,15 @@ export async function runJob(jobId: number): Promise<void> {
       );
       break;
     }
+    case "mdm_sync": {
+      const { runMdmSync } = await import("@/lib/integrations/mdm-runner");
+      const result = await runMdmSync();
+      console.info(
+        `[Scheduler] mdm_sync: ${result.devices} device, ${result.changed} cambi` +
+        (result.error ? `, errore: ${result.error}` : "")
+      );
+      break;
+    }
   }
 }
 

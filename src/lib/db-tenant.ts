@@ -160,6 +160,9 @@ export function getTenantDb(tenantCode: string): Database.Database {
       CASE
         WHEN os_info IS NULL OR TRIM(os_info) = '' THEN 'Unknown'
         WHEN LOWER(os_info) LIKE '%windows%' THEN 'Windows'
+        WHEN LOWER(os_info) LIKE '%android%' THEN 'Android'
+        WHEN LOWER(os_info) LIKE 'ios%' OR LOWER(os_info) LIKE '%ipados%'
+          OR LOWER(os_info) LIKE '%iphone%' OR LOWER(os_info) LIKE '%ipad%' THEN 'iOS'
         WHEN LOWER(os_info) LIKE '%macos%' OR LOWER(os_info) LIKE '%mac os%'
           OR LOWER(os_info) LIKE '%darwin%' OR LOWER(os_info) LIKE '%osx%' THEN 'Apple'
         WHEN LOWER(os_info) LIKE '%linux%' OR LOWER(os_info) LIKE '%ubuntu%'
@@ -173,13 +176,19 @@ export function getTenantDb(tenantCode: string): Database.Database {
     ) VIRTUAL
   `;
 
-  /** Ricrea hosts senza os_family corrotta (double-quote legacy) — DROP COLUMN fallisce. */
+  /**
+   * Ricrea hosts per riapplicare la definizione GENERATED di os_family corrente.
+   * Trigger: (a) os_family corrotta double-quote legacy (DROP COLUMN fallisce), oppure
+   * (b) definizione obsoleta priva dei rami Android/iOS (aggiunti per il modulo MDM).
+   */
   function rebuildHostsOsFamilyLegacy(): boolean {
     const hostsTableSql =
       (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='hosts'").get() as
         | { sql?: string }
         | undefined)?.sql ?? "";
-    if (!hostsTableSql.includes('"Unknown"') && !hostsTableSql.includes('"Windows"')) {
+    const isDoubleQuoteLegacy = hostsTableSql.includes('"Unknown"') || hostsTableSql.includes('"Windows"');
+    const missingAndroidBranch = hostsTableSql.includes("os_family") && !hostsTableSql.includes("'Android'");
+    if (!isDoubleQuoteLegacy && !missingAndroidBranch) {
       return false;
     }
     const colRows = newDb.prepare("PRAGMA table_info(hosts)").all() as Array<{
@@ -227,13 +236,16 @@ export function getTenantDb(tenantCode: string): Database.Database {
       // triggera integrity check e fallisce con "no such column: \"\"".
       // Detect + ricreate con single quotes.
       const hostsTableSql = (newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='hosts'").get() as { sql?: string } | undefined)?.sql ?? "";
-      if (hostsTableSql.includes('"Unknown"') || hostsTableSql.includes('"Windows"')) {
+      const isDoubleQuoteLegacy = hostsTableSql.includes('"Unknown"') || hostsTableSql.includes('"Windows"');
+      const missingAndroidBranch = !hostsTableSql.includes("'Android'");
+      if (isDoubleQuoteLegacy || missingAndroidBranch) {
         try {
           if (rebuildHostsOsFamilyLegacy()) {
-            console.info(`[db-tenant] ${tenantCode}: hosts.os_family ricreata (fix double-quote legacy, table rebuild)`);
+            const reason = isDoubleQuoteLegacy ? "fix double-quote legacy" : "aggiunti rami Android/iOS";
+            console.info(`[db-tenant] ${tenantCode}: hosts.os_family ricreata (${reason}, table rebuild)`);
           }
         } catch (e) {
-          console.warn(`[db-tenant] ${tenantCode}: fix double-quote os_family fallito:`, e);
+          console.warn(`[db-tenant] ${tenantCode}: rebuild os_family fallito:`, e);
         }
       }
     }
@@ -361,6 +373,35 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione wazuh_sync fallita:`, e);
+  }
+
+  // Migrazione runtime: scheduled_jobs.job_type CHECK include 'mdm_sync'
+  // (sync periodico device mobili da Headwind MDM).
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as { sql?: string } | undefined;
+    if (row?.sql && !row.sql.includes("'mdm_sync'")) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS scheduled_jobs_v5");
+      newDb.exec(`CREATE TABLE scheduled_jobs_v5 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync', 'vuln_sync', 'wazuh_sync', 'mdm_sync')),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      newDb.exec("INSERT INTO scheduled_jobs_v5 SELECT * FROM scheduled_jobs");
+      newDb.exec("DROP TABLE scheduled_jobs");
+      newDb.exec("ALTER TABLE scheduled_jobs_v5 RENAME TO scheduled_jobs");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'mdm_sync'`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione mdm_sync fallita:`, e);
   }
 
   // Migrazione runtime: vuln_scanners.{cert_pin,cert_fingerprint} per
@@ -850,6 +891,18 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.warn(`[db-tenant] ${tenantCode}: software_scans recovery fallito:`, e);
   }
 
+  // v0.2.694: networks.targeting_mode — colonna additiva per persistere la
+  // modalità targeting VA per subnet (full_subnet / found_ips / populated_24).
+  try {
+    const netCols = newDb.prepare("PRAGMA table_info(networks)").all() as Array<{ name: string }>;
+    if (netCols.length > 0 && !netCols.some((c) => c.name === "targeting_mode")) {
+      newDb.exec("ALTER TABLE networks ADD COLUMN targeting_mode TEXT DEFAULT 'full_subnet'");
+      console.info(`[db-tenant] ${tenantCode}: aggiunta networks.targeting_mode`);
+    }
+  } catch (e) {
+    console.warn(`[db-tenant] ${tenantCode}: migrazione networks.targeting_mode fallita:`, e);
+  }
+
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
   return newDb;
 }
@@ -1161,6 +1214,15 @@ export function updateNetwork(id: number, input: Partial<NetworkInput>): Network
 
   db().prepare(`UPDATE networks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
   return getNetworkById(id);
+}
+
+export function setNetworkTargetingMode(
+  id: number,
+  mode: "full_subnet" | "found_ips" | "populated_24",
+): void {
+  db()
+    .prepare("UPDATE networks SET targeting_mode = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(mode, id);
 }
 
 export function deleteNetwork(id: number): boolean {

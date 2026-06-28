@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,8 @@ import { Separator } from "@/components/ui/separator";
 import { Clock, ExternalLink, Loader2, Save, ShieldAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { EdgeScanProfile, EdgeSubnetStatus, EdgeTargetingMode } from "@/lib/vuln/edge-subnet-bridge";
+import { ScheduleBuilder, type ScheduleBuilderValue } from "@/components/networks/schedule-builder";
+import { slugifyJobName, type Frequency } from "@/lib/vuln/cron-builder";
 
 const SLOT_LABELS: Record<string, string> = {
   ssh: "SSH / Linux",
@@ -38,11 +41,52 @@ const PROFILE_LABELS: Record<EdgeScanProfile, string> = {
   deep: "Profondo (~8–24 h /24)",
 };
 
-const TARGETING_MODE_LABELS: Record<EdgeTargetingMode, string> = {
-  full_subnet: "Tutta la subnet",
-  found_ips: "Solo IP trovati",
-  populated_24: "Solo /24 popolate",
+const TARGETING_MODE_LABELS: Record<EdgeTargetingMode, { label: string; desc: string }> = {
+  full_subnet: {
+    label: "Tutto il CIDR",
+    desc: "Ogni indirizzo del range nominale della subnet.",
+  },
+  populated_24: {
+    label: "Solo /24 popolati",
+    desc: "Solo i blocchi /24 con almeno un host noto.",
+  },
+  found_ips: {
+    label: "Solo IP che rispondono",
+    desc: "Solo host online dalla discovery IPAM.",
+  },
 };
+
+const SCOPE_SLUG: Record<EdgeTargetingMode, string> = {
+  full_subnet: "tutto-cidr",
+  populated_24: "24-popolati",
+  found_ips: "ip-attivi",
+};
+
+const FREQ_LABEL: Record<Frequency, string> = {
+  daily: "giornaliera",
+  weekly: "settimanale",
+  monthly: "mensile",
+};
+
+interface SavedSchedule {
+  job_name: string | null;
+  frequency: Frequency | null;
+  at_time: string | null;
+  days_of_week: string | null; // CSV "1,2,3"
+  day_of_month: number | null;
+  profile: EdgeScanProfile | null;
+  targeting_mode: EdgeTargetingMode | null;
+  enabled: boolean;
+}
+
+function parseDaysCsv(csv: string | null): number[] {
+  if (!csv) return [1];
+  const days = csv
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+  return days.length ? days : [1];
+}
 
 function cidrAddressCount(cidr: string): number {
   const slash = cidr.lastIndexOf("/");
@@ -61,14 +105,6 @@ function get24Prefix(ip: string): string {
   return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
 }
 
-const VA_INTERVAL_OPTIONS = [
-  { value: 360, label: "Ogni 6 ore" },
-  { value: 720, label: "Ogni 12 ore" },
-  { value: 1440, label: "Ogni giorno (02:00)" },
-  { value: 4320, label: "Ogni 3 giorni (03:00)" },
-  { value: 10080, label: "Ogni settimana (lun 03:00)" },
-];
-
 function formatRelative(iso: string | null | undefined): string {
   if (!iso) return "—";
   const ts = new Date(iso.endsWith("Z") ? iso : iso.replace(" ", "T") + "Z").getTime();
@@ -83,18 +119,15 @@ function formatRelative(iso: string | null | undefined): string {
   return `${suffix} ${Math.floor(absH / 24)} g`;
 }
 
-function intervalLabel(min: number): string {
-  return VA_INTERVAL_OPTIONS.find((o) => o.value === min)?.label ?? `${min} min`;
-}
-
 interface SubnetEdgeScanPanelProps {
   networkId: number;
   disabled?: boolean;
   hosts?: Array<{ ip: string; status: string }>;
   cidr?: string;
+  networkName?: string;
 }
 
-export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: SubnetEdgeScanPanelProps) {
+export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkName }: SubnetEdgeScanPanelProps) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<EdgeSubnetStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -107,9 +140,16 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: Subnet
   const [targetingMode, setTargetingMode] = useState<EdgeTargetingMode>("full_subnet");
 
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
-  const [scheduleInterval, setScheduleInterval] = useState(1440);
   const [scheduleProfile, setScheduleProfile] = useState<EdgeScanProfile>("balanced");
   const [hasSchedule, setHasSchedule] = useState(false);
+  const [sched, setSched] = useState<ScheduleBuilderValue>({
+    frequency: "monthly",
+    at: "10:00",
+    daysOfWeek: [1],
+    dayOfMonth: 1,
+  });
+  const [jobName, setJobName] = useState("");
+  const [jobNameTouched, setJobNameTouched] = useState(false);
 
   // Live counts from hosts prop (when available)
   const foundCount = hosts ? hosts.filter((h) => h.status !== "offline").length : null;
@@ -127,15 +167,25 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: Subnet
     try {
       const r = await fetch(`/api/networks/${networkId}/edge-scan`);
       if (r.ok) {
-        const data = (await r.json()) as EdgeSubnetStatus;
+        const data = (await r.json()) as EdgeSubnetStatus & { savedSchedule?: SavedSchedule | null };
         setStatus(data);
-        setTargetingMode(data.targeting_mode ?? "full_subnet");
-        const sched = data.edgeNetwork?.schedule;
-        if (sched) {
+        const saved = data.savedSchedule ?? null;
+        // La modalità targeting può vivere sia in savedSchedule sia nello status: preferisci il salvato.
+        setTargetingMode(saved?.targeting_mode ?? data.targeting_mode ?? "full_subnet");
+        if (saved) {
           setHasSchedule(true);
-          setScheduleEnabled(sched.enabled === 1);
-          setScheduleProfile(sched.profile ?? "balanced");
-          if (sched.interval_minutes) setScheduleInterval(sched.interval_minutes);
+          setScheduleEnabled(saved.enabled);
+          setScheduleProfile(saved.profile ?? "balanced");
+          if (saved.job_name) {
+            setJobName(saved.job_name);
+            setJobNameTouched(true);
+          }
+          setSched({
+            frequency: saved.frequency ?? "monthly",
+            at: saved.at_time ?? "10:00",
+            daysOfWeek: parseDaysCsv(saved.days_of_week),
+            dayOfMonth: saved.day_of_month ?? 1,
+          });
         } else {
           setHasSchedule(false);
           setScheduleEnabled(false);
@@ -155,6 +205,18 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: Subnet
   useEffect(() => {
     if (open) void refresh();
   }, [open, refresh]);
+
+  // Auto-compila il nome job finché l'utente non lo modifica a mano.
+  useEffect(() => {
+    if (jobNameTouched) return;
+    const auto = slugifyJobName([
+      networkName ?? "",
+      resolvedCidr ?? "",
+      SCOPE_SLUG[targetingMode],
+      FREQ_LABEL[sched.frequency],
+    ]);
+    setJobName(auto);
+  }, [jobNameTouched, networkName, resolvedCidr, targetingMode, sched.frequency]);
 
   async function handleScan() {
     setScanning(true);
@@ -182,6 +244,10 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: Subnet
   }
 
   async function handleSaveSchedule() {
+    if (!jobName.trim()) {
+      toast.error("Indica un nome job/report");
+      return;
+    }
     setSavingSchedule(true);
     try {
       const r = await fetch(`/api/networks/${networkId}/edge-scan`, {
@@ -189,18 +255,30 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: Subnet
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           enabled: scheduleEnabled,
-          interval_minutes: scheduleInterval,
           profile: scheduleProfile,
           targeting_mode: targetingMode,
+          job_name: jobName.trim(),
+          frequency: sched.frequency,
+          at_time: sched.at,
+          days_of_week: sched.frequency === "weekly" ? sched.daysOfWeek : undefined,
+          day_of_month: sched.frequency === "monthly" ? sched.dayOfMonth : undefined,
         }),
       });
-      const d = (await r.json()) as EdgeSubnetStatus & { ok?: boolean; error?: string };
+      const d = (await r.json()) as EdgeSubnetStatus & {
+        ok?: boolean;
+        error?: string;
+        degraded?: boolean;
+        warning?: string;
+      };
       if (r.ok && d.ok !== false && !d.error) {
         toast.success(
           scheduleEnabled
-            ? `Schedulazione VA attiva (${intervalLabel(scheduleInterval).toLowerCase()})`
+            ? "Schedulazione VA attiva"
             : "Schedulazione VA salvata (sospesa)",
         );
+        if (d.degraded && d.warning) {
+          toast.warning(d.warning);
+        }
         setHasSchedule(true);
         setStatus(d);
       } else {
@@ -235,10 +313,10 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: Subnet
   }
 
   const last = status?.edgeNetwork?.last_scan;
-  const sched = status?.edgeNetwork?.schedule;
+  const schedRun = status?.edgeNetwork?.schedule;
   const edgeCreds = status?.edgeNetwork?.credentials;
   const ipamCreds = status?.ipamCredentials ?? [];
-  const scheduleActive = sched?.enabled === 1;
+  const scheduleActive = schedRun?.enabled === 1;
 
   const summaryBadge = !status?.edgeConfigured
     ? null
@@ -352,7 +430,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: Subnet
                   return (
                     <label
                       key={mode}
-                      className={`flex items-center gap-2.5 rounded-md border px-3 py-2 cursor-pointer transition-colors ${isActive ? "border-purple-500 bg-purple-500/10" : "border-border bg-muted/20 hover:bg-muted/40"}`}
+                      className={`flex items-start gap-2.5 rounded-md border px-3 py-2 cursor-pointer transition-colors ${isActive ? "border-purple-500 bg-purple-500/10" : "border-border bg-muted/20 hover:bg-muted/40"}`}
                     >
                       <input
                         type="radio"
@@ -360,13 +438,18 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: Subnet
                         value={mode}
                         checked={isActive}
                         onChange={() => setTargetingMode(mode)}
-                        className="accent-purple-600"
+                        className="accent-purple-600 mt-0.5"
                       />
-                      <span className="text-sm">
-                        {TARGETING_MODE_LABELS[mode]}
-                        {countLabel && (
-                          <span className="text-xs text-muted-foreground ml-1">{countLabel}</span>
-                        )}
+                      <span className="min-w-0">
+                        <span className="text-sm font-medium">
+                          {TARGETING_MODE_LABELS[mode].label}
+                          {countLabel && (
+                            <span className="text-xs font-normal text-muted-foreground ml-1">{countLabel}</span>
+                          )}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          {TARGETING_MODE_LABELS[mode].desc}
+                        </span>
                       </span>
                     </label>
                   );
@@ -496,22 +579,6 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: Subnet
                     <Label className="text-sm">Attiva</Label>
                   </div>
                   <Select
-                    value={String(scheduleInterval)}
-                    onValueChange={(v) => setScheduleInterval(Number(v))}
-                    disabled={savingSchedule || !status.edgeEnabled}
-                  >
-                    <SelectTrigger className="w-[200px] h-9">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {VA_INTERVAL_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={String(opt.value)}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select
                     value={scheduleProfile}
                     onValueChange={(v) => setScheduleProfile(v as EdgeScanProfile)}
                     disabled={savingSchedule || !status.edgeEnabled}
@@ -529,12 +596,31 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr }: Subnet
                   </Select>
                 </div>
 
-                {sched && (
+                <ScheduleBuilder value={sched} onChange={setSched} />
+
+                <div className="space-y-1.5">
+                  <Label htmlFor={`edge-job-name-${networkId}`} className="text-xs">
+                    Nome job/report
+                  </Label>
+                  <Input
+                    id={`edge-job-name-${networkId}`}
+                    value={jobName}
+                    onChange={(e) => {
+                      setJobNameTouched(true);
+                      setJobName(e.target.value);
+                    }}
+                    placeholder="es. rete-uffici_10-0-0-0-24_tutto-cidr_mensile"
+                    className="h-9 text-sm"
+                    disabled={savingSchedule || !status.edgeEnabled}
+                  />
+                </div>
+
+                {schedRun && (
                   <p className="text-xs text-muted-foreground">
-                    Ultima esecuzione: <strong>{formatRelative(sched.last_run_at)}</strong>
-                    {sched.last_run_status && ` (${sched.last_run_status})`}
-                    {scheduleActive && sched.next_run_at && (
-                      <> · Prossima: <strong>{formatRelative(sched.next_run_at)}</strong></>
+                    Ultima esecuzione: <strong>{formatRelative(schedRun.last_run_at)}</strong>
+                    {schedRun.last_run_status && ` (${schedRun.last_run_status})`}
+                    {scheduleActive && schedRun.next_run_at && (
+                      <> · Prossima: <strong>{formatRelative(schedRun.next_run_at)}</strong></>
                     )}
                   </p>
                 )}

@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MeshCentralUnmatched } from "@/components/integrations/meshcentral-unmatched";
 
 interface MeshConfigPublic {
   present: boolean;
@@ -298,6 +299,8 @@ export function MeshCentralCard({
               </div>
             </div>
           )}
+          {/* Manual-bind: associa nodi unmatched a un host (C6). */}
+          <MeshCentralUnmatched onBound={() => void fetchState()} />
         </CardContent>
       )}
     </Card>

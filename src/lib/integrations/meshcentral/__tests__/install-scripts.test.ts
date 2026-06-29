@@ -12,7 +12,7 @@ const P = { serverUrl: "https://da-ipam.example.com", meshId: "mesh//AbC123==" }
 test("windows script embeds serverUrl + meshId and downloads generic agent + .msh", () => {
   const s = buildMeshInstallScript("windows", P);
   assert.ok(s.includes("/meshagents?id="), "missing generic meshagent download");
-  assert.ok(s.includes("/meshsettings?id=mesh//AbC123=="), "missing .msh meshsettings download");
+  assert.ok(s.includes("/meshsettings?id=AbC123=="), "missing .msh meshsettings download");
   assert.ok(s.includes("https://da-ipam.example.com"), "serverUrl not embedded");
   assert.ok(s.includes("--meshServiceName") || s.includes("Mesh Agent"), "missing service name anchor");
 });
@@ -20,14 +20,14 @@ test("windows script embeds serverUrl + meshId and downloads generic agent + .ms
 test("linux script is a bash installer that fetches .msh by meshId", () => {
   const s = buildMeshInstallScript("linux", P);
   assert.ok(s.startsWith("#!/usr/bin/env bash"));
-  assert.ok(s.includes("/meshsettings?id=mesh//AbC123=="));
+  assert.ok(s.includes("/meshsettings?id=AbC123=="));
   assert.ok(s.includes("https://da-ipam.example.com"));
 });
 
 test("macos script is a bash installer that fetches .msh by meshId", () => {
   const s = buildMeshInstallScript("macos", P);
   assert.ok(s.startsWith("#!/usr/bin/env bash"));
-  assert.ok(s.includes("/meshsettings?id=mesh//AbC123=="));
+  assert.ok(s.includes("/meshsettings?id=AbC123=="));
 });
 
 test("serverUrl trailing slash is normalized (no double slash)", () => {

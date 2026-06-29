@@ -30,6 +30,15 @@ function normalizeServerUrl(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
+/**
+ * /meshsettings vuole il meshId base64 SENZA il prefisso `mesh//` (verificato sul
+ * vivo: con `mesh//...` o con la forma hex il server risponde 401; con il base64
+ * nudo risponde 200 con il `.msh`).
+ */
+function mshIdParam(meshId: string): string {
+  return meshId.replace(/^mesh\/\//, "");
+}
+
 // MeshAgent IDs ufficiali (server-side architecture selector).
 // 3 = Windows x64, 6 = Linux x64, 16 = macOS universal.
 const MESH_AGENT_ARCH = { windows: 3, linux: 6, macos: 16 } as const;
@@ -42,7 +51,7 @@ const MESH_AGENT_ARCH = { windows: 3, linux: 6, macos: 16 } as const;
 function buildWindowsMeshScript(p: MeshInstallScriptParams): string {
   const base = normalizeServerUrl(p.serverUrl);
   const agentUrl = `${base}/meshagents?id=${MESH_AGENT_ARCH.windows}`;
-  const mshUrl = `${base}/meshsettings?id=${p.meshId}`;
+  const mshUrl = `${base}/meshsettings?id=${mshIdParam(p.meshId)}`;
   return `# MeshCentral Agent install → DA-IPAM (Windows)
 #Requires -RunAsAdministrator
 $ErrorActionPreference = "Stop"
@@ -63,7 +72,7 @@ Invoke-WebRequest -Uri ${psQuote(agentUrl)} -OutFile $Exe -UseBasicParsing
 Write-Host ">>> [2/3] Download configurazione .msh ($MeshId)"
 Invoke-WebRequest -Uri ${psQuote(mshUrl)} -OutFile $Msh -UseBasicParsing
 Write-Host ">>> [3/3] Installazione servizio ($ServiceName)"
-& $Exe -fullinstall --meshServiceName "$ServiceName"
+& $Exe -fullinstall --meshServiceName "$ServiceName" --copy-msh=1
 Start-Sleep -Seconds 3
 $svc = Get-Service "$ServiceName" -ErrorAction SilentlyContinue
 if ($svc -and $svc.Status -ne 'Running') { Start-Service "$ServiceName" }
@@ -78,7 +87,7 @@ function buildUnixMeshScript(
 ): string {
   const base = normalizeServerUrl(p.serverUrl);
   const agentUrl = `${base}/meshagents?id=${MESH_AGENT_ARCH[platform]}`;
-  const mshUrl = `${base}/meshsettings?id=${p.meshId}`;
+  const mshUrl = `${base}/meshsettings?id=${mshIdParam(p.meshId)}`;
   return `#!/usr/bin/env bash
 # MeshCentral Agent install → DA-IPAM (${platform})
 set -euo pipefail
@@ -101,7 +110,9 @@ chmod +x "$AGENT_BIN"
 echo ">>> [2/3] Download configurazione .msh ($MESH_ID)"
 curl -fsSk ${bashQuote(mshUrl)} -o "$MSH_FILE"
 echo ">>> [3/3] Installazione"
-"$AGENT_BIN" -fullinstall
+# --copy-msh=1 copia il .msh adiacente nella dir di servizio (verificato sul vivo:
+# senza, l'agente si installa ma NON si connette — manca la config del gruppo).
+"$AGENT_BIN" -fullinstall --copy-msh=1
 echo ">>> OK — server: $SERVER_URL"
 `;
 }

@@ -119,3 +119,42 @@ test("no creds → returns zeros, no throw", () => {
     deleteTenantDatabase("TESTMESHNOCFG");
   });
 });
+
+test("stale node is pruned, but an EMPTY listNodes never wipes existing rows", () => {
+  const TS = "TESTMESHSTALE";
+  return withTenant(TS, async () => {
+    const tdb = getTenantDb(TS);
+    applyMcSchemaMigrations(tdb);
+    seedConfig();
+    const countRows = (): number =>
+      (tdb.prepare("SELECT COUNT(*) AS c FROM mc_node").get() as { c: number }).c;
+
+    // First sync: two nodes present.
+    _setControlClientFactory(() => ({
+      listNodes: async () => [
+        node({ nodeId: "node//S1", ip: null, macs: [], rname: "", name: "" }),
+        node({ nodeId: "node//S2", ip: null, macs: [], rname: "", name: "" }),
+      ],
+      close() {},
+    }));
+    await syncMeshForTenant();
+    assert.equal(countRows(), 2);
+
+    // Second sync: only S1 present → S2 is stale and must be pruned.
+    _setControlClientFactory(() => ({
+      listNodes: async () => [node({ nodeId: "node//S1", ip: null, macs: [], rname: "", name: "" })],
+      close() {},
+    }));
+    await syncMeshForTenant();
+    const ids = (tdb.prepare("SELECT node_id FROM mc_node ORDER BY node_id").all() as { node_id: string }[]).map((r) => r.node_id);
+    assert.deepEqual(ids, ["node//S1"]);
+
+    // Third sync: listNodes returns [] (transient/empty) → must NOT wipe S1.
+    _setControlClientFactory(() => ({ listNodes: async () => [], close() {} }));
+    const r = await syncMeshForTenant();
+    assert.equal(r.totalNodes, 0);
+    assert.equal(countRows(), 1, "empty result must not delete existing rows (false-zero safety)");
+
+    deleteTenantDatabase(TS);
+  });
+});

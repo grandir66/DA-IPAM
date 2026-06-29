@@ -123,12 +123,13 @@ export async function syncMeshForTenant(): Promise<{ totalNodes: number; matched
       }
     }
 
-    // Delete stale: rimuove nodi non più presenti in listNodes.
+    // Delete stale: rimuove nodi non più presenti in listNodes — ma MAI azzerare
+    // tutto su risultato vuoto (false-zero safety, cfr. Wazuh B3): un listNodes
+    // vuoto (errore transitorio / visibilità gruppo) NON deve cancellare le
+    // mappature né i bind manuali. Vuoto ⇒ "niente da prunare", non "tutto via".
     if (activeNodeIds.length > 0) {
       const placeholders = activeNodeIds.map(() => "?").join(", ");
       db.prepare(`DELETE FROM mc_node WHERE node_id NOT IN (${placeholders})`).run(...activeNodeIds);
-    } else {
-      db.prepare("DELETE FROM mc_node").run();
     }
   });
 

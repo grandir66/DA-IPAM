@@ -37,13 +37,13 @@ function db() {
 export function getMeshConfig(): MeshConfigPublic | null {
   const r = db()
     .prepare(
-      `SELECT server_url, domain, mesh_id, service_user, login_token_key_encrypted
+      `SELECT server_url, domain, mesh_id, service_user
          FROM mc_config WHERE id = 1`,
     )
     .get() as Record<string, unknown> | undefined;
   if (!r || !r.server_url) return null;
   return {
-    present: Boolean(r.login_token_key_encrypted),
+    present: Boolean(r.server_url && r.mesh_id),
     serverUrl: (r.server_url as string) ?? "",
     domain: (r.domain as string) ?? "",
     meshId: (r.mesh_id as string) ?? "",

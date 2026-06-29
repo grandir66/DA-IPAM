@@ -308,6 +308,18 @@ function ModuleTile({
             Apri
           </span>
         )}
+        {m.externalUiUrl && (
+          <a
+            href={m.externalUiUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Apri l'interfaccia web completa dell'appliance (scan, reti, Greenbone)"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Interfaccia edge
+          </a>
+        )}
         {!compact && (
           <Link
             href={m.configHref}

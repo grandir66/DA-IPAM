@@ -148,3 +148,16 @@ test("no anchor at all -> unmatched with hostId null", () => {
     assert.equal(res.matchStatus, "unmatched");
   });
 });
+
+test("node.name (display nickname) is NOT used as a hostname anchor", () => {
+  withTenant(T, () => {
+    ensureNet();
+    // A host whose hostname equals the node's DISPLAY name must NOT match:
+    // only node.rname (the real computer name) is a valid hostname anchor.
+    seedHost({ ip: "10.0.0.70", mac: null, hostname: "My laptop" });
+    const node = mkNode({ ip: null, macs: [], rname: "", name: "My laptop" });
+    const res = resolveNodeToHostId(node);
+    assert.equal(res.hostId, null, "display name must not match a host hostname");
+    assert.equal(res.matchStatus, "unmatched");
+  });
+});

@@ -65,8 +65,11 @@ export function resolveNodeToHostId(node: MeshNode): NodeMatch {
     }
   }
 
-  // Phase 3: hostname fallback (rname preferred; name as secondary)
-  const nameToTry = node.rname || node.name;
+  // Phase 3: hostname fallback. Only node.rname (the real computer name) is a
+  // valid hostname anchor — node.name is a user-assigned display nickname
+  // ("My laptop", "MGMT switch") and must NOT be matched against host hostnames
+  // (false positives). No anchor ⇒ unmatched (manual-bind), never guess.
+  const nameToTry = node.rname;
   if (nameToTry) {
     const host = matchByHostname(nameToTry);
     if (host) {

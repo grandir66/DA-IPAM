@@ -292,7 +292,8 @@ export function buildMeshAgentInstallScript(
   const logPath = logFilePathForOperation(opId);
   const base = serverUrl.replace(/\/+$/, "");
   const agentUrl = psQuoteInline(`${base}/meshagents?id=3`);
-  const mshUrl = psQuoteInline(`${base}/meshsettings?id=${meshId}`);
+  // /meshsettings vuole il meshId base64 SENZA prefisso `mesh//` (altrimenti 401, verificato sul vivo).
+  const mshUrl = psQuoteInline(`${base}/meshsettings?id=${meshId.replace(/^mesh\/\//, "")}`);
   return `$ErrorActionPreference='Continue'
 $logPath = '${logPath}'
 New-Item -ItemType Directory -Force -Path (Split-Path $logPath) | Out-Null

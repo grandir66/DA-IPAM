@@ -4,7 +4,7 @@ import { buildMeshAgentInstallScript } from "@/lib/patch/ps-scripts";
 
 test("embeds serverUrl + meshId, fixed service name, idempotency marker, EXIT_CODE", () => {
   const s = buildMeshAgentInstallScript(42, "https://da-ipam.example.com", "mesh//AbC123==");
-  assert.ok(s.includes("https://da-ipam.example.com/meshsettings?id=mesh//AbC123=="));
+  assert.ok(s.includes("https://da-ipam.example.com/meshsettings?id=AbC123=="));
   assert.ok(s.includes("https://da-ipam.example.com/meshagents?id="));
   assert.ok(s.includes("Mesh Agent"), "fixed service name");
   assert.ok(s.includes("MESHAGENT_ALREADY_INSTALLED_AND_RUNNING"), "idempotency marker");

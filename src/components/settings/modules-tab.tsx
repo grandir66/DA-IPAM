@@ -37,6 +37,7 @@ import { IntegrationCard } from "./integration-card";
 import { ScannerEdgeCard } from "./scanner-edge-card";
 import { WazuhCard } from "./wazuh-card";
 import { InventoryAgentCard } from "./inventory-agent-card";
+import { MeshCentralCard } from "./meshcentral-card";
 import { ModuleJsonImport } from "./module-json-import";
 import { IntegrationViewer } from "@/components/integrations/integration-viewer";
 import { CredentialsVaultPanel } from "./credentials-vault-panel";
@@ -196,6 +197,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
 
   const patch = features.find((f) => f.key === "patch_management");
   const inventoryAgent = features.find((f) => f.key === "inventory_agent");
+  const meshcentral = features.find((f) => f.key === "meshcentral");
 
   const handleInstallPatch = async () => {
     setBusyKey("patch_management");
@@ -237,6 +239,26 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
     }
   };
 
+  const handleInstallMesh = async () => {
+    setBusyKey("meshcentral");
+    try {
+      const r = await fetch("/api/features/meshcentral/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!r.ok) {
+        const err = (await r.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(err?.error ?? `HTTP ${r.status}`);
+      }
+      toast.success("Modulo MeshCentral installato");
+      await fetchFeatures();
+    } catch (e) {
+      toast.error(`Installazione fallita: ${e instanceof Error ? e.message : "errore"}`);
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const handleUninstallConfirm = async () => {
     const feature = uninstallDialog.feature;
     if (!feature) return;
@@ -265,6 +287,8 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
   const patchBusy = busyKey === "patch_management";
   const inventoryInstalled = inventoryAgent?.status === "installed";
   const inventoryBusy = busyKey === "inventory_agent";
+  const meshInstalled = meshcentral?.status === "installed";
+  const meshBusy = busyKey === "meshcentral";
 
   return (
     <div className="space-y-8">
@@ -359,6 +383,22 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
           onUninstall={() =>
             inventoryAgent &&
             setUninstallDialog({ open: true, feature: inventoryAgent, dropData: false })
+          }
+        />
+      </ModuleSection>
+
+      <ModuleSection
+        id="module-meshcentral"
+        title="MeshCentral — Controllo remoto"
+      >
+        <MeshCentralCard
+          isAdmin={isAdmin}
+          installed={meshInstalled}
+          installBusy={meshBusy}
+          onInstall={handleInstallMesh}
+          onUninstall={() =>
+            meshcentral &&
+            setUninstallDialog({ open: true, feature: meshcentral, dropData: false })
           }
         />
       </ModuleSection>

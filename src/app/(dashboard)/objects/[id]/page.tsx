@@ -35,6 +35,7 @@ const EditDeviceDialog = dynamic(() => import("@/components/devices/edit-device-
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
 import { HostInventoryAgentCard } from "@/components/hosts/host-inventory-agent-card";
+import { HostMeshcentralCard } from "@/components/hosts/host-meshcentral-card";
 import { MobileProfilePanel } from "@/components/mobile/MobileProfilePanel";
 const UptimeTimeline = dynamic(() => import("@/components/shared/uptime-timeline").then((m) => ({ default: m.UptimeTimeline })), { ssr: false });
 const LatencyChart = dynamic(() => import("@/app/(dashboard)/hosts/[id]/latency-chart").then((m) => ({ default: m.LatencyChart })), { ssr: false });
@@ -2452,6 +2453,9 @@ export default function ObjectDetailPage() {
       <Section icon={<HardDrive className="h-4 w-4" />} title="Software da GLPI Agent (push)">
         <HostInventoryAgentCard hostId={host.id} />
       </Section>
+
+      <HostMeshcentralCard hostId={host.id} />
+
 
       {/* ─── 4. Software inventory (solo se device + windows/linux) ─── */}
       {isManaged && isWindowsOrLinux && device && (

@@ -259,7 +259,7 @@ CREATE TABLE IF NOT EXISTS switch_ports (
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync', 'vuln_sync', 'wazuh_sync', 'mdm_sync')),
+  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync', 'vuln_sync', 'wazuh_sync', 'mdm_sync', 'meshcentral_sync')),
   interval_minutes INTEGER NOT NULL DEFAULT 60,
   last_run TEXT,
   next_run TEXT,
@@ -1173,6 +1173,57 @@ CREATE TABLE IF NOT EXISTS edge_scan_schedules (
   enabled INTEGER DEFAULT 1,
   updated_at TEXT DEFAULT (datetime('now'))
 );
+
+-- ============================================================================
+-- MeshCentral RMM (modulo opt-in; tabelle vivono anche se feature OFF, vuote)
+-- mc_config = singleton config cifrata per-tenant (pattern mdm_config).
+-- mc_node/mc_remote_session/mc_node_bind = spec §6.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS mc_config (
+  id              INTEGER PRIMARY KEY CHECK (id = 1),
+  server_url      TEXT,
+  domain          TEXT,
+  mesh_id         TEXT,
+  service_user    TEXT,
+  login_token_key_encrypted TEXT,
+  admin_user      TEXT,
+  admin_pass_encrypted TEXT,
+  updated_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS mc_node (
+  node_id        TEXT PRIMARY KEY,
+  host_id        INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+  mesh_id        TEXT NOT NULL,
+  name           TEXT,
+  rname          TEXT,
+  primary_ip     TEXT,
+  primary_mac    TEXT,
+  osdesc         TEXT,
+  conn           INTEGER DEFAULT 0,
+  last_connect   TEXT,
+  match_status   TEXT,
+  synced_at      TEXT DEFAULT (datetime('now')),
+  created_at     TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS mc_remote_session (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id          INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  node_id          TEXT REFERENCES mc_node(node_id) ON DELETE SET NULL,
+  operator         TEXT NOT NULL,
+  mesh_user        TEXT NOT NULL,
+  viewmode         INTEGER,
+  token_expire_min INTEGER,
+  token_once       INTEGER DEFAULT 1,
+  status           TEXT DEFAULT 'minted',
+  created_at       TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS mc_node_bind (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  node_id     TEXT NOT NULL,
+  host_id     INTEGER NOT NULL,
+  operator    TEXT NOT NULL,
+  created_at  TEXT DEFAULT (datetime('now'))
+);
 `;
 
 export const TENANT_INDEXES_SQL = `
@@ -1405,4 +1456,9 @@ CREATE INDEX IF NOT EXISTS idx_ad_computers_host_dns ON ad_computers(host_id, dn
 CREATE INDEX IF NOT EXISTS idx_mobile_hist_dev ON mobile_inventory_history(device_id, changed_at);
 CREATE INDEX IF NOT EXISTS idx_mobile_apps_dev ON mobile_device_apps(device_id);
 CREATE INDEX IF NOT EXISTS idx_mobile_devices_host ON mobile_devices(host_id);
+
+-- MeshCentral RMM
+CREATE INDEX IF NOT EXISTS idx_mc_node_host ON mc_node(host_id);
+CREATE INDEX IF NOT EXISTS idx_mc_node_mesh ON mc_node(mesh_id);
+CREATE INDEX IF NOT EXISTS idx_mc_remote_session_host_ts ON mc_remote_session(host_id, created_at DESC);
 `;

@@ -37,6 +37,12 @@ const FEATURE_CATALOG: ReadonlyArray<{
     description:
       "Riceve inventario software push da GLPI Agent (Windows/Linux/macOS) via JSON. Nessun server GLPI né Wazuh.",
   },
+  {
+    key: "meshcentral",
+    title: "MeshCentral (controllo remoto)",
+    description:
+      "Controllo remoto degli endpoint via MeshCentral co-locato (launch-out SSO). Deploy agente, mappatura nodo→host, sessioni remote.",
+  },
 ] as const;
 
 export async function GET() {

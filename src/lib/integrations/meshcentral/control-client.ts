@@ -59,7 +59,11 @@ function defaultWsConnector(
   url: string,
   headers: Record<string, string>,
 ): McWsSocket {
-  const ws = new WebSocket(url, { headers });
+  // MeshCentral è co-locato sull'appliance con cert self-signed: per il sync
+  // server-side (cron) impostare MESHCENTRAL_TLS_INSECURE=1 nel .env del tenant.
+  // Scoped alla SOLA connessione MeshControlClient — NON tocca il TLS globale.
+  const rejectUnauthorized = process.env.MESHCENTRAL_TLS_INSECURE !== "1";
+  const ws = new WebSocket(url, { headers, rejectUnauthorized });
   return {
     onMessage(cb) {
       ws.on("message", (d: WebSocket.RawData) => cb(d.toString()));

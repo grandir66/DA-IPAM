@@ -305,8 +305,11 @@ export class MeshControlClient {
   }
 
   close(): void {
+    // Reject any in-flight requests so awaiting callers settle immediately
+    // instead of leaking (clearing the map alone would orphan their promises).
     for (const [, p] of this.pending) {
       clearTimeout(p.timer);
+      p.reject(new Error("control.ashx client closed"));
     }
     this.pending.clear();
     this.sock?.close();

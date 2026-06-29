@@ -197,3 +197,20 @@ test("server sending {action:'close', cause:'noauth'} rejects immediately", asyn
   );
   c.close();
 });
+
+test("close() rejects in-flight requests instead of leaking them", async () => {
+  // Responder never replies → the request stays pending until close().
+  _setWsConnector(() => makeFake(() => null));
+  const c = new MeshControlClient(creds);
+  const inflight = c.listNodes();
+  // Let connect open + the request register in the pending map before closing.
+  await new Promise((r) => setImmediate(r));
+  c.close();
+  await assert.rejects(
+    inflight,
+    (err: Error) => {
+      assert.ok(err.message.includes("client closed"), "in-flight request rejects with client-closed");
+      return true;
+    },
+  );
+});

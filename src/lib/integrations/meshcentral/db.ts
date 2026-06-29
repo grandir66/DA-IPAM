@@ -82,3 +82,35 @@ export function bindNodeToHost(
   tx();
   return { ok: true };
 }
+
+export interface MeshHostStatus {
+  present: boolean;
+  nodeId?: string;
+  conn?: number;
+  online?: boolean;
+  matchStatus?: string;
+}
+
+/**
+ * Stato Mesh del singolo host (per la card host detail). present=true se esiste
+ * un nodo matched/manual; online = bit di connettività (conn & 1).
+ */
+export function getMeshStatusForHost(hostId: number): MeshHostStatus {
+  const row = db()
+    .prepare(
+      `SELECT node_id, conn, match_status
+         FROM mc_node
+        WHERE host_id = ? AND match_status IN ('matched', 'manual')
+        ORDER BY (conn & 1) DESC, synced_at DESC
+        LIMIT 1`,
+    )
+    .get(hostId) as { node_id: string; conn: number | null; match_status: string } | undefined;
+  if (!row) return { present: false };
+  return {
+    present: true,
+    nodeId: row.node_id,
+    conn: row.conn ?? 0,
+    online: ((row.conn ?? 0) & 1) === 1,
+    matchStatus: row.match_status,
+  };
+}

@@ -2,7 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { withTenant, deleteTenantDatabase, getTenantDb, upsertHost } from "@/lib/db-tenant";
 import { applyMcSchemaMigrations } from "@/lib/integrations/meshcentral/schema";
-import { listMeshNodes, bindNodeToHost } from "@/lib/integrations/meshcentral/db";
+import { listMeshNodes, bindNodeToHost, getMeshStatusForHost } from "@/lib/integrations/meshcentral/db";
 
 const T = "TESTMCDB";
 after(() => deleteTenantDatabase(T));
@@ -78,5 +78,22 @@ test("bindNodeToHost rejects unknown node and unknown host", () => {
       ok: false,
       error: "host_not_found",
     });
+  });
+});
+
+test("getMeshStatusForHost reports present/online for a matched node, absent otherwise", () => {
+  withTenant(T, () => {
+    setup();
+    const host = upsertHost({ network_id: 1, ip: "10.0.0.80", hostname: "ONLINE-PC" });
+    seedNode({ node_id: "node//ON", host_id: host!.id, match_status: "matched" });
+
+    const st = getMeshStatusForHost(host!.id);
+    assert.equal(st.present, true);
+    assert.equal(st.nodeId, "node//ON");
+    assert.equal(st.online, true); // seedNode sets conn=1
+
+    // a host with no mc_node row → absent
+    const other = upsertHost({ network_id: 1, ip: "10.0.0.81" });
+    assert.deepEqual(getMeshStatusForHost(other!.id), { present: false });
   });
 });

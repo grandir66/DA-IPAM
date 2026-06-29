@@ -76,13 +76,12 @@ test("no N+1: exactly 4 prepared statements (one per source)", () => {
     const db = getTenantDb(TENANTS[2]);
     const orig = db.prepare.bind(db);
     let prepares = 0;
-    // @ts-expect-error patch for counting in test
-    db.prepare = (sql: string) => { prepares++; return orig(sql); };
+    const patched = db as unknown as { prepare: (sql: string) => unknown };
+    patched.prepare = (sql: string) => { prepares++; return orig(sql); };
     try {
       getEndpointAgentsForHosts([10, 11, 12]);
     } finally {
-      // @ts-expect-error restore
-      db.prepare = orig;
+      patched.prepare = orig;
     }
     assert.equal(prepares, 4); // mesh, wazuh, glpi, choco — never per-host
   });

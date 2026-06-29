@@ -122,6 +122,15 @@ export async function runJob(jobId: number): Promise<void> {
       );
       break;
     }
+    case "meshcentral_sync": {
+      const { syncMeshForTenant } = await import("@/lib/integrations/meshcentral/mesh-sync");
+      const result = await syncMeshForTenant();
+      console.info(
+        `[Scheduler] meshcentral_sync: ${result.matched}/${result.totalNodes} nodi matchati, ` +
+        `${result.unmatched} unmatched`
+      );
+      break;
+    }
   }
 }
 

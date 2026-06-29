@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { CheckCircle2, Loader2, RefreshCw, ShieldCheck, ShieldAlert, Trash2, PlayCircle, Network, ExternalLink, Plug } from "lucide-react";
+import { deriveEdgeUiBase } from "@/lib/integrations/edge-ui-url";
 
 interface ScannerRow {
   id: number;
@@ -20,30 +21,6 @@ interface ScannerRow {
   auto_disabled_at: string | null;
 }
 
-/**
- * Deriva la base URL della UI dell'edge (browser-reachable) dal base_url di sync.
- * La UI dell'edge gira su :6443 (nginx), distinta dalla porta API di sync.
- * Ritorna null se l'host non è raggiungibile da browser (docker-internal/localhost),
- * caso in cui il deep-link non ha senso e mostriamo solo l'hint.
- */
-function deriveEdgeUiBase(baseUrl: string): string | null {
-  let u: URL;
-  try {
-    u = new URL(baseUrl);
-  } catch {
-    return null;
-  }
-  const host = u.hostname;
-  if (
-    host === "host.docker.internal" ||
-    host === "localhost" ||
-    host === "127.0.0.1" ||
-    host.endsWith(".internal")
-  ) {
-    return null;
-  }
-  return `https://${host}:6443`;
-}
 
 /**
  * Pannello Edge MVP: due riquadri informativi con deep-link alla UI propria

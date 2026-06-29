@@ -86,6 +86,7 @@ const DEFAULT_CLASS_PRESETS: ClassPreset[] = [
 import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
 import { WazuhHostBadge, type WazuhHostStatus } from "@/components/integrations/wazuh-host-badge";
+import { MeshCentralHostBadge } from "@/components/integrations/meshcentral-host-badge";
 import type { ClassPreset, IconName } from "./preset-types";
 import { PresetsDialog } from "@/components/devices/presets-dialog";
 
@@ -394,6 +395,8 @@ export default function DiscoveryPage() {
   const [hosts, setHosts] = useState<EnrichedHost[]>([]);
   const [librenmsMap, setLibrenmsMap] = useState<Map<string, LibreNMSHostMap>>(new Map());
   const [wazuhMap, setWazuhMap] = useState<Map<number, WazuhHostStatus | null>>(new Map());
+  type MeshPresence = { present: boolean; nodeId?: string; conn?: number; syncedAt?: string } | null;
+  const [meshMap, setMeshMap] = useState<Map<number, MeshPresence>>(new Map());
   const [credentials, setCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -705,6 +708,26 @@ export default function DiscoveryPage() {
               const wm = new Map<number, WazuhHostStatus | null>();
               for (const id of ids) wm.set(id, wj.statuses?.[id] ?? null);
               setWazuhMap(wm);
+            }
+          }
+        } catch { /* non critico */ }
+
+        // Batch fetch presenza MeshCentral per tutti gli host della vista — singola query.
+        try {
+          const ids = data.map((h) => h.id).filter((v): v is number => Number.isFinite(v));
+          if (ids.length > 0) {
+            const mr = await fetch("/api/integrations/meshcentral/host-status", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ host_ids: ids.slice(0, 1000) }),
+            });
+            if (mr.ok) {
+              const mj = (await mr.json()) as {
+                statuses: Record<string, { mesh: MeshPresence } | null>;
+              };
+              const mm = new Map<number, MeshPresence>();
+              for (const id of ids) mm.set(id, mj.statuses?.[id]?.mesh ?? null);
+              setMeshMap(mm);
             }
           }
         } catch { /* non critico */ }
@@ -1396,6 +1419,9 @@ export default function DiscoveryPage() {
         if (h.asset_id) score += 4;
         if (librenmsMap.get(`${h.network_id}:${h.ip}`)) score += 8;
         if (h.multihomed) score += 16;
+        // Presenza MeshCentral attiva (online + sync fresco) pesa nel sort "Profilo".
+        const mesh = meshMap.get(h.id);
+        if (mesh?.present && ((mesh.conn ?? 0) & 1) === 1) score += 32;
         return String(score);
       }
       case "asset_tag": return h.asset_tag ?? "";
@@ -1732,6 +1758,14 @@ export default function DiscoveryPage() {
               hostName={h.hostname ?? h.custom_name ?? null}
               hostIp={h.ip}
               prefetched={wazuhMap.get(h.id) ?? null}
+              mode="icon"
+            />
+
+            {/* MeshCentral — presenza RMM agent (3 stati: assente/attivo/stale).
+                Stato prefetchato in batch (meshMap), nessuna fetch per-riga. */}
+            <MeshCentralHostBadge
+              hostId={h.id}
+              mesh={meshMap.get(h.id) ?? null}
               mode="icon"
             />
 

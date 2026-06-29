@@ -7,12 +7,14 @@ import { applyPatchModuleMigrations } from "@/lib/patch/schema";
 import { runFullSyncMatch } from "@/lib/patch/matcher";
 import { applyInventoryAgentMigrations } from "@/lib/inventory-agent/schema";
 import { installInventoryAgentFeature } from "@/lib/inventory-agent/feature";
+import { installMeshFeature } from "@/lib/integrations/meshcentral/feature";
+import { MC_TABLES } from "@/lib/integrations/meshcentral/schema";
 
 /**
  * Feature key whitelistate. Le route /api/features/[key]/* accettano solo
  * questi valori: una key sconosciuta ritorna 404 senza toccare il DB.
  */
-const ALLOWED_FEATURES = new Set<string>(["patch_management", "inventory_agent"]);
+const ALLOWED_FEATURES = new Set<string>(["patch_management", "inventory_agent", "meshcentral"]);
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -72,6 +74,10 @@ export async function POST(
         const migration = applyInventoryAgentMigrations(tenantDb);
         tablesCreated = migration.tablesCreated;
         installInventoryAgentFeature(tenantCode, safeUserId);
+      } else if (key === "meshcentral") {
+        // installMeshFeature applica mc_* schema + abilita il flag (usa il tenant context).
+        installMeshFeature();
+        tablesCreated = [...MC_TABLES];
       } else {
         setFeatureEnabled(tenantCode, key, safeUserId);
       }

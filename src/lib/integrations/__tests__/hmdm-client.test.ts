@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDeviceSearchResponse, parseDeviceInfoResponse } from "@/lib/integrations/hmdm-client";
+import { parseDeviceSearchResponse, parseDeviceInfoResponse, parseInfoBlob } from "@/lib/integrations/hmdm-client";
 
 test("parse device search payload (data.devices.items)", () => {
   const raw = {
@@ -55,4 +55,31 @@ test("parse deviceinfo payload (model + apps)", () => {
 
 test("parse deviceinfo null when no data", () => {
   assert.equal(parseDeviceInfoResponse({}), null);
+});
+
+test("parseInfoBlob: apps from info blob (pkg/name/version), serial unknown->null", () => {
+  const info = JSON.stringify({
+    model: "SM-S938B",
+    androidVersion: "16",
+    serial: "unknown",
+    batteryLevel: 89,
+    applications: [
+      { name: "Chrome", pkg: "com.android.chrome", version: "120" },
+      { name: "no-pkg-app" },
+    ],
+  });
+  const di = parseInfoBlob(info)!;
+  assert.equal(di.model, "SM-S938B");
+  assert.equal(di.androidVersion, "16");
+  assert.equal(di.serial, null); // "unknown" normalizzato a null
+  assert.equal(di.batteryLevel, 89);
+  assert.equal(di.applications.length, 1);
+  assert.equal(di.applications[0].applicationPkg, "com.android.chrome");
+  assert.equal(di.applications[0].applicationName, "Chrome");
+  assert.equal(di.applications[0].versionInstalled, "120");
+});
+
+test("parseInfoBlob: null/invalid → null", () => {
+  assert.equal(parseInfoBlob(null), null);
+  assert.equal(parseInfoBlob("not json"), null);
 });

@@ -12,6 +12,7 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "host_detect_credential", scope: "tenant", tier: "config" },
   { table: "device_credential_bindings", scope: "tenant", tier: "config" },
   { table: "network_devices", scope: "tenant", tier: "config", secretColumns: ["community_string", "api_token"] },
+  { table: "mc_config", scope: "tenant", tier: "config", secretColumns: ["login_token_key_encrypted", "admin_pass_encrypted"] },
   { table: "network_router", scope: "tenant", tier: "config" },
   { table: "ad_integrations", scope: "tenant", tier: "config" },
   { table: "vuln_scanners", scope: "tenant", tier: "config" },

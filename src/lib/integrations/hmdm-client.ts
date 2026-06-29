@@ -108,6 +108,38 @@ export function parseDeviceInfoResponse(raw: unknown): DeviceInfoView | null {
   };
 }
 
+/**
+ * Estrae model/serial/OS/app dal blob `info` di DeviceView (DeviceInfo serializzato).
+ * Fonte affidabile sui device NON Device-Owner, dove il plugin deviceinfo resta vuoto/403.
+ * Nel blob le app usano `pkg`/`name`/`version` (non applicationPkg/...). serial "unknown" → null.
+ */
+export function parseInfoBlob(info: string | null): DeviceInfoView | null {
+  if (!info) return null;
+  let d: Record<string, unknown>;
+  try {
+    d = JSON.parse(info) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const apps = (d.applications as Record<string, unknown>[] | undefined) ?? [];
+  const serial = (d.serial as string) ?? null;
+  return {
+    model: (d.model as string) ?? null,
+    serial: serial && serial.toLowerCase() !== "unknown" ? serial : null,
+    imei: (d.imei as string) || null,
+    androidVersion: (d.androidVersion as string) ?? null,
+    batteryLevel: typeof d.batteryLevel === "number" ? (d.batteryLevel as number) : null,
+    cpu: (d.cpu as string) ?? null,
+    applications: apps
+      .map((a) => ({
+        applicationName: (a.name as string) ?? null,
+        applicationPkg: String(a.pkg ?? ""),
+        versionInstalled: (a.version as string) ?? null,
+      }))
+      .filter((a) => a.applicationPkg),
+  };
+}
+
 export async function searchDevices(
   baseUrl: string,
   jwt: string,

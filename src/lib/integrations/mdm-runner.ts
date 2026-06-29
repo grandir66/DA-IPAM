@@ -1,5 +1,5 @@
 import { getMdmConfig, getMdmCreds, recordSync } from "@/lib/integrations/mdm-config";
-import { loginJwt, searchDevices, getDeviceInfo } from "@/lib/integrations/hmdm-client";
+import { loginJwt, searchDevices, getDeviceInfo, parseInfoBlob } from "@/lib/integrations/hmdm-client";
 import { applyDevice } from "@/lib/integrations/mdm-sync";
 
 /**
@@ -25,7 +25,10 @@ export async function runMdmSync(): Promise<{ devices: number; changed: number; 
       const batch = await searchDevices(creds.baseUrl, jwt, page, pageSize);
       if (batch.length === 0) break;
       for (const dv of batch) {
-        const di = await getDeviceInfo(creds.baseUrl, jwt, dv.number).catch(() => null);
+        // Preferisci il blob `info` (presente sia su DO che non-DO); fallback al plugin deviceinfo.
+        const di =
+          parseInfoBlob(dv.info) ??
+          (await getDeviceInfo(creds.baseUrl, jwt, dv.number).catch(() => null));
         const r = applyDevice(dv, di);
         total++;
         if (!r.deduped) changed += r.changes;

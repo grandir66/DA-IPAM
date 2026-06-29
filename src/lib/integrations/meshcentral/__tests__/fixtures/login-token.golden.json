@@ -1,0 +1,5 @@
+{
+  "key": "00112233445566778899aabbccddeeff0123456789abcdef0123456789abcdeffedcba9876543210fedcba987654321000112233445566778899aabbccddeeff0123456789abcdef0123456789abcdef",
+  "token": "__REGENERATE_AGAINST_LIVE_SERVER_PHASE0__",
+  "expectedPayload": { "u": "user//svc-daipam", "a": 3 }
+}

@@ -262,3 +262,83 @@ if (Test-Path $logPath) {
   Write-Output '---'
 }`;
 }
+
+/** Escapa una stringa per inclusione in un literal single-quote PowerShell. */
+function psQuoteInline(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
+ * MeshCentral agent install via WinRM. Scarica il binario MeshAgent generico
+ * (`/meshagents?id=3`, Windows x64) + il file di config per-gruppo `.msh`
+ * (`/meshsettings?id=<meshId>`), installa il servizio "Mesh Agent" con
+ * `--meshServiceName` FISSO così che il probe `Get-Service` sia deterministico.
+ *
+ * Idempotente: se il servizio "Mesh Agent" è già Running → exit 0 senza
+ * reinstallare, marker `MESHAGENT_ALREADY_INSTALLED_AND_RUNNING`.
+ *
+ * Exit code:
+ *   0 → success (installato o già presente e running)
+ *   1 → download agent/.msh failed
+ *   2 → service NOT running dopo install
+ *
+ * serverUrl/meshId sono psQuoted per evitare PS injection.
+ */
+export function buildMeshAgentInstallScript(
+  opId: number,
+  serverUrl: string,
+  meshId: string,
+): string {
+  const logPath = logFilePathForOperation(opId);
+  const base = serverUrl.replace(/\/+$/, "");
+  const agentUrl = psQuoteInline(`${base}/meshagents?id=3`);
+  const mshUrl = psQuoteInline(`${base}/meshsettings?id=${meshId}`);
+  return `$ErrorActionPreference='Continue'
+$logPath = '${logPath}'
+New-Item -ItemType Directory -Force -Path (Split-Path $logPath) | Out-Null
+'MESHAGENT_INSTALL_START' | Tee-Object -FilePath $logPath
+$ServiceName = 'Mesh Agent'
+# Skip se già installato e running
+$existing = Get-Service "$ServiceName" -ErrorAction SilentlyContinue
+if ($existing -and $existing.Status -eq 'Running') {
+  'MESHAGENT_ALREADY_INSTALLED_AND_RUNNING' | Tee-Object -FilePath $logPath -Append
+  'EXIT_CODE=0' | Tee-Object -FilePath $logPath -Append
+  exit 0
+}
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+$dir = "$env:ProgramData\\Domarc\\meshagent"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+$exe = Join-Path $dir 'meshagent.exe'
+$msh = Join-Path $dir 'meshagent.msh'
+# Download MeshAgent generico + .msh per-gruppo
+'DOWNLOADING_AGENT' | Tee-Object -FilePath $logPath -Append
+try {
+  Invoke-WebRequest -Uri ${agentUrl} -OutFile $exe -UseBasicParsing 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
+  Invoke-WebRequest -Uri ${mshUrl} -OutFile $msh -UseBasicParsing 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
+} catch {
+  "ERROR: Download failed: $_" | Tee-Object -FilePath $logPath -Append
+  'EXIT_CODE=1' | Tee-Object -FilePath $logPath -Append
+  exit 1
+}
+if (-not (Test-Path $exe) -or -not (Test-Path $msh)) {
+  'ERROR: agent o .msh non scaricati' | Tee-Object -FilePath $logPath -Append
+  'EXIT_CODE=1' | Tee-Object -FilePath $logPath -Append
+  exit 1
+}
+# Install servizio con nome FISSO
+'INSTALLING_AGENT' | Tee-Object -FilePath $logPath -Append
+& $exe -fullinstall --meshServiceName "$ServiceName" 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
+Start-Sleep -Seconds 3
+$svc = Get-Service "$ServiceName" -ErrorAction SilentlyContinue
+if ($svc -and $svc.Status -ne 'Running') { Start-Service "$ServiceName" 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append; Start-Sleep -Seconds 2; $svc = Get-Service "$ServiceName" -ErrorAction SilentlyContinue }
+if ($svc -and $svc.Status -eq 'Running') {
+  'MESHAGENT_INSTALLED_AND_RUNNING' | Tee-Object -FilePath $logPath -Append
+  'EXIT_CODE=0' | Tee-Object -FilePath $logPath -Append
+  exit 0
+} else {
+  $status = if ($svc) { $svc.Status } else { 'NOT_FOUND' }
+  "ERROR: '$ServiceName' status=$status dopo install" | Tee-Object -FilePath $logPath -Append
+  'EXIT_CODE=2' | Tee-Object -FilePath $logPath -Append
+  exit 2
+}`;
+}

@@ -26,6 +26,7 @@ import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { getNetServicesState } from "@/lib/network-services/feature";
 import { getFeatureStatus } from "@/lib/patch/feature";
 import { getTenantDb } from "@/lib/db-tenant";
+import { deriveEdgeUiBase } from "@/lib/integrations/edge-ui-url";
 
 export type ModuleKey =
   | "edge"
@@ -60,6 +61,13 @@ export interface ModuleState extends ModuleDescriptor {
   /** Target di "Apri": route interna (native) o URL esterno (external). null se non lanciabile. */
   uiUrl: string | null;
   uiIsInternal: boolean;
+  /**
+   * URL esterno opzionale alla UI completa del modulo, in aggiunta a `uiUrl`.
+   * Usato dai moduli ad accesso nativo (uiUrl interno) che però espongono
+   * anche una propria interfaccia web autonoma — es. Scanner-Edge: findings
+   * nativi in /vulnerabilities + UI edge completa su :6443. null = nessuna.
+   */
+  externalUiUrl?: string | null;
   /** Suggerimento operativo quando non installato. */
   note?: string;
 }
@@ -193,6 +201,9 @@ export async function resolveModules(tenantCode: string): Promise<ModuleState[]>
       enabled,
       uiUrl: "/vulnerabilities",
       uiIsInternal: true,
+      // UI edge completa (Greenbone/scan/reti) su :6443, in aggiunta ai
+      // findings nativi in /vulnerabilities. null se host non browser-reachable.
+      externalUiUrl: scanner?.base_url ? deriveEdgeUiBase(scanner.base_url) : null,
       note: installed
         ? undefined
         : "Scanner-Edge non configurato. Importa il JSON dell'installer o compila la card edge.",

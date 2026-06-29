@@ -22,11 +22,13 @@ import type { Database } from "better-sqlite3";
 import { runWinrmCommand } from "@/lib/devices/winrm-run";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { loadWinrmCredentialsForHost } from "./credentials";
+import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
 import {
   buildBootstrapScript,
   buildProbeScript,
   buildUpgradeScript,
   buildWazuhInstallScript,
+  buildMeshAgentInstallScript,
   logFilePathForOperation,
 } from "./ps-scripts";
 import type {
@@ -555,6 +557,115 @@ export async function executeWazuhInstall(
   });
 
   return { operationId, success: installedOk, alreadyInstalled };
+}
+
+/**
+ * Parser idempotenza/esito MeshAgent install. Esposto per test unit.
+ */
+export function parseMeshInstallStatus(
+  stdout: string,
+): "success" | "failed" | "already_installed" {
+  const exitCode = parseExitCodeFromOutput(stdout);
+  if (exitCode !== 0) return "failed";
+  if (stdout.includes("MESHAGENT_ALREADY_INSTALLED_AND_RUNNING")) {
+    return "already_installed";
+  }
+  if (stdout.includes("MESHAGENT_INSTALLED_AND_RUNNING")) return "success";
+  return "failed";
+}
+
+/**
+ * MeshCentral agent install via WinRM. Scarica binario MeshAgent generico +
+ * `.msh` per-gruppo dal server MeshCentral configurato (`getMeshCreds()`) e
+ * installa il servizio "Mesh Agent". Idempotente lato target (skip se già
+ * running → status 'already_installed').
+ *
+ * Schema patch_operations: action='install', package_id='meshagent'.
+ * `userId` arriva dal contesto sessione via la route (CONTRACT C10: niente
+ * getCurrentUserId, che non esiste in api-tenant — l'opts porta userId come per
+ * executeWazuhInstall).
+ *
+ * Ritorna `{ operationId, status }` con status ∈ {'success','failed','already_installed'}.
+ */
+export async function executeMeshAgentInstall(
+  opts: ExecutorOptions,
+): Promise<{ operationId: number; status: string }> {
+  const db = resolveTenantDb(opts.tenantCode);
+  const operationId = createOperation(db, {
+    hostId: opts.hostId,
+    userId: opts.userId,
+    action: "install",
+    packageId: "meshagent",
+  });
+  const logPath = logFilePathForOperation(operationId);
+  updateOperation(db, operationId, {
+    status: "running",
+    startedAt: nowIso(),
+    logFilePath: logPath,
+  });
+
+  const meshCreds = getMeshCreds();
+  if (!meshCreds) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: "MeshCentral non configurato per il tenant",
+    });
+    return { operationId, status: "failed" };
+  }
+
+  const winrm = loadWinrmCredentialsForHost(db, opts.hostId);
+  if (!winrm) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: "Credenziali WinRM mancanti o non decifrabili per l'host",
+    });
+    return { operationId, status: "failed" };
+  }
+
+  let script: string;
+  try {
+    script = buildMeshAgentInstallScript(operationId, meshCreds.serverUrl, meshCreds.meshId);
+  } catch (err) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: `Build script fallito: ${(err as Error)?.message ?? err}`,
+    });
+    return { operationId, status: "failed" };
+  }
+
+  let stdout = "";
+  try {
+    stdout = await runWinrmCommand(
+      winrm.host,
+      winrm.port,
+      winrm.username,
+      winrm.password,
+      script,
+      true,
+      winrm.realm ?? "",
+    );
+  } catch (err) {
+    const message = (err as Error)?.message ?? String(err);
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: message.slice(0, 2000),
+    });
+    return { operationId, status: "failed" };
+  }
+
+  const status = parseMeshInstallStatus(stdout);
+  const ok = status === "success" || status === "already_installed";
+  updateOperation(db, operationId, {
+    status: ok ? "success" : "failed",
+    exitCode: parseExitCodeFromOutput(stdout) ?? null,
+    finishedAt: nowIso(),
+    errorMessage: ok ? null : tailForError(stdout) || "MeshAgent install fallito",
+  });
+  return { operationId, status };
 }
 
 /**

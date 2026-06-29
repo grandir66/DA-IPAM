@@ -15,8 +15,9 @@ import {
   INVENTORY_AGENT_TABLES,
 } from "@/lib/inventory-agent/schema";
 import { uninstallInventoryAgentFeature } from "@/lib/inventory-agent/feature";
+import { dropMcSchema } from "@/lib/integrations/meshcentral/schema";
 
-const ALLOWED_FEATURES = new Set<string>(["patch_management", "inventory_agent"]);
+const ALLOWED_FEATURES = new Set<string>(["patch_management", "inventory_agent", "meshcentral"]);
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -72,6 +73,9 @@ export async function POST(
         } else if (key === "inventory_agent") {
           dropInventoryAgentSchema(tenantDb);
           dataDropped = INVENTORY_AGENT_TABLES.length > 0;
+        } else if (key === "meshcentral") {
+          dropMcSchema(tenantDb);
+          dataDropped = true;
         }
       }
 

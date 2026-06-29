@@ -21,7 +21,8 @@ test("encodeCookie: layout iv[12]|authTag[16]|ciphertext, AES-256-GCM, key.slice
   const key = Buffer.from(HEX_KEY, "hex");
   assert.equal(key.length, 80); // 160 hex chars
 
-  const payload = { u: "user/mesh/svc-daipam", a: 3, time: 1719600000, expire: 3, once: 1 };
+  const ONCE_UUID = "550e8400-e29b-41d4-a716-446655440000";
+  const payload = { u: "user/mesh/svc-daipam", a: 3, time: 1719600000, expire: 3, once: ONCE_UUID };
   const token = encodeCookie(payload, key);
 
   // URL-safe alphabet only: no '+' and no '/' in output.
@@ -45,7 +46,8 @@ test("encodeCookie: layout iv[12]|authTag[16]|ciphertext, AES-256-GCM, key.slice
   assert.equal(parsed.a, 3);
   assert.equal(parsed.time, 1719600000);
   assert.equal(parsed.expire, 3);
-  assert.equal(parsed.once, 1);
+  assert.equal(typeof parsed.once, "string", "once must be a string (UUID dedup key)");
+  assert.equal(parsed.once, ONCE_UUID);
 });
 
 test("encodeCookie: tampering the authTag breaks decryption (GCM integrity)", () => {
@@ -69,7 +71,7 @@ test("encodeCookie: output never contains '+' or '/', and @/$ map back to +//", 
   let sawAt = false;
   let sawDollar = false;
   for (let i = 0; i < 200; i++) {
-    const token = encodeCookie({ u: "user/mesh/svc", a: 3, time: i, expire: 3, once: 1 }, key);
+    const token = encodeCookie({ u: "user/mesh/svc", a: 3, time: i, expire: 3, once: "dedup-key" }, key);
     assert.equal(token.includes("+"), false, "token must not contain '+'");
     assert.equal(token.includes("/"), false, "token must not contain '/'");
     if (token.includes("@")) sawAt = true;
@@ -100,7 +102,7 @@ test("encodeCookie: key MUST be loaded from hex (Buffer.from(hex)), base64-loade
   const wrongKey = Buffer.from(HEX_KEY, "base64");
   assert.notEqual(wrongKey.length, hexKey.length, "base64 misload must differ from hex load");
 
-  const token = encodeCookie({ u: "user/mesh/svc", a: 3, time: 7, expire: 3, once: 1 }, hexKey);
+  const token = encodeCookie({ u: "user/mesh/svc", a: 3, time: 7, expire: 3, once: "dedup-key" }, hexKey);
   const raw = Buffer.from(token.replace(/@/g, "+").replace(/\$/g, "/"), "base64");
   const iv = raw.subarray(0, 12);
   const tag = raw.subarray(12, 28);

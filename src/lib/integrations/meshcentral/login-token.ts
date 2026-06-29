@@ -103,7 +103,7 @@ export function mintLoginToken(
     expire: opts.expireMinutes,
   };
   if (opts.once) {
-    payload.once = 1;
+    payload.once = crypto.randomUUID();
   }
   return encodeCookie(payload, creds.loginTokenKey);
 }

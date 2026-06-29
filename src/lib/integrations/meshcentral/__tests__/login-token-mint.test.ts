@@ -53,13 +53,23 @@ test("mintLoginToken: fields a:3, once, expire in minutes, time in unix seconds"
     a: number;
     time: number;
     expire: number;
-    once?: number;
+    once?: unknown;
   };
   assert.equal(p.u, "user/mesh/svc-daipam");
   assert.equal(p.a, 3);
   assert.equal(p.expire, 3, "expire is in MINUTES");
-  assert.equal(p.once, 1, "once must serialize as 1");
+  assert.equal(typeof p.once, "string", "once must be a string (MeshCentral uses it as dedup key)");
+  assert.ok((p.once as string).length > 0, "once must be non-empty");
   assert.ok(p.time >= before && p.time <= after, "time must be unix SECONDS at mint time");
+});
+
+test("mintLoginToken: once is unique per mint (per-token dedup key)", () => {
+  const t1 = mintLoginToken({ meshUser: "user/mesh/svc-daipam", expireMinutes: 3, once: true }, credsStub);
+  const t2 = mintLoginToken({ meshUser: "user/mesh/svc-daipam", expireMinutes: 3, once: true }, credsStub);
+  const key = Buffer.from(HEX_KEY, "hex");
+  const p1 = decode(t1, key) as { once?: unknown };
+  const p2 = decode(t2, key) as { once?: unknown };
+  assert.ok(p1.once !== p2.once, "each minted token must have a distinct once value for server-side dedup");
 });
 
 test("mintLoginToken: once omitted -> no 'once' field", () => {

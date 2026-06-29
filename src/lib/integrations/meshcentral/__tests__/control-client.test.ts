@@ -58,10 +58,11 @@ test("listNodes maps the meshes-keyed nodes payload to MeshNode[]", async () => 
       url.startsWith("wss://mesh.example.it/control.ashx"),
       "wss control.ashx",
     );
-    assert.ok(
-      headers["x-meshauth"] || headers["Cookie"] || headers["cookie"],
-      "auth header present",
-    );
+    // Assert exact x-meshauth format: Base64(user),Base64(pass)
+    const parts = (headers["x-meshauth"] ?? "").split(",");
+    assert.equal(parts.length, 2, "x-meshauth must have two comma-separated parts");
+    assert.equal(Buffer.from(parts[0], "base64").toString(), creds.adminUser, "part[0] decodes to adminUser");
+    assert.equal(Buffer.from(parts[1], "base64").toString(), creds.adminPass, "part[1] decodes to adminPass");
     return makeFake((msg) => {
       if (msg.action === "nodes") {
         return {
@@ -159,4 +160,40 @@ test("close() tears down the client without errors", () => {
   const c = new MeshControlClient(creds);
   // close before connect — should not throw
   assert.doesNotThrow(() => c.close());
+});
+
+test("server sending {action:'close', cause:'noauth'} rejects immediately", async () => {
+  _setWsConnector(() => {
+    // Fake socket that opens, then immediately sends an auth-close message
+    let onMsg: (d: string) => void = () => {};
+    let onOpen: () => void = () => {};
+    const sock: McWsSocket = {
+      onMessage(cb) { onMsg = cb; },
+      onOpen(cb) {
+        onOpen = cb;
+        queueMicrotask(() => {
+          onOpen();
+          // After open, server sends noauth close
+          queueMicrotask(() =>
+            onMsg(JSON.stringify({ action: "close", cause: "noauth", msg: "Not authenticated" }))
+          );
+        });
+      },
+      onClose() {},
+      onError() {},
+      send() {},
+      close() {},
+    };
+    return sock;
+  });
+
+  const c = new MeshControlClient(creds);
+  await assert.rejects(
+    () => c.listNodes(),
+    (err: Error) => {
+      assert.ok(err.message.includes("noauth") || err.message.includes("Not authenticated"), "error must mention auth failure");
+      return true;
+    },
+  );
+  c.close();
 });

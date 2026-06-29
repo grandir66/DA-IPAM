@@ -2,14 +2,15 @@
  * MeshControlClient — WebSocket client for MeshCentral control.ashx.
  *
  * Sends JSON requests and correlates responses by `responseid`.
- * Auth: Basic (adminUser:adminPass) in x-meshauth + Authorization headers on
- * the upgrade request.  loginTokenKey is NOT used here (that mints launch-out
- * tokens via login-token.ts, not admin API calls).
+ * Auth: x-meshauth: Base64(user),Base64(pass) on the upgrade request.
+ * loginTokenKey is NOT used here (that mints launch-out tokens via
+ * login-token.ts, not admin API calls).
  *
  * Transport is injectable via `_setWsConnector` (test-only seam).
  * Production callers use `new MeshControlClient(creds)` with no extra args.
  */
 
+import WebSocket from "ws";
 import type { MeshCreds } from "./config";
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -50,65 +51,27 @@ export function _setWsConnector(c: WsConnector | null): void {
 }
 
 /**
- * Default connector using Node 22's built-in globalThis.WebSocket.
- * The headers are passed via the Sec-WebSocket-Protocol workaround that
- * MeshCentral supports, AND via Authorization for non-browser upgrades.
- * Node's built-in WS does not support custom headers directly, so we embed
- * the Basic token in the URL for the default connector.
+ * Default connector using the `ws` npm package so custom headers (x-meshauth)
+ * are sent on the HTTP upgrade request. Node's built-in globalThis.WebSocket
+ * cannot set arbitrary headers, so `ws` is required here.
  */
 function defaultWsConnector(
   url: string,
   headers: Record<string, string>,
 ): McWsSocket {
-  // Node 22 built-in WebSocket doesn't accept arbitrary headers.
-  // Embed credentials via URL userinfo so MeshCentral's HTTP server can auth.
-  // The Basic token is already in headers["Authorization"]; extract user:pass.
-  const authHeader = headers["Authorization"] ?? "";
-  const basicB64 = authHeader.replace(/^Basic\s+/i, "");
-  let wsUrlWithAuth = url;
-  if (basicB64) {
-    try {
-      const u = new URL(url);
-      const decoded = Buffer.from(basicB64, "base64").toString("utf8");
-      const colonIdx = decoded.indexOf(":");
-      if (colonIdx > 0) {
-        u.username = decoded.slice(0, colonIdx);
-        u.password = decoded.slice(colonIdx + 1);
-      }
-      wsUrlWithAuth = u.toString();
-    } catch {
-      // fall through with original url
-    }
-  }
-
-  const ws = new globalThis.WebSocket(wsUrlWithAuth);
-  let msgCb: (data: string) => void = () => {};
-  let openCb: () => void = () => {};
-  let closeCb: () => void = () => {};
-  let errCb: (e: Error) => void = () => {};
-
-  ws.onopen = () => openCb();
-  ws.onclose = () => closeCb();
-  ws.onerror = (evt) => {
-    errCb(new Error((evt as ErrorEvent).message ?? "WebSocket error"));
-  };
-  ws.onmessage = (evt: MessageEvent<unknown>) => {
-    const data = typeof evt.data === "string" ? evt.data : String(evt.data);
-    msgCb(data);
-  };
-
+  const ws = new WebSocket(url, { headers });
   return {
     onMessage(cb) {
-      msgCb = cb;
+      ws.on("message", (d: WebSocket.RawData) => cb(d.toString()));
     },
     onOpen(cb) {
-      openCb = cb;
+      ws.on("open", cb);
     },
     onClose(cb) {
-      closeCb = cb;
+      ws.on("close", () => cb());
     },
     onError(cb) {
-      errCb = cb;
+      ws.on("error", (e: Error) => cb(e));
     },
     send(data: string) {
       ws.send(data);
@@ -200,14 +163,15 @@ export class MeshControlClient {
         .replace(/^https?/, (p) => (p === "https" ? "wss" : "ws"))
         .replace(/\/+$/, "") + "/control.ashx";
 
-    // adminPass is NOT logged — only the base64-encoded credential header is
-    // constructed in memory for the WS upgrade.
-    const basic = Buffer.from(
-      `${this.creds.adminUser}:${this.creds.adminPass}`,
-    ).toString("base64");
+    // adminPass is NOT logged — credentials are base64-encoded in memory.
+    // MeshCentral webserver.js splits x-meshauth on "," and base64-decodes
+    // each part: token[0] = Base64(user), token[1] = Base64(pass).
+    const meshauth =
+      Buffer.from(this.creds.adminUser).toString("base64") +
+      "," +
+      Buffer.from(this.creds.adminPass).toString("base64");
     const headers: Record<string, string> = {
-      "x-meshauth": basic,
-      Authorization: `Basic ${basic}`,
+      "x-meshauth": meshauth,
     };
 
     const connector = overrideConnector ?? defaultWsConnector;
@@ -245,6 +209,26 @@ export class MeshControlClient {
         } catch {
           return;
         }
+
+        // MeshCentral sends {action:'close', cause:'noauth', ...} when auth
+        // fails. Surface this immediately rather than letting all requests hang
+        // to the 30s timeout.
+        if (msg.action === "close") {
+          const cause = typeof msg.cause === "string" ? msg.cause : "";
+          const detail = typeof msg.msg === "string" ? msg.msg : cause;
+          const authErr = new Error(
+            `MeshCentral auth/connection closed: ${detail || "unknown"}`,
+          );
+          clearTimeout(connectTimer);
+          reject(authErr);
+          for (const [, p] of this.pending) {
+            clearTimeout(p.timer);
+            p.reject(authErr);
+          }
+          this.pending.clear();
+          return;
+        }
+
         const rid =
           typeof msg.responseid === "string" ? msg.responseid : null;
         if (rid) {

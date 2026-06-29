@@ -9,8 +9,8 @@
  * NB: mc_config NON viene toccata da uninstall — i secret restano per evitare
  * di perderli a un toggle UI; la rimozione avviene dalla settings page.
  *
- * DEFERRED (Task 23): loginTokenSelfCheck() non esiste ancora; il self-check
- * wiring sarà aggiunto in una task successiva. Qui: solo schema + flag.
+ * Self-check del codec (loginTokenSelfCheck) è agganciato nella config POST route
+ * (soft warning, C3), non qui: install applica solo schema + flag.
  */
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { getHubDb } from "@/lib/db-hub";

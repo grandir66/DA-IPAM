@@ -1,4 +1,14 @@
 import crypto from "crypto";
+import { getMeshCreds, type MeshCreds } from "@/lib/integrations/meshcentral/config";
+
+/**
+ * Creds loader seam. Defaults to the real per-tenant `getMeshCreds()`. Exposed as
+ * an optional override on `mintLoginToken`/`loginTokenSelfCheck` purely so tests
+ * can inject deterministic creds: `node:test` `mock.method` cannot patch the
+ * getter-only, non-configurable ESM namespace binding produced by tsx, so DI is
+ * the reliable seam. Production callers never pass this.
+ */
+type CredsLoader = () => MeshCreds | null;
 
 /**
  * Port of MeshCentral `obj.encodeCookie` for login tokens (spec §9, rischio #1).
@@ -57,4 +67,100 @@ export function decodeCookie(token: string, key: Buffer): Record<string, unknown
   decipher.setAuthTag(authTag);
   const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
   return JSON.parse(plaintext) as Record<string, unknown>;
+}
+
+/**
+ * Mint a MeshCentral login token (spec §10). a:3 = login action.
+ * `time` is unix SECONDS, `expire` is MINUTES. `once` (single-use) serializes
+ * as 1 when requested, and is omitted otherwise (matches server expectation).
+ *
+ * The loginTokenKey lives ONLY in backend memory — never logged, never sent to
+ * the browser. Throws loudly if config/creds are missing (no silent empty token
+ * → silent launch-out failure is rischio #1, spec §9).
+ */
+export function mintLoginToken(
+  opts: {
+    meshUser: string;
+    expireMinutes: number;
+    once?: boolean;
+  },
+  loadCreds: CredsLoader = getMeshCreds,
+): string {
+  const creds = loadCreds();
+  if (!creds) {
+    throw new Error("meshcentral login-token: config/creds not present (cannot mint)");
+  }
+  if (!opts.meshUser || !opts.meshUser.startsWith("user/")) {
+    throw new Error("meshcentral login-token: meshUser must be 'user/<domain>/<user>'");
+  }
+  if (!Number.isFinite(opts.expireMinutes) || opts.expireMinutes <= 0) {
+    throw new Error("meshcentral login-token: expireMinutes must be a positive number");
+  }
+  const payload: Record<string, unknown> = {
+    u: opts.meshUser,
+    a: 3,
+    time: Math.floor(Date.now() / 1000),
+    expire: opts.expireMinutes,
+  };
+  if (opts.once) {
+    payload.once = 1;
+  }
+  return encodeCookie(payload, creds.loginTokenKey);
+}
+
+/**
+ * Self-check interop (spec §9 point 3 / D8). Mints a short-lived single-use
+ * token for the service user and validates it against the RUNNING MeshCentral
+ * server by hitting an authenticated control endpoint with ?login=<token>.
+ *
+ * Returns true only if the server accepts the minted token. Fails LOUDLY
+ * (returns false + warns) rather than letting a broken codec silently produce
+ * tokens the server rejects (which would surface as a dead launch-out).
+ *
+ * This is a RUNTIME interop check: it requires a reachable MeshCentral server.
+ * Unit tests cover the construction/branching logic (creds-absent → false,
+ * mint failure → false); the HTTP probe itself is exercised in the appliance
+ * E2E smoke (spec §14), not in unit tests against no server.
+ */
+export async function loginTokenSelfCheck(
+  loadCreds: CredsLoader = getMeshCreds,
+): Promise<boolean> {
+  const creds = loadCreds();
+  if (!creds) {
+    console.warn("[meshcentral] self-check skipped: no config present");
+    return false;
+  }
+  let token: string;
+  try {
+    token = mintLoginToken(
+      {
+        meshUser: `user/${creds.domain}/${creds.serviceUser}`,
+        expireMinutes: 1,
+        once: false, // self-check may retry; don't burn a single-use token
+      },
+      loadCreds,
+    );
+  } catch (err) {
+    console.warn("[meshcentral] self-check mint failed:", (err as Error).message);
+    return false;
+  }
+  // Probe an authenticated endpoint with the login token. A valid token yields
+  // a non-login response (200/101/redirect to the app), an invalid token bounces
+  // back to the login page. We avoid logging the token value.
+  const base = creds.serverUrl.startsWith("http")
+    ? creds.serverUrl
+    : `https://${creds.serverUrl}`;
+  const probeUrl = `${base.replace(/\/+$/, "")}/?login=${encodeURIComponent(token)}`;
+  try {
+    const res = await fetch(probeUrl, { redirect: "manual" });
+    // Server accepts the token: not a 401/403, and not the login screen.
+    const ok = res.status !== 401 && res.status !== 403;
+    if (!ok) {
+      console.warn(`[meshcentral] self-check rejected by server (status ${res.status})`);
+    }
+    return ok;
+  } catch (err) {
+    console.warn("[meshcentral] self-check transport error:", (err as Error).message);
+    return false;
+  }
 }

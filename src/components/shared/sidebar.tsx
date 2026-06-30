@@ -33,6 +33,7 @@ import {
   BookOpen,
   Ban,
   ShieldCheck,
+  MonitorSmartphone,
   KeyRound,
   Globe,
   Wifi,
@@ -288,17 +289,25 @@ export function Sidebar() {
   );
   const [unackedAnomalies, setUnackedAnomalies] = useState(0);
   const [patchEnabled, setPatchEnabled] = useState(false);
+  const [meshEnabled, setMeshEnabled] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!tenantCode || tenantCode === "__ALL__") {
       setPatchEnabled(false);
+      setMeshEnabled(false);
       return;
     }
     fetch("/api/features/patch_management", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { enabled?: boolean } | null) => {
         setPatchEnabled(data?.enabled === true);
+      })
+      .catch(() => { /* feature off come default */ });
+    fetch("/api/features/meshcentral", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { enabled?: boolean } | null) => {
+        setMeshEnabled(data?.enabled === true);
       })
       .catch(() => { /* feature off come default */ });
   }, [tenantCode]);
@@ -412,6 +421,11 @@ export function Sidebar() {
         {/* Patch Management — visibile solo se la feature è installata per il tenant */}
         {patchEnabled && (
           <NavItem href="/patch-management" icon={ShieldCheck} label="Patch Management" active={isActive("/patch-management")} collapsed={collapsed} onNavigate={closeMobile} />
+        )}
+
+        {/* RMM / Controllo remoto (MeshCentral) — solo se la feature è installata */}
+        {meshEnabled && (
+          <NavItem href="/rmm" icon={MonitorSmartphone} label="Controllo remoto" active={isActive("/rmm")} collapsed={collapsed} onNavigate={closeMobile} />
         )}
 
         {/* Manuale in-app: viewer markdown dei doc in /docs */}

@@ -25,7 +25,8 @@ import { getIntegrationConfig } from "@/lib/integrations/config";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { getNetServicesState } from "@/lib/network-services/feature";
 import { getFeatureStatus } from "@/lib/patch/feature";
-import { getTenantDb } from "@/lib/db-tenant";
+import { getMeshConfig } from "@/lib/integrations/meshcentral/config";
+import { getTenantDb, getTenantSetting } from "@/lib/db-tenant";
 import { deriveEdgeUiBase } from "@/lib/integrations/edge-ui-url";
 
 export type ModuleKey =
@@ -34,9 +35,11 @@ export type ModuleKey =
   | "network_services"
   | "librenms"
   | "graylog"
-  | "wazuh";
+  | "wazuh"
+  | "meshcentral"
+  | "nis2_inventory";
 
-export type ModuleCategory = "va" | "patch" | "network" | "nms" | "logs" | "siem";
+export type ModuleCategory = "va" | "patch" | "network" | "nms" | "logs" | "siem" | "rmm" | "inventory";
 
 export interface ModuleDescriptor {
   key: ModuleKey;
@@ -158,6 +161,25 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
     icon: "Radar",
     access: "external",
     configHref: "/settings?tab=moduli#module-wazuh",
+  },
+  {
+    key: "meshcentral",
+    label: "MeshCentral (Controllo remoto)",
+    category: "rmm",
+    description:
+      "Controllo remoto endpoint via MeshCentral co-locato (launch-out SSO). UI nativa /rmm + console esterna.",
+    icon: "MonitorSmartphone",
+    access: "native",
+    configHref: "/settings?tab=moduli#module-meshcentral",
+  },
+  {
+    key: "nis2_inventory",
+    label: "Inventario NIS2",
+    category: "inventory",
+    description: "Servizi/asset NIS2 (anagrafica, criticità). Modulo nativo opzionale.",
+    icon: "Workflow",
+    access: "native",
+    configHref: "/settings?tab=moduli#module-nis2_inventory",
   },
 ];
 
@@ -295,6 +317,42 @@ export async function resolveModules(tenantCode: string): Promise<ModuleState[]>
       uiUrl: entry?.url ?? null,
       uiIsInternal: false,
       note: installed ? undefined : "Non configurato. Importa il JSON dell'installer Wazuh.",
+    });
+  }
+
+  // ── meshcentral (hub tenant_features + mc_config tenant) — nativo /rmm + console esterna ──
+  {
+    const status = await getFeatureStatus(tenantCode, "meshcentral");
+    const cfg = getMeshConfig();
+    out.push({
+      ...desc("meshcentral"),
+      installed: status.enabled,
+      configured: !!cfg?.present,
+      enabled: status.enabled && !!cfg?.present,
+      uiUrl: "/rmm",
+      uiIsInternal: true,
+      externalUiUrl: cfg?.serverUrl || null,
+      note: status.enabled
+        ? cfg?.present
+          ? undefined
+          : "Modulo installato ma non configurato (URL/MeshID/credenziali)."
+        : "Modulo non installato. Installalo dalla card MeshCentral.",
+    });
+  }
+
+  // ── nis2_inventory (toggle nativo via tenant_settings) — nativo /services ──
+  {
+    // Default ON: preserva la visibilità storica di /services; disattivabile.
+    const raw = getTenantSetting("nis2_inventory_enabled");
+    const enabled = raw === null ? true : raw === "1" || raw === "true";
+    out.push({
+      ...desc("nis2_inventory"),
+      installed: true,
+      configured: true,
+      enabled,
+      uiUrl: "/services",
+      uiIsInternal: true,
+      note: enabled ? undefined : "Disattivato. Attivalo da Impostazioni → Moduli.",
     });
   }
 

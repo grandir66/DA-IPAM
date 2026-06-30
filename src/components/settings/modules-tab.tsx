@@ -38,6 +38,7 @@ import { ScannerEdgeCard } from "./scanner-edge-card";
 import { WazuhCard } from "./wazuh-card";
 import { InventoryAgentCard } from "./inventory-agent-card";
 import { MeshCentralCard } from "./meshcentral-card";
+import { Nis2ToggleCard } from "./nis2-toggle-card";
 import { ModuleJsonImport } from "./module-json-import";
 import { IntegrationViewer } from "@/components/integrations/integration-viewer";
 import { CredentialsVaultPanel } from "./credentials-vault-panel";
@@ -401,6 +402,10 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
             setUninstallDialog({ open: true, feature: meshcentral, dropData: false })
           }
         />
+      </ModuleSection>
+
+      <ModuleSection id="module-nis2_inventory" title="Inventario NIS2">
+        <Nis2ToggleCard isAdmin={isAdmin} />
       </ModuleSection>
 
       <ModuleSection

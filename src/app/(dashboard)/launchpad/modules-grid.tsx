@@ -15,6 +15,8 @@ import {
   Activity,
   ScrollText,
   Radar,
+  MonitorSmartphone,
+  Workflow,
   ExternalLink,
   Settings2,
   RefreshCw,
@@ -34,6 +36,8 @@ const ICONS: Record<string, LucideIcon> = {
   Activity,
   ScrollText,
   Radar,
+  MonitorSmartphone,
+  Workflow,
 };
 
 const STATUS_DOT: Record<ModuleHealthStatus, string> = {

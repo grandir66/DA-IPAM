@@ -34,6 +34,7 @@ import {
   Ban,
   ShieldCheck,
   MonitorSmartphone,
+  ExternalLink,
   KeyRound,
   Globe,
   Wifi,
@@ -288,28 +289,30 @@ export function Sidebar() {
     networkServicesSubItems.some((d) => pathname.startsWith(d.href))
   );
   const [unackedAnomalies, setUnackedAnomalies] = useState(0);
-  const [patchEnabled, setPatchEnabled] = useState(false);
-  const [meshEnabled, setMeshEnabled] = useState(false);
+  // Moduli abilitati: fonte unica = registry (/api/modules). Ogni voce di menu
+  // dei moduli compare SOLO se il modulo è enabled per il tenant.
+  const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
+  const [externalModules, setExternalModules] = useState<Array<{ key: string; label: string; url: string }>>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!tenantCode || tenantCode === "__ALL__") {
-      setPatchEnabled(false);
-      setMeshEnabled(false);
+      setEnabledModules(new Set());
+      setExternalModules([]);
       return;
     }
-    fetch("/api/features/patch_management", { cache: "no-store" })
+    fetch("/api/modules", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data: { enabled?: boolean } | null) => {
-        setPatchEnabled(data?.enabled === true);
+      .then((d: { modules?: Array<{ key: string; label: string; enabled: boolean; uiUrl: string | null; uiIsInternal: boolean }> } | null) => {
+        const mods = d?.modules ?? [];
+        setEnabledModules(new Set(mods.filter((m) => m.enabled).map((m) => m.key)));
+        setExternalModules(
+          mods
+            .filter((m) => m.enabled && !m.uiIsInternal && m.uiUrl)
+            .map((m) => ({ key: m.key, label: m.label, url: m.uiUrl as string })),
+        );
       })
-      .catch(() => { /* feature off come default */ });
-    fetch("/api/features/meshcentral", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { enabled?: boolean } | null) => {
-        setMeshEnabled(data?.enabled === true);
-      })
-      .catch(() => { /* feature off come default */ });
+      .catch(() => { /* moduli off come default */ });
   }, [tenantCode]);
 
   useEffect(() => {
@@ -392,11 +395,13 @@ export function Sidebar() {
           come gestione dettagliata; verranno sostituite da azioni inline in Fase 3.
         */}
 
-        {/* Inventario */}
-        <NavGroup icon={Package} label="Inventario" items={inventorySubItems} open={inventoryOpen} setOpen={setInventoryOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
+        {/* Inventario — la voce "Servizi NIS2" compare solo se il modulo è abilitato */}
+        <NavGroup icon={Package} label="Inventario" items={enabledModules.has("nis2_inventory") ? inventorySubItems : inventorySubItems.filter((i) => i.href !== "/services")} open={inventoryOpen} setOpen={setInventoryOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 
-        {/* Network Services — DNS / DHCP / bridge (stesso livello di Network e Inventario) */}
-        <NavGroup icon={ServerCog} label="Network Services" items={networkServicesSubItems} open={networkServicesOpen} setOpen={setNetworkServicesOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
+        {/* Network Services — DNS / DHCP / bridge (solo se il modulo è abilitato) */}
+        {enabledModules.has("network_services") && (
+          <NavGroup icon={ServerCog} label="Network Services" items={networkServicesSubItems} open={networkServicesOpen} setOpen={setNetworkServicesOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
+        )}
 
         {/* Launchpad — accesso rapido moduli attivi */}
         <NavItem href="/launchpad" icon={KeyRound} label="Launchpad" active={pathname.startsWith("/launchpad")} collapsed={collapsed} onNavigate={closeMobile} />
@@ -418,15 +423,34 @@ export function Sidebar() {
           <span className={cn(collapsed && "md:hidden")}>Config Cliente</span>
         </div>
 
-        {/* Patch Management — visibile solo se la feature è installata per il tenant */}
-        {patchEnabled && (
+        {/* Patch Management (Chocolatey) — solo se il modulo è abilitato */}
+        {enabledModules.has("patch_management") && (
           <NavItem href="/patch-management" icon={ShieldCheck} label="Patch Management" active={isActive("/patch-management")} collapsed={collapsed} onNavigate={closeMobile} />
         )}
 
-        {/* RMM / Controllo remoto (MeshCentral) — solo se la feature è installata */}
-        {meshEnabled && (
+        {/* RMM / Controllo remoto (MeshCentral) — solo se il modulo è abilitato */}
+        {enabledModules.has("meshcentral") && (
           <NavItem href="/rmm" icon={MonitorSmartphone} label="Controllo remoto" active={isActive("/rmm")} collapsed={collapsed} onNavigate={closeMobile} />
         )}
+
+        {/* Moduli esterni abilitati (LibreNMS / Wazuh / Graylog) — link diretto alla dashboard */}
+        {externalModules.map((m) => (
+          <a
+            key={m.key}
+            href={m.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={closeMobile}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors",
+              collapsed && "md:justify-center md:px-0",
+            )}
+            title={`${m.label} (apre in nuova scheda)`}
+          >
+            <ExternalLink className="h-4 w-4 shrink-0" />
+            <span className={cn(collapsed && "md:hidden")}>{m.label}</span>
+          </a>
+        ))}
 
         {/* Manuale in-app: viewer markdown dei doc in /docs */}
         <NavItem href="/manual" icon={BookOpen} label="Manuale" active={isActive("/manual")} collapsed={collapsed} onNavigate={closeMobile} />

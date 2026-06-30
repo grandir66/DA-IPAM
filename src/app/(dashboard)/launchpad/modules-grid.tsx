@@ -17,6 +17,7 @@ import {
   Radar,
   MonitorSmartphone,
   Workflow,
+  PackageSearch,
   ExternalLink,
   Settings2,
   RefreshCw,
@@ -38,6 +39,7 @@ const ICONS: Record<string, LucideIcon> = {
   Radar,
   MonitorSmartphone,
   Workflow,
+  PackageSearch,
 };
 
 const STATUS_DOT: Record<ModuleHealthStatus, string> = {

@@ -37,6 +37,7 @@ export type ModuleKey =
   | "graylog"
   | "wazuh"
   | "meshcentral"
+  | "inventory_agent"
   | "nis2_inventory";
 
 export type ModuleCategory = "va" | "patch" | "network" | "nms" | "logs" | "siem" | "rmm" | "inventory";
@@ -171,6 +172,16 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
     icon: "MonitorSmartphone",
     access: "native",
     configHref: "/settings?tab=moduli#module-meshcentral",
+  },
+  {
+    key: "inventory_agent",
+    label: "Inventory Agent (GLPI)",
+    category: "inventory",
+    description:
+      "Inventario software push da GLPI Agent (Windows/Linux/macOS) via JSON. Nessun server GLPI né Wazuh.",
+    icon: "PackageSearch",
+    access: "native",
+    configHref: "/settings?tab=moduli#module-inventory_agent",
   },
   {
     key: "nis2_inventory",
@@ -337,6 +348,24 @@ export async function resolveModules(tenantCode: string): Promise<ModuleState[]>
           ? undefined
           : "Modulo installato ma non configurato (URL/MeshID/credenziali)."
         : "Modulo non installato. Installalo dalla card MeshCentral.",
+    });
+  }
+
+  // ── inventory_agent (hub tenant_features) — GLPI push, gestione nativa (card + host detail) ──
+  {
+    const status = await getFeatureStatus(tenantCode, "inventory_agent");
+    out.push({
+      ...desc("inventory_agent"),
+      installed: status.enabled,
+      configured: status.enabled,
+      enabled: status.enabled,
+      // Ingest in background: nessuna pagina dedicata propria (dati nel dettaglio host
+      // + card settings). uiUrl null = catalogato ma non "lanciabile".
+      uiUrl: null,
+      uiIsInternal: true,
+      note: status.enabled
+        ? undefined
+        : "Modulo non installato. Installalo dalla card Inventory Agent.",
     });
   }
 

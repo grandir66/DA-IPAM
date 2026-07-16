@@ -98,13 +98,13 @@ function buildInitialForm(host: HostDetail): DeviceFormState {
     "cisco", "mikrotik", "juniper", "ubiquiti", "fortinet", "stormshield", "sonicwall", "draytek",
     "synology", "qnap", "vmware", "proxmox", "hp", "dell", "lenovo", "microsoft", "apple", "other",
   ]);
-  let vendor = isMac
+  const vendor = isMac
     ? "apple"
     : (inferredVendor && vendorOptions.has(inferredVendor) ? inferredVendor : null)
       ?? inferVendorFromManufacturer(snmp?.manufacturer ?? host.device_manufacturer ?? null);
 
   const protocolOptions = new Set(["ssh", "snmp_v2", "snmp_v3", "winrm", "api"]);
-  let protocol = isMac
+  const protocol = isMac
     ? "ssh"
     : (inferredProtocol && protocolOptions.has(inferredProtocol) ? inferredProtocol : null)
       ?? inferProtocolFromSnmp(snmp);

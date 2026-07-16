@@ -425,7 +425,7 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
 
             {addMode === "archive" ? (
               <div className="space-y-1.5">
-                <Label className="text-xs">Credenziale dall'archivio</Label>
+                <Label className="text-xs">Credenziale dall&apos;archivio</Label>
                 <Select value={addCredentialId} onValueChange={(v) => setAddCredentialId(v ?? "")}>
                   <SelectTrigger><SelectValue placeholder="Seleziona credenziale..." /></SelectTrigger>
                   <SelectContent>

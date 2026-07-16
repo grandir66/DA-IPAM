@@ -115,7 +115,7 @@ export async function syncNetworkToLibreNMS(networkId: number): Promise<LibreNMS
   }
 
   // Device già censiti in LibreNMS (per evitare duplicati)
-  let existingLibreNMSDevices = new Map<string, number>();
+  const existingLibreNMSDevices = new Map<string, number>();
   try {
     const devices = await client.getDevices();
     for (const d of devices) {

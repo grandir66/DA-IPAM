@@ -12,6 +12,7 @@ const VALID_KEYS: ModuleKey[] = [
   "graylog",
   "patch_management",
   "network_services",
+  "meshcentral",
 ];
 
 /**

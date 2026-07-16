@@ -23,6 +23,8 @@ import { getFeatureStatus } from "@/lib/patch/feature";
 import { getNetServicesState } from "@/lib/network-services/feature";
 import { probeBridgeWithAuth } from "@/lib/network-services/client";
 import { safeDecrypt } from "@/lib/crypto";
+import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
+import { MeshControlClient } from "@/lib/integrations/meshcentral/control-client";
 import type { ModuleKey } from "./registry";
 
 export type ModuleHealthStatus =
@@ -127,6 +129,89 @@ function mk(
     detail: opts.detail,
     repairAction: opts.repairAction ?? null,
   };
+}
+
+// ── Probe: meshcentral (RMM) ─────────────────────────────────────────────────
+/**
+ * Verifica in un colpo solo le tre cose che rendono l'RMM utilizzabile:
+ * il server risponde, il service account si autentica sul control WebSocket, e
+ * il device group configurato esiste ancora la' sopra. Riporta anche l'ultimo
+ * `meshcentral_sync` riuscito: un server sano con il sync fermo e' comunque un
+ * problema (cfr. incidente 2026-07-05, 11 giorni di sync fermo non visti).
+ *
+ * NB: usa `listMeshes()`, che fino alla v0.3.132 andava sempre in timeout —
+ * MeshCentral risponde a 'meshes' con il solo `tag`, senza `responseid`.
+ */
+async function probeMeshcentral(tenantCode: string, probedAt: string): Promise<ModuleHealth> {
+  const creds = getMeshCreds();
+  const lastSyncAt =
+    (
+      getTenantDb(tenantCode)
+        .prepare(
+          `SELECT last_run FROM scheduled_jobs
+            WHERE job_type = 'meshcentral_sync' AND network_id IS NULL`,
+        )
+        .get() as { last_run: string | null } | undefined
+    )?.last_run ?? null;
+
+  if (!creds) {
+    return mk("meshcentral", probedAt, {
+      reachable: false,
+      authOk: false,
+      verdict: "fail",
+      detail: "MeshCentral non configurato",
+      configured: false,
+    });
+  }
+
+  const client = new MeshControlClient(creds);
+  try {
+    const meshes = await withTimeoutReject(
+      client.listMeshes(),
+      PROBE_TIMEOUT_MS,
+      "control.ashx 'meshes' timeout",
+    );
+    // Se rispondiamo qui, il server e' raggiungibile E il service account e'
+    // autenticato: control.ashx chiude la connessione (action 'close') se l'auth
+    // fallisce, quindi una risposta valida implica entrambe le cose.
+    const groupOk = meshes.some((m) => m.meshId === creds.meshId);
+    if (!groupOk) {
+      return mk("meshcentral", probedAt, {
+        reachable: true,
+        authOk: true,
+        verdict: "degraded",
+        detail:
+          "Device group configurato non presente sul server: gli agenti non verranno associati",
+        lastSyncAt,
+      });
+    }
+    const nodes = getTenantDb(tenantCode)
+      .prepare("SELECT COUNT(*) AS n, SUM(conn) AS c FROM mc_node")
+      .get() as { n: number; c: number | null };
+    return mk("meshcentral", probedAt, {
+      reachable: true,
+      authOk: true,
+      verdict: "ok",
+      detail: `${nodes.n} endpoint, ${nodes.c ?? 0} connessi`,
+      lastSyncAt,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // L'auth fallita si manifesta come chiusura della connessione, non come 401.
+    const authIssue = /auth|noauth|close/i.test(msg);
+    return mk("meshcentral", probedAt, {
+      reachable: !authIssue,
+      authOk: false,
+      verdict: "fail",
+      detail: authIssue
+        ? `Autenticazione MeshCentral fallita: ${msg}`
+        : `MeshCentral non raggiungibile: ${msg}`,
+      lastSyncAt,
+    });
+  } finally {
+    // Senza close() le richieste in volo restano appese e il socket perde.
+    client.close();
+  }
 }
 
 // ── Probe: edge ──────────────────────────────────────────────────────────────
@@ -328,6 +413,7 @@ async function compute(tenantCode: string): Promise<ModuleHealth[]> {
     ["graylog", probeHttpIntegration("graylog", probedAt)],
     ["network_services", probeNetServices(tenantCode, probedAt)],
     ["patch_management", probePatch(tenantCode, probedAt)],
+    ["meshcentral", withTenant(tenantCode, () => probeMeshcentral(tenantCode, probedAt))],
   ];
   const settled = await Promise.allSettled(tasks.map(([, p]) => p));
   const byKey = {} as Record<ModuleKey, ModuleHealth>;

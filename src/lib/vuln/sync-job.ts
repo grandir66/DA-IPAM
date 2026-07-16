@@ -85,33 +85,82 @@ export async function runVulnSync(): Promise<{
     // namespace e non corrisponde a `networks.id` lato IPAM. Il match host
     // viene fatto per IP a valle (vedi matchHostId). Eventuale mapping
     // per CIDR è ottimizzazione futura.
+    // NB: dedup sull'UUID Greenbone (`gvm_report_id`), non sull'`id` locale
+    // dell'edge. L'id locale riparte da 1 se l'edge viene ricostruito e
+    // collide con lo storico: con `INSERT OR IGNORE` + UNIQUE(scanner_id,
+    // edge_scan_id) gli scan nuovi venivano scartati IN SILENZIO e i loro
+    // findings attribuiti a run vecchi (incident DTS 2026-07, scoperto solo
+    // dopo settimane). Qui: mai ignorare in silenzio.
     const insertScanRun = db.prepare(
-      `INSERT OR IGNORE INTO vuln_scan_runs
-        (scanner_id, edge_scan_id, network_id, started_at, finished_at,
-         finding_count, status)
-       VALUES (?, ?, NULL, ?, ?, ?, ?)`,
+      `INSERT INTO vuln_scan_runs
+        (scanner_id, edge_scan_id, edge_scan_uid, network_id, started_at,
+         finished_at, finding_count, status)
+       VALUES (?, ?, ?, NULL, ?, ?, ?, ?)`,
     );
-    const findScanRun = db.prepare(
-      "SELECT id FROM vuln_scan_runs WHERE scanner_id = ? AND edge_scan_id = ?",
+    const findByUid = db.prepare(
+      "SELECT id FROM vuln_scan_runs WHERE scanner_id = ? AND edge_scan_uid = ?",
+    );
+    const findByLocalId = db.prepare(
+      "SELECT id, edge_scan_uid FROM vuln_scan_runs WHERE scanner_id = ? AND edge_scan_id = ?",
+    );
+    const detachStaleLocalId = db.prepare(
+      "UPDATE vuln_scan_runs SET edge_scan_id = NULL WHERE id = ?",
     );
 
     const scanRunByEdgeId = new Map<number, { runId: number; networkId: number | null }>();
     for (const s of scans) {
-      const info = insertScanRun.run(
-        scanner.id,
-        s.id,
-        s.started_at,
-        s.finished_at,
-        s.finding_count,
-        s.status,
-      );
-      const row = findScanRun.get(scanner.id, s.id) as { id: number } | undefined;
-      if (row) {
+      const uid = s.gvm_report_id ?? null;
+
+      // già importato? (per UUID se disponibile, altrimenti per id locale)
+      const already = (uid
+        ? findByUid.get(scanner.id, uid)
+        : findByLocalId.get(scanner.id, s.id)) as { id: number } | undefined;
+      if (already) {
+        scanRunByEdgeId.set(s.id, { runId: already.id, networkId: s.network_id });
+        continue;
+      }
+
+      // Collisione: esiste un run con lo stesso id locale ma UUID diverso →
+      // l'edge è stato ricostruito e ha riusato l'id. Sgancio l'id locale dal
+      // run storico (i suoi dati restano, identificati dall'UUID) così il
+      // vincolo UNIQUE non fa perdere lo scan nuovo.
+      if (uid) {
+        const clash = findByLocalId.get(scanner.id, s.id) as
+          | { id: number; edge_scan_uid: string | null }
+          | undefined;
+        if (clash && clash.edge_scan_uid !== uid) {
+          detachStaleLocalId.run(clash.id);
+          console.warn(
+            `[vuln-sync] edge_scan_id ${s.id} riusato dall'edge (ricostruito?): ` +
+              `run storico #${clash.id} scollegato dall'id locale, dedup su UUID`,
+          );
+        }
+      }
+
+      try {
+        const info = insertScanRun.run(
+          scanner.id,
+          s.id,
+          uid,
+          s.started_at,
+          s.finished_at,
+          s.finding_count,
+          s.status,
+        );
         // networkId qui mantengo come arriva dall'edge perché serve solo
         // come hint per matchHostId (lookup hosts per ip+network_id IPAM
         // se conosciuto). Per IPAM è informativo, non FK.
-        scanRunByEdgeId.set(s.id, { runId: row.id, networkId: s.network_id });
-        if (info.changes > 0) newScans++;
+        scanRunByEdgeId.set(s.id, {
+          runId: Number(info.lastInsertRowid),
+          networkId: s.network_id,
+        });
+        newScans++;
+      } catch (e) {
+        // Mai perdere lo scan in silenzio: logga e prosegui con gli altri.
+        console.error(
+          `[vuln-sync] insert scan_run fallito (edge_scan_id=${s.id}, uid=${uid}):`,
+          (e as Error).message,
+        );
       }
     }
 

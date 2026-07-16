@@ -995,7 +995,12 @@ CREATE TABLE IF NOT EXISTS vuln_scanners (
 CREATE TABLE IF NOT EXISTS vuln_scan_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   scanner_id INTEGER NOT NULL REFERENCES vuln_scanners(id) ON DELETE CASCADE,
+  -- id LOCALE dell'edge: riparte da 1 se l'edge viene ricostruito → NON usarlo
+  -- da solo come chiave di dedup (collide con lo storico). Vedi edge_scan_uid.
   edge_scan_id INTEGER,
+  -- UUID Greenbone (gvm_report_id): stabile e globalmente unico. Chiave di
+  -- dedup preferita quando l'edge la espone.
+  edge_scan_uid TEXT,
   network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
   started_at TEXT,
   finished_at TEXT,

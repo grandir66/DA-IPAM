@@ -307,6 +307,16 @@ if ($existing -and $existing.Status -eq 'Running') {
   exit 0
 }
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+# MeshCentral espone un cert self-signed: senza questo callback Invoke-WebRequest
+# fallisce con "Impossibile stabilire una relazione di trust per il canale sicuro
+# SSL/TLS" e l'agente non viene mai scaricato (verificato dal vivo su RGSERVER,
+# 2026-07-17). Lo script generato dalla UI (install-scripts.ts) lo faceva gia': i
+# due percorsi erano divergenti e solo quello via push era rotto.
+# Stesso escape hatch della UI: DA_IPAM_INSECURE_SSL=0 ripristina la validazione
+# (da usare quando MeshCentral avra' un cert valido — vedi BACKLOG TLS).
+if ($env:DA_IPAM_INSECURE_SSL -ne '0') {
+  [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+}
 $dir = "$env:ProgramData\\Domarc\\meshagent"
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $exe = Join-Path $dir 'meshagent.exe'

@@ -431,14 +431,12 @@ async function compute(tenantCode: string): Promise<ModuleHealth[]> {
       });
     }
   });
-  return [
-    byKey.edge,
-    byKey.librenms,
-    byKey.wazuh,
-    byKey.graylog,
-    byKey.patch_management,
-    byKey.network_services,
-  ];
+  // NB: questa lista e' la SORGENTE di cio' che esce dall'API. Aggiungere un
+  // probe a `tasks` senza aggiungerlo qui lo fa girare e ne butta il risultato
+  // (successo silenzioso: nessun errore, il modulo semplicemente non compare).
+  // Ricavarla da `tasks` invece di riscriverla a mano rende impossibile lo
+  // sfasamento, e mantiene l'ordine di dichiarazione.
+  return tasks.map(([key]) => byKey[key]).filter(Boolean);
 }
 
 /**

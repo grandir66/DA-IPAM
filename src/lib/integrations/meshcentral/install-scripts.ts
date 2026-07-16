@@ -9,6 +9,7 @@
  * Il MeshID è validato come esistente dalla route (control.ashx `meshes`) PRIMA
  * che lo script venga emesso — qui assumiamo l'input già verificato.
  */
+import { PS_TRUST_SELF_SIGNED } from "@/lib/ps-tls";
 
 export type MeshInstallPlatform = "windows" | "linux" | "macos";
 
@@ -55,10 +56,7 @@ function buildWindowsMeshScript(p: MeshInstallScriptParams): string {
   return `# MeshCentral Agent install → DA-IPAM (Windows)
 #Requires -RunAsAdministrator
 $ErrorActionPreference = "Stop"
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-if ($env:DA_IPAM_INSECURE_SSL -ne '0') {
-  [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-}
+${PS_TRUST_SELF_SIGNED}
 $ServerUrl = ${psQuote(base)}
 $MeshId = ${psQuote(p.meshId)}
 $Dir = "C:\\ProgramData\\Domarc\\meshagent"

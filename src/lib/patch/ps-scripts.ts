@@ -278,6 +278,15 @@ function psQuoteInline(value: string): string {
  * Idempotente: se il servizio "Mesh Agent" è già Running → exit 0 senza
  * reinstallare, marker `MESHAGENT_ALREADY_INSTALLED_AND_RUNNING`.
  *
+ * `--copy-msh=1` è OBBLIGATORIO: copia il `.msh` adiacente all'exe dentro la dir
+ * di servizio (`C:\Program Files (x86)\Mesh Agent`). Senza, l'agente si installa,
+ * il servizio parte e lo script dichiara SUCCESSO — ma l'agente non ha la config
+ * del gruppo, non si connette mai e il nodo non compare in MeshCentral: un falso
+ * positivo silenzioso. Verificato su RGSERVER il 2026-07-17: service Running, dir
+ * di installazione con MeshAgent.exe + MeshAgent.db (0 byte) e NESSUN .msh, zero
+ * connessioni verso :4443. Lo script della UI aveva già il flag: era l'ennesima
+ * divergenza fra i due generatori — la blocca il test "push e UI concordano".
+ *
  * Exit code:
  *   0 → success (installato o già presente e running)
  *   1 → download agent/.msh failed
@@ -329,7 +338,7 @@ if (-not (Test-Path $exe) -or -not (Test-Path $msh)) {
 }
 # Install servizio con nome FISSO
 'INSTALLING_AGENT' | Tee-Object -FilePath $logPath -Append
-& $exe -fullinstall --meshServiceName "$ServiceName" 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
+& $exe -fullinstall --meshServiceName "$ServiceName" --copy-msh=1 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
 Start-Sleep -Seconds 3
 $svc = Get-Service "$ServiceName" -ErrorAction SilentlyContinue
 if ($svc -and $svc.Status -ne 'Running') { Start-Service "$ServiceName" 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append; Start-Sleep -Seconds 2; $svc = Get-Service "$ServiceName" -ErrorAction SilentlyContinue }

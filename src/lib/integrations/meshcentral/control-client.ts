@@ -233,8 +233,20 @@ export class MeshControlClient {
           return;
         }
 
+        // MeshCentral NON e' uniforme nel correlare le risposte (verificato sul
+        // server 2026-07-17, sonda su control.ashx):
+        //   nodes  -> {action,responseid,nodes,tag}   (echo di responseid E tag)
+        //   meshes -> {action,meshes,tag}             (echo del SOLO tag!)
+        // Correlare solo su responseid faceva scadere ogni 'meshes' nel timeout
+        // di 30s: e' il motivo per cui la generazione dello script di install
+        // falliva con "control.ashx 'meshes' timeout". request() invia lo stesso
+        // id in responseid E tag, quindi qui accettiamo l'uno o l'altro.
         const rid =
-          typeof msg.responseid === "string" ? msg.responseid : null;
+          typeof msg.responseid === "string"
+            ? msg.responseid
+            : typeof msg.tag === "string"
+              ? msg.tag
+              : null;
         if (rid) {
           const p = this.pending.get(rid);
           if (p) {
@@ -258,7 +270,10 @@ export class MeshControlClient {
     if (!sock) throw new Error("control.ashx socket not available");
 
     const responseid = `req-${this.nextId++}`;
-    const payload = JSON.stringify({ action, responseid, ...extra });
+    // tag = responseid: alcune action (es. 'meshes') rimandano SOLO tag. Vedi la
+    // nota nel dispatcher di connect(). Inviarli entrambi rende la correlazione
+    // indipendente da quale dei due il server decide di rimandare.
+    const payload = JSON.stringify({ action, responseid, tag: responseid, ...extra });
 
     return new Promise<Record<string, unknown>>((resolve, reject) => {
       const timer = setTimeout(() => {

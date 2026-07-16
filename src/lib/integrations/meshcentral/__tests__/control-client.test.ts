@@ -198,6 +198,40 @@ test("server sending {action:'close', cause:'noauth'} rejects immediately", asyn
   c.close();
 });
 
+test("listMeshes resolves when the server echoes only 'tag' (no responseid)", async () => {
+  // REGRESSIONE (2026-07-17). Comportamento REALE di MeshCentral, verificato con
+  // una sonda sul control.ashx di produzione:
+  //   nodes  -> {action, responseid, nodes, tag}   (echo di responseid E tag)
+  //   meshes -> {action, meshes, tag}              (echo del SOLO tag!)
+  // Correlando le risposte solo su responseid, ogni listMeshes() restava appesa
+  // fino al timeout di 30s: POST /api/integrations/meshcentral/install-script
+  // rispondeva 500 "Verifica MeshID fallita: control.ashx 'meshes' timeout" e
+  // nessuno script di installazione agente poteva essere generato dalla UI.
+  _setWsConnector(() =>
+    makeFake((msg) => {
+      if (msg.action === "meshes") {
+        assert.equal(
+          msg.tag,
+          msg.responseid,
+          "request() deve inviare lo stesso id in tag E responseid",
+        );
+        return {
+          action: "meshes",
+          tag: msg.tag, // <- SOLO tag, esattamente come il server vero
+          meshes: [{ _id: "mesh//AAA", name: "Domarc Endpoints" }],
+        };
+      }
+      return null;
+    }),
+  );
+  const c = new MeshControlClient(creds);
+  const meshes = await c.listMeshes();
+  c.close();
+  assert.equal(meshes.length, 1);
+  assert.equal(meshes[0].meshId, "mesh//AAA");
+  assert.equal(meshes[0].name, "Domarc Endpoints");
+});
+
 test("close() rejects in-flight requests instead of leaking them", async () => {
   // Responder never replies → the request stays pending until close().
   _setWsConnector(() => makeFake(() => null));

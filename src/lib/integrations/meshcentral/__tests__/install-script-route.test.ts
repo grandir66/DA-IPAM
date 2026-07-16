@@ -44,7 +44,18 @@ test("MeshID not present on server → 500", async () => {
 test("MeshID present → 200 with embedded script + filename", async () => {
   const r = await resolveInstallScript("linux", deps([{ meshId: "mesh//AbC123==", name: "g" }]));
   assert.equal(r.status, 200);
-  assert.ok(r.script!.includes("/meshsettings?id=mesh//AbC123=="));
+  // Il parametro ?id= di /meshsettings vuole il mesh id SENZA il prefisso
+  // 'mesh//': col prefisso (o in hex) MeshCentral risponde 401 — verificato dal
+  // vivo il 2026-07-15, da cui mshIdParam() in install-scripts.ts. Questa
+  // asserzione era rimasta sul comportamento vecchio e rompeva la suite.
+  assert.ok(
+    r.script!.includes("/meshsettings?id=AbC123=="),
+    "mesh id nel parametro ?id= senza prefisso mesh//",
+  );
+  assert.ok(
+    !r.script!.includes("?id=mesh//"),
+    "il prefisso mesh// non deve MAI finire nel parametro ?id= (il server risponde 401)",
+  );
   assert.equal(r.filename, "domarc-meshagent-install.sh");
   assert.equal(r.contentType, "text/x-shellscript; charset=utf-8");
 });

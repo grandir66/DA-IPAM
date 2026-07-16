@@ -132,7 +132,12 @@ export interface EdgeCertInfo {
 }
 
 export interface EdgeScan {
+  /** id LOCALE dell'edge: riparte da 1 se l'edge viene ricostruito → non usarlo
+   *  da solo per il dedup (collide con lo storico). Vedi `gvm_report_id`. */
   id: number;
+  /** UUID Greenbone: identificatore stabile e globalmente unico dello scan.
+   *  Assente sugli edge più vecchi (fallback all'id locale). */
+  gvm_report_id?: string | null;
   network_id: number | null;
   status: string;
   started_at: string;

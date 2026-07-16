@@ -457,6 +457,22 @@ export function getTenantDb(tenantCode: string): Database.Database {
         console.info(`[db-tenant] ${tenantCode}: vuln_scanners.auto_disabled_at aggiunto`);
       }
     }
+    // Migrazione: vuln_scan_runs.edge_scan_uid = UUID Greenbone (gvm_report_id).
+    // `edge_scan_id` è l'autoincrement LOCALE dell'edge: se l'edge viene
+    // ricostruito riparte da 1 e collide con lo storico → UNIQUE(scanner_id,
+    // edge_scan_id) faceva scartare in silenzio gli scan nuovi e attribuiva i
+    // findings a run vecchi (incident DTS 2026-07). L'UUID è stabile e unico.
+    const runsTbl = newDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vuln_scan_runs'").get();
+    if (runsTbl) {
+      const rcols = newDb.prepare("PRAGMA table_info(vuln_scan_runs)").all() as Array<{ name: string }>;
+      if (!rcols.some((c) => c.name === "edge_scan_uid")) {
+        newDb.exec("ALTER TABLE vuln_scan_runs ADD COLUMN edge_scan_uid TEXT");
+        newDb.exec(
+          "CREATE UNIQUE INDEX IF NOT EXISTS idx_vuln_scan_runs_uid ON vuln_scan_runs(scanner_id, edge_scan_uid) WHERE edge_scan_uid IS NOT NULL",
+        );
+        console.info(`[db-tenant] ${tenantCode}: vuln_scan_runs.edge_scan_uid aggiunto`);
+      }
+    }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione cert_pin fallita:`, e);
   }

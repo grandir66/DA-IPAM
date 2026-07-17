@@ -52,8 +52,27 @@ export function buildRemoteSessionUrl(opts: {
   const host = opts.serverUrl.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
   const query =
     `login=${encodeURIComponent(opts.token)}` +
-    `&node=${encodeURIComponent(opts.nodeId)}` +
+    `&node=${encodeURIComponent(nodeIdParam(opts.nodeId))}` +
     `&viewmode=${opts.viewmode}` +
     `&hide=${MC_HIDE_CHROME}`;
   return `https://${host}/?${query}`;
+}
+
+/**
+ * `?node=` vuole l'id GREZZO, senza il prefisso `node//`.
+ *
+ * MeshCentral lo ricostruisce da se' (webserver.js):
+ *   var nodeidsplit = req.query.node.split('/');
+ *   req.query.node = 'node/' + domain.id + '/' + nodeidsplit[0];
+ * Passando `node//ABC` lo split da' ["node","","ABC"] e prende [0] = "node",
+ * producendo l'id inesistente `node//node`: il nodo non viene MAI selezionato.
+ * La console si apre sull'elenco dispositivi e desktop/terminale restano vuoti —
+ * il sintomo era "schermo nero e barra laterale visibile", scambiato per un
+ * problema di certificato o di host headless (segnalato dall'utente, 2026-07-17).
+ *
+ * Stessa trappola di `/meshsettings?id=` con il prefisso `mesh//` (install-scripts.ts):
+ * MeshCentral vuole SEMPRE l'id nudo nei parametri URL, mai la forma `tipo//id`.
+ */
+function nodeIdParam(nodeId: string): string {
+  return nodeId.replace(/^node\/\//, "");
 }

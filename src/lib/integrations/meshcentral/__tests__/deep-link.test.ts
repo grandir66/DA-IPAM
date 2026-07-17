@@ -14,7 +14,7 @@ test("buildRemoteSessionUrl: exact shape login/node/viewmode/hide=31, https forc
   });
   assert.equal(
     url,
-    "https://mesh.appliance.local/?login=ABC%40DEF%24gh%3D%3D&node=node%2F%2FXYZ123&viewmode=11&hide=31",
+    "https://mesh.appliance.local/?login=ABC%40DEF%24gh%3D%3D&node=XYZ123&viewmode=11&hide=31",
   );
 });
 
@@ -60,4 +60,20 @@ test("buildRemoteSessionUrl: token special chars are URL-encoded (no raw @ $ = i
   });
   const login = url.split("login=")[1].split("&")[0];
   assert.equal(login, "a%40b%24c%3D");
+});
+
+test("node= porta l'id GREZZO: il prefisso node// rompe la selezione del nodo", () => {
+  // REGRESSIONE (2026-07-17). MeshCentral ricostruisce l'id da se':
+  //   nodeidsplit = req.query.node.split('/'); node = 'node/' + domain + '/' + nodeidsplit[0]
+  // Con "node//ABC" lo split da' ["node","","ABC"] e prende [0]="node" → id
+  // inesistente `node//node`: il nodo non viene mai selezionato e desktop/terminale
+  // restano vuoti (sintomo: schermo nero con la barra laterale visibile).
+  const url = buildRemoteSessionUrl({
+    serverUrl: "https://mesh.example.it",
+    token: "t",
+    nodeId: "node//AbC123",
+    viewmode: 11,
+  });
+  assert.ok(url.includes("&node=AbC123&"), "id nudo, senza prefisso node//");
+  assert.ok(!url.includes("node%2F%2F"), "il prefisso node// non deve MAI finire in ?node=");
 });

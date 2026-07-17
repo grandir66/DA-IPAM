@@ -323,6 +323,50 @@ export class MeshControlClient {
     }));
   }
 
+  /**
+   * Esegue un comando shell sull'endpoint e ne restituisce l'output.
+   *
+   * Protocollo verificato con una sonda sul server reale (2026-07-17) — la
+   * documentazione non lo copre e il sorgente e' ambiguo:
+   *
+   *   invio:  {action:'runcommands', nodeids:[id], type, cmds, runAsUser, reply:true}
+   *   ritorno: {action:'msg', type:'runcommands', result:'<output>', responseid}
+   *
+   * NOTA: la risposta finale ha `action:'msg'`, NON `action:'runcommands'` — il
+   * tipo sta nel campo `type`. Filtrare per action qui non trova niente. La
+   * correlazione regge lo stesso perche' il messaggio porta il nostro responseid
+   * (i messaggi intermedi `type:'console'`, uno per riga di output, non ce l'hanno
+   * e vengono giustamente ignorati dal dispatcher).
+   *
+   * `reply:true` e' obbligatorio per avere l'output: con `false` il server
+   * risponde subito 'OK' e l'esito reale del comando non si sa mai.
+   *
+   * type: **0 = auto-rilevamento** (l'agente Windows lo traduce in 1 = cmd, quello
+   * non-Windows in 3 = bash). Passare 2 per PowerShell (solo Windows: su Linux il
+   * server risponde 'Invalid command type'). Questo permette di non sapere il SO.
+   *
+   * runAsUser: 0 = SYSTEM/root · 1 = come utente loggato se possibile · 2 = solo utente.
+   *
+   * LIMITE NOTO: si aspetta la risposta entro REQUEST_TIMEOUT_MS (30s). Un comando
+   * piu' lento va in timeout qui pur continuando a girare sull'endpoint.
+   */
+  async runCommand(
+    nodeId: string,
+    cmds: string,
+    opts: { powershell?: boolean; runAsUser?: 0 | 1 | 2 } = {},
+  ): Promise<string> {
+    const resp = await this.request("runcommands", {
+      nodeids: [nodeId],
+      type: opts.powershell ? 2 : 0,
+      cmds,
+      runAsUser: opts.runAsUser ?? 0,
+      reply: true,
+    });
+    // `result` porta l'output completo; su errore il server ci mette il motivo
+    // ('Access denied', 'Agent not connected', 'Invalid command type', ...).
+    return typeof resp.result === "string" ? resp.result : "";
+  }
+
   close(): void {
     // Reject any in-flight requests so awaiting callers settle immediately
     // instead of leaking (clearing the map alone would orphan their promises).

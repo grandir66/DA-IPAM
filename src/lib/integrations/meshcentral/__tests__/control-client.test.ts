@@ -248,3 +248,61 @@ test("close() rejects in-flight requests instead of leaking them", async () => {
     },
   );
 });
+
+test("runCommand: l'output torna in {action:'msg', type:'runcommands', result}", async () => {
+  // Forma verificata con una sonda sul server reale (2026-07-17): la risposta
+  // finale NON ha action:'runcommands' — quello sta nel campo `type`. Un client
+  // che filtrasse per action non troverebbe mai l'output. Regge perche' il
+  // messaggio porta il responseid della richiesta.
+  _setWsConnector(() =>
+    makeFake((msg) => {
+      if (msg.action !== "runcommands") return null;
+      assert.deepEqual(msg.nodeids, ["node//N1"], "nodeids e' un array");
+      assert.equal(msg.type, 0, "type 0 = auto-rilevamento piattaforma");
+      assert.equal(msg.reply, true, "senza reply:true il server risponde solo 'OK'");
+      assert.equal(msg.runAsUser, 0, "default: SYSTEM/root");
+      return {
+        action: "msg",
+        type: "runcommands",
+        result: "Linux app-stack 6.8.0\nroot\n",
+        responseid: msg.responseid,
+        nodeid: "node//N1",
+      };
+    }),
+  );
+  const c = new MeshControlClient(creds);
+  const out = await c.runCommand("node//N1", "uname -a && whoami");
+  c.close();
+  assert.equal(out, "Linux app-stack 6.8.0\nroot\n");
+});
+
+test("runCommand --powershell usa type 2 (solo Windows)", async () => {
+  _setWsConnector(() =>
+    makeFake((msg) => {
+      if (msg.action !== "runcommands") return null;
+      assert.equal(msg.type, 2, "2 = Windows PowerShell");
+      return { action: "msg", type: "runcommands", result: "ok", responseid: msg.responseid };
+    }),
+  );
+  const c = new MeshControlClient(creds);
+  const out = await c.runCommand("node//N1", "Get-Service", { powershell: true });
+  c.close();
+  assert.equal(out, "ok");
+});
+
+test("runCommand: un errore del server arriva in `result` (non come throw)", async () => {
+  // Il server mette li' 'Access denied' / 'Agent not connected' / 'Invalid command
+  // type': l'output e l'errore condividono lo stesso campo, quindi il chiamante
+  // deve poterlo leggere invece di ricevere una promise risolta vuota.
+  _setWsConnector(() =>
+    makeFake((msg) =>
+      msg.action === "runcommands"
+        ? { action: "msg", type: "runcommands", result: "Agent not connected", responseid: msg.responseid }
+        : null,
+    ),
+  );
+  const c = new MeshControlClient(creds);
+  const out = await c.runCommand("node//N1", "whoami");
+  c.close();
+  assert.equal(out, "Agent not connected");
+});

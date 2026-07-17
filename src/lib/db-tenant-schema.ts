@@ -1229,6 +1229,25 @@ CREATE TABLE IF NOT EXISTS mc_node_bind (
   operator    TEXT NOT NULL,
   created_at  TEXT DEFAULT (datetime('now'))
 );
+
+-- Audit esecuzione comandi remoti (Fase 2 RMM). L'OUTPUT non si salva mai: puo'
+-- contenere password/token (un 'cat .env' basta) e finirebbe in chiaro nel DB e
+-- nei backup. Restano comando, operatore ed esito.
+-- NB: duplicato di MC_SCHEMA_SQL (integrations/meshcentral/schema.ts) — le due
+-- copie DEVONO restare allineate; lo verifica tenant-schema-wiring.test.ts, che
+-- itera MC_TABLES invece di una lista scritta a mano.
+CREATE TABLE IF NOT EXISTS mc_command_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id     INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  node_id     TEXT REFERENCES mc_node(node_id) ON DELETE SET NULL,
+  operator    TEXT NOT NULL,
+  command     TEXT NOT NULL,
+  shell       TEXT NOT NULL DEFAULT 'auto',
+  run_as_user INTEGER NOT NULL DEFAULT 0,
+  status      TEXT NOT NULL DEFAULT 'ok',
+  error       TEXT,
+  created_at  TEXT DEFAULT (datetime('now'))
+);
 `;
 
 export const TENANT_INDEXES_SQL = `

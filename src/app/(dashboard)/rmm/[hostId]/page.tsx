@@ -34,16 +34,24 @@ import {
   RefreshCw,
   TerminalSquare,
   ExternalLink,
+  SquareChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CommandPanel } from "@/components/rmm/command-panel";
 import { Badge } from "@/components/ui/badge";
 
-/** viewmode MeshCentral: 11 desktop · 12 terminale · 13 file. */
+/**
+ * Modalita' della sessione. I viewmode 11/12/13 sono di MeshCentral e vivono
+ * nell'iframe; "cmd" e' NOSTRA — pannello nativo via control.ashx, nessun iframe.
+ */
 const MODES = [
   { id: 11, label: "Desktop", icon: Monitor },
   { id: 12, label: "Terminale", icon: TerminalSquare },
   { id: 13, label: "File", icon: FolderOpen },
+  { id: "cmd", label: "Comandi", icon: SquareChevronRight },
 ] as const;
+
+type Mode = (typeof MODES)[number]["id"];
 
 interface MeshStatus {
   present: boolean;
@@ -59,7 +67,7 @@ export default function RemoteSessionPage() {
   const router = useRouter();
   const hostId = Number(params?.hostId);
 
-  const [mode, setMode] = useState<number>(11);
+  const [mode, setMode] = useState<Mode>(11);
   const [url, setUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<MeshStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -112,7 +120,9 @@ export default function RemoteSessionPage() {
   );
 
   // Prima apertura + cambio modalita': ogni volta serve un token nuovo (monouso).
+  // "cmd" e' nativa: nessun token, nessun iframe, nessuna chiamata a MeshCentral.
   useEffect(() => {
+    if (typeof mode !== "number") return;
     void openSession(mode);
   }, [mode, openSession]);
 
@@ -157,14 +167,19 @@ export default function RemoteSessionPage() {
                 key={m.id}
                 size="sm"
                 variant={mode === m.id ? "default" : "outline"}
-                onClick={() => (mode === m.id ? void openSession(m.id) : setMode(m.id))}
-                disabled={loading}
+                onClick={() => {
+                  if (mode !== m.id) { setMode(m.id); return; }
+                  // Ri-click sulla modalita' attiva = riconnetti. "cmd" e' nativa: niente token.
+                  if (typeof m.id === "number") void openSession(m.id);
+                }}
+                disabled={loading && typeof m.id === "number"}
               >
                 <Icon className="mr-2 h-4 w-4" />
                 {m.label}
               </Button>
             );
           })}
+          {typeof mode === "number" ? (
           <Button
             size="sm"
             variant="outline"
@@ -178,7 +193,8 @@ export default function RemoteSessionPage() {
               <RefreshCw className="h-4 w-4" />
             )}
           </Button>
-          {url ? (
+          ) : null}
+          {url && typeof mode === "number" ? (
             <Button
               size="sm"
               variant="ghost"
@@ -207,32 +223,43 @@ export default function RemoteSessionPage() {
 
       {/* I pixel: unica parte servita da MeshCentral. */}
       <div className="relative flex-1 bg-muted/30">
-        {loading && !url ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Avvio sessione…
-          </div>
-        ) : null}
-
-        {error && !url ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-            <p className="text-sm text-destructive">{error}</p>
-            <Button size="sm" variant="outline" onClick={() => void openSession(mode)}>
-              <RefreshCw className="mr-2 h-4 w-4" /> Riprova
-            </Button>
-          </div>
-        ) : null}
-
-        {url ? (
-          <iframe
-            // key: forza il rimontaggio a ogni nuovo token. Senza, React riusa il
-            // nodo e cambiare src non ricarica in modo affidabile.
-            key={url}
-            src={url}
-            title={`Sessione remota — ${title}`}
-            className="h-full w-full border-0"
-            allow="clipboard-read; clipboard-write; fullscreen"
+        {mode === "cmd" ? (
+          /* Modalita' NATIVA: nessun iframe, nessun token, nessuna pagina
+             MeshCentral. Passa da control.ashx, che e' un'API stabile. */
+          <CommandPanel
+            hostId={hostId}
+            isWindows={/windows/i.test(status?.osdesc ?? "")}
           />
-        ) : null}
+        ) : (
+          <>
+            {loading && !url ? (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Avvio sessione…
+              </div>
+            ) : null}
+
+            {error && !url ? (
+              <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                <p className="text-sm text-destructive">{error}</p>
+                <Button size="sm" variant="outline" onClick={() => void openSession(mode)}>
+                  <RefreshCw className="mr-2 h-4 w-4" /> Riprova
+                </Button>
+              </div>
+            ) : null}
+
+            {url ? (
+              <iframe
+                // key: forza il rimontaggio a ogni nuovo token. Senza, React riusa il
+                // nodo e cambiare src non ricarica in modo affidabile.
+                key={url}
+                src={url}
+                title={`Sessione remota — ${title}`}
+                className="h-full w-full border-0"
+                allow="clipboard-read; clipboard-write; fullscreen"
+              />
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );

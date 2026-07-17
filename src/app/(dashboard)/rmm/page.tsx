@@ -61,7 +61,14 @@ export default function RmmPage() {
   async function startRemote(hostId: number) {
     if (launchBusy) return;
     setLaunchBusy(hostId);
-    const win = window.open("", "_blank", "noopener,noreferrer");
+    // NIENTE "noopener,noreferrer" qui: per specifica HTML quelle feature fanno
+    // restituire null a window.open(), e a noi il riferimento serve per navigare
+    // la scheda dopo la POST. Con esse `win` era SEMPRE null: si apriva una
+    // scheda vuota, la navigazione non avveniva mai e l'utente restava con
+    // about:blank + il toast "Popup bloccato" — il pulsante Controllo remoto non
+    // ha mai funzionato dalla UI, pur essendo l'API perfettamente sana.
+    // La sicurezza (reverse tabnabbing) la garantisce `win.opener = null` sotto.
+    const win = window.open("", "_blank");
     try {
       const r = await fetch(`/api/integrations/meshcentral/host/${hostId}/remote-session`, {
         method: "POST",

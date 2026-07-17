@@ -54,7 +54,11 @@ export function HostMeshcentralCard({ hostId }: { hostId: number }) {
     setLoading(true);
 
     // Apertura sincrona nel gesture utente: indispensabile per evitare il blocco popup.
-    const win = window.open("", "_blank", "noopener,noreferrer");
+    // NIENTE "noopener,noreferrer": per specifica HTML fanno restituire null a
+    // window.open(), e qui il riferimento serve per navigare la scheda dopo la
+    // POST. Con esse `win` era SEMPRE null → scheda vuota mai riempita.
+    // Il reverse tabnabbing lo previene `win.opener = null` sotto.
+    const win = window.open("", "_blank");
     try {
       const res = await fetch(
         `/api/integrations/meshcentral/host/${hostId}/remote-session`,

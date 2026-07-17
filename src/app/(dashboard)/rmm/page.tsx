@@ -6,6 +6,7 @@
  * manual-bind per gli unmatched, e link alla console MeshCentral.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, MonitorSmartphone, RefreshCw, ExternalLink, Settings } from "lucide-react";
 import Link from "next/link";
@@ -33,10 +34,10 @@ interface MeshNodeRow {
 }
 
 export default function RmmPage() {
+  const router = useRouter();
   const [cfg, setCfg] = useState<MeshConfigPublic | null>(null);
   const [nodes, setNodes] = useState<MeshNodeRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [launchBusy, setLaunchBusy] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,44 +59,6 @@ export default function RmmPage() {
     void load();
   }, [load]);
 
-  async function startRemote(hostId: number) {
-    if (launchBusy) return;
-    setLaunchBusy(hostId);
-    // NIENTE "noopener,noreferrer" qui: per specifica HTML quelle feature fanno
-    // restituire null a window.open(), e a noi il riferimento serve per navigare
-    // la scheda dopo la POST. Con esse `win` era SEMPRE null: si apriva una
-    // scheda vuota, la navigazione non avveniva mai e l'utente restava con
-    // about:blank + il toast "Popup bloccato" — il pulsante Controllo remoto non
-    // ha mai funzionato dalla UI, pur essendo l'API perfettamente sana.
-    // La sicurezza (reverse tabnabbing) la garantisce `win.opener = null` sotto.
-    const win = window.open("", "_blank");
-    try {
-      const r = await fetch(`/api/integrations/meshcentral/host/${hostId}/remote-session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ viewmode: 11 }),
-      });
-      const data = (await r.json().catch(() => ({}))) as { url?: string };
-      if (!r.ok || !data.url) {
-        if (win) win.close();
-        toast.error("Avvio sessione remota fallito");
-        return;
-      }
-      if (win) {
-        win.opener = null;
-        win.location.href = data.url;
-      } else {
-        toast("Popup bloccato — apri manualmente", {
-          action: { label: "Apri", onClick: () => window.open(data.url, "_blank", "noopener,noreferrer") },
-        });
-      }
-    } catch {
-      if (win) win.close();
-      toast.error("Errore di rete");
-    } finally {
-      setLaunchBusy(null);
-    }
-  }
 
   const matched = nodes.filter((n) => n.host_id != null);
 
@@ -176,16 +139,16 @@ export default function RmmPage() {
                               </Badge>
                             </td>
                             <td className="p-2 text-right">
+                              {/* Sessione INCORPORATA in DA-IPAM (/rmm/[hostId]): niente
+                                  scheda esterna, niente console MeshCentral. Il launch-out
+                                  in nuova scheda resta disponibile da lì, per i casi in cui
+                                  serve una finestra a parte. */}
                               <Button
                                 size="sm"
-                                disabled={launchBusy === n.host_id || !online}
-                                onClick={() => n.host_id != null && void startRemote(n.host_id)}
+                                disabled={!online || n.host_id == null}
+                                onClick={() => n.host_id != null && router.push(`/rmm/${n.host_id}`)}
                               >
-                                {launchBusy === n.host_id ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                                ) : (
-                                  <MonitorSmartphone className="h-3.5 w-3.5 mr-1" />
-                                )}
+                                <MonitorSmartphone className="h-3.5 w-3.5 mr-1" />
                                 Controllo remoto
                               </Button>
                             </td>

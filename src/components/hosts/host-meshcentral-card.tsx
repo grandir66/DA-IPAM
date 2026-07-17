@@ -1,15 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MonitorSmartphone, Loader2 } from "lucide-react";
-import { toast } from "sonner";
-
-interface RemoteSessionResponse {
-  url?: string;
-  error?: unknown;
-}
+import { MonitorSmartphone } from "lucide-react";
 
 interface MeshStatus {
   present: boolean;
@@ -17,17 +12,21 @@ interface MeshStatus {
 }
 
 /**
- * Card MeshCentral nella scheda host: avvio sessione di controllo remoto (launch-out SSO).
+ * Card MeshCentral nella scheda host: apre la sessione di controllo remoto.
  * Auto-carica lo stato Mesh dell'host (GET host/[hostId]) e mostra il bottone solo
  * se esiste un nodo associato.
  *
- * Popup-safe (§10): apriamo la tab in modo SINCRONO nel gesture del click,
- * poi impostiamo l'URL dopo la POST. Niente window.open(url) DOPO l'await
- * (verrebbe bloccato dal popup blocker).
+ * La sessione si apre DENTRO DA-IPAM (`/rmm/[hostId]`), non in una scheda esterna:
+ * di conseguenza qui non c'è più nessuna gestione del popup blocker, che era la
+ * parte fragile (window.open con `noopener` restituisce null per specifica, quindi
+ * la scheda restava vuota e non veniva mai navigata). Il login-token lo conia — e
+ * consuma — solo la pagina di sessione: è monouso, e passarlo di mano rischiava di
+ * bruciarlo per strada. Da `/rmm/[hostId]` resta possibile staccare la sessione in
+ * una finestra separata.
  */
 export function HostMeshcentralCard({ hostId }: { hostId: number }) {
+  const router = useRouter();
   const [status, setStatus] = useState<MeshStatus | null>(null);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -49,52 +48,6 @@ export function HostMeshcentralCard({ hostId }: { hostId: number }) {
   // Nessun nodo MeshCentral: card assente (no rumore nella scheda host).
   if (!status.present) return null;
 
-  async function startRemoteSession() {
-    if (loading) return;
-    setLoading(true);
-
-    // Apertura sincrona nel gesture utente: indispensabile per evitare il blocco popup.
-    // NIENTE "noopener,noreferrer": per specifica HTML fanno restituire null a
-    // window.open(), e qui il riferimento serve per navigare la scheda dopo la
-    // POST. Con esse `win` era SEMPRE null → scheda vuota mai riempita.
-    // Il reverse tabnabbing lo previene `win.opener = null` sotto.
-    const win = window.open("", "_blank");
-    try {
-      const res = await fetch(
-        `/api/integrations/meshcentral/host/${hostId}/remote-session`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ viewmode: 11 }),
-        },
-      );
-      const data = (await res.json().catch(() => ({}))) as RemoteSessionResponse;
-
-      if (!res.ok || !data.url) {
-        if (win) win.close();
-        toast.error("Avvio sessione remota fallito");
-        return;
-      }
-
-      if (win) {
-        win.opener = null; // hardening: nessun riferimento all'app sorgente
-        win.location.href = data.url;
-      } else {
-        toast("Popup bloccato — apri la sessione manualmente", {
-          action: {
-            label: "Apri",
-            onClick: () => window.open(data.url, "_blank", "noopener,noreferrer"),
-          },
-        });
-      }
-    } catch {
-      if (win) win.close();
-      toast.error("Errore di rete durante l'avvio della sessione remota");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
     <Card>
       <CardHeader>
@@ -109,8 +62,8 @@ export function HostMeshcentralCard({ hostId }: { hostId: number }) {
             Il nodo risulta offline: la sessione potrebbe non aprirsi.
           </p>
         )}
-        <Button onClick={startRemoteSession} disabled={loading}>
-          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        <Button onClick={() => router.push(`/rmm/${hostId}`)}>
+          <MonitorSmartphone className="mr-2 h-4 w-4" />
           Controllo remoto
         </Button>
       </CardContent>

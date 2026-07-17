@@ -2,7 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildRemoteSessionUrl } from "@/lib/integrations/meshcentral/deep-link";
 
-test("buildRemoteSessionUrl: exact shape login/node/viewmode/hide=15, https forced", () => {
+// hide=31 (non 15): il bit 16 nasconde la barra laterale di MeshCentral.
+// Con 15 le sue icone restavano visibili dentro la nostra pagina, rompendo
+// l'illusione di un modulo nativo (screenshot utente, 2026-07-17).
+test("buildRemoteSessionUrl: exact shape login/node/viewmode/hide=31, https forced", () => {
   const url = buildRemoteSessionUrl({
     serverUrl: "mesh.appliance.local",
     token: "ABC@DEF$gh==",
@@ -11,7 +14,7 @@ test("buildRemoteSessionUrl: exact shape login/node/viewmode/hide=15, https forc
   });
   assert.equal(
     url,
-    "https://mesh.appliance.local/?login=ABC%40DEF%24gh%3D%3D&node=node%2F%2FXYZ123&viewmode=11&hide=15",
+    "https://mesh.appliance.local/?login=ABC%40DEF%24gh%3D%3D&node=node%2F%2FXYZ123&viewmode=11&hide=31",
   );
 });
 
@@ -23,7 +26,7 @@ test("buildRemoteSessionUrl: param ORDER is login, node, viewmode, hide (case-se
     viewmode: 12,
   });
   const q = url.split("?")[1];
-  assert.equal(q, "login=t&node=n&viewmode=12&hide=15");
+  assert.equal(q, "login=t&node=n&viewmode=12&hide=31");
   // case-sensitivity: lowercase param names exactly, no 'gotonode'
   assert.equal(url.includes("gotonode"), false);
   assert.match(url, /[?&]node=/);

@@ -26,11 +26,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
-        // Rate limiting: max 5 tentativi falliti per username ogni 15 minuti
-        const { checkRateLimit, recordFailedAttempt } = await import("./rate-limit");
+        // Rate limiting: max 5 tentativi FALLITI per username ogni 15 minuti.
+        // isRateLimited() e NON checkRateLimit(): quest'ultima consuma un tentativo
+        // a ogni chiamata, quindi contava anche i login RIUSCITI — 5 accessi
+        // corretti in 15 minuti bastavano a bloccare l'utente, e un fallimento
+        // contava doppio (checkRateLimit + recordFailedAttempt), riducendo la
+        // soglia reale a ~3 errori. Poiche' qui si torna `null` sia per il blocco
+        // sia per la password errata, l'utente vedeva "credenziali errate" e si
+        // convinceva di aver dimenticato la password. Incidente reale su 99.50
+        // il 2026-07-17: utente bloccato fuori dalla propria appliance.
+        const { isRateLimited, recordFailedAttempt, clearRateLimit } = await import("./rate-limit");
         const rateLimitKey = `login:${username}`;
-        if (!checkRateLimit(rateLimitKey, 5, 15 * 60 * 1000)) {
-          console.warn(`[Auth] Rate limit raggiunto per utente: ${username}`);
+        if (isRateLimited(rateLimitKey, 5, 15 * 60 * 1000)) {
+          console.warn(
+            `[Auth] Rate limit raggiunto per utente: ${username} — bloccato per 15 min dopo 5 tentativi falliti`,
+          );
           return null;
         }
 
@@ -67,6 +77,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
+        // Password corretta → azzera i fallimenti: chi indovina al 5° tentativo
+        // deve poter entrare, e i tentativi andati a vuoto non devono accumularsi
+        // fino a bloccare un utente legittimo giorni dopo.
+        clearRateLimit(rateLimitKey);
         updateUserLastLogin(user.id);
 
         // Superadmin vede tutti i tenant attivi (come utente Domarc),

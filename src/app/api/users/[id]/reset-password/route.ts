@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 import { getUserById, updateUserPassword } from "@/lib/db";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireSuperAdmin, isAuthError } from "@/lib/api-auth";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const adminCheck = await requireAdmin();
+    const adminCheck = await requireSuperAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
 
     const { id } = await params;

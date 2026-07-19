@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getTenantById, updateTenant, deleteTenant } from "@/lib/db-hub";
 import { deleteTenantDatabase } from "@/lib/db-tenant";
-import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAuth, requireSuperAdmin, isAuthError } from "@/lib/api-auth";
 import { z } from "zod";
 
 const TenantUpdateSchema = z.object({
@@ -46,7 +46,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const adminCheck = await requireAdmin();
+    const adminCheck = await requireSuperAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
 
     const { id } = await params;
@@ -83,7 +83,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const adminCheck = await requireAdmin();
+    const adminCheck = await requireSuperAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
 
     const { id } = await params;

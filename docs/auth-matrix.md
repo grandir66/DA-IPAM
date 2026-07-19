@@ -12,9 +12,9 @@ Modello: `withTenantFromSession` impone l'autenticazione (401 senza sessione) ma
 - 🔴 **FLAG (mutazione senza requireAdmin, o nessuna guardia): 11**
   - mutazioni (POST/PUT/PATCH/DELETE) eseguibili da viewer: **6**
   - endpoint `none` (nessuna guardia rilevata, non pubblici): **7**
-- 🟡 **REVIEW (letture sensibili da valutare admin + POST): 9**
+- 🟡 **REVIEW (letture sensibili da valutare admin + POST): 7**
 
-Distribuzione guardia attuale: `superadmin`=0 · `admin`=237 · `auth`=99 · `session-only`=50 · `none`=13
+Distribuzione guardia attuale: `superadmin`=8 · `admin`=231 · `auth`=98 · `session-only`=49 · `none`=13
 
 ## 🔴 FLAG — da correggere (Wave 1)
 
@@ -36,9 +36,7 @@ Distribuzione guardia attuale: `superadmin`=0 · `admin`=237 · `auth`=99 · `se
 
 | Route | Metodo | Attuale | Nota |
 |---|---|---|---|
-| `/api/client-config/export` | GET | `auth` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/credentials` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
-| `/api/credentials/[id]` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/devices/[id]/credentials` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/export` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/hosts/[id]/credentials` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
@@ -101,12 +99,12 @@ Distribuzione guardia attuale: `superadmin`=0 · `admin`=237 · `auth`=99 · `se
 | `/api/client-config` | DELETE | `admin` | `admin` |  |
 | `/api/client-config` | GET | `auth` | `auth` |  |
 | `/api/client-config` | PUT | `admin` | `admin` |  |
-| `/api/client-config/export` | GET | `auth` | `auth` | 🟡 |
+| `/api/client-config/export` | GET | `admin` | `auth` |  |
 | `/api/client-config/import` | POST | `admin` | `admin` |  |
 | `/api/credentials` | GET | `session-only` | `auth` | 🟡 |
 | `/api/credentials` | POST | `admin` | `admin` |  |
 | `/api/credentials/[id]` | DELETE | `admin` | `admin` |  |
-| `/api/credentials/[id]` | GET | `session-only` | `auth` | 🟡 |
+| `/api/credentials/[id]` | GET | `admin` | `auth` |  |
 | `/api/credentials/[id]` | PUT | `admin` | `admin` |  |
 | `/api/credentials/[id]/test` | POST | `admin` | `admin` |  |
 | `/api/credentials/[id]/test-snmp` | GET | `admin` | `auth` |  |
@@ -425,10 +423,10 @@ Distribuzione guardia attuale: `superadmin`=0 · `admin`=237 · `auth`=99 · `se
 | `/api/tenant/export` | POST | `admin` | `admin` |  |
 | `/api/tenant/import` | POST | `admin` | `admin` |  |
 | `/api/tenants` | GET | `auth` | `auth` |  |
-| `/api/tenants` | POST | `admin` | `admin` |  |
-| `/api/tenants/[id]` | DELETE | `admin` | `admin` |  |
+| `/api/tenants` | POST | `superadmin` | `admin` |  |
+| `/api/tenants/[id]` | DELETE | `superadmin` | `admin` |  |
 | `/api/tenants/[id]` | GET | `auth` | `auth` |  |
-| `/api/tenants/[id]` | PUT | `admin` | `admin` |  |
+| `/api/tenants/[id]` | PUT | `superadmin` | `admin` |  |
 | `/api/tenants/[id]/agent` | GET | `auth` | `auth` |  |
 | `/api/tenants/[id]/agent` | PUT | `admin` | `admin` |  |
 | `/api/tenants/[id]/agent/test` | POST | `admin` | `admin` |  |
@@ -439,11 +437,11 @@ Distribuzione guardia attuale: `superadmin`=0 · `admin`=237 · `auth`=99 · `se
 | `/api/tls` | GET | `admin` | `auth` |  |
 | `/api/tls` | POST | `admin` | `admin` |  |
 | `/api/user/preferences` | GET | `auth` | `auth` |  |
-| `/api/users` | GET | `admin` | `auth` |  |
-| `/api/users` | POST | `admin` | `admin` |  |
-| `/api/users/[id]` | DELETE | `admin` | `admin` |  |
-| `/api/users/[id]` | PUT | `admin` | `admin` |  |
-| `/api/users/[id]/reset-password` | POST | `admin` | `admin` |  |
+| `/api/users` | GET | `superadmin` | `auth` |  |
+| `/api/users` | POST | `superadmin` | `admin` |  |
+| `/api/users/[id]` | DELETE | `superadmin` | `admin` |  |
+| `/api/users/[id]` | PUT | `superadmin` | `admin` |  |
+| `/api/users/[id]/reset-password` | POST | `superadmin` | `admin` |  |
 | `/api/version` | GET | `none` | `public` |  |
 | `/api/vulnerabilities` | GET | `auth` | `auth` |  |
 | `/api/vulnerabilities/[key]/hosts` | GET | `auth` | `auth` |  |

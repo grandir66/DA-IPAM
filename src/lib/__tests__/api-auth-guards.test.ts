@@ -24,6 +24,9 @@ interface Contract {
   guard: "requireAdmin" | "requireSuperAdmin";
 }
 
+// Nota: per `credentials/[id]` GET la guardia admin è condizionale (solo con
+// ?for_edit=1); il test verifica solo che requireAdmin sia invocato nel metodo.
+
 // Contratto atteso. I primi due sono i fix di Wave 1; gli altri sono controlli
 // positivi su route già protette (documentano l'intento e catturano rimozioni).
 const CONTRACT: Contract[] = [
@@ -36,8 +39,16 @@ const CONTRACT: Contract[] = [
   { route: "credentials/[id]/test-snmp", method: "GET", guard: "requireAdmin" },
   { route: "networks/[id]/test-snmp", method: "GET", guard: "requireAdmin" },
   { route: "networks/[id]/test-dns", method: "GET", guard: "requireAdmin" },
+  { route: "credentials/[id]", method: "GET", guard: "requireAdmin" }, // condizionale (for_edit)
   { route: "credentials/[id]", method: "PUT", guard: "requireAdmin" },
   { route: "credentials/[id]", method: "DELETE", guard: "requireAdmin" },
+  { route: "client-config/export", method: "GET", guard: "requireAdmin" },
+  // route hub globali → superadmin (H3: requireSuperAdmin era definito ma inutilizzato)
+  { route: "users", method: "POST", guard: "requireSuperAdmin" },
+  { route: "users/[id]", method: "DELETE", guard: "requireSuperAdmin" },
+  { route: "users/[id]/reset-password", method: "POST", guard: "requireSuperAdmin" },
+  { route: "tenants", method: "POST", guard: "requireSuperAdmin" },
+  { route: "tenants/[id]", method: "DELETE", guard: "requireSuperAdmin" },
 ];
 
 /** Estrae il corpo di un metodo HTTP esportato (slice fino al prossimo export). */

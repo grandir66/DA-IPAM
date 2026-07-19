@@ -15,6 +15,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       }
       const url = new URL(request.url);
       const forEdit = url.searchParams.get("for_edit") === "1";
+      // for_edit=1 decifra i dati: solo admin. La lettura mascherata resta ai viewer.
+      if (forEdit) {
+        const adminCheck = await requireAdmin();
+        if (isAuthError(adminCheck)) return adminCheck;
+      }
       let username: string | null = null;
       if (forEdit && credential.encrypted_username) {
         try {

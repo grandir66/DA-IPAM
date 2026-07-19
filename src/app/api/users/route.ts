@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { getUsers, getUserByUsername, createUser, getUserTenantAccess, setUserTenantAccess, getActiveTenants } from "@/lib/db";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireSuperAdmin, isAuthError } from "@/lib/api-auth";
 import bcrypt from "bcrypt";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
 export async function GET() {
   try {
-    const adminCheck = await requireAdmin();
+    const adminCheck = await requireSuperAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
 
     const users = getUsers();
@@ -38,7 +38,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const adminCheck = await requireAdmin();
+    const adminCheck = await requireSuperAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
 
     const body = await request.json();

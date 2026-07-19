@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import {
   runProvisionalDeviceTest,
@@ -31,6 +32,11 @@ const ProvisionalTestSchema = z.object({
  * Body: { host, vendor, protocol, port?, credential_id?, snmp_credential_id?, scan_target?, api_url? }
  */
 export async function POST(request: Request) {
+  // Usa credenziali salvate (credential_id/snmp_credential_id) per un test di
+  // connessione: azione privilegiata, non accessibile ai viewer.
+  const authCheck = await requireAdmin();
+  if (isAuthError(authCheck)) return authCheck;
+
   const result = await withTenantFromSession(async () => {
   try {
     const body = await request.json();

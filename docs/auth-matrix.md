@@ -9,19 +9,17 @@
 
 Modello: `withTenantFromSession` impone l'autenticazione (401 senza sessione) ma **non il ruolo**. Quindi una *lettura* `session-only` è protetta quanto `auth`. Il rischio è: **mutazioni** senza ruolo admin, e **letture sensibili** (credenziali/segreti/trigger) che dovrebbero essere admin.
 
-- 🔴 **FLAG (mutazione senza requireAdmin, o nessuna guardia): 13**
-  - mutazioni (POST/PUT/PATCH/DELETE) eseguibili da viewer: **8**
+- 🔴 **FLAG (mutazione senza requireAdmin, o nessuna guardia): 11**
+  - mutazioni (POST/PUT/PATCH/DELETE) eseguibili da viewer: **6**
   - endpoint `none` (nessuna guardia rilevata, non pubblici): **7**
 - 🟡 **REVIEW (letture sensibili da valutare admin + POST): 14**
 
-Distribuzione guardia attuale: `superadmin`=0 · `admin`=230 · `auth`=101 · `session-only`=55 · `none`=13
+Distribuzione guardia attuale: `superadmin`=0 · `admin`=232 · `auth`=100 · `session-only`=54 · `none`=13
 
 ## 🔴 FLAG — da correggere (Wave 1)
 
 | Route | Metodo | Attuale | Target | Nota |
 |---|---|---|---|---|
-| `/api/analytics/anomalies/[id]` | PATCH | `auth` | `admin` | mutazione eseguibile da viewer → requireAdmin |
-| `/api/devices/test-provisional` | POST | `session-only` | `admin` | mutazione eseguibile da viewer → requireAdmin |
 | `/api/integrations/inventory-agent/install/linux.sh` | GET | `none` | `auth` | NESSUNA guardia rilevata (verifica: helper interno?) |
 | `/api/integrations/inventory-agent/install/macos.sh` | GET | `none` | `auth` | NESSUNA guardia rilevata (verifica: helper interno?) |
 | `/api/integrations/inventory-agent/install/windows.ps1` | GET | `none` | `auth` | NESSUNA guardia rilevata (verifica: helper interno?) |
@@ -57,8 +55,6 @@ Distribuzione guardia attuale: `superadmin`=0 · `admin`=230 · `auth`=101 · `s
 
 | Route | Metodo | Attuale | Target | Flag |
 |---|---|---|---|---|
-| `/api/analytics/anomalies/[id]` | PATCH | `auth` | `admin` | 🔴 |
-| `/api/devices/test-provisional` | POST | `session-only` | `admin` | 🔴 |
 | `/api/integrations/inventory-agent/install/linux.sh` | GET | `none` | `auth` | 🔴 |
 | `/api/integrations/inventory-agent/install/macos.sh` | GET | `none` | `auth` | 🔴 |
 | `/api/integrations/inventory-agent/install/windows.ps1` | GET | `none` | `auth` | 🔴 |
@@ -90,6 +86,7 @@ Distribuzione guardia attuale: `superadmin`=0 · `admin`=230 · `auth`=101 · `s
 | `/api/analytics/anomalies` | GET | `auth` | `auth` |  |
 | `/api/analytics/anomalies` | POST | `admin` | `admin` |  |
 | `/api/analytics/anomalies/[id]` | DELETE | `admin` | `admin` |  |
+| `/api/analytics/anomalies/[id]` | PATCH | `admin` | `admin` |  |
 | `/api/analytics/classification/batch-refingerprint` | POST | `admin` | `admin` |  |
 | `/api/analytics/classification/feedback` | GET | `auth` | `auth` |  |
 | `/api/analytics/classification/feedback` | POST | `admin` | `admin` |  |
@@ -142,6 +139,7 @@ Distribuzione guardia attuale: `superadmin`=0 · `admin`=230 · `auth`=101 · `s
 | `/api/devices/bulk` | POST | `admin` | `admin` |  |
 | `/api/devices/bulk-scan` | POST | `admin` | `admin` |  |
 | `/api/devices/detect-protocol` | POST | `admin` | `admin` |  |
+| `/api/devices/test-provisional` | POST | `admin` | `admin` |  |
 | `/api/dhcp-leases` | GET | `session-only` | `auth` |  |
 | `/api/dhcp-leases` | POST | `admin` | `admin` |  |
 | `/api/excluded-ips` | GET | `auth` | `auth` |  |

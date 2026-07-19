@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import {
   acknowledgeAnomalyEvent,
@@ -11,7 +11,9 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await requireAuth();
+  // Mutazione di stato analytics (ack/resolve/dismiss): coerente con la DELETE
+  // sotto, richiede admin. Un viewer non deve modificare lo stato delle anomalie.
+  const session = await requireAdmin();
   if (isAuthError(session)) return session;
 
   const { id } = await params;

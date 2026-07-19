@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { denyCrossTenantConfig } from "@/lib/client-config-access";
 import { saveClientConfig } from "@/lib/client-config";
 import type { ClientConfig } from "@/lib/client-config";
 
@@ -17,6 +18,8 @@ export async function POST(req: Request) {
   if (!code) {
     return NextResponse.json({ error: "Parametro 'code' richiesto" }, { status: 400 });
   }
+  const denied = denyCrossTenantConfig(session, code);
+  if (denied) return denied;
 
   let data: ClientConfig;
   try {

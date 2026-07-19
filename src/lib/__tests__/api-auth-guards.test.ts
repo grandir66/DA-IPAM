@@ -33,6 +33,9 @@ const CONTRACT: Contract[] = [
   // probe diagnostici verso host/credenziali arbitrari (audit SEC-9)
   { route: "test-snmp", method: "GET", guard: "requireAdmin" },
   { route: "test-arp", method: "GET", guard: "requireAdmin" },
+  { route: "credentials/[id]/test-snmp", method: "GET", guard: "requireAdmin" },
+  { route: "networks/[id]/test-snmp", method: "GET", guard: "requireAdmin" },
+  { route: "networks/[id]/test-dns", method: "GET", guard: "requireAdmin" },
   { route: "credentials/[id]", method: "PUT", guard: "requireAdmin" },
   { route: "credentials/[id]", method: "DELETE", guard: "requireAdmin" },
 ];

@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { getCredentialById, getCredentialCommunityString } from "@/lib/db";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
-/** Verifica se una credenziale SNMP ha una community string valida */
+/** Verifica se una credenziale SNMP ha una community string valida (legge il vault: solo admin) */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const authCheck = await requireAdmin();
+  if (isAuthError(authCheck)) return authCheck;
   return withTenantFromSession(async () => {
     try {
       const { id } = await params;

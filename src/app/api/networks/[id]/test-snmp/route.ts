@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getNetworkById, getHostsByNetwork } from "@/lib/db";
 import { snmpDebugQuery } from "@/lib/scanner/snmp-debug";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
 /**
@@ -10,6 +11,8 @@ import { withTenantFromSession } from "@/lib/api-tenant";
  * Senza ?ip= testa i primi 5 host della rete.
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const authCheck = await requireAdmin();
+  if (isAuthError(authCheck)) return authCheck;
   return withTenantFromSession(async () => {
     try {
       const { id } = await params;

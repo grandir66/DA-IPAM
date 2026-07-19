@@ -12,9 +12,9 @@ Modello: `withTenantFromSession` impone l'autenticazione (401 senza sessione) ma
 - 🔴 **FLAG (mutazione senza requireAdmin, o nessuna guardia): 11**
   - mutazioni (POST/PUT/PATCH/DELETE) eseguibili da viewer: **6**
   - endpoint `none` (nessuna guardia rilevata, non pubblici): **7**
-- 🟡 **REVIEW (letture sensibili da valutare admin + POST): 12**
+- 🟡 **REVIEW (letture sensibili da valutare admin + POST): 9**
 
-Distribuzione guardia attuale: `superadmin`=0 · `admin`=234 · `auth`=99 · `session-only`=53 · `none`=13
+Distribuzione guardia attuale: `superadmin`=0 · `admin`=237 · `auth`=99 · `session-only`=50 · `none`=13
 
 ## 🔴 FLAG — da correggere (Wave 1)
 
@@ -39,15 +39,12 @@ Distribuzione guardia attuale: `superadmin`=0 · `admin`=234 · `auth`=99 · `se
 | `/api/client-config/export` | GET | `auth` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/credentials` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/credentials/[id]` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
-| `/api/credentials/[id]/test-snmp` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/devices/[id]/credentials` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/export` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/hosts/[id]/credentials` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/integrations/[component]/test-connection` | GET | `auth` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/inventory/export` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/networks/[id]/credentials` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
-| `/api/networks/[id]/test-dns` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
-| `/api/networks/[id]/test-snmp` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 
 ## Inventario completo
 
@@ -112,7 +109,7 @@ Distribuzione guardia attuale: `superadmin`=0 · `admin`=234 · `auth`=99 · `se
 | `/api/credentials/[id]` | GET | `session-only` | `auth` | 🟡 |
 | `/api/credentials/[id]` | PUT | `admin` | `admin` |  |
 | `/api/credentials/[id]/test` | POST | `admin` | `admin` |  |
-| `/api/credentials/[id]/test-snmp` | GET | `session-only` | `auth` | 🟡 |
+| `/api/credentials/[id]/test-snmp` | GET | `admin` | `auth` |  |
 | `/api/custom-oui` | GET | `auth` | `auth` |  |
 | `/api/custom-oui` | PUT | `admin` | `admin` |  |
 | `/api/device-vendor-options` | GET | `session-only` | `auth` |  |
@@ -327,8 +324,8 @@ Distribuzione guardia attuale: `superadmin`=0 · `admin`=234 · `auth`=99 · `se
 | `/api/networks/[id]/excluded-ips` | GET | `auth` | `auth` |  |
 | `/api/networks/[id]/excluded-ips` | POST | `admin` | `admin` |  |
 | `/api/networks/[id]/refresh` | POST | `admin` | `admin` |  |
-| `/api/networks/[id]/test-dns` | GET | `session-only` | `auth` | 🟡 |
-| `/api/networks/[id]/test-snmp` | GET | `session-only` | `auth` | 🟡 |
+| `/api/networks/[id]/test-dns` | GET | `admin` | `auth` |  |
+| `/api/networks/[id]/test-snmp` | GET | `admin` | `auth` |  |
 | `/api/networks/bulk-assign-credential` | POST | `admin` | `admin` |  |
 | `/api/networks/bulk-scan-devices` | POST | `admin` | `admin` |  |
 | `/api/networks/with-credentials` | GET | `session-only` | `auth` |  |

@@ -2257,7 +2257,24 @@ export function createNetwork(input: NetworkInput): Network {
     input.snmp_community || null,
     input.dns_server || null
   );
-  return getDb().prepare("SELECT * FROM networks WHERE id = ?").get(result.lastInsertRowid) as Network;
+  const networkId = Number(result.lastInsertRowid);
+
+  // Fix drift (2026-07-20): la copia `db.ts` di createNetwork non seminava i job
+  // default (known_host_check) presenti in `db-tenant.createNetwork` → creando una
+  // rete via API (che importa da @/lib/db) il monitoring default non partiva.
+  // Allineata a db-tenant; seedDefaultJobsForNetwork opera sul tenant corrente (getDb).
+  try {
+    const { seedDefaultJobsForNetwork } = require("./db-tenant") as {
+      seedDefaultJobsForNetwork: (networkId: number, idx: number, total: number) => void;
+    };
+    const existingNets = (getDb().prepare("SELECT COUNT(*) AS n FROM networks").get() as { n: number }).n;
+    const idx = Math.max(0, existingNets - 1);
+    seedDefaultJobsForNetwork(networkId, idx, Math.max(1, existingNets));
+  } catch (err) {
+    console.warn(`[createNetwork] seed default jobs failed per network ${networkId}:`, err);
+  }
+
+  return getDb().prepare("SELECT * FROM networks WHERE id = ?").get(networkId) as Network;
 }
 
 export function updateNetwork(id: number, input: Partial<NetworkInput>): Network | undefined {

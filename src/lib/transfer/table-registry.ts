@@ -26,8 +26,11 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "multihomed_links", scope: "tenant", tier: "config" },
   { table: "device_classifications_custom", scope: "tenant", tier: "config" },
   { table: "proxmox_hosts", scope: "tenant", tier: "config" },
+  { table: "mdm_config", scope: "tenant", tier: "config", secretColumns: ["password_encrypted"] },
+  { table: "edge_scan_schedules", scope: "tenant", tier: "config" },
   // --- asset (default ON) ---
   { table: "hosts", scope: "tenant", tier: "asset" },
+  { table: "mobile_devices", scope: "tenant", tier: "asset" },
   { table: "inventory_assets", scope: "tenant", tier: "asset" },
   { table: "asset_assignees", scope: "tenant", tier: "asset" },
   { table: "locations", scope: "tenant", tier: "asset" },
@@ -50,8 +53,15 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "switch_ports", scope: "tenant", tier: "history" },
   { table: "routing_table", scope: "tenant", tier: "history" },
   { table: "device_neighbors", scope: "tenant", tier: "history" },
+  { table: "mobile_inventory_history", scope: "tenant", tier: "history" },
+  { table: "mc_remote_session", scope: "tenant", tier: "history" }, // sessioni remote effimere
+  { table: "mc_command_log", scope: "tenant", tier: "history" },    // audit comandi RMM
   // --- mirror (default ON) ---
   { table: "software_inventory", scope: "tenant", tier: "mirror" },
+  { table: "mobile_device_inventory", scope: "tenant", tier: "mirror" },
+  { table: "mobile_device_apps", scope: "tenant", tier: "mirror" },
+  { table: "mc_node", scope: "tenant", tier: "mirror" },      // mapping host→nodo MeshCentral
+  { table: "mc_node_bind", scope: "tenant", tier: "mirror" },
   { table: "wazuh_agent", scope: "tenant", tier: "mirror" },
   { table: "wazuh_hw", scope: "tenant", tier: "mirror" },
   { table: "wazuh_os", scope: "tenant", tier: "mirror" },

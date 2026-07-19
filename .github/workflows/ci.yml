@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, feature/**, bugfix/**]
+    branches: [main, dev, feature/**, bugfix/**]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 # Annulla esecuzioni precedenti su stessa branch quando arriva un nuovo push.
 concurrency:
@@ -39,6 +39,12 @@ jobs:
 
       - name: Type check
         run: npx tsc --noEmit
+
+      - name: Test (hub)
+        run: npm test
+        env:
+          ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+          AUTH_SECRET: "0000000000000000000000000000000000000000000000000000000000000000"
 
       - name: Build production
         run: npm run build

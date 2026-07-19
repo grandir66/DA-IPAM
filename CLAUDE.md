@@ -34,7 +34,7 @@ git push origin <branch>  # senza push, il server in produzione non vede la nuov
 ## Architettura
 
 - **Hub vs Tenant** → DB tenant per dati cliente; hub solo utenti, registry tenant, settings globali, profili template. Tabella mapping in [docs/CLAUDE-legacy-20260511.md](docs/CLAUDE-legacy-20260511.md).
-- **Facade DB** → `src/lib/db-legacy.ts` mantiene backward-compat; `src/lib/db.ts` fa fallback a DEFAULT tenant.
+- **Facade DB** → `src/lib/db.ts` è il facade con fallback a DEFAULT tenant; sorgente per-tenant in `db-tenant.ts`, hub in `db-hub.ts`. (`db-legacy.ts` rimosso in v0.3.151, era codice morto — vedi [ADR 0001](docs/adr/0001-remove-db-legacy.md).)
 - **Tenant context** → `src/lib/api-tenant.ts` `withTenantFromSession()`, usato da ~65 API routes.
 - **Scheduler** → `server.ts` custom server con node-cron; prod gira con `npm start`, non `next start`.
 
@@ -51,7 +51,7 @@ git push origin <branch>  # senza push, il server in produzione non vede la nuov
 9. **Liste UI → LIMIT/paginazione** (`getXxxPaginated()`). Mai full table scan al frontend.
 10. **Schema DB**: nessun framework migrazioni. Modifiche schema → editare `db-hub-schema.ts`/`db-tenant-schema.ts` + `ALTER TABLE` inline idempotente nello stesso file. Mai DROP/ALTER ad-hoc.
 11. **Hub vs Tenant**: dati specifici cliente → DB tenant. Hub contiene solo utenti, registry tenant, settings globali, profili template.
-12. **Triplica le funzioni DB**: modifiche a una funzione DB verificare presenza in `db-tenant.ts`, `db.ts`, `db-legacy.ts` (facade backward-compat). Non lasciare divergenze.
+12. **Coerenza funzioni DB**: modifiche a una funzione DB → verificare presenza in `db-tenant.ts` (+ `db-hub.ts` se hub); `db.ts` è facade. Non lasciare divergenze. (Prima era "triplica" con `db-legacy.ts`, rimosso in v0.3.151.)
 13. **TypeScript strict, no `any`**. Functional components, named exports. Testo UI/errori **in italiano**. Server Components per letture; client fetch + `router.refresh()` per mutazioni. Palette Domarc: Primary `#00A7E7`, Navy `#0D2537`, Gold `#FFD400`, BG `#EDEDED`.
 
 ## Verifica obbligatoria post-modifica

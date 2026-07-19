@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
+import { parseJsonSafe } from "@/lib/json-safe";
 import {
   getSnmpVendorProfiles,
   createSnmpVendorProfile,
@@ -52,12 +53,7 @@ export async function GET(request: NextRequest) {
   }
 
   const enriched = profiles.map((p) => {
-    let dbFields: Record<string, string | string[] | undefined> = {};
-    try {
-      dbFields = JSON.parse(p.fields || "{}") as Record<string, string | string[] | undefined>;
-    } catch {
-      /* ignore */
-    }
+    const dbFields = parseJsonSafe<Record<string, string | string[] | undefined>>(p.fields, {});
     const mergedFields = mergeProfileFieldsWithOidLibrary(p.profile_id, p.category, dbFields);
     return {
       ...p,

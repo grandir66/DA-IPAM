@@ -10,6 +10,7 @@ import {
 import { coerceProtocolForVendor } from "@/lib/vendor-device-profile";
 import { encrypt } from "@/lib/crypto";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { parseJsonSafe } from "@/lib/json-safe";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 
@@ -72,12 +73,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       source: b.credential_id ? "archive" as const : "inline" as const,
     }));
 
-    let stp_info: unknown = null;
-    if (device.stp_info) {
-      try {
-        stp_info = JSON.parse(device.stp_info);
-      } catch { /* invalid JSON */ }
-    }
+    const stp_info: unknown = parseJsonSafe<unknown>(device.stp_info, null);
 
     let device_info: Record<string, unknown> | null = null;
     if (device.last_device_info_json) {

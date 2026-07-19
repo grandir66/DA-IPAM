@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getNetworkById, getHostsByNetwork, getDb, getFingerprintClassificationRulesForResolve } from "@/lib/db";
 import { getCustomClassificationBySlug } from "@/lib/db-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { parseJsonSafe } from "@/lib/json-safe";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { classifyDevice } from "@/lib/device-classifier";
 import { getClassificationFromFingerprintSnapshot } from "@/lib/device-fingerprint-classification";
@@ -118,14 +119,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           ? host.vendor
           : (changes.includes("vendor") ? values[fields.indexOf("vendor = ?")]  as string : host.vendor);
 
-        let fpSnap: DeviceFingerprintSnapshot | null = null;
-        if (host.detection_json) {
-          try {
-            fpSnap = JSON.parse(host.detection_json) as DeviceFingerprintSnapshot;
-          } catch {
-            /* ignore */
-          }
-        }
+        const fpSnap = parseJsonSafe<DeviceFingerprintSnapshot | null>(host.detection_json, null);
         const fromFingerprint = fpSnap ? getClassificationFromFingerprintSnapshot(fpSnap, fpUserRules) : undefined;
         const fromRules = classifyDevice({
           sysDescr: fpSnap?.snmp_sysdescr ?? host.os_info ?? null,

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCredentialById, updateCredential, deleteCredential } from "@/lib/db";
 import { CredentialSchema } from "@/lib/validators";
-import { encrypt, decrypt } from "@/lib/crypto";
+import { encrypt, safeDecrypt } from "@/lib/crypto";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
@@ -22,9 +22,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       }
       let username: string | null = null;
       if (forEdit && credential.encrypted_username) {
-        try {
-          username = decrypt(credential.encrypted_username);
-        } catch { /* ignore */ }
+        username = safeDecrypt(credential.encrypted_username);
       }
       return NextResponse.json({
         ...credential,

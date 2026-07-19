@@ -11,7 +11,7 @@ import {
   reorderDeviceCredentialBindings,
   updateBindingTestStatus,
 } from "@/lib/db";
-import { encrypt, decrypt } from "@/lib/crypto";
+import { encrypt, safeDecrypt } from "@/lib/crypto";
 
 /**
  * GET /api/devices/:id/credentials — lista bindings credenziali per device
@@ -207,7 +207,7 @@ async function testBinding(
         password = pair?.password;
       } else {
         username = binding.inline_username ?? undefined;
-        password = binding.inline_encrypted_password ? decrypt(binding.inline_encrypted_password) : undefined;
+        password = binding.inline_encrypted_password ? (safeDecrypt(binding.inline_encrypted_password) ?? undefined) : undefined;
       }
       if (!username) return { success: false, message: "Username mancante" };
       if (!password) return { success: false, message: "Password mancante" };
@@ -240,7 +240,7 @@ async function testBinding(
         const { getCredentialCommunityString } = await import("@/lib/db");
         community = getCredentialCommunityString(binding.credential_id) ?? "public";
       } else {
-        community = binding.inline_encrypted_password ? decrypt(binding.inline_encrypted_password) : "public";
+        community = binding.inline_encrypted_password ? (safeDecrypt(binding.inline_encrypted_password) ?? "public") : "public";
       }
       const snmp = await import("net-snmp");
       const session = snmp.createSession(host, community, { port: binding.port, timeout: 5000 });
@@ -267,7 +267,7 @@ async function testBinding(
         password = pair?.password;
       } else {
         username = binding.inline_username ?? undefined;
-        password = binding.inline_encrypted_password ? decrypt(binding.inline_encrypted_password) : undefined;
+        password = binding.inline_encrypted_password ? (safeDecrypt(binding.inline_encrypted_password) ?? undefined) : undefined;
       }
       if (!username) return { success: false, message: "Username mancante" };
       try {

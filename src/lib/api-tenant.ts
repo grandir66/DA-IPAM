@@ -30,6 +30,19 @@ export async function getTenantMode(): Promise<
  * Esegue una funzione nel contesto del tenant corrente (da sessione JWT).
  * Ritorna NextResponse di errore se non autenticato o nessun tenant selezionato.
  */
+/**
+ * Risolve il tenant per un'operazione tenant-scoped (H2).
+ * `__ALL__` (vista aggregata superadmin) NON è ammesso: le viste aggregate usano
+ * `queryAllTenants` e non arrivano qui; ogni operazione su un singolo DB tenant
+ * richiede un tenant esplicito. Assenza di tenant (single-tenant/legacy) → DEFAULT.
+ */
+export function resolveSessionTenant(
+  tenantCode: string | null | undefined,
+): { ok: true; tenant: string } | { ok: false } {
+  if (tenantCode === "__ALL__") return { ok: false };
+  return { ok: true, tenant: tenantCode || "DEFAULT" };
+}
+
 export async function withTenantFromSession<T>(
   fn: () => T | Promise<T>
 ): Promise<T | NextResponse> {
@@ -37,12 +50,14 @@ export async function withTenantFromSession<T>(
   if (!session?.user) {
     return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
   }
-  let tenantCode = session.user.tenantCode;
-  // __ALL__ for superadmin: fallback to DEFAULT for single-tenant operations
-  if (!tenantCode || tenantCode === "__ALL__") {
-    tenantCode = "DEFAULT";
+  const resolved = resolveSessionTenant(session.user.tenantCode);
+  if (!resolved.ok) {
+    return NextResponse.json(
+      { error: "Vista aggregata attiva: seleziona un tenant specifico per questa operazione." },
+      { status: 409 },
+    );
   }
-  return withTenant(tenantCode, () => fn());
+  return withTenant(resolved.tenant, () => fn());
 }
 
 /**

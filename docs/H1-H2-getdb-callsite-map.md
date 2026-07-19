@@ -51,13 +51,18 @@ aggregata superadmin) a `"DEFAULT"`. Conseguenza:
 - **Mutazioni** in modalità `__ALL__`: una POST/PUT/DELETE scrive su **DEFAULT.db**, non sul
   tenant inteso. ← bug reale, ma path stretto (solo superadmin in vista "tutti i tenant").
 
-### Fix proposto per H2 (bounded, sicuro — da approvare)
+### Fix H2 — FATTO (v0.3.153)
 
-Bloccare **le mutazioni** quando `tenantCode === "__ALL__"`: invece di rimappare a DEFAULT,
-ritornare `409 "Seleziona un tenant specifico per questa operazione"`. Non tocca le letture, non
-rischia cross-contamination (la previene), impatta solo il path superadmin-aggregato. Richiede di
-distinguere mutazione da lettura in `withTenantFromSession` (oggi non lo sa) → o un helper
-`withTenantMutation()` dedicato, o il check nelle route mutanti.
+`withTenantFromSession` **non rimappa più** `__ALL__` a DEFAULT: ritorna **409** "seleziona un
+tenant specifico". La decisione è estratta in `resolveSessionTenant(tenantCode)` (pura, testata in
+`src/lib/__tests__/resolve-session-tenant.test.ts`). Verificato sicuro per le letture: le 4 viste
+aggregate (networks/hosts/devices/search) usano `queryAllTenants` e branchano **prima** di
+arrivare qui, quindi non ricevono il 409; nessun test codificava il vecchio comportamento; build
+di produzione completo verde su tutte le 181 route.
+
+**Nota residua** (non-distruttiva): `getServerTenantCode()` (letture Server Component) rimappa
+ancora `__ALL__`→DEFAULT. È solo lettura (nessun rischio di scrittura sul tenant sbagliato);
+allinearla al 409 è un follow-up minore di coerenza, non di sicurezza.
 
 ## Raccomandazioni per WAVE 5
 

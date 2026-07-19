@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { requireAuth, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 /**
  * Test SNMP connectivity on a host.
  * GET /api/test-snmp?host=192.168.1.1&community=public
+ * Probe SNMP verso host arbitrario (audit SEC-9): solo admin.
  */
 export async function GET(request: Request) {
-  const authCheck = await requireAuth();
+  const authCheck = await requireAdmin();
   if (isAuthError(authCheck)) return authCheck;
   const { searchParams } = new URL(request.url);
   const host = searchParams.get("host");

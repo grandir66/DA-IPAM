@@ -30,6 +30,9 @@ const CONTRACT: Contract[] = [
   { route: "devices/test-provisional", method: "POST", guard: "requireAdmin" },
   { route: "analytics/anomalies/[id]", method: "PATCH", guard: "requireAdmin" },
   { route: "analytics/anomalies/[id]", method: "DELETE", guard: "requireAdmin" },
+  // probe diagnostici verso host/credenziali arbitrari (audit SEC-9)
+  { route: "test-snmp", method: "GET", guard: "requireAdmin" },
+  { route: "test-arp", method: "GET", guard: "requireAdmin" },
   { route: "credentials/[id]", method: "PUT", guard: "requireAdmin" },
   { route: "credentials/[id]", method: "DELETE", guard: "requireAdmin" },
 ];

@@ -12,9 +12,9 @@ Modello: `withTenantFromSession` impone l'autenticazione (401 senza sessione) ma
 - 🔴 **FLAG (mutazione senza requireAdmin, o nessuna guardia): 11**
   - mutazioni (POST/PUT/PATCH/DELETE) eseguibili da viewer: **6**
   - endpoint `none` (nessuna guardia rilevata, non pubblici): **7**
-- 🟡 **REVIEW (letture sensibili da valutare admin + POST): 14**
+- 🟡 **REVIEW (letture sensibili da valutare admin + POST): 12**
 
-Distribuzione guardia attuale: `superadmin`=0 · `admin`=232 · `auth`=100 · `session-only`=54 · `none`=13
+Distribuzione guardia attuale: `superadmin`=0 · `admin`=234 · `auth`=99 · `session-only`=53 · `none`=13
 
 ## 🔴 FLAG — da correggere (Wave 1)
 
@@ -48,8 +48,6 @@ Distribuzione guardia attuale: `superadmin`=0 · `admin`=232 · `auth`=100 · `s
 | `/api/networks/[id]/credentials` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/networks/[id]/test-dns` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 | `/api/networks/[id]/test-snmp` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
-| `/api/test-arp` | GET | `session-only` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
-| `/api/test-snmp` | GET | `auth` | lettura sensibile (credenziali/segreti/trigger) → valutare admin + POST |
 
 ## Inventario completo
 
@@ -439,8 +437,8 @@ Distribuzione guardia attuale: `superadmin`=0 · `admin`=232 · `auth`=100 · `s
 | `/api/tenants/[id]/agent/test` | POST | `admin` | `admin` |  |
 | `/api/tenants/[id]/agent/token` | POST | `admin` | `admin` |  |
 | `/api/tenants/[id]/agent/token/import` | POST | `admin` | `admin` |  |
-| `/api/test-arp` | GET | `session-only` | `auth` | 🟡 |
-| `/api/test-snmp` | GET | `auth` | `auth` | 🟡 |
+| `/api/test-arp` | GET | `admin` | `auth` |  |
+| `/api/test-snmp` | GET | `admin` | `auth` |  |
 | `/api/tls` | GET | `admin` | `auth` |  |
 | `/api/tls` | POST | `admin` | `admin` |  |
 | `/api/user/preferences` | GET | `auth` | `auth` |  |

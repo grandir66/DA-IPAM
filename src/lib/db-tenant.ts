@@ -948,6 +948,22 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.warn(`[db-tenant] ${tenantCode}: migrazione networks.targeting_mode fallita:`, e);
   }
 
+  // Assessment IPAM-driven (2026-07-21): post-scan moduli sull'edge.
+  try {
+    const netCols = newDb.prepare("PRAGMA table_info(networks)").all() as Array<{ name: string }>;
+    const names = new Set(netCols.map((c) => c.name));
+    if (names.size > 0 && !names.has("assessment_enabled")) {
+      newDb.exec("ALTER TABLE networks ADD COLUMN assessment_enabled INTEGER NOT NULL DEFAULT 0");
+      console.info(`[db-tenant] ${tenantCode}: aggiunta networks.assessment_enabled`);
+    }
+    if (names.size > 0 && !names.has("assessment_profile_id")) {
+      newDb.exec("ALTER TABLE networks ADD COLUMN assessment_profile_id TEXT");
+      console.info(`[db-tenant] ${tenantCode}: aggiunta networks.assessment_profile_id`);
+    }
+  } catch (e) {
+    console.warn(`[db-tenant] ${tenantCode}: migrazione networks.assessment_* fallita:`, e);
+  }
+
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
   return newDb;
 }
@@ -1268,6 +1284,18 @@ export function setNetworkTargetingMode(
   db()
     .prepare("UPDATE networks SET targeting_mode = ?, updated_at = datetime('now') WHERE id = ?")
     .run(mode, id);
+}
+
+export function setNetworkAssessmentConfig(
+  id: number,
+  opts: { enabled: boolean; profileId: string | null },
+): void {
+  db()
+    .prepare(
+      `UPDATE networks SET assessment_enabled = ?, assessment_profile_id = ?,
+       updated_at = datetime('now') WHERE id = ?`,
+    )
+    .run(opts.enabled ? 1 : 0, opts.profileId, id);
 }
 
 export function deleteNetwork(id: number): boolean {

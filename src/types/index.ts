@@ -22,6 +22,9 @@ export interface Network {
   snmp_community: string | null;
   dns_server: string | null;
   targeting_mode: "full_subnet" | "found_ips" | "populated_24" | null;
+  /** Post-scan assessment sull'edge (tls-deep, enum, …). */
+  assessment_enabled: number | null;
+  assessment_profile_id: string | null;
   created_at: string;
   updated_at: string;
 }

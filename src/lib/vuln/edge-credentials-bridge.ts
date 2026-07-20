@@ -4,6 +4,7 @@
  */
 
 import {
+  getAdRealm,
   getCredentialById,
   getCredentialCommunityString,
   getCredentialLoginPair,
@@ -16,7 +17,7 @@ import {
   buildSnmpCommunitiesForNetwork,
 } from "@/lib/db";
 
-export type EdgeCredentialSlot = "ssh" | "smb" | "snmp";
+export type EdgeCredentialSlot = "ssh" | "smb" | "snmp" | "ad";
 
 export interface EdgeCredentialPreview {
   credential_id: number | null;
@@ -34,8 +35,22 @@ export interface EdgeCredentialTransfer {
   login?: string;
   password?: string;
   community?: string;
+  domain?: string;
   ipam_credential_id?: number;
   sort_order: number;
+}
+
+function splitWindowsLogin(raw: string): { login: string; domain: string | null } {
+  const s = raw.trim();
+  if (s.includes("\\")) {
+    const [domain, login] = s.split("\\", 2);
+    return { login: (login || s).trim(), domain: domain.trim() || null };
+  }
+  if (s.includes("@")) {
+    const [login, domain] = s.split("@", 2);
+    return { login: (login || s).trim(), domain: (domain || "").trim() || null };
+  }
+  return { login: s, domain: null };
 }
 
 function slotForType(credentialType: string): EdgeCredentialSlot | null {
@@ -84,15 +99,18 @@ function buildTransferFromCredential(
     };
   }
 
-  if (slot === "smb") {
+  if (slot === "smb" || slot === "ad") {
     const pair = getCredentialLoginPair(credentialId, "windows");
     if (!pair) return null;
+    const parsed = splitWindowsLogin(pair.username);
+    const realm = getAdRealm()?.realm ?? null;
     return {
-      slot: "smb",
-      name: baseName,
+      slot,
+      name: slot === "ad" ? `${baseName} (AD)`.slice(0, 80) : baseName,
       cred_type: "up",
-      login: pair.username,
+      login: parsed.login,
       password: pair.password,
+      domain: parsed.domain ?? realm ?? undefined,
       ipam_credential_id: credentialId,
       sort_order: sortOrder,
     };
@@ -143,6 +161,24 @@ export function collectEdgeCredentialsForNetwork(networkId: number): {
   }
   for (const credId of getOrderedDetectCredentialIds(networkId, "windows")) {
     pushCred(credId, "smb");
+  }
+  // Slot AD per assessment cred-bind (stesse cred Windows, payload dedicato edge).
+  const smbIds = transfer.filter((t) => t.slot === "smb").map((t) => t.ipam_credential_id);
+  for (const credId of smbIds) {
+    if (credId == null) continue;
+    const adSpec = buildTransferFromCredential(credId, "ad", order);
+    order += 1;
+    if (adSpec) {
+      transfer.push(adSpec);
+      const cred = getCredentialById(credId);
+      preview.push({
+        credential_id: credId,
+        name: cred?.name ?? `cred #${credId}`,
+        credential_type: "windows",
+        slot: "ad",
+        selected_for_scan: true,
+      });
+    }
   }
   for (const credId of getNetworkHostCredentialIds(networkId, "snmp")) {
     pushCred(credId, "snmp");

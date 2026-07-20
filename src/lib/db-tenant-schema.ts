@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS networks (
   snmp_community TEXT,
   dns_server TEXT,
   targeting_mode TEXT DEFAULT 'full_subnet',
+  assessment_enabled INTEGER NOT NULL DEFAULT 0,
+  assessment_profile_id TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

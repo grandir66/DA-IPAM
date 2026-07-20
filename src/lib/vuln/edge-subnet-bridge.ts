@@ -2,7 +2,12 @@
  * Bridge subnet DA-IPAM → scanner-edge (ensure network + trigger Greenbone scan).
  */
 
-import { getNetworkById, getHostsByNetwork, setNetworkTargetingMode } from "@/lib/db";
+import {
+  getNetworkById,
+  getHostsByNetwork,
+  setNetworkTargetingMode,
+  setNetworkAssessmentConfig,
+} from "@/lib/db";
 import {
   collectEdgeCredentialsForNetwork,
   type EdgeCredentialPreview,
@@ -21,6 +26,11 @@ import { nearestIntervalForFrequency, type Frequency } from "@/lib/vuln/cron-bui
 
 export type EdgeScanProfile = "fast" | "balanced" | "deep";
 export type EdgeTargetingMode = "full_subnet" | "found_ips" | "populated_24";
+export type AssessmentProfileId =
+  | "smoke-interno"
+  | "safe-interno"
+  | "validation-plus"
+  | "interno-approfondito";
 
 export interface EdgeSubnetLastScan {
   id: number;
@@ -49,6 +59,8 @@ export interface EdgeSubnetStatus {
   scannerName: string | null;
   ipamCredentials: EdgeCredentialPreview[];
   targeting_mode: EdgeTargetingMode;
+  assessment_enabled: boolean;
+  assessment_profile_id: AssessmentProfileId | null;
   edgeNetwork: {
     network_id: number;
     cidr: string;
@@ -64,12 +76,25 @@ export interface EdgeSubnetStatus {
   } | null;
 }
 
+function assessmentFromNetwork(network: { assessment_enabled?: number | null; assessment_profile_id?: string | null } | null | undefined): {
+  assessment_enabled: boolean;
+  assessment_profile_id: AssessmentProfileId | null;
+} {
+  const enabled = Number(network?.assessment_enabled ?? 0) === 1;
+  const pid = (network?.assessment_profile_id || "").trim() || null;
+  return {
+    assessment_enabled: enabled,
+    assessment_profile_id: (pid as AssessmentProfileId | null) ?? null,
+  };
+}
+
 export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubnetStatus> {
   const scanner = getActiveEdgeScanner();
   const network = getNetworkById(networkId);
   const { preview: ipamCredentials } = collectEdgeCredentialsForNetwork(networkId);
   const targetingMode: EdgeTargetingMode =
     (network?.targeting_mode as EdgeTargetingMode | null) ?? "full_subnet";
+  const assessment = assessmentFromNetwork(network);
 
   if (!network || !scanner) {
     return {
@@ -78,6 +103,7 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
       scannerName: scanner?.name ?? null,
       ipamCredentials,
       targeting_mode: targetingMode,
+      ...assessment,
       edgeNetwork: null,
     };
   }
@@ -105,6 +131,7 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
         scannerName: scanner.name,
         ipamCredentials,
         targeting_mode: targetingMode,
+        ...assessment,
         edgeNetwork: null,
       };
     }
@@ -115,6 +142,7 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
       scannerName: scanner.name,
       ipamCredentials,
       targeting_mode: targetingMode,
+      ...assessment,
       edgeNetwork: {
         network_id: lookup.network_id,
         cidr: lookup.cidr ?? network.cidr,
@@ -132,25 +160,62 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
       scannerName: scanner.name,
       ipamCredentials,
       targeting_mode: targetingMode,
+      ...assessment,
       edgeNetwork: null,
     };
   }
 }
 
+function tcpPortsFromHost(openPortsJson: string | null): string | null {
+  if (!openPortsJson?.trim()) return null;
+  try {
+    const parsed = JSON.parse(openPortsJson) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const ports = parsed
+      .map((p) => {
+        if (typeof p === "number") return p;
+        if (p && typeof p === "object" && "port" in p) {
+          return Number((p as { port: unknown }).port);
+        }
+        return NaN;
+      })
+      .filter((n) => Number.isFinite(n) && n > 0);
+    return ports.length ? [...new Set(ports)].join(",") : null;
+  } catch {
+    return null;
+  }
+}
+
 function buildEdgeEnsureBody(
   networkId: number,
-  opts: { syncHosts?: boolean; syncCredentials?: boolean; targetingMode?: EdgeTargetingMode; label?: string } = {},
+  opts: {
+    syncHosts?: boolean;
+    syncCredentials?: boolean;
+    targetingMode?: EdgeTargetingMode;
+    label?: string;
+    assessmentEnabled?: boolean;
+    assessmentProfileId?: string | null;
+  } = {},
 ): Record<string, unknown> {
   const network = getNetworkById(networkId);
   if (!network) throw new Error("Rete non trovata");
 
   const syncHosts = opts.syncHosts !== false;
   const syncCredentials = opts.syncCredentials !== false;
+  const assessment = assessmentFromNetwork(network);
+  const assessmentEnabled =
+    opts.assessmentEnabled != null ? opts.assessmentEnabled : assessment.assessment_enabled;
+  const assessmentProfileId =
+    opts.assessmentProfileId !== undefined
+      ? opts.assessmentProfileId
+      : assessment.assessment_profile_id;
 
   const body: Record<string, unknown> = {
     cidr: network.cidr,
     label: opts.label ?? (network.name || network.description || `IPAM #${network.id}`),
     ipam_network_id: network.id,
+    assessment_enabled: assessmentEnabled,
+    assessment_profile_id: assessmentEnabled ? assessmentProfileId : null,
   };
 
   if (syncHosts) {
@@ -167,6 +232,7 @@ function buildEdgeEnsureBody(
         ...(c.login ? { login: c.login } : {}),
         ...(c.password ? { password: c.password } : {}),
         ...(c.community ? { community: c.community } : {}),
+        ...(c.domain ? { domain: c.domain } : {}),
         ...(c.ipam_credential_id != null ? { ipam_credential_id: c.ipam_credential_id } : {}),
         sort_order: c.sort_order,
       }));
@@ -183,12 +249,20 @@ function buildEdgeEnsureBody(
 function hostsForEdgeSync(networkId: number) {
   return getHostsByNetwork(networkId)
     .filter((h) => h.status !== "offline")
-    .map((h) => ({
-      ip: h.ip,
-      hostname: h.hostname || h.custom_name || h.dns_forward || null,
-      mac: h.mac,
-      status: h.status,
-    }));
+    .map((h) => {
+      const cls = String(h.classification || "").toLowerCase();
+      const adJoined =
+        cls.includes("domain") || cls.includes("ad_") || cls.includes("windows") ? 1 : null;
+      return {
+        ip: h.ip,
+        hostname: h.hostname || h.custom_name || h.dns_forward || null,
+        mac: h.mac,
+        status: h.status,
+        classification: h.classification || null,
+        tcp_ports: tcpPortsFromHost(h.open_ports),
+        ad_joined: adJoined,
+      };
+    });
 }
 
 /**
@@ -228,6 +302,8 @@ export async function triggerSubnetEdgeScan(
     syncCredentials?: boolean;
     runArp?: boolean;
     targetingMode?: EdgeTargetingMode;
+    assessmentEnabled?: boolean;
+    assessmentProfileId?: AssessmentProfileId | null;
   } = {},
 ): Promise<{
   ok: boolean;
@@ -251,6 +327,15 @@ export async function triggerSubnetEdgeScan(
   const syncCredentials = opts.syncCredentials !== false;
 
   try {
+    if (opts.assessmentEnabled != null) {
+      setNetworkAssessmentConfig(networkId, {
+        enabled: opts.assessmentEnabled,
+        profileId: opts.assessmentEnabled
+          ? (opts.assessmentProfileId ?? "validation-plus")
+          : null,
+      });
+    }
+
     const ensured = await edgeApiPost<{
       ok: boolean;
       network_id: number;
@@ -259,7 +344,13 @@ export async function triggerSubnetEdgeScan(
     }>(
       scanner,
       "/api/v1/networks/ensure",
-      buildEdgeEnsureBody(networkId, { syncHosts, syncCredentials, targetingMode: opts.targetingMode }),
+      buildEdgeEnsureBody(networkId, {
+        syncHosts,
+        syncCredentials,
+        targetingMode: opts.targetingMode,
+        assessmentEnabled: opts.assessmentEnabled,
+        assessmentProfileId: opts.assessmentProfileId,
+      }),
       { timeoutMs: 120000 },
     );
 

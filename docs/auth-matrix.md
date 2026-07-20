@@ -1,6 +1,6 @@
 # Matrice auth API — DA-IPAM
 
-> Generato da `scripts/audit-api-auth.ts` · 2026-07-19 · analisi euristica, i FLAG vanno confermati.
+> Generato da `scripts/audit-api-auth.ts` · 2026-07-20 · analisi euristica, i FLAG vanno confermati.
 
 ## Riepilogo
 

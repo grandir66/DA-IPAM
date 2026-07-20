@@ -12,9 +12,17 @@ import {
   removeEdgeSubnetSchedule,
   type EdgeScanProfile,
 } from "@/lib/vuln/edge-subnet-bridge";
+import { setNetworkAssessmentConfig } from "@/lib/db";
 import { z } from "zod";
 import { buildCron } from "@/lib/vuln/cron-builder";
 import { getEdgeSchedule, deleteEdgeSchedule } from "@/lib/vuln/edge-schedule-store";
+
+const assessmentProfileSchema = z.enum([
+  "smoke-interno",
+  "safe-interno",
+  "validation-plus",
+  "interno-approfondito",
+]);
 
 const postSchema = z.object({
   profile: z.enum(["fast", "balanced", "deep"]).optional(),
@@ -22,12 +30,16 @@ const postSchema = z.object({
   sync_credentials: z.boolean().optional(),
   run_arp: z.boolean().optional(),
   targeting_mode: z.enum(["full_subnet", "found_ips", "populated_24"]).optional(),
+  assessment_enabled: z.boolean().optional(),
+  assessment_profile_id: assessmentProfileSchema.nullable().optional(),
 });
 
 const scheduleSchema = z.object({
   enabled: z.boolean(),
   profile: z.enum(["fast", "balanced", "deep"]),
   targeting_mode: z.enum(["full_subnet", "found_ips", "populated_24"]).optional(),
+  assessment_enabled: z.boolean().optional(),
+  assessment_profile_id: assessmentProfileSchema.nullable().optional(),
   job_name: z.string().min(1).max(120),
   frequency: z.enum(["daily", "weekly", "monthly"]),
   at_time: z.string().regex(/^\d{1,2}:\d{2}$/),
@@ -75,6 +87,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       syncCredentials: body.sync_credentials,
       runArp: body.run_arp,
       targetingMode: body.targeting_mode,
+      assessmentEnabled: body.assessment_enabled,
+      assessmentProfileId: body.assessment_profile_id,
     });
 
     if (!result.ok) {
@@ -109,6 +123,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       daysOfWeek: body.days_of_week,
       dayOfMonth: body.day_of_month,
     });
+
+    if (body.assessment_enabled != null) {
+      setNetworkAssessmentConfig(networkId, {
+        enabled: body.assessment_enabled,
+        profileId: body.assessment_enabled
+          ? (body.assessment_profile_id ?? "validation-plus")
+          : null,
+      });
+    }
 
     const result = await saveEdgeSubnetSchedule(networkId, {
       enabled: body.enabled,

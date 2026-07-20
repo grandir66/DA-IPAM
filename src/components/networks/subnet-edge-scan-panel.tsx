@@ -25,7 +25,12 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Clock, ExternalLink, Loader2, Save, ShieldAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { EdgeScanProfile, EdgeSubnetStatus, EdgeTargetingMode } from "@/lib/vuln/edge-subnet-bridge";
+import type {
+  AssessmentProfileId,
+  EdgeScanProfile,
+  EdgeSubnetStatus,
+  EdgeTargetingMode,
+} from "@/lib/vuln/edge-subnet-bridge";
 import { ScheduleBuilder, type ScheduleBuilderValue } from "@/components/networks/schedule-builder";
 import { slugifyJobName, type Frequency } from "@/lib/vuln/cron-builder";
 
@@ -33,6 +38,14 @@ const SLOT_LABELS: Record<string, string> = {
   ssh: "SSH / Linux",
   smb: "Windows / SMB",
   snmp: "SNMP",
+  ad: "AD (assessment)",
+};
+
+const ASSESSMENT_PROFILE_LABELS: Record<AssessmentProfileId, string> = {
+  "smoke-interno": "Smoke (verifica orchestrazione)",
+  "safe-interno": "Safe interno",
+  "validation-plus": "Validation plus (AD / TLS / CIS)",
+  "interno-approfondito": "Interno approfondito",
 };
 
 const PROFILE_LABELS: Record<EdgeScanProfile, string> = {
@@ -138,6 +151,9 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
   const [syncHosts, setSyncHosts] = useState(true);
   const [syncCredentials, setSyncCredentials] = useState(true);
   const [targetingMode, setTargetingMode] = useState<EdgeTargetingMode>("full_subnet");
+  const [assessmentEnabled, setAssessmentEnabled] = useState(false);
+  const [assessmentProfileId, setAssessmentProfileId] =
+    useState<AssessmentProfileId>("validation-plus");
 
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleProfile, setScheduleProfile] = useState<EdgeScanProfile>("balanced");
@@ -172,6 +188,10 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
         const saved = data.savedSchedule ?? null;
         // La modalità targeting può vivere sia in savedSchedule sia nello status: preferisci il salvato.
         setTargetingMode(saved?.targeting_mode ?? data.targeting_mode ?? "full_subnet");
+        setAssessmentEnabled(Boolean(data.assessment_enabled));
+        if (data.assessment_profile_id) {
+          setAssessmentProfileId(data.assessment_profile_id);
+        }
         if (saved) {
           setHasSchedule(true);
           setScheduleEnabled(saved.enabled);
@@ -224,13 +244,21 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
       const r = await fetch(`/api/networks/${networkId}/edge-scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile, sync_hosts: syncHosts, sync_credentials: syncCredentials, targeting_mode: targetingMode }),
+        body: JSON.stringify({
+          profile,
+          sync_hosts: syncHosts,
+          sync_credentials: syncCredentials,
+          targeting_mode: targetingMode,
+          assessment_enabled: assessmentEnabled,
+          assessment_profile_id: assessmentEnabled ? assessmentProfileId : null,
+        }),
       });
       const d = (await r.json()) as { ok?: boolean; scan_id?: number; host_count?: number; error?: string };
       if (r.ok && d.ok) {
         toast.success(
           `Scan VA avviato (#${d.scan_id ?? "?"})` +
-            (d.host_count != null ? ` — ${d.host_count} host target` : ""),
+            (d.host_count != null ? ` — ${d.host_count} host target` : "") +
+            (assessmentEnabled ? ` · assessment ${assessmentProfileId}` : ""),
         );
         await refresh();
       } else {
@@ -257,6 +285,8 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
           enabled: scheduleEnabled,
           profile: scheduleProfile,
           targeting_mode: targetingMode,
+          assessment_enabled: assessmentEnabled,
+          assessment_profile_id: assessmentEnabled ? assessmentProfileId : null,
           job_name: jobName.trim(),
           frequency: sched.frequency,
           at_time: sched.at,
@@ -501,9 +531,43 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                         disabled={scanning || disabled || !status.edgeEnabled}
                       />
                       <Label htmlFor={`edge-cred-sync-${networkId}`} className="text-xs leading-snug cursor-pointer">
-                        Trasferisci credenziali subnet allo scanner (SSH / WinRM / SNMP)
+                        Trasferisci credenziali subnet allo scanner (SSH / WinRM / SNMP / AD)
                       </Label>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id={`edge-assessment-${networkId}`}
+                        checked={assessmentEnabled}
+                        onCheckedChange={setAssessmentEnabled}
+                        disabled={scanning || disabled || !status.edgeEnabled}
+                      />
+                      <Label htmlFor={`edge-assessment-${networkId}`} className="text-xs leading-snug cursor-pointer">
+                        Dopo Greenbone esegui anche assessment avanzato
+                      </Label>
+                    </div>
+                    {assessmentEnabled && (
+                      <div className="space-y-1.5 pl-1">
+                        <Label className="text-xs">Profilo assessment</Label>
+                        <Select
+                          value={assessmentProfileId}
+                          onValueChange={(v) => setAssessmentProfileId(v as AssessmentProfileId)}
+                        >
+                          <SelectTrigger className="h-9 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(Object.keys(ASSESSMENT_PROFILE_LABELS) as AssessmentProfileId[]).map((p) => (
+                              <SelectItem key={p} value={p}>
+                                {ASSESSMENT_PROFILE_LABELS[p]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-[11px] text-muted-foreground">
+                          Target e filtri porte dall&apos;inventario IPAM (stessa modalità targeting sopra).
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <Button

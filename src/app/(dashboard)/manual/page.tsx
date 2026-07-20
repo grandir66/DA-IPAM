@@ -7,8 +7,10 @@ import { MarkdownViewer } from "@/components/manual/markdown-viewer";
 import { cn } from "@/lib/utils";
 import { BookOpen, FileText, FileCode, FolderOpen } from "lucide-react";
 
-/** Cartelle dentro docs/ accettate. Tutto il resto è ignorato (sicurezza). */
-const ALLOWED_DIRS = ["", "adr", "playbooks"] as const;
+/** Cartelle dentro docs/ accettate. Tutto il resto è ignorato (sicurezza).
+ *  modules/interni + modules/esterni: documentazione per-modulo (docs/modules),
+ *  prima presente su disco ma non visibile in /manual. */
+const ALLOWED_DIRS = ["", "adr", "playbooks", "modules/interni", "modules/esterni"] as const;
 
 /** Documento di default mostrato all'accesso a /manual senza ?doc=. */
 const DEFAULT_DOC = "manuale-utente";
@@ -16,9 +18,10 @@ const DEFAULT_DOC = "manuale-utente";
 interface DocEntry {
   slug: string;          // es. "manuale-utente" o "playbooks__dr"
   filePath: string;      // path assoluto sul filesystem
-  category: "Manuali" | "Architettura (ADR)" | "Playbook";
+  category: "Manuali" | "Moduli" | "Architettura (ADR)" | "Playbook";
   title: string;         // primo H1 del file, o filename pulito
   filename: string;      // basename per UI
+  relPath: string;       // path relativo a docs/ (per il link GitHub, anche annidato)
 }
 
 /** Trova tutti i .md ammessi in docs/ e sottocartelle whitelisted, restituendo
@@ -38,12 +41,16 @@ async function listDocs(): Promise<DocEntry[]> {
     for (const f of files) {
       if (!f.toLowerCase().endsWith(".md")) continue;
       if (f.toUpperCase() === "README.md" && !dir) continue; // README di docs/ non utile
+      // README.md dell'indice moduli: escluso, l'elenco lo ricostruisce la UI.
+      if (f.toUpperCase() === "README.md") continue;
       const filePath = join(dirPath, f);
       const base = f.replace(/\.md$/i, "");
-      const slug = (dir ? `${dir}__${base}` : base).toLowerCase();
+      // Slug senza slash (i dir annidati come "modules/interni" userebbero "/").
+      const slug = (dir ? `${dir.replace(/\//g, "-")}__${base}` : base).toLowerCase();
       const category: DocEntry["category"] =
         dir === "adr" ? "Architettura (ADR)" :
         dir === "playbooks" ? "Playbook" :
+        dir.startsWith("modules") ? "Moduli" :
         "Manuali";
 
       // Estrae il primo H1 come titolo
@@ -54,11 +61,11 @@ async function listDocs(): Promise<DocEntry[]> {
         if (h1) title = h1[1].trim();
       } catch { /* ignore */ }
 
-      entries.push({ slug, filePath, category, title, filename: f });
+      entries.push({ slug, filePath, category, title, filename: f, relPath: dir ? `${dir}/${f}` : f });
     }
   }
 
-  // Ordine: Manuali (in ordine specifico), ADR (per numero), Playbook (alfabetico)
+  // Ordine: Manuali (specifico), Moduli (alfabetico), ADR (per numero), Playbook.
   const manualPriority: Record<string, number> = {
     "manuale-utente": 1,
     "stati-host-e-discovery": 2,
@@ -66,7 +73,7 @@ async function listDocs(): Promise<DocEntry[]> {
   };
   return entries.sort((a, b) => {
     const catOrder = (c: DocEntry["category"]) =>
-      c === "Manuali" ? 0 : c === "Architettura (ADR)" ? 1 : 2;
+      c === "Manuali" ? 0 : c === "Moduli" ? 1 : c === "Architettura (ADR)" ? 2 : 3;
     const co = catOrder(a.category) - catOrder(b.category);
     if (co !== 0) return co;
     if (a.category === "Manuali") {
@@ -127,7 +134,7 @@ export default async function ManualPage({
               <BookOpen className="h-4 w-4 text-primary" />
               <h2 className="font-semibold text-sm">Documentazione</h2>
             </div>
-            {(["Manuali", "Architettura (ADR)", "Playbook"] as const).map((cat) => {
+            {(["Manuali", "Moduli", "Architettura (ADR)", "Playbook"] as const).map((cat) => {
               const items = grouped[cat] ?? [];
               if (items.length === 0) return null;
               const Icon = cat === "Manuali" ? FileText : cat === "Architettura (ADR)" ? FileCode : FolderOpen;
@@ -168,10 +175,10 @@ export default async function ManualPage({
             <div className="mb-4 pb-3 border-b text-xs text-muted-foreground flex items-center justify-between flex-wrap gap-2">
               <span className="flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5" />
-                <span className="font-mono">{data.entry.category} / {data.entry.filename}</span>
+                <span className="font-mono">{data.entry.category} / {data.entry.relPath}</span>
               </span>
               <a
-                href={`https://github.com/grandir66/DA-IPAM/blob/main/docs/${data.entry.filename}`}
+                href={`https://github.com/grandir66/DA-IPAM/blob/main/docs/${data.entry.relPath}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-primary"

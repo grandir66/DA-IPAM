@@ -226,7 +226,10 @@ Write-Host 'Deploy script di push'
 Set-Content -Path $PushScript -Value ${jsonPsLiteral(p.pushScriptBody)} -Encoding UTF8
 Write-Host "Registrazione scheduled task ogni $IntervalHours h"
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File \\"$PushScript\\" -IngestUrl \\"$IngestUrl\\" -IngestToken \\"$IngestToken\\""
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Hours $IntervalHours) -RepetitionDuration ([TimeSpan]::MaxValue)
+# [TimeSpan]::MaxValue genera Duration P10675199DT... che Task Scheduler rifiuta
+# ("valore fuori intervallo", incident DA-SEVEN/RGSERVER 2026-07-21). 3650gg = di
+# fatto indefinito, ma dentro il range XML accettato. Verificato su Windows reale.
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Hours $IntervalHours) -RepetitionDuration (New-TimeSpan -Days 3650)
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Force | Out-Null
 & $PushScript -IngestUrl $IngestUrl -IngestToken $IngestToken
 Write-Host 'GLPI Agent installato e push configurato'`;

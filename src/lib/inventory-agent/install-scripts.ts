@@ -140,11 +140,13 @@ const WINDOWS_PUSH_SCRIPT_BODY = [
   // il tipo compilato di PS_TRUST_SELF_SIGNED funziona lì dove lo ScriptBlock
   // ServerCertificateValidationCallback si rompe (stesso bug del push choco).
   PS_TRUST_SELF_SIGNED,
+  // L'MSI GLPI Agent NON installa glpi-inventory.exe: installa glpi-inventory.bat
+  // (wrapper del perl\\bin\\glpi-agent.exe). Verificato su Windows reale 2026-07-21.
   "$glpi = @(",
-  '  "$env:ProgramFiles\\GLPI-Agent\\glpi-inventory.exe",',
-  '  "${env:ProgramFiles(x86)}\\GLPI-Agent\\glpi-inventory.exe"',
+  '  "$env:ProgramFiles\\GLPI-Agent\\glpi-inventory.bat",',
+  '  "${env:ProgramFiles(x86)}\\GLPI-Agent\\glpi-inventory.bat"',
   ") | Where-Object { Test-Path $_ } | Select-Object -First 1",
-  'if (-not $glpi) { throw "glpi-inventory.exe non trovato" }',
+  'if (-not $glpi) { throw "glpi-inventory non trovato (GLPI Agent installato?)" }',
   "$tmp = [IO.Path]::GetTempFileName()",
   "try {",
   "  & $glpi --json 2>$null | Set-Content -Path $tmp -Encoding UTF8",
@@ -200,7 +202,9 @@ Set-Content -Path $PushScript -Value ${JSON.stringify(WINDOWS_PUSH_SCRIPT_BODY)}
 
 Write-Host ">>> [4/4] Scheduled Task ogni $IntervalHours h"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File \`"$PushScript\`" -IngestUrl \`"$IngestUrl\`" -IngestToken \`"$IngestToken\`""
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Hours $IntervalHours) -RepetitionDuration ([TimeSpan]::MaxValue)
+# [TimeSpan]::MaxValue -> Duration fuori range, Task Scheduler rifiuta l'XML.
+# 3650gg = indefinito nella pratica ma accettato. Verificato su Windows reale.
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Hours $IntervalHours) -RepetitionDuration (New-TimeSpan -Days 3650)
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Force | Out-Null
 & $PushScript -IngestUrl $IngestUrl -IngestToken $IngestToken
 Write-Host ">>> OK — task: $TaskName"

@@ -13,20 +13,31 @@ import { join } from "node:path";
 
 const ROOT = process.cwd();
 
-interface Fn { name: string; body: string; }
+/** Estrae il corpo di una funzione da `startIdx` bilanciando le graffe (dal primo `{`). */
+function extractBody(src: string, startIdx: number): string {
+  const open = src.indexOf("{", startIdx);
+  if (open < 0) return src.slice(startIdx, startIdx + 200);
+  let depth = 0;
+  for (let j = open; j < src.length; j++) {
+    if (src[j] === "{") depth++;
+    else if (src[j] === "}") {
+      depth--;
+      if (depth === 0) return src.slice(startIdx, j + 1);
+    }
+  }
+  return src.slice(startIdx);
+}
 
-/** Estrae tutte le `export function <name>(...)` con il loro corpo (fino alla prossima). */
+/**
+ * Estrae `export function <name>(...)` col VERO corpo (graffe bilanciate) — così non
+ * iningloba le funzioni non-esportate interposte (che falsavano il confronto).
+ */
 function parseFns(file: string): Map<string, string> {
   const src = readFileSync(join(ROOT, file), "utf8");
   const re = /export function (\w+)\s*[<(]/g;
-  const starts: { name: string; idx: number }[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src))) starts.push({ name: m[1], idx: m.index });
   const out = new Map<string, string>();
-  for (let i = 0; i < starts.length; i++) {
-    const end = i + 1 < starts.length ? starts[i + 1].idx : src.length;
-    out.set(starts[i].name, src.slice(starts[i].idx, end));
-  }
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) out.set(m[1], extractBody(src, m.index));
   return out;
 }
 
@@ -42,6 +53,28 @@ function normalize(body: string): string {
 
 const dbFns = parseFns("src/lib/db.ts");
 const tenantFns = parseFns("src/lib/db-tenant.ts");
+
+// Modalità diff: `npx tsx scripts/audit-db-drift.ts --diff <nomeFunzione>`
+// stampa le righe (normalizzate) presenti in una copia e non nell'altra.
+const diffArg = process.argv.indexOf("--diff");
+if (diffArg >= 0 && process.argv[diffArg + 1]) {
+  const name = process.argv[diffArg + 1];
+  const a = dbFns.get(name);
+  const b = tenantFns.get(name);
+  if (!a || !b) {
+    console.log(`${name}: presente in db.ts=${!!a} db-tenant.ts=${!!b}`);
+    process.exit(0);
+  }
+  const linesA = normalize(a).split(/(?<=;|\{|\})\s*/).map((s) => s.trim()).filter(Boolean);
+  const linesB = normalize(b).split(/(?<=;|\{|\})\s*/).map((s) => s.trim()).filter(Boolean);
+  const setB = new Set(linesB);
+  const setA = new Set(linesA);
+  console.log(`\n### ${name} — solo in db.ts (facade):`);
+  linesA.filter((l) => !setB.has(l)).forEach((l) => console.log("  db>  " + l.slice(0, 160)));
+  console.log(`\n### ${name} — solo in db-tenant.ts (sorgente):`);
+  linesB.filter((l) => !setA.has(l)).forEach((l) => console.log("  tn>  " + l.slice(0, 160)));
+  process.exit(0);
+}
 
 const common: string[] = [];
 for (const name of dbFns.keys()) if (tenantFns.has(name)) common.push(name);

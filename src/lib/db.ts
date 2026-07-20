@@ -2508,7 +2508,7 @@ export function getHostById(id: number): HostDetail | undefined {
     FROM mac_port_entries mpe
     JOIN network_devices nd ON nd.id = mpe.device_id
     WHERE ${MAC_HEX("mpe.mac")} = ? AND nd.device_type = 'switch'
-    ORDER BY mpe.timestamp DESC LIMIT 1
+    ORDER BY mpe.rowid DESC LIMIT 1
   `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; port_name: string; vlan: number | null } | undefined : undefined;
 
   // Dispositivo gestito con stesso IP (es. WINRM, SSH, SNMP)
@@ -4857,28 +4857,11 @@ export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { h
 // ========================
 
 export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types").SwitchPort, "id" | "device_id" | "timestamp">[]): void {
-  const db = getDb();
-  const deleteStmt = db.prepare("DELETE FROM switch_ports WHERE device_id = ?");
-
-  // Valida FK prima dell'inserimento: host_id e trunk_primary_device_id potrebbero essere stale
-  const hostExists = db.prepare("SELECT id FROM hosts WHERE id = ?");
-  const deviceExists = db.prepare("SELECT id FROM network_devices WHERE id = ?");
-
-  const stmt = db.prepare(
-    `INSERT INTO switch_ports (device_id, port_index, port_name, status, speed, duplex, vlan, poe_status, poe_power_mw, mac_count, is_trunk, single_mac, single_mac_vendor, single_mac_ip, single_mac_hostname, host_id, trunk_neighbor_name, trunk_neighbor_port, trunk_primary_device_id, trunk_primary_name, stp_state)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  );
-
-  const replaceAll = db.transaction((items: typeof ports) => {
-    deleteStmt.run(deviceId);
-    for (const p of items) {
-      const hostId = p.host_id != null && hostExists.get(p.host_id) ? p.host_id : null;
-      const trunkDeviceId = p.trunk_primary_device_id != null && deviceExists.get(p.trunk_primary_device_id) ? p.trunk_primary_device_id : null;
-      stmt.run(deviceId, p.port_index, p.port_name, p.status, p.speed, p.duplex, p.vlan, p.poe_status, p.poe_power_mw, p.mac_count, p.is_trunk, p.single_mac, p.single_mac_vendor, p.single_mac_ip, p.single_mac_hostname, hostId, p.trunk_neighbor_name ?? null, p.trunk_neighbor_port ?? null, trunkDeviceId, trunkDeviceId ? (p.trunk_primary_name ?? null) : null, p.stp_state ?? null);
-    }
-  });
-
-  replaceAll(ports);
+  // Delega al sorgente db-tenant: la copia locale era la versione N+1 pre-fix (una
+  // query host/device per porta), mentre db-tenant batcha la validazione FK
+  // (v0.2.645 perf DB4). Stesso pattern di delega di recordHostHeartbeat.
+  const tenant = require("./db-tenant");
+  tenant.upsertSwitchPorts(deviceId, ports);
 }
 
 export function getSwitchPortsByDevice(deviceId: number): import("@/types").SwitchPort[] {

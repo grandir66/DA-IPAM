@@ -6,6 +6,7 @@ import {
   MeshControlClient,
   _setWsConnector,
   isSelfHost,
+  isSelfHostResolved,
   type McWsSocket,
 } from "@/lib/integrations/meshcentral/control-client";
 import type { MeshCreds } from "@/lib/integrations/meshcentral/config";
@@ -318,4 +319,31 @@ test("isSelfHost: loopback e localhost sono locali; un IP pubblico no", () => {
   assert.equal(isSelfHost("https://8.8.8.8:4443/"), false);
   assert.equal(isSelfHost("https://mesh.altro-cliente.it/"), false);
   assert.equal(isSelfHost("non-un-url"), false);
+});
+
+test("isSelfHostResolved: un FQDN che risolve a un IP locale e' self", async () => {
+  // Il caso reale (2026-07-20): l'appliance si installa col proprio nome DNS
+  // (da-ipam.domarc.it), che risolve a un IP di una sua interfaccia. isSelfHost
+  // sincrono non lo vede (confronto stringa); isSelfHostResolved lo risolve.
+  // resolver iniettato: nessun DNS reale nella suite. 127.0.0.1 e' sempre
+  // un'interfaccia locale (lo), quindi il match e' stabile su ogni macchina.
+  const toLoopback = async () => [{ address: "127.0.0.1" }];
+  assert.equal(await isSelfHostResolved("https://appliance.example.it:4443/", toLoopback), true);
+});
+
+test("isSelfHostResolved: un FQDN che risolve altrove NON e' self", async () => {
+  const toPublic = async () => [{ address: "8.8.8.8" }];
+  assert.equal(await isSelfHostResolved("https://mesh.altro-cliente.it:4443/", toPublic), false);
+});
+
+test("isSelfHostResolved: se il DNS fallisce restiamo prudenti (non self)", async () => {
+  const boom = async () => { throw new Error("ENOTFOUND"); };
+  assert.equal(await isSelfHostResolved("https://sconosciuto.example/", boom), false);
+});
+
+test("isSelfHostResolved: loopback/IP locale non chiamano nemmeno il resolver", async () => {
+  let called = false;
+  const spy = async () => { called = true; return []; };
+  assert.equal(await isSelfHostResolved("wss://127.0.0.1:4443/control.ashx", spy), true);
+  assert.equal(called, false, "loopback risolto in sincrono, senza DNS");
 });

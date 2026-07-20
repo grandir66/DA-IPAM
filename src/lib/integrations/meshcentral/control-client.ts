@@ -12,6 +12,7 @@
 
 import WebSocket from "ws";
 import { networkInterfaces } from "os";
+import { lookup as dnsLookup } from "dns/promises";
 import type { MeshCreds } from "./config";
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ export interface McWsSocket {
 export type WsConnector = (
   url: string,
   headers: Record<string, string>,
+  rejectUnauthorized?: boolean,
 ) => McWsSocket;
 
 let overrideConnector: WsConnector | null = null;
@@ -56,13 +58,23 @@ export function _setWsConnector(c: WsConnector | null): void {
  * are sent on the HTTP upgrade request. Node's built-in globalThis.WebSocket
  * cannot set arbitrary headers, so `ws` is required here.
  */
+/** Insieme degli IP di tutte le interfacce locali (loopback incluso). */
+function localInterfaceIps(): Set<string> {
+  const out = new Set<string>();
+  try {
+    for (const addrs of Object.values(networkInterfaces())) {
+      for (const a of addrs ?? []) out.add(a.address.toLowerCase());
+    }
+  } catch {
+    /* ambiente senza accesso alle interfacce: insieme vuoto */
+  }
+  return out;
+}
+
 /**
- * True se l'URL punta a QUESTA macchina (loopback o un IP di una sua interfaccia).
- * Serve a distinguere il MeshCentral co-locato — provisionato da noi, con cert
- * self-signed per costruzione — da un server remoto, per il quale un certificato
- * non verificabile deve restare un errore.
- *
- * Esportata per i test.
+ * True (SINCRONO) se l'URL è già letteralmente questa macchina: loopback o un IP
+ * di una sua interfaccia scritto per esteso. NON risolve i nomi — un FQDN passa
+ * da isSelfHostResolved. Esportata per i test.
  */
 export function isSelfHost(url: string): boolean {
   let host: string;
@@ -73,39 +85,60 @@ export function isSelfHost(url: string): boolean {
   }
   const h = host.toLowerCase().replace(/^\[|\]$/g, "");
   if (h === "localhost" || h === "::1" || h.startsWith("127.")) return true;
+  return localInterfaceIps().has(h);
+}
+
+type DnsResolver = (host: string) => Promise<Array<{ address: string }>>;
+const defaultResolver: DnsResolver = (h) => dnsLookup(h, { all: true });
+
+/**
+ * True se l'URL punta a QUESTA macchina, RISOLVENDO anche gli FQDN.
+ *
+ * Serve perché l'appliance si installa normalmente con il proprio nome DNS
+ * (`da-ipam.domarc.it`), non con l'IP: quel nome risolve a un IP di una sua
+ * interfaccia, ma il confronto stringa di isSelfHost non lo vedeva e faceva
+ * fallire il provisioning con "unable to verify the first certificate" (colto su
+ * 192.168.4.8 il 2026-07-20). Qui si risolve il nome e si controlla se un IP
+ * ottenuto è locale.
+ *
+ * SICUREZZA: risolvere-per-verificare-locale è sicuro. Un attaccante che facesse
+ * puntare un nome a un MIO IP mi farebbe solo connettere a me stesso; e per
+ * scrivere questa config serve gia' l'admin di DA-IPAM. La verifica del cert
+ * resta attiva verso qualunque MeshCentral che NON risolva a un IP locale.
+ * resolver e' iniettabile per i test (niente DNS reale nella suite).
+ */
+export async function isSelfHostResolved(
+  url: string,
+  resolver: DnsResolver = defaultResolver,
+): Promise<boolean> {
+  if (isSelfHost(url)) return true;
+  let host: string;
   try {
-    // networkInterfaces() e' sincrona e locale: nessuna risoluzione DNS, quindi
-    // un hostname che punta altrove non puo' spacciarsi per locale.
-    const ifaces = networkInterfaces();
-    for (const addrs of Object.values(ifaces)) {
-      for (const a of addrs ?? []) {
-        if (a.address.toLowerCase() === h) return true;
-      }
-    }
+    host = new URL(url).hostname;
   } catch {
-    /* ambiente senza accesso alle interfacce: restiamo prudenti */
+    return false;
   }
-  return false;
+  const h = host.toLowerCase().replace(/^\[|\]$/g, "");
+  try {
+    const results = await resolver(h);
+    const locals = localInterfaceIps();
+    return results.some((r) => locals.has(r.address.toLowerCase()));
+  } catch {
+    // DNS non risolve → non possiamo affermare che sia locale: restiamo prudenti.
+    return false;
+  }
 }
 
 function defaultWsConnector(
   url: string,
   headers: Record<string, string>,
+  rejectUnauthorized: boolean,
 ): McWsSocket {
-  // MeshCentral co-locato sull'appliance ha un cert SELF-SIGNED generato da lui
-  // stesso durante il provisioning: verificarlo contro le CA pubbliche fallisce
-  // sempre ("unable to verify the first certificate"). Accettiamo il cert non
-  // verificabile SOLO quando il server è questa stessa macchina — cioè l'istanza
-  // che abbiamo installato noi. Verso un MeshCentral remoto la verifica resta
-  // attiva: lì un cert non valido è un segnale, non una condizione normale.
-  //
-  // Prima serviva MESHCENTRAL_TLS_INSECURE=1 nel .env.local, da scrivere a mano
-  // e con riavvio del servizio: un passaggio manuale invisibile che faceva
-  // fallire il provisioning su ogni appliance nuova (colto su 192.168.4.8 il
-  // 2026-07-20). La env var resta come override esplicito per casi particolari.
-  // Scoped alla SOLA connessione MeshControlClient — NON tocca il TLS globale.
-  const rejectUnauthorized =
-    process.env.MESHCENTRAL_TLS_INSECURE === "1" ? false : !isSelfHost(url);
+  // MeshCentral co-locato ha un cert SELF-SIGNED generato da lui durante l'install:
+  // verificarlo contro le CA pubbliche fallisce sempre. La decisione se accettarlo
+  // (server = questa macchina) e' presa in connect(), che puo' risolvere il DNS in
+  // modo asincrono; qui il valore arriva gia' calcolato. Scoped alla SOLA
+  // connessione MeshControlClient — NON tocca il TLS globale.
   const ws = new WebSocket(url, { headers, rejectUnauthorized });
   return {
     onMessage(cb) {
@@ -197,6 +230,13 @@ export class MeshControlClient {
   private openPromise: Promise<void> | null = null;
   private nextId = 1;
   private readonly pending = new Map<string, PendingRequest>();
+  /**
+   * Errore terminale della connessione (auth close / socket chiuso). Serve a far
+   * fallire SUBITO una richiesta che si registra un attimo dopo la chiusura,
+   * invece di lasciarla scadere a 30s: senza, l'esito dipendeva dall'ordine dei
+   * microtask fra la chiusura e la registrazione del pending.
+   */
+  private terminalError: Error | null = null;
 
   constructor(creds: MeshCreds) {
     this.creds = creds;
@@ -204,7 +244,13 @@ export class MeshControlClient {
 
   private connect(): Promise<void> {
     if (this.openPromise) return this.openPromise;
+    this.openPromise = this.doConnect();
+    return this.openPromise;
+  }
 
+  private async doConnect(): Promise<void> {
+    // Tentativo di connessione nuovo: azzera l'eventuale errore terminale residuo.
+    this.terminalError = null;
     const wsUrl =
       this.creds.serverUrl
         .replace(/^https?/, (p) => (p === "https" ? "wss" : "ws"))
@@ -222,10 +268,21 @@ export class MeshControlClient {
     };
 
     const connector = overrideConnector ?? defaultWsConnector;
-    const sock = connector(wsUrl, headers);
+    // TLS: sotto il seam di test non c'e' socket reale, quindi non serve (e non
+    // deve girare del DNS reale nella suite). Con il connector reale accettiamo il
+    // cert self-signed SOLO se il server risolve a questa macchina, oppure se
+    // l'override esplicito MESHCENTRAL_TLS_INSECURE=1 e' impostato.
+    let rejectUnauthorized = false;
+    if (!overrideConnector) {
+      rejectUnauthorized =
+        process.env.MESHCENTRAL_TLS_INSECURE === "1"
+          ? false
+          : !(await isSelfHostResolved(wsUrl));
+    }
+    const sock = connector(wsUrl, headers, rejectUnauthorized);
     this.sock = sock;
 
-    this.openPromise = new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const connectTimer = setTimeout(
         () => reject(new Error("control.ashx connect timeout")),
         CONNECT_TIMEOUT_MS,
@@ -242,9 +299,10 @@ export class MeshControlClient {
       });
 
       sock.onClose(() => {
+        this.terminalError = this.terminalError ?? new Error("control.ashx connection closed");
         for (const [, p] of this.pending) {
           clearTimeout(p.timer);
-          p.reject(new Error("control.ashx connection closed"));
+          p.reject(this.terminalError);
         }
         this.pending.clear();
       });
@@ -266,6 +324,7 @@ export class MeshControlClient {
           const authErr = new Error(
             `MeshCentral auth/connection closed: ${detail || "unknown"}`,
           );
+          this.terminalError = authErr;
           clearTimeout(connectTimer);
           reject(authErr);
           for (const [, p] of this.pending) {
@@ -300,8 +359,6 @@ export class MeshControlClient {
         }
       });
     });
-
-    return this.openPromise;
   }
 
   private async request(
@@ -311,6 +368,9 @@ export class MeshControlClient {
     await this.connect();
     const sock = this.sock;
     if (!sock) throw new Error("control.ashx socket not available");
+    // La connessione potrebbe essere gia' chiusa (es. auth fallita) fra il
+    // termine di connect() e questo punto: fallisci subito, non a 30s.
+    if (this.terminalError) throw this.terminalError;
 
     const responseid = `req-${this.nextId++}`;
     // tag = responseid: alcune action (es. 'meshes') rimandano SOLO tag. Vedi la
@@ -319,6 +379,11 @@ export class MeshControlClient {
     const payload = JSON.stringify({ action, responseid, tag: responseid, ...extra });
 
     return new Promise<Record<string, unknown>>((resolve, reject) => {
+      // Chiusura arrivata proprio mentre registravamo: niente attesa inutile.
+      if (this.terminalError) {
+        reject(this.terminalError);
+        return;
+      }
       const timer = setTimeout(() => {
         this.pending.delete(responseid);
         reject(new Error(`control.ashx '${action}' timeout`));

@@ -86,6 +86,7 @@ const DEFAULT_CLASS_PRESETS: ClassPreset[] = [
 import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
 import { WazuhHostBadge, type WazuhHostStatus } from "@/components/integrations/wazuh-host-badge";
+import { InstallAgentsDialog } from "@/components/patch/install-agents-dialog";
 import { MeshCentralHostBadge } from "@/components/integrations/meshcentral-host-badge";
 import type { ClassPreset, IconName } from "./preset-types";
 import { PresetsDialog } from "@/components/devices/presets-dialog";
@@ -593,6 +594,8 @@ export default function DiscoveryPage() {
   const [deleteHostRow, setDeleteHostRow] = useState<EnrichedHost | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [testHostRow, setTestHostRow] = useState<EnrichedHost | null>(null);
+  // Riga per cui è aperto il dialog "Installa agent/moduli" (Wazuh/GLPI/Mesh/choco).
+  const [installAgentsRow, setInstallAgentsRow] = useState<EnrichedHost | null>(null);
   const [testRowCredId, setTestRowCredId] = useState<string>("");
   const [testRowPort, setTestRowPort] = useState<string>("");
   const [testRowRunning, setTestRowRunning] = useState(false);
@@ -2194,6 +2197,15 @@ export default function DiscoveryPage() {
                                     Test credenziali host
                                   </DropdownMenuItem>
 
+                                  {/* Installa agent/moduli (Windows/WinRM): Chocolatey,
+                                      MeshAgent RMM, GLPI inventario, Wazuh. Riusa gli
+                                      endpoint /api/patch/* verificati; la validazione
+                                      Windows/WinRM è lato server. */}
+                                  <DropdownMenuItem onClick={() => setInstallAgentsRow(h)}>
+                                    <Package className="h-3.5 w-3.5" />
+                                    Installa agent/moduli
+                                  </DropdownMenuItem>
+
                                   <DropdownMenuSeparator />
 
                                   {/* Integrazione LibreNMS */}
@@ -2923,6 +2935,16 @@ export default function DiscoveryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Installa agent/moduli sull'host selezionato dal kebab (Windows/WinRM) */}
+      {installAgentsRow && (
+        <InstallAgentsDialog
+          hostId={installAgentsRow.id}
+          hostLabel={displayName(installAgentsRow) || installAgentsRow.ip}
+          open={installAgentsRow !== null}
+          onOpenChange={(o) => { if (!o) setInstallAgentsRow(null); }}
+        />
+      )}
 
       {/* v0.2.594+: bulk link manuale "stesso device fisico" */}
       <LinkIpsDialog

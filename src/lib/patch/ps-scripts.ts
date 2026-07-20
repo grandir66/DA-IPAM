@@ -140,6 +140,75 @@ if ($listOut) {
 exit $ec`;
 }
 
+/**
+ * Uninstall di un software su Windows.
+ *   - `chocoId` presente → `choco uninstall <id> -y` (lifecycle Chocolatey).
+ *   - altrimenti → uninstall SILENZIOSO da registro per DisplayName == `name`:
+ *       · MSI (ProductCode {GUID})     → msiexec /x {code} /qn /norestart
+ *       · EXE con QuietUninstallString  → eseguito così com'è (già silenzioso)
+ *       · nessuno dei due               → EXIT_CODE=3, NON eseguiamo la
+ *         UninstallString interattiva (aprirebbe una UI e bloccherebbe WinRM).
+ *
+ * `chocoId` passa per assertSafeIdentifier. `name` NON è un identifier (ha
+ * spazi/apostrofi): entra come literal PS single-quoted (apici raddoppiati) e
+ * viene solo confrontato con -eq nel registro, mai eseguito → no injection.
+ * Exit: 0=ok, 2=non trovato, 3=uninstall silenzioso non disponibile.
+ */
+export function buildUninstallScript(
+  opId: number,
+  name: string,
+  chocoId?: string | null,
+): string {
+  const logPath = logFilePathForOperation(opId);
+  if (chocoId) {
+    assertSafeIdentifier(chocoId, "chocoId");
+    return `$ErrorActionPreference='Continue'
+$logPath = '${logPath}'
+New-Item -ItemType Directory -Force -Path (Split-Path $logPath) | Out-Null
+$choco = (Get-Command choco -ErrorAction SilentlyContinue).Source
+if (-not $choco) {
+  'ERROR: Chocolatey non installato su questo host. Esegui prima un Bootstrap choco.' | Tee-Object -FilePath $logPath
+  'EXIT_CODE=127' | Tee-Object -FilePath $logPath -Append
+  exit 127
+}
+& choco uninstall ${chocoId} -y --no-progress --limit-output 2>&1 | Tee-Object -FilePath $logPath
+$ec = $LASTEXITCODE
+"EXIT_CODE=$ec" | Tee-Object -FilePath $logPath -Append
+exit $ec`;
+  }
+  const nameLit = "'" + name.replace(/'/g, "''") + "'";
+  return `$ErrorActionPreference='Continue'
+$logPath = '${logPath}'
+New-Item -ItemType Directory -Force -Path (Split-Path $logPath) | Out-Null
+$name = ${nameLit}
+$keys = @(
+  'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
+  'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
+  'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'
+)
+$app = Get-ItemProperty $keys -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq $name } | Select-Object -First 1
+if (-not $app) {
+  "Software non trovato nel registro (DisplayName == $name)" | Tee-Object -FilePath $logPath
+  'EXIT_CODE=2' | Tee-Object -FilePath $logPath -Append
+  exit 2
+}
+$ec = 3
+if ($app.PSChildName -match '^\\{[0-9A-Fa-f-]+\\}$') {
+  "Uninstall MSI: $($app.DisplayName) $($app.PSChildName)" | Tee-Object -FilePath $logPath
+  $p = Start-Process msiexec.exe -ArgumentList "/x $($app.PSChildName) /qn /norestart" -Wait -PassThru
+  $ec = $p.ExitCode
+} elseif ($app.QuietUninstallString) {
+  "Uninstall silenzioso: $($app.DisplayName)" | Tee-Object -FilePath $logPath
+  $p = Start-Process cmd.exe -ArgumentList '/c', $app.QuietUninstallString -Wait -PassThru
+  $ec = $p.ExitCode
+} else {
+  "Uninstall silenzioso non disponibile per '$name'. UninstallString: $($app.UninstallString). Disinstallare manualmente sull'host." | Tee-Object -FilePath $logPath
+  $ec = 3
+}
+"EXIT_CODE=$ec" | Tee-Object -FilePath $logPath -Append
+exit $ec`;
+}
+
 // Hostname valido: lettere/digit/dot/dash, max 253, almeno 1 dot oppure puro IPv4.
 const SAFE_HOSTNAME_RE = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
 const SAFE_IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;

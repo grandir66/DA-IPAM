@@ -67,6 +67,7 @@ import {
   Rocket,
   Search,
   ShieldCheck,
+  Trash2,
   Wrench,
   XCircle,
 } from "lucide-react";
@@ -95,6 +96,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   HostActionModal,
   type HostActionOperation,
@@ -359,6 +368,9 @@ export default function DeviceDetailPage() {
   );
   const [modalOps, setModalOps] = useState<HostActionOperation[]>([]);
   const [launching, setLaunching] = useState(false);
+  // Uninstall software (conferma → POST /api/patch/uninstall → modale log)
+  const [uninstallTarget, setUninstallTarget] = useState<DeviceSoftware | null>(null);
+  const [uninstalling, setUninstalling] = useState(false);
 
   // Pin dialog
   const [pinOpen, setPinOpen] = useState(false);
@@ -808,6 +820,49 @@ export default function DeviceDetailPage() {
     },
     [detail]
   );
+
+  // ---- Disinstalla il software selezionato (dopo conferma) ----
+  const runUninstall = useCallback(async () => {
+    if (!detail || !uninstallTarget) return;
+    const sw = uninstallTarget;
+    setUninstalling(true);
+    try {
+      const res = await fetch("/api/patch/uninstall", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hostId: detail.hostId,
+          name: sw.name,
+          chocoId: sw.chocoId ?? undefined,
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { operationId?: number; error?: string }
+        | null;
+      if (!res.ok || typeof data?.operationId !== "number") {
+        throw new Error(data?.error ?? `HTTP ${res.status}`);
+      }
+      setModalTitle(`Disinstalla ${sw.name}`);
+      setModalDescription(
+        sw.chocoId
+          ? `choco uninstall ${sw.chocoId} -y`
+          : "Uninstall silenzioso da registro (MSI /qn o QuietUninstallString).",
+      );
+      setModalOps([
+        {
+          operationId: data.operationId,
+          hostId: detail.hostId,
+          hostLabel: `${hostLabel(detail)} · ${sw.name}`,
+        },
+      ]);
+      setModalOpen(true);
+      setUninstallTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Errore disinstallazione");
+    } finally {
+      setUninstalling(false);
+    }
+  }, [detail, uninstallTarget]);
 
   const handleModalClose = () => {
     setModalOpen(false);
@@ -1290,34 +1345,57 @@ export default function DeviceDetailPage() {
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            {sw.patchable && sw.chocoId ? (
+                            <div className="flex items-center justify-end gap-1">
+                              {sw.patchable && sw.chocoId && (
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={
+                                      <Button
+                                        variant="outline"
+                                        size="xs"
+                                        onClick={() => void launchUpgrade([sw])}
+                                        disabled={
+                                          launching || !detail.winrmValidated
+                                        }
+                                      />
+                                    }
+                                  >
+                                    <Rocket className="h-3 w-3 mr-1" />
+                                    Patch
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    {detail.winrmValidated
+                                      ? `choco upgrade ${sw.chocoId} -y`
+                                      : "WinRM non configurato — patch non disponibile"}
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
                               <Tooltip>
                                 <TooltipTrigger
                                   render={
                                     <Button
                                       variant="outline"
                                       size="xs"
-                                      onClick={() => void launchUpgrade([sw])}
+                                      className="text-rose-600 hover:text-rose-700"
+                                      onClick={() => setUninstallTarget(sw)}
                                       disabled={
-                                        launching || !detail.winrmValidated
+                                        uninstalling || !detail.winrmValidated
                                       }
                                     />
                                   }
                                 >
-                                  <Rocket className="h-3 w-3 mr-1" />
-                                  Patch
+                                  <Trash2 className="h-3 w-3 mr-1" />
+                                  Disinstalla
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   {detail.winrmValidated
-                                    ? `choco upgrade ${sw.chocoId} -y`
-                                    : "WinRM non configurato — patch non disponibile"}
+                                    ? sw.chocoId
+                                      ? `choco uninstall ${sw.chocoId}`
+                                      : "Uninstall silenzioso da registro (MSI /qn o QuietUninstallString)"
+                                    : "WinRM non configurato — uninstall non disponibile"}
                                 </TooltipContent>
                               </Tooltip>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">
-                                —
-                              </span>
-                            )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -1365,6 +1443,56 @@ export default function DeviceDetailPage() {
             </Button>
           </div>
         )}
+
+        {/* Conferma disinstallazione software (azione irreversibile sull'host) */}
+        <Dialog
+          open={uninstallTarget !== null}
+          onOpenChange={(o) => { if (!o) setUninstallTarget(null); }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Disinstallare software?</DialogTitle>
+              <DialogDescription>
+                {uninstallTarget && (
+                  <>
+                    Stai per disinstallare{" "}
+                    <span className="font-medium text-foreground">{uninstallTarget.name}</span>
+                    {uninstallTarget.version ? ` (${uninstallTarget.version})` : ""} da{" "}
+                    <span className="font-medium text-foreground">
+                      {detail ? hostLabel(detail) : ""}
+                    </span>
+                    .{" "}
+                    {uninstallTarget.chocoId
+                      ? `Verrà eseguito choco uninstall ${uninstallTarget.chocoId}.`
+                      : "Uninstall silenzioso da registro (MSI /qn o QuietUninstallString); se non disponibile verrà segnalato senza toccare l'host."}{" "}
+                    Operazione irreversibile.
+                  </>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setUninstallTarget(null)}
+                disabled={uninstalling}
+              >
+                Annulla
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => void runUninstall()}
+                disabled={uninstalling}
+              >
+                {uninstalling ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-1" />
+                )}
+                Disinstalla
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Modal esecuzione (singola op o bulk) */}
         <HostActionModal

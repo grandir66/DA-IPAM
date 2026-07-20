@@ -30,6 +30,7 @@ import {
   buildBootstrapScript,
   buildProbeScript,
   buildUpgradeScript,
+  buildUninstallScript,
   buildWazuhInstallScript,
   buildMeshAgentInstallScript,
   logFilePathForOperation,
@@ -807,6 +808,33 @@ export async function executeGlpiAgentChocoInstall(
     pushScriptBody: getWindowsPushScriptBody(),
   });
   return runChocoPush(db, operationId, opts.hostId, script, "Install choco GLPI Agent fallito");
+}
+
+/**
+ * Disinstalla un software dall'host Windows (await, esito con log live).
+ *   - `chocoId` presente → `choco uninstall <id>`.
+ *   - altrimenti → uninstall silenzioso da registro per DisplayName == `name`
+ *     (MSI /qn o QuietUninstallString; mai la UninstallString interattiva).
+ * Riusa runChocoPush/finalizeChocoOp: EXIT_CODE=0 → success.
+ */
+export async function executeUninstall(
+  opts: ExecutorOptions & { name: string; chocoId?: string | null },
+): Promise<{ operationId: number; status: string }> {
+  const db = resolveTenantDb(opts.tenantCode);
+  const operationId = createOperation(db, {
+    hostId: opts.hostId,
+    userId: opts.userId,
+    action: "uninstall",
+    packageId: opts.chocoId ?? opts.name.slice(0, 200),
+  });
+  updateOperation(db, operationId, {
+    status: "running",
+    startedAt: nowIso(),
+    logFilePath: logFilePathForOperation(operationId),
+  });
+
+  const script = buildUninstallScript(operationId, opts.name, opts.chocoId ?? null);
+  return runChocoPush(db, operationId, opts.hostId, script, "Disinstallazione fallita");
 }
 
 /**

@@ -11,6 +11,7 @@
  */
 
 import WebSocket from "ws";
+import { networkInterfaces } from "os";
 import type { MeshCreds } from "./config";
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -55,14 +56,56 @@ export function _setWsConnector(c: WsConnector | null): void {
  * are sent on the HTTP upgrade request. Node's built-in globalThis.WebSocket
  * cannot set arbitrary headers, so `ws` is required here.
  */
+/**
+ * True se l'URL punta a QUESTA macchina (loopback o un IP di una sua interfaccia).
+ * Serve a distinguere il MeshCentral co-locato — provisionato da noi, con cert
+ * self-signed per costruzione — da un server remoto, per il quale un certificato
+ * non verificabile deve restare un errore.
+ *
+ * Esportata per i test.
+ */
+export function isSelfHost(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  const h = host.toLowerCase().replace(/^\[|\]$/g, "");
+  if (h === "localhost" || h === "::1" || h.startsWith("127.")) return true;
+  try {
+    // networkInterfaces() e' sincrona e locale: nessuna risoluzione DNS, quindi
+    // un hostname che punta altrove non puo' spacciarsi per locale.
+    const ifaces = networkInterfaces();
+    for (const addrs of Object.values(ifaces)) {
+      for (const a of addrs ?? []) {
+        if (a.address.toLowerCase() === h) return true;
+      }
+    }
+  } catch {
+    /* ambiente senza accesso alle interfacce: restiamo prudenti */
+  }
+  return false;
+}
+
 function defaultWsConnector(
   url: string,
   headers: Record<string, string>,
 ): McWsSocket {
-  // MeshCentral è co-locato sull'appliance con cert self-signed: per il sync
-  // server-side (cron) impostare MESHCENTRAL_TLS_INSECURE=1 nel .env del tenant.
+  // MeshCentral co-locato sull'appliance ha un cert SELF-SIGNED generato da lui
+  // stesso durante il provisioning: verificarlo contro le CA pubbliche fallisce
+  // sempre ("unable to verify the first certificate"). Accettiamo il cert non
+  // verificabile SOLO quando il server è questa stessa macchina — cioè l'istanza
+  // che abbiamo installato noi. Verso un MeshCentral remoto la verifica resta
+  // attiva: lì un cert non valido è un segnale, non una condizione normale.
+  //
+  // Prima serviva MESHCENTRAL_TLS_INSECURE=1 nel .env.local, da scrivere a mano
+  // e con riavvio del servizio: un passaggio manuale invisibile che faceva
+  // fallire il provisioning su ogni appliance nuova (colto su 192.168.4.8 il
+  // 2026-07-20). La env var resta come override esplicito per casi particolari.
   // Scoped alla SOLA connessione MeshControlClient — NON tocca il TLS globale.
-  const rejectUnauthorized = process.env.MESHCENTRAL_TLS_INSECURE !== "1";
+  const rejectUnauthorized =
+    process.env.MESHCENTRAL_TLS_INSECURE === "1" ? false : !isSelfHost(url);
   const ws = new WebSocket(url, { headers, rejectUnauthorized });
   return {
     onMessage(cb) {

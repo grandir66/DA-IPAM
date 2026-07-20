@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   MeshControlClient,
   _setWsConnector,
+  isSelfHost,
   type McWsSocket,
 } from "@/lib/integrations/meshcentral/control-client";
 import type { MeshCreds } from "@/lib/integrations/meshcentral/config";
@@ -305,4 +306,16 @@ test("runCommand: un errore del server arriva in `result` (non come throw)", asy
   const out = await c.runCommand("node//N1", "whoami");
   c.close();
   assert.equal(out, "Agent not connected");
+});
+
+test("isSelfHost: loopback e localhost sono locali; un IP pubblico no", () => {
+  // Il cert self-signed di MeshCentral si accetta SOLO se il server e' questa
+  // macchina. Un hostname che risolve altrove non deve spacciarsi per locale:
+  // isSelfHost non fa DNS, confronta con le interfacce locali.
+  assert.equal(isSelfHost("wss://127.0.0.1:4443/control.ashx"), true);
+  assert.equal(isSelfHost("https://localhost:4443/"), true);
+  assert.equal(isSelfHost("wss://[::1]:4443/"), true);
+  assert.equal(isSelfHost("https://8.8.8.8:4443/"), false);
+  assert.equal(isSelfHost("https://mesh.altro-cliente.it/"), false);
+  assert.equal(isSelfHost("non-un-url"), false);
 });

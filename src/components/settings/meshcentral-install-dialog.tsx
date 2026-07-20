@@ -62,11 +62,18 @@ export function MeshCentralInstallDialog({ open, onOpenChange, onInstalled }: Pr
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const logRef = useRef<HTMLPreElement | null>(null);
 
-  // L'host di default e' quello con cui l'operatore sta gia' raggiungendo
-  // DA-IPAM: e' per definizione un indirizzo che il suo browser risolve.
+  // All'apertura: host di default = l'indirizzo con cui l'operatore raggiunge
+  // DA-IPAM (per definizione risolve dal suo browser), e riparti sempre dal form
+  // anche dopo un errore/completamento precedente. Dipende SOLO da `open`: prima
+  // dipendeva anche da `host`, quindi svuotare il campo faceva rifirare l'effetto
+  // e re-scrivere il default (il campo "tornava indietro" — audit 2026-07-20).
   useEffect(() => {
-    if (open && !host) setHost(window.location.hostname);
-  }, [open, host]);
+    if (open) {
+      setHost((h) => h || window.location.hostname);
+      setJob(null);
+      setStarting(false);
+    }
+  }, [open]);
 
   // Cleanup del polling: senza, l'intervallo sopravvive alla chiusura del dialog.
   useEffect(() => {
@@ -157,7 +164,7 @@ export function MeshCentralInstallDialog({ open, onOpenChange, onInstalled }: Pr
           </DialogDescription>
         </DialogHeader>
 
-        {job ? (
+        {job && job.phase !== "error" ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm">
               {running ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -169,10 +176,18 @@ export function MeshCentralInstallDialog({ open, onOpenChange, onInstalled }: Pr
             >
               {job.log.join("\n") || "…"}
             </pre>
-            {job.error ? <p className="text-sm text-destructive">{job.error}</p> : null}
           </div>
         ) : (
+          // Su errore si torna al form (con i valori inseriti) per poterli
+          // correggere prima di riprovare — prima l'errore mostrava solo il log,
+          // e "Riprova" ri-inviava gli stessi identici parametri (audit 2026-07-20).
           <div className="space-y-4">
+            {job?.phase === "error" ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                Installazione non riuscita: {job.error ?? "errore sconosciuto"}. Correggi i
+                parametri e riprova.
+              </div>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label htmlFor="mc-host">Indirizzo dell&apos;appliance</Label>

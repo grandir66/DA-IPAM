@@ -327,9 +327,24 @@ export async function installMeshCentral(jobId: string, opts: MeshInstallOptions
     withTenant(opts.tenantCode, () => installMeshFeature());
     log(`[done] MeshCentral installato e configurato su ${serverUrl}`);
     updateJob(jobId, { phase: "done", finishedAt: new Date().toISOString() });
+    return;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     log(`[error] ${message}`);
+    // Rollback best-effort: senza, un fallimento a metà lascia un container con
+    // `--restart unless-stopped` che RIPARTE a ogni reboot mentre la UI dice
+    // "non installato" (il flag si accende solo a fine corsa), e la dir dati con
+    // il service account nel NeDB — che farebbe fallire un retry sul
+    // `--createaccount` (utente già presente). Ripulendo, il tentativo successivo
+    // riparte pulito. Individuato dall'audit di completezza (2026-07-20).
+    log(`[rollback] Rimozione container e dati dell'installazione fallita...`);
+    await execDockerCommand(["rm", "-f", CONTAINER]).catch(() => {});
+    try {
+      const fs = await import("fs/promises");
+      await fs.rm(APP_DIR, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
     updateJob(jobId, {
       phase: "error",
       error: message,

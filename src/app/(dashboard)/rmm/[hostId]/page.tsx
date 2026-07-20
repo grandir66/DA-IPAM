@@ -72,6 +72,13 @@ export default function RemoteSessionPage() {
   const [status, setStatus] = useState<MeshStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // L'iframe carica MeshCentral da https://<host>:4443, cert self-signed. Se il
+  // browser dell'operatore non ha ancora accettato quel cert, blocca il contenuto
+  // cross-origin SENZA errore visibile → riquadro vuoto, indistinguibile da "sto
+  // caricando". Un iframe bloccato non emette onLoad: se dopo qualche secondo non
+  // è arrivato, mostriamo l'istruzione per accettare il cert una volta.
+  const [frameLoaded, setFrameLoaded] = useState(false);
+  const [frameStuck, setFrameStuck] = useState(false);
 
   useEffect(() => {
     if (!Number.isFinite(hostId)) return;
@@ -125,6 +132,16 @@ export default function RemoteSessionPage() {
     if (typeof mode !== "number") return;
     void openSession(mode);
   }, [mode, openSession]);
+
+  // Watchdog dell'iframe: a ogni nuovo url azzera lo stato e, se dopo 7s non e'
+  // arrivato onLoad, segnala il probabile blocco del cert self-signed.
+  useEffect(() => {
+    if (!url) return;
+    setFrameLoaded(false);
+    setFrameStuck(false);
+    const t = setTimeout(() => setFrameStuck(true), 7000);
+    return () => clearTimeout(t);
+  }, [url]);
 
   const online = status?.conn === 1;
   const title = status?.rname ?? status?.name ?? `Host ${hostId}`;
@@ -256,7 +273,32 @@ export default function RemoteSessionPage() {
                 title={`Sessione remota — ${title}`}
                 className="h-full w-full border-0"
                 allow="clipboard-read; clipboard-write; fullscreen"
+                onLoad={() => setFrameLoaded(true)}
               />
+            ) : null}
+
+            {/* Se l'iframe non carica, quasi sempre e' il cert self-signed di
+                MeshCentral non ancora accettato dal browser: lo diciamo e diamo
+                il link per accettarlo una volta, invece del riquadro vuoto muto. */}
+            {url && frameStuck && !frameLoaded ? (
+              <div className="absolute inset-x-0 bottom-0 border-t bg-background/95 p-4 text-sm">
+                <p className="font-medium">Il riquadro resta vuoto?</p>
+                <p className="mt-1 text-muted-foreground">
+                  MeshCentral usa un certificato self-signed che il browser blocca finché non
+                  lo accetti una volta. Apri il server in una scheda, accetta l&apos;avviso di
+                  sicurezza, poi torna qui e premi Riconnetti.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <a href={new URL(url).origin} target="_blank" rel="noopener noreferrer">
+                    <Button size="sm" variant="outline">
+                      <ExternalLink className="mr-2 h-4 w-4" /> Apri il server e accetta il certificato
+                    </Button>
+                  </a>
+                  <Button size="sm" variant="ghost" onClick={() => void openSession(mode)}>
+                    <RefreshCw className="mr-2 h-4 w-4" /> Riconnetti
+                  </Button>
+                </div>
+              </div>
             ) : null}
           </>
         )}

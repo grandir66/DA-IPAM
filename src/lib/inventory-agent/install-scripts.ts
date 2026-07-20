@@ -151,6 +151,11 @@ const WINDOWS_PUSH_SCRIPT_BODY = [
   "} finally { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }",
 ].join("\n");
 
+/** Corpo dello script di push (per riuso: pacchetto choco GLPI). */
+export function getWindowsPushScriptBody(): string {
+  return Array.isArray(WINDOWS_PUSH_SCRIPT_BODY) ? WINDOWS_PUSH_SCRIPT_BODY.join("\n") : String(WINDOWS_PUSH_SCRIPT_BODY);
+}
+
 export function buildWindowsInstallScript(params?: Partial<InstallScriptParams>): string {
   const dl = getGlpiClientDownloads();
   const embed = Boolean(params?.ingestUrl && params?.ingestToken);

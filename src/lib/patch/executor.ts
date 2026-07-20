@@ -23,6 +23,9 @@ import { runWinrmCommand } from "@/lib/devices/winrm-run";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { loadWinrmCredentialsForHost } from "./credentials";
 import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
+import { buildMeshAgentChocoScript, buildGlpiAgentChocoScript } from "./choco-packages";
+import { getWindowsPushScriptBody } from "@/lib/inventory-agent/install-scripts";
+import { getGlpiClientDownloads } from "@/lib/inventory-agent/client-downloads";
 import {
   buildBootstrapScript,
   buildProbeScript,
@@ -666,6 +669,144 @@ export async function executeMeshAgentInstall(
     errorMessage: ok ? null : tailForError(stdout) || "MeshAgent install fallito",
   });
   return { operationId, status };
+}
+
+/** Esito comune per gli install via pacchetto Chocolatey (EXIT_CODE=0 = ok). */
+function finalizeChocoOp(
+  db: Database,
+  operationId: number,
+  stdout: string,
+  failMsg: string,
+): { operationId: number; status: string } {
+  const exit = parseExitCodeFromOutput(stdout);
+  const ok = exit === 0;
+  updateOperation(db, operationId, {
+    status: ok ? "success" : "failed",
+    exitCode: exit ?? null,
+    finishedAt: nowIso(),
+    errorMessage: ok ? null : tailForError(stdout) || failMsg,
+  });
+  return { operationId, status: ok ? "success" : "failed" };
+}
+
+/** Push WinRM di uno script già costruito, con gestione errori uniforme. */
+async function runChocoPush(
+  db: Database,
+  operationId: number,
+  hostId: number,
+  script: string,
+  failMsg: string,
+): Promise<{ operationId: number; status: string }> {
+  const winrm = loadWinrmCredentialsForHost(db, hostId);
+  if (!winrm) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: "Credenziali WinRM mancanti o non decifrabili per l'host",
+    });
+    return { operationId, status: "failed" };
+  }
+  try {
+    const stdout = await runWinrmCommand(
+      winrm.host,
+      winrm.port,
+      winrm.username,
+      winrm.password,
+      script,
+      true,
+      winrm.realm ?? "",
+    );
+    return finalizeChocoOp(db, operationId, stdout, failMsg);
+  } catch (err) {
+    const message = (err as Error)?.message ?? String(err);
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: message.slice(0, 2000),
+    });
+    return { operationId, status: "failed" };
+  }
+}
+
+/**
+ * Installa il MeshCentral Agent come PACCHETTO CHOCOLATEY configurato
+ * (`domarc-meshagent`): DA-IPAM genera il pacchetto sull'host (nuspec +
+ * chocolateyInstall che scarica exe+.msh dal server co-locato) e lo installa via
+ * `choco`. Diverso da executeMeshAgentInstall (download diretto): qui il lifecycle
+ * è gestito da Chocolatey (`choco upgrade`/`uninstall domarc-meshagent`).
+ */
+export async function executeMeshAgentChocoInstall(
+  opts: ExecutorOptions,
+): Promise<{ operationId: number; status: string }> {
+  const db = resolveTenantDb(opts.tenantCode);
+  const operationId = createOperation(db, {
+    hostId: opts.hostId,
+    userId: opts.userId,
+    action: "install",
+    packageId: "domarc-meshagent",
+  });
+  updateOperation(db, operationId, {
+    status: "running",
+    startedAt: nowIso(),
+    logFilePath: logFilePathForOperation(operationId),
+  });
+
+  const meshCreds = getMeshCreds();
+  if (!meshCreds) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: "MeshCentral non configurato per il tenant",
+    });
+    return { operationId, status: "failed" };
+  }
+
+  const script = buildMeshAgentChocoScript(operationId, meshCreds.serverUrl, meshCreds.meshId);
+  return runChocoPush(db, operationId, opts.hostId, script, "Install choco MeshAgent fallito");
+}
+
+/**
+ * Installa il GLPI Agent come PACCHETTO CHOCOLATEY configurato
+ * (`domarc-glpi-agent`): MSI silenzioso + task di push inventario verso
+ * l'endpoint ingest di DA-IPAM. `ingestUrl`/`ingestToken` li risolve la route
+ * (che ha il contesto Request per l'URL pubblico).
+ */
+export async function executeGlpiAgentChocoInstall(
+  opts: ExecutorOptions & { ingestUrl: string; ingestToken: string; intervalHours?: number },
+): Promise<{ operationId: number; status: string }> {
+  const db = resolveTenantDb(opts.tenantCode);
+  const operationId = createOperation(db, {
+    hostId: opts.hostId,
+    userId: opts.userId,
+    action: "install",
+    packageId: "domarc-glpi-agent",
+  });
+  updateOperation(db, operationId, {
+    status: "running",
+    startedAt: nowIso(),
+    logFilePath: logFilePathForOperation(operationId),
+  });
+
+  const dl = getGlpiClientDownloads();
+  const msi = dl.windows[0];
+  if (!msi) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: "Download MSI GLPI Agent non disponibile",
+    });
+    return { operationId, status: "failed" };
+  }
+
+  const script = buildGlpiAgentChocoScript(operationId, {
+    ingestUrl: opts.ingestUrl,
+    ingestToken: opts.ingestToken,
+    intervalHours: opts.intervalHours ?? 6,
+    msiUrl: msi.url,
+    msiVersion: dl.version,
+    pushScriptBody: getWindowsPushScriptBody(),
+  });
+  return runChocoPush(db, operationId, opts.hostId, script, "Install choco GLPI Agent fallito");
 }
 
 /**

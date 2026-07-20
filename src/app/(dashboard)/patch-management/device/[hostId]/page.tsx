@@ -58,7 +58,9 @@ import {
   HelpCircle,
   Loader2,
   Monitor,
+  MonitorSmartphone,
   Package,
+  PackageSearch,
   Pin,
   Play,
   RefreshCw,
@@ -366,6 +368,8 @@ export default function DeviceDetailPage() {
   const [probeBusy, setProbeBusy] = useState(false);
   const [bootstrapBusy, setBootstrapBusy] = useState(false);
   const [wazuhBusy, setWazuhBusy] = useState(false);
+  const [meshChocoBusy, setMeshChocoBusy] = useState(false);
+  const [glpiChocoBusy, setGlpiChocoBusy] = useState(false);
   const [wazuhConfigured, setWazuhConfigured] = useState(false);
   const [wazuhManagerHost, setWazuhManagerHost] = useState<string | null>(null);
 
@@ -656,6 +660,68 @@ export default function DeviceDetailPage() {
       setWazuhBusy(false);
     }
   }, [detail, wazuhConfigured, wazuhManagerHost]);
+
+  // ---- Install agent come PACCHETTO CHOCOLATEY (configurato) ----
+  // Stesso flusso di install-wazuh: POST → operationId → modale con log live.
+  const runChocoAgentInstall = useCallback(
+    async (
+      endpoint: string,
+      title: string,
+      description: string,
+      setBusy: (v: boolean) => void,
+    ) => {
+      if (!detail) return;
+      setBusy(true);
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hostId: detail.hostId }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error ?? `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { operationId?: number };
+        if (typeof data.operationId !== "number") {
+          throw new Error("Risposta senza operationId");
+        }
+        setModalTitle(title);
+        setModalDescription(description);
+        setModalOps([
+          { operationId: data.operationId, hostId: detail.hostId, hostLabel: hostLabel(detail) },
+        ]);
+        setModalOpen(true);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Errore install agent");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [detail],
+  );
+
+  const handleInstallMeshChoco = useCallback(
+    () =>
+      runChocoAgentInstall(
+        "/api/patch/install-meshagent-choco",
+        "Install MeshCentral Agent (Chocolatey)",
+        "Pacchetto choco domarc-meshagent: scarica l'agente configurato dal server e lo installa via Chocolatey (gestibile con choco upgrade/uninstall).",
+        setMeshChocoBusy,
+      ),
+    [runChocoAgentInstall],
+  );
+
+  const handleInstallGlpiChoco = useCallback(
+    () =>
+      runChocoAgentInstall(
+        "/api/patch/install-glpi-agent-choco",
+        "Install GLPI Agent (Chocolatey)",
+        "Pacchetto choco domarc-glpi-agent: GLPI Agent + task di push inventario verso DA-IPAM, installato via Chocolatey.",
+        setGlpiChocoBusy,
+      ),
+    [runChocoAgentInstall],
+  );
 
   // ---- Lancia upgrade per N software (singolo o bulk) ----
   const launchUpgrade = useCallback(
@@ -985,6 +1051,42 @@ export default function DeviceDetailPage() {
                   <ShieldCheck className="h-4 w-4 mr-2" />
                 )}
                 Installa Wazuh agent
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleInstallMeshChoco()}
+                disabled={meshChocoBusy || !detail || !detail.winrmValidated}
+                title={
+                  !detail?.winrmValidated
+                    ? "WinRM non configurato per questo host"
+                    : "Installa il MeshCentral Agent come pacchetto Chocolatey configurato"
+                }
+              >
+                {meshChocoBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <MonitorSmartphone className="h-4 w-4 mr-2" />
+                )}
+                MeshAgent (choco)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleInstallGlpiChoco()}
+                disabled={glpiChocoBusy || !detail || !detail.winrmValidated}
+                title={
+                  !detail?.winrmValidated
+                    ? "WinRM non configurato per questo host"
+                    : "Installa il GLPI Agent come pacchetto Chocolatey configurato (push inventario a DA-IPAM)"
+                }
+              >
+                {glpiChocoBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <PackageSearch className="h-4 w-4 mr-2" />
+                )}
+                GLPI Agent (choco)
               </Button>
               {detail && (
                 <a

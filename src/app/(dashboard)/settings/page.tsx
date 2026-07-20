@@ -269,7 +269,13 @@ function SettingsPageInner() {
         }
       })
       .catch(() => {});
-    fetch("/api/users").then((r) => r.json()).then(setUsers).catch(() => {});
+    // /api/users è super-admin-only: per un admin NON super torna 403 (oggetto
+    // errore, non array). Senza la guardia Array.isArray, setUsers(errObj) rende
+    // `users` un oggetto e il successivo users.map() fa crashare TUTTA la pagina
+    // impostazioni. Guardia identica a /api/tenants qui sotto.
+    fetch("/api/users").then((r) => r.json()).then((data) => {
+      if (Array.isArray(data)) setUsers(data);
+    }).catch(() => {});
     fetch("/api/tenants").then((r) => r.json()).then((data: TenantEntry[]) => {
       if (Array.isArray(data)) setTenantsList(data);
     }).catch(() => {});
@@ -387,7 +393,7 @@ function SettingsPageInner() {
         setNewUserOpen(false);
         setNewUsername(""); setNewUserEmail(""); setNewUserPassword(""); setNewUserRole("viewer"); setNewUserTenantIds([]);
         const updated = await fetch("/api/users").then((r) => r.json());
-        setUsers(updated);
+        if (Array.isArray(updated)) setUsers(updated);
       } else {
         const data = await res.json();
         toast.error(data.error || "Errore nella creazione utente");
@@ -420,7 +426,7 @@ function SettingsPageInner() {
         toast.success("Utente aggiornato");
         setEditUserOpen(false);
         const updated = await fetch("/api/users").then((r) => r.json());
-        setUsers(updated);
+        if (Array.isArray(updated)) setUsers(updated);
       } else {
         const data = await res.json();
         toast.error(data.error || "Errore");

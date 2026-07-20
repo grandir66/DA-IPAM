@@ -1,3 +1,4 @@
+import { PS_TRUST_SELF_SIGNED } from "@/lib/ps-tls";
 import {
   getGlpiClientDownloads,
   type InventoryInstallPlatform,
@@ -135,9 +136,10 @@ echo ">>> OK — log: /var/log/domarc-inventory-agent.log"
 const WINDOWS_PUSH_SCRIPT_BODY = [
   "param([string]$IngestUrl, [string]$IngestToken)",
   '$ErrorActionPreference = "Stop"',
-  "if ($env:DA_IPAM_INSECURE_SSL -ne '0') {",
-  "  [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }",
-  "}",
+  // Lo scheduled task gira NON interattivo verso l'ingest DA-IPAM (self-signed):
+  // il tipo compilato di PS_TRUST_SELF_SIGNED funziona lì dove lo ScriptBlock
+  // ServerCertificateValidationCallback si rompe (stesso bug del push choco).
+  PS_TRUST_SELF_SIGNED,
   "$glpi = @(",
   '  "$env:ProgramFiles\\GLPI-Agent\\glpi-inventory.exe",',
   '  "${env:ProgramFiles(x86)}\\GLPI-Agent\\glpi-inventory.exe"',

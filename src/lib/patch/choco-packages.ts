@@ -199,10 +199,14 @@ export function buildGlpiAgentChocoScript(
   p: GlpiChocoParams,
   version = "1.0.0",
 ): string {
+  // NIENTE bypass del cert qui: l'MSI si scarica da GitHub (cert VALIDO). Il
+  // callback ScriptBlock, sotto choco (non interattivo), si rompe e AVVELENA
+  // anche il download valido → "underlying connection was closed" (colto su
+  // DA-RDH il 2026-07-20). Serve solo abilitare TLS 1.2 per GitHub su Windows
+  // vecchi. Il cert self-signed di DA-IPAM lo gestisce lo script di push (task),
+  // con il tipo compilato di PS_TRUST_SELF_SIGNED — non uno ScriptBlock.
   const installPs = `$ErrorActionPreference = 'Stop'
-if ($env:DA_IPAM_INSECURE_SSL -ne '0') {
-  [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-}
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
 $IngestUrl = '${p.ingestUrl}'
 $IngestToken = '${p.ingestToken}'
 $IntervalHours = ${p.intervalHours}

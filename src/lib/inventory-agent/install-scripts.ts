@@ -149,7 +149,13 @@ const WINDOWS_PUSH_SCRIPT_BODY = [
   'if (-not $glpi) { throw "glpi-inventory non trovato (GLPI Agent installato?)" }',
   "$tmp = [IO.Path]::GetTempFileName()",
   "try {",
+  // glpi-inventory.bat logga i suoi [info] su stderr: con ErrorActionPreference='Stop'
+  // PowerShell 5.1 tratta OGNI riga stderr di un comando nativo come errore fatale,
+  // anche se l'inventario e' andato a buon fine. Isolo la chiamata con EAP='Continue'
+  // (il 2>$null da solo NON basta). Verificato su Windows reale 2026-07-21.
+  "  $prevEAP = $ErrorActionPreference; $ErrorActionPreference = 'Continue'",
   "  & $glpi --json 2>$null | Set-Content -Path $tmp -Encoding UTF8",
+  "  $ErrorActionPreference = $prevEAP",
   '  $headers = @{ Authorization = "Bearer $IngestToken"; "Content-Type" = "application/json" }',
   "  Invoke-WebRequest -Uri $IngestUrl -Method POST -Headers $headers -Body (Get-Content $tmp -Raw) -UseBasicParsing | Out-Null",
   "} finally { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }",

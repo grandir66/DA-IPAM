@@ -38,6 +38,7 @@ export default function RmmPage() {
   const [cfg, setCfg] = useState<MeshConfigPublic | null>(null);
   const [nodes, setNodes] = useState<MeshNodeRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,6 +53,35 @@ export default function RmmPage() {
       toast.error("Errore nel recupero dello stato RMM");
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  // Forza un mesh-sync ORA (il job automatico gira ogni 15 min): utile subito dopo
+  // aver installato un nuovo agente, senza aspettare il prossimo giro schedulato.
+  const syncNow = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const r = await fetch("/api/integrations/meshcentral/nodes", { method: "POST" });
+      const data = (await r.json()) as {
+        ok?: boolean;
+        totalNodes?: number;
+        matched?: number;
+        unmatched?: number;
+        nodes?: MeshNodeRow[];
+        error?: string;
+      };
+      if (!r.ok || !data.ok) {
+        toast.error(data.error ?? "Sync MeshCentral fallito");
+        return;
+      }
+      setNodes(data.nodes ?? []);
+      toast.success(
+        `Sync completato: ${data.totalNodes ?? 0} nodi (${data.matched ?? 0} associati, ${data.unmatched ?? 0} da associare)`,
+      );
+    } catch {
+      toast.error("Sync MeshCentral fallito");
+    } finally {
+      setSyncing(false);
     }
   }, []);
 
@@ -77,6 +107,10 @@ export default function RmmPage() {
         <div className="flex gap-2">
           <Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          </Button>
+          <Button variant="default" size="sm" disabled={syncing} onClick={() => void syncNow()}>
+            {syncing ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <MonitorSmartphone className="h-4 w-4 mr-1" />}
+            Sincronizza ora
           </Button>
           {cfg?.present && cfg.serverUrl && (
             <a href={cfg.serverUrl} target="_blank" rel="noopener noreferrer">

@@ -11,6 +11,9 @@ import { getHubDb } from "./db-hub";
 import { encrypt, safeDecrypt } from "./crypto";
 
 export type CredentialKind =
+  // Password condivisa dalle utenze di servizio dei moduli (vedi master-password.ts).
+  // La colonna `kind` e' TEXT senza CHECK: aggiungere un valore non richiede migrazioni.
+  | "master"
   | "wazuh"
   | "graylog"
   | "librenms"

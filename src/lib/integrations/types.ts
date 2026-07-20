@@ -20,9 +20,18 @@ export type InstallPhase =
   | "done"
   | "error";
 
+/**
+ * Cosa sta installando un job. PIU' AMPIO di IntegrationComponent, che descrive
+ * i soli container della pagina Integrazioni (con mode/url/apiToken): docker e
+ * meshcentral hanno un ciclo di vita proprio ma usano lo stesso job-store.
+ * Prima di questo tipo, install-docker era costretto a dichiararsi "librenms"
+ * come placeholder — un falso che rendeva impossibile distinguere i job.
+ */
+export type JobComponent = IntegrationComponent | "docker" | "meshcentral";
+
 export interface InstallJob {
   id: string;
-  component: IntegrationComponent;
+  component: JobComponent;
   phase: InstallPhase;
   log: string[];
   error?: string;

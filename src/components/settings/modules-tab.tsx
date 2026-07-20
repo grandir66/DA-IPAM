@@ -38,6 +38,7 @@ import { ScannerEdgeCard } from "./scanner-edge-card";
 import { WazuhCard } from "./wazuh-card";
 import { InventoryAgentCard } from "./inventory-agent-card";
 import { MeshCentralCard } from "./meshcentral-card";
+import { MeshCentralInstallDialog } from "./meshcentral-install-dialog";
 import { Nis2ToggleCard } from "./nis2-toggle-card";
 import { ModuleJsonImport } from "./module-json-import";
 import { IntegrationViewer } from "@/components/integrations/integration-viewer";
@@ -116,6 +117,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
   // ── Docker availability (per le integrazioni Docker-managed) ───────
   const [dockerAvailable, setDockerAvailable] = useState<boolean | null>(null);
   const [installingDocker, setInstallingDocker] = useState(false);
+  const [meshInstallOpen, setMeshInstallOpen] = useState(false);
   const [dockerInstallJob, setDockerInstallJob] = useState<InstallJob | null>(null);
   const dockerPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -240,25 +242,11 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
     }
   };
 
-  const handleInstallMesh = async () => {
-    setBusyKey("meshcentral");
-    try {
-      const r = await fetch("/api/features/meshcentral/install", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!r.ok) {
-        const err = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(err?.error ?? `HTTP ${r.status}`);
-      }
-      toast.success("Modulo MeshCentral installato");
-      await fetchFeatures();
-    } catch (e) {
-      toast.error(`Installazione fallita: ${e instanceof Error ? e.message : "errore"}`);
-    } finally {
-      setBusyKey(null);
-    }
-  };
+  // Apre il wizard che provisiona DAVVERO MeshCentral (container + utenza +
+  // gruppo + config). Prima qui si chiamava /api/features/meshcentral/install,
+  // che accendeva solo il flag: il modulo risultava "installato" ma inservibile,
+  // e serviva completarlo da CLI. Vedi lib/integrations/meshcentral/install.ts.
+  const handleInstallMesh = () => setMeshInstallOpen(true);
 
   const handleUninstallConfirm = async () => {
     const feature = uninstallDialog.feature;
@@ -572,6 +560,12 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <MeshCentralInstallDialog
+        open={meshInstallOpen}
+        onOpenChange={setMeshInstallOpen}
+        onInstalled={() => void fetchFeatures()}
+      />
     </div>
   );
 }

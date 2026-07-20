@@ -10,7 +10,7 @@ export async function POST(req: Request) {
 
   // Controlla se c'è già un job di installazione Docker in corso
   const running = listJobs().find(
-    (j) => j.component === ("docker" as never) && j.phase !== "done" && j.phase !== "error"
+    (j) => j.component === "docker" && j.phase !== "done" && j.phase !== "error"
   );
   if (running) {
     return NextResponse.json({ error: "Installazione Docker già in corso", jobId: running.id }, { status: 409 });
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   const jobId = randomUUID();
   createJob({
     id: jobId,
-    component: "librenms", // usiamo librenms come placeholder (component non influisce sul job)
+    component: "docker",
     phase: "idle",
     log: [],
     startedAt: new Date().toISOString(),

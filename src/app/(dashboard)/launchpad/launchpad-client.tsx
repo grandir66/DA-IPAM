@@ -105,6 +105,7 @@ function isCredentialIncomplete(item: SystemCredential): boolean {
 }
 
 const KIND_META: Record<CredentialKind, { icon: typeof Shield; label: string; color: string }> = {
+  master: { icon: KeyRound, label: "Password master moduli", color: "text-yellow-600" },
   wazuh: { icon: Shield, label: "Wazuh", color: "text-blue-600" },
   graylog: { icon: Activity, label: "Graylog", color: "text-amber-600" },
   librenms: { icon: Server, label: "LibreNMS", color: "text-emerald-600" },

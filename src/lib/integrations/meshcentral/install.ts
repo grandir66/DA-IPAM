@@ -222,18 +222,41 @@ export async function installMeshCentral(jobId: string, opts: MeshInstallOptions
       "meshcentral/meshcentral.js",
       ...args,
     ];
-    await execDockerCommand(
-      cliArgs([
-        "--createaccount",
-        SERVICE_USER,
-        "--pass",
-        opts.adminPassword,
-        "--email",
-        `${SERVICE_USER}@localhost`,
-      ]),
-    );
+    // Reinstall idempotente: se l'account ESISTE già (dati precedenti non
+    // ripuliti), `--createaccount` NON ne aggiorna la password — resterebbe
+    // quella vecchia mentre la config salva la nuova, e il primo control.ashx
+    // fallirebbe con 'noauth'. Se esiste si usa `--resetaccount` (forza password
+    // + sblocca), preservando device group e agenti già arruolati; altrimenti
+    // `--createaccount`. Bug colto dal vivo su 4.8 il 2026-07-20 (reinstall sopra
+    // un'installazione lasciata dai test).
+    let accountExists = false;
+    try {
+      const fs = await import("fs/promises");
+      const db = await fs.readFile(`${APP_DIR}/meshcentral-data/meshcentral.db`, "utf8");
+      accountExists = db.includes(`"_id":"user//${SERVICE_USER}"`);
+    } catch {
+      /* meshcentral.db assente = installazione pulita */
+    }
+
+    if (accountExists) {
+      log(`[account] Service account già presente: reset password.`);
+      await execDockerCommand(
+        cliArgs(["--resetaccount", SERVICE_USER, "--pass", opts.adminPassword]),
+      );
+    } else {
+      await execDockerCommand(
+        cliArgs([
+          "--createaccount",
+          SERVICE_USER,
+          "--pass",
+          opts.adminPassword,
+          "--email",
+          `${SERVICE_USER}@localhost`,
+        ]),
+      );
+    }
     await execDockerCommand(cliArgs(["--adminaccount", SERVICE_USER]));
-    log(`[account] Service account creato e promosso ad amministratore.`);
+    log(`[account] Service account pronto (amministratore).`);
 
     await execDockerCommand(["start", CONTAINER]);
     if (!(await waitForServer(opts.port, log))) {

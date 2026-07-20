@@ -21,7 +21,7 @@ import { execDockerCommand, spawnDockerStream, isDockerAvailable } from "@/lib/i
 import { appendLog, updateJob } from "@/lib/integrations/job-store";
 import { withTenant, getTenantDb } from "@/lib/db-tenant";
 import { reloadTenantScheduler } from "@/lib/cron/scheduler";
-import { saveMeshConfig, getMeshCreds } from "./config";
+import { saveMeshConfig, type MeshCreds } from "./config";
 import { MeshControlClient } from "./control-client";
 import { loginTokenSelfCheck } from "./login-token";
 import { applyMcSchemaMigrations } from "./schema";
@@ -260,39 +260,42 @@ export async function installMeshCentral(jobId: string, opts: MeshInstallOptions
     log(`[group] Creazione gruppo dispositivi '${DEVICE_GROUP}'...`);
     const serverUrl = `https://${opts.host}:${opts.port}`;
 
-    // Config salvata PRIMA di creare il gruppo: MeshControlClient legge le
-    // credenziali da mc_config. Il meshId viene riempito subito dopo.
-    withTenant(opts.tenantCode, () => {
-      applyMcSchemaMigrations(getTenantDb(opts.tenantCode));
-      saveMeshConfig({
-        serverUrl,
-        domain: "",
-        meshId: "",
-        serviceUser: SERVICE_USER,
-        loginTokenKey,
-        adminUser: SERVICE_USER,
-        adminPass: opts.adminPassword,
-      });
-    });
+    // Le tabelle devono esistere prima di scriverci la config.
+    withTenant(opts.tenantCode, () => applyMcSchemaMigrations(getTenantDb(opts.tenantCode)));
 
-    const meshId = await withTenant(opts.tenantCode, async () => {
-      const creds = getMeshCreds();
-      if (!creds) throw new Error("Config MeshCentral non leggibile dopo il salvataggio");
-      const client = new MeshControlClient(creds);
-      try {
-        const existing = await client.listMeshes();
-        const found = existing.find((m) => m.name === DEVICE_GROUP);
-        if (found) {
-          log(`[group] Gruppo già presente.`);
-          return found.meshId;
-        }
-        const created = await client.addMesh(DEVICE_GROUP);
+    // Credenziali costruite IN MEMORIA, non rilette dal DB: a questo punto le
+    // abbiamo gia' tutte. Il giro dal database non servirebbe e sarebbe pure
+    // sbagliato — getMeshCreds() richiede un mesh_id NON vuoto, e il gruppo lo
+    // stiamo creando proprio adesso: salvare una config con meshId="" per poi
+    // rileggerla restituiva null e faceva fallire l'installazione qui
+    // ("Config MeshCentral non leggibile dopo il salvataggio", colto dal primo
+    // collaudo reale su 192.168.4.8). Cosi' la config si scrive UNA volta sola,
+    // a valle, gia' completa.
+    const creds: MeshCreds = {
+      serverUrl,
+      domain: "",
+      meshId: "",
+      serviceUser: SERVICE_USER,
+      loginTokenKey: Buffer.from(loginTokenKey, "hex"),
+      adminUser: SERVICE_USER,
+      adminPass: opts.adminPassword,
+    };
+
+    const client = new MeshControlClient(creds);
+    let meshId: string;
+    try {
+      const existing = await client.listMeshes();
+      const found = existing.find((m) => m.name === DEVICE_GROUP);
+      if (found) {
+        log(`[group] Gruppo già presente.`);
+        meshId = found.meshId;
+      } else {
+        meshId = await client.addMesh(DEVICE_GROUP);
         log(`[group] Gruppo creato.`);
-        return created;
-      } finally {
-        client.close();
       }
-    });
+    } finally {
+      client.close();
+    }
 
     // ── CONFIG DEFINITIVA + JOB DI SYNC ──────────────────────────────────────
     withTenant(opts.tenantCode, () => {

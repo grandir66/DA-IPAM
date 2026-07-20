@@ -25,6 +25,7 @@ import { saveMeshConfig, type MeshCreds } from "./config";
 import { MeshControlClient } from "./control-client";
 import { loginTokenSelfCheck } from "./login-token";
 import { applyMcSchemaMigrations } from "./schema";
+import { meshProbeStatus } from "./tls-fetch";
 import { installMeshFeature } from "./feature";
 
 /**
@@ -110,31 +111,15 @@ function buildConfigJson(opts: MeshInstallOptions, loginTokenKey: string): strin
   );
 }
 
-/** Attende che il server risponda sulla porta HTTPS (self-signed → -k). */
+/**
+ * Attende che il server risponda sulla porta HTTPS. Sonda via 127.0.0.1
+ * (loopback = self-host → meshProbeStatus accetta il cert self-signed appena
+ * generato). Qualunque status HTTP = server su.
+ */
 async function waitForServer(port: number, log: (l: string) => void, maxSeconds = 180): Promise<boolean> {
   for (let i = 0; i < maxSeconds; i += 3) {
-    try {
-      // Il cert e' self-signed: in Node serve disabilitare la verifica solo per
-      // questo probe locale (non e' traffico sensibile, e' un ping di liveness).
-      const res = await fetch(`https://127.0.0.1:${port}/`, {
-        signal: AbortSignal.timeout(2500),
-        // @ts-expect-error - undici accetta `dispatcher`, non tipizzato qui
-        dispatcher: undefined,
-      }).catch(() => null);
-      if (res) return true;
-    } catch {
-      /* non ancora su */
-    }
-    // Fallback: il fetch di Node rifiuta i cert self-signed. Usiamo docker exec
-    // sul container stesso, che ha curl e parla in loopback interno.
-    const probe = await execDockerCommand([
-      "exec",
-      CONTAINER,
-      "sh",
-      "-c",
-      `curl -sk -o /dev/null --connect-timeout 2 https://127.0.0.1:${port}/ && echo UP`,
-    ]).catch(() => null);
-    if (probe?.stdout?.includes("UP")) return true;
+    const status = await meshProbeStatus(`https://127.0.0.1:${port}/`, 2500).catch(() => 0);
+    if (status > 0) return true;
     await new Promise((r) => setTimeout(r, 3000));
     if (i % 30 === 0 && i > 0) log(`[wait] server non ancora pronto (${i}s)...`);
   }

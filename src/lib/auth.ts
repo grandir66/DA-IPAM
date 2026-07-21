@@ -101,7 +101,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           email: user.email || `${user.username}@da-invent.local`,
           role: user.role,
           tenants: tenantList,
-          tenantCode: user.role === "superadmin" ? "__ALL__" : (tenantList.length === 1 ? tenantList[0].code : null),
+          // Single-tenant (es. appliance): TUTTI, superadmin incluso, defaultano
+          // all'unico tenant — altrimenti il superadmin resta su __ALL__ (vista
+          // aggregata) e ogni pagina tenant-scoped fa 409 (niente tenant risolto).
+          // Multi-tenant: superadmin → __ALL__ (+ switcher), altri → selezione.
+          tenantCode:
+            tenantList.length === 1
+              ? tenantList[0].code
+              : user.role === "superadmin"
+                ? "__ALL__"
+                : null,
         };
       },
     }),

@@ -44,6 +44,7 @@ import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, ShieldAlert, HardDrive, Monitor,
+  Terminal as TerminalIcon, Globe,
   Phone, Printer, Camera, Cpu, Database, Smartphone, Link2,
   Lock, KeyRound, Trash2, ShieldCheck, MoreVertical, Wifi,
   BatteryCharging, Network, ArrowUp, ArrowDown,
@@ -87,6 +88,7 @@ import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
 import { WazuhHostBadge, type WazuhHostStatus } from "@/components/integrations/wazuh-host-badge";
 import { InstallAgentsDialog } from "@/components/patch/install-agents-dialog";
+import { SshTerminalDialog } from "@/components/ssh-terminal/ssh-terminal-dialog";
 import { MeshCentralHostBadge } from "@/components/integrations/meshcentral-host-badge";
 import type { ClassPreset, IconName } from "./preset-types";
 import { PresetsDialog } from "@/components/devices/presets-dialog";
@@ -596,6 +598,8 @@ export default function DiscoveryPage() {
   const [testHostRow, setTestHostRow] = useState<EnrichedHost | null>(null);
   // Riga per cui è aperto il dialog "Installa agent/moduli" (Wazuh/GLPI/Mesh/choco).
   const [installAgentsRow, setInstallAgentsRow] = useState<EnrichedHost | null>(null);
+  // Riga per cui è aperto il terminale SSH interattivo.
+  const [sshTermRow, setSshTermRow] = useState<EnrichedHost | null>(null);
   const [testRowCredId, setTestRowCredId] = useState<string>("");
   const [testRowPort, setTestRowPort] = useState<string>("");
   const [testRowRunning, setTestRowRunning] = useState(false);
@@ -2206,6 +2210,26 @@ export default function DiscoveryPage() {
                                     Installa agent/moduli
                                   </DropdownMenuItem>
 
+                                  {/* Terminale SSH interattivo (host con credenziali SSH salvate) */}
+                                  <DropdownMenuItem onClick={() => setSshTermRow(h)}>
+                                    <TerminalIcon className="h-3.5 w-3.5" />
+                                    Terminale SSH
+                                  </DropdownMenuItem>
+
+                                  {/* Apri un servizio web dell'host in una tab separata (porta/schema editabili) */}
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      const url = window.prompt(
+                                        `Apri servizio web su ${h.ip} (modifica schema/porta):`,
+                                        `https://${h.ip}`,
+                                      );
+                                      if (url) window.open(url, "_blank", "noopener,noreferrer");
+                                    }}
+                                  >
+                                    <Globe className="h-3.5 w-3.5" />
+                                    Apri web (http/s)
+                                  </DropdownMenuItem>
+
                                   <DropdownMenuSeparator />
 
                                   {/* Integrazione LibreNMS */}
@@ -2943,6 +2967,16 @@ export default function DiscoveryPage() {
           hostLabel={displayName(installAgentsRow) || installAgentsRow.ip}
           open={installAgentsRow !== null}
           onOpenChange={(o) => { if (!o) setInstallAgentsRow(null); }}
+        />
+      )}
+
+      {/* Terminale SSH interattivo sull'host selezionato dal kebab */}
+      {sshTermRow && (
+        <SshTerminalDialog
+          hostId={sshTermRow.id}
+          hostLabel={displayName(sshTermRow) || sshTermRow.ip}
+          open={sshTermRow !== null}
+          onOpenChange={(o) => { if (!o) setSshTermRow(null); }}
         />
       )}
 

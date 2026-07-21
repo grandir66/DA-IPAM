@@ -1,10 +1,10 @@
 import { createServer } from "http";
 import { createServer as createSecureServer } from "https";
 import { readFileSync } from "fs";
-import { join } from "path";
 import next from "next";
 import { ensureEnvSecrets, assertContainerSecretsConfigured } from "./src/lib/env-secrets";
 import { logEncryptionKeyHealthAtBoot } from "./src/lib/encryption-key-health";
+import { attachSshTerminalWs } from "./src/lib/ssh-terminal/ws-handler";
 
 // ── Segreti: container = compose .env host; systemd = .env.local (install.sh) ──
 assertContainerSecretsConfigured();
@@ -36,9 +36,11 @@ app.prepare().then(() => {
         cert: readFileSync(tlsCert),
         key: readFileSync(tlsKey),
       };
-      createSecureServer(options, (req, res) => {
+      const httpsServer = createSecureServer(options, (req, res) => {
         handle(req, res);
-      }).listen(port, hostname, () => {
+      });
+      attachSshTerminalWs(httpsServer); // terminale SSH web (/ws/ssh)
+      httpsServer.listen(port, hostname, () => {
         console.log(`> DA-INVENT ready on https://localhost:${port}`);
         initCron();
       });
@@ -65,9 +67,11 @@ app.prepare().then(() => {
   }
 
   function startHttp() {
-    createServer((req, res) => {
+    const httpServer = createServer((req, res) => {
       handle(req, res);
-    }).listen(port, hostname, () => {
+    });
+    attachSshTerminalWs(httpServer); // terminale SSH web (/ws/ssh)
+    httpServer.listen(port, hostname, () => {
       console.log(`> DA-INVENT ready on http://0.0.0.0:${port} (anche http://localhost:${port})`);
       initCron();
     });

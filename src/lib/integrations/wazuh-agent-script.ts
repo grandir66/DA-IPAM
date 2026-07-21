@@ -61,6 +61,11 @@ if command -v apt-get >/dev/null 2>&1; then
   chmod 644 /usr/share/keyrings/wazuh.gpg
   echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" > /etc/apt/sources.list.d/wazuh.list
   apt-get update
+  # Recupera uno stato dpkg interrotto (E: dpkg was interrupted) da operazioni apt
+  # precedenti sull'host, altrimenti apt-get install rifiuta di procedere. Non
+  # distruttivo: completa solo i configure lasciati a metà.
+  dpkg --configure -a || true
+  apt-get install -f -y || true
   WAZUH_MANAGER="$MGR" apt-get install -y wazuh-agent
 elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
   echo ">>> YUM/DNF"

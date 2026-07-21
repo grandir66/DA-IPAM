@@ -69,6 +69,14 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      # pywinrm[kerberos] dipende da pykerberos, che è un'estensione C:
+      # va compilata da sorgente e richiede gli header GSSAPI, non presenti
+      # di default sull'immagine ubuntu-24.04.
+      - name: Install system deps (GSSAPI headers for pykerberos)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libkrb5-dev
+
       - name: Install agent (editable + dev)
         working-directory: agent
         run: |

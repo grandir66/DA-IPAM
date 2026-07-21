@@ -160,27 +160,15 @@ export function buildUninstallScript(
   chocoId?: string | null,
 ): string {
   const logPath = logFilePathForOperation(opId);
-  if (chocoId) {
-    assertSafeIdentifier(chocoId, "chocoId");
-    return `$ErrorActionPreference='Continue'
-$logPath = '${logPath}'
-New-Item -ItemType Directory -Force -Path (Split-Path $logPath) | Out-Null
-$choco = (Get-Command choco -ErrorAction SilentlyContinue).Source
-if (-not $choco) {
-  'ERROR: Chocolatey non installato su questo host. Esegui prima un Bootstrap choco.' | Tee-Object -FilePath $logPath
-  'EXIT_CODE=127' | Tee-Object -FilePath $logPath -Append
-  exit 127
-}
-& choco uninstall ${chocoId} -y --no-progress --limit-output 2>&1 | Tee-Object -FilePath $logPath
-$ec = $LASTEXITCODE
-"EXIT_CODE=$ec" | Tee-Object -FilePath $logPath -Append
-exit $ec`;
-  }
   const nameLit = "'" + name.replace(/'/g, "''") + "'";
-  return `$ErrorActionPreference='Continue'
-$logPath = '${logPath}'
-New-Item -ItemType Directory -Force -Path (Split-Path $logPath) | Out-Null
-$name = ${nameLit}
+
+  // Disinstallazione da REGISTRO per DisplayName == name: funziona per QUALSIASI
+  // software installato (MSI /qn oppure QuietUninstallString), a prescindere da
+  // come è stato installato. È anche il fallback quando 'choco uninstall' fallisce
+  // perché il pacchetto non è gestito da Chocolatey (es. FortiClient installato
+  // col suo installer → 'is not installed'). Tutti i Tee in -Append per non
+  // sovrascrivere l'eventuale output di choco.
+  const registryBlock = `$name = ${nameLit}
 $keys = @(
   'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
   'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
@@ -188,25 +176,43 @@ $keys = @(
 )
 $app = Get-ItemProperty $keys -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq $name } | Select-Object -First 1
 if (-not $app) {
-  "Software non trovato nel registro (DisplayName == $name)" | Tee-Object -FilePath $logPath
+  "Software non trovato nel registro (DisplayName == $name)" | Tee-Object -FilePath $logPath -Append
   'EXIT_CODE=2' | Tee-Object -FilePath $logPath -Append
   exit 2
 }
 $ec = 3
 if ($app.PSChildName -match '^\\{[0-9A-Fa-f-]+\\}$') {
-  "Uninstall MSI: $($app.DisplayName) $($app.PSChildName)" | Tee-Object -FilePath $logPath
+  "Uninstall MSI: $($app.DisplayName) $($app.PSChildName)" | Tee-Object -FilePath $logPath -Append
   $p = Start-Process msiexec.exe -ArgumentList "/x $($app.PSChildName) /qn /norestart" -Wait -PassThru
   $ec = $p.ExitCode
 } elseif ($app.QuietUninstallString) {
-  "Uninstall silenzioso: $($app.DisplayName)" | Tee-Object -FilePath $logPath
+  "Uninstall silenzioso: $($app.DisplayName)" | Tee-Object -FilePath $logPath -Append
   $p = Start-Process cmd.exe -ArgumentList '/c', $app.QuietUninstallString -Wait -PassThru
   $ec = $p.ExitCode
 } else {
-  "Uninstall silenzioso non disponibile per '$name'. UninstallString: $($app.UninstallString). Disinstallare manualmente sull'host." | Tee-Object -FilePath $logPath
+  "Uninstall silenzioso non disponibile per '$name'. UninstallString: $($app.UninstallString). Disinstallare manualmente sull'host." | Tee-Object -FilePath $logPath -Append
   $ec = 3
 }
 "EXIT_CODE=$ec" | Tee-Object -FilePath $logPath -Append
 exit $ec`;
+
+  const head = `$ErrorActionPreference='Continue'
+$logPath = '${logPath}'
+New-Item -ItemType Directory -Force -Path (Split-Path $logPath) | Out-Null`;
+
+  if (chocoId) {
+    assertSafeIdentifier(chocoId, "chocoId");
+    return `${head}
+$choco = (Get-Command choco -ErrorAction SilentlyContinue).Source
+if ($choco) {
+  & choco uninstall ${chocoId} -y --no-progress --limit-output 2>&1 | Tee-Object -FilePath $logPath
+  if ($LASTEXITCODE -eq 0) { 'EXIT_CODE=0' | Tee-Object -FilePath $logPath -Append; exit 0 }
+  "Pacchetto '${chocoId}' non gestito da Chocolatey su questo host — provo la disinstallazione dal registro." | Tee-Object -FilePath $logPath -Append
+}
+${registryBlock}`;
+  }
+  return `${head}
+${registryBlock}`;
 }
 
 // Hostname valido: lettere/digit/dot/dash, max 253, almeno 1 dot oppure puro IPv4.

@@ -64,22 +64,47 @@ export function WazuhCard() {
   const [showSetup, setShowSetup] = useState(false);
   const [setupContent, setSetupContent] = useState<{ script: string; playbook: string } | null>(null);
   const [scriptBusy, setScriptBusy] = useState<"windows" | "linux" | "macos" | null>(null);
+  const [scriptView, setScriptView] = useState<{ platform: "windows" | "linux" | "macos"; text: string } | null>(null);
 
-  // Scarica lo script di install dell'AGENTE Wazuh per la platform, puntato a
-  // questo manager (equivalente delle card GLPI/MeshCentral).
+  const fetchAgentScript = async (platform: "windows" | "linux" | "macos"): Promise<string> => {
+    const r = await fetch("/api/integrations/wazuh/agent-script", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ platform }),
+    });
+    if (!r.ok) {
+      const err = (await r.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(err?.error ?? `HTTP ${r.status}`);
+    }
+    return r.text();
+  };
+
+  // Mostra lo script inline (per install manuale copia/incolla).
+  const handleShowAgentScript = async (platform: "windows" | "linux" | "macos") => {
+    setScriptBusy(platform);
+    setScriptView(null);
+    try {
+      setScriptView({ platform, text: await fetchAgentScript(platform) });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore generazione script");
+    } finally {
+      setScriptBusy(null);
+    }
+  };
+
+  const copyScriptView = () => {
+    if (!scriptView) return;
+    void navigator.clipboard.writeText(scriptView.text).then(
+      () => toast.success("Script copiato"),
+      () => toast.error("Copia non riuscita"),
+    );
+  };
+
   const handleDownloadAgentScript = async (platform: "windows" | "linux" | "macos") => {
     setScriptBusy(platform);
     try {
-      const r = await fetch("/api/integrations/wazuh/agent-script", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform }),
-      });
-      if (!r.ok) {
-        const err = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(err?.error ?? `HTTP ${r.status}`);
-      }
-      const blob = await r.blob();
+      const text = await fetchAgentScript(platform);
+      const blob = new Blob([text], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -455,29 +480,46 @@ export function WazuhCard() {
             (auto-arruolo). Windows = <code>.ps1</code> (PowerShell admin); Linux/macOS =
             <code>.sh</code> (root). Aggiunge da sé la voce hosts del manager se serve.
           </p>
-          <Tabs defaultValue="windows">
+          <Tabs defaultValue="windows" onValueChange={() => setScriptView(null)}>
             <TabsList className="h-8">
               <TabsTrigger value="windows" className="text-xs">Windows</TabsTrigger>
               <TabsTrigger value="linux" className="text-xs">Linux</TabsTrigger>
               <TabsTrigger value="macos" className="text-xs">macOS</TabsTrigger>
             </TabsList>
             {(["windows", "linux", "macos"] as const).map((p) => (
-              <TabsContent key={p} value={p} className="mt-3">
-                <Button
-                  size="sm"
-                  disabled={scriptBusy === p}
-                  onClick={() => void handleDownloadAgentScript(p)}
-                >
+              <TabsContent key={p} value={p} className="mt-3 flex gap-2">
+                <Button size="sm" disabled={scriptBusy === p} onClick={() => void handleShowAgentScript(p)}>
                   {scriptBusy === p ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
                   ) : (
-                    <Download className="h-3.5 w-3.5 mr-1" />
+                    <BookOpen className="h-3.5 w-3.5 mr-1" />
                   )}
-                  Scarica script {p === "macos" ? "macOS" : p === "windows" ? "Windows" : "Linux"}
+                  Mostra script
+                </Button>
+                <Button size="sm" variant="outline" disabled={scriptBusy === p} onClick={() => void handleDownloadAgentScript(p)}>
+                  <Download className="h-3.5 w-3.5 mr-1" />
+                  Scarica
                 </Button>
               </TabsContent>
             ))}
           </Tabs>
+
+          {scriptView && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Script {scriptView.platform === "macos" ? "macOS" : scriptView.platform === "windows" ? "Windows" : "Linux"}
+                  {" "}— lancialo sul target ({scriptView.platform === "windows" ? "PowerShell come amministratore" : "root/sudo"})
+                </span>
+                <Button size="xs" variant="outline" onClick={copyScriptView}>
+                  <Copy className="h-3.5 w-3.5 mr-1" /> Copia
+                </Button>
+              </div>
+              <pre className="max-h-72 overflow-auto rounded-md border bg-muted/40 p-2 text-xs font-mono whitespace-pre-wrap break-all">
+                {scriptView.text}
+              </pre>
+            </div>
+          )}
         </div>
       )}
 

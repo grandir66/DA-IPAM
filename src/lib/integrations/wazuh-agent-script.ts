@@ -21,18 +21,31 @@ export function isWazuhAgentPlatform(p: string): p is WazuhAgentPlatform {
   return p === "linux" || p === "macos";
 }
 
-export function buildWazuhAgentScript(platform: WazuhAgentPlatform, managerHost: string): string {
+export function buildWazuhAgentScript(
+  platform: WazuhAgentPlatform,
+  managerHost: string,
+  managerIp?: string,
+): string {
   const mgr = managerHost.trim();
   if (!SAFE_MANAGER_RE.test(mgr)) {
     throw new Error(`Manager Wazuh non valido: ${managerHost}`);
   }
+  const ip = (managerIp ?? "").trim();
+  const isIp = (s: string) => /^\d{1,3}(\.\d{1,3}){3}$/.test(s);
+  // Se il manager è un hostname e ne conosciamo l'IP, aggiungiamo /etc/hosts sul
+  // target: molti host lab non risolvono i nomi domarc.it → l'agente installa ma
+  // logga "Could not resolve hostname" e non si connette. Idempotente.
+  const hostsFix =
+    ip && ip !== mgr && isIp(ip) && !isIp(mgr)
+      ? `if ! grep -q '${mgr}' /etc/hosts 2>/dev/null; then echo '${ip} ${mgr}' >> /etc/hosts; fi\n`
+      : "";
 
   if (platform === "macos") {
     return `#!/bin/sh
 # Wazuh Agent (macOS) — manager ${mgr}
 set -e
 if [ "$(id -u)" -ne 0 ]; then echo "Esegui come root: sudo sh questo-script.sh"; exit 1; fi
-ARCH=$(uname -m)
+${hostsFix}ARCH=$(uname -m)
 if [ "$ARCH" = "arm64" ]; then
   PKG="wazuh-agent-${WAZUH_MACOS_PKG_VERSION}.arm64.pkg"
 else
@@ -55,7 +68,7 @@ echo ">>> OK — agente installato, manager ${mgr}. Comparira' in da-wazuh entro
 set -e
 if [ "$(id -u)" -ne 0 ]; then echo "Esegui come root/sudo"; exit 1; fi
 MGR='${mgr}'
-if command -v apt-get >/dev/null 2>&1; then
+${hostsFix}if command -v apt-get >/dev/null 2>&1; then
   echo ">>> APT"
   curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import
   chmod 644 /usr/share/keyrings/wazuh.gpg

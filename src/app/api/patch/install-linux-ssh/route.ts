@@ -10,6 +10,7 @@
  * verrebbe eseguito come root sull'host). Solo admin.
  */
 import { NextResponse } from "next/server";
+import { lookup } from "dns/promises";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { patchModuleGuard, userIdFromSession } from "@/lib/patch/route-guard";
@@ -63,7 +64,14 @@ export async function POST(request: Request) {
         if (!cfg.enabled || !cfg.url) {
           return NextResponse.json({ error: "Wazuh non configurato in Integrazioni" }, { status: 400 });
         }
-        script = buildWazuhAgentScript(platform, new URL(cfg.url).hostname);
+        const managerHost = new URL(cfg.url).hostname;
+        let managerIp: string | undefined;
+        try {
+          managerIp = (await lookup(managerHost)).address;
+        } catch {
+          managerIp = undefined;
+        }
+        script = buildWazuhAgentScript(platform, managerHost, managerIp);
         packageId = "wazuh-agent";
       } else if (agent === "glpi") {
         if (!isInventoryAgentEnabled(tenantCode)) {

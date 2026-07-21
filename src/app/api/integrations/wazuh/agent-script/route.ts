@@ -6,6 +6,7 @@
  * Body: { platform: 'linux' | 'macos' }. Auth: requireAdmin.
  */
 import { NextResponse } from "next/server";
+import { lookup } from "dns/promises";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { buildWazuhAgentScript, isWazuhAgentPlatform } from "@/lib/integrations/wazuh-agent-script";
@@ -44,8 +45,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "URL manager Wazuh non valido" }, { status: 400 });
   }
 
+  let managerIp: string | undefined;
   try {
-    const script = buildWazuhAgentScript(platform, managerHost);
+    managerIp = (await lookup(managerHost)).address;
+  } catch {
+    managerIp = undefined;
+  }
+
+  try {
+    const script = buildWazuhAgentScript(platform, managerHost, managerIp);
     return new NextResponse(script, {
       status: 200,
       headers: {

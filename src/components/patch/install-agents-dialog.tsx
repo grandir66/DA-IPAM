@@ -200,6 +200,34 @@ export function InstallAgentsDialog({
     [platform],
   );
 
+  // Linux/macOS: push via SSH (esegue lo script sull'host, come WinRM su Windows).
+  const runSshPush = useCallback(
+    async (agentKey: string, label: string) => {
+      setBusy(`${agentKey}:push`);
+      try {
+        const res = await fetch("/api/patch/install-linux-ssh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hostId, agent: agentKey, platform }),
+        });
+        const data = (await res.json().catch(() => null)) as
+          | { operationId?: number; error?: string }
+          | null;
+        if (!res.ok || typeof data?.operationId !== "number") {
+          throw new Error(data?.error ?? `HTTP ${res.status}`);
+        }
+        setModalTitle(`Installa ${label} — ${hostLabel} (SSH)`);
+        setModalOps([{ operationId: data.operationId, hostId, hostLabel }]);
+        setModalOpen(true);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Errore install via SSH");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [hostId, hostLabel, platform],
+  );
+
   const copyScript = useCallback(() => {
     if (!script) return;
     void navigator.clipboard.writeText(script.content).then(
@@ -235,7 +263,8 @@ export function InstallAgentsDialog({
             <DialogTitle>Installa agent/moduli</DialogTitle>
             <DialogDescription>
               Su <span className="font-medium text-foreground">{hostLabel}</span>.
-              Windows via WinRM (one-click); Linux/macOS generano lo script da lanciare sul target.
+              Windows: push WinRM. Linux/macOS: <strong>Installa</strong> = push via SSH
+              (credenziali salvate), oppure <strong>Script</strong> da lanciare a mano.
             </DialogDescription>
           </DialogHeader>
 
@@ -282,21 +311,33 @@ export function InstallAgentsDialog({
                         <div className="text-sm font-medium">{a.label}</div>
                         <div className="text-xs text-muted-foreground">{a.desc}</div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="shrink-0"
-                        disabled={busy !== null}
-                        onClick={() => void genScript(a)}
-                      >
-                        {busy === a.key ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <>
-                            <FileTerminal className="h-4 w-4 mr-1" /> Script
-                          </>
-                        )}
-                      </Button>
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          size="sm"
+                          disabled={busy !== null}
+                          onClick={() => void runSshPush(a.key, a.label)}
+                          title="Installa via SSH (usa le credenziali salvate dell'host)"
+                        >
+                          {busy === `${a.key}:push` ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "Installa"
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy !== null}
+                          onClick={() => void genScript(a)}
+                          title="Genera lo script da lanciare a mano sul target"
+                        >
+                          {busy === a.key ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <FileTerminal className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   ))}
                   <p className="text-xs text-muted-foreground px-1">

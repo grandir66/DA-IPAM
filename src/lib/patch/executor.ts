@@ -21,7 +21,8 @@
 import type { Database } from "better-sqlite3";
 import { runWinrmCommand } from "@/lib/devices/winrm-run";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
-import { loadWinrmCredentialsForHost } from "./credentials";
+import { loadWinrmCredentialsForHost, loadSshCredentialsForHost } from "./credentials";
+import { runSshCommand } from "@/lib/devices/ssh-run";
 import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
 import { buildMeshAgentChocoScript, buildGlpiAgentChocoScript } from "./choco-packages";
 import { getWindowsPushScriptBody } from "@/lib/inventory-agent/install-scripts";
@@ -835,6 +836,77 @@ export async function executeUninstall(
 
   const script = buildUninstallScript(operationId, opts.name, opts.chocoId ?? null);
   return runChocoPush(db, operationId, opts.hostId, script, "Disinstallazione fallita");
+}
+
+/**
+ * Push install su host Linux/macOS via SSH (equivalente del push WinRM su
+ * Windows). Carica le credenziali SSH dell'host, esegue lo `script` (già
+ * costruito per la platform: Wazuh/GLPI/MeshCentral) e traccia l'operazione con
+ * log su patch_operation_logs. Lo script deve girare come root (o l'utente SSH
+ * deve esserlo): lo script stesso verifica `id -u` e fallisce con messaggio chiaro.
+ * runSshCommand ritorna già l'exitCode → niente parsing EXIT_CODE.
+ */
+export async function executeSshInstall(
+  opts: ExecutorOptions & { script: string; packageId: string },
+): Promise<{ operationId: number; status: string }> {
+  const db = resolveTenantDb(opts.tenantCode);
+  const operationId = createOperation(db, {
+    hostId: opts.hostId,
+    userId: opts.userId,
+    action: "install",
+    packageId: opts.packageId,
+  });
+  updateOperation(db, operationId, { status: "running", startedAt: nowIso() });
+
+  const ssh = loadSshCredentialsForHost(db, opts.hostId);
+  if (!ssh) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: "Credenziali SSH mancanti o non decifrabili per l'host",
+    });
+    return { operationId, status: "failed" };
+  }
+
+  const insertLog = db.prepare(
+    "INSERT INTO patch_operation_logs (operation_id, ts, stream, line) VALUES (?, ?, ?, ?)",
+  );
+  const logStream = (text: string, stream: "stdout" | "stderr" | "system") => {
+    const ts = nowIso();
+    for (const l of text.split(/\r?\n/).filter((x) => x.length > 0).slice(-300)) {
+      insertLog.run(operationId, ts, stream, l.slice(0, 4000));
+    }
+  };
+
+  try {
+    const res = await runSshCommand({
+      host: ssh.host,
+      port: ssh.port,
+      username: ssh.username,
+      password: ssh.password,
+      command: opts.script,
+      timeoutSec: 600,
+    });
+    logStream(res.stdout, "stdout");
+    logStream(res.stderr, "stderr");
+    const ok = res.exitCode === 0;
+    updateOperation(db, operationId, {
+      status: ok ? "success" : "failed",
+      exitCode: res.exitCode,
+      finishedAt: nowIso(),
+      ...(ok ? {} : { errorMessage: `SSH install exit ${res.exitCode}` }),
+    });
+    return { operationId, status: ok ? "success" : "failed" };
+  } catch (err) {
+    const msg = (err as Error)?.message ?? String(err);
+    logStream(msg, "system");
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: msg.slice(0, 2000),
+    });
+    return { operationId, status: "failed" };
+  }
 }
 
 /**

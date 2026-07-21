@@ -131,3 +131,46 @@ export function loadWinrmCredentialsForHost(
     realm,
   };
 }
+
+export interface SshCredentialsResolved {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+}
+
+const SSH_DEFAULT_PORT = 22;
+
+/**
+ * Ritorna la migliore credenziale SSH disponibile per `hostId`, già decifrata
+ * (per il push install su Linux/macOS). Stesso pattern di
+ * `loadWinrmCredentialsForHost` ma `protocol_type='ssh'`, porta default 22, senza
+ * realm/AD. `null` se host senza IP, nessuna credenziale ssh, o decrypt fallito.
+ */
+export function loadSshCredentialsForHost(
+  db: Database,
+  hostId: number,
+): SshCredentialsResolved | null {
+  const row = db
+    .prepare(
+      `SELECT h.ip AS host_ip,
+              COALESCE(hc.port, ${SSH_DEFAULT_PORT}) AS port,
+              c.encrypted_username AS encrypted_username,
+              c.encrypted_password AS encrypted_password
+         FROM host_credentials hc
+         JOIN credentials c ON c.id = hc.credential_id
+         JOIN hosts h ON h.id = hc.host_id
+        WHERE hc.host_id = ?
+          AND hc.protocol_type = 'ssh'
+        ORDER BY hc.validated DESC, hc.sort_order ASC, hc.id ASC
+        LIMIT 1`,
+    )
+    .get(hostId) as JoinedRow | undefined;
+
+  if (!row || !row.host_ip) return null;
+  if (!row.encrypted_username || !row.encrypted_password) return null;
+  const username = safeDecrypt(row.encrypted_username);
+  const password = safeDecrypt(row.encrypted_password);
+  if (!username || !password) return null;
+  return { host: row.host_ip, port: row.port || SSH_DEFAULT_PORT, username, password };
+}

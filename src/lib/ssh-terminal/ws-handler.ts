@@ -96,6 +96,15 @@ function handleSession(ws: WebSocket, payload: SshTokenPayload): void {
     });
   });
 
+  // keyboard-interactive: molti appliance/gateway (UniFi, ecc.) non accettano
+  // 'password' pura ma keyboard-interactive. Rispondiamo con la password salvata.
+  conn.on(
+    "keyboard-interactive",
+    (_name, _instr, _lang, prompts: unknown[], finish: (responses: string[]) => void) => {
+      finish(prompts.map(() => creds.password));
+    },
+  );
+
   conn.on("error", (e: Error) => {
     if (ws.readyState === ws.OPEN) ws.send(`\r\n[SSH error: ${e.message}]\r\n`);
     closeAll();
@@ -131,6 +140,7 @@ function handleSession(ws: WebSocket, payload: SshTokenPayload): void {
     port: creds.port,
     username: creds.username,
     password: creds.password,
+    tryKeyboard: true,
     readyTimeout: 15000,
     keepaliveInterval: 15000,
   });

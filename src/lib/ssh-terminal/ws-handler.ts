@@ -19,7 +19,9 @@ import { loadSshCredentialsForHost } from "@/lib/patch/credentials";
 const WS_PATH = "/ws/ssh";
 
 export function attachSshTerminalWs(server: HttpServer): void {
-  const wss = new WebSocketServer({ noServer: true });
+  // perMessageDeflate disabilitato: la compressione non serve per un terminale e
+  // con noServer + proxy davanti genera "RSV1 must be clear" sui frame.
+  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
   server.on("upgrade", (req, socket, head) => {
     let url: URL;

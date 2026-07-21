@@ -243,8 +243,24 @@ export function assertSafeManagerHost(value: string): void {
  *
  * `managerHost` passa per `assertSafeManagerHost` per evitare PS injection.
  */
-export function buildWazuhInstallScript(opId: number, managerHost: string): string {
+/**
+ * URL MSI agent Wazuh. L'URL GENERICO `wazuh-agent.msi` non è più servito
+ * (packages.wazuh.com → 403); solo gli URL VERSIONATI funzionano. Pin su una
+ * versione ≤ manager (da-wazuh è 4.14.x): un agent versionato non va mai in 403.
+ * Overridabile per matchare la versione del manager quando serve.
+ */
+export const DEFAULT_WAZUH_AGENT_MSI =
+  "https://packages.wazuh.com/4.x/windows/wazuh-agent-4.14.5-1.msi";
+
+export function buildWazuhInstallScript(
+  opId: number,
+  managerHost: string,
+  msiUrl: string = DEFAULT_WAZUH_AGENT_MSI,
+): string {
   assertSafeManagerHost(managerHost);
+  if (!/^https:\/\/packages\.wazuh\.com\/[\w./-]+\.msi$/.test(msiUrl)) {
+    throw new Error(`[patch/ps-scripts] URL MSI Wazuh non valido: ${msiUrl}`);
+  }
   const logPath = logFilePathForOperation(opId);
   return `$ErrorActionPreference='Continue'
 $logPath = '${logPath}'
@@ -262,7 +278,7 @@ $msi = "$env:TEMP\\wazuh-agent.msi"
 'DOWNLOADING_MSI from packages.wazuh.com' | Tee-Object -FilePath $logPath -Append
 try {
   [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-  Invoke-WebRequest -Uri 'https://packages.wazuh.com/4.x/windows/wazuh-agent.msi' -OutFile $msi -UseBasicParsing 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
+  Invoke-WebRequest -Uri '${msiUrl}' -OutFile $msi -UseBasicParsing 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
 } catch {
   "ERROR: Download MSI failed: $_" | Tee-Object -FilePath $logPath -Append
   'EXIT_CODE=1' | Tee-Object -FilePath $logPath -Append

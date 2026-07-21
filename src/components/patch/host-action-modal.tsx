@@ -595,7 +595,7 @@ export function HostActionModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="max-w-5xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? (
@@ -660,7 +660,7 @@ export function HostActionModal({
           </div>
         ) : null}
 
-        <div className="border rounded-md max-h-[55vh] overflow-y-auto divide-y">
+        <div className="border rounded-md max-h-[72vh] overflow-y-auto divide-y">
           {operations.map((op) => {
             const st = states[op.operationId];
             const logEntry = logs[op.operationId] ?? emptyLogState();
@@ -743,8 +743,8 @@ export function HostActionModal({
                       ref={(el) => {
                         outputContainerRefs.current[op.operationId] = el;
                       }}
-                      className="mt-1 border rounded bg-muted/40 font-mono text-xs leading-relaxed p-2 overflow-y-auto"
-                      style={{ maxHeight: "200px" }}
+                      className="mt-1 border rounded bg-muted/40 font-mono text-xs leading-relaxed p-2 overflow-auto"
+                      style={{ maxHeight: "min(52vh, 640px)", minHeight: "180px" }}
                     >
                       {logEntry.truncated ? (
                         <div className="text-amber-600 dark:text-amber-400 italic mb-1">

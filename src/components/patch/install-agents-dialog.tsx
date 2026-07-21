@@ -113,6 +113,17 @@ const SCRIPT_AGENTS: ScriptAgent[] = [
     }),
     ext: "sh",
   },
+  {
+    key: "wazuh",
+    label: "Wazuh Agent (SIEM/HIDS)",
+    desc: "Script agente Wazuh (repo apt/yum/zypper o .pkg macOS) verso il manager configurato.",
+    icon: <ShieldCheck className="h-4 w-4" />,
+    request: (platform) => ({
+      url: "/api/integrations/wazuh/agent-script",
+      body: { platform },
+    }),
+    ext: "sh",
+  },
 ];
 
 export function InstallAgentsDialog({
@@ -289,8 +300,8 @@ export function InstallAgentsDialog({
                     </div>
                   ))}
                   <p className="text-xs text-muted-foreground px-1">
-                    Chocolatey è solo Windows. Per l&apos;agente <strong>Wazuh</strong> su Linux/macOS usa
-                    &ldquo;Deploy new agent&rdquo; dal dashboard Wazuh (da-wazuh).
+                    Chocolatey è solo Windows. Gli script vanno lanciati come root/sudo sul target;
+                    l&apos;agente Wazuh richiede il manager configurato in Integrazioni.
                   </p>
                 </>
               )}

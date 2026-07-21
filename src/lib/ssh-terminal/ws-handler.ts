@@ -23,7 +23,9 @@ export function attachSshTerminalWs(server: HttpServer): void {
   // con noServer + proxy davanti genera "RSV1 must be clear" sui frame.
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
-  server.on("upgrade", (req, socket, head) => {
+  // prependListener: il nostro handler deve intercettare /ws/ssh PRIMA di
+  // eventuali handler upgrade di Next (che altrimenti proxa/redirige la socket).
+  server.prependListener("upgrade", (req, socket, head) => {
     let url: URL;
     try {
       url = new URL(req.url ?? "", "http://localhost");
@@ -37,6 +39,9 @@ export function attachSshTerminalWs(server: HttpServer): void {
       socket.destroy();
       return;
     }
+    // Consumiamo la socket noi: rimuoviamo eventuali altri listener 'upgrade'
+    // per questa richiesta così Next non ci scrive sopra (frame corrotto/RSV1).
+    socket.on("error", () => { /* noop: gestito in handleSession */ });
     wss.handleUpgrade(req, socket, head, (ws) => handleSession(ws, payload));
   });
 }

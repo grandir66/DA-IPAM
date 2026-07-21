@@ -7,5 +7,7 @@ import { auth } from "@/lib/auth";
 export const proxy = auth;
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/auth|logo-white\\.png|logo-color\\.png).*)"],
+  // ws/ssh escluso: è un upgrade WebSocket gestito dal custom server (server.ts),
+  // NON deve passare dal middleware auth (redirect /login → corrompe l'handshake).
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/auth|ws/ssh|logo-white\\.png|logo-color\\.png).*)"],
 };

@@ -54,11 +54,12 @@ export async function POST(request: Request) {
 
   try {
     const script = buildWazuhAgentScript(platform, managerHost, managerIp);
+    const isWin = platform === "windows";
     return new NextResponse(script, {
       status: 200,
       headers: {
-        "Content-Type": "text/x-shellscript; charset=utf-8",
-        "Content-Disposition": `attachment; filename="install-wazuh-agent-${platform}.sh"`,
+        "Content-Type": isWin ? "text/plain; charset=utf-8" : "text/x-shellscript; charset=utf-8",
+        "Content-Disposition": `attachment; filename="install-wazuh-agent-${platform}.${isWin ? "ps1" : "sh"}"`,
         "Cache-Control": "no-store",
       },
     });

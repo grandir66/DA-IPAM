@@ -10,15 +10,17 @@
 
 /** Versione pkg macOS pinnata (≤ manager da-wazuh). */
 const WAZUH_MACOS_PKG_VERSION = "4.14.5-1";
+/** URL MSI Windows VERSIONATO (l'URL generico wazuh-agent.msi → 403). */
+const WAZUH_WIN_MSI_URL = "https://packages.wazuh.com/4.x/windows/wazuh-agent-4.14.5-1.msi";
 
 // hostname (con dot) o IPv4 — no injection nello script.
 const SAFE_MANAGER_RE =
   /^(?:(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?|(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d))$/;
 
-export type WazuhAgentPlatform = "linux" | "macos";
+export type WazuhAgentPlatform = "linux" | "macos" | "windows";
 
 export function isWazuhAgentPlatform(p: string): p is WazuhAgentPlatform {
-  return p === "linux" || p === "macos";
+  return p === "linux" || p === "macos" || p === "windows";
 }
 
 export function buildWazuhAgentScript(
@@ -39,6 +41,28 @@ export function buildWazuhAgentScript(
     ip && ip !== mgr && isIp(ip) && !isIp(mgr)
       ? `if ! grep -q '${mgr}' /etc/hosts 2>/dev/null; then echo '${ip} ${mgr}' >> /etc/hosts; fi\n`
       : "";
+  // Equivalente per Windows (hosts di sistema), stesso scopo.
+  const hostsFixPs =
+    ip && ip !== mgr && isIp(ip) && !isIp(mgr)
+      ? `$hp = "$env:WINDIR\\System32\\drivers\\etc\\hosts"\nif (-not (Select-String -Path $hp -Pattern ([regex]::Escape('${mgr}')) -Quiet)) { Add-Content -Path $hp -Value '${ip} ${mgr}' }\n`
+      : "";
+
+  if (platform === "windows") {
+    return `# Wazuh Agent (Windows) — manager ${mgr}
+# Esegui in PowerShell come Amministratore.
+$ErrorActionPreference = 'Stop'
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+${hostsFixPs}$msi = "$env:TEMP\\wazuh-agent.msi"
+Write-Host '>>> Download MSI'
+Invoke-WebRequest -Uri '${WAZUH_WIN_MSI_URL}' -OutFile $msi -UseBasicParsing
+Write-Host '>>> Installazione silenziosa'
+$p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList ('/i', $msi, '/qn', 'WAZUH_MANAGER=${mgr}', 'WAZUH_AGENT_GROUP=default')
+if ($p.ExitCode -ne 0) { throw "msiexec exit $($p.ExitCode)" }
+Remove-Item $msi -Force -ErrorAction SilentlyContinue
+Start-Service WazuhSvc -ErrorAction SilentlyContinue
+Write-Host ">>> OK - Wazuh agent installato, manager ${mgr}. Comparira' in da-wazuh entro ~1 min."
+`;
+  }
 
   if (platform === "macos") {
     return `#!/bin/sh

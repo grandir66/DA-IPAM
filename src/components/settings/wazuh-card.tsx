@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, RefreshCw, Shield, Trash2, BookOpen, Copy, ChevronDown, ChevronRight, AlertTriangle, ExternalLink } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, Shield, Trash2, BookOpen, Copy, ChevronDown, ChevronRight, AlertTriangle, ExternalLink, Download } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface WazuhConfig {
   enabled: boolean;
@@ -62,6 +63,36 @@ export function WazuhCard() {
   const [syncing, setSyncing] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
   const [setupContent, setSetupContent] = useState<{ script: string; playbook: string } | null>(null);
+  const [scriptBusy, setScriptBusy] = useState<"windows" | "linux" | "macos" | null>(null);
+
+  // Scarica lo script di install dell'AGENTE Wazuh per la platform, puntato a
+  // questo manager (equivalente delle card GLPI/MeshCentral).
+  const handleDownloadAgentScript = async (platform: "windows" | "linux" | "macos") => {
+    setScriptBusy(platform);
+    try {
+      const r = await fetch("/api/integrations/wazuh/agent-script", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform }),
+      });
+      if (!r.ok) {
+        const err = (await r.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(err?.error ?? `HTTP ${r.status}`);
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `install-wazuh-agent-${platform}.${platform === "windows" ? "ps1" : "sh"}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Script scaricato");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore download script");
+    } finally {
+      setScriptBusy(null);
+    }
+  };
   const [setupTab, setSetupTab] = useState<"playbook" | "script">("playbook");
   const [editMode, setEditMode] = useState(false);
 
@@ -410,6 +441,43 @@ export function WazuhCard() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ──────────── Script install AGENTE per sistema operativo ──────────── */}
+      {configured && (
+        <div className="border-t pt-3 mt-1 space-y-2">
+          <div className="text-sm font-medium flex items-center gap-1.5">
+            <Download className="h-3.5 w-3.5" /> Script install agente (per sistema operativo)
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Scarica lo script che installa l&apos;agente Wazuh puntato a questo manager
+            (auto-arruolo). Windows = <code>.ps1</code> (PowerShell admin); Linux/macOS =
+            <code>.sh</code> (root). Aggiunge da sé la voce hosts del manager se serve.
+          </p>
+          <Tabs defaultValue="windows">
+            <TabsList className="h-8">
+              <TabsTrigger value="windows" className="text-xs">Windows</TabsTrigger>
+              <TabsTrigger value="linux" className="text-xs">Linux</TabsTrigger>
+              <TabsTrigger value="macos" className="text-xs">macOS</TabsTrigger>
+            </TabsList>
+            {(["windows", "linux", "macos"] as const).map((p) => (
+              <TabsContent key={p} value={p} className="mt-3">
+                <Button
+                  size="sm"
+                  disabled={scriptBusy === p}
+                  onClick={() => void handleDownloadAgentScript(p)}
+                >
+                  {scriptBusy === p ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Scarica script {p === "macos" ? "macOS" : p === "windows" ? "Windows" : "Linux"}
+                </Button>
+              </TabsContent>
+            ))}
+          </Tabs>
         </div>
       )}
 

@@ -5,7 +5,7 @@
  * /api/ssh-terminal/token, apre un WebSocket verso /ws/ssh (gestito in server.ts)
  * e collega xterm ↔ shell SSH. Le credenziali non lasciano mai il server.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { Terminal } from "@xterm/xterm";
@@ -29,11 +29,14 @@ export function SshTerminalDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  // Ref-callback con stato: con il Dialog (portal + animazione) il div può montare
+  // DOPO il primo run dell'effetto; usando uno stato l'effetto rigira quando il
+  // container è disponibile (altrimenti restava "connessione…" per sempre).
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<"connecting" | "open" | "closed">("connecting");
 
   useEffect(() => {
-    if (!open || !containerRef.current) return;
+    if (!open || !container) return;
     let disposed = false;
     let ws: WebSocket | null = null;
     const term = new Terminal({
@@ -44,7 +47,7 @@ export function SshTerminalDialog({
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.open(containerRef.current);
+    term.open(container);
     try {
       fit.fit();
     } catch {
@@ -104,18 +107,23 @@ export function SshTerminalDialog({
       }
     })();
 
-    const onWinResize = () => {
+    const refit = () => {
       try {
         fit.fit();
       } catch {
         /* noop */
       }
     };
-    window.addEventListener("resize", onWinResize);
+    window.addEventListener("resize", refit);
+    // Il dialog si apre in animazione (container 0px → dimensione finale): rifitta
+    // quando il container prende le sue misure, altrimenti xterm resta a 0 colonne.
+    const ro = new ResizeObserver(() => refit());
+    ro.observe(container);
 
     return () => {
       disposed = true;
-      window.removeEventListener("resize", onWinResize);
+      window.removeEventListener("resize", refit);
+      ro.disconnect();
       try {
         ws?.close();
       } catch {
@@ -123,7 +131,7 @@ export function SshTerminalDialog({
       }
       term.dispose();
     };
-  }, [open, hostId]);
+  }, [open, hostId, container]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -146,7 +154,7 @@ export function SshTerminalDialog({
           </DialogTitle>
         </DialogHeader>
         <div
-          ref={containerRef}
+          ref={setContainer}
           className="h-[65vh] w-full overflow-hidden rounded-md border bg-[#0b1220] p-2"
         />
       </DialogContent>

@@ -112,21 +112,39 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     }
-    if (existing) {
-      db.prepare("DELETE FROM vuln_scanners WHERE id = ?").run(existing.id);
-    }
     const enc = encrypt(parsed.data.token);
-    db.prepare(
-      `INSERT INTO vuln_scanners
-         (name, base_url, token_encrypted, enabled, cert_pin, cert_fingerprint)
-       VALUES (?, ?, ?, 1, ?, ?)`,
-    ).run(
-      parsed.data.name,
-      parsed.data.base_url.replace(/\/$/, ""),
-      enc,
-      parsed.data.cert_pin ?? null,
-      parsed.data.cert_fingerprint ?? null,
-    );
+    const cleanUrl = parsed.data.base_url.replace(/\/$/, "");
+    if (existing) {
+      // COR-05: UPDATE in-place invece di DELETE+INSERT. Il DELETE del singleton
+      // farebbe scattare ON DELETE CASCADE su vuln_scan_runs/vuln_findings,
+      // cancellando tutto lo storico auditabile; mantenendo lo stesso id le FK
+      // restano valide e lo storico è preservato.
+      db.prepare(
+        `UPDATE vuln_scanners
+           SET name = ?, base_url = ?, token_encrypted = ?, enabled = 1,
+               cert_pin = ?, cert_fingerprint = ?
+         WHERE id = ?`,
+      ).run(
+        parsed.data.name,
+        cleanUrl,
+        enc,
+        parsed.data.cert_pin ?? null,
+        parsed.data.cert_fingerprint ?? null,
+        existing.id,
+      );
+    } else {
+      db.prepare(
+        `INSERT INTO vuln_scanners
+           (name, base_url, token_encrypted, enabled, cert_pin, cert_fingerprint)
+         VALUES (?, ?, ?, 1, ?, ?)`,
+      ).run(
+        parsed.data.name,
+        cleanUrl,
+        enc,
+        parsed.data.cert_pin ?? null,
+        parsed.data.cert_fingerprint ?? null,
+      );
+    }
 
     // Registra il job vuln_sync se non esiste (30 min default).
     const existingJob = db

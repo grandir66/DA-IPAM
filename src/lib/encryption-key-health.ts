@@ -110,7 +110,11 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
     }
   }
 
-  const ok = credentialCount === 0 || decryptOkCount > 0;
+  // COR-06: health verde SOLO se TUTTE le credenziali sono decifrabili.
+  // Prima bastava un solo secret decifrabile (decryptOkCount > 0) → il monitoring
+  // restava verde mentre credenziali di rete/integrazioni erano già irrecuperabili.
+  const ok = credentialCount === 0 || decryptOkCount === credentialCount;
+  const failCount = credentialCount - decryptOkCount;
   return {
     configured: true,
     fingerprint,
@@ -119,7 +123,7 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
     ok,
     detail: ok
       ? null
-      : `${credentialCount} credenziali salvate ma nessuna decifrabile con ENCRYPTION_KEY attuale. ` +
+      : `${failCount}/${credentialCount} credenziali NON decifrabili con ENCRYPTION_KEY attuale. ` +
         "Allinea la chiave Docker/systemd con quella usata al salvataggio o re-inserisci le credenziali.",
   };
 }

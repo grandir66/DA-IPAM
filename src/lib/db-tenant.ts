@@ -105,6 +105,13 @@ export function getTenantDb(tenantCode: string): Database.Database {
   }
 
   const dbPath = path.join(TENANTS_DIR, `${tenantCode}.db`);
+  // TEN-02 hardening: containment. Il file DB del tenant DEVE trovarsi
+  // direttamente dentro TENANTS_DIR. Un tenantCode con path traversal
+  // (es. "../hub") aprirebbe altrimenti hub.db come se fosse un DB tenant,
+  // applicandovi schema/migrazioni e corrompendolo. Fail-closed.
+  if (path.dirname(path.resolve(dbPath)) !== path.resolve(TENANTS_DIR)) {
+    throw new Error(`Tenant code non valido: ${tenantCode}`);
+  }
   const newDb = new Database(dbPath);
 
   // Apply PRAGMAs
@@ -3456,20 +3463,23 @@ export function getArpEntriesByDevice(deviceId: number): (ArpEntry & { host_ip?:
 
 export function upsertMacPortEntries(deviceId: number, entries: { mac: string; port_name: string; vlan: number | null; port_status: "up" | "down" | null; speed: string | null }[]): void {
   const d = db();
-  d.prepare("DELETE FROM mac_port_entries WHERE device_id = ?").run(deviceId);
-
+  // ARC-01: DELETE dentro la transazione = replace atomico. Prima il DELETE era
+  // fuori (auto-commit): se l'insert falliva, il device restava con zero MAC
+  // entries. Stesso pattern già applicato a upsertSwitchPorts e alla copia db.ts.
+  const deleteStmt = d.prepare("DELETE FROM mac_port_entries WHERE device_id = ?");
   const stmt = d.prepare(
     `INSERT INTO mac_port_entries (device_id, mac, port_name, vlan, port_status, speed)
      VALUES (?, ?, ?, ?, ?, ?)`
   );
 
-  const insertMany = d.transaction((items: typeof entries) => {
+  const replaceAll = d.transaction((items: typeof entries) => {
+    deleteStmt.run(deviceId);
     for (const entry of items) {
       stmt.run(deviceId, entry.mac, entry.port_name, entry.vlan, entry.port_status, entry.speed);
     }
   });
 
-  insertMany(entries);
+  replaceAll(entries);
 }
 
 /**

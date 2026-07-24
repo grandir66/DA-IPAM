@@ -508,7 +508,7 @@ Variabili opzionali: `DA_INVENT_SERVICE_NAME`, `DA_INVENT_DIR` se usi nomi o per
 
 ### Dove è la copia «buona» del progetto
 
-La **cartella sul tuo Mac** dove hai il clone Git (es. `~/Progetti/DA-IPAM`) è la copia di **riferimento**: ci lavori, committi e fai push. Il **CT Proxmox** è solo **deploy** (aggiornato da Git sul nodo, non il contrario). **Non** va considerata «la copia giusta» quella dentro il container rispetto al Mac.
+La **cartella sul tuo Mac** dove hai il clone Git (es. `~/Progetti/Domarc/DA-IPAM`) è la copia di **riferimento**: ci lavori, committi e fai push. Il **CT Proxmox** è solo **deploy** (aggiornato da Git sul nodo, non il contrario). **Non** va considerata «la copia giusta» quella dentro il container rispetto al Mac.
 
 ### Copia locale dal repository (non è “tutto” nell’archivio Git)
 
@@ -541,7 +541,7 @@ Convenzioni e anti-regressioni: vedi `CLAUDE.md` nel repository.
 
 1. **Apri un terminale** e avvia il server dalla root del repo — **non basta** avere solo i file in cartella:
    ```bash
-   cd ~/Progetti/DA-IPAM   # o il tuo percorso
+   cd ~/Progetti/Domarc/DA-IPAM   # o il tuo percorso
    npm run dev
    ```
    Attendi la riga **Ready** (es. “Ready in … ms”). Lascia il terminale aperto.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -21,6 +21,11 @@ import {
   Loader2,
   Wifi,
   Pencil,
+  Activity,
+  Download,
+  ChevronDown,
+  ChevronRight,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +38,8 @@ import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { ADSetupGuideDialog } from "@/components/shared/ad-setup-guide-dialog";
+import { SEVERITY_STYLE } from "@/lib/severity-style";
+import type { HealthFinding, HealthScore, HealthSeverity } from "@/lib/ad/health/types";
 
 interface AdIntegration {
   id: number;
@@ -104,6 +111,17 @@ interface WinrmCredential {
   name: string;
 }
 
+interface AdHealthRun {
+  id: number;
+  integrationId: number;
+  startedAt: string;
+  finishedAt: string | null;
+  status: "running" | "ok" | "error";
+  errorMessage: string | null;
+  scoreGlobal: number | null;
+  engineVersion: string;
+}
+
 const defaultForm = {
   name: "",
   dc_host: "",
@@ -157,6 +175,13 @@ export default function ActiveDirectoryPage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState({ ...defaultForm, username: "", password: "" });
   const [editSaving, setEditSaving] = useState(false);
+
+  const [healthRun, setHealthRun] = useState<AdHealthRun | null>(null);
+  const [healthScore, setHealthScore] = useState<HealthScore | null>(null);
+  const [healthFindings, setHealthFindings] = useState<HealthFinding[]>([]);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthRunning, setHealthRunning] = useState(false);
+  const [expandedFinding, setExpandedFinding] = useState<string | null>(null);
 
   const pageSize = 25;
 
@@ -260,12 +285,39 @@ export default function ActiveDirectoryPage() {
     }
   }, [selectedIntegration, dhcpPage, dhcpSearch]);
 
+  const fetchHealth = useCallback(async () => {
+    if (!selectedIntegration) {
+      setHealthRun(null);
+      setHealthScore(null);
+      setHealthFindings([]);
+      return;
+    }
+    setHealthLoading(true);
+    setExpandedFinding(null);
+    try {
+      const res = await fetch(`/api/ad/healthcheck?integrationId=${selectedIntegration.id}`);
+      if (!res.ok) throw new Error("Errore caricamento AD Health");
+      const data = await res.json();
+      setHealthRun(data.run ?? null);
+      setHealthScore(data.score ?? null);
+      setHealthFindings(Array.isArray(data.findings) ? data.findings : []);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Errore");
+      setHealthRun(null);
+      setHealthScore(null);
+      setHealthFindings([]);
+    } finally {
+      setHealthLoading(false);
+    }
+  }, [selectedIntegration]);
+
   useEffect(() => { fetchIntegrations(); }, [fetchIntegrations]);
   useEffect(() => { fetchWinrmCredentials(); }, [fetchWinrmCredentials]);
   useEffect(() => { fetchComputers(); }, [fetchComputers]);
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
   useEffect(() => { fetchGroups(); }, [fetchGroups]);
   useEffect(() => { fetchDhcpLeases(); }, [fetchDhcpLeases]);
+  useEffect(() => { fetchHealth(); }, [fetchHealth]);
 
   const handleSync = async (id: number) => {
     setSyncing(id);
@@ -396,6 +448,34 @@ export default function ActiveDirectoryPage() {
     }
   };
 
+  const handleHealthcheck = async () => {
+    if (!selectedIntegration) return;
+    setHealthRunning(true);
+    try {
+      const res = await fetch("/api/ad/healthcheck", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ integrationId: selectedIntegration.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Errore healthcheck");
+      setHealthScore(data.score ?? null);
+      setHealthFindings(Array.isArray(data.findings) ? data.findings : []);
+      setExpandedFinding(null);
+      toast.success(`Healthcheck completato (score ${data.score?.global ?? "—"})`);
+      await fetchHealth();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Errore");
+    } finally {
+      setHealthRunning(false);
+    }
+  };
+
+  const handleExportHealth = () => {
+    if (!healthRun?.id) return;
+    window.open(`/api/ad/healthcheck/export?runId=${healthRun.id}`, "_blank");
+  };
+
   const formatDate = (iso: string | null) => {
     if (!iso) return "—";
     try {
@@ -404,6 +484,16 @@ export default function ActiveDirectoryPage() {
       return iso;
     }
   };
+
+  const scoreTone = (n: number) => {
+    if (n >= 70) return "text-red-600";
+    if (n >= 40) return "text-orange-500";
+    if (n >= 20) return "text-amber-600";
+    return "text-green-600";
+  };
+
+  const severityBadgeClass = (sev: HealthSeverity | string) =>
+    SEVERITY_STYLE[sev] ?? "bg-muted text-foreground";
 
   const groupTypeLabel = (gt: number | null) => {
     if (gt === null) return "—";
@@ -863,6 +953,10 @@ export default function ActiveDirectoryPage() {
                     <Wifi className="w-4 h-4" />
                     DHCP ({selectedIntegration.dhcp_leases_count ?? 0})
                   </TabsTrigger>
+                  <TabsTrigger value="health" className="flex items-center gap-2">
+                    <Activity className="w-4 h-4" />
+                    Health
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="computers" className="mt-4">
@@ -1154,6 +1248,180 @@ export default function ActiveDirectoryPage() {
                         />
                       </div>
                     </>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="health" className="mt-4 space-y-4">
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm flex gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <p>
+                      <span className="font-medium">AD Health Domarc (LDAP) — non è PingCastle.</span>{" "}
+                      Assessment basato su sync LDAP e regole Domarc; non esegue né sostituisce PingCastle.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      onClick={handleHealthcheck}
+                      disabled={healthRunning || !selectedIntegration.enabled}
+                    >
+                      {healthRunning ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Activity className="w-4 h-4 mr-2" />
+                      )}
+                      Esegui healthcheck
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleExportHealth}
+                      disabled={!healthRun?.id || healthRun.status !== "ok" || healthScore == null}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Esporta JSON
+                    </Button>
+                    {healthRun && (
+                      <span className="text-xs text-muted-foreground ml-auto">
+                        Ultimo run: {formatDate(healthRun.finishedAt ?? healthRun.startedAt)}
+                        {" · "}
+                        <Badge
+                          variant={
+                            healthRun.status === "ok"
+                              ? "default"
+                              : healthRun.status === "error"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                          className="align-middle"
+                        >
+                          {healthRun.status}
+                        </Badge>
+                        {healthRun.engineVersion && (
+                          <span className="ml-2">v{healthRun.engineVersion}</span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+
+                  {healthRun?.status === "error" && healthRun.errorMessage && (
+                    <p className="text-sm text-destructive">{healthRun.errorMessage}</p>
+                  )}
+
+                  {healthLoading ? (
+                    <SkeletonTable rows={3} columns={4} />
+                  ) : healthScore ? (
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                      {(
+                        [
+                          ["Global", healthScore.global],
+                          ["Stale", healthScore.stale],
+                          ["Privileged", healthScore.privileged],
+                          ["Trust", healthScore.trust],
+                          ["Anomaly", healthScore.anomaly],
+                        ] as const
+                      ).map(([label, value]) => (
+                        <Card key={label}>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">
+                              {label}
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className={`text-2xl font-bold ${scoreTone(value)}`}>{value}</div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <Card>
+                      <CardContent className="py-8 text-center text-muted-foreground">
+                        <Activity className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                        <p>Nessun healthcheck eseguito per questa integrazione.</p>
+                        <p className="text-sm mt-1">Clicca &quot;Esegui healthcheck&quot; per avviare l&apos;assessment.</p>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {!healthLoading && healthFindings.length > 0 && (
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="p-3 text-left font-medium w-8" />
+                            <th className="p-3 text-left font-medium">Rule</th>
+                            <th className="p-3 text-left font-medium">Severity</th>
+                            <th className="p-3 text-left font-medium">Titolo</th>
+                            <th className="p-3 text-left font-medium">Oggetti</th>
+                            <th className="p-3 text-left font-medium">Asse</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {healthFindings.map((f) => {
+                            const open = expandedFinding === f.ruleId;
+                            return (
+                              <Fragment key={f.ruleId}>
+                                <tr
+                                  className="border-t hover:bg-muted/30 cursor-pointer"
+                                  onClick={() =>
+                                    setExpandedFinding(open ? null : f.ruleId)
+                                  }
+                                >
+                                  <td className="p-3 text-muted-foreground">
+                                    {open ? (
+                                      <ChevronDown className="w-4 h-4" />
+                                    ) : (
+                                      <ChevronRight className="w-4 h-4" />
+                                    )}
+                                  </td>
+                                  <td className="p-3 font-mono text-xs">{f.ruleId}</td>
+                                  <td className="p-3">
+                                    <Badge className={severityBadgeClass(f.severity)}>
+                                      {f.severity}
+                                    </Badge>
+                                  </td>
+                                  <td className="p-3 font-medium">{f.title}</td>
+                                  <td className="p-3">{f.objectCount}</td>
+                                  <td className="p-3">
+                                    <Badge variant="outline">{f.axis}</Badge>
+                                  </td>
+                                </tr>
+                                {open && (
+                                  <tr className="border-t bg-muted/20">
+                                    <td colSpan={6} className="p-3 space-y-2">
+                                      {f.description && (
+                                        <p className="text-sm text-muted-foreground">{f.description}</p>
+                                      )}
+                                      {f.sampleDns.length > 0 ? (
+                                        <div>
+                                          <p className="text-xs font-medium mb-1">
+                                            Sample ({f.sampleDns.length})
+                                          </p>
+                                          <ul className="text-xs font-mono space-y-0.5 max-h-48 overflow-y-auto">
+                                            {f.sampleDns.map((dn) => (
+                                              <li key={dn} className="truncate" title={dn}>
+                                                {dn}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      ) : (
+                                        <p className="text-xs text-muted-foreground">Nessun sample DN</p>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {!healthLoading && healthScore && healthFindings.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      Nessun finding per questo run.
+                    </p>
                   )}
                 </TabsContent>
               </Tabs>

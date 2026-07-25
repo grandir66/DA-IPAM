@@ -152,7 +152,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               manual: classificationManual,
             });
           } else {
-            await runClassificationEngineForHost({
+            const { decision, touchedClassification } = await runClassificationEngineForHost({
               db,
               hostId: host.id,
               ip: host.ip,
@@ -165,14 +165,16 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               snmp_sysobjectid: fpSnap?.snmp_vendor_oid ?? null,
               cascade_slug: newClassification,
               cascade_method: fromFingerprint ? "fingerprint" : "rules",
-              classification_manual: classificationManual && !forceReclassify,
+              classification_manual: classificationManual,
               previous_classification: host.classification,
               previous_confidence: (host as { inferred_confidence?: number | null }).inferred_confidence ?? 0,
               trigger: "apply",
               force: forceReclassify,
             });
-            changes.push(`classification: ${host.classification} → ${newClassification}`);
-            reclassified++;
+            if (touchedClassification) {
+              changes.push(`classification: ${host.classification} → ${decision.classification}`);
+              reclassified++;
+            }
           }
         }
       }

@@ -7,6 +7,11 @@ import type { ClassificationDecision } from "./types";
 
 export type SqliteDbLike = Database.Database;
 
+export interface RunClassificationResult {
+  decision: ClassificationDecision;
+  touchedClassification: boolean;
+}
+
 function portsToNumbers(
   open_ports?: Array<{ port: number }> | number[] | null
 ): number[] {
@@ -39,7 +44,7 @@ export async function runClassificationEngineForHost(args: {
   previous_confidence: number | null;
   trigger: "scan" | "apply" | "manual" | "backfill";
   force?: boolean;
-}): Promise<ClassificationDecision> {
+}): Promise<RunClassificationResult> {
   const evidence = normalizeToEvidence({
     ip: args.ip,
     hostname: args.hostname ?? null,
@@ -61,7 +66,7 @@ export async function runClassificationEngineForHost(args: {
     classification_manual: args.classification_manual,
   });
 
-  applyClassificationDecision(args.db, args.hostId, decision, {
+  const persist = applyClassificationDecision(args.db, args.hostId, decision, {
     classification_manual: args.classification_manual,
     previous_classification: args.previous_classification,
     previous_confidence: args.previous_confidence,
@@ -69,5 +74,8 @@ export async function runClassificationEngineForHost(args: {
     force: args.force,
   });
 
-  return decision;
+  return {
+    decision,
+    touchedClassification: persist.touchedClassification,
+  };
 }

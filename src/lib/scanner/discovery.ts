@@ -2334,6 +2334,8 @@ async function runDiscovery(
     const classificationManual =
       (prevHost as { classification_manual?: number } | undefined)?.classification_manual === 1;
 
+    // Classification slug: non scrivere in upsert (evita double-write se l'engine
+    // rifiuta l'upgrade). Cascade → cascade_slug; engine applica dopo. INSERT usa "unknown".
     const host = upsertHost({
       network_id: networkId,
       ip,
@@ -2343,7 +2345,6 @@ async function runDiscovery(
       hostname_source: hostnameSource,
       dns_reverse: dnsReverse || undefined,
       dns_forward: dnsForward || undefined,
-      classification: classification,
       status: "online",
       open_ports: portsJson,
       // Valore già unione DB + sessione (TCP+UDP+SNMP 161); persistenza puntuale
@@ -2385,7 +2386,7 @@ async function runDiscovery(
     } else if (classification === classFromHostnamePrefix) {
       cascadeMethod = "rules";
     }
-    await runClassificationEngineForHost({
+    const { decision, touchedClassification } = await runClassificationEngineForHost({
       db: getDb(),
       hostId: host.id,
       ip,
@@ -2404,9 +2405,12 @@ async function runDiscovery(
       trigger: "scan",
     });
 
-    // Sync network_device collegato (stesso IP) — port e classification
+    // Sync network_device collegato (stesso IP) — port e classification applicata
+    const slugForDevice = touchedClassification
+      ? decision.classification
+      : (previousClassification ?? classification);
     if (nmapData?.ports?.length && getNetworkDeviceByHost(ip)) {
-      syncNetworkDeviceFromHostScan(ip, nmapData.ports, classification);
+      syncNetworkDeviceFromHostScan(ip, nmapData.ports, slugForDevice);
     }
 
     addStatusHistory(host.id, "online");

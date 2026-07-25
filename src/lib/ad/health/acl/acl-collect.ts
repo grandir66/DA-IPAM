@@ -64,7 +64,7 @@ async function searchKind(
   baseDn: string,
   kind: AclObjectKind,
   filter: string,
-  scope: "base" | "sub",
+  scope: "base" | "one" | "sub",
   control: ReturnType<typeof sdFlagsControl>,
 ): Promise<WorkItem[]> {
   const { searchEntries } = await client.search(

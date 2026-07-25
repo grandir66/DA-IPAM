@@ -1,6 +1,6 @@
 # Task 5 Report — LDAP extras + lastLogonTimestamp sync
 
-**Status:** DONE · **Branch:** `feat/ad-health-native`
+**Status:** DONE · **Branch:** `feat/ad-health-native` · **SHA:** `43ce8d5`
 
 ## Delivered
 

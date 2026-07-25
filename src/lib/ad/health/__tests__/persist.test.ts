@@ -6,6 +6,7 @@ import {
   finishRun,
   getFindings,
   getLatestRun,
+  getRunningRun,
   insertFindings,
   insertRun,
 } from "../persist";
@@ -108,4 +109,19 @@ test("getLatestRun returns most recent by started_at / id", () => {
   assert.ok(latest);
   assert.equal(latest.id, newer);
   assert.equal(latest.scoreGlobal, 5);
+});
+
+test("getRunningRun finds only status=running", () => {
+  const db = freshDb();
+  ensureAdHealthSchema(db);
+  assert.equal(getRunningRun(db, 1), null);
+
+  const runId = insertRun(db, { integrationId: 1 });
+  const running = getRunningRun(db, 1);
+  assert.ok(running);
+  assert.equal(running.id, runId);
+  assert.equal(running.status, "running");
+
+  finishRun(db, runId, { status: "ok" });
+  assert.equal(getRunningRun(db, 1), null);
 });

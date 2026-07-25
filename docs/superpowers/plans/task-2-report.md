@@ -9,7 +9,7 @@
 
 | SHA | Subject |
 |---|---|
-| *(filled after commit)* | feat(ad-health): add stale rules DA-S-* with helpers |
+| `aacb3939636fe7e00a482e4f48283b25a46ecde9` | feat(ad-health): add stale rules DA-S-* with helpers |
 
 ## Files created
 

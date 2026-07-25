@@ -322,6 +322,8 @@ Nessun redesign delle liste classificazione / filtri slug.
 | **B4** | Validazione su dataset reale etichettato (lab) |
 | **A** | Unificazione regole nel motore; pesi editabili; thinning cascade; fingerprint enterprise locale |
 
+**Implementazione:** piano task-by-task e checklist B4 in [plans/2026-07-26-multi-source-classification-engine.md](../plans/2026-07-26-multi-source-classification-engine.md).
+
 ### Fuori scope B
 
 - ML puro

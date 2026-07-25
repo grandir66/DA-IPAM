@@ -52,12 +52,33 @@ Il codice sorgente è **rilasciato in forma open source** (vedi [`LICENSE`](LICE
 | **Node.js** | 20 o superiore |
 | **SQLite 3** | File DB in `data/` (directory esclusa da Git) |
 | **nmap** | Scansioni porte/OS |
+| **naabu** | Opzionale — pre-pass TCP veloce (ProjectDiscovery). Vedi [Naabu (opzionale)](#naabu-opzionale) |
 | **Python 3 + venv WinRM** | Opzionale, per WinRM su host Windows. `scripts/install.sh` crea `~/.da-invent-venv` e installa: `pywinrm`, `requests-ntlm`, `requests-credssp`, `gssapi` (Kerberos opzionale). Variabili: `WINRM_PYTHON`, `WINRM_TRANSPORT` (vedi `.env.example`) |
 | **Sistema** | Debian/Ubuntu consigliati per script `install.sh` (apt) |
 
 Per **scansioni nmap** (inclusa **UDP `-sU`**) e **ping ICMP** servono in genere **socket privilegiati**. Nel **container LXC/VM** il servizio systemd è quindi previsto in esecuzione come **`root`** (default di `scripts/install.sh` e di `deploy/da-invent.service`), così `nmap` non viene eseguito senza i diritti necessari. Un container **non privilegiato** può comunque bastare se accetti solo scan TCP; per UDP serve **root** nel CT oppure capability `CAP_NET_RAW` / `CAP_NET_ADMIN` su un utente dedicato (configurazione avanzata).
 
 Oltre a Node e agli strumenti di scansione, in **produzione** servono i **pacchetti di sviluppo** per compilare moduli nativi npm (`better-sqlite3`, `bcrypt`, `ssh2`, `net-snmp`, …): `build-essential`, `pkg-config`, `libssl-dev`, `libsqlite3-dev`, `libsnmp-dev` (installati automaticamente da `scripts/install.sh` come **root** su Debian/Ubuntu).
+
+### Naabu (opzionale)
+
+[Naabu](https://github.com/projectdiscovery/naabu) (ProjectDiscovery) può accelerare la discovery TCP prima di Nmap mirato (`-sV`). **Non** è richiesto da `scripts/install.sh`: senza binario i job di scan restano Nmap-only.
+
+**Install tipica (Linux amd64):** scaricare il release binary da [ProjectDiscovery/naabu releases](https://github.com/projectdiscovery/naabu/releases), estrarre `naabu` in un path nel `PATH` del servizio (es. `/usr/local/bin/naabu`), oppure indicare il path assoluto in Impostazioni.
+
+**UI — Impostazioni → Scansione → Port discovery:**
+
+| Setting | Valori | Default |
+|---------|--------|---------|
+| Mode | `nmap` (solo Nmap) / `naabu+nmap` (pre-pass Naabu poi Nmap mirato) | `nmap` |
+| Path binario | vuoto → `naabu` nel PATH; oppure path assoluto | vuoto |
+| Badge stato | `disponibile` / `non trovato` (check server-side) | — |
+
+**Fallback fail-soft:** se `naabu+nmap` è attivo ma il binario manca o fallisce, il job logga `[naabu] unavailable, fallback nmap` e continua con Nmap come prima. Nessun abort del job.
+
+Con Naabu attivo e funzionante, Nmap `-sV` usa l’union delle porte aperte trovate da Naabu, delle porte “sempre utili” e della lista quick/profilo — così lo scope TCP è tipicamente più stretto (meno porte da versionare).
+
+Checklist di validazione lab (B4): vedi fine del [piano di implementazione](docs/superpowers/plans/2026-07-26-multi-source-classification-engine.md#b4-lab-validation-checklist).
 
 ---
 
@@ -394,7 +415,7 @@ Sette tab con tutto il necessario per configurare il sistema:
 | **Generale** | Porta server, password, credenziali host globali (Windows/Linux), Custom OUI, versione e aggiornamenti |
 | **Utenti** | Gestione utenti e ruoli (admin/viewer) |
 | **HTTPS** | Certificati TLS, generazione self-signed, import certificato |
-| **Scansione** | Profilo Nmap (porte TCP/UDP, community SNMP — editabile), parametri Quick Scan (porte, concorrenza, timeout — editabili), variabili ambiente |
+| **Scansione** | Profilo Nmap (porte TCP/UDP, community SNMP — editabile), parametri Quick Scan (porte, concorrenza, timeout — editabili), port discovery Naabu opzionale (toggle `naabu+nmap`, path binario, stato), variabili ambiente |
 | **Identificazione** | Pipeline completa di riconoscimento dispositivi: profili SNMP vendor, tabella sysObjectID lookup (CRUD), firme fingerprint (OID, porte, sysDescr, hostname, MAC, banner, TTL), regole classificazione |
 | **Job Pianificati** | Configurazione job cron per rete (ping sweep, nmap, ARP poll, DNS, monitoraggio, cleanup) |
 | **Gestione Dati** | Export/import DB, reset, backup |

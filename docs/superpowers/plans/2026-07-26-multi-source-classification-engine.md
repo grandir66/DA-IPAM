@@ -803,17 +803,11 @@ EOF
 - Modify: `README.md` (sezione scansioni / dipendenze)
 - Optional short note in spec “Implementazione” pointing to this plan
 
-- [ ] **Step 1: Documentare** install opzionale naabu (binary ProjectDiscovery), setting UI, fallback.
+- [x] **Step 1: Documentare** install opzionale naabu (binary ProjectDiscovery), setting UI, fallback.
 
-- [ ] **Step 2: Aggiungere in fondo al plan (o issue interna) checklist B4 validazione lab:**
-  - [ ] ESXi classificato hypervisor con reason che cita HTTP
-  - [ ] Synology non vira `server_windows` solo per 445
-  - [ ] Host senza segnali → unknown / bassa confidence
-  - [ ] Manual lock rispettato
-  - [ ] Naabu assente non rompe job
-  - [ ] Naabu presente riduce scope porte Nmap (log/timing)
+- [x] **Step 2: Aggiungere in fondo al plan checklist B4 validazione lab** (vedi [B4 Lab validation checklist](#b4-lab-validation-checklist)).
 
-- [ ] **Step 3: Commit docs**
+- [x] **Step 3: Commit docs**
 
 ```bash
 git commit -m "$(cat <<'EOF'
@@ -851,3 +845,16 @@ EOF
 ## Nota Fase A (piano futuro separato)
 
 Dopo B4 su dataset reale: unificare `device-classifier` + fingerprint rules dentro `classification/engine`, pesi editabili in hub, thinning cascade. Aprire nuova spec/plan solo allora.
+
+---
+
+## B4 Lab validation checklist
+
+Validazione su dataset reale etichettato (lab). Eseguire dopo B1–B3 deployati sull’appliance di test; ops notes Naabu in [README § Naabu (opzionale)](../../../README.md#naabu-opzionale).
+
+- [ ] ESXi classificato `hypervisor` con reason che cita HTTP
+- [ ] Synology non vira `server_windows` solo per 445
+- [ ] Host senza segnali → `unknown` / bassa confidence
+- [ ] Manual lock rispettato
+- [ ] Naabu assente non rompe job
+- [ ] Naabu presente riduce scope porte Nmap (log/timing)

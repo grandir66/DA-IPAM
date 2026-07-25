@@ -371,7 +371,7 @@ Logica:
 1. Sommare `weight*confidence` per `votes_for`.
 2. Se nessun voto ma `cascade_slug`, usare cascade come best con confidence da evidence `rule` o floor basso.
 3. `normalizeOverall`: `Math.min(100, Math.round(raw * 100))` (raw già ~0–1 tipicamente; se somma &gt;1 clamp).
-4. Se overall &lt; `MIN_APPLY_CONFIDENCE` → `classification = "unknown"` (o slug generico solo se cascade era già generico — preferire `unknown`).
+4. Se overall &lt; `MIN_APPLY_CONFIDENCE` → `classification = "unknown"` **salvo** `cascade_slug` reale (non-unknown): tenere lo slug a low confidence (floor cascade) invece di coercere a unknown.
 5. Conflicts: top2 slug con Δ overall &lt; `CONFLICT_WINDOW`.
 6. Reason: menzionare top evidence observed + se override nmap generico.
 7. `shouldTouchClassification`: manual → false; else `decision.confidence >= (previous.confidence ?? 0)` e decision.classification !== unknown (oppure unknown solo se previous era unknown); se conflict e previous confidence ≥ decision → false ma caller persiste conflicts.
@@ -857,4 +857,4 @@ Validazione su dataset reale etichettato (lab). Eseguire dopo B1–B3 deployati 
 - [ ] Host senza segnali → `unknown` / bassa confidence
 - [ ] Manual lock rispettato
 - [ ] Naabu assente non rompe job
-- [ ] Naabu presente riduce scope porte Nmap (log/timing)
+- [ ] Naabu presente: Nmap `-sV` usa union(naabu open, ALWAYS_USEFUL, profilo) — scope TCP non shrink (log/timing)

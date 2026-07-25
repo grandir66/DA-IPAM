@@ -4,7 +4,7 @@ import { getCustomClassificationBySlug } from "@/lib/db-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { parseJsonSafe } from "@/lib/json-safe";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { classifyDevice } from "@/lib/device-classifier";
+import { classifyDeviceDetailed } from "@/lib/device-classifier";
 import { getClassificationFromFingerprintSnapshot } from "@/lib/device-fingerprint-classification";
 import { runClassificationEngineForHost } from "@/lib/classification/run";
 import type { DeviceFingerprintSnapshot } from "@/types";
@@ -122,7 +122,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
         const fpSnap = parseJsonSafe<DeviceFingerprintSnapshot | null>(host.detection_json, null);
         const fromFingerprint = fpSnap ? getClassificationFromFingerprintSnapshot(fpSnap, fpUserRules) : undefined;
-        const fromRules = classifyDevice({
+        const rulesDetailed = classifyDeviceDetailed({
           sysDescr: fpSnap?.snmp_sysdescr ?? host.os_info ?? null,
           sysObjectID: fpSnap?.snmp_vendor_oid ?? null,
           osInfo: host.os_info ?? null,
@@ -130,7 +130,14 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           hostname: host.hostname ?? null,
           vendor: effectiveVendor ?? null,
         });
+        const fromRules = rulesDetailed.classification;
         const newClassification = fromFingerprint ?? fromRules;
+        // Real DetectionMethod so SNMP oid/text get votes_for; fingerprint → "fingerprint".
+        const cascadeMethod = fromFingerprint
+          ? "fingerprint"
+          : rulesDetailed.method !== "none"
+            ? rulesDetailed.method
+            : "rules";
 
         // Bug fix audit 2026-05-26 (A3): se la classification corrente è una
         // custom child del newClassification (es. host.classification="server_postgres"
@@ -164,7 +171,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               snmp_sysdescr: fpSnap?.snmp_sysdescr ?? null,
               snmp_sysobjectid: fpSnap?.snmp_vendor_oid ?? null,
               cascade_slug: newClassification,
-              cascade_method: fromFingerprint ? "fingerprint" : "rules",
+              cascade_method: cascadeMethod,
               classification_manual: classificationManual,
               previous_classification: host.classification,
               previous_confidence: (host as { inferred_confidence?: number | null }).inferred_confidence ?? 0,

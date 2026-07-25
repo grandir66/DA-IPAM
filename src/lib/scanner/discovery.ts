@@ -24,7 +24,7 @@ import { isNaabuAvailable, runNaabuTcpPorts } from "./naabu";
 import { readArpCache } from "./arp-cache";
 import { lookupVendor } from "./mac-vendor";
 import { querySnmpInfoMultiCommunity, querySnmpSysGroupMultiCommunity, normalizeOidString } from "./snmp-query";
-import { classifyDevice } from "@/lib/device-classifier";
+import { classifyDeviceDetailed } from "@/lib/device-classifier";
 import {
   getClassificationFromFingerprintSnapshot,
   FINGERPRINT_CLASSIFICATION_MIN_CONFIDENCE,
@@ -2234,7 +2234,7 @@ async function runDiscovery(
       portsForClassification = nmapData?.ports ?? null;
     }
 
-    const classificationFromRules = classifyDevice({
+    const rulesDetailed = classifyDeviceDetailed({
       sysDescr: nmapData?.snmpSysDescr ?? null,
       sysObjectID: nmapData?.snmpSysObjectID ?? null,
       osInfo: nmapData?.os ?? null,
@@ -2243,6 +2243,7 @@ async function runDiscovery(
       vendor: vendor ?? null,
       snmpContext: buildSnmpContextForClassifier(nmapData),
     });
+    const classificationFromRules = rulesDetailed.classification;
 
     // Estrai modello/firmware da ENTITY-MIB, oppure fallback su sysDescr
     const sysDescrParsed = parseModelFromSysDescr(nmapData?.snmpSysDescr ?? null);
@@ -2541,9 +2542,10 @@ async function runDiscovery(
     } else if (classification === classificationFromFingerprint || classification === classificationFromGenericFp) {
       cascadeMethod = "fingerprint";
     } else if (classification === classificationFromRules) {
-      cascadeMethod = "text";
+      // Real DetectionMethod from classifyDeviceDetailed (oid|text|port|hostname|vendor|…)
+      cascadeMethod = rulesDetailed.method !== "none" ? rulesDetailed.method : "rules";
     } else if (classification === classFromHostnamePrefix) {
-      cascadeMethod = "rules";
+      cascadeMethod = "hostname";
     }
     const naabuPortsForHost = naabuPortsByIp.get(ip) ?? null;
     const { decision, touchedClassification } = await runClassificationEngineForHost({

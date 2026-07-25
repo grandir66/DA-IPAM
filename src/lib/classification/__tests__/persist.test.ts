@@ -101,3 +101,75 @@ test("manual lock updates reason/json but not classification", () => {
   assert.equal(json.engine_version, ENGINE_VERSION);
   assert.deepEqual(json.sources, ["snmp"]);
 });
+
+test("force + under-threshold unknown must not wipe manual", () => {
+  const db = memDb();
+  db.prepare(
+    "UPDATE hosts SET classification='workstation', classification_manual=1, inferred_confidence=80 WHERE id=1"
+  ).run();
+  const decision: ClassificationDecision = {
+    classification: "unknown",
+    confidence: 40,
+    reason: "Insufficient evidence to classify host",
+    evidence: [],
+    conflicts: [],
+    fingerprint_hash: "weak",
+    engine_version: ENGINE_VERSION,
+    sources: ["dns"],
+  };
+  const r = applyClassificationDecision(db, 1, decision, {
+    classification_manual: true,
+    previous_classification: "workstation",
+    previous_confidence: 80,
+    trigger: "apply",
+    force: true,
+  });
+  assert.equal(r.touchedClassification, false);
+  const row = db.prepare(
+    "SELECT classification, classification_manual, inferred_confidence, classification_reason FROM hosts WHERE id=1"
+  ).get() as {
+    classification: string;
+    classification_manual: number;
+    inferred_confidence: number;
+    classification_reason: string;
+  };
+  assert.equal(row.classification, "workstation");
+  assert.equal(row.classification_manual, 1);
+  assert.equal(row.inferred_confidence, 40);
+  assert.equal(row.classification_reason, "Insufficient evidence to classify host");
+});
+
+test("force + real slug clears manual and applies", () => {
+  const db = memDb();
+  db.prepare(
+    "UPDATE hosts SET classification='workstation', classification_manual=1, inferred_confidence=80 WHERE id=1"
+  ).run();
+  const decision: ClassificationDecision = {
+    classification: "switch",
+    confidence: 40,
+    reason: "cascade hostname prefix",
+    evidence: [],
+    conflicts: [],
+    fingerprint_hash: "casc",
+    engine_version: ENGINE_VERSION,
+    sources: ["dns"],
+  };
+  const r = applyClassificationDecision(db, 1, decision, {
+    classification_manual: true,
+    previous_classification: "workstation",
+    previous_confidence: 80,
+    trigger: "apply",
+    force: true,
+  });
+  assert.equal(r.touchedClassification, true);
+  const row = db.prepare(
+    "SELECT classification, classification_manual, inferred_confidence FROM hosts WHERE id=1"
+  ).get() as {
+    classification: string;
+    classification_manual: number;
+    inferred_confidence: number;
+  };
+  assert.equal(row.classification, "switch");
+  assert.equal(row.classification_manual, 0);
+  assert.equal(row.inferred_confidence, 40);
+});

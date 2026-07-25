@@ -102,16 +102,21 @@ export function applyClassificationDecision(
   const classificationJson = JSON.stringify(snapshot);
 
   const force = ctx.force === true;
-  const policy = force
-    ? { apply: true as const, reason: "force" }
-    : shouldTouchClassification(
-        {
-          classification: ctx.previous_classification,
-          confidence: ctx.previous_confidence,
-        },
-        decision,
-        ctx.classification_manual
-      );
+  // force=true may overwrite manual — but never only to write "unknown"
+  // (would wipe classification_manual without a real cascade/engine slug).
+  const policy =
+    force && decision.classification !== "unknown"
+      ? { apply: true as const, reason: "force" }
+      : force && decision.classification === "unknown"
+        ? { apply: false as const, reason: "force refused: unknown decision" }
+        : shouldTouchClassification(
+            {
+              classification: ctx.previous_classification,
+              confidence: ctx.previous_confidence,
+            },
+            decision,
+            ctx.classification_manual
+          );
 
   const touchedClassification = policy.apply;
 

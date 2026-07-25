@@ -182,8 +182,22 @@ export function decideClassification(
   let confidence = bestSlug != null ? normalizeOverall(bestRaw) : 0;
   let classification = bestSlug ?? "unknown";
 
+  const cascadeSlug =
+    opts.cascade_slug && opts.cascade_slug !== "unknown"
+      ? opts.cascade_slug
+      : null;
+
   if (confidence < MIN_APPLY_CONFIDENCE) {
-    classification = "unknown";
+    // Keep cascade_slug at low confidence (hostname/rules floor ~40) instead of
+    // coercing the label to unknown — otherwise new hosts never land a slug.
+    if (cascadeSlug) {
+      if (bestSlug != null && bestSlug !== cascadeSlug) {
+        confidence = cascadeConfidence(evidence, cascadeSlug);
+      }
+      classification = cascadeSlug;
+    } else {
+      classification = "unknown";
+    }
   }
 
   const conflicts = detectConflicts(scores);

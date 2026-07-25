@@ -75,3 +75,39 @@ test("under MIN_APPLY_CONFIDENCE yields unknown", () => {
   assert.ok(decision.confidence < 56);
   assert.equal(decision.classification, "unknown");
 });
+
+test("cascade-only under MIN_APPLY keeps cascade_slug at low confidence", () => {
+  // Hostname/rules cascade with no votes_for → floor 40 < 56, must not coerce to unknown
+  const decision = decideClassification(
+    [
+      ev({
+        source: "dns",
+        attribute: "hostname",
+        value: "sw-core-01",
+        weight: 0.35,
+        confidence: 0.6,
+        // no votes_for — cascade-only path
+      }),
+    ],
+    { cascade_slug: "switch", previous_classification: "unknown", previous_confidence: 0 }
+  );
+  assert.ok(decision.confidence < 56);
+  assert.equal(decision.classification, "switch");
+  assert.equal(
+    shouldTouchClassification(
+      { classification: "unknown", confidence: 0 },
+      decision,
+      false
+    ).apply,
+    true
+  );
+  // Still refuse upgrading a known strong previous with weaker cascade
+  assert.equal(
+    shouldTouchClassification(
+      { classification: "server", confidence: 90 },
+      decision,
+      false
+    ).apply,
+    false
+  );
+});

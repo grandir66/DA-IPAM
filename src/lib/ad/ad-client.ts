@@ -19,6 +19,11 @@ import {
   syncIpAssignmentsForAllNetworks,
   type AdIntegration,
 } from "@/lib/db";
+import {
+  isAccountEnabled,
+  ldapStr,
+  ldapTimestampToIso,
+} from "@/lib/ad/ldap-utils";
 
 /**
  * Risultato della sincronizzazione AD.
@@ -37,23 +42,6 @@ export interface AdSyncResult {
 }
 
 /**
- * Converte timestamp LDAP (Windows FILETIME: 100-nanoseconds dal 1601) in ISO string.
- * Se il valore è 0 o "0" (mai loggato), restituisce null.
- */
-function ldapTimestampToIso(val: string | number | undefined | null): string | null {
-  if (val == null || val === "0" || val === 0) return null;
-  const num = typeof val === "string" ? BigInt(val) : BigInt(val);
-  if (num <= BigInt(0)) return null;
-  const milliseconds = Number(num / BigInt(10000)) - 11644473600000;
-  if (milliseconds < 0 || milliseconds > Date.now() + 86400000 * 365 * 10) return null;
-  try {
-    return new Date(milliseconds).toISOString();
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Converte objectGUID (Buffer) in stringa UUID.
  */
 function guidBufferToString(buf: Buffer | Uint8Array | undefined): string | null {
@@ -68,16 +56,6 @@ function guidBufferToString(buf: Buffer | Uint8Array | undefined): string | null
 }
 
 /**
- * Estrae valore stringa da attributo LDAP (può essere array o stringa).
- */
-function ldapStr(val: unknown): string | null {
-  if (val == null) return null;
-  if (Array.isArray(val)) return val[0]?.toString() ?? null;
-  if (Buffer.isBuffer(val)) return val.toString("utf-8");
-  return String(val);
-}
-
-/**
  * Estrae la prima OU dal distinguishedName (es. "OU=Workstations,DC=..." → "Workstations").
  */
 function ouFromDn(dn: string): string | null {
@@ -86,20 +64,10 @@ function ouFromDn(dn: string): string | null {
 }
 
 /**
- * Verifica se account è abilitato da userAccountControl.
- * Bit 0x02 = ACCOUNTDISABLE.
- */
-function isAccountEnabled(uac: string | number | undefined | null): number {
-  if (uac == null) return 1;
-  const num = typeof uac === "string" ? parseInt(uac, 10) : uac;
-  if (isNaN(num)) return 1;
-  return (num & 0x02) === 0 ? 1 : 0;
-}
-
-/**
  * Connette a LDAP e restituisce il client.
+ * Esportato per AD Health extras (ldap-extras).
  */
-async function connectLdap(integration: AdIntegration): Promise<Client> {
+export async function connectLdap(integration: AdIntegration): Promise<Client> {
   let username: string;
   let password: string;
   try {
@@ -258,6 +226,7 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
         "department",
         "title",
         "userAccountControl",
+        "lastLogonTimestamp",
         "lastLogon",
         "pwdLastSet",
         "memberOf",
@@ -284,7 +253,10 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
         const phone = ldapStr(entry.telephoneNumber);
         const distinguishedNameUser = ldapStr(entry.distinguishedName) ?? "";
         const enabled = isAccountEnabled(entry.userAccountControl as string);
-        const lastLogonAt = ldapTimestampToIso(entry.lastLogon as string);
+        // Prefer replicated lastLogonTimestamp over DC-local lastLogon
+        const lastLogonAt =
+          ldapTimestampToIso(entry.lastLogonTimestamp as string) ??
+          ldapTimestampToIso(entry.lastLogon as string);
         const passwordLastSetAt = ldapTimestampToIso(entry.pwdLastSet as string);
 
         upsertAdUser(integrationId, {

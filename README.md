@@ -76,7 +76,7 @@ Oltre a Node e agli strumenti di scansione, in **produzione** servono i **pacche
 
 **Fallback fail-soft:** se `naabu+nmap` è attivo ma il binario manca o fallisce, il job logga `[naabu] unavailable, fallback nmap` e continua con Nmap come prima. Nessun abort del job.
 
-Con Naabu attivo e funzionante, Nmap `-sV` usa l’union delle porte aperte trovate da Naabu, delle porte “sempre utili” e della lista quick/profilo — così lo scope TCP è tipicamente più stretto (meno porte da versionare).
+Con Naabu attivo e funzionante, Nmap `-sV` usa `union(porte aperte Naabu, ALWAYS_USEFUL, lista quick/profilo)`. Lo scope TCP non è ridotto rispetto alla stessa lista senza Naabu: le porte del profilo restano coperte; Naabu aggiunge hit già aperti e può anticipare evidence/`open_ports` prima del version scan.
 
 Checklist di validazione lab (B4): vedi fine del [piano di implementazione](docs/superpowers/plans/2026-07-26-multi-source-classification-engine.md#b4-lab-validation-checklist).
 

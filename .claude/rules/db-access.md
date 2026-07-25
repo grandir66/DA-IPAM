@@ -1,19 +1,19 @@
 ---
 scope: Database access layer
-applies_to: src/lib/db.ts, src/lib/db-tenant.ts, src/lib/db-hub.ts, src/lib/db-legacy.ts, src/lib/db-*-schema.ts
+applies_to: src/lib/db.ts, src/lib/db-tenant.ts, src/lib/db-hub.ts, src/lib/db-*-schema.ts
 ---
 
 # DB access — regole
 
-## Tre file da tenere allineati
+## Due file da tenere allineati
 
-Modifiche a una funzione DB → controllare presenza/firma in **tutti e tre**:
+Modifiche a una funzione DB → controllare presenza/firma in **entrambi**:
 
 - `src/lib/db-tenant.ts` — versione "vera" multi-tenant, usa `db()` via AsyncLocalStorage
 - `src/lib/db.ts` — facade backward-compat, usa `getDb()` con fallback a DEFAULT tenant
-- `src/lib/db-legacy.ts` — solo per codice legacy che non ha ancora la separazione hub/tenant
 
 Hub-only (utenti, registro tenant, profili template): solo `src/lib/db-hub.ts`.
+(`db-legacy.ts` è stato RIMOSSO in v0.3.151 — [ADR 0001](../../docs/adr/0001-remove-db-legacy.md). Se lo vedi citato altrove, la doc è stale.)
 
 ## Hub vs Tenant — regola di separazione
 

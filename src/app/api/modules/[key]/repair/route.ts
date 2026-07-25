@@ -6,6 +6,9 @@ import { getModulesHealth, invalidateModulesHealth } from "@/lib/modules/health"
 import type { ModuleRepairAction } from "@/lib/modules/health";
 import type { ModuleKey } from "@/lib/modules/registry";
 
+// Moduli riparabili = quelli con un probe in modules/health.ts (compute()).
+// inventory_agent e nis2_inventory sono ESCLUSI di proposito: toggle locali
+// senza servizio esterno, getModulesHealth non li emette → repair = 404.
 const VALID_KEYS: ModuleKey[] = [
   "edge",
   "librenms",
@@ -13,6 +16,7 @@ const VALID_KEYS: ModuleKey[] = [
   "graylog",
   "patch_management",
   "network_services",
+  "meshcentral",
 ];
 
 /** Deep-link alla pagina di configurazione del modulo (per la UI "Ripara"). */
@@ -23,6 +27,7 @@ function configHrefFor(key: ModuleKey): string | null {
     case "graylog": return "/settings?tab=moduli#module-graylog";
     case "edge": return "/settings?tab=moduli#module-edge";
     case "network_services": return "/network-services";
+    case "meshcentral": return "/settings?tab=moduli#module-meshcentral";
     default: return null;
   }
 }

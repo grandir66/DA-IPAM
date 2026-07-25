@@ -7,6 +7,7 @@ DA-INVENT (alias DA-IPAM): IPAM multi-tenant Next.js 16. Gestisce reti, scansion
 
 ## Pointer
 
+- **Onboarding / stato progetto: [CONTEXT.md](CONTEXT.md)** ← leggere per primo, evita di rianalizzare il repo
 - Dettaglio narrativo legacy: [docs/CLAUDE-legacy-20260511.md](docs/CLAUDE-legacy-20260511.md)
 - Skills (workflow): [.claude/skills/release/](.claude/skills/release/SKILL.md), [.claude/skills/deploy-prod/](.claude/skills/deploy-prod/SKILL.md), [.claude/skills/winrm-kerberos/](.claude/skills/winrm-kerberos/SKILL.md)
 - Rules file-scoped: [.claude/rules/](.claude/rules/)
@@ -75,7 +76,7 @@ Se cambia codice → poi `npm run version:release && git push`.
 
 ## Debug in produzione
 
-Container LXC `333` sul nodo Proxmox `192.168.40.4` (DA-PX-04), app in `/opt/da-invent`, servizio `systemctl status da-invent`. Per comandi non distruttivi (SSH, `pct exec`, sqlite read-only, restart servizio, push file fixato) **procedere senza chiedere conferma**. Per modifiche DB hub, DROP, distruzione container, push su `main`, credenziali in chiaro → chiedere prima. Vedi [.claude/skills/deploy-prod/SKILL.md](.claude/skills/deploy-prod/SKILL.md) e [.claude/skills/winrm-kerberos/SKILL.md](.claude/skills/winrm-kerberos/SKILL.md).
+**VM `533`** (`192.168.4.8`) su Proxmox DA-PX-04 (`192.168.40.4`), app in `/opt/da-invent`, servizio `systemctl status da-invent`. (Il vecchio LXC 333 è dismesso.) Per comandi non distruttivi (SSH, `pct exec`, sqlite read-only, restart servizio, push file fixato) **procedere senza chiedere conferma**. Per modifiche DB hub, DROP, distruzione container, push su `main`, credenziali in chiaro → chiedere prima. Vedi [.claude/skills/deploy-prod/SKILL.md](.claude/skills/deploy-prod/SKILL.md) e [.claude/skills/winrm-kerberos/SKILL.md](.claude/skills/winrm-kerberos/SKILL.md).
 
 ## Setup nuovo dev
 
@@ -94,5 +95,5 @@ Prima di chiudere, valuta:
 - **Pattern emerso e riutilizzabile?** → nuovo file in `.claude/rules/` (scope file-type) o `.claude/skills/` (workflow)
 - **Errore commesso 2+ volte?** → nuova regola anti-regressione qui sopra
 - **Decisione architetturale?** → ADR in `docs/adr/` (template `0000-template.md`)
-- **Fatto nuovo sul progetto?** → aggiorna `docs/CLAUDE-legacy-20260511.md` o crea CONTEXT.md
+- **Fatto nuovo sul progetto?** → aggiorna [CONTEXT.md](CONTEXT.md)
 - **Regola comportamentale trasversale?** → `~/.claude/CLAUDE.md` (vale per tutti)

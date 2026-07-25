@@ -80,6 +80,24 @@ test("manual lock updates reason/json but not classification", () => {
     trigger: "scan",
   });
   assert.equal(r.touchedClassification, false);
-  const row = db.prepare("SELECT classification FROM hosts WHERE id=1").get() as { classification: string };
+  const row = db.prepare(
+    "SELECT classification, inferred_confidence, classification_reason, classification_json FROM hosts WHERE id=1"
+  ).get() as {
+    classification: string;
+    inferred_confidence: number;
+    classification_reason: string;
+    classification_json: string;
+  };
   assert.equal(row.classification, "workstation");
+  assert.equal(row.inferred_confidence, 95);
+  assert.equal(row.classification_reason, "SNMP");
+  assert.ok(row.classification_json != null && row.classification_json.length > 0);
+  const json = JSON.parse(row.classification_json) as {
+    fingerprint_hash: string;
+    engine_version: string;
+    sources: string[];
+  };
+  assert.equal(json.fingerprint_hash, "x");
+  assert.equal(json.engine_version, ENGINE_VERSION);
+  assert.deepEqual(json.sources, ["snmp"]);
 });

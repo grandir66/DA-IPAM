@@ -14,6 +14,7 @@ import {
 } from "@/lib/db";
 import { syncActiveDirectory } from "@/lib/ad/ad-client";
 import { collectLdapExtras, type LdapExtras } from "./ldap-extras";
+import { buildPrivilegeMatrix } from "./membership";
 import {
   ensureAdHealthSchema,
   finishRun,
@@ -30,6 +31,7 @@ import type {
   AdUserRow,
   HealthFinding,
   HealthScore,
+  PrivilegeMatrix,
   RuleContext,
 } from "./types";
 import { ENGINE_VERSION } from "./types";
@@ -147,7 +149,12 @@ export function evaluateContext(ctx: RuleContext): {
 export async function runAdHealthcheck(
   integrationId: number,
   opts?: { refreshSync?: boolean },
-): Promise<{ runId: number; score: HealthScore; findings: HealthFinding[] }> {
+): Promise<{
+  runId: number;
+  score: HealthScore;
+  findings: HealthFinding[];
+  privilegeMatrix: PrivilegeMatrix | null;
+}> {
   const db = getDb();
   ensureAdHealthSchema(db);
 
@@ -189,12 +196,26 @@ export async function runAdHealthcheck(
     // Fail the run on collect failure — do not degrade to empty extras / false positives.
     const extras = await collectLdapExtras(integrationId);
 
+    const users = toUserRows(dbUsers, extras);
+    const groups = toGroupRows(dbGroups, extras);
+    const now = new Date();
+    const privilegeMatrix = buildPrivilegeMatrix(groups, users, now);
+    stats.privilegeMatrix = privilegeMatrix;
+    stats.privilegeSummary = {
+      privilegedUsers: privilegeMatrix.users.filter((u) => u.enabled).length,
+      columns: privilegeMatrix.groups.map((g) => ({
+        key: g.key,
+        members: g.memberCount,
+        found: g.found,
+      })),
+    };
+
     const ctx: RuleContext = {
-      now: new Date(),
+      now,
       domainFqdn: integration.domain,
-      users: toUserRows(dbUsers, extras),
+      users,
       computers: toComputerRows(dbComputers, extras),
-      groups: toGroupRows(dbGroups, extras),
+      groups,
       trusts: extras.trusts,
       krbtgtPasswordLastSetAt: extras.krbtgtPasswordLastSetAt,
       guestEnabled: extras.guestEnabled,
@@ -204,15 +225,33 @@ export async function runAdHealthcheck(
       machineAccountQuota: extras.machineAccountQuota,
       lapsSchemaPresent: extras.lapsSchemaPresent,
       ldapsConfigured: extras.integrationUseSsl,
+      privilegeMatrix,
     };
 
     const { score, findings } = evaluateContext(ctx);
     insertFindings(db, runId, findings);
     finishRun(db, runId, { status: "ok", score, statsJson: stats });
-    return { runId, score, findings };
+    return { runId, score, findings, privilegeMatrix };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishRun(db, runId, { status: "error", errorMessage: message, statsJson: stats });
     throw err;
+  }
+}
+
+/** Parse privilegeMatrix from a run's stats_json, if present. */
+export function privilegeMatrixFromStatsJson(
+  statsJson: string | null | undefined,
+): PrivilegeMatrix | null {
+  if (!statsJson) return null;
+  try {
+    const parsed = JSON.parse(statsJson) as { privilegeMatrix?: unknown };
+    const m = parsed.privilegeMatrix;
+    if (!m || typeof m !== "object") return null;
+    const obj = m as PrivilegeMatrix;
+    if (!Array.isArray(obj.groups) || !Array.isArray(obj.users)) return null;
+    return obj;
+  } catch {
+    return null;
   }
 }

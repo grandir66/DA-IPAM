@@ -39,7 +39,13 @@ import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { ADSetupGuideDialog } from "@/components/shared/ad-setup-guide-dialog";
 import { SEVERITY_STYLE } from "@/lib/severity-style";
-import type { HealthFinding, HealthScore, HealthSeverity } from "@/lib/ad/health/types";
+import type {
+  HealthFinding,
+  HealthScore,
+  HealthSeverity,
+  PrivilegeMatrix,
+  PrivilegeMembershipKind,
+} from "@/lib/ad/health/types";
 
 interface AdIntegration {
   id: number;
@@ -179,6 +185,8 @@ export default function ActiveDirectoryPage() {
   const [healthRun, setHealthRun] = useState<AdHealthRun | null>(null);
   const [healthScore, setHealthScore] = useState<HealthScore | null>(null);
   const [healthFindings, setHealthFindings] = useState<HealthFinding[]>([]);
+  const [privilegeMatrix, setPrivilegeMatrix] = useState<PrivilegeMatrix | null>(null);
+  const [matrixEnabledOnly, setMatrixEnabledOnly] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthRunning, setHealthRunning] = useState(false);
   const [expandedFinding, setExpandedFinding] = useState<string | null>(null);
@@ -290,6 +298,7 @@ export default function ActiveDirectoryPage() {
       setHealthRun(null);
       setHealthScore(null);
       setHealthFindings([]);
+      setPrivilegeMatrix(null);
       return;
     }
     setHealthLoading(true);
@@ -301,11 +310,13 @@ export default function ActiveDirectoryPage() {
       setHealthRun(data.run ?? null);
       setHealthScore(data.score ?? null);
       setHealthFindings(Array.isArray(data.findings) ? data.findings : []);
+      setPrivilegeMatrix(data.privilegeMatrix ?? null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore");
       setHealthRun(null);
       setHealthScore(null);
       setHealthFindings([]);
+      setPrivilegeMatrix(null);
     } finally {
       setHealthLoading(false);
     }
@@ -461,6 +472,7 @@ export default function ActiveDirectoryPage() {
       if (!res.ok) throw new Error(data.error ?? "Errore healthcheck");
       setHealthScore(data.score ?? null);
       setHealthFindings(Array.isArray(data.findings) ? data.findings : []);
+      setPrivilegeMatrix(data.privilegeMatrix ?? null);
       setExpandedFinding(null);
       toast.success(`Healthcheck completato (score ${data.score?.global ?? "—"})`);
       await fetchHealth();
@@ -491,6 +503,24 @@ export default function ActiveDirectoryPage() {
     if (n >= 20) return "text-amber-600";
     return "text-green-600";
   };
+
+  const matrixCellLabel = (kind: PrivilegeMembershipKind | null | undefined) => {
+    if (!kind) return "·";
+    if (kind === "direct") return "D";
+    if (kind === "nested") return "N";
+    return "P";
+  };
+
+  const matrixCellClass = (kind: PrivilegeMembershipKind | null | undefined) => {
+    if (!kind) return "text-muted-foreground/40";
+    if (kind === "direct") return "bg-red-500/15 text-red-700 dark:text-red-300 font-semibold";
+    if (kind === "nested") return "bg-amber-500/15 text-amber-800 dark:text-amber-200 font-semibold";
+    return "bg-orange-500/15 text-orange-800 dark:text-orange-200 font-semibold";
+  };
+
+  const matrixRows = privilegeMatrix
+    ? privilegeMatrix.users.filter((u) => (matrixEnabledOnly ? u.enabled : true))
+    : [];
 
   const severityBadgeClass = (sev: HealthSeverity | string) =>
     SEVERITY_STYLE[sev] ?? "bg-muted text-foreground";
@@ -1422,6 +1452,97 @@ export default function ActiveDirectoryPage() {
                     <p className="text-sm text-muted-foreground text-center py-4">
                       Nessun finding per questo run.
                     </p>
+                  )}
+
+                  {!healthLoading && privilegeMatrix && (
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <div className="flex flex-wrap items-center gap-3 justify-between">
+                          <div>
+                            <CardTitle className="text-base">Matrice privilegi</CardTitle>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Utenti con path verso gruppi amministrativi / elevati
+                              (D=diretto, N=nested, P=primaryGroupID). Nested max depth 5.
+                            </p>
+                          </div>
+                          <label className="flex items-center gap-2 text-sm cursor-pointer">
+                            <Checkbox
+                              checked={matrixEnabledOnly}
+                              onCheckedChange={(v) => setMatrixEnabledOnly(v === true)}
+                            />
+                            Solo account abilitati
+                          </label>
+                        </div>
+                        {privilegeMatrix.truncated && (
+                          <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
+                            Matrice troncata ai primi 500 utenti con privilegi.
+                          </p>
+                        )}
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        {matrixRows.length === 0 ? (
+                          <p className="text-sm text-muted-foreground px-6 pb-6">
+                            Nessun utente nelle colonne privilegiate (con il filtro attuale).
+                          </p>
+                        ) : (
+                          <div className="overflow-x-auto border-t">
+                            <table className="w-full text-xs">
+                              <thead className="bg-muted/50 sticky top-0">
+                                <tr>
+                                  <th className="p-2 text-left font-medium sticky left-0 bg-muted/50 z-10 min-w-[140px]">
+                                    Utente
+                                  </th>
+                                  {privilegeMatrix.groups.map((g) => (
+                                    <th
+                                      key={g.key}
+                                      className="p-2 text-center font-medium whitespace-nowrap"
+                                      title={`${g.displayName}${g.found ? "" : " (gruppo non trovato)"} — ${g.memberCount} enabled`}
+                                    >
+                                      <div className={g.found ? "" : "opacity-40"}>
+                                        {g.displayName.replace("Group Policy Creator Owners", "GPO Creators")}
+                                      </div>
+                                      <div className="text-[10px] font-normal text-muted-foreground">
+                                        {g.memberCount}
+                                      </div>
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {matrixRows.map((u) => (
+                                  <tr key={u.dn} className="border-t hover:bg-muted/20">
+                                    <td
+                                      className="p-2 font-mono sticky left-0 bg-background z-10"
+                                      title={u.dn}
+                                    >
+                                      <span className={u.enabled ? "" : "text-muted-foreground line-through"}>
+                                        {u.sam}
+                                      </span>
+                                    </td>
+                                    {privilegeMatrix.groups.map((g) => {
+                                      const kind = u.cells[g.key] ?? null;
+                                      const path = u.paths?.[g.key];
+                                      const tip = kind
+                                        ? `${g.displayName}: ${kind}${path?.length ? ` via ${path.join(" → ")}` : ""}`
+                                        : undefined;
+                                      return (
+                                        <td
+                                          key={g.key}
+                                          className={`p-1 text-center ${matrixCellClass(kind)}`}
+                                          title={tip}
+                                        >
+                                          {matrixCellLabel(kind)}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
                   )}
                 </TabsContent>
               </Tabs>

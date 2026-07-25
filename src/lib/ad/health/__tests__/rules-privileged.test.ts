@@ -295,9 +295,9 @@ test("resolveDomainAdminUsers includes primaryGroupID=512", () => {
   assert.deepEqual(dns, ["CN=listed,DC=contoso,DC=local", "CN=primary,DC=contoso,DC=local"]);
 });
 
-test("ALL_RULES has 26 unique rule ids", () => {
-  assert.equal(ALL_RULES.length, 26);
+test("ALL_RULES has 32 unique rule ids", () => {
+  assert.equal(ALL_RULES.length, 32);
   const ids = ALL_RULES.map((r) => r.id);
-  assert.equal(new Set(ids).size, 26);
+  assert.equal(new Set(ids).size, 32);
   assert.ok(!ids.includes("DA-A-DomainScore"));
 });

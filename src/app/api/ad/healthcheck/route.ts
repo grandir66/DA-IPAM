@@ -3,7 +3,11 @@ import { z } from "zod/v4";
 import { requireAdmin } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getAdIntegrationById, getDb } from "@/lib/db";
-import { AdHealthConflictError, runAdHealthcheck } from "@/lib/ad/health/engine";
+import {
+  AdHealthConflictError,
+  privilegeMatrixFromStatsJson,
+  runAdHealthcheck,
+} from "@/lib/ad/health/engine";
 import {
   ensureAdHealthSchema,
   getFindings,
@@ -55,7 +59,12 @@ export async function GET(request: Request) {
     ensureAdHealthSchema(db);
     const run = getLatestRun(db, integrationId);
     if (!run) {
-      return NextResponse.json({ run: null, score: null, findings: [] });
+      return NextResponse.json({
+        run: null,
+        score: null,
+        findings: [],
+        privilegeMatrix: null,
+      });
     }
 
     const findings = getFindings(db, run.id);
@@ -63,6 +72,7 @@ export async function GET(request: Request) {
       run,
       score: scoreFromRun(run),
       findings,
+      privilegeMatrix: privilegeMatrixFromStatsJson(run.statsJson),
     });
   });
 }

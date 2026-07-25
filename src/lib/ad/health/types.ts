@@ -76,6 +76,35 @@ export interface AdTrustRow {
 /** TRUST_ATTRIBUTE_WITHIN_FOREST — exclude from external trust inventory. */
 export const TRUST_ATTR_WITHIN_FOREST = 0x20;
 
+/** How a user reaches a privileged group. */
+export type PrivilegeMembershipKind = "direct" | "nested" | "primary";
+
+export interface PrivilegeMatrixGroupCol {
+  key: string;
+  displayName: string;
+  /** Enabled user members (any path). */
+  memberCount: number;
+  /** Whether the group object was found in LDAP cache. */
+  found: boolean;
+}
+
+export interface PrivilegeMatrixUserRow {
+  sam: string;
+  dn: string;
+  enabled: boolean;
+  /** groupKey → membership kind (null = not a member). */
+  cells: Record<string, PrivilegeMembershipKind | null>;
+  /** Nested path (intermediate group sAMAccountNames) when kind is nested. */
+  paths?: Record<string, string[]>;
+}
+
+export interface PrivilegeMatrix {
+  groups: PrivilegeMatrixGroupCol[];
+  users: PrivilegeMatrixUserRow[];
+  generatedAt: string;
+  truncated: boolean;
+}
+
 export interface RuleContext {
   now: Date;
   domainFqdn: string;
@@ -100,6 +129,11 @@ export interface RuleContext {
   lapsSchemaPresent: boolean | null;
   /** Domarc integration use_ssl / LDAPS configured. */
   ldapsConfigured: boolean;
+  /**
+   * Precomputed privilege matrix (engine). Rules may also call expandAllPrivileges.
+   * Optional for unit tests that build minimal contexts.
+   */
+  privilegeMatrix?: PrivilegeMatrix | null;
 }
 
 export interface RuleDef {
@@ -110,5 +144,8 @@ export interface RuleDef {
   run: (ctx: RuleContext) => HealthFinding | null; // null = no match
 }
 
-export const ENGINE_VERSION = "0.2.0";
+export const ENGINE_VERSION = "0.3.0";
 export const SAMPLE_CAP = 50;
+
+/** Threshold for DA-A-LargePrivilegedSet. */
+export const LARGE_PRIVILEGED_SET_ABOVE = 15;

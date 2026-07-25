@@ -26,7 +26,10 @@ export function stringToSid(sid: string): Buffer {
   const m = /^S-(\d+)-(\d+)((?:-\d+)*)$/i.exec(sid.trim());
   if (!m) throw new Error(`Invalid SID: ${sid}`);
   const revision = Number(m[1]);
-  const authority = BigInt(m[2]);
+  const authority = Number(m[2]);
+  if (!Number.isFinite(authority) || authority < 0 || authority > Number.MAX_SAFE_INTEGER) {
+    throw new Error(`Invalid SID authority: ${m[2]}`);
+  }
   const subs = m[3]
     ? m[3]
         .split("-")
@@ -36,11 +39,11 @@ export function stringToSid(sid: string): Buffer {
   const buf = Buffer.alloc(8 + subs.length * 4);
   buf.writeUInt8(revision, 0);
   buf.writeUInt8(subs.length, 1);
-  // 6-byte big-endian authority
+  // 6-byte big-endian authority (NT authorities fit in Number)
   let auth = authority;
   for (let i = 7; i >= 2; i--) {
-    buf.writeUInt8(Number(auth & 0xffn), i);
-    auth >>= 8n;
+    buf.writeUInt8(auth & 0xff, i);
+    auth = Math.floor(auth / 256);
   }
   for (let i = 0; i < subs.length; i++) {
     buf.writeUInt32LE(subs[i]!, 8 + i * 4);

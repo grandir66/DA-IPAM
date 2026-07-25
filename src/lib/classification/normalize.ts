@@ -59,9 +59,8 @@ function httpBannerVotesFor(banner: string): string | undefined {
     case "ilo":
       return "server";
     case "synology":
-      return "nas_synology";
     case "qnap":
-      return "nas_qnap";
+      return "storage";
     default:
       return undefined;
   }

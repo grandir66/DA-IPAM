@@ -11,6 +11,10 @@ import {
   buildTargetedServiceTcpArgs,
   ALWAYS_USEFUL_TCP_PORTS,
   unionTcpPorts,
+  getQuickScanTcpPorts,
+  getFullScanTcpPortList,
+  parseTcpPortSpec,
+  tcpPortListToSpec,
   getNmapHostTimeoutSeconds,
   getNetworkDiscoveryQuickConcurrency,
   getNetworkDiscoveryQuickExecMs,
@@ -353,32 +357,48 @@ async function runDiscovery(
 
   /**
    * Pre-pass Naabu opzionale (setting `port_discovery=naabu+nmap`).
-   * Fail-soft: binario assente / errori → fallback Nmap-only.
+   * Fail-soft: binario assente / exit≠0 / Map vuota → fallback Nmap-only (`enabled:false`).
+   * @param portsSpec porte da passare a naabu (quick/default/profile — non solo always-useful)
    */
   async function prepareNaabuPortDiscovery(
-    hosts: string[]
-  ): Promise<{ enabled: boolean; byIp: Map<string, number[]> }> {
+    hosts: string[],
+    portsSpec: string
+  ): Promise<{ enabled: boolean; byIp: Map<string, number[]>; basePorts: number[] }> {
+    const basePorts = parseTcpPortSpec(portsSpec);
+    const disabled = (): { enabled: false; byIp: Map<string, number[]>; basePorts: number[] } => ({
+      enabled: false,
+      byIp: new Map(),
+      basePorts,
+    });
     try {
       const mode = (getSetting("port_discovery") ?? "nmap").trim();
-      if (mode !== "naabu+nmap" || hosts.length === 0) {
-        return { enabled: false, byIp: new Map() };
+      if (mode !== "naabu+nmap" || hosts.length === 0 || basePorts.length === 0) {
+        return disabled();
       }
       const binPath = (getSetting("naabu_bin_path") ?? "").trim() || undefined;
       const available = await isNaabuAvailable(binPath);
       if (!available) {
         log("[naabu] unavailable, fallback nmap");
-        return { enabled: false, byIp: new Map() };
+        return disabled();
       }
       progress.phase = `Naabu TCP — ${hosts.length} host`;
-      log(`[naabu] pre-pass TCP su ${hosts.length} host`);
-      const byIp = await runNaabuTcpPorts(hosts, { binPath });
+      log(`[naabu] pre-pass TCP su ${hosts.length} host (${basePorts.length} porte)`);
+      const byIp = await runNaabuTcpPorts(hosts, {
+        binPath,
+        ports: tcpPortListToSpec(basePorts),
+      });
       let hits = 0;
       for (const ports of byIp.values()) hits += ports.length;
+      // Empty Map = spawn/exit fail OR zero open ports → do NOT shrink Nmap to ALWAYS_USEFUL-only
+      if (hits === 0 || byIp.size === 0) {
+        log("[naabu] unavailable, fallback nmap");
+        return disabled();
+      }
       log(`[naabu] ${byIp.size} host con porte aperte (${hits} hit)`);
-      return { enabled: true, byIp };
+      return { enabled: true, byIp, basePorts };
     } catch {
       log("[naabu] unavailable, fallback nmap");
-      return { enabled: false, byIp: new Map() };
+      return disabled();
     }
   }
 
@@ -401,16 +421,18 @@ async function runDiscovery(
     }
   }
 
+  /** Targeted Nmap: union(naabu open, ALWAYS_USEFUL, prior quick/profile list). */
   function tcpArgsForHost(
     ip: string,
     fallbackArgs: string,
     naabuEnabled: boolean,
     byIp: Map<string, number[]>,
+    basePorts: number[],
     hostTimeoutSeconds?: number
   ): string {
     if (!naabuEnabled) return fallbackArgs;
     return buildTargetedServiceTcpArgs(
-      unionTcpPorts(byIp.get(ip) ?? [], ALWAYS_USEFUL_TCP_PORTS),
+      unionTcpPorts(byIp.get(ip) ?? [], ALWAYS_USEFUL_TCP_PORTS, basePorts),
       hostTimeoutSeconds != null ? { hostTimeoutSeconds } : undefined
     );
   }
@@ -555,7 +577,8 @@ async function runDiscovery(
     } else if (!(await isNmapAvailable())) {
       log("Nmap non disponibile sul sistema/agent — scan annullato");
     } else {
-      const naabuPrep = await prepareNaabuPortDiscovery(targetIps);
+      const quickPortsSpec = getQuickScanTcpPorts();
+      const naabuPrep = await prepareNaabuPortDiscovery(targetIps, quickPortsSpec);
       naabuPortsByIp = naabuPrep.byIp;
       if (naabuPrep.enabled) seedNaabuOpenPorts(naabuPrep.byIp);
 
@@ -576,7 +599,7 @@ async function runDiscovery(
           batch.map((ip) =>
             nmapPortScan(
               ip,
-              tcpArgsForHost(ip, quickArgs, naabuPrep.enabled, naabuPrep.byIp),
+              tcpArgsForHost(ip, quickArgs, naabuPrep.enabled, naabuPrep.byIp, naabuPrep.basePorts),
               quickExecMs,
               { skipUdp: true, onLog: log }
             )
@@ -892,7 +915,8 @@ async function runDiscovery(
     }
 
     const nmapAvailable = await isNmapAvailable();
-    const naabuPrepNd = await prepareNaabuPortDiscovery(onlineIps);
+    const quickPortsSpecNd = getQuickScanTcpPorts();
+    const naabuPrepNd = await prepareNaabuPortDiscovery(onlineIps, quickPortsSpecNd);
     naabuPortsByIp = naabuPrepNd.byIp;
     if (naabuPrepNd.enabled) seedNaabuOpenPorts(naabuPrepNd.byIp);
 
@@ -915,7 +939,7 @@ async function runDiscovery(
           batch.map((ip) =>
             nmapPortScan(
               ip,
-              tcpArgsForHost(ip, quickArgs, naabuPrepNd.enabled, naabuPrepNd.byIp),
+              tcpArgsForHost(ip, quickArgs, naabuPrepNd.enabled, naabuPrepNd.byIp, naabuPrepNd.basePorts),
               quickExecMs,
               { skipUdp: true }
             )
@@ -1323,7 +1347,8 @@ async function runDiscovery(
 
     // Fase 2: Nmap quick TCP (opzionale pre-pass naabu)
     const nmapAvailable = await isNmapAvailable();
-    const naabuPrepIpam = await prepareNaabuPortDiscovery(onlineIps);
+    const quickPortsSpecIpam = getQuickScanTcpPorts();
+    const naabuPrepIpam = await prepareNaabuPortDiscovery(onlineIps, quickPortsSpecIpam);
     naabuPortsByIp = naabuPrepIpam.byIp;
     if (naabuPrepIpam.enabled) seedNaabuOpenPorts(naabuPrepIpam.byIp);
 
@@ -1346,7 +1371,7 @@ async function runDiscovery(
           batch.map((ip) =>
             nmapPortScan(
               ip,
-              tcpArgsForHost(ip, quickArgs, naabuPrepIpam.enabled, naabuPrepIpam.byIp),
+              tcpArgsForHost(ip, quickArgs, naabuPrepIpam.enabled, naabuPrepIpam.byIp, naabuPrepIpam.basePorts),
               quickExecMs,
               { skipUdp: true }
             )
@@ -1766,7 +1791,8 @@ async function runDiscovery(
       progress.total = onlineIps.length;
       // Usa porte esplicite dal profilo se presenti, altrimenti fallback a nmapArgs o default
       const portScanArgs = nmapArgs ?? buildTcpScanArgs(null, discoverOpts?.tcpPorts);
-      const naabuPrepNmap = await prepareNaabuPortDiscovery(onlineIps);
+      const fullPortsSpec = tcpPortListToSpec(getFullScanTcpPortList(discoverOpts?.tcpPorts));
+      const naabuPrepNmap = await prepareNaabuPortDiscovery(onlineIps, fullPortsSpec);
       naabuPortsByIp = naabuPrepNmap.byIp;
       if (naabuPrepNmap.enabled) seedNaabuOpenPorts(naabuPrepNmap.byIp);
       const udpPortsRaw = discoverOpts?.udpPorts;
@@ -1779,7 +1805,7 @@ async function runDiscovery(
       const nmapPortExecTimeoutMs = Math.min(180_000, htMs + 20_000);
       log(
         naabuPrepNmap.enabled
-          ? `Nmap TCP mirato post-naabu (-sV su union porte + always-useful); profilo base: ${portScanArgs}`
+          ? `Nmap TCP mirato post-naabu (union naabu + always-useful + profilo); base: ${portScanArgs}`
           : `Profilo Nmap TCP: ${portScanArgs}`
       );
       if (skipUdpPhase) log("UDP: disattivato (nessuna porta UDP nel profilo)");
@@ -1799,7 +1825,14 @@ async function runDiscovery(
           batch.map((ip) =>
             nmapPortScan(
               ip,
-              tcpArgsForHost(ip, portScanArgs, naabuPrepNmap.enabled, naabuPrepNmap.byIp, htSec),
+              tcpArgsForHost(
+                ip,
+                portScanArgs,
+                naabuPrepNmap.enabled,
+                naabuPrepNmap.byIp,
+                naabuPrepNmap.basePorts,
+                htSec
+              ),
               nmapPortExecTimeoutMs,
               {
                 onLog: log,

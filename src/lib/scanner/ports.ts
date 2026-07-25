@@ -146,11 +146,34 @@ export function buildTargetedServiceTcpArgs(
   return `-Pn -sT -p ${list.join(",")} -sV --version-intensity 0 -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
 }
 
+/** Parse comma-separated TCP port specs → sorted unique numbers. */
+export function parseTcpPortSpec(spec: string): number[] {
+  return unionTcpPorts(
+    spec
+      .split(",")
+      .map((p) => parseInt(p.trim(), 10))
+      .filter((n) => Number.isFinite(n) && n > 0)
+  );
+}
+
 /**
- * Build nmap args per scansione TCP (non richiede root).
- * Porte default + eventuali porte extra dal profilo.
- * @param customPorts - Porte TCP aggiuntive separate da virgola (es. "8444,9443")
+ * Elenco porte TCP dello scan completo (default ∪ profilo), stessa logica di `buildTcpScanArgs`.
  */
+export function getFullScanTcpPortList(
+  explicitTcpPorts?: string | null,
+  customPorts?: string | null
+): number[] {
+  if (explicitTcpPorts && explicitTcpPorts.trim()) {
+    return unionTcpPorts(parseTcpPortSpec(NMAP_DEFAULT_TCP_PORTS), parseTcpPortSpec(explicitTcpPorts));
+  }
+  return unionTcpPorts(parseTcpPortSpec(NMAP_DEFAULT_TCP_PORTS), parseTcpPortSpec(customPorts ?? ""));
+}
+
+/** Spec stringa porte per naabu / log (quick o full). */
+export function tcpPortListToSpec(ports: number[]): string {
+  return unionTcpPorts(ports).join(",");
+}
+
 /**
  * Build nmap args per scansione TCP.
  * @param customPorts - Porte TCP aggiuntive (legacy, merge con default)
@@ -159,20 +182,7 @@ export function buildTargetedServiceTcpArgs(
  *   infrastrutturali (es. MikroTik 8291/8728 già nel default).
  */
 export function buildTcpScanArgs(customPorts?: string | null, explicitTcpPorts?: string | null): string {
-  const parsePortNums = (s: string) =>
-    s
-      .split(",")
-      .map((p) => p.trim())
-      .filter((p) => /^\d+$/.test(p));
-  let tcpList: string;
-  if (explicitTcpPorts && explicitTcpPorts.trim()) {
-    const tcpSet = new Set([...parsePortNums(NMAP_DEFAULT_TCP_PORTS), ...parsePortNums(explicitTcpPorts)]);
-    tcpList = [...tcpSet].map(Number).sort((a, b) => a - b).join(",");
-  } else {
-    const tcpExtra = parsePortNums(customPorts ?? "");
-    const tcpSet = new Set([...NMAP_DEFAULT_TCP_PORTS.split(","), ...tcpExtra]);
-    tcpList = [...tcpSet].map(Number).sort((a, b) => a - b).join(",");
-  }
+  const tcpList = tcpPortListToSpec(getFullScanTcpPortList(explicitTcpPorts, customPorts));
   const ht = getNmapHostTimeoutSeconds();
   /* -Pn: host già verificato online da ping/nmap-sn → salta host discovery di Nmap (evita falsi "down").
    * v0.2.643 audit perf SC5: --max-retries 3→1, --min-rate 35→200. Su host già

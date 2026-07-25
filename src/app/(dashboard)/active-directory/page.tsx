@@ -39,6 +39,7 @@ import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { ADSetupGuideDialog } from "@/components/shared/ad-setup-guide-dialog";
 import { SEVERITY_STYLE } from "@/lib/severity-style";
+import type { AclExtras } from "@/lib/ad/health/acl/types";
 import type {
   HealthFinding,
   HealthScore,
@@ -186,6 +187,7 @@ export default function ActiveDirectoryPage() {
   const [healthScore, setHealthScore] = useState<HealthScore | null>(null);
   const [healthFindings, setHealthFindings] = useState<HealthFinding[]>([]);
   const [privilegeMatrix, setPrivilegeMatrix] = useState<PrivilegeMatrix | null>(null);
+  const [aclExtras, setAclExtras] = useState<AclExtras | null>(null);
   const [matrixEnabledOnly, setMatrixEnabledOnly] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthRunning, setHealthRunning] = useState(false);
@@ -299,6 +301,7 @@ export default function ActiveDirectoryPage() {
       setHealthScore(null);
       setHealthFindings([]);
       setPrivilegeMatrix(null);
+      setAclExtras(null);
       return;
     }
     setHealthLoading(true);
@@ -311,12 +314,14 @@ export default function ActiveDirectoryPage() {
       setHealthScore(data.score ?? null);
       setHealthFindings(Array.isArray(data.findings) ? data.findings : []);
       setPrivilegeMatrix(data.privilegeMatrix ?? null);
+      setAclExtras(data.acl ?? null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore");
       setHealthRun(null);
       setHealthScore(null);
       setHealthFindings([]);
       setPrivilegeMatrix(null);
+      setAclExtras(null);
     } finally {
       setHealthLoading(false);
     }
@@ -473,6 +478,7 @@ export default function ActiveDirectoryPage() {
       setHealthScore(data.score ?? null);
       setHealthFindings(Array.isArray(data.findings) ? data.findings : []);
       setPrivilegeMatrix(data.privilegeMatrix ?? null);
+      setAclExtras(data.acl ?? null);
       setExpandedFinding(null);
       toast.success(`Healthcheck completato (score ${data.score?.global ?? "—"})`);
       await fetchHealth();
@@ -1540,6 +1546,87 @@ export default function ActiveDirectoryPage() {
                               </tbody>
                             </table>
                           </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {!healthLoading && aclExtras && (
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <div className="flex flex-wrap items-center gap-3 justify-between">
+                          <div>
+                            <CardTitle className="text-base">ACL (nTSecurityDescriptor)</CardTitle>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Collect stile BloodHound con filtro ACE interesting (DCSync, GenericAll, WriteDacl…).
+                            </p>
+                          </div>
+                          <Badge
+                            variant={
+                              aclExtras.meta.status === "ok"
+                                ? "default"
+                                : aclExtras.meta.status === "partial"
+                                  ? "secondary"
+                                  : "destructive"
+                            }
+                          >
+                            {aclExtras.meta.status}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                          <div>
+                            <div className="text-muted-foreground text-xs">Oggetti</div>
+                            <div className="font-semibold">{aclExtras.meta.objectsScanned}</div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground text-xs">SD parsed</div>
+                            <div className="font-semibold">{aclExtras.meta.sdParsed}</div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground text-xs">Interesting ACE</div>
+                            <div className="font-semibold">{aclExtras.meta.interestingAceCount}</div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground text-xs">Durata</div>
+                            <div className="font-semibold">{aclExtras.meta.durationMs} ms</div>
+                          </div>
+                        </div>
+                        {aclExtras.meta.errorMessage && (
+                          <p className="text-sm text-destructive">{aclExtras.meta.errorMessage}</p>
+                        )}
+                        {aclExtras.interestingAces.length > 0 ? (
+                          <div className="border rounded-lg overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead className="bg-muted/50">
+                                <tr>
+                                  <th className="p-2 text-left">Oggetto</th>
+                                  <th className="p-2 text-left">Kind</th>
+                                  <th className="p-2 text-left">Trustee</th>
+                                  <th className="p-2 text-left">Rights</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {aclExtras.interestingAces.slice(0, 50).map((a, i) => (
+                                  <tr key={`${a.objectDn}-${a.trusteeSid}-${i}`} className="border-t">
+                                    <td className="p-2 font-mono truncate max-w-[220px]" title={a.objectDn}>
+                                      {a.objectDn}
+                                    </td>
+                                    <td className="p-2">{a.objectKind}</td>
+                                    <td className="p-2 font-mono" title={a.trusteeSid}>
+                                      {a.trusteeSam ?? a.trusteeSid}
+                                    </td>
+                                    <td className="p-2">{a.rights.join(", ")}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            Nessuna ACE interesting (o collect non disponibile).
+                          </p>
                         )}
                       </CardContent>
                     </Card>

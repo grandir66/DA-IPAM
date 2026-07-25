@@ -1,6 +1,6 @@
 # AD Health Fase 4 — ACL collect stile BloodHound (analisi selettiva)
 
-> Data: 2026-07-26 · Stato: **in review** · Branch: `feat/ad-health-native`  
+> Data: 2026-07-26 · Stato: **approvato / implementato** · Branch: `feat/ad-health-native`  
 > Worktree: `/Users/riccardo/Progetti/Domarc/.worktrees/DA-IPAM-ad-health`  
 > Prerequisito: ENGINE 0.3.0 (privilege matrix) già su hub.
 

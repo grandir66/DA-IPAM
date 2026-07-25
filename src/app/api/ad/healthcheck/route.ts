@@ -5,6 +5,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { getAdIntegrationById, getDb } from "@/lib/db";
 import {
   AdHealthConflictError,
+  aclFromStatsJson,
   privilegeMatrixFromStatsJson,
   runAdHealthcheck,
 } from "@/lib/ad/health/engine";
@@ -64,6 +65,7 @@ export async function GET(request: Request) {
         score: null,
         findings: [],
         privilegeMatrix: null,
+        acl: null,
       });
     }
 
@@ -73,6 +75,7 @@ export async function GET(request: Request) {
       score: scoreFromRun(run),
       findings,
       privilegeMatrix: privilegeMatrixFromStatsJson(run.statsJson),
+      acl: aclFromStatsJson(run.statsJson),
     });
   });
 }

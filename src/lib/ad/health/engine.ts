@@ -13,6 +13,8 @@ import {
   type AdUser,
 } from "@/lib/db";
 import { syncActiveDirectory } from "@/lib/ad/ad-client";
+import { collectAclExtras } from "./acl/acl-collect";
+import type { AclExtras } from "./acl/types";
 import { collectLdapExtras, type LdapExtras } from "./ldap-extras";
 import { buildPrivilegeMatrix } from "./membership";
 import {
@@ -154,6 +156,7 @@ export async function runAdHealthcheck(
   score: HealthScore;
   findings: HealthFinding[];
   privilegeMatrix: PrivilegeMatrix | null;
+  acl: AclExtras | null;
 }> {
   const db = getDb();
   ensureAdHealthSchema(db);
@@ -196,6 +199,15 @@ export async function runAdHealthcheck(
     // Fail the run on collect failure — do not degrade to empty extras / false positives.
     const extras = await collectLdapExtras(integrationId);
 
+    // ACL collect is best-effort (Phase 4) — never fails the whole run.
+    const acl = await collectAclExtras(integrationId);
+    stats.acl = {
+      meta: acl.meta,
+      interestingAceCount: acl.meta.interestingAceCount,
+      domainSid: acl.domainSid,
+      interestingAces: acl.interestingAces,
+    };
+
     const users = toUserRows(dbUsers, extras);
     const groups = toGroupRows(dbGroups, extras);
     const now = new Date();
@@ -226,12 +238,13 @@ export async function runAdHealthcheck(
       lapsSchemaPresent: extras.lapsSchemaPresent,
       ldapsConfigured: extras.integrationUseSsl,
       privilegeMatrix,
+      acl,
     };
 
     const { score, findings } = evaluateContext(ctx);
     insertFindings(db, runId, findings);
     finishRun(db, runId, { status: "ok", score, statsJson: stats });
-    return { runId, score, findings, privilegeMatrix };
+    return { runId, score, findings, privilegeMatrix, acl };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishRun(db, runId, { status: "error", errorMessage: message, statsJson: stats });
@@ -250,6 +263,23 @@ export function privilegeMatrixFromStatsJson(
     if (!m || typeof m !== "object") return null;
     const obj = m as PrivilegeMatrix;
     if (!Array.isArray(obj.groups) || !Array.isArray(obj.users)) return null;
+    return obj;
+  } catch {
+    return null;
+  }
+}
+
+/** Parse acl extras from a run's stats_json, if present. */
+export function aclFromStatsJson(
+  statsJson: string | null | undefined,
+): AclExtras | null {
+  if (!statsJson) return null;
+  try {
+    const parsed = JSON.parse(statsJson) as { acl?: unknown };
+    const a = parsed.acl;
+    if (!a || typeof a !== "object") return null;
+    const obj = a as AclExtras;
+    if (!obj.meta || !Array.isArray(obj.interestingAces)) return null;
     return obj;
   } catch {
     return null;

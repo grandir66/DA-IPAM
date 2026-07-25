@@ -1,3 +1,5 @@
+import type { AclExtras } from "./acl/types";
+
 export type HealthAxis = "stale" | "privileged" | "trust" | "anomaly" | "score";
 export type HealthSeverity = "Critical" | "High" | "Medium" | "Low";
 
@@ -134,6 +136,10 @@ export interface RuleContext {
    * Optional for unit tests that build minimal contexts.
    */
   privilegeMatrix?: PrivilegeMatrix | null;
+  /**
+   * ACL collect extras (Phase 4). Optional — rules skip when absent/unavailable.
+   */
+  acl?: AclExtras | null;
 }
 
 export interface RuleDef {
@@ -144,7 +150,7 @@ export interface RuleDef {
   run: (ctx: RuleContext) => HealthFinding | null; // null = no match
 }
 
-export const ENGINE_VERSION = "0.3.0";
+export const ENGINE_VERSION = "0.4.0";
 export const SAMPLE_CAP = 50;
 
 /** Threshold for DA-A-LargePrivilegedSet. */

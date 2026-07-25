@@ -16,6 +16,11 @@ function baseCtx(overrides: Partial<RuleContext> = {}): RuleContext {
     krbtgtPasswordLastSetAt: "2026-06-01T00:00:00.000Z",
     guestEnabled: false,
     recycleBinEnabled: true,
+    minPwdLength: null,
+    lockoutThreshold: null,
+    machineAccountQuota: null,
+    lapsSchemaPresent: null,
+    ldapsConfigured: true,
     ...overrides,
   };
 }

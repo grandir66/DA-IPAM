@@ -76,6 +76,10 @@ function toUserRows(users: AdUser[], extras: LdapExtras): AdUserRow[] {
       servicePrincipalNames: extras.userSpnBySam.get(sam) ?? [],
       memberOfDns: [],
       primaryGroupId: extras.userPrimaryGroupIdBySam.get(sam) ?? null,
+      adminCount: extras.userAdminCountBySam.get(sam) ?? null,
+      description: extras.userDescriptionBySam.get(sam) ?? null,
+      sidHistory: extras.userSidHistoryBySam.get(sam) ?? [],
+      allowedToDelegateTo: extras.userAllowedToDelegateToBySam.get(sam) ?? [],
     };
   });
 }
@@ -91,6 +95,11 @@ function toComputerRows(computers: AdComputer[], extras: LdapExtras): AdComputer
       operatingSystem: c.operating_system,
       uac: extras.computerUacBySam.get(sam) ?? null,
       isDomainController: extras.computerIsDcBySam.get(sam) ?? false,
+      allowedToDelegateTo: extras.computerAllowedToDelegateToBySam.get(sam) ?? [],
+      allowedToActOnBehalfOf: extras.computerAllowedToActOnBehalfOfBySam.get(sam) ?? false,
+      lapsPasswordPresent: extras.computerLapsPasswordPresentBySam.has(sam)
+        ? (extras.computerLapsPasswordPresentBySam.get(sam) ?? null)
+        : null,
     };
   });
 }
@@ -190,6 +199,11 @@ export async function runAdHealthcheck(
       krbtgtPasswordLastSetAt: extras.krbtgtPasswordLastSetAt,
       guestEnabled: extras.guestEnabled,
       recycleBinEnabled: extras.recycleBinEnabled,
+      minPwdLength: extras.minPwdLength,
+      lockoutThreshold: extras.lockoutThreshold,
+      machineAccountQuota: extras.machineAccountQuota,
+      lapsSchemaPresent: extras.lapsSchemaPresent,
+      ldapsConfigured: extras.integrationUseSsl,
     };
 
     const { score, findings } = evaluateContext(ctx);

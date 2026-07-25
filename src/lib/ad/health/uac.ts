@@ -4,6 +4,8 @@ export const UAC = {
   DONT_EXPIRE_PASSWORD: 0x10000,
   TRUSTED_FOR_DELEGATION: 0x80000,
   DONT_REQ_PREAUTH: 0x400000,
+  /** Protocol transition (S4U2Self) — constrained delegation with any auth. */
+  TRUSTED_TO_AUTH_FOR_DELEGATION: 0x1000000,
 } as const;
 
 export function hasFlag(uac: number | null | undefined, bit: number): boolean {

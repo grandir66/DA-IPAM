@@ -19,6 +19,10 @@ function user(partial: Partial<AdUserRow> & Pick<AdUserRow, "samAccountName" | "
     servicePrincipalNames: [],
     memberOfDns: [],
     primaryGroupId: null,
+    adminCount: null,
+    description: null,
+    sidHistory: [],
+    allowedToDelegateTo: [],
     ...partial,
   };
 }
@@ -32,6 +36,9 @@ function computer(
     operatingSystem: "Windows Server 2019",
     uac: 0,
     isDomainController: false,
+    allowedToDelegateTo: [],
+    allowedToActOnBehalfOf: false,
+    lapsPasswordPresent: null,
     ...partial,
   };
 }
@@ -56,6 +63,11 @@ function baseCtx(overrides: Partial<RuleContext> = {}): RuleContext {
     krbtgtPasswordLastSetAt: null,
     guestEnabled: null,
     recycleBinEnabled: null,
+    minPwdLength: null,
+    lockoutThreshold: null,
+    machineAccountQuota: null,
+    lapsSchemaPresent: null,
+    ldapsConfigured: true,
     ...overrides,
   };
 }
@@ -283,9 +295,9 @@ test("resolveDomainAdminUsers includes primaryGroupID=512", () => {
   assert.deepEqual(dns, ["CN=listed,DC=contoso,DC=local", "CN=primary,DC=contoso,DC=local"]);
 });
 
-test("ALL_RULES has 14 unique rule ids", () => {
-  assert.equal(ALL_RULES.length, 14);
+test("ALL_RULES has 26 unique rule ids", () => {
+  assert.equal(ALL_RULES.length, 26);
   const ids = ALL_RULES.map((r) => r.id);
-  assert.equal(new Set(ids).size, 14);
+  assert.equal(new Set(ids).size, 26);
   assert.ok(!ids.includes("DA-A-DomainScore"));
 });

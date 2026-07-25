@@ -17,6 +17,10 @@ function user(partial: Partial<AdUserRow> & Pick<AdUserRow, "samAccountName" | "
     servicePrincipalNames: [],
     memberOfDns: [],
     primaryGroupId: null,
+    adminCount: null,
+    description: null,
+    sidHistory: [],
+    allowedToDelegateTo: [],
     ...partial,
   };
 }
@@ -30,6 +34,9 @@ function computer(
     operatingSystem: "Windows Server 2019",
     uac: 0,
     isDomainController: false,
+    allowedToDelegateTo: [],
+    allowedToActOnBehalfOf: false,
+    lapsPasswordPresent: null,
     ...partial,
   };
 }
@@ -45,6 +52,11 @@ function baseCtx(overrides: Partial<RuleContext> = {}): RuleContext {
     krbtgtPasswordLastSetAt: null,
     guestEnabled: null,
     recycleBinEnabled: null,
+    minPwdLength: null,
+    lockoutThreshold: null,
+    machineAccountQuota: null,
+    lapsSchemaPresent: null,
+    ldapsConfigured: true,
     ...overrides,
   };
 }

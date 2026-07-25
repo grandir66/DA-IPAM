@@ -32,6 +32,13 @@ export interface AdUserRow {
   memberOfDns: string[];
   /** LDAP primaryGroupID (RID); 512 = Domain Admins. */
   primaryGroupId: number | null;
+  /** LDAP adminCount; 1 = protected/admin remnant. */
+  adminCount: number | null;
+  description: string | null;
+  /** SID history values (strings); empty if none. */
+  sidHistory: string[];
+  /** Constrained delegation targets (msDS-AllowedToDelegateTo). */
+  allowedToDelegateTo: string[];
 }
 
 export interface AdComputerRow {
@@ -42,6 +49,15 @@ export interface AdComputerRow {
   operatingSystem: string | null;
   uac: number | null;
   isDomainController: boolean;
+  /** Constrained delegation targets (msDS-AllowedToDelegateTo). */
+  allowedToDelegateTo: string[];
+  /** True if msDS-AllowedToActOnBehalfOfOtherIdentity is present (RBCD). */
+  allowedToActOnBehalfOf: boolean;
+  /**
+   * LAPS password attribute present (ms-Mcs-AdmPwd / msLAPS-Password).
+   * null = unknown (ACL denied / query failed for that object).
+   */
+  lapsPasswordPresent: boolean | null;
 }
 
 export interface AdGroupRow {
@@ -70,6 +86,20 @@ export interface RuleContext {
   krbtgtPasswordLastSetAt: string | null;
   guestEnabled: boolean | null;
   recycleBinEnabled: boolean | null;
+  /** Domain minPwdLength; null if unreadable. */
+  minPwdLength: number | null;
+  /** Domain lockoutThreshold; null if unreadable. */
+  lockoutThreshold: number | null;
+  /** Domain ms-DS-MachineAccountQuota; null if unreadable. */
+  machineAccountQuota: number | null;
+  /**
+   * LAPS schema / collect status:
+   * true = attrs readable; false = schema absent (0 coverage after successful read);
+   * null = unknown (skip rule — no false positive).
+   */
+  lapsSchemaPresent: boolean | null;
+  /** Domarc integration use_ssl / LDAPS configured. */
+  ldapsConfigured: boolean;
 }
 
 export interface RuleDef {
@@ -80,5 +110,5 @@ export interface RuleDef {
   run: (ctx: RuleContext) => HealthFinding | null; // null = no match
 }
 
-export const ENGINE_VERSION = "0.1.0";
+export const ENGINE_VERSION = "0.2.0";
 export const SAMPLE_CAP = 50;

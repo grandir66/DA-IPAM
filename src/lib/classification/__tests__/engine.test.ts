@@ -54,5 +54,24 @@ test("near scores different slugs produce conflict", () => {
     ev({ source: "http", attribute: "title", value: "a", votes_for: "storage", weight: 0.8, confidence: 0.8 }),
     ev({ source: "smb", attribute: "os", value: "Windows", votes_for: "server_windows", weight: 0.75, confidence: 0.85 }),
   ], {});
-  assert.ok(decision.conflicts.length >= 1 || decision.classification !== "unknown");
+  assert.equal(decision.conflicts.length, 1);
+  const c = decision.conflicts[0]!;
+  assert.deepEqual([c.a, c.b].sort(), ["server_windows", "storage"]);
+  assert.ok(c.delta < 10);
+});
+
+test("under MIN_APPLY_CONFIDENCE yields unknown", () => {
+  // naabu-weight weak vote: 0.2 * 0.8 = 0.16 → overall 16 < 56
+  const decision = decideClassification([
+    ev({
+      source: "naabu",
+      attribute: "tcp_ports",
+      value: "80,443",
+      votes_for: "server",
+      weight: 0.2,
+      confidence: 0.8,
+    }),
+  ], {});
+  assert.ok(decision.confidence < 56);
+  assert.equal(decision.classification, "unknown");
 });

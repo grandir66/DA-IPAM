@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ALL_RULES } from "../rules";
-import { privilegedRules } from "../rules/privileged";
+import { privilegedRules, resolveDomainAdminUsers } from "../rules/privileged";
 import { trustRules } from "../rules/trust";
 import { UAC } from "../uac";
 import type { AdComputerRow, AdGroupRow, AdUserRow, RuleContext } from "../types";
@@ -18,6 +18,7 @@ function user(partial: Partial<AdUserRow> & Pick<AdUserRow, "samAccountName" | "
     uac: 0,
     servicePrincipalNames: [],
     memberOfDns: [],
+    primaryGroupId: null,
     ...partial,
   };
 }
@@ -224,16 +225,29 @@ test("DA-P-Kerberoastable matches enabled users with SPNs", () => {
   assert.equal(finding?.points, 15);
 });
 
-test("DA-T-TrustInventory matches when at least one trust exists", () => {
+test("DA-T-TrustInventory matches external trusts only (WITHIN_FOREST excluded)", () => {
   const trustRule = trustRules.find((r) => r.id === "DA-T-TrustInventory");
   assert.ok(trustRule);
   const empty = baseCtx();
   assert.equal(trustRule.run(empty), null);
 
+  // Only WITHIN_FOREST (0x20) → no match
+  assert.equal(
+    trustRule.run(
+      baseCtx({
+        trusts: [
+          { name: "child.contoso.local", trustDirection: 3, trustType: 2, trustAttributes: 0x20 },
+        ],
+      }),
+    ),
+    null,
+  );
+
   const ctx = baseCtx({
     trusts: [
       { name: "partner.local", trustDirection: 3, trustType: 2, trustAttributes: 0 },
       { name: "lab.local", trustDirection: 1, trustType: 1, trustAttributes: 0 },
+      { name: "child.contoso.local", trustDirection: 3, trustType: 2, trustAttributes: 0x20 },
     ],
   });
   const finding = trustRule.run(ctx);
@@ -242,6 +256,31 @@ test("DA-T-TrustInventory matches when at least one trust exists", () => {
   assert.equal(finding?.objectCount, 2);
   assert.match(finding?.description ?? "", /partner\.local/);
   assert.match(finding?.description ?? "", /lab\.local/);
+  assert.ok(!finding?.description?.includes("child.contoso.local"));
+});
+
+test("resolveDomainAdminUsers includes primaryGroupID=512", () => {
+  const daDn = "CN=Domain Admins,CN=Users,DC=contoso,DC=local";
+  const ctx = baseCtx({
+    users: [
+      user({ samAccountName: "listed", distinguishedName: "CN=listed,DC=contoso,DC=local" }),
+      user({
+        samAccountName: "primary",
+        distinguishedName: "CN=primary,DC=contoso,DC=local",
+        primaryGroupId: 512,
+      }),
+    ],
+    groups: [
+      group({
+        samAccountName: "Domain Admins",
+        distinguishedName: daDn,
+        memberDns: ["CN=listed,DC=contoso,DC=local"],
+      }),
+    ],
+  });
+  const members = resolveDomainAdminUsers(ctx);
+  const dns = members.map((u) => u.distinguishedName).sort();
+  assert.deepEqual(dns, ["CN=listed,DC=contoso,DC=local", "CN=primary,DC=contoso,DC=local"]);
 });
 
 test("ALL_RULES has 14 unique rule ids", () => {

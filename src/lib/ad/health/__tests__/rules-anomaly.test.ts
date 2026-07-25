@@ -35,17 +35,16 @@ test("anomalyRules exports the three DA-A-* ids (no DomainScore)", () => {
   );
 });
 
-test("DA-A-KrbtgtAge matches when null or older than 180 days", () => {
+test("DA-A-KrbtgtAge: null → no match; older than 180 days → match", () => {
   assert.equal(ruleById("DA-A-KrbtgtAge").run(baseCtx({ krbtgtPasswordLastSetAt: FRESH_KRBTGT })), null);
+
+  // Unknown / not collected must not false-positive (same as Recycle Bin)
+  assert.equal(ruleById("DA-A-KrbtgtAge").run(baseCtx({ krbtgtPasswordLastSetAt: null })), null);
 
   const old = ruleById("DA-A-KrbtgtAge").run(baseCtx({ krbtgtPasswordLastSetAt: OLD_KRBTGT }));
   assert.equal(old?.ruleId, "DA-A-KrbtgtAge");
   assert.equal(old?.points, 25);
   assert.equal(old?.objectCount, 1);
-
-  const missing = ruleById("DA-A-KrbtgtAge").run(baseCtx({ krbtgtPasswordLastSetAt: null }));
-  assert.equal(missing?.ruleId, "DA-A-KrbtgtAge");
-  assert.equal(missing?.points, 25);
 });
 
 test("DA-A-GuestEnabled matches only when guestEnabled === true", () => {

@@ -63,5 +63,8 @@ export function isAccountEnabled(uac: string | number | undefined | null): numbe
   return (num & 0x02) === 0 ? 1 : 0;
 }
 
+/** RID well-known del gruppo Domain Admins. */
+export const DOMAIN_ADMINS_RID = 512;
+
 /** RID well-known del gruppo Domain Controllers. */
 export const DOMAIN_CONTROLLERS_RID = 516;

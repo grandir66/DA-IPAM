@@ -16,6 +16,7 @@ function user(partial: Partial<AdUserRow> & Pick<AdUserRow, "samAccountName" | "
     uac: 0,
     servicePrincipalNames: [],
     memberOfDns: [],
+    primaryGroupId: null,
     ...partial,
   };
 }

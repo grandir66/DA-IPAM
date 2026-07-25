@@ -30,6 +30,8 @@ export interface AdUserRow {
   uac: number | null;
   servicePrincipalNames: string[];
   memberOfDns: string[];
+  /** LDAP primaryGroupID (RID); 512 = Domain Admins. */
+  primaryGroupId: number | null;
 }
 
 export interface AdComputerRow {
@@ -54,6 +56,9 @@ export interface AdTrustRow {
   trustType: number | null;
   trustAttributes: number | null;
 }
+
+/** TRUST_ATTRIBUTE_WITHIN_FOREST — exclude from external trust inventory. */
+export const TRUST_ATTR_WITHIN_FOREST = 0x20;
 
 export interface RuleContext {
   now: Date;

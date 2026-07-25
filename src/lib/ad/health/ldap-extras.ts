@@ -19,6 +19,7 @@ import type { AdTrustRow } from "@/lib/ad/health/types";
 export interface LdapExtras {
   userUacBySam: Map<string, number>;
   userSpnBySam: Map<string, string[]>;
+  userPrimaryGroupIdBySam: Map<string, number>;
   computerUacBySam: Map<string, number>;
   computerIsDcBySam: Map<string, boolean>;
   trusts: AdTrustRow[];
@@ -89,6 +90,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
   try {
     const userUacBySam = new Map<string, number>();
     const userSpnBySam = new Map<string, string[]>();
+    const userPrimaryGroupIdBySam = new Map<string, number>();
     try {
       const { searchEntries: users } = await client.search(baseDn, {
         scope: "sub",
@@ -100,6 +102,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
           "pwdLastSet",
           "lastLogonTimestamp",
           "memberOf",
+          "primaryGroupID",
         ],
         paged: { pageSize: 500 },
         timeLimit: 120,
@@ -111,6 +114,8 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
         if (uac != null) userUacBySam.set(sam, uac);
         const spns = ldapStrArray(entry.servicePrincipalName);
         if (spns.length > 0) userSpnBySam.set(sam, spns);
+        const pgid = parseIntAttr(entry.primaryGroupID);
+        if (pgid != null) userPrimaryGroupIdBySam.set(sam, pgid);
       }
     } catch {
       // leave maps empty; engine can still run on cache
@@ -222,6 +227,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
     return {
       userUacBySam,
       userSpnBySam,
+      userPrimaryGroupIdBySam,
       computerUacBySam,
       computerIsDcBySam,
       trusts,

@@ -20,6 +20,7 @@ import {
   getRunningRun,
   insertFindings,
   insertRun,
+  reclaimStaleRunningRuns,
 } from "./persist";
 import { ALL_RULES } from "./rules";
 import { aggregateScores, severityFromPoints } from "./score";
@@ -74,6 +75,7 @@ function toUserRows(users: AdUser[], extras: LdapExtras): AdUserRow[] {
       uac: extras.userUacBySam.get(sam) ?? null,
       servicePrincipalNames: extras.userSpnBySam.get(sam) ?? [],
       memberOfDns: [],
+      primaryGroupId: extras.userPrimaryGroupIdBySam.get(sam) ?? null,
     };
   });
 }
@@ -140,6 +142,9 @@ export async function runAdHealthcheck(
   const db = getDb();
   ensureAdHealthSchema(db);
 
+  // Reclaim stuck runs before conflict check so a crashed process cannot block forever.
+  reclaimStaleRunningRuns(db, integrationId);
+
   if (getRunningRun(db, integrationId)) {
     throw new AdHealthConflictError();
   }
@@ -172,23 +177,8 @@ export async function runAdHealthcheck(
       groups: dbGroups.length,
     };
 
-    let extras: LdapExtras;
-    try {
-      extras = await collectLdapExtras(integrationId);
-    } catch (err) {
-      stats.ldapExtrasError = err instanceof Error ? err.message : String(err);
-      extras = {
-        userUacBySam: new Map(),
-        userSpnBySam: new Map(),
-        computerUacBySam: new Map(),
-        computerIsDcBySam: new Map(),
-        trusts: [],
-        krbtgtPasswordLastSetAt: null,
-        guestEnabled: null,
-        recycleBinEnabled: null,
-        groupMembersByDn: new Map(),
-      };
-    }
+    // Fail the run on collect failure — do not degrade to empty extras / false positives.
+    const extras = await collectLdapExtras(integrationId);
 
     const ctx: RuleContext = {
       now: new Date(),

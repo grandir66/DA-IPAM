@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  DOMAIN_ADMINS_RID,
   DOMAIN_CONTROLLERS_RID,
   isAccountEnabled,
   ldapStr,
@@ -41,9 +42,10 @@ test("ldapStr / ldapStrArray / parseUac helpers", () => {
   assert.equal(parseUac("nope"), null);
 });
 
-test("isAccountEnabled and Domain Controllers RID", () => {
+test("isAccountEnabled and well-known RIDs", () => {
   assert.equal(isAccountEnabled(512), 1);
   assert.equal(isAccountEnabled(514), 0); // 512|2
   assert.equal(isAccountEnabled(null), 1);
+  assert.equal(DOMAIN_ADMINS_RID, 512);
   assert.equal(DOMAIN_CONTROLLERS_RID, 516);
 });

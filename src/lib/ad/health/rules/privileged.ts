@@ -1,3 +1,4 @@
+import { DOMAIN_ADMINS_RID } from "@/lib/ad/ldap-utils";
 import { THRESHOLDS } from "../thresholds";
 import type { AdGroupRow, AdUserRow, RuleContext, RuleDef } from "../types";
 import { hasFlag, UAC } from "../uac";
@@ -23,41 +24,53 @@ function userByDn(users: AdUserRow[]): Map<string, AdUserRow> {
   return m;
 }
 
-/** Expand Domain Admins members up to 2 levels of nesting (DA = level 0). */
+/**
+ * Expand Domain Admins members up to 2 levels of nesting (DA = level 0),
+ * plus users whose primaryGroupID is the Domain Admins RID (512).
+ * Primary-group membership is not listed in the group's `member` attribute.
+ */
 export function resolveDomainAdminUsers(ctx: RuleContext): AdUserRow[] {
-  const da = ctx.groups.find(isDomainAdminsGroup);
-  if (!da) return [];
-
   const groups = groupByDn(ctx.groups);
   const users = userByDn(ctx.users);
   const seenUserDns = new Set<string>();
   const result: AdUserRow[] = [];
 
-  type QueueItem = { dn: string; depth: number };
-  const queue: QueueItem[] = da.memberDns.map((dn) => ({ dn, depth: 1 }));
-  const seenGroupDns = new Set<string>([da.distinguishedName.toLowerCase()]);
+  const da = ctx.groups.find(isDomainAdminsGroup);
+  if (da) {
+    type QueueItem = { dn: string; depth: number };
+    const queue: QueueItem[] = da.memberDns.map((dn) => ({ dn, depth: 1 }));
+    const seenGroupDns = new Set<string>([da.distinguishedName.toLowerCase()]);
 
-  while (queue.length > 0) {
-    const { dn, depth } = queue.shift()!;
-    const key = dn.toLowerCase();
+    while (queue.length > 0) {
+      const { dn, depth } = queue.shift()!;
+      const key = dn.toLowerCase();
 
-    const user = users.get(key);
-    if (user) {
-      if (!seenUserDns.has(key)) {
-        seenUserDns.add(key);
-        result.push(user);
+      const user = users.get(key);
+      if (user) {
+        if (!seenUserDns.has(key)) {
+          seenUserDns.add(key);
+          result.push(user);
+        }
+        continue;
       }
-      continue;
-    }
 
-    const nested = groups.get(key);
-    if (!nested) continue;
-    if (seenGroupDns.has(key)) continue;
-    seenGroupDns.add(key);
-    if (depth >= 2) continue; // do not expand groups beyond level 2
-    for (const child of nested.memberDns) {
-      queue.push({ dn: child, depth: depth + 1 });
+      const nested = groups.get(key);
+      if (!nested) continue;
+      if (seenGroupDns.has(key)) continue;
+      seenGroupDns.add(key);
+      if (depth >= 2) continue; // do not expand groups beyond level 2
+      for (const child of nested.memberDns) {
+        queue.push({ dn: child, depth: depth + 1 });
+      }
     }
+  }
+
+  for (const u of ctx.users) {
+    if (u.primaryGroupId !== DOMAIN_ADMINS_RID) continue;
+    const key = u.distinguishedName.toLowerCase();
+    if (seenUserDns.has(key)) continue;
+    seenUserDns.add(key);
+    result.push(u);
   }
 
   return result;

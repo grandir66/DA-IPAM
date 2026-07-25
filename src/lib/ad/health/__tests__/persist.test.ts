@@ -9,6 +9,9 @@ import {
   getRunningRun,
   insertFindings,
   insertRun,
+  isStaleRunning,
+  reclaimStaleRunningRuns,
+  STALE_RUNNING_MS,
 } from "../persist";
 import { ENGINE_VERSION, type HealthFinding } from "../types";
 
@@ -124,4 +127,36 @@ test("getRunningRun finds only status=running", () => {
 
   finishRun(db, runId, { status: "ok" });
   assert.equal(getRunningRun(db, 1), null);
+});
+
+test("isStaleRunning: pure age check against maxAgeMs", () => {
+  const now = new Date("2026-07-25T12:00:00.000Z");
+  assert.equal(isStaleRunning("2026-07-25T11:55:00.000Z", now, STALE_RUNNING_MS), false);
+  assert.equal(isStaleRunning("2026-07-25T11:49:00.000Z", now, STALE_RUNNING_MS), true);
+  assert.equal(isStaleRunning("not-a-date", now, STALE_RUNNING_MS), true);
+});
+
+test("reclaimStaleRunningRuns marks stuck running as error", () => {
+  const db = freshDb();
+  ensureAdHealthSchema(db);
+  const now = new Date("2026-07-25T12:00:00.000Z");
+
+  const fresh = insertRun(db, {
+    integrationId: 1,
+    startedAt: "2026-07-25T11:55:00.000Z",
+  });
+  const stale = insertRun(db, {
+    integrationId: 1,
+    startedAt: "2026-07-25T11:00:00.000Z",
+  });
+
+  const n = reclaimStaleRunningRuns(db, 1, { now });
+  assert.equal(n, 1);
+  assert.equal(getRunningRun(db, 1)?.id, fresh);
+
+  const after = db
+    .prepare(`SELECT status, error_message FROM ad_health_runs WHERE id = ?`)
+    .get(stale) as { status: string; error_message: string };
+  assert.equal(after.status, "error");
+  assert.match(after.error_message, /timed out|stuck/i);
 });

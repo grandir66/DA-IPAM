@@ -9,23 +9,19 @@ export const anomalyRules: RuleDef[] = [
     points: 25,
     title: "krbtgt password age",
     run(ctx) {
+      // null = data not collected / unknown → skip (no false positive; same as Recycle Bin)
       const iso = ctx.krbtgtPasswordLastSetAt;
-      let match = false;
-      if (iso == null) {
-        match = true;
-      } else {
-        const days = daysSince(iso, ctx.now);
-        match = days == null || days > THRESHOLDS.krbtgtMaxDays;
-      }
-      if (!match) return null;
+      if (iso == null) return null;
+      const days = daysSince(iso, ctx.now);
+      if (days != null && days <= THRESHOLDS.krbtgtMaxDays) return null;
       return aggFinding({
         ruleId: "DA-A-KrbtgtAge",
         axis: "anomaly",
         points: 25,
         title: "krbtgt password age",
         description:
-          iso == null
-            ? "krbtgt password last set is unknown"
+          days == null
+            ? "krbtgt password last set is unparseable"
             : `krbtgt password last set is older than ${THRESHOLDS.krbtgtMaxDays} days`,
         dns: ["krbtgt"],
       });

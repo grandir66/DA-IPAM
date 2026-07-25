@@ -254,6 +254,57 @@ export function getRunningRun(db: Database, integrationId: number): AdHealthRunR
   return row ? mapRun(row) : null;
 }
 
+/** Default age after which a stuck `running` run is reclaimed as error. */
+export const STALE_RUNNING_MS = 10 * 60 * 1000;
+
+const STALE_RUNNING_ERROR =
+  "AD healthcheck timed out (stuck in running longer than 10 minutes)";
+
+/** Pure: whether a running run's started_at is older than maxAgeMs. */
+export function isStaleRunning(
+  startedAt: string,
+  now: Date = new Date(),
+  maxAgeMs: number = STALE_RUNNING_MS,
+): boolean {
+  const t = Date.parse(startedAt);
+  if (Number.isNaN(t)) return true;
+  return now.getTime() - t > maxAgeMs;
+}
+
+/**
+ * Mark any `running` runs for the integration older than maxAgeMs as `error`.
+ * Returns the number of runs reclaimed. Call before conflict-check / insert.
+ */
+export function reclaimStaleRunningRuns(
+  db: Database,
+  integrationId: number,
+  opts?: { now?: Date; maxAgeMs?: number },
+): number {
+  const now = opts?.now ?? new Date();
+  const maxAgeMs = opts?.maxAgeMs ?? STALE_RUNNING_MS;
+  const rows = db
+    .prepare(
+      `SELECT id, integration_id, started_at, finished_at, status, error_message,
+              score_global, score_stale, score_privileged, score_trust, score_anomaly,
+              engine_version, stats_json, created_at
+         FROM ad_health_runs
+        WHERE integration_id = ? AND status = 'running'`,
+    )
+    .all(integrationId) as RunDbRow[];
+
+  let reclaimed = 0;
+  for (const row of rows) {
+    if (!isStaleRunning(row.started_at, now, maxAgeMs)) continue;
+    finishRun(db, row.id, {
+      status: "error",
+      errorMessage: STALE_RUNNING_ERROR,
+      finishedAt: now.toISOString(),
+    });
+    reclaimed += 1;
+  }
+  return reclaimed;
+}
+
 /** Findings di un run, in ordine di inserimento. */
 export function getFindings(db: Database, runId: number): HealthFinding[] {
   const rows = db

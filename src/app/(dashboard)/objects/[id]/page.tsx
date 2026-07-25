@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { ClassificationEvidencePanel } from "@/components/shared/classification-evidence-panel";
 // v0.2.646 audit perf UI9: i dialog modali (Promote/LinkIps/EditDevice) e i
 // componenti grafici pesanti (LatencyChart/UptimeTimeline/LibreNMSGraphs) sono
 // caricati on-demand. Prima erano nel bundle iniziale anche se l'utente non li
@@ -1233,6 +1234,7 @@ export default function ObjectDetailPage() {
           const vendor = host.inferred_vendor ?? device?.vendor ?? host.vendor ?? null;
           const osFamily = host.inferred_os_family ?? null;
           return (
+            <>
             <dl className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
               <InfoRow label="Tipologia" value={tipologia} />
               <InfoRow label="Vendor" value={vendor} />
@@ -1250,6 +1252,12 @@ export default function ObjectDetailPage() {
                 />
               )}
             </dl>
+            <ClassificationEvidencePanel
+              reason={host.classification_reason ?? null}
+              confidence={host.inferred_confidence ?? null}
+              classificationJson={host.classification_json ?? null}
+            />
+            </>
           );
         })()}
       </Section>

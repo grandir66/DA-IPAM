@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS hosts (
   snmp_data TEXT,
   known_host INTEGER DEFAULT 0,
   classification_manual INTEGER DEFAULT 0,
+  classification_reason TEXT,
+  classification_json TEXT,
   last_response_time_ms INTEGER,
   monitor_ports TEXT,
   hostname_source TEXT,
@@ -102,6 +104,19 @@ CREATE TABLE IF NOT EXISTS status_history (
   response_time_ms INTEGER,
   checked_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS host_classification_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  classification TEXT,
+  confidence INTEGER NOT NULL DEFAULT 0,
+  reason TEXT,
+  evidence_json TEXT,
+  conflicts_json TEXT,
+  trigger TEXT NOT NULL CHECK(trigger IN ('scan','apply','manual','backfill'))
+);
+CREATE INDEX IF NOT EXISTS idx_host_class_hist_host ON host_classification_history(host_id, at DESC);
 
 CREATE TABLE IF NOT EXISTS credentials (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

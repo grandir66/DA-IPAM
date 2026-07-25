@@ -817,6 +817,9 @@ export function getTenantDb(tenantCode: string): Database.Database {
       { name: "inferred_at",          sql: "ALTER TABLE hosts ADD COLUMN inferred_at TEXT" },
       // v0.2.602: versione classifier per ricomputo automatico quando le regole cambiano.
       { name: "inferred_classifier_version", sql: "ALTER TABLE hosts ADD COLUMN inferred_classifier_version INTEGER" },
+      // Classification-engine summary (confidence = inferred_confidence, no duplicate column).
+      { name: "classification_reason", sql: "ALTER TABLE hosts ADD COLUMN classification_reason TEXT" },
+      { name: "classification_json", sql: "ALTER TABLE hosts ADD COLUMN classification_json TEXT" },
     ];
     for (const col of inferredCols) {
       if (!hCols.some((c) => c.name === col.name)) {
@@ -824,6 +827,21 @@ export function getTenantDb(tenantCode: string): Database.Database {
         console.info(`[db-tenant] ${tenantCode}: hosts.${col.name} aggiunto`);
       }
     }
+    // History decisioni classificazione (CREATE IF NOT EXISTS → idempotente su DB esistenti).
+    newDb.exec(`
+      CREATE TABLE IF NOT EXISTS host_classification_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+        at TEXT NOT NULL DEFAULT (datetime('now')),
+        classification TEXT,
+        confidence INTEGER NOT NULL DEFAULT 0,
+        reason TEXT,
+        evidence_json TEXT,
+        conflicts_json TEXT,
+        trigger TEXT NOT NULL CHECK(trigger IN ('scan','apply','manual','backfill'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_host_class_hist_host ON host_classification_history(host_id, at DESC);
+    `);
     // Backfill/upgrade:
     //   - host senza inferred_at → mai classificato
     //   - host con inferred_classifier_version < CLASSIFIER_VERSION → ricomputo richiesto

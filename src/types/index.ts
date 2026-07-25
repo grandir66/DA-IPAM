@@ -82,6 +82,10 @@ export interface Host {
   inferred_at?: string | null;
   /** Versione del classifier che ha popolato i campi inferred_*. Bump → ricomputo automatico. */
   inferred_classifier_version?: number | null;
+  /** One-liner spiegabile dal classification-engine (riusa inferred_confidence come overall). */
+  classification_reason?: string | null;
+  /** JSON snapshot decisionale: evidence, conflicts, fingerprint_hash, engine_version, sources. */
+  classification_json?: string | null;
   created_at: string;
   updated_at: string;
 }

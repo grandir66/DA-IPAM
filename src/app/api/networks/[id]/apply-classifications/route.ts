@@ -6,6 +6,7 @@ import { parseJsonSafe } from "@/lib/json-safe";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { classifyDevice } from "@/lib/device-classifier";
 import { getClassificationFromFingerprintSnapshot } from "@/lib/device-fingerprint-classification";
+import { runClassificationEngineForHost } from "@/lib/classification/run";
 import type { DeviceFingerprintSnapshot } from "@/types";
 
 /**
@@ -81,18 +82,31 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       const currentCustom = host.classification ? getCustomClassificationBySlug(host.classification) : undefined;
       const currentIsCustomChildOfNew = currentCustom?.parent_slug === newClassification;
 
+      // A3: custom child più specifica del parent built-in → non chiamare engine
       if (!newClassification || newClassification === host.classification || currentIsCustomChildOfNew) {
         skipped++;
         continue;
       }
 
-      const sets: string[] = ["classification = ?", "updated_at = datetime('now')"];
-      const vals: unknown[] = [newClassification];
-      if (force && classificationManual) {
-        sets.push("classification_manual = 0");
-      }
-      vals.push(host.id);
-      db.prepare(`UPDATE hosts SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+      await runClassificationEngineForHost({
+        db,
+        hostId: host.id,
+        ip: host.ip,
+        hostname: host.hostname,
+        vendor: host.vendor,
+        os_info: host.os_info,
+        open_ports: openPorts,
+        detection: fpSnap,
+        snmp_sysdescr: fpSnap?.snmp_sysdescr ?? null,
+        snmp_sysobjectid: fpSnap?.snmp_vendor_oid ?? null,
+        cascade_slug: newClassification ?? null,
+        cascade_method: fromFingerprint ? "fingerprint" : "rules",
+        classification_manual: classificationManual && !force,
+        previous_classification: host.classification,
+        previous_confidence: (host as { inferred_confidence?: number | null }).inferred_confidence ?? 0,
+        trigger: "apply",
+        force,
+      });
       applied++;
     }
 

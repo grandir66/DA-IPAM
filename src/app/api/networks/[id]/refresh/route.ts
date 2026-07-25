@@ -6,6 +6,7 @@ import { parseJsonSafe } from "@/lib/json-safe";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { classifyDevice } from "@/lib/device-classifier";
 import { getClassificationFromFingerprintSnapshot } from "@/lib/device-fingerprint-classification";
+import { runClassificationEngineForHost } from "@/lib/classification/run";
 import type { DeviceFingerprintSnapshot } from "@/types";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
@@ -151,11 +152,25 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
               manual: classificationManual,
             });
           } else {
-            fields.push("classification = ?");
-            values.push(newClassification);
-            if (forceReclassify && classificationManual) {
-              fields.push("classification_manual = 0");
-            }
+            await runClassificationEngineForHost({
+              db,
+              hostId: host.id,
+              ip: host.ip,
+              hostname: host.hostname,
+              vendor: effectiveVendor ?? null,
+              os_info: host.os_info,
+              open_ports: openPorts,
+              detection: fpSnap,
+              snmp_sysdescr: fpSnap?.snmp_sysdescr ?? null,
+              snmp_sysobjectid: fpSnap?.snmp_vendor_oid ?? null,
+              cascade_slug: newClassification,
+              cascade_method: fromFingerprint ? "fingerprint" : "rules",
+              classification_manual: classificationManual && !forceReclassify,
+              previous_classification: host.classification,
+              previous_confidence: (host as { inferred_confidence?: number | null }).inferred_confidence ?? 0,
+              trigger: "apply",
+              force: forceReclassify,
+            });
             changes.push(`classification: ${host.classification} → ${newClassification}`);
             reclassified++;
           }
@@ -163,9 +178,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       }
 
       // Applica update se ci sono cambiamenti e non siamo in dry-run
+      // (classification è gestita dall'engine sopra; qui restano vendor/DNS/hostname)
       if (!dryRun && values.length > 0) {
         values.push(host.id);
         db.prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+        updated++;
+      } else if (!dryRun && changes.some((c) => c.startsWith("classification:"))) {
+        // Solo riclassificazione via engine (nessun altro field UPDATE)
         updated++;
       }
     }

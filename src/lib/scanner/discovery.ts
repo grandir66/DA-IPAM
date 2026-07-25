@@ -21,9 +21,12 @@ import {
   getClassificationFromFingerprintSnapshot,
   FINGERPRINT_CLASSIFICATION_MIN_CONFIDENCE,
 } from "@/lib/device-fingerprint-classification";
+import { runClassificationEngineForHost } from "@/lib/classification/run";
+import { parseJsonSafe } from "@/lib/json-safe";
 import {
   getNetworkById,
   getHostsByNetwork,
+  getDb,
   upsertHost,
   markHostsOffline,
   noteHostsNonResponding,
@@ -2324,6 +2327,13 @@ async function runDiscovery(
     // fa throw (constraint, MAC mojibake, ecc.) NON deve abortire l'intero scan
     // né saltare l'offline-marking post-scan — come già fanno gli sweep fast/icmp.
     try {
+    const prevHost = hostRowByIp.get(ip);
+    const previousClassification = prevHost?.classification ?? null;
+    const previousConfidence =
+      (prevHost as { inferred_confidence?: number | null } | undefined)?.inferred_confidence ?? 0;
+    const classificationManual =
+      (prevHost as { classification_manual?: number } | undefined)?.classification_manual === 1;
+
     const host = upsertHost({
       network_id: networkId,
       ip,
@@ -2358,6 +2368,41 @@ async function runDiscovery(
 
     if (!host) continue;
     if (host.first_seen === host.created_at) newHosts++;
+
+    // Classification-engine facade (post-cascade): evidence + policy + history
+    const detectionForEngine =
+      fpSnap ??
+      (detectionJson
+        ? parseJsonSafe<DeviceFingerprintSnapshot | null>(detectionJson, null)
+        : null);
+    let cascadeMethod: string = "rules";
+    if (classification === effectiveVendorProfileClass || classification === classFromSysObj || classification === classificationFromFpOid || classification === classificationFromGenericOid) {
+      cascadeMethod = "oid";
+    } else if (classification === classificationFromFingerprint || classification === classificationFromGenericFp) {
+      cascadeMethod = "fingerprint";
+    } else if (classification === classificationFromRules) {
+      cascadeMethod = "text";
+    } else if (classification === classFromHostnamePrefix) {
+      cascadeMethod = "rules";
+    }
+    await runClassificationEngineForHost({
+      db: getDb(),
+      hostId: host.id,
+      ip,
+      hostname: hostname ?? null,
+      vendor: vendor ?? null,
+      os_info: nmapData?.snmpSysDescr || nmapData?.os || null,
+      open_ports: portsForClassification,
+      detection: detectionForEngine,
+      snmp_sysdescr: nmapData?.snmpSysDescr ?? detectionForEngine?.snmp_sysdescr ?? null,
+      snmp_sysobjectid: nmapData?.snmpSysObjectID ?? detectionForEngine?.snmp_vendor_oid ?? null,
+      cascade_slug: classification,
+      cascade_method: cascadeMethod,
+      classification_manual: classificationManual,
+      previous_classification: previousClassification,
+      previous_confidence: previousConfidence,
+      trigger: "scan",
+    });
 
     // Sync network_device collegato (stesso IP) — port e classification
     if (nmapData?.ports?.length && getNetworkDeviceByHost(ip)) {

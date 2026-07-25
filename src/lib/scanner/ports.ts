@@ -115,6 +115,38 @@ export function buildNetworkDiscoveryQuickTcpArgs(): string {
 }
 
 /**
+ * Porte TCP "sempre utili" da unire alle hit naabu per Nmap -sV mirato
+ * (allineate a DEFAULT_NAABU_PORTS / design §7.1).
+ */
+export const ALWAYS_USEFUL_TCP_PORTS = [22, 80, 443, 445, 161, 3389, 554, 623, 9100] as const;
+
+/** Unione ordinata di elenchi porte (dedupe, solo > 0). */
+export function unionTcpPorts(...lists: Array<readonly number[] | number[] | null | undefined>): number[] {
+  const set = new Set<number>();
+  for (const list of lists) {
+    if (!list) continue;
+    for (const p of list) {
+      if (typeof p === "number" && Number.isFinite(p) && p > 0) set.add(Math.trunc(p));
+    }
+  }
+  return [...set].sort((a, b) => a - b);
+}
+
+/**
+ * Nmap -sV mirato su un elenco porte esplicito (post naabu).
+ * Se `ports` è vuoto → fallback al profilo quick standard.
+ */
+export function buildTargetedServiceTcpArgs(
+  ports: number[],
+  opts?: { hostTimeoutSeconds?: number }
+): string {
+  const list = unionTcpPorts(ports);
+  if (list.length === 0) return buildNetworkDiscoveryQuickTcpArgs();
+  const ht = opts?.hostTimeoutSeconds ?? getNetworkDiscoveryQuickHostTimeoutSeconds();
+  return `-Pn -sT -p ${list.join(",")} -sV --version-intensity 0 -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
+}
+
+/**
  * Build nmap args per scansione TCP (non richiede root).
  * Porte default + eventuali porte extra dal profilo.
  * @param customPorts - Porte TCP aggiuntive separate da virgola (es. "8444,9443")

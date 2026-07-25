@@ -57,10 +57,7 @@ function attrPresent(val: unknown): boolean {
   return true;
 }
 
-function isDomainController(entry: {
-  primaryGroupID?: unknown;
-  memberOf?: unknown;
-}): boolean {
+function isDomainController(entry: Record<string, unknown>): boolean {
   const pgid = parseIntAttr(entry.primaryGroupID);
   if (pgid === DOMAIN_CONTROLLERS_RID) return true;
   const memberOf = ldapStrArray(entry.memberOf);

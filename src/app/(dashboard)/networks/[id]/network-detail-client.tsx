@@ -790,7 +790,10 @@ export function NetworkDetailClient({
       scanType === "scan_icmp" ||
       scanType === "scan_nmap_base" ||
       scanType === "scan_snmp_verify" ||
-      scanType === "scan_naabu";
+      scanType === "scan_naabu" ||
+      // Fase "Credenziali" del pannello Acquisizione (§6.2): subnet-wide, il
+      // backend risolve tutti gli host della rete quando host_ids è assente.
+      scanType === "credential_validate";
     if (!noHostSelectionNeeded && selectedHostIds.size === 0) {
       toast.error("Seleziona uno o più host nella vista lista (azioni manuali solo sugli IP selezionati)");
       return { ok: false, lastProgress: null };
@@ -880,7 +883,24 @@ export function NetworkDetailClient({
    */
   async function runInitialScan() {
     if (!!scanning || enriching) return;
-    if (scanPhases?.naabuAvailable) {
+    let naabuAvailable = scanPhases?.naabuAvailable ?? false;
+    if (!scanPhases) {
+      // scan-phases non ancora risolto (mount fetch in corso/fallito): un
+      // tentativo sincrono qui evita di sottostimare naabu col fallback
+      // ICMP+Nmap quando naabu è in realtà disponibile. Se fallisce, resta
+      // il fallback attuale (naabuAvailable = false).
+      try {
+        const res = await fetch(`/api/networks/${network.id}/scan-phases`);
+        if (res.ok) {
+          const data = (await res.json()) as ScanPhasesResponse;
+          naabuAvailable = data.naabuAvailable;
+          setScanPhases(data);
+        }
+      } catch {
+        /* fallback al percorso ICMP + Nmap sotto */
+      }
+    }
+    if (naabuAvailable) {
       const { ok } = await runScanJob("scan_naabu");
       if (ok) toast.success("Percorso: ICMP + Naabu");
     } else {
@@ -1201,7 +1221,7 @@ export function NetworkDetailClient({
                       title={
                         networkCredentialIds.length === 0
                           ? "Configura credenziali nella modifica rete"
-                          : (phaseCredentials?.adds ?? "SSH/WinRM: OS esatto, board vendor, enrichment via agent")
+                          : "Valida le credenziali della rete su tutti gli host"
                       }
                     >
                       <Key className="h-3.5 w-3.5 mr-1 shrink-0" />

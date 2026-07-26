@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ScanTriggerSchema } from "@/lib/validators";
-import { getNmapProfileById, getActiveNmapProfile, getHostById, relinkAdComputersForNetwork, addScanHistory } from "@/lib/db";
+import { getNmapProfileById, getActiveNmapProfile, getHostById, getHostsByNetwork, relinkAdComputersForNetwork, addScanHistory } from "@/lib/db";
 import { discoverNetwork } from "@/lib/scanner/discovery";
 import { buildCustomScanArgs } from "@/lib/scanner/ports";
 import { runArpPoll, runDhcpPollForNetwork, runDnsResolve } from "@/lib/cron/jobs";
@@ -32,12 +32,27 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
       }
 
-      const targetIps = resolveTargetIps(parsed.data.network_id, parsed.data.host_ids);
+      let targetIps = resolveTargetIps(parsed.data.network_id, parsed.data.host_ids);
       if (parsed.data.host_ids?.length && !targetIps?.length) {
         return NextResponse.json({ error: "Nessun host valido tra quelli selezionati per questa rete" }, { status: 400 });
       }
 
-      if (MANUAL_SCAN_TYPES.has(parsed.data.scan_type) && !parsed.data.host_ids?.length) {
+      // credential_validate: la fase "Credenziali" del pannello Acquisizione (§6.2, fase 3b)
+      // è subnet-wide — senza host_ids selezionati manualmente opera su TUTTI gli host già
+      // noti della rete (stessa shape targetIps della selezione manuale, popolata da tutta la
+      // rete invece che dalla selezione). Le altre MANUAL_SCAN_TYPES (pannello Detect) restano
+      // vincolate a host_ids esplicito: comportamento invariato quando host_ids è presente.
+      const isNetworkWideCredentialValidate =
+        parsed.data.scan_type === "credential_validate" && !parsed.data.host_ids?.length;
+      if (isNetworkWideCredentialValidate) {
+        targetIps = getHostsByNetwork(parsed.data.network_id).map((h) => h.ip);
+      }
+
+      if (
+        MANUAL_SCAN_TYPES.has(parsed.data.scan_type) &&
+        !parsed.data.host_ids?.length &&
+        !isNetworkWideCredentialValidate
+      ) {
         return NextResponse.json(
           { error: "Seleziona uno o più host nella lista e riprova (azioni manuali solo su IP selezionati)" },
           { status: 400 }

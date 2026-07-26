@@ -275,7 +275,130 @@ host hanno attribuzione a livello 2 vs solo livello 1 vs nessuna, e **l'azione s
 derivata da `attr_min_phase` degli host incerti ("32 host fermi al livello 1: esegui SNMP per
 distinguere AP da switch"). La stessa informazione, per singolo host, vive nel pannello evidenze.
 
-## 7. Verifica
+## 7. Credenziali — diagnostica, binding e riuso
+
+Il sistema di diagnostica credenziali **resta e diventa un pilastro**: è ciò che trasforma un host
+scoperto in un oggetto di inventario completo, ed è al tempo stesso una delle evidenze più forti per
+l'attribuzione. Non va sostituito, va **riparato e potenziato**.
+
+### 7.1 Stato attuale (verificato in codice e in produzione)
+
+Nucleo funzionante: `credential_validate` (`scanner/discovery.ts:2084-2241`) itera host × credenziali
+della subnet, prova SSH (`sshTryConnect`, timeout 6 s), SNMP v2c (sysName/sysDescr/sysObjectID),
+WinRM (`hostname` via bridge), e scrive l'esito in `host_credentials` (`validated`, `validated_at`,
+`auto_detected`) e, se l'host è già promosso a device, in `device_credential_bindings`
+(`test_status`, `test_message`, `tested_at`). Cifratura AES-256-GCM in `crypto.ts`; vault hub in
+`system_credentials` con audit.
+
+Misura in produzione (tenant 70791, 2026-07-26): **59 host su 375 (16%)** hanno una credenziale,
+58 validate — SSH 34, WinRM 24, **SNMP 7**. Ultima validazione a livello host: **2026-05-27**.
+`software_scans`: 13 error + 4 timeout su 37 (**46% di fallimenti**). E soprattutto: **41 host
+rispondono a SNMP** (`snmp_data` popolato) **senza alcuna credenziale SNMP validata**.
+
+**Le due rotture della catena** (causa dei numeri sopra):
+
+1. **L'UI moderna non alimenta i collettori.** `NetworkCredentialsTable` scrive `network_credentials`
+   (v2), ma `buildSnmpCommunitiesForHost` (`db.ts:3526`), `getOrderedDetectCredentialIds` (`:3461`) e
+   `getOrderedSshLinuxCredentialIds` (`:3475`) leggono le tabelle **legacy**
+   `network_host_credentials` / `host_detect_credential`, scrivibili di fatto solo dall'onboarding.
+   Una credenziale SNMP aggiunta oggi dall'UI **non entra** nella catena community di
+   `scan_snmp_verify`/`snmp deep`: il walk riprova `public`/`private` — ecco i 41 host.
+2. **`host_credentials.validated` non è letto da nessun collettore di inventario.** Lo usano patch
+   executor, terminale SSH e i badge UI; le acquisizioni profonde passano **solo** da
+   `device_credential_bindings`, popolato da `autoBindCredentialToDevice()` che esce subito se non
+   esiste già un `network_devices` con quell'IP (`discovery.ts:124`). Host non promosso → nessun
+   binding → software scan fallisce con "non ha credenziali linkate".
+
+Altri difetti rilevanti: nessuna rivalidazione automatica (`credential_validate` non è tra i
+`job_type` di `scheduled_jobs`), `validated=1` resta vero per sempre anche dopo una rotazione
+password; nessun retry né persistenza dei fallimenti (`host_credentials` non ha `last_error`,
+`fail_count`, `last_attempt_at`); SNMP v3 mai validato (solo `authNoPriv`, nessun privKey);
+il binding `api` viene creato **senza alcun test**; tre vocabolari incoerenti
+(`credential_type` = `ssh|snmp|api|windows|linux` mescola protocollo e OS, mentre `protocol_type` =
+`ssh|snmp|winrm|api`); `ad-client.ts:106` usa `decrypt()` nudo invece di `safeDecrypt()` (viola la
+regola 3 del CLAUDE.md).
+
+### 7.2 Catena unica: valida una volta, riusa ovunque
+
+- **Una sola sorgente di verità**: `host_credentials` per gli host, `device_credential_bindings` per
+  i device promossi, con propagazione automatica host↔device (già presente in
+  `api/devices/[id]/credentials`, da generalizzare). Le tre tabelle legacy
+  (`network_host_credentials`, `host_detect_credential`, colonne inline su `network_devices`)
+  vengono migrate e **deprecate**; il componente morto `NetworkCredentialChains` rimosso.
+- **Tutti i collettori leggono il binding validato per primo**, con fallback alla catena della
+  subnet: SNMP deep, scan `windows`/`ssh`, ARP/DHCP dal router, switch/LLDP, NAS, Proxmox,
+  software inventory. Un solo helper `resolveCredentialFor(host|device, protocol)`.
+- **Il binding non richiede la promozione a device**: gli host restano acquisibili in profondità
+  anche prima di diventare oggetti di inventario.
+- **Vocabolario unico** `protocol` (`ssh|snmp|winrm|wmi|smb|api|redfish|ipmi|onvif|netconf`),
+  con l'OS che smette di essere un "tipo di credenziale": `windows`→`winrm`, `linux`→`ssh`.
+
+### 7.3 Le credenziali come evidenza di attribuzione
+
+Ogni esito di autenticazione emette evidenza (§4.2) — oggi questa informazione viene buttata:
+
+| Esito | Evidenza | Forza |
+|---|---|---|
+| WinRM/WMI OK | `os_family=windows` + build esatta → `compute.workstation\|server` | autoritativa |
+| SSH OK | banner: OpenSSH/Debian → `compute` + `linux`; RouterOS/IOS/VyOS/EdgeOS → `network.*` + vendor | autoritativa |
+| SNMP OK | sysObjectID → vendor+modello+categoria via KB; LLDP capability → AP vs switch | autoritativa |
+| API vendor OK | modello e ruolo dichiarati dal controller (UniFi, Proxmox, vSphere, MikroTik) | autoritativa |
+| Redfish/IPMI OK | è un **BMC**: `compute.server` + modello/seriale del server ospite | autoritativa |
+| ONVIF OK | è una **camera** + modello/firmware | autoritativa |
+| Auth rifiutata ma servizio presente | il servizio esiste comunque → segnale debole di categoria/OS | media |
+
+Caso reale dal DB: l'host `ILOSGH942WX1N` (vendor "Hewlett Packard Enterprise") oggi è `unknown` a
+confidence 40; con Redfish diventa `compute.server` con modello, seriale e firmware del server.
+
+### 7.4 Estensione dei protocolli
+
+Oltre a SNMP/SSH/API/WinRM già presenti, in ordine di rapporto valore/costo:
+
+| Protocollo | Sblocca | Priorità |
+|---|---|---|
+| **SNMP v3 completo** (authPriv, privKey) | apparati enterprise dove v2c è disabilitato per policy | alta — oggi v3 non è nemmeno validato |
+| **SMB/WMI** come fallback WinRM | Windows con WinRM disabilitato (casistica frequentissima): SMB2+NTLMSSP dà già la build **senza credenziali**, con credenziali dà l'inventario | alta |
+| **Redfish / IPMI** | BMC (iLO, iDRAC, XClarity): modello, seriale, firmware, stato hardware del server | alta |
+| **API vendor** (MikroTik REST, UniFi/Omada controller, Proxmox, vSphere, firewall Forti/Sophos/Stormshield) | inventario autoritativo; per UniFi risolve AP vs switch senza ambiguità | alta (parte già esiste) |
+| **ONVIF** | camere: modello, firmware, stream | media |
+| **NETCONF/RESTCONF** | switch/router enterprise dove SSH-CLI è fragile | media |
+| **Chiave privata SSH** (oggi solo user/password) | apparati e server che rifiutano l'auth password | media |
+| **HTTP/REST generico con token** | appliance web-only | bassa |
+| **Telnet** | apparati legacy, opt-in esplicito perché in chiaro | bassa |
+
+Ogni protocollo nuovo deve fornire: un test di validazione, un estrattore di evidenze e un
+estrattore di inventario — altrimenti non entra.
+
+### 7.5 Anti-lockout e igiene (vincolante)
+
+Con 316 host senza credenziali, una validazione più aggressiva è un rischio concreto di blocco
+account AD. Oggi la protezione `validatedProtos` (`discovery.ts:2138`) agisce **solo dopo un
+successo**: se nessuna credenziale Windows funziona, vengono provate tutte su ogni host — 3
+credenziali × 200 host = 600 logon falliti in pochi minuti.
+
+Regole obbligatorie:
+
+- **Budget per credenziale e per finestra**: dopo N fallimenti consecutivi della stessa credenziale
+  su una subnet, si smette di provarla (stato persistito, non solo in-memory).
+- **Persistenza dei fallimenti**: `last_error`, `fail_count`, `last_attempt_at` su
+  `host_credentials`, con backoff esponenziale per host+credenziale.
+- **Mai provare credenziali di dominio su host palesemente non-Windows**; salta i **multihomed
+  secondary** (già fatto da `/api/devices/[id]/test`, non da `credential_validate`).
+- **Invalidazione al fallimento**: un binding `validated=1` che fallisce torna a `0` con motivo,
+  invece di restare vero per sempre.
+- **Rivalidazione schedulata**: `credential_validate` entra nei `job_type` di `scheduled_jobs`
+  (default settimanale, per subnet), così le rotazioni password emergono da sole.
+- Timeout SSH allineato agli altri percorsi (15 s, non 6) per evitare falsi negativi su link lenti.
+
+### 7.6 Copertura come metrica
+
+Nuova vista trasversale (e metrica di accettazione): **quali host non hanno una credenziale valida
+per il protocollo che servirebbe loro**, derivata dall'attribuzione — se un host è `network.switch`
+gli serve SNMP, se è `compute.workstation` gli serve WinRM/SMB. Target: dal 16% attuale a **≥ 70%**
+degli host con almeno una credenziale valida per il protocollo pertinente, e software scan falliti
+< 15%.
+
+## 8. Verifica
 
 - **Unit** su `fuse.ts`: casi tabellari con evidenze sintetiche (AP Ubiquiti via LLDP; stesso AP
   senza LLDP ma con mDNS; switch Ubiquiti con hostname fuorviante `ap-piano2`; conflitto tra nmap e
@@ -288,19 +411,21 @@ distinguere AP da switch"). La stessa informazione, per singolo host, vive nel p
 - **Progressività**: test che per ogni host golden l'attribuzione dopo la fase N non contraddica
   quella dopo la fase N+1 (può solo affinarsi o restare).
 
-## 8. Fasi di implementazione
+## 9. Fasi di implementazione
 
 | Fase | Contenuto | Valore |
 |---|---|---|
 | **0** | Quick-fix: rimappa `sysobj_lookup.category`, elimina il cast, `votes_for` su tutte le evidenze, `access_point` nel CHECK `network_devices` | sblocca subito il caso Ubiquiti, nessuna nuova architettura |
 | **1** | Tassonomia 2 livelli + `attribution_evidence` + `fuse.ts` + emettitori dai segnali **già in DB** (LLDP, AD, Wazuh, agent, SNMP, OUI) | il grosso del recupero, zero probe nuovi |
+| **1b** | **Credenziali (§7.2)**: catena unica, `resolveCredentialFor()`, tutti i collettori leggono il binding validato, legacy migrate; anti-lockout + `fail_count` + rivalidazione schedulata (§7.5); esiti auth → evidenze (§7.3) | sblocca le acquisizioni profonde: 41 host SNMP e il 46% di software scan falliti |
 | **2** | KB SQLite vendorizzata + `mac_product_map` + UI nel tab Identificazione | vendor/famiglia prodotto affidabili |
 | **3** | Probe nuovi: HTTP/TLS esteso, mDNS, SSDP, WSD, SMB2 | copre gli endpoint senza SNMP né agent |
 | **3b** | **UI subnet (§6)**: `Scansione iniziale` unica, fasi progressive con stato, `Ricalcola attribuzione` con anteprima; via i 4 combo | l'operatore vede e guida la progressione |
 | **4** | Ritiro di B, migrazione UI, viste di compatibilità rimosse | un solo sistema |
+| **4b** | **Protocolli nuovi (§7.4)**: SNMP v3 completo, SMB/WMI fallback, Redfish/IPMI, API vendor, ONVIF | inventario completo su BMC, camere, Windows senza WinRM |
 | **5** | Opzionali: Fingerbank, AI, loop di feedback → `mac_product_map` | coda lunga consumer/IoT |
 
-## 9. Rischi
+## 10. Rischi
 
 - **Regressione su host già corretti** → mitigata dal golden set e dalla policy "manual vince sempre".
 - **Peso dei probe nuovi su reti grandi** → probe solo su host con almeno una porta aperta, budget di

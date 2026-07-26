@@ -829,6 +829,50 @@ export function getTenantDb(tenantCode: string): Database.Database {
         console.info(`[db-tenant] ${tenantCode}: hosts.${col.name} aggiunto`);
       }
     }
+    // Attribution v2 fase 1 — colonne risultato fusione (spec §5)
+    const attrCols: Array<{ name: string; sql: string }> = [
+      { name: "attr_vendor", sql: "ALTER TABLE hosts ADD COLUMN attr_vendor TEXT" },
+      { name: "attr_vendor_name", sql: "ALTER TABLE hosts ADD COLUMN attr_vendor_name TEXT" },
+      { name: "attr_category", sql: "ALTER TABLE hosts ADD COLUMN attr_category TEXT" },
+      { name: "attr_os_family", sql: "ALTER TABLE hosts ADD COLUMN attr_os_family TEXT" },
+      { name: "attr_os_name", sql: "ALTER TABLE hosts ADD COLUMN attr_os_name TEXT" },
+      { name: "attr_confidence_vendor", sql: "ALTER TABLE hosts ADD COLUMN attr_confidence_vendor INTEGER" },
+      { name: "attr_confidence_category", sql: "ALTER TABLE hosts ADD COLUMN attr_confidence_category INTEGER" },
+      { name: "attr_confidence_os", sql: "ALTER TABLE hosts ADD COLUMN attr_confidence_os INTEGER" },
+      { name: "attr_min_phase", sql: "ALTER TABLE hosts ADD COLUMN attr_min_phase TEXT" },
+      { name: "attr_at", sql: "ALTER TABLE hosts ADD COLUMN attr_at TEXT" },
+      { name: "attr_engine_version", sql: "ALTER TABLE hosts ADD COLUMN attr_engine_version TEXT" },
+    ];
+    for (const col of attrCols) {
+      if (!hCols.some((c) => c.name === col.name)) {
+        newDb.exec(col.sql);
+        console.info(`[db-tenant] ${tenantCode}: hosts.${col.name} aggiunto`);
+      }
+    }
+    // Tabella evidenze per DB creati prima di questa versione
+    newDb.exec(`CREATE TABLE IF NOT EXISTS attribution_evidence (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+      source TEXT NOT NULL,
+      phase TEXT NOT NULL,
+      dimension TEXT NOT NULL CHECK(dimension IN ('vendor','category','os')),
+      claim TEXT NOT NULL,
+      confidence REAL NOT NULL DEFAULT 0,
+      weight REAL NOT NULL DEFAULT 0,
+      raw_value TEXT,
+      observed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT,
+      superseded_by INTEGER REFERENCES attribution_evidence(id) ON DELETE SET NULL
+    )`);
+    newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension)");
+    newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_active ON attribution_evidence(host_id, superseded_by) WHERE superseded_by IS NULL");
+    // History estesa alle 3 dimensioni (il CHECK su trigger resta invariato — decisione 8 del piano)
+    const histCols = newDb.prepare("PRAGMA table_info(host_classification_history)").all() as Array<{ name: string }>;
+    for (const c of ["attr_vendor", "attr_category", "attr_os"]) {
+      if (!histCols.some((x) => x.name === c)) {
+        newDb.exec(`ALTER TABLE host_classification_history ADD COLUMN ${c} TEXT`);
+      }
+    }
     // History decisioni classificazione (CREATE IF NOT EXISTS → idempotente su DB esistenti).
     newDb.exec(`
       CREATE TABLE IF NOT EXISTS host_classification_history (
@@ -2033,6 +2077,48 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     ).run(host.id, host.ip);
   } catch { /* niente */ }
   return host;
+}
+
+// Snapshot dei segnali di un host già persistiti (nessun probe): input puro per gli
+// emettitori di src/lib/attribution/emitters.ts.
+export interface AttributionSignals {
+  host: {
+    id: number; ip: string; mac: string | null; vendor: string | null;
+    hostname: string | null; os_info: string | null; open_ports: string | null;
+    snmp_data: string | null; detection_json: string | null;
+  };
+  adComputer: { operating_system: string | null; operating_system_version: string | null } | null;
+  wazuh: { os_platform: string | null; os_name: string | null; os_version: string | null; board_vendor: string | null } | null;
+  neighborSightings: Array<{ protocol: string; remote_platform: string | null; remote_device_name: string }>;
+}
+
+export function getAttributionSignalsForHost(hostId: number): AttributionSignals | null {
+  const d = db();
+  const host = d.prepare(
+    `SELECT id, ip, mac, vendor, hostname, os_info, open_ports, snmp_data, detection_json
+     FROM hosts WHERE id = ?`
+  ).get(hostId) as AttributionSignals["host"] | undefined;
+  if (!host) return null;
+  const adComputer = d.prepare(
+    `SELECT operating_system, operating_system_version FROM ad_computers
+     WHERE host_id = ? ORDER BY synced_at DESC LIMIT 1`
+  ).get(hostId) as AttributionSignals["adComputer"] ?? null;
+  const wazuh = d.prepare(
+    `SELECT wo.os_platform, wo.os_name, wo.os_version, wh.board_vendor
+     FROM wazuh_agent wa
+     LEFT JOIN wazuh_os wo ON wo.agent_id = wa.agent_id
+     LEFT JOIN wazuh_hw wh ON wh.agent_id = wa.agent_id
+     WHERE wa.host_id = ? LIMIT 1`
+  ).get(hostId) as AttributionSignals["wazuh"] ?? null;
+  const neighborSightings = d.prepare(
+    `SELECT dn.protocol, dn.remote_platform, dn.remote_device_name
+     FROM device_neighbors dn, hosts h
+     WHERE h.id = ?
+       AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
+         OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))
+     ORDER BY dn.timestamp DESC LIMIT 5`
+  ).all(hostId) as AttributionSignals["neighborSightings"];
+  return { host, adComputer, wazuh, neighborSightings };
 }
 
 export function updateHost(id: number, input: HostUpdate): Host | undefined {
@@ -3697,6 +3783,20 @@ export function upsertNeighbors(
       ins.run(deviceId, n.localPort, n.remoteDevice, n.remotePort, n.protocol, n.remoteIp ?? null, n.remoteMac ?? null, n.remotePlatform ?? null);
     }
   })();
+
+  // Attribution v2: i vicini LLDP/CDP appena scritti sono evidenza per gli host remoti
+  try {
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    const touched = d.prepare(
+      `SELECT DISTINCT h.id FROM hosts h
+       JOIN device_neighbors dn ON dn.device_id = ?
+        AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
+          OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))`
+    ).all(deviceId) as Array<{ id: number }>;
+    for (const t of touched) recomputeAttributionSafe(t.id, "scan");
+  } catch (e) {
+    console.error("[attribution] recompute da neighbors fallito:", e);
+  }
 }
 
 export function getNeighborsByDevice(deviceId: number): DbNeighborEntry[] {
@@ -5055,6 +5155,7 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
     if (!currentHost.classification || currentHost.classification === "unknown") { sets.push("classification = ?"); vals.push(classification); }
     if (sets.length > 0) { sets.push("updated_at = datetime('now')"); d.prepare(`UPDATE hosts SET ${sets.join(", ")} WHERE id = ?`).run(...vals, hostId); enriched++; }
   }
+  const touchedHostIds: number[] = [];
   d.transaction(() => {
     for (const comp of unlinked) {
       const dnsHostName = comp.dns_host_name?.toLowerCase() ?? "";
@@ -5065,8 +5166,18 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
       if (!host) continue;
       if (comp.host_id !== host.id) { linkStmt.run(host.id, comp.integration_id, comp.object_guid); linked++; }
       enrichHost(host.id, comp, host);
+      touchedHostIds.push(host.id);
     }
   })();
+
+  // Attribution v2 (fase 1, parallel-run): rifusione evidenze sugli host toccati
+  try {
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    for (const id of touchedHostIds) recomputeAttributionSafe(id, "scan");
+  } catch (e) {
+    console.error("[attribution] recompute da relinkAdComputersForNetwork fallito:", e);
+  }
+
   return { linked, enriched };
 }
 

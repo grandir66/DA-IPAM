@@ -267,7 +267,7 @@ export async function runArpPoll(
           // Solo i probe attivi (ICMP + TCP fallback in network_discovery) sono
           // autoritativi per la CREAZIONE di un host. Se l'host è stato cancellato
           // dall'utente, NON va ricreato fino a quando ICMP non lo ri-conferma.
-          updateHostIfExists({
+          const host = updateHostIfExists({
             network_id: network.id,
             ip: entry.ip,
             mac: entry.mac,
@@ -275,6 +275,10 @@ export async function runArpPoll(
             hostname_source: "arp",
             ...(classification && { classification }),
           });
+          if (host) {
+            const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+            recomputeAttributionSafe(host.id, "scan");
+          }
         }
         upsertArpEntries(device.id, entries, (ip) => {
           const n = networks.find((net) => isIpInCidr(ip, net.cidr));
@@ -308,6 +312,10 @@ export async function runArpPoll(
                 vendor: vendor || undefined,
                 ...(classification && { classification }),
               });
+              if (host) {
+                const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+                recomputeAttributionSafe(host.id, "scan");
+              }
               upsertMacIpMapping({
                 mac: lease.mac,
                 ip: lease.ip,
@@ -613,6 +621,10 @@ export async function runDhcpPollForNetwork(
       vendor: vendor || undefined,
       ...(classification && { classification }),
     });
+    if (host) {
+      const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+      recomputeAttributionSafe(host.id, "scan");
+    }
     upsertMacIpMapping({
       mac: lease.mac,
       ip: lease.ip,

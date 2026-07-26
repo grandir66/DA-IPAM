@@ -47,6 +47,7 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "anomaly_events", scope: "tenant", tier: "history" },
   { table: "classification_feedback", scope: "tenant", tier: "history" },
   { table: "host_classification_history", scope: "tenant", tier: "history" },
+  { table: "attribution_evidence", scope: "tenant", tier: "history" },
   { table: "arp_entries", scope: "tenant", tier: "history" },
   { table: "mac_port_entries", scope: "tenant", tier: "history" },
   { table: "mac_ip_mapping", scope: "tenant", tier: "history" },

@@ -661,6 +661,7 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
   let linked = 0;
   const created = 0;
   let enriched = 0;
+  const linkedHostIds: number[] = [];
 
   const computers = db
     .prepare(`SELECT id, object_guid, dns_host_name, sam_account_name, ip_address,
@@ -750,6 +751,7 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
         }
 
         linked++;
+        linkedHostIds.push(host.id);
       } else if (comp.ip_address) {
         // ── AD ha un IP ma IPAM non ha l'host: aggiorna solo se esiste ──
         // AD è una fonte PASSIVA (computer rimangono in AD anche se spenti/dismessi):
@@ -769,11 +771,16 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
             linkHost(integrationId, comp.object_guid, updated.id);
             linked++;
             enriched++;
+            linkedHostIds.push(updated.id);
           }
         }
       }
     } catch { /* errore su singolo computer, continua */ }
   }
+
+  // Attribution v2 (fase 1, parallel-run): rifusione evidenze sugli host linkati/arricchiti
+  const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+  for (const id of linkedHostIds) recomputeAttributionSafe(id, "scan");
 
   return { linked, created, enriched };
 }

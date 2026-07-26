@@ -2857,6 +2857,48 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
   return host;
 }
 
+// Snapshot dei segnali di un host già persistiti (nessun probe): input puro per gli
+// emettitori di src/lib/attribution/emitters.ts. Facade di db-tenant.ts::getAttributionSignalsForHost.
+export interface AttributionSignals {
+  host: {
+    id: number; ip: string; mac: string | null; vendor: string | null;
+    hostname: string | null; os_info: string | null; open_ports: string | null;
+    snmp_data: string | null; detection_json: string | null;
+  };
+  adComputer: { operating_system: string | null; operating_system_version: string | null } | null;
+  wazuh: { os_platform: string | null; os_name: string | null; os_version: string | null; board_vendor: string | null } | null;
+  neighborSightings: Array<{ protocol: string; remote_platform: string | null; remote_device_name: string }>;
+}
+
+export function getAttributionSignalsForHost(hostId: number): AttributionSignals | null {
+  const d = getDb();
+  const host = d.prepare(
+    `SELECT id, ip, mac, vendor, hostname, os_info, open_ports, snmp_data, detection_json
+     FROM hosts WHERE id = ?`
+  ).get(hostId) as AttributionSignals["host"] | undefined;
+  if (!host) return null;
+  const adComputer = d.prepare(
+    `SELECT operating_system, operating_system_version FROM ad_computers
+     WHERE host_id = ? ORDER BY synced_at DESC LIMIT 1`
+  ).get(hostId) as AttributionSignals["adComputer"] ?? null;
+  const wazuh = d.prepare(
+    `SELECT wo.os_platform, wo.os_name, wo.os_version, wh.board_vendor
+     FROM wazuh_agent wa
+     LEFT JOIN wazuh_os wo ON wo.agent_id = wa.agent_id
+     LEFT JOIN wazuh_hw wh ON wh.agent_id = wa.agent_id
+     WHERE wa.host_id = ? LIMIT 1`
+  ).get(hostId) as AttributionSignals["wazuh"] ?? null;
+  const neighborSightings = d.prepare(
+    `SELECT dn.protocol, dn.remote_platform, dn.remote_device_name
+     FROM device_neighbors dn, hosts h
+     WHERE h.id = ?
+       AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
+         OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))
+     ORDER BY dn.timestamp DESC LIMIT 5`
+  ).all(hostId) as AttributionSignals["neighborSightings"];
+  return { host, adComputer, wazuh, neighborSightings };
+}
+
 export function updateHost(id: number, input: HostUpdate): Host | undefined {
   const prevForMac =
     input.mac !== undefined
@@ -4931,6 +4973,20 @@ export function upsertNeighbors(
       ins.run(deviceId, n.localPort, n.remoteDevice, n.remotePort, n.protocol, n.remoteIp ?? null, n.remoteMac ?? null, n.remotePlatform ?? null);
     }
   })();
+
+  // Attribution v2: i vicini LLDP/CDP appena scritti sono evidenza per gli host remoti
+  try {
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    const touched = db.prepare(
+      `SELECT DISTINCT h.id FROM hosts h
+       JOIN device_neighbors dn ON dn.device_id = ?
+        AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
+          OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))`
+    ).all(deviceId) as Array<{ id: number }>;
+    for (const t of touched) recomputeAttributionSafe(t.id, "scan");
+  } catch (e) {
+    console.error("[attribution] recompute da neighbors fallito:", e);
+  }
 }
 
 export function getNeighborsByDevice(deviceId: number): DbNeighborEntry[] {
@@ -6294,6 +6350,7 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
     }
   }
 
+  const touchedHostIds: number[] = [];
   db.transaction(() => {
     for (const comp of unlinked) {
       const dnsHostName = comp.dns_host_name?.toLowerCase() ?? "";
@@ -6319,8 +6376,17 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
       }
 
       enrichHost(host.id, comp, host);
+      touchedHostIds.push(host.id);
     }
   })();
+
+  // Attribution v2 (fase 1, parallel-run): rifusione evidenze sugli host toccati
+  try {
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    for (const id of touchedHostIds) recomputeAttributionSafe(id, "scan");
+  } catch (e) {
+    console.error("[attribution] recompute da relinkAdComputersForNetwork fallito:", e);
+  }
 
   return { linked, enriched };
 }

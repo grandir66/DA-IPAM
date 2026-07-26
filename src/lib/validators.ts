@@ -157,6 +157,7 @@ export const ScanTriggerSchema = z.object({
     "scan_icmp",
     "scan_nmap_base",
     "scan_snmp_verify",
+    "scan_naabu",
     "scan_enrich",
     "scan_full",
   ]),

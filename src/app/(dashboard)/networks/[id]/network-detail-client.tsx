@@ -699,6 +699,7 @@ export function NetworkDetailClient({
     | "scan_icmp"
     | "scan_nmap_base"
     | "scan_snmp_verify"
+    | "scan_naabu"
     | "scan_full";
 
   const SCAN_LABELS: Record<ScanJobType, string> = {
@@ -712,6 +713,7 @@ export function NetworkDetailClient({
     scan_icmp: "ICMP",
     scan_nmap_base: "Nmap base",
     scan_snmp_verify: "SNMP verify",
+    scan_naabu: "Naabu",
     scan_full: "Scan completo",
   };
 
@@ -728,7 +730,8 @@ export function NetworkDetailClient({
       scanType === "scan_full" ||
       scanType === "scan_icmp" ||
       scanType === "scan_nmap_base" ||
-      scanType === "scan_snmp_verify";
+      scanType === "scan_snmp_verify" ||
+      scanType === "scan_naabu";
     if (!noHostSelectionNeeded && selectedHostIds.size === 0) {
       toast.error("Seleziona uno o più host nella vista lista (azioni manuali solo sugli IP selezionati)");
       return { ok: false, lastProgress: null };
@@ -824,6 +827,25 @@ export function NetworkDetailClient({
     setScanning(null);
     if (!ok) {
       toast.error("Scan non completato — classificazione non avviata");
+      return;
+    }
+    await classifySubnet();
+  }
+
+  /**
+   * Nuovo percorso: ICMP → Naabu (obbligatorio) → Nmap -sV mirato, poi
+   * classificazione evidence. Richiede binary naabu sull'hub/agent.
+   */
+  async function naabuAndClassifySubnet() {
+    if (classifyingSubnet || !!scanning || enriching) return;
+    toast.message("Scan Naabu in corso, poi classificazione…");
+    const { ok } = await runScanJob("scan_naabu", {
+      showStartToast: true,
+      refreshOnComplete: true,
+    });
+    setScanning(null);
+    if (!ok) {
+      toast.error("Scan Naabu non completato — classificazione non avviata");
       return;
     }
     await classifySubnet();
@@ -1028,6 +1050,17 @@ export function NetworkDetailClient({
                   <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
                   Scan completo
                 </Button>
+                <Button
+                  size="default"
+                  variant="secondary"
+                  className={cn("w-full", ACTION_BTN)}
+                  onClick={() => triggerScan("scan_naabu")}
+                  disabled={!!scanning || enriching}
+                  title="Nuovo percorso: ICMP → Naabu (obbligatorio) → Nmap -sV mirato. Richiede naabu installato (Impostazioni → Scansione)."
+                >
+                  <Activity className="h-3.5 w-3.5 mr-1 shrink-0" />
+                  Scan Naabu
+                </Button>
                 <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5">
                   <Button
                     size="default"
@@ -1156,20 +1189,31 @@ export function NetworkDetailClient({
                   size="default"
                   variant="default"
                   className={cn(ACTION_BTN, "w-full")}
-                  onClick={() => void scanAndClassifySubnet()}
+                  onClick={() => void naabuAndClassifySubnet()}
                   disabled={!!scanning || enriching || classifyingSubnet}
-                  title="Scan completo (ICMP → Nmap → SNMP → Enrich con impostazioni rete/profilo) e poi motore evidence/scoring. Più lento: confronto completo con dati freschi."
+                  title="ICMP → Naabu → Nmap -sV mirato, poi motore evidence/scoring. Richiede naabu sull'hub/agent."
                 >
                   {(scanning || classifyingSubnet) ? (
                     <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
                   ) : (
-                    <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
+                    <Activity className="h-3.5 w-3.5 mr-1 shrink-0" />
                   )}
-                  Scan + classifica
+                  Naabu + classifica
                 </Button>
                 <Button
                   size="default"
                   variant="secondary"
+                  className={cn(ACTION_BTN, "w-full")}
+                  onClick={() => void scanAndClassifySubnet()}
+                  disabled={!!scanning || enriching || classifyingSubnet}
+                  title="Scan completo (ICMP → Nmap → SNMP → Enrich) e poi motore evidence/scoring."
+                >
+                  <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
+                  Scan completo + classifica
+                </Button>
+                <Button
+                  size="default"
+                  variant="outline"
                   className={cn(ACTION_BTN, "w-full")}
                   onClick={() => void classifySubnet()}
                   disabled={!!scanning || enriching || classifyingSubnet}
@@ -1183,7 +1227,7 @@ export function NetworkDetailClient({
                   Solo classifica
                 </Button>
                 <p className="text-[10px] text-muted-foreground leading-snug px-0.5">
-                  Scan+classifica = dati freschi · Solo classifica = archivio IPAM
+                  Naabu+classifica = porte fresche via Naabu · Solo classifica = archivio IPAM
                 </p>
                 <Button
                   size="default"

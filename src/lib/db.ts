@@ -436,27 +436,27 @@ export function getDb(): Database.Database {
       _db.pragma("foreign_keys = ON");
     }
   }
-  // Migrazione: scan_type include i nuovi sub-step UI ('scan_icmp', 'scan_nmap_base', 'scan_snmp_verify') + 'fast' + 'ipam_full' che mancavano nel CHECK legacy
+  // Migrazione: scan_type include i nuovi sub-step UI ('scan_icmp', 'scan_nmap_base', 'scan_snmp_verify') + 'fast' + 'ipam_full' + 'scan_naabu'
   {
     const schema = _db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scan_history'").get() as { sql: string } | undefined;
-    if (schema?.sql && !schema.sql.includes("'scan_nmap_base'")) {
+    if (schema?.sql && (!schema.sql.includes("'scan_nmap_base'") || !schema.sql.includes("'scan_naabu'"))) {
       _db.pragma("foreign_keys = OFF");
       try {
-        _db.exec("DROP TABLE IF EXISTS scan_history_v6");
-        _db.exec(`CREATE TABLE scan_history_v6 (
+        _db.exec("DROP TABLE IF EXISTS scan_history_v7");
+        _db.exec(`CREATE TABLE scan_history_v7 (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
           network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-          scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify')),
+          scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify', 'scan_naabu')),
           status TEXT NOT NULL,
           ports_open TEXT,
           raw_output TEXT,
           duration_ms INTEGER,
           timestamp TEXT DEFAULT (datetime('now'))
         )`);
-        _db.exec("INSERT INTO scan_history_v6 SELECT * FROM scan_history");
+        _db.exec("INSERT INTO scan_history_v7 SELECT * FROM scan_history");
         _db.exec("DROP TABLE scan_history");
-        _db.exec("ALTER TABLE scan_history_v6 RENAME TO scan_history");
+        _db.exec("ALTER TABLE scan_history_v7 RENAME TO scan_history");
         _db.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_host ON scan_history(host_id)");
         _db.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_network ON scan_history(network_id)");
       } catch {

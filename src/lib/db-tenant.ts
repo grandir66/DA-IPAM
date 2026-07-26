@@ -295,31 +295,33 @@ export function getTenantDb(tenantCode: string): Database.Database {
   // Senza questi due valori il fast_scan crasha a metà (CHECK constraint failed)
   // e il flip-offline di Phase 4 non viene mai raggiunto → host fantasma.
   // v3 aggiunge i sub-step UI: scan_icmp, scan_nmap_base, scan_snmp_verify.
+  // v4 aggiunge scan_naabu (ICMP → Naabu obbligatorio → Nmap -sV mirato).
   try {
     const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scan_history'").get() as { sql?: string } | undefined;
     const needsBase = row?.sql && (!row.sql.includes("'fast'") || !row.sql.includes("'ipam_full'"));
     const needsSubsteps = row?.sql && !row.sql.includes("'scan_nmap_base'");
-    if (needsBase || needsSubsteps) {
+    const needsNaabu = row?.sql && !row.sql.includes("'scan_naabu'");
+    if (needsBase || needsSubsteps || needsNaabu) {
       newDb.pragma("foreign_keys = OFF");
-      newDb.exec("DROP TABLE IF EXISTS scan_history_v3");
-      newDb.exec(`CREATE TABLE scan_history_v3 (
+      newDb.exec("DROP TABLE IF EXISTS scan_history_v4");
+      newDb.exec(`CREATE TABLE scan_history_v4 (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
         network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-        scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify')),
+        scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify', 'scan_naabu')),
         status TEXT NOT NULL,
         ports_open TEXT,
         raw_output TEXT,
         duration_ms INTEGER,
         timestamp TEXT DEFAULT (datetime('now'))
       )`);
-      newDb.exec("INSERT INTO scan_history_v3 SELECT * FROM scan_history");
+      newDb.exec("INSERT INTO scan_history_v4 SELECT * FROM scan_history");
       newDb.exec("DROP TABLE scan_history");
-      newDb.exec("ALTER TABLE scan_history_v3 RENAME TO scan_history");
+      newDb.exec("ALTER TABLE scan_history_v4 RENAME TO scan_history");
       newDb.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_host ON scan_history(host_id)");
       newDb.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_network ON scan_history(network_id)");
       newDb.pragma("foreign_keys = ON");
-      console.info(`[db-tenant] ${tenantCode}: scan_history CHECK aggiornato a v3 (fast, ipam_full, scan_icmp, scan_nmap_base, scan_snmp_verify)`);
+      console.info(`[db-tenant] ${tenantCode}: scan_history CHECK aggiornato a v4 (+ scan_naabu)`);
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione scan_history CHECK fallita:`, e);

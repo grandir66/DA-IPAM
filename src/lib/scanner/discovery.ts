@@ -93,7 +93,9 @@ export type DiscoveryScanType =
   | "scan_icmp"
   | "scan_nmap_base"
   | "scan_snmp_verify"
-  | "scan_full";
+  | "scan_full"
+  /** ICMP → Naabu TCP (obbligatorio) → Nmap -sV mirato. Nuovo modo di scan rete. */
+  | "scan_naabu";
 
 export type DiscoverNetworkOptions = {
   /** Se impostato, la scansione riguarda solo questi IP (devono appartenere alla subnet). */
@@ -356,13 +358,16 @@ async function runDiscovery(
   let naabuPortsByIp: Map<string, number[]> = new Map();
 
   /**
-   * Pre-pass Naabu opzionale (setting `port_discovery=naabu+nmap`).
-   * Fail-soft: binario assente / exit≠0 / Map vuota → fallback Nmap-only (`enabled:false`).
-   * @param portsSpec porte da passare a naabu (quick/default/profile — non solo always-useful)
+   * Pre-pass Naabu.
+   * - Default: solo se setting `port_discovery=naabu+nmap` (fail-soft → Nmap-only).
+   * - `require: true` (scan_naabu): ignora il setting; se binario assente → disabled
+   *   (il caller annulla lo scan). Map vuota dopo run riuscito = zero porte aperte,
+   *   comunque `enabled: true` così Nmap usa union(always-useful, basePorts).
    */
   async function prepareNaabuPortDiscovery(
     hosts: string[],
-    portsSpec: string
+    portsSpec: string,
+    opts?: { require?: boolean }
   ): Promise<{ enabled: boolean; byIp: Map<string, number[]>; basePorts: number[] }> {
     const basePorts = parseTcpPortSpec(portsSpec);
     const disabled = (): { enabled: false; byIp: Map<string, number[]>; basePorts: number[] } => ({
@@ -370,34 +375,46 @@ async function runDiscovery(
       byIp: new Map(),
       basePorts,
     });
+    const require = opts?.require === true;
     try {
       const mode = (getSetting("port_discovery") ?? "nmap").trim();
-      if (mode !== "naabu+nmap" || hosts.length === 0 || basePorts.length === 0) {
+      if (!require && (mode !== "naabu+nmap" || hosts.length === 0 || basePorts.length === 0)) {
+        return disabled();
+      }
+      if (hosts.length === 0 || basePorts.length === 0) {
         return disabled();
       }
       const binPath = (getSetting("naabu_bin_path") ?? "").trim() || undefined;
       const available = await isNaabuAvailable(binPath);
       if (!available) {
-        log("[naabu] unavailable, fallback nmap");
+        log(
+          require
+            ? "[naabu] richiesto ma non disponibile — installa naabu o imposta path in Impostazioni → Scansione"
+            : "[naabu] unavailable, fallback nmap"
+        );
         return disabled();
       }
       progress.phase = `Naabu TCP — ${hosts.length} host`;
-      log(`[naabu] pre-pass TCP su ${hosts.length} host (${basePorts.length} porte)`);
+      log(`[naabu] ${require ? "scan" : "pre-pass"} TCP su ${hosts.length} host (${basePorts.length} porte)`);
       const byIp = await runNaabuTcpPorts(hosts, {
         binPath,
         ports: tcpPortListToSpec(basePorts),
       });
       let hits = 0;
       for (const ports of byIp.values()) hits += ports.length;
-      // Empty Map = spawn/exit fail OR zero open ports → do NOT shrink Nmap to ALWAYS_USEFUL-only
-      if (hits === 0 || byIp.size === 0) {
+      if (!require && (hits === 0 || byIp.size === 0)) {
+        // Optional path: empty result treated as fail → Nmap-only full list
         log("[naabu] unavailable, fallback nmap");
         return disabled();
       }
       log(`[naabu] ${byIp.size} host con porte aperte (${hits} hit)`);
       return { enabled: true, byIp, basePorts };
     } catch {
-      log("[naabu] unavailable, fallback nmap");
+      log(
+        require
+          ? "[naabu] errore esecuzione — scan Naabu annullato"
+          : "[naabu] unavailable, fallback nmap"
+      );
       return disabled();
     }
   }
@@ -481,11 +498,132 @@ async function runDiscovery(
   }
 
   // ═══════════════════════════════════════════════════════════════
+  // SCAN_NAABU: nuovo modo — ICMP (+ TCP second-pass) → Naabu obbligatorio
+  // → Nmap -sV mirato sulle porte trovate ∪ profilo. Se naabu manca, stop.
+  // ═══════════════════════════════════════════════════════════════
+  if (scanType === "scan_naabu") {
+    progress.phase = "Ping sweep (ICMP)";
+    const results = await pingSweep(ips, 50, (scanned, found) => {
+      progress.scanned = scanned;
+      progress.found = found;
+    });
+    onlineIps = results.filter((r) => r.alive).map((r) => r.ip);
+
+    const onlineSet = new Set(onlineIps);
+    const dbHosts = getHostsByNetwork(networkId);
+    const tcpCandidates = dbHosts
+      .filter((h) => h.status === "online" && !onlineSet.has(h.ip))
+      .map((h) => h.ip);
+    if (tcpCandidates.length > 0) {
+      progress.phase = `Second-pass TCP — 0/${tcpCandidates.length}`;
+      log(`ICMP miss: ${tcpCandidates.length} host noti online, tento TCP su ${FALLBACK_TCP_PORTS.join("/")}`);
+      const TCP_BATCH = 32;
+      let recovered = 0;
+      let scanned = 0;
+      for (let i = 0; i < tcpCandidates.length; i += TCP_BATCH) {
+        const batch = tcpCandidates.slice(i, i + TCP_BATCH);
+        const probed = await Promise.all(
+          batch.map(async (ip) => {
+            for (const port of FALLBACK_TCP_PORTS) {
+              if (await tcpConnect(ip, port, 2000)) return ip;
+            }
+            return null;
+          })
+        );
+        for (const ip of probed) {
+          scanned++;
+          if (ip) {
+            onlineIps.push(ip);
+            recovered++;
+          }
+        }
+        progress.phase = `Second-pass TCP — ${scanned}/${tcpCandidates.length}`;
+      }
+      if (recovered > 0) {
+        log(`Second-pass TCP: recuperati ${recovered}/${tcpCandidates.length} host`);
+      }
+    }
+
+    if (onlineIps.length === 0) {
+      log("Nessun host raggiungibile — scan Naabu terminato");
+    } else {
+      const quickPortsSpec = getQuickScanTcpPorts();
+      const naabuPrep = await prepareNaabuPortDiscovery(onlineIps, quickPortsSpec, { require: true });
+      naabuPortsByIp = naabuPrep.byIp;
+      if (!naabuPrep.enabled) {
+        progress.status = "failed";
+        progress.phase = "Naabu non disponibile";
+        progress.error =
+          "Naabu non disponibile: installa il binary ProjectDiscovery o configura il path in Impostazioni → Scansione";
+        log("Scan Naabu annullato: installa naabu (ProjectDiscovery) e/o configura path in Impostazioni → Scansione");
+        setTimeout(() => getProgressMap().delete(scanId), 300_000);
+        return {
+          network_id: networkId,
+          total_ips: ips.length,
+          hosts_found: onlineIps.length,
+          hosts_online: onlineIps.length,
+          hosts_offline: ips.length - onlineIps.length,
+          new_hosts: 0,
+          duration_ms: Date.now() - startTime,
+        };
+      }
+      seedNaabuOpenPorts(naabuPrep.byIp);
+
+      if (!(await isNmapAvailable())) {
+        log("Nmap non disponibile — porte Naabu già acquisite; salto -sV");
+      } else {
+        const quickArgs = buildNetworkDiscoveryQuickTcpArgs();
+        const quickExecMs = getNetworkDiscoveryQuickExecMs();
+        const quickBatch = getNetworkDiscoveryQuickConcurrency();
+        progress.phase = `Nmap -sV (post-naabu) — 0/${onlineIps.length}`;
+        progress.total = onlineIps.length;
+        progress.scanned = 0;
+        log(`Naabu ok; Nmap -sV mirato su ${onlineIps.length} host (batch ${quickBatch})`);
+        for (let i = 0; i < onlineIps.length; i += quickBatch) {
+          const batch = onlineIps.slice(i, i + quickBatch);
+          const batchResults = await Promise.all(
+            batch.map((ip) =>
+              nmapPortScan(
+                ip,
+                tcpArgsForHost(ip, quickArgs, true, naabuPrep.byIp, naabuPrep.basePorts),
+                quickExecMs,
+                { skipUdp: true, onLog: log }
+              )
+            )
+          );
+          for (let j = 0; j < batch.length; j++) {
+            const ip = batch[j];
+            const result = batchResults[j];
+            if (result) {
+              nmapResults.set(ip, {
+                ports: result.ports.map((p) => ({
+                  port: p.port,
+                  protocol: p.protocol,
+                  service: p.service,
+                  version: p.version,
+                })),
+                os: result.os,
+                mac: result.mac || null,
+              });
+            }
+          }
+          progress.scanned = Math.min(i + quickBatch, onlineIps.length);
+          progress.phase = `Nmap -sV (post-naabu) — ${progress.scanned}/${onlineIps.length}`;
+          if (i + quickBatch < onlineIps.length) {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+          }
+        }
+      }
+      progress.found = onlineIps.length;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // SCAN_ICMP: sotto-fase 1.1 — ICMP sweep + second-pass TCP, persist host
   // online. Niente ARP/DHCP/AD (vivono in scan_enrich), niente nmap, niente
   // SNMP. Additivo: NON marca offline i non rispondenti.
   // ═══════════════════════════════════════════════════════════════
-  if (scanType === "scan_icmp") {
+  else if (scanType === "scan_icmp") {
     progress.phase = "Ping sweep (ICMP)";
     const results = await pingSweep(ips, 50, (scanned, found) => {
       progress.scanned = scanned;
@@ -2129,7 +2267,7 @@ async function runDiscovery(
   const fpEnabled = process.env.DA_INVENT_FINGERPRINT !== "false";
   if (
     fpEnabled &&
-    (scanType === "nmap" || scanType === "network_discovery" || scanType === "ipam_full" || scanType === "scan_nmap_base") &&
+    (scanType === "nmap" || scanType === "network_discovery" || scanType === "ipam_full" || scanType === "scan_nmap_base" || scanType === "scan_naabu") &&
     onlineIps.length > 0 &&
     process.env.DA_INVENT_FINGERPRINT_TTL !== "false"
   ) {
@@ -2179,7 +2317,7 @@ async function runDiscovery(
   const fpHostOk = onlineIps.length <= Math.max(1, Math.min(500, fpProbesMaxHosts));
   const fingerprintAllowHeavyProbes =
     fpEnabled && fpHostOk && process.env.DA_INVENT_FINGERPRINT_PROBES !== "false";
-  if (fpEnabled && !fpHostOk && (scanType === "nmap" || scanType === "snmp" || scanType === "network_discovery" || scanType === "ipam_full" || scanType === "scan_nmap_base" || scanType === "scan_snmp_verify")) {
+  if (fpEnabled && !fpHostOk && (scanType === "nmap" || scanType === "snmp" || scanType === "network_discovery" || scanType === "ipam_full" || scanType === "scan_nmap_base" || scanType === "scan_snmp_verify" || scanType === "scan_naabu")) {
     console.warn(
       `[Discovery] Fingerprint: probe HTTP/SSH/SMB disattivati (${onlineIps.length} host online > ${fpProbesMaxHosts}); uso solo firme porte/SNMP. Alzare DA_INVENT_FINGERPRINT_PROBES_MAX_HOSTS solo su subnet piccole.`
     );
@@ -2264,7 +2402,7 @@ async function runDiscovery(
     let vpId = nmapData?.vendorProfileId ?? null;
     let vpConf = nmapData?.vendorProfileConfidence ?? 0;
     let isGenericVp = vpId === "linux_generic" || vpId === "windows_snmp";
-    if (fpEnabled && (scanType === "nmap" || scanType === "snmp" || scanType === "network_discovery" || scanType === "ipam_full" || scanType === "scan_nmap_base" || scanType === "scan_snmp_verify")) {
+    if (fpEnabled && (scanType === "nmap" || scanType === "snmp" || scanType === "network_discovery" || scanType === "ipam_full" || scanType === "scan_nmap_base" || scanType === "scan_snmp_verify" || scanType === "scan_naabu")) {
       try {
         const { buildDeviceFingerprint } = await import("./device-fingerprint");
         const tcpPortCount = (portsForClassification ?? []).filter((p) => (p.protocol ?? "tcp") === "tcp").length;
@@ -2280,7 +2418,7 @@ async function runDiscovery(
           snmpSysName: snmpHostname ?? null,
           activeProbes:
             fingerprintAllowHeavyProbes &&
-            (scanType === "nmap" || scanType === "network_discovery" || scanType === "ipam_full" || scanType === "scan_nmap_base") &&
+            (scanType === "nmap" || scanType === "network_discovery" || scanType === "ipam_full" || scanType === "scan_nmap_base" || scanType === "scan_naabu") &&
             tcpPortCount > 0,
         }, fpDbRules);
         // Se il vendor profile SNMP ha identificato un device specifico (non linux_generic/windows_snmp),
@@ -2513,7 +2651,7 @@ async function runDiscovery(
       model: hostModel,
       serial_number: hostSerial,
       // preserve_existing: scan nmap/network_discovery/ipam_full non sovrascrivono dati già rilevati
-      preserve_existing: scanType === "nmap" || scanType === "network_discovery" || scanType === "ipam_full" || scanType === "scan_nmap_base" || scanType === "scan_snmp_verify",
+      preserve_existing: scanType === "nmap" || scanType === "network_discovery" || scanType === "ipam_full" || scanType === "scan_nmap_base" || scanType === "scan_snmp_verify" || scanType === "scan_naabu",
       // Probe attivo ICMP-confermato: se l'IP era nel tombstone (host cancellato e poi
       // sostituito da un device nuovo), rimuovi l'esclusione e procedi alla creazione.
       bypassExclusion: true,
@@ -2629,7 +2767,7 @@ async function runDiscovery(
   //   (scan manuali, l'utente può avere visioni parziali su CIDR grandi).
   // - ping: marca offline (solo ICMP, comportamento classico).
   // ═══════════════════════════════════════════════════════════════
-  if (scanType === "network_discovery" || scanType === "fast") {
+  if (scanType === "network_discovery" || scanType === "fast" || scanType === "scan_naabu") {
     progress.phase = "Aggiornamento host offline";
     noteHostsNonResponding(networkId, onlineIps, ips, scanType);
     markHostsOffline(networkId, onlineIps, ips);
@@ -2638,7 +2776,13 @@ async function runDiscovery(
     progress.phase = "Annotazione host non rispondenti";
     noteHostsNonResponding(networkId, onlineIps, ips, scanType);
     log(`Host non rispondenti (${ips.length - onlineIps.length}): annotati nelle note per revisione`);
-  } else if (scanType !== "snmp") {
+  } else if (
+    scanType !== "snmp" &&
+    scanType !== "scan_nmap_base" &&
+    scanType !== "scan_snmp_verify"
+  ) {
+    // ping e altri sweep ICMP-only: marca offline. I sub-step UI additivi
+    // (nmap_base / snmp_verify) non devono flippare host non in target.
     progress.phase = "Aggiornamento host offline";
     markHostsOffline(networkId, onlineIps, ips);
   }
@@ -2677,7 +2821,7 @@ async function runDiscovery(
   // ═══════════════════════════════════════════════════════════════
   // Post-scan: rileva dispositivi multi-homed (stesso device su più subnet)
   // ═══════════════════════════════════════════════════════════════
-  if (scanType === "network_discovery" || scanType === "ipam_full" || scanType === "nmap" || scanType === "scan_nmap_base" || scanType === "scan_snmp_verify") {
+  if (scanType === "network_discovery" || scanType === "ipam_full" || scanType === "nmap" || scanType === "scan_nmap_base" || scanType === "scan_snmp_verify" || scanType === "scan_naabu") {
     progress.phase = "Rilevamento dispositivi multi-homed";
     try {
       const { recomputeMultihomedLinks } = await import("@/lib/db");

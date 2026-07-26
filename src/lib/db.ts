@@ -465,6 +465,36 @@ export function getDb(): Database.Database {
       _db.pragma("foreign_keys = ON");
     }
   }
+  // Migrazione: scan_type include 'scan_enrich' (fase 3b: la fase Enrich ARP/DHCP/AD
+  // ora scrive in scan_history — prima non scriveva nulla, last_run sempre null in UI).
+  {
+    const schema = _db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scan_history'").get() as { sql: string } | undefined;
+    if (schema?.sql && !schema.sql.includes("'scan_enrich'")) {
+      _db.pragma("foreign_keys = OFF");
+      try {
+        _db.exec("DROP TABLE IF EXISTS scan_history_v8");
+        _db.exec(`CREATE TABLE scan_history_v8 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
+          network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+          scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify', 'scan_naabu', 'scan_enrich')),
+          status TEXT NOT NULL,
+          ports_open TEXT,
+          raw_output TEXT,
+          duration_ms INTEGER,
+          timestamp TEXT DEFAULT (datetime('now'))
+        )`);
+        _db.exec("INSERT INTO scan_history_v8 SELECT * FROM scan_history");
+        _db.exec("DROP TABLE scan_history");
+        _db.exec("ALTER TABLE scan_history_v8 RENAME TO scan_history");
+        _db.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_host ON scan_history(host_id)");
+        _db.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_network ON scan_history(network_id)");
+      } catch {
+        /* already migrated */
+      }
+      _db.pragma("foreign_keys = ON");
+    }
+  }
   try {
     _db.exec(`CREATE TABLE IF NOT EXISTS network_host_credentials (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3184,7 +3214,7 @@ const SCAN_PHASE_TYPES: Record<ScanPhaseKey, string[]> = {
   initial: ["scan_icmp", "scan_naabu", "network_discovery"],
   nmap_deep: ["scan_nmap_base", "nmap"],
   snmp: ["scan_snmp_verify", "snmp"],
-  enrich: ["arp", "dhcp", "dns"],
+  enrich: ["scan_enrich", "arp", "dhcp", "dns"],
   credentials: ["credential_validate"],
 };
 

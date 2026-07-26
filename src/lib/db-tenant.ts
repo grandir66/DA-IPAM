@@ -2079,6 +2079,48 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
   return host;
 }
 
+// Snapshot dei segnali di un host già persistiti (nessun probe): input puro per gli
+// emettitori di src/lib/attribution/emitters.ts.
+export interface AttributionSignals {
+  host: {
+    id: number; ip: string; mac: string | null; vendor: string | null;
+    hostname: string | null; os_info: string | null; open_ports: string | null;
+    snmp_data: string | null; detection_json: string | null;
+  };
+  adComputer: { operating_system: string | null; operating_system_version: string | null } | null;
+  wazuh: { os_platform: string | null; os_name: string | null; os_version: string | null; board_vendor: string | null } | null;
+  neighborSightings: Array<{ protocol: string; remote_platform: string | null; remote_device_name: string }>;
+}
+
+export function getAttributionSignalsForHost(hostId: number): AttributionSignals | null {
+  const d = db();
+  const host = d.prepare(
+    `SELECT id, ip, mac, vendor, hostname, os_info, open_ports, snmp_data, detection_json
+     FROM hosts WHERE id = ?`
+  ).get(hostId) as AttributionSignals["host"] | undefined;
+  if (!host) return null;
+  const adComputer = d.prepare(
+    `SELECT operating_system, operating_system_version FROM ad_computers
+     WHERE host_id = ? ORDER BY synced_at DESC LIMIT 1`
+  ).get(hostId) as AttributionSignals["adComputer"] ?? null;
+  const wazuh = d.prepare(
+    `SELECT wo.os_platform, wo.os_name, wo.os_version, wh.board_vendor
+     FROM wazuh_agent wa
+     LEFT JOIN wazuh_os wo ON wo.agent_id = wa.agent_id
+     LEFT JOIN wazuh_hw wh ON wh.agent_id = wa.agent_id
+     WHERE wa.host_id = ? LIMIT 1`
+  ).get(hostId) as AttributionSignals["wazuh"] ?? null;
+  const neighborSightings = d.prepare(
+    `SELECT dn.protocol, dn.remote_platform, dn.remote_device_name
+     FROM device_neighbors dn, hosts h
+     WHERE h.id = ?
+       AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
+         OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))
+     ORDER BY dn.timestamp DESC LIMIT 5`
+  ).all(hostId) as AttributionSignals["neighborSightings"];
+  return { host, adComputer, wazuh, neighborSightings };
+}
+
 export function updateHost(id: number, input: HostUpdate): Host | undefined {
   const prevForMac =
     input.mac !== undefined

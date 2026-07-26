@@ -39,8 +39,8 @@ import { IpGrid } from "@/components/shared/ip-grid";
 import { ScanProgress } from "@/components/shared/scan-progress";
 import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
 import { SubnetEdgeScanPanel } from "@/components/networks/subnet-edge-scan-panel";
-import { ClassificationProposalDialog } from "@/components/networks/classification-proposal-dialog";
-import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Zap, Radar, Layers, Wifi, Tags } from "lucide-react";
+import { AttributionPreviewDialog } from "@/components/networks/attribution-preview-dialog";
+import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Layers, Tags } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
@@ -82,6 +82,52 @@ type HostWithDevice = Host & {
   ad_dns_host_name?: string | null;
   multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
 };
+
+/** Contratto di GET /api/networks/[id]/scan-phases (Task 1, fase 3b). */
+interface ScanPhasesResponse {
+  naabuAvailable: boolean;
+  phases: Array<{
+    key: "initial" | "nmap_deep" | "snmp" | "enrich" | "credentials";
+    label: string;
+    adds: string;
+    last_run: string | null;
+    stale: boolean;
+  }>;
+  attribution: {
+    total: number;
+    level2: number;
+    level1: number;
+    none: number;
+    suggestion: string | null;
+  };
+}
+
+/** Formatta un ISO timestamp come "il DD/MM HH:mm" per la riga di stato fase. */
+function formatPhaseLastRun(iso: string): string {
+  const d = new Date(iso);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `il ${dd}/${mm} ${hh}:${mi}`;
+}
+
+/** Riga di stato sotto ciascun pulsante fase (§6.2): "mai eseguita" / "il DD/MM HH:mm" [+ badge "obsoleta"]. */
+function PhaseStatusLine({ phase }: { phase: ScanPhasesResponse["phases"][number] | null }) {
+  if (!phase?.last_run) {
+    return <p className="text-[10px] text-muted-foreground leading-snug px-0.5">mai eseguita</p>;
+  }
+  return (
+    <p className="text-[10px] text-muted-foreground leading-snug px-0.5 flex items-center gap-1">
+      {formatPhaseLastRun(phase.last_run)}
+      {phase.stale && (
+        <Badge variant="outline" className="text-[9px] leading-none py-0 px-1 h-3.5">
+          obsoleta
+        </Badge>
+      )}
+    </p>
+  );
+}
 
 const REFRESH_INTERVALS = [
   { value: 0, label: "Off" },
@@ -130,6 +176,10 @@ export function NetworkDetailClient({
       if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
     };
   }, []);
+  // Stato fasi di scansione + completezza attribuzione (§6.2/6.3, fase 3b)
+  const [scanPhases, setScanPhases] = useState<ScanPhasesResponse | null>(null);
+  const [scanPhasesRefreshKey, setScanPhasesRefreshKey] = useState(0);
+  const [applyingAttribution, setApplyingAttribution] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [view, setView] = useState<"grid" | "list">("list");
@@ -150,8 +200,7 @@ export function NetworkDetailClient({
   const [editingHostId, setEditingHostId] = useState<number | null>(null);
   const [editingField, setEditingField] = useState<"custom_name" | "notes" | "classification" | null>(null);
   const [enriching, setEnriching] = useState(false);
-  const [classifyOpen, setClassifyOpen] = useState(false);
-  const [classifyingSubnet, setClassifyingSubnet] = useState(false);
+  const [attributionPreviewOpen, setAttributionPreviewOpen] = useState(false);
   const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
   const [selectedHostIds, setSelectedHostIds] = useState<Set<number>>(new Set());
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
@@ -309,10 +358,22 @@ export function NetworkDetailClient({
     } catch { /* ignore */ }
   }, [network.id]);
 
-  /** Motore evidence/scoring su tutti gli host della subnet (POST /refresh). */
+  // Stato fasi di scansione + completezza attribuzione (§6.3): al mount e dopo
+  // ogni scan completato (scanPhasesRefreshKey incrementato). Cleanup con
+  // AbortController per evitare setState su fetch pendenti allo unmount.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/networks/${network.id}/scan-phases`, { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("fetch failed"))))
+      .then((data: ScanPhasesResponse) => setScanPhases(data))
+      .catch((err) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, [network.id, scanPhasesRefreshKey]);
+
+  /** Motore evidence/scoring legacy su tutti gli host della subnet (POST /refresh). */
   const classifySubnet = useCallback(async () => {
-    if (classifyingSubnet) return;
-    setClassifyingSubnet(true);
     try {
       const res = await fetch(`/api/networks/${network.id}/refresh`, {
         method: "POST",
@@ -331,10 +392,8 @@ export function NetworkDetailClient({
       router.refresh();
     } catch {
       toast.error("Errore di rete");
-    } finally {
-      setClassifyingSubnet(false);
     }
-  }, [classifyingSubnet, network.id, refreshHosts, router]);
+  }, [network.id, refreshHosts, router]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -783,6 +842,7 @@ export function NetworkDetailClient({
                 if (refreshOnComplete) {
                   refreshHosts();
                   router.refresh();
+                  setScanPhasesRefreshKey((k) => k + 1);
                 }
                 resolve({
                   ok: progress.status === "completed",
@@ -813,42 +873,22 @@ export function NetworkDetailClient({
   }
 
   /**
-   * Scan completo (ICMP → Nmap base → SNMP → Enrich, con profilo/naabu/community
-   * della rete) e poi classificazione evidence su tutti gli host.
-   * Diverso da "Classifica subnet", che riusa solo dati già in IPAM.
+   * "Scansione iniziale" (§6.2, Blocco A): unico ingresso, percorso deciso
+   * client-side da naabuAvailable (letto da scan-phases). Mai chiedere
+   * all'utente quale percorso — naabu se disponibile, altrimenti ICMP → Nmap
+   * base in sequenza. Toast finale col percorso effettivo.
    */
-  async function scanAndClassifySubnet() {
-    if (classifyingSubnet || !!scanning || enriching) return;
-    toast.message("Scan completo in corso, poi classificazione…");
-    const { ok } = await runScanJob("scan_full", {
-      showStartToast: true,
-      refreshOnComplete: true,
-    });
-    setScanning(null);
-    if (!ok) {
-      toast.error("Scan non completato — classificazione non avviata");
-      return;
+  async function runInitialScan() {
+    if (!!scanning || enriching) return;
+    if (scanPhases?.naabuAvailable) {
+      const { ok } = await runScanJob("scan_naabu");
+      if (ok) toast.success("Percorso: ICMP + Naabu");
+    } else {
+      const first = await runScanJob("scan_icmp");
+      if (!first.ok) return;
+      const second = await runScanJob("scan_nmap_base");
+      if (second.ok) toast.success("Percorso: ICMP + Nmap quick");
     }
-    await classifySubnet();
-  }
-
-  /**
-   * Nuovo percorso: ICMP → Naabu (obbligatorio) → Nmap -sV mirato, poi
-   * classificazione evidence. Richiede binary naabu sull'hub/agent.
-   */
-  async function naabuAndClassifySubnet() {
-    if (classifyingSubnet || !!scanning || enriching) return;
-    toast.message("Scan Naabu in corso, poi classificazione…");
-    const { ok } = await runScanJob("scan_naabu", {
-      showStartToast: true,
-      refreshOnComplete: true,
-    });
-    setScanning(null);
-    if (!ok) {
-      toast.error("Scan Naabu non completato — classificazione non avviata");
-      return;
-    }
-    await classifySubnet();
   }
 
   // scan_enrich non passa per discoverNetwork: chiama l'endpoint dedicato che
@@ -867,6 +907,7 @@ export function NetworkDetailClient({
         toast.success(data.progress?.phase ?? "Enrich completato");
         await refreshHosts();
         router.refresh();
+        setScanPhasesRefreshKey((k) => k + 1);
       } else {
         toast.error(data.error || "Errore enrich");
       }
@@ -874,6 +915,32 @@ export function NetworkDetailClient({
       toast.error("Errore di rete");
     } finally {
       setEnriching(false);
+    }
+  }
+
+  /** Blocco B — "Applica diretto": ricalcola e applica l'attribuzione senza anteprima. */
+  async function applyAttributionDirect() {
+    if (applyingAttribution) return;
+    setApplyingAttribution(true);
+    try {
+      const res = await fetch("/api/attribution/recompute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network_id: network.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error((data as { error?: string }).error || "Errore nel ricalcolo dell'attribuzione");
+        return;
+      }
+      toast.success((data as { message?: string }).message || "Attribuzione ricalcolata");
+      // transitorio fino a Fase 4: allinea la classificazione legacy visibile in tabella
+      await classifySubnet();
+      setScanPhasesRefreshKey((k) => k + 1);
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setApplyingAttribution(false);
     }
   }
 
@@ -910,6 +977,12 @@ export function NetworkDetailClient({
 
   const onlineCount = hosts.filter((h) => h.status === "online").length;
   const offlineCount = hosts.filter((h) => h.status === "offline").length;
+
+  // Stato delle fasi successive alla "Scansione iniziale" (§6.2 Blocco A)
+  const phaseNmapDeep = scanPhases?.phases.find((p) => p.key === "nmap_deep") ?? null;
+  const phaseSnmp = scanPhases?.phases.find((p) => p.key === "snmp") ?? null;
+  const phaseEnrich = scanPhases?.phases.find((p) => p.key === "enrich") ?? null;
+  const phaseCredentials = scanPhases?.phases.find((p) => p.key === "credentials") ?? null;
 
   return (
     <div className="space-y-3">
@@ -1028,6 +1101,15 @@ export function NetworkDetailClient({
 
         {/* Toolbar a fasi: area principale in evidenza rispetto ad auto-refresh sotto */}
         <div className="space-y-2">
+          {/* Riga di completezza attribuzione (§6.3) — nessuna riga se scan-phases non ancora caricato */}
+          {scanPhases && (
+            <p className="text-xs text-muted-foreground px-1">
+              Attribuzione: {scanPhases.attribution.level2}/{scanPhases.attribution.total} a livello 2 · {scanPhases.attribution.level1} a livello 1 · {scanPhases.attribution.none} senza
+              {scanPhases.attribution.suggestion ? ` — ${scanPhases.attribution.suggestion}` : ""}
+              {" · "}
+              {scanPhases.phases.filter((p) => p.last_run).length}/{scanPhases.phases.length} fasi eseguite
+            </p>
+          )}
           <div className="rounded-xl border-2 border-primary/20 bg-card/95 shadow-md ring-1 ring-primary/10 p-3">
             <p className="text-xs font-semibold text-foreground mb-1.5 flex items-center gap-2">
               <span className="rounded bg-primary/15 text-primary px-1.5 py-0.5 text-[10px] uppercase tracking-wide">Azioni</span>
@@ -1035,88 +1117,98 @@ export function NetworkDetailClient({
             </p>
             <div className="flex flex-wrap gap-2 items-stretch content-start">
 
-            {/* ─── SCAN — intera subnet ─────────────────────────────── */}
-            <div className={`${ACTION_PANEL} min-w-[min(100%,22rem)]`}>
-              <p className={ACTION_PANEL_TITLE}>Scan — intera subnet</p>
+            {/* ─── ACQUISIZIONE — intera subnet (§6.2 Blocco A) ────────── */}
+            <div className={`${ACTION_PANEL} min-w-[min(100%,26rem)]`}>
+              <p className={ACTION_PANEL_TITLE}>Acquisizione</p>
               <div className="flex flex-col gap-1.5 flex-1 justify-end">
-                <Button
-                  size="default"
-                  variant="default"
-                  className={cn("w-full", ACTION_BTN)}
-                  onClick={() => triggerScan("scan_full")}
-                  disabled={!!scanning || enriching}
-                  title="Scan completo: ICMP → Nmap base → SNMP verify → Enrich (ARP/DHCP/AD)"
-                >
-                  <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  Scan completo
-                </Button>
-                <Button
-                  size="default"
-                  variant="secondary"
-                  className={cn("w-full", ACTION_BTN)}
-                  onClick={() => triggerScan("scan_naabu")}
-                  disabled={!!scanning || enriching}
-                  title="Nuovo percorso: ICMP → Naabu (obbligatorio) → Nmap -sV mirato. Richiede naabu installato (Impostazioni → Scansione)."
-                >
-                  <Activity className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  Scan Naabu
-                </Button>
-                <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5">
+                <div className="flex flex-nowrap gap-1.5">
                   <Button
                     size="default"
-                    variant="outline"
-                    className={cn(ACTION_BTN, "bg-background/90")}
-                    onClick={() => triggerScan("scan_icmp")}
+                    variant="default"
+                    className={cn(ACTION_BTN, "flex-1")}
+                    onClick={() => void runInitialScan()}
                     disabled={!!scanning || enriching}
-                    title="1.1 — Solo ICMP sweep + second-pass TCP. Additivo, niente flip offline."
+                    title="Scoperta host attivi: Naabu se disponibile (Impostazioni → Scansione), altrimenti ICMP + Nmap quick. Percorso scelto automaticamente."
                   >
-                    <Zap className="h-3.5 w-3.5 mr-1 shrink-0" />
-                    ICMP
+                    {scanning ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
+                    ) : (
+                      <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
+                    )}
+                    Scansione iniziale
                   </Button>
                   <Button
                     size="default"
                     variant="outline"
                     className={cn(ACTION_BTN, "bg-background/90")}
-                    onClick={() => triggerScan("scan_nmap_base")}
+                    onClick={() => triggerScan("scan_full")}
                     disabled={!!scanning || enriching}
-                    title="1.2 — Nmap quick TCP sugli host già online in DB"
+                    title="Esegue in sequenza tutte le fasi di acquisizione (ICMP/Naabu → Nmap -sV → SNMP → Enrich)"
                   >
-                    <Scan className="h-3.5 w-3.5 mr-1 shrink-0" />
-                    Nmap base
+                    Esegui tutte le fasi
                   </Button>
-                  <Button
-                    size="default"
-                    variant="outline"
-                    className={cn(ACTION_BTN, "bg-background/90")}
-                    onClick={() => triggerScan("scan_snmp_verify")}
-                    disabled={!!scanning || enriching}
-                    title="1.3 — SNMP sysObjectID probe (community subnet + public)"
-                  >
-                    <Cpu className="h-3.5 w-3.5 mr-1 shrink-0" />
-                    SNMP verify
-                  </Button>
-                  <Button
-                    size="default"
-                    variant="outline"
-                    className={cn(ACTION_BTN, "bg-background/90")}
-                    onClick={() => void triggerEnrich(false)}
-                    disabled={!!scanning || enriching}
-                    title="1.4 — ARP router + DHCP MikroTik + DNS + AD relink (cache)"
-                  >
-                    <Layers className="h-3.5 w-3.5 mr-1 shrink-0" />
-                    {enriching ? "Enrich…" : "Enrich"}
-                  </Button>
-                  <Button
-                    size="default"
-                    variant="outline"
-                    className={cn(ACTION_BTN, "bg-background/90")}
-                    onClick={() => void triggerEnrich(true)}
-                    disabled={!!scanning || enriching}
-                    title="1.4 + sync LDAP fresco dall'AD prima del relink (più lento, 10-60s)"
-                  >
-                    <Wifi className="h-3.5 w-3.5 mr-1 shrink-0" />
-                    Enrich + AD sync
-                  </Button>
+                </div>
+                <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5">
+                  <div className="flex flex-col gap-0.5 min-w-[8rem]">
+                    <Button
+                      size="default"
+                      variant="outline"
+                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
+                      onClick={() => triggerScan("scan_nmap_base")}
+                      disabled={!!scanning || enriching}
+                      title={phaseNmapDeep?.adds ?? "Nmap -sV: banner e versioni dei servizi, OS fingerprint approfondito"}
+                    >
+                      <Scan className="h-3.5 w-3.5 mr-1 shrink-0" />
+                      Porte approfondite
+                    </Button>
+                    <PhaseStatusLine phase={phaseNmapDeep} />
+                  </div>
+                  <div className="flex flex-col gap-0.5 min-w-[6rem]">
+                    <Button
+                      size="default"
+                      variant="outline"
+                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
+                      onClick={() => triggerScan("scan_snmp_verify")}
+                      disabled={!!scanning || enriching}
+                      title={phaseSnmp?.adds ?? "SNMP → sysObjectID, LLDP: distingue AP da switch"}
+                    >
+                      <Cpu className="h-3.5 w-3.5 mr-1 shrink-0" />
+                      SNMP
+                    </Button>
+                    <PhaseStatusLine phase={phaseSnmp} />
+                  </div>
+                  <div className="flex flex-col gap-0.5 min-w-[7rem]">
+                    <Button
+                      size="default"
+                      variant="outline"
+                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
+                      onClick={() => void triggerEnrich(true)}
+                      disabled={!!scanning || enriching}
+                      title={phaseEnrich?.adds ?? "ARP/DHCP/AD: hostname, MAC/vendor, collegamento a computer Active Directory"}
+                    >
+                      <Layers className="h-3.5 w-3.5 mr-1 shrink-0" />
+                      {enriching ? "Enrich…" : "Enrich"}
+                    </Button>
+                    <PhaseStatusLine phase={phaseEnrich} />
+                  </div>
+                  <div className="flex flex-col gap-0.5 min-w-[8rem]">
+                    <Button
+                      size="default"
+                      variant="outline"
+                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
+                      onClick={() => triggerScan("credential_validate")}
+                      disabled={!!scanning || enriching || networkCredentialIds.length === 0}
+                      title={
+                        networkCredentialIds.length === 0
+                          ? "Configura credenziali nella modifica rete"
+                          : (phaseCredentials?.adds ?? "SSH/WinRM: OS esatto, board vendor, enrichment via agent")
+                      }
+                    >
+                      <Key className="h-3.5 w-3.5 mr-1 shrink-0" />
+                      Credenziali
+                    </Button>
+                    <PhaseStatusLine phase={phaseCredentials} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1161,83 +1253,34 @@ export function NetworkDetailClient({
               </div>
             </div>
 
-            {/* ─── CREDENZIALI — host selezionati ────────────────────── */}
-            <div className={ACTION_PANEL}>
-              <p className={ACTION_PANEL_TITLE}>Test credenziali</p>
-              <Button
-                size="default"
-                variant="default"
-                className={cn("w-full mt-auto", ACTION_BTN)}
-                onClick={() => triggerScan("credential_validate")}
-                disabled={!!scanning || networkCredentialIds.length === 0 || view !== "list" || selectedHostIds.size === 0}
-                title={networkCredentialIds.length === 0
-                  ? "Configura credenziali nella modifica rete"
-                  : "Verifica SSH/WinRM/SNMP della subnet sugli IP selezionati. Le credenziali validate vengono salvate sul host."}
-              >
-                <Key className="h-3.5 w-3.5 mr-1 shrink-0" />
-                Verifica SSH/WinRM
-              </Button>
-            </div>
-
-            {/* ─── CLASSIFICAZIONE ──────────────────────────────────── */}
+            {/* ─── ATTRIBUZIONE (§6.2 Blocco B) — Test credenziali assorbito nella fase Credenziali sopra ─── */}
             <div className="rounded-lg border border-dashed border-border bg-muted/25 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none flex flex-col">
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide leading-tight mb-1.5">
-                Classificazione
+                Attribuzione
               </p>
               <div className="flex flex-col gap-1.5 mt-auto">
                 <Button
                   size="default"
                   variant="default"
                   className={cn(ACTION_BTN, "w-full")}
-                  onClick={() => void naabuAndClassifySubnet()}
-                  disabled={!!scanning || enriching || classifyingSubnet}
-                  title="ICMP → Naabu → Nmap -sV mirato, poi motore evidence/scoring. Richiede naabu sull'hub/agent."
+                  onClick={() => setAttributionPreviewOpen(true)}
+                  title="Anteprima: mostra i cambi di vendor/categoria/OS proposti dalle evidenze già salvate, prima di applicarli. Funziona anche durante uno scan."
                 >
-                  {(scanning || classifyingSubnet) ? (
-                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
-                  ) : (
-                    <Activity className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  )}
-                  Naabu + classifica
-                </Button>
-                <Button
-                  size="default"
-                  variant="secondary"
-                  className={cn(ACTION_BTN, "w-full")}
-                  onClick={() => void scanAndClassifySubnet()}
-                  disabled={!!scanning || enriching || classifyingSubnet}
-                  title="Scan completo (ICMP → Nmap → SNMP → Enrich) e poi motore evidence/scoring."
-                >
-                  <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  Scan completo + classifica
+                  <Tags className="h-3.5 w-3.5 mr-1 shrink-0" />
+                  Ricalcola attribuzione
                 </Button>
                 <Button
                   size="default"
                   variant="outline"
                   className={cn(ACTION_BTN, "w-full")}
-                  onClick={() => void classifySubnet()}
-                  disabled={!!scanning || enriching || classifyingSubnet}
-                  title="Ricalcola classificazione da dati già noti (porte, SNMP, fingerprint, banner). Non rilancia Nmap/SNMP."
+                  onClick={() => void applyAttributionDirect()}
+                  disabled={applyingAttribution}
+                  title="Ricalcola e applica direttamente l'attribuzione su tutta la subnet, senza anteprima."
                 >
-                  {classifyingSubnet && !scanning ? (
+                  {applyingAttribution ? (
                     <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
-                  ) : (
-                    <Tags className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  )}
-                  Solo classifica
-                </Button>
-                <p className="text-[10px] text-muted-foreground leading-snug px-0.5">
-                  Naabu+classifica = porte fresche via Naabu · Solo classifica = archivio IPAM
-                </p>
-                <Button
-                  size="default"
-                  variant="outline"
-                  className={cn(ACTION_BTN, "w-full")}
-                  onClick={() => setClassifyOpen(true)}
-                  disabled={!!scanning || enriching || classifyingSubnet}
-                  title="Anteprima: mostra solo gli host dove lo slug cambierebbe, poi applica i selezionati"
-                >
-                  Anteprima proposte
+                  ) : null}
+                  Applica diretto
                 </Button>
               </div>
             </div>
@@ -1985,11 +2028,15 @@ export function NetworkDetailClient({
         />
       )}
 
-      <ClassificationProposalDialog
-        open={classifyOpen}
-        onOpenChange={setClassifyOpen}
+      <AttributionPreviewDialog
+        open={attributionPreviewOpen}
+        onOpenChange={setAttributionPreviewOpen}
         networkId={network.id}
-        onApplied={() => { void refreshHosts(); router.refresh(); }}
+        onApplied={() => {
+          void refreshHosts();
+          router.refresh();
+          setScanPhasesRefreshKey((k) => k + 1);
+        }}
       />
     </div>
   );

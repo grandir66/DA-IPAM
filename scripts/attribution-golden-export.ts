@@ -1,3 +1,12 @@
+// Golden set export — estrae AttributionSignals da una COPIA locale del DB tenant.
+// CRUCIALE: mai da produzione live. Input da copia locale o /var/tmp backup.
+//
+// Uso: npx tsx scripts/attribution-golden-export.ts data/tenants/70791.db > src/lib/attribution/__tests__/golden/hosts.json
+// Output → AttributionSignals[] con snmp_data sanitizzata (credenziali rimosse).
+//
+// ATTENZIONE privacy: il file esportato contiene IP e hostname reali. Valutare
+// anonimizzazione (rimappare su 10.x.x.x) prima del commit se necessario.
+//
 import Database from "better-sqlite3";
 
 const dbPath = process.argv[2];
@@ -42,7 +51,9 @@ const out = hosts.map((h) => {
         sanitizedSnmpData = JSON.stringify(parsed);
       }
     } catch {
-      // Se il parsing fallisce, lasciare come è
+      // Dato malformato: redaction totale per evitare credenziali nel JSON
+      console.warn(`[WARN] host id=${h.id}: snmp_data non parsabile, redaction totale`);
+      sanitizedSnmpData = null;
     }
   }
 

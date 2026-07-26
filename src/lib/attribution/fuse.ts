@@ -131,11 +131,11 @@ function fuseDimension(
   // vendor / os: nessuna gerarchia
   const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
   const conflicts: AttributionConflict[] = [];
-  if (sorted.length >= 2 && sorted[0][1] - sorted[1][1] < CONFLICT_WINDOW) {
-    conflicts.push({ a: sorted[0][0], b: sorted[1][0], score_a: sorted[0][1], score_b: sorted[1][1] });
-  }
   if (sorted.length === 0 || sorted[0][1] < MIN_CLAIM_SCORE) {
     return { result: { ...result, conflicts }, winnerRows: [] };
+  }
+  if (sorted.length >= 2 && sorted[0][1] - sorted[1][1] < CONFLICT_WINDOW) {
+    conflicts.push({ a: sorted[0][0], b: sorted[1][0], score_a: sorted[0][1], score_b: sorted[1][1] });
   }
   const claim = sorted[0][0];
   const citing = rows.filter((e) => e.claim === claim);

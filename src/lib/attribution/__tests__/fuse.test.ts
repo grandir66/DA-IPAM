@@ -74,4 +74,14 @@ describe("fuseAttribution", () => {
     assert.equal(r.category.claim, "network");
     assert.equal(r.category.min_phase, "scan_snmp_verify");
   });
+  it("vendor deboli ravvicinate: conflitto fantasma non registrato se entrambi sotto soglia", () => {
+    const r = fuseAttribution([
+      ev({ source: "dhcp", dimension: "vendor", claim: "apple", confidence: 0.08, weight: 0.3, raw_value: "Apple Inc" }),
+      ev({ source: "ttl", dimension: "vendor", claim: "dell", confidence: 0.06, weight: 0.25, raw_value: "Dell Technologies" }),
+    ], NOW);
+    // score apple=0.08*0.3=0.024, score dell=0.06*0.25=0.015, delta 0.009 < 0.1
+    // ma entrambi << 0.56 (MIN_CLAIM_SCORE) → nessun conflitto registrato (non rumore)
+    assert.equal(r.vendor.claim, null);
+    assert.equal(r.vendor.conflicts.length, 0);
+  });
 });

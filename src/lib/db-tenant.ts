@@ -3783,6 +3783,20 @@ export function upsertNeighbors(
       ins.run(deviceId, n.localPort, n.remoteDevice, n.remotePort, n.protocol, n.remoteIp ?? null, n.remoteMac ?? null, n.remotePlatform ?? null);
     }
   })();
+
+  // Attribution v2: i vicini LLDP/CDP appena scritti sono evidenza per gli host remoti
+  try {
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    const touched = d.prepare(
+      `SELECT DISTINCT h.id FROM hosts h
+       JOIN device_neighbors dn ON dn.device_id = ?
+        AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
+          OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))`
+    ).all(deviceId) as Array<{ id: number }>;
+    for (const t of touched) recomputeAttributionSafe(t.id, "scan");
+  } catch (e) {
+    console.error("[attribution] recompute da neighbors fallito:", e);
+  }
 }
 
 export function getNeighborsByDevice(deviceId: number): DbNeighborEntry[] {
@@ -5141,6 +5155,7 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
     if (!currentHost.classification || currentHost.classification === "unknown") { sets.push("classification = ?"); vals.push(classification); }
     if (sets.length > 0) { sets.push("updated_at = datetime('now')"); d.prepare(`UPDATE hosts SET ${sets.join(", ")} WHERE id = ?`).run(...vals, hostId); enriched++; }
   }
+  const touchedHostIds: number[] = [];
   d.transaction(() => {
     for (const comp of unlinked) {
       const dnsHostName = comp.dns_host_name?.toLowerCase() ?? "";
@@ -5151,8 +5166,18 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
       if (!host) continue;
       if (comp.host_id !== host.id) { linkStmt.run(host.id, comp.integration_id, comp.object_guid); linked++; }
       enrichHost(host.id, comp, host);
+      touchedHostIds.push(host.id);
     }
   })();
+
+  // Attribution v2 (fase 1, parallel-run): rifusione evidenze sugli host toccati
+  try {
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    for (const id of touchedHostIds) recomputeAttributionSafe(id, "scan");
+  } catch (e) {
+    console.error("[attribution] recompute da relinkAdComputersForNetwork fallito:", e);
+  }
+
   return { linked, enriched };
 }
 

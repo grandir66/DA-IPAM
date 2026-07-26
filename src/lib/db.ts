@@ -4973,6 +4973,20 @@ export function upsertNeighbors(
       ins.run(deviceId, n.localPort, n.remoteDevice, n.remotePort, n.protocol, n.remoteIp ?? null, n.remoteMac ?? null, n.remotePlatform ?? null);
     }
   })();
+
+  // Attribution v2: i vicini LLDP/CDP appena scritti sono evidenza per gli host remoti
+  try {
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    const touched = db.prepare(
+      `SELECT DISTINCT h.id FROM hosts h
+       JOIN device_neighbors dn ON dn.device_id = ?
+        AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
+          OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))`
+    ).all(deviceId) as Array<{ id: number }>;
+    for (const t of touched) recomputeAttributionSafe(t.id, "scan");
+  } catch (e) {
+    console.error("[attribution] recompute da neighbors fallito:", e);
+  }
 }
 
 export function getNeighborsByDevice(deviceId: number): DbNeighborEntry[] {
@@ -6336,6 +6350,7 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
     }
   }
 
+  const touchedHostIds: number[] = [];
   db.transaction(() => {
     for (const comp of unlinked) {
       const dnsHostName = comp.dns_host_name?.toLowerCase() ?? "";
@@ -6361,8 +6376,17 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
       }
 
       enrichHost(host.id, comp, host);
+      touchedHostIds.push(host.id);
     }
   })();
+
+  // Attribution v2 (fase 1, parallel-run): rifusione evidenze sugli host toccati
+  try {
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    for (const id of touchedHostIds) recomputeAttributionSafe(id, "scan");
+  } catch (e) {
+    console.error("[attribution] recompute da relinkAdComputersForNetwork fallito:", e);
+  }
 
   return { linked, enriched };
 }

@@ -2709,6 +2709,10 @@ async function runDiscovery(
       trigger: "scan",
     });
 
+    // Attribution v2 (fase 1, parallel-run): rifusione evidenze sui dati appena persistiti
+    const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+    recomputeAttributionSafe(host.id, "scan");
+
     // Sync network_device collegato (stesso IP) — port e classification applicata
     const slugForDevice = touchedClassification
       ? decision.classification

@@ -127,4 +127,29 @@ export function enrichHostFromInventoryAgent(hostId: number, parsed: ParsedGlpiI
   db()
     .prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`)
     .run(...values);
+
+  // Attribution v2: l'inventario agent è evidenza autoritativa su OS (spec §4.3)
+  try {
+    // require sincrono: enrichHostFromInventoryAgent non è async (vedi .claude/rules).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { recordEvidence } = require("@/lib/attribution/evidence") as typeof import("@/lib/attribution/evidence");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    const code = getCurrentTenantCode();
+    if (code) {
+      const inputs: import("@/lib/attribution/types").EvidenceInput[] = [];
+      if (parsed.os_family && parsed.os_family !== "other") {
+        inputs.push({
+          source: "inv_agent", phase: "integration", dimension: "os",
+          claim: parsed.os_family === "macos" ? "macos" : parsed.os_family,
+          confidence: 0.95, raw_value: parsed.os_name ?? null,
+        });
+      }
+      inputs.push({ source: "inv_agent", phase: "integration", dimension: "category", claim: "compute", confidence: 0.6, raw_value: "agent GLPI presente" });
+      if (inputs.length > 0) recordEvidence(getTenantDb(code), hostId, inputs);
+      recomputeAttributionSafe(hostId, "scan");
+    }
+  } catch (e) {
+    console.error("[attribution] evidenza inv_agent fallita:", e);
+  }
 }

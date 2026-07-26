@@ -33,8 +33,7 @@ export function recomputeAttributionSafe(
   try {
     // import dinamici per evitare cicli db-tenant ↔ attribution
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getAttributionSignalsForHost, getCurrentTenantCode, getTenantDb } =
-      require("@/lib/db-tenant") as typeof import("@/lib/db-tenant");
+    const { getAttributionSignalsForHost, getCurrentTenantCode, getTenantDb } = require("@/lib/db-tenant") as typeof import("@/lib/db-tenant");
     const code = getCurrentTenantCode();
     if (!code) return null;
     const signals = getAttributionSignalsForHost(hostId);

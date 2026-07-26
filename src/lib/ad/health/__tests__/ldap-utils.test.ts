@@ -20,9 +20,14 @@ test("ldapTimestampToIso returns null for empty / never-logged", () => {
 test("ldapTimestampToIso converts known FILETIME to ISO", () => {
   // 2020-01-01T00:00:00.000Z → FILETIME 100-ns since 1601
   const unixMs = Date.UTC(2020, 0, 1);
-  const filetime = (BigInt(unixMs) + 11644473600000n) * 10000n;
+  // Niente letterali BigInt (`123n`): il target TS del progetto è ES2017.
+  const filetime = (BigInt(unixMs) + BigInt("11644473600000")) * BigInt(10000);
   assert.equal(ldapTimestampToIso(filetime.toString()), "2020-01-01T00:00:00.000Z");
-  assert.equal(ldapTimestampToIso(filetime), "2020-01-01T00:00:00.000Z");
+  // Input numerico: il FILETIME supera Number.MAX_SAFE_INTEGER, quindi si verifica
+  // la variante number su un timestamp più recente e rappresentabile esattamente.
+  const safeUnixMs = Date.UTC(2024, 5, 1);
+  const safeFiletime = Number(BigInt(safeUnixMs) + BigInt("11644473600000")) * 10000;
+  assert.equal(ldapTimestampToIso(safeFiletime), "2024-06-01T00:00:00.000Z");
 });
 
 test("ldapTimestampToIso rejects garbage", () => {

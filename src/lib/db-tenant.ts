@@ -844,6 +844,72 @@ export function getTenantDb(tenantCode: string): Database.Database {
       );
       CREATE INDEX IF NOT EXISTS idx_host_class_hist_host ON host_classification_history(host_id, at DESC);
     `);
+    // Migrazione: estendi il CHECK device_type con access_point/nas/server.
+    // SQLite non consente ALTER di un CHECK → ricostruzione tabella (stesso idiom
+    // di network_devices_hypervisor_new). Idempotente: il probe INSERT/DELETE
+    // fallisce solo finché il CHECK vecchio è in vigore.
+    try {
+      newDb.prepare(
+        "INSERT INTO network_devices (name, host, device_type, vendor, protocol) VALUES ('__probe__', '0.0.0.0', 'access_point', 'other', 'ssh')"
+      ).run();
+      newDb.prepare("DELETE FROM network_devices WHERE name = '__probe__'").run();
+    } catch {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.transaction(() => {
+        // FK verso physical_devices solo se la tabella esiste (tenant molto vecchi
+        // possono non averla ancora al momento di questo rebuild).
+        const hasPhysicalDevices = Boolean(
+          newDb.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='physical_devices'").get()
+        );
+        const physicalDeviceCol = hasPhysicalDevices
+          ? "physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL,"
+          : "physical_device_id INTEGER,";
+        newDb.exec(`CREATE TABLE network_devices__ap_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          host TEXT NOT NULL,
+          device_type TEXT NOT NULL CHECK(device_type IN ('router', 'switch', 'firewall', 'hypervisor', 'access_point', 'nas', 'server')),
+          vendor TEXT NOT NULL CHECK(vendor IN ('mikrotik', 'ubiquiti', 'hp', 'cisco', 'omada', 'stormshield', 'proxmox', 'vmware', 'linux', 'windows', 'synology', 'qnap', 'other')),
+          vendor_subtype TEXT CHECK(vendor_subtype IN ('procurve', 'comware')),
+          protocol TEXT NOT NULL CHECK(protocol IN ('ssh', 'snmp_v2', 'snmp_v3', 'api', 'winrm')),
+          credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+          snmp_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+          username TEXT, encrypted_password TEXT, community_string TEXT, api_token TEXT, api_url TEXT,
+          port INTEGER DEFAULT 22, enabled INTEGER DEFAULT 1, classification TEXT,
+          sysname TEXT, sysdescr TEXT, model TEXT, firmware TEXT, serial_number TEXT, part_number TEXT,
+          last_info_update TEXT, last_device_info_json TEXT, stp_info TEXT,
+          last_proxmox_scan_at TEXT, last_proxmox_scan_result TEXT,
+          scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux')),
+          product_profile TEXT,
+          use_for_arp_poll INTEGER NOT NULL DEFAULT 0,
+          host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+          ${physicalDeviceCol}
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        )`);
+        const srcCols = (newDb.prepare("PRAGMA table_info(network_devices)").all() as Array<{ name: string }>)
+          .map((r) => r.name);
+        const dstCols = new Set(
+          (newDb.prepare("PRAGMA table_info(network_devices__ap_new)").all() as Array<{ name: string }>)
+            .map((r) => r.name)
+        );
+        const common = srcCols.filter((c) => dstCols.has(c)).join(", ");
+        newDb.exec(`INSERT INTO network_devices__ap_new (${common}) SELECT ${common} FROM network_devices`);
+        newDb.exec("DROP TABLE network_devices");
+        newDb.exec("ALTER TABLE network_devices__ap_new RENAME TO network_devices");
+        newDb.exec(`
+          CREATE INDEX IF NOT EXISTS idx_network_devices_credential ON network_devices(credential_id);
+          CREATE INDEX IF NOT EXISTS idx_network_devices_host ON network_devices(host);
+          CREATE INDEX IF NOT EXISTS idx_network_devices_device_type ON network_devices(device_type);
+          CREATE INDEX IF NOT EXISTS idx_network_devices_product_profile ON network_devices(product_profile);
+          CREATE INDEX IF NOT EXISTS idx_network_devices_classification ON network_devices(classification);
+          CREATE INDEX IF NOT EXISTS idx_network_devices_physical_device_id ON network_devices(physical_device_id);
+          CREATE INDEX IF NOT EXISTS idx_network_devices_host_id ON network_devices(host_id);
+        `);
+      })();
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: network_devices.device_type esteso (access_point/nas/server)`);
+    }
     // Backfill/upgrade:
     //   - host senza inferred_at → mai classificato
     //   - host con inferred_classifier_version < CLASSIFIER_VERSION → ricomputo richiesto

@@ -193,6 +193,9 @@ export function suggestDeviceTypeFromProductProfile(profile: ProductProfileId): 
   ) {
     return "hypervisor";
   }
+  if (profile.startsWith("ubiquiti_access_point") || profile.includes("_access_point")) {
+    return "access_point";
+  }
   return "switch";
 }
 
@@ -234,6 +237,15 @@ export function resolveDeviceTypeForCreate(input: {
   if (input.classification === "firewall") return "firewall";
   if (input.classification === "hypervisor") return "hypervisor";
   if (input.classification === "switch") return "switch";
+  if (input.classification === "access_point") return "access_point";
+  if (input.classification === "nas" || input.classification === "storage") return "nas";
+  if (
+    input.classification === "server" ||
+    input.classification === "server_linux" ||
+    input.classification === "server_windows"
+  ) {
+    return "server";
+  }
   if (input.device_type) return input.device_type;
   return suggestDeviceTypeFromProductProfile(input.product_profile);
 }

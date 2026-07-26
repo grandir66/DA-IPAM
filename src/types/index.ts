@@ -186,7 +186,7 @@ export interface NetworkDevice {
   id: number;
   name: string;
   host: string;
-  device_type: "router" | "switch" | "firewall" | "hypervisor";
+  device_type: "router" | "switch" | "firewall" | "hypervisor" | "access_point" | "nas" | "server";
   classification: string | null;
   vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "apple" | "other";
   vendor_subtype: "procurve" | "comware" | null;

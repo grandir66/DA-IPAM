@@ -30,6 +30,13 @@ import {
   DialogTitle,
   DIALOG_PANEL_COMPACT_CLASS,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { inferVendorFromManufacturer } from "@/lib/vendor-inference";
 import { isMacOsHost, suggestEndpointClassification } from "@/lib/host-platform-detect";
@@ -49,17 +56,25 @@ function inferProtocolFromSnmp(snmp: HostSnmpData | null): string {
   return snmp ? "snmp_v2" : "ssh";
 }
 
-function inferDeviceTypeFromClassification(c: string): "router" | "switch" | "hypervisor" {
-  if (c === "router" || c === "firewall") return "router";
+type PromotableDeviceType =
+  | "router" | "switch" | "firewall" | "hypervisor" | "access_point" | "nas" | "server";
+
+function inferDeviceTypeFromClassification(c: string): PromotableDeviceType {
+  if (c === "firewall") return "firewall";
+  if (c === "router") return "router";
   if (c === "switch") return "switch";
-  return "hypervisor";
+  if (c === "access_point") return "access_point";
+  if (c === "nas" || c === "storage") return "nas";
+  if (c === "hypervisor" || c === "vm") return "hypervisor";
+  if (c === "server" || c === "server_linux" || c === "server_windows") return "server";
+  return "server";
 }
 
 interface DeviceFormState {
   name: string;
   vendor: string;
   protocol: string;
-  device_type: "router" | "switch" | "hypervisor";
+  device_type: PromotableDeviceType;
   classification: string;
   port: number;
   model: string;
@@ -109,16 +124,12 @@ function buildInitialForm(host: HostDetail): DeviceFormState {
     : (inferredProtocol && protocolOptions.has(inferredProtocol) ? inferredProtocol : null)
       ?? inferProtocolFromSnmp(snmp);
 
-  let device_type: "router" | "switch" | "hypervisor";
-  if (inferredDeviceType === "router" || inferredDeviceType === "switch" || inferredDeviceType === "hypervisor") {
-    device_type = inferredDeviceType;
-  } else if (inferredDeviceType === "firewall") {
-    device_type = "router";
-  } else if (inferredDeviceType === "workstation" || inferredDeviceType === "server" || inferredDeviceType === "notebook") {
-    device_type = "hypervisor";
-  } else {
-    device_type = inferDeviceTypeFromClassification(host.classification);
-  }
+  const PROMOTABLE = new Set<string>([
+    "router", "switch", "firewall", "hypervisor", "access_point", "nas", "server",
+  ]);
+  const device_type: PromotableDeviceType = inferredDeviceType && PROMOTABLE.has(inferredDeviceType)
+    ? (inferredDeviceType as PromotableDeviceType)
+    : inferDeviceTypeFromClassification(inferredDeviceType ?? host.classification);
 
   const port = protocol === "snmp_v2" || protocol === "snmp_v3" ? 161
     : protocol === "winrm" ? 5985
@@ -192,16 +203,10 @@ export function PromoteHostDialog({ host, open, onOpenChange, onCreated }: Promo
     e.preventDefault();
     setCreating(true);
 
-    const deviceTypeForSchema: "router" | "switch" | "firewall" | "hypervisor" =
-      form.classification === "router" ? "router"
-      : form.classification === "switch" ? "switch"
-      : form.classification === "firewall" ? "firewall"
-      : "hypervisor";
-
     const body: Record<string, unknown> = {
       name: form.name,
       host: host.ip,
-      device_type: deviceTypeForSchema,
+      device_type: form.device_type,
       vendor: form.vendor,
       protocol: form.protocol,
       port: form.port,
@@ -268,6 +273,30 @@ export function PromoteHostDialog({ host, open, onOpenChange, onCreated }: Promo
                 <Label className="text-xs">IP</Label>
                 <Input value={host.ip} readOnly className="bg-muted" />
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Tipo dispositivo</Label>
+              <Select
+                value={form.device_type}
+                onValueChange={(v) => {
+                  if (!v) return;
+                  setForm((f) => ({ ...f, device_type: v as PromotableDeviceType }));
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="router">Router</SelectItem>
+                  <SelectItem value="switch">Switch</SelectItem>
+                  <SelectItem value="firewall">Firewall</SelectItem>
+                  <SelectItem value="hypervisor">Hypervisor</SelectItem>
+                  <SelectItem value="access_point">Access Point</SelectItem>
+                  <SelectItem value="nas">NAS</SelectItem>
+                  <SelectItem value="server">Server</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <DeviceFormFields

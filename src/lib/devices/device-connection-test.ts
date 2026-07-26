@@ -75,7 +75,7 @@ function buildDeviceFromProvisional(p: ProvisionalDevice): NetworkDevice {
   const fromProfile = suggestDeviceTypeFromProductProfile(profileId);
   const effectiveScan =
     (p.scan_target ?? scanTargetHintFromProductProfile(profileId)) as NetworkDevice["scan_target"] | null;
-  const deviceType: "router" | "switch" | "firewall" | "hypervisor" =
+  const deviceType: NetworkDevice["device_type"] =
     isProxmoxDevice({
       ...p,
       device_type: fromProfile,

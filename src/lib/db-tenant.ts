@@ -829,6 +829,50 @@ export function getTenantDb(tenantCode: string): Database.Database {
         console.info(`[db-tenant] ${tenantCode}: hosts.${col.name} aggiunto`);
       }
     }
+    // Attribution v2 fase 1 — colonne risultato fusione (spec §5)
+    const attrCols: Array<{ name: string; sql: string }> = [
+      { name: "attr_vendor", sql: "ALTER TABLE hosts ADD COLUMN attr_vendor TEXT" },
+      { name: "attr_vendor_name", sql: "ALTER TABLE hosts ADD COLUMN attr_vendor_name TEXT" },
+      { name: "attr_category", sql: "ALTER TABLE hosts ADD COLUMN attr_category TEXT" },
+      { name: "attr_os_family", sql: "ALTER TABLE hosts ADD COLUMN attr_os_family TEXT" },
+      { name: "attr_os_name", sql: "ALTER TABLE hosts ADD COLUMN attr_os_name TEXT" },
+      { name: "attr_confidence_vendor", sql: "ALTER TABLE hosts ADD COLUMN attr_confidence_vendor INTEGER" },
+      { name: "attr_confidence_category", sql: "ALTER TABLE hosts ADD COLUMN attr_confidence_category INTEGER" },
+      { name: "attr_confidence_os", sql: "ALTER TABLE hosts ADD COLUMN attr_confidence_os INTEGER" },
+      { name: "attr_min_phase", sql: "ALTER TABLE hosts ADD COLUMN attr_min_phase TEXT" },
+      { name: "attr_at", sql: "ALTER TABLE hosts ADD COLUMN attr_at TEXT" },
+      { name: "attr_engine_version", sql: "ALTER TABLE hosts ADD COLUMN attr_engine_version TEXT" },
+    ];
+    for (const col of attrCols) {
+      if (!hCols.some((c) => c.name === col.name)) {
+        newDb.exec(col.sql);
+        console.info(`[db-tenant] ${tenantCode}: hosts.${col.name} aggiunto`);
+      }
+    }
+    // Tabella evidenze per DB creati prima di questa versione
+    newDb.exec(`CREATE TABLE IF NOT EXISTS attribution_evidence (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+      source TEXT NOT NULL,
+      phase TEXT NOT NULL,
+      dimension TEXT NOT NULL CHECK(dimension IN ('vendor','category','os')),
+      claim TEXT NOT NULL,
+      confidence REAL NOT NULL DEFAULT 0,
+      weight REAL NOT NULL DEFAULT 0,
+      raw_value TEXT,
+      observed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT,
+      superseded_by INTEGER REFERENCES attribution_evidence(id) ON DELETE SET NULL
+    )`);
+    newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension)");
+    newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_active ON attribution_evidence(host_id, superseded_by) WHERE superseded_by IS NULL");
+    // History estesa alle 3 dimensioni (il CHECK su trigger resta invariato — decisione 8 del piano)
+    const histCols = newDb.prepare("PRAGMA table_info(host_classification_history)").all() as Array<{ name: string }>;
+    for (const c of ["attr_vendor", "attr_category", "attr_os"]) {
+      if (!histCols.some((x) => x.name === c)) {
+        newDb.exec(`ALTER TABLE host_classification_history ADD COLUMN ${c} TEXT`);
+      }
+    }
     // History decisioni classificazione (CREATE IF NOT EXISTS → idempotente su DB esistenti).
     newDb.exec(`
       CREATE TABLE IF NOT EXISTS host_classification_history (

@@ -114,6 +114,9 @@ CREATE TABLE IF NOT EXISTS host_classification_history (
   reason TEXT,
   evidence_json TEXT,
   conflicts_json TEXT,
+  attr_vendor TEXT,
+  attr_category TEXT,
+  attr_os TEXT,
   trigger TEXT NOT NULL CHECK(trigger IN ('scan','apply','manual','backfill'))
 );
 CREATE INDEX IF NOT EXISTS idx_host_class_hist_host ON host_classification_history(host_id, at DESC);
@@ -1265,6 +1268,25 @@ CREATE TABLE IF NOT EXISTS mc_command_log (
   error       TEXT,
   created_at  TEXT DEFAULT (datetime('now'))
 );
+
+-- Attribution v2 (spec §4.2): evidenze append-only per host/dimensione.
+-- NB: 'source' e 'phase' senza CHECK deliberatamente — il vocabolario è chiuso
+-- a livello TypeScript (AttributionSource/AttributionPhase) e crescerà nelle fasi 2-5;
+-- i CHECK SQLite non sono estendibili senza rebuild della tabella.
+CREATE TABLE IF NOT EXISTS attribution_evidence (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  dimension TEXT NOT NULL CHECK(dimension IN ('vendor','category','os')),
+  claim TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 0,
+  weight REAL NOT NULL DEFAULT 0,
+  raw_value TEXT,
+  observed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT,
+  superseded_by INTEGER REFERENCES attribution_evidence(id) ON DELETE SET NULL
+);
 `;
 
 export const TENANT_INDEXES_SQL = `
@@ -1502,4 +1524,8 @@ CREATE INDEX IF NOT EXISTS idx_mobile_devices_host ON mobile_devices(host_id);
 CREATE INDEX IF NOT EXISTS idx_mc_node_host ON mc_node(host_id);
 CREATE INDEX IF NOT EXISTS idx_mc_node_mesh ON mc_node(mesh_id);
 CREATE INDEX IF NOT EXISTS idx_mc_remote_session_host_ts ON mc_remote_session(host_id, created_at DESC);
+
+-- Attribution v2 (spec §4.2)
+CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension);
+CREATE INDEX IF NOT EXISTS idx_attr_evidence_active ON attribution_evidence(host_id, superseded_by) WHERE superseded_by IS NULL;
 `;

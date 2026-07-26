@@ -211,7 +211,71 @@ API: `GET /api/hosts/[id]/attribution` (attribuzione + evidenze + conflitti + "c
 (rifusione bulk per tenant/rete, usata anche dopo l'aggiornamento della KB),
 CRUD `mac_product_map` nel tab **Identificazione** esistente.
 
-## 6. Verifica
+## 6. UI subnet — separare acquisizione e attribuzione
+
+### 6.1 Stato attuale (verificato in `networks/[id]/network-detail-client.tsx`)
+
+Il pannello **Scan — intera subnet** offre due percorsi iniziali alternativi e non dichiarati come
+tali — `Scan completo` (`scan_full`: ICMP → Nmap base → SNMP → Enrich, riga 1042) e `Scan Naabu`
+(`scan_naabu`: ICMP → Naabu → Nmap -sV mirato, riga 1053) — più cinque pulsanti granulari
+(ICMP, Nmap base, SNMP verify, Enrich, Enrich + AD sync).
+
+Il pannello **Classificazione** (riga 1183) ripropone **gli stessi due scan** accoppiati alla
+classificazione: `Naabu + classifica` (1188) e `Scan completo + classifica` (1203) — che sono
+letteralmente `runScanJob(...)` seguito da `classifySubnet()` (righe 820-852) — più
+`Solo classifica` (1214, ricalcolo sui dati già in IPAM) e `Anteprima proposte` (1232).
+
+Problemi: la stessa acquisizione appare in due pannelli; l'utente deve scegliere *a priori* tra due
+percorsi iniziali senza sapere se naabu è installato; se lo scan combo fallisce la classificazione
+non parte affatto (righe 828-831, 847-850); e la classificazione appare come coda di uno scan
+invece che come operazione indipendente.
+
+### 6.2 Modello target
+
+Con Attribution v2 la fusione è una **funzione pura sulle evidenze già salvate**: rieseguirla non
+costa una scansione. Questo permette di separare nettamente le due cose.
+
+**Blocco A — Acquisizione (progressiva).** Un unico ingresso e una catena esplicita:
+
+- **`Scansione iniziale`** — pulsante primario unico. Sostituisce la scelta tra `scan_full` e
+  `scan_naabu`: esegue ICMP + port discovery scegliendo **automaticamente** naabu se disponibile
+  (capability rilevata dall'hub/agent) e ricadendo su nmap quick altrimenti, più i probe leggeri
+  della fase 3 (HTTP/TLS, mDNS, SSDP, WSD). Il percorso effettivo è mostrato a posteriori, non
+  scelto a priori.
+- **Fasi successive**, ognuna con il proprio pulsante e il proprio **stato per rete** (mai
+  eseguita / eseguita il … / obsoleta, con copertura host): `Porte approfondite (Nmap -sV)`,
+  `SNMP`, `Enrich (ARP/DHCP/AD)`, `Credenziali (SSH/WinRM)`. Ogni fase dichiara **cosa aggiunge**
+  all'attribuzione ("SNMP → sysObjectID, LLDP: distingue AP da switch").
+- **`Esegui tutte le fasi`** — l'equivalente dell'attuale `scan_full`, come azione secondaria.
+
+**Blocco B — Attribuzione (indipendente, sempre disponibile).** Un solo pulsante
+**`Ricalcola attribuzione`**, attivo in qualunque momento — anche senza aver mai scansionato, anche
+mentre una fase è in corso, perché legge solo le evidenze salvate. Due modalità:
+
+- **Anteprima** (default): mostra **solo gli host la cui attribuzione cambierebbe**, con
+  `prima → dopo` per ciascuna delle 3 dimensioni, la confidence, **le evidenze che causano il
+  cambio** e *perché ora* (quale fase ha portato il segnale nuovo). Selezione per host, poi applica.
+  Riusa e sostituisce l'attuale `ClassificationProposalDialog`.
+- **Applica diretto**: per chi si fida, stessa operazione senza dialog.
+
+Gli host con override manuale sono mostrati ma **mai** proposti per il cambio (§4.2).
+
+**Ricalcolo automatico.** Al termine di ogni fase di acquisizione la fusione riparte da sola sugli
+host toccati: l'attribuzione è sempre allineata alle evidenze. Il pulsante manuale serve per
+verificare/riapplicare dopo un aggiornamento della KB, delle regole nel tab Identificazione o della
+`mac_product_map` — non per "far partire" la classificazione.
+
+**Conseguenza diretta**: i 4 pulsanti combo del pannello Classificazione spariscono. Restano
+1 pulsante di acquisizione iniziale + N di avanzamento fase + 1 di attribuzione con anteprima.
+
+### 6.3 Indicatore di completezza
+
+In testa alla subnet, una riga di stato per rete: quali fasi sono state eseguite e quando, quanti
+host hanno attribuzione a livello 2 vs solo livello 1 vs nessuna, e **l'azione suggerita** —
+derivata da `attr_min_phase` degli host incerti ("32 host fermi al livello 1: esegui SNMP per
+distinguere AP da switch"). La stessa informazione, per singolo host, vive nel pannello evidenze.
+
+## 7. Verifica
 
 - **Unit** su `fuse.ts`: casi tabellari con evidenze sintetiche (AP Ubiquiti via LLDP; stesso AP
   senza LLDP ma con mDNS; switch Ubiquiti con hostname fuorviante `ap-piano2`; conflitto tra nmap e
@@ -224,7 +288,7 @@ CRUD `mac_product_map` nel tab **Identificazione** esistente.
 - **Progressività**: test che per ogni host golden l'attribuzione dopo la fase N non contraddica
   quella dopo la fase N+1 (può solo affinarsi o restare).
 
-## 7. Fasi di implementazione
+## 8. Fasi di implementazione
 
 | Fase | Contenuto | Valore |
 |---|---|---|
@@ -232,10 +296,11 @@ CRUD `mac_product_map` nel tab **Identificazione** esistente.
 | **1** | Tassonomia 2 livelli + `attribution_evidence` + `fuse.ts` + emettitori dai segnali **già in DB** (LLDP, AD, Wazuh, agent, SNMP, OUI) | il grosso del recupero, zero probe nuovi |
 | **2** | KB SQLite vendorizzata + `mac_product_map` + UI nel tab Identificazione | vendor/famiglia prodotto affidabili |
 | **3** | Probe nuovi: HTTP/TLS esteso, mDNS, SSDP, WSD, SMB2 | copre gli endpoint senza SNMP né agent |
+| **3b** | **UI subnet (§6)**: `Scansione iniziale` unica, fasi progressive con stato, `Ricalcola attribuzione` con anteprima; via i 4 combo | l'operatore vede e guida la progressione |
 | **4** | Ritiro di B, migrazione UI, viste di compatibilità rimosse | un solo sistema |
 | **5** | Opzionali: Fingerbank, AI, loop di feedback → `mac_product_map` | coda lunga consumer/IoT |
 
-## 8. Rischi
+## 9. Rischi
 
 - **Regressione su host già corretti** → mitigata dal golden set e dalla policy "manual vince sempre".
 - **Peso dei probe nuovi su reti grandi** → probe solo su host con almeno una porta aperta, budget di

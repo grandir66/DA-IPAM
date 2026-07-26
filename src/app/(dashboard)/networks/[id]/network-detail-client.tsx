@@ -1138,7 +1138,7 @@ export function NetworkDetailClient({
                   className={cn(ACTION_BTN, "w-full")}
                   onClick={() => void classifySubnet()}
                   disabled={!!scanning || enriching || classifyingSubnet}
-                  title="Esegue il motore evidence/scoring su tutti gli host della subnet (reason + confidence + evidence)"
+                  title="Ricalcola classificazione da dati già noti (porte, SNMP, fingerprint, banner). Non rilancia Nmap/SNMP — usa prima i pulsanti Scan se servono dati freschi."
                 >
                   {classifyingSubnet ? (
                     <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
@@ -1147,13 +1147,16 @@ export function NetworkDetailClient({
                   )}
                   Classifica subnet
                 </Button>
+                <p className="text-[10px] text-muted-foreground leading-snug px-0.5">
+                  Solo dati già in IPAM — non riesegue Nmap/SNMP
+                </p>
                 <Button
                   size="default"
                   variant="secondary"
                   className={cn(ACTION_BTN, "w-full")}
                   onClick={() => setClassifyOpen(true)}
                   disabled={!!scanning || enriching || classifyingSubnet}
-                  title="Anteprima: mostra solo gli host dove lo slug cambierebbe, poi applica i selezionati"
+                  title="Anteprima: mostra solo gli host dove lo slug cambierebbe, poi applica i selezionati (sempre su dati già noti)"
                 >
                   Anteprima proposte
                 </Button>

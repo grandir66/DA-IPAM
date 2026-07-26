@@ -221,9 +221,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       dns_updated: dnsUpdated,
       vendor_updated: vendorUpdated,
       message:
-        `Classificazione subnet: ${updated}/${hosts.length} host aggiornati` +
+        `Classificazione da dati già noti: ${updated}/${hosts.length} host` +
         ` (${reclassified} slug cambiati, ${dnsUpdated} DNS, ${vendorUpdated} vendor).` +
-        ` Apri un host per vedere reason ed evidence.`,
+        ` Nmap/SNMP non rilanciati — apri un host per reason/evidence.`,
     });
   } catch (error) {
     console.error("Network refresh error:", error);

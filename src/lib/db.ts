@@ -3176,6 +3176,76 @@ export function getScanHistory(filters: { host_id?: number; network_id?: number;
   ).all(...values, limit) as ScanHistory[];
 }
 
+// Chiave fase acquisizione (spec §6.2) → scan_type multipli in scan_history che la alimentano.
+// Facade di db-tenant.ts::getScanPhaseStatusForNetwork — vedi lì la nota su 'enrich'.
+export type ScanPhaseKey = "initial" | "nmap_deep" | "snmp" | "enrich" | "credentials";
+
+const SCAN_PHASE_TYPES: Record<ScanPhaseKey, string[]> = {
+  initial: ["scan_icmp", "scan_naabu", "network_discovery"],
+  nmap_deep: ["scan_nmap_base", "nmap"],
+  snmp: ["scan_snmp_verify", "snmp"],
+  enrich: ["arp", "dhcp", "dns"],
+  credentials: ["credential_validate"],
+};
+
+export interface ScanPhaseStatus {
+  key: ScanPhaseKey;
+  last_run: string | null;
+  stale: boolean;
+}
+
+const STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function getScanPhaseStatusForNetwork(networkId: number): ScanPhaseStatus[] {
+  const rows = getDb().prepare(
+    `SELECT scan_type, MAX(timestamp) t FROM scan_history WHERE network_id = ? GROUP BY scan_type`
+  ).all(networkId) as Array<{ scan_type: string; t: string | null }>;
+  const maxByType = new Map(rows.map((r) => [r.scan_type, r.t]));
+  const now = Date.now();
+  return (Object.keys(SCAN_PHASE_TYPES) as ScanPhaseKey[]).map((key) => {
+    const types = SCAN_PHASE_TYPES[key];
+    let lastRun: string | null = null;
+    for (const t of types) {
+      const v = maxByType.get(t);
+      if (v && (lastRun === null || v > lastRun)) lastRun = v;
+    }
+    const stale = lastRun !== null && now - new Date(lastRun).getTime() > STALE_AFTER_MS;
+    return { key, last_run: lastRun, stale };
+  });
+}
+
+export interface AttributionCompleteness {
+  total: number;
+  level2: number;
+  level1: number;
+  none: number;
+  suggestion: string | null;
+}
+
+export function getAttributionCompletenessForNetwork(networkId: number): AttributionCompleteness {
+  const row = getDb().prepare(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN attr_category LIKE '%.%' THEN 1 ELSE 0 END) AS level2,
+       SUM(CASE WHEN attr_category IS NOT NULL AND attr_category != 'unknown' AND attr_category NOT LIKE '%.%' THEN 1 ELSE 0 END) AS level1
+     FROM hosts WHERE network_id = ?`
+  ).get(networkId) as { total: number; level2: number | null; level1: number | null };
+  const total = row.total ?? 0;
+  const level2 = row.level2 ?? 0;
+  const level1 = row.level1 ?? 0;
+  const none = total - level2 - level1;
+
+  let suggestion: string | null = null;
+  const snmpNeverRun = getScanPhaseStatusForNetwork(networkId).find((p) => p.key === "snmp")?.last_run == null;
+  if (level1 + none > 0 && snmpNeverRun) {
+    suggestion = `${level1 + none} host fermi al livello 1: esegui SNMP per distinguere AP da switch`;
+  } else if (none > level2) {
+    suggestion = `${none} host senza attribuzione: esegui la scansione iniziale`;
+  }
+
+  return { total, level2, level1, none, suggestion };
+}
+
 // ========================
 // Network Devices
 // ========================

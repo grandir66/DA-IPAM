@@ -149,6 +149,32 @@ export function filterInterestingFromAces(args: {
 }
 
 /** Aggregate: trustee has both DCSync GUIDs (or GenericAll) on domain. */
+/** Higher = more important when capping persisted ACE list. */
+export function interestingAcePriority(ace: InterestingAce): number {
+  const rights = new Set(ace.rights);
+  if (rights.has("GenericAll") || rights.has("DCSync-GetChangesAll") || rights.has("DCSync-GetChanges")) {
+    return 100;
+  }
+  if (rights.has("WriteDacl") || rights.has("WriteOwner") || rights.has("AllExtendedRights")) {
+    return 80;
+  }
+  if (ace.objectKind === "adminsdholder") return 70;
+  if (rights.has("AddMember")) return 50;
+  // ForceChangePassword alone on domain is common Azure/MSOL noise
+  if (rights.has("ForceChangePassword") && ace.rights.length === 1) return 15;
+  return 40;
+}
+
+/** Sort + diversify before applying the persistence cap. */
+export function rankInterestingAces(aces: InterestingAce[]): InterestingAce[] {
+  return [...aces].sort((a, b) => {
+    const p = interestingAcePriority(b) - interestingAcePriority(a);
+    if (p !== 0) return p;
+    if (a.objectKind !== b.objectKind) return a.objectKind.localeCompare(b.objectKind);
+    return (a.trusteeSam ?? a.trusteeSid).localeCompare(b.trusteeSam ?? b.trusteeSid);
+  });
+}
+
 export function dcsyncPrincipals(aces: InterestingAce[]): InterestingAce[] {
   const domain = aces.filter((a) => a.objectKind === "domain");
   const bySid = new Map<string, Set<string>>();

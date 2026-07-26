@@ -6,7 +6,7 @@ import { Client } from "ldapts";
 import { getAdIntegrationById } from "@/lib/db";
 import { connectLdap } from "@/lib/ad/ad-client";
 import { ldapStr } from "@/lib/ad/ldap-utils";
-import { filterInterestingFromAces } from "./interesting-ace";
+import { filterInterestingFromAces, rankInterestingAces } from "./interesting-ace";
 import { sdFlagsControl } from "./sd-flags-control";
 import { parseSecurityDescriptor } from "./security-descriptor";
 import { sidToString } from "./sid";
@@ -155,10 +155,11 @@ export function processAclItems(
     }
   }
 
-  const totalInteresting = interesting.length;
+  const ranked = rankInterestingAces(interesting);
+  const totalInteresting = ranked.length;
   if (totalInteresting > interestingCap) truncated = true;
   return {
-    interestingAces: interesting.slice(0, interestingCap),
+    interestingAces: ranked.slice(0, interestingCap),
     domainSid,
     sdParsed,
     truncated,
@@ -257,7 +258,12 @@ export async function collectAclExtras(integrationId: number): Promise<AclExtras
           ),
         );
       },
+      // Users/computers last — often huge; skip if budget nearly spent.
       async () => {
+        if (Date.now() > deadline - 20_000) {
+          timedOut = true;
+          return;
+        }
         push(
           await searchKind(
             client!,
@@ -270,6 +276,10 @@ export async function collectAclExtras(integrationId: number): Promise<AclExtras
         );
       },
       async () => {
+        if (Date.now() > deadline - 15_000) {
+          timedOut = true;
+          return;
+        }
         push(
           await searchKind(
             client!,

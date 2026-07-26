@@ -60,7 +60,7 @@ export interface ParsedSecurityDescriptor {
   aces: ParsedAce[];
 }
 
-export const ACL_SD_CAP = 15_000;
-export const ACL_TIMEOUT_MS = 120_000;
+export const ACL_SD_CAP = 8_000;
+export const ACL_TIMEOUT_MS = 90_000;
 export const ACL_INTERESTING_CAP = 500;
 export const SD_FLAGS_OWNER_GROUP_DACL = 7;

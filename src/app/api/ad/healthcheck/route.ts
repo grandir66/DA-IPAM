@@ -12,7 +12,9 @@ import {
 import {
   ensureAdHealthSchema,
   getFindings,
+  getLatestOkRun,
   getLatestRun,
+  reclaimStaleRunningRuns,
   type AdHealthRunRow,
 } from "@/lib/ad/health/persist";
 import type { HealthScore } from "@/lib/ad/health/types";
@@ -58,40 +60,53 @@ export async function GET(request: Request) {
 
     const db = getDb();
     ensureAdHealthSchema(db);
-    const run = getLatestRun(db, integrationId);
-    if (!run) {
+    reclaimStaleRunningRuns(db, integrationId);
+
+    const latest = getLatestRun(db, integrationId);
+    if (!latest) {
       return NextResponse.json({
         run: null,
         score: null,
         findings: [],
         privilegeMatrix: null,
         acl: null,
+        winrm: null,
+        phase5: null,
+        displayRunId: null,
       });
     }
 
-    const findings = getFindings(db, run.id);
+    // If latest is running/error without stats, still show last successful results.
+    const display =
+      latest.status === "ok" && latest.statsJson
+        ? latest
+        : (getLatestOkRun(db, integrationId) ?? latest);
+
+    const findings = getFindings(db, display.id);
+    let winrm = null;
+    let phase5 = null;
+    if (display.statsJson) {
+      try {
+        const parsed = JSON.parse(display.statsJson) as {
+          winrm?: unknown;
+          phase5?: unknown;
+        };
+        winrm = parsed.winrm ?? null;
+        phase5 = parsed.phase5 ?? null;
+      } catch {
+        // ignore
+      }
+    }
+
     return NextResponse.json({
-      run,
-      score: scoreFromRun(run),
+      run: latest,
+      displayRunId: display.id,
+      score: scoreFromRun(display),
       findings,
-      privilegeMatrix: privilegeMatrixFromStatsJson(run.statsJson),
-      acl: aclFromStatsJson(run.statsJson),
-      winrm: (() => {
-        try {
-          const parsed = run.statsJson ? JSON.parse(run.statsJson) : null;
-          return parsed?.winrm ?? null;
-        } catch {
-          return null;
-        }
-      })(),
-      phase5: (() => {
-        try {
-          const parsed = run.statsJson ? JSON.parse(run.statsJson) : null;
-          return parsed?.phase5 ?? null;
-        } catch {
-          return null;
-        }
-      })(),
+      privilegeMatrix: privilegeMatrixFromStatsJson(display.statsJson),
+      acl: aclFromStatsJson(display.statsJson),
+      winrm,
+      phase5,
     });
   });
 }

@@ -224,6 +224,22 @@ export function getLatestRun(db: Database, integrationId: number): AdHealthRunRo
   return row ? mapRun(row) : null;
 }
 
+/** Ultimo run completato ok con stats (per UI quando l'ultimo è running/error). */
+export function getLatestOkRun(db: Database, integrationId: number): AdHealthRunRow | null {
+  const row = db
+    .prepare(
+      `SELECT id, integration_id, started_at, finished_at, status, error_message,
+              score_global, score_stale, score_privileged, score_trust, score_anomaly,
+              engine_version, stats_json, created_at
+         FROM ad_health_runs
+        WHERE integration_id = ? AND status = 'ok' AND stats_json IS NOT NULL
+        ORDER BY started_at DESC, id DESC
+        LIMIT 1`,
+    )
+    .get(integrationId) as RunDbRow | undefined;
+  return row ? mapRun(row) : null;
+}
+
 /** Run per id, o null. */
 export function getRunById(db: Database, runId: number): AdHealthRunRow | null {
   const row = db

@@ -1447,8 +1447,21 @@ export default function ActiveDirectoryPage() {
                     )}
                   </div>
 
-                  {healthRun?.status === "error" && healthRun.errorMessage && (
-                    <p className="text-sm text-destructive">{healthRun.errorMessage}</p>
+                  {healthRun?.status === "running" && (
+                    <p className="text-sm text-amber-700 dark:text-amber-300">
+                      Healthcheck in corso… i dati sotto restano dell&apos;ultimo run completato, se disponibile.
+                    </p>
+                  )}
+                  {healthRun?.status === "error" && (
+                    <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm space-y-1">
+                      <p className="font-medium text-destructive">Ultimo run in errore</p>
+                      {healthRun.errorMessage && (
+                        <p className="text-destructive/90">{healthRun.errorMessage}</p>
+                      )}
+                      <p className="text-muted-foreground">
+                        Riesegui l&apos;healthcheck. Se vedi ancora findings/ACL sotto, sono dell&apos;ultimo run ok.
+                      </p>
+                    </div>
                   )}
 
                   {healthLoading ? (
@@ -1786,28 +1799,34 @@ export default function ActiveDirectoryPage() {
                           <p className="text-sm text-destructive">{aclExtras.meta.errorMessage}</p>
                         )}
                         {aclExtras.interestingAces.length > 0 && aclKindCounts && (
-                          <div className="flex flex-wrap gap-1.5">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={aclKindFilter === "all" ? "default" : "outline"}
-                              className="h-7 text-xs"
-                              onClick={() => setAclKindFilter("all")}
-                            >
-                              Tutte ({aclExtras.interestingAces.length})
-                            </Button>
-                            {ACL_KIND_ORDER.filter((k) => (aclKindCounts[k] ?? 0) > 0).map((k) => (
+                          <div className="space-y-2">
+                            <p className="text-xs text-muted-foreground">
+                              Filtra per tipo oggetto. La tabella sotto elenca chi ha il permesso e su cosa
+                              (max 80 righe, ordinate per gravità).
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
                               <Button
-                                key={k}
                                 type="button"
                                 size="sm"
-                                variant={aclKindFilter === k ? "default" : "outline"}
+                                variant={aclKindFilter === "all" ? "default" : "outline"}
                                 className="h-7 text-xs"
-                                onClick={() => setAclKindFilter(k)}
+                                onClick={() => setAclKindFilter("all")}
                               >
-                                {ACL_KIND_LABEL[k]} ({aclKindCounts[k]})
+                                Tutte ({aclExtras.interestingAces.length})
                               </Button>
-                            ))}
+                              {ACL_KIND_ORDER.filter((k) => (aclKindCounts[k] ?? 0) > 0).map((k) => (
+                                <Button
+                                  key={k}
+                                  type="button"
+                                  size="sm"
+                                  variant={aclKindFilter === k ? "default" : "outline"}
+                                  className="h-7 text-xs"
+                                  onClick={() => setAclKindFilter(k)}
+                                >
+                                  {ACL_KIND_LABEL[k]} ({aclKindCounts[k]})
+                                </Button>
+                              ))}
+                            </div>
                           </div>
                         )}
                         {aclRows.length > 0 ? (

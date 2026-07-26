@@ -151,6 +151,7 @@ export function NetworkDetailClient({
   const [editingField, setEditingField] = useState<"custom_name" | "notes" | "classification" | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [classifyOpen, setClassifyOpen] = useState(false);
+  const [classifyingSubnet, setClassifyingSubnet] = useState(false);
   const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
   const [selectedHostIds, setSelectedHostIds] = useState<Set<number>>(new Set());
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
@@ -307,6 +308,33 @@ export function NetworkDetailClient({
       }
     } catch { /* ignore */ }
   }, [network.id]);
+
+  /** Motore evidence/scoring su tutti gli host della subnet (POST /refresh). */
+  const classifySubnet = useCallback(async () => {
+    if (classifyingSubnet) return;
+    setClassifyingSubnet(true);
+    try {
+      const res = await fetch(`/api/networks/${network.id}/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error((data as { error?: string }).error || "Errore classificazione subnet");
+        return;
+      }
+      toast.success(
+        (data as { message?: string }).message || "Classificazione subnet completata",
+      );
+      await refreshHosts();
+      router.refresh();
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setClassifyingSubnet(false);
+    }
+  }, [classifyingSubnet, network.id, refreshHosts, router]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -1099,30 +1127,35 @@ export function NetworkDetailClient({
             </div>
 
             {/* ─── CLASSIFICAZIONE ──────────────────────────────────── */}
-            <div className="rounded-lg border border-dashed border-border bg-muted/25 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,12rem)] flex-1 sm:flex-none flex flex-col">
+            <div className="rounded-lg border border-dashed border-border bg-muted/25 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none flex flex-col">
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide leading-tight mb-1.5">
                 Classificazione
               </p>
-              <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5 items-center mt-auto">
+              <div className="flex flex-col gap-1.5 mt-auto">
+                <Button
+                  size="default"
+                  variant="default"
+                  className={cn(ACTION_BTN, "w-full")}
+                  onClick={() => void classifySubnet()}
+                  disabled={!!scanning || enriching || classifyingSubnet}
+                  title="Esegue il motore evidence/scoring su tutti gli host della subnet (reason + confidence + evidence)"
+                >
+                  {classifyingSubnet ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
+                  ) : (
+                    <Tags className="h-3.5 w-3.5 mr-1 shrink-0" />
+                  )}
+                  Classifica subnet
+                </Button>
                 <Button
                   size="default"
                   variant="secondary"
-                  className={ACTION_BTN}
+                  className={cn(ACTION_BTN, "w-full")}
                   onClick={() => setClassifyOpen(true)}
-                  disabled={!!scanning || enriching}
-                  title="Analizza proposte: mostra anteprima delle riclassificazioni e applica solo quelle scelte"
+                  disabled={!!scanning || enriching || classifyingSubnet}
+                  title="Anteprima: mostra solo gli host dove lo slug cambierebbe, poi applica i selezionati"
                 >
-                  <Tags className="h-3.5 w-3.5 mr-1" />
-                  Analizza proposte
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 shrink-0"
-                  onClick={() => refreshHosts()}
-                  title="Aggiorna elenco"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
+                  Anteprima proposte
                 </Button>
               </div>
             </div>

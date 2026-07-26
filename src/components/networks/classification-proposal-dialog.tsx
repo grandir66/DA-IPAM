@@ -122,8 +122,14 @@ export function ClassificationProposalDialog({ open, onOpenChange, networkId, on
               Calcolo proposte…
             </div>
           ) : proposals.length === 0 ? (
-            <div className="py-12 text-center text-muted-foreground text-sm">
-              Nessuna proposta: tutte le classificazioni risultano coerenti con regole e fingerprint correnti.
+            <div className="py-12 text-center text-muted-foreground text-sm space-y-2">
+              <p>
+                Nessuna proposta di cambio slug: le classificazioni sono già coerenti con regole e fingerprint.
+              </p>
+              <p className="text-xs">
+                Per aggiornare reason/evidence su tutta la rete usa il pulsante{" "}
+                <span className="font-medium text-foreground">Classifica subnet</span> nella toolbar.
+              </p>
             </div>
           ) : (
             <>

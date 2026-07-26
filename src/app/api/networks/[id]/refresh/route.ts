@@ -23,8 +23,9 @@ type ClassificationProposal = {
 
 /**
  * POST /api/networks/[id]/refresh
- * - Default: applica subito classificazioni/DNS/vendor.
- * - { dryRun: true }: ritorna { proposals: [...] } senza scrivere.
+ * - Default ("Classifica subnet"): engine evidence/scoring su tutti gli host
+ *   (+ DNS/vendor), anche se lo slug non cambia.
+ * - { dryRun: true }: ritorna { proposals: [...] } senza scrivere (solo cambio slug).
  * - { force: true }: sovrascrive anche le classificazioni manuali.
  * - { forceDns: true }: ri-risolve DNS anche se già archiviato.
  */
@@ -108,92 +109,98 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         }
       }
 
-      // 3. Classificazione
+      // 3. Classificazione / evidence engine
+      // dryRun → anteprima proposte; altrimenti engine su tutti gli host
+      // (manuali: aggiorna evidence senza toccare lo slug).
       const classificationManual = (host as unknown as Record<string, unknown>).classification_manual === 1;
-      if (!classificationManual || forceReclassify || dryRun) {
-        let openPorts: Array<{ port: number; protocol?: string; service?: string | null; version?: string | null }> | null = null;
-        if (host.open_ports) {
-          try { openPorts = JSON.parse(host.open_ports); } catch { /* ignore */ }
+      let openPorts: Array<{ port: number; protocol?: string; service?: string | null; version?: string | null }> | null = null;
+      if (host.open_ports) {
+        try { openPorts = JSON.parse(host.open_ports); } catch { /* ignore */ }
+      }
+
+      const effectiveVendor = values[values.length - 1] === host.vendor
+        ? host.vendor
+        : (changes.includes("vendor") ? values[fields.indexOf("vendor = ?")]  as string : host.vendor);
+
+      const fpSnap = parseJsonSafe<DeviceFingerprintSnapshot | null>(host.detection_json, null);
+      const fromFingerprint = fpSnap ? getClassificationFromFingerprintSnapshot(fpSnap, fpUserRules) : undefined;
+      const rulesDetailed = classifyDeviceDetailed({
+        sysDescr: fpSnap?.snmp_sysdescr ?? host.os_info ?? null,
+        sysObjectID: fpSnap?.snmp_vendor_oid ?? null,
+        osInfo: host.os_info ?? null,
+        openPorts,
+        hostname: host.hostname ?? null,
+        vendor: effectiveVendor ?? null,
+      });
+      const fromRules = rulesDetailed.classification;
+      const newClassification = fromFingerprint ?? fromRules;
+      // Real DetectionMethod so SNMP oid/text get votes_for; fingerprint → "fingerprint".
+      const cascadeMethod = fromFingerprint
+        ? "fingerprint"
+        : rulesDetailed.method !== "none"
+          ? rulesDetailed.method
+          : "rules";
+
+      // Bug fix audit 2026-05-26 (A3): custom child più specifica del parent built-in.
+      const currentCustom = host.classification ? getCustomClassificationBySlug(host.classification) : undefined;
+      const currentIsCustomChildOfNew = currentCustom?.parent_slug === newClassification;
+
+      if (dryRun) {
+        if (
+          newClassification &&
+          newClassification !== host.classification &&
+          !currentIsCustomChildOfNew
+        ) {
+          proposals.push({
+            host_id: host.id,
+            ip: host.ip,
+            hostname: host.hostname ?? null,
+            current: host.classification ?? null,
+            proposed: newClassification,
+            reason: fromFingerprint ? "fingerprint" : "regole",
+            manual: classificationManual,
+          });
         }
-
-        const effectiveVendor = values[values.length - 1] === host.vendor
-          ? host.vendor
-          : (changes.includes("vendor") ? values[fields.indexOf("vendor = ?")]  as string : host.vendor);
-
-        const fpSnap = parseJsonSafe<DeviceFingerprintSnapshot | null>(host.detection_json, null);
-        const fromFingerprint = fpSnap ? getClassificationFromFingerprintSnapshot(fpSnap, fpUserRules) : undefined;
-        const rulesDetailed = classifyDeviceDetailed({
-          sysDescr: fpSnap?.snmp_sysdescr ?? host.os_info ?? null,
-          sysObjectID: fpSnap?.snmp_vendor_oid ?? null,
-          osInfo: host.os_info ?? null,
-          openPorts,
-          hostname: host.hostname ?? null,
+      } else if (!(currentIsCustomChildOfNew && !forceReclassify)) {
+        // Classifica subnet: engine sempre (anche se lo slug non cambia) → evidence/reason.
+        const cascadeSlug = newClassification ?? host.classification ?? null;
+        const { decision, touchedClassification } = await runClassificationEngineForHost({
+          db,
+          hostId: host.id,
+          ip: host.ip,
+          hostname: host.hostname,
           vendor: effectiveVendor ?? null,
+          os_info: host.os_info,
+          open_ports: openPorts,
+          detection: fpSnap,
+          snmp_sysdescr: fpSnap?.snmp_sysdescr ?? null,
+          snmp_sysobjectid: fpSnap?.snmp_vendor_oid ?? null,
+          cascade_slug: cascadeSlug,
+          cascade_method: cascadeMethod,
+          classification_manual: classificationManual,
+          previous_classification: host.classification,
+          previous_confidence: (host as { inferred_confidence?: number | null }).inferred_confidence ?? 0,
+          trigger: "apply",
+          force: forceReclassify,
         });
-        const fromRules = rulesDetailed.classification;
-        const newClassification = fromFingerprint ?? fromRules;
-        // Real DetectionMethod so SNMP oid/text get votes_for; fingerprint → "fingerprint".
-        const cascadeMethod = fromFingerprint
-          ? "fingerprint"
-          : rulesDetailed.method !== "none"
-            ? rulesDetailed.method
-            : "rules";
-
-        // Bug fix audit 2026-05-26 (A3): se la classification corrente è una
-        // custom child del newClassification (es. host.classification="server_postgres"
-        // con parent_slug="server" e classifier propone "server"), NON sovrascrivere:
-        // la custom è più specifica del parent built-in. Altrimenti force=true
-        // distrugge silenziosamente le sotto-categorie utente.
-        const currentCustom = host.classification ? getCustomClassificationBySlug(host.classification) : undefined;
-        const currentIsCustomChildOfNew = currentCustom?.parent_slug === newClassification;
-
-        if (newClassification && newClassification !== host.classification && !currentIsCustomChildOfNew) {
-          if (dryRun) {
-            proposals.push({
-              host_id: host.id,
-              ip: host.ip,
-              hostname: host.hostname ?? null,
-              current: host.classification ?? null,
-              proposed: newClassification,
-              reason: fromFingerprint ? "fingerprint" : "regole",
-              manual: classificationManual,
-            });
-          } else {
-            const { decision, touchedClassification } = await runClassificationEngineForHost({
-              db,
-              hostId: host.id,
-              ip: host.ip,
-              hostname: host.hostname,
-              vendor: effectiveVendor ?? null,
-              os_info: host.os_info,
-              open_ports: openPorts,
-              detection: fpSnap,
-              snmp_sysdescr: fpSnap?.snmp_sysdescr ?? null,
-              snmp_sysobjectid: fpSnap?.snmp_vendor_oid ?? null,
-              cascade_slug: newClassification,
-              cascade_method: cascadeMethod,
-              classification_manual: classificationManual,
-              previous_classification: host.classification,
-              previous_confidence: (host as { inferred_confidence?: number | null }).inferred_confidence ?? 0,
-              trigger: "apply",
-              force: forceReclassify,
-            });
-            if (touchedClassification) {
-              changes.push(`classification: ${host.classification} → ${decision.classification}`);
-              reclassified++;
-            }
-          }
+        if (touchedClassification) {
+          changes.push(`classification: ${host.classification} → ${decision.classification}`);
+          reclassified++;
+        } else {
+          changes.push("classification_evidence");
         }
       }
 
       // Applica update se ci sono cambiamenti e non siamo in dry-run
-      // (classification è gestita dall'engine sopra; qui restano vendor/DNS/hostname)
+      // (classification/evidence sono gestite dall'engine sopra; qui restano vendor/DNS/hostname)
       if (!dryRun && values.length > 0) {
         values.push(host.id);
         db.prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`).run(...values);
         updated++;
-      } else if (!dryRun && changes.some((c) => c.startsWith("classification:"))) {
-        // Solo riclassificazione via engine (nessun altro field UPDATE)
+      } else if (
+        !dryRun &&
+        changes.some((c) => c.startsWith("classification:") || c === "classification_evidence")
+      ) {
         updated++;
       }
     }
@@ -213,7 +220,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       reclassified,
       dns_updated: dnsUpdated,
       vendor_updated: vendorUpdated,
-      message: `Aggiornati ${updated}/${hosts.length} host: ${reclassified} riclassificati, ${dnsUpdated} DNS aggiornati, ${vendorUpdated} vendor aggiornati`,
+      message:
+        `Classificazione subnet: ${updated}/${hosts.length} host aggiornati` +
+        ` (${reclassified} slug cambiati, ${dnsUpdated} DNS, ${vendorUpdated} vendor).` +
+        ` Apri un host per vedere reason ed evidence.`,
     });
   } catch (error) {
     console.error("Network refresh error:", error);

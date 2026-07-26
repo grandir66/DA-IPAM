@@ -1,6 +1,13 @@
 # Attribution v2 — Fase 0 (quick-fix) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Per l'agente che implementa (Cursor, Codex, Claude Code):** esegui il piano **un task per volta**,
+> nell'ordine dato. Ogni task ha il suo ciclo test → implementazione → verifica → commit: non
+> accorpare i commit e non saltare gli step di verifica. Spunta le checkbox (`- [ ]`) man mano.
+> Vincoli di progetto non negoziabili: [AGENTS.md](../../../AGENTS.md). Design di riferimento:
+> [spec Attribution v2](../specs/2026-07-26-attribution-v2-design.md).
+>
+> **Regola sui test preesistenti:** se un test storico cambia esito, NON abbassare soglie o
+> asserzioni per farlo passare — aggiorna il valore atteso e spiega il motivo nel commit.
 
 **Goal:** Sbloccare l'attribuzione già oggi — senza nuova architettura — correggendo le tre cause che rendono `classification` inutilizzabile: le categorie legacy di `sysobj_lookup`, le evidenze che non votano, e l'assenza di `access_point` tra i tipi di device.
 

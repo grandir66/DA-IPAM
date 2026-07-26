@@ -791,8 +791,9 @@ export function NetworkDetailClient({
       scanType === "scan_nmap_base" ||
       scanType === "scan_snmp_verify" ||
       scanType === "scan_naabu" ||
-      // Fase "Credenziali" del pannello Acquisizione (§6.2): subnet-wide, il
-      // backend risolve tutti gli host della rete quando host_ids è assente.
+      // Fase "Credenziali" (§6.2): mai bloccare per selezione assente (network-wide
+      // di default) — se l'utente HA selezionato host, lo scoping vero avviene sotto
+      // in body.host_ids (mitigazione lockout AD), non qui.
       scanType === "credential_validate";
     if (!noHostSelectionNeeded && selectedHostIds.size === 0) {
       toast.error("Seleziona uno o più host nella vista lista (azioni manuali solo sugli IP selezionati)");
@@ -802,7 +803,10 @@ export function NetworkDetailClient({
       network_id: network.id,
       scan_type: scanType,
     };
-    if (!noHostSelectionNeeded && selectedHostIds.size > 0) {
+    if (scanType === "credential_validate") {
+      // A differenza delle altre fasi subnet-wide: se c'è una selezione attiva la rispetta comunque (scoping = mitigazione lockout AD, discovery.ts:2141-2144); senza selezione resta network-wide.
+      if (selectedHostIds.size > 0) body.host_ids = Array.from(selectedHostIds);
+    } else if (!noHostSelectionNeeded && selectedHostIds.size > 0) {
       body.host_ids = Array.from(selectedHostIds);
     }
 
@@ -1221,7 +1225,9 @@ export function NetworkDetailClient({
                       title={
                         networkCredentialIds.length === 0
                           ? "Configura credenziali nella modifica rete"
-                          : "Valida le credenziali della rete su tutti gli host"
+                          : selectedHostIds.size > 0
+                            ? `Valida le credenziali sugli ${selectedHostIds.size} host selezionati`
+                            : "Valida le credenziali della rete su tutti gli host"
                       }
                     >
                       <Key className="h-3.5 w-3.5 mr-1 shrink-0" />

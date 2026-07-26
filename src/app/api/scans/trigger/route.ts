@@ -38,10 +38,11 @@ export async function POST(request: Request) {
       }
 
       // credential_validate: la fase "Credenziali" del pannello Acquisizione (§6.2, fase 3b)
-      // è subnet-wide — senza host_ids selezionati manualmente opera su TUTTI gli host già
-      // noti della rete (stessa shape targetIps della selezione manuale, popolata da tutta la
-      // rete invece che dalla selezione). Le altre MANUAL_SCAN_TYPES (pannello Detect) restano
-      // vincolate a host_ids esplicito: comportamento invariato quando host_ids è presente.
+      // ha due modalità reali dal client — con host_ids (selezione attiva in lista: scoping,
+      // mitigazione lockout AD) segue il path standard sopra; senza host_ids (nessuna
+      // selezione) è network-wide e risolve qui sotto TUTTI gli host già noti della rete.
+      // Le altre MANUAL_SCAN_TYPES (pannello Detect: nmap/snmp/windows/ssh/dns/ipam_full)
+      // restano vincolate a host_ids esplicito, sempre.
       const isNetworkWideCredentialValidate =
         parsed.data.scan_type === "credential_validate" && !parsed.data.host_ids?.length;
       if (isNetworkWideCredentialValidate) {

@@ -1,4 +1,5 @@
 import type { DeviceFingerprintSnapshot } from "@/types";
+import { classifyDeviceDetailed } from "@/lib/device-classifier";
 import type { ClassificationEvidence, EvidenceSource } from "./types";
 import { SOURCE_WEIGHTS } from "./weights";
 
@@ -86,6 +87,31 @@ function cascadeVotes(
 }
 
 /**
+ * Voto derivato da UN SINGOLO segnale.
+ *
+ * Riusa le regole di `device-classifier.ts` (hostname/vendor/port/text) passando
+ * un solo campo per volta: così l'evidenza vota esattamente ciò che quel segnale
+ * implica, senza duplicare le tabelle di regole e senza che un segnale forte
+ * "trascini" gli altri. Ritorna undefined quando il segnale non è discriminante
+ * (es. vendor Ubiquiti, che produce AP, switch e gateway).
+ */
+function singleSignalVote(
+  signal:
+    | { hostname: string }
+    | { vendor: string }
+    | { osInfo: string }
+    | { openPorts: number[] },
+): string | undefined {
+  if ("openPorts" in signal) {
+    return (
+      classifyDeviceDetailed({ openPorts: signal.openPorts.map((port) => ({ port })) })
+        .classification ?? undefined
+    );
+  }
+  return classifyDeviceDetailed(signal).classification ?? undefined;
+}
+
+/**
  * Normalizza segnali multi-sorgente in `ClassificationEvidence[]` (Fase B facade).
  */
 export function normalizeToEvidence(
@@ -120,21 +146,25 @@ export function normalizeToEvidence(
   }
 
   if (input.hostname?.trim()) {
+    const hostname = input.hostname.trim();
     out.push(
-      evidence("dns", "hostname", input.hostname.trim(), {
+      evidence("dns", "hostname", hostname, {
         timestamp: ts,
         confidence: 0.6,
         observed: true,
+        votes_for: singleSignalVote({ hostname }),
       })
     );
   }
 
   if (input.vendor?.trim()) {
+    const vendor = input.vendor.trim();
     out.push(
-      evidence("mac_oui", "vendor", input.vendor.trim(), {
+      evidence("mac_oui", "vendor", vendor, {
         timestamp: ts,
         confidence: 0.7,
         observed: true,
+        votes_for: singleSignalVote({ vendor }),
       })
     );
   }
@@ -145,6 +175,7 @@ export function normalizeToEvidence(
         timestamp: ts,
         confidence: 0.8,
         observed: true,
+        votes_for: singleSignalVote({ openPorts: input.naabu_ports }),
       })
     );
   }
@@ -164,11 +195,13 @@ export function normalizeToEvidence(
   }
 
   if (snap?.banner_ssh?.trim()) {
+    const bannerSsh = snap.banner_ssh.trim();
     out.push(
-      evidence("ssh", "banner", snap.banner_ssh.trim(), {
+      evidence("ssh", "banner", bannerSsh, {
         timestamp: ts,
         confidence: 0.55,
         observed: true,
+        votes_for: singleSignalVote({ osInfo: bannerSsh }),
       })
     );
   }

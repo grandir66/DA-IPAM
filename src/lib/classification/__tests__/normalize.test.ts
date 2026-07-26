@@ -14,6 +14,7 @@ import {
 } from "../types";
 import { SOURCE_WEIGHTS } from "../weights";
 import { normalizeToEvidence } from "../normalize";
+import { decideClassification } from "../engine";
 
 test("ENGINE_VERSION e costanti policy", () => {
   assert.equal(ENGINE_VERSION, "0.1.0");
@@ -94,4 +95,79 @@ test("HTTP banner ESXi votes hypervisor; nmap linux votes server_linux", () => {
   assert.ok(ev.some((e) => e.source === "http" && e.votes_for === "hypervisor"));
   assert.ok(ev.some((e) => e.source === "nmap" && e.attribute === "os_guess"));
   assert.ok(ev.some((e) => e.source === "naabu" && e.attribute === "tcp_ports"));
+});
+
+test("hostname, vendor e porte votano: stampante supera la soglia senza SNMP", () => {
+  const evidence = normalizeToEvidence({
+    ip: "192.0.2.50",
+    hostname: "printer-hp1",
+    vendor: "Brother Industries, Ltd.",
+    os_info: null,
+    open_ports: [],
+    snmp_sysdescr: null,
+    snmp_sysobjectid: null,
+    detection: null,
+    naabu_ports: [9100],
+  });
+
+  const dns = evidence.find((e) => e.source === "dns");
+  const oui = evidence.find((e) => e.source === "mac_oui");
+  const ports = evidence.find((e) => e.source === "naabu");
+  assert.equal(dns?.votes_for, "stampante");
+  assert.equal(oui?.votes_for, "stampante");
+  assert.equal(ports?.votes_for, "stampante");
+
+  // 0.35*0.6 + 0.4*0.7 + 0.2*0.8 = 0.65 → 65 ≥ MIN_APPLY_CONFIDENCE (56)
+  const decision = decideClassification(evidence);
+  assert.equal(decision.classification, "stampante");
+  assert.ok(decision.confidence >= 56, `confidence attesa ≥56, ottenuta ${decision.confidence}`);
+});
+
+test("banner SSH RouterOS vota router", () => {
+  const evidence = normalizeToEvidence({
+    ip: "192.0.2.51",
+    hostname: null,
+    vendor: null,
+    os_info: null,
+    open_ports: [],
+    snmp_sysdescr: null,
+    snmp_sysobjectid: null,
+    detection: {
+      ip: "192.0.2.51",
+      open_ports: [22],
+      matches: [],
+      banner_ssh: "SSH-2.0-ROSSSH MikroTik RouterOS 7.14",
+      detection_sources: ["banner_ssh"],
+      generated_at: "2026-07-26T00:00:00Z",
+    },
+  });
+  assert.equal(evidence.find((e) => e.source === "ssh")?.votes_for, "router");
+});
+
+test("vendor ambiguo non vota (Ubiquiti fa AP, switch e gateway)", () => {
+  const evidence = normalizeToEvidence({
+    ip: "192.0.2.52",
+    hostname: null,
+    vendor: "Ubiquiti Inc",
+    os_info: null,
+    open_ports: [],
+    snmp_sysdescr: null,
+    snmp_sysobjectid: null,
+    detection: null,
+  });
+  assert.equal(evidence.find((e) => e.source === "mac_oui")?.votes_for, undefined);
+});
+
+test("hostname senza pattern noto non vota", () => {
+  const evidence = normalizeToEvidence({
+    ip: "192.0.2.53",
+    hostname: "pc-di-mario",
+    vendor: null,
+    os_info: null,
+    open_ports: [],
+    snmp_sysdescr: null,
+    snmp_sysobjectid: null,
+    detection: null,
+  });
+  assert.equal(evidence.find((e) => e.source === "dns")?.votes_for, undefined);
 });

@@ -30,6 +30,7 @@ import {
   FINGERPRINT_CLASSIFICATION_MIN_CONFIDENCE,
 } from "@/lib/device-fingerprint-classification";
 import { runClassificationEngineForHost } from "@/lib/classification/run";
+import { mapSysObjCategory } from "@/lib/attribution/sysobj-category";
 import { parseJsonSafe } from "@/lib/json-safe";
 import {
   getNetworkById,
@@ -2562,9 +2563,11 @@ async function runDiscovery(
       ? (firstOidMatch.classification as DC)
       : undefined;
 
-    // sysObjectID lookup (dalla tabella snmp-sysobj-lookup.ts): alta affidabilità, match esatto su OID standard
+    // sysObjectID lookup (dalla tabella snmp-sysobj-lookup.ts): alta affidabilità, match esatto su OID standard.
+    // La category della lookup è storicamente libera ("networking"/"wireless"): mapSysObjCategory la
+    // normalizza a uno slug valido e ritorna undefined se il prodotto è ambiguo, così la cascade prosegue.
     const classFromSysObj: DC | undefined = nmapData?.sysObjMatch
-      ? (nmapData.sysObjMatch.category as DC)
+      ? mapSysObjCategory(nmapData.sysObjMatch)
       : undefined;
 
     const classification = (

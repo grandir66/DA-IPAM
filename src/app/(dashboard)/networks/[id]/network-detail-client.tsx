@@ -809,6 +809,26 @@ export function NetworkDetailClient({
     await runScanJob(scanType);
   }
 
+  /**
+   * Scan completo (ICMP → Nmap base → SNMP → Enrich, con profilo/naabu/community
+   * della rete) e poi classificazione evidence su tutti gli host.
+   * Diverso da "Classifica subnet", che riusa solo dati già in IPAM.
+   */
+  async function scanAndClassifySubnet() {
+    if (classifyingSubnet || !!scanning || enriching) return;
+    toast.message("Scan completo in corso, poi classificazione…");
+    const { ok } = await runScanJob("scan_full", {
+      showStartToast: true,
+      refreshOnComplete: true,
+    });
+    setScanning(null);
+    if (!ok) {
+      toast.error("Scan non completato — classificazione non avviata");
+      return;
+    }
+    await classifySubnet();
+  }
+
   // scan_enrich non passa per discoverNetwork: chiama l'endpoint dedicato che
   // esegue ARP + DHCP + DNS + AD relink. Con fresh_sync=true esegue prima un
   // sync LDAP fresco (più lento, ma utile se la cache AD è obsoleta).
@@ -1136,27 +1156,42 @@ export function NetworkDetailClient({
                   size="default"
                   variant="default"
                   className={cn(ACTION_BTN, "w-full")}
-                  onClick={() => void classifySubnet()}
+                  onClick={() => void scanAndClassifySubnet()}
                   disabled={!!scanning || enriching || classifyingSubnet}
-                  title="Ricalcola classificazione da dati già noti (porte, SNMP, fingerprint, banner). Non rilancia Nmap/SNMP — usa prima i pulsanti Scan se servono dati freschi."
+                  title="Scan completo (ICMP → Nmap → SNMP → Enrich con impostazioni rete/profilo) e poi motore evidence/scoring. Più lento: confronto completo con dati freschi."
                 >
-                  {classifyingSubnet ? (
+                  {(scanning || classifyingSubnet) ? (
                     <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
                   ) : (
-                    <Tags className="h-3.5 w-3.5 mr-1 shrink-0" />
+                    <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
                   )}
-                  Classifica subnet
+                  Scan + classifica
                 </Button>
-                <p className="text-[10px] text-muted-foreground leading-snug px-0.5">
-                  Solo dati già in IPAM — non riesegue Nmap/SNMP
-                </p>
                 <Button
                   size="default"
                   variant="secondary"
                   className={cn(ACTION_BTN, "w-full")}
+                  onClick={() => void classifySubnet()}
+                  disabled={!!scanning || enriching || classifyingSubnet}
+                  title="Ricalcola classificazione da dati già noti (porte, SNMP, fingerprint, banner). Non rilancia Nmap/SNMP."
+                >
+                  {classifyingSubnet && !scanning ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
+                  ) : (
+                    <Tags className="h-3.5 w-3.5 mr-1 shrink-0" />
+                  )}
+                  Solo classifica
+                </Button>
+                <p className="text-[10px] text-muted-foreground leading-snug px-0.5">
+                  Scan+classifica = dati freschi · Solo classifica = archivio IPAM
+                </p>
+                <Button
+                  size="default"
+                  variant="outline"
+                  className={cn(ACTION_BTN, "w-full")}
                   onClick={() => setClassifyOpen(true)}
                   disabled={!!scanning || enriching || classifyingSubnet}
-                  title="Anteprima: mostra solo gli host dove lo slug cambierebbe, poi applica i selezionati (sempre su dati già noti)"
+                  title="Anteprima: mostra solo gli host dove lo slug cambierebbe, poi applica i selezionati"
                 >
                   Anteprima proposte
                 </Button>

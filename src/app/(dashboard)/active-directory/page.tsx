@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -49,6 +49,12 @@ import {
   type AclRiskBucketId,
   type AclRiskSeverity,
 } from "@/lib/ad/health/acl/risk-summary";
+import {
+  actionableFindings,
+  countBySeverity,
+  getRuleGuide,
+  groupFindingsForUi,
+} from "@/lib/ad/health/rule-catalog";
 import type {
   HealthFinding,
   HealthScore,
@@ -637,8 +643,25 @@ export default function ActiveDirectoryPage() {
       : aclRisk.buckets.filter((b) => b.id === aclFocusBucket)
     : [];
 
+  const findingGroups = useMemo(
+    () => groupFindingsForUi(actionableFindings(healthFindings)),
+    [healthFindings],
+  );
+  const findingSeverityCounts = useMemo(
+    () => countBySeverity(healthFindings),
+    [healthFindings],
+  );
+
   const severityBadgeClass = (sev: HealthSeverity | string) =>
     SEVERITY_STYLE[sev] ?? "bg-muted text-foreground";
+
+  const severityLabelIt = (sev: string) => {
+    if (sev === "Critical") return "Critico";
+    if (sev === "High") return "Alto";
+    if (sev === "Medium") return "Medio";
+    if (sev === "Low") return "Basso";
+    return sev;
+  };
 
   const groupTypeLabel = (gt: number | null) => {
     if (gt === null) return "—";
@@ -1500,85 +1523,143 @@ export default function ActiveDirectoryPage() {
                     </Card>
                   )}
 
-                  {!healthLoading && healthFindings.length > 0 && (
-                    <div className="border rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/50">
-                          <tr>
-                            <th className="p-3 text-left font-medium w-8" />
-                            <th className="p-3 text-left font-medium">Rule</th>
-                            <th className="p-3 text-left font-medium">Severity</th>
-                            <th className="p-3 text-left font-medium">Titolo</th>
-                            <th className="p-3 text-left font-medium">Oggetti</th>
-                            <th className="p-3 text-left font-medium">Asse</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {healthFindings.map((f) => {
-                            const open = expandedFinding === f.ruleId;
-                            return (
-                              <Fragment key={f.ruleId}>
-                                <tr
-                                  className="border-t hover:bg-muted/30 cursor-pointer"
-                                  onClick={() =>
-                                    setExpandedFinding(open ? null : f.ruleId)
-                                  }
-                                >
-                                  <td className="p-3 text-muted-foreground">
-                                    {open ? (
-                                      <ChevronDown className="w-4 h-4" />
-                                    ) : (
-                                      <ChevronRight className="w-4 h-4" />
-                                    )}
-                                  </td>
-                                  <td className="p-3 font-mono text-xs">{f.ruleId}</td>
-                                  <td className="p-3">
-                                    <Badge className={severityBadgeClass(f.severity)}>
-                                      {f.severity}
-                                    </Badge>
-                                  </td>
-                                  <td className="p-3 font-medium">{f.title}</td>
-                                  <td className="p-3">{f.objectCount}</td>
-                                  <td className="p-3">
-                                    <Badge variant="outline">{f.axis}</Badge>
-                                  </td>
-                                </tr>
-                                {open && (
-                                  <tr className="border-t bg-muted/20">
-                                    <td colSpan={6} className="p-3 space-y-2">
-                                      {f.description && (
-                                        <p className="text-sm text-muted-foreground">{f.description}</p>
-                                      )}
-                                      {f.sampleDns.length > 0 ? (
-                                        <div>
-                                          <p className="text-xs font-medium mb-1">
-                                            Sample ({f.sampleDns.length})
+                  {!healthLoading && findingGroups.length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <CardTitle className="text-base">Findings — cosa fare</CardTitle>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Problemi raggruppati per area, con spiegazione e azione consigliata.
+                              Espandi una riga per vedere gli oggetti coinvolti.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(["Critical", "High", "Medium", "Low"] as const).map((sev) => {
+                              const n = findingSeverityCounts[sev] ?? 0;
+                              if (n === 0) return null;
+                              return (
+                                <Badge key={sev} className={severityBadgeClass(sev)}>
+                                  {severityLabelIt(sev)}: {n}
+                                </Badge>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-5">
+                        {findingGroups.map((group) => (
+                          <div key={group.axis} className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-semibold">{group.label}</h3>
+                              <Badge variant="outline" className="text-[10px]">
+                                {group.findings.length}
+                              </Badge>
+                            </div>
+                            <div className="space-y-2">
+                              {group.findings.map((f) => {
+                                const open = expandedFinding === f.ruleId;
+                                const guide = getRuleGuide(f.ruleId);
+                                return (
+                                  <div
+                                    key={f.ruleId}
+                                    className="rounded-lg border bg-card overflow-hidden"
+                                  >
+                                    <button
+                                      type="button"
+                                      className="w-full text-left px-3 py-2.5 hover:bg-muted/40 transition-colors"
+                                      onClick={() =>
+                                        setExpandedFinding(open ? null : f.ruleId)
+                                      }
+                                    >
+                                      <div className="flex items-start gap-2">
+                                        <span className="text-muted-foreground mt-0.5 shrink-0">
+                                          {open ? (
+                                            <ChevronDown className="w-4 h-4" />
+                                          ) : (
+                                            <ChevronRight className="w-4 h-4" />
+                                          )}
+                                        </span>
+                                        <div className="min-w-0 flex-1 space-y-1">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <span className="font-medium text-sm">
+                                              {guide.titleIt}
+                                            </span>
+                                            <Badge className={severityBadgeClass(f.severity)}>
+                                              {severityLabelIt(f.severity)}
+                                            </Badge>
+                                            {f.objectCount > 0 && (
+                                              <span className="text-xs text-muted-foreground">
+                                                {f.objectCount} oggett{f.objectCount === 1 ? "o" : "i"}
+                                              </span>
+                                            )}
+                                            <span className="text-[10px] font-mono text-muted-foreground">
+                                              {f.ruleId}
+                                            </span>
+                                          </div>
+                                          <p className="text-xs text-muted-foreground leading-snug">
+                                            <span className="font-medium text-foreground/80">Perché: </span>
+                                            {guide.why}
                                           </p>
-                                          <ul className="text-xs font-mono space-y-0.5 max-h-48 overflow-y-auto">
-                                            {f.sampleDns.map((dn) => (
-                                              <li key={dn} className="truncate" title={dn}>
-                                                {dn}
-                                              </li>
-                                            ))}
-                                          </ul>
+                                          <p className="text-xs leading-snug">
+                                            <span className="font-medium text-foreground/80">Cosa fare: </span>
+                                            {guide.fix}
+                                          </p>
                                         </div>
-                                      ) : (
-                                        <p className="text-xs text-muted-foreground">Nessun sample DN</p>
-                                      )}
-                                    </td>
-                                  </tr>
-                                )}
-                              </Fragment>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                      </div>
+                                    </button>
+                                    {open && (
+                                      <div className="border-t bg-muted/20 px-3 py-2.5 space-y-2">
+                                        {f.description && (
+                                          <p className="text-xs text-muted-foreground">
+                                            <span className="font-medium text-foreground/80">Dettaglio engine: </span>
+                                            {f.description}
+                                          </p>
+                                        )}
+                                        {f.sampleDns.length > 0 ? (
+                                          <div>
+                                            <p className="text-xs font-medium mb-1">
+                                              Oggetti coinvolti ({f.sampleDns.length}
+                                              {f.objectCount > f.sampleDns.length
+                                                ? ` di ${f.objectCount}`
+                                                : ""}
+                                              )
+                                            </p>
+                                            <ul className="text-xs space-y-0.5 max-h-48 overflow-y-auto">
+                                              {f.sampleDns.map((dn) => (
+                                                <li
+                                                  key={dn}
+                                                  className="truncate"
+                                                  title={dn}
+                                                >
+                                                  <span className="font-medium">{shortDnName(dn)}</span>
+                                                  <span className="ml-2 font-mono text-muted-foreground">
+                                                    {dn}
+                                                  </span>
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        ) : (
+                                          <p className="text-xs text-muted-foreground">
+                                            Nessun oggetto in sample (finding a livello dominio/config).
+                                          </p>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
                   )}
 
-                  {!healthLoading && healthScore && healthFindings.length === 0 && (
+                  {!healthLoading && healthScore && actionableFindings(healthFindings).length === 0 && (
                     <p className="text-sm text-muted-foreground text-center py-4">
-                      Nessun finding per questo run.
+                      Nessun finding operativo per questo run.
                     </p>
                   )}
 
@@ -1760,21 +1841,56 @@ export default function ActiveDirectoryPage() {
                               </p>
                             )}
                             {winrmProbe.hardening && winrmProbe.status === "ok" && (
-                              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-muted-foreground pt-1">
-                                <span>LDAP sign: {winrmProbe.hardening.ldapServerIntegrity ?? "—"}</span>
-                                <span>Channel bind: {winrmProbe.hardening.ldapEnforceChannelBinding ?? "—"}</span>
-                                <span>SMB sign: {winrmProbe.hardening.smbRequireSecuritySignature ?? "—"}</span>
-                                <span>LmCompat: {winrmProbe.hardening.lmCompatibilityLevel ?? "—"}</span>
-                                <span>WDigest: {winrmProbe.hardening.wdigestUseLogonCredential ?? "—"}</span>
-                                <span>
-                                  Spooler:{" "}
+                              <ul className="text-xs text-muted-foreground pt-1 space-y-0.5">
+                                <li>
+                                  LDAP signing:{" "}
+                                  {winrmProbe.hardening.ldapServerIntegrity == null
+                                    ? "—"
+                                    : winrmProbe.hardening.ldapServerIntegrity >= 2
+                                      ? `obbligatorio (${winrmProbe.hardening.ldapServerIntegrity})`
+                                      : `non obbligatorio (${winrmProbe.hardening.ldapServerIntegrity})`}
+                                </li>
+                                <li>
+                                  Channel binding:{" "}
+                                  {winrmProbe.hardening.ldapEnforceChannelBinding == null
+                                    ? "—"
+                                    : winrmProbe.hardening.ldapEnforceChannelBinding === 0
+                                      ? "disattivato (0)"
+                                      : `attivo (${winrmProbe.hardening.ldapEnforceChannelBinding})`}
+                                </li>
+                                <li>
+                                  SMB signing richiesto:{" "}
+                                  {winrmProbe.hardening.smbRequireSecuritySignature == null
+                                    ? "—"
+                                    : winrmProbe.hardening.smbRequireSecuritySignature === 0
+                                      ? "no"
+                                      : "sì"}
+                                </li>
+                                <li>
+                                  Compatibilità NTLM (LmCompat):{" "}
+                                  {winrmProbe.hardening.lmCompatibilityLevel ?? "—"}
+                                  {winrmProbe.hardening.lmCompatibilityLevel != null &&
+                                  winrmProbe.hardening.lmCompatibilityLevel < 3
+                                    ? " — consente NTLMv1"
+                                    : ""}
+                                </li>
+                                <li>
+                                  WDigest in memoria:{" "}
+                                  {winrmProbe.hardening.wdigestUseLogonCredential == null
+                                    ? "—"
+                                    : winrmProbe.hardening.wdigestUseLogonCredential === 1
+                                      ? "abilitato (rischio)"
+                                      : "disabilitato"}
+                                </li>
+                                <li>
+                                  Print Spooler:{" "}
                                   {winrmProbe.hardening.spoolerRunning == null
                                     ? "—"
                                     : winrmProbe.hardening.spoolerRunning
-                                      ? "Running"
-                                      : "Stopped"}
-                                </span>
-                              </div>
+                                      ? "in esecuzione"
+                                      : "fermo"}
+                                </li>
+                              </ul>
                             )}
                             {winrmProbe.cpasswordPaths && winrmProbe.cpasswordPaths.length > 0 && (
                               <p className="text-xs text-destructive font-medium">

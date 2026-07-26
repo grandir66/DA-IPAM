@@ -76,6 +76,22 @@ export async function GET(request: Request) {
       findings,
       privilegeMatrix: privilegeMatrixFromStatsJson(run.statsJson),
       acl: aclFromStatsJson(run.statsJson),
+      winrm: (() => {
+        try {
+          const parsed = run.statsJson ? JSON.parse(run.statsJson) : null;
+          return parsed?.winrm ?? null;
+        } catch {
+          return null;
+        }
+      })(),
+      phase5: (() => {
+        try {
+          const parsed = run.statsJson ? JSON.parse(run.statsJson) : null;
+          return parsed?.phase5 ?? null;
+        } catch {
+          return null;
+        }
+      })(),
     });
   });
 }

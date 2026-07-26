@@ -13,8 +13,8 @@ import {
   ldapTimestampToIso,
   parseUac,
 } from "@/lib/ad/ldap-utils";
-import { UAC } from "@/lib/ad/health/uac";
-import type { AdTrustRow } from "@/lib/ad/health/types";
+import { hasFlag, UAC } from "@/lib/ad/health/uac";
+import type { AdGpoRow, AdTrustRow } from "@/lib/ad/health/types";
 
 export interface LdapExtras {
   userUacBySam: Map<string, number>;
@@ -26,6 +26,8 @@ export interface LdapExtras {
   userAllowedToDelegateToBySam: Map<string, string[]>;
   computerUacBySam: Map<string, number>;
   computerIsDcBySam: Map<string, boolean>;
+  computerIsRodcBySam: Map<string, boolean>;
+  computerPwdLastSetBySam: Map<string, string | null>;
   computerAllowedToDelegateToBySam: Map<string, string[]>;
   computerAllowedToActOnBehalfOfBySam: Map<string, boolean>;
   computerLapsPasswordPresentBySam: Map<string, boolean | null>;
@@ -40,6 +42,10 @@ export interface LdapExtras {
   msDsBehaviorVersion: number | null;
   lapsSchemaPresent: boolean | null;
   integrationUseSsl: boolean;
+  gpos: AdGpoRow[];
+  siteCount: number | null;
+  subnetCount: number | null;
+  gmsaCount: number | null;
 }
 
 function parseIntAttr(val: unknown): number | null {
@@ -209,6 +215,8 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
 
     const computerUacBySam = new Map<string, number>();
     const computerIsDcBySam = new Map<string, boolean>();
+    const computerIsRodcBySam = new Map<string, boolean>();
+    const computerPwdLastSetBySam = new Map<string, string | null>();
     const computerAllowedToDelegateToBySam = new Map<string, string[]>();
     const computerAllowedToActOnBehalfOfBySam = new Map<string, boolean>();
     const computerLapsPasswordPresentBySam = new Map<string, boolean | null>();
@@ -224,6 +232,8 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
           "operatingSystem",
           "primaryGroupID",
           "memberOf",
+          "pwdLastSet",
+          "msDS-isRODC",
           "msDS-AllowedToDelegateTo",
           "msDS-AllowedToActOnBehalfOfOtherIdentity",
           "ms-Mcs-AdmPwd",
@@ -238,7 +248,19 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
         if (!sam) continue;
         const uac = parseUac(entry.userAccountControl);
         if (uac != null) computerUacBySam.set(sam, uac);
-        computerIsDcBySam.set(sam, isDomainController(entry));
+        const isDc = isDomainController(entry);
+        computerIsDcBySam.set(sam, isDc);
+        const isRodcAttr = ldapStr(entry["msDS-isRODC"]);
+        const isRodc =
+          isRodcAttr === "TRUE" ||
+          isRodcAttr === "true" ||
+          isRodcAttr === "1" ||
+          hasFlag(uac, UAC.PARTIAL_SECRETS_ACCOUNT);
+        computerIsRodcBySam.set(sam, isRodc);
+        computerPwdLastSetBySam.set(
+          sam,
+          ldapTimestampToIso(entry.pwdLastSet as string),
+        );
         const delegateTo = ldapStrArray(entry["msDS-AllowedToDelegateTo"]);
         if (delegateTo.length > 0) computerAllowedToDelegateToBySam.set(sam, delegateTo);
         if (attrPresent(entry["msDS-AllowedToActOnBehalfOfOtherIdentity"])) {
@@ -336,6 +358,67 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       // leave empty — engine falls back to cache groups
     }
 
+    const gpos: AdGpoRow[] = [];
+    try {
+      const { searchEntries: gpoEntries } = await client.search(baseDn, {
+        scope: "sub",
+        filter: "(objectCategory=groupPolicyContainer)",
+        attributes: ["displayName", "distinguishedName", "gPCFileSysPath", "flags"],
+        paged: { pageSize: 200 },
+        timeLimit: 60,
+      });
+      for (const entry of gpoEntries) {
+        const dn = ldapStr(entry.distinguishedName);
+        if (!dn) continue;
+        gpos.push({
+          displayName: ldapStr(entry.displayName) ?? dn,
+          distinguishedName: dn,
+          gpcFileSysPath: ldapStr(entry.gPCFileSysPath),
+          flags: parseIntAttr(entry.flags),
+        });
+      }
+    } catch {
+      // GPO container often readable; ignore on failure
+    }
+
+    let siteCount: number | null = null;
+    let subnetCount: number | null = null;
+    try {
+      const configDn = `CN=Configuration,${baseDn}`;
+      const sitesDn = `CN=Sites,${configDn}`;
+      const { searchEntries: sites } = await client.search(sitesDn, {
+        scope: "one",
+        filter: "(objectClass=site)",
+        attributes: ["cn"],
+        timeLimit: 30,
+      });
+      siteCount = sites.length;
+      const { searchEntries: subnets } = await client.search(`CN=Subnets,${sitesDn}`, {
+        scope: "one",
+        filter: "(objectClass=subnet)",
+        attributes: ["cn"],
+        timeLimit: 30,
+      });
+      subnetCount = subnets.length;
+    } catch {
+      siteCount = null;
+      subnetCount = null;
+    }
+
+    let gmsaCount: number | null = null;
+    try {
+      const { searchEntries: gmsas } = await client.search(baseDn, {
+        scope: "sub",
+        filter: "(objectClass=msDS-GroupManagedServiceAccount)",
+        attributes: ["sAMAccountName"],
+        paged: { pageSize: 200 },
+        timeLimit: 60,
+      });
+      gmsaCount = gmsas.length;
+    } catch {
+      gmsaCount = null;
+    }
+
     return {
       userUacBySam,
       userSpnBySam,
@@ -346,6 +429,8 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       userAllowedToDelegateToBySam,
       computerUacBySam,
       computerIsDcBySam,
+      computerIsRodcBySam,
+      computerPwdLastSetBySam,
       computerAllowedToDelegateToBySam,
       computerAllowedToActOnBehalfOfBySam,
       computerLapsPasswordPresentBySam,
@@ -360,6 +445,10 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       msDsBehaviorVersion: domainPolicy.msDsBehaviorVersion,
       lapsSchemaPresent,
       integrationUseSsl,
+      gpos,
+      siteCount,
+      subnetCount,
+      gmsaCount,
     };
   } finally {
     try {

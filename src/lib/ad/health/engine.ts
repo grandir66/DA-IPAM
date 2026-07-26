@@ -17,6 +17,8 @@ import { collectAclExtras } from "./acl/acl-collect";
 import type { AclExtras } from "./acl/types";
 import { collectLdapExtras, type LdapExtras } from "./ldap-extras";
 import { buildPrivilegeMatrix } from "./membership";
+import { collectWinrmProbe } from "./winrm-probe";
+import type { WinrmProbeResult } from "./types";
 import {
   ensureAdHealthSchema,
   finishRun,
@@ -96,9 +98,11 @@ function toComputerRows(computers: AdComputer[], extras: LdapExtras): AdComputer
       distinguishedName: c.distinguished_name,
       enabled: c.enabled === 1,
       lastLogonAt: c.last_logon_at,
+      passwordLastSetAt: extras.computerPwdLastSetBySam.get(sam) ?? null,
       operatingSystem: c.operating_system,
       uac: extras.computerUacBySam.get(sam) ?? null,
       isDomainController: extras.computerIsDcBySam.get(sam) ?? false,
+      isRodc: extras.computerIsRodcBySam.get(sam) ?? false,
       allowedToDelegateTo: extras.computerAllowedToDelegateToBySam.get(sam) ?? [],
       allowedToActOnBehalfOf: extras.computerAllowedToActOnBehalfOfBySam.get(sam) ?? false,
       lapsPasswordPresent: extras.computerLapsPasswordPresentBySam.has(sam)
@@ -157,6 +161,7 @@ export async function runAdHealthcheck(
   findings: HealthFinding[];
   privilegeMatrix: PrivilegeMatrix | null;
   acl: AclExtras | null;
+  winrm: WinrmProbeResult | null;
 }> {
   const db = getDb();
   ensureAdHealthSchema(db);
@@ -208,6 +213,16 @@ export async function runAdHealthcheck(
       interestingAces: acl.interestingAces,
     };
 
+    // WinRM probe best-effort (Phase 5b).
+    const winrm = await collectWinrmProbe(integrationId);
+    stats.winrm = winrm;
+    stats.phase5 = {
+      gpoCount: extras.gpos.length,
+      siteCount: extras.siteCount,
+      subnetCount: extras.subnetCount,
+      gmsaCount: extras.gmsaCount,
+    };
+
     const users = toUserRows(dbUsers, extras);
     const groups = toGroupRows(dbGroups, extras);
     const now = new Date();
@@ -239,12 +254,17 @@ export async function runAdHealthcheck(
       ldapsConfigured: extras.integrationUseSsl,
       privilegeMatrix,
       acl,
+      gpos: extras.gpos,
+      siteCount: extras.siteCount,
+      subnetCount: extras.subnetCount,
+      gmsaCount: extras.gmsaCount,
+      winrm,
     };
 
     const { score, findings } = evaluateContext(ctx);
     insertFindings(db, runId, findings);
     finishRun(db, runId, { status: "ok", score, statsJson: stats });
-    return { runId, score, findings, privilegeMatrix, acl };
+    return { runId, score, findings, privilegeMatrix, acl, winrm };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishRun(db, runId, { status: "error", errorMessage: message, statsJson: stats });

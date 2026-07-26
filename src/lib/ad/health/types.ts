@@ -48,9 +48,11 @@ export interface AdComputerRow {
   distinguishedName: string;
   enabled: boolean;
   lastLogonAt: string | null;
+  passwordLastSetAt: string | null;
   operatingSystem: string | null;
   uac: number | null;
   isDomainController: boolean;
+  isRodc: boolean;
   /** Constrained delegation targets (msDS-AllowedToDelegateTo). */
   allowedToDelegateTo: string[];
   /** True if msDS-AllowedToActOnBehalfOfOtherIdentity is present (RBCD). */
@@ -77,6 +79,26 @@ export interface AdTrustRow {
 
 /** TRUST_ATTRIBUTE_WITHIN_FOREST — exclude from external trust inventory. */
 export const TRUST_ATTR_WITHIN_FOREST = 0x20;
+/** TRUST_ATTRIBUTE_QUARANTINED_DOMAIN — SID filtering enabled. */
+export const TRUST_ATTR_QUARANTINED_DOMAIN = 0x4;
+
+export interface AdGpoRow {
+  displayName: string;
+  distinguishedName: string;
+  gpcFileSysPath: string | null;
+  flags: number | null;
+}
+
+export interface WinrmProbeResult {
+  /** null = WinRM not configured on integration (skip related rules). */
+  configured: boolean;
+  status: "ok" | "unavailable" | "skipped";
+  errorMessage?: string;
+  lastHotfixAt: string | null;
+  missingCriticalKbs: string[];
+  cpasswordPaths: string[];
+  durationMs: number;
+}
 
 /** How a user reaches a privileged group. */
 export type PrivilegeMembershipKind = "direct" | "nested" | "primary";
@@ -140,6 +162,15 @@ export interface RuleContext {
    * ACL collect extras (Phase 4). Optional — rules skip when absent/unavailable.
    */
   acl?: AclExtras | null;
+  /** GPO inventory (Phase 5). */
+  gpos?: AdGpoRow[];
+  /** Sites / subnets counts from Configuration NC. */
+  siteCount?: number | null;
+  subnetCount?: number | null;
+  /** gMSA objects found. */
+  gmsaCount?: number | null;
+  /** WinRM probe on DC (Phase 5b). */
+  winrm?: WinrmProbeResult | null;
 }
 
 export interface RuleDef {
@@ -150,8 +181,14 @@ export interface RuleDef {
   run: (ctx: RuleContext) => HealthFinding | null; // null = no match
 }
 
-export const ENGINE_VERSION = "0.4.0";
+export const ENGINE_VERSION = "0.5.0";
 export const SAMPLE_CAP = 50;
 
 /** Threshold for DA-A-LargePrivilegedSet. */
 export const LARGE_PRIVILEGED_SET_ABOVE = 15;
+
+/** DC machine account password age warn (days). */
+export const DC_PWD_MAX_DAYS = 45;
+
+/** DC last hotfix age warn (days). */
+export const DC_HOTFIX_MAX_DAYS = 90;

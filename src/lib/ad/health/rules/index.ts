@@ -3,6 +3,7 @@ import { anomalyRules } from "./anomaly";
 import { phase2Rules } from "./phase2";
 import { phase3Rules } from "./phase3";
 import { phase4Rules } from "./phase4";
+import { phase5Rules } from "./phase5";
 import { privilegedRules } from "./privileged";
 import { staleRules } from "./stale";
 import { trustRules } from "./trust";
@@ -15,6 +16,7 @@ export const ALL_RULES: RuleDef[] = [
   ...phase2Rules,
   ...phase3Rules,
   ...phase4Rules,
+  ...phase5Rules,
 ];
 
 export {
@@ -22,6 +24,7 @@ export {
   phase2Rules,
   phase3Rules,
   phase4Rules,
+  phase5Rules,
   privilegedRules,
   staleRules,
   trustRules,

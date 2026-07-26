@@ -34,6 +34,8 @@ function computer(
     operatingSystem: "Windows Server 2019",
     uac: 0,
     isDomainController: false,
+    passwordLastSetAt: null,
+    isRodc: false,
     allowedToDelegateTo: [],
     allowedToActOnBehalfOf: false,
     lapsPasswordPresent: null,

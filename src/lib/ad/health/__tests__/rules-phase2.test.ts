@@ -35,6 +35,8 @@ function computer(
     operatingSystem: "Windows Server 2019",
     uac: 0,
     isDomainController: false,
+    passwordLastSetAt: null,
+    isRodc: false,
     allowedToDelegateTo: [],
     allowedToActOnBehalfOf: false,
     lapsPasswordPresent: null,
@@ -95,10 +97,10 @@ test("phase2Rules exports the twelve DA-* ids", () => {
   );
 });
 
-test("ALL_RULES has 36 unique rule ids", () => {
-  assert.equal(ALL_RULES.length, 36);
+test("ALL_RULES has 44 unique rule ids", () => {
+  assert.equal(ALL_RULES.length, 44);
   const ids = ALL_RULES.map((r) => r.id);
-  assert.equal(new Set(ids).size, 36);
+  assert.equal(new Set(ids).size, 44);
   assert.ok(!ids.includes("DA-A-DomainScore"));
 });
 

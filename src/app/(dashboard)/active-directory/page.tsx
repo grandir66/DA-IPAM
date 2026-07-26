@@ -258,6 +258,20 @@ export default function ActiveDirectoryPage() {
   const [privilegeMatrix, setPrivilegeMatrix] = useState<PrivilegeMatrix | null>(null);
   const [aclExtras, setAclExtras] = useState<AclExtras | null>(null);
   const [aclKindFilter, setAclKindFilter] = useState<"all" | AclObjectKind>("all");
+  const [winrmProbe, setWinrmProbe] = useState<{
+    configured?: boolean;
+    status?: string;
+    lastHotfixAt?: string | null;
+    cpasswordPaths?: string[];
+    errorMessage?: string;
+    durationMs?: number;
+  } | null>(null);
+  const [phase5Meta, setPhase5Meta] = useState<{
+    gpoCount?: number;
+    siteCount?: number | null;
+    subnetCount?: number | null;
+    gmsaCount?: number | null;
+  } | null>(null);
   const [matrixEnabledOnly, setMatrixEnabledOnly] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthRunning, setHealthRunning] = useState(false);
@@ -372,6 +386,8 @@ export default function ActiveDirectoryPage() {
       setHealthFindings([]);
       setPrivilegeMatrix(null);
       setAclExtras(null);
+      setWinrmProbe(null);
+      setPhase5Meta(null);
       return;
     }
     setHealthLoading(true);
@@ -385,6 +401,8 @@ export default function ActiveDirectoryPage() {
       setHealthFindings(Array.isArray(data.findings) ? data.findings : []);
       setPrivilegeMatrix(data.privilegeMatrix ?? null);
       setAclExtras(data.acl ?? null);
+      setWinrmProbe(data.winrm ?? null);
+      setPhase5Meta(data.phase5 ?? null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore");
       setHealthRun(null);
@@ -392,6 +410,8 @@ export default function ActiveDirectoryPage() {
       setHealthFindings([]);
       setPrivilegeMatrix(null);
       setAclExtras(null);
+      setWinrmProbe(null);
+      setPhase5Meta(null);
     } finally {
       setHealthLoading(false);
     }
@@ -549,6 +569,8 @@ export default function ActiveDirectoryPage() {
       setHealthFindings(Array.isArray(data.findings) ? data.findings : []);
       setPrivilegeMatrix(data.privilegeMatrix ?? null);
       setAclExtras(data.acl ?? null);
+      setWinrmProbe(data.winrm ?? null);
+      setPhase5Meta(data.phase5 ?? null);
       setExpandedFinding(null);
       toast.success(`Healthcheck completato (score ${data.score?.global ?? "—"})`);
       await fetchHealth();
@@ -1631,6 +1653,80 @@ export default function ActiveDirectoryPage() {
                                 ))}
                               </tbody>
                             </table>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {!healthLoading && (phase5Meta || winrmProbe) && (
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Topologia e probe DC</CardTitle>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Inventario LDAP (GPO/Sites) e verifica WinRM sul DC se configurata.
+                        </p>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {phase5Meta && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                            <div>
+                              <div className="text-muted-foreground text-xs">GPO</div>
+                              <div className="font-semibold">{phase5Meta.gpoCount ?? "—"}</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground text-xs">Sites</div>
+                              <div className="font-semibold">{phase5Meta.siteCount ?? "—"}</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground text-xs">Subnets</div>
+                              <div className="font-semibold">{phase5Meta.subnetCount ?? "—"}</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground text-xs">gMSA</div>
+                              <div className="font-semibold">{phase5Meta.gmsaCount ?? "—"}</div>
+                            </div>
+                          </div>
+                        )}
+                        {winrmProbe && (
+                          <div className="rounded-md border px-3 py-2 text-sm space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-muted-foreground">WinRM</span>
+                              <Badge
+                                variant={
+                                  winrmProbe.status === "ok"
+                                    ? "default"
+                                    : winrmProbe.status === "skipped"
+                                      ? "secondary"
+                                      : "destructive"
+                                }
+                              >
+                                {!winrmProbe.configured || winrmProbe.status === "skipped"
+                                  ? "Non configurato"
+                                  : winrmProbe.status === "ok"
+                                    ? "OK"
+                                    : "Non disponibile"}
+                              </Badge>
+                              {winrmProbe.durationMs != null && winrmProbe.status === "ok" && (
+                                <span className="text-xs text-muted-foreground">
+                                  {(winrmProbe.durationMs / 1000).toFixed(1)} s
+                                </span>
+                              )}
+                            </div>
+                            {winrmProbe.lastHotfixAt && (
+                              <p className="text-xs text-muted-foreground">
+                                Ultimo hotfix DC:{" "}
+                                {formatDate(winrmProbe.lastHotfixAt)}
+                              </p>
+                            )}
+                            {winrmProbe.cpasswordPaths && winrmProbe.cpasswordPaths.length > 0 && (
+                              <p className="text-xs text-destructive font-medium">
+                                cpassword in SYSVOL: {winrmProbe.cpasswordPaths.length} path
+                              </p>
+                            )}
+                            {winrmProbe.errorMessage && winrmProbe.status === "unavailable" && (
+                              <p className="text-xs text-destructive">{winrmProbe.errorMessage}</p>
+                            )}
                           </div>
                         )}
                       </CardContent>

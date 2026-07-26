@@ -52,7 +52,8 @@ test("evaluateContext aggregates rule findings then appends DomainScore", () => 
     baseCtx({
       guestEnabled: true,
       recycleBinEnabled: false,
-      trusts: [{ name: "partner.local", trustDirection: 3, trustType: 2, trustAttributes: 0 }],
+      // 0x4 = QUARANTINED_DOMAIN (SID filtering on) so only TrustInventory fires
+      trusts: [{ name: "partner.local", trustDirection: 3, trustType: 2, trustAttributes: 0x4 }],
     }),
   );
 

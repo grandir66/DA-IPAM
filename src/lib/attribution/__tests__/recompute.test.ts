@@ -61,4 +61,10 @@ describe("recomputeHostAttribution", () => {
     }
     assert.ok(r2.category.confidence >= r1.category.confidence);
   });
+  it("write amplification: due recompute identici consecutivi scrivono una sola riga in history", () => {
+    recomputeHostAttribution(db, signals(), "scan");
+    recomputeHostAttribution(db, signals(), "scan");
+    const n = (db.prepare("SELECT COUNT(*) n FROM host_classification_history WHERE host_id=1").get() as { n: number }).n;
+    assert.equal(n, 1);
+  });
 });

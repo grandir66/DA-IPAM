@@ -125,7 +125,7 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
   // 6. AD — autoritativo su OS (spec §4.3 punto 4)
   const ados = signals.adComputer?.operating_system;
   if (ados) {
-    out.push({ source: "ad", phase: "integration", dimension: "os", claim: "windows", confidence: 0.95, raw_value: ados });
+    out.push({ source: "ad", phase: "integration", dimension: "os", claim: osFamilyFromText(ados) ?? "windows", confidence: 0.95, raw_value: ados });
     out.push({
       source: "ad", phase: "integration", dimension: "category",
       claim: ados.toLowerCase().includes("server") ? "compute.server" : "compute.workstation",

@@ -59,6 +59,13 @@ describe("emitEvidenceFromSignals", () => {
     s2.adComputer = { operating_system: "Windows 11 Pro", operating_system_version: null };
     assert.equal(emitEvidenceFromSignals(s2).find((e) => e.source === "ad" && e.dimension === "category")?.claim, "compute.workstation");
   });
+  it("AD autoritativo con Linux domain-joined: os family reale, non windows hardcoded", () => {
+    const s = base();
+    s.adComputer = { operating_system: "Ubuntu 22.04 LTS", operating_system_version: null };
+    const out = emitEvidenceFromSignals(s);
+    assert.equal(out.find((e) => e.source === "ad" && e.dimension === "os")?.claim, "linux");
+    assert.equal(out.find((e) => e.source === "ad" && e.dimension === "category")?.claim, "compute.workstation");
+  });
   it("Wazuh: os_platform → famiglia + compute livello 1", () => {
     const s = base();
     s.wazuh = { os_platform: "ubuntu", os_name: "Ubuntu", os_version: "22.04", board_vendor: "Dell Inc." };

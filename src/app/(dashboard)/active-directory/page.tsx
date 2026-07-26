@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -40,6 +40,15 @@ import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { ADSetupGuideDialog } from "@/components/shared/ad-setup-guide-dialog";
 import { SEVERITY_STYLE } from "@/lib/severity-style";
 import type { AclExtras, AclObjectKind, InterestingAce } from "@/lib/ad/health/acl/types";
+import {
+  formatRightsIt,
+  OBJECT_KIND_LABEL_IT,
+  shortDnName,
+  shortSid,
+  summarizeAclRisk,
+  type AclRiskBucketId,
+  type AclRiskSeverity,
+} from "@/lib/ad/health/acl/risk-summary";
 import type {
   HealthFinding,
   HealthScore,
@@ -47,26 +56,6 @@ import type {
   PrivilegeMatrix,
   PrivilegeMembershipKind,
 } from "@/lib/ad/health/types";
-
-function shortDnName(dn: string): string {
-  const first = dn.split(",")[0] ?? dn;
-  return first.replace(/^(CN|OU|DC)=/i, "").trim() || dn;
-}
-
-function shortSid(sid: string): string {
-  const parts = sid.split("-");
-  if (parts.length < 3) return sid;
-  return `…-${parts[parts.length - 1]}`;
-}
-
-const ACL_KIND_LABEL: Record<AclObjectKind, string> = {
-  domain: "Dominio",
-  adminsdholder: "AdminSDHolder",
-  ou: "OU",
-  user: "Utente",
-  group: "Gruppo",
-  computer: "Computer",
-};
 
 const ACL_KIND_ORDER: AclObjectKind[] = [
   "domain",
@@ -77,28 +66,20 @@ const ACL_KIND_ORDER: AclObjectKind[] = [
   "computer",
 ];
 
-function aclRightLabel(right: string): string {
-  const map: Record<string, string> = {
-    GenericAll: "Controllo totale",
-    WriteDacl: "Modifica ACL",
-    WriteOwner: "Cambia owner",
-    AllExtendedRights: "Tutti i diritti estesi",
-    "DCSync-GetChanges": "DCSync (Get-Changes)",
-    "DCSync-GetChangesAll": "DCSync (Get-Changes-All)",
-    ForceChangePassword: "Reset password",
-    AddMember: "Aggiungi membri",
-  };
-  return map[right] ?? right;
+function aclRiskSeverityClass(sev: AclRiskSeverity): string {
+  if (sev === "critical") {
+    return "border-red-500/40 bg-red-500/5";
+  }
+  if (sev === "high") {
+    return "border-amber-500/40 bg-amber-500/5";
+  }
+  return "border-border bg-muted/30";
 }
 
-function aclRightClass(right: string): string {
-  if (right.startsWith("DCSync") || right === "GenericAll") {
-    return "bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30";
-  }
-  if (right === "WriteDacl" || right === "WriteOwner" || right === "AllExtendedRights") {
-    return "bg-amber-500/15 text-amber-800 dark:text-amber-200 border-amber-500/30";
-  }
-  return "bg-muted text-foreground border-border";
+function aclRiskSeverityBadge(sev: AclRiskSeverity): string {
+  if (sev === "critical") return "Critico";
+  if (sev === "high") return "Alto";
+  return "Medio";
 }
 
 function sortAclAces(aces: InterestingAce[]): InterestingAce[] {
@@ -257,7 +238,8 @@ export default function ActiveDirectoryPage() {
   const [healthFindings, setHealthFindings] = useState<HealthFinding[]>([]);
   const [privilegeMatrix, setPrivilegeMatrix] = useState<PrivilegeMatrix | null>(null);
   const [aclExtras, setAclExtras] = useState<AclExtras | null>(null);
-  const [aclKindFilter, setAclKindFilter] = useState<"all" | AclObjectKind>("all");
+  const [aclFocusBucket, setAclFocusBucket] = useState<AclRiskBucketId | "all">("all");
+  const [aclShowRaw, setAclShowRaw] = useState(false);
   const [winrmProbe, setWinrmProbe] = useState<{
     configured?: boolean;
     status?: string;
@@ -642,21 +624,18 @@ export default function ActiveDirectoryPage() {
     ? privilegeMatrix.users.filter((u) => (matrixEnabledOnly ? u.enabled : true))
     : [];
 
-  const aclRows = aclExtras
-    ? sortAclAces(aclExtras.interestingAces).filter((a) =>
-        aclKindFilter === "all" ? true : a.objectKind === aclKindFilter,
-      )
-    : [];
+  const aclRisk = useMemo(
+    () => (aclExtras ? summarizeAclRisk(aclExtras.interestingAces) : null),
+    [aclExtras],
+  );
 
-  const aclKindCounts = aclExtras
-    ? ACL_KIND_ORDER.reduce(
-        (acc, kind) => {
-          acc[kind] = aclExtras.interestingAces.filter((a) => a.objectKind === kind).length;
-          return acc;
-        },
-        {} as Record<AclObjectKind, number>,
-      )
-    : null;
+  const aclRows = aclExtras ? sortAclAces(aclExtras.interestingAces) : [];
+
+  const aclBucketsVisible = aclRisk
+    ? aclFocusBucket === "all"
+      ? aclRisk.buckets
+      : aclRisk.buckets.filter((b) => b.id === aclFocusBucket)
+    : [];
 
   const severityBadgeClass = (sev: HealthSeverity | string) =>
     SEVERITY_STYLE[sev] ?? "bg-muted text-foreground";
@@ -1816,10 +1795,9 @@ export default function ActiveDirectoryPage() {
                       <CardHeader className="pb-3">
                         <div className="flex flex-wrap items-center gap-3 justify-between">
                           <div>
-                            <CardTitle className="text-base">Permessi ACL critici</CardTitle>
+                            <CardTitle className="text-base">Analisi permessi ACL</CardTitle>
                             <p className="text-sm text-muted-foreground mt-1">
-                              Solo ACE ad alto rischio (DCSync, controllo totale, modifica ACL/owner…).
-                              Passa il mouse su nome o SID per il dettaglio completo.
+                              Sintesi per tipo di rischio: cosa è pericoloso, perché, e chi lo può fare.
                             </p>
                           </div>
                           <Badge
@@ -1846,12 +1824,12 @@ export default function ActiveDirectoryPage() {
                             <div className="font-semibold">{aclExtras.meta.objectsScanned}</div>
                           </div>
                           <div>
-                            <div className="text-muted-foreground text-xs">Descriptor OK</div>
-                            <div className="font-semibold">{aclExtras.meta.sdParsed}</div>
-                          </div>
-                          <div>
                             <div className="text-muted-foreground text-xs">ACE critiche</div>
                             <div className="font-semibold">{aclExtras.meta.interestingAceCount}</div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground text-xs">Categorie rischio</div>
+                            <div className="font-semibold">{aclRisk?.buckets.length ?? 0}</div>
                           </div>
                           <div>
                             <div className="text-muted-foreground text-xs">Tempo collect</div>
@@ -1863,100 +1841,151 @@ export default function ActiveDirectoryPage() {
                         {aclExtras.meta.errorMessage && (
                           <p className="text-sm text-destructive">{aclExtras.meta.errorMessage}</p>
                         )}
-                        {aclExtras.interestingAces.length > 0 && aclKindCounts && (
-                          <div className="space-y-2">
-                            <p className="text-xs text-muted-foreground">
-                              Filtra per tipo oggetto. La tabella sotto elenca chi ha il permesso e su cosa
-                              (max 80 righe, ordinate per gravità).
-                            </p>
-                            <div className="flex flex-wrap gap-1.5">
+
+                        {aclRisk && aclRisk.buckets.length > 0 ? (
+                          <>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {aclRisk.buckets.map((b) => (
+                                <button
+                                  key={b.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setAclFocusBucket((cur) => (cur === b.id ? "all" : b.id))
+                                  }
+                                  className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${aclRiskSeverityClass(b.severity)} ${
+                                    aclFocusBucket === b.id ? "ring-2 ring-primary/40" : ""
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="font-medium text-sm">{b.title}</div>
+                                    <Badge variant="outline" className="text-[10px] shrink-0">
+                                      {aclRiskSeverityBadge(b.severity)}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-1 leading-snug">{b.why}</p>
+                                  <p className="text-xs mt-2">
+                                    <span className="font-semibold">{b.uniqueTrustees}</span> attori ·{" "}
+                                    <span className="font-semibold">{b.uniqueTargets}</span> oggetti ·{" "}
+                                    <span className="font-semibold">{b.aceCount}</span> ACE
+                                  </p>
+                                </button>
+                              ))}
+                            </div>
+
+                            <div className="space-y-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-sm font-medium">
+                                  {aclFocusBucket === "all"
+                                    ? "Dettaglio per categoria"
+                                    : `Dettaglio: ${aclBucketsVisible[0]?.title ?? ""}`}
+                                </p>
+                                {aclFocusBucket !== "all" && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-xs"
+                                    onClick={() => setAclFocusBucket("all")}
+                                  >
+                                    Mostra tutte
+                                  </Button>
+                                )}
+                              </div>
+
+                              {aclBucketsVisible.map((b) => (
+                                <div key={b.id} className={`rounded-lg border p-3 space-y-2 ${aclRiskSeverityClass(b.severity)}`}>
+                                  <div>
+                                    <div className="font-medium text-sm">{b.title}</div>
+                                    <p className="text-xs text-muted-foreground mt-0.5">{b.why}</p>
+                                  </div>
+                                  <div className="space-y-2">
+                                    {b.entries.map((e) => (
+                                      <div
+                                        key={`${b.id}-${e.trusteeSid}`}
+                                        className="rounded-md bg-background/70 border px-2.5 py-2"
+                                      >
+                                        <div className="text-sm font-medium" title={e.trusteeSid}>
+                                          {e.trusteeLabel}
+                                          {e.trusteeSam && (
+                                            <span className="ml-2 text-[11px] font-mono text-muted-foreground font-normal">
+                                              {shortSid(e.trusteeSid)}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <ul className="mt-1.5 space-y-1">
+                                          {e.targets.map((t) => (
+                                            <li
+                                              key={`${t.objectDn}-${t.rights.join(",")}`}
+                                              className="text-xs text-muted-foreground flex flex-wrap gap-x-1.5"
+                                            >
+                                              <span className="text-foreground font-medium" title={t.objectDn}>
+                                                {t.objectLabel}
+                                              </span>
+                                              <span>({OBJECT_KIND_LABEL_IT[t.objectKind]})</span>
+                                              <span>—</span>
+                                              <span className="text-foreground">{formatRightsIt(t.rights)}</span>
+                                              {t.inherited && (
+                                                <span className="text-muted-foreground/80">· ereditato</span>
+                                              )}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    ))}
+                                    {b.uniqueTrustees > b.entries.length && (
+                                      <p className="text-xs text-muted-foreground">
+                                        … e altri {b.uniqueTrustees - b.entries.length} attori in questa categoria
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="pt-1">
                               <Button
                                 type="button"
                                 size="sm"
-                                variant={aclKindFilter === "all" ? "default" : "outline"}
-                                className="h-7 text-xs"
-                                onClick={() => setAclKindFilter("all")}
+                                variant="outline"
+                                className="h-8 text-xs"
+                                onClick={() => setAclShowRaw((v) => !v)}
                               >
-                                Tutte ({aclExtras.interestingAces.length})
+                                {aclShowRaw ? "Nascondi elenco grezzo" : `Mostra elenco grezzo (${aclRows.length})`}
                               </Button>
-                              {ACL_KIND_ORDER.filter((k) => (aclKindCounts[k] ?? 0) > 0).map((k) => (
-                                <Button
-                                  key={k}
-                                  type="button"
-                                  size="sm"
-                                  variant={aclKindFilter === k ? "default" : "outline"}
-                                  className="h-7 text-xs"
-                                  onClick={() => setAclKindFilter(k)}
-                                >
-                                  {ACL_KIND_LABEL[k]} ({aclKindCounts[k]})
-                                </Button>
-                              ))}
+                              {aclShowRaw && (
+                                <div className="mt-2 border rounded-lg overflow-x-auto max-h-80 overflow-y-auto">
+                                  <table className="w-full text-sm">
+                                    <thead className="bg-muted/50 sticky top-0">
+                                      <tr>
+                                        <th className="p-2 text-left font-medium">Su cosa</th>
+                                        <th className="p-2 text-left font-medium">Chi</th>
+                                        <th className="p-2 text-left font-medium">Permesso</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {aclRows.slice(0, 120).map((a, i) => (
+                                        <tr key={`${a.objectDn}-${a.trusteeSid}-${i}`} className="border-t align-top">
+                                          <td className="p-2" title={a.objectDn}>
+                                            {shortDnName(a.objectDn)}
+                                            <div className="text-[11px] text-muted-foreground">
+                                              {OBJECT_KIND_LABEL_IT[a.objectKind]}
+                                            </div>
+                                          </td>
+                                          <td className="p-2" title={a.trusteeSid}>
+                                            {a.trusteeSam ?? shortSid(a.trusteeSid)}
+                                          </td>
+                                          <td className="p-2 text-xs">{formatRightsIt(a.rights)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        )}
-                        {aclRows.length > 0 ? (
-                          <div className="border rounded-lg overflow-x-auto">
-                            <table className="w-full text-sm">
-                              <thead className="bg-muted/50">
-                                <tr>
-                                  <th className="p-2.5 text-left font-medium">Su cosa</th>
-                                  <th className="p-2.5 text-left font-medium">Chi</th>
-                                  <th className="p-2.5 text-left font-medium">Permesso</th>
-                                  <th className="p-2.5 text-left font-medium w-24">Note</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {aclRows.slice(0, 80).map((a, i) => (
-                                  <tr key={`${a.objectDn}-${a.trusteeSid}-${i}`} className="border-t align-top">
-                                    <td className="p-2.5">
-                                      <div className="font-medium" title={a.objectDn}>
-                                        {shortDnName(a.objectDn)}
-                                      </div>
-                                      <div className="text-xs text-muted-foreground mt-0.5">
-                                        {ACL_KIND_LABEL[a.objectKind]}
-                                      </div>
-                                    </td>
-                                    <td className="p-2.5">
-                                      <div className="font-medium" title={a.trusteeSid}>
-                                        {a.trusteeSam ?? shortSid(a.trusteeSid)}
-                                      </div>
-                                      {!a.trusteeSam && (
-                                        <div className="text-[11px] font-mono text-muted-foreground mt-0.5 truncate max-w-[180px]" title={a.trusteeSid}>
-                                          {a.trusteeSid}
-                                        </div>
-                                      )}
-                                      {a.trusteeSam && (
-                                        <div className="text-[11px] font-mono text-muted-foreground mt-0.5" title={a.trusteeSid}>
-                                          {shortSid(a.trusteeSid)}
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td className="p-2.5">
-                                      <div className="flex flex-wrap gap-1">
-                                        {a.rights.map((r) => (
-                                          <span
-                                            key={r}
-                                            className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-medium ${aclRightClass(r)}`}
-                                            title={r}
-                                          >
-                                            {aclRightLabel(r)}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    </td>
-                                    <td className="p-2.5 text-xs text-muted-foreground">
-                                      {a.inherited ? "Ereditato" : "Esplicito"}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
+                          </>
                         ) : (
                           <p className="text-sm text-muted-foreground">
-                            {aclExtras.interestingAces.length === 0
-                              ? "Nessuna ACE critica trovata (o collect non disponibile)."
-                              : "Nessuna riga per il filtro selezionato."}
+                            Nessuna ACE critica da analizzare (o collect non disponibile).
                           </p>
                         )}
                       </CardContent>

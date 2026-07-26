@@ -1,3 +1,4 @@
+import type { AdcsExtras } from "./adcs";
 import type { AclExtras } from "./acl/types";
 
 export type HealthAxis = "stale" | "privileged" | "trust" | "anomaly" | "score";
@@ -89,6 +90,16 @@ export interface AdGpoRow {
   flags: number | null;
 }
 
+/** Registry / service hardening sampled on DC via WinRM (Phase 6). */
+export interface DcHardeningProbe {
+  ldapServerIntegrity: number | null;
+  ldapEnforceChannelBinding: number | null;
+  smbRequireSecuritySignature: number | null;
+  lmCompatibilityLevel: number | null;
+  wdigestUseLogonCredential: number | null;
+  spoolerRunning: boolean | null;
+}
+
 export interface WinrmProbeResult {
   /** null = WinRM not configured on integration (skip related rules). */
   configured: boolean;
@@ -98,6 +109,8 @@ export interface WinrmProbeResult {
   missingCriticalKbs: string[];
   cpasswordPaths: string[];
   durationMs: number;
+  /** Present when probe status is ok (may still have null fields). */
+  hardening?: DcHardeningProbe | null;
 }
 
 /** How a user reaches a privileged group. */
@@ -169,8 +182,14 @@ export interface RuleContext {
   subnetCount?: number | null;
   /** gMSA objects found. */
   gmsaCount?: number | null;
-  /** WinRM probe on DC (Phase 5b). */
+  /** WinRM probe on DC (Phase 5b / 6). */
   winrm?: WinrmProbeResult | null;
+  /** ADCS certificate templates (Phase 6). */
+  adcs?: AdcsExtras | null;
+  /** Fine-grained Password Settings Objects count; null = unread. */
+  psoCount?: number | null;
+  /** Users with msDS-KeyCredentialLink (shadow credentials). */
+  shadowCredentialDns?: string[];
 }
 
 export interface RuleDef {
@@ -181,7 +200,7 @@ export interface RuleDef {
   run: (ctx: RuleContext) => HealthFinding | null; // null = no match
 }
 
-export const ENGINE_VERSION = "0.5.0";
+export const ENGINE_VERSION = "0.6.0";
 export const SAMPLE_CAP = 50;
 
 /** Threshold for DA-A-LargePrivilegedSet. */

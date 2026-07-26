@@ -14,6 +14,7 @@ import {
   parseUac,
 } from "@/lib/ad/ldap-utils";
 import { hasFlag, UAC } from "@/lib/ad/health/uac";
+import { collectAdcsExtras, type AdcsExtras } from "@/lib/ad/health/adcs";
 import type { AdGpoRow, AdTrustRow } from "@/lib/ad/health/types";
 
 export interface LdapExtras {
@@ -46,6 +47,11 @@ export interface LdapExtras {
   siteCount: number | null;
   subnetCount: number | null;
   gmsaCount: number | null;
+  /** Fine-grained PSO count; null = unread. */
+  psoCount: number | null;
+  /** DNs of users with msDS-KeyCredentialLink present. */
+  shadowCredentialDns: string[];
+  adcs: AdcsExtras;
 }
 
 function parseIntAttr(val: unknown): number | null {
@@ -171,12 +177,14 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
     const userDescriptionBySam = new Map<string, string>();
     const userSidHistoryBySam = new Map<string, string[]>();
     const userAllowedToDelegateToBySam = new Map<string, string[]>();
+    const shadowCredentialDns: string[] = [];
     try {
       const { searchEntries: users } = await client.search(baseDn, {
         scope: "sub",
         filter: "(&(objectClass=user)(objectCategory=person)(!(objectClass=computer)))",
         attributes: [
           "sAMAccountName",
+          "distinguishedName",
           "userAccountControl",
           "servicePrincipalName",
           "pwdLastSet",
@@ -187,6 +195,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
           "description",
           "sIDHistory",
           "msDS-AllowedToDelegateTo",
+          "msDS-KeyCredentialLink",
         ],
         paged: { pageSize: 500 },
         timeLimit: 120,
@@ -208,6 +217,10 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
         if (sidHistory.length > 0) userSidHistoryBySam.set(sam, sidHistory);
         const delegateTo = ldapStrArray(entry["msDS-AllowedToDelegateTo"]);
         if (delegateTo.length > 0) userAllowedToDelegateToBySam.set(sam, delegateTo);
+        if (attrPresent(entry["msDS-KeyCredentialLink"])) {
+          const dn = ldapStr(entry.distinguishedName);
+          if (dn) shadowCredentialDns.push(dn);
+        }
       }
     } catch {
       // leave maps empty; engine can still run on cache
@@ -419,6 +432,22 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       gmsaCount = null;
     }
 
+    let psoCount: number | null = null;
+    try {
+      const { searchEntries: psos } = await client.search(baseDn, {
+        scope: "sub",
+        filter: "(objectClass=msDS-PasswordSettings)",
+        attributes: ["cn"],
+        paged: { pageSize: 100 },
+        timeLimit: 30,
+      });
+      psoCount = psos.length;
+    } catch {
+      psoCount = null;
+    }
+
+    const adcs = await collectAdcsExtras(client, baseDn);
+
     return {
       userUacBySam,
       userSpnBySam,
@@ -449,6 +478,9 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       siteCount,
       subnetCount,
       gmsaCount,
+      psoCount,
+      shadowCredentialDns: shadowCredentialDns.slice(0, 50),
+      adcs,
     };
   } finally {
     try {

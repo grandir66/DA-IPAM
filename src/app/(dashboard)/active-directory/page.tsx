@@ -265,12 +265,30 @@ export default function ActiveDirectoryPage() {
     cpasswordPaths?: string[];
     errorMessage?: string;
     durationMs?: number;
+    hardening?: {
+      ldapServerIntegrity?: number | null;
+      ldapEnforceChannelBinding?: number | null;
+      smbRequireSecuritySignature?: number | null;
+      lmCompatibilityLevel?: number | null;
+      wdigestUseLogonCredential?: number | null;
+      spoolerRunning?: boolean | null;
+    } | null;
   } | null>(null);
   const [phase5Meta, setPhase5Meta] = useState<{
     gpoCount?: number;
     siteCount?: number | null;
     subnetCount?: number | null;
     gmsaCount?: number | null;
+  } | null>(null);
+  const [phase6Meta, setPhase6Meta] = useState<{
+    psoCount?: number | null;
+    shadowCredentialCount?: number;
+    adcsStatus?: string;
+    templateCount?: number;
+    esc1Count?: number;
+    esc2Count?: number;
+    esc1Names?: string[];
+    esc2Names?: string[];
   } | null>(null);
   const [matrixEnabledOnly, setMatrixEnabledOnly] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
@@ -388,6 +406,7 @@ export default function ActiveDirectoryPage() {
       setAclExtras(null);
       setWinrmProbe(null);
       setPhase5Meta(null);
+      setPhase6Meta(null);
       return;
     }
     setHealthLoading(true);
@@ -403,6 +422,7 @@ export default function ActiveDirectoryPage() {
       setAclExtras(data.acl ?? null);
       setWinrmProbe(data.winrm ?? null);
       setPhase5Meta(data.phase5 ?? null);
+      setPhase6Meta(data.phase6 ?? null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore");
       setHealthRun(null);
@@ -412,6 +432,7 @@ export default function ActiveDirectoryPage() {
       setAclExtras(null);
       setWinrmProbe(null);
       setPhase5Meta(null);
+      setPhase6Meta(null);
     } finally {
       setHealthLoading(false);
     }
@@ -571,6 +592,7 @@ export default function ActiveDirectoryPage() {
       setAclExtras(data.acl ?? null);
       setWinrmProbe(data.winrm ?? null);
       setPhase5Meta(data.phase5 ?? null);
+      setPhase6Meta(data.phase6 ?? null);
       setExpandedFinding(null);
       toast.success(`Healthcheck completato (score ${data.score?.global ?? "—"})`);
       await fetchHealth();
@@ -1672,12 +1694,12 @@ export default function ActiveDirectoryPage() {
                     </Card>
                   )}
 
-                  {!healthLoading && (phase5Meta || winrmProbe) && (
+                  {!healthLoading && (phase5Meta || phase6Meta || winrmProbe) && (
                     <Card>
                       <CardHeader className="pb-3">
-                        <CardTitle className="text-base">Topologia e probe DC</CardTitle>
+                        <CardTitle className="text-base">Topologia, ADCS e probe DC</CardTitle>
                         <p className="text-sm text-muted-foreground mt-1">
-                          Inventario LDAP (GPO/Sites) e verifica WinRM sul DC se configurata.
+                          Inventario LDAP (GPO/Sites/ADCS), hardening WinRM sul DC se configurato.
                         </p>
                       </CardHeader>
                       <CardContent className="space-y-3">
@@ -1698,6 +1720,32 @@ export default function ActiveDirectoryPage() {
                             <div>
                               <div className="text-muted-foreground text-xs">gMSA</div>
                               <div className="font-semibold">{phase5Meta.gmsaCount ?? "—"}</div>
+                            </div>
+                          </div>
+                        )}
+                        {phase6Meta && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                            <div>
+                              <div className="text-muted-foreground text-xs">Template ADCS</div>
+                              <div className="font-semibold">{phase6Meta.templateCount ?? "—"}</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground text-xs">ESC1</div>
+                              <div className="font-semibold text-destructive">
+                                {phase6Meta.esc1Count ?? 0}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground text-xs">ESC2</div>
+                              <div className="font-semibold">
+                                {phase6Meta.esc2Count ?? 0}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground text-xs">PSO / Shadow</div>
+                              <div className="font-semibold">
+                                {phase6Meta.psoCount ?? "—"} / {phase6Meta.shadowCredentialCount ?? 0}
+                              </div>
                             </div>
                           </div>
                         )}
@@ -1731,6 +1779,23 @@ export default function ActiveDirectoryPage() {
                                 Ultimo hotfix DC:{" "}
                                 {formatDate(winrmProbe.lastHotfixAt)}
                               </p>
+                            )}
+                            {winrmProbe.hardening && winrmProbe.status === "ok" && (
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-muted-foreground pt-1">
+                                <span>LDAP sign: {winrmProbe.hardening.ldapServerIntegrity ?? "—"}</span>
+                                <span>Channel bind: {winrmProbe.hardening.ldapEnforceChannelBinding ?? "—"}</span>
+                                <span>SMB sign: {winrmProbe.hardening.smbRequireSecuritySignature ?? "—"}</span>
+                                <span>LmCompat: {winrmProbe.hardening.lmCompatibilityLevel ?? "—"}</span>
+                                <span>WDigest: {winrmProbe.hardening.wdigestUseLogonCredential ?? "—"}</span>
+                                <span>
+                                  Spooler:{" "}
+                                  {winrmProbe.hardening.spoolerRunning == null
+                                    ? "—"
+                                    : winrmProbe.hardening.spoolerRunning
+                                      ? "Running"
+                                      : "Stopped"}
+                                </span>
+                              </div>
                             )}
                             {winrmProbe.cpasswordPaths && winrmProbe.cpasswordPaths.length > 0 && (
                               <p className="text-xs text-destructive font-medium">

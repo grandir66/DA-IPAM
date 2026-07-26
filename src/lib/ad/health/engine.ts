@@ -162,6 +162,7 @@ export async function runAdHealthcheck(
   privilegeMatrix: PrivilegeMatrix | null;
   acl: AclExtras | null;
   winrm: WinrmProbeResult | null;
+  phase6: Record<string, unknown> | null;
 }> {
   const db = getDb();
   ensureAdHealthSchema(db);
@@ -213,7 +214,7 @@ export async function runAdHealthcheck(
       interestingAces: acl.interestingAces,
     };
 
-    // WinRM probe best-effort (Phase 5b).
+    // WinRM probe best-effort (Phase 5b / 6).
     const winrm = await collectWinrmProbe(integrationId);
     stats.winrm = winrm;
     stats.phase5 = {
@@ -221,6 +222,24 @@ export async function runAdHealthcheck(
       siteCount: extras.siteCount,
       subnetCount: extras.subnetCount,
       gmsaCount: extras.gmsaCount,
+    };
+    const phase6 = {
+      psoCount: extras.psoCount,
+      shadowCredentialCount: extras.shadowCredentialDns.length,
+      adcsStatus: extras.adcs.status,
+      templateCount: extras.adcs.templates.length,
+      esc1Count: extras.adcs.esc1Names.length,
+      esc2Count: extras.adcs.esc2Names.length,
+      esc1Names: extras.adcs.esc1Names.slice(0, 20),
+      esc2Names: extras.adcs.esc2Names.slice(0, 20),
+    };
+    stats.phase6 = phase6;
+    stats.adcs = {
+      status: extras.adcs.status,
+      errorMessage: extras.adcs.errorMessage,
+      esc1Names: extras.adcs.esc1Names,
+      esc2Names: extras.adcs.esc2Names,
+      templateCount: extras.adcs.templates.length,
     };
 
     const users = toUserRows(dbUsers, extras);
@@ -259,12 +278,15 @@ export async function runAdHealthcheck(
       subnetCount: extras.subnetCount,
       gmsaCount: extras.gmsaCount,
       winrm,
+      adcs: extras.adcs,
+      psoCount: extras.psoCount,
+      shadowCredentialDns: extras.shadowCredentialDns,
     };
 
     const { score, findings } = evaluateContext(ctx);
     insertFindings(db, runId, findings);
     finishRun(db, runId, { status: "ok", score, statsJson: stats });
-    return { runId, score, findings, privilegeMatrix, acl, winrm };
+    return { runId, score, findings, privilegeMatrix, acl, winrm, phase6 };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishRun(db, runId, { status: "error", errorMessage: message, statsJson: stats });

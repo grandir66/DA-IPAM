@@ -72,6 +72,7 @@ export async function GET(request: Request) {
         acl: null,
         winrm: null,
         phase5: null,
+        phase6: null,
         displayRunId: null,
       });
     }
@@ -85,14 +86,17 @@ export async function GET(request: Request) {
     const findings = getFindings(db, display.id);
     let winrm = null;
     let phase5 = null;
+    let phase6 = null;
     if (display.statsJson) {
       try {
         const parsed = JSON.parse(display.statsJson) as {
           winrm?: unknown;
           phase5?: unknown;
+          phase6?: unknown;
         };
         winrm = parsed.winrm ?? null;
         phase5 = parsed.phase5 ?? null;
+        phase6 = parsed.phase6 ?? null;
       } catch {
         // ignore
       }
@@ -107,6 +111,7 @@ export async function GET(request: Request) {
       acl: aclFromStatsJson(display.statsJson),
       winrm,
       phase5,
+      phase6,
     });
   });
 }

@@ -415,7 +415,34 @@ degli host con almeno una credenziale valida per il protocollo pertinente, e sof
 
 | Fase | Contenuto | Valore |
 |---|---|---|
-| **0** | Quick-fix: rimappa `sysobj_lookup.category`, elimina il cast, `votes_for` su tutte le evidenze, `access_point` nel CHECK `network_devices` | sblocca subito il caso Ubiquiti, nessuna nuova architettura |
+| **0** ✅ | Quick-fix: rimappa `sysobj_lookup.category`, elimina il cast, `votes_for` su tutte le evidenze, `access_point` nel CHECK `network_devices` | **Completata 2026-07-26** — v0.3.202, impl. Cursor, verifica Claude. Vedi esito sotto. |
+
+### Esito Fase 0 misurato in produzione (tenant 70791, 2026-07-26)
+
+Confronto contro backup pre-deploy `/var/tmp/70791.pre-attrv2.db`, dopo la prima
+riclassificazione automatica (170 decisioni):
+
+| Metrica | Prima | Dopo |
+|---|---|---|
+| Confidence media | 37,5 | **45,0** |
+| Host a confidence ≥ 56 (soglia di applicazione) | 73 | **150** |
+| Host bloccati al floor 40 della cascade | 183 | **81** |
+| Slug non renderizzabili (`networking`/`wireless`) | 0 | **0** |
+| Host con `classification_manual` modificati | — | **0** |
+| Degradi da slug valido a `unknown` | — | **0** |
+| Integrità dati (device / host) | 32 / 375 | **32 / 375** |
+
+Le **etichette** di classificazione non cambiano (0 host): i 9 MikroTik che il mapper porta
+da `networking` a `router` erano già `router` per via di un livello più alto della cascade.
+Il guadagno reale della fase è sul **punteggio**: le evidenze prima mute ora votano, e più del
+doppio degli host supera la soglia di applicazione. `host_classification_history` registra le
+decisioni *valutate* (71 su host manuali, 1 `unknown`) ma **nessuna è stata applicata**: il lock
+manuale e la policy anti-downgrade hanno retto.
+
+Limite noto: i 4 AP UniFi in produzione riportano il sysObjectID **generico**
+`1.3.6.1.4.1.41112`, assente dalla lookup table (che mappa solo `.1.6` e `.1.4`). Il caso Ubiquiti
+si risolve quindi in **Fase 1** (modello dal `sysDescr`: `U6-Pro`, `U7-Pro`, `USW`) e in **Fase 2**
+(`mac_product_map`), non qui.
 | **1** | Tassonomia 2 livelli + `attribution_evidence` + `fuse.ts` + emettitori dai segnali **già in DB** (LLDP, AD, Wazuh, agent, SNMP, OUI) | il grosso del recupero, zero probe nuovi |
 | **1b** | **Credenziali (§7.2)**: catena unica, `resolveCredentialFor()`, tutti i collettori leggono il binding validato, legacy migrate; anti-lockout + `fail_count` + rivalidazione schedulata (§7.5); esiti auth → evidenze (§7.3) | sblocca le acquisizioni profonde: 41 host SNMP e il 46% di software scan falliti |
 | **2** | KB SQLite vendorizzata + `mac_product_map` + UI nel tab Identificazione | vendor/famiglia prodotto affidabili |

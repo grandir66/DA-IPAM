@@ -39,7 +39,7 @@ import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { ADSetupGuideDialog } from "@/components/shared/ad-setup-guide-dialog";
 import { SEVERITY_STYLE } from "@/lib/severity-style";
-import type { AclExtras } from "@/lib/ad/health/acl/types";
+import type { AclExtras, AclObjectKind, InterestingAce } from "@/lib/ad/health/acl/types";
 import type {
   HealthFinding,
   HealthScore,
@@ -47,6 +47,75 @@ import type {
   PrivilegeMatrix,
   PrivilegeMembershipKind,
 } from "@/lib/ad/health/types";
+
+function shortDnName(dn: string): string {
+  const first = dn.split(",")[0] ?? dn;
+  return first.replace(/^(CN|OU|DC)=/i, "").trim() || dn;
+}
+
+function shortSid(sid: string): string {
+  const parts = sid.split("-");
+  if (parts.length < 3) return sid;
+  return `…-${parts[parts.length - 1]}`;
+}
+
+const ACL_KIND_LABEL: Record<AclObjectKind, string> = {
+  domain: "Dominio",
+  adminsdholder: "AdminSDHolder",
+  ou: "OU",
+  user: "Utente",
+  group: "Gruppo",
+  computer: "Computer",
+};
+
+const ACL_KIND_ORDER: AclObjectKind[] = [
+  "domain",
+  "adminsdholder",
+  "ou",
+  "group",
+  "user",
+  "computer",
+];
+
+function aclRightLabel(right: string): string {
+  const map: Record<string, string> = {
+    GenericAll: "Controllo totale",
+    WriteDacl: "Modifica ACL",
+    WriteOwner: "Cambia owner",
+    AllExtendedRights: "Tutti i diritti estesi",
+    "DCSync-GetChanges": "DCSync (Get-Changes)",
+    "DCSync-GetChangesAll": "DCSync (Get-Changes-All)",
+    ForceChangePassword: "Reset password",
+    AddMember: "Aggiungi membri",
+  };
+  return map[right] ?? right;
+}
+
+function aclRightClass(right: string): string {
+  if (right.startsWith("DCSync") || right === "GenericAll") {
+    return "bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30";
+  }
+  if (right === "WriteDacl" || right === "WriteOwner" || right === "AllExtendedRights") {
+    return "bg-amber-500/15 text-amber-800 dark:text-amber-200 border-amber-500/30";
+  }
+  return "bg-muted text-foreground border-border";
+}
+
+function sortAclAces(aces: InterestingAce[]): InterestingAce[] {
+  const kindRank = (k: AclObjectKind) => ACL_KIND_ORDER.indexOf(k);
+  const severity = (a: InterestingAce) => {
+    if (a.rights.some((r) => r.startsWith("DCSync") || r === "GenericAll")) return 0;
+    if (a.rights.some((r) => r === "WriteDacl" || r === "WriteOwner")) return 1;
+    return 2;
+  };
+  return [...aces].sort((a, b) => {
+    const k = kindRank(a.objectKind) - kindRank(b.objectKind);
+    if (k !== 0) return k;
+    const s = severity(a) - severity(b);
+    if (s !== 0) return s;
+    return shortDnName(a.objectDn).localeCompare(shortDnName(b.objectDn));
+  });
+}
 
 interface AdIntegration {
   id: number;
@@ -188,6 +257,7 @@ export default function ActiveDirectoryPage() {
   const [healthFindings, setHealthFindings] = useState<HealthFinding[]>([]);
   const [privilegeMatrix, setPrivilegeMatrix] = useState<PrivilegeMatrix | null>(null);
   const [aclExtras, setAclExtras] = useState<AclExtras | null>(null);
+  const [aclKindFilter, setAclKindFilter] = useState<"all" | AclObjectKind>("all");
   const [matrixEnabledOnly, setMatrixEnabledOnly] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthRunning, setHealthRunning] = useState(false);
@@ -527,6 +597,22 @@ export default function ActiveDirectoryPage() {
   const matrixRows = privilegeMatrix
     ? privilegeMatrix.users.filter((u) => (matrixEnabledOnly ? u.enabled : true))
     : [];
+
+  const aclRows = aclExtras
+    ? sortAclAces(aclExtras.interestingAces).filter((a) =>
+        aclKindFilter === "all" ? true : a.objectKind === aclKindFilter,
+      )
+    : [];
+
+  const aclKindCounts = aclExtras
+    ? ACL_KIND_ORDER.reduce(
+        (acc, kind) => {
+          acc[kind] = aclExtras.interestingAces.filter((a) => a.objectKind === kind).length;
+          return acc;
+        },
+        {} as Record<AclObjectKind, number>,
+      )
+    : null;
 
   const severityBadgeClass = (sev: HealthSeverity | string) =>
     SEVERITY_STYLE[sev] ?? "bg-muted text-foreground";
@@ -1556,9 +1642,10 @@ export default function ActiveDirectoryPage() {
                       <CardHeader className="pb-3">
                         <div className="flex flex-wrap items-center gap-3 justify-between">
                           <div>
-                            <CardTitle className="text-base">ACL (nTSecurityDescriptor)</CardTitle>
+                            <CardTitle className="text-base">Permessi ACL critici</CardTitle>
                             <p className="text-sm text-muted-foreground mt-1">
-                              Collect stile BloodHound con filtro ACE interesting (DCSync, GenericAll, WriteDacl…).
+                              Solo ACE ad alto rischio (DCSync, controllo totale, modifica ACL/owner…).
+                              Passa il mouse su nome o SID per il dettaglio completo.
                             </p>
                           </div>
                           <Badge
@@ -1570,54 +1657,116 @@ export default function ActiveDirectoryPage() {
                                   : "destructive"
                             }
                           >
-                            {aclExtras.meta.status}
+                            {aclExtras.meta.status === "ok"
+                              ? "Completo"
+                              : aclExtras.meta.status === "partial"
+                                ? "Parziale"
+                                : "Non disponibile"}
                           </Badge>
                         </div>
                       </CardHeader>
-                      <CardContent className="space-y-3">
+                      <CardContent className="space-y-4">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                           <div>
-                            <div className="text-muted-foreground text-xs">Oggetti</div>
+                            <div className="text-muted-foreground text-xs">Oggetti letti</div>
                             <div className="font-semibold">{aclExtras.meta.objectsScanned}</div>
                           </div>
                           <div>
-                            <div className="text-muted-foreground text-xs">SD parsed</div>
+                            <div className="text-muted-foreground text-xs">Descriptor OK</div>
                             <div className="font-semibold">{aclExtras.meta.sdParsed}</div>
                           </div>
                           <div>
-                            <div className="text-muted-foreground text-xs">Interesting ACE</div>
+                            <div className="text-muted-foreground text-xs">ACE critiche</div>
                             <div className="font-semibold">{aclExtras.meta.interestingAceCount}</div>
                           </div>
                           <div>
-                            <div className="text-muted-foreground text-xs">Durata</div>
-                            <div className="font-semibold">{aclExtras.meta.durationMs} ms</div>
+                            <div className="text-muted-foreground text-xs">Tempo collect</div>
+                            <div className="font-semibold">
+                              {(aclExtras.meta.durationMs / 1000).toFixed(1)} s
+                            </div>
                           </div>
                         </div>
                         {aclExtras.meta.errorMessage && (
                           <p className="text-sm text-destructive">{aclExtras.meta.errorMessage}</p>
                         )}
-                        {aclExtras.interestingAces.length > 0 ? (
+                        {aclExtras.interestingAces.length > 0 && aclKindCounts && (
+                          <div className="flex flex-wrap gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={aclKindFilter === "all" ? "default" : "outline"}
+                              className="h-7 text-xs"
+                              onClick={() => setAclKindFilter("all")}
+                            >
+                              Tutte ({aclExtras.interestingAces.length})
+                            </Button>
+                            {ACL_KIND_ORDER.filter((k) => (aclKindCounts[k] ?? 0) > 0).map((k) => (
+                              <Button
+                                key={k}
+                                type="button"
+                                size="sm"
+                                variant={aclKindFilter === k ? "default" : "outline"}
+                                className="h-7 text-xs"
+                                onClick={() => setAclKindFilter(k)}
+                              >
+                                {ACL_KIND_LABEL[k]} ({aclKindCounts[k]})
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                        {aclRows.length > 0 ? (
                           <div className="border rounded-lg overflow-x-auto">
-                            <table className="w-full text-xs">
+                            <table className="w-full text-sm">
                               <thead className="bg-muted/50">
                                 <tr>
-                                  <th className="p-2 text-left">Oggetto</th>
-                                  <th className="p-2 text-left">Kind</th>
-                                  <th className="p-2 text-left">Trustee</th>
-                                  <th className="p-2 text-left">Rights</th>
+                                  <th className="p-2.5 text-left font-medium">Su cosa</th>
+                                  <th className="p-2.5 text-left font-medium">Chi</th>
+                                  <th className="p-2.5 text-left font-medium">Permesso</th>
+                                  <th className="p-2.5 text-left font-medium w-24">Note</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {aclExtras.interestingAces.slice(0, 50).map((a, i) => (
-                                  <tr key={`${a.objectDn}-${a.trusteeSid}-${i}`} className="border-t">
-                                    <td className="p-2 font-mono truncate max-w-[220px]" title={a.objectDn}>
-                                      {a.objectDn}
+                                {aclRows.slice(0, 80).map((a, i) => (
+                                  <tr key={`${a.objectDn}-${a.trusteeSid}-${i}`} className="border-t align-top">
+                                    <td className="p-2.5">
+                                      <div className="font-medium" title={a.objectDn}>
+                                        {shortDnName(a.objectDn)}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground mt-0.5">
+                                        {ACL_KIND_LABEL[a.objectKind]}
+                                      </div>
                                     </td>
-                                    <td className="p-2">{a.objectKind}</td>
-                                    <td className="p-2 font-mono" title={a.trusteeSid}>
-                                      {a.trusteeSam ?? a.trusteeSid}
+                                    <td className="p-2.5">
+                                      <div className="font-medium" title={a.trusteeSid}>
+                                        {a.trusteeSam ?? shortSid(a.trusteeSid)}
+                                      </div>
+                                      {!a.trusteeSam && (
+                                        <div className="text-[11px] font-mono text-muted-foreground mt-0.5 truncate max-w-[180px]" title={a.trusteeSid}>
+                                          {a.trusteeSid}
+                                        </div>
+                                      )}
+                                      {a.trusteeSam && (
+                                        <div className="text-[11px] font-mono text-muted-foreground mt-0.5" title={a.trusteeSid}>
+                                          {shortSid(a.trusteeSid)}
+                                        </div>
+                                      )}
                                     </td>
-                                    <td className="p-2">{a.rights.join(", ")}</td>
+                                    <td className="p-2.5">
+                                      <div className="flex flex-wrap gap-1">
+                                        {a.rights.map((r) => (
+                                          <span
+                                            key={r}
+                                            className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-medium ${aclRightClass(r)}`}
+                                            title={r}
+                                          >
+                                            {aclRightLabel(r)}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </td>
+                                    <td className="p-2.5 text-xs text-muted-foreground">
+                                      {a.inherited ? "Ereditato" : "Esplicito"}
+                                    </td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -1625,7 +1774,9 @@ export default function ActiveDirectoryPage() {
                           </div>
                         ) : (
                           <p className="text-sm text-muted-foreground">
-                            Nessuna ACE interesting (o collect non disponibile).
+                            {aclExtras.interestingAces.length === 0
+                              ? "Nessuna ACE critica trovata (o collect non disponibile)."
+                              : "Nessuna riga per il filtro selezionato."}
                           </p>
                         )}
                       </CardContent>

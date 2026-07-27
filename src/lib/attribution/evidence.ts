@@ -10,7 +10,12 @@ export interface RecordEvidenceResult { inserted: number; refreshed: number; sup
  *   observed_at/confidence/expires_at;
  * - claim/raw diverso dalla stessa (source, dimension) → INSERT + supersede
  *   delle attive precedenti di quella coppia;
- * - le evidenze manual sono superseded SOLO da un nuovo manual.
+ * - le evidenze manual sono superseded SOLO da un nuovo manual;
+ * - claim DIVERSI co-emessi dalla STESSA (source, dimension) nello STESSO batch
+ *   (es. mdns che emette sia category=storage.nas sia category=compute per lo
+ *   stesso host — caso reale QNAP 192.168.40.26) NON si superseded a vicenda:
+ *   il supersede per una coppia (source, dimension) viene calcolato una sola
+ *   volta, dopo aver processato tutti i claim del batch per quella coppia.
  */
 export function recordEvidence(
   dbh: Database.Database,
@@ -33,27 +38,66 @@ export function recordEvidence(
   );
   const supersede = dbh.prepare(`UPDATE attribution_evidence SET superseded_by = ? WHERE id = ?`);
 
+  // Raggruppa gli input per coppia (source, dimension): il supersede va calcolato
+  // una volta per l'intero gruppo, dopo aver processato tutti i claim del batch,
+  // cosi' i claim co-emessi nello stesso batch non si cancellano a vicenda.
+  // retireStaleEvidence resta responsabile del ritiro per assenza dall'insieme
+  // emesso su batch successivi; qui si evita solo l'auto-cancellazione dentro il
+  // batch corrente.
+  const groups = new Map<string, EvidenceInput[]>();
+  for (const input of inputs) {
+    const key = `${input.source} ${input.dimension}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = [];
+      groups.set(key, group);
+    }
+    group.push(input);
+  }
+
   dbh.transaction(() => {
-    for (const input of inputs) {
-      const weight = input.weight ?? ATTR_SOURCE_WEIGHTS[input.source];
-      const active = selActive.all(hostId, input.source, input.dimension) as Array<{
+    for (const groupInputs of groups.values()) {
+      const { source, dimension } = groupInputs[0];
+      const active = selActive.all(hostId, source, dimension) as Array<{
         id: number; claim: string; raw_value: string | null;
       }>;
-      const identical = active.find(
-        (a) => a.claim === input.claim && (a.raw_value ?? null) === (input.raw_value ?? null)
-      );
-      if (identical) {
-        refresh.run(input.confidence, input.expires_at ?? null, identical.id);
-        result.refreshed += 1;
-        continue;
+      const activeByClaim = new Map(active.map((a) => [a.claim, a] as const));
+
+      // id "vincitore" per ciascun claim del batch (riga refreshata in place o
+      // nuova riga inserita), piu' un id di fallback per il supersede delle righe
+      // stale (claim non piu' emesso in questo batch da questa source/dimension).
+      const winnerIdByClaim = new Map<string, number>();
+      let lastWinnerId: number | null = null;
+      for (const input of groupInputs) {
+        const weight = input.weight ?? ATTR_SOURCE_WEIGHTS[input.source];
+        const existing = activeByClaim.get(input.claim);
+        const identical =
+          existing !== undefined && (existing.raw_value ?? null) === (input.raw_value ?? null);
+        if (identical) {
+          refresh.run(input.confidence, input.expires_at ?? null, existing.id);
+          result.refreshed += 1;
+          winnerIdByClaim.set(input.claim, existing.id);
+          lastWinnerId = existing.id;
+          continue;
+        }
+        const newId = insert.run(
+          hostId, input.source, input.phase, input.dimension, input.claim,
+          input.confidence, weight, input.raw_value ?? null, input.expires_at ?? null
+        ).lastInsertRowid as number;
+        result.inserted += 1;
+        winnerIdByClaim.set(input.claim, newId);
+        lastWinnerId = newId;
       }
-      const newId = insert.run(
-        hostId, input.source, input.phase, input.dimension, input.claim,
-        input.confidence, weight, input.raw_value ?? null, input.expires_at ?? null
-      ).lastInsertRowid as number;
-      result.inserted += 1;
+
+      // Supersede delle righe attive preesistenti che non sono il "vincitore" del
+      // proprio claim in questo batch: copre sia i claim assenti dal batch (stale),
+      // sia un claim ri-emesso con raw_value diverso (la nuova riga sostituisce la
+      // vecchia). I claim co-emessi il cui esito e' un refresh in place restano
+      // intatti perche' coincidono col proprio vincitore (stesso id).
       for (const a of active) {
-        supersede.run(newId, a.id);
+        const winnerId = winnerIdByClaim.get(a.claim);
+        if (winnerId === a.id) continue;
+        supersede.run(winnerId ?? lastWinnerId, a.id);
         result.superseded += 1;
       }
     }

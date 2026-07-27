@@ -15,7 +15,7 @@ const PHASE_META: Array<{ key: ScanPhaseKey; label: string; adds: string }> = [
   {
     key: "initial",
     label: "Scansione iniziale",
-    adds: "ICMP + Naabu (o ICMP + Nmap quick se Naabu non è disponibile): scopre host attivi e porte di base",
+    adds: "ICMP + Naabu (o ICMP + Nmap quick se Naabu non è disponibile): scopre host attivi e porte di base, più probe passivi HTTP/TLS, mDNS, SSDP, WSD e SMB2 sugli host con porte aperte",
   },
   {
     key: "nmap_deep",

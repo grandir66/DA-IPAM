@@ -25,6 +25,8 @@ export interface Network {
   /** Post-scan assessment sull'edge (tls-deep, enum, …). */
   assessment_enabled: number | null;
   assessment_profile_id: string | null;
+  /** Override per rete del gating probe passivi di attribuzione (fase 3, default 1 = abilitati). */
+  probes_enabled: number | null;
   created_at: string;
   updated_at: string;
 }

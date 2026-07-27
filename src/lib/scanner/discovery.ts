@@ -2331,6 +2331,13 @@ async function runDiscovery(
   progress.scanned = 0;
   progress.total = onlineIps.length;
 
+  // Attribution v2 fase 3 — probe passivi (HTTP/TLS, mDNS, SSDP, WSD, SMB2): raccolti
+  // qui durante la fase porte e lanciati in un'unica chiamata dopo il loop, per gli
+  // scan che portano open_ports fresco (scan_naabu/scan_nmap_base/network_discovery).
+  const probeEligibleScan =
+    scanType === "scan_naabu" || scanType === "scan_nmap_base" || scanType === "network_discovery";
+  const probeHosts: Array<{ id: number; ip: string; openPorts: number[] }> = [];
+
   for (let i = 0; i < onlineIps.length; i++) {
     const ip = onlineIps[i];
     progress.scanned = i;
@@ -2713,6 +2720,11 @@ async function runDiscovery(
     const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
     recomputeAttributionSafe(host.id, "scan");
 
+    // Attribution v2 fase 3: raccolta host per i probe passivi post-loop (vedi sotto)
+    if (probeEligibleScan) {
+      probeHosts.push({ id: host.id, ip, openPorts: (portsForClassification ?? []).map((p) => p.port) });
+    }
+
     // Sync network_device collegato (stesso IP) — port e classification applicata
     const slugForDevice = touchedClassification
       ? decision.classification
@@ -2740,6 +2752,22 @@ async function runDiscovery(
 
     progress.scanned = i + 1;
     progress.phase = `Elaborazione host — ${i + 1}/${onlineIps.length} (${ip})`;
+  }
+
+  // Attribution v2 fase 3 — probe passivi (HTTP/TLS, mDNS, SSDP, WSD, SMB2): al termine
+  // della fase porte, sugli host con open_ports appena persistito. Gating (setting
+  // globale + override per rete + porta aperta) e budget/concorrenza sono interamente
+  // responsabilità dell'orchestratore; qui basta non propagare mai un suo errore.
+  if (probeEligibleScan && probeHosts.length > 0) {
+    try {
+      const { runAttributionProbes } = await import("@/lib/scanner/probes/run-probes");
+      const probeResult = await runAttributionProbes(networkId, probeHosts);
+      log(
+        `Probe attribuzione: ${probeResult.hostsProbed} host probati, ${probeResult.evidenceWritten} evidenze scritte, ${probeResult.skipped} skip (${probeResult.elapsedMs}ms)`
+      );
+    } catch (e) {
+      console.error(`[Discovery] probe attribuzione falliti per rete ${networkId}:`, e);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════

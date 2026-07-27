@@ -56,6 +56,51 @@ describe("recordEvidence", () => {
     assert.equal(manuals.length, 1);
     assert.equal(manuals[0].claim, "network.router");
   });
+
+  it("caso reale QNAP: claim co-emessi nello stesso batch dalla stessa (source,dimension) NON si superseded a vicenda", () => {
+    const r = recordEvidence(db, 1, [
+      { source: "mdns", phase: "scan_icmp", dimension: "category", claim: "storage.nas", confidence: 0.8 },
+      { source: "mdns", phase: "scan_icmp", dimension: "category", claim: "compute", confidence: 0.5 },
+    ]);
+    assert.equal(r.inserted, 2);
+    assert.equal(r.superseded, 0);
+    const active = getActiveEvidence(db, 1).filter((e) => e.source === "mdns" && e.dimension === "category");
+    const claims = active.map((e) => e.claim).sort();
+    assert.deepEqual(claims, ["compute", "storage.nas"]);
+  });
+
+  it("batch successivo con un solo claim della coppia (source,dimension) → l'altro viene superseded, quello ripetuto refreshato", () => {
+    recordEvidence(db, 1, [
+      { source: "mdns", phase: "scan_icmp", dimension: "category", claim: "storage.nas", confidence: 0.8 },
+      { source: "mdns", phase: "scan_icmp", dimension: "category", claim: "compute", confidence: 0.5 },
+    ]);
+    const r2 = recordEvidence(db, 1, [
+      { source: "mdns", phase: "scan_icmp", dimension: "category", claim: "storage.nas", confidence: 0.8 },
+    ]);
+    assert.equal(r2.refreshed, 1);
+    assert.equal(r2.superseded, 1);
+    const active = getActiveEvidence(db, 1).filter((e) => e.source === "mdns" && e.dimension === "category");
+    assert.equal(active.length, 1);
+    assert.equal(active[0].claim, "storage.nas");
+  });
+
+  it("regressione: batch con claim diverso non tocca una riga attiva preesistente di ALTRA sorgente", () => {
+    recordEvidence(db, 1, [{ source: "hostname", phase: "scan_icmp", dimension: "category", claim: "network.access_point", confidence: 0.5 }]);
+    recordEvidence(db, 1, [{ source: "mdns", phase: "scan_icmp", dimension: "category", claim: "storage.nas", confidence: 0.8 }]);
+    const active = getActiveEvidence(db, 1);
+    assert.ok(active.some((e) => e.source === "hostname" && e.claim === "network.access_point"));
+    assert.ok(active.some((e) => e.source === "mdns" && e.claim === "storage.nas"));
+  });
+
+  it("manual non viene mai superseded da un batch multi-claim di sorgenti automatiche", () => {
+    recordEvidence(db, 1, [{ source: "manual", phase: "manual", dimension: "category", claim: "network.switch", confidence: 1 }]);
+    recordEvidence(db, 1, [
+      { source: "mdns", phase: "scan_icmp", dimension: "category", claim: "storage.nas", confidence: 0.8 },
+      { source: "mdns", phase: "scan_icmp", dimension: "category", claim: "compute", confidence: 0.5 },
+    ]);
+    const active = getActiveEvidence(db, 1);
+    assert.ok(active.some((e) => e.source === "manual" && e.claim === "network.switch"));
+  });
 });
 
 describe("retireStaleEvidence", () => {

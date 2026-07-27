@@ -219,7 +219,17 @@ export async function runAttributionProbes(
       const host = eligible[i];
       result.hostsProbed += 1;
       try {
-        result.evidenceWritten += await probeHost(host, deps);
+        // NB: `await` va risolto PRIMA di leggere/sommare `result.evidenceWritten`.
+        // `result.evidenceWritten += await probeHost(...)` legge il valore corrente
+        // di evidenceWritten PRIMA che l'await sospenda (get-poi-await-poi-set): con
+        // più worker concorrenti (pool fino a DEFAULT_CONCURRENCY host in parallelo)
+        // due letture "vecchie" si sovrascrivono a vicenda e il conteggio finale
+        // riporta solo l'ultimo host invece della somma di tutti (bug reale in
+        // produzione: evidenceWritten=5 riportato mentre in DB erano state scritte
+        // 35 righe). Separare l'await dalla somma rende il `+=` atomico (nessun
+        // punto di sospensione al suo interno, JS è single-thread).
+        const written = await probeHost(host, deps);
+        result.evidenceWritten += written;
       } catch (e) {
         // Difesa in profondità: probeHost già intercetta tutto internamente.
         console.error(`[probes] host ${host.ip} fallito inaspettatamente:`, e);

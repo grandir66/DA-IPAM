@@ -47,6 +47,8 @@ function fuseDimension(
   dimension: AttributionDimension,
   nowIso: string
 ): { result: DimensionResult; winnerRows: AttributionEvidenceRow[] } {
+  // INVARIANTE: expires_at è sempre ISO-8601 UTC (normalizeExpiresAt in evidence.ts
+  // lo garantisce in scrittura); il confronto lessicografico con nowIso qui sotto dipende da questo.
   const rows = all.filter(
     (e) => e.dimension === dimension && (e.expires_at == null || e.expires_at > nowIso)
   );

@@ -26,25 +26,37 @@ import {
   getAttributionSignalsForHost,
 } from "@/lib/db-tenant";
 import { recomputeHostAttribution } from "@/lib/attribution/recompute";
+import { withLockRetry, isLockError } from "@/lib/attribution/retry";
 
 interface Summary {
   networks: number;
   hosts: number;
   processed: number;
   skippedNoSignals: number;
+  skippedLocked: number;
   withCategory: number;
   withVendor: number;
   withOs: number;
 }
 
-function run(tenantCode: string, cidr: string | undefined): Summary {
+// CLI standalone: nessun altro reader/writer sta condividendo l'handle di
+// questo processo (a differenza del server, dove più richieste si spartiscono
+// la stessa connessione cacheata). Il busy_timeout di default (5000ms, vedi
+// db-tenant.ts) basta per la contesa normale server↔server, ma la CLI gira
+// spesso in backfill lunghi in parallelo al servizio che scrive sullo stesso
+// tenant DB (misurato in produzione: SQLITE_BUSY_SNAPSHOT durante un giro sulla
+// rete 192.168.15.0/24). Alziamo il timeout SOLO per questa connessione.
+const CLI_BUSY_TIMEOUT_MS = 30_000;
+
+async function run(tenantCode: string, cidr: string | undefined): Promise<Summary> {
   const summary: Summary = {
-    networks: 0, hosts: 0, processed: 0, skippedNoSignals: 0,
+    networks: 0, hosts: 0, processed: 0, skippedNoSignals: 0, skippedLocked: 0,
     withCategory: 0, withVendor: 0, withOs: 0,
   };
 
-  return withTenant(tenantCode, () => {
+  return withTenant(tenantCode, async () => {
     const dbh = getTenantDb(tenantCode);
+    dbh.pragma(`busy_timeout = ${CLI_BUSY_TIMEOUT_MS}`);
     const allNetworks = getNetworks();
     const networks = cidr ? allNetworks.filter((n) => n.cidr === cidr) : allNetworks;
 
@@ -64,11 +76,20 @@ function run(tenantCode: string, cidr: string | undefined): Summary {
           summary.skippedNoSignals += 1;
           continue;
         }
-        const result = recomputeHostAttribution(dbh, signals, "backfill");
-        summary.processed += 1;
-        if (result.category.claim) summary.withCategory += 1;
-        if (result.vendor.claim) summary.withVendor += 1;
-        if (result.os.claim) summary.withOs += 1;
+        try {
+          const result = await withLockRetry(() => recomputeHostAttribution(dbh, signals, "backfill"));
+          summary.processed += 1;
+          if (result.category.claim) summary.withCategory += 1;
+          if (result.vendor.claim) summary.withVendor += 1;
+          if (result.os.claim) summary.withOs += 1;
+        } catch (err) {
+          if (isLockError(err)) {
+            summary.skippedLocked += 1;
+            console.error(`[attribution-recompute] host ${host.ip} saltato dopo retry (DB lock persistente): ${err instanceof Error ? err.message : String(err)}`);
+            continue;
+          }
+          throw err;
+        }
       }
     }
 
@@ -85,12 +106,15 @@ function printSummary(summary: Summary): void {
   if (summary.skippedNoSignals > 0) {
     console.log(`Host saltati (no dati): ${summary.skippedNoSignals}`);
   }
+  if (summary.skippedLocked > 0) {
+    console.log(`Host saltati (lock):    ${summary.skippedLocked}`);
+  }
   console.log(`Con categoria:          ${summary.withCategory}`);
   console.log(`Con vendor:             ${summary.withVendor}`);
   console.log(`Con OS:                 ${summary.withOs}`);
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const tenantCode = process.argv[2];
   const cidr = process.argv[3];
 
@@ -106,10 +130,14 @@ function main(): void {
   }
 
   try {
-    const summary = run(tenantCode, cidr);
+    const summary = await run(tenantCode, cidr);
     printSummary(summary);
     closeTenantDb(tenantCode);
-    process.exit(0);
+    // Un batch dove OGNI host è stato saltato per lock persistente o dati
+    // mancanti non ha applicato nessuna correzione: va segnalato come
+    // fallimento (exit 1) anche se nessuna eccezione hard si è propagata,
+    // cosi' un cron/orchestratore a monte lo rileva e puo' ritentare il giro.
+    process.exit(summary.processed > 0 ? 0 : 1);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("ENCRYPTION_KEY")) {

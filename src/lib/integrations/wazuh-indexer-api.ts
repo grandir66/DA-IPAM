@@ -22,6 +22,11 @@ import {
   type SelfIdentity,
   type WazuhAlertDoc,
 } from "./wazuh-alerts";
+import {
+  buildStatsQuery,
+  parseStatsResponse,
+  type AlertStats,
+} from "./wazuh-alerts-stats";
 
 export interface WazuhIndexerConfig {
   url: string;            // es. https://da-wazuh.domarc.it:9200
@@ -268,6 +273,20 @@ export class WazuhIndexerClient {
       if (hits.length < body.size) break;
     }
     return { alerts: out, nextCursor };
+  }
+
+  /**
+   * Distribuzione temporale e composizione degli alert selezionati.
+   * Aggregazione pura (size 0): non scarica documenti.
+   */
+  async alertStats(args: { since: string; interval: string }): Promise<AlertStats> {
+    const body = buildStatsQuery(args);
+    const res = await this.json<Record<string, unknown>>(
+      "POST",
+      "/wazuh-alerts-*/_search",
+      body as unknown as Record<string, unknown>,
+    );
+    return parseStatsResponse(res);
   }
 
   /** Numero totale di documenti CVE nell'indice (sanity check). */

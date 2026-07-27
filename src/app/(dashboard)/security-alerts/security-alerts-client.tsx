@@ -13,7 +13,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RefreshCw, Check, Siren } from "lucide-react";
+import { RefreshCw, Check, Siren, Pause, Play } from "lucide-react";
+import {
+  AlertsComposition,
+  AlertsOverTime,
+  StatTile,
+  seriesColor,
+  type CategorySlice,
+  type SeriesRow,
+} from "./alert-charts";
+
+/** Ogni quanto la pagina si riallinea da sola. */
+const AUTO_REFRESH_MS = 60_000;
 
 interface AlertCategoryDto {
   id: string;
@@ -42,8 +53,27 @@ interface AlertEventDto {
 interface AlertsResponse {
   categories: AlertCategoryDto[];
   openByCategory: Record<string, number>;
-  syncState: { lastRunAt: string | null; lastError: string | null };
   events: AlertEventDto[];
+}
+
+interface StatsWindowDto {
+  id: string;
+  labelIt: string;
+  hours: number;
+}
+
+interface StatsResponse {
+  windows: StatsWindowDto[];
+  window: string;
+  interval: string;
+  openTotal: number;
+  syncState: { lastRunAt: string | null; lastError: string | null };
+  unavailable?: string;
+  stats: {
+    totals: { alerts: number; agents: number; rules: number };
+    byCategory: CategorySlice[];
+    series: SeriesRow[];
+  } | null;
 }
 
 function levelBadgeClass(level: number): string {
@@ -59,39 +89,66 @@ function formatDate(iso: string): string {
 
 export function SecurityAlertsClient() {
   const [data, setData] = useState<AlertsResponse | null>(null);
+  const [stats, setStats] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [category, setCategory] = useState<string | null>(null);
   const [onlyOpen, setOnlyOpen] = useState(true);
+  const [windowId, setWindowId] = useState("24h");
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const load = useCallback(async () => {
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    setLoading(true);
-    try {
-      const qs = new URLSearchParams();
-      if (category) qs.set("category", category);
-      if (onlyOpen) qs.set("onlyOpen", "1");
-      const res = await fetch(`/api/integrations/wazuh/alerts?${qs}`, {
-        signal: ac.signal,
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setData((await res.json()) as AlertsResponse);
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") {
-        toast.error(`Errore nel caricamento degli alert: ${(e as Error).message}`);
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
+      if (!opts?.silent) setLoading(true);
+      try {
+        const qs = new URLSearchParams();
+        if (category) qs.set("category", category);
+        if (onlyOpen) qs.set("onlyOpen", "1");
+        const [listRes, statsRes] = await Promise.all([
+          fetch(`/api/integrations/wazuh/alerts?${qs}`, { signal: ac.signal }),
+          fetch(`/api/integrations/wazuh/alerts/stats?window=${windowId}`, {
+            signal: ac.signal,
+          }),
+        ]);
+        if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
+        setData((await listRes.json()) as AlertsResponse);
+        if (statsRes.ok) setStats((await statsRes.json()) as StatsResponse);
+        setLastRefresh(new Date());
+      } catch (e) {
+        if ((e as Error).name !== "AbortError" && !opts?.silent) {
+          toast.error(`Errore nel caricamento: ${(e as Error).message}`);
+        }
+      } finally {
+        if (!opts?.silent) setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, [category, onlyOpen]);
+    },
+    [category, onlyOpen, windowId],
+  );
 
   useEffect(() => {
     void load();
     return () => abortRef.current?.abort();
   }, [load]);
+
+  // Aggiornamento automatico. Il job lato server gira ogni 15 minuti: qui si
+  // ricarica più spesso perché la presa in carico di un collega deve comparire
+  // senza che nessuno prema nulla.
+  useEffect(() => {
+    if (!autoRefresh) return;
+    timerRef.current = setInterval(() => {
+      void load({ silent: true });
+    }, AUTO_REFRESH_MS);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = null;
+    };
+  }, [autoRefresh, load]);
 
   async function handleSync() {
     setSyncing(true);
@@ -120,9 +177,7 @@ export function SecurityAlertsClient() {
 
   async function handleAck(id: number) {
     try {
-      const res = await fetch(`/api/integrations/wazuh/alerts/${id}`, {
-        method: "POST",
-      });
+      const res = await fetch(`/api/integrations/wazuh/alerts/${id}`, { method: "POST" });
       if (!res.ok) {
         const body = (await res.json()) as { error?: string };
         throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -137,6 +192,10 @@ export function SecurityAlertsClient() {
   const categories = data?.categories ?? [];
   const openCounts = data?.openByCategory ?? {};
   const events = data?.events ?? [];
+  const windows = stats?.windows ?? [{ id: "24h", labelIt: "Ultime 24 ore", hours: 24 }];
+  const totals = stats?.stats?.totals;
+  const byCategory = stats?.stats?.byCategory ?? [];
+  const series = stats?.stats?.series ?? [];
 
   return (
     <div className="space-y-6 p-6">
@@ -157,11 +216,106 @@ export function SecurityAlertsClient() {
         </Button>
       </div>
 
-      {data?.syncState.lastError ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          Ultimo poll fallito: {data.syncState.lastError}
+      {stats?.unavailable ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Grafici non disponibili: {stats.unavailable}. La tabella degli eventi resta
+          consultabile.
         </div>
       ) : null}
+      {stats?.syncState.lastError ? (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          Ultimo poll fallito: {stats.syncState.lastError}
+        </div>
+      ) : null}
+
+      {/* Controlli in una riga sola, sopra i grafici */}
+      <div className="flex flex-wrap items-center gap-2">
+        {windows.map((w) => (
+          <Button
+            key={w.id}
+            variant={windowId === w.id ? "default" : "outline"}
+            size="sm"
+            onClick={() => setWindowId(w.id)}
+          >
+            {w.labelIt}
+          </Button>
+        ))}
+        <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+        <Button
+          variant={onlyOpen ? "default" : "outline"}
+          size="sm"
+          onClick={() => setOnlyOpen((v) => !v)}
+        >
+          {onlyOpen ? "Solo aperti" : "Tutti gli stati"}
+        </Button>
+        <div className="ml-auto flex items-center gap-2">
+          {lastRefresh ? (
+            <span className="text-xs text-muted-foreground">
+              aggiornato {lastRefresh.toLocaleTimeString("it-IT")}
+            </span>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAutoRefresh((v) => !v)}
+            title={
+              autoRefresh
+                ? "Aggiornamento automatico attivo (ogni minuto)"
+                : "Aggiornamento automatico in pausa"
+            }
+          >
+            {autoRefresh ? (
+              <>
+                <Pause className="mr-1 h-3 w-3" /> Auto
+              </>
+            ) : (
+              <>
+                <Play className="mr-1 h-3 w-3" /> Auto
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* KPI: i numeri di testa, non un grafico a una barra */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile
+          label="Alert nel periodo"
+          value={totals?.alerts ?? 0}
+          hint={windows.find((w) => w.id === windowId)?.labelIt}
+        />
+        <StatTile
+          label="Eventi aperti"
+          value={stats?.openTotal ?? 0}
+          hint="da prendere in carico"
+        />
+        <StatTile label="Agent coinvolti" value={totals?.agents ?? 0} />
+        <StatTile label="Regole distinte" value={totals?.rules ?? 0} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Distribuzione nel tempo</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AlertsOverTime
+              series={series}
+              categories={byCategory}
+              interval={stats?.interval ?? "1h"}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Composizione</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AlertsComposition categories={byCategory} />
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -178,22 +332,17 @@ export function SecurityAlertsClient() {
             size="sm"
             onClick={() => setCategory(c.id)}
           >
+            <span
+              className="mr-2 inline-block h-2 w-2 rounded-sm"
+              style={{ background: seriesColor(c.id) }}
+              aria-hidden
+            />
             {c.labelIt}
             {openCounts[c.id] ? (
-              <Badge className="ml-2 bg-slate-200 text-slate-800">
-                {openCounts[c.id]}
-              </Badge>
+              <Badge className="ml-2 bg-slate-200 text-slate-800">{openCounts[c.id]}</Badge>
             ) : null}
           </Button>
         ))}
-        <Button
-          variant={onlyOpen ? "default" : "outline"}
-          size="sm"
-          className="ml-auto"
-          onClick={() => setOnlyOpen((v) => !v)}
-        >
-          {onlyOpen ? "Solo aperti" : "Tutti gli stati"}
-        </Button>
       </div>
 
       <Card>
@@ -231,7 +380,14 @@ export function SecurityAlertsClient() {
                         </Badge>
                       </TableCell>
                       <TableCell className="max-w-sm">
-                        <div className="font-medium">{e.rule_description ?? "—"}</div>
+                        <div className="flex items-center gap-2 font-medium">
+                          <span
+                            className="inline-block h-2 w-2 shrink-0 rounded-sm"
+                            style={{ background: seriesColor(e.category) }}
+                            aria-hidden
+                          />
+                          {e.rule_description ?? "—"}
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           {categories.find((c) => c.id === e.category)?.labelIt ??
                             e.category}
@@ -245,12 +401,10 @@ export function SecurityAlertsClient() {
                         {e.target_user ? <div>Utente: {e.target_user}</div> : null}
                         {e.source_ip ? <div>IP: {e.source_ip}</div> : null}
                       </TableCell>
-                      <TableCell className="text-right font-mono">
+                      <TableCell className="text-right tabular-nums">
                         {e.occurrence_count}
                       </TableCell>
-                      <TableCell className="text-xs">
-                        {formatDate(e.last_seen_at)}
-                      </TableCell>
+                      <TableCell className="text-xs">{formatDate(e.last_seen_at)}</TableCell>
                       <TableCell className="text-right">
                         {e.acknowledged ? (
                           <span className="text-xs text-muted-foreground">
@@ -258,11 +412,7 @@ export function SecurityAlertsClient() {
                             {e.acknowledged_by ? ` da ${e.acknowledged_by}` : ""}
                           </span>
                         ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleAck(e.id)}
-                          >
+                          <Button size="sm" variant="outline" onClick={() => handleAck(e.id)}>
                             <Check className="mr-1 h-3 w-3" />
                             Prendi in carico
                           </Button>

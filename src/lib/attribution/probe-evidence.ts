@@ -2,6 +2,8 @@
 // Mappa i finding dei probe passivi (fase 3, spec §4.5) in EvidenceInput[].
 // Funzioni PURE: nessuna rete, nessun accesso DB — testabili senza mock.
 import type { HttpTlsFinding } from "@/lib/scanner/probes/http-tls";
+import type { Smb2Finding } from "@/lib/scanner/probes/smb2";
+import type { MdnsFinding } from "@/lib/scanner/probes/mdns";
 import { isValidCategory } from "./taxonomy";
 import { vendorSlug } from "./emitters";
 import type { EvidenceInput } from "./types";
@@ -165,4 +167,132 @@ export function evidenceFromHttpTls(findings: HttpTlsFinding[]): EvidenceInput[]
   }
 
   return Array.from(acc.values());
+}
+
+// ---------------------------------------------------------------------------
+// SMB2 (fase 3 Task 2) — vedi commento di testa a smb2.ts per il vincolo di
+// sicurezza: il probe si ferma alla CHALLENGE NTLMSSP, mai un'autenticazione.
+// ---------------------------------------------------------------------------
+
+const SMB_OS_CONFIDENCE = 0.9;
+// La categoria è deliberatamente al livello 1 ("compute", non
+// "compute.server"/"compute.workstation"): SMB2 da solo non distingue server
+// da workstation, lo fa AD o altre evidenze più specifiche (spec Task 2).
+const SMB_CATEGORY_CONFIDENCE = 0.5;
+
+/** Dedup per (dimension, claim) tenendo la confidence più alta; scarta claim category fuori tassonomia. */
+function dedupeAndValidate(inputs: EvidenceInput[]): EvidenceInput[] {
+  const acc = new Map<string, EvidenceInput>();
+  for (const input of inputs) {
+    if (input.dimension === "category" && !isValidCategory(input.claim)) continue;
+    const key = `${input.dimension}:${input.claim}`;
+    const existing = acc.get(key);
+    if (!existing || input.confidence > existing.confidence) acc.set(key, input);
+  }
+  return Array.from(acc.values());
+}
+
+/**
+ * Da un `Smb2Finding` (NEGOTIATE + NTLMSSP NEGOTIATE anonimo riusciti) deriva
+ * le evidenze: la sola risposta a NTLMSSP implica il dialetto SMB Windows,
+ * quindi `os = windows` a confidence alta; la build (se letta dalla Version
+ * NTLM) va in `raw_value` (diventa `os_name` in fase di fusione, vedi
+ * `fuse.ts#bestRaw`). `netbiosName`/`dnsDomain` non producono evidenze qui:
+ * non esiste una dimensione "hostname" nell'attribution engine v2 (solo
+ * vendor/category/os) — restano nel finding per usi futuri (es. matching AD).
+ */
+export function evidenceFromSmb2(f: Smb2Finding): EvidenceInput[] {
+  const expires_at = expiresAt();
+  return dedupeAndValidate([
+    {
+      source: "smb", phase: "scan_naabu", dimension: "os",
+      claim: "windows", confidence: SMB_OS_CONFIDENCE, raw_value: f.osVersion, expires_at,
+    },
+    {
+      source: "smb", phase: "scan_naabu", dimension: "category",
+      claim: "compute", confidence: SMB_CATEGORY_CONFIDENCE, raw_value: null, expires_at,
+    },
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// mDNS (fase 3 Task 2)
+// ---------------------------------------------------------------------------
+
+const MDNS_PRINTER_CONFIDENCE = 0.9;
+const MDNS_PRINTER_VENDOR_CONFIDENCE = 0.9; // usb_MFG è auto-dichiarato dal device, come i header HTTP
+const MDNS_HAP_CONFIDENCE = 0.75;
+const MDNS_AV_DISPLAY_CONFIDENCE = 0.7;
+// _device-info._tcp è un servizio Bonjour Apple, ma il suo "model=" è
+// storicamente spoofato da NAS/Netatalk (Synology/QNAP/TrueNAS) per mostrare
+// un'icona "Mac" in Finder durante Time Machine (es. "model=Xserve1,1" su un
+// NAS non-Apple): confidence volutamente bassa, questa evidenza da sola non
+// può mai superare MIN_CLAIM_SCORE (0.56) nella fusione pesata.
+const MDNS_DEVICE_INFO_MODEL_VENDOR_CONFIDENCE = 0.35;
+
+// Apple HomeKit Accessory Categories (mappa ufficiale, solo le voci con un
+// corrispettivo di tassonomia utile qui): 2 (bridge) e 5 (illuminazione) sono
+// deliberatamente esclude — un bridge HomeKit non dice nulla sul tipo di
+// dispositivo fisico, e non esiste una foglia "iot.light" nella tassonomia.
+const HAP_CATEGORY_TO_TAXONOMY: Record<number, string> = {
+  9: "iot.thermostat",
+  17: "av.camera",
+  31: "av.display", // Television
+  33: "network.router", // Wi-Fi Router
+  34: "av.speaker", // Audio Receiver
+  35: "av.display", // TV Set Top Box
+  36: "av.display", // TV Streaming Stick
+};
+
+/**
+ * Da un `MdnsFinding` deriva le evidenze: stampanti via `_ipp`/`_pdl-datastream`
+ * (+ vendor/modello da usb_MFG/usb_MDL), categoria HomeKit via `ci=` di `_hap`,
+ * display via `_airplay`/`_googlecast`, vendor Apple (a bassa confidence) via
+ * `model=` di `_device-info`.
+ */
+export function evidenceFromMdns(f: MdnsFinding): EvidenceInput[] {
+  const expires_at = expiresAt();
+  const services = f.services.map((s) => s.toLowerCase());
+  const hasService = (needle: string) => services.some((s) => s.includes(needle));
+  const out: EvidenceInput[] = [];
+
+  if (hasService("_ipp._tcp") || hasService("_pdl-datastream._tcp")) {
+    out.push({
+      source: "mdns", phase: "scan_naabu", dimension: "category",
+      claim: "peripheral.printer", confidence: MDNS_PRINTER_CONFIDENCE, raw_value: null, expires_at,
+    });
+    if (f.usbMfg) {
+      const raw = [f.usbMfg, f.usbMdl].filter(Boolean).join(" ") || null;
+      out.push({
+        source: "mdns", phase: "scan_naabu", dimension: "vendor",
+        claim: vendorSlug(f.usbMfg), confidence: MDNS_PRINTER_VENDOR_CONFIDENCE, raw_value: raw, expires_at,
+      });
+    }
+  }
+
+  if (hasService("_hap._tcp") && f.hapCategory != null) {
+    const category = HAP_CATEGORY_TO_TAXONOMY[f.hapCategory];
+    if (category) {
+      out.push({
+        source: "mdns", phase: "scan_naabu", dimension: "category",
+        claim: category, confidence: MDNS_HAP_CONFIDENCE, raw_value: String(f.hapCategory), expires_at,
+      });
+    }
+  }
+
+  if (hasService("_airplay._tcp") || hasService("_googlecast._tcp")) {
+    out.push({
+      source: "mdns", phase: "scan_naabu", dimension: "category",
+      claim: "av.display", confidence: MDNS_AV_DISPLAY_CONFIDENCE, raw_value: null, expires_at,
+    });
+  }
+
+  if (f.model) {
+    out.push({
+      source: "mdns", phase: "scan_naabu", dimension: "vendor",
+      claim: vendorSlug("Apple"), confidence: MDNS_DEVICE_INFO_MODEL_VENDOR_CONFIDENCE, raw_value: f.model, expires_at,
+    });
+  }
+
+  return dedupeAndValidate(out);
 }

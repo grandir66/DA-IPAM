@@ -327,6 +327,38 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione scan_history CHECK fallita:`, e);
   }
 
+  // Migrazione runtime: scan_history.scan_type CHECK include 'scan_enrich'.
+  // v5 (fase 3b): la fase Enrich (ARP/DHCP/AD) ora scrive in scan_history (prima
+  // non scriveva affatto → last_run sempre null nel pannello acquisizione UI).
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scan_history'").get() as { sql?: string } | undefined;
+    const needsScanEnrich = row?.sql && !row.sql.includes("'scan_enrich'");
+    if (needsScanEnrich) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS scan_history_v5");
+      newDb.exec(`CREATE TABLE scan_history_v5 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify', 'scan_naabu', 'scan_enrich')),
+        status TEXT NOT NULL,
+        ports_open TEXT,
+        raw_output TEXT,
+        duration_ms INTEGER,
+        timestamp TEXT DEFAULT (datetime('now'))
+      )`);
+      newDb.exec("INSERT INTO scan_history_v5 SELECT * FROM scan_history");
+      newDb.exec("DROP TABLE scan_history");
+      newDb.exec("ALTER TABLE scan_history_v5 RENAME TO scan_history");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_host ON scan_history(host_id)");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_network ON scan_history(network_id)");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: scan_history CHECK aggiornato a v5 (+ scan_enrich)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione scan_history CHECK v5 fallita:`, e);
+  }
+
   // Migrazione runtime: scheduled_jobs.job_type CHECK include 'vuln_sync' (sync findings da scanner-edge).
   try {
     const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as { sql?: string } | undefined;
@@ -2377,6 +2409,80 @@ export function getScanHistory(filters: { host_id?: number; network_id?: number;
   return db().prepare(
     `SELECT * FROM scan_history ${where} ORDER BY timestamp DESC LIMIT ?`
   ).all(...values, limit) as ScanHistory[];
+}
+
+// Chiave fase acquisizione (spec §6.2) → scan_type multipli in scan_history che la alimentano.
+export type ScanPhaseKey = "initial" | "nmap_deep" | "snmp" | "enrich" | "credentials";
+
+// Mappa fase→scan_type. 'enrich' (ARP/DHCP/AD, endpoint scan_type="scan_enrich" in
+// /api/scans/trigger) scrive ora "scan_enrich" in scan_history a fine esecuzione
+// (fix 2026-07-27: prima non scriveva nulla → last_run sempre null in UI). Teniamo
+// anche i tipi legacy 'arp'/'dhcp'/'dns' nell'OR nel caso esistano righe storiche o
+// scritture dirette introdotte altrove.
+const SCAN_PHASE_TYPES: Record<ScanPhaseKey, string[]> = {
+  initial: ["scan_icmp", "scan_naabu", "network_discovery"],
+  nmap_deep: ["scan_nmap_base", "nmap", "network_discovery"],
+  snmp: ["scan_snmp_verify", "snmp", "network_discovery"],
+  enrich: ["scan_enrich", "arp", "dhcp", "dns", "network_discovery"],
+  credentials: ["credential_validate"],
+};
+
+export interface ScanPhaseStatus {
+  key: ScanPhaseKey;
+  last_run: string | null;
+  stale: boolean;
+}
+
+const STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function getScanPhaseStatusForNetwork(networkId: number): ScanPhaseStatus[] {
+  const rows = db().prepare(
+    `SELECT scan_type, MAX(timestamp) t FROM scan_history WHERE network_id = ? GROUP BY scan_type`
+  ).all(networkId) as Array<{ scan_type: string; t: string | null }>;
+  const maxByType = new Map(rows.map((r) => [r.scan_type, r.t]));
+  const now = Date.now();
+  return (Object.keys(SCAN_PHASE_TYPES) as ScanPhaseKey[]).map((key) => {
+    const types = SCAN_PHASE_TYPES[key];
+    let lastRun: string | null = null;
+    for (const t of types) {
+      const v = maxByType.get(t);
+      if (v && (lastRun === null || v > lastRun)) lastRun = v;
+    }
+    const stale = lastRun !== null && now - new Date(lastRun).getTime() > STALE_AFTER_MS;
+    return { key, last_run: lastRun, stale };
+  });
+}
+
+export interface AttributionCompleteness {
+  total: number;
+  level2: number;
+  level1: number;
+  none: number;
+  suggestion: string | null;
+}
+
+export function getAttributionCompletenessForNetwork(networkId: number): AttributionCompleteness {
+  const row = db().prepare(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN attr_category LIKE '%.%' THEN 1 ELSE 0 END) AS level2,
+       SUM(CASE WHEN attr_category IS NOT NULL AND attr_category != 'unknown' AND attr_category NOT LIKE '%.%' THEN 1 ELSE 0 END) AS level1
+     FROM hosts WHERE network_id = ?`
+  ).get(networkId) as { total: number; level2: number | null; level1: number | null };
+  const total = row.total ?? 0;
+  const level2 = row.level2 ?? 0;
+  const level1 = row.level1 ?? 0;
+  const none = total - level2 - level1;
+
+  let suggestion: string | null = null;
+  const snmpNeverRun = getScanPhaseStatusForNetwork(networkId).find((p) => p.key === "snmp")?.last_run == null;
+  if (level1 + none > 0 && snmpNeverRun) {
+    suggestion = `${level1 + none} host fermi al livello 1: esegui SNMP per distinguere AP da switch`;
+  } else if (none > level2) {
+    suggestion = `${none} host senza attribuzione: esegui la scansione iniziale`;
+  }
+
+  return { total, level2, level1, none, suggestion };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ScanTriggerSchema } from "@/lib/validators";
-import { getNmapProfileById, getActiveNmapProfile, getHostById, relinkAdComputersForNetwork } from "@/lib/db";
+import { getNmapProfileById, getActiveNmapProfile, getHostById, getHostsByNetwork, relinkAdComputersForNetwork, addScanHistory } from "@/lib/db";
 import { discoverNetwork } from "@/lib/scanner/discovery";
 import { buildCustomScanArgs } from "@/lib/scanner/ports";
 import { runArpPoll, runDhcpPollForNetwork, runDnsResolve } from "@/lib/cron/jobs";
@@ -32,12 +32,28 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
       }
 
-      const targetIps = resolveTargetIps(parsed.data.network_id, parsed.data.host_ids);
+      let targetIps = resolveTargetIps(parsed.data.network_id, parsed.data.host_ids);
       if (parsed.data.host_ids?.length && !targetIps?.length) {
         return NextResponse.json({ error: "Nessun host valido tra quelli selezionati per questa rete" }, { status: 400 });
       }
 
-      if (MANUAL_SCAN_TYPES.has(parsed.data.scan_type) && !parsed.data.host_ids?.length) {
+      // credential_validate: la fase "Credenziali" del pannello Acquisizione (§6.2, fase 3b)
+      // ha due modalità reali dal client — con host_ids (selezione attiva in lista: scoping,
+      // mitigazione lockout AD) segue il path standard sopra; senza host_ids (nessuna
+      // selezione) è network-wide e risolve qui sotto TUTTI gli host già noti della rete.
+      // Le altre MANUAL_SCAN_TYPES (pannello Detect: nmap/snmp/windows/ssh/dns/ipam_full)
+      // restano vincolate a host_ids esplicito, sempre.
+      const isNetworkWideCredentialValidate =
+        parsed.data.scan_type === "credential_validate" && !parsed.data.host_ids?.length;
+      if (isNetworkWideCredentialValidate) {
+        targetIps = getHostsByNetwork(parsed.data.network_id).map((h) => h.ip);
+      }
+
+      if (
+        MANUAL_SCAN_TYPES.has(parsed.data.scan_type) &&
+        !parsed.data.host_ids?.length &&
+        !isNetworkWideCredentialValidate
+      ) {
         return NextResponse.json(
           { error: "Seleziona uno o più host nella lista e riprova (azioni manuali solo su IP selezionati)" },
           { status: 400 }
@@ -79,6 +95,7 @@ export async function POST(request: Request) {
       // Con fresh_sync=true esegue una query LDAP fresca prima del relink:
       // utile quando la cache AD è vecchia o vuota, ma più lento (10-60s).
       if (parsed.data.scan_type === "scan_enrich") {
+        const enrichStart = Date.now();
         const phases: string[] = [];
         const errors: string[] = [];
         const freshSync = parsed.data.fresh_sync === true;
@@ -130,11 +147,29 @@ export async function POST(request: Request) {
 
         const phaseMsg = phases.length > 0 ? phases.join(" · ") : "Enrich completato";
         const status = errors.length > 0 && phases.length === 0 ? "failed" : "completed";
+        const statusText = phaseMsg + (errors.length > 0 ? ` (errori: ${errors.join("; ")})` : "");
+
+        // Traccia in scan_history così il pannello acquisizione (fase 3b) mostra
+        // last_run reale per "Enrich" invece di "mai eseguita" (bug fix 2026-07-27).
+        try {
+          addScanHistory({
+            host_id: null,
+            network_id: parsed.data.network_id,
+            scan_type: "scan_enrich",
+            status: statusText,
+            ports_open: null,
+            raw_output: errors.length > 0 ? errors.join("; ") : null,
+            duration_ms: Date.now() - enrichStart,
+          });
+        } catch (e) {
+          console.error("scan_enrich: scrittura scan_history fallita:", e);
+        }
+
         return NextResponse.json({
           id: "scan-enrich",
           progress: {
             status,
-            phase: phaseMsg + (errors.length > 0 ? ` (errori: ${errors.join("; ")})` : ""),
+            phase: statusText,
           },
         });
       }

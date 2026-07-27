@@ -7,6 +7,22 @@ import type { AttributionResult } from "./fuse";
 import { applyAttribution } from "./persist";
 
 /**
+ * Fase 3b: emette le evidenze dai segnali già in DB e rifonde l'insieme
+ * completo (spec §3: deterministica, non incrementale) SENZA persistere su
+ * hosts.attr_* né in history. recordEvidence resta additivo (le evidenze
+ * emesse vengono comunque scritte/aggiornate — solo l'applicazione del
+ * risultato fuso viene saltata), quindi una preview seguita da un apply
+ * produce lo stesso esito di un recompute diretto.
+ */
+export function previewHostAttribution(
+  dbh: Database.Database,
+  signals: AttributionSignals
+): AttributionResult {
+  recordEvidence(dbh, signals.host.id, emitEvidenceFromSignals(signals));
+  return fuseAttribution(getActiveEvidence(dbh, signals.host.id), new Date().toISOString());
+}
+
+/**
  * Orchestratore fase 1: emette le evidenze dai segnali già in DB, rifonde
  * l'insieme completo (spec §3: deterministica, non incrementale) e persiste.
  */
@@ -15,8 +31,7 @@ export function recomputeHostAttribution(
   signals: AttributionSignals,
   trigger: "scan" | "apply" | "manual" | "backfill" = "apply"
 ): AttributionResult {
-  recordEvidence(dbh, signals.host.id, emitEvidenceFromSignals(signals));
-  const result = fuseAttribution(getActiveEvidence(dbh, signals.host.id), new Date().toISOString());
+  const result = previewHostAttribution(dbh, signals);
   applyAttribution(dbh, signals.host.id, result, trigger);
   return result;
 }

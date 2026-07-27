@@ -12,10 +12,12 @@
 
 import {
   ALERT_CATEGORIES,
+  accountKind,
   minSelectedLevel,
   normalizeIp,
   selectedGroups,
   type AlertCategory,
+  type SourceSystem,
 } from "./wazuh-alerts";
 
 /** Quanti account bersagliati riportare. */
@@ -65,17 +67,27 @@ interface TermsBucket {
   doc_count?: number;
 }
 
+interface UserTermsAgg {
+  terms: { field: string; size: number };
+  aggs: {
+    top_source: { terms: { field: string; size: number } };
+    top_workstation?: { terms: { field: string; size: number } };
+    last_seen: { max: { field: string } };
+  };
+}
+
 interface AccountsAgg {
   filter: { bool: { filter: unknown[]; must_not: unknown[] } };
   aggs: {
-    by_user: {
-      terms: { field: string; size: number };
-      aggs: {
-        top_source: { terms: { field: string; size: number } };
-        top_workstation: { terms: { field: string; size: number } };
-        last_seen: { max: { field: string } };
-      };
+    /** Windows: targetUserName. */
+    by_user: UserTermsAgg;
+    /** Microsoft 365: UserId, ma solo sugli accessi FALLITI. */
+    by_user_cloud: {
+      filter: { term: Record<string, string> };
+      aggs: { u: UserTermsAgg };
     };
+    /** Decoder generici (sshd, pam, sudo): srcuser. */
+    by_user_unix: UserTermsAgg;
   };
 }
 
@@ -108,7 +120,10 @@ export function buildStatsQuery(args: {
   excludeAccounts?: string[];
 }): StatsQuery {
   const cats = queryableCategories();
-  const authGroups = cats.find((c) => c.id === "auth_failure")?.groups ?? [];
+  const authGroups = [
+    ...(cats.find((c) => c.id === "auth_failure")?.groups ?? []),
+    ...(cats.find((c) => c.id === "cloud_auth_failure")?.groups ?? []),
+  ];
   const filters: Record<string, CategoryFilter> = {};
 
   cats.forEach((c, i) => {
@@ -156,8 +171,16 @@ export function buildStatsQuery(args: {
         filter: {
           bool: {
             filter: [{ terms: { "rule.groups": authGroups } }],
+            // I nostri account vanno esclusi su OGNI campo utente: i decoder
+            // Linux usano srcuser, Microsoft 365 usa UserId. Filtrare solo il
+            // campo Windows lasciava passare "domarc" fra i bersagliati.
             must_not: (args.excludeAccounts ?? []).length
-              ? [{ terms: { "data.win.eventdata.targetUserName": args.excludeAccounts } }]
+              ? [
+                  { terms: { "data.win.eventdata.targetUserName": args.excludeAccounts } },
+                  { terms: { "data.srcuser": args.excludeAccounts } },
+                  { terms: { "data.dstuser": args.excludeAccounts } },
+                  { terms: { "data.office365.UserId": args.excludeAccounts } },
+                ]
               : [],
           },
         },
@@ -169,6 +192,25 @@ export function buildStatsQuery(args: {
               top_workstation: {
                 terms: { field: "data.win.eventdata.workstationName", size: 1 },
               },
+              last_seen: { max: { field: "@timestamp" } },
+            },
+          },
+          by_user_cloud: {
+            filter: { term: { "data.office365.Operation": "UserLoginFailed" } },
+            aggs: {
+              u: {
+                terms: { field: "data.office365.UserId", size: TOP_ACCOUNTS },
+                aggs: {
+                  top_source: { terms: { field: "data.office365.ClientIP", size: 1 } },
+                  last_seen: { max: { field: "@timestamp" } },
+                },
+              },
+            },
+          },
+          by_user_unix: {
+            terms: { field: "data.srcuser", size: TOP_ACCOUNTS },
+            aggs: {
+              top_source: { terms: { field: "data.srcip", size: 1 } },
               last_seen: { max: { field: "@timestamp" } },
             },
           },
@@ -195,6 +237,10 @@ export interface TargetedAccount {
   sourceIp: string | null;
   workstation: string | null;
   lastSeenAt: string | null;
+  /** Da quale sistema arriva il fallimento. */
+  system: SourceSystem;
+  /** Persona o account macchina (quelli che finiscono con $). */
+  kind: "utente" | "computer";
 }
 
 export interface AlertStats {
@@ -204,21 +250,23 @@ export interface AlertStats {
   topAccounts: TargetedAccount[];
 }
 
+interface UserBucket {
+  key?: string;
+  doc_count?: number;
+  top_source?: { buckets?: TermsBucket[] };
+  top_workstation?: { buckets?: TermsBucket[] };
+  last_seen?: { value_as_string?: string };
+}
+
 interface RawAgg {
   hits?: { total?: { value?: number } | number };
   aggregations?: {
     agents?: { value?: number };
     rules?: { value?: number };
     accounts?: {
-      by_user?: {
-        buckets?: Array<{
-          key?: string;
-          doc_count?: number;
-          top_source?: { buckets?: TermsBucket[] };
-          top_workstation?: { buckets?: TermsBucket[] };
-          last_seen?: { value_as_string?: string };
-        }>;
-      };
+      by_user?: { buckets?: UserBucket[] };
+      by_user_cloud?: { u?: { buckets?: UserBucket[] } };
+      by_user_unix?: { buckets?: UserBucket[] };
     };
     per_category?: {
       buckets?: Record<
@@ -265,17 +313,29 @@ export function parseStatsResponse(raw: RawAgg): AlertStats {
     a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0,
   );
 
-  const topAccounts: TargetedAccount[] = (
-    raw.aggregations?.accounts?.by_user?.buckets ?? []
-  )
-    .filter((b) => b.key && b.key !== "-")
-    .map((b) => ({
-      account: b.key as string,
-      count: b.doc_count ?? 0,
-      sourceIp: normalizeIp(b.top_source?.buckets?.[0]?.key),
-      workstation: b.top_workstation?.buckets?.[0]?.key ?? null,
-      lastSeenAt: b.last_seen?.value_as_string ?? null,
-    }));
+  // Ogni sorgente usa un campo diverso per l'account: si uniscono qui e si
+  // ordinano per volume, non per sistema di provenienza.
+  const fromBuckets = (buckets: UserBucket[] | undefined, system: SourceSystem) =>
+    (buckets ?? [])
+      .filter((b) => b.key && b.key !== "-")
+      .map<TargetedAccount>((b) => ({
+        account: b.key as string,
+        count: b.doc_count ?? 0,
+        sourceIp: normalizeIp(b.top_source?.buckets?.[0]?.key),
+        workstation: b.top_workstation?.buckets?.[0]?.key ?? null,
+        lastSeenAt: b.last_seen?.value_as_string ?? null,
+        system,
+        kind: accountKind(b.key),
+      }));
+
+  const acc = raw.aggregations?.accounts;
+  const topAccounts: TargetedAccount[] = [
+    ...fromBuckets(acc?.by_user?.buckets, "windows"),
+    ...fromBuckets(acc?.by_user_cloud?.u?.buckets, "microsoft365"),
+    ...fromBuckets(acc?.by_user_unix?.buckets, "linux"),
+  ]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, TOP_ACCOUNTS);
 
   return {
     totals: {

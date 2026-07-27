@@ -6,6 +6,7 @@ import {
   categorizeAlert,
   minSelectedLevel,
   normalizeIp,
+  accountKind,
   dedupKey,
   normalizeAlert,
   type WazuhAlertDoc,
@@ -133,13 +134,15 @@ test("dedupKey collapses the same alert repeating on the same agent", () => {
 });
 
 test("the query threshold is the lowest any category needs", () => {
-  // Sul campo il 99,9% dei logon falliti scatta a livello 5 ("Logon Failure -
-  // Unknown user or bad password"): filtrare a 8 nella query li perdeva tutti.
-  assert.equal(minSelectedLevel(), 5);
+  // Sul campo i logon falliti Windows scattano a livello 5 e i fallimenti di
+  // accesso Microsoft 365 a livello 3: la query deve scendere alla piu' bassa,
+  // altrimenti scarta gli alert prima che le soglie per-categoria li vedano.
+  // Misurato: da 2.492 a 3.862 alert in 24h, volume ampiamente gestibile.
+  assert.equal(minSelectedLevel(), 3);
   const q = buildAlertsQuery({ since: SINCE, size: 100 });
   const lvl = q.query.bool.filter.find((f) => "range" in f && f.range["rule.level"]);
   assert.ok(lvl && "range" in lvl);
-  assert.equal(lvl.range["rule.level"]?.gte, 5);
+  assert.equal(lvl.range["rule.level"]?.gte, 3);
 });
 
 test("auth_failure captures the level-5 rule Windows actually fires", () => {
@@ -227,4 +230,85 @@ test("self_probe is diagnostic: visible, but never an attack", () => {
   const cat = ALERT_CATEGORIES.find((c) => c.id === "self_probe");
   assert.ok(cat);
   assert.equal(cat!.diagnostic, true);
+});
+
+// ── Sorgenti oltre Windows e disambiguazione dell'account ───────────────────
+
+test("a Microsoft 365 failed login is captured, its successes are not", () => {
+  // Il gruppo AzureActiveDirectoryStsLogon contiene sia accessi riusciti sia
+  // falliti: senza guardare l'Operation si archivierebbero 600 login riusciti
+  // come se fossero attacchi.
+  const mk = (op: string) =>
+    normalizeAlert(
+      {
+        "@timestamp": "2026-07-27T10:00:00.000Z",
+        rule: { id: "91004", level: 3, description: "STS logon", groups: ["office365", "AzureActiveDirectoryStsLogon"] },
+        data: { office365: { Operation: op, UserId: "mario.rossi@acme.it", ClientIP: "203.0.113.9" } },
+      },
+      "h",
+    );
+  assert.equal(mk("UserLoginFailed").category, "cloud_auth_failure");
+  assert.equal(mk("UserLoggedIn").category, null);
+});
+
+test("the user is read from whichever field the source uses", () => {
+  const user = (data: Record<string, unknown>) =>
+    normalizeAlert(
+      {
+        "@timestamp": "2026-07-27T10:00:00.000Z",
+        rule: { id: "1", level: 5, description: "x", groups: ["authentication_failed"] },
+        data,
+      },
+      "h",
+    );
+  assert.equal(user({ win: { eventdata: { targetUserName: "mrossi" } } }).targetUser, "mrossi");
+  assert.equal(user({ srcuser: "root" }).targetUser, "root");
+  assert.equal(user({ dstuser: "admin" }).targetUser, "admin");
+  assert.equal(
+    user({ office365: { Operation: "UserLoginFailed", UserId: "a@b.it" } }).targetUser,
+    "a@b.it",
+  );
+});
+
+test("the origin IP is read from whichever field the source uses", () => {
+  const ip = (data: Record<string, unknown>) =>
+    normalizeAlert(
+      {
+        "@timestamp": "2026-07-27T10:00:00.000Z",
+        rule: { id: "1", level: 5, description: "x", groups: ["authentication_failed"] },
+        data,
+      },
+      "h",
+    ).sourceIp;
+  assert.equal(ip({ win: { eventdata: { ipAddress: "::ffff:10.0.0.1" } } }), "10.0.0.1");
+  assert.equal(ip({ srcip: "192.0.2.5" }), "192.0.2.5");
+  assert.equal(ip({ office365: { ClientIP: "203.0.113.9" } }), "203.0.113.9");
+});
+
+test("each alert declares which system it came from", () => {
+  const sys = (data: Record<string, unknown>, groups = ["authentication_failed"]) =>
+    normalizeAlert(
+      {
+        "@timestamp": "2026-07-27T10:00:00.000Z",
+        rule: { id: "1", level: 5, description: "x", groups },
+        data,
+      },
+      "h",
+    ).sourceSystem;
+  assert.equal(sys({ win: { eventdata: { targetUserName: "a" } } }), "windows");
+  assert.equal(
+    sys({ office365: { Operation: "UserLoginFailed" } }, ["office365", "AzureActiveDirectoryStsLogon"]),
+    "microsoft365",
+  );
+  assert.equal(sys({ srcuser: "root" }, ["sshd"]), "linux");
+  assert.equal(sys({}), "altro");
+});
+
+test("a machine account is told apart from a person", () => {
+  // Sul campo compaiono account come "PS-CERIELLO-P$": senza distinguerli
+  // sembrano utenti e mandano fuori strada chi legge.
+  assert.equal(accountKind("PS-CERIELLO-P$"), "computer");
+  assert.equal(accountKind("mario.rossi"), "utente");
+  assert.equal(accountKind("a@b.it"), "utente");
+  assert.equal(accountKind(null), "utente");
 });

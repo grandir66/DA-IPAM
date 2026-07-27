@@ -327,8 +327,10 @@ export function SecurityAlertsClient() {
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-xs text-muted-foreground">
-            Chi subisce i tentativi di accesso falliti e da dove partono. I nostri
-            account di servizio sono esclusi.
+            Chi subisce i tentativi di accesso falliti e da dove partono, su tutte
+            le sorgenti che Wazuh raccoglie: Windows, Microsoft 365 e Linux. Gli
+            account che finiscono con &quot;$&quot; sono account computer, non persone.
+            I nostri account di servizio sono esclusi.
           </p>
           <TargetedAccounts accounts={topAccounts} />
         </CardContent>

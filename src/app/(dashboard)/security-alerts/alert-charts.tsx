@@ -272,7 +272,16 @@ export interface TargetedAccount {
   sourceIp: string | null;
   workstation: string | null;
   lastSeenAt: string | null;
+  system: "windows" | "microsoft365" | "linux" | "altro";
+  kind: "utente" | "computer";
 }
+
+const SYSTEM_LABEL: Record<TargetedAccount["system"], string> = {
+  windows: "Windows",
+  microsoft365: "Microsoft 365",
+  linux: "Linux",
+  altro: "Altro",
+};
 
 /**
  * Chi viene bersagliato dai tentativi falliti, con l'origine.
@@ -302,16 +311,27 @@ export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) 
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-muted-foreground">
-            <th className="pb-2 font-normal">Account</th>
+            <th className="pb-2 font-normal">Account bersagliato</th>
+            <th className="pb-2 font-normal">Sistema</th>
             <th className="pb-2 font-normal">Tentativi falliti</th>
-            <th className="pb-2 font-normal">Origine</th>
+            <th className="pb-2 font-normal">Da dove parte il tentativo</th>
             <th className="pb-2 text-right font-normal">Ultimo</th>
           </tr>
         </thead>
         <tbody>
           {accounts.map((a) => (
             <tr key={a.account} className="border-t">
-              <td className="py-2 pr-3 font-medium">{a.account}</td>
+              <td className="py-2 pr-3">
+                <span className="font-medium">{a.account}</span>
+                {a.kind === "computer" ? (
+                  <span className="ml-2 rounded border px-1 py-0.5 text-[10px] uppercase text-muted-foreground">
+                    account computer
+                  </span>
+                ) : null}
+              </td>
+              <td className="py-2 pr-3 text-xs text-muted-foreground">
+                {SYSTEM_LABEL[a.system]}
+              </td>
               <td className="w-1/2 py-2 pr-3">
                 <div className="flex items-center gap-2">
                   <div

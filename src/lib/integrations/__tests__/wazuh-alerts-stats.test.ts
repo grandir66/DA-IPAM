@@ -183,3 +183,64 @@ test("no account aggregation yields an empty ranking, not a crash", () => {
   const s = parseStatsResponse({ hits: { total: { value: 0 } }, aggregations: {} });
   assert.deepEqual(s.topAccounts, []);
 });
+
+test("the account aggregation covers Windows, Microsoft 365 and Linux", () => {
+  const q = buildStatsQuery({ since: "2026-07-26T12:00:00.000Z", interval: "1h" });
+  const a = q.aggs.accounts.aggs;
+  assert.equal(a.by_user.terms.field, "data.win.eventdata.targetUserName");
+  assert.equal(a.by_user_cloud.aggs.u.terms.field, "data.office365.UserId");
+  assert.equal(a.by_user_unix.terms.field, "data.srcuser");
+  // i login cloud RIUSCITI non sono fallimenti: filtrati sull'Operation
+  assert.ok(JSON.stringify(a.by_user_cloud.filter).includes("UserLoginFailed"));
+});
+
+test("accounts from different systems are merged and ranked together", () => {
+  const s = parseStatsResponse({
+    hits: { total: { value: 100 } },
+    aggregations: {
+      accounts: {
+        by_user: {
+          buckets: [
+            { key: "PC-MARIO$", doc_count: 40, top_source: { buckets: [] }, top_workstation: { buckets: [{ key: "PC-MARIO" }] } },
+          ],
+        },
+        by_user_cloud: {
+          u: {
+            buckets: [
+              { key: "celestiano@acme.it", doc_count: 69, top_source: { buckets: [{ key: "203.0.113.9" }] } },
+            ],
+          },
+        },
+        by_user_unix: {
+          buckets: [{ key: "root", doc_count: 12, top_source: { buckets: [{ key: "192.0.2.7" }] } }],
+        },
+      },
+    },
+  });
+  assert.equal(s.topAccounts.length, 3);
+  // ordinati per volume, non per sorgente
+  assert.equal(s.topAccounts[0]!.account, "celestiano@acme.it");
+  assert.equal(s.topAccounts[0]!.system, "microsoft365");
+  assert.equal(s.topAccounts[1]!.account, "PC-MARIO$");
+  assert.equal(s.topAccounts[1]!.system, "windows");
+  // l'account macchina va distinto da una persona
+  assert.equal(s.topAccounts[1]!.kind, "computer");
+  assert.equal(s.topAccounts[2]!.system, "linux");
+  assert.equal(s.topAccounts[2]!.kind, "utente");
+});
+
+test("the self-account exclusion covers every user field, not just Windows", () => {
+  // Visto a schermo: "domarc" compariva fra i bersagliati perche' l'esclusione
+  // filtrava solo data.win.eventdata.targetUserName, mentre i decoder Linux
+  // usano data.srcuser.
+  const q = buildStatsQuery({
+    since: "2026-07-26T12:00:00.000Z",
+    interval: "1h",
+    excludeAccounts: ["domarc"],
+  });
+  const json = JSON.stringify(q.aggs.accounts.filter.bool.must_not);
+  assert.ok(json.includes("data.win.eventdata.targetUserName"), "manca il campo Windows");
+  assert.ok(json.includes("data.srcuser"), "manca il campo dei decoder generici");
+  assert.ok(json.includes("data.dstuser"), "manca dstuser");
+  assert.ok(json.includes("data.office365.UserId"), "manca il campo Microsoft 365");
+});

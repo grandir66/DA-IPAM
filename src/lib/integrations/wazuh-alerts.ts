@@ -67,6 +67,15 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
     minLevel: 8,
   },
   {
+    // I fallimenti di accesso Microsoft 365 scattano a livello 3: filtrare piu'
+    // in alto li rendeva invisibili. Il gruppo contiene pero' anche gli accessi
+    // RIUSCITI, separati in normalizeAlert guardando l'Operation.
+    id: "cloud_auth_failure",
+    labelIt: "Fallimenti accesso cloud (Microsoft 365)",
+    groups: ["AzureActiveDirectoryStsLogon"],
+    minLevel: 3,
+  },
+  {
     id: "log_tampering",
     labelIt: "Manomissione dei log",
     groups: ["audit_log_cleared", "logs_cleared"],
@@ -190,7 +199,27 @@ export interface WazuhAlertDoc {
       system?: { eventID?: string };
       eventdata?: Record<string, string | undefined>;
     };
+    /** Decoder generici Wazuh (sshd, pam, sudo, apparati syslog). */
+    srcuser?: string;
+    dstuser?: string;
+    srcip?: string;
+    office365?: {
+      Operation?: string;
+      UserId?: string;
+      ClientIP?: string;
+    };
   };
+}
+
+/** Sistema da cui proviene l'alert: serve a leggere la colonna account. */
+export type SourceSystem = "windows" | "microsoft365" | "linux" | "altro";
+
+/** Operazioni Microsoft 365 che rappresentano un accesso FALLITO. */
+const O365_FAILURE_OPS = new Set(["UserLoginFailed"]);
+
+/** Un account che finisce con $ e' un account computer, non una persona. */
+export function accountKind(user: string | null | undefined): "utente" | "computer" {
+  return user && user.trim().endsWith("$") ? "computer" : "utente";
 }
 
 export interface NormalizedAlert {
@@ -207,6 +236,10 @@ export interface NormalizedAlert {
   eventId: string | null;
   targetUser: string | null;
   sourceIp: string | null;
+  /** Postazione dichiarata dall'evento Windows, quando presente. */
+  workstation: string | null;
+  sourceSystem: SourceSystem;
+  accountKind: "utente" | "computer";
 }
 
 export function normalizeAlert(
@@ -216,13 +249,35 @@ export function normalizeAlert(
 ): NormalizedAlert {
   const groups = doc.rule?.groups ?? [];
   const ed = doc.data?.win?.eventdata;
-  const sourceIp = normalizeIp(ed?.ipAddress) ?? null;
-  const targetUser = ed?.targetUserName ?? ed?.subjectUserName ?? null;
-  const matched = categorizeAlert(groups);
+  const o365 = doc.data?.office365;
+
+  // Ogni sorgente usa un campo diverso: Windows targetUserName, Microsoft 365
+  // UserId, i decoder generici srcuser/dstuser.
+  const targetUser =
+    ed?.targetUserName ?? o365?.UserId ?? doc.data?.srcuser ?? doc.data?.dstuser ?? ed?.subjectUserName ?? null;
+  const sourceIp =
+    normalizeIp(ed?.ipAddress) ?? normalizeIp(o365?.ClientIP) ?? normalizeIp(doc.data?.srcip) ?? null;
+  const workstation = ed?.workstationName ?? null;
+
+  const sourceSystem: SourceSystem = ed
+    ? "windows"
+    : o365 || groups.includes("office365")
+      ? "microsoft365"
+      : doc.data?.srcuser || doc.data?.dstuser || groups.some((g) => g === "sshd" || g === "pam" || g === "sudo")
+        ? "linux"
+        : "altro";
+
+  let matched = categorizeAlert(groups);
+  // Microsoft 365: lo stesso gruppo porta accessi riusciti e falliti. Senza
+  // guardare l'Operation si archivierebbero i login riusciti come attacchi.
+  if (matched === "cloud_auth_failure" && !O365_FAILURE_OPS.has(o365?.Operation ?? "")) {
+    matched = null;
+  }
   // Riclassifica solo cio' che sarebbe finito fra i fallimenti di
   // autenticazione: un ransomware non diventa "nostra sonda" per via dell'IP.
   const category =
-    matched === "auth_failure" && isSelfOrigin({ sourceIp, targetUser }, self)
+(matched === "auth_failure" || matched === "cloud_auth_failure") &&
+    isSelfOrigin({ sourceIp, targetUser }, self)
       ? "self_probe"
       : matched;
   return {
@@ -238,6 +293,9 @@ export function normalizeAlert(
     eventId: doc.data?.win?.system?.eventID ?? null,
     targetUser,
     sourceIp,
+    workstation,
+    sourceSystem,
+    accountKind: accountKind(targetUser),
   };
 }
 

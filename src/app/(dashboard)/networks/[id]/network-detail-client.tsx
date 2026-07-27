@@ -796,11 +796,8 @@ export function NetworkDetailClient({
       scanType === "scan_icmp" ||
       scanType === "scan_nmap_base" ||
       scanType === "scan_snmp_verify" ||
-      scanType === "scan_naabu" ||
-      // Fase "Credenziali" (§6.2): mai bloccare per selezione assente (network-wide
-      // di default) — se l'utente HA selezionato host, lo scoping vero avviene sotto
-      // in body.host_ids (mitigazione lockout AD), non qui.
-      scanType === "credential_validate";
+      scanType === "scan_naabu";
+    // credential_validate NON è qui di proposito: ogni tentativo è un logon fallito reale (allarmi MDR/XDR, lockout AD) → solo host selezionati.
     if (!noHostSelectionNeeded && selectedHostIds.size === 0) {
       toast.error("Seleziona uno o più host nella vista lista (azioni manuali solo sugli IP selezionati)");
       return { ok: false, lastProgress: null };
@@ -809,10 +806,7 @@ export function NetworkDetailClient({
       network_id: network.id,
       scan_type: scanType,
     };
-    if (scanType === "credential_validate") {
-      // A differenza delle altre fasi subnet-wide: se c'è una selezione attiva la rispetta comunque (scoping = mitigazione lockout AD, discovery.ts:2141-2144); senza selezione resta network-wide.
-      if (selectedHostIds.size > 0) body.host_ids = Array.from(selectedHostIds);
-    } else if (!noHostSelectionNeeded && selectedHostIds.size > 0) {
+    if (!noHostSelectionNeeded && selectedHostIds.size > 0) {
       body.host_ids = Array.from(selectedHostIds);
     }
 
@@ -1227,13 +1221,13 @@ export function NetworkDetailClient({
                       variant="outline"
                       className={cn(ACTION_BTN, "bg-background/90 w-full")}
                       onClick={() => triggerScan("credential_validate")}
-                      disabled={!!scanning || enriching || networkCredentialIds.length === 0}
+                      disabled={!!scanning || enriching || networkCredentialIds.length === 0 || selectedHostIds.size === 0}
                       title={
                         networkCredentialIds.length === 0
                           ? "Configura credenziali nella modifica rete"
-                          : selectedHostIds.size > 0
-                            ? `Valida le credenziali sugli ${selectedHostIds.size} host selezionati`
-                            : "Valida le credenziali della rete su tutti gli host"
+                          : selectedHostIds.size === 0
+                            ? "Seleziona gli host nella vista lista: la validazione genera tentativi di login reali (allarmi MDR/XDR, rischio lockout AD)"
+                            : `Valida le credenziali sugli ${selectedHostIds.size} host selezionati`
                       }
                     >
                       <Key className="h-3.5 w-3.5 mr-1 shrink-0" />

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ScanTriggerSchema } from "@/lib/validators";
-import { getNmapProfileById, getActiveNmapProfile, getHostById, getHostsByNetwork, relinkAdComputersForNetwork, addScanHistory } from "@/lib/db";
+import { getNmapProfileById, getActiveNmapProfile, getHostById, relinkAdComputersForNetwork, addScanHistory } from "@/lib/db";
 import { discoverNetwork } from "@/lib/scanner/discovery";
 import { buildCustomScanArgs } from "@/lib/scanner/ports";
 import { runArpPoll, runDhcpPollForNetwork, runDnsResolve } from "@/lib/cron/jobs";
@@ -32,28 +32,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
       }
 
-      let targetIps = resolveTargetIps(parsed.data.network_id, parsed.data.host_ids);
+      const targetIps = resolveTargetIps(parsed.data.network_id, parsed.data.host_ids);
       if (parsed.data.host_ids?.length && !targetIps?.length) {
         return NextResponse.json({ error: "Nessun host valido tra quelli selezionati per questa rete" }, { status: 400 });
       }
 
-      // credential_validate: la fase "Credenziali" del pannello Acquisizione (§6.2, fase 3b)
-      // ha due modalità reali dal client — con host_ids (selezione attiva in lista: scoping,
-      // mitigazione lockout AD) segue il path standard sopra; senza host_ids (nessuna
-      // selezione) è network-wide e risolve qui sotto TUTTI gli host già noti della rete.
-      // Le altre MANUAL_SCAN_TYPES (pannello Detect: nmap/snmp/windows/ssh/dns/ipam_full)
-      // restano vincolate a host_ids esplicito, sempre.
-      const isNetworkWideCredentialValidate =
-        parsed.data.scan_type === "credential_validate" && !parsed.data.host_ids?.length;
-      if (isNetworkWideCredentialValidate) {
-        targetIps = getHostsByNetwork(parsed.data.network_id).map((h) => h.ip);
-      }
-
-      if (
-        MANUAL_SCAN_TYPES.has(parsed.data.scan_type) &&
-        !parsed.data.host_ids?.length &&
-        !isNetworkWideCredentialValidate
-      ) {
+      // credential_validate e altre MANUAL_SCAN_TYPES richiedono host_ids esplicito:
+      // ogni tentativo è un logon fallito reale (allarmi MDR/XDR, rischio lockout AD).
+      if (MANUAL_SCAN_TYPES.has(parsed.data.scan_type) && !parsed.data.host_ids?.length) {
         return NextResponse.json(
           { error: "Seleziona uno o più host nella lista e riprova (azioni manuali solo su IP selezionati)" },
           { status: 400 }

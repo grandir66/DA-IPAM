@@ -17,12 +17,35 @@ export interface AttributionSignals {
   neighborSightings: Array<{ protocol: string; remote_platform: string | null; remote_device_name: string }>;
 }
 
-/** "Ubiquiti Inc" → "ubiquiti"; "Hewlett Packard Enterprise" → "hewlett-packard-enterprise" */
+/**
+ * Alias di normalizzazione finale: varianti note dello stesso vendor che la sola
+ * pulizia suffissi/punteggiatura non unifica (nomi registro OUI non standard,
+ * o abbreviazioni SNMP diverse) — altrimenti i voti si spaccano tra fonti
+ * (OUI vs SNMP sysObjectID vs Wazuh board_vendor) e nessun claim supera soglia.
+ */
+const ALIAS: Record<string, string> = {
+  "routerboard-com": "mikrotik",
+  "routerboard": "mikrotik",
+  "ubiquiti-networks": "ubiquiti",
+  "hewlett-packard": "hpe",
+  "hewlett-packard-enterprise": "hpe",
+};
+
+/** "Ubiquiti Inc" → "ubiquiti"; "Hewlett Packard Enterprise" → "hpe" (via ALIAS) */
 export function vendorSlug(name: string): string {
-  return name.trim().toLowerCase()
+  const slug = name.trim().toLowerCase()
     .replace(/,?\s+(inc|ltd|llc|gmbh|s\.?p\.?a\.?|s\.?r\.?l\.?|co|corp|corporation|technologies|technology|networks)\.?$/i, "")
     .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return ALIAS[slug] ?? slug;
 }
+
+// Lacuna 1 (fase produzione): MAC di NIC virtuali — il vendor OUI è quello
+// dell'hypervisor, non un "produttore" fisico. Match per sostringa (spec: "contiene").
+const HYPERVISOR_VENDOR_RE = /proxmox|vmware|qemu|xensource|virtualbox|oracle virtualbox|hyper-v|parallels|nutanix/i;
+
+// Lacuna 2: voci placeholder del registro IEEE (nessun produttore reale dietro il
+// MAC, es. locally-administered/random) — match esatto (dopo trim), non sostringa.
+const VENDOR_PLACEHOLDER_RE = /^(ieee registration authority|private)$/i;
 
 // Caso Ubiquiti (nota Fase 0 della spec): il modello nel sysDescr distingue AP/switch/router
 const UBNT_AP = /\b(U[67][A-Z0-9-]*|UAP[A-Z0-9-]*|UA-[A-Z0-9-]*)\b/i;
@@ -61,11 +84,23 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
 
   // 1. Vendor da OUI: hosts.vendor è già la risoluzione OUI del MAC (lookupVendorSync
   //    a scan-time). Non rifacciamo il lookup: emettiamo il dato persistito.
+  //    - NIC virtuale (hypervisor noto nel vendor OUI) → emettiamo ANCHE la categoria
+  //      compute.vm (oltre al vendor: utile sapere quale hypervisor la ospita).
+  //    - Vendor placeholder del registro (IEEE Registration Authority / Private) →
+  //      non è un produttore: niente evidenza vendor.
   if (host.vendor) {
-    out.push({
-      source: "oui", phase: "scan_icmp", dimension: "vendor",
-      claim: vendorSlug(host.vendor), confidence: 0.9, raw_value: host.vendor,
-    });
+    if (HYPERVISOR_VENDOR_RE.test(host.vendor)) {
+      out.push({
+        source: "oui", phase: "scan_icmp", dimension: "category",
+        claim: "compute.vm", confidence: 0.85, raw_value: host.vendor,
+      });
+    }
+    if (!VENDOR_PLACEHOLDER_RE.test(host.vendor.trim())) {
+      out.push({
+        source: "oui", phase: "scan_icmp", dimension: "vendor",
+        claim: vendorSlug(host.vendor), confidence: 0.9, raw_value: host.vendor,
+      });
+    }
   }
 
   // 2. SNMP: sysObjectID via KB + sysDescr (incl. caso Ubiquiti)

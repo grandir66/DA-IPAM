@@ -86,6 +86,28 @@ export interface Host {
   classification_reason?: string | null;
   /** JSON snapshot decisionale: evidence, conflicts, fingerprint_hash, engine_version, sources. */
   classification_json?: string | null;
+  /** Attribution v2 (src/lib/attribution/): slug categoria fuso da evidenze multi-fonte (es. "network.access_point"). */
+  attr_category?: string | null;
+  /** Slug vendor fuso (normalizzato, es. "ubiquiti"). */
+  attr_vendor?: string | null;
+  /** Nome vendor leggibile citato dall'evidenza vincente (es. "Ubiquiti Inc"). */
+  attr_vendor_name?: string | null;
+  /** Famiglia OS fusa (es. "linux", "windows", "network-os"). */
+  attr_os_family?: string | null;
+  /** Nome/versione OS leggibile citato dall'evidenza vincente. */
+  attr_os_name?: string | null;
+  /** Confidenza 0-100 della categoria fusa. */
+  attr_confidence_category?: number | null;
+  /** Confidenza 0-100 del vendor fuso. */
+  attr_confidence_vendor?: number | null;
+  /** Confidenza 0-100 dell'OS fuso. */
+  attr_confidence_os?: number | null;
+  /** Fase minima richiesta dalle evidenze citate per la categoria (es. "scan_snmp_verify"). */
+  attr_min_phase?: string | null;
+  /** Timestamp ultimo ricalcolo attribuzione. */
+  attr_at?: string | null;
+  /** Versione motore Attribution v2 che ha prodotto l'ultimo risultato. */
+  attr_engine_version?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -1,7 +1,7 @@
 // src/lib/attribution/__tests__/emitters.test.ts
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { emitEvidenceFromSignals } from "../emitters";
+import { emitEvidenceFromSignals, vendorSlug } from "../emitters";
 import type { AttributionSignals } from "../emitters";
 
 function base(): AttributionSignals {
@@ -21,6 +21,76 @@ describe("emitEvidenceFromSignals", () => {
     assert.equal(v.claim, "ubiquiti");
     assert.equal(v.raw_value, "Ubiquiti Inc");
     assert.equal(v.phase, "scan_icmp");
+  });
+  it("MAC virtuale (vendor OUI hypervisor) → categoria compute.vm + vendor comunque emesso", () => {
+    const s = base();
+    s.host.vendor = "VMware, Inc.";
+    const out = emitEvidenceFromSignals(s);
+    const cat = out.find((e) => e.source === "oui" && e.dimension === "category");
+    assert.ok(cat, "attesa evidenza categoria compute.vm");
+    assert.equal(cat.claim, "compute.vm");
+    assert.equal(cat.confidence, 0.85);
+    assert.equal(cat.phase, "scan_icmp");
+    assert.equal(cat.raw_value, "VMware, Inc.");
+    const v = out.find((e) => e.source === "oui" && e.dimension === "vendor");
+    assert.ok(v, "il vendor (hypervisor) deve restare emesso");
+    assert.equal(v.claim, "vmware");
+  });
+  it("MAC virtuale: match case-insensitive su tutti gli hypervisor noti", () => {
+    for (const vendor of ["Proxmox Server Solutions GmbH", "QEMU", "Xensource, Inc.", "Oracle VirtualBox", "Microsoft Hyper-V", "Parallels, Inc.", "Nutanix Inc"]) {
+      const s = base();
+      s.host.vendor = vendor;
+      const cat = emitEvidenceFromSignals(s).find((e) => e.source === "oui" && e.dimension === "category");
+      assert.equal(cat?.claim, "compute.vm", `atteso compute.vm per vendor "${vendor}"`);
+    }
+  });
+  it("vendor placeholder del registro (IEEE Registration Authority / Private) → nessuna evidenza vendor", () => {
+    for (const vendor of ["IEEE Registration Authority", "private", "  Private  ", "PRIVATE"]) {
+      const s = base();
+      s.host.vendor = vendor;
+      const out = emitEvidenceFromSignals(s);
+      assert.deepEqual(out, [], `atteso nessuna evidenza per vendor placeholder "${vendor}"`);
+    }
+  });
+  it("vendor placeholder non sopprime altre evidenze (es. hostname)", () => {
+    const s = base();
+    s.host.vendor = "Private";
+    s.host.hostname = "ap-piano2";
+    const out = emitEvidenceFromSignals(s);
+    assert.equal(out.find((e) => e.source === "oui"), undefined);
+    assert.equal(out.find((e) => e.source === "hostname")?.claim, "network.access_point");
+  });
+  it("alias slug vendor: varianti note convergono sullo stesso claim (voti OUI/SNMP non si spaccano)", () => {
+    assert.equal(vendorSlug("Routerboard.com"), "mikrotik");
+    assert.equal(vendorSlug("Routerboard"), "mikrotik");
+    assert.equal(vendorSlug("Ubiquiti Networks Inc."), "ubiquiti");
+    assert.equal(vendorSlug("Hewlett Packard"), "hpe");
+    assert.equal(vendorSlug("Hewlett Packard Enterprise"), "hpe");
+    // regressione: caso già coperto senza alias deve restare invariato
+    assert.equal(vendorSlug("Ubiquiti Inc"), "ubiquiti");
+  });
+  it("alias slug applicato anche nel flusso emitter (host.vendor = OUI grezzo)", () => {
+    const s = base();
+    s.host.vendor = "Routerboard.com";
+    const v = emitEvidenceFromSignals(s).find((e) => e.source === "oui" && e.dimension === "vendor");
+    assert.equal(v?.claim, "mikrotik");
+  });
+  it("alias slug applicato anche su fonte Wazuh (board_vendor = Routerboard.com) → claim mikrotik", () => {
+    const s = base();
+    s.wazuh = { os_platform: "rhel", os_name: "RHEL", os_version: "9", board_vendor: "Routerboard.com" };
+    const v = emitEvidenceFromSignals(s).find((e) => e.source === "wazuh" && e.dimension === "vendor");
+    assert.ok(v, "attesa evidenza vendor da wazuh");
+    assert.equal(v.claim, "mikrotik");
+  });
+  it('vendorSlug con trattino: "Hewlett-Packard Enterprise" → "hpe" (nessun sysObjectID builtin espone la forma non normalizzata: la LOOKUP_TABLE usa già "HPE")', () => {
+    assert.equal(vendorSlug("Hewlett-Packard Enterprise"), "hpe");
+  });
+  it("alias slug applicato anche su fonte Wazuh (board_vendor = Hewlett-Packard) → claim hpe", () => {
+    const s = base();
+    s.wazuh = { os_platform: "rhel", os_name: "RHEL", os_version: "9", board_vendor: "Hewlett-Packard" };
+    const v = emitEvidenceFromSignals(s).find((e) => e.source === "wazuh" && e.dimension === "vendor");
+    assert.ok(v, "attesa evidenza vendor da wazuh");
+    assert.equal(v.claim, "hpe");
   });
   it("sysDescr Ubiquiti: U6-Pro → access_point, USW → switch, UDM → router", () => {
     const mk = (sysDescr: string) => {

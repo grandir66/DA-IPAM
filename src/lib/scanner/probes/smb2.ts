@@ -23,7 +23,17 @@ const DEFAULT_TIMEOUT_MS = 2000;
 const SMB_PORT = 445;
 const MAX_FRAME_BYTES = 128 * 1024; // difesa: mai bufferizzare oltre questo per una risposta
 
-const SMB2_DIALECTS = [0x0202, 0x0210, 0x0300, 0x0302, 0x0311] as const;
+// 0x0311 (SMB 3.1.1) DELIBERATAMENTE ESCLUSO: MS-SMB2 §2.2.3 richiede che un
+// client che lo propone allei anche un NegotiateContextList (almeno
+// SMB2_PREAUTH_INTEGRITY_CAPABILITIES) subito dopo l'array Dialects. Senza
+// quel contesto, Samba/Synology DSM rifiuta l'INTERA richiesta NEGOTIATE con
+// STATUS_INVALID_PARAMETER (0xC000000D) — confermato byte-per-byte contro
+// 192.168.40.23 (evidenza rete reale, VM 533): con 0x0311 nella lista,
+// NESSUNA risposta utile arriva mai, anche per i dialetti piu' vecchi
+// regolarmente proposti nello stesso messaggio. Implementare i negotiate
+// context e' fuori scope per un probe passivo minimale: si rinuncia a 3.1.1,
+// il probe resta comunque valido per 2.0.2/2.1/3.0/3.0.2.
+const SMB2_DIALECTS = [0x0202, 0x0210, 0x0300, 0x0302] as const;
 
 // NTLMSSP_NEGOTIATE_UNICODE | REQUEST_TARGET | NTLM | ALWAYS_SIGN | EXTENDED_SESSIONSECURITY
 const NTLM_NEGOTIATE_FLAGS =
@@ -72,9 +82,12 @@ function buildNegotiateRequest(): Buffer {
   body.writeUInt16LE(0x0001, 4); // SecurityMode: signing enabled (non required)
   body.writeUInt16LE(0, 6); // Reserved
   body.writeUInt32LE(0, 8); // Capabilities
-  // ClientGuid (16 byte) a 0: probe anonimo, nessun bisogno di un GUID reale
-  // offset 24: 8 byte (ClientStartTime / NegotiateContextOffset+Count+Reserved2) a 0
-  let off = 32;
+  // ClientGuid (16 byte, offset 12-27) a 0: probe anonimo, nessun bisogno di un
+  // GUID reale. ClientStartTime (8 byte, offset 28-35) a 0. Il fixed body e'
+  // quindi 12 + 16 + 8 = 36 byte: i Dialects iniziano a offset 36, MAI 32 (bug
+  // precedente: scriveva i Dialects 4 byte troppo presto, dentro il campo
+  // ClientStartTime, disallineando l'intero array agli occhi del server).
+  let off = 36;
   for (const dialect of SMB2_DIALECTS) {
     body.writeUInt16LE(dialect, off);
     off += 2;
@@ -149,16 +162,52 @@ function isValidSmb2Message(msg: Buffer): boolean {
   return msg.length >= 64 && msg[0] === 0xfe && msg[1] === 0x53 && msg[2] === 0x4d && msg[3] === 0x42;
 }
 
-/** SecurityMode del body NEGOTIATE response (offset 2-3 del body, cioè 66-67 del messaggio). */
-function parseNegotiateSigningRequired(msg: Buffer): boolean | null {
+/**
+ * Status della risposta (offset 8-11 dell'header, 4 byte LE). Va SEMPRE
+ * controllato prima di interpretare il body come una risposta di successo:
+ * un body di errore (StructureSize=9, MS-SMB2 §2.2.2) ha un layout diverso e
+ * leggerlo come se fosse il body di successo produce campi spazzatura invece
+ * di `null` (bug osservato in produzione: NEGOTIATE rifiutato con
+ * STATUS_INVALID_PARAMETER veniva comunque letto come se SecurityMode fosse
+ * valido, e il probe proseguiva con un SESSION_SETUP su una connessione mai
+ * negoziata).
+ */
+function readSmb2Status(msg: Buffer): number {
+  return msg.readUInt32LE(8);
+}
+
+const STATUS_SUCCESS = 0x00000000;
+// Atteso per un SESSION_SETUP anonimo NTLMSSP NEGOTIATE riuscito: il server
+// non ha completato la sessione e restituisce la CHALLENGE nel security
+// buffer. Qualunque altro status (es. STATUS_LOGON_FAILURE 0xC000006D se il
+// device ha l'accesso anonimo/guest disabilitato — comune sui NAS, confermato
+// su 192.168.40.23) non contiene una CHALLENGE utilizzabile: nessuna evidenza,
+// mai un'autenticazione reale (vedi vincolo di sicurezza di testa file).
+const STATUS_MORE_PROCESSING_REQUIRED = 0xc0000016;
+
+/**
+ * SecurityMode del body NEGOTIATE response (offset 2-3 del body, cioè 66-67
+ * del messaggio). Esportata per i test: e' qui che si e' verificato in
+ * produzione il bug reale contro rete 192.168.40.0/24 (Synology/QNAP) — un
+ * NEGOTIATE rifiutato con STATUS_INVALID_PARAMETER veniva letto come se il
+ * body fosse quello di una risposta di successo.
+ */
+export function parseNegotiateSigningRequired(msg: Buffer): boolean | null {
   if (!isValidSmb2Message(msg) || msg.length < 68) return null;
+  if (readSmb2Status(msg) !== STATUS_SUCCESS) return null;
   const securityMode = msg.readUInt16LE(66);
   return (securityMode & 0x0002) !== 0; // NEGOTIATE_SIGNING_REQUIRED
 }
 
-/** SecurityBuffer del body SESSION_SETUP response (offsets relativi all'header a 64 byte). */
-function extractSessionSetupSecurityBuffer(msg: Buffer): Buffer | null {
+/**
+ * SecurityBuffer del body SESSION_SETUP response (offsets relativi all'header
+ * a 64 byte). Esportata per i test per lo stesso motivo di
+ * `parseNegotiateSigningRequired`: un device con accesso anonimo disabilitato
+ * (comune sui NAS) risponde STATUS_LOGON_FAILURE, mai una CHALLENGE.
+ */
+export function extractSessionSetupSecurityBuffer(msg: Buffer): Buffer | null {
   if (!isValidSmb2Message(msg) || msg.length < 64 + 8) return null;
+  if (readSmb2Status(msg) !== STATUS_MORE_PROCESSING_REQUIRED) return null;
   const bodyOffset = 64;
   const secBufOffset = msg.readUInt16LE(bodyOffset + 4);
   const secBufLength = msg.readUInt16LE(bodyOffset + 6);

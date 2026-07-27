@@ -5,7 +5,7 @@ import { evidenceFromHttpTls, evidenceFromSmb2, evidenceFromMdns, evidenceFromSs
 import { isValidCategory } from "../taxonomy";
 import type { HttpTlsFinding } from "@/lib/scanner/probes/http-tls";
 import type { Smb2Finding } from "@/lib/scanner/probes/smb2";
-import { parseNtlmChallenge } from "@/lib/scanner/probes/smb2";
+import { parseNtlmChallenge, parseNegotiateSigningRequired, extractSessionSetupSecurityBuffer } from "@/lib/scanner/probes/smb2";
 import type { MdnsFinding } from "@/lib/scanner/probes/mdns";
 import { parseTxtRecords } from "@/lib/scanner/probes/mdns";
 import type { SsdpFinding } from "@/lib/scanner/probes/ssdp";
@@ -416,6 +416,100 @@ describe("evidenceFromMdns", () => {
       assert.ok(days > 29 && days < 31);
     }
   });
+
+  // --- Regole aggiunte da evidenza rete reale (VM 533, 192.168.40.0/24) ---
+
+  it("_printer._tcp (oltre a _ipp/_pdl-datastream) → peripheral.printer @0.9", () => {
+    const out = evidenceFromMdns(mdnsFinding({ services: ["_printer._tcp.local"] }));
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "peripheral.printer");
+    assert.equal(out.find((e) => e.dimension === "category")?.confidence, 0.9);
+  });
+
+  it("_qdiscover (QNAP) → vendor qnap @0.85 + storage.nas @0.8", () => {
+    const out = evidenceFromMdns(mdnsFinding({ services: ["_qdiscover._tcp.local"] }));
+    const v = out.find((e) => e.dimension === "vendor");
+    const c = out.find((e) => e.dimension === "category");
+    assert.equal(v?.claim, "qnap");
+    assert.equal(v?.confidence, 0.85);
+    assert.equal(c?.claim, "storage.nas");
+    assert.equal(c?.confidence, 0.8);
+  });
+
+  it("_sonos → vendor sonos @0.85", () => {
+    const out = evidenceFromMdns(mdnsFinding({ services: ["_sonos._tcp.local"] }));
+    assert.equal(out.find((e) => e.dimension === "vendor")?.claim, "sonos");
+  });
+
+  it("_axis → vendor axis + av.camera @0.85", () => {
+    const out = evidenceFromMdns(mdnsFinding({ services: ["_axis-video._tcp.local"] }));
+    assert.equal(out.find((e) => e.dimension === "vendor")?.claim, "axis");
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "av.camera");
+    assert.equal(out.find((e) => e.dimension === "category")?.confidence, 0.85);
+  });
+
+  it("_smb da solo (senza _device-info/_http) → compute @0.5, MAI storage.nas (lo espone anche Windows)", () => {
+    const out = evidenceFromMdns(mdnsFinding({ services: ["_smb._tcp.local"] }));
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "compute");
+    assert.equal(out.find((e) => e.dimension === "category")?.confidence, 0.5);
+    assert.equal(out.filter((e) => e.claim === "storage.nas").length, 0);
+  });
+
+  it("_smb + _http insieme → storage.nas @0.6 (NAS che espone share e si amministra via HTTP)", () => {
+    const out = evidenceFromMdns(mdnsFinding({ services: ["_smb._tcp.local", "_http._tcp.local"] }));
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "storage.nas");
+    assert.equal(out.find((e) => e.dimension === "category")?.confidence, 0.6);
+  });
+
+  it("_adisk + _device-info insieme → storage.nas @0.6", () => {
+    const out = evidenceFromMdns(mdnsFinding({ services: ["_adisk._tcp.local", "_device-info._tcp.local"] }));
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "storage.nas");
+  });
+
+  it("_workstation da solo → compute @0.5", () => {
+    const out = evidenceFromMdns(mdnsFinding({ services: ["_workstation._tcp.local"] }));
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "compute");
+    assert.equal(out.find((e) => e.dimension === "category")?.confidence, 0.5);
+  });
+
+  it("_raop._tcp (AirPlay audio) → av.display @0.7", () => {
+    const out = evidenceFromMdns(mdnsFinding({ services: ["_raop._tcp.local"] }));
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "av.display");
+  });
+
+  it("_hap._tcp SENZA ci= → iot.other @0.6 (accessorio HomeKit generico)", () => {
+    const out = evidenceFromMdns(mdnsFinding({ services: ["_hap._tcp.local"], hapCategory: null }));
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "iot.other");
+    assert.equal(out.find((e) => e.dimension === "category")?.confidence, 0.6);
+  });
+
+  it("_hp._tcp + usb_MFG (senza _ipp/_pdl/_printer) → vendor da usbMfg, nessuna categoria stampante", () => {
+    const out = evidenceFromMdns(mdnsFinding({ services: ["_hp._tcp.local"], usbMfg: "HP" }));
+    assert.equal(out.find((e) => e.dimension === "vendor")?.claim, "hp");
+    assert.equal(out.find((e) => e.dimension === "category"), undefined);
+  });
+
+  it("_sftp-ssh/_ssh (troppo generici) → nessuna evidenza", () => {
+    assert.deepEqual(evidenceFromMdns(mdnsFinding({ services: ["_sftp-ssh._tcp.local"] })), []);
+    assert.deepEqual(evidenceFromMdns(mdnsFinding({ services: ["_ssh._tcp.local"] })), []);
+  });
+
+  describe("payload reali (VM 533, rete 192.168.40.0/24)", () => {
+    it("QNAP 192.168.40.26: _workstation+_http+_smb+_qdiscover → vendor qnap, storage.nas @0.8 (vince su compute)", () => {
+      const out = evidenceFromMdns(mdnsFinding({
+        services: ["_workstation._tcp.local", "_http._tcp.local", "_smb._tcp.local", "_qdiscover._tcp.local"],
+        model: null, usbMfg: null, usbMdl: null, hapCategory: null,
+      }));
+      const vendors = out.filter((e) => e.dimension === "vendor");
+      const categories = out.filter((e) => e.dimension === "category").map((e) => e.claim).sort();
+      assert.equal(vendors.length, 1);
+      assert.equal(vendors[0].claim, "qnap");
+      assert.equal(vendors[0].confidence, 0.85);
+      // "compute" (da _workstation/_smb) e "storage.nas" (da _qdiscover, piu' forte) coesistono:
+      // la fusione pesata a valle decide, qui emettiamo tutti i claim osservati.
+      assert.deepEqual(categories, ["compute", "storage.nas"]);
+      assert.equal(out.find((e) => e.claim === "storage.nas")?.confidence, 0.8);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -531,6 +625,73 @@ describe("parseNtlmChallenge", () => {
     const r = parseNtlmChallenge(truncated);
     assert.ok(r);
     assert.equal(r?.nbComputerName, null);
+  });
+
+  it("payload reale (QNAP 192.168.40.26, VM 533, root-cause investigation SMB2): SESSION_SETUP response completa (239 byte, Status=STATUS_MORE_PROCESSING_REQUIRED) → version 6.1.0, nbComputerName DA-765", () => {
+    // Catturato con NEGOTIATE senza dialetto 0x0311 (vedi fix in smb2.ts): con
+    // 0x0311 offerto senza NegotiateContextList il device rifiuta l'intera
+    // richiesta con STATUS_INVALID_PARAMETER e non si arriva mai qui.
+    const raw = Buffer.from(
+      "fe534d4240000000160000c0010001000100000000000000010000000000000000000000000000003b612e12000000000000000000000000000000000000000009000000" +
+      "4800a700a181a43081a1a0030a0101a10c060a2b06010401823702020aa2818b0481884e544c4d53535000020000000c000c003800000005828a02662f82d8f58a8fed" +
+      "00000000000000004400440044000000060100000000000f440041002d0037003600350002000c00440041002d0037003600350001000c00440041002d00370036003500" +
+      "0400000003000c00640061002d0037003600350007000800b4308fc4bb1ddd0100000000",
+      "hex"
+    );
+    assert.equal(raw.length, 239);
+    assert.equal(raw.readUInt32LE(8), 0xc0000016, "Status atteso: STATUS_MORE_PROCESSING_REQUIRED");
+    const r = parseNtlmChallenge(raw);
+    assert.ok(r);
+    assert.equal(r?.version, "6.1.0");
+    assert.equal(r?.nbComputerName, "DA-765");
+    assert.equal(r?.dnsDomainName, ""); // AV_PAIR MsvAvDnsDomainName presente ma vuoto (len=0)
+  });
+});
+
+describe("parseNegotiateSigningRequired / extractSessionSetupSecurityBuffer — root cause reale (rete 192.168.40.0/24)", () => {
+  it("NEGOTIATE response con Status=STATUS_INVALID_PARAMETER (0xC000000D, catturato su 192.168.40.23 offrendo il dialetto 0x0311 senza NegotiateContextList) → null, MAI il body letto come se fosse un successo", () => {
+    const raw = Buffer.from(
+      "fe534d42400000000d0000c0000001000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000900000000000000" + "00",
+      "hex"
+    );
+    assert.equal(raw.length, 73);
+    assert.equal(raw.readUInt32LE(8), 0xc000000d);
+    assert.equal(parseNegotiateSigningRequired(raw), null);
+  });
+
+  it("NEGOTIATE response con Status=STATUS_SUCCESS (catturato su 192.168.40.26, dialetto 0x0311 escluso) → SecurityMode letto correttamente", () => {
+    const raw = Buffer.from(
+      "fe534d42400000000000000000000100010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000041000100" +
+      "0203000064612d3736350000000000000000000007000000000080000000800000001000d83f8ec4bb1ddd01000000000000000080004a0000000000604806062b0601" +
+      "050502a03e303ca00e300c060a2b06010401823702020aa32a3028a0261b246e6f745f646566696e65645f696e5f5246433431373840706c656173655f69676e6f7265",
+      "hex"
+    );
+    assert.equal(raw.readUInt32LE(8), 0x00000000);
+    assert.notEqual(parseNegotiateSigningRequired(raw), null);
+  });
+
+  it("SESSION_SETUP response con Status=STATUS_LOGON_FAILURE (0xC000006D, catturato su 192.168.40.23/.27: accesso anonimo SMB disabilitato) → null, MAI un security buffer spazzatura", () => {
+    const raw = Buffer.from(
+      "fe534d42400000006d0000c001000100010000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000090000000000000000",
+      "hex"
+    );
+    assert.equal(raw.length, 73);
+    assert.equal(raw.readUInt32LE(8), 0xc000006d);
+    assert.equal(extractSessionSetupSecurityBuffer(raw), null);
+  });
+
+  it("SESSION_SETUP response con Status=STATUS_MORE_PROCESSING_REQUIRED (catturato su 192.168.40.26) → security buffer estratto, contiene la CHALLENGE NTLMSSP", () => {
+    const raw = Buffer.from(
+      "fe534d4240000000160000c0010001000100000000000000010000000000000000000000000000003b612e12000000000000000000000000000000000000000009000000" +
+      "4800a700a181a43081a1a0030a0101a10c060a2b06010401823702020aa2818b0481884e544c4d53535000020000000c000c003800000005828a02662f82d8f58a8fed" +
+      "00000000000000004400440044000000060100000000000f440041002d0037003600350002000c00440041002d0037003600350001000c00440041002d00370036003500" +
+      "0400000003000c00640061002d0037003600350007000800b4308fc4bb1ddd0100000000",
+      "hex"
+    );
+    const secBuf = extractSessionSetupSecurityBuffer(raw);
+    assert.ok(secBuf);
+    const challenge = parseNtlmChallenge(secBuf as Buffer);
+    assert.equal(challenge?.nbComputerName, "DA-765");
   });
 });
 
@@ -671,6 +832,92 @@ describe("evidenceFromSsdp", () => {
       assert.ok(days > 29 && days < 31);
     }
   });
+
+  // --- Regole aggiunte da evidenza rete reale: campo `server`, oggi ignorato ---
+
+  it("server 'Synology/DSM/...' → vendor synology + storage.nas @0.85", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ server: "Synology/DSM/7.2.1-69057" }));
+    assert.equal(out.find((e) => e.dimension === "vendor")?.claim, "synology");
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "storage.nas");
+    assert.equal(out.find((e) => e.dimension === "category")?.confidence, 0.85);
+  });
+
+  it("server 'QNAP/QTS ...' → vendor qnap + storage.nas @0.85", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ server: "Linux/3.x QNAP/QTS UPnP/1.0" }));
+    assert.equal(out.find((e) => e.dimension === "vendor")?.claim, "qnap");
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "storage.nas");
+  });
+
+  it("server 'Linux UPnP/1.0 MikroTik/...' → vendor mikrotik + network.router @0.8", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ server: "Linux UPnP/1.0 MikroTik/7.11" }));
+    assert.equal(out.find((e) => e.dimension === "vendor")?.claim, "mikrotik");
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "network.router");
+    assert.equal(out.find((e) => e.dimension === "category")?.confidence, 0.8);
+  });
+
+  it("server 'Ubiquiti UniFi ...' → vendor ubiquiti, nessuna categoria dal server", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ server: "Ubiquiti UniFi OS" }));
+    assert.equal(out.find((e) => e.dimension === "vendor")?.claim, "ubiquiti");
+    assert.equal(out.find((e) => e.dimension === "category"), undefined);
+  });
+
+  it("server 'AsusWRT ...' → vendor asus + network.router @0.75", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ server: "AsusWRT/Linux UPnP/1.1" }));
+    assert.equal(out.find((e) => e.dimension === "vendor")?.claim, "asus");
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "network.router");
+  });
+
+  it("server 'Sonos/...' → vendor sonos + av.speaker @0.85", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ server: "Linux UPnP/1.0 Sonos/62.1" }));
+    assert.equal(out.find((e) => e.dimension === "vendor")?.claim, "sonos");
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "av.speaker");
+  });
+
+  it("server 'Roku/Chromecast/SmartTV/Samsung/LG' → av.display @0.75, nessun vendor", () => {
+    for (const server of ["Roku UPnP/1.0", "Chromecast/1.0", "Samsung SmartTV", "LG WebOS"]) {
+      const out = evidenceFromSsdp(ssdpFinding({ server }));
+      assert.equal(out.find((e) => e.dimension === "category")?.claim, "av.display", server);
+      assert.equal(out.find((e) => e.dimension === "category")?.confidence, 0.75, server);
+    }
+  });
+
+  it("server 'Brother/EPSON/Canon/HP' → peripheral.printer @0.8", () => {
+    for (const server of ["Brother NC-1234h", "EPSON Web Server", "Canon iR-ADV", "HP HTTP Server"]) {
+      const out = evidenceFromSsdp(ssdpFinding({ server }));
+      assert.equal(out.find((e) => e.dimension === "category")?.claim, "peripheral.printer", server);
+    }
+  });
+
+  it("Ogni claim category dalle regole `server` è dentro la tassonomia", () => {
+    for (const server of [
+      "Synology/DSM/7.2.1", "QNAP/QTS", "Linux UPnP/1.0 MikroTik/7.11", "AsusWRT/Linux",
+      "Linux UPnP/1.0 Sonos/62.1", "Roku UPnP/1.0", "Brother NC-1234h",
+    ]) {
+      const out = evidenceFromSsdp(ssdpFinding({ server }));
+      for (const e of out.filter((x) => x.dimension === "category")) {
+        assert.ok(isValidCategory(e.claim), `claim fuori tassonomia: ${e.claim}`);
+      }
+    }
+  });
+
+  describe("payload reali (VM 533, rete 192.168.40.0/24)", () => {
+    it("192.168.40.23 (Synology): server='Synology/DSM/192.168.16.23', manufacturer/deviceType assenti → vendor synology + storage.nas", () => {
+      const out = evidenceFromSsdp(ssdpFinding({
+        st: "upnp:rootdevice",
+        server: "Synology/DSM/192.168.16.23",
+        location: "http://192.168.16.23:5000/ssdp/desc-DSM-ovs_eth4.xml",
+        manufacturer: null, modelName: null, deviceType: null,
+      }));
+      assert.equal(out.find((e) => e.dimension === "vendor")?.claim, "synology");
+      assert.equal(out.find((e) => e.dimension === "category")?.claim, "storage.nas");
+    });
+
+    it("192.168.40.27: server='Synology/DSM/...' → vendor synology + storage.nas", () => {
+      const out = evidenceFromSsdp(ssdpFinding({ server: "Synology/DSM/6.2.4" }));
+      assert.equal(out.find((e) => e.dimension === "vendor")?.claim, "synology");
+      assert.equal(out.find((e) => e.dimension === "category")?.claim, "storage.nas");
+    });
+  });
 });
 
 describe("parseSsdpHeaders", () => {
@@ -777,6 +1024,33 @@ describe("evidenceFromWsd", () => {
       const days = (new Date(e.expires_at as string).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
       assert.ok(days > 29 && days < 31);
     }
+  });
+
+  // --- Matching namespace-agnostico: il prefisso QName varia per implementazione ---
+
+  it("'Computer' da solo (senza 'Device') → compute @0.5", () => {
+    const out = evidenceFromWsd(wsdFinding({ types: ["pub:Computer"] }));
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "compute");
+    assert.equal(out.find((e) => e.dimension === "category")?.confidence, 0.5);
+  });
+
+  it("prefisso di namespace diverso ('dp0:') → NetworkVideoTransmitter riconosciuto comunque", () => {
+    const out = evidenceFromWsd(wsdFinding({ types: ["dp0:NetworkVideoTransmitter"] }));
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "av.camera");
+  });
+
+  it("'Device' con prefisso diverso ('pub:Device'), senza 'Computer' → nessuna evidenza", () => {
+    const out = evidenceFromWsd(wsdFinding({ types: ["pub:Device"] }));
+    assert.deepEqual(out, []);
+  });
+
+  describe("payload reali (VM 533, rete 192.168.40.0/24)", () => {
+    it("192.168.40.23 (Synology): types=['wsdp:Device','pub:Computer'], scopes=[] → compute @0.5", () => {
+      const out = evidenceFromWsd(wsdFinding({ types: ["wsdp:Device", "pub:Computer"], scopes: [] }));
+      const c = out.find((e) => e.dimension === "category");
+      assert.equal(c?.claim, "compute");
+      assert.equal(c?.confidence, 0.5);
+    });
   });
 });
 

@@ -286,11 +286,12 @@ describe("evidenceFromSmb2", () => {
     assert.equal(cat.source, "smb");
   });
 
-  it("osVersion assente (Version non letta dalla CHALLENGE) → os windows comunque, raw_value null", () => {
+  it("osVersion assente (Version non letta dalla CHALLENGE) → nessun claim OS, categoria compute presente", () => {
     const out = evidenceFromSmb2(smb2Finding({ osVersion: null }));
     const os = out.find((e) => e.dimension === "os");
-    assert.equal(os?.claim, "windows");
-    assert.equal(os?.raw_value, null);
+    const cat = out.find((e) => e.dimension === "category");
+    assert.equal(os, undefined);
+    assert.equal(cat?.claim, "compute");
   });
 
   it("netbiosName/dnsDomain non producono evidenze dirette (nessuna dimensione hostname nel motore)", () => {
@@ -313,6 +314,44 @@ describe("evidenceFromSmb2", () => {
       const days = (new Date(e.expires_at as string).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
       assert.ok(days > 29 && days < 31);
     }
+  });
+
+  describe("payload reali (VM 533, rete 192.168.40.0/24) — fix falso positivo Samba/NAS", () => {
+    it("QNAP NAS 192.168.40.26 (build=0, confermato Linux+Samba da mDNS/TLS): nessuna evidenza os, resta compute", () => {
+      const out = evidenceFromSmb2(smb2Finding({
+        osVersion: "6.1.0", netbiosName: "DA-765", dnsDomain: "", signingRequired: false,
+      }));
+      const os = out.find((e) => e.dimension === "os");
+      const cat = out.find((e) => e.dimension === "category");
+      assert.equal(os, undefined, "build 0 non e' un Windows plausibile: niente claim os");
+      assert.ok(cat);
+      assert.equal(cat?.claim, "compute");
+    });
+
+    it("Windows Server 2022/2025 reale (build 20348, 4-5 cifre) → os windows @0.9, raw_value con la build", () => {
+      const out = evidenceFromSmb2(smb2Finding({
+        osVersion: "10.0.20348", netbiosName: "DC01", dnsDomain: "contoso.local", signingRequired: true,
+      }));
+      const os = out.find((e) => e.dimension === "os");
+      assert.ok(os);
+      assert.equal(os?.claim, "windows");
+      assert.equal(os?.confidence, 0.9);
+      assert.ok(os?.raw_value?.toString().includes("10.0.20348"));
+    });
+
+    it("Windows 7 / 2008 R2 reale (build 7601) → os windows", () => {
+      const out = evidenceFromSmb2(smb2Finding({ osVersion: "6.1.7601" }));
+      const os = out.find((e) => e.dimension === "os");
+      assert.equal(os?.claim, "windows");
+    });
+
+    it("osVersion null (Version non letta dalla CHALLENGE) → nessun claim os, categoria compute presente", () => {
+      const out = evidenceFromSmb2(smb2Finding({ osVersion: null }));
+      const os = out.find((e) => e.dimension === "os");
+      const cat = out.find((e) => e.dimension === "category");
+      assert.equal(os, undefined);
+      assert.equal(cat?.claim, "compute");
+    });
   });
 });
 

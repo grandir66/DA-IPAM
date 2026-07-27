@@ -279,7 +279,11 @@ export class WazuhIndexerClient {
    * Distribuzione temporale e composizione degli alert selezionati.
    * Aggregazione pura (size 0): non scarica documenti.
    */
-  async alertStats(args: { since: string; interval: string }): Promise<AlertStats> {
+  async alertStats(args: {
+    since: string;
+    interval: string;
+    excludeAccounts?: string[];
+  }): Promise<AlertStats> {
     const body = buildStatsQuery(args);
     const res = await this.json<Record<string, unknown>>(
       "POST",

@@ -22,6 +22,7 @@ import {
   getAlertSyncState,
   tenantDb,
 } from "@/lib/integrations/wazuh-alerts-db";
+import { collectSelfIdentity } from "@/lib/integrations/self-identity";
 
 const QuerySchema = z.object({ window: z.string().max(10).optional() });
 
@@ -75,6 +76,9 @@ export async function GET(req: Request) {
       const stats = await client.alertStats({
         since: sinceForWindow(win.hours),
         interval: bucketIntervalFor(win.hours),
+        // I nostri account di servizio non sono "bersagliati": toglierli evita
+        // che una nostra credenziale scaduta finisca in cima alla classifica.
+        excludeAccounts: collectSelfIdentity(db).accounts,
       });
       return NextResponse.json({ ...base, stats });
     } catch (e) {

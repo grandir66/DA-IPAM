@@ -18,9 +18,11 @@ import {
   AlertsComposition,
   AlertsOverTime,
   StatTile,
+  TargetedAccounts,
   seriesColor,
   type CategorySlice,
   type SeriesRow,
+  type TargetedAccount,
 } from "./alert-charts";
 
 /** Ogni quanto la pagina si riallinea da sola. */
@@ -73,6 +75,7 @@ interface StatsResponse {
     totals: { alerts: number; agents: number; rules: number };
     byCategory: CategorySlice[];
     series: SeriesRow[];
+    topAccounts: TargetedAccount[];
   } | null;
 }
 
@@ -196,6 +199,7 @@ export function SecurityAlertsClient() {
   const totals = stats?.stats?.totals;
   const byCategory = stats?.stats?.byCategory ?? [];
   const series = stats?.stats?.series ?? [];
+  const topAccounts = stats?.stats?.topAccounts ?? [];
 
   return (
     <div className="space-y-6 p-6">
@@ -316,6 +320,19 @@ export function SecurityAlertsClient() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Account bersagliati</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Chi subisce i tentativi di accesso falliti e da dove partono. I nostri
+            account di servizio sono esclusi.
+          </p>
+          <TargetedAccounts accounts={topAccounts} />
+        </CardContent>
+      </Card>
 
       <div className="flex flex-wrap items-center gap-2">
         <Button

@@ -265,3 +265,83 @@ export function StatTile({
     </div>
   );
 }
+
+export interface TargetedAccount {
+  account: string;
+  count: number;
+  sourceIp: string | null;
+  workstation: string | null;
+  lastSeenAt: string | null;
+}
+
+/**
+ * Chi viene bersagliato dai tentativi falliti, con l'origine.
+ *
+ * Barre orizzontali a tinta unica: è una sola serie, quindi un solo colore per
+ * ogni barra — colorare "più scuro dove più grande" raddoppierebbe l'encoding
+ * della lunghezza e brucerebbe l'unico canale libero. Nomi lunghi ⇒ orizzontale.
+ */
+/** Il loopback dice solo "e' successo su quella macchina": lo dice gia' il nome. */
+function originLabel(a: TargetedAccount): string {
+  const ip = a.sourceIp && a.sourceIp !== "127.0.0.1" && a.sourceIp !== "::1" ? a.sourceIp : null;
+  if (a.workstation && ip) return `${a.workstation} · ${ip}`;
+  return a.workstation ?? ip ?? "—";
+}
+
+export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) {
+  if (accounts.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        Nessun account con tentativi falliti nella finestra selezionata.
+      </p>
+    );
+  }
+  const max = Math.max(...accounts.map((a) => a.count), 1);
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-muted-foreground">
+            <th className="pb-2 font-normal">Account</th>
+            <th className="pb-2 font-normal">Tentativi falliti</th>
+            <th className="pb-2 font-normal">Origine</th>
+            <th className="pb-2 text-right font-normal">Ultimo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {accounts.map((a) => (
+            <tr key={a.account} className="border-t">
+              <td className="py-2 pr-3 font-medium">{a.account}</td>
+              <td className="w-1/2 py-2 pr-3">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="h-3 rounded-r-sm"
+                    style={{
+                      width: `${Math.max(2, (a.count / max) * 100)}%`,
+                      background: "var(--series-1)",
+                    }}
+                    aria-hidden
+                  />
+                  <span className="shrink-0 tabular-nums">{compact(a.count)}</span>
+                </div>
+              </td>
+              <td className="py-2 pr-3 text-xs text-muted-foreground">
+                {originLabel(a)}
+              </td>
+              <td className="py-2 text-right text-xs tabular-nums text-muted-foreground">
+                {a.lastSeenAt
+                  ? new Date(a.lastSeenAt).toLocaleString("it-IT", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

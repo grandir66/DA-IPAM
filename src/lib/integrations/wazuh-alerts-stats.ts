@@ -13,9 +13,13 @@
 import {
   ALERT_CATEGORIES,
   minSelectedLevel,
+  normalizeIp,
   selectedGroups,
   type AlertCategory,
 } from "./wazuh-alerts";
+
+/** Quanti account bersagliati riportare. */
+const TOP_ACCOUNTS = 10;
 
 export interface StatsWindow {
   id: string;
@@ -56,6 +60,25 @@ interface CategoryFilter {
   };
 }
 
+interface TermsBucket {
+  key?: string;
+  doc_count?: number;
+}
+
+interface AccountsAgg {
+  filter: { bool: { filter: unknown[]; must_not: unknown[] } };
+  aggs: {
+    by_user: {
+      terms: { field: string; size: number };
+      aggs: {
+        top_source: { terms: { field: string; size: number } };
+        top_workstation: { terms: { field: string; size: number } };
+        last_seen: { max: { field: string } };
+      };
+    };
+  };
+}
+
 export interface StatsQuery {
   size: 0;
   query: { bool: { filter: unknown[] } };
@@ -74,11 +97,18 @@ export interface StatsQuery {
     };
     agents: { cardinality: { field: string } };
     rules: { cardinality: { field: string } };
+    accounts: AccountsAgg;
   };
 }
 
-export function buildStatsQuery(args: { since: string; interval: string }): StatsQuery {
+export function buildStatsQuery(args: {
+  since: string;
+  interval: string;
+  /** Account di servizio nostri: fuori dalla classifica dei bersagliati. */
+  excludeAccounts?: string[];
+}): StatsQuery {
   const cats = queryableCategories();
+  const authGroups = cats.find((c) => c.id === "auth_failure")?.groups ?? [];
   const filters: Record<string, CategoryFilter> = {};
 
   cats.forEach((c, i) => {
@@ -120,6 +150,30 @@ export function buildStatsQuery(args: { since: string; interval: string }): Stat
       },
       agents: { cardinality: { field: "agent.id" } },
       rules: { cardinality: { field: "rule.id" } },
+      // Chi viene bersagliato, non solo dove atterra l'evento. L'event store
+      // non puo' rispondere: deduplica per (agent, regola) e perde l'account.
+      accounts: {
+        filter: {
+          bool: {
+            filter: [{ terms: { "rule.groups": authGroups } }],
+            must_not: (args.excludeAccounts ?? []).length
+              ? [{ terms: { "data.win.eventdata.targetUserName": args.excludeAccounts } }]
+              : [],
+          },
+        },
+        aggs: {
+          by_user: {
+            terms: { field: "data.win.eventdata.targetUserName", size: TOP_ACCOUNTS },
+            aggs: {
+              top_source: { terms: { field: "data.win.eventdata.ipAddress", size: 1 } },
+              top_workstation: {
+                terms: { field: "data.win.eventdata.workstationName", size: 1 },
+              },
+              last_seen: { max: { field: "@timestamp" } },
+            },
+          },
+        },
+      },
     },
   };
 }
@@ -134,10 +188,20 @@ export interface CategorySlice {
 /** Una riga per bucket temporale: { bucket, <categoria>: n, … }. */
 export type SeriesRow = { bucket: string } & Record<string, number | string>;
 
+export interface TargetedAccount {
+  account: string;
+  count: number;
+  /** IP da cui partono i tentativi: la parte azionabile. */
+  sourceIp: string | null;
+  workstation: string | null;
+  lastSeenAt: string | null;
+}
+
 export interface AlertStats {
   totals: { alerts: number; agents: number; rules: number };
   byCategory: CategorySlice[];
   series: SeriesRow[];
+  topAccounts: TargetedAccount[];
 }
 
 interface RawAgg {
@@ -145,6 +209,17 @@ interface RawAgg {
   aggregations?: {
     agents?: { value?: number };
     rules?: { value?: number };
+    accounts?: {
+      by_user?: {
+        buckets?: Array<{
+          key?: string;
+          doc_count?: number;
+          top_source?: { buckets?: TermsBucket[] };
+          top_workstation?: { buckets?: TermsBucket[] };
+          last_seen?: { value_as_string?: string };
+        }>;
+      };
+    };
     per_category?: {
       buckets?: Record<
         string,
@@ -190,6 +265,18 @@ export function parseStatsResponse(raw: RawAgg): AlertStats {
     a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0,
   );
 
+  const topAccounts: TargetedAccount[] = (
+    raw.aggregations?.accounts?.by_user?.buckets ?? []
+  )
+    .filter((b) => b.key && b.key !== "-")
+    .map((b) => ({
+      account: b.key as string,
+      count: b.doc_count ?? 0,
+      sourceIp: normalizeIp(b.top_source?.buckets?.[0]?.key),
+      workstation: b.top_workstation?.buckets?.[0]?.key ?? null,
+      lastSeenAt: b.last_seen?.value_as_string ?? null,
+    }));
+
   return {
     totals: {
       alerts,
@@ -198,5 +285,6 @@ export function parseStatsResponse(raw: RawAgg): AlertStats {
     },
     byCategory,
     series,
+    topAccounts,
   };
 }

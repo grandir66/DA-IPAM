@@ -120,3 +120,66 @@ test("categories with zero hits are dropped from the pie", () => {
   assert.equal(s.byCategory.length, 1);
   assert.equal(s.byCategory[0]!.id, "auth_failure");
 });
+
+test("the query asks who is being targeted, not just where", () => {
+  const q = buildStatsQuery({ since: "2026-07-26T12:00:00.000Z", interval: "1h" });
+  const acc = q.aggs.accounts;
+  assert.ok(acc, "manca l'aggregazione sugli account");
+  assert.equal(acc.aggs.by_user.terms.field, "data.win.eventdata.targetUserName");
+  // l'origine e' la parte azionabile: dice DA DOVE partono i tentativi
+  assert.ok(acc.aggs.by_user.aggs.top_source);
+  assert.ok(acc.aggs.by_user.aggs.top_workstation);
+});
+
+test("our own service accounts are kept out of the targeted list", () => {
+  const q = buildStatsQuery({
+    since: "2026-07-26T12:00:00.000Z",
+    interval: "1h",
+    excludeAccounts: ["domarc"],
+  });
+  const mustNot = q.aggs.accounts.filter.bool.must_not;
+  assert.ok(
+    mustNot.some((m) => JSON.stringify(m).includes("domarc")),
+    "l'account di servizio non e' escluso",
+  );
+});
+
+test("without exclusions the account filter stays permissive", () => {
+  const q = buildStatsQuery({ since: "2026-07-26T12:00:00.000Z", interval: "1h" });
+  assert.deepEqual(q.aggs.accounts.filter.bool.must_not, []);
+});
+
+test("parseStatsResponse ranks the targeted accounts with their origin", () => {
+  const s = parseStatsResponse({
+    hits: { total: { value: 10 } },
+    aggregations: {
+      accounts: {
+        by_user: {
+          buckets: [
+            {
+              key: "gs.sicurezza",
+              doc_count: 1438,
+              top_source: { buckets: [{ key: "::ffff:172.16.1.154" }] },
+              top_workstation: { buckets: [{ key: "SRV-WIN2025" }] },
+              last_seen: { value_as_string: "2026-07-27T10:00:00.000Z" },
+            },
+            { key: "mrossi", doc_count: 12, top_source: { buckets: [] }, top_workstation: { buckets: [] } },
+          ],
+        },
+      },
+    },
+  });
+  assert.equal(s.topAccounts.length, 2);
+  const first = s.topAccounts[0]!;
+  assert.equal(first.account, "gs.sicurezza");
+  assert.equal(first.count, 1438);
+  // l'IP viene normalizzato: Windows lo scrive in forma mappata
+  assert.equal(first.sourceIp, "172.16.1.154");
+  assert.equal(first.workstation, "SRV-WIN2025");
+  assert.equal(s.topAccounts[1]!.sourceIp, null);
+});
+
+test("no account aggregation yields an empty ranking, not a crash", () => {
+  const s = parseStatsResponse({ hits: { total: { value: 0 } }, aggregations: {} });
+  assert.deepEqual(s.topAccounts, []);
+});

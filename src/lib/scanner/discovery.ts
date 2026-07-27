@@ -51,6 +51,7 @@ import {
   getFingerprintClassificationRulesForResolve,
   getEnabledDeviceFingerprintRules,
   getNetworkDeviceByHost,
+  getNetworkDeviceByHostId,
   findExistingBinding,
   addDeviceCredentialBinding,
   updateBindingTestStatus,
@@ -61,7 +62,17 @@ import {
   getCredentialCommunityString,
   addHostCredential,
   getSetting,
+  getMultihomedStatus,
+  recordCredentialFailure,
+  recordCredentialSuccess,
 } from "@/lib/db";
+import { resolveCredentialsFor } from "@/lib/credentials/resolve";
+import type { CredProtocol } from "@/lib/credentials/resolve";
+import { CredentialRunBudget } from "./credential-run-budget";
+import { evidenceFromAuthOutcome } from "@/lib/attribution/credential-evidence";
+import type { AuthOutcome } from "@/lib/attribution/credential-evidence";
+import { recordEvidence } from "@/lib/attribution/evidence";
+import { recomputeAttributionSafe } from "@/lib/attribution/recompute";
 import type { ScanProgress, DiscoveryResult, DeviceFingerprintSnapshot } from "@/types";
 import type { DnsResolution } from "./dns";
 
@@ -119,10 +130,24 @@ export type DiscoverNetworkOptions = {
  * @param snmpCommunity - SNMP community per questa rete/profilo. Usato solo per scanType "snmp".
  */
 
-/** Auto-aggiunge una credenziale funzionante ai bindings del device, se l'host corrisponde a un network_device */
-function autoBindCredentialToDevice(hostIp: string, credentialId: number, protocolType: "ssh" | "snmp" | "winrm", port: number): void {
+/**
+ * Auto-aggiunge una credenziale funzionante ai bindings del device, se l'host
+ * corrisponde a un network_device. Fase 1b (§7.2): risolve il device via
+ * `getNetworkDeviceByHostId` (FK, più affidabile) quando `hostId` è noto, con
+ * fallback sul match stringa IP. Se nessun device viene trovato la funzione
+ * è un no-op sul binding — ma questo NON deve mai essere l'unico posto dove si
+ * registra il tentativo: i chiamanti scrivono già su `host_credentials`
+ * (via `addHostCredential`/`recordCredentialSuccess`) PRIMA di invocarla.
+ */
+function autoBindCredentialToDevice(
+  hostIp: string,
+  credentialId: number,
+  protocolType: "ssh" | "snmp" | "winrm",
+  port: number,
+  hostId?: number | null
+): void {
   try {
-    const device = getNetworkDeviceByHost(hostIp);
+    const device = (hostId != null ? getNetworkDeviceByHostId(hostId) : undefined) ?? getNetworkDeviceByHost(hostIp);
     if (!device) return;
     const existing = findExistingBinding(device.id, credentialId, protocolType, port);
     if (existing) {
@@ -1291,6 +1316,13 @@ async function runDiscovery(
         return 5985;
       }
     };
+    // Anti-lockout (fix Critical post-review, §7.5): questo loop provava OGNI
+    // credenziale in catena su OGNI host Windows senza consultare backoff né
+    // budget di run — una credenziale di dominio con password sbagliata su 20
+    // host Windows = fino a 20 logon falliti dello stesso account in pochi
+    // minuti (rischio lockout AD). Riusa `CredentialRunBudget` (stessa logica
+    // di `credential_validate`, non duplicata).
+    const runBudget = new CredentialRunBudget(log);
     for (let i = 0; i < windowsHosts.length; i++) {
       const host = windowsHosts[i];
       const ip = host.ip;
@@ -1304,8 +1336,16 @@ async function runDiscovery(
         continue;
       }
       const winrmPort = pickWinrmPort(host);
+      const nowIso = new Date().toISOString();
+      // hasWindowsIndicator sempre true qui: `windowsHosts` è già filtrato per
+      // porte SMB/WinRM (445/135/5985/5986) — vedi definizione sopra.
+      const resolved = resolveCredentialsFor({ hostId: host.id, ip, networkId }, "winrm", { includeBackoff: true });
       let ok = false;
       for (const credId of chain) {
+        const backoffUntil = resolved.find(
+          (r) => r.credential_id === credId && r.protocol === "winrm" && r.port === winrmPort
+        )?.backoff_until ?? null;
+        if (!runBudget.gate({ ip, credId, credType: "windows", hasWindowsIndicator: true, backoffUntil, nowIso })) continue;
         const creds = getCredentialLoginPair(credId, "windows");
         if (!creds) {
           log(`✗ ${ip} cred#${credId} — dati mancanti`);
@@ -1327,18 +1367,26 @@ async function runDiscovery(
             });
             setHostDetectCredential(host.id, "windows", credId);
             addHostCredential(host.id, credId, "winrm", winrmPort, { validated: true, auto_detected: true });
-            autoBindCredentialToDevice(ip, credId, "winrm", winrmPort);
+            recordCredentialSuccess(host.id, credId, "winrm", winrmPort);
+            runBudget.recordSuccess(credId);
+            autoBindCredentialToDevice(ip, credId, "winrm", winrmPort, host.id);
             log(`✓ ${ip} → ${hn} (cred#${credId}, porta ${winrmPort})`);
             ok = true;
             break;
           }
+          const failMsg = hn ? `output non valido come hostname: "${hn.slice(0, 200)}"` : "risposta vuota da WinRM (hostname)";
+          recordCredentialFailure(host.id, credId, "winrm", winrmPort, failMsg);
+          runBudget.recordFailure(credId);
           if (hn) {
             log(`✗ ${ip} cred#${credId} — output non valido come hostname: "${hn.slice(0, 60)}"`);
           } else {
             log(`✗ ${ip} cred#${credId} — risposta vuota`);
           }
         } catch (e) {
-          log(`✗ ${ip} cred#${credId}: ${(e as Error).message?.slice(0, 72) ?? "errore"}`);
+          const msg = (e as Error).message ?? String(e);
+          recordCredentialFailure(host.id, credId, "winrm", winrmPort, msg.slice(0, 500));
+          runBudget.recordFailure(credId);
+          log(`✗ ${ip} cred#${credId}: ${msg.slice(0, 72)}`);
         }
       }
       if (!ok) log(`✗ ${ip} — nessuna credenziale valida`);
@@ -1346,6 +1394,7 @@ async function runDiscovery(
       progress.found = nmapResults.size;
       progress.phase = `Scansione WinRM — ${i + 1}/${onlineIps.length}`;
     }
+    runBudget.logSummary();
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1380,6 +1429,9 @@ async function runDiscovery(
 
     const { sshExec: transportSshExec, SshError } = await import("@/lib/devices/ssh-transport");
 
+    // Anti-lockout (fix Critical post-review, §7.5): stesso motivo del loop
+    // Windows sopra — riusa `CredentialRunBudget`, non duplica la logica.
+    const runBudget = new CredentialRunBudget(log);
     for (let i = 0; i < sshHosts.length; i++) {
       const host = sshHosts[i];
       const ip = host.ip;
@@ -1403,8 +1455,17 @@ async function runDiscovery(
         progress.phase = `Scansione SSH — ${i + 1}/${onlineIps.length}`;
         continue;
       }
+      const nowIso = new Date().toISOString();
+      const resolved = resolveCredentialsFor({ hostId: host.id, ip, networkId }, "ssh", { includeBackoff: true });
       let ok = false;
       for (const credId of chain) {
+        const backoffUntil = resolved.find(
+          (r) => r.credential_id === credId && r.protocol === "ssh" && r.port === 22
+        )?.backoff_until ?? null;
+        // credType "ssh" letterale: irrilevante se in catena c'è un cred "linux",
+        // il gate distingue solo credType==="windows" (nessuna catena SSH può
+        // contenerne uno — resolveCredentialsFor filtra per protocollo).
+        if (!runBudget.gate({ ip, credId, credType: "ssh", hasWindowsIndicator: false, backoffUntil, nowIso })) continue;
         const creds = getSshLinuxCredentialPair(credId);
         if (!creds) {
           log(`✗ ${ip} cred#${credId} — dati mancanti`);
@@ -1442,7 +1503,9 @@ async function runDiscovery(
           });
           setHostDetectCredential(host.id, "linux", credId);
           addHostCredential(host.id, credId, "ssh", 22, { validated: true, auto_detected: true });
-          autoBindCredentialToDevice(ip, credId, "ssh", 22);
+          recordCredentialSuccess(host.id, credId, "ssh", 22);
+          runBudget.recordSuccess(credId);
+          autoBindCredentialToDevice(ip, credId, "ssh", 22, host.id);
           if (boundSshForSave == null) {
             setHostDetectCredential(host.id, "ssh", credId);
           }
@@ -1453,6 +1516,8 @@ async function runDiscovery(
           const msg = sshErr instanceof SshError
             ? `[${sshErr.kind}] ${sshErr.message}`
             : (sshErr as Error).message ?? String(sshErr);
+          recordCredentialFailure(host.id, credId, "ssh", 22, msg.slice(0, 500));
+          runBudget.recordFailure(credId);
           log(`✗ ${ip} cred#${credId}: ${msg.slice(0, 160)}`);
         }
       }
@@ -1461,6 +1526,7 @@ async function runDiscovery(
       progress.found = nmapResults.size;
       progress.phase = `Scansione SSH — ${i + 1}/${onlineIps.length}`;
     }
+    runBudget.logSummary();
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1681,6 +1747,9 @@ async function runDiscovery(
     if (sshHosts.length > 0 && defaultSshChain.length > 0) {
       const { sshExec: transportSshExec, SshError } = await import("@/lib/devices/ssh-transport");
 
+      // Anti-lockout (fix Critical post-review, §7.5): stesso motivo dei loop
+      // windows/ssh sopra — riusa `CredentialRunBudget`, non duplica la logica.
+      const runBudget = new CredentialRunBudget(log);
       for (let i = 0; i < sshHosts.length; i++) {
         const ip = sshHosts[i];
         const hostRow = existingHosts.find((h) => h.ip === ip);
@@ -1698,8 +1767,14 @@ async function runDiscovery(
           chain = defaultSshChain;
         }
 
+        const nowIso = new Date().toISOString();
+        const resolved = resolveCredentialsFor({ hostId, ip, networkId }, "ssh", { includeBackoff: true });
         let ok = false;
         for (const credId of chain) {
+          const backoffUntil = resolved.find(
+            (r) => r.credential_id === credId && r.protocol === "ssh" && r.port === 22
+          )?.backoff_until ?? null;
+          if (!runBudget.gate({ ip, credId, credType: "ssh", hasWindowsIndicator: false, backoffUntil, nowIso })) continue;
           const creds = getSshLinuxCredentialPair(credId);
           if (!creds) continue;
           try {
@@ -1733,11 +1808,13 @@ async function runDiscovery(
             if (hostId != null) {
               setHostDetectCredential(hostId, "linux", credId);
               addHostCredential(hostId, credId, "ssh", 22, { validated: true, auto_detected: true });
+              recordCredentialSuccess(hostId, credId, "ssh", 22);
               if (boundSsh == null) {
                 setHostDetectCredential(hostId, "ssh", credId);
               }
             }
-            autoBindCredentialToDevice(ip, credId, "ssh", 22);
+            runBudget.recordSuccess(credId);
+            autoBindCredentialToDevice(ip, credId, "ssh", 22, hostId);
             log(`SSH ✓ ${ip} → ${hn || "—"}, OS: ${osInfo}`);
             ok = true;
             break;
@@ -1745,6 +1822,8 @@ async function runDiscovery(
             const msg = sshErr instanceof SshError
               ? `[${sshErr.kind}] ${sshErr.message}`
               : (sshErr as Error).message ?? String(sshErr);
+            if (hostId != null) recordCredentialFailure(hostId, credId, "ssh", 22, msg.slice(0, 500));
+            runBudget.recordFailure(credId);
             log(`SSH ✗ ${ip} cred#${credId}: ${msg.slice(0, 160)}`);
           }
         }
@@ -1753,6 +1832,7 @@ async function runDiscovery(
         progress.found = nmapResults.size;
         progress.phase = `IPAM [4/4] SSH — ${i + 1}/${sshHosts.length}`;
       }
+      runBudget.logSummary();
     } else if (sshHosts.length === 0) {
       log("Nessun host con porta 22 (senza 445)");
     } else {
@@ -2120,7 +2200,38 @@ async function runDiscovery(
 
     let validated = 0;
     const { sshExec: transportSshExec, SshError } = await import("@/lib/devices/ssh-transport");
-    const { runWinrmCommand } = await import("@/lib/devices/winrm-run");
+    const { runWinrmCommand, WinrmError } = await import("@/lib/devices/winrm-run");
+
+    // Codici WinRM che indicano un servizio RAGGIUNTO (auth/negoziazione fallita),
+    // a differenza di TCP_CLOSED/TCP_TIMEOUT/PYWINRM_MISSING/BRIDGE_TIMEOUT/UNKNOWN
+    // che indicano "nessun servizio lì" — distinzione usata dalla regola Task 4
+    // "auth rifiutata ma servizio presente" per WinRM.
+    const WINRM_SERVICE_PRESENT_CODES = new Set([
+      "AUTH_REJECTED", "KERBEROS_FAILED", "KERBEROS_ONLY", "BASIC_DISABLED", "WSMAN_FAULT",
+    ]);
+
+    // Anti-lockout fase 1b (§7.5) / fix post-review Critical: budget di RUN per
+    // credenziale, indipendente dall'host — dopo MAX_CONSECUTIVE_FAILURES_PER_RUN
+    // fallimenti CONSECUTIVI della stessa credenziale in QUESTA esecuzione, la
+    // escludiamo dal resto del run (mai troncamento silenzioso). Estratto in
+    // `CredentialRunBudget` cosi' i loop detect windows/ssh e ipam_full fase 4
+    // riusano la STESSA logica invece di duplicarla.
+    const runBudget = new CredentialRunBudget(log);
+
+    /** Esiti di autenticazione → evidenze di attribuzione (Task 4, §7.3). Persiste
+     * solo se c'è davvero qualcosa da dire: recordEvidence su array vuoto è un
+     * no-op, ma recomputeAttributionSafe rifonderebbe comunque l'host per niente
+     * su ogni singolo tentativo fallito — lo evitiamo quando non c'è evidenza. */
+    function applyAuthEvidence(hostId: number, outcome: AuthOutcome): void {
+      const evidences = evidenceFromAuthOutcome(outcome);
+      if (evidences.length === 0) return;
+      try {
+        recordEvidence(getDb(), hostId, evidences);
+        recomputeAttributionSafe(hostId, "scan");
+      } catch (e) {
+        log(`⚠ evidenza attribuzione non registrata per host ${hostId}: ${(e as Error).message ?? e}`);
+      }
+    }
 
     for (let i = 0; i < targetHosts.length; i++) {
       const host = targetHosts[i];
@@ -2130,6 +2241,17 @@ async function runDiscovery(
 
       progress.phase = `Validazione — ${i + 1}/${targetHosts.length} (${ip})`;
 
+      // Multihomed secondary: mai testare credenziali su un IP secondary di un
+      // gruppo (§7.5, stessa policy di dedup di /api/devices/[id]/test — riusa
+      // getMultihomedStatus invece di duplicarla). Skip dell'intero host: un
+      // secondary non è mai il target giusto per NESSUNA credenziale/protocollo.
+      const mh = getMultihomedStatus(host.id);
+      if (mh && !mh.is_primary) {
+        log(`⏭ ${ip}: host multihomed secondary (primary ${mh.primary_ip}) — credenziali non testate`);
+        progress.scanned = i + 1;
+        continue;
+      }
+
       // Indicatori Windows: porte SMB/WinRM o classificazione/OS
       const hasWinrmPort = openPorts.some((p) => [5985, 5986].includes(p.port));
       const hasWindowsIndicator = hasWinrmPort
@@ -2137,6 +2259,41 @@ async function runDiscovery(
         || (host.classification ?? "").includes("windows")
         || (host.classification ?? "") === "workstation"
         || (host.os_info ?? "").toLowerCase().includes("windows");
+
+      const nowIso = new Date().toISOString();
+      const resolvedBackoffCache = new Map<CredProtocol, ReturnType<typeof resolveCredentialsFor>>();
+      const getResolvedForProtocol = (protocol: CredProtocol): ReturnType<typeof resolveCredentialsFor> => {
+        let r = resolvedBackoffCache.get(protocol);
+        if (!r) {
+          r = resolveCredentialsFor({ hostId: host.id, ip, networkId }, protocol, { includeBackoff: true });
+          resolvedBackoffCache.set(protocol, r);
+        }
+        return r;
+      };
+
+      /** Gate anti-lockout unico (Task 3, via `CredentialRunBudget`): backoff
+       * persistito (Task 1), divieto esplicito windows-senza-indicatore, budget
+       * di run. Il multihomed è già filtrato a livello host sopra, quindi qui è
+       * sempre false — passato comunque per tenere `shouldAttemptCredential`
+       * come unica fonte di verità.
+       *
+       * Minor 1 (review): il lookup del backoff confronta anche protocollo e
+       * porta effettivamente usata, non solo `credential_id` — una riga di
+       * backoff su una porta diversa (es. stessa credenziale provata su 5985 e
+       * 5986) non deve essere scambiata per quella della porta corrente. */
+      const gateCredential = (protocol: CredProtocol, credId: number, credType: string, port: number): boolean => {
+        const resolved = getResolvedForProtocol(protocol).find(
+          (r) => r.credential_id === credId && r.protocol === protocol && r.port === port
+        );
+        return runBudget.gate({
+          ip,
+          credId,
+          credType,
+          hasWindowsIndicator,
+          backoffUntil: resolved?.backoff_until ?? null,
+          nowIso,
+        });
+      };
 
       // Protocolli già validati per QUESTO host: una volta trovata la cred giusta
       // per un protocollo, NON provare le altre (fix C2 2026-06-23: senza, ogni
@@ -2158,76 +2315,126 @@ async function runDiscovery(
           ));
         if ((credType === "ssh" || credType === "linux") && hasSshIndicator && !validatedProtos.has("ssh")) {
           const sshPort = openPorts.find((p) => p.port === 22 || p.service === "ssh")?.port ?? 22;
+          if (!gateCredential("ssh", credId, credType, sshPort)) continue;
           const creds = getSshLinuxCredentialPair(credId);
           if (!creds) continue;
           try {
             await transportSshExec(
-              { host: ip, port: sshPort, username: creds.username, password: creds.password, timeout: 6000, credentialName: nc.credential_name },
+              // Timeout 6000→15000 (§7.5): allineato al default del transport, evita
+              // falsi negativi (quindi falsi FALLIMENTI persistiti) su link lenti.
+              { host: ip, port: sshPort, username: creds.username, password: creds.password, timeout: 15000, credentialName: nc.credential_name },
               "true"
             );
-            addHostCredential(host.id, credId, "ssh", sshPort, { validated: true, auto_detected: true });
-            autoBindCredentialToDevice(ip, credId, "ssh", sshPort);
+            recordCredentialSuccess(host.id, credId, "ssh", sshPort);
+            autoBindCredentialToDevice(ip, credId, "ssh", sshPort, host.id);
+            runBudget.recordSuccess(credId);
             log(`✓ ${ip}:${sshPort} SSH cred#${credId} (${nc.credential_name})`);
             validated++;
             validatedProtos.add("ssh");
+            // Banner SSH non catturato dal transport attuale (ssh2 espone solo
+            // stdout/stderr/errore, non l'identification string) — nessuna nuova
+            // evidenza da qui finché ssh-transport.ts non viene esteso (fuori
+            // scope qui: già in parte coperto da nmap_os/snmp_sysdescr altrove).
+            applyAuthEvidence(host.id, { protocol: "ssh", ok: true, banner: null });
           } catch (e) {
             const msg = e instanceof SshError ? `[${e.kind}] ${e.message}` : (e as Error).message ?? String(e);
+            recordCredentialFailure(host.id, credId, "ssh", sshPort, msg.slice(0, 500));
+            runBudget.recordFailure(credId);
             log(`✗ ${ip}:${sshPort} SSH cred#${credId}: ${msg.slice(0, 160)}`);
+            applyAuthEvidence(host.id, { protocol: "ssh", ok: false, banner: null });
           }
         }
 
         if (credType === "snmp" && !validatedProtos.has("snmp")) {
+          if (!gateCredential("snmp", credId, credType, 161)) continue;
           const com = getCredentialCommunityString(credId);
           if (!com) continue;
           try {
             const r = await querySnmpInfoMultiCommunity(ip, [com], 161, { onLog: log });
             if (r.sysName || r.sysDescr || r.sysObjectID) {
-              addHostCredential(host.id, credId, "snmp", 161, { validated: true, auto_detected: true });
-              autoBindCredentialToDevice(ip, credId, "snmp", 161);
+              recordCredentialSuccess(host.id, credId, "snmp", 161);
+              autoBindCredentialToDevice(ip, credId, "snmp", 161, host.id);
+              runBudget.recordSuccess(credId);
               log(`✓ ${ip}:161 SNMP cred#${credId} (${nc.credential_name})`);
               validated++;
               validatedProtos.add("snmp");
+              // Nessuna evidenza aggiuntiva qui: sysObjectID/sysDescr sono già
+              // emessi da emitEvidenceFromSignals sui dati persistiti (Task 4).
             } else {
+              recordCredentialFailure(host.id, credId, "snmp", 161, "Nessuna risposta SNMP (community non valida o host non raggiungibile su 161)");
+              runBudget.recordFailure(credId);
               log(`✗ ${ip}:161 SNMP cred#${credId}: nessuna risposta`);
             }
           } catch (e) {
-            log(`✗ ${ip}:161 SNMP cred#${credId}: ${(e as Error).message?.slice(0, 60)}`);
+            const msg = (e as Error).message ?? String(e);
+            recordCredentialFailure(host.id, credId, "snmp", 161, msg.slice(0, 500));
+            runBudget.recordFailure(credId);
+            log(`✗ ${ip}:161 SNMP cred#${credId}: ${msg.slice(0, 60)}`);
           }
         }
 
-        if (credType === "windows" && hasWindowsIndicator && !validatedProtos.has("winrm")) {
-          // Porta WinRM: preferisci porta esplicita, fallback a 5985
+        // hasWindowsIndicator NON è più solo una condizione di ramo (§Task3): se
+        // falsa, gateCredential nega esplicitamente con motivo loggato invece di
+        // saltare l'intero blocco in silenzio come accadeva prima della fase 1b.
+        if (credType === "windows" && !validatedProtos.has("winrm")) {
+          // Porta WinRM: preferisci porta esplicita, fallback a 5985 — calcolata
+          // PRIMA del gate (Minor 1: gateCredential deve conoscere la porta
+          // effettiva per confrontarla col backoff persistito).
           const winrmPort = openPorts.find((p) => [5985, 5986].includes(p.port))?.port ?? 5985;
+          if (!gateCredential("winrm", credId, credType, winrmPort)) continue;
           const creds = getCredentialLoginPair(credId, "windows");
           if (!creds) continue;
           try {
             const adInfo = getAdRealm();
             const hn = await runWinrmCommand(ip, winrmPort, creds.username, creds.password, "hostname", false, adInfo?.realm || "");
             if (String(hn ?? "").trim()) {
-              addHostCredential(host.id, credId, "winrm", winrmPort, { validated: true, auto_detected: true });
-              autoBindCredentialToDevice(ip, credId, "winrm", winrmPort);
+              recordCredentialSuccess(host.id, credId, "winrm", winrmPort);
+              autoBindCredentialToDevice(ip, credId, "winrm", winrmPort, host.id);
+              runBudget.recordSuccess(credId);
               log(`✓ ${ip}:${winrmPort} WinRM cred#${credId} (${nc.credential_name})`);
               validated++;
               validatedProtos.add("winrm");
+              applyAuthEvidence(host.id, { protocol: "winrm", ok: true, banner: String(hn).trim() });
             } else {
+              recordCredentialFailure(host.id, credId, "winrm", winrmPort, "Risposta vuota da WinRM (hostname)");
+              runBudget.recordFailure(credId);
               log(`✗ ${ip}:${winrmPort} WinRM cred#${credId}: risposta vuota`);
             }
           } catch (e) {
-            log(`✗ ${ip}:${winrmPort} WinRM cred#${credId}: ${(e as Error).message?.slice(0, 60)}`);
+            const msg = e instanceof WinrmError ? e.message : ((e as Error).message ?? String(e));
+            recordCredentialFailure(host.id, credId, "winrm", winrmPort, msg.slice(0, 500));
+            runBudget.recordFailure(credId);
+            log(`✗ ${ip}:${winrmPort} WinRM cred#${credId}: ${msg.slice(0, 60)}`);
+            const servicePresent = e instanceof WinrmError && WINRM_SERVICE_PRESENT_CODES.has(e.code);
+            applyAuthEvidence(host.id, { protocol: "winrm", ok: false, banner: servicePresent ? e.code : null });
           }
         }
 
-        // API: porte 80/443/8080/8443
+        // API: nessun test di autenticazione reale in questa fase (§7.4 fuori
+        // scope) — registriamo il binding come NON validato con motivo esplicito,
+        // mai più un "validated:false" muto (§Task3).
         if (credType === "api" && openPorts.some((p) => [80, 443, 8080, 8443].includes(p.port))) {
           const apiPort = openPorts.find((p) => [80, 443, 8080, 8443].includes(p.port))!.port;
+          if (!gateCredential("api", credId, credType, apiPort)) continue;
+          const noTestError = "nessun test disponibile per il protocollo api";
           addHostCredential(host.id, credId, "api", apiPort, { validated: false, auto_detected: true });
-          log(`⚙ ${ip}:${apiPort} API cred#${credId} (${nc.credential_name}) — aggiunta senza test`);
+          getDb()
+            .prepare(
+              `UPDATE host_credentials SET last_error = ? WHERE host_id = ? AND credential_id = ? AND protocol_type = 'api' AND port = ?`
+            )
+            .run(noTestError, host.id, credId, apiPort);
+          log(`⚙ ${ip}:${apiPort} API cred#${credId} (${nc.credential_name}) — ${noTestError}`);
         }
       }
 
       progress.scanned = i + 1;
       progress.found = validated;
     }
+
+    // Riepilogo budget di run (§Task3: mai troncamento silenzioso) — quante
+    // credenziali sono state escluse dal resto del run e quanti tentativi
+    // sono stati risparmiati grazie all'esclusione.
+    runBudget.logSummary();
 
     log(`Validazione completata: ${validated} credenziali validate su ${targetHosts.length} host`);
     progress.status = "completed";

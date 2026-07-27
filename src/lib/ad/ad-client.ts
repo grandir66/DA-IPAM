@@ -4,7 +4,7 @@
  */
 
 import { Client, SearchOptions } from "ldapts";
-import { decrypt } from "@/lib/crypto";
+import { safeDecrypt } from "@/lib/crypto";
 import {
   getAdIntegrationById,
   updateAdIntegration,
@@ -68,13 +68,10 @@ function ouFromDn(dn: string): string | null {
  * Esportato per AD Health extras (ldap-extras).
  */
 export async function connectLdap(integration: AdIntegration): Promise<Client> {
-  let username: string;
-  let password: string;
-  try {
-    username = decrypt(integration.encrypted_username);
-    password = decrypt(integration.encrypted_password);
-  } catch {
-    throw new Error("Impossibile decifrare le credenziali AD. Verificare ENCRYPTION_KEY e riconfigurare l'integrazione.");
+  const username = safeDecrypt(integration.encrypted_username);
+  const password = safeDecrypt(integration.encrypted_password);
+  if (!username || !password) {
+    throw new Error("Credenziali AD non decifrabili: verificare ENCRYPTION_KEY.");
   }
 
   const protocol = integration.use_ssl ? "ldaps" : "ldap";
@@ -435,13 +432,10 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
   const cred = getCredentialById(integration.winrm_credential_id);
   if (!cred) throw new Error("Credenziale WinRM non trovata");
 
-  let username: string;
-  let password: string;
-  try {
-    username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
-    password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
-  } catch {
-    throw new Error("Impossibile decifrare le credenziali WinRM. Verificare ENCRYPTION_KEY.");
+  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : null;
+  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : null;
+  if (!username || !password) {
+    throw new Error("Credenziali WinRM non decifrabili: verificare ENCRYPTION_KEY.");
   }
   const host = integration.dc_host;
   const port = 5985;

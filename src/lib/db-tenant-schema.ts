@@ -354,6 +354,16 @@ CREATE TABLE IF NOT EXISTS host_credentials (
   sort_order INTEGER NOT NULL DEFAULT 0,
   auto_detected INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
+  -- Stato fallimenti/backoff (fase 1b credenziali, §7.5). fail_count/backoff_until
+  -- azzerati da recordCredentialSuccess, incrementati da recordCredentialFailure
+  -- (backoff esponenziale: min(2^fail_count * 5min, 24h)). last_attempt_at e
+  -- backoff_until sono ISO-8601 UTC (new Date().toISOString(), NON datetime('now')
+  -- SQLite) — stesso invariante di attribution_evidence.expires_at, vedi
+  -- normalizeExpiresAt in src/lib/attribution/evidence.ts.
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  last_attempt_at TEXT,
+  backoff_until TEXT,
   UNIQUE(host_id, credential_id, protocol_type, port)
 );
 

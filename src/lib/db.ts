@@ -26,6 +26,7 @@ import { sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
+import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
 
 /** Convert IPv4 string to numeric value for sorting */
 function ipToNum(ip: string): number {
@@ -3599,30 +3600,42 @@ export function getHostDetectCredentialsEnriched(hostId: number): Array<{
   });
 }
 
-/** Ordine: credenziali della rete, poi quella globale Impostazioni (se non già in elenco). */
+/**
+ * Ordine: wrapper del resolver unico (fase 1b, §7.1-7.2) — credenziali v2
+ * pertinenti (`network_credentials` filtrate per tipo adatto al ruolo), poi
+ * legacy attuali (rete), poi quella globale Impostazioni (se non già in elenco).
+ * Vedi commento gemello in db-tenant.ts sulla nota role="linux"→protocol "ssh".
+ */
 export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux"): number[] {
-  const netIds = getNetworkHostCredentialIds(networkId, role);
+  const protocol: CredProtocol = role === "windows" ? "winrm" : "ssh";
+  const resolved = resolveCredentialsForDb(getDb(), { networkId }, protocol);
+  const out: number[] = [];
+  const seen = new Set<number>();
+  for (const r of resolved) {
+    if (seen.has(r.credential_id)) continue;
+    seen.add(r.credential_id);
+    out.push(r.credential_id);
+  }
   const globalKey = role === "windows" ? "host_windows_credential_id" : "host_linux_credential_id";
   const gStr = getSetting(globalKey);
   const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
-  const out: number[] = [...netIds];
-  if (!Number.isNaN(gId) && gId > 0 && !out.includes(gId)) out.push(gId);
+  if (!Number.isNaN(gId) && gId > 0 && !seen.has(gId)) out.push(gId);
   return out;
 }
 
 /**
- * Catena SSH per scan: credenziali ruolo `ssh` sulla rete, poi `linux`, poi globale Impostazioni.
- * Ordine e dedup preservati.
+ * Catena SSH per scan: wrapper del resolver unico — credenziali v2 pertinenti
+ * (ssh/linux), poi legacy (ruolo `ssh` poi `linux`, stesso ordine di prima),
+ * poi globale Impostazioni. Ordine e dedup preservati.
  */
 export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
-  const sshIds = getNetworkHostCredentialIds(networkId, "ssh");
-  const linuxIds = getNetworkHostCredentialIds(networkId, "linux");
+  const resolved = resolveCredentialsForDb(getDb(), { networkId }, "ssh");
   const out: number[] = [];
   const seen = new Set<number>();
-  for (const id of [...sshIds, ...linuxIds]) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push(id);
+  for (const r of resolved) {
+    if (seen.has(r.credential_id)) continue;
+    seen.add(r.credential_id);
+    out.push(r.credential_id);
   }
   const gStr = getSetting("host_linux_credential_id");
   const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
@@ -3631,13 +3644,15 @@ export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
 }
 
 /**
- * Community SNMP per scan su una rete: credenziali SNMP della subnet (ordine),
- * poi override profilo/scan, poi community di default sulla rete, infine public/private.
+ * Community SNMP per scan su una rete: wrapper del resolver unico — v2
+ * (`network_credentials` tipo snmp) poi legacy (ruolo snmp, stesso ordine di
+ * prima), poi override profilo/scan, poi community di default sulla rete,
+ * infine public/private SEMPRE in fondo.
  */
 export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverride?: string | null): string[] {
   const fromCreds: string[] = [];
-  for (const credId of getNetworkHostCredentialIds(networkId, "snmp")) {
-    const com = getCredentialCommunityString(credId);
+  for (const r of resolveCredentialsForDb(getDb(), { networkId }, "snmp")) {
+    const com = getCredentialCommunityString(r.credential_id);
     if (com?.trim()) fromCreds.push(com.trim());
   }
   const net = getNetworkById(networkId);
@@ -3661,23 +3676,40 @@ export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverr
 }
 
 /**
- * Community SNMP per un host: se in `host_detect_credential` è forzata una credenziale SNMP,
- * usa **solo** quella community (come richiesto per scan vincolati); altrimenti stessa logica di
- * {@link buildSnmpCommunitiesForNetwork}.
+ * Community SNMP per un host: wrapper del resolver unico con `hostId` — le
+ * credenziali già VALIDATE per questo host vengono anteposte alla catena di
+ * rete v2 e a quella legacy (incluso il pin `host_detect_credential`, ora
+ * parte della catena invece di uno short-circuit esclusivo come prima).
+ * `public`/`private` restano SEMPRE in fondo. Vedi commento gemello in db-tenant.ts.
  */
 export function buildSnmpCommunitiesForHost(
   networkId: number,
   hostId: number | null,
   profileOrOverride?: string | null
 ): string[] {
-  if (hostId != null) {
-    const boundId = getHostDetectCredentialId(hostId, "snmp");
-    if (boundId != null) {
-      const com = getCredentialCommunityString(boundId);
-      if (com?.trim()) return [com.trim()];
-    }
+  const fromCreds: string[] = [];
+  for (const r of resolveCredentialsForDb(getDb(), { hostId: hostId ?? undefined, networkId }, "snmp")) {
+    const com = getCredentialCommunityString(r.credential_id);
+    if (com?.trim()) fromCreds.push(com.trim());
   }
-  return buildSnmpCommunitiesForNetwork(networkId, profileOrOverride);
+  const net = getNetworkById(networkId);
+  const pushSplit = (s: string | null | undefined, into: string[]) => {
+    const t = s?.trim();
+    if (!t) return;
+    for (const part of t.split(",").map((x) => x.trim()).filter(Boolean)) into.push(part);
+  };
+  const mid: string[] = [];
+  pushSplit(profileOrOverride, mid);
+  pushSplit(net?.snmp_community ?? null, mid);
+  const ordered = [...fromCreds, ...mid, "public", "private"];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of ordered) {
+    if (!x || seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+  }
+  return out;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3923,6 +3955,106 @@ export function setHostCredentialValidatedByKey(
     max.m + 1,
     options?.auto_detected ? 1 : 0
   );
+}
+
+/** Bridge host→device best-effort per il cross-update dei binding: FK prima, poi match IP. */
+function findDeviceIdForHostCred(hostId: number): number | null {
+  const byFk = getNetworkDeviceByHostId(hostId);
+  if (byFk) return byFk.id;
+  const host = getDb().prepare(`SELECT ip FROM hosts WHERE id = ?`).get(hostId) as { ip: string } | undefined;
+  if (!host) return null;
+  const byIp = getNetworkDeviceByHost(host.ip);
+  return byIp?.id ?? null;
+}
+
+/**
+ * Registra un fallimento di autenticazione su (host, credenziale, protocollo, porta) —
+ * resolver unico fase 1b, §7.5. Upsert idempotente: se la riga in `host_credentials`
+ * non esiste ancora la crea con fail_count=1, mai un no-op silenzioso. backoff_until =
+ * now + min(2^fail_count * 5min, 24h) col fail_count AGGIORNATO (post-incremento).
+ * validated viene invalidato incondizionatamente (§7.5). last_attempt_at/backoff_until
+ * in ISO-8601 UTC (vedi commento sullo schema in db-tenant-schema.ts). Copia identica
+ * di db-tenant.ts a parte la sorgente db (regola 12).
+ */
+export function recordCredentialFailure(
+  hostId: number,
+  credentialId: number,
+  protocol: CredProtocol,
+  port: number,
+  error: string
+): void {
+  const db = getDb();
+  const existing = db
+    .prepare(
+      `SELECT id, fail_count FROM host_credentials WHERE host_id = ? AND credential_id = ? AND protocol_type = ? AND port = ?`
+    )
+    .get(hostId, credentialId, protocol, port) as { id: number; fail_count: number } | undefined;
+
+  const newFailCount = (existing?.fail_count ?? 0) + 1;
+  const backoffMs = Math.min(2 ** newFailCount * 5 * 60 * 1000, 24 * 60 * 60 * 1000);
+  const nowIso = new Date().toISOString();
+  const backoffUntil = new Date(Date.now() + backoffMs).toISOString();
+
+  if (existing) {
+    db.prepare(
+      `UPDATE host_credentials
+       SET fail_count = ?, last_error = ?, last_attempt_at = ?, backoff_until = ?,
+           validated = 0, validated_at = NULL
+       WHERE id = ?`
+    ).run(newFailCount, error, nowIso, backoffUntil, existing.id);
+  } else {
+    const max = db.prepare(
+      `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
+    ).get(hostId) as { m: number };
+    db.prepare(
+      `INSERT INTO host_credentials
+         (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until)
+       VALUES (?, ?, ?, ?, 0, NULL, ?, 0, ?, ?, ?, ?)`
+    ).run(hostId, credentialId, protocol, port, max.m + 1, newFailCount, error, nowIso, backoffUntil);
+  }
+
+  const deviceId = findDeviceIdForHostCred(hostId);
+  if (deviceId != null) {
+    const binding = findExistingBinding(deviceId, credentialId, protocol, port);
+    if (binding) updateBindingTestStatus(binding.id, "failed", error);
+  }
+}
+
+/**
+ * Registra un'autenticazione riuscita su (host, credenziale, protocollo, porta):
+ * azzera fail_count/last_error/backoff_until e marca validated=1 (upsert, come
+ * setHostCredentialValidatedByKey). Propaga anche a device_credential_bindings se
+ * esiste un binding corrispondente. Copia identica di db-tenant.ts (regola 12).
+ */
+export function recordCredentialSuccess(
+  hostId: number,
+  credentialId: number,
+  protocol: CredProtocol,
+  port: number
+): void {
+  const db = getDb();
+  const nowIso = new Date().toISOString();
+  const max = db.prepare(
+    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
+  ).get(hostId) as { m: number };
+  db.prepare(
+    `INSERT INTO host_credentials
+       (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until)
+     VALUES (?, ?, ?, ?, 1, datetime('now'), ?, 0, 0, NULL, ?, NULL)
+     ON CONFLICT(host_id, credential_id, protocol_type, port) DO UPDATE SET
+       validated = 1,
+       validated_at = datetime('now'),
+       fail_count = 0,
+       last_error = NULL,
+       last_attempt_at = excluded.last_attempt_at,
+       backoff_until = NULL`
+  ).run(hostId, credentialId, protocol, port, max.m + 1, nowIso);
+
+  const deviceId = findDeviceIdForHostCred(hostId);
+  if (deviceId != null) {
+    const binding = findExistingBinding(deviceId, credentialId, protocol, port);
+    if (binding) updateBindingTestStatus(binding.id, "success", "Autenticazione riuscita");
+  }
 }
 
 /** Restituisce la community string decifrata per una credenziale SNMP. */

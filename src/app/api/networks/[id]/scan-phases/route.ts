@@ -35,7 +35,8 @@ const PHASE_META: Array<{ key: ScanPhaseKey; label: string; adds: string }> = [
   {
     key: "credentials",
     label: "Credenziali (SSH/WinRM)",
-    adds: "SSH/WinRM: OS esatto, board vendor, enrichment via agent",
+    // Solo host selezionati: ogni tentativo è un logon fallito reale (allarmi MDR/XDR, lockout AD).
+    adds: "SSH/WinRM sugli host selezionati: OS esatto, board vendor, enrichment via agent",
   },
 ];
 

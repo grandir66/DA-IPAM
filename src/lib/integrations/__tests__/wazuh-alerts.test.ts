@@ -5,6 +5,7 @@ import {
   buildAlertsQuery,
   categorizeAlert,
   minSelectedLevel,
+  normalizeIp,
   dedupKey,
   normalizeAlert,
   type WazuhAlertDoc,
@@ -151,4 +152,79 @@ test("auth_failure captures the level-5 rule Windows actually fires", () => {
 test("a graver category keeps its own higher threshold", () => {
   const ransom = ALERT_CATEGORIES.find((c) => c.id === "ransomware")!;
   assert.ok(ransom.minLevel >= 10);
+});
+
+// ── Soppressione del rumore generato da noi stessi ──────────────────────────
+
+test("normalizeIp unwraps the IPv4-mapped IPv6 form Windows logs", () => {
+  // Sul campo il DC scrive "::ffff:172.16.1.154": senza normalizzare, il
+  // confronto con gli IP dell'appliance non aggancerebbe mai.
+  assert.equal(normalizeIp("::ffff:172.16.1.154"), "172.16.1.154");
+  assert.equal(normalizeIp("172.16.0.2"), "172.16.0.2");
+  assert.equal(normalizeIp("  ::FFFF:10.0.0.1 "), "10.0.0.1");
+  assert.equal(normalizeIp(null), null);
+});
+
+const SELF = { ips: ["172.16.0.2", "172.16.1.21"], accounts: ["domarc"] };
+
+test("an alert coming from the appliance is recognised as our own probe", () => {
+  const a = normalizeAlert(
+    {
+      "@timestamp": "2026-07-27T10:00:00.000Z",
+      agent: { id: "003", name: "SRV-DC" },
+      rule: { id: "60122", level: 5, description: "Logon Failure", groups: ["authentication_failed"] },
+      data: { win: { system: { eventID: "4625" }, eventdata: { ipAddress: "::ffff:172.16.0.2" } } },
+    },
+    "h1",
+    SELF,
+  );
+  assert.equal(a.category, "self_probe");
+});
+
+test("our service account is recognised however the domain is written", () => {
+  const mk = (user: string) =>
+    normalizeAlert(
+      {
+        "@timestamp": "2026-07-27T10:00:00.000Z",
+        rule: { id: "60122", level: 5, description: "x", groups: ["authentication_failed"] },
+        data: { win: { eventdata: { targetUserName: user } } },
+      },
+      "h",
+      SELF,
+    ).category;
+  assert.equal(mk("domarc"), "self_probe");
+  assert.equal(mk("DOMARC"), "self_probe");
+  assert.equal(mk("domarc@dts.local"), "self_probe");
+  assert.equal(mk("DTS\\domarc"), "self_probe");
+});
+
+test("a real user from a customer server stays a security alert", () => {
+  const a = normalizeAlert(
+    {
+      "@timestamp": "2026-07-27T10:00:00.000Z",
+      rule: { id: "60122", level: 5, description: "x", groups: ["authentication_failed"] },
+      data: { win: { eventdata: { targetUserName: "gs.sicurezza", ipAddress: "::ffff:172.16.1.154" } } },
+    },
+    "h",
+    SELF,
+  );
+  assert.equal(a.category, "auth_failure");
+});
+
+test("without a self-identity list nothing is suppressed", () => {
+  const a = normalizeAlert(
+    {
+      "@timestamp": "2026-07-27T10:00:00.000Z",
+      rule: { id: "60122", level: 5, description: "x", groups: ["authentication_failed"] },
+      data: { win: { eventdata: { ipAddress: "172.16.0.2" } } },
+    },
+    "h",
+  );
+  assert.equal(a.category, "auth_failure");
+});
+
+test("self_probe is diagnostic: visible, but never an attack", () => {
+  const cat = ALERT_CATEGORIES.find((c) => c.id === "self_probe");
+  assert.ok(cat);
+  assert.equal(cat!.diagnostic, true);
 });

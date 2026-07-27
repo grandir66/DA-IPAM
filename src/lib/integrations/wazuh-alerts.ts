@@ -23,6 +23,11 @@ export interface AlertCategory {
    * AD Health engine makes for its diagnostic findings.
    */
   diagnostic?: boolean;
+  /**
+   * Categoria assegnata solo per riclassificazione, mai per corrispondenza sui
+   * rule.groups: non partecipa a categorizeAlert, alla query, ne' alla soglia.
+   */
+  assignedOnly?: boolean;
 }
 
 export const ALERT_CATEGORIES: AlertCategory[] = [
@@ -74,6 +79,19 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
     minLevel: 8,
     diagnostic: true,
   },
+  {
+    // DA-IPAM autentica davvero contro gli host Windows (probe WinRM, patch
+    // management, inventario software): con una credenziale scaduta genererebbe
+    // valanghe di 4625 e poi le segnalerebbe come attacco. Resta visibile —
+    // serve accorgersi che una nostra credenziale non funziona piu' — ma non e'
+    // una minaccia e non concorre a DA-A-BruteForceActivity.
+    id: "self_probe",
+    labelIt: "Attività delle nostre sonde",
+    groups: ["authentication_failed", "authentication_failures"],
+    minLevel: 1,
+    diagnostic: true,
+    assignedOnly: true,
+  },
 ];
 
 /**
@@ -88,7 +106,7 @@ export const EXCLUDED_GROUPS: Record<string, string> = {
 
 /** All groups pulled from the indexer. */
 export function selectedGroups(): string[] {
-  return ALERT_CATEGORIES.flatMap((c) => c.groups);
+  return [...new Set(ALERT_CATEGORIES.filter((c) => !c.assignedOnly).flatMap((c) => c.groups))];
 }
 
 /**
@@ -97,15 +115,61 @@ export function selectedGroups(): string[] {
  * soglie per-categoria possano vederli, e il dato sarebbe perso per sempre.
  */
 export function minSelectedLevel(): number {
-  return ALERT_CATEGORIES.reduce((min, c) => Math.min(min, c.minLevel), Number.MAX_SAFE_INTEGER);
+  return ALERT_CATEGORIES.filter((c) => !c.assignedOnly).reduce(
+    (min, c) => Math.min(min, c.minLevel),
+    Number.MAX_SAFE_INTEGER,
+  );
 }
 
 /** First category whose groups intersect `groups`; null when none matches. */
 export function categorizeAlert(groups: string[] | undefined): string | null {
   if (!groups || groups.length === 0) return null;
   const set = new Set(groups);
-  const hit = ALERT_CATEGORIES.find((c) => c.groups.some((g) => set.has(g)));
+  const hit = ALERT_CATEGORIES.find(
+    (c) => !c.assignedOnly && c.groups.some((g) => set.has(g)),
+  );
   return hit ? hit.id : null;
+}
+
+/**
+ * Identita' con cui DA-IPAM stesso (o lo Scanner-Edge) si presenta agli host.
+ * Serve a non scambiare le nostre sonde per un attacco.
+ */
+export interface SelfIdentity {
+  ips: string[];
+  accounts: string[];
+}
+
+/** "::ffff:172.16.1.154" → "172.16.1.154". Windows logga la forma mappata. */
+export function normalizeIp(ip: string | null | undefined): string | null {
+  if (ip == null) return null;
+  const t = ip.trim();
+  if (t === "" || t === "-") return null;
+  return t.replace(/^::ffff:/i, "");
+}
+
+/** "DTS\\domarc" e "domarc@dts.local" sono lo stesso account. */
+export function normalizeAccount(user: string | null | undefined): string | null {
+  if (user == null) return null;
+  let t = user.trim();
+  if (t === "" || t === "-") return null;
+  const slash = t.lastIndexOf("\\");
+  if (slash >= 0) t = t.slice(slash + 1);
+  const at = t.indexOf("@");
+  if (at > 0) t = t.slice(0, at);
+  return t.toLowerCase();
+}
+
+export function isSelfOrigin(
+  args: { sourceIp: string | null; targetUser: string | null },
+  self: SelfIdentity | undefined,
+): boolean {
+  if (!self) return false;
+  const ip = normalizeIp(args.sourceIp);
+  if (ip && self.ips.some((s) => normalizeIp(s) === ip)) return true;
+  const user = normalizeAccount(args.targetUser);
+  if (user && self.accounts.some((a) => normalizeAccount(a) === user)) return true;
+  return false;
 }
 
 export function categoryById(id: string): AlertCategory | undefined {
@@ -145,9 +209,22 @@ export interface NormalizedAlert {
   sourceIp: string | null;
 }
 
-export function normalizeAlert(doc: WazuhAlertDoc, hitId: string): NormalizedAlert {
+export function normalizeAlert(
+  doc: WazuhAlertDoc,
+  hitId: string,
+  self?: SelfIdentity,
+): NormalizedAlert {
   const groups = doc.rule?.groups ?? [];
   const ed = doc.data?.win?.eventdata;
+  const sourceIp = normalizeIp(ed?.ipAddress) ?? null;
+  const targetUser = ed?.targetUserName ?? ed?.subjectUserName ?? null;
+  const matched = categorizeAlert(groups);
+  // Riclassifica solo cio' che sarebbe finito fra i fallimenti di
+  // autenticazione: un ransomware non diventa "nostra sonda" per via dell'IP.
+  const category =
+    matched === "auth_failure" && isSelfOrigin({ sourceIp, targetUser }, self)
+      ? "self_probe"
+      : matched;
   return {
     id: hitId,
     timestamp: doc["@timestamp"],
@@ -157,10 +234,10 @@ export function normalizeAlert(doc: WazuhAlertDoc, hitId: string): NormalizedAle
     ruleLevel: doc.rule?.level ?? 0,
     ruleDescription: doc.rule?.description ?? "",
     groups,
-    category: categorizeAlert(groups),
+    category,
     eventId: doc.data?.win?.system?.eventID ?? null,
-    targetUser: ed?.targetUserName ?? ed?.subjectUserName ?? null,
-    sourceIp: ed?.ipAddress ?? null,
+    targetUser,
+    sourceIp,
   };
 }
 

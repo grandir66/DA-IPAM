@@ -9,6 +9,7 @@ import type { Database } from "better-sqlite3";
 import { createWazuhIndexerClient } from "./wazuh-indexer-api";
 import { getWazuhConfig } from "./wazuh-config";
 import { getCurrentTenantCode } from "../db-tenant";
+import { collectSelfIdentity } from "./self-identity";
 import { getNotificationConfig } from "../notifications/config";
 import { dispatchNotification } from "../notifications/notifier";
 import {
@@ -152,6 +153,8 @@ export async function syncWazuhAlertsForTenant(opts?: {
       minLevel: opts?.minLevel,
       maxRows: opts?.maxRows ?? DEFAULT_MAX_ROWS,
       searchAfter: state.cursor ?? undefined,
+      // Le nostre stesse sonde non devono comparire come attacco
+      self: collectSelfIdentity(db),
     });
 
     let opened = 0;

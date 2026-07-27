@@ -19,6 +19,7 @@ import {
   buildAlertsQuery,
   normalizeAlert,
   type NormalizedAlert,
+  type SelfIdentity,
   type WazuhAlertDoc,
 } from "./wazuh-alerts";
 
@@ -234,6 +235,7 @@ export class WazuhIndexerClient {
     minLevel?: number;
     maxRows?: number;
     searchAfter?: unknown[];
+    self?: SelfIdentity;
   }): Promise<{ alerts: NormalizedAlert[]; nextCursor: unknown[] | null }> {
     const maxRows = args.maxRows ?? 2_000;
     const pageSize = Math.min(500, maxRows);
@@ -255,7 +257,7 @@ export class WazuhIndexerClient {
       );
       const hits = res.hits?.hits ?? [];
       if (hits.length === 0) break;
-      for (const h of hits) out.push(normalizeAlert(h._source, h._id));
+      for (const h of hits) out.push(normalizeAlert(h._source, h._id, args.self));
 
       const last = hits[hits.length - 1] as IndexerHit<WazuhAlertDoc> & {
         sort?: unknown[];

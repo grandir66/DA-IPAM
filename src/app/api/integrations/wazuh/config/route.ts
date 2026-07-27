@@ -61,14 +61,49 @@ function ensureWazuhSyncJobForAllTenants(intervalMinutes: number): { created: nu
   return { created, updated };
 }
 
-/** Rimuove il job wazuh_sync da TUTTI i tenant attivi. */
+/**
+ * Crea/aggiorna il job wazuh_alerts_sync su TUTTI i tenant attivi.
+ * Intervallo più fitto del sync inventario: gli alert invecchiano in fretta.
+ */
+function ensureWazuhAlertsJobForAllTenants(intervalMinutes: number): { created: number; updated: number } {
+  let created = 0;
+  let updated = 0;
+  for (const tenant of getActiveTenants()) {
+    withTenant(tenant.codice_cliente, () => {
+      const db = getTenantDb(tenant.codice_cliente);
+      const existing = db
+        .prepare("SELECT id, interval_minutes FROM scheduled_jobs WHERE job_type = 'wazuh_alerts_sync' AND network_id IS NULL")
+        .get() as { id: number; interval_minutes: number } | undefined;
+      if (existing) {
+        if (existing.interval_minutes !== intervalMinutes) {
+          db.prepare(
+            "UPDATE scheduled_jobs SET interval_minutes = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?",
+          ).run(intervalMinutes, existing.id);
+          updated++;
+        }
+      } else {
+        db.prepare(
+          `INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled)
+           VALUES (NULL, 'wazuh_alerts_sync', ?, 1)`,
+        ).run(intervalMinutes);
+        created++;
+      }
+      reloadTenantScheduler(tenant.codice_cliente);
+    });
+  }
+  return { created, updated };
+}
+
+/** Rimuove i job wazuh_sync e wazuh_alerts_sync da TUTTI i tenant attivi. */
 function removeWazuhSyncJobFromAllTenants(): number {
   let removed = 0;
   for (const tenant of getActiveTenants()) {
     withTenant(tenant.codice_cliente, () => {
       const db = getTenantDb(tenant.codice_cliente);
       const res = db
-        .prepare("DELETE FROM scheduled_jobs WHERE job_type = 'wazuh_sync' AND network_id IS NULL")
+        .prepare(
+          "DELETE FROM scheduled_jobs WHERE job_type IN ('wazuh_sync', 'wazuh_alerts_sync') AND network_id IS NULL",
+        )
         .run();
       if (res.changes > 0) removed += res.changes;
       reloadTenantScheduler(tenant.codice_cliente);
@@ -104,14 +139,20 @@ export async function POST(req: Request) {
   // Se l'integrazione viene abilitata (o resta abilitata) registra il cron job.
   const after = getWazuhConfig();
   let scheduler: { created: number; updated: number } | null = null;
+  let alertsScheduler: { created: number; updated: number } | null = null;
   if (after.enabled && after.url && after.username && after.password) {
     scheduler = ensureWazuhSyncJobForAllTenants(syncIntervalMinutes ?? 60);
+    // Il poll alert richiede l'indexer, non la Manager API: registralo solo
+    // quando le credenziali OpenSearch ci sono davvero.
+    if (after.indexerUrl && after.indexerUsername && after.indexerPassword) {
+      alertsScheduler = ensureWazuhAlertsJobForAllTenants(15);
+    }
   } else if (cfg.enabled === false) {
     // disabilitato esplicitamente → rimuovi i job
     removeWazuhSyncJobFromAllTenants();
   }
 
-  return NextResponse.json({ ...getWazuhConfigPublic(), scheduler });
+  return NextResponse.json({ ...getWazuhConfigPublic(), scheduler, alertsScheduler });
 }
 
 export async function DELETE() {

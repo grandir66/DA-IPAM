@@ -15,8 +15,9 @@ export const phase4Rules: RuleDef[] = [
   {
     id: "DA-A-AclCollectPartial",
     axis: "anomaly",
-    points: 5,
+    points: 0,
     title: "ACL collect incomplete or unavailable",
+    diagnostic: true,
     run(ctx) {
       const acl = aclOf(ctx);
       if (!acl) return null;
@@ -32,11 +33,13 @@ export const phase4Rules: RuleDef[] = [
       return aggFinding({
         ruleId: "DA-A-AclCollectPartial",
         axis: "anomaly",
-        points: 5,
+        points: 0,
         title: "ACL collect incomplete or unavailable",
         description: `Security descriptor collect status=${meta.status} (${why}); scanned=${meta.objectsScanned}, parsed=${meta.sdParsed}`,
         dns: [],
         raw: { meta },
+        diagnostic: true,
+        severity: "Medium",
       });
     },
   },

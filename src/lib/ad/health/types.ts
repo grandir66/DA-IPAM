@@ -14,6 +14,12 @@ export interface HealthFinding {
   objectCount: number;
   sampleDns: string[]; // max 50
   raw?: Record<string, unknown>;
+  /**
+   * Diagnostic findings describe the collector, not the domain (failed LDAP
+   * query, unreachable WinRM). They stay visible in the UI but are excluded
+   * from the risk score: a probe we could not run is not a domain weakness.
+   */
+  diagnostic?: boolean;
 }
 
 export interface HealthScore {
@@ -106,7 +112,10 @@ export interface WinrmProbeResult {
   status: "ok" | "unavailable" | "skipped";
   errorMessage?: string;
   lastHotfixAt: string | null;
+  /** Only KBs that apply to this DC's OS; empty when the OS is unknown. */
   missingCriticalKbs: string[];
+  /** Win32_OperatingSystem Caption of the probed DC; null if unreadable. */
+  osCaption?: string | null;
   cpasswordPaths: string[];
   durationMs: number;
   /** Present when probe status is ok (may still have null fields). */
@@ -190,6 +199,12 @@ export interface RuleContext {
   psoCount?: number | null;
   /** Users with msDS-KeyCredentialLink (shadow credentials). */
   shadowCredentialDns?: string[];
+  /**
+   * Labels of LDAP collect queries that failed (e.g. "users", "groups").
+   * Empty/undefined = every query succeeded. Without this, a timed-out query
+   * silently empties the maps and the domain looks clean.
+   */
+  ldapCollectErrors?: string[];
 }
 
 export interface RuleDef {
@@ -197,10 +212,12 @@ export interface RuleDef {
   axis: Exclude<HealthAxis, "score">;
   points: number;
   title: string;
+  /** Reports collector health rather than domain risk; excluded from scoring. */
+  diagnostic?: boolean;
   run: (ctx: RuleContext) => HealthFinding | null; // null = no match
 }
 
-export const ENGINE_VERSION = "0.6.0";
+export const ENGINE_VERSION = "0.7.0";
 export const SAMPLE_CAP = 50;
 
 /** Threshold for DA-A-LargePrivilegedSet. */

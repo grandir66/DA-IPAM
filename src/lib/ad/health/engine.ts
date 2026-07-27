@@ -281,6 +281,7 @@ export async function runAdHealthcheck(
       adcs: extras.adcs,
       psoCount: extras.psoCount,
       shadowCredentialDns: extras.shadowCredentialDns,
+      ldapCollectErrors: extras.collectErrors,
     };
 
     const { score, findings } = evaluateContext(ctx);

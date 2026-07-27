@@ -3,6 +3,7 @@
  */
 
 import { externalTrusts } from "./trust";
+import { criticalKbLabel } from "../critical-kbs";
 import { aggFinding, daysSince } from "./helpers";
 import { hasFlag, UAC } from "../uac";
 import {
@@ -64,7 +65,10 @@ export const phase5Rules: RuleDef[] = [
   {
     id: "DA-T-SidFilteringOff",
     axis: "trust",
-    points: 25,
+    // Weighted 50: SID history injection across a non-quarantined trust is a
+    // domain-takeover path, and the trust axis has too few rules to register
+    // otherwise.
+    points: 50,
     title: "SID filtering disabled on external trust",
     run(ctx) {
       const bad = externalTrusts(ctx.trusts).filter(
@@ -74,7 +78,7 @@ export const phase5Rules: RuleDef[] = [
       return aggFinding({
         ruleId: "DA-T-SidFilteringOff",
         axis: "trust",
-        points: 25,
+        points: 50,
         title: "SID filtering disabled on external trust",
         description:
           `${bad.length} external trust(s) without QUARANTINED_DOMAIN (SID filtering off): ` +
@@ -127,8 +131,9 @@ export const phase5Rules: RuleDef[] = [
   {
     id: "DA-A-WinrmProbeUnavailable",
     axis: "anomaly",
-    points: 5,
+    points: 0,
     title: "WinRM health probe unavailable",
+    diagnostic: true,
     run(ctx) {
       const w = ctx.winrm;
       if (!w || !w.configured) return null;
@@ -136,11 +141,13 @@ export const phase5Rules: RuleDef[] = [
       return aggFinding({
         ruleId: "DA-A-WinrmProbeUnavailable",
         axis: "anomaly",
-        points: 5,
+        points: 0,
         title: "WinRM health probe unavailable",
         description: `WinRM configured but probe failed: ${w.errorMessage ?? "unknown"}`,
         dns: [],
         raw: { winrm: w },
+        diagnostic: true,
+        severity: "Medium",
       });
     },
   },
@@ -176,6 +183,30 @@ export const phase5Rules: RuleDef[] = [
           lastHotfixAt: w.lastHotfixAt,
           missingCriticalKbs: w.missingCriticalKbs,
         },
+      });
+    },
+  },
+  {
+    id: "DA-A-DcMissingCriticalKb",
+    axis: "anomaly",
+    points: 25,
+    title: "Domain Controller missing a critical security KB",
+    run(ctx) {
+      const w = ctx.winrm;
+      if (!w || w.status !== "ok") return null;
+      const missing = w.missingCriticalKbs;
+      if (missing.length === 0) return null;
+      return aggFinding({
+        ruleId: "DA-A-DcMissingCriticalKb",
+        axis: "anomaly",
+        points: 25,
+        title: "Domain Controller missing a critical security KB",
+        description:
+          `${missing.length} security update(s) applicable to this DC's OS not found via Get-HotFix: ` +
+          `${missing.map(criticalKbLabel).join("; ")}. ` +
+          "A cumulative rollup may supersede them — confirm before remediating.",
+        dns: missing,
+        raw: { osCaption: w.osCaption ?? null, missingCriticalKbs: missing },
       });
     },
   },

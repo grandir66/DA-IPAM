@@ -205,6 +205,16 @@ const CATALOG: Record<string, RuleGuide> = {
     why: "Senza lettura completa dei security descriptor alcune escalation restano invisibili.",
     fix: "Verifica permessi LDAP dell’account sync e riprova l’healthcheck.",
   },
+  "DA-A-LdapCollectPartial": {
+    titleIt: "Raccolta LDAP incompleta",
+    why: "Una query LDAP fallita svuota gli attributi corrispondenti: le regole che li usano non trovano nulla e il dominio appare più pulito di quanto sia. Non è un rischio del dominio, ma rende il report inaffidabile.",
+    fix: "Controlla timeout e permessi dell’account LDAP, poi ripeti l’healthcheck; su domini grandi valuta di aumentare il timeLimit della query.",
+  },
+  "DA-A-DcMissingCriticalKb": {
+    titleIt: "KB di sicurezza critica assente sul DC",
+    why: "MS14-068 consente a un utente qualsiasi di farsi rilasciare un ticket da Domain Admin; MS17-010 espone il DC a esecuzione di codice remoto via SMBv1.",
+    fix: "Verifica con Get-HotFix e Windows Update se la KB o un rollup cumulativo che la include è installato; se manca davvero, applicala con priorità massima.",
+  },
   "DA-A-AdminSDHolderAce": {
     titleIt: "ACE non attese su AdminSDHolder",
     why: "Le ACE qui si propagano agli account protetti (admin) via SDProp.",

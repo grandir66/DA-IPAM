@@ -59,7 +59,7 @@ export const staleRules: RuleDef[] = [
     title: "Obsolete operating systems",
     run(ctx) {
       const dns = ctx.computers
-        .filter((c) => c.enabled && isObsoleteOs(c.operatingSystem))
+        .filter((c) => c.enabled && isObsoleteOs(c.operatingSystem, ctx.now))
         .map((c) => c.distinguishedName);
       if (dns.length === 0) return null;
       return aggFinding({

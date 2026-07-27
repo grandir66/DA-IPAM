@@ -113,6 +113,20 @@ export async function runJob(jobId: number): Promise<void> {
       );
       break;
     }
+    case "wazuh_alerts_sync": {
+      const { syncWazuhAlertsForTenant } = await import(
+        "@/lib/integrations/wazuh-alerts-sync"
+      );
+      const result = await syncWazuhAlertsForTenant();
+      console.info(
+        result.skipped
+          ? `[Scheduler] wazuh_alerts_sync: saltato (${result.reason})`
+          : `[Scheduler] wazuh_alerts_sync: ${result.fetched} alert letti, ` +
+            `${result.opened} eventi aperti, ${result.updated} aggiornati, ` +
+            `${result.ignored} fuori selezione`
+      );
+      break;
+    }
     case "mdm_sync": {
       const { runMdmSync } = await import("@/lib/integrations/mdm-runner");
       const result = await runMdmSync();

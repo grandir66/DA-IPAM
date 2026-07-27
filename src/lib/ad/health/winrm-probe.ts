@@ -6,15 +6,14 @@
 import { decrypt } from "@/lib/crypto";
 import { getAdIntegrationById, getCredentialById } from "@/lib/db";
 import { runWinrmCommand } from "@/lib/devices/winrm-run";
+import { missingCriticalKbs as computeMissingKbs } from "./critical-kbs";
 import type { DcHardeningProbe, WinrmProbeResult } from "./types";
 
-/** High-signal KBs often referenced in AD assessments (presence check). */
-export const CRITICAL_HOTFIX_KBS = [
-  "KB3011780", // MS14-068 Kerberos
-  "KB4012212", // MS17-010 (Win7/2008R2 example)
-  "KB4012215", // MS17-010 (2012)
-  "KB4012598", // MS17-010
-] as const;
+export {
+  CRITICAL_HOTFIX_KBS,
+  criticalKbLabel,
+  missingCriticalKbs,
+} from "./critical-kbs";
 
 const EMPTY_HARDENING: DcHardeningProbe = {
   ldapServerIntegrity: null,
@@ -74,6 +73,7 @@ function asNullableBool(v: unknown): boolean | null {
 export function parseWinrmProbeJson(raw: string): {
   lastHotfixAt: string | null;
   installedKbs: string[];
+  osCaption: string | null;
   cpasswordPaths: string[];
   hardening: DcHardeningProbe;
 } {
@@ -82,6 +82,7 @@ export function parseWinrmProbeJson(raw: string): {
     return {
       lastHotfixAt: null,
       installedKbs: [],
+      osCaption: null,
       cpasswordPaths: [],
       hardening: { ...EMPTY_HARDENING },
     };
@@ -92,6 +93,7 @@ export function parseWinrmProbeJson(raw: string): {
   const parsed = JSON.parse(json) as {
     lastHotfixAt?: string | null;
     installedKbs?: string[];
+    osCaption?: string | null;
     cpasswordPaths?: string[];
     hardening?: Record<string, unknown>;
   };
@@ -101,6 +103,7 @@ export function parseWinrmProbeJson(raw: string): {
     installedKbs: Array.isArray(parsed.installedKbs)
       ? parsed.installedKbs.map(String)
       : [],
+    osCaption: parsed.osCaption != null ? String(parsed.osCaption) : null,
     cpasswordPaths: Array.isArray(parsed.cpasswordPaths)
       ? parsed.cpasswordPaths.map(String)
       : [],
@@ -117,10 +120,6 @@ export function parseWinrmProbeJson(raw: string): {
   };
 }
 
-export function missingCriticalKbs(installed: string[]): string[] {
-  const set = new Set(installed.map((k) => k.toUpperCase()));
-  return CRITICAL_HOTFIX_KBS.filter((kb) => !set.has(kb));
-}
 
 const PROBE_PS = `
 $ErrorActionPreference = 'SilentlyContinue'
@@ -152,6 +151,8 @@ try {
 } catch {}
 $spooler = $null
 try { $spooler = ((Get-Service -Name Spooler -ErrorAction Stop).Status -eq 'Running') } catch {}
+$os = $null
+try { $os = (Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop).Caption } catch {}
 $hardening = @{
   ldapServerIntegrity = Get-RegInt 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Parameters' 'LDAPServerIntegrity'
   ldapEnforceChannelBinding = Get-RegInt 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Parameters' 'LDAPEnforceChannelBinding'
@@ -160,7 +161,7 @@ $hardening = @{
   wdigestUseLogonCredential = Get-RegInt 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest' 'UseLogonCredential'
   spoolerRunning = $spooler
 }
-@{ lastHotfixAt = $last; installedKbs = $kbs; cpasswordPaths = $cp; hardening = $hardening } | ConvertTo-Json -Compress -Depth 4
+@{ lastHotfixAt = $last; installedKbs = $kbs; osCaption = $os; cpasswordPaths = $cp; hardening = $hardening } | ConvertTo-Json -Compress -Depth 4
 `.trim();
 
 export async function collectWinrmProbe(integrationId: number): Promise<WinrmProbeResult> {
@@ -196,7 +197,8 @@ export async function collectWinrmProbe(integrationId: number): Promise<WinrmPro
       configured: true,
       status: "ok",
       lastHotfixAt: parsed.lastHotfixAt,
-      missingCriticalKbs: missingCriticalKbs(parsed.installedKbs),
+      missingCriticalKbs: computeMissingKbs(parsed.installedKbs, parsed.osCaption),
+      osCaption: parsed.osCaption,
       cpasswordPaths: parsed.cpasswordPaths.slice(0, 30),
       durationMs: Date.now() - started,
       hardening: parsed.hardening,

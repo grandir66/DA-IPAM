@@ -97,10 +97,10 @@ test("phase2Rules exports the twelve DA-* ids", () => {
   );
 });
 
-test("ALL_RULES has 54 unique rule ids", () => {
-  assert.equal(ALL_RULES.length, 54);
+test("ALL_RULES has 56 unique rule ids", () => {
+  assert.equal(ALL_RULES.length, 56);
   const ids = ALL_RULES.map((r) => r.id);
-  assert.equal(new Set(ids).size, 54);
+  assert.equal(new Set(ids).size, 56);
   assert.ok(!ids.includes("DA-A-DomainScore"));
 });
 

@@ -25,6 +25,8 @@ export interface Network {
   /** Post-scan assessment sull'edge (tls-deep, enum, …). */
   assessment_enabled: number | null;
   assessment_profile_id: string | null;
+  /** Override per rete del gating probe passivi di attribuzione (fase 3, default 1 = abilitati). */
+  probes_enabled: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -658,7 +660,7 @@ export interface SwitchPort {
 export interface ScheduledJob {
   id: number;
   network_id: number | null;
-  job_type: "ping_sweep" | "fast_scan" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check" | "librenms_sync" | "vuln_sync" | "wazuh_sync" | "mdm_sync" | "meshcentral_sync";
+  job_type: "ping_sweep" | "fast_scan" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check" | "librenms_sync" | "vuln_sync" | "wazuh_sync" | "wazuh_alerts_sync" | "mdm_sync" | "meshcentral_sync";
   interval_minutes: number;
   last_run: string | null;
   next_run: string | null;
@@ -842,7 +844,7 @@ export interface CredentialInput {
 
 export interface ScheduledJobInput {
   network_id?: number | null;
-  job_type: "ping_sweep" | "fast_scan" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check" | "librenms_sync" | "vuln_sync" | "wazuh_sync" | "mdm_sync" | "meshcentral_sync";
+  job_type: "ping_sweep" | "fast_scan" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check" | "librenms_sync" | "vuln_sync" | "wazuh_sync" | "wazuh_alerts_sync" | "mdm_sync" | "meshcentral_sync";
   interval_minutes: number;
   config?: Record<string, unknown>;
 }

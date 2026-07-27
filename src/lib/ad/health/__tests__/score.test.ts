@@ -24,3 +24,33 @@ test("aggregateScores takes max axis and caps at 100", () => {
   assert.equal(s.anomaly, 0);
   assert.equal(s.global, 100);
 });
+
+test("aggregateScores ignores diagnostic findings", () => {
+  const findings: HealthFinding[] = [
+    {
+      ruleId: "DA-A-LdapCollectPartial",
+      axis: "anomaly",
+      points: 20,
+      severity: "High",
+      title: "t",
+      description: "d",
+      objectCount: 0,
+      sampleDns: [],
+      diagnostic: true,
+    },
+    {
+      ruleId: "DA-A-GuestEnabled",
+      axis: "anomaly",
+      points: 20,
+      severity: "High",
+      title: "t",
+      description: "d",
+      objectCount: 1,
+      sampleDns: [],
+    },
+  ];
+  const s = aggregateScores(findings);
+  // only the real finding counts, not the collector diagnostic
+  assert.equal(s.anomaly, 20);
+  assert.equal(s.global, 20);
+});

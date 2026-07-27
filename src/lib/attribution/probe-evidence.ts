@@ -194,27 +194,63 @@ function dedupeAndValidate(inputs: EvidenceInput[]): EvidenceInput[] {
   return Array.from(acc.values());
 }
 
+// Build minimo plausibile per una versione Windows reale: Windows Vista/2008
+// (6.0.6000) è la più vecchia release NT che parla NTLMv2/SMB2, ma già quella
+// ha build a 4 cifre. Samba e i suoi derivati (QNAP QTS, Synology DSM, molti
+// NAS Linux/BSD) rispondono anch'essi a SMB2/NTLMSSP ma riportano tipicamente
+// build=0 nel campo Version della CHALLENGE (es. "6.1.0" — vedi evidenza reale
+// QNAP 192.168.40.26, VM 533 rete 192.168.40.0/24, root cause del falso
+// positivo os=windows su quel NAS).
+const WINDOWS_MIN_PLAUSIBLE_BUILD = 1000;
+// Major version realmente usate dalle NTLM Version di Windows (NT 5.x/6.x/10.x).
+const WINDOWS_PLAUSIBLE_MAJORS = new Set([5, 6, 10]);
+
+/**
+ * Discrimina un vero Windows da Samba/NAS che rispondono comunque a SMB2 con
+ * una CHALLENGE NTLMSSP: entrambi superano il probe, ma solo Windows riporta
+ * un numero di build realistico (4-5 cifre, es. 7601/9200/9600/14393/17763/
+ * 19041/20348/22621/26100). Richiede ANCHE major∈{5,6,10}, non solo build
+ * grande, per difesa in profondità contro future varianti Version malformate.
+ */
+function isPlausibleWindowsVersion(osVersion: string | null): boolean {
+  if (!osVersion) return false;
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(osVersion);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const build = Number(match[3]);
+  return build > WINDOWS_MIN_PLAUSIBLE_BUILD && WINDOWS_PLAUSIBLE_MAJORS.has(major);
+}
+
 /**
  * Da un `Smb2Finding` (NEGOTIATE + NTLMSSP NEGOTIATE anonimo riusciti) deriva
- * le evidenze: la sola risposta a NTLMSSP implica il dialetto SMB Windows,
- * quindi `os = windows` a confidence alta; la build (se letta dalla Version
- * NTLM) va in `raw_value` (diventa `os_name` in fase di fusione, vedi
- * `fuse.ts#bestRaw`). `netbiosName`/`dnsDomain` non producono evidenze qui:
- * non esiste una dimensione "hostname" nell'attribution engine v2 (solo
- * vendor/category/os) — restano nel finding per usi futuri (es. matching AD).
+ * le evidenze. La sola risposta a NTLMSSP NON basta più a dire Windows: la
+ * parlano anche Samba e i suoi derivati (QNAP, Synology, NAS Linux/BSD, molti
+ * embedded), che riportano build=0 nella Version — vedi
+ * `isPlausibleWindowsVersion`. Emettiamo `os = windows` (confidence alta) SOLO
+ * se il build è plausibile; altrimenti nessun claim OS (meglio nessuna
+ * informazione che una sbagliata — falso positivo altrimenti su ogni NAS della
+ * rete, spec fix smb2-samba-false-positive). La categoria `compute` resta
+ * emessa in ogni caso: SMB2 attivo implica comunque una macchina, non un
+ * apparato di rete puro; sarà la fusione con mDNS/SSDP (es. storage.nas più
+ * profondo/più forte) a comporre l'attribuzione finale. `netbiosName`/
+ * `dnsDomain` non producono evidenze qui: non esiste una dimensione
+ * "hostname" nell'attribution engine v2 (solo vendor/category/os) — restano
+ * nel finding per usi futuri (es. matching AD).
  */
 export function evidenceFromSmb2(f: Smb2Finding): EvidenceInput[] {
   const expires_at = expiresAt();
-  return dedupeAndValidate([
-    {
+  const evidences: EvidenceInput[] = [];
+  if (isPlausibleWindowsVersion(f.osVersion)) {
+    evidences.push({
       source: "smb", phase: "scan_naabu", dimension: "os",
       claim: "windows", confidence: SMB_OS_CONFIDENCE, raw_value: f.osVersion, expires_at,
-    },
-    {
-      source: "smb", phase: "scan_naabu", dimension: "category",
-      claim: "compute", confidence: SMB_CATEGORY_CONFIDENCE, raw_value: null, expires_at,
-    },
-  ]);
+    });
+  }
+  evidences.push({
+    source: "smb", phase: "scan_naabu", dimension: "category",
+    claim: "compute", confidence: SMB_CATEGORY_CONFIDENCE, raw_value: null, expires_at,
+  });
+  return dedupeAndValidate(evidences);
 }
 
 // ---------------------------------------------------------------------------

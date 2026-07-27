@@ -102,6 +102,12 @@ interface ScanPhasesResponse {
   };
 }
 
+/** "network.access_point" → "Access Point" (ultimo segmento dello slug categoria, capitalizzato). */
+function attrCategoryLabel(slug: string): string {
+  const last = slug.includes(".") ? slug.slice(slug.lastIndexOf(".") + 1) : slug;
+  return last.split("_").filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
 /** Formatta un ISO timestamp come "il DD/MM HH:mm" per la riga di stato fase. */
 function formatPhaseLastRun(iso: string): string {
   const d = new Date(iso);
@@ -1760,6 +1766,7 @@ export function NetworkDetailClient({
                   Classificazione
                 </SortableTableHead>
                 <TableHead title="Tipo dispositivo da fingerprint (porte, SNMP, banner)">Rilevato</TableHead>
+                <TableHead title="Attribution v2: categoria/vendor/OS calcolati da evidenze multi-fonte (OUI, SNMP, AD, Wazuh, LLDP/CDP)">Attribuzione</TableHead>
                 <TableHead>Dispositivo</TableHead>
                 <TableHead title="Stesso device su più subnet" className="w-10 text-center">MH</TableHead>
                 <SortableTableHead columnId="vendor" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
@@ -1774,7 +1781,7 @@ export function NetworkDetailClient({
             <TableBody>
               {displayHosts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={17} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={18} className="text-center text-muted-foreground py-8">
                     {hosts.length === 0
                       ? "Nessun host trovato. Avvia una scansione per scoprire i dispositivi."
                       : "Nessun host corrisponde ai filtri."}
@@ -1923,6 +1930,28 @@ export function NetworkDetailClient({
                           </span>
                         );
                       })()}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {host.attr_category ? (
+                        <div className="flex flex-col gap-0.5 leading-tight">
+                          <span
+                            className="font-medium text-foreground"
+                            title={`${host.attr_category}${host.attr_confidence_category != null ? ` (confidenza ${host.attr_confidence_category}%)` : ""}`}
+                          >
+                            {attrCategoryLabel(host.attr_category)}
+                            {host.attr_confidence_category != null && (
+                              <span className="text-muted-foreground font-normal ml-1">{host.attr_confidence_category}%</span>
+                            )}
+                          </span>
+                          {(host.attr_vendor_name || host.attr_vendor || host.attr_os_family) ? (
+                            <span className="text-muted-foreground truncate max-w-[160px] block">
+                              {[host.attr_vendor_name || host.attr_vendor, host.attr_os_family].filter(Boolean).join(" · ")}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm">
                       {(host as HostWithDevice).device ? (

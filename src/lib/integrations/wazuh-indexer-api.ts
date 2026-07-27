@@ -15,6 +15,12 @@
 import * as https from "node:https";
 import { URL } from "node:url";
 import { getSharedAgent } from "./http-pool";
+import {
+  buildAlertsQuery,
+  normalizeAlert,
+  type NormalizedAlert,
+  type WazuhAlertDoc,
+} from "./wazuh-alerts";
 
 export interface WazuhIndexerConfig {
   url: string;            // es. https://da-wazuh.domarc.it:9200
@@ -213,6 +219,53 @@ export class WazuhIndexerClient {
     const out: Record<string, number> = {};
     for (const b of res.aggregations?.by_severity?.buckets ?? []) out[b.key] = b.doc_count;
     return out;
+  }
+
+  /**
+   * Legge gli alert di sicurezza selezionati da `wazuh-alerts-*` a partire da
+   * `since` (ISO). Paginazione search_after, cap su `maxRows` per non tirare
+   * dentro milioni di documenti: l'indice reale misurato supera i 390M doc.
+   *
+   * Ritorna anche il cursore dell'ultimo documento, da persistere per il poll
+   * successivo ed evitare di rileggere la stessa finestra.
+   */
+  async searchAlerts(args: {
+    since: string;
+    minLevel?: number;
+    maxRows?: number;
+    searchAfter?: unknown[];
+  }): Promise<{ alerts: NormalizedAlert[]; nextCursor: unknown[] | null }> {
+    const maxRows = args.maxRows ?? 2_000;
+    const pageSize = Math.min(500, maxRows);
+    const out: NormalizedAlert[] = [];
+    let searchAfter = args.searchAfter;
+    let nextCursor: unknown[] | null = null;
+
+    while (out.length < maxRows) {
+      const body = buildAlertsQuery({
+        since: args.since,
+        minLevel: args.minLevel ?? 8,
+        size: Math.min(pageSize, maxRows - out.length),
+        searchAfter,
+      });
+      const res = await this.json<IndexerSearchResponse<WazuhAlertDoc>>(
+        "POST",
+        "/wazuh-alerts-*/_search",
+        body as unknown as Record<string, unknown>,
+      );
+      const hits = res.hits?.hits ?? [];
+      if (hits.length === 0) break;
+      for (const h of hits) out.push(normalizeAlert(h._source, h._id));
+
+      const last = hits[hits.length - 1] as IndexerHit<WazuhAlertDoc> & {
+        sort?: unknown[];
+      };
+      if (!last?.sort || !Array.isArray(last.sort)) break;
+      nextCursor = last.sort;
+      searchAfter = last.sort;
+      if (hits.length < body.size) break;
+    }
+    return { alerts: out, nextCursor };
   }
 
   /** Numero totale di documenti CVE nell'indice (sanity check). */

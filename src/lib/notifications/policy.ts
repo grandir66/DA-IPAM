@@ -70,7 +70,7 @@ function describe(e: NotifiableEvent): string {
   if (e.source_ip) detail.push(`IP ${e.source_ip}`);
   if (detail.length) bits.push(`    ${detail.join(" · ")}`);
   bits.push(
-    `    ${e.occurrence_count} occorrenze, ultima ${formatDate(e.last_seen_at)}`,
+    `    ${e.occurrence_count} ${e.occurrence_count === 1 ? "occorrenza" : "occorrenze"}, ultima ${formatDate(e.last_seen_at)}`,
   );
   return bits.join("\n");
 }
@@ -108,15 +108,18 @@ export function buildDigestMessage(
     byCategory.set(e.category, list);
   }
 
+  const plural = (n: number) => (n === 1 ? "evento" : "eventi");
+
   const sections: string[] = [];
   for (const [cat, list] of byCategory) {
-    sections.push(`${categoryLabel(cat)} — ${list.length} eventi`);
+    sections.push(`${categoryLabel(cat)} — ${list.length} ${plural(list.length)}`);
     sections.push(list.map(describe).join("\n"));
     sections.push("");
   }
 
+  const n = events.length;
   return {
-    subject: `[${tenant}] Riepilogo alert sicurezza: ${events.length} nuovi eventi`,
+    subject: `[${tenant}] Riepilogo alert sicurezza: ${n} ${n === 1 ? "nuovo evento" : "nuovi eventi"}`,
     text:
       `Nuovi eventi di sicurezza aperti dall'ultimo riepilogo.\n\n` +
       sections.join("\n") +

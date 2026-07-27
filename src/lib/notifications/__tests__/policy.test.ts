@@ -97,3 +97,18 @@ test("the webhook payload is machine-readable and carries the events", () => {
   assert.equal(p.events[0]!.category, "auth_failure");
   assert.ok(typeof p.text === "string" && p.text.length > 0);
 });
+
+test("the digest gets Italian plurals right", () => {
+  const one = buildDigestMessage([ev()], "ACME")!;
+  assert.ok(one.subject.includes("1 nuovo evento"), one.subject);
+  assert.ok(one.text.includes("1 evento"), one.text);
+
+  const many = buildDigestMessage([ev({ id: 1 }), ev({ id: 2, agent_name: "PC-01" })], "ACME")!;
+  assert.ok(many.subject.includes("2 nuovi eventi"), many.subject);
+  assert.ok(many.text.includes("2 eventi"), many.text);
+});
+
+test("a single occurrence is not written as plural", () => {
+  const m = buildImmediateMessage(ev({ category: "ransomware", occurrence_count: 1 }), "ACME");
+  assert.ok(m.text.includes("1 occorrenza,"), m.text);
+});

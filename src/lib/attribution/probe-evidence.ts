@@ -4,6 +4,8 @@
 import type { HttpTlsFinding } from "@/lib/scanner/probes/http-tls";
 import type { Smb2Finding } from "@/lib/scanner/probes/smb2";
 import type { MdnsFinding } from "@/lib/scanner/probes/mdns";
+import type { SsdpFinding } from "@/lib/scanner/probes/ssdp";
+import type { WsdFinding } from "@/lib/scanner/probes/wsd";
 import { isValidCategory } from "./taxonomy";
 import { vendorSlug } from "./emitters";
 import type { EvidenceInput } from "./types";
@@ -291,6 +293,107 @@ export function evidenceFromMdns(f: MdnsFinding): EvidenceInput[] {
     out.push({
       source: "mdns", phase: "scan_naabu", dimension: "vendor",
       claim: vendorSlug("Apple"), confidence: MDNS_DEVICE_INFO_MODEL_VENDOR_CONFIDENCE, raw_value: f.model, expires_at,
+    });
+  }
+
+  return dedupeAndValidate(out);
+}
+
+// ---------------------------------------------------------------------------
+// SSDP/UPnP (fase 3 Task 3)
+// ---------------------------------------------------------------------------
+
+interface SsdpDeviceTypeRule {
+  re: RegExp;
+  category: string;
+  confidence: number;
+}
+
+// deviceType e' l'URN UPnP standard (es. "urn:schemas-upnp-org:device:WLANAccessPointDevice:1"):
+// match per sottostringa, ordine non critico perche' le famiglie non si sovrappongono.
+const SSDP_DEVICE_TYPE_RULES: SsdpDeviceTypeRule[] = [
+  { re: /WLANAccessPointDevice/i, category: "network.access_point", confidence: 0.85 },
+  { re: /InternetGatewayDevice/i, category: "network.router", confidence: 0.8 },
+  { re: /MediaRenderer/i, category: "av.display", confidence: 0.7 },
+  { re: /Printer/i, category: "peripheral.printer", confidence: 0.85 },
+];
+
+// manufacturer/modelName sono auto-dichiarati dal device nell'XML UPnP (come il
+// Server header HTTP): confidence allineata al peso base della sorgente ssdp
+// in weights.ts (0.75), non e' una conferma indipendente forte come SNMP.
+const SSDP_MANUFACTURER_VENDOR_CONFIDENCE = 0.75;
+
+/**
+ * Da un `SsdpFinding` (M-SEARCH + eventuale GET dell'XML device riusciti)
+ * deriva le evidenze: vendor da `manufacturer`/`modelName`, categoria da
+ * `deviceType` (spec Task 3).
+ */
+export function evidenceFromSsdp(f: SsdpFinding): EvidenceInput[] {
+  const expires_at = expiresAt();
+  const out: EvidenceInput[] = [];
+
+  if (f.manufacturer) {
+    const raw = [f.manufacturer, f.modelName].filter(Boolean).join(" ") || null;
+    out.push({
+      source: "ssdp", phase: "scan_naabu", dimension: "vendor",
+      claim: vendorSlug(f.manufacturer), confidence: SSDP_MANUFACTURER_VENDOR_CONFIDENCE, raw_value: raw, expires_at,
+    });
+  }
+
+  if (f.deviceType) {
+    for (const rule of SSDP_DEVICE_TYPE_RULES) {
+      if (!rule.re.test(f.deviceType)) continue;
+      out.push({
+        source: "ssdp", phase: "scan_naabu", dimension: "category",
+        claim: rule.category, confidence: rule.confidence, raw_value: f.deviceType, expires_at,
+      });
+      break; // primo match vince
+    }
+  }
+
+  return dedupeAndValidate(out);
+}
+
+// ---------------------------------------------------------------------------
+// WS-Discovery (fase 3 Task 3) — `wsd` e' gia' in `AUTHORITATIVE_SOURCES.category`
+// (weights.ts): l'evidenza category diventa dichiarativa e salta la somma
+// pesata. Per questo NON emettiamo mai un claim category debole/ambiguo: se i
+// Types non sono riconosciuti con certezza, nessuna evidenza per quella
+// dimensione (spec Task 3).
+// ---------------------------------------------------------------------------
+
+const WSD_CAMERA_CONFIDENCE = 0.95; // ONVIF NetworkVideoTransmitter: gia' autoritativa, la confidence alta e' voluta
+const WSD_PRINTER_CONFIDENCE = 0.9;
+const WSD_COMPUTE_CONFIDENCE = 0.5; // "Device"+"Computer" da soli non distinguono server/workstation
+
+/**
+ * Da un `WsdFinding` (Probe SOAP riuscito) deriva l'evidenza di categoria:
+ * `NetworkVideoTransmitter` → av.camera, `PrintDeviceType`/`PrinterServiceType`
+ * → peripheral.printer, `Device`+`Computer` (entrambi presenti) → compute.
+ * Match per sottostringa sul nome locale del tipo (i prefissi QName come
+ * "dn:"/"tds:" variano tra implementazioni, vedi wsd.ts). Un solo claim
+ * category per finding: le famiglie sono mutuamente esclusive per un device
+ * reale, e priorita' esplicita evita ambiguita' se i Types elencano piu' tipi.
+ */
+export function evidenceFromWsd(f: WsdFinding): EvidenceInput[] {
+  const expires_at = expiresAt();
+  const typesBlob = f.types.join(" ");
+  const out: EvidenceInput[] = [];
+
+  if (/NetworkVideoTransmitter/i.test(typesBlob)) {
+    out.push({
+      source: "wsd", phase: "scan_naabu", dimension: "category",
+      claim: "av.camera", confidence: WSD_CAMERA_CONFIDENCE, raw_value: typesBlob, expires_at,
+    });
+  } else if (/PrintDeviceType|PrinterServiceType/i.test(typesBlob)) {
+    out.push({
+      source: "wsd", phase: "scan_naabu", dimension: "category",
+      claim: "peripheral.printer", confidence: WSD_PRINTER_CONFIDENCE, raw_value: typesBlob, expires_at,
+    });
+  } else if (/\bDevice\b/i.test(typesBlob) && /\bComputer\b/i.test(typesBlob)) {
+    out.push({
+      source: "wsd", phase: "scan_naabu", dimension: "category",
+      claim: "compute", confidence: WSD_COMPUTE_CONFIDENCE, raw_value: typesBlob, expires_at,
     });
   }
 

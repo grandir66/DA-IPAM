@@ -1,13 +1,17 @@
 // src/lib/attribution/__tests__/probe-evidence.test.ts
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { evidenceFromHttpTls, evidenceFromSmb2, evidenceFromMdns } from "../probe-evidence";
+import { evidenceFromHttpTls, evidenceFromSmb2, evidenceFromMdns, evidenceFromSsdp, evidenceFromWsd } from "../probe-evidence";
 import { isValidCategory } from "../taxonomy";
 import type { HttpTlsFinding } from "@/lib/scanner/probes/http-tls";
 import type { Smb2Finding } from "@/lib/scanner/probes/smb2";
 import { parseNtlmChallenge } from "@/lib/scanner/probes/smb2";
 import type { MdnsFinding } from "@/lib/scanner/probes/mdns";
 import { parseTxtRecords } from "@/lib/scanner/probes/mdns";
+import type { SsdpFinding } from "@/lib/scanner/probes/ssdp";
+import { parseSsdpHeaders } from "@/lib/scanner/probes/ssdp";
+import type { WsdFinding } from "@/lib/scanner/probes/wsd";
+import { collectByLocalName } from "@/lib/scanner/probes/wsd";
 
 function finding(partial: Partial<HttpTlsFinding>): HttpTlsFinding {
   return {
@@ -570,5 +574,238 @@ describe("parseTxtRecords", () => {
     const r = parseTxtRecords(txtBuf("ci=17", "sf=0"));
     assert.equal(r["ci"], "17");
     assert.equal(r["sf"], "0");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SSDP/UPnP (fase 3 Task 3)
+// ---------------------------------------------------------------------------
+
+function ssdpFinding(partial: Partial<SsdpFinding>): SsdpFinding {
+  return {
+    st: null,
+    server: null,
+    location: null,
+    manufacturer: null,
+    modelName: null,
+    deviceType: null,
+    ...partial,
+  };
+}
+
+describe("evidenceFromSsdp", () => {
+  it("deviceType WLANAccessPointDevice → network.access_point @0.85", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ deviceType: "urn:schemas-upnp-org:device:WLANAccessPointDevice:1" }));
+    const c = out.find((e) => e.dimension === "category");
+    assert.equal(c?.claim, "network.access_point");
+    assert.equal(c?.confidence, 0.85);
+    assert.equal(c?.source, "ssdp");
+  });
+
+  it("deviceType InternetGatewayDevice → network.router @0.8", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ deviceType: "urn:schemas-upnp-org:device:InternetGatewayDevice:1" }));
+    const c = out.find((e) => e.dimension === "category");
+    assert.equal(c?.claim, "network.router");
+    assert.equal(c?.confidence, 0.8);
+  });
+
+  it("deviceType MediaRenderer → av.display @0.7", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ deviceType: "urn:schemas-upnp-org:device:MediaRenderer:1" }));
+    const c = out.find((e) => e.dimension === "category");
+    assert.equal(c?.claim, "av.display");
+    assert.equal(c?.confidence, 0.7);
+  });
+
+  it("deviceType Printer → peripheral.printer @0.85", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ deviceType: "urn:schemas-upnp-org:device:Printer:1" }));
+    const c = out.find((e) => e.dimension === "category");
+    assert.equal(c?.claim, "peripheral.printer");
+    assert.equal(c?.confidence, 0.85);
+  });
+
+  it("deviceType non riconosciuto → nessuna evidenza categoria", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ deviceType: "urn:schemas-upnp-org:device:BasicDevice:1" }));
+    assert.equal(out.find((e) => e.dimension === "category"), undefined);
+  });
+
+  it("manufacturer + modelName → vendor @0.75, raw_value combinato", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ manufacturer: "Canon Inc.", modelName: "TS3350" }));
+    const v = out.find((e) => e.dimension === "vendor");
+    assert.equal(v?.claim, "canon");
+    assert.equal(v?.confidence, 0.75);
+    assert.equal(v?.raw_value, "Canon Inc. TS3350");
+    assert.equal(v?.source, "ssdp");
+  });
+
+  it("manufacturer senza modelName → vendor comunque, raw_value solo manufacturer", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ manufacturer: "Sonos" }));
+    const v = out.find((e) => e.dimension === "vendor");
+    assert.equal(v?.claim, "sonos");
+    assert.equal(v?.raw_value, "Sonos");
+  });
+
+  it("finding vuoto → nessuna evidenza", () => {
+    assert.deepEqual(evidenceFromSsdp(ssdpFinding({})), []);
+  });
+
+  it("Ogni claim category è dentro la tassonomia", () => {
+    const findings: SsdpFinding[] = [
+      ssdpFinding({ deviceType: "urn:schemas-upnp-org:device:WLANAccessPointDevice:1" }),
+      ssdpFinding({ deviceType: "urn:schemas-upnp-org:device:InternetGatewayDevice:1" }),
+      ssdpFinding({ deviceType: "urn:schemas-upnp-org:device:MediaRenderer:1" }),
+      ssdpFinding({ deviceType: "urn:schemas-upnp-org:device:Printer:1" }),
+    ];
+    for (const f of findings) {
+      for (const e of evidenceFromSsdp(f).filter((x) => x.dimension === "category")) {
+        assert.ok(isValidCategory(e.claim), `claim fuori tassonomia: ${e.claim}`);
+      }
+    }
+  });
+
+  it("phase 'scan_naabu' e expires_at ~30 giorni", () => {
+    const out = evidenceFromSsdp(ssdpFinding({ deviceType: "urn:schemas-upnp-org:device:Printer:1" }));
+    assert.ok(out.length > 0);
+    for (const e of out) {
+      assert.equal(e.phase, "scan_naabu");
+      const days = (new Date(e.expires_at as string).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+      assert.ok(days > 29 && days < 31);
+    }
+  });
+});
+
+describe("parseSsdpHeaders", () => {
+  it("risposta M-SEARCH tipica → st/server/usn/location estratti case-insensitive", () => {
+    const raw =
+      "HTTP/1.1 200 OK\r\n" +
+      "CACHE-CONTROL: max-age=1800\r\n" +
+      "ST: urn:schemas-upnp-org:device:Printer:1\r\n" +
+      "server: MyPrinter/1.0 UPnP/1.0\r\n" +
+      "USN: uuid:1234::urn:schemas-upnp-org:device:Printer:1\r\n" +
+      "LOCATION: http://192.168.1.50:80/description.xml\r\n" +
+      "\r\n";
+    const h = parseSsdpHeaders(raw);
+    assert.equal(h.st, "urn:schemas-upnp-org:device:Printer:1");
+    assert.equal(h.server, "MyPrinter/1.0 UPnP/1.0");
+    assert.equal(h.usn, "uuid:1234::urn:schemas-upnp-org:device:Printer:1");
+    assert.equal(h.location, "http://192.168.1.50:80/description.xml");
+  });
+
+  it("header assenti → tutti null, nessuna eccezione", () => {
+    const h = parseSsdpHeaders("HTTP/1.1 200 OK\r\n\r\n");
+    assert.deepEqual(h, { st: null, server: null, usn: null, location: null });
+  });
+
+  it("righe senza ':' o vuote → ignorate senza eccezione", () => {
+    const h = parseSsdpHeaders("HTTP/1.1 200 OK\r\ngarbageline\r\n\r\nST: ssdp:all\r\n");
+    assert.equal(h.st, "ssdp:all");
+  });
+
+  it("buffer latin1 equivalente alla stringa → stesso risultato", () => {
+    const raw = "HTTP/1.1 200 OK\r\nST: upnp:rootdevice\r\n\r\n";
+    assert.deepEqual(parseSsdpHeaders(Buffer.from(raw, "latin1")), parseSsdpHeaders(raw));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WS-Discovery (fase 3 Task 3)
+// ---------------------------------------------------------------------------
+
+function wsdFinding(partial: Partial<WsdFinding>): WsdFinding {
+  return { types: [], scopes: [], ...partial };
+}
+
+describe("evidenceFromWsd", () => {
+  it("Types con NetworkVideoTransmitter (ONVIF) → av.camera @0.95", () => {
+    const out = evidenceFromWsd(wsdFinding({ types: ["dn:NetworkVideoTransmitter", "tds:Device"] }));
+    const c = out.find((e) => e.dimension === "category");
+    assert.equal(c?.claim, "av.camera");
+    assert.equal(c?.confidence, 0.95);
+    assert.equal(c?.source, "wsd");
+  });
+
+  it("Types con PrintDeviceType → peripheral.printer @0.9", () => {
+    const out = evidenceFromWsd(wsdFinding({ types: ["wprt:PrintDeviceType"] }));
+    const c = out.find((e) => e.dimension === "category");
+    assert.equal(c?.claim, "peripheral.printer");
+    assert.equal(c?.confidence, 0.9);
+  });
+
+  it("Types con PrinterServiceType → peripheral.printer @0.9", () => {
+    const out = evidenceFromWsd(wsdFinding({ types: ["wsdp:PrinterServiceType"] }));
+    assert.equal(out.find((e) => e.dimension === "category")?.claim, "peripheral.printer");
+  });
+
+  it("Types con Device + Computer → compute @0.5", () => {
+    const out = evidenceFromWsd(wsdFinding({ types: ["wsdp:Device", "pub:Computer"] }));
+    const c = out.find((e) => e.dimension === "category");
+    assert.equal(c?.claim, "compute");
+    assert.equal(c?.confidence, 0.5);
+  });
+
+  it("solo Device senza Computer → nessuna evidenza categoria (troppo ambiguo)", () => {
+    const out = evidenceFromWsd(wsdFinding({ types: ["wsdp:Device"] }));
+    assert.equal(out.find((e) => e.dimension === "category"), undefined);
+  });
+
+  it("Types non riconosciuti → nessuna evidenza categoria", () => {
+    const out = evidenceFromWsd(wsdFinding({ types: ["custom:SomeVendorSpecificType"] }));
+    assert.deepEqual(out, []);
+  });
+
+  it("finding vuoto (nessun Types) → nessuna evidenza", () => {
+    assert.deepEqual(evidenceFromWsd(wsdFinding({})), []);
+  });
+
+  it("Ogni claim category è dentro la tassonomia", () => {
+    const findings: WsdFinding[] = [
+      wsdFinding({ types: ["dn:NetworkVideoTransmitter"] }),
+      wsdFinding({ types: ["wprt:PrintDeviceType"] }),
+      wsdFinding({ types: ["wsdp:Device", "pub:Computer"] }),
+    ];
+    for (const f of findings) {
+      for (const e of evidenceFromWsd(f).filter((x) => x.dimension === "category")) {
+        assert.ok(isValidCategory(e.claim), `claim fuori tassonomia: ${e.claim}`);
+      }
+    }
+  });
+
+  it("phase 'scan_naabu' e expires_at ~30 giorni", () => {
+    const out = evidenceFromWsd(wsdFinding({ types: ["dn:NetworkVideoTransmitter"] }));
+    assert.ok(out.length > 0);
+    for (const e of out) {
+      assert.equal(e.phase, "scan_naabu");
+      const days = (new Date(e.expires_at as string).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+      assert.ok(days > 29 && days < 31);
+    }
+  });
+});
+
+describe("collectByLocalName", () => {
+  it("estrae stringhe semplici per nome locale, ovunque annidate", () => {
+    const tree = { Envelope: { Body: { ProbeMatches: { ProbeMatch: { Types: "dn:NetworkVideoTransmitter" } } } } };
+    assert.deepEqual(collectByLocalName(tree, "Types"), ["dn:NetworkVideoTransmitter"]);
+  });
+
+  it("ProbeMatch come array (piu' match) → raccoglie da tutti gli elementi", () => {
+    const tree = {
+      ProbeMatches: {
+        ProbeMatch: [{ Types: "a:Foo" }, { Types: "b:Bar" }],
+      },
+    };
+    assert.deepEqual(collectByLocalName(tree, "Types"), ["a:Foo", "b:Bar"]);
+  });
+
+  it("valore come nodo con #text (attributi presenti) → estrae il testo", () => {
+    const tree = { ProbeMatch: { Types: { "#text": "dn:NetworkVideoTransmitter" } } };
+    assert.deepEqual(collectByLocalName(tree, "Types"), ["dn:NetworkVideoTransmitter"]);
+  });
+
+  it("nome locale assente → array vuoto, nessuna eccezione", () => {
+    assert.deepEqual(collectByLocalName({ Foo: "bar" }, "Types"), []);
+  });
+
+  it("nodo null/undefined → array vuoto", () => {
+    assert.deepEqual(collectByLocalName(null, "Types"), []);
+    assert.deepEqual(collectByLocalName(undefined, "Types"), []);
   });
 });

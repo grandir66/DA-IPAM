@@ -85,6 +85,19 @@ describe("emitEvidenceFromSignals", () => {
   it('vendorSlug con trattino: "Hewlett-Packard Enterprise" → "hpe" (nessun sysObjectID builtin espone la forma non normalizzata: la LOOKUP_TABLE usa già "HPE")', () => {
     assert.equal(vendorSlug("Hewlett-Packard Enterprise"), "hpe");
   });
+  it("caso reale 192.168.40.23/.26 (Synology/QNAP): slug vendor societari uniformati alla forma corta usata da SSDP/mDNS", () => {
+    assert.equal(vendorSlug("Synology Incorporated"), "synology");
+    assert.equal(vendorSlug("QNAP Systems, Inc."), "qnap");
+    assert.equal(vendorSlug("Proxmox Server Solutions GmbH"), "proxmox");
+  });
+  it("nessuno slug vendor societario risulta stringa vuota", () => {
+    for (const vendor of [
+      "Synology Incorporated", "QNAP Systems, Inc.", "Proxmox Server Solutions GmbH",
+      "Ubiquiti Inc", "Belkin International, Inc.", "VMware, Inc.", "Systems Inc",
+    ]) {
+      assert.notEqual(vendorSlug(vendor), "", `slug vuoto per "${vendor}"`);
+    }
+  });
   it("alias slug applicato anche su fonte Wazuh (board_vendor = Hewlett-Packard) → claim hpe", () => {
     const s = base();
     s.wazuh = { os_platform: "rhel", os_name: "RHEL", os_version: "9", board_vendor: "Hewlett-Packard" };
@@ -111,6 +124,27 @@ describe("emitEvidenceFromSignals", () => {
     const ven = out.find((e) => e.source === "snmp_sysobj" && e.dimension === "vendor");
     assert.equal(cat?.claim, "network.access_point");
     assert.ok(ven);
+  });
+  it("caso reale 192.168.40.23 (Synology): sysObjectID net-snmp generico 1.3.6.1.4.1.8072.3.2.10 → nessuna evidenza vendor/categoria", () => {
+    const s = base();
+    s.host.snmp_data = JSON.stringify({ sysObjectID: "1.3.6.1.4.1.8072.3.2.10", sysDescr: null, collected_at: "x" });
+    const out = emitEvidenceFromSignals(s);
+    assert.equal(out.find((e) => e.source === "snmp_sysobj" && e.dimension === "vendor"), undefined);
+    assert.equal(out.find((e) => e.source === "snmp_sysobj" && e.dimension === "category"), undefined);
+  });
+  it("sysObjectID net-snmp generico 1.3.6.1.4.1.8072.3.2.255 (unknown/custom appliance) → nessuna evidenza vendor/categoria", () => {
+    const s = base();
+    s.host.snmp_data = JSON.stringify({ sysObjectID: "1.3.6.1.4.1.8072.3.2.255", sysDescr: null, collected_at: "x" });
+    const out = emitEvidenceFromSignals(s);
+    assert.equal(out.find((e) => e.source === "snmp_sysobj"), undefined);
+  });
+  it("vendorSlug: nomi generici da placeholder (linux/unknown/generic/net-snmp/n-a/other) → stringa filtrata come IEEE/private", () => {
+    for (const vendor of ["Linux", "unknown", "Generic", "net-snmp", "netsnmp", "n/a", "OTHER"]) {
+      const s = base();
+      s.host.vendor = vendor;
+      const out = emitEvidenceFromSignals(s);
+      assert.equal(out.find((e) => e.source === "oui"), undefined, `atteso nessuna evidenza OUI per vendor placeholder "${vendor}"`);
+    }
   });
   it("os_info nmap → os family", () => {
     const s = base();

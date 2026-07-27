@@ -1,6 +1,6 @@
 // Fusione pura evidenze → attribuzione (spec §4.3). Nessun accesso DB, nessun side effect.
 import {
-  ATTR_ENGINE_VERSION, CONFLICT_WINDOW, MIN_CLAIM_SCORE, phaseIndex,
+  ATTR_ENGINE_VERSION, AUTHORITY_MIN_CONFIDENCE, CONFLICT_WINDOW, MIN_CLAIM_SCORE, phaseIndex,
 } from "./types";
 import type {
   AttributionDimension, AttributionEvidenceRow, AttributionPhase,
@@ -63,9 +63,16 @@ function fuseDimension(
     };
   }
 
-  // 2. sorgenti dichiarative (spec §4.3 punto 4)
+  // 2. sorgenti dichiarative (spec §4.3 punto 4). L'autorità vale solo per
+  // claim DICHIARATIVI: una sorgente elencata in AUTHORITATIVE_SOURCES può
+  // comunque emettere un claim debole/ambiguo (es. wsd generico "Device"+
+  // "Computer" a confidence 0.5, che qualunque NAS/SMB/Windows restituisce).
+  // Caso reale 192.168.40.23 (Synology): wsd/compute@0.5 saltava la somma
+  // pesata e imponeva "compute" schiacciando "storage.nas" (score 1.2675).
+  // Sotto AUTHORITY_MIN_CONFIDENCE l'evidenza NON conta come autoritativa e
+  // ricade nel punto 3 (somma pesata) insieme al resto di `rows`.
   const authSources = AUTHORITATIVE_SOURCES[dimension];
-  const auth = rows.filter((e) => authSources.includes(e.source));
+  const auth = rows.filter((e) => authSources.includes(e.source) && e.confidence >= AUTHORITY_MIN_CONFIDENCE);
   if (auth.length > 0) {
     const winner = auth.reduce((a, b) => (b.confidence > a.confidence ? b : a));
     const supporting = auth.filter((e) => e.claim === winner.claim);

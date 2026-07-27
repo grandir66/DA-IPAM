@@ -3212,9 +3212,9 @@ export type ScanPhaseKey = "initial" | "nmap_deep" | "snmp" | "enrich" | "creden
 
 const SCAN_PHASE_TYPES: Record<ScanPhaseKey, string[]> = {
   initial: ["scan_icmp", "scan_naabu", "network_discovery"],
-  nmap_deep: ["scan_nmap_base", "nmap"],
-  snmp: ["scan_snmp_verify", "snmp"],
-  enrich: ["scan_enrich", "arp", "dhcp", "dns"],
+  nmap_deep: ["scan_nmap_base", "nmap", "network_discovery"],
+  snmp: ["scan_snmp_verify", "snmp", "network_discovery"],
+  enrich: ["scan_enrich", "arp", "dhcp", "dns", "network_discovery"],
   credentials: ["credential_validate"],
 };
 

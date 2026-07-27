@@ -1,0 +1,19 @@
+---
+description: Ciclo di sviluppo standard — pianifica, autorizza una volta, esegui senza prompt, report semplice
+alwaysApply: true
+---
+
+# Flusso di lavoro obbligatorio
+
+1. **Pianificare**: fare subito TUTTE le domande necessarie a definire un piano strutturato e completo (un'unica raffica iniziale).
+2. **Verificare come svilupparlo**: leggere codice e vincoli, definire approccio tecnico, file toccati, rischi, test.
+3. **Chiedere UNA sola autorizzazione**: presentare il piano completo e attendere l'ok.
+4. **Eseguire senza ulteriori richieste fino al termine**: dopo l'ok niente prompt né domande intermedie. Terminale, file e comandi nelle cartelle di lavoro (`~/Progetti/**`, `/private/tmp/**`) sono pre-autorizzati: PUOI e DEVI usarli direttamente. Stop solo per azioni distruttive irreversibili fuori piano o veri cambi di scope.
+5. **Report finale in linguaggio semplice**: cosa è stato fatto, cosa funziona, come è stato verificato, cosa resta aperto.
+6. **Proporre miglioramenti**: elencare debug eseguiti e miglioramenti consigliati, senza applicarli finché non approvati.
+
+# Limiti sempre validi
+
+- Azioni distruttive (rm su dati, DROP, distruzione container/VM) e push su `main` di DA-IPAM: SEMPRE conferma esplicita.
+- MAI committare credenziali.
+- Comando fallito 2 volte senza capirne la causa → leggere log/codice, root cause, UN fix mirato, UN test. Niente tentativi a raffica.

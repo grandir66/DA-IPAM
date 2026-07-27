@@ -74,6 +74,36 @@ describe("fuseAttribution", () => {
     assert.equal(r.category.claim, "network");
     assert.equal(r.category.min_phase, "scan_snmp_verify");
   });
+  it("caso reale 192.168.40.23 (Synology): wsd generico 'compute' conf 0.5 NON è autoritativo, storage.nas vince sulla somma pesata", () => {
+    const r = fuseAttribution([
+      // wsd generico ("wsdp:Device pub:Computer") — oggi in AUTHORITATIVE_SOURCES.category
+      // ma sotto AUTHORITY_MIN_CONFIDENCE: deve ricadere nella somma pesata, non vincere di diritto.
+      ev({ source: "wsd", dimension: "category", claim: "compute", confidence: 0.5, weight: 0.9, phase: "scan_naabu" }),
+      ev({ source: "http_banner", dimension: "category", claim: "storage.nas", confidence: 0.7, weight: 0.9, phase: "scan_naabu" }),
+      ev({ source: "ssdp", dimension: "category", claim: "storage.nas", confidence: 0.85, weight: 0.75, phase: "scan_naabu" }),
+      ev({ source: "snmp_sysdescr", dimension: "category", claim: "storage", confidence: 0.75, weight: 0.85, phase: "scan_snmp_verify" }),
+    ], NOW);
+    // storage.nas = 0.63 + 0.6375 = 1.2675 (livello1 storage), compute = 0.5*0.9=0.45 → storage.nas vince
+    assert.equal(r.category.claim, "storage.nas");
+    assert.notEqual(r.category.claim, "compute");
+  });
+  it("wsd av.camera conf 0.95 resta autoritativo e vince su segnali contrastanti", () => {
+    const r = fuseAttribution([
+      ev({ source: "wsd", dimension: "category", claim: "av.camera", confidence: 0.95, weight: 0.9, phase: "scan_naabu" }),
+      ev({ source: "http_banner", dimension: "category", claim: "storage.nas", confidence: 0.9, weight: 0.9, phase: "scan_naabu" }),
+      ev({ source: "ssdp", dimension: "category", claim: "storage.nas", confidence: 0.9, weight: 0.9, phase: "scan_naabu" }),
+    ], NOW);
+    assert.equal(r.category.claim, "av.camera");
+    assert.equal(r.category.authoritative, true);
+  });
+  it("ad su os resta autoritativo (confidence 0.95 >= AUTHORITY_MIN_CONFIDENCE)", () => {
+    const r = fuseAttribution([
+      ev({ source: "nmap_os", dimension: "os", claim: "linux", confidence: 0.9, weight: 0.5, phase: "scan_nmap_base" }),
+      ev({ source: "ad", dimension: "os", claim: "windows", confidence: 0.95, weight: 1, phase: "integration" }),
+    ], NOW);
+    assert.equal(r.os.claim, "windows");
+    assert.equal(r.os.authoritative, true);
+  });
   it("vendor deboli ravvicinate: conflitto fantasma non registrato se entrambi sotto soglia", () => {
     const r = fuseAttribution([
       ev({ source: "dhcp", dimension: "vendor", claim: "apple", confidence: 0.08, weight: 0.3, raw_value: "Apple Inc" }),

@@ -2,6 +2,20 @@ export const ATTR_ENGINE_VERSION = "2.0.0";
 export const MIN_CLAIM_SCORE = 0.56;   // coerente con MIN_APPLY_CONFIDENCE=56 del motore legacy
 export const CONFLICT_WINDOW = 0.1;    // finestra di conflitto sulla scala score 0-1
 
+/**
+ * Soglia minima di confidence perché una sorgente in `AUTHORITATIVE_SOURCES`
+ * (weights.ts) salti davvero la somma pesata. Caso reale che ha motivato la
+ * soglia (VM 533, tenant 70791, 192.168.40.23 — Synology NAS): `wsd` è
+ * autoritativa su `category`, ma il claim generico `wsdp:Device pub:Computer`
+ * (emesso a confidence 0.5 — qualunque device SMB/Windows/NAS risponde così)
+ * imponeva `compute` schiacciando `storage.nas` che valeva 1.2675 nella somma
+ * pesata. L'autorità deve valere solo per claim DICHIARATIVI (manual=1.0,
+ * ad/wazuh/inv_agent/winrm os=0.95, wsd av.camera/printer specifici >=0.9),
+ * non per risposte deboli/ambigue che una sorgente "autoritativa" può comunque
+ * emettere. Sotto soglia l'evidenza ricade nella normale somma pesata.
+ */
+export const AUTHORITY_MIN_CONFIDENCE = 0.9;
+
 export type AttributionDimension = "vendor" | "category" | "os";
 
 export const PHASE_ORDER = [

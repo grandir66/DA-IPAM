@@ -42,12 +42,31 @@ const ALIAS: Record<string, string> = {
   "ubiquiti-networks": "ubiquiti",
   "hewlett-packard": "hpe",
   "hewlett-packard-enterprise": "hpe",
+  // Caso reale 192.168.40.23/.26 (VM 533, tenant 70791): OUI risolve "Synology
+  // Incorporated"/"QNAP Systems, Inc." mentre SSDP/mDNS producono "synology"/
+  // "qnap" — senza alias i voti si spaccano tra fonti e nessun claim supera soglia.
+  "synology-incorporated": "synology",
+  "qnap-systems": "qnap",
+  "proxmox-server-solutions": "proxmox",
+  "ubiquiti-inc": "ubiquiti",
+  "belkin-international": "belkin",
+  "vmware-inc": "vmware",
 };
 
-/** "Ubiquiti Inc" → "ubiquiti"; "Hewlett Packard Enterprise" → "hpe" (via ALIAS) */
+/**
+ * "Ubiquiti Inc" → "ubiquiti"; "Hewlett Packard Enterprise" → "hpe" (via ALIAS).
+ * Lo strip dei suffissi societari è a SINGOLA passata (un solo `.replace`,
+ * niente loop): rimuove solo l'ULTIMO token societario, non incatena più
+ * suffissi in un colpo solo ("QNAP Systems, Inc." → "QNAP Systems", non
+ * "QNAP"). Le forme con più suffissi societari residui vanno unificate via
+ * ALIAS (vedi sopra) — è la regex stessa a garantire che uno strip non riduca
+ * mai la stringa a vuoto: richiede sempre uno spazio prima del suffisso, quindi
+ * un nome di UNA sola parola (anche se coincide con un suffisso, es. "Systems"
+ * da solo) non viene mai toccato.
+ */
 export function vendorSlug(name: string): string {
   const slug = name.trim().toLowerCase()
-    .replace(/,?\s+(inc|ltd|llc|gmbh|s\.?p\.?a\.?|s\.?r\.?l\.?|co|corp|corporation|technologies|technology|networks)\.?$/i, "")
+    .replace(/,?\s+(inc|ltd|llc|gmbh|s\.?p\.?a\.?|s\.?r\.?l\.?|co|corp|corporation|technologies|technology|solutions|holdings|group|electronics|international|industries|networks?|communications|incorporated|systems)\.?$/i, "")
     .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return ALIAS[slug] ?? slug;
 }
@@ -58,7 +77,14 @@ const HYPERVISOR_VENDOR_RE = /proxmox|vmware|qemu|xensource|virtualbox|oracle vi
 
 // Lacuna 2: voci placeholder del registro IEEE (nessun produttore reale dietro il
 // MAC, es. locally-administered/random) — match esatto (dopo trim), non sostringa.
-const VENDOR_PLACEHOLDER_RE = /^(ieee registration authority|private)$/i;
+// Estesa (caso reale 192.168.40.23, Synology): il lookup sysObjectID net-snmp
+// generico (OID 1.3.6.1.4.1.8072.*) restituisce vendor "Linux", che NON è un
+// produttore — vero per NAS, router, qualunque host Linux con net-snmp attivo.
+const VENDOR_PLACEHOLDER_RE = /^(ieee registration authority|private|linux|unknown|generic|net-snmp|netsnmp|n\/a|other)$/i;
+
+// OID net-snmp generico (Lacuna 2): significa solo "gira net-snmp", vero per NAS,
+// router, qualunque Linux — non basta a inferire una categoria device.
+const GENERIC_NETSNMP_OID_RE = /^1\.3\.6\.1\.4\.1\.8072\./;
 
 // Caso Ubiquiti (nota Fase 0 della spec): il modello nel sysDescr distingue AP/switch/router
 const UBNT_AP = /\b(U[67][A-Z0-9-]*|UAP[A-Z0-9-]*|UA-[A-Z0-9-]*)\b/i;
@@ -121,17 +147,28 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
   if (snmp?.sysObjectID) {
     const match = lookupSysObjectId(snmp.sysObjectID);
     if (match) {
-      out.push({
-        source: "snmp_sysobj", phase: "scan_snmp_verify", dimension: "vendor",
-        claim: vendorSlug(match.vendor), confidence: 0.95, raw_value: match.vendor,
-      });
-      const legacyCat = mapSysObjCategory(match);
-      const cat = legacyCat ? mapLegacyClassification(legacyCat).category : null;
-      if (cat) {
+      // Match generico (OID net-snmp 1.3.6.1.4.1.8072.* OPPURE vendor/product
+      // che matcha il filtro placeholder, es. vendor "Linux"): non è un
+      // produttore identificabile né una categoria device — niente vendor,
+      // niente categoria. Lascia parlare sysDescr e gli altri segnali.
+      const generic = GENERIC_NETSNMP_OID_RE.test(snmp.sysObjectID.trim())
+        || VENDOR_PLACEHOLDER_RE.test(match.vendor.trim())
+        || VENDOR_PLACEHOLDER_RE.test(match.product.trim());
+      if (!VENDOR_PLACEHOLDER_RE.test(match.vendor.trim())) {
         out.push({
-          source: "snmp_sysobj", phase: "scan_snmp_verify", dimension: "category",
-          claim: cat, confidence: 0.95, raw_value: `${snmp.sysObjectID} → ${match.product}`,
+          source: "snmp_sysobj", phase: "scan_snmp_verify", dimension: "vendor",
+          claim: vendorSlug(match.vendor), confidence: 0.95, raw_value: match.vendor,
         });
+      }
+      if (!generic) {
+        const legacyCat = mapSysObjCategory(match);
+        const cat = legacyCat ? mapLegacyClassification(legacyCat).category : null;
+        if (cat) {
+          out.push({
+            source: "snmp_sysobj", phase: "scan_snmp_verify", dimension: "category",
+            claim: cat, confidence: 0.95, raw_value: `${snmp.sysObjectID} → ${match.product}`,
+          });
+        }
       }
     }
   }

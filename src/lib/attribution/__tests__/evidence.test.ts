@@ -2,7 +2,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
-import { recordEvidence, getActiveEvidence, retireStaleEvidence } from "../evidence";
+import { recordEvidence, getActiveEvidence, retireStaleEvidence, normalizeExpiresAt } from "../evidence";
 
 let db: Database.Database;
 beforeEach(() => {
@@ -138,5 +138,45 @@ describe("retireStaleEvidence", () => {
   });
   it("nessuna riga attiva per le sources indicate → 0, nessun errore", () => {
     assert.equal(retireStaleEvidence(db, 1, [], ["oui", "wazuh"]), 0);
+  });
+
+  it("formati datetime incoerenti: expires_at ISO nel futuro è ATTIVA (candidata al ritiro), ISO nel passato è già esclusa", () => {
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    recordEvidence(db, 1, [
+      { source: "dhcp", phase: "scan_icmp", dimension: "vendor", claim: "vendor-a", confidence: 0.5, expires_at: future },
+    ]);
+    recordEvidence(db, 1, [
+      { source: "ttl", phase: "scan_icmp", dimension: "os", claim: "linux", confidence: 0.5, expires_at: past },
+    ]);
+    // emitted vuoto: entrambe le sources sono candidate al ritiro (nessun claim ri-emesso).
+    // Solo la riga ATTIVA (expires_at futuro) deve essere effettivamente ritirata da questa
+    // chiamata: quella già scaduta (expires_at passato) è già esclusa dal filtro "attive ai
+    // fini della fusione" e retireStaleEvidence non la deve toccare di nuovo.
+    const n = retireStaleEvidence(db, 1, [], ["dhcp", "ttl"]);
+    assert.equal(n, 1);
+    const dhcpRow = db.prepare("SELECT expires_at FROM attribution_evidence WHERE host_id=1 AND source='dhcp'").get() as { expires_at: string };
+    assert.notEqual(dhcpRow.expires_at, future, "la riga futura deve essere stata ritirata (expires_at riportato a ora)");
+    const ttlRow = db.prepare("SELECT expires_at FROM attribution_evidence WHERE host_id=1 AND source='ttl'").get() as { expires_at: string };
+    assert.equal(ttlRow.expires_at, past, "la riga già scaduta non va toccata di nuovo");
+  });
+});
+
+describe("normalizeExpiresAt", () => {
+  it("input ISO → invariato", () => {
+    assert.equal(normalizeExpiresAt("2026-07-27T12:00:00.000Z"), "2026-07-27T12:00:00.000Z");
+  });
+  it("input formato SQLite 'YYYY-MM-DD HH:MM:SS' → ISO equivalente (UTC)", () => {
+    assert.equal(normalizeExpiresAt("2026-07-27 12:00:00"), "2026-07-27T12:00:00.000Z");
+  });
+  it("null → null", () => {
+    assert.equal(normalizeExpiresAt(null), null);
+  });
+  it("undefined → null", () => {
+    assert.equal(normalizeExpiresAt(undefined), null);
+  });
+  it("stringa non parsabile → null, nessuna eccezione", () => {
+    assert.doesNotThrow(() => normalizeExpiresAt("non-una-data"));
+    assert.equal(normalizeExpiresAt("non-una-data"), null);
   });
 });

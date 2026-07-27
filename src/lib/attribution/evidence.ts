@@ -5,6 +5,25 @@ import { ATTR_SOURCE_WEIGHTS } from "./weights";
 export interface RecordEvidenceResult { inserted: number; refreshed: number; superseded: number; }
 
 /**
+ * Normalizza `expires_at` in ISO-8601 UTC al momento della scrittura (spec fix
+ * datetime incoerenti): `fuse.ts` confronta `e.expires_at > nowIso` con `nowIso`
+ * sempre in formato ISO, quindi una riga scritta nel formato SQLite
+ * `YYYY-MM-DD HH:MM:SS` (usato da `datetime('now')` altrove nel progetto) romperebbe
+ * il confronto lessicografico per scadenze ravvicinate (oggi "funziona per caso"
+ * solo perché nessun probe emette ancora TTL/DHCP con scadenza a breve termine).
+ * Se `value` contiene già "T" lo si assume ISO e lo si lascia invariato; altrimenti
+ * si prova a interpretarlo come `YYYY-MM-DD HH:MM:SS` UTC. Pura, nessuna eccezione:
+ * un valore non parsabile ritorna null piuttosto che propagare un errore.
+ */
+export function normalizeExpiresAt(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  if (value.includes("T")) return value;
+  const parsed = new Date(`${value.replace(" ", "T")}Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+/**
  * Registra evidenze per un host (spec §4.2, decisione 10 del piano):
  * - identica a una attiva (source, dimension, claim, raw_value) → refresh di
  *   observed_at/confidence/expires_at;
@@ -74,7 +93,7 @@ export function recordEvidence(
         const identical =
           existing !== undefined && (existing.raw_value ?? null) === (input.raw_value ?? null);
         if (identical) {
-          refresh.run(input.confidence, input.expires_at ?? null, existing.id);
+          refresh.run(input.confidence, normalizeExpiresAt(input.expires_at), existing.id);
           result.refreshed += 1;
           winnerIdByClaim.set(input.claim, existing.id);
           lastWinnerId = existing.id;
@@ -82,7 +101,7 @@ export function recordEvidence(
         }
         const newId = insert.run(
           hostId, input.source, input.phase, input.dimension, input.claim,
-          input.confidence, weight, input.raw_value ?? null, input.expires_at ?? null
+          input.confidence, weight, input.raw_value ?? null, normalizeExpiresAt(input.expires_at)
         ).lastInsertRowid as number;
         result.inserted += 1;
         winnerIdByClaim.set(input.claim, newId);
@@ -147,24 +166,35 @@ export function retireStaleEvidence(
   if (candidateSources.length === 0) return 0;
 
   const placeholders = candidateSources.map(() => "?").join(",");
+  // INVARIANTE: expires_at è sempre ISO-8601 UTC con millisecondi (vedi
+  // normalizeExpiresAt sopra, stesso formato di `new Date().toISOString()` usato da
+  // fuse.ts per nowIso) — il confronto qui deve usare lo stesso formato E la stessa
+  // precisione di `datetime('now')`/`strftime` di SQLite, che di default NON include
+  // i millisecondi: un confronto lessicografico "...:45Z" vs "...:45.123Z" ordina la
+  // stringa SENZA millisecondi DOPO quella con millisecondi (il punto "." precede la
+  // "Z" in ASCII), quindi una riga appena ritirata con `strftime(...)` risulterebbe
+  // ancora "attiva" al successivo confronto con un nowIso con millisecondi. Per
+  // questo usiamo un unico timestamp JS (`nowIso`, sotto) sia per selezionare le
+  // righe attive sia per scrivere il ritiro, evitando di mischiare sorgenti di tempo.
+  const nowIso = new Date().toISOString();
   const active = dbh.prepare(
     `SELECT id, source, dimension, claim FROM attribution_evidence
      WHERE host_id = ? AND superseded_by IS NULL
-       AND (expires_at IS NULL OR expires_at > datetime('now'))
+       AND (expires_at IS NULL OR expires_at > ?)
        AND source != 'manual'
        AND source IN (${placeholders})`
-  ).all(hostId, ...candidateSources) as Array<{ id: number; source: string; dimension: string; claim: string }>;
+  ).all(hostId, nowIso, ...candidateSources) as Array<{ id: number; source: string; dimension: string; claim: string }>;
   if (active.length === 0) return 0;
 
   const emittedKeys = new Set(emitted.map((e) => `${e.source} ${e.dimension} ${e.claim}`));
-  const retire = dbh.prepare(`UPDATE attribution_evidence SET expires_at = datetime('now') WHERE id = ?`);
+  const retire = dbh.prepare(`UPDATE attribution_evidence SET expires_at = ? WHERE id = ?`);
 
   let retired = 0;
   dbh.transaction(() => {
     for (const row of active) {
       const key = `${row.source} ${row.dimension} ${row.claim}`;
       if (!emittedKeys.has(key)) {
-        retire.run(row.id);
+        retire.run(nowIso, row.id);
         retired += 1;
       }
     }

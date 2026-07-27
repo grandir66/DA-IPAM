@@ -134,6 +134,30 @@ describe("runAttributionProbes — scrittura evidenze", () => {
     assert.equal(r.evidenceWritten, 0);
   });
 
+  it("2 host con 3 evidenze ciascuno (smb2 category compute + httpTls vendor/category MikroTik) → evidenceWritten conta inserted+refreshed di OGNI host, non solo dell'ultimo", async () => {
+    const recordCallsByHost: Record<number, number> = {};
+    const deps = baseDeps({
+      // build=0 → non plausibile come Windows (vedi isPlausibleWindowsVersion): solo category=compute (1 evidenza).
+      smb2: async () => ({ osVersion: "6.1.0", netbiosName: null, dnsDomain: null, signingRequired: true }),
+      // MikroTik → vendor=mikrotik + category=network.router (2 evidenze). Totale per host: 3.
+      httpTls: async () => [
+        {
+          port: 443, scheme: "https", server: "MikroTik RouterOS", title: null, realm: null, location: null,
+          tlsSubjectCn: null, tlsSan: [], tlsIssuer: null,
+        },
+      ],
+      recordEvidence: (hostId, inputs) => {
+        recordCallsByHost[hostId] = inputs.length;
+        return inputs.length; // simula recordEvidenceRaw: tutte righe nuove → inserted === inputs.length
+      },
+    });
+    const r = await runAttributionProbes(1, [host(1, [443, 445]), host(2, [443, 445])], { deps });
+    assert.equal(r.hostsProbed, 2);
+    assert.equal(recordCallsByHost[1], 3, "smb2 (category) + http-tls (vendor+category) = 3 evidenze per host");
+    assert.equal(recordCallsByHost[2], 3);
+    assert.equal(r.evidenceWritten, 6, "evidenceWritten deve sommare inserted+refreshed di TUTTI gli host probati, non riportare solo l'ultimo host");
+  });
+
   it("un probe che rigetta la Promise non impedisce agli altri probe di scrivere evidenza", async () => {
     const recordCalls: EvidenceInput[][] = [];
     const deps = baseDeps({

@@ -75,6 +75,23 @@ describe("emitEvidenceFromSignals", () => {
     const v = emitEvidenceFromSignals(s).find((e) => e.source === "oui" && e.dimension === "vendor");
     assert.equal(v?.claim, "mikrotik");
   });
+  it("alias slug applicato anche su fonte Wazuh (board_vendor = Routerboard.com) → claim mikrotik", () => {
+    const s = base();
+    s.wazuh = { os_platform: "rhel", os_name: "RHEL", os_version: "9", board_vendor: "Routerboard.com" };
+    const v = emitEvidenceFromSignals(s).find((e) => e.source === "wazuh" && e.dimension === "vendor");
+    assert.ok(v, "attesa evidenza vendor da wazuh");
+    assert.equal(v.claim, "mikrotik");
+  });
+  it('vendorSlug con trattino: "Hewlett-Packard Enterprise" → "hpe" (nessun sysObjectID builtin espone la forma non normalizzata: la LOOKUP_TABLE usa già "HPE")', () => {
+    assert.equal(vendorSlug("Hewlett-Packard Enterprise"), "hpe");
+  });
+  it("alias slug applicato anche su fonte Wazuh (board_vendor = Hewlett-Packard) → claim hpe", () => {
+    const s = base();
+    s.wazuh = { os_platform: "rhel", os_name: "RHEL", os_version: "9", board_vendor: "Hewlett-Packard" };
+    const v = emitEvidenceFromSignals(s).find((e) => e.source === "wazuh" && e.dimension === "vendor");
+    assert.ok(v, "attesa evidenza vendor da wazuh");
+    assert.equal(v.claim, "hpe");
+  });
   it("sysDescr Ubiquiti: U6-Pro → access_point, USW → switch, UDM → router", () => {
     const mk = (sysDescr: string) => {
       const s = base();

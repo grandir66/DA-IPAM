@@ -26,7 +26,7 @@ import { sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
-import type { CredProtocol } from "./credentials/resolve";
+import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
 
 /** Convert IPv4 string to numeric value for sorting */
 function ipToNum(ip: string): number {
@@ -3600,30 +3600,42 @@ export function getHostDetectCredentialsEnriched(hostId: number): Array<{
   });
 }
 
-/** Ordine: credenziali della rete, poi quella globale Impostazioni (se non già in elenco). */
+/**
+ * Ordine: wrapper del resolver unico (fase 1b, §7.1-7.2) — credenziali v2
+ * pertinenti (`network_credentials` filtrate per tipo adatto al ruolo), poi
+ * legacy attuali (rete), poi quella globale Impostazioni (se non già in elenco).
+ * Vedi commento gemello in db-tenant.ts sulla nota role="linux"→protocol "ssh".
+ */
 export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux"): number[] {
-  const netIds = getNetworkHostCredentialIds(networkId, role);
+  const protocol: CredProtocol = role === "windows" ? "winrm" : "ssh";
+  const resolved = resolveCredentialsForDb(getDb(), { networkId }, protocol);
+  const out: number[] = [];
+  const seen = new Set<number>();
+  for (const r of resolved) {
+    if (seen.has(r.credential_id)) continue;
+    seen.add(r.credential_id);
+    out.push(r.credential_id);
+  }
   const globalKey = role === "windows" ? "host_windows_credential_id" : "host_linux_credential_id";
   const gStr = getSetting(globalKey);
   const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
-  const out: number[] = [...netIds];
-  if (!Number.isNaN(gId) && gId > 0 && !out.includes(gId)) out.push(gId);
+  if (!Number.isNaN(gId) && gId > 0 && !seen.has(gId)) out.push(gId);
   return out;
 }
 
 /**
- * Catena SSH per scan: credenziali ruolo `ssh` sulla rete, poi `linux`, poi globale Impostazioni.
- * Ordine e dedup preservati.
+ * Catena SSH per scan: wrapper del resolver unico — credenziali v2 pertinenti
+ * (ssh/linux), poi legacy (ruolo `ssh` poi `linux`, stesso ordine di prima),
+ * poi globale Impostazioni. Ordine e dedup preservati.
  */
 export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
-  const sshIds = getNetworkHostCredentialIds(networkId, "ssh");
-  const linuxIds = getNetworkHostCredentialIds(networkId, "linux");
+  const resolved = resolveCredentialsForDb(getDb(), { networkId }, "ssh");
   const out: number[] = [];
   const seen = new Set<number>();
-  for (const id of [...sshIds, ...linuxIds]) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push(id);
+  for (const r of resolved) {
+    if (seen.has(r.credential_id)) continue;
+    seen.add(r.credential_id);
+    out.push(r.credential_id);
   }
   const gStr = getSetting("host_linux_credential_id");
   const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
@@ -3632,13 +3644,15 @@ export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
 }
 
 /**
- * Community SNMP per scan su una rete: credenziali SNMP della subnet (ordine),
- * poi override profilo/scan, poi community di default sulla rete, infine public/private.
+ * Community SNMP per scan su una rete: wrapper del resolver unico — v2
+ * (`network_credentials` tipo snmp) poi legacy (ruolo snmp, stesso ordine di
+ * prima), poi override profilo/scan, poi community di default sulla rete,
+ * infine public/private SEMPRE in fondo.
  */
 export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverride?: string | null): string[] {
   const fromCreds: string[] = [];
-  for (const credId of getNetworkHostCredentialIds(networkId, "snmp")) {
-    const com = getCredentialCommunityString(credId);
+  for (const r of resolveCredentialsForDb(getDb(), { networkId }, "snmp")) {
+    const com = getCredentialCommunityString(r.credential_id);
     if (com?.trim()) fromCreds.push(com.trim());
   }
   const net = getNetworkById(networkId);
@@ -3662,23 +3676,40 @@ export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverr
 }
 
 /**
- * Community SNMP per un host: se in `host_detect_credential` è forzata una credenziale SNMP,
- * usa **solo** quella community (come richiesto per scan vincolati); altrimenti stessa logica di
- * {@link buildSnmpCommunitiesForNetwork}.
+ * Community SNMP per un host: wrapper del resolver unico con `hostId` — le
+ * credenziali già VALIDATE per questo host vengono anteposte alla catena di
+ * rete v2 e a quella legacy (incluso il pin `host_detect_credential`, ora
+ * parte della catena invece di uno short-circuit esclusivo come prima).
+ * `public`/`private` restano SEMPRE in fondo. Vedi commento gemello in db-tenant.ts.
  */
 export function buildSnmpCommunitiesForHost(
   networkId: number,
   hostId: number | null,
   profileOrOverride?: string | null
 ): string[] {
-  if (hostId != null) {
-    const boundId = getHostDetectCredentialId(hostId, "snmp");
-    if (boundId != null) {
-      const com = getCredentialCommunityString(boundId);
-      if (com?.trim()) return [com.trim()];
-    }
+  const fromCreds: string[] = [];
+  for (const r of resolveCredentialsForDb(getDb(), { hostId: hostId ?? undefined, networkId }, "snmp")) {
+    const com = getCredentialCommunityString(r.credential_id);
+    if (com?.trim()) fromCreds.push(com.trim());
   }
-  return buildSnmpCommunitiesForNetwork(networkId, profileOrOverride);
+  const net = getNetworkById(networkId);
+  const pushSplit = (s: string | null | undefined, into: string[]) => {
+    const t = s?.trim();
+    if (!t) return;
+    for (const part of t.split(",").map((x) => x.trim()).filter(Boolean)) into.push(part);
+  };
+  const mid: string[] = [];
+  pushSplit(profileOrOverride, mid);
+  pushSplit(net?.snmp_community ?? null, mid);
+  const ordered = [...fromCreds, ...mid, "public", "private"];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of ordered) {
+    if (!x || seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+  }
+  return out;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

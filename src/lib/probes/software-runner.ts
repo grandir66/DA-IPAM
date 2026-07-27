@@ -29,6 +29,7 @@ import {
   insertSoftwareScanLog,
   updateSoftwareScanFinish,
 } from "@/lib/db-tenant";
+import { resolveCredentialFor } from "@/lib/credentials/resolve";
 import { safeDecrypt } from "@/lib/crypto";
 import { runWindowsSoftwareProbe } from "@/lib/probes/software-windows";
 import { runLinuxSoftwareScan } from "@/lib/probes/software-linux";
@@ -122,12 +123,21 @@ function resolveTarget(opts: SoftwareScanOptions): ResolvedTarget {
     if (!host) {
       throw new Error(`Host ${opts.target.hostId} non trovato`);
     }
-    if (!opts.credentialId) {
+    // Fase 1b: se non è passato un credentialId esplicito, prova la
+    // risoluzione automatica via resolver unico (winrm poi ssh, in quest'ordine
+    // perché l'osFamily non è ancora nota) prima di fallire. Il messaggio
+    // d'errore originale resta invariato quando nemmeno il resolver trova nulla.
+    const resolvedCredentialId =
+      opts.credentialId ??
+      resolveCredentialFor({ hostId: host.id, networkId: host.network_id }, "winrm")?.credential_id ??
+      resolveCredentialFor({ hostId: host.id, networkId: host.network_id }, "ssh")?.credential_id ??
+      null;
+    if (!resolvedCredentialId) {
       throw new Error("credentialId obbligatorio per scan su host");
     }
-    const cred = getCredentialById(opts.credentialId);
+    const cred = getCredentialById(resolvedCredentialId);
     if (!cred) {
-      throw new Error(`Credenziale ${opts.credentialId} non trovata`);
+      throw new Error(`Credenziale ${resolvedCredentialId} non trovata`);
     }
     const credType = String(cred.credential_type || "").toLowerCase();
     let osFamily: SoftwareOsFamily;
@@ -148,7 +158,7 @@ function resolveTarget(opts: SoftwareScanOptions): ResolvedTarget {
       label: host.hostname ?? host.custom_name ?? host.ip,
       osFamily,
       initialProbe,
-      credentialId: opts.credentialId,
+      credentialId: resolvedCredentialId,
       defaultPort: osFamily === "windows" ? WINRM_DEFAULT_PORT : SSH_DEFAULT_PORT,
       identification: {
         target_kind: "host",

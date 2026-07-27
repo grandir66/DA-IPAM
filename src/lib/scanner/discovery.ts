@@ -51,6 +51,7 @@ import {
   getFingerprintClassificationRulesForResolve,
   getEnabledDeviceFingerprintRules,
   getNetworkDeviceByHost,
+  getNetworkDeviceByHostId,
   findExistingBinding,
   addDeviceCredentialBinding,
   updateBindingTestStatus,
@@ -119,10 +120,24 @@ export type DiscoverNetworkOptions = {
  * @param snmpCommunity - SNMP community per questa rete/profilo. Usato solo per scanType "snmp".
  */
 
-/** Auto-aggiunge una credenziale funzionante ai bindings del device, se l'host corrisponde a un network_device */
-function autoBindCredentialToDevice(hostIp: string, credentialId: number, protocolType: "ssh" | "snmp" | "winrm", port: number): void {
+/**
+ * Auto-aggiunge una credenziale funzionante ai bindings del device, se l'host
+ * corrisponde a un network_device. Fase 1b (§7.2): risolve il device via
+ * `getNetworkDeviceByHostId` (FK, più affidabile) quando `hostId` è noto, con
+ * fallback sul match stringa IP. Se nessun device viene trovato la funzione
+ * è un no-op sul binding — ma questo NON deve mai essere l'unico posto dove si
+ * registra il tentativo: i chiamanti scrivono già su `host_credentials`
+ * (via `addHostCredential`/`recordCredentialSuccess`) PRIMA di invocarla.
+ */
+function autoBindCredentialToDevice(
+  hostIp: string,
+  credentialId: number,
+  protocolType: "ssh" | "snmp" | "winrm",
+  port: number,
+  hostId?: number | null
+): void {
   try {
-    const device = getNetworkDeviceByHost(hostIp);
+    const device = (hostId != null ? getNetworkDeviceByHostId(hostId) : undefined) ?? getNetworkDeviceByHost(hostIp);
     if (!device) return;
     const existing = findExistingBinding(device.id, credentialId, protocolType, port);
     if (existing) {
@@ -1327,7 +1342,7 @@ async function runDiscovery(
             });
             setHostDetectCredential(host.id, "windows", credId);
             addHostCredential(host.id, credId, "winrm", winrmPort, { validated: true, auto_detected: true });
-            autoBindCredentialToDevice(ip, credId, "winrm", winrmPort);
+            autoBindCredentialToDevice(ip, credId, "winrm", winrmPort, host.id);
             log(`✓ ${ip} → ${hn} (cred#${credId}, porta ${winrmPort})`);
             ok = true;
             break;
@@ -1442,7 +1457,7 @@ async function runDiscovery(
           });
           setHostDetectCredential(host.id, "linux", credId);
           addHostCredential(host.id, credId, "ssh", 22, { validated: true, auto_detected: true });
-          autoBindCredentialToDevice(ip, credId, "ssh", 22);
+          autoBindCredentialToDevice(ip, credId, "ssh", 22, host.id);
           if (boundSshForSave == null) {
             setHostDetectCredential(host.id, "ssh", credId);
           }
@@ -1737,7 +1752,7 @@ async function runDiscovery(
                 setHostDetectCredential(hostId, "ssh", credId);
               }
             }
-            autoBindCredentialToDevice(ip, credId, "ssh", 22);
+            autoBindCredentialToDevice(ip, credId, "ssh", 22, hostId);
             log(`SSH ✓ ${ip} → ${hn || "—"}, OS: ${osInfo}`);
             ok = true;
             break;
@@ -2166,7 +2181,7 @@ async function runDiscovery(
               "true"
             );
             addHostCredential(host.id, credId, "ssh", sshPort, { validated: true, auto_detected: true });
-            autoBindCredentialToDevice(ip, credId, "ssh", sshPort);
+            autoBindCredentialToDevice(ip, credId, "ssh", sshPort, host.id);
             log(`✓ ${ip}:${sshPort} SSH cred#${credId} (${nc.credential_name})`);
             validated++;
             validatedProtos.add("ssh");
@@ -2183,7 +2198,7 @@ async function runDiscovery(
             const r = await querySnmpInfoMultiCommunity(ip, [com], 161, { onLog: log });
             if (r.sysName || r.sysDescr || r.sysObjectID) {
               addHostCredential(host.id, credId, "snmp", 161, { validated: true, auto_detected: true });
-              autoBindCredentialToDevice(ip, credId, "snmp", 161);
+              autoBindCredentialToDevice(ip, credId, "snmp", 161, host.id);
               log(`✓ ${ip}:161 SNMP cred#${credId} (${nc.credential_name})`);
               validated++;
               validatedProtos.add("snmp");
@@ -2205,7 +2220,7 @@ async function runDiscovery(
             const hn = await runWinrmCommand(ip, winrmPort, creds.username, creds.password, "hostname", false, adInfo?.realm || "");
             if (String(hn ?? "").trim()) {
               addHostCredential(host.id, credId, "winrm", winrmPort, { validated: true, auto_detected: true });
-              autoBindCredentialToDevice(ip, credId, "winrm", winrmPort);
+              autoBindCredentialToDevice(ip, credId, "winrm", winrmPort, host.id);
               log(`✓ ${ip}:${winrmPort} WinRM cred#${credId} (${nc.credential_name})`);
               validated++;
               validatedProtos.add("winrm");

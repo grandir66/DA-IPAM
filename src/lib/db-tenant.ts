@@ -23,7 +23,7 @@ import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
 import { getActiveTenants } from "./db-hub";
-import type { CredProtocol } from "./credentials/resolve";
+import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
 
 import type {
   Network,
@@ -3112,27 +3112,52 @@ export function getHostDetectCredentialsEnriched(hostId: number): Array<{
   });
 }
 
+/**
+ * Catena credenziali per rilevamento OS (Windows/Linux), fase 1b: wrapper del
+ * resolver unico (`resolveCredentialsForDb`, §7.1-7.2) — prima le credenziali
+ * v2 pertinenti (`network_credentials`, filtrate per tipo adatto al ruolo),
+ * poi le legacy attuali (`network_host_credentials` per ruolo), dedup
+ * mantenendo l'ordine. Il setting globale resta in coda come prima.
+ *
+ * Nota: `role="linux"` mappa sul protocollo "ssh" del resolver, che include
+ * ANCHE il ruolo legacy "ssh" oltre a "linux" (§ resolve.ts legacyRolesForProtocol) —
+ * prima includeva solo il ruolo "linux". Nessun chiamante odierno usa
+ * `role="linux"` (solo "windows" è invocato in discovery.ts/edge-credentials-bridge.ts),
+ * quindi l'allargamento non ha impatto osservabile oggi.
+ */
 export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux"): number[] {
   const { getSetting } = require("./db") as { getSetting: (key: string) => string | null };
-  const netIds = getNetworkHostCredentialIds(networkId, role);
+  const protocol: CredProtocol = role === "windows" ? "winrm" : "ssh";
+  const resolved = resolveCredentialsForDb(db(), { networkId }, protocol);
+  const out: number[] = [];
+  const seen = new Set<number>();
+  for (const r of resolved) {
+    if (seen.has(r.credential_id)) continue;
+    seen.add(r.credential_id);
+    out.push(r.credential_id);
+  }
   const globalKey = role === "windows" ? "host_windows_credential_id" : "host_linux_credential_id";
   const gStr = getSetting(globalKey);
   const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
-  const out: number[] = [...netIds];
-  if (!Number.isNaN(gId) && gId > 0 && !out.includes(gId)) out.push(gId);
+  if (!Number.isNaN(gId) && gId > 0 && !seen.has(gId)) out.push(gId);
   return out;
 }
 
+/**
+ * Catena SSH per scan: wrapper del resolver unico — credenziali v2 pertinenti
+ * (`network_credentials` di tipo ssh/linux), poi legacy (ruolo `ssh` poi
+ * `linux` su `network_host_credentials`, stesso ordine di prima), poi
+ * globale Impostazioni. Dedup preservando l'ordine.
+ */
 export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
   const { getSetting } = require("./db") as { getSetting: (key: string) => string | null };
-  const sshIds = getNetworkHostCredentialIds(networkId, "ssh");
-  const linuxIds = getNetworkHostCredentialIds(networkId, "linux");
+  const resolved = resolveCredentialsForDb(db(), { networkId }, "ssh");
   const out: number[] = [];
   const seen = new Set<number>();
-  for (const id of [...sshIds, ...linuxIds]) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push(id);
+  for (const r of resolved) {
+    if (seen.has(r.credential_id)) continue;
+    seen.add(r.credential_id);
+    out.push(r.credential_id);
   }
   const gStr = getSetting("host_linux_credential_id");
   const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
@@ -3140,10 +3165,17 @@ export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
   return out;
 }
 
+/**
+ * Community SNMP per una rete: wrapper del resolver unico — credenziali v2
+ * pertinenti (`network_credentials` di tipo snmp) poi legacy
+ * (`network_host_credentials` ruolo snmp, stesso ordine di prima), poi
+ * l'override di profilo/scan e la community di default della rete, infine
+ * `public`/`private` SEMPRE in fondo. Dedup preservando l'ordine.
+ */
 export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverride?: string | null): string[] {
   const fromCreds: string[] = [];
-  for (const credId of getNetworkHostCredentialIds(networkId, "snmp")) {
-    const com = getCredentialCommunityString(credId);
+  for (const r of resolveCredentialsForDb(db(), { networkId }, "snmp")) {
+    const com = getCredentialCommunityString(r.credential_id);
     if (com?.trim()) fromCreds.push(com.trim());
   }
   const net = getNetworkById(networkId);
@@ -3166,19 +3198,44 @@ export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverr
   return out;
 }
 
+/**
+ * Community SNMP per un host: wrapper del resolver unico con `hostId` —
+ * a differenza della versione di rete, qui il resolver antepone le
+ * credenziali già VALIDATE per QUESTO host (`host_credentials`, tier
+ * `host_validated`/`host_unvalidated`/`device_binding`) prima della catena
+ * di rete v2 e di quella legacy (incluso il pin `host_detect_credential`,
+ * ora parte della catena invece di un short-circuit esclusivo come prima —
+ * evita che un pin isolato blocchi il fallback a public/private se fallisce).
+ * `public`/`private` restano SEMPRE in fondo.
+ */
 export function buildSnmpCommunitiesForHost(
   networkId: number,
   hostId: number | null,
   profileOrOverride?: string | null
 ): string[] {
-  if (hostId != null) {
-    const boundId = getHostDetectCredentialId(hostId, "snmp");
-    if (boundId != null) {
-      const com = getCredentialCommunityString(boundId);
-      if (com?.trim()) return [com.trim()];
-    }
+  const fromCreds: string[] = [];
+  for (const r of resolveCredentialsForDb(db(), { hostId: hostId ?? undefined, networkId }, "snmp")) {
+    const com = getCredentialCommunityString(r.credential_id);
+    if (com?.trim()) fromCreds.push(com.trim());
   }
-  return buildSnmpCommunitiesForNetwork(networkId, profileOrOverride);
+  const net = getNetworkById(networkId);
+  const pushSplit = (s: string | null | undefined, into: string[]) => {
+    const t = s?.trim();
+    if (!t) return;
+    for (const part of t.split(",").map((x) => x.trim()).filter(Boolean)) into.push(part);
+  };
+  const mid: string[] = [];
+  pushSplit(profileOrOverride, mid);
+  pushSplit(net?.snmp_community ?? null, mid);
+  const ordered = [...fromCreds, ...mid, "public", "private"];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of ordered) {
+    if (!x || seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+  }
+  return out;
 }
 
 // ── network_credentials v2 ──

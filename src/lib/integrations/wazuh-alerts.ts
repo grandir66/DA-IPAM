@@ -40,13 +40,16 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
   {
     id: "auth_failure",
     labelIt: "Fallimenti di autenticazione",
+    // SOLO gruppi di ESITO. "sshd" e "pam" indicano il programma che ha scritto
+    // il log, non com'e' andata: includendoli finivano nella selezione 14.824
+    // accessi RIUSCITI su 28.254 in 24h (misurato), fra cui "PAM: Login session
+    // closed" che non e' nemmeno un login. I fallimenti veri di sshd e pam
+    // portano comunque authentication_failed o invalid_login.
     groups: [
       "authentication_failures",
       "authentication_failed",
       "win_authentication_failed",
       "invalid_login",
-      "sshd",
-      "pam",
     ],
     // Soglia 5, non 8: misurato sul campo, 1.505 logon falliti su 1.506 scattano
     // come "Logon Failure - Unknown user or bad password" a livello 5. Solo la
@@ -108,6 +111,9 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
  * omission is a decision on record rather than an oversight.
  */
 export const EXCLUDED_GROUPS: Record<string, string> = {
+  sshd: "gruppo di programma, non di esito: i fallimenti veri portano authentication_failed",
+  pam: "gruppo di programma, non di esito (include 'Login session opened/closed')",
+  authentication_success: "accessi riusciti: l'opposto di cio' che cerchiamo",
   windows_system: "rumore operativo ('Multiple System error events')",
   windows_application: "rumore operativo ('Multiple Windows error application events')",
   "vulnerability-detector": "già coperto dal sync CVE esistente (wazuh_vuln)",
@@ -130,10 +136,16 @@ export function minSelectedLevel(): number {
   );
 }
 
+/** Esiti che escludono a priori: un accesso riuscito non e' un fallimento. */
+const OUTCOME_EXCLUSIONS = new Set(["authentication_success"]);
+
 /** First category whose groups intersect `groups`; null when none matches. */
 export function categorizeAlert(groups: string[] | undefined): string | null {
   if (!groups || groups.length === 0) return null;
   const set = new Set(groups);
+  // Cintura e bretelle: anche se un gruppo di esito comparisse insieme a
+  // authentication_success, l'alert non e' un fallimento.
+  if (groups.some((g) => OUTCOME_EXCLUSIONS.has(g))) return null;
   const hit = ALERT_CATEGORIES.find(
     (c) => !c.assignedOnly && c.groups.some((g) => set.has(g)),
   );
@@ -307,6 +319,9 @@ export function dedupKey(a: NormalizedAlert): string {
   return `${a.agentId ?? "?"}|${a.ruleId ?? "?"}`;
 }
 
+/** Esiti da non scaricare affatto. */
+export const EXCLUDED_OUTCOME_GROUPS = ["authentication_success"];
+
 type RangeFilter = {
   range: {
     "@timestamp"?: { gte: string };
@@ -317,7 +332,12 @@ type TermsFilter = { terms: { "rule.groups": string[] } };
 
 export interface AlertsQuery {
   size: number;
-  query: { bool: { filter: Array<RangeFilter | TermsFilter> } };
+  query: {
+    bool: {
+      filter: Array<RangeFilter | TermsFilter>;
+      must_not: Array<TermsFilter>;
+    };
+  };
   sort: Array<Record<string, string>>;
   search_after?: unknown[];
 }
@@ -338,6 +358,8 @@ export function buildAlertsQuery(args: {
           { range: { "rule.level": { gte: args.minLevel ?? minSelectedLevel() } } },
           { terms: { "rule.groups": selectedGroups() } },
         ],
+        // Un accesso riuscito non e' un fallimento: meglio non scaricarlo
+        must_not: [{ terms: { "rule.groups": EXCLUDED_OUTCOME_GROUPS } }],
       },
     },
     // Ascending + tiebreak on _id so search_after paging never skips or repeats

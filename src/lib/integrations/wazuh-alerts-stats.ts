@@ -12,6 +12,7 @@
 
 import {
   ALERT_CATEGORIES,
+  EXCLUDED_OUTCOME_GROUPS,
   accountKind,
   minSelectedLevel,
   normalizeIp,
@@ -20,8 +21,12 @@ import {
   type SourceSystem,
 } from "./wazuh-alerts";
 
-/** Quanti account bersagliati riportare. */
-const TOP_ACCOUNTS = 10;
+/**
+ * Quanti account bersagliati raccogliere per sorgente. Ampio di proposito: la
+ * coda lunga (chi sbaglia due o tre volte) e' spesso il segnale piu'
+ * interessante, e la pagina la impagina invece di troncarla.
+ */
+const TOP_ACCOUNTS = 100;
 
 export interface StatsWindow {
   id: string;
@@ -72,6 +77,8 @@ interface UserTermsAgg {
   aggs: {
     top_source: { terms: { field: string; size: number } };
     top_workstation?: { terms: { field: string; size: number } };
+    /** Agent che ha inviato l'alert: NON e' l'origine del tentativo. */
+    top_agent: { terms: { field: string; size: number } };
     last_seen: { max: { field: string } };
   };
 }
@@ -93,7 +100,7 @@ interface AccountsAgg {
 
 export interface StatsQuery {
   size: 0;
-  query: { bool: { filter: unknown[] } };
+  query: { bool: { filter: unknown[]; must_not: unknown[] } };
   aggs: {
     per_category: {
       filters: { filters: Record<string, CategoryFilter> };
@@ -118,6 +125,8 @@ export function buildStatsQuery(args: {
   interval: string;
   /** Account di servizio nostri: fuori dalla classifica dei bersagliati. */
   excludeAccounts?: string[];
+  /** IP nostri: il nostro scanner prova credenziali note (admin, oracle, …). */
+  excludeIps?: string[];
 }): StatsQuery {
   const cats = queryableCategories();
   const authGroups = [
@@ -148,6 +157,7 @@ export function buildStatsQuery(args: {
           { range: { "rule.level": { gte: minSelectedLevel() } } },
           { terms: { "rule.groups": selectedGroups() } },
         ],
+        must_not: [{ terms: { "rule.groups": EXCLUDED_OUTCOME_GROUPS } }],
       },
     },
     aggs: {
@@ -174,14 +184,24 @@ export function buildStatsQuery(args: {
             // I nostri account vanno esclusi su OGNI campo utente: i decoder
             // Linux usano srcuser, Microsoft 365 usa UserId. Filtrare solo il
             // campo Windows lasciava passare "domarc" fra i bersagliati.
-            must_not: (args.excludeAccounts ?? []).length
-              ? [
-                  { terms: { "data.win.eventdata.targetUserName": args.excludeAccounts } },
-                  { terms: { "data.srcuser": args.excludeAccounts } },
-                  { terms: { "data.dstuser": args.excludeAccounts } },
-                  { terms: { "data.office365.UserId": args.excludeAccounts } },
-                ]
-              : [],
+            must_not: [
+              ...((args.excludeAccounts ?? []).length
+                ? [
+                    { terms: { "data.win.eventdata.targetUserName": args.excludeAccounts } },
+                    { terms: { "data.srcuser": args.excludeAccounts } },
+                    { terms: { "data.dstuser": args.excludeAccounts } },
+                    { terms: { "data.office365.UserId": args.excludeAccounts } },
+                  ]
+                : []),
+              // Il nostro scanner prova credenziali note (admin, oracle, karaf):
+              // sono tentativi NOSTRI, e si riconoscono dall'IP di partenza.
+              ...((args.excludeIps ?? []).length
+                ? [
+                    { terms: { "data.srcip": args.excludeIps } },
+                    { terms: { "data.win.eventdata.ipAddress": args.excludeIps } },
+                  ]
+                : []),
+            ],
           },
         },
         aggs: {
@@ -192,6 +212,7 @@ export function buildStatsQuery(args: {
               top_workstation: {
                 terms: { field: "data.win.eventdata.workstationName", size: 1 },
               },
+              top_agent: { terms: { field: "agent.name", size: 1 } },
               last_seen: { max: { field: "@timestamp" } },
             },
           },
@@ -202,6 +223,7 @@ export function buildStatsQuery(args: {
                 terms: { field: "data.office365.UserId", size: TOP_ACCOUNTS },
                 aggs: {
                   top_source: { terms: { field: "data.office365.ClientIP", size: 1 } },
+                  top_agent: { terms: { field: "agent.name", size: 1 } },
                   last_seen: { max: { field: "@timestamp" } },
                 },
               },
@@ -211,6 +233,7 @@ export function buildStatsQuery(args: {
             terms: { field: "data.srcuser", size: TOP_ACCOUNTS },
             aggs: {
               top_source: { terms: { field: "data.srcip", size: 1 } },
+              top_agent: { terms: { field: "agent.name", size: 1 } },
               last_seen: { max: { field: "@timestamp" } },
             },
           },
@@ -236,6 +259,8 @@ export interface TargetedAccount {
   /** IP da cui partono i tentativi: la parte azionabile. */
   sourceIp: string | null;
   workstation: string | null;
+  /** Agent Wazuh che ha rilevato: dove e' stato visto, non da dove parte. */
+  detectedBy: string | null;
   lastSeenAt: string | null;
   /** Da quale sistema arriva il fallimento. */
   system: SourceSystem;
@@ -255,6 +280,7 @@ interface UserBucket {
   doc_count?: number;
   top_source?: { buckets?: TermsBucket[] };
   top_workstation?: { buckets?: TermsBucket[] };
+  top_agent?: { buckets?: TermsBucket[] };
   last_seen?: { value_as_string?: string };
 }
 
@@ -323,6 +349,7 @@ export function parseStatsResponse(raw: RawAgg): AlertStats {
         count: b.doc_count ?? 0,
         sourceIp: normalizeIp(b.top_source?.buckets?.[0]?.key),
         workstation: b.top_workstation?.buckets?.[0]?.key ?? null,
+        detectedBy: b.top_agent?.buckets?.[0]?.key ?? null,
         lastSeenAt: b.last_seen?.value_as_string ?? null,
         system,
         kind: accountKind(b.key),
@@ -334,8 +361,7 @@ export function parseStatsResponse(raw: RawAgg): AlertStats {
     ...fromBuckets(acc?.by_user_cloud?.u?.buckets, "microsoft365"),
     ...fromBuckets(acc?.by_user_unix?.buckets, "linux"),
   ]
-    .sort((a, b) => b.count - a.count)
-    .slice(0, TOP_ACCOUNTS);
+    .sort((a, b) => b.count - a.count);
 
   return {
     totals: {

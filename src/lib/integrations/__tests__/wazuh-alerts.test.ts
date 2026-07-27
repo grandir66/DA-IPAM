@@ -7,6 +7,7 @@ import {
   minSelectedLevel,
   normalizeIp,
   accountKind,
+  selectedGroups,
   dedupKey,
   normalizeAlert,
   type WazuhAlertDoc,
@@ -311,4 +312,60 @@ test("a machine account is told apart from a person", () => {
   assert.equal(accountKind("mario.rossi"), "utente");
   assert.equal(accountKind("a@b.it"), "utente");
   assert.equal(accountKind(null), "utente");
+});
+
+// ── Esito, non programma ───────────────────────────────────────────────────
+
+test("a successful login is never classified as a failure", () => {
+  // Misurato sull'indice Domarc: includendo i gruppi "pam" e "sshd" finivano
+  // nella selezione 14.824 accessi RIUSCITI su 28.254 in 24h, fra cui
+  // "PAM: Login session closed" — che non e' nemmeno un login.
+  const ok = normalizeAlert(
+    {
+      "@timestamp": "2026-07-27T10:00:00.000Z",
+      rule: {
+        id: "5501",
+        level: 3,
+        description: "PAM: Login session opened.",
+        groups: ["pam", "syslog", "authentication_success"],
+      },
+      data: { srcuser: "root" },
+    },
+    "h",
+  );
+  assert.equal(ok.category, null);
+});
+
+test("the failure outcome is what selects, not the program that logged it", () => {
+  const fail = (groups: string[]) =>
+    normalizeAlert(
+      {
+        "@timestamp": "2026-07-27T10:00:00.000Z",
+        rule: { id: "5760", level: 5, description: "x", groups },
+        data: { srcuser: "admin" },
+      },
+      "h",
+    ).category;
+  assert.equal(fail(["sshd", "authentication_failed"]), "auth_failure");
+  assert.equal(fail(["pam", "authentication_failed"]), "auth_failure");
+  assert.equal(fail(["sshd", "invalid_login"]), "auth_failure");
+  // il solo nome del programma non basta piu'
+  assert.equal(fail(["sshd", "syslog"]), null);
+  assert.equal(fail(["pam"]), null);
+});
+
+test("the curated groups no longer include program-only groups", () => {
+  const auth = ALERT_CATEGORIES.find((c) => c.id === "auth_failure")!;
+  assert.ok(!auth.groups.includes("sshd"), "sshd e' un gruppo di programma");
+  assert.ok(!auth.groups.includes("pam"), "pam e' un gruppo di programma");
+  assert.ok(auth.groups.includes("authentication_failed"));
+  assert.ok(!selectedGroups().includes("pam"));
+});
+
+test("successful logins are excluded already in the query", () => {
+  const q = buildAlertsQuery({ since: SINCE, size: 100 });
+  assert.ok(
+    JSON.stringify(q.query.bool).includes("authentication_success"),
+    "gli accessi riusciti vengono ancora scaricati",
+  );
 });

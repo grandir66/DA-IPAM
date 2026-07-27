@@ -72,13 +72,15 @@ export async function GET(req: Request) {
       });
     }
 
+    const self = collectSelfIdentity(db);
     try {
       const stats = await client.alertStats({
         since: sinceForWindow(win.hours),
         interval: bucketIntervalFor(win.hours),
         // I nostri account di servizio non sono "bersagliati": toglierli evita
         // che una nostra credenziale scaduta finisca in cima alla classifica.
-        excludeAccounts: collectSelfIdentity(db).accounts,
+        excludeAccounts: self.accounts,
+        excludeIps: self.ips,
       });
       return NextResponse.json({ ...base, stats });
     } catch (e) {

@@ -244,3 +244,60 @@ test("the self-account exclusion covers every user field, not just Windows", () 
   assert.ok(json.includes("data.dstuser"), "manca dstuser");
   assert.ok(json.includes("data.office365.UserId"), "manca il campo Microsoft 365");
 });
+
+test("the account ranking goes deep enough not to lose the long tail", () => {
+  // Con un tetto a 10 chi sbaglia poche volte spariva: la coda lunga e' spesso
+  // il segnale piu' interessante (un attaccante che prova un account per volta).
+  const q = buildStatsQuery({ since: "2026-07-26T12:00:00.000Z", interval: "1h" });
+  assert.ok(q.aggs.accounts.aggs.by_user.terms.size >= 100);
+  assert.ok(q.aggs.accounts.aggs.by_user_cloud.aggs.u.terms.size >= 100);
+});
+
+test("successful logins never reach the account ranking", () => {
+  const q = buildStatsQuery({ since: "2026-07-26T12:00:00.000Z", interval: "1h" });
+  assert.ok(JSON.stringify(q.query.bool).includes("authentication_success"));
+});
+
+test("who reported the alert is kept separate from where it came from", () => {
+  // Erano confusi: la colonna origine mostrava di fatto l'agent che ha inviato
+  // l'alert (quasi sempre il domain controller), non da dove partiva il tentativo.
+  const q = buildStatsQuery({ since: "2026-07-26T12:00:00.000Z", interval: "1h" });
+  assert.ok(q.aggs.accounts.aggs.by_user.aggs.top_agent, "manca l'agent che rileva");
+
+  const s = parseStatsResponse({
+    hits: { total: { value: 1 } },
+    aggregations: {
+      accounts: {
+        by_user: {
+          buckets: [
+            {
+              key: "DA-SYN-VM$",
+              doc_count: 1127,
+              top_source: { buckets: [{ key: "192.168.4.27" }] },
+              top_workstation: { buckets: [{ key: "DA-SYN-VM" }] },
+              top_agent: { buckets: [{ key: "SRV-DC01" }] },
+            },
+          ],
+        },
+      },
+    },
+  });
+  assert.equal(s.topAccounts[0]!.detectedBy, "SRV-DC01");
+  assert.equal(s.topAccounts[0]!.sourceIp, "192.168.4.27");
+});
+
+test("our own scanner is excluded by IP too, not only by account name", () => {
+  // Visto a schermo: dall'IP dell'appliance partivano tentativi su "admin",
+  // "karaf", "oracle" — cioe' il nostro scanner che prova credenziali note.
+  // Filtrare solo per nome account non li toglieva.
+  const q = buildStatsQuery({
+    since: "2026-07-26T12:00:00.000Z",
+    interval: "1h",
+    excludeAccounts: ["domarc"],
+    excludeIps: ["192.168.4.8"],
+  });
+  const json = JSON.stringify(q.aggs.accounts.filter.bool.must_not);
+  assert.ok(json.includes("192.168.4.8"));
+  assert.ok(json.includes("data.srcip"));
+  assert.ok(json.includes("data.win.eventdata.ipAddress"));
+});

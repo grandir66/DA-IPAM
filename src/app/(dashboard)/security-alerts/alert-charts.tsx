@@ -12,6 +12,7 @@
  * resta la vista testuale di riferimento.
  */
 
+import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -271,6 +272,7 @@ export interface TargetedAccount {
   count: number;
   sourceIp: string | null;
   workstation: string | null;
+  detectedBy: string | null;
   lastSeenAt: string | null;
   system: "windows" | "microsoft365" | "linux" | "altro";
   kind: "utente" | "computer";
@@ -297,7 +299,10 @@ function originLabel(a: TargetedAccount): string {
   return a.workstation ?? ip ?? "—";
 }
 
+const ACCOUNTS_PER_PAGE = 10;
+
 export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) {
+  const [page, setPage] = useState(0);
   if (accounts.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-muted-foreground">
@@ -305,7 +310,16 @@ export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) 
       </p>
     );
   }
+  // La scala delle barre resta ancorata al massimo ASSOLUTO, non a quello della
+  // pagina: altrimenti a pagina 3 un account con 3 tentativi disegnerebbe una
+  // barra piena e sembrerebbe grave quanto il primo della classifica.
   const max = Math.max(...accounts.map((a) => a.count), 1);
+  const pages = Math.ceil(accounts.length / ACCOUNTS_PER_PAGE);
+  const current = Math.min(page, pages - 1);
+  const visible = accounts.slice(
+    current * ACCOUNTS_PER_PAGE,
+    current * ACCOUNTS_PER_PAGE + ACCOUNTS_PER_PAGE,
+  );
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -315,12 +329,13 @@ export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) 
             <th className="pb-2 font-normal">Sistema</th>
             <th className="pb-2 font-normal">Tentativi falliti</th>
             <th className="pb-2 font-normal">Da dove parte il tentativo</th>
+            <th className="pb-2 font-normal">Rilevato da</th>
             <th className="pb-2 text-right font-normal">Ultimo</th>
           </tr>
         </thead>
         <tbody>
-          {accounts.map((a) => (
-            <tr key={a.account} className="border-t">
+          {visible.map((a) => (
+            <tr key={`${a.system}-${a.account}`} className="border-t">
               <td className="py-2 pr-3">
                 <span className="font-medium">{a.account}</span>
                 {a.kind === "computer" ? (
@@ -348,6 +363,9 @@ export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) 
               <td className="py-2 pr-3 text-xs text-muted-foreground">
                 {originLabel(a)}
               </td>
+              <td className="py-2 pr-3 text-xs text-muted-foreground">
+                {a.detectedBy ?? "—"}
+              </td>
               <td className="py-2 text-right text-xs tabular-nums text-muted-foreground">
                 {a.lastSeenAt
                   ? new Date(a.lastSeenAt).toLocaleString("it-IT", {
@@ -362,6 +380,32 @@ export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) 
           ))}
         </tbody>
       </table>
+
+      {pages > 1 ? (
+        <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
+          <span>
+            {accounts.length} account con tentativi falliti · pagina {current + 1} di {pages}
+          </span>
+          <div className="ml-auto flex gap-2">
+            <button
+              type="button"
+              className="rounded border px-2 py-1 disabled:opacity-40"
+              onClick={() => setPage(current - 1)}
+              disabled={current === 0}
+            >
+              Precedente
+            </button>
+            <button
+              type="button"
+              className="rounded border px-2 py-1 disabled:opacity-40"
+              onClick={() => setPage(current + 1)}
+              disabled={current >= pages - 1}
+            >
+              Successiva
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

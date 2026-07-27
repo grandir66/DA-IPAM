@@ -52,6 +52,12 @@ export interface LdapExtras {
   /** DNs of users with msDS-KeyCredentialLink present. */
   shadowCredentialDns: string[];
   adcs: AdcsExtras;
+  /**
+   * Labels of queries that failed. Each failure leaves the corresponding maps
+   * empty, so rules depending on them find nothing — surfacing this is what
+   * separates "no problems" from "we could not look".
+   */
+  collectErrors: string[];
 }
 
 function parseIntAttr(val: unknown): number | null {
@@ -115,7 +121,8 @@ async function readRecycleBinEnabled(
 
 async function readDomainPolicy(
   client: Client,
-  baseDn: string
+  baseDn: string,
+  collectErrors: string[],
 ): Promise<{
   minPwdLength: number | null;
   lockoutThreshold: number | null;
@@ -150,6 +157,7 @@ async function readDomainPolicy(
       msDsBehaviorVersion: parseIntAttr(entry["msDS-Behavior-Version"]),
     };
   } catch {
+    collectErrors.push("domainPolicy");
     return {
       minPwdLength: null,
       lockoutThreshold: null,
@@ -178,6 +186,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
     const userSidHistoryBySam = new Map<string, string[]>();
     const userAllowedToDelegateToBySam = new Map<string, string[]>();
     const shadowCredentialDns: string[] = [];
+    const collectErrors: string[] = [];
     try {
       const { searchEntries: users } = await client.search(baseDn, {
         scope: "sub",
@@ -223,7 +232,9 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
         }
       }
     } catch {
-      // leave maps empty; engine can still run on cache
+      // maps stay empty; DA-A-LdapCollectPartial reports it so the empty
+      // result is not mistaken for a clean domain
+      collectErrors.push("users");
     }
 
     const computerUacBySam = new Map<string, number>();
@@ -291,7 +302,8 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       if (isInsufficientAccess(err)) {
         lapsSchemaPresent = null;
       }
-      // leave computer maps empty / partial
+      // computer maps stay empty / partial
+      collectErrors.push("computers");
     }
 
     const trusts: AdTrustRow[] = [];
@@ -315,6 +327,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       }
     } catch {
       // no trusts or CN=System inaccessible
+      collectErrors.push("trusts");
     }
 
     let krbtgtPasswordLastSetAt: string | null = null;
@@ -331,6 +344,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       }
     } catch {
       krbtgtPasswordLastSetAt = null;
+      collectErrors.push("krbtgt");
     }
 
     let guestEnabled: boolean | null = null;
@@ -348,10 +362,11 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       }
     } catch {
       guestEnabled = null;
+      collectErrors.push("guest");
     }
 
     const recycleBinEnabled = await readRecycleBinEnabled(client, baseDn);
-    const domainPolicy = await readDomainPolicy(client, baseDn);
+    const domainPolicy = await readDomainPolicy(client, baseDn, collectErrors);
 
     const groupMembersByDn = new Map<string, string[]>();
     try {
@@ -368,7 +383,8 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
         groupMembersByDn.set(dn, ldapStrArray(entry.member));
       }
     } catch {
-      // leave empty — engine falls back to cache groups
+      // engine falls back to cache groups, which may be stale
+      collectErrors.push("groups");
     }
 
     const gpos: AdGpoRow[] = [];
@@ -391,7 +407,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
         });
       }
     } catch {
-      // GPO container often readable; ignore on failure
+      collectErrors.push("gpos");
     }
 
     let siteCount: number | null = null;
@@ -416,6 +432,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
     } catch {
       siteCount = null;
       subnetCount = null;
+      collectErrors.push("sites");
     }
 
     let gmsaCount: number | null = null;
@@ -430,6 +447,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       gmsaCount = gmsas.length;
     } catch {
       gmsaCount = null;
+      collectErrors.push("gmsa");
     }
 
     let psoCount: number | null = null;
@@ -444,6 +462,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       psoCount = psos.length;
     } catch {
       psoCount = null;
+      collectErrors.push("pso");
     }
 
     const adcs = await collectAdcsExtras(client, baseDn);
@@ -481,6 +500,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       psoCount,
       shadowCredentialDns: shadowCredentialDns.slice(0, 50),
       adcs,
+      collectErrors,
     };
   } finally {
     try {

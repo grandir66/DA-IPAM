@@ -30,6 +30,9 @@ function cvssForFinding(f: HealthFinding, score: HealthScore): number {
   if (f.ruleId === "DA-A-DomainScore") {
     return Math.min(10, score.global / 10);
   }
+  // Collector diagnostics are data-quality signals, not domain weaknesses:
+  // scoring them would inflate the hub's vulnerability list.
+  if (f.diagnostic) return 0;
   return SEVERITY_CVSS[f.severity] ?? Math.min(10, f.points / 10);
 }
 
@@ -54,7 +57,10 @@ export function toHubExport(args: {
       nvt_oid: f.ruleId,
       nvt_name: f.title,
       description: f.description,
-      source_kind: f.ruleId === "DA-A-DomainScore" ? "risk_indicator" : "ad_misconfig",
+      source_kind:
+        f.ruleId === "DA-A-DomainScore" || f.diagnostic
+          ? "risk_indicator"
+          : "ad_misconfig",
       raw_json: JSON.stringify({
         ruleId: f.ruleId,
         axis: f.axis,

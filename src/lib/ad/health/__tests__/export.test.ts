@@ -103,3 +103,27 @@ test("toHubExport maps findings with DA-* nvt_oid and source_kind", () => {
   assert.equal(ds.source_kind, "risk_indicator");
   assert.equal(ds.cvss_score, 3.5); // global/10
 });
+
+test("diagnostic findings reach the hub as indicators, not vulnerabilities", () => {
+  const exp = toHubExport({
+    domainFqdn: "contoso.local",
+    score: SCORE,
+    findings: [
+      {
+        ruleId: "DA-A-LdapCollectPartial",
+        axis: "anomaly",
+        points: 0,
+        severity: "High",
+        title: "LDAP collect incomplete",
+        description: "users query failed",
+        objectCount: 1,
+        sampleDns: ["users"],
+        diagnostic: true,
+      },
+    ],
+  });
+
+  const f = exp.findings[0]!;
+  assert.equal(f.source_kind, "risk_indicator");
+  assert.equal(f.cvss_score, 0);
+});

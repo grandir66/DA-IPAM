@@ -11,6 +11,7 @@ export function aggregateScores(findings: HealthFinding[]): HealthScore {
   const axes = { stale: 0, privileged: 0, trust: 0, anomaly: 0 };
 
   for (const f of findings) {
+    if (f.diagnostic) continue; // collector health is not domain risk
     if (f.axis === "stale" || f.axis === "privileged" || f.axis === "trust" || f.axis === "anomaly") {
       axes[f.axis] += f.points;
     }

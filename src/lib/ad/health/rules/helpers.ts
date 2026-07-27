@@ -1,5 +1,10 @@
 import { severityFromPoints } from "../score";
-import { SAMPLE_CAP, type HealthAxis, type HealthFinding } from "../types";
+import {
+  SAMPLE_CAP,
+  type HealthAxis,
+  type HealthFinding,
+  type HealthSeverity,
+} from "../types";
 
 export function daysSince(iso: string | null | undefined, now: Date): number | null {
   if (iso == null || iso === "") return null;
@@ -21,16 +26,21 @@ export function aggFinding(args: {
   description: string;
   dns: string[];
   raw?: Record<string, unknown>;
+  /** Excluded from the score; use for collector-health findings. */
+  diagnostic?: boolean;
+  /** Overrides the points-derived severity (diagnostic findings score 0). */
+  severity?: HealthSeverity;
 }): HealthFinding {
   return {
     ruleId: args.ruleId,
     axis: args.axis,
     points: args.points,
-    severity: severityFromPoints(args.points),
+    severity: args.severity ?? severityFromPoints(args.points),
     title: args.title,
     description: args.description,
     objectCount: args.dns.length,
     sampleDns: sample(args.dns),
     ...(args.raw ? { raw: args.raw } : {}),
+    ...(args.diagnostic ? { diagnostic: true } : {}),
   };
 }

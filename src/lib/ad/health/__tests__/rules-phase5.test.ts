@@ -119,7 +119,7 @@ test("DA-T-SidFilteringOff fires when quarantine bit missing", () => {
     }),
   );
   assert.ok(f);
-  assert.equal(f!.points, 25);
+  assert.equal(f!.points, 50);
 });
 
 test("DA-A-SysvolCpassword fires when paths present", () => {
@@ -136,10 +136,49 @@ test("DA-A-SysvolCpassword fires when paths present", () => {
   assert.equal(f!.points, 40);
 });
 
-test("parseWinrmProbeJson + missingCriticalKbs", () => {
+test("parseWinrmProbeJson reads installedKbs and osCaption", () => {
   const parsed = parseWinrmProbeJson(
-    '{"lastHotfixAt":"2026-01-01T00:00:00.000Z","installedKbs":["KB123"],"cpasswordPaths":[]}',
+    '{"lastHotfixAt":"2026-01-01T00:00:00.000Z","installedKbs":["KB123"],"cpasswordPaths":[],"osCaption":"Microsoft Windows Server 2019 Standard"}',
   );
   assert.equal(parsed.installedKbs.length, 1);
-  assert.ok(missingCriticalKbs(parsed.installedKbs).includes("KB3011780"));
+  assert.equal(parsed.osCaption, "Microsoft Windows Server 2019 Standard");
+});
+
+test("missingCriticalKbs only reports KBs that apply to the DC's OS", () => {
+  // Server 2019 never ships these legacy KBs — reporting them is a false positive
+  assert.deepEqual(
+    missingCriticalKbs([], "Microsoft Windows Server 2019 Standard"),
+    [],
+  );
+  // Unknown OS must stay silent rather than guess
+  assert.deepEqual(missingCriticalKbs([], null), []);
+  // Server 2008 R2 genuinely needs the MS14-068 / MS17-010 fixes
+  const missing = missingCriticalKbs([], "Microsoft Windows Server 2008 R2 Standard");
+  assert.ok(missing.includes("KB3011780"));
+  assert.ok(missing.length > 0);
+});
+
+test("missingCriticalKbs clears a KB that is actually installed", () => {
+  const os = "Microsoft Windows Server 2008 R2 Standard";
+  assert.ok(!missingCriticalKbs(["kb3011780"], os).includes("KB3011780"));
+});
+
+test("DA-A-DcMissingCriticalKb fires only when an applicable KB is missing", () => {
+  const base: WinrmProbeResult = {
+    configured: true,
+    status: "ok",
+    lastHotfixAt: "2026-07-01T00:00:00.000Z",
+    missingCriticalKbs: [],
+    cpasswordPaths: [],
+    durationMs: 10,
+  };
+  assert.equal(run("DA-A-DcMissingCriticalKb", baseCtx({ winrm: base })), null);
+
+  const f = run(
+    "DA-A-DcMissingCriticalKb",
+    baseCtx({ winrm: { ...base, missingCriticalKbs: ["KB3011780"] } }),
+  );
+  assert.ok(f);
+  assert.equal(f!.severity, "High");
+  assert.ok(f!.description.includes("KB3011780"));
 });

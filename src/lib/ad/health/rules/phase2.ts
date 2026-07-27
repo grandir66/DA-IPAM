@@ -140,16 +140,38 @@ export const phase2Rules: RuleDef[] = [
         issues.push("lockoutThreshold=0 (lockout disabled)");
       }
       if (issues.length === 0) return null;
+
+      // Incrocio con gli alert Wazuh: la soglia a zero e' una configurazione,
+      // ma "zero account bloccati mentre sono in corso N tentativi falliti" e'
+      // la prova che quella configurazione sta gia' facendo danno.
+      const w = ctx.wazuh;
+      const bruteForceEvidence =
+        ctx.lockoutThreshold === 0 &&
+        w?.available &&
+        w.authFailureOccurrences > 0 &&
+        w.lockoutOccurrences === 0
+          ? ` Negli ultimi ${w.windowDays} giorni Wazuh ha registrato ` +
+            `${w.authFailureOccurrences} tentativi di autenticazione falliti e ` +
+            `nessun account bloccato: con la soglia a zero il dominio non oppone ` +
+            `alcuna resistenza a un attacco a forza bruta.`
+          : "";
+
       return aggFinding({
         ruleId: "DA-A-PwdPolicy",
         axis: "anomaly",
         points: 20,
         title: "Weak domain password policy",
-        description: `Domain password policy issues: ${issues.join("; ")}`,
+        description: `Domain password policy issues: ${issues.join("; ")}.${bruteForceEvidence}`,
         dns: [ctx.domainFqdn],
         raw: {
           minPwdLength: ctx.minPwdLength,
           lockoutThreshold: ctx.lockoutThreshold,
+          ...(bruteForceEvidence
+            ? {
+                wazuhAuthFailures: w?.authFailureOccurrences,
+                wazuhLockouts: w?.lockoutOccurrences,
+              }
+            : {}),
         },
       });
     },

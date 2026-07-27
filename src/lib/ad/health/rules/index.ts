@@ -1,5 +1,6 @@
 import type { RuleDef } from "../types";
 import { anomalyRules } from "./anomaly";
+import { auditRules } from "./audit";
 import { collectRules } from "./collect";
 import { phase2Rules } from "./phase2";
 import { phase3Rules } from "./phase3";
@@ -21,10 +22,12 @@ export const ALL_RULES: RuleDef[] = [
   ...phase5Rules,
   ...phase6Rules,
   ...collectRules,
+  ...auditRules,
 ];
 
 export {
   anomalyRules,
+  auditRules,
   collectRules,
   phase2Rules,
   phase3Rules,

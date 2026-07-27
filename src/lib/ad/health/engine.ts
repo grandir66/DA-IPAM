@@ -19,6 +19,7 @@ import { collectLdapExtras, type LdapExtras } from "./ldap-extras";
 import { buildPrivilegeMatrix } from "./membership";
 import { collectWinrmProbe } from "./winrm-probe";
 import type { WinrmProbeResult } from "./types";
+import { collectWazuhSignals } from "./wazuh-signals";
 import {
   ensureAdHealthSchema,
   finishRun,
@@ -217,6 +218,16 @@ export async function runAdHealthcheck(
     // WinRM probe best-effort (Phase 5b / 6).
     const winrm = await collectWinrmProbe(integrationId);
     stats.winrm = winrm;
+
+    // Segnali dagli alert Wazuh gia' raccolti: se il modulo non e' configurato
+    // torna available:false e le regole correlate restano zitte.
+    const wazuhSignals = collectWazuhSignals(db);
+    stats.wazuhSignals = {
+      available: wazuhSignals.available,
+      windowDays: wazuhSignals.windowDays,
+      authFailureOccurrences: wazuhSignals.authFailureOccurrences,
+      lockoutOccurrences: wazuhSignals.lockoutOccurrences,
+    };
     stats.phase5 = {
       gpoCount: extras.gpos.length,
       siteCount: extras.siteCount,
@@ -282,6 +293,7 @@ export async function runAdHealthcheck(
       psoCount: extras.psoCount,
       shadowCredentialDns: extras.shadowCredentialDns,
       ldapCollectErrors: extras.collectErrors,
+      wazuh: wazuhSignals,
     };
 
     const { score, findings } = evaluateContext(ctx);

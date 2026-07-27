@@ -30,9 +30,9 @@ function runRule(id: string, ctx: RuleContext) {
   return rule.run(ctx);
 }
 
-test("ALL_RULES has 56 unique rule ids", () => {
-  assert.equal(ALL_RULES.length, 56);
-  assert.equal(new Set(ALL_RULES.map((r) => r.id)).size, 56);
+test("ALL_RULES has 58 unique rule ids", () => {
+  assert.equal(ALL_RULES.length, 58);
+  assert.equal(new Set(ALL_RULES.map((r) => r.id)).size, 58);
 });
 
 test("DA-P-DCSyncRights fires on unexpected GenericAll domain ACE", () => {

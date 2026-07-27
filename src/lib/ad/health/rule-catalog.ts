@@ -205,6 +205,16 @@ const CATALOG: Record<string, RuleGuide> = {
     why: "Senza lettura completa dei security descriptor alcune escalation restano invisibili.",
     fix: "Verifica permessi LDAP dell’account sync e riprova l’healthcheck.",
   },
+  "DA-A-AuditPolicyGaps": {
+    titleIt: "Audit policy del DC incompleta",
+    why: "Se una sottocategoria di audit è spenta, gli eventi corrispondenti non vengono mai scritti: nessun SIEM potrà rilevarli, e l'assenza di allarmi verrà scambiata per assenza di problemi. È il caso tipico della DCSync, invisibile senza «Accesso ai servizi di directory».",
+    fix: "Attiva le sottocategorie mancanti via GPO (Configurazione computer → Criteri → Impostazioni di sicurezza → Configurazione avanzata dei criteri di controllo), quindi verifica con «auditpol /get /category:*».",
+  },
+  "DA-A-BruteForceActivity": {
+    titleIt: "Tentativi di autenticazione falliti in corso",
+    why: "Un volume elevato e continuo di autenticazioni fallite indica un attacco a forza bruta o password spraying in corso, oppure credenziali salvate ormai scadute che stanno bloccando utenti reali.",
+    fix: "Identifica l'origine dai dettagli dell'alert (IP e account bersaglio), blocca la sorgente e verifica che la soglia di lockout del dominio sia attiva.",
+  },
   "DA-A-LdapCollectPartial": {
     titleIt: "Raccolta LDAP incompleta",
     why: "Una query LDAP fallita svuota gli attributi corrispondenti: le regole che li usano non trovano nulla e il dominio appare più pulito di quanto sia. Non è un rischio del dominio, ma rende il report inaffidabile.",

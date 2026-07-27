@@ -7,6 +7,7 @@ import { decrypt } from "@/lib/crypto";
 import { getAdIntegrationById, getCredentialById } from "@/lib/db";
 import { runWinrmCommand } from "@/lib/devices/winrm-run";
 import { missingCriticalKbs as computeMissingKbs } from "./critical-kbs";
+import { auditGaps, parseAuditpolCsv } from "./audit-policy";
 import type { DcHardeningProbe, WinrmProbeResult } from "./types";
 
 export {
@@ -74,6 +75,7 @@ export function parseWinrmProbeJson(raw: string): {
   lastHotfixAt: string | null;
   installedKbs: string[];
   osCaption: string | null;
+  auditpolCsv: string | null;
   cpasswordPaths: string[];
   hardening: DcHardeningProbe;
 } {
@@ -83,6 +85,7 @@ export function parseWinrmProbeJson(raw: string): {
       lastHotfixAt: null,
       installedKbs: [],
       osCaption: null,
+      auditpolCsv: null,
       cpasswordPaths: [],
       hardening: { ...EMPTY_HARDENING },
     };
@@ -94,6 +97,7 @@ export function parseWinrmProbeJson(raw: string): {
     lastHotfixAt?: string | null;
     installedKbs?: string[];
     osCaption?: string | null;
+    auditpolCsv?: string | null;
     cpasswordPaths?: string[];
     hardening?: Record<string, unknown>;
   };
@@ -104,6 +108,7 @@ export function parseWinrmProbeJson(raw: string): {
       ? parsed.installedKbs.map(String)
       : [],
     osCaption: parsed.osCaption != null ? String(parsed.osCaption) : null,
+    auditpolCsv: parsed.auditpolCsv != null ? String(parsed.auditpolCsv) : null,
     cpasswordPaths: Array.isArray(parsed.cpasswordPaths)
       ? parsed.cpasswordPaths.map(String)
       : [],
@@ -153,6 +158,8 @@ $spooler = $null
 try { $spooler = ((Get-Service -Name Spooler -ErrorAction Stop).Status -eq 'Running') } catch {}
 $os = $null
 try { $os = (Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop).Caption } catch {}
+$audit = $null
+try { $audit = (auditpol /get /category:* /r | Out-String) } catch {}
 $hardening = @{
   ldapServerIntegrity = Get-RegInt 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Parameters' 'LDAPServerIntegrity'
   ldapEnforceChannelBinding = Get-RegInt 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Parameters' 'LDAPEnforceChannelBinding'
@@ -161,7 +168,7 @@ $hardening = @{
   wdigestUseLogonCredential = Get-RegInt 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest' 'UseLogonCredential'
   spoolerRunning = $spooler
 }
-@{ lastHotfixAt = $last; installedKbs = $kbs; osCaption = $os; cpasswordPaths = $cp; hardening = $hardening } | ConvertTo-Json -Compress -Depth 4
+@{ lastHotfixAt = $last; installedKbs = $kbs; osCaption = $os; auditpolCsv = $audit; cpasswordPaths = $cp; hardening = $hardening } | ConvertTo-Json -Compress -Depth 4
 `.trim();
 
 export async function collectWinrmProbe(integrationId: number): Promise<WinrmProbeResult> {
@@ -199,6 +206,9 @@ export async function collectWinrmProbe(integrationId: number): Promise<WinrmPro
       lastHotfixAt: parsed.lastHotfixAt,
       missingCriticalKbs: computeMissingKbs(parsed.installedKbs, parsed.osCaption),
       osCaption: parsed.osCaption,
+      auditGaps: parsed.auditpolCsv
+        ? auditGaps(parseAuditpolCsv(parsed.auditpolCsv))
+        : null,
       cpasswordPaths: parsed.cpasswordPaths.slice(0, 30),
       durationMs: Date.now() - started,
       hardening: parsed.hardening,

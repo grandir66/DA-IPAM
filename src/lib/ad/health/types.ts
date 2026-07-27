@@ -1,5 +1,7 @@
 import type { AdcsExtras } from "./adcs";
 import type { AclExtras } from "./acl/types";
+import type { AuditGap } from "./audit-policy";
+import type { WazuhSignals } from "./wazuh-signals";
 
 export type HealthAxis = "stale" | "privileged" | "trust" | "anomaly" | "score";
 export type HealthSeverity = "Critical" | "High" | "Medium" | "Low";
@@ -116,6 +118,11 @@ export interface WinrmProbeResult {
   missingCriticalKbs: string[];
   /** Win32_OperatingSystem Caption of the probed DC; null if unreadable. */
   osCaption?: string | null;
+  /**
+   * Sottocategorie di audit non configurate come servirebbe.
+   * null = auditpol non letto (non si conclude nulla), [] = tutto a posto.
+   */
+  auditGaps?: AuditGap[] | null;
   cpasswordPaths: string[];
   durationMs: number;
   /** Present when probe status is ok (may still have null fields). */
@@ -205,6 +212,11 @@ export interface RuleContext {
    * silently empties the maps and the domain looks clean.
    */
   ldapCollectErrors?: string[];
+  /**
+   * Segnali dagli alert Wazuh gia' raccolti (fallimenti di autenticazione,
+   * lockout). null/assente o `available: false` ⇒ le regole correlate tacciono.
+   */
+  wazuh?: WazuhSignals | null;
 }
 
 export interface RuleDef {
@@ -217,7 +229,7 @@ export interface RuleDef {
   run: (ctx: RuleContext) => HealthFinding | null; // null = no match
 }
 
-export const ENGINE_VERSION = "0.7.0";
+export const ENGINE_VERSION = "0.8.0";
 export const SAMPLE_CAP = 50;
 
 /** Threshold for DA-A-LargePrivilegedSet. */

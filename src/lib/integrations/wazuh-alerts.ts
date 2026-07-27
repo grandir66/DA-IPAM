@@ -39,10 +39,16 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
       "authentication_failures",
       "authentication_failed",
       "win_authentication_failed",
+      "invalid_login",
       "sshd",
       "pam",
     ],
-    minLevel: 8,
+    // Soglia 5, non 8: misurato sul campo, 1.505 logon falliti su 1.506 scattano
+    // come "Logon Failure - Unknown user or bad password" a livello 5. Solo la
+    // regola di correlazione ("Multiple Windows Logon Failures") arriva a 10, e
+    // filtrare a 8 rendeva invisibile praticamente tutto il segnale. Il dedup
+    // per (agent, regola) impedisce che il volume diventi rumore.
+    minLevel: 5,
   },
   {
     id: "privileged_change",
@@ -83,6 +89,15 @@ export const EXCLUDED_GROUPS: Record<string, string> = {
 /** All groups pulled from the indexer. */
 export function selectedGroups(): string[] {
   return ALERT_CATEGORIES.flatMap((c) => c.groups);
+}
+
+/**
+ * Soglia di livello per la query: la più bassa richiesta da una qualsiasi
+ * categoria. Filtrare più in alto scarterebbe alert nell'indexer prima che le
+ * soglie per-categoria possano vederli, e il dato sarebbe perso per sempre.
+ */
+export function minSelectedLevel(): number {
+  return ALERT_CATEGORIES.reduce((min, c) => Math.min(min, c.minLevel), Number.MAX_SAFE_INTEGER);
 }
 
 /** First category whose groups intersect `groups`; null when none matches. */
@@ -174,7 +189,8 @@ export interface AlertsQuery {
 
 export function buildAlertsQuery(args: {
   since: string;
-  minLevel: number;
+  /** Default: la soglia più bassa fra le categorie selezionate. */
+  minLevel?: number;
   size: number;
   searchAfter?: unknown[];
 }): AlertsQuery {
@@ -184,7 +200,7 @@ export function buildAlertsQuery(args: {
       bool: {
         filter: [
           { range: { "@timestamp": { gte: args.since } } },
-          { range: { "rule.level": { gte: args.minLevel } } },
+          { range: { "rule.level": { gte: args.minLevel ?? minSelectedLevel() } } },
           { terms: { "rule.groups": selectedGroups() } },
         ],
       },

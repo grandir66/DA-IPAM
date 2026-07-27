@@ -149,7 +149,7 @@ export async function syncWazuhAlertsForTenant(opts?: {
   try {
     const { alerts, nextCursor } = await client.searchAlerts({
       since,
-      minLevel: opts?.minLevel ?? 8,
+      minLevel: opts?.minLevel,
       maxRows: opts?.maxRows ?? DEFAULT_MAX_ROWS,
       searchAfter: state.cursor ?? undefined,
     });

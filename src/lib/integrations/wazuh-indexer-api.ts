@@ -244,7 +244,7 @@ export class WazuhIndexerClient {
     while (out.length < maxRows) {
       const body = buildAlertsQuery({
         since: args.since,
-        minLevel: args.minLevel ?? 8,
+        minLevel: args.minLevel,
         size: Math.min(pageSize, maxRows - out.length),
         searchAfter,
       });

@@ -4,6 +4,7 @@ import {
   ALERT_CATEGORIES,
   buildAlertsQuery,
   categorizeAlert,
+  minSelectedLevel,
   dedupKey,
   normalizeAlert,
   type WazuhAlertDoc,
@@ -128,4 +129,26 @@ test("dedupKey collapses the same alert repeating on the same agent", () => {
     "hit-3",
   );
   assert.notEqual(dedupKey(a), dedupKey(other));
+});
+
+test("the query threshold is the lowest any category needs", () => {
+  // Sul campo il 99,9% dei logon falliti scatta a livello 5 ("Logon Failure -
+  // Unknown user or bad password"): filtrare a 8 nella query li perdeva tutti.
+  assert.equal(minSelectedLevel(), 5);
+  const q = buildAlertsQuery({ since: SINCE, size: 100 });
+  const lvl = q.query.bool.filter.find((f) => "range" in f && f.range["rule.level"]);
+  assert.ok(lvl && "range" in lvl);
+  assert.equal(lvl.range["rule.level"]?.gte, 5);
+});
+
+test("auth_failure captures the level-5 rule Windows actually fires", () => {
+  const cat = ALERT_CATEGORIES.find((c) => c.id === "auth_failure")!;
+  assert.ok(cat.minLevel <= 5);
+  assert.ok(cat.groups.includes("authentication_failed"));
+  assert.ok(cat.groups.includes("invalid_login"));
+});
+
+test("a graver category keeps its own higher threshold", () => {
+  const ransom = ALERT_CATEGORIES.find((c) => c.id === "ransomware")!;
+  assert.ok(ransom.minLevel >= 10);
 });

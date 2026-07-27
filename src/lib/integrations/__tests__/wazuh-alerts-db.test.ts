@@ -7,6 +7,9 @@ import {
   ensureWazuhAlertSchema,
   getAlertSyncState,
   listAlertEvents,
+  listUnnotifiedEvents,
+  markEventsNotified,
+  purgeAcknowledgedOlderThan,
   setAlertSyncState,
   upsertAlertEvent,
 } from "../wazuh-alerts-db";
@@ -174,4 +177,51 @@ test("sync state round-trips the cursor", () => {
   const s = getAlertSyncState(db);
   assert.equal(s.lastTimestamp, "2026-07-27T12:00:00.000Z");
   assert.deepEqual(s.cursor, ["2026-07-27T12:00:00.000Z", "abc"]);
+});
+
+test("new events are pending notification until marked", () => {
+  const db = freshDb();
+  upsertAlertEvent(db, alert());
+  const pending = listUnnotifiedEvents(db);
+  assert.equal(pending.length, 1);
+
+  markEventsNotified(db, [pending[0]!.id]);
+  assert.equal(listUnnotifiedEvents(db).length, 0);
+});
+
+test("an event already notified is not re-sent when it recurs", () => {
+  const db = freshDb();
+  upsertAlertEvent(db, alert());
+  markEventsNotified(db, [listUnnotifiedEvents(db)[0]!.id]);
+  // stessa coppia agent+regola: incrementa, non deve riaprire la notifica
+  upsertAlertEvent(db, alert({ "@timestamp": "2026-07-27T12:00:00.000Z" }, "hit-2"));
+  assert.equal(listUnnotifiedEvents(db).length, 0);
+});
+
+test("retention removes old acknowledged events and never open ones", () => {
+  const db = freshDb();
+  upsertAlertEvent(db, alert());
+  upsertAlertEvent(db, alert({ agent: { id: "004", name: "PC-01" } }, "hit-2"));
+
+  const rows = listAlertEvents(db, {});
+  acknowledgeAlertEvent(db, rows[0]!.id, "riccardo");
+  // invecchia artificialmente l'ack
+  db.prepare(
+    "UPDATE wazuh_alert_event SET acknowledged_at = datetime('now', '-60 days') WHERE id = ?",
+  ).run(rows[0]!.id);
+
+  const removed = purgeAcknowledgedOlderThan(db, 30);
+  assert.equal(removed, 1);
+
+  const left = listAlertEvents(db, {});
+  assert.equal(left.length, 1);
+  assert.equal(left[0]!.acknowledged, 0);
+});
+
+test("retention keeps acknowledged events that are still recent", () => {
+  const db = freshDb();
+  upsertAlertEvent(db, alert());
+  acknowledgeAlertEvent(db, listAlertEvents(db, {})[0]!.id, "riccardo");
+  assert.equal(purgeAcknowledgedOlderThan(db, 30), 0);
+  assert.equal(listAlertEvents(db, {}).length, 1);
 });

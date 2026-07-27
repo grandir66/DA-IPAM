@@ -42,6 +42,7 @@ export function ensureWazuhAlertSchema(db: Database): void {
       acknowledged INTEGER NOT NULL DEFAULT 0,
       acknowledged_at TEXT,
       acknowledged_by TEXT,
+      notified_at TEXT,
       raw_json TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -58,9 +59,22 @@ export function ensureWazuhAlertSchema(db: Database): void {
       last_timestamp TEXT,
       cursor_json TEXT,
       last_run_at TEXT,
-      last_error TEXT
+      last_error TEXT,
+      last_digest_at TEXT
     );
   `);
+
+  // Tabelle create prima dell'introduzione delle notifiche: additivo e idempotente.
+  try {
+    db.exec("ALTER TABLE wazuh_alert_event ADD COLUMN notified_at TEXT");
+  } catch {
+    /* colonna già presente */
+  }
+  try {
+    db.exec("ALTER TABLE wazuh_alert_sync_state ADD COLUMN last_digest_at TEXT");
+  } catch {
+    /* colonna già presente */
+  }
 }
 
 export interface WazuhAlertEventRow {
@@ -82,6 +96,7 @@ export interface WazuhAlertEventRow {
   acknowledged: number;
   acknowledged_at: string | null;
   acknowledged_by: string | null;
+  notified_at: string | null;
   raw_json: string | null;
   created_at: string;
 }
@@ -197,6 +212,45 @@ export function acknowledgeAlertEvent(
   return res.changes > 0;
 }
 
+/** Eventi aperti mai notificati: input sia dell'invio immediato sia del digest. */
+export function listUnnotifiedEvents(db: Database): WazuhAlertEventRow[] {
+  return db
+    .prepare(
+      `SELECT * FROM wazuh_alert_event
+        WHERE notified_at IS NULL AND acknowledged = 0
+        ORDER BY last_seen_at ASC`,
+    )
+    .all() as WazuhAlertEventRow[];
+}
+
+export function markEventsNotified(db: Database, ids: number[]): void {
+  if (ids.length === 0) return;
+  const stmt = db.prepare(
+    "UPDATE wazuh_alert_event SET notified_at = datetime('now') WHERE id = ?",
+  );
+  const run = db.transaction((list: number[]) => {
+    for (const id of list) stmt.run(id);
+  });
+  run(ids);
+}
+
+/**
+ * Retention: elimina SOLO gli eventi presi in carico più vecchi di `days`.
+ * Un evento ancora aperto non viene mai cancellato, per quanto vecchio sia:
+ * sparirebbe un problema irrisolto.
+ */
+export function purgeAcknowledgedOlderThan(db: Database, days: number): number {
+  const res = db
+    .prepare(
+      `DELETE FROM wazuh_alert_event
+        WHERE acknowledged = 1
+          AND acknowledged_at IS NOT NULL
+          AND acknowledged_at < datetime('now', ?)`,
+    )
+    .run(`-${Math.max(1, Math.floor(days))} days`);
+  return res.changes;
+}
+
 export function countOpenByCategory(db: Database): Record<string, number> {
   const rows = db
     .prepare(
@@ -213,6 +267,7 @@ export interface AlertSyncState {
   cursor: unknown[] | null;
   lastRunAt: string | null;
   lastError: string | null;
+  lastDigestAt: string | null;
 }
 
 export function getAlertSyncState(db: Database): AlertSyncState {
@@ -224,9 +279,18 @@ export function getAlertSyncState(db: Database): AlertSyncState {
         cursor_json: string | null;
         last_run_at: string | null;
         last_error: string | null;
+        last_digest_at: string | null;
       }
     | undefined;
-  if (!row) return { lastTimestamp: null, cursor: null, lastRunAt: null, lastError: null };
+  if (!row) {
+    return {
+      lastTimestamp: null,
+      cursor: null,
+      lastRunAt: null,
+      lastError: null,
+      lastDigestAt: null,
+    };
+  }
   let cursor: unknown[] | null = null;
   if (row.cursor_json) {
     try {
@@ -241,7 +305,17 @@ export function getAlertSyncState(db: Database): AlertSyncState {
     cursor,
     lastRunAt: row.last_run_at,
     lastError: row.last_error,
+    lastDigestAt: row.last_digest_at,
   };
+}
+
+/** Segna l'istante dell'ultimo digest inviato. */
+export function markDigestSent(db: Database): void {
+  db.prepare(
+    `INSERT INTO wazuh_alert_sync_state (id, last_digest_at)
+     VALUES (1, datetime('now'))
+     ON CONFLICT(id) DO UPDATE SET last_digest_at = datetime('now')`,
+  ).run();
 }
 
 export function setAlertSyncState(

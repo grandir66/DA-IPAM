@@ -173,7 +173,9 @@
    in entrambe le modalità. Il set scuro NON è un ribaltamento di quello chiaro:
    sono passi diversi delle stesse rampe, validati sulla superficie scura.      */
 :root {
-  --chart-surface: #fcfcfb;
+  /* Il distanziatore da 2px fra i segmenti DEVE essere il colore reale dietro
+     al grafico, cioe' la card dell'app: agganciato al token, non duplicato. */
+  --chart-surface: var(--card);
   --chart-grid: #e6e5e1;
   --chart-ink-muted: #52514e;
   --series-1: #2a78d6;
@@ -185,8 +187,8 @@
 }
 
 .dark {
-  --chart-surface: #1a1a19;
-  --chart-grid: #33322f;
+  --chart-surface: var(--card);
+  --chart-grid: #24405a;
   --chart-ink-muted: #c3c2b7;
   --series-1: #3987e5;
   --series-2: #d95926;

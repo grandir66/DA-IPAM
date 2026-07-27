@@ -123,7 +123,8 @@ export async function runJob(jobId: number): Promise<void> {
           ? `[Scheduler] wazuh_alerts_sync: saltato (${result.reason})`
           : `[Scheduler] wazuh_alerts_sync: ${result.fetched} alert letti, ` +
             `${result.opened} eventi aperti, ${result.updated} aggiornati, ` +
-            `${result.ignored} fuori selezione`
+            `${result.ignored} fuori selezione, ` +
+            `notifiche ${result.notifiedImmediate} immediate / ${result.notifiedDigest} in digest`
       );
       break;
     }
@@ -831,6 +832,26 @@ async function runCleanup(configStr: string): Promise<void> {
     }
   } catch (e) {
     console.warn(`[Cleanup] mac_port_entries cleanup fallito:`, e);
+  }
+
+  // Retention alert Wazuh: elimina solo gli eventi PRESI IN CARICO più vecchi
+  // della soglia. Gli eventi ancora aperti restano, per quanto vecchi siano.
+  try {
+    const { getNotificationConfig } = await import("@/lib/notifications/config");
+    const { ensureWazuhAlertSchema, purgeAcknowledgedOlderThan, tenantDb } = await import(
+      "@/lib/integrations/wazuh-alerts-db"
+    );
+    const days = getNotificationConfig().retentionDays;
+    const db = tenantDb();
+    ensureWazuhAlertSchema(db);
+    const removed = purgeAcknowledgedOlderThan(db, days);
+    if (removed > 0) {
+      console.info(
+        `[Cleanup] wazuh_alert_event: eliminati ${removed} eventi presi in carico più vecchi di ${days} giorni`,
+      );
+    }
+  } catch (e) {
+    console.warn(`[Cleanup] retention alert Wazuh fallita:`, e);
   }
 }
 

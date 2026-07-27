@@ -26,6 +26,7 @@ import { sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
+import type { CredProtocol } from "./credentials/resolve";
 
 /** Convert IPv4 string to numeric value for sorting */
 function ipToNum(ip: string): number {
@@ -3923,6 +3924,106 @@ export function setHostCredentialValidatedByKey(
     max.m + 1,
     options?.auto_detected ? 1 : 0
   );
+}
+
+/** Bridge host→device best-effort per il cross-update dei binding: FK prima, poi match IP. */
+function findDeviceIdForHostCred(hostId: number): number | null {
+  const byFk = getNetworkDeviceByHostId(hostId);
+  if (byFk) return byFk.id;
+  const host = getDb().prepare(`SELECT ip FROM hosts WHERE id = ?`).get(hostId) as { ip: string } | undefined;
+  if (!host) return null;
+  const byIp = getNetworkDeviceByHost(host.ip);
+  return byIp?.id ?? null;
+}
+
+/**
+ * Registra un fallimento di autenticazione su (host, credenziale, protocollo, porta) —
+ * resolver unico fase 1b, §7.5. Upsert idempotente: se la riga in `host_credentials`
+ * non esiste ancora la crea con fail_count=1, mai un no-op silenzioso. backoff_until =
+ * now + min(2^fail_count * 5min, 24h) col fail_count AGGIORNATO (post-incremento).
+ * validated viene invalidato incondizionatamente (§7.5). last_attempt_at/backoff_until
+ * in ISO-8601 UTC (vedi commento sullo schema in db-tenant-schema.ts). Copia identica
+ * di db-tenant.ts a parte la sorgente db (regola 12).
+ */
+export function recordCredentialFailure(
+  hostId: number,
+  credentialId: number,
+  protocol: CredProtocol,
+  port: number,
+  error: string
+): void {
+  const db = getDb();
+  const existing = db
+    .prepare(
+      `SELECT id, fail_count FROM host_credentials WHERE host_id = ? AND credential_id = ? AND protocol_type = ? AND port = ?`
+    )
+    .get(hostId, credentialId, protocol, port) as { id: number; fail_count: number } | undefined;
+
+  const newFailCount = (existing?.fail_count ?? 0) + 1;
+  const backoffMs = Math.min(2 ** newFailCount * 5 * 60 * 1000, 24 * 60 * 60 * 1000);
+  const nowIso = new Date().toISOString();
+  const backoffUntil = new Date(Date.now() + backoffMs).toISOString();
+
+  if (existing) {
+    db.prepare(
+      `UPDATE host_credentials
+       SET fail_count = ?, last_error = ?, last_attempt_at = ?, backoff_until = ?,
+           validated = 0, validated_at = NULL
+       WHERE id = ?`
+    ).run(newFailCount, error, nowIso, backoffUntil, existing.id);
+  } else {
+    const max = db.prepare(
+      `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
+    ).get(hostId) as { m: number };
+    db.prepare(
+      `INSERT INTO host_credentials
+         (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until)
+       VALUES (?, ?, ?, ?, 0, NULL, ?, 0, ?, ?, ?, ?)`
+    ).run(hostId, credentialId, protocol, port, max.m + 1, newFailCount, error, nowIso, backoffUntil);
+  }
+
+  const deviceId = findDeviceIdForHostCred(hostId);
+  if (deviceId != null) {
+    const binding = findExistingBinding(deviceId, credentialId, protocol, port);
+    if (binding) updateBindingTestStatus(binding.id, "failed", error);
+  }
+}
+
+/**
+ * Registra un'autenticazione riuscita su (host, credenziale, protocollo, porta):
+ * azzera fail_count/last_error/backoff_until e marca validated=1 (upsert, come
+ * setHostCredentialValidatedByKey). Propaga anche a device_credential_bindings se
+ * esiste un binding corrispondente. Copia identica di db-tenant.ts (regola 12).
+ */
+export function recordCredentialSuccess(
+  hostId: number,
+  credentialId: number,
+  protocol: CredProtocol,
+  port: number
+): void {
+  const db = getDb();
+  const nowIso = new Date().toISOString();
+  const max = db.prepare(
+    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
+  ).get(hostId) as { m: number };
+  db.prepare(
+    `INSERT INTO host_credentials
+       (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until)
+     VALUES (?, ?, ?, ?, 1, datetime('now'), ?, 0, 0, NULL, ?, NULL)
+     ON CONFLICT(host_id, credential_id, protocol_type, port) DO UPDATE SET
+       validated = 1,
+       validated_at = datetime('now'),
+       fail_count = 0,
+       last_error = NULL,
+       last_attempt_at = excluded.last_attempt_at,
+       backoff_until = NULL`
+  ).run(hostId, credentialId, protocol, port, max.m + 1, nowIso);
+
+  const deviceId = findDeviceIdForHostCred(hostId);
+  if (deviceId != null) {
+    const binding = findExistingBinding(deviceId, credentialId, protocol, port);
+    if (binding) updateBindingTestStatus(binding.id, "success", "Autenticazione riuscita");
+  }
 }
 
 /** Restituisce la community string decifrata per una credenziale SNMP. */

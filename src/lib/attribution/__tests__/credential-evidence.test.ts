@@ -99,6 +99,19 @@ describe("evidenceFromAuthOutcome — SSH, banner network-os", () => {
   }
 });
 
+describe("evidenceFromAuthOutcome — SSH, banner Windows (Minor 2 fix post-review)", () => {
+  it('"SSH-2.0-OpenSSH_for_Windows_8.1" → NESSUNA evidenza os=linux (meglio nessuna evidenza che una sbagliata)', () => {
+    const ev = evidenceFromAuthOutcome({ protocol: "ssh", ok: true, banner: "SSH-2.0-OpenSSH_for_Windows_8.1" });
+    assert.deepEqual(find(ev, "os"), []);
+    assert.deepEqual(ev, []);
+  });
+
+  it('variante case-insensitive "SSH-2.0-OpenSSH_for_windows_7.7" → nessuna evidenza os=linux', () => {
+    const ev = evidenceFromAuthOutcome({ protocol: "ssh", ok: true, banner: "SSH-2.0-OpenSSH_for_windows_7.7" });
+    assert.deepEqual(find(ev, "os"), []);
+  });
+});
+
 describe("evidenceFromAuthOutcome — SSH, auth rifiutata o banner ignoto", () => {
   it("auth rifiutata (servizio presente) → nessuna evidenza: troppo generico per SSH", () => {
     const ev = evidenceFromAuthOutcome({ protocol: "ssh", ok: false, banner: "SSH-2.0-OpenSSH_8.9p1 Ubuntu" });

@@ -86,7 +86,11 @@ export function evidenceFromAuthOutcome(o: AuthOutcome): EvidenceInput[] {
       ];
     }
 
-    if (LINUX_BANNER_RE.test(banner)) {
+    // Minor 2 (review post-fase1b): "SSH-2.0-OpenSSH_for_Windows_8.1" matcha
+    // LINUX_BANNER_RE (contiene "openssh") ma è un banner Windows — produrrebbe
+    // un falso os=linux. Escludere esplicitamente i banner con "windows" PRIMA
+    // del match linux: meglio nessuna evidenza che una evidenza sbagliata.
+    if (!/windows/i.test(banner) && LINUX_BANNER_RE.test(banner)) {
       return [
         { source: "ssh", phase: "credential_validate", dimension: "os", claim: "linux", confidence: 0.9, raw_value: banner },
         { source: "ssh", phase: "credential_validate", dimension: "category", claim: "compute", confidence: 0.6, raw_value: banner },

@@ -36,7 +36,7 @@ interface CategoryDto {
   labelIt: string;
 }
 
-export function NotificationsSettingsClient() {
+export function NotificationsTab() {
   const [cfg, setCfg] = useState<ConfigDto | null>(null);
   const [categories, setCategories] = useState<CategoryDto[]>([]);
   const [saving, setSaving] = useState(false);
@@ -129,17 +129,14 @@ export function NotificationsSettingsClient() {
     patch({ policy: { ...cfg.policy, immediateCategories: [...set] } });
   }
 
-  if (!cfg) return <div className="p-6 text-sm text-muted-foreground">Caricamento…</div>;
+  if (!cfg) return <div className="text-sm text-muted-foreground">Caricamento…</div>;
 
   return (
-    <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Notifiche</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Invio degli alert di sicurezza via email e webhook. Le categorie gravi
-          partono subito; tutto il resto viene raggruppato in un riepilogo periodico.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <p className="text-sm text-muted-foreground">
+        Invio degli alert di sicurezza via email e webhook. Le categorie gravi
+        partono subito; tutto il resto viene raggruppato in un riepilogo periodico.
+      </p>
 
       <Card>
         <CardHeader>

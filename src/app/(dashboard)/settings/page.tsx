@@ -48,6 +48,7 @@ import {
   Users,
   Shield,
   ArrowUpCircle,
+  Bell,
   Sparkles,
   Play,
   RefreshCw,
@@ -63,6 +64,7 @@ import { ScanConfigTab } from "@/components/settings/scan-config-tab";
 import { DeviceIdentificationTab } from "@/components/settings/device-identification-tab";
 import { ModulesTab } from "@/components/settings/modules-tab";
 import { UpdatesTab } from "@/components/settings/updates-tab";
+import { NotificationsTab } from "@/components/settings/notifications-tab";
 
 const JOB_TYPE_LABELS: Record<string, string> = {
   ping_sweep: "Scoperta rete (ICMP + Nmap quick + DNS + ARP)",
@@ -106,6 +108,7 @@ type TabKey =
   | "jobs"
   | "https"
   | "moduli"
+  | "notifiche"
   | "aggiornamenti"
   | "sistema";
 
@@ -126,6 +129,9 @@ const TAB_ALIASES: Record<string, TabKey> = {
   moduli: "moduli",
   modules: "moduli",
   features: "moduli",
+  notifiche: "notifiche",
+  notifications: "notifiche",
+  alert: "notifiche",
   aggiornamenti: "aggiornamenti",
   updates: "aggiornamenti",
   sistema: "sistema",
@@ -597,6 +603,7 @@ function SettingsPageInner() {
     { key: "jobs", label: "Job pianificati", icon: Clock },
     { key: "https", label: "HTTPS", icon: Shield },
     { key: "moduli", label: "Moduli", icon: PackageOpen },
+    { key: "notifiche", label: "Notifiche", icon: Bell },
     { key: "aggiornamenti", label: "Aggiornamenti", icon: ArrowUpCircle },
     { key: "sistema", label: "Sistema", icon: Wrench },
   ];
@@ -1118,6 +1125,8 @@ function SettingsPageInner() {
       {activeTab === "moduli" && <ModulesTab isAdmin={isAdmin} />}
 
       {/* === Tab: Aggiornamenti === */}
+      {activeTab === "notifiche" && <NotificationsTab />}
+
       {activeTab === "aggiornamenti" && <UpdatesTab />}
 
       {/* === Tab: Sistema (host credentials + wizard + manutenzione/dati) === */}

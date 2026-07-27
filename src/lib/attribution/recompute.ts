@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
-import { getActiveEvidence, recordEvidence } from "./evidence";
-import { emitEvidenceFromSignals } from "./emitters";
+import { getActiveEvidence, recordEvidence, retireStaleEvidence } from "./evidence";
+import { emitEvidenceFromSignals, RECOMPUTED_SOURCES } from "./emitters";
 import type { AttributionSignals } from "./emitters";
 import { fuseAttribution } from "./fuse";
 import type { AttributionResult } from "./fuse";
@@ -13,12 +13,20 @@ import { applyAttribution } from "./persist";
  * emesse vengono comunque scritte/aggiornate — solo l'applicazione del
  * risultato fuso viene saltata), quindi una preview seguita da un apply
  * produce lo stesso esito di un recompute diretto.
+ *
+ * Dopo recordEvidence, ritira (expires_at = now, non hard-delete) le evidenze
+ * attive delle sorgenti RECOMPUTED_SOURCES che questa chiamata NON ha ri-emesso:
+ * senza questo passo un claim che un emettitore smette di produrre (es. vendor
+ * placeholder ora filtrato) resta attivo e continua a vincere la fusione per
+ * sempre (gap trovato in produzione: 5 host bloccati sul vendor placeholder).
  */
 export function previewHostAttribution(
   dbh: Database.Database,
   signals: AttributionSignals
 ): AttributionResult {
-  recordEvidence(dbh, signals.host.id, emitEvidenceFromSignals(signals));
+  const emitted = emitEvidenceFromSignals(signals);
+  recordEvidence(dbh, signals.host.id, emitted);
+  retireStaleEvidence(dbh, signals.host.id, emitted, RECOMPUTED_SOURCES);
   return fuseAttribution(getActiveEvidence(dbh, signals.host.id), new Date().toISOString());
 }
 

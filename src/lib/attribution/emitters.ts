@@ -4,7 +4,20 @@ import { classifyDevice } from "@/lib/device-classifier";
 import { lookupSysObjectId } from "@/lib/scanner/snmp-sysobj-lookup";
 import { mapSysObjCategory } from "@/lib/attribution/sysobj-category";
 import { mapLegacyClassification } from "./taxonomy";
-import type { EvidenceInput } from "./types";
+import type { AttributionSource, EvidenceInput } from "./types";
+
+/**
+ * Sorgenti che `emitEvidenceFromSignals` ricalcola INTEGRALMENTE ad ogni chiamata
+ * (dato il set di segnali, l'insieme di evidenze emesse da queste sorgenti è
+ * deterministico e completo). Usata da `retireStaleEvidence` per capire quali
+ * evidenze attive possono essere ritirate quando l'emettitore smette di riprodurle.
+ * ESCLUSE deliberatamente: `manual` (mai automatico) e `inv_agent` (arriva da un
+ * flusso diverso, non da questo emettitore — ritirarla qui la farebbe sparire ad
+ * ogni recompute anche se l'agente è ancora presente).
+ */
+export const RECOMPUTED_SOURCES = [
+  "oui", "snmp_sysobj", "snmp_sysdescr", "nmap_os", "hostname", "ports", "ad", "wazuh", "lldp", "cdp",
+] as const satisfies readonly AttributionSource[];
 
 export interface AttributionSignals {
   host: {

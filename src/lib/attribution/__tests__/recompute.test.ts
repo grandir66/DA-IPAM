@@ -3,6 +3,7 @@ import assert from "node:assert";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
 import { recomputeHostAttribution } from "../recompute";
+import { recordEvidence } from "../evidence";
 import type { AttributionSignals } from "../emitters";
 
 let db: Database.Database;
@@ -66,5 +67,50 @@ describe("recomputeHostAttribution", () => {
     recomputeHostAttribution(db, signals(), "scan");
     const n = (db.prepare("SELECT COUNT(*) n FROM host_classification_history WHERE host_id=1").get() as { n: number }).n;
     assert.equal(n, 1);
+  });
+});
+
+// Gap ciclo di vita evidenze trovato in produzione: un emettitore che smette di produrre
+// un claim (es. vendor placeholder ora filtrato) lasciava la vecchia riga attiva a
+// vincere per sempre la fusione (5 host bloccati sul vendor placeholder). Fix:
+// retireStaleEvidence chiamata da previewHostAttribution dopo ogni recordEvidence.
+describe("ritiro evidenze non più emesse (retireStaleEvidence via recompute)", () => {
+  function vendorOnlySignals(vendor: string | null): AttributionSignals {
+    return {
+      host: { id: 1, ip: "10.0.0.1", mac: "24:5a:4c:00:00:01", vendor, hostname: null, os_info: null, open_ports: null, snmp_data: null, detection_json: null },
+      adComputer: null, wazuh: null, neighborSightings: [],
+    };
+  }
+
+  it("(a) il vendor sparisce dal segnale → la fusione torna null e la riga viene ritirata (expires_at valorizzato)", () => {
+    const r1 = recomputeHostAttribution(db, vendorOnlySignals("Ubiquiti Inc"), "scan");
+    assert.equal(r1.vendor.claim, "ubiquiti");
+    const before = db.prepare("SELECT expires_at FROM attribution_evidence WHERE host_id=1 AND source='oui' AND dimension='vendor'").get() as { expires_at: string | null };
+    assert.equal(before.expires_at, null);
+
+    // es. host.vendor tornato null, o ora è un placeholder che l'emettitore filtra
+    const r2 = recomputeHostAttribution(db, vendorOnlySignals(null), "scan");
+    assert.equal(r2.vendor.claim, null);
+    const after = db.prepare("SELECT expires_at FROM attribution_evidence WHERE host_id=1 AND source='oui' AND dimension='vendor'").get() as { expires_at: string | null };
+    assert.ok(after.expires_at, "expires_at deve essere valorizzato dopo il ritiro");
+    const hostRow = db.prepare("SELECT attr_vendor FROM hosts WHERE id=1").get() as { attr_vendor: string | null };
+    assert.equal(hostRow.attr_vendor, null, "hosts.attr_vendor deve seguire la fusione (null)");
+  });
+
+  it("(b) una ri-emissione identica successiva rianima l'evidenza: expires_at torna null, il claim torna a vincere", () => {
+    recomputeHostAttribution(db, vendorOnlySignals("Ubiquiti Inc"), "scan");
+    recomputeHostAttribution(db, vendorOnlySignals(null), "scan"); // ritira
+    const r3 = recomputeHostAttribution(db, vendorOnlySignals("Ubiquiti Inc"), "scan"); // ri-emesso
+    assert.equal(r3.vendor.claim, "ubiquiti");
+    const row = db.prepare("SELECT expires_at FROM attribution_evidence WHERE host_id=1 AND source='oui' AND dimension='vendor'").get() as { expires_at: string | null };
+    assert.equal(row.expires_at, null, "la rianimazione deve azzerare expires_at");
+  });
+
+  it("(c) un'evidenza manual non viene mai ritirata dal recompute, anche senza segnali automatici", () => {
+    recordEvidence(db, 1, [{ source: "manual", phase: "manual", dimension: "vendor", claim: "manual-vendor", confidence: 1 }]);
+    const r = recomputeHostAttribution(db, vendorOnlySignals(null), "scan"); // nessun segnale vendor automatico
+    assert.equal(r.vendor.claim, "manual-vendor", "manual deve continuare a vincere la fusione");
+    const row = db.prepare("SELECT expires_at FROM attribution_evidence WHERE host_id=1 AND source='manual'").get() as { expires_at: string | null };
+    assert.equal(row.expires_at, null, "manual non deve mai essere ritirata");
   });
 });

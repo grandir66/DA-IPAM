@@ -2,7 +2,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
-import { recordEvidence, getActiveEvidence } from "../evidence";
+import { recordEvidence, getActiveEvidence, retireStaleEvidence } from "../evidence";
 
 let db: Database.Database;
 beforeEach(() => {
@@ -55,5 +55,43 @@ describe("recordEvidence", () => {
     const manuals = getActiveEvidence(db, 1).filter((e) => e.source === "manual");
     assert.equal(manuals.length, 1);
     assert.equal(manuals[0].claim, "network.router");
+  });
+});
+
+describe("retireStaleEvidence", () => {
+  it("ritira (expires_at valorizzato) una riga attiva la cui source è ricalcolata ma il claim non è più tra gli emitted", () => {
+    recordEvidence(db, 1, [{ source: "oui", phase: "scan_icmp", dimension: "vendor", claim: "genericvendor", confidence: 0.9, raw_value: "Generic Vendor Inc" }]);
+    const n = retireStaleEvidence(db, 1, [], ["oui"]);
+    assert.equal(n, 1);
+    const row = db.prepare("SELECT expires_at FROM attribution_evidence WHERE host_id=1 AND source='oui'").get() as { expires_at: string | null };
+    assert.ok(row.expires_at, "expires_at deve essere valorizzato dal ritiro");
+    // resta in storia: superseded_by non viene toccato, getActiveEvidence continua a vederla
+    // (l'esclusione dalla FUSIONE è responsabilità di fuseAttribution via il filtro expires_at)
+    assert.equal(getActiveEvidence(db, 1).length, 1);
+  });
+  it("NON ritira se il claim è ancora presente in emitted", () => {
+    const input = { source: "oui" as const, phase: "scan_icmp" as const, dimension: "vendor" as const, claim: "ubiquiti", confidence: 0.9, raw_value: "Ubiquiti Inc" };
+    recordEvidence(db, 1, [input]);
+    const n = retireStaleEvidence(db, 1, [input], ["oui"]);
+    assert.equal(n, 0);
+    const row = db.prepare("SELECT expires_at FROM attribution_evidence WHERE host_id=1 AND source='oui'").get() as { expires_at: string | null };
+    assert.equal(row.expires_at, null);
+  });
+  it("non tocca source non incluse nella lista sources passata", () => {
+    recordEvidence(db, 1, [{ source: "hostname", phase: "scan_icmp", dimension: "category", claim: "network.access_point", confidence: 0.5 }]);
+    const n = retireStaleEvidence(db, 1, [], ["oui"]); // "hostname" non è in sources
+    assert.equal(n, 0);
+    const row = db.prepare("SELECT expires_at FROM attribution_evidence WHERE host_id=1 AND source='hostname'").get() as { expires_at: string | null };
+    assert.equal(row.expires_at, null);
+  });
+  it("non ritira MAI source='manual', anche se passata esplicitamente in sources", () => {
+    recordEvidence(db, 1, [{ source: "manual", phase: "manual", dimension: "category", claim: "network.switch", confidence: 1 }]);
+    const n = retireStaleEvidence(db, 1, [], ["manual", "oui"]);
+    assert.equal(n, 0);
+    const row = db.prepare("SELECT expires_at FROM attribution_evidence WHERE host_id=1 AND source='manual'").get() as { expires_at: string | null };
+    assert.equal(row.expires_at, null);
+  });
+  it("nessuna riga attiva per le sources indicate → 0, nessun errore", () => {
+    assert.equal(retireStaleEvidence(db, 1, [], ["oui", "wazuh"]), 0);
   });
 });

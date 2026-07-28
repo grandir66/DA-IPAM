@@ -27,6 +27,8 @@ import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
 import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
+import { lookupVendorSync } from "./scanner/mac-vendor";
+import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 
 /** Convert IPv4 string to numeric value for sorting */
 function ipToNum(ip: string): number {
@@ -2977,6 +2979,50 @@ export function getAttributionSignalsForHost(hostId: number): AttributionSignals
      ORDER BY dn.timestamp DESC LIMIT 5`
   ).all(hostId) as AttributionSignals["neighborSightings"];
   return { host, adComputer, wazuh, neighborSightings };
+}
+
+/** Facade di db-tenant.ts::refreshHostVendorsFromMac (regola 12). Vedi lì per la doc completa. */
+export function refreshHostVendorsFromMac(
+  networkId?: number
+): { examined: number; updated: number; unresolved: number } {
+  const d = getDb();
+  const rows = (
+    networkId != null
+      ? d.prepare(
+          "SELECT id, mac, vendor FROM hosts WHERE network_id = ? AND mac IS NOT NULL AND mac != ''"
+        ).all(networkId)
+      : d.prepare(
+          "SELECT id, mac, vendor FROM hosts WHERE mac IS NOT NULL AND mac != ''"
+        ).all()
+  ) as Array<{ id: number; mac: string; vendor: string | null }>;
+
+  const candidates = rows.filter(
+    (r) => !r.vendor || VENDOR_PLACEHOLDER_RE.test(r.vendor.trim())
+  );
+
+  const result = { examined: candidates.length, updated: 0, unresolved: 0 };
+  const updateStmt = d.prepare("UPDATE hosts SET vendor = ? WHERE id = ?");
+
+  const run = d.transaction((items: typeof candidates) => {
+    for (const row of items) {
+      try {
+        const resolved = lookupVendorSync(row.mac);
+        if (!resolved || VENDOR_PLACEHOLDER_RE.test(resolved.trim())) {
+          result.unresolved += 1;
+          continue;
+        }
+        if (resolved === row.vendor) continue;
+        updateStmt.run(resolved, row.id);
+        result.updated += 1;
+      } catch (err) {
+        result.unresolved += 1;
+        console.error(`[refreshHostVendorsFromMac] host ${row.id} (mac ${row.mac}) fallito:`, err instanceof Error ? err.message : String(err));
+      }
+    }
+  });
+  run(candidates);
+
+  return result;
 }
 
 export function updateHost(id: number, input: HostUpdate): Host | undefined {

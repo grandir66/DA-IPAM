@@ -18,6 +18,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { lookupVendorSync } from "./scanner/mac-vendor";
+import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 import { sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
@@ -2207,6 +2208,67 @@ export function getAttributionSignalsForHost(hostId: number): AttributionSignals
      ORDER BY dn.timestamp DESC LIMIT 5`
   ).all(hostId) as AttributionSignals["neighborSightings"];
   return { host, adComputer, wazuh, neighborSightings };
+}
+
+/**
+ * Ririsolve `hosts.vendor` dal MAC per gli host il cui vendor è assente o è
+ * ancora un placeholder scritto a scan-time da una vecchia catena di
+ * risoluzione (es. "IEEE Registration Authority" da oui-data, prima che la KB
+ * vendorizzata — 57.778 prefissi incl. MA-M/28 e MA-S/36 — fosse disponibile).
+ * Caso reale: VM 533/tenant 70791 dopo il deploy KB v0.3.236, 16 host restati
+ * bloccati sul placeholder finché non venissero riscansionati — il ricalcolo
+ * attribuzione legge `hosts.vendor` così com'è e non rifà da solo il lookup.
+ *
+ * Passo di risoluzione riusabile (non solo dal CLI): un solo lookup MAC→vendor
+ * per host, via `lookupVendorSync` (stesso ordine custom_oui → KB → oui-data
+ * usato a scan-time), scritto SOLO se il risultato è diverso ed è a sua volta
+ * un produttore reale (non un placeholder). Non tocca altri campi. Non lancia
+ * mai: un errore sul singolo host viene loggato e contato in `unresolved`,
+ * senza abortire il giro sugli altri host.
+ */
+export function refreshHostVendorsFromMac(
+  networkId?: number
+): { examined: number; updated: number; unresolved: number } {
+  const d = db();
+  const rows = (
+    networkId != null
+      ? d.prepare(
+          "SELECT id, mac, vendor FROM hosts WHERE network_id = ? AND mac IS NOT NULL AND mac != ''"
+        ).all(networkId)
+      : d.prepare(
+          "SELECT id, mac, vendor FROM hosts WHERE mac IS NOT NULL AND mac != ''"
+        ).all()
+  ) as Array<{ id: number; mac: string; vendor: string | null }>;
+
+  const candidates = rows.filter(
+    (r) => !r.vendor || VENDOR_PLACEHOLDER_RE.test(r.vendor.trim())
+  );
+
+  const result = { examined: candidates.length, updated: 0, unresolved: 0 };
+  const updateStmt = d.prepare(
+    "UPDATE hosts SET vendor = ? WHERE id = ?"
+  );
+
+  const run = d.transaction((items: typeof candidates) => {
+    for (const row of items) {
+      try {
+        const resolved = lookupVendorSync(row.mac);
+        if (!resolved || VENDOR_PLACEHOLDER_RE.test(resolved.trim())) {
+          result.unresolved += 1;
+          continue;
+        }
+        if (resolved === row.vendor) continue;
+        updateStmt.run(resolved, row.id);
+        result.updated += 1;
+      } catch (err) {
+        result.unresolved += 1;
+        console.error(`[refreshHostVendorsFromMac] host ${row.id} (mac ${row.mac}) fallito:`, err instanceof Error ? err.message : String(err));
+      }
+    }
+  });
+  run(candidates);
+
+  return result;
 }
 
 export function updateHost(id: number, input: HostUpdate): Host | undefined {

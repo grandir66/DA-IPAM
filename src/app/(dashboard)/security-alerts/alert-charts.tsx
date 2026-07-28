@@ -190,6 +190,7 @@ export function AlertsOverTime({
 }
 
 export function AlertsComposition({ categories }: { categories: CategorySlice[] }) {
+  const [hovered, setHovered] = useState<string | null>(null);
   const total = categories.reduce((s, c) => s + c.count, 0);
   if (total === 0) {
     return (
@@ -198,50 +199,99 @@ export function AlertsComposition({ categories }: { categories: CategorySlice[] 
       </p>
     );
   }
+
+  /**
+   * Etichette dirette SELETTIVE: solo sulle fette abbastanza grandi da
+   * contenerle. Scriverle su tutte produrrebbe numeri sovrapposti proprio dove
+   * le fette sono sottili, cioe' dove servono di meno.
+   */
+  const labelled = (value: number) => value / total >= 0.08;
+
   return (
-    <div className="flex flex-col items-center gap-4 md:flex-row md:items-start">
-      {/* Box quadrato a dimensione FISSA: dentro un flex, ResponsiveContainer
-          misurava male la larghezza e la ciambella usciva tagliata a spicchi. */}
-      <div className="h-[200px] w-[200px] shrink-0">
+    <div className="flex flex-col items-center gap-5 md:flex-row md:items-start">
+      <div className="relative h-[220px] w-[220px] shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-          <Pie
-            data={categories}
-            dataKey="count"
-            nameKey="labelIt"
-            innerRadius={48}
-            outerRadius={78}
-            paddingAngle={2}
-            stroke="var(--chart-surface)"
-            strokeWidth={2}
-          >
-            {categories.map((c) => (
-              <Cell key={c.id} fill={seriesColor(c.id)} />
-            ))}
-          </Pie>
-          <Tooltip
-            content={({ active, payload }) => {
-              if (!active || !payload?.length) return null;
-              const d = payload[0]!.payload as CategorySlice;
-              return (
-                <div className="rounded-md border bg-[var(--chart-surface)] px-3 py-2 text-xs shadow-md">
-                  <div className="font-medium text-foreground">{d.labelIt}</div>
-                  <div className="text-muted-foreground">
-                    {d.count} alert · {((d.count / total) * 100).toFixed(1)}%
+            <Pie
+              data={categories}
+              dataKey="count"
+              nameKey="labelIt"
+              innerRadius={58}
+              outerRadius={92}
+              paddingAngle={2}
+              stroke="var(--chart-surface)"
+              strokeWidth={2}
+              isAnimationActive={false}
+              labelLine={false}
+              // Il testo veste l'inchiostro, mai il colore della serie:
+              // l'identita' la porta la fetta accanto, non la cifra.
+              label={(props: {
+                percent?: number;
+                value?: number;
+                x?: number;
+                y?: number;
+                textAnchor?: "start" | "middle" | "end" | "inherit";
+              }) => {
+                if (!labelled(props.value ?? 0)) return <g />;
+                return (
+                  <text
+                    x={props.x}
+                    y={props.y}
+                    textAnchor={props.textAnchor}
+                    dominantBaseline="central"
+                    fill="var(--chart-ink-muted)"
+                    fontSize={12}
+                  >
+                    {`${Math.round((props.percent ?? 0) * 100)}%`}
+                  </text>
+                );
+              }}
+            >
+              {categories.map((c) => (
+                <Cell
+                  key={c.id}
+                  fill={seriesColor(c.id)}
+                  // La legenda evidenzia la sua fetta: le fette sottili sono
+                  // difficili da agganciare col puntatore.
+                  fillOpacity={hovered && hovered !== c.id ? 0.25 : 1}
+                />
+              ))}
+            </Pie>
+            <Tooltip
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null;
+                const d = payload[0]!.payload as CategorySlice;
+                return (
+                  <div className="rounded-md border bg-[var(--chart-surface)] px-3 py-2 text-xs shadow-md">
+                    <div className="font-medium text-foreground">{d.labelIt}</div>
+                    <div className="text-muted-foreground">
+                      {d.count} alert · {((d.count / total) * 100).toFixed(1)}%
+                    </div>
                   </div>
-                </div>
-              );
-            }}
-          />
+                );
+              }}
+            />
           </PieChart>
         </ResponsiveContainer>
+
+        {/* Il totale nel foro: ancora le percentuali a un numero concreto.
+            Volutamente misurato — il numero di testa resta quello dei KPI. */}
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-xl font-semibold leading-none">{compact(total)}</span>
+          <span className="mt-1 text-[11px] text-muted-foreground">alert</span>
+        </div>
       </div>
 
       {/* La legenda porta il valore accanto al colore: è il sostegno testuale
           richiesto dalle tinte a basso contrasto in modalità chiara. */}
-      <ul className="w-full flex-1 space-y-1.5 text-sm">
+      <ul className="w-full flex-1 space-y-2 text-sm">
         {categories.map((c) => (
-          <li key={c.id} className="flex items-center gap-2">
+          <li
+            key={c.id}
+            className="flex cursor-default items-center gap-2 rounded px-1 py-0.5 transition-colors hover:bg-muted/50"
+            onMouseEnter={() => setHovered(c.id)}
+            onMouseLeave={() => setHovered(null)}
+          >
             <span
               className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
               style={{ background: seriesColor(c.id) }}

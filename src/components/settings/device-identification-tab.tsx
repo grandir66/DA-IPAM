@@ -37,6 +37,7 @@ import {
   sortClassificationsByDisplayLabel,
 } from "@/lib/device-classifications";
 import { SysObjLookupTab } from "@/components/settings/sysobj-lookup-tab";
+import { MacProductMapTab } from "@/components/settings/mac-product-map-tab";
 
 /* ── Types ─────────────────────────────────────────────────── */
 
@@ -449,6 +450,11 @@ export function DeviceIdentificationTab() {
       {/* ═══ Section 3: sysObjectID Lookup ═══ */}
       <div id="sysobj-lookup">
         <SysObjLookupTab />
+      </div>
+
+      {/* ═══ Section 3b: MAC → linea di prodotto (Attribution v2 Fase 2) ═══ */}
+      <div id="mac-product-map">
+        <MacProductMapTab />
       </div>
 
       {/* ═══ Section 4: Firme riconoscimento dispositivi ═══ */}

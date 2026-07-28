@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { AttributionResult } from "./fuse";
+import { projectLegacy } from "./legacy-projection";
 
 interface CurrentAttrRow {
   attr_vendor: string | null;
@@ -13,6 +14,17 @@ interface CurrentAttrRow {
   attr_min_phase: string | null;
 }
 
+/** Colonne legacy lette nella STESSA SELECT del guard "invariato" (niente query extra):
+ * servono sia per il lock manuale sia per il confronto "il valore è cambiato davvero". */
+interface CurrentLegacyRow {
+  classification_manual: number;
+  classification: string | null;
+  inferred_device_type: string | null;
+  inferred_vendor: string | null;
+  inferred_os_family: string | null;
+  inferred_confidence: number | null;
+}
+
 /** null e undefined sono equivalenti ai fini del confronto "nessun cambiamento". */
 function norm(v: unknown): unknown {
   return v === undefined ? null : v;
@@ -20,7 +32,9 @@ function norm(v: unknown): unknown {
 
 /**
  * Scrive il risultato della fusione su hosts.attr_* e appende alla history estesa.
- * NON tocca classification/inferred_* (parallel-run, fase 1 — il legacy resta fino alla fase 4).
+ * Fase 4: proietta anche il risultato sulle colonne legacy (classification/inferred_*)
+ * via `projectLegacy`, rispettando SEMPRE il lock manuale (classification_manual=1
+ * non viene mai toccato) — vedi legacy-projection.ts per le regole di ricomposizione.
  * Il trigger riusa i valori del CHECK esistente (decisione 8 del piano).
  *
  * Salta UPDATE + INSERT history se il risultato è identico a quanto già persistito
@@ -37,9 +51,11 @@ export function applyAttribution(
 ): boolean {
   const current = dbh.prepare(
     `SELECT attr_vendor, attr_vendor_name, attr_category, attr_os_family, attr_os_name,
-            attr_confidence_vendor, attr_confidence_category, attr_confidence_os, attr_min_phase
+            attr_confidence_vendor, attr_confidence_category, attr_confidence_os, attr_min_phase,
+            classification_manual, classification,
+            inferred_device_type, inferred_vendor, inferred_os_family, inferred_confidence
      FROM hosts WHERE id = ?`
-  ).get(hostId) as CurrentAttrRow | undefined;
+  ).get(hostId) as (CurrentAttrRow & CurrentLegacyRow) | undefined;
 
   const next: CurrentAttrRow = {
     attr_vendor: result.vendor.claim,
@@ -82,6 +98,41 @@ export function applyAttribution(
       JSON.stringify(result.category.conflicts),
       result.vendor.claim, result.category.claim, result.os.claim, trigger
     );
+
+    // Proiezione legacy (fase 4): hosts.classification/inferred_* diventano una
+    // proiezione della fusione. Invariante SACRO: classification_manual=1 non va
+    // mai toccato (l'utente ha fissato la classificazione a mano). `current` è
+    // già stato letto sopra nella stessa SELECT del guard "invariato": niente
+    // query extra.
+    if (current && current.classification_manual === 0) {
+      const projection = projectLegacy(result);
+      // Regola uniforme per ogni colonna legacy: si scrive SOLO se il valore
+      // proiettato non è null E differisce da quello attuale.
+      // - Per `classification` questo implementa esplicitamente "se la proiezione
+      //   è null, non azzerare il valore preesistente" (meglio un dato vecchio
+      //   che nessun dato).
+      // - Per inferred_device_type/inferred_vendor/inferred_os_family applichiamo
+      //   la stessa cautela per simmetria (non c'è motivo di essere più
+      //   aggressivi lì che su `classification`).
+      // - inferred_confidence è un number (mai null): la condizione "non nullo"
+      //   è sempre vera, quindi per quella colonna la regola si riduce a "scrivi
+      //   se cambiata" — coerente con l'indicazione che ora è la proiezione a
+      //   possederla in via esclusiva.
+      const candidates: Array<[column: string, value: string | number | null, currentValue: string | number | null]> = [
+        ["classification", projection.classification, current.classification],
+        ["inferred_device_type", projection.inferred_device_type, current.inferred_device_type],
+        ["inferred_vendor", projection.inferred_vendor, current.inferred_vendor],
+        ["inferred_os_family", projection.inferred_os_family, current.inferred_os_family],
+        ["inferred_confidence", projection.inferred_confidence, current.inferred_confidence],
+      ];
+      const toWrite = candidates.filter(([, value, currentValue]) => value !== null && value !== currentValue);
+      if (toWrite.length > 0) {
+        const setClause = toWrite.map(([column]) => `${column} = ?`).join(", ");
+        dbh.prepare(`UPDATE hosts SET ${setClause} WHERE id = ?`).run(
+          ...toWrite.map(([, value]) => value), hostId
+        );
+      }
+    }
   })();
   return true;
 }

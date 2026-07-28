@@ -14,7 +14,9 @@ beforeEach(() => {
   db.exec(TENANT_INDEXES_SQL);
   // le colonne attr_* sono nel CREATE TABLE dello schema? No: vengono da ALTER in getTenantDb.
   // Nei test in-memory le aggiungiamo come farebbe la migrazione:
-  for (const c of ["attr_vendor TEXT","attr_vendor_name TEXT","attr_category TEXT","attr_os_family TEXT","attr_os_name TEXT","attr_confidence_vendor INTEGER","attr_confidence_category INTEGER","attr_confidence_os INTEGER","attr_min_phase TEXT","attr_at TEXT","attr_engine_version TEXT"]) {
+  // attr_*: colonne fusione v2. inferred_*: fase 4, ora scritte dalla proiezione
+  // legacy dentro applyAttribution (persist.ts) — servono anche qui in memoria.
+  for (const c of ["attr_vendor TEXT","attr_vendor_name TEXT","attr_category TEXT","attr_os_family TEXT","attr_os_name TEXT","attr_confidence_vendor INTEGER","attr_confidence_category INTEGER","attr_confidence_os INTEGER","attr_min_phase TEXT","attr_at TEXT","attr_engine_version TEXT","inferred_device_type TEXT","inferred_vendor TEXT","inferred_os_family TEXT","inferred_confidence INTEGER"]) {
     try { db.exec(`ALTER TABLE hosts ADD COLUMN ${c}`); } catch { /* già presente */ }
   }
   db.exec("INSERT INTO networks (id, name, cidr) VALUES (1, 'n', '10.0.0.0/24')");

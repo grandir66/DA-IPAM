@@ -400,6 +400,31 @@ export interface CategorySlice {
 /** Una riga per bucket temporale: { bucket, <categoria>: n, … }. */
 export type SeriesRow = { bucket: string } & Record<string, number | string>;
 
+/**
+ * Separa cio' che e' un attacco da cio' che e' rumore nostro.
+ *
+ * Le sonde di DA-IPAM e la salute della raccolta producono molto piu' volume
+ * degli attacchi veri: messe nello stesso stack facevano colonne altissime che
+ * annegavano tutto il resto. Restano contate e visibili, ma fuori dal grafico
+ * principale, che deve rispondere a "mi stanno attaccando?".
+ */
+export function splitCategories(categories: CategorySlice[]): {
+  attacks: CategorySlice[];
+  diagnostic: CategorySlice[];
+  attackTotal: number;
+  diagnosticTotal: number;
+} {
+  const attacks = categories.filter((c) => !c.diagnostic);
+  const diagnostic = categories.filter((c) => c.diagnostic);
+  const sum = (list: CategorySlice[]) => list.reduce((s, c) => s + c.count, 0);
+  return {
+    attacks,
+    diagnostic,
+    attackTotal: sum(attacks),
+    diagnosticTotal: sum(diagnostic),
+  };
+}
+
 export interface TargetedAccount {
   account: string;
   count: number;

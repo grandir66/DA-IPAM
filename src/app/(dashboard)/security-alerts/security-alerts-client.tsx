@@ -14,9 +14,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RefreshCw, Check, Siren, Pause, Play } from "lucide-react";
+import { splitCategories } from "@/lib/integrations/wazuh-alerts-stats";
 import {
   AlertsComposition,
   AlertsOverTime,
+  DiagnosticStrip,
   RankedTable,
   SYSTEM_CHOICES,
   WINDOW_CHOICES,
@@ -209,6 +211,14 @@ export function SecurityAlertsClient() {
   const windows = WINDOW_CHOICES;
   const totals = stats?.stats?.totals;
   const byCategory = stats?.stats?.byCategory ?? [];
+  // I grafici rispondono a "mi stanno attaccando?": le nostre sonde e la salute
+  // della raccolta fanno volumi che annegherebbero gli attacchi veri, quindi
+  // restano contate ma fuori dallo stack.
+  const split = splitCategories(byCategory);
+  const noAttacksNote =
+    split.diagnosticTotal > 0
+      ? `Nessun attacco nella finestra selezionata. Le ${split.diagnosticTotal} rilevazioni presenti sono attività nostre o di servizio, elencate qui sotto.`
+      : undefined;
   const series = stats?.stats?.series ?? [];
   const topAccounts = stats?.stats?.topAccounts ?? [];
   const byTarget = stats?.stats?.byTarget ?? [];
@@ -317,8 +327,12 @@ export function SecurityAlertsClient() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
           label="Alert nel periodo"
-          value={totals?.alerts ?? 0}
-          hint={windows.find((w) => w.id === windowId)?.labelIt}
+          value={split.attackTotal}
+          hint={
+            split.diagnosticTotal > 0
+              ? `${windows.find((w) => w.id === windowId)?.labelIt} · ${split.diagnosticTotal} non ostili esclusi`
+              : windows.find((w) => w.id === windowId)?.labelIt
+          }
         />
         <StatTile
           label="Eventi aperti"
@@ -337,8 +351,9 @@ export function SecurityAlertsClient() {
           <CardContent>
             <AlertsOverTime
               series={series}
-              categories={byCategory}
+              categories={split.attacks}
               interval={stats?.interval ?? "1h"}
+              emptyNote={noAttacksNote}
             />
           </CardContent>
         </Card>
@@ -348,10 +363,12 @@ export function SecurityAlertsClient() {
             <CardTitle className="text-base">Composizione</CardTitle>
           </CardHeader>
           <CardContent>
-            <AlertsComposition categories={byCategory} />
+            <AlertsComposition categories={split.attacks} emptyNote={noAttacksNote} />
           </CardContent>
         </Card>
       </div>
+
+      <DiagnosticStrip categories={split.diagnostic} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

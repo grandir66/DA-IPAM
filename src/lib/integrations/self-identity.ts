@@ -12,12 +12,25 @@
 
 import * as os from "node:os";
 import type { Database } from "better-sqlite3";
-import { getSetting } from "../db-hub";
+import { getSetting, setSetting } from "../db-hub";
 import { safeDecrypt } from "../crypto";
 import { normalizeAccount, normalizeIp, type SelfIdentity } from "./wazuh-alerts";
 
 const KEY_EXTRA_IPS = "wazuh_alerts_self_ips";
 const KEY_EXTRA_ACCOUNTS = "wazuh_alerts_self_accounts";
+
+/** Identita' dichiarate a mano: reti aziendali, cloud, collector aggiuntivi. */
+export function getDeclaredSelfIdentity(): { ips: string[]; accounts: string[] } {
+  return {
+    ips: splitList(getSetting(KEY_EXTRA_IPS)),
+    accounts: splitList(getSetting(KEY_EXTRA_ACCOUNTS)),
+  };
+}
+
+export function setDeclaredSelfIdentity(v: { ips?: string[]; accounts?: string[] }): void {
+  if (v.ips !== undefined) setSetting(KEY_EXTRA_IPS, v.ips.join(","));
+  if (v.accounts !== undefined) setSetting(KEY_EXTRA_ACCOUNTS, v.accounts.join(","));
+}
 
 function splitList(raw: string | null | undefined): string[] {
   if (!raw) return [];

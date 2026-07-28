@@ -36,9 +36,16 @@ interface CategoryDto {
   labelIt: string;
 }
 
+interface SelfDto {
+  ips: string[];
+  accounts: string[];
+}
+
 export function NotificationsTab() {
   const [cfg, setCfg] = useState<ConfigDto | null>(null);
   const [categories, setCategories] = useState<CategoryDto[]>([]);
+  const [selfIps, setSelfIps] = useState("");
+  const [selfAccounts, setSelfAccounts] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
@@ -47,11 +54,17 @@ export function NotificationsTab() {
       try {
         const res = await fetch("/api/notifications/config");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const body = (await res.json()) as { config: ConfigDto; categories: CategoryDto[] };
+        const body = (await res.json()) as {
+          config: ConfigDto;
+          categories: CategoryDto[];
+          self?: SelfDto;
+        };
         // I segreti tornano mascherati: azzero i campi così restano invariati
         // se l'utente non li riscrive.
         setCfg({ ...body.config, smtpPassword: "", webhookAuthHeader: "" });
         setCategories(body.categories);
+        setSelfIps((body.self?.ips ?? []).join(", "));
+        setSelfAccounts((body.self?.accounts ?? []).join(", "));
       } catch (e) {
         toast.error(`Errore nel caricamento: ${(e as Error).message}`);
       }
@@ -86,6 +99,8 @@ export function NotificationsTab() {
           immediateMinLevel: Number(cfg.policy.immediateMinLevel),
           digestIntervalMinutes: Number(cfg.policy.digestIntervalMinutes),
           retentionDays: Number(cfg.retentionDays),
+          selfIps: selfIps.split(/[,;\s]+/).map((v) => v.trim()).filter(Boolean),
+          selfAccounts: selfAccounts.split(/[,;\s]+/).map((v) => v.trim()).filter(Boolean),
         }),
       });
       if (!res.ok) {
@@ -337,6 +352,48 @@ export function NotificationsTab() {
                 vengono mai cancellati.
               </p>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Reti e account nostri</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Quello che parte da noi non è un attacco. Gli IP dell&apos;appliance e gli
+            account delle credenziali configurate vengono riconosciuti da soli;
+            qui si aggiunge il resto — reti aziendali, cloud, altri collector — che
+            il sistema non può dedurre. Senza questi, le nostre sonde e le nostre
+            sedi compaiono fra gli attaccanti.
+          </p>
+          <div>
+            <Label htmlFor="selfIps">IP e reti nostri</Label>
+            <Input
+              id="selfIps"
+              value={selfIps}
+              onChange={(e) => setSelfIps(e.target.value)}
+              placeholder="es. 95.230.196.128/28, 217.28.64.176/28, 51.89.15.24/29"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Indirizzi singoli o reti in notazione CIDR, separati da virgola. Una
+              rete scritta a partire da un host viene normalizzata (51.89.15.25/29
+              vale .24–.31). Reti più ampie di 1024 indirizzi vengono ignorate.
+            </p>
+          </div>
+          <div>
+            <Label htmlFor="selfAccounts">Account di servizio nostri</Label>
+            <Input
+              id="selfAccounts"
+              value={selfAccounts}
+              onChange={(e) => setSelfAccounts(e.target.value)}
+              placeholder="es. domarc, ospd-openvas, svc-scanner"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Riconosciuti in qualunque forma: &quot;DOMINIO\utente&quot; e
+              &quot;utente@dominio&quot; valgono come &quot;utente&quot;.
+            </p>
           </div>
         </CardContent>
       </Card>

@@ -12,6 +12,10 @@ import {
   setNotificationConfig,
 } from "@/lib/notifications/config";
 import { ALERT_CATEGORIES } from "@/lib/integrations/wazuh-alerts";
+import {
+  getDeclaredSelfIdentity,
+  setDeclaredSelfIdentity,
+} from "@/lib/integrations/self-identity";
 
 const BodySchema = z.object({
   enabled: z.boolean().optional(),
@@ -33,6 +37,9 @@ const BodySchema = z.object({
   immediateMinLevel: z.number().int().min(1).max(16).optional(),
   digestIntervalMinutes: z.number().int().min(5).max(1440).optional(),
   retentionDays: z.number().int().min(1).max(365).optional(),
+  /** Reti/IP nostri (anche CIDR) e account di servizio da non trattare come attacchi. */
+  selfIps: z.array(z.string().max(40)).max(200).optional(),
+  selfAccounts: z.array(z.string().max(80)).max(200).optional(),
 });
 
 export async function GET() {
@@ -41,6 +48,7 @@ export async function GET() {
   return NextResponse.json({
     config: getNotificationConfigPublic(),
     categories: ALERT_CATEGORIES.map((c) => ({ id: c.id, labelIt: c.labelIt })),
+    self: getDeclaredSelfIdentity(),
   });
 }
 
@@ -72,6 +80,10 @@ export async function POST(req: Request) {
         }
       : undefined;
 
+  if (d.selfIps !== undefined || d.selfAccounts !== undefined) {
+    setDeclaredSelfIdentity({ ips: d.selfIps, accounts: d.selfAccounts });
+  }
+
   setNotificationConfig({
     ...d,
     ...(policy
@@ -79,5 +91,8 @@ export async function POST(req: Request) {
       : {}),
   });
 
-  return NextResponse.json({ config: getNotificationConfigPublic() });
+  return NextResponse.json({
+    config: getNotificationConfigPublic(),
+    self: getDeclaredSelfIdentity(),
+  });
 }

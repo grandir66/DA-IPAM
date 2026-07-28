@@ -35,6 +35,7 @@ import {
   evidenceFromMdns,
   evidenceFromSsdp,
   evidenceFromWsd,
+  evidenceFromRedfishDetect,
 } from "@/lib/attribution/probe-evidence";
 import type { EvidenceInput } from "@/lib/attribution/types";
 import { probeHttpTls } from "./http-tls";
@@ -42,6 +43,7 @@ import { probeSmb2 } from "./smb2";
 import { probeMdns } from "./mdns";
 import { probeSsdp } from "./ssdp";
 import { probeWsd } from "./wsd";
+import { redfishDetect } from "@/lib/protocols/redfish";
 
 export interface ProbeRunResult {
   hostsProbed: number;
@@ -59,6 +61,8 @@ export interface ProbeHostInput {
 /** Porte web note su cui ha senso tentare HTTP/TLS (spec §4.5 Task 1, stesso elenco di http-tls.ts). */
 const WEB_PORTS = new Set([80, 443, 8080, 8443, 9443, 7080, 8006, 5000, 5001, 631, 9100, 8000, 8081]);
 const SMB_PORT = 445;
+/** Porte Redfish note (spec Fase 4b Task 1): 443 standard, 8443 fallback comune sui BMC. */
+const REDFISH_PORTS = [443, 8443] as const;
 
 const DEFAULT_BUDGET_MS = 60_000;
 const DEFAULT_CONCURRENCY = 8;
@@ -71,6 +75,7 @@ export interface ProbeRunDeps {
   mdns: typeof probeMdns;
   ssdp: typeof probeSsdp;
   wsd: typeof probeWsd;
+  redfishDetect: typeof redfishDetect;
   getSetting: (key: string) => string | null;
   getNetworkById: (id: number) => { probes_enabled?: number | null } | undefined;
   /** Scrive le evidenze per l'host e ritorna quante righe sono state inserite/aggiornate. */
@@ -92,6 +97,7 @@ const REAL_DEPS: ProbeRunDeps = {
   mdns: probeMdns,
   ssdp: probeSsdp,
   wsd: probeWsd,
+  redfishDetect,
   getSetting,
   getNetworkById,
   recordEvidence: realRecordEvidence,
@@ -126,6 +132,23 @@ async function probeHost(host: ProbeHostInput, deps: ProbeRunDeps): Promise<numb
         })
         .catch((e) => console.error(`[probes] http-tls ${host.ip} fallito:`, e))
     );
+  }
+
+  // Redfish (BMC): tenta le porte note in ordine (443 poi 8443), si ferma al primo
+  // service root che risponde da BMC — un secondo tentativo sulla stessa porta
+  // gia' negativa non aggiungerebbe nulla (spec Fase 4b Task 1).
+  const redfishPorts = REDFISH_PORTS.filter((p) => openPorts.has(p));
+  if (redfishPorts.length > 0) {
+    const tryRedfishPorts = async () => {
+      for (const port of redfishPorts) {
+        const result = await deps.redfishDetect(host.ip, { port, timeoutMs: PROBE_TIMEOUT_MS });
+        if (result.present) {
+          inputs.push(...evidenceFromRedfishDetect(result));
+          return;
+        }
+      }
+    };
+    tasks.push(tryRedfishPorts().catch((e) => console.error(`[probes] redfish ${host.ip} fallito:`, e)));
   }
 
   if (openPorts.has(SMB_PORT)) {

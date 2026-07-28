@@ -128,6 +128,14 @@ CREATE TABLE IF NOT EXISTS credentials (
   credential_type TEXT NOT NULL CHECK(credential_type IN ('ssh', 'snmp', 'api', 'windows', 'linux')),
   encrypted_username TEXT,
   encrypted_password TEXT,
+  -- SNMPv3 completo (Fase 4b Task 2, §7.1): niente CHECK sui protocolli (non
+  -- estendibili senza migrazione, vedi ADR pattern rebuild) — validati in
+  -- TypeScript da buildV3Options (src/lib/protocols/snmpv3.ts).
+  encrypted_auth_key TEXT,
+  auth_protocol TEXT,
+  encrypted_priv_key TEXT,
+  priv_protocol TEXT,
+  security_level TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -347,7 +355,7 @@ CREATE TABLE IF NOT EXISTS host_credentials (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
   credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
-  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api')),
+  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif')),
   port INTEGER NOT NULL,
   validated INTEGER NOT NULL DEFAULT 0,
   validated_at TEXT,
@@ -391,7 +399,7 @@ CREATE TABLE IF NOT EXISTS device_credential_bindings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
   credential_id INTEGER REFERENCES credentials(id) ON DELETE CASCADE,
-  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api')),
+  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif')),
   port INTEGER NOT NULL DEFAULT 22,
   sort_order INTEGER NOT NULL DEFAULT 0,
   inline_username TEXT,

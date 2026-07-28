@@ -930,6 +930,24 @@ export function getTenantDb(tenantCode: string): Database.Database {
     newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension)");
     newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_active ON attribution_evidence(host_id, superseded_by) WHERE superseded_by IS NULL");
 
+    // Fase 4b Task 2 — colonne SNMPv3 completo su credentials (§7.1): niente
+    // CHECK sui protocolli (validati in TS da buildV3Options), idempotente
+    // come il pattern attrCols sopra.
+    const credCols = newDb.prepare("PRAGMA table_info(credentials)").all() as Array<{ name: string }>;
+    const credV3Cols: Array<{ name: string; sql: string }> = [
+      { name: "encrypted_auth_key", sql: "ALTER TABLE credentials ADD COLUMN encrypted_auth_key TEXT" },
+      { name: "auth_protocol", sql: "ALTER TABLE credentials ADD COLUMN auth_protocol TEXT" },
+      { name: "encrypted_priv_key", sql: "ALTER TABLE credentials ADD COLUMN encrypted_priv_key TEXT" },
+      { name: "priv_protocol", sql: "ALTER TABLE credentials ADD COLUMN priv_protocol TEXT" },
+      { name: "security_level", sql: "ALTER TABLE credentials ADD COLUMN security_level TEXT" },
+    ];
+    for (const col of credV3Cols) {
+      if (!credCols.some((c) => c.name === col.name)) {
+        newDb.exec(col.sql);
+        console.info(`[db-tenant] ${tenantCode}: credentials.${col.name} aggiunto`);
+      }
+    }
+
     // Fase 1b credenziali — stato fallimenti su host_credentials (resolver unico, §7.5)
     const hostCredCols = newDb.prepare("PRAGMA table_info(host_credentials)").all() as Array<{ name: string }>;
     const hostCredNewCols: Array<{ name: string; sql: string }> = [
@@ -1188,6 +1206,90 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.warn(`[db-tenant] ${tenantCode}: migrazione networks.probes_enabled fallita:`, e);
+  }
+
+  // Migrazione runtime: host_credentials.protocol_type CHECK include 'redfish'/'onvif'
+  // (Fase 4b Task 3+4 — BMC Redfish e telecamere ONVIF ora hanno un protocol_type
+  // dedicato invece di riusare 'api', vedi task-1-report.md §Decisione da confermare).
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='host_credentials'").get() as { sql?: string } | undefined;
+    if (row?.sql && !row.sql.includes("'redfish'")) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS host_credentials_v2");
+      newDb.exec(`CREATE TABLE host_credentials_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+        credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+        protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif')),
+        port INTEGER NOT NULL,
+        validated INTEGER NOT NULL DEFAULT 0,
+        validated_at TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        auto_detected INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        fail_count INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        last_attempt_at TEXT,
+        backoff_until TEXT,
+        UNIQUE(host_id, credential_id, protocol_type, port)
+      )`);
+      newDb.exec(`INSERT INTO host_credentials_v2 (
+        id, host_id, credential_id, protocol_type, port, validated, validated_at,
+        sort_order, auto_detected, created_at, fail_count, last_error, last_attempt_at, backoff_until
+      ) SELECT
+        id, host_id, credential_id, protocol_type, port, validated, validated_at,
+        sort_order, auto_detected, created_at, fail_count, last_error, last_attempt_at, backoff_until
+      FROM host_credentials`);
+      newDb.exec("DROP TABLE host_credentials");
+      newDb.exec("ALTER TABLE host_credentials_v2 RENAME TO host_credentials");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_host_credentials_host ON host_credentials(host_id, sort_order)");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_host_credentials_validated ON host_credentials(host_id, validated)");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: host_credentials CHECK aggiornato (+ redfish/onvif)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione host_credentials protocol_type fallita:`, e);
+  }
+
+  // Migrazione runtime: device_credential_bindings.protocol_type CHECK include 'redfish'/'onvif'
+  // (stessa motivazione della migrazione host_credentials sopra).
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='device_credential_bindings'").get() as { sql?: string } | undefined;
+    if (row?.sql && !row.sql.includes("'redfish'")) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS device_credential_bindings_v2");
+      newDb.exec(`CREATE TABLE device_credential_bindings_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+        credential_id INTEGER REFERENCES credentials(id) ON DELETE CASCADE,
+        protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif')),
+        port INTEGER NOT NULL DEFAULT 22,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        inline_username TEXT,
+        inline_encrypted_password TEXT,
+        test_status TEXT NOT NULL DEFAULT 'untested' CHECK(test_status IN ('success', 'failed', 'untested')),
+        test_message TEXT,
+        tested_at TEXT,
+        auto_detected INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(device_id, credential_id, protocol_type, port)
+      )`);
+      newDb.exec(`INSERT INTO device_credential_bindings_v2 (
+        id, device_id, credential_id, protocol_type, port, sort_order, inline_username,
+        inline_encrypted_password, test_status, test_message, tested_at, auto_detected, created_at
+      ) SELECT
+        id, device_id, credential_id, protocol_type, port, sort_order, inline_username,
+        inline_encrypted_password, test_status, test_message, tested_at, auto_detected, created_at
+      FROM device_credential_bindings`);
+      newDb.exec("DROP TABLE device_credential_bindings");
+      newDb.exec("ALTER TABLE device_credential_bindings_v2 RENAME TO device_credential_bindings");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_dcb_device ON device_credential_bindings(device_id, sort_order)");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_dcb_credential ON device_credential_bindings(credential_id)");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: device_credential_bindings CHECK aggiornato (+ redfish/onvif)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione device_credential_bindings protocol_type fallita:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -2603,6 +2705,98 @@ export function getAttributionCompletenessForNetwork(networkId: number): Attribu
   return { total, level2, level1, none, suggestion };
 }
 
+export interface CredentialCoverageRow {
+  category: string;
+  hosts: number;
+  withValidCredential: number;
+  expectedProtocol: string;
+}
+
+// Fase 4b Task 4 (spec §7.6): categoria attribuita → protocollo/i pertinenti
+// per raggiungerla con credenziali. Solo le categorie con un protocollo
+// "giusto" chiaro compaiono nella vista — le altre (peripheral.*, voip.*,
+// power.*, iot.*, mobile.*, av.nvr/display/speaker) non hanno un protocollo
+// di autenticazione bersaglio in questa fase e sono escluse deliberatamente
+// (mostrare "nessun protocollo pertinente" sarebbe rumore, non un'evidenza
+// utile). compute.server/hypervisor: BMC (redfish) è alternativo a OS
+// (winrm/ssh) — qualunque delle tre soddisfa la copertura.
+const CREDENTIAL_COVERAGE_PROTOCOLS: Record<string, readonly CredProtocol[]> = {
+  network: ["snmp"],
+  "network.router": ["snmp"],
+  "network.switch": ["snmp"],
+  "network.access_point": ["snmp"],
+  "network.firewall": ["snmp"],
+  "network.controller": ["snmp"],
+  "network.modem": ["snmp"],
+  "compute.workstation": ["winrm"],
+  "compute.laptop": ["winrm"],
+  "compute.server": ["winrm", "ssh", "redfish"],
+  "compute.hypervisor": ["winrm", "ssh", "redfish"],
+  "av.camera": ["onvif"],
+  storage: ["ssh", "snmp"],
+  "storage.nas": ["ssh", "snmp"],
+  "storage.san": ["ssh", "snmp"],
+  "storage.tape": ["ssh", "snmp"],
+};
+
+/**
+ * Vista di copertura credenziali (§7.6): per ogni categoria attribuita con un
+ * protocollo pertinente noto, conta quanti host in totale e quanti hanno
+ * ALMENO una credenziale VALIDATA (`host_credentials.validated=1`) su uno dei
+ * protocolli applicabili a quella categoria (es. compute.server: winrm O ssh
+ * O redfish soddisfano la copertura). Loop bounded sul piccolo insieme fisso
+ * di categorie mappate (non per-host): non è il pattern N+1 vietato dalle
+ * regole DB, il numero di query è costante indipendentemente dal numero di
+ * host. Non lancia mai (coerente col resto del modulo attribuzione): un
+ * errore su una singola categoria la esclude dal risultato invece di far
+ * fallire l'intera vista.
+ */
+export function getCredentialCoverageByCategory(): CredentialCoverageRow[] {
+  const d = db();
+  let categoryRows: Array<{ category: string; hosts: number }>;
+  try {
+    categoryRows = d
+      .prepare(
+        `SELECT attr_category AS category, COUNT(*) AS hosts
+         FROM hosts
+         WHERE attr_category IS NOT NULL AND attr_category != 'unknown'
+         GROUP BY attr_category`
+      )
+      .all() as Array<{ category: string; hosts: number }>;
+  } catch (e) {
+    console.error("[db-tenant] getCredentialCoverageByCategory: query categorie fallita:", e);
+    return [];
+  }
+
+  const out: CredentialCoverageRow[] = [];
+  for (const row of categoryRows) {
+    const protocols = CREDENTIAL_COVERAGE_PROTOCOLS[row.category];
+    if (!protocols || protocols.length === 0) continue;
+    try {
+      const placeholders = protocols.map(() => "?").join(",");
+      const withValid = d
+        .prepare(
+          `SELECT COUNT(*) AS n FROM hosts h
+           WHERE h.attr_category = ? AND EXISTS (
+             SELECT 1 FROM host_credentials hc
+             WHERE hc.host_id = h.id AND hc.validated = 1 AND hc.protocol_type IN (${placeholders})
+           )`
+        )
+        .get(row.category, ...protocols) as { n: number };
+      out.push({
+        category: row.category,
+        hosts: row.hosts,
+        withValidCredential: withValid.n ?? 0,
+        expectedProtocol: protocols.join("/"),
+      });
+    } catch (e) {
+      console.error(`[db-tenant] getCredentialCoverageByCategory: query copertura fallita per ${row.category}:`, e);
+    }
+  }
+
+  return out.sort((a, b) => a.category.localeCompare(b.category));
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // NETWORK DEVICES
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2980,24 +3174,60 @@ export function getCredentialById(id: number): Credential | undefined {
   return db().prepare("SELECT * FROM credentials WHERE id = ?").get(id) as Credential | undefined;
 }
 
-export function createCredential(input: CredentialInput & { encrypted_username?: string | null; encrypted_password?: string | null }): Credential {
+export function createCredential(
+  input: CredentialInput & {
+    encrypted_username?: string | null;
+    encrypted_password?: string | null;
+    encrypted_auth_key?: string | null;
+    auth_protocol?: string | null;
+    encrypted_priv_key?: string | null;
+    priv_protocol?: string | null;
+    security_level?: string | null;
+  }
+): Credential {
   const stmt = db().prepare(
-    `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password)
-     VALUES (?, ?, ?, ?)`
+    `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password, encrypted_auth_key, auth_protocol, encrypted_priv_key, priv_protocol, security_level)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name,
     input.credential_type,
     input.encrypted_username ?? null,
-    input.encrypted_password ?? null
+    input.encrypted_password ?? null,
+    input.encrypted_auth_key ?? null,
+    input.auth_protocol ?? null,
+    input.encrypted_priv_key ?? null,
+    input.priv_protocol ?? null,
+    input.security_level ?? null
   );
   return db().prepare("SELECT * FROM credentials WHERE id = ?").get(result.lastInsertRowid) as Credential;
 }
 
-export function updateCredential(id: number, input: Partial<CredentialInput> & { encrypted_username?: string | null; encrypted_password?: string | null }): Credential | undefined {
+export function updateCredential(
+  id: number,
+  input: Partial<CredentialInput> & {
+    encrypted_username?: string | null;
+    encrypted_password?: string | null;
+    encrypted_auth_key?: string | null;
+    auth_protocol?: string | null;
+    encrypted_priv_key?: string | null;
+    priv_protocol?: string | null;
+    security_level?: string | null;
+  }
+): Credential | undefined {
   const fields: string[] = [];
   const values: unknown[] = [];
-  const keys = ["name", "credential_type", "encrypted_username", "encrypted_password"] as const;
+  const keys = [
+    "name",
+    "credential_type",
+    "encrypted_username",
+    "encrypted_password",
+    "encrypted_auth_key",
+    "auth_protocol",
+    "encrypted_priv_key",
+    "priv_protocol",
+    "security_level",
+  ] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);
@@ -3048,9 +3278,15 @@ export function getHostLinuxCredentials(): { username: string; password: string 
   return null;
 }
 
+/**
+ * Username/password decifrati se la credenziale esiste ed è del tipo atteso
+ * (Windows/Linux/API — "api" riusato anche per Redfish/BMC, Fase 4b Task 1:
+ * niente tipo dedicato finché il CHECK di host_credentials/device_credential_bindings
+ * non viene migrato, vedi Task 4).
+ */
 export function getCredentialLoginPair(
   credentialId: number,
-  expectedType: "windows" | "linux"
+  expectedType: "windows" | "linux" | "api"
 ): { username: string; password: string } | null {
   const cred = getCredentialById(credentialId);
   if (!cred) return null;
@@ -3411,7 +3647,7 @@ export interface HostCredentialRow {
   id: number;
   host_id: number;
   credential_id: number;
-  protocol_type: "ssh" | "snmp" | "winrm" | "api";
+  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
   port: number;
   validated: number;
   validated_at: string | null;
@@ -3527,7 +3763,7 @@ export function getAllMultihomedLinks(): Map<number, { group_id: string; match_t
 export function addHostCredential(
   hostId: number,
   credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm" | "api",
+  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
   port: number,
   options?: { validated?: boolean; auto_detected?: boolean }
 ): void {
@@ -3578,7 +3814,7 @@ export function setHostCredentialValidated(id: number, validated: boolean): void
 export function setHostCredentialValidatedByKey(
   hostId: number,
   credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm" | "api",
+  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
   port: number,
   options?: { auto_detected?: boolean }
 ): void {
@@ -4248,7 +4484,7 @@ export interface DeviceCredentialBinding {
   id: number;
   device_id: number;
   credential_id: number | null;
-  protocol_type: "ssh" | "snmp" | "winrm" | "api";
+  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
   port: number;
   sort_order: number;
   inline_username: string | null;
@@ -6458,7 +6694,7 @@ export function getSoftwareScansForDevice(
  */
 export function getBestCredentialBindingForDevice(
   deviceId: number,
-  protocolType: "winrm" | "ssh" | "snmp" | "api"
+  protocolType: "winrm" | "ssh" | "snmp" | "api" | "redfish" | "onvif"
 ): { credential_id: number; port: number; test_status: string; auto_detected: number } | null {
   const row = db()
     .prepare(

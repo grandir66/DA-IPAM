@@ -202,6 +202,12 @@ export interface Credential {
   credential_type: "ssh" | "snmp" | "api" | "windows" | "linux";
   encrypted_username: string | null;
   encrypted_password: string | null;
+  /** SNMPv3 (Fase 4b Task 2, §7.1) — mai restituiti dalle GET, write-only. */
+  encrypted_auth_key: string | null;
+  auth_protocol: string | null;
+  encrypted_priv_key: string | null;
+  priv_protocol: string | null;
+  security_level: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -722,7 +728,7 @@ export interface HostDetail extends Host {
     id: number;
     host_id: number;
     credential_id: number;
-    protocol_type: "ssh" | "snmp" | "winrm" | "api";
+    protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
     port: number;
     validated: number;
     validated_at: string | null;
@@ -840,6 +846,12 @@ export interface CredentialInput {
   credential_type: "ssh" | "snmp" | "api" | "windows" | "linux";
   username?: string;
   password?: string;
+  /** SNMPv3 (Fase 4b Task 2) — plaintext lato validazione, cifrati prima di createCredential/updateCredential. */
+  security_level?: string | null;
+  auth_protocol?: string | null;
+  auth_key?: string;
+  priv_protocol?: string | null;
+  priv_key?: string;
 }
 
 export interface ScheduledJobInput {

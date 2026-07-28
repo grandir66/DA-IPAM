@@ -31,7 +31,7 @@ const BulkHostUpdateSchema = z.object({
   ip_assignment: z.enum(["dynamic", "static", "reserved", "unknown"]).optional(),
   // Credenziali da assegnare a tutti gli host selezionati
   credential_id: z.coerce.number().int().positive().optional().nullable(),
-  credential_protocol: z.enum(["ssh", "snmp", "winrm", "api"]).optional(),
+  credential_protocol: z.enum(["ssh", "snmp", "winrm", "api", "redfish", "onvif"]).optional(),
   credential_port: z.coerce.number().int().min(1).max(65535).optional(),
   // network_devices (applicati a quelli linkati via IP=hosts.ip)
   device_type: deviceTypeSchema.optional(),
@@ -137,7 +137,7 @@ export async function PATCH(request: Request) {
             const host = getHostById(id);
             if (host) {
               const device = getNetworkDeviceByIp(host.ip);
-              if (device && (proto === "ssh" || proto === "snmp" || proto === "winrm" || proto === "api")) {
+              if (device && (proto === "ssh" || proto === "snmp" || proto === "winrm" || proto === "api" || proto === "redfish" || proto === "onvif")) {
                 const dcb = getDeviceCredentialBindings(device.id);
                 const dcbExists = dcb.some(
                   (b) => b.credential_id === credential_id && b.protocol_type === proto && b.port === port,

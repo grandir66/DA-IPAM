@@ -6,6 +6,7 @@ import type { Smb2Finding } from "@/lib/scanner/probes/smb2";
 import type { MdnsFinding } from "@/lib/scanner/probes/mdns";
 import type { SsdpFinding } from "@/lib/scanner/probes/ssdp";
 import type { WsdFinding } from "@/lib/scanner/probes/wsd";
+import type { RedfishDetectResult } from "@/lib/protocols/redfish";
 import { isValidCategory } from "./taxonomy";
 import { vendorSlug } from "./emitters";
 import type { EvidenceInput } from "./types";
@@ -579,4 +580,32 @@ export function evidenceFromWsd(f: WsdFinding): EvidenceInput[] {
   }
 
   return dedupeAndValidate(out);
+}
+
+// ---------------------------------------------------------------------------
+// Redfish detect (Fase 4b Task 1) — rilevazione BMC senza credenziali, aggancio
+// ai probe passivi della Fase 3 (host con 443/8443 aperte). La conferma piena
+// con credenziali (`redfishEvidence` in src/lib/protocols/redfish.ts, fase
+// credential_validate, 0.95 autoritativa) resta separata: qui e' solo un
+// segnale debole, coerente con lo stesso pattern degli altri probe passivi.
+// ---------------------------------------------------------------------------
+
+const REDFISH_DETECT_CATEGORY_CONFIDENCE = 0.9;
+
+/**
+ * Da un `RedfishDetectResult` (GET anonimo su `/redfish/v1/` riuscito): un BMC
+ * che risponde e' per definizione un server -> `category=compute.server` anche
+ * senza credenziali. Nessuna evidenza vendor qui: il vendor confermato via
+ * credenziali arriva da `redfishEvidence` a confidence piu' alta; `vendorHint`
+ * resta solo nel `raw_value` come traccia diagnostica.
+ */
+export function evidenceFromRedfishDetect(f: RedfishDetectResult): EvidenceInput[] {
+  if (!f.present) return [];
+  return [
+    {
+      source: "redfish", phase: "scan_naabu", dimension: "category",
+      claim: "compute.server", confidence: REDFISH_DETECT_CATEGORY_CONFIDENCE,
+      raw_value: f.vendorHint, expires_at: expiresAt(),
+    },
+  ];
 }

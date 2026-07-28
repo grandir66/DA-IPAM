@@ -65,6 +65,7 @@ import {
   getMultihomedStatus,
   recordCredentialFailure,
   recordCredentialSuccess,
+  getCredentialById,
 } from "@/lib/db";
 import { resolveCredentialsFor } from "@/lib/credentials/resolve";
 import type { CredProtocol } from "@/lib/credentials/resolve";
@@ -73,6 +74,9 @@ import { evidenceFromAuthOutcome } from "@/lib/attribution/credential-evidence";
 import type { AuthOutcome } from "@/lib/attribution/credential-evidence";
 import { recordEvidence } from "@/lib/attribution/evidence";
 import { recomputeAttributionSafe } from "@/lib/attribution/recompute";
+import { redfishDetect, redfishValidate, redfishFetchInfo, redfishEvidence } from "@/lib/protocols/redfish";
+import { snmpValidateV3 } from "@/lib/protocols/snmpv3";
+import { onvifGetDeviceInformation, onvifEvidence } from "@/lib/protocols/onvif";
 import type { ScanProgress, DiscoveryResult, DeviceFingerprintSnapshot } from "@/types";
 import type { DnsResolution } from "./dns";
 
@@ -142,7 +146,7 @@ export type DiscoverNetworkOptions = {
 function autoBindCredentialToDevice(
   hostIp: string,
   credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm",
+  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
   port: number,
   hostId?: number | null
 ): void {
@@ -2347,6 +2351,44 @@ async function runDiscovery(
 
         if (credType === "snmp" && !validatedProtos.has("snmp")) {
           if (!gateCredential("snmp", credId, credType, 161)) continue;
+
+          // Fase 4b Task 2 (§7.1/§7.4): credenziali con security_level
+          // impostato (noAuthNoPriv/authNoPriv/authPriv) sono SNMPv3 vero —
+          // niente community string, sessione dedicata via createV3Session.
+          // Le credenziali v2c legacy (security_level assente/NULL) restano
+          // sul percorso community esistente sotto. Stesso gate anti-lockout
+          // (`gateCredential` sopra) e stessa persistenza esito di ogni altro
+          // protocollo — nessun bypass del budget di run.
+          const credRow = getCredentialById(credId);
+          if (credRow?.security_level) {
+            try {
+              const v3 = await snmpValidateV3(ip, credId, { port: 161 });
+              if (v3.ok) {
+                recordCredentialSuccess(host.id, credId, "snmp", 161);
+                autoBindCredentialToDevice(ip, credId, "snmp", 161, host.id);
+                runBudget.recordSuccess(credId);
+                log(`✓ ${ip}:161 SNMPv3 cred#${credId} (${nc.credential_name})`);
+                validated++;
+                validatedProtos.add("snmp");
+                // Nessuna evidenza aggiuntiva qui: sysObjectID/sysDescr restano
+                // emessi da emitEvidenceFromSignals sui dati persistiti (Task 4) —
+                // stesso motivo del percorso v2c sotto, snmpValidateV3 fa solo il
+                // test di autenticazione, non il fingerprint completo.
+              } else {
+                const msg = v3.error ?? "autenticazione SNMPv3 non riuscita";
+                recordCredentialFailure(host.id, credId, "snmp", 161, msg.slice(0, 500));
+                runBudget.recordFailure(credId);
+                log(`✗ ${ip}:161 SNMPv3 cred#${credId}: ${msg.slice(0, 160)}`);
+              }
+            } catch (e) {
+              const msg = (e as Error).message ?? String(e);
+              recordCredentialFailure(host.id, credId, "snmp", 161, msg.slice(0, 500));
+              runBudget.recordFailure(credId);
+              log(`✗ ${ip}:161 SNMPv3 cred#${credId}: ${msg.slice(0, 60)}`);
+            }
+            continue;
+          }
+
           const com = getCredentialCommunityString(credId);
           if (!com) continue;
           try {
@@ -2410,9 +2452,109 @@ async function runDiscovery(
           }
         }
 
-        // API: nessun test di autenticazione reale in questa fase (§7.4 fuori
-        // scope) — registriamo il binding come NON validato con motivo esplicito,
-        // mai più un "validated:false" muto (§Task3).
+        // API: nessun test di autenticazione generico in questa fase (§7.4 fuori
+        // scope) — TRANNE Redfish (BMC): se il service root anonimo
+        // (`redfishDetect`) conferma un BMC su 443/8443, tentiamo l'autenticazione
+        // vera. Fase 4b Task 4: `protocol_type` dedicato "redfish" (CHECK esteso
+        // via migrazione rebuild, vedi db-tenant.ts) — non più "api" come nel
+        // Task 1 originale, ora che il tipo esiste. La credenziale sottostante
+        // resta `credential_type='api'` (semplice coppia user/pass, vedi
+        // resolve.ts): il detect anonimo PRIMA dell'auth evita comunque lo sweep
+        // (Global Constraints "nessuno sweep") anche con protocol_type dedicato.
+        if (credType === "api" && openPorts.some((p) => [443, 8443].includes(p.port)) && !validatedProtos.has("redfish")) {
+          const apiPort = openPorts.find((p) => [443, 8443].includes(p.port))!.port;
+
+          const detected = await redfishDetect(ip, { port: apiPort, timeoutMs: 3000 }).catch(
+            () => ({ present: false, vendorHint: null })
+          );
+          if (detected.present) {
+            if (!gateCredential("redfish", credId, credType, apiPort)) continue;
+            const creds = getCredentialLoginPair(credId, "api");
+            if (creds) {
+              const result = await redfishValidate(ip, creds.username, creds.password, { port: apiPort }).catch(
+                (e) => ({ ok: false, error: (e as Error).message ?? String(e) })
+              );
+              if (result.ok) {
+                recordCredentialSuccess(host.id, credId, "redfish", apiPort);
+                autoBindCredentialToDevice(ip, credId, "redfish", apiPort, host.id);
+                runBudget.recordSuccess(credId);
+                log(`✓ ${ip}:${apiPort} Redfish (BMC) cred#${credId} (${nc.credential_name})`);
+                validated++;
+                validatedProtos.add("redfish");
+                const infoResult = await redfishFetchInfo(ip, creds.username, creds.password, { port: apiPort }).catch(
+                  () => null
+                );
+                if (infoResult) {
+                  try {
+                    recordEvidence(getDb(), host.id, redfishEvidence(infoResult));
+                    recomputeAttributionSafe(host.id, "scan");
+                  } catch (e) {
+                    log(`⚠ evidenza Redfish non registrata per host ${host.id}: ${(e as Error).message ?? e}`);
+                  }
+                }
+              } else {
+                const msg = result.error ?? "credenziali non valide";
+                recordCredentialFailure(host.id, credId, "redfish", apiPort, msg.slice(0, 500));
+                runBudget.recordFailure(credId);
+                log(`✗ ${ip}:${apiPort} Redfish (BMC) cred#${credId}: ${msg.slice(0, 160)}`);
+              }
+              continue; // esito reale (successo o fallimento) già registrato: non serve il fallback "non testato"
+            }
+          }
+        }
+
+        // ONVIF (telecamere), Fase 4b Task 3+4: a differenza di Redfish non
+        // esiste un pre-check anonimo affidabile — dato dal campo 2026-07-28,
+        // 13 telecamere Dahua reali rispondono VUOTO a `GetDeviceInformation`
+        // anonimo, serve WS-Security fin dal primo tentativo. Per non tentare
+        // un'autenticazione alla cieca contro ogni host con porta 80 aperta
+        // (Global Constraints "nessuno sweep"), il tentativo è gated su un
+        // indizio già presente PRIMA di questo scan: classificazione
+        // "telecamera" (fingerprint/OUI, vedi device-fingerprint-classification.ts)
+        // oppure porta 5000 aperta insieme alla 80 (firma tipica NVR/IP-cam
+        // osservata sul campo, es. Dahua). `onvifGetDeviceInformation` prova
+        // 80→8000→8080 internamente (fallback solo se 80 non risponde).
+        const hasCameraIndicator =
+          (host.classification ?? "").includes("telecamera") || openPorts.some((p) => p.port === 5000);
+        if (
+          credType === "api"
+          && hasCameraIndicator
+          && openPorts.some((p) => [80, 8000, 8080].includes(p.port))
+          && !validatedProtos.has("onvif")
+        ) {
+          const onvifPort = openPorts.find((p) => [80, 8000, 8080].includes(p.port))!.port;
+          if (!gateCredential("onvif", credId, credType, onvifPort)) continue;
+          const creds = getCredentialLoginPair(credId, "api");
+          if (creds) {
+            const info = await onvifGetDeviceInformation(ip, creds.username, creds.password, { timeoutMs: 3000 }).catch(
+              () => null
+            );
+            if (info) {
+              recordCredentialSuccess(host.id, credId, "onvif", onvifPort);
+              autoBindCredentialToDevice(ip, credId, "onvif", onvifPort, host.id);
+              runBudget.recordSuccess(credId);
+              log(`✓ ${ip}:${onvifPort} ONVIF cred#${credId} (${nc.credential_name})`);
+              validated++;
+              validatedProtos.add("onvif");
+              try {
+                recordEvidence(getDb(), host.id, onvifEvidence(info));
+                recomputeAttributionSafe(host.id, "scan");
+              } catch (e) {
+                log(`⚠ evidenza ONVIF non registrata per host ${host.id}: ${(e as Error).message ?? e}`);
+              }
+            } else {
+              const msg = "nessuna risposta ONVIF valida (credenziali non valide o servizio assente)";
+              recordCredentialFailure(host.id, credId, "onvif", onvifPort, msg);
+              runBudget.recordFailure(credId);
+              log(`✗ ${ip}:${onvifPort} ONVIF cred#${credId}: ${msg}`);
+            }
+            continue; // esito reale (successo o fallimento) già registrato: non serve il fallback "non testato"
+          }
+        }
+
+        // API generica (o Redfish/ONVIF non rilevati/credenziale non compatibile):
+        // nessun test di autenticazione disponibile — registriamo il binding come
+        // NON validato con motivo esplicito, mai più un "validated:false" muto (§Task3).
         if (credType === "api" && openPorts.some((p) => [80, 443, 8080, 8443].includes(p.port))) {
           const apiPort = openPorts.find((p) => [80, 443, 8080, 8443].includes(p.port))!.port;
           if (!gateCredential("api", credId, credType, apiPort)) continue;

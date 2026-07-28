@@ -20,7 +20,13 @@
  */
 import type Database from "better-sqlite3";
 
-export type CredProtocol = "ssh" | "snmp" | "winrm" | "api";
+// Fase 4b Task 4: 'redfish' (BMC iLO/iDRAC/XClarity) e 'onvif' (telecamere) sono
+// protocolli dedicati (protocol_type su host_credentials/device_credential_bindings,
+// CHECK esteso in db-tenant.ts/db.ts — vedi migrazione rebuild). La credenziale
+// sottostante (`credentials.credential_type`) resta 'api' per entrambi: sono
+// semplici coppie username/password, nessuna colonna dedicata necessaria (stessa
+// scelta già presa per Redfish nel Task 1, vedi task-1-report.md).
+export type CredProtocol = "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
 
 export interface ResolveTarget {
   hostId?: number;
@@ -59,6 +65,8 @@ const DEFAULT_PORTS: Record<CredProtocol, number> = {
   snmp: 161,
   winrm: 5985,
   api: 443,
+  redfish: 443,
+  onvif: 80,
 };
 
 /** credential_type ammessi in `credentials`/`network_credentials` per protocollo. */
@@ -71,11 +79,13 @@ function credentialTypesForProtocol(protocol: CredProtocol): string[] {
     case "snmp":
       return ["snmp"];
     case "api":
+    case "redfish":
+    case "onvif":
       return ["api"];
   }
 }
 
-/** role legacy (network_host_credentials/host_detect_credential) per protocollo. 'api' non ha ruolo legacy. */
+/** role legacy (network_host_credentials/host_detect_credential) per protocollo. 'api'/'redfish'/'onvif' non hanno ruolo legacy. */
 function legacyRolesForProtocol(protocol: CredProtocol): Array<"windows" | "linux" | "ssh" | "snmp"> {
   switch (protocol) {
     case "ssh":
@@ -85,6 +95,8 @@ function legacyRolesForProtocol(protocol: CredProtocol): Array<"windows" | "linu
     case "snmp":
       return ["snmp"];
     case "api":
+    case "redfish":
+    case "onvif":
       return [];
   }
 }

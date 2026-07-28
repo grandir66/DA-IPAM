@@ -40,7 +40,7 @@ export type AttributionSource =
   | "http_banner" | "tls_cert" | "snmp_sysobj" | "snmp_sysdescr"
   | "lldp" | "cdp" | "mdns" | "ssdp" | "wsd" | "netbios" | "smb"
   | "nmap_os" | "nmap_service" | "ad" | "wazuh" | "inv_agent"
-  | "ssh" | "winrm" | "fingerbank" | "ai" | "manual";
+  | "ssh" | "winrm" | "fingerbank" | "ai" | "manual" | "redfish" | "onvif";
 
 export interface AttributionEvidenceRow {
   id: number;

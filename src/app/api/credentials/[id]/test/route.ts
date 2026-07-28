@@ -11,7 +11,7 @@ const TEST_TIMEOUT_MS = 25000;
 function persistValidatedBinding(
   ip: string,
   credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm" | "api",
+  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
   port: number
 ): void {
   try {

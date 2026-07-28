@@ -38,6 +38,7 @@ import {
 } from "@/lib/device-classifications";
 import { SysObjLookupTab } from "@/components/settings/sysobj-lookup-tab";
 import { MacProductMapTab } from "@/components/settings/mac-product-map-tab";
+import { CredentialCoverageTab } from "@/components/settings/credential-coverage-tab";
 
 /* ── Types ─────────────────────────────────────────────────── */
 
@@ -455,6 +456,11 @@ export function DeviceIdentificationTab() {
       {/* ═══ Section 3b: MAC → linea di prodotto (Attribution v2 Fase 2) ═══ */}
       <div id="mac-product-map">
         <MacProductMapTab />
+      </div>
+
+      {/* ═══ Section 3c: Copertura credenziali per categoria (Attribution v2 Fase 4b) ═══ */}
+      <div id="credential-coverage">
+        <CredentialCoverageTab />
       </div>
 
       {/* ═══ Section 4: Firme riconoscimento dispositivi ═══ */}

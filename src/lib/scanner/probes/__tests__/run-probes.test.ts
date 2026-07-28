@@ -11,6 +11,7 @@ function baseDeps(overrides?: Partial<ProbeRunDeps>): ProbeRunDeps {
     mdns: async () => null,
     ssdp: async () => null,
     wsd: async () => null,
+    redfishDetect: async () => ({ present: false, vendorHint: null }),
     getSetting: () => null,
     getNetworkById: () => ({ probes_enabled: 1 }),
     recordEvidence: () => 0,
@@ -169,5 +170,58 @@ describe("runAttributionProbes — scrittura evidenze", () => {
     assert.equal(r.hostsProbed, 1);
     assert.equal(recordCalls.length, 1);
     assert.ok(recordCalls[0].some((i) => i.dimension === "os" && i.claim === "windows"));
+  });
+});
+
+describe("runAttributionProbes — Redfish detect (Fase 4b Task 1)", () => {
+  it("host con 443 aperta e BMC presente → evidenza category compute.server 0.9", async () => {
+    const recordCalls: EvidenceInput[][] = [];
+    const deps = baseDeps({
+      redfishDetect: async (_ip, opts) => (opts?.port === 443 ? { present: true, vendorHint: "Hpe" } : { present: false, vendorHint: null }),
+      recordEvidence: (_hostId, inputs) => { recordCalls.push(inputs); return inputs.length; },
+    });
+    const r = await runAttributionProbes(1, [host(1, [443])], { deps });
+    assert.equal(r.hostsProbed, 1);
+    assert.equal(recordCalls.length, 1);
+    const ev = recordCalls[0].find((i) => i.source === "redfish");
+    assert.ok(ev);
+    assert.equal(ev.claim, "compute.server");
+    assert.equal(ev.confidence, 0.9);
+    assert.equal(ev.raw_value, "Hpe");
+  });
+
+  it("443 negativo → fallback a 8443", async () => {
+    const calls: number[] = [];
+    const deps = baseDeps({
+      redfishDetect: async (_ip, opts) => {
+        calls.push(opts?.port ?? 0);
+        return opts?.port === 8443 ? { present: true, vendorHint: null } : { present: false, vendorHint: null };
+      },
+    });
+    const r = await runAttributionProbes(1, [host(1, [443, 8443])], { deps });
+    assert.deepEqual(calls, [443, 8443]);
+    assert.equal(r.hostsProbed, 1);
+  });
+
+  it("nessuna porta Redfish aperta → redfishDetect non viene chiamato", async () => {
+    let called = false;
+    const deps = baseDeps({ redfishDetect: async () => { called = true; return { present: false, vendorHint: null }; } });
+    await runAttributionProbes(1, [host(1, [80])], { deps });
+    assert.equal(called, false);
+  });
+
+  it("redfishDetect che rigetta la Promise non impedisce agli altri probe di scrivere evidenza", async () => {
+    const recordCalls: EvidenceInput[][] = [];
+    const deps = baseDeps({
+      redfishDetect: async () => { throw new Error("timeout"); },
+      httpTls: async () => [
+        { port: 443, scheme: "https" as const, server: "MikroTik RouterOS", title: null, realm: null, location: null, tlsSubjectCn: null, tlsSan: [], tlsIssuer: null },
+      ],
+      recordEvidence: (_hostId, inputs) => { recordCalls.push(inputs); return inputs.length; },
+    });
+    const r = await runAttributionProbes(1, [host(1, [443])], { deps });
+    assert.equal(r.hostsProbed, 1);
+    assert.equal(recordCalls.length, 1);
+    assert.ok(recordCalls[0].some((i) => i.dimension === "vendor" && i.claim === "mikrotik"));
   });
 });

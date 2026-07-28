@@ -125,12 +125,6 @@ export function AttributionPreviewDialog({ open, onOpenChange, networkId, onAppl
         return;
       }
       toast.success((data as { message?: string }).message || "Attribuzione applicata");
-      // transitorio fino a Fase 4: allinea la classificazione legacy visibile in tabella
-      await fetch(`/api/networks/${networkId}/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      }).catch(() => {});
       onApplied?.();
       onOpenChange(false);
     } catch {

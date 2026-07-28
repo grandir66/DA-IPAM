@@ -5,6 +5,7 @@ import { resolveDataDir } from "./data-dir";
 import { HUB_SCHEMA_SQL, HUB_INDEXES_SQL } from "./db-hub-schema";
 import { backfillAllIntegrationUiUrls } from "./integrations/public-url-server";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
+import { normalizeMacHex } from "./attribution/kb";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Hub DB singleton (tenants, users, settings, profiles)
@@ -353,11 +354,51 @@ function seedBuiltinSysObjLookup(db: Database.Database): void {
   }
 }
 
-/** Seed all hub defaults (profiles, rules, sysobj). Does NOT seed users. */
+/**
+ * Seed prudente di `mac_product_map` (Attribution v2 Fase 2, Task 3).
+ *
+ * La KB vendorizzata (data/attribution-kb.sqlite) NON distingue famiglia
+ * prodotto per gli OUI MA-L di Ubiquiti (tutti "Ubiquiti Inc" generico,
+ * verificato via sqlite3 il 2026-07-28): l'unica disambiguazione prudente che
+ * abbiamo è la CONVENZIONE DI NAMING hostname (`^ap-`/`^sw-`/`^gw-`|`^fw-`).
+ * Per questo ogni riga seed ha SEMPRE hostname_pattern valorizzato — mai un
+ * mac_prefix "nudo" con famiglia prodotto inventata (una riga così vale per
+ * qualunque device Ubiquiti a prescindere dal ruolo reale, il rischio esatto
+ * descritto nel piano: "una regola sbagliata inquina tutti i tenant").
+ * confidence 0.6 (< 0.7 richiesto): euristica sul nome host, non sul modello.
+ * `INSERT OR IGNORE` + `UNIQUE(mac_prefix, hostname_pattern)`: idempotente,
+ * non sovrascrive mai una entry esistente (utente o seed precedente).
+ */
+function seedBuiltinMacProductMap(db: Database.Database): void {
+  // Prefissi OUI reali Ubiquiti (24 bit), verificati su data/attribution-kb.sqlite:
+  //   sqlite3 data/attribution-kb.sqlite "select prefix from oui where vendor_name='Ubiquiti Inc' limit 5;"
+  const UBIQUITI_PREFIXES = ["00156D", "002722", "0418D6", "0CEA14", "18E829"];
+  const RULES: Array<{ hostname_pattern: string; product_family: string; category: string }> = [
+    { hostname_pattern: "^ap-", product_family: "UniFi AP", category: "network.access_point" },
+    { hostname_pattern: "^sw-", product_family: "UniFi Switch", category: "network.switch" },
+    { hostname_pattern: "^(gw|fw)-", product_family: "UniFi Gateway", category: "network.router" },
+  ];
+
+  const ins = db.prepare(`INSERT OR IGNORE INTO mac_product_map
+    (mac_prefix, hostname_pattern, vendor, product_family, category, confidence, source, enabled)
+    VALUES (?, ?, 'ubiquiti', ?, ?, 0.6, 'seed', 1)`);
+
+  const t = db.transaction(() => {
+    for (const prefix of UBIQUITI_PREFIXES) {
+      for (const rule of RULES) {
+        ins.run(prefix, rule.hostname_pattern, rule.product_family, rule.category);
+      }
+    }
+  });
+  t();
+}
+
+/** Seed all hub defaults (profiles, rules, sysobj, mac product map). Does NOT seed users. */
 export function seedHubDefaults(db: Database.Database): void {
   seedBuiltinSnmpVendorProfiles(db);
   seedBuiltinFingerprintRules(db);
   seedBuiltinSysObjLookup(db);
+  seedBuiltinMacProductMap(db);
 }
 
 // ========================
@@ -1456,4 +1497,83 @@ export function deleteSysObjLookupEntry(id: number): boolean {
 export function resetBuiltinSysObjLookup(): void {
   getHubDb().prepare("DELETE FROM sysobj_lookup WHERE builtin = 1").run();
   seedBuiltinSysObjLookup(getHubDb());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MAC Product Map (Attribution v2 Fase 2, Task 3)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface MacProductMapRow {
+  id: number;
+  mac_prefix: string;
+  hostname_pattern: string | null;
+  vendor: string;
+  product_family: string | null;
+  category: string | null;
+  confidence: number;
+  source: "seed" | "domarc" | "feedback";
+  enabled: number;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function getMacProductMap(): MacProductMapRow[] {
+  return getHubDb()
+    .prepare("SELECT * FROM mac_product_map ORDER BY LENGTH(mac_prefix) DESC, id ASC")
+    .all() as MacProductMapRow[];
+}
+
+export function createMacProductEntry(input: {
+  mac_prefix: string; hostname_pattern?: string | null; vendor: string;
+  product_family?: string | null; category?: string | null;
+  confidence?: number; source?: "seed" | "domarc" | "feedback";
+  enabled?: number; note?: string | null;
+}): MacProductMapRow {
+  const normalizedPrefix = normalizeMacHex(input.mac_prefix) ?? input.mac_prefix.trim().toUpperCase();
+  const result = getHubDb().prepare(
+    `INSERT INTO mac_product_map
+     (mac_prefix, hostname_pattern, vendor, product_family, category, confidence, source, enabled, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    normalizedPrefix,
+    input.hostname_pattern?.trim() || null,
+    input.vendor.trim(),
+    input.product_family?.trim() || null,
+    input.category?.trim() || null,
+    input.confidence ?? 0.7,
+    input.source ?? "domarc",
+    input.enabled ?? 1,
+    input.note?.trim() || null,
+  );
+  return getHubDb().prepare("SELECT * FROM mac_product_map WHERE id = ?").get(result.lastInsertRowid) as MacProductMapRow;
+}
+
+export function updateMacProductEntry(id: number, input: Partial<{
+  mac_prefix: string; hostname_pattern: string | null; vendor: string;
+  product_family: string | null; category: string | null;
+  confidence: number; source: "seed" | "domarc" | "feedback";
+  enabled: number; note: string | null;
+}>): MacProductMapRow | undefined {
+  const existing = getHubDb().prepare("SELECT id FROM mac_product_map WHERE id = ?").get(id) as { id: number } | undefined;
+  if (!existing) return undefined;
+  const sets: string[] = ["updated_at = datetime('now')"];
+  const vals: unknown[] = [];
+  const field = (col: string, val: unknown) => { sets.push(`${col} = ?`); vals.push(val); };
+  if (input.mac_prefix !== undefined) field("mac_prefix", normalizeMacHex(input.mac_prefix) ?? input.mac_prefix.trim().toUpperCase());
+  if (input.hostname_pattern !== undefined) field("hostname_pattern", input.hostname_pattern?.trim() || null);
+  if (input.vendor !== undefined) field("vendor", input.vendor.trim());
+  if (input.product_family !== undefined) field("product_family", input.product_family?.trim() || null);
+  if (input.category !== undefined) field("category", input.category?.trim() || null);
+  if (input.confidence !== undefined) field("confidence", input.confidence);
+  if (input.source !== undefined) field("source", input.source);
+  if (input.enabled !== undefined) field("enabled", input.enabled);
+  if (input.note !== undefined) field("note", input.note?.trim() || null);
+  vals.push(id);
+  getHubDb().prepare(`UPDATE mac_product_map SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getHubDb().prepare("SELECT * FROM mac_product_map WHERE id = ?").get(id) as MacProductMapRow | undefined;
+}
+
+export function deleteMacProductEntry(id: number): boolean {
+  return getHubDb().prepare("DELETE FROM mac_product_map WHERE id = ?").run(id).changes > 0;
 }

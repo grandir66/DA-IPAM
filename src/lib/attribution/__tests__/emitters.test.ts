@@ -216,3 +216,37 @@ describe("emitEvidenceFromSignals", () => {
     for (const e of emitEvidenceFromSignals(base())) assert.ok(e.claim.length > 0);
   });
 });
+
+// Sorgente mac_product (Task 3): contro il vero hub.db, seedato da
+// seedBuiltinMacProductMap (db-hub.ts) con prefissi Ubiquiti reali + hostname_pattern
+// ^ap-/^sw-/^gw-|^fw-. Vedi anche mac-product.test.ts per i test puri sul matcher.
+describe("emitEvidenceFromSignals — sorgente mac_product", () => {
+  it("MAC Ubiquiti seedato + hostname 'ap-...' → vendor + categoria valida, raw_value = product_family", () => {
+    const s = base();
+    s.host.mac = "00:15:6D:AA:BB:CC";
+    s.host.hostname = "ap-piano2";
+    const out = emitEvidenceFromSignals(s);
+    const v = out.find((e) => e.source === "mac_product" && e.dimension === "vendor");
+    const cat = out.find((e) => e.source === "mac_product" && e.dimension === "category");
+    assert.ok(v, "attesa evidenza vendor da mac_product");
+    assert.equal(v!.claim, "ubiquiti");
+    assert.equal(v!.raw_value, "UniFi AP");
+    assert.ok(cat, "attesa evidenza categoria da mac_product");
+    assert.equal(cat!.claim, "network.access_point");
+    assert.equal(cat!.raw_value, "UniFi AP");
+    assert.ok(v!.confidence <= 0.7 && cat!.confidence <= 0.7, "il seed deve restare <= 0.7");
+  });
+  it("MAC presente ma nessun match (hostname che non combacia con alcun pattern seed) → nessuna evidenza mac_product", () => {
+    const s = base();
+    s.host.mac = "00:15:6D:AA:BB:CC";
+    s.host.hostname = "desktop-marco";
+    const out = emitEvidenceFromSignals(s);
+    assert.equal(out.find((e) => e.source === "mac_product"), undefined);
+  });
+  it("nessun MAC → nessuna evidenza mac_product (nessuna eccezione)", () => {
+    const s = base();
+    s.host.hostname = "ap-piano2";
+    const out = emitEvidenceFromSignals(s);
+    assert.equal(out.find((e) => e.source === "mac_product"), undefined);
+  });
+});

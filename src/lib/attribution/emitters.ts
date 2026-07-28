@@ -5,7 +5,8 @@ import { lookupSysObjectId } from "@/lib/scanner/snmp-sysobj-lookup";
 import { mapSysObjCategory } from "@/lib/attribution/sysobj-category";
 import { kbLookupSysObjectId } from "./kb";
 import type { KbSysObjMatch } from "./kb";
-import { categoryDepth, mapLegacyClassification } from "./taxonomy";
+import { matchMacProduct } from "./mac-product";
+import { categoryDepth, isValidCategory, mapLegacyClassification } from "./taxonomy";
 import type { CategorySlug } from "./taxonomy";
 import type { AttributionSource, EvidenceInput } from "./types";
 
@@ -19,7 +20,7 @@ import type { AttributionSource, EvidenceInput } from "./types";
  * ogni recompute anche se l'agente è ancora presente).
  */
 export const RECOMPUTED_SOURCES = [
-  "oui", "snmp_sysobj", "snmp_sysdescr", "nmap_os", "hostname", "ports", "ad", "wazuh", "lldp", "cdp",
+  "oui", "mac_product", "snmp_sysobj", "snmp_sysdescr", "nmap_os", "hostname", "ports", "ad", "wazuh", "lldp", "cdp",
 ] as const satisfies readonly AttributionSource[];
 
 export interface AttributionSignals {
@@ -181,6 +182,28 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
         source: "oui", phase: "scan_icmp", dimension: "vendor",
         claim: vendorSlug(host.vendor), confidence: 0.9, raw_value: host.vendor,
       });
+    }
+  }
+
+  // 1b. Linea di prodotto da mac_product_map (hub, Task 3): prefisso MAC +
+  //     hostname_pattern opzionale risolvono famiglia prodotto/categoria quando
+  //     l'OUI da solo non basta (es. Ubiquiti: stesso vendor per AP/switch/
+  //     gateway). `matchMacProduct` valida già la categoria internamente
+  //     (isValidCategory) — qui il controllo è ridondante ma esplicito: nessuna
+  //     evidenza categoria se non c'è un match valido.
+  if (host.mac) {
+    const mp = matchMacProduct(host.mac, host.hostname);
+    if (mp) {
+      out.push({
+        source: "mac_product", phase: "scan_icmp", dimension: "vendor",
+        claim: vendorSlug(mp.vendor), confidence: mp.confidence, raw_value: mp.product_family ?? mp.vendor,
+      });
+      if (mp.category && isValidCategory(mp.category)) {
+        out.push({
+          source: "mac_product", phase: "scan_icmp", dimension: "category",
+          claim: mp.category, confidence: mp.confidence, raw_value: mp.product_family ?? mp.vendor,
+        });
+      }
     }
   }
 

@@ -86,7 +86,13 @@ export function kbVersion(): string | null {
   }
 }
 
-function normalizeMacHex(mac: string): string | null {
+/**
+ * Normalizza un MAC (qualunque formattazione: `:`/`-`/nessun separatore) in
+ * esadecimale MAIUSCOLO senza separatori. `null` se meno di 6 cifre esadecimali
+ * valide. Esportata (Task 3, `mac-product.ts`) per non duplicare la stessa
+ * normalizzazione già in uso per il lookup OUI qui sotto.
+ */
+export function normalizeMacHex(mac: string): string | null {
   const hex = mac.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
   return hex.length >= 6 ? hex : null;
 }

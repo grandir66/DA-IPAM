@@ -95,6 +95,7 @@ export const HUB_TABLES: TableSpec[] = [
   { table: "device_fingerprint_rules", scope: "hub-global", tier: "config", mergeKey: ["name"] },
   { table: "fingerprint_classification_map", scope: "hub-global", tier: "config", mergeKey: ["fingerprint"] },
   { table: "sysobj_lookup", scope: "hub-global", tier: "config", mergeKey: ["oid"] },
+  { table: "mac_product_map", scope: "hub-global", tier: "config", mergeKey: ["mac_prefix", "hostname_pattern"] },
 ];
 
 /** Tabelle tenant volutamente NON esportate (nessuna oggi: tutte classificate). */

@@ -99,8 +99,10 @@ function queryableCategories(): AlertCategory[] {
 
 interface CategoryFilter {
   bool: {
-    filter: Array<{ terms: { "rule.groups": string[] } }>;
-    must_not: Array<{ terms: { "rule.groups": string[] } }>;
+    filter: Array<{ terms: Record<string, string[]> }>;
+    must_not: Array<{ terms: Record<string, string[]> }>;
+    should?: Array<{ terms: Record<string, string[]> }>;
+    minimum_should_match?: number;
   };
 }
 
@@ -212,7 +214,7 @@ export function buildStatsQuery(args: {
   const extraIds = args.extraRuleIds ?? [];
   const expandedExcludeIps = expandIpEntries(args.excludeIps ?? []);
   // Cio' che parte da noi non e' un attacco: vale per TUTTE le classifiche.
-  const selfExclusions = [
+  const selfExclusions: Array<{ terms: Record<string, string[]> }> = [
     ...((args.excludeAccounts ?? []).length
       ? [
           { terms: { "data.win.eventdata.targetUserName": args.excludeAccounts! } },
@@ -238,15 +240,35 @@ export function buildStatsQuery(args: {
   ];
   const filters: Record<string, CategoryFilter> = {};
 
+  // Il traffico che parte da noi non e' un attacco: prima di tutto il resto si
+  // porta via i tentativi originati dalle nostre identita', altrimenti il
+  // grafico conterebbe come minacce le nostre stesse sonde mentre le classifiche
+  // (che le escludono) resterebbero vuote — incoerenza vista a schermo.
+  if (selfExclusions.length > 0 && authGroups.length > 0) {
+    filters.self_probe = {
+      bool: {
+        filter: [{ terms: { "rule.groups": authGroups } }],
+        must_not: [],
+        should: selfExclusions,
+        minimum_should_match: 1,
+      },
+    };
+  }
+
   cats.forEach((c, i) => {
     // Ogni categoria esclude i gruppi di quelle che la precedono: riproduce il
     // "primo che matcha vince" di categorizeAlert, cosi' un documento non viene
     // contato due volte e le fette della torta sommano al totale.
     const previous = cats.slice(0, i).flatMap((p) => p.groups);
+    const isAuth = c.id === "auth_failure" || c.id === "cloud_auth_failure";
     filters[c.id] = {
       bool: {
         filter: [{ terms: { "rule.groups": c.groups } }],
-        must_not: previous.length ? [{ terms: { "rule.groups": [...new Set(previous)] } }] : [],
+        must_not: [
+          ...(previous.length ? [{ terms: { "rule.groups": [...new Set(previous)] } }] : []),
+          // gia' contati sotto self_probe
+          ...(isAuth ? selfExclusions : []),
+        ],
       },
     };
   });

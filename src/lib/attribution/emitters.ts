@@ -4,7 +4,8 @@ import { classifyDevice } from "@/lib/device-classifier";
 import { lookupSysObjectId } from "@/lib/scanner/snmp-sysobj-lookup";
 import { mapSysObjCategory } from "@/lib/attribution/sysobj-category";
 import { kbLookupSysObjectId } from "./kb";
-import { mapLegacyClassification } from "./taxonomy";
+import type { KbSysObjMatch } from "./kb";
+import { categoryDepth, mapLegacyClassification } from "./taxonomy";
 import type { CategorySlug } from "./taxonomy";
 import type { AttributionSource, EvidenceInput } from "./types";
 
@@ -119,6 +120,45 @@ function categoryFromLegacyText(input: Parameters<typeof classifyDevice>[0]): st
   return mapLegacyClassification(legacy).category;
 }
 
+/** Normalizzazione della LOOKUP_TABLE builtin allo stesso shape della KB, per il merge. */
+interface BuiltinSysObjMatch {
+  vendor: string;
+  product: string | null;
+  category: CategorySlug | null;
+}
+
+/**
+ * Combina KB (9.554 voci GLPI) e LOOKUP_TABLE builtin (94 voci curate a mano)
+ * per un match sysObjectID, invece di far vincere una sola fonte:
+ * - **vendor/modello**: preferisci la KB (molto più ricca), fallback alla builtin.
+ * - **categoria**: la PIÙ PROFONDA fra le due (`categoryDepth`, taxonomy.ts) —
+ *   la KB deriva la categoria dal solo TYPE GLPI (per gli apparati di rete è
+ *   sempre "NETWORKING" → livello 1 "network"), mentre la builtin distingue
+ *   spesso router/switch/access_point (livello 2). A parità di profondità
+ *   vince la builtin (curata a mano). Se solo una fonte ha una categoria, si
+ *   usa quella. Caso guida (regressione): OID 1.3.6.1.4.1.41112.1.6 con SOLO
+ *   sysObjectID (niente sysDescr) → deve restare "network.access_point", non
+ *   degradare a "network" solo perché la KB matcha anch'essa l'OID.
+ */
+export function mergeSysObjSources(
+  kbMatch: KbSysObjMatch | null,
+  builtinMatch: BuiltinSysObjMatch | null
+): { vendor: string | null; product: string | null; category: CategorySlug | null } {
+  const vendor = kbMatch?.vendor ?? builtinMatch?.vendor ?? null;
+  const product = kbMatch?.model ?? builtinMatch?.product ?? null;
+
+  const kbCategory = kbMatch?.category ?? null;
+  const builtinCategory = builtinMatch?.category ?? null;
+  let category: CategorySlug | null;
+  if (kbCategory && builtinCategory) {
+    category = categoryDepth(builtinCategory) >= categoryDepth(kbCategory) ? builtinCategory : kbCategory;
+  } else {
+    category = kbCategory ?? builtinCategory;
+  }
+
+  return { vendor, product, category };
+}
+
 export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceInput[] {
   const out: EvidenceInput[] = [];
   const { host } = signals;
@@ -144,21 +184,27 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
     }
   }
 
-  // 2. SNMP: sysObjectID via KB (9.554 entry GLPI) con fallback alla LOOKUP_TABLE
-  //    builtin (94 entry, ma con distinzione switch/router/AP che la KB — TYPE
-  //    GLPI "NETWORKING" — non offre, livello 1 soltanto) + sysDescr (incl. Ubiquiti).
+  // 2. SNMP: sysObjectID via KB (9.554 entry GLPI) COMBINATA con la LOOKUP_TABLE
+  //    builtin (94 entry, curate a mano con distinzione switch/router/AP che la
+  //    KB — TYPE GLPI "NETWORKING" — non offre da sola, livello 1 soltanto):
+  //    vendor/modello dalla KB (fallback builtin), categoria la più profonda fra
+  //    le due (mergeSysObjSources) — mai una fonte sola "vince" a prescindere,
+  //    altrimenti si perde la profondità nota alla builtin (regressione Ubiquiti,
+  //    vedi commento su mergeSysObjSources) + sysDescr (incl. Ubiquiti).
   const snmp = safeJson<{ sysDescr?: string | null; sysObjectID?: string | null; manufacturer?: string | null }>(host.snmp_data);
   if (snmp?.sysObjectID) {
     const kbMatch = kbLookupSysObjectId(snmp.sysObjectID);
-    const legacyMatch = kbMatch ? null : lookupSysObjectId(snmp.sysObjectID);
-    const vendor = kbMatch?.vendor ?? legacyMatch?.vendor ?? null;
-    // "product": testo prodotto/modello, usato sia per il filtro placeholder sia
-    // per arricchire raw_value. KB → model (spec Task 2: "se la KB fornisce
-    // model, finisce in raw_value"); legacy → product.
-    const product = kbMatch ? kbMatch.model : (legacyMatch?.product ?? null);
-    const category: CategorySlug | null = kbMatch
-      ? kbMatch.category
-      : (legacyMatch ? (mapSysObjCategory(legacyMatch) ? mapLegacyClassification(mapSysObjCategory(legacyMatch)!).category : null) : null);
+    const legacyMatch = lookupSysObjectId(snmp.sysObjectID);
+    const builtinMatch: BuiltinSysObjMatch | null = legacyMatch
+      ? {
+          vendor: legacyMatch.vendor,
+          product: legacyMatch.product ?? null,
+          category: mapSysObjCategory(legacyMatch)
+            ? (mapLegacyClassification(mapSysObjCategory(legacyMatch)!).category ?? null)
+            : null,
+        }
+      : null;
+    const { vendor, product, category } = mergeSysObjSources(kbMatch, builtinMatch);
 
     if (vendor) {
       // Match generico (OID net-snmp 1.3.6.1.4.1.8072.* OPPURE vendor/product

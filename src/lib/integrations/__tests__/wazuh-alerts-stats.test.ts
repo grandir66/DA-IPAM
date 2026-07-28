@@ -18,7 +18,17 @@ test("every selectable window declares a label and a duration", () => {
   }
 });
 
+test("the shortest window is one hour, for looking at what is happening now", () => {
+  const w = STATS_WINDOWS.find((x) => x.id === "1h");
+  assert.ok(w, "manca la finestra di un'ora");
+  assert.equal(w!.hours, 1);
+  // deve restare la piu' stretta, cioe' la prima
+  assert.equal(STATS_WINDOWS[0]!.id, "1h");
+});
+
 test("the bucket width follows the window so the chart never has 700 columns", () => {
+  // un'ora con bucket orari darebbe UNA colonna: serve scendere a 5 minuti
+  assert.equal(bucketIntervalFor(1), "5m");
   assert.equal(bucketIntervalFor(24), "1h");
   assert.equal(bucketIntervalFor(24 * 7), "6h");
   assert.equal(bucketIntervalFor(24 * 30), "1d");

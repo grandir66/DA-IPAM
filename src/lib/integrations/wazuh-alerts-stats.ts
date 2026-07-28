@@ -69,6 +69,7 @@ export interface StatsWindow {
 }
 
 export const STATS_WINDOWS: StatsWindow[] = [
+  { id: "1h", labelIt: "Ultima ora", hours: 1 },
   { id: "24h", labelIt: "Ultime 24 ore", hours: 24 },
   { id: "7d", labelIt: "Ultimi 7 giorni", hours: 24 * 7 },
   { id: "30d", labelIt: "Ultimi 30 giorni", hours: 24 * 30 },
@@ -80,6 +81,8 @@ export function windowById(id: string): StatsWindow | undefined {
 
 /** Larghezza del bucket: sempre fra ~24 e ~30 colonne, mai centinaia. */
 export function bucketIntervalFor(hours: number): string {
+  // Un'ora con bucket orari darebbe una sola colonna: si scende a 5 minuti.
+  if (hours <= 1) return "5m";
   if (hours <= 24) return "1h";
   if (hours <= 24 * 7) return "6h";
   return "1d";

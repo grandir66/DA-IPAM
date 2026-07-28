@@ -41,6 +41,13 @@ export type SeriesRow = { bucket: string } & Record<string, number | string>;
  * dell'API, quindi se le statistiche fallivano il filtro spariva del tutto —
  * proprio quando serve capire cosa sta succedendo.
  */
+export const WINDOW_CHOICES = [
+  { id: "1h", labelIt: "Ultima ora" },
+  { id: "24h", labelIt: "Ultime 24 ore" },
+  { id: "7d", labelIt: "Ultimi 7 giorni" },
+  { id: "30d", labelIt: "Ultimi 30 giorni" },
+] as const;
+
 export const SYSTEM_CHOICES = [
   { id: "windows", labelIt: "Windows" },
   { id: "microsoft365", labelIt: "Microsoft 365" },
@@ -72,6 +79,10 @@ function compact(n: number): string {
 function formatBucket(iso: string, interval: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
+  // Bucket sotto l'ora: serve il minuto, altrimenti l'asse ripete la stessa ora.
+  if (interval.endsWith("m")) {
+    return d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+  }
   return interval === "1d"
     ? d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })
     : d.toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit" });

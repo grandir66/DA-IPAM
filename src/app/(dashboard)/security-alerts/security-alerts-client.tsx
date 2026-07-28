@@ -19,6 +19,7 @@ import {
   AlertsOverTime,
   RankedTable,
   SYSTEM_CHOICES,
+  WINDOW_CHOICES,
   StatTile,
   TargetedAccounts,
   seriesColor,
@@ -205,7 +206,7 @@ export function SecurityAlertsClient() {
   const categories = data?.categories ?? [];
   const openCounts = data?.openByCategory ?? {};
   const events = data?.events ?? [];
-  const windows = stats?.windows ?? [{ id: "24h", labelIt: "Ultime 24 ore", hours: 24 }];
+  const windows = WINDOW_CHOICES;
   const totals = stats?.stats?.totals;
   const byCategory = stats?.stats?.byCategory ?? [];
   const series = stats?.stats?.series ?? [];

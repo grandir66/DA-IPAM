@@ -5,9 +5,13 @@
 // per applicare la correzione agli host già scansionati senza aspettare il prossimo scan.
 //
 // Uso:
-//   npx tsx scripts/attribution-recompute-cli.ts <tenantCode> [cidr]
+//   npx tsx scripts/attribution-recompute-cli.ts <tenantCode> [cidr] [--no-vendor-refresh]
 //
 // Senza [cidr]: ricalcola tutte le reti del tenant. Con [cidr]: solo quella rete.
+// Prima del ricalcolo vero e proprio, ririsolve dal MAC i vendor placeholder
+// (es. "IEEE Registration Authority") usando la KB vendorizzata — così le nuove
+// evidenze vendor partono dal dato aggiornato invece che dal placeholder scritto
+// a scan-time. `--no-vendor-refresh` salta questo passo.
 //
 // Nota ENCRYPTION_KEY: NON richiesta. Il motore Attribution v2 (src/lib/attribution/)
 // legge solo segnali già persistiti in chiaro (hosts, ad_computers, wazuh_*,
@@ -24,6 +28,7 @@ import {
   getNetworks,
   getHostsByNetwork,
   getAttributionSignalsForHost,
+  refreshHostVendorsFromMac,
 } from "@/lib/db-tenant";
 import { recomputeHostAttribution } from "@/lib/attribution/recompute";
 import { withLockRetry, isLockError } from "@/lib/attribution/retry";
@@ -37,6 +42,7 @@ interface Summary {
   withCategory: number;
   withVendor: number;
   withOs: number;
+  vendorRefreshed: number | null;
 }
 
 // CLI standalone: nessun altro reader/writer sta condividendo l'handle di
@@ -48,10 +54,10 @@ interface Summary {
 // rete 192.168.15.0/24). Alziamo il timeout SOLO per questa connessione.
 const CLI_BUSY_TIMEOUT_MS = 30_000;
 
-async function run(tenantCode: string, cidr: string | undefined): Promise<Summary> {
+async function run(tenantCode: string, cidr: string | undefined, skipVendorRefresh: boolean): Promise<Summary> {
   const summary: Summary = {
     networks: 0, hosts: 0, processed: 0, skippedNoSignals: 0, skippedLocked: 0,
-    withCategory: 0, withVendor: 0, withOs: 0,
+    withCategory: 0, withVendor: 0, withOs: 0, vendorRefreshed: null,
   };
 
   return withTenant(tenantCode, async () => {
@@ -64,6 +70,19 @@ async function run(tenantCode: string, cidr: string | undefined): Promise<Summar
       throw new Error(`nessuna rete con cidr "${cidr}" nel tenant "${tenantCode}"`);
     }
     summary.networks = networks.length;
+
+    // Ririsolve i vendor placeholder (es. "IEEE Registration Authority") dal MAC
+    // usando la KB PRIMA del ricalcolo: senza questo passo il ricalcolo legge
+    // hosts.vendor così com'è stato scritto a scan-time e il guadagno della KB
+    // resta invisibile finché l'host non viene riscansionato (caso reale VM
+    // 533/tenant 70791, 16 host bloccati dopo il deploy KB v0.3.236).
+    if (!skipVendorRefresh) {
+      const vendorResult = cidr
+        ? refreshHostVendorsFromMac(networks[0].id)
+        : refreshHostVendorsFromMac();
+      summary.vendorRefreshed = vendorResult.updated;
+      console.log(`[attribution-recompute] vendor ririsolti dal MAC: ${vendorResult.updated}/${vendorResult.examined} (non risolvibili: ${vendorResult.unresolved})`);
+    }
 
     for (const network of networks) {
       const hosts = getHostsByNetwork(network.id);
@@ -100,6 +119,9 @@ async function run(tenantCode: string, cidr: string | undefined): Promise<Summar
 function printSummary(summary: Summary): void {
   console.log("");
   console.log("=== Riepilogo ricalcolo attribuzione ===");
+  if (summary.vendorRefreshed !== null) {
+    console.log(`Vendor ririsolti:       ${summary.vendorRefreshed}`);
+  }
   console.log(`Reti valutate:          ${summary.networks}`);
   console.log(`Host totali:            ${summary.hosts}`);
   console.log(`Host processati:        ${summary.processed}`);
@@ -115,11 +137,14 @@ function printSummary(summary: Summary): void {
 }
 
 async function main(): Promise<void> {
-  const tenantCode = process.argv[2];
-  const cidr = process.argv[3];
+  const rawArgs = process.argv.slice(2);
+  const skipVendorRefresh = rawArgs.includes("--no-vendor-refresh");
+  const positional = rawArgs.filter((a) => a !== "--no-vendor-refresh");
+  const tenantCode = positional[0];
+  const cidr = positional[1];
 
   if (!tenantCode) {
-    console.error("Uso: npx tsx scripts/attribution-recompute-cli.ts <tenantCode> [cidr]");
+    console.error("Uso: npx tsx scripts/attribution-recompute-cli.ts <tenantCode> [cidr] [--no-vendor-refresh]");
     process.exit(1);
   }
 
@@ -130,7 +155,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    const summary = await run(tenantCode, cidr);
+    const summary = await run(tenantCode, cidr, skipVendorRefresh);
     printSummary(summary);
     closeTenantDb(tenantCode);
     // Un batch dove OGNI host è stato saltato per lock persistente o dati

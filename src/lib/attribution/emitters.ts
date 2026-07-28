@@ -84,7 +84,10 @@ const HYPERVISOR_VENDOR_RE = /proxmox|vmware|qemu|xensource|virtualbox|oracle vi
 // Estesa (caso reale 192.168.40.23, Synology): il lookup sysObjectID net-snmp
 // generico (OID 1.3.6.1.4.1.8072.*) restituisce vendor "Linux", che NON è un
 // produttore — vero per NAS, router, qualunque host Linux con net-snmp attivo.
-const VENDOR_PLACEHOLDER_RE = /^(ieee registration authority|private|linux|unknown|generic|net-snmp|netsnmp|n\/a|other)$/i;
+// Esportata (Task 2, `refreshHostVendorsFromMac` in db-tenant.ts): riusata per
+// riconoscere un vendor placeholder scritto in hosts.vendor a scan-time da una
+// vecchia catena di risoluzione, senza duplicare la regex.
+export const VENDOR_PLACEHOLDER_RE = /^(ieee registration authority|private|linux|unknown|generic|net-snmp|netsnmp|n\/a|other)$/i;
 
 // OID net-snmp generico (Lacuna 2): significa solo "gira net-snmp", vero per NAS,
 // router, qualunque Linux — non basta a inferire una categoria device.

@@ -29,9 +29,7 @@ import {
   getClassificationFromFingerprintSnapshot,
   FINGERPRINT_CLASSIFICATION_MIN_CONFIDENCE,
 } from "@/lib/device-fingerprint-classification";
-import { runClassificationEngineForHost } from "@/lib/classification/run";
 import { mapSysObjCategory } from "@/lib/attribution/sysobj-category";
-import { parseJsonSafe } from "@/lib/json-safe";
 import {
   getNetworkById,
   getHostsByNetwork,
@@ -384,8 +382,6 @@ async function runDiscovery(
 
   let onlineIps: string[] = [];
   const nmapResults: Map<string, HostScanData> = new Map();
-  /** Porte TCP da pre-pass naabu (per host), usate in classify + Nmap mirato. */
-  let naabuPortsByIp: Map<string, number[]> = new Map();
 
   /**
    * Pre-pass Naabu.
@@ -579,7 +575,6 @@ async function runDiscovery(
     } else {
       const quickPortsSpec = getQuickScanTcpPorts();
       const naabuPrep = await prepareNaabuPortDiscovery(onlineIps, quickPortsSpec, { require: true });
-      naabuPortsByIp = naabuPrep.byIp;
       if (!naabuPrep.enabled) {
         progress.status = "failed";
         progress.phase = "Naabu non disponibile";
@@ -747,7 +742,6 @@ async function runDiscovery(
     } else {
       const quickPortsSpec = getQuickScanTcpPorts();
       const naabuPrep = await prepareNaabuPortDiscovery(targetIps, quickPortsSpec);
-      naabuPortsByIp = naabuPrep.byIp;
       if (naabuPrep.enabled) seedNaabuOpenPorts(naabuPrep.byIp);
 
       const quickArgs = buildNetworkDiscoveryQuickTcpArgs();
@@ -1085,7 +1079,6 @@ async function runDiscovery(
     const nmapAvailable = await isNmapAvailable();
     const quickPortsSpecNd = getQuickScanTcpPorts();
     const naabuPrepNd = await prepareNaabuPortDiscovery(onlineIps, quickPortsSpecNd);
-    naabuPortsByIp = naabuPrepNd.byIp;
     if (naabuPrepNd.enabled) seedNaabuOpenPorts(naabuPrepNd.byIp);
 
     const quickArgs = buildNetworkDiscoveryQuickTcpArgs();
@@ -1558,7 +1551,6 @@ async function runDiscovery(
     const nmapAvailable = await isNmapAvailable();
     const quickPortsSpecIpam = getQuickScanTcpPorts();
     const naabuPrepIpam = await prepareNaabuPortDiscovery(onlineIps, quickPortsSpecIpam);
-    naabuPortsByIp = naabuPrepIpam.byIp;
     if (naabuPrepIpam.enabled) seedNaabuOpenPorts(naabuPrepIpam.byIp);
 
     const quickArgs = buildNetworkDiscoveryQuickTcpArgs();
@@ -2016,7 +2008,6 @@ async function runDiscovery(
       const portScanArgs = nmapArgs ?? buildTcpScanArgs(null, discoverOpts?.tcpPorts);
       const fullPortsSpec = tcpPortListToSpec(getFullScanTcpPortList(discoverOpts?.tcpPorts));
       const naabuPrepNmap = await prepareNaabuPortDiscovery(onlineIps, fullPortsSpec);
-      naabuPortsByIp = naabuPrepNmap.byIp;
       if (naabuPrepNmap.enabled) seedNaabuOpenPorts(naabuPrepNmap.byIp);
       const udpPortsRaw = discoverOpts?.udpPorts;
       /** `""` = nessuna scansione UDP (solo TCP); `null`/`undefined` = elenco UDP predefinito (profilo legacy). */
@@ -2986,13 +2977,11 @@ async function runDiscovery(
     try {
     const prevHost = hostRowByIp.get(ip);
     const previousClassification = prevHost?.classification ?? null;
-    const previousConfidence =
-      (prevHost as { inferred_confidence?: number | null } | undefined)?.inferred_confidence ?? 0;
-    const classificationManual =
-      (prevHost as { classification_manual?: number } | undefined)?.classification_manual === 1;
 
-    // Classification slug: non scrivere in upsert (evita double-write se l'engine
-    // rifiuta l'upgrade). Cascade → cascade_slug; engine applica dopo. INSERT usa "unknown".
+    // Classification slug: non scrivere in upsert. Fix C1 (fase 4): l'engine
+    // legacy non gira più automaticamente qui — hosts.classification/inferred_*
+    // sono ora una proiezione esclusiva dell'attribuzione v2 (vedi sotto,
+    // recomputeAttributionSafe). INSERT usa comunque "unknown" come default.
     const host = upsertHost({
       network_id: networkId,
       ip,
@@ -3027,43 +3016,16 @@ async function runDiscovery(
     if (!host) continue;
     if (host.first_seen === host.created_at) newHosts++;
 
-    // Classification-engine facade (post-cascade): evidence + policy + history
-    const detectionForEngine =
-      fpSnap ??
-      (detectionJson
-        ? parseJsonSafe<DeviceFingerprintSnapshot | null>(detectionJson, null)
-        : null);
-    let cascadeMethod: string = "rules";
-    if (classification === effectiveVendorProfileClass || classification === classFromSysObj || classification === classificationFromFpOid || classification === classificationFromGenericOid) {
-      cascadeMethod = "oid";
-    } else if (classification === classificationFromFingerprint || classification === classificationFromGenericFp) {
-      cascadeMethod = "fingerprint";
-    } else if (classification === classificationFromRules) {
-      // Real DetectionMethod from classifyDeviceDetailed (oid|text|port|hostname|vendor|…)
-      cascadeMethod = rulesDetailed.method !== "none" ? rulesDetailed.method : "rules";
-    } else if (classification === classFromHostnamePrefix) {
-      cascadeMethod = "hostname";
-    }
-    const naabuPortsForHost = naabuPortsByIp.get(ip) ?? null;
-    const { decision, touchedClassification } = await runClassificationEngineForHost({
-      db: getDb(),
-      hostId: host.id,
-      ip,
-      hostname: hostname ?? null,
-      vendor: vendor ?? null,
-      os_info: nmapData?.snmpSysDescr || nmapData?.os || null,
-      open_ports: portsForClassification,
-      detection: detectionForEngine,
-      snmp_sysdescr: nmapData?.snmpSysDescr ?? detectionForEngine?.snmp_sysdescr ?? null,
-      snmp_sysobjectid: nmapData?.snmpSysObjectID ?? detectionForEngine?.snmp_vendor_oid ?? null,
-      naabu_ports: naabuPortsForHost && naabuPortsForHost.length > 0 ? naabuPortsForHost : null,
-      cascade_slug: classification,
-      cascade_method: cascadeMethod,
-      classification_manual: classificationManual,
-      previous_classification: previousClassification,
-      previous_confidence: previousConfidence,
-      trigger: "scan",
-    });
+    // Fix C1 (fase 4, ritiro legacy): qui girava anche runClassificationEngineForHost
+    // (motore di classificazione legacy) a OGNI scan schedulato — era rimasto l'ultimo
+    // writer automatico di hosts.classification/inferred_*, e in conflitto vinceva lui:
+    // il suo persist (src/lib/classification/persist.ts) scriveva inferred_confidence/
+    // classification_reason/classification_json anche su host con classification_manual=1,
+    // violando l'invariante sacro. Ritirato: l'UNICO motore attivo ora è l'attribuzione v2
+    // (recomputeAttributionSafe sotto), che proietta su hosts.classification/inferred_*
+    // rispettando SEMPRE il lock manuale (vedi src/lib/attribution/persist.ts).
+    // Il motore legacy stesso non è stato rimosso (fuori scope): resta raggiungibile solo
+    // dalle route admin di applicazione manuale (src/lib/classification/run.ts).
 
     // Attribution v2 (fase 1, parallel-run): rifusione evidenze sui dati appena persistiti
     const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
@@ -3074,10 +3036,11 @@ async function runDiscovery(
       probeHosts.push({ id: host.id, ip, openPorts: (portsForClassification ?? []).map((p) => p.port) });
     }
 
-    // Sync network_device collegato (stesso IP) — port e classification applicata
-    const slugForDevice = touchedClassification
-      ? decision.classification
-      : (previousClassification ?? classification);
+    // Sync network_device collegato (stesso IP): serve solo a scegliere le porte
+    // candidate per protocollo/vendor (non scrive su hosts) — usa la cascade di
+    // questo scan se ha prodotto qualcosa di più specifico di "unknown", altrimenti
+    // l'ultimo valore noto (stesso fallback di prima, senza dipendere dal motore legacy).
+    const slugForDevice = classification !== "unknown" ? classification : (previousClassification ?? classification);
     if (nmapData?.ports?.length && getNetworkDeviceByHost(ip)) {
       syncNetworkDeviceFromHostScan(ip, nmapData.ports, slugForDevice);
     }

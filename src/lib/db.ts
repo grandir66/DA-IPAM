@@ -2813,8 +2813,12 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
 
   if (existing) {
     const existingRow = getDb().prepare(
-      "SELECT open_ports, classification_manual, model, serial_number, firmware, device_manufacturer, os_info, mac FROM hosts WHERE id = ?"
-    ).get(existing.id) as { open_ports: string | null; classification_manual?: number; model?: string | null; serial_number?: string | null; firmware?: string | null; device_manufacturer?: string | null; os_info?: string | null; mac?: string | null } | undefined;
+      // Fase 4: snmp_data/detection_json/vendor/hostname aggiunti al SELECT per
+      // poter gate-are recomputeAttributionSafe con shouldRecomputeClassification
+      // (stesso set di segnali di db-tenant.ts, audit B3 v0.2.637) — prima qui
+      // mancavano e applyAutoClassification veniva chiamato ad ogni upsert.
+      "SELECT open_ports, classification_manual, model, serial_number, firmware, device_manufacturer, os_info, mac, snmp_data, detection_json, vendor, hostname FROM hosts WHERE id = ?"
+    ).get(existing.id) as { open_ports: string | null; classification_manual?: number; model?: string | null; serial_number?: string | null; firmware?: string | null; device_manufacturer?: string | null; os_info?: string | null; mac?: string | null; snmp_data?: string | null; detection_json?: string | null; vendor?: string | null; hostname?: string | null } | undefined;
     const classificationManual = existingRow?.classification_manual === 1;
     /** Quando preserve_existing=true (scan discovery/nmap) non si sovrascrivono dati già valorizzati */
     const preserve = input.preserve_existing === true;
@@ -2946,12 +2950,39 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
         syncIpAssignmentsForNetwork(input.network_id);
       }
     }
-    // F1: ricomputo classificazione automatica dai dati appena aggiornati (idempotente).
+    // F1: ricomputo attribuzione dai dati appena aggiornati (idempotente).
+    // Fase 4: applyAutoClassification (legacy) rimosso — un solo scrittore
+    // (attribution v2, vedi src/lib/attribution/). Fix I2 (review fase 4):
+    // recomputeAttributionSafe risolve il tenant da getCurrentTenantCode()
+    // (AsyncLocalStorage) — se questa facade gira fuori da withTenantFromSession
+    // (getDb() qui sopra è caduto sul fallback DEFAULT), quella funzione
+    // ritornava null in silenzio e l'attribuzione non partiva mai. Uso
+    // recomputeAttributionForDb passando esplicitamente l'handle già risolto
+    // da getDb() poche righe sopra: emette evidenza dai segnali già in DB e
+    // proietta classification/inferred_*, indipendentemente dal contesto async.
+    // Gate con shouldRecomputeClassification (stesso criterio di db-tenant.ts,
+    // audit B3 v0.2.637): un flip status online↔offline non deve rifondere
+    // l'host per niente.
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { applyAutoClassification } = require("./devices/auto-classify");
-      applyAutoClassification(getDb(), host.id);
-    } catch { /* non blocca l'upsert se la classificazione fallisce */ }
+      const { shouldRecomputeClassification } = require("./devices/auto-classify");
+      const changedSignals = new Set<string>();
+      if (input.open_ports !== undefined && input.open_ports !== existingRow?.open_ports) changedSignals.add("open_ports");
+      if (input.snmp_data !== undefined && input.snmp_data !== existingRow?.snmp_data) changedSignals.add("snmp_data");
+      if (input.device_manufacturer !== undefined && input.device_manufacturer !== existingRow?.device_manufacturer) changedSignals.add("device_manufacturer");
+      if (input.hostname !== undefined && input.hostname !== existingRow?.hostname) changedSignals.add("hostname");
+      if (input.vendor !== undefined && input.vendor !== existingRow?.vendor) changedSignals.add("vendor");
+      if (input.detection_json !== undefined && input.detection_json !== existingRow?.detection_json) changedSignals.add("detection_json");
+      if (input.os_info !== undefined && input.os_info !== existingRow?.os_info) changedSignals.add("os_info");
+      if (shouldRecomputeClassification(changedSignals)) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { recomputeAttributionForDb } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+        const recomputed = recomputeAttributionForDb(getDb(), host.id, "scan");
+        if (recomputed === null) {
+          console.warn(`[attribution] db.ts upsertHost (update): recompute non riuscito per host ${host.id}`);
+        }
+      }
+    } catch { /* non blocca l'upsert se il recompute fallisce */ }
     // F4 v0.2.597: reverse trigger — device orphan con stesso IP viene collegato.
     try {
       getDb().prepare(
@@ -3014,12 +3045,20 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       hostname: host.hostname ?? undefined,
     });
   }
-  // F1: prima classificazione automatica all'insert.
+  // F1: prima attribuzione all'insert. Fase 4: applyAutoClassification
+  // (legacy) rimosso — un solo scrittore (attribution v2, vedi src/lib/attribution/).
+  // Fix I2 (review fase 4): recomputeAttributionForDb con l'handle di getDb()
+  // esplicito invece di recomputeAttributionSafe — vedi commento gemello nel
+  // branch UPDATE poco sopra per il perché (getDb() qui può essere caduto sul
+  // fallback DEFAULT fuori da un contesto tenant esplicito).
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { applyAutoClassification } = require("./devices/auto-classify");
-    applyAutoClassification(getDb(), host.id);
-  } catch { /* non blocca l'insert se la classificazione fallisce */ }
+    const { recomputeAttributionForDb } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    const recomputed = recomputeAttributionForDb(getDb(), host.id, "scan");
+    if (recomputed === null) {
+      console.warn(`[attribution] db.ts upsertHost (insert): recompute non riuscito per host ${host.id}`);
+    }
+  } catch { /* non blocca l'insert se il recompute fallisce */ }
   // F4 v0.2.597: reverse trigger anche nel branch INSERT.
   try {
     getDb().prepare(
@@ -5887,10 +5926,14 @@ export function getRecentActivity(limit: number = 10): ScanHistory[] {
 // ========================
 
 export function cleanupStaleHosts(daysUntilStale: number, daysUntilDelete: number): { flagged: number; deleted: number } {
+  // Fix C2 (fase 4): un host classificato a mano (classification_manual=1) non
+  // deve mai essere sovrascritto automaticamente — nemmeno col sentinel 'stale'.
+  // Vedi db-tenant.ts::cleanupStaleHosts per la spiegazione completa (regola 12:
+  // questa è la facade, stessa logica).
   const flagged = getDb().prepare(
     `UPDATE hosts SET classification = 'stale', updated_at = datetime('now')
      WHERE status = 'offline' AND last_seen < datetime('now', '-' || ? || ' days')
-     AND classification != 'stale'`
+     AND classification != 'stale' AND classification_manual = 0`
   ).run(daysUntilStale);
 
   const deleted = getDb().prepare(
@@ -6806,11 +6849,11 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
 
   // Host della rete
   const hosts = db.prepare(
-    `SELECT id, ip, mac, hostname, dns_forward, dns_reverse, os_info, classification FROM hosts WHERE network_id = ?`
+    `SELECT id, ip, mac, hostname, dns_forward, dns_reverse, os_info FROM hosts WHERE network_id = ?`
   ).all(networkId) as Array<{
     id: number; ip: string; mac: string | null; hostname: string | null;
     dns_forward: string | null; dns_reverse: string | null;
-    os_info: string | null; classification: string | null;
+    os_info: string | null;
   }>;
   if (hosts.length === 0) return { linked: 0, enriched: 0 };
 
@@ -6841,12 +6884,14 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
     `UPDATE ad_computers SET host_id = ? WHERE integration_id = ? AND object_guid = ?`
   );
 
-  // Funzione di arricchimento: AD è fonte autoritativa per hostname
+  // Funzione di arricchimento: AD è fonte autoritativa per hostname.
+  // Fase 4: l'euristica server_windows/workstation (da os_info) è stata
+  // rimossa — l'evidenza "ad" già emessa in emitters.ts (dimension category,
+  // claim compute.server/compute.workstation) la sostituisce nella fusione
+  // v2. os_info/hostname restano: sono anagrafica, non attribuzione.
   function enrichHost(hostId: number, comp: typeof unlinked[0], currentHost: typeof hosts[0]) {
     const adHostname = comp.dns_host_name || comp.sam_account_name.replace(/\$$/, "");
     const osRaw = comp.operating_system ?? "";
-    const osLower = osRaw.toLowerCase();
-    const classification = osLower.includes("server") ? "server_windows" : "workstation";
 
     // AD è la fonte più affidabile: hostname viene SEMPRE sovrascritto
     const sets: string[] = [];
@@ -6868,12 +6913,6 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
     if (osRaw && (!currentHost.os_info || currentHost.os_info === "unknown")) {
       sets.push("os_info = ?");
       vals.push(osRaw);
-    }
-
-    // Classificazione: AD sovrascrive se l'host non ha classificazione o ha "unknown"
-    if (!currentHost.classification || currentHost.classification === "unknown") {
-      sets.push("classification = ?");
-      vals.push(classification);
     }
 
     if (sets.length > 0) {

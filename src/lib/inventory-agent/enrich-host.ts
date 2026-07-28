@@ -109,26 +109,21 @@ export function enrichHostFromInventoryAgent(hostId: number, parsed: ParsedGlpiI
     values.push(firmware);
   }
 
-  const osFamilyMap: Record<ParsedGlpiInventory["os_family"], string> = {
-    windows: "windows",
-    linux: "linux",
-    macos: "macos",
-    other: "unknown",
-  };
-  const inferred = osFamilyMap[parsed.os_family];
-  if (inferred && inferred !== "unknown" && shouldAgentSetAnagraphic(inferred)) {
-    fields.push("inferred_os_family = ?", "inferred_at = datetime('now')");
-    values.push(inferred);
+  // Fase 4 (ritiro legacy): la scrittura diretta di inferred_os_family/inferred_at
+  // è stata rimossa — un solo scrittore (attribution v2). L'evidenza "inv_agent"
+  // emessa più sotto (dimension os, autoritativa su OS) copre lo stesso segnale
+  // e viene proiettata su inferred_os_family da applyAttribution.
+  if (fields.length > 2) {
+    values.push(hostId);
+    db()
+      .prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`)
+      .run(...values);
   }
 
-  if (fields.length <= 2) return;
-
-  values.push(hostId);
-  db()
-    .prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`)
-    .run(...values);
-
-  // Attribution v2: l'inventario agent è evidenza autoritativa su OS (spec §4.3)
+  // Attribution v2: l'inventario agent è evidenza autoritativa su OS (spec §4.3).
+  // Va tentata anche se l'UPDATE anagrafico sopra è stato saltato (es. sync che
+  // riporta solo os_family, nessun campo anagrafico nuovo): altrimenti quel
+  // segnale sparirebbe del tutto.
   try {
     // require sincrono: enrichHostFromInventoryAgent non è async (vedi .claude/rules).
     // eslint-disable-next-line @typescript-eslint/no-require-imports

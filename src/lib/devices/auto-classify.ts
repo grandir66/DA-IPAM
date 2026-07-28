@@ -1,7 +1,21 @@
 /**
- * Auto-classificazione host server-side.
+ * Auto-classificazione host — logica rule-based pura (sync, no I/O).
  *
- * Logica rule-based pura (sync, no I/O) che produce un best-guess di:
+ * Fase 4 (ritiro legacy, 2026-07-28): questo modulo NON scrive più su `hosts`.
+ * `applyAutoClassification` (il wrapper DB) e il backfill al boot in
+ * `initializeTenantDb` sono stati rimossi: il motore attribution v2
+ * (`src/lib/attribution/`) è ora l'unico scrittore delle colonne
+ * `classification`/`inferred_*` (proiezione via `legacy-projection.ts`,
+ * applicata in `applyAttribution`). Verificato via grep (2026-07-28): nessun
+ * consumatore esterno usa `autoClassifyHost` direttamente — resta come
+ * calcolo puro documentato (opzione "b" del piano fase 4, meno invasiva della
+ * rimozione totale) nel caso serva di nuovo un best-guess offline/di debug,
+ * senza persistenza. `shouldRecomputeClassification` invece è tuttora usata
+ * (db-tenant.ts/db.ts) come gate di perf prima di richiamare
+ * `recomputeAttributionSafe` su upsertHost — v0.2.637 audit B3: senza gate,
+ * ogni flip status online↔offline rifonderebbe l'host per niente.
+ *
+ * Produce un best-guess di:
  *   - device_type      (router/switch/firewall/hypervisor/server/workstation/printer/iot/nas)
  *   - vendor           (cisco/mikrotik/microsoft/apple/dell/hp/...)
  *   - protocol         (ssh/snmp_v2/snmp_v3/winrm/api)
@@ -9,28 +23,7 @@
  *   - os_family        (windows/linux/macos/network-os)
  *
  * Output: classification + confidence (0-100) + reasons (lista di stringhe per debug).
- *
- * Usato da upsertHost() per popolare le colonne hosts.inferred_* alla discovery.
- * Il modale di promozione (F2) usa quei valori come default editabili.
- *
- * NB: rispetto della scelta manuale dell'utente lato chiamante (vedi
- * `classification_manual=1` flag in upsertHost): se l'utente ha fissato la
- * classificazione a mano, il chiamante NON deve sovrascrivere le inferenze.
  */
-
-/**
- * Versione del classifier. Bump quando le regole cambiano in modo non backward-compat
- * (es. nuovi segnali, regole vendor ristrette). La migration del tenant ricomputa
- * automaticamente gli host con `inferred_classifier_version < CLASSIFIER_VERSION`.
- *
- * v1 (originale) — solo OUI/hostname/porte/snmp_data
- * v2 (2026-05-26) — aggiunto os_info come segnale primario; regola VMware ristretta
- *                   per distinguere ESXi reale da VM su VMware con NIC virtuale
- */
-// v3 (2026-05-26 v0.2.633): fix Apple iOS classificato come network-os (A9) +
-// Linux workstation classificato come server di default (A10). Bump triggera
-// ricomputo automatico via backfill in initializeTenantDb.
-export const CLASSIFIER_VERSION = 3;
 
 export type InferredDeviceType =
   | "router"
@@ -380,100 +373,4 @@ export function shouldRecomputeClassification(changedFields: Set<string>): boole
   const triggers = ["open_ports", "snmp_data", "device_manufacturer", "hostname", "vendor", "detection_json", "os_info"];
   for (const t of triggers) if (changedFields.has(t)) return true;
   return false;
-}
-
-// ─── DB integration ─────────────────────────────────────────────────────────
-
-// Type minimo per accettare sia better-sqlite3 Database che la sua interfaccia
-// (evita circolarità import: i moduli db.ts/db-tenant.ts già importano better-sqlite3).
-interface SqliteDbLike {
-  prepare(sql: string): {
-    get(...args: unknown[]): unknown;
-    run(...args: unknown[]): unknown;
-  };
-}
-
-// v0.2.641 audit perf DB1: cache dei 2 prepared statement per Database handle.
-// Prima `db.prepare(SELECT...)` e `db.prepare(UPDATE...)` venivano ricompilati
-// ad ogni invocazione (~50-100µs/cad). Su backfill 2000 host = ~400ms persi
-// solo in prepare; in hot loop di scan ancora di più.
-type PreparedStmt = ReturnType<SqliteDbLike["prepare"]>;
-const stmtCache = new WeakMap<SqliteDbLike, { select: PreparedStmt; update: PreparedStmt }>();
-
-function getStmts(db: SqliteDbLike) {
-  let entry = stmtCache.get(db);
-  if (!entry) {
-    entry = {
-      select: db.prepare(
-        "SELECT hostname, mac, vendor, device_manufacturer, os_info, open_ports, snmp_data, detection_json, classification FROM hosts WHERE id = ?"
-      ),
-      update: db.prepare(`
-        UPDATE hosts SET
-          inferred_device_type = ?,
-          inferred_vendor = ?,
-          inferred_protocol = ?,
-          inferred_scan_target = ?,
-          inferred_os_family = ?,
-          inferred_confidence = ?,
-          inferred_reasons = ?,
-          inferred_at = datetime('now'),
-          inferred_classifier_version = ?
-        WHERE id = ?
-      `),
-    };
-    stmtCache.set(db, entry);
-  }
-  return entry;
-}
-
-/**
- * Legge i campi rilevanti dell'host, calcola le inferenze, e fa UPDATE delle
- * colonne inferred_*. Rispetta classification_manual=1 (in quel caso NON
- * sovrascrive `classification` — ma le inferred_* si aggiornano comunque,
- * sono suggerimenti separati dalla scelta manuale).
- *
- * Idempotente: se i dati di input non sono cambiati, l'output è identico.
- * Sicuro chiamarlo a ogni upsert.
- */
-export function applyAutoClassification(db: SqliteDbLike, hostId: number): AutoClassifyResult | null {
-  const stmts = getStmts(db);
-  const row = stmts.select.get(hostId) as {
-    hostname: string | null;
-    mac: string | null;
-    vendor: string | null;
-    device_manufacturer: string | null;
-    os_info: string | null;
-    open_ports: string | null;
-    snmp_data: string | null;
-    detection_json: string | null;
-    classification: string | null;
-  } | undefined;
-
-  if (!row) return null;
-
-  const result = autoClassifyHost({
-    hostname: row.hostname,
-    mac: row.mac,
-    vendor: row.vendor,
-    device_manufacturer: row.device_manufacturer,
-    os_info: row.os_info,
-    open_ports_json: row.open_ports,
-    snmp_data_json: row.snmp_data,
-    detection_json: row.detection_json,
-    current_classification: row.classification,
-  });
-
-  stmts.update.run(
-    result.inferred_device_type,
-    result.inferred_vendor,
-    result.inferred_protocol,
-    result.inferred_scan_target,
-    result.inferred_os_family,
-    result.inferred_confidence,
-    JSON.stringify(result.inferred_reasons),
-    CLASSIFIER_VERSION,
-    hostId,
-  );
-
-  return result;
 }

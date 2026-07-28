@@ -30,7 +30,6 @@ import { tcpConnect, FALLBACK_TCP_PORTS } from "@/lib/scanner/tcp-check";
 import { createRouterClient, routerOsDurationToIsoTimestamp } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
-import { classifyDevice } from "@/lib/device-classifier";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import {
@@ -275,20 +274,21 @@ export async function runArpPoll(
           const network = networks.find((n) => isIpInCidr(entry.ip!, n.cidr));
           if (!network) continue;
           const vendor = await lookupVendor(entry.mac);
-          const classification = classifyDevice({ hostname: null, vendor: vendor ?? null });
           // ARP è fonte PASSIVA: aggiorna solo host già esistenti, MAI inserisce.
           // I router tengono entry ARP per ore (Cisco 4h default), quindi un IP nella
           // tabella ARP non prova reachability attuale né "esistenza" del device.
           // Solo i probe attivi (ICMP + TCP fallback in network_discovery) sono
           // autoritativi per la CREAZIONE di un host. Se l'host è stato cancellato
           // dall'utente, NON va ricreato fino a quando ICMP non lo ri-conferma.
+          // Fase 4: bypass classifyDevice→classification rimosso — un solo
+          // scrittore (attribution v2). recomputeAttributionSafe sotto emette
+          // l'evidenza "oui" dal vendor appena scritto e proietta il risultato.
           const host = updateHostIfExists({
             network_id: network.id,
             ip: entry.ip,
             mac: entry.mac,
             vendor: vendor || undefined,
             hostname_source: "arp",
-            ...(classification && { classification }),
           });
           if (host) {
             const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
@@ -310,14 +310,12 @@ export async function runArpPoll(
               const network = networks.find((n) => isIpInCidr(lease.ip, n.cidr));
               if (!network) continue;
               const vendor = await lookupVendor(lease.mac);
-              const classification = classifyDevice({
-                hostname: lease.hostname ?? null,
-                vendor: vendor ?? null,
-              });
               // DHCP è fonte PASSIVA: aggiorna solo host esistenti, MAI inserisce.
               // I DHCP server tengono lease per ore/giorni dopo che il device si
               // spegne, quindi un lease attivo non prova che l'host esista più.
               // Vedi commento in arp_poll sopra.
+              // Fase 4: bypass classifyDevice→classification rimosso — un solo
+              // scrittore (attribution v2), vedi recomputeAttributionSafe sotto.
               const host = updateHostIfExists({
                 network_id: network.id,
                 ip: lease.ip,
@@ -325,7 +323,6 @@ export async function runArpPoll(
                 ...(lease.hostname && { hostname: lease.hostname }),
                 hostname_source: "dhcp",
                 vendor: vendor || undefined,
-                ...(classification && { classification }),
               });
               if (host) {
                 const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
@@ -622,11 +619,9 @@ export async function runDhcpPollForNetwork(
     if (allow && !allow.has(lease.ip)) continue;
     if (!isIpInCidr(lease.ip, network.cidr)) continue;
     const vendor = await lookupVendor(lease.mac);
-    const classification = classifyDevice({
-      hostname: lease.hostname ?? null,
-      vendor: vendor ?? null,
-    });
     // DHCP è fonte PASSIVA: aggiorna solo host esistenti, MAI inserisce.
+    // Fase 4: bypass classifyDevice→classification rimosso — un solo
+    // scrittore (attribution v2), vedi recomputeAttributionSafe sotto.
     const host = updateHostIfExists({
       network_id: networkId,
       ip: lease.ip,
@@ -634,7 +629,6 @@ export async function runDhcpPollForNetwork(
       ...(lease.hostname && { hostname: lease.hostname }),
       hostname_source: "dhcp",
       vendor: vendor || undefined,
-      ...(classification && { classification }),
     });
     if (host) {
       const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");

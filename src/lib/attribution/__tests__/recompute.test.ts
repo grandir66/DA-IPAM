@@ -2,7 +2,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
-import { recomputeHostAttribution } from "../recompute";
+import { recomputeHostAttribution, recomputeAttributionForDb, recomputeAttributionSafe } from "../recompute";
 import { recordEvidence } from "../evidence";
 import type { AttributionSignals } from "../emitters";
 
@@ -14,7 +14,9 @@ beforeEach(() => {
   db.exec(TENANT_INDEXES_SQL);
   // le colonne attr_* sono nel CREATE TABLE dello schema? No: vengono da ALTER in getTenantDb.
   // Nei test in-memory le aggiungiamo come farebbe la migrazione:
-  for (const c of ["attr_vendor TEXT","attr_vendor_name TEXT","attr_category TEXT","attr_os_family TEXT","attr_os_name TEXT","attr_confidence_vendor INTEGER","attr_confidence_category INTEGER","attr_confidence_os INTEGER","attr_min_phase TEXT","attr_at TEXT","attr_engine_version TEXT"]) {
+  // attr_*: colonne fusione v2. inferred_*: fase 4, ora scritte dalla proiezione
+  // legacy dentro applyAttribution (persist.ts) — servono anche qui in memoria.
+  for (const c of ["attr_vendor TEXT","attr_vendor_name TEXT","attr_category TEXT","attr_os_family TEXT","attr_os_name TEXT","attr_confidence_vendor INTEGER","attr_confidence_category INTEGER","attr_confidence_os INTEGER","attr_min_phase TEXT","attr_at TEXT","attr_engine_version TEXT","inferred_device_type TEXT","inferred_vendor TEXT","inferred_os_family TEXT","inferred_confidence INTEGER"]) {
     try { db.exec(`ALTER TABLE hosts ADD COLUMN ${c}`); } catch { /* già presente */ }
   }
   db.exec("INSERT INTO networks (id, name, cidr) VALUES (1, 'n', '10.0.0.0/24')");
@@ -112,5 +114,32 @@ describe("ritiro evidenze non più emesse (retireStaleEvidence via recompute)", 
     assert.equal(r.vendor.claim, "manual-vendor", "manual deve continuare a vincere la fusione");
     const row = db.prepare("SELECT expires_at FROM attribution_evidence WHERE host_id=1 AND source='manual'").get() as { expires_at: string | null };
     assert.equal(row.expires_at, null, "manual non deve mai essere ritirata");
+  });
+});
+
+// Fix I2 (review fase 4): recomputeAttributionSafe risolve il tenant SOLO da
+// getCurrentTenantCode() (AsyncLocalStorage) — fuori da un contesto tenant
+// esplicito ritorna null in silenzio, anche quando un handle DB valido esiste
+// (es. db.ts::getDb() che fa fallback al tenant DEFAULT). recomputeAttributionForDb
+// prende l'handle già risolto dal chiamante e non dipende dall'AsyncLocalStorage.
+describe("recomputeAttributionForDb — indipendente dall'AsyncLocalStorage (fix I2)", () => {
+  it("funziona con un handle esplicito, senza alcun contesto tenant attivo (getCurrentTenantCode()===null)", () => {
+    // Nessun withTenant() qui: simula esattamente lo scenario del bug (db.ts
+    // upsertHost chiamato fuori da withTenantFromSession, getDb() già
+    // risolto sul fallback DEFAULT, ma AsyncLocalStorage vuoto).
+    const r = recomputeAttributionForDb(db, 1, "scan");
+    assert.notEqual(r, null, "deve ricalcolare anche senza contesto tenant, dato un handle esplicito");
+    assert.equal(r!.vendor.claim, "ubiquiti");
+    const row = db.prepare("SELECT attr_vendor FROM hosts WHERE id=1").get() as { attr_vendor: string | null };
+    assert.equal(row.attr_vendor, "ubiquiti", "la scrittura avviene davvero sull'handle passato");
+  });
+
+  it("recomputeAttributionSafe resta null fuori da un contesto tenant (comportamento invariato, ora solo documentato/atteso)", () => {
+    // Questo NON è il fix — è la controprova che il problema esisteva davvero:
+    // senza withTenant(), getCurrentTenantCode() è null e recomputeAttributionSafe
+    // non ha modo di risolvere un handle da solo. È per questo che i due branch
+    // di db.ts::upsertHost sono stati spostati su recomputeAttributionForDb.
+    const r = recomputeAttributionSafe(1, "scan");
+    assert.equal(r, null, "senza withTenant() attivo non c'è modo di risolvere il tenant da AsyncLocalStorage");
   });
 });

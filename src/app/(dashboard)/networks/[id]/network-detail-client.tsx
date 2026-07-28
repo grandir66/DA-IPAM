@@ -81,6 +81,8 @@ type HostWithDevice = Host & {
   device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string };
   ad_dns_host_name?: string | null;
   multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
+  /** 1 = classificazione bloccata da modifica manuale dell'utente, esclusa dalle proiezioni automatiche di Attribution v2. */
+  classification_manual?: number;
 };
 
 /** Contratto di GET /api/networks/[id]/scan-phases (Task 1, fase 3b). */
@@ -377,29 +379,6 @@ export function NetworkDetailClient({
       });
     return () => controller.abort();
   }, [network.id, scanPhasesRefreshKey]);
-
-  /** Motore evidence/scoring legacy su tutti gli host della subnet (POST /refresh). */
-  const classifySubnet = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/networks/${network.id}/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error((data as { error?: string }).error || "Errore classificazione subnet");
-        return;
-      }
-      toast.success(
-        (data as { message?: string }).message || "Classificazione subnet completata",
-      );
-      await refreshHosts();
-      router.refresh();
-    } catch {
-      toast.error("Errore di rete");
-    }
-  }, [network.id, refreshHosts, router]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -958,8 +937,8 @@ export function NetworkDetailClient({
         return;
       }
       toast.success((data as { message?: string }).message || "Attribuzione ricalcolata");
-      // transitorio fino a Fase 4: allinea la classificazione legacy visibile in tabella
-      await classifySubnet();
+      await refreshHosts();
+      router.refresh();
       setScanPhasesRefreshKey((k) => k + 1);
     } catch {
       toast.error("Errore di rete");
@@ -1756,11 +1735,16 @@ export function NetworkDetailClient({
                 <SortableTableHead columnId="name" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
                   Nome
                 </SortableTableHead>
-                <SortableTableHead columnId="classification" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
-                  Classificazione
+                <SortableTableHead
+                  columnId="classification"
+                  sortColumn={listSortColumn}
+                  sortDirection={listSortDir}
+                  onSort={handleListSort}
+                  title="Attribution v2: categoria/vendor/OS calcolati da evidenze multi-fonte (OUI, SNMP, AD, Wazuh, LLDP/CDP). Badge 'Manuale' = classificazione impostata a mano, esclusa dai ricalcoli automatici."
+                >
+                  Attribuzione
                 </SortableTableHead>
                 <TableHead title="Tipo dispositivo da fingerprint (porte, SNMP, banner)">Rilevato</TableHead>
-                <TableHead title="Attribution v2: categoria/vendor/OS calcolati da evidenze multi-fonte (OUI, SNMP, AD, Wazuh, LLDP/CDP)">Attribuzione</TableHead>
                 <TableHead>Dispositivo</TableHead>
                 <TableHead title="Stesso device su più subnet" className="w-10 text-center">MH</TableHead>
                 <SortableTableHead columnId="vendor" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
@@ -1775,7 +1759,7 @@ export function NetworkDetailClient({
             <TableBody>
               {displayHosts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={18} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={17} className="text-center text-muted-foreground py-8">
                     {hosts.length === 0
                       ? "Nessun host trovato. Avvia una scansione per scoprire i dispositivi."
                       : "Nessun host corrisponde ai filtri."}
@@ -1875,7 +1859,7 @@ export function NetworkDetailClient({
                       )}
                     </TableCell>
                     <TableCell
-                      className="min-w-[140px] cursor-text"
+                      className="min-w-[160px] cursor-text text-xs"
                       onClick={(e) => { e.stopPropagation(); if (!(e.target as HTMLElement).closest("button, [role=combobox]")) { setEditingHostId(host.id); setEditingField("classification"); } }}
                     >
                       {editingHostId === host.id && editingField === "classification" ? (
@@ -1900,8 +1884,45 @@ export function NetworkDetailClient({
                             ))}
                           </SelectContent>
                         </Select>
+                      ) : (host as HostWithDevice).classification_manual === 1 ? (
+                        // Lock manuale: la proiezione automatica di Attribution v2 non tocca
+                        // classification/inferred_* per questo host (invariante sacro, persist.ts).
+                        // Mostriamo il valore impostato a mano + eventuale suggerimento v2 non applicato.
+                        <div className="flex flex-col gap-0.5 leading-tight">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <Badge variant="outline" className="text-[10px] py-0">Manuale</Badge>
+                            <Badge variant="outline">{host.classification ? getClassificationLabel(host.classification) : "—"}</Badge>
+                          </div>
+                          {host.attr_category ? (
+                            <span
+                              className="text-muted-foreground truncate max-w-[160px] block"
+                              title="Suggerimento Attribution v2 non applicato: classificazione bloccata manualmente"
+                            >
+                              v2: {attrCategoryLabel(host.attr_category)}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : host.attr_category ? (
+                        <div className="flex flex-col gap-0.5 leading-tight">
+                          <span
+                            className="font-medium text-foreground"
+                            title={`${host.attr_category}${host.attr_confidence_category != null ? ` (confidenza ${host.attr_confidence_category}%)` : ""}`}
+                          >
+                            {attrCategoryLabel(host.attr_category)}
+                            {host.attr_confidence_category != null && (
+                              <span className="text-muted-foreground font-normal ml-1">{host.attr_confidence_category}%</span>
+                            )}
+                          </span>
+                          {(host.attr_vendor_name || host.attr_vendor || host.attr_os_family) ? (
+                            <span className="text-muted-foreground truncate max-w-[160px] block">
+                              {[host.attr_vendor_name || host.attr_vendor, host.attr_os_family].filter(Boolean).join(" · ")}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : host.classification ? (
+                        <Badge variant="outline">{getClassificationLabel(host.classification)}</Badge>
                       ) : (
-                        <Badge variant="outline">{host.classification ? getClassificationLabel(host.classification) : "—"}</Badge>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
                     <TableCell className="text-sm max-w-[200px]">
@@ -1924,28 +1945,6 @@ export function NetworkDetailClient({
                           </span>
                         );
                       })()}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {host.attr_category ? (
-                        <div className="flex flex-col gap-0.5 leading-tight">
-                          <span
-                            className="font-medium text-foreground"
-                            title={`${host.attr_category}${host.attr_confidence_category != null ? ` (confidenza ${host.attr_confidence_category}%)` : ""}`}
-                          >
-                            {attrCategoryLabel(host.attr_category)}
-                            {host.attr_confidence_category != null && (
-                              <span className="text-muted-foreground font-normal ml-1">{host.attr_confidence_category}%</span>
-                            )}
-                          </span>
-                          {(host.attr_vendor_name || host.attr_vendor || host.attr_os_family) ? (
-                            <span className="text-muted-foreground truncate max-w-[160px] block">
-                              {[host.attr_vendor_name || host.attr_vendor, host.attr_os_family].filter(Boolean).join(" · ")}
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
                     </TableCell>
                     <TableCell className="text-sm">
                       {(host as HostWithDevice).device ? (

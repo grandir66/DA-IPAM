@@ -35,7 +35,7 @@ interface CredentialBinding {
   id: number;
   device_id: number;
   credential_id: number | null;
-  protocol_type: "ssh" | "snmp" | "winrm" | "api";
+  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
   port: number;
   sort_order: number;
   inline_username: string | null;
@@ -61,6 +61,8 @@ const PROTOCOL_LABELS: Record<string, string> = {
   snmp: "SNMP",
   winrm: "WinRM",
   api: "API",
+  redfish: "Redfish",
+  onvif: "ONVIF",
 };
 
 const PROTOCOL_PORTS: Record<string, number> = {
@@ -68,6 +70,8 @@ const PROTOCOL_PORTS: Record<string, number> = {
   snmp: 161,
   winrm: 5985,
   api: 443,
+  redfish: 443,
+  onvif: 80,
 };
 
 const STATUS_ICONS = {
@@ -414,6 +418,8 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
                     <SelectItem value="snmp">SNMP</SelectItem>
                     <SelectItem value="winrm">WinRM</SelectItem>
                     <SelectItem value="api">API</SelectItem>
+                    <SelectItem value="redfish">Redfish (BMC)</SelectItem>
+                    <SelectItem value="onvif">ONVIF (telecamera)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -479,6 +485,8 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
                     <SelectItem value="snmp">SNMP</SelectItem>
                     <SelectItem value="winrm">WinRM</SelectItem>
                     <SelectItem value="api">API</SelectItem>
+                    <SelectItem value="redfish">Redfish (BMC)</SelectItem>
+                    <SelectItem value="onvif">ONVIF (telecamera)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

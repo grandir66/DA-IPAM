@@ -529,7 +529,7 @@ CREATE TABLE IF NOT EXISTS host_credentials (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
   credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
-  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api')),
+  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif')),
   port INTEGER NOT NULL,
   validated INTEGER NOT NULL DEFAULT 0,
   validated_at TEXT,
@@ -793,7 +793,7 @@ CREATE TABLE IF NOT EXISTS device_credential_bindings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
   credential_id INTEGER REFERENCES credentials(id) ON DELETE CASCADE,
-  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api')),
+  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif')),
   port INTEGER NOT NULL DEFAULT 22,
   sort_order INTEGER NOT NULL DEFAULT 0,
   -- Credenziali inline (se credential_id è NULL)

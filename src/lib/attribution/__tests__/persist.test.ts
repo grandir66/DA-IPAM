@@ -95,4 +95,61 @@ describe("applyAttribution — proiezione legacy (fase 4)", () => {
     const wrote = applyAttribution(db, 5, fusionResult({ category: "network.router", categoryConfidence: 91, os: null, vendor: "cisco" }), "scan");
     assert.equal(wrote, false, "il secondo apply con stesso risultato non deve scrivere nulla (guard esistente)");
   });
+
+  describe("fix I1 — il guard considera anche la proiezione legacy, non solo attr_*", () => {
+    it("attr_* già identiche ma classification disallineata → la proiezione ripara comunque", () => {
+      insertHost({ id: 6, classificationManual: 0, classification: "workstation" });
+      // Primo apply: popola attr_* E proietta classification="router".
+      applyAttribution(db, 6, fusionResult({ category: "network.router", categoryConfidence: 91, os: null, vendor: "cisco" }), "scan");
+      assert.equal(hostRow(6).classification, "router", "precondizione: la proiezione ha già scritto 'router'");
+
+      // Simula il caso reale del bug: qualcosa (es. un edit manuale poi tornato
+      // automatico, o un dato storico) ha rimesso `classification` fuori sync
+      // con la proiezione, ma le colonne attr_* restano IDENTICHE al risultato
+      // che stiamo per riapplicare — prima del fix il guard usciva qui e
+      // l'host restava disallineato per sempre (niente più backfill al boot).
+      db.exec("UPDATE hosts SET classification='workstation' WHERE id=6");
+
+      const wrote = applyAttribution(db, 6, fusionResult({ category: "network.router", categoryConfidence: 91, os: null, vendor: "cisco" }), "scan");
+      assert.equal(wrote, true, "il guard deve rilevare la proiezione disallineata anche con attr_* invariate");
+      assert.equal(hostRow(6).classification, "router", "la proiezione ripara la colonna legacy disallineata");
+    });
+
+    it("host manuale con proiezione divergente → il guard non forza scritture (lock intatto, nessuna write-amplification)", () => {
+      insertHost({ id: 7, classificationManual: 1, classification: "server_windows" });
+      // Primo apply: attr_* ancora vuote → attrUnchanged=false, la funzione scrive
+      // attr_* (ma MAI le colonne legacy, protette dal lock manuale).
+      const wrote1 = applyAttribution(db, 7, fusionResult({ category: "network.router", categoryConfidence: 91, os: null, vendor: "cisco" }), "scan");
+      assert.equal(wrote1, true);
+      assert.equal(hostRow(7).classification, "server_windows", "lock manuale intatto dopo il primo apply");
+
+      // Secondo apply con lo STESSO risultato: attr_* ora sono già allineate
+      // (scritte al passo precedente) e l'host è manuale, quindi legacyToWrite
+      // resta sempre vuoto per costruzione — il guard deve tornare a mordere,
+      // altrimenti ogni host manuale scriverebbe attr_*/history a ogni chiamata
+      // solo perché la sua classification diverge (per definizione) dalla v2.
+      const wrote2 = applyAttribution(db, 7, fusionResult({ category: "network.router", categoryConfidence: 91, os: null, vendor: "cisco" }), "scan");
+      assert.equal(wrote2, false, "host manuale con attr_* già allineate non deve riscrivere solo perché diverge dalla proiezione");
+      assert.equal(hostRow(7).classification, "server_windows", "lock manuale ancora intatto");
+    });
+
+    it("host già coerente (attr_* e proiezione entrambe allineate) → nessuna scrittura", () => {
+      insertHost({ id: 8, classificationManual: 0, classification: "unknown" });
+      const wrote1 = applyAttribution(db, 8, fusionResult({ category: "network.router", categoryConfidence: 91, os: null, vendor: "cisco" }), "scan");
+      assert.equal(wrote1, true, "primo apply scrive (stato iniziale disallineato)");
+      const wrote2 = applyAttribution(db, 8, fusionResult({ category: "network.router", categoryConfidence: 91, os: null, vendor: "cisco" }), "scan");
+      assert.equal(wrote2, false, "secondo apply con stesso risultato: attr_* E proiezione già allineate → il guard morde ancora");
+    });
+  });
+
+  describe("fix M1 — inferred_confidence non si disallinea da classification quando la proiezione è null", () => {
+    it("categoria livello 1 'network' (proiezione classification=null) → inferred_confidence NON viene scritta", () => {
+      insertHost({ id: 9, classificationManual: 0, classification: "workstation" });
+      db.exec("UPDATE hosts SET inferred_confidence=42 WHERE id=9");
+      applyAttribution(db, 9, fusionResult({ category: "network", categoryConfidence: 99, os: null, vendor: null }), "scan");
+      const row = hostRow(9);
+      assert.equal(row.classification, "workstation", "classification preesistente non toccata (proiezione null)");
+      assert.equal(row.inferred_confidence, 42, "inferred_confidence non deve disallinearsi da una classification non toccata");
+    });
+  });
 });

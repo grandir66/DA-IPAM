@@ -2952,8 +2952,14 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     }
     // F1: ricomputo attribuzione dai dati appena aggiornati (idempotente).
     // Fase 4: applyAutoClassification (legacy) rimosso — un solo scrittore
-    // (attribution v2, vedi src/lib/attribution/). recomputeAttributionSafe
-    // emette evidenza dai segnali già in DB e proietta classification/inferred_*.
+    // (attribution v2, vedi src/lib/attribution/). Fix I2 (review fase 4):
+    // recomputeAttributionSafe risolve il tenant da getCurrentTenantCode()
+    // (AsyncLocalStorage) — se questa facade gira fuori da withTenantFromSession
+    // (getDb() qui sopra è caduto sul fallback DEFAULT), quella funzione
+    // ritornava null in silenzio e l'attribuzione non partiva mai. Uso
+    // recomputeAttributionForDb passando esplicitamente l'handle già risolto
+    // da getDb() poche righe sopra: emette evidenza dai segnali già in DB e
+    // proietta classification/inferred_*, indipendentemente dal contesto async.
     // Gate con shouldRecomputeClassification (stesso criterio di db-tenant.ts,
     // audit B3 v0.2.637): un flip status online↔offline non deve rifondere
     // l'host per niente.
@@ -2970,8 +2976,11 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       if (input.os_info !== undefined && input.os_info !== existingRow?.os_info) changedSignals.add("os_info");
       if (shouldRecomputeClassification(changedSignals)) {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
-        recomputeAttributionSafe(host.id, "scan");
+        const { recomputeAttributionForDb } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+        const recomputed = recomputeAttributionForDb(getDb(), host.id, "scan");
+        if (recomputed === null) {
+          console.warn(`[attribution] db.ts upsertHost (update): recompute non riuscito per host ${host.id}`);
+        }
       }
     } catch { /* non blocca l'upsert se il recompute fallisce */ }
     // F4 v0.2.597: reverse trigger — device orphan con stesso IP viene collegato.
@@ -3037,12 +3046,18 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     });
   }
   // F1: prima attribuzione all'insert. Fase 4: applyAutoClassification
-  // (legacy) rimosso — recomputeAttributionSafe emette evidenza dai segnali
-  // già scritti sopra e proietta classification/inferred_* (un solo scrittore).
+  // (legacy) rimosso — un solo scrittore (attribution v2, vedi src/lib/attribution/).
+  // Fix I2 (review fase 4): recomputeAttributionForDb con l'handle di getDb()
+  // esplicito invece di recomputeAttributionSafe — vedi commento gemello nel
+  // branch UPDATE poco sopra per il perché (getDb() qui può essere caduto sul
+  // fallback DEFAULT fuori da un contesto tenant esplicito).
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
-    recomputeAttributionSafe(host.id, "scan");
+    const { recomputeAttributionForDb } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    const recomputed = recomputeAttributionForDb(getDb(), host.id, "scan");
+    if (recomputed === null) {
+      console.warn(`[attribution] db.ts upsertHost (insert): recompute non riuscito per host ${host.id}`);
+    }
   } catch { /* non blocca l'insert se il recompute fallisce */ }
   // F4 v0.2.597: reverse trigger anche nel branch INSERT.
   try {
@@ -5911,10 +5926,14 @@ export function getRecentActivity(limit: number = 10): ScanHistory[] {
 // ========================
 
 export function cleanupStaleHosts(daysUntilStale: number, daysUntilDelete: number): { flagged: number; deleted: number } {
+  // Fix C2 (fase 4): un host classificato a mano (classification_manual=1) non
+  // deve mai essere sovrascritto automaticamente — nemmeno col sentinel 'stale'.
+  // Vedi db-tenant.ts::cleanupStaleHosts per la spiegazione completa (regola 12:
+  // questa è la facade, stessa logica).
   const flagged = getDb().prepare(
     `UPDATE hosts SET classification = 'stale', updated_at = datetime('now')
      WHERE status = 'offline' AND last_seen < datetime('now', '-' || ? || ' days')
-     AND classification != 'stale'`
+     AND classification != 'stale' AND classification_manual = 0`
   ).run(daysUntilStale);
 
   const deleted = getDb().prepare(

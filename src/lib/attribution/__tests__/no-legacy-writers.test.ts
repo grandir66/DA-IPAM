@@ -70,14 +70,21 @@ const ALLOWED_FILES: Record<string, string> = {
     "legittime e per lo stesso motivo — vedi src/lib/db-tenant.ts.",
 
   "src/lib/classification/persist.ts":
-    "Motore di classificazione SEPARATO e preesistente (applyClassificationDecision), " +
-    "non uno dei 'quattro bypass' ritirati in questo task (auto-classify, " +
-    "cron/jobs.ts, enrich-host.ts, ad-client.ts, batch-refingerprint.ts — vedi intro " +
-    "del piano fase 4). Restа dietro un'azione ESPLICITA dell'utente in UI " +
-    "(classifySubnet() → /api/networks/[id]/refresh e /apply-classifications), " +
-    "non viene invocato automaticamente da scan/cron. Fuori scope Task 2: la sua " +
-    "eventuale dismissione è un lavoro separato (Task 3 rimuove solo la chiamata " +
-    "UI transitoria post-attribuzione, non l'intero motore).",
+    "Motore di classificazione legacy SEPARATO e preesistente (applyClassificationDecision). " +
+    "CORREZIONE fix C1 (review finale fase 4): l'allowlist giustificava questa voce dicendo " +
+    "'solo dietro azione esplicita dell'utente' — era FALSO, discovery.ts lo chiamava a OGNI " +
+    "scan schedulato da cron, e il suo persist scriveva inferred_confidence/classification_reason/" +
+    "classification_json anche su host con classification_manual=1 (violava l'invariante sacro). " +
+    "Fix C1 ha ritirato quella chiamata automatica in discovery.ts: l'UNICO scrittore automatico " +
+    "resta src/lib/attribution/persist.ts (riga sopra). Dopo il ritiro delle due route admin " +
+    "/api/networks/[id]/refresh e /apply-classifications (fix I3, erano zombie: nessun consumer " +
+    "UI, ma restavano raggiungibili con {force:true} che azzerava classification_manual in massa), " +
+    "questo motore non ha più NESSUN chiamante in produzione: è codice morto, non invocato da " +
+    "alcun percorso automatico né manuale. Resta allowlisted qui non perché sia 'legittimo' nel " +
+    "senso originale, ma perché il file fisico non è stato cancellato (rimozione fisica dichiarata " +
+    "fuori scope in fix C1): il suo testo contiene ancora gli UPDATE letterali che questo guard " +
+    "rileva staticamente, a prescindere dalla reachability. Se in futuro qualcuno gli aggiunge un " +
+    "nuovo chiamante, quel nuovo file/percorso NON è coperto da questa voce e va verificato a parte.",
 };
 
 interface Hit {

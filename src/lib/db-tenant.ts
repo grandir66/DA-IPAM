@@ -3048,9 +3048,15 @@ export function getHostLinuxCredentials(): { username: string; password: string 
   return null;
 }
 
+/**
+ * Username/password decifrati se la credenziale esiste ed è del tipo atteso
+ * (Windows/Linux/API — "api" riusato anche per Redfish/BMC, Fase 4b Task 1:
+ * niente tipo dedicato finché il CHECK di host_credentials/device_credential_bindings
+ * non viene migrato, vedi Task 4).
+ */
 export function getCredentialLoginPair(
   credentialId: number,
-  expectedType: "windows" | "linux"
+  expectedType: "windows" | "linux" | "api"
 ): { username: string; password: string } | null {
   const cred = getCredentialById(credentialId);
   if (!cred) return null;

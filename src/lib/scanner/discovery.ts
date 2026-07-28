@@ -73,6 +73,7 @@ import { evidenceFromAuthOutcome } from "@/lib/attribution/credential-evidence";
 import type { AuthOutcome } from "@/lib/attribution/credential-evidence";
 import { recordEvidence } from "@/lib/attribution/evidence";
 import { recomputeAttributionSafe } from "@/lib/attribution/recompute";
+import { redfishDetect, redfishValidate, redfishFetchInfo, redfishEvidence } from "@/lib/protocols/redfish";
 import type { ScanProgress, DiscoveryResult, DeviceFingerprintSnapshot } from "@/types";
 import type { DnsResolution } from "./dns";
 
@@ -142,7 +143,7 @@ export type DiscoverNetworkOptions = {
 function autoBindCredentialToDevice(
   hostIp: string,
   credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm",
+  protocolType: "ssh" | "snmp" | "winrm" | "api",
   port: number,
   hostId?: number | null
 ): void {
@@ -2410,9 +2411,63 @@ async function runDiscovery(
           }
         }
 
-        // API: nessun test di autenticazione reale in questa fase (§7.4 fuori
-        // scope) — registriamo il binding come NON validato con motivo esplicito,
-        // mai più un "validated:false" muto (§Task3).
+        // API: nessun test di autenticazione generico in questa fase (§7.4 fuori
+        // scope) — TRANNE Redfish (BMC), Fase 4b Task 1: se il service root
+        // anonimo (`redfishDetect`) conferma un BMC su 443/8443, tentiamo
+        // l'autenticazione vera. NOTA (per Task 4): riusiamo credential_type/
+        // protocol_type "api" perché un tipo "redfish" dedicato richiederebbe
+        // una migrazione del CHECK su host_credentials/device_credential_bindings
+        // (rimandata al Task 4 di integrazione) — mai un tentativo alla cieca
+        // contro API generiche non-Redfish che condividono lo stesso tipo (es.
+        // Proxmox): il detect anonimo PRIMA dell'auth evita lo sweep (Global
+        // Constraints "nessuno sweep").
+        if (credType === "api" && openPorts.some((p) => [80, 443, 8080, 8443].includes(p.port))) {
+          const apiPort = openPorts.find((p) => [80, 443, 8080, 8443].includes(p.port))!.port;
+
+          if ((apiPort === 443 || apiPort === 8443) && !validatedProtos.has("api")) {
+            const detected = await redfishDetect(ip, { port: apiPort, timeoutMs: 3000 }).catch(
+              () => ({ present: false, vendorHint: null })
+            );
+            if (detected.present) {
+              if (!gateCredential("api", credId, credType, apiPort)) continue;
+              const creds = getCredentialLoginPair(credId, "api");
+              if (creds) {
+                const result = await redfishValidate(ip, creds.username, creds.password, { port: apiPort }).catch(
+                  (e) => ({ ok: false, error: (e as Error).message ?? String(e) })
+                );
+                if (result.ok) {
+                  recordCredentialSuccess(host.id, credId, "api", apiPort);
+                  autoBindCredentialToDevice(ip, credId, "api", apiPort, host.id);
+                  runBudget.recordSuccess(credId);
+                  log(`✓ ${ip}:${apiPort} Redfish (BMC) cred#${credId} (${nc.credential_name})`);
+                  validated++;
+                  validatedProtos.add("api");
+                  const infoResult = await redfishFetchInfo(ip, creds.username, creds.password, { port: apiPort }).catch(
+                    () => null
+                  );
+                  if (infoResult) {
+                    try {
+                      recordEvidence(getDb(), host.id, redfishEvidence(infoResult));
+                      recomputeAttributionSafe(host.id, "scan");
+                    } catch (e) {
+                      log(`⚠ evidenza Redfish non registrata per host ${host.id}: ${(e as Error).message ?? e}`);
+                    }
+                  }
+                } else {
+                  const msg = result.error ?? "credenziali non valide";
+                  recordCredentialFailure(host.id, credId, "api", apiPort, msg.slice(0, 500));
+                  runBudget.recordFailure(credId);
+                  log(`✗ ${ip}:${apiPort} Redfish (BMC) cred#${credId}: ${msg.slice(0, 160)}`);
+                }
+                continue; // esito reale (successo o fallimento) già registrato: non serve il fallback "non testato"
+              }
+            }
+          }
+        }
+
+        // API generica (o Redfish non rilevato/credenziale non compatibile): nessun
+        // test di autenticazione disponibile — registriamo il binding come NON
+        // validato con motivo esplicito, mai più un "validated:false" muto (§Task3).
         if (credType === "api" && openPorts.some((p) => [80, 443, 8080, 8443].includes(p.port))) {
           const apiPort = openPorts.find((p) => [80, 443, 8080, 8443].includes(p.port))!.port;
           if (!gateCredential("api", credId, credType, apiPort)) continue;

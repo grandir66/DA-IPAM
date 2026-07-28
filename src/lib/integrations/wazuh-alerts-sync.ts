@@ -155,6 +155,7 @@ export async function syncWazuhAlertsForTenant(opts?: {
       searchAfter: state.cursor ?? undefined,
       // Le nostre stesse sonde non devono comparire come attacco
       self: collectSelfIdentity(db),
+      deviceRuleIds: cfg.deviceRuleIds,
     });
 
     let opened = 0;

@@ -45,7 +45,16 @@ export const SYSTEM_FILTERS: SystemFilter[] = [
   { id: "windows", labelIt: "Windows", match: ["windows", "windows_security"] },
   { id: "microsoft365", labelIt: "Microsoft 365", match: ["office365"] },
   { id: "linux", labelIt: "Linux", match: ["sshd", "pam", "sudo"] },
-  { id: "vpn", labelIt: "VPN / apparati", match: ["fortigate", "pfsense", "openvpn", "radius", "vpn", "cisco"] },
+  {
+    id: "vpn",
+    labelIt: "VPN / apparati",
+    // Misurato: gli apparati qui sono MikroTik e Stormshield. La lista resta
+    // ampia per coprire i decoder piu' comuni senza dover ritoccare il codice.
+    match: [
+      "mikrotik", "stormshield", "firewallstormshield", "wireguard", "vpn",
+      "fortigate", "pfsense", "openvpn", "radius", "cisco",
+    ],
+  },
 ];
 
 export function systemFilterById(id: string | undefined): SystemFilter | undefined {
@@ -119,6 +128,8 @@ interface AccountsAgg {
     };
     /** Decoder generici (sshd, pam, sudo): srcuser. */
     by_user_unix: UserTermsAgg;
+    /** Apparati (MikroTik, firewall): username. */
+    by_user_device: UserTermsAgg;
   };
 }
 
@@ -142,7 +153,7 @@ export interface StatsQuery {
     rules: { cardinality: { field: string } };
     accounts: AccountsAgg;
     /** Dove avviene la violazione. */
-    targets: RankedAgg;
+    targets: { filter: { bool: { must_not: unknown[] } }; aggs: { r: RankedAgg } };
     /**
      * Da dove parte la richiesta: IP e postazione, per ogni sorgente.
      * Deve essere un'aggregazione a bucket con le sue sotto-aggregazioni sotto
@@ -150,7 +161,7 @@ export interface StatsQuery {
      * inesistente ("Unknown aggregation type [by_win]").
      */
     sources: {
-      filter: { match_all: Record<string, never> };
+      filter: { bool: { must_not: unknown[] } };
       aggs: {
         by_win: RankedAgg;
         by_unix: RankedAgg;
@@ -190,8 +201,28 @@ export function buildStatsQuery(args: {
   excludeIps?: string[];
   /** Restringe a un solo sistema (windows | microsoft365 | linux | vpn). */
   system?: string;
+  /** ID regola degli apparati configurati. */
+  extraRuleIds?: string[];
 }): StatsQuery {
   const sys = systemFilterById(args.system);
+  const extraIds = args.extraRuleIds ?? [];
+  // Cio' che parte da noi non e' un attacco: vale per TUTTE le classifiche.
+  const selfExclusions = [
+    ...((args.excludeAccounts ?? []).length
+      ? [
+          { terms: { "data.win.eventdata.targetUserName": args.excludeAccounts! } },
+          { terms: { "data.srcuser": args.excludeAccounts! } },
+          { terms: { "data.dstuser": args.excludeAccounts! } },
+          { terms: { "data.office365.UserId": args.excludeAccounts! } },
+        ]
+      : []),
+    ...((args.excludeIps ?? []).length
+      ? [
+          { terms: { "data.srcip": args.excludeIps! } },
+          { terms: { "data.win.eventdata.ipAddress": args.excludeIps! } },
+        ]
+      : []),
+  ];
   const cats = queryableCategories();
   const authGroups = [
     ...(cats.find((c) => c.id === "auth_failure")?.groups ?? []),
@@ -219,7 +250,15 @@ export function buildStatsQuery(args: {
         filter: [
           { range: { "@timestamp": { gte: args.since } } },
           { range: { "rule.level": { gte: minSelectedLevel() } } },
-          { terms: { "rule.groups": selectedGroups() } },
+          {
+            bool: {
+              should: [
+                { terms: { "rule.groups": selectedGroups() } },
+                ...(extraIds.length ? [{ terms: { "rule.id": extraIds } }] : []),
+              ],
+              minimum_should_match: 1,
+            },
+          },
           ...(sys ? [{ terms: { "rule.groups": sys.match } }] : []),
         ],
         must_not: [{ terms: { "rule.groups": EXCLUDED_OUTCOME_GROUPS } }],
@@ -240,13 +279,18 @@ export function buildStatsQuery(args: {
       },
       agents: { cardinality: { field: "agent.id" } },
       rules: { cardinality: { field: "rule.id" } },
-      targets: ranked(
-        "agent.name",
-        "data.win.eventdata.targetUserName",
-        "data.win.eventdata.ipAddress",
-      ),
+      targets: {
+        filter: { bool: { must_not: selfExclusions } },
+        aggs: {
+          r: ranked(
+            "agent.name",
+            "data.win.eventdata.targetUserName",
+            "data.win.eventdata.ipAddress",
+          ),
+        },
+      },
       sources: {
-        filter: { match_all: {} },
+        filter: { bool: { must_not: selfExclusions } },
         aggs: {
           by_win: ranked("data.win.eventdata.ipAddress", "data.win.eventdata.targetUserName"),
           by_unix: ranked("data.srcip", "data.srcuser"),
@@ -266,24 +310,7 @@ export function buildStatsQuery(args: {
             // I nostri account vanno esclusi su OGNI campo utente: i decoder
             // Linux usano srcuser, Microsoft 365 usa UserId. Filtrare solo il
             // campo Windows lasciava passare "domarc" fra i bersagliati.
-            must_not: [
-              ...((args.excludeAccounts ?? []).length
-                ? [
-                    { terms: { "data.win.eventdata.targetUserName": args.excludeAccounts } },
-                    { terms: { "data.srcuser": args.excludeAccounts } },
-                    { terms: { "data.dstuser": args.excludeAccounts } },
-                    { terms: { "data.office365.UserId": args.excludeAccounts } },
-                  ]
-                : []),
-              // Il nostro scanner prova credenziali note (admin, oracle, karaf):
-              // sono tentativi NOSTRI, e si riconoscono dall'IP di partenza.
-              ...((args.excludeIps ?? []).length
-                ? [
-                    { terms: { "data.srcip": args.excludeIps } },
-                    { terms: { "data.win.eventdata.ipAddress": args.excludeIps } },
-                  ]
-                : []),
-            ],
+            must_not: selfExclusions,
           },
         },
         aggs: {
@@ -309,6 +336,14 @@ export function buildStatsQuery(args: {
                   last_seen: { max: { field: "@timestamp" } },
                 },
               },
+            },
+          },
+          by_user_device: {
+            terms: { field: "data.username", size: TOP_ACCOUNTS },
+            aggs: {
+              top_source: { terms: { field: "data.srcip", size: 1 } },
+              top_agent: { terms: { field: "agent.name", size: 1 } },
+              last_seen: { max: { field: "@timestamp" } },
             },
           },
           by_user_unix: {
@@ -396,8 +431,9 @@ interface RawAgg {
       by_user?: { buckets?: UserBucket[] };
       by_user_cloud?: { u?: { buckets?: UserBucket[] } };
       by_user_unix?: { buckets?: UserBucket[] };
+      by_user_device?: { buckets?: UserBucket[] };
     };
-    targets?: { buckets?: RankedBucket[] };
+    targets?: { r?: { buckets?: RankedBucket[] } };
     sources?: {
       by_win?: { buckets?: RankedBucket[] };
       by_unix?: { buckets?: RankedBucket[] };
@@ -470,6 +506,7 @@ export function parseStatsResponse(raw: RawAgg): AlertStats {
     ...fromBuckets(acc?.by_user?.buckets, "windows"),
     ...fromBuckets(acc?.by_user_cloud?.u?.buckets, "microsoft365"),
     ...fromBuckets(acc?.by_user_unix?.buckets, "linux"),
+    ...fromBuckets(acc?.by_user_device?.buckets, "altro"),
   ]
     .sort((a, b) => b.count - a.count);
 
@@ -494,7 +531,7 @@ export function parseStatsResponse(raw: RawAgg): AlertStats {
   ].sort((a, b) => b.count - a.count);
 
   return {
-    byTarget: rank(raw.aggregations?.targets?.buckets).sort((a, b) => b.count - a.count),
+    byTarget: rank(raw.aggregations?.targets?.r?.buckets).sort((a, b) => b.count - a.count),
     bySource,
     totals: {
       alerts,

@@ -21,6 +21,13 @@ export interface WazuhConfig {
   indexerUrl: string;       // es. https://da-wazuh.domarc.it:9200
   indexerUsername: string;  // utente OS read-only (es. "da-ipam-os")
   indexerPassword: string;  // plaintext lato applicativo, cifrato a riposo
+
+  /**
+   * ID delle regole locali degli apparati (MikroTik, firewall, VPN) da
+   * raccogliere. Servono perche' quei decoder non emettono gruppi di esito:
+   * gli id sono specifici della singola installazione Wazuh, non del prodotto.
+   */
+  deviceRuleIds: string[];
 }
 
 const KEY_ENABLED       = "integration_wazuh_enabled";
@@ -31,6 +38,7 @@ const KEY_VERIFY_TLS    = "integration_wazuh_verify_tls";
 const KEY_IDX_URL       = "integration_wazuh_indexer_url";
 const KEY_IDX_USERNAME  = "integration_wazuh_indexer_username";
 const KEY_IDX_PASSWORD  = "integration_wazuh_indexer_password_encrypted";
+const KEY_DEVICE_RULES  = "integration_wazuh_device_rule_ids";
 
 export function getWazuhConfig(): WazuhConfig {
   const passwordEnc = getSetting(KEY_PASSWORD);
@@ -44,10 +52,17 @@ export function getWazuhConfig(): WazuhConfig {
     indexerUrl:      getSetting(KEY_IDX_URL) ?? "",
     indexerUsername: getSetting(KEY_IDX_USERNAME) ?? "",
     indexerPassword: idxPasswordEnc ? (safeDecrypt(idxPasswordEnc) ?? "") : "",
+    deviceRuleIds: (getSetting(KEY_DEVICE_RULES) ?? "")
+      .split(/[,;\s]+/)
+      .map((v) => v.trim())
+      .filter(Boolean),
   };
 }
 
 export function setWazuhConfig(cfg: Partial<WazuhConfig>): void {
+  if (cfg.deviceRuleIds !== undefined) {
+    setSetting(KEY_DEVICE_RULES, cfg.deviceRuleIds.join(","));
+  }
   if (cfg.enabled !== undefined)   setSetting(KEY_ENABLED, cfg.enabled ? "1" : "0");
   if (cfg.url !== undefined)       setSetting(KEY_URL, cfg.url.trim());
   if (cfg.username !== undefined)  setSetting(KEY_USERNAME, cfg.username.trim());

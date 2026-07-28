@@ -28,6 +28,8 @@ export interface AlertCategory {
    * rule.groups: non partecipa a categorizeAlert, alla query, ne' alla soglia.
    */
   assignedOnly?: boolean;
+  /** Selezionata per ID regola configurati, non per gruppo. */
+  ruleIdsFromConfig?: boolean;
 }
 
 export const ALERT_CATEGORIES: AlertCategory[] = [
@@ -76,6 +78,21 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
     id: "cloud_auth_failure",
     labelIt: "Fallimenti accesso cloud (Microsoft 365)",
     groups: ["AzureActiveDirectoryStsLogon"],
+    minLevel: 3,
+  },
+  {
+    /**
+     * Apparati di rete e VPN. I loro decoder locali NON emettono gruppi di
+     * esito (MikroTik: "Login failure for user root" ha solo il gruppo
+     * "mikrotik"), quindi si selezionano per ID REGOLA, configurabile per
+     * installazione: gli id sono locali al singolo Wazuh, non del prodotto.
+     * Il rimedio durevole resta aggiungere <group>authentication_failed</group>
+     * alle regole locali.
+     */
+    id: "network_auth_failure",
+    labelIt: "Fallimenti su apparati di rete e VPN",
+    groups: [],
+    ruleIdsFromConfig: true,
     minLevel: 3,
   },
   {
@@ -130,7 +147,7 @@ export function selectedGroups(): string[] {
  * soglie per-categoria possano vederli, e il dato sarebbe perso per sempre.
  */
 export function minSelectedLevel(): number {
-  return ALERT_CATEGORIES.filter((c) => !c.assignedOnly).reduce(
+  return ALERT_CATEGORIES.filter((c) => !c.assignedOnly && !c.ruleIdsFromConfig).reduce(
     (min, c) => Math.min(min, c.minLevel),
     Number.MAX_SAFE_INTEGER,
   );
@@ -214,6 +231,8 @@ export interface WazuhAlertDoc {
     /** Decoder generici Wazuh (sshd, pam, sudo, apparati syslog). */
     srcuser?: string;
     dstuser?: string;
+    /** Usato dai decoder di apparati (MikroTik, firewall). */
+    username?: string;
     srcip?: string;
     office365?: {
       Operation?: string;
@@ -258,6 +277,8 @@ export function normalizeAlert(
   doc: WazuhAlertDoc,
   hitId: string,
   self?: SelfIdentity,
+  /** ID regola degli apparati configurati per questa installazione. */
+  deviceRuleIds?: string[],
 ): NormalizedAlert {
   const groups = doc.rule?.groups ?? [];
   const ed = doc.data?.win?.eventdata;
@@ -266,7 +287,13 @@ export function normalizeAlert(
   // Ogni sorgente usa un campo diverso: Windows targetUserName, Microsoft 365
   // UserId, i decoder generici srcuser/dstuser.
   const targetUser =
-    ed?.targetUserName ?? o365?.UserId ?? doc.data?.srcuser ?? doc.data?.dstuser ?? ed?.subjectUserName ?? null;
+    ed?.targetUserName ??
+    o365?.UserId ??
+    doc.data?.srcuser ??
+    doc.data?.dstuser ??
+    doc.data?.username ??
+    ed?.subjectUserName ??
+    null;
   const sourceIp =
     normalizeIp(ed?.ipAddress) ?? normalizeIp(o365?.ClientIP) ?? normalizeIp(doc.data?.srcip) ?? null;
   const workstation = ed?.workstationName ?? null;
@@ -280,6 +307,10 @@ export function normalizeAlert(
         : "altro";
 
   let matched = categorizeAlert(groups);
+  // Gli apparati non hanno gruppi di esito: si riconoscono per id regola.
+  if (!matched && doc.rule?.id && (deviceRuleIds ?? []).includes(doc.rule.id)) {
+    matched = "network_auth_failure";
+  }
   // Microsoft 365: lo stesso gruppo porta accessi riusciti e falliti. Senza
   // guardare l'Operation si archivierebbero i login riusciti come attacchi.
   if (matched === "cloud_auth_failure" && !O365_FAILURE_OPS.has(o365?.Operation ?? "")) {
@@ -329,12 +360,18 @@ type RangeFilter = {
   };
 };
 type TermsFilter = { terms: { "rule.groups": string[] } };
+type ShouldFilter = {
+  bool: {
+    should: Array<{ terms: Record<string, string[]> }>;
+    minimum_should_match: number;
+  };
+};
 
 export interface AlertsQuery {
   size: number;
   query: {
     bool: {
-      filter: Array<RangeFilter | TermsFilter>;
+      filter: Array<RangeFilter | TermsFilter | ShouldFilter>;
       must_not: Array<TermsFilter>;
     };
   };
@@ -348,7 +385,10 @@ export function buildAlertsQuery(args: {
   minLevel?: number;
   size: number;
   searchAfter?: unknown[];
+  /** ID regola degli apparati (MikroTik, firewall) configurati. */
+  extraRuleIds?: string[];
 }): AlertsQuery {
+  const extraRuleIds = args.extraRuleIds ?? [];
   const q: AlertsQuery = {
     size: args.size,
     query: {
@@ -356,7 +396,15 @@ export function buildAlertsQuery(args: {
         filter: [
           { range: { "@timestamp": { gte: args.since } } },
           { range: { "rule.level": { gte: args.minLevel ?? minSelectedLevel() } } },
-          { terms: { "rule.groups": selectedGroups() } },
+          {
+            bool: {
+              should: [
+                { terms: { "rule.groups": selectedGroups() } },
+                ...(extraRuleIds.length ? [{ terms: { "rule.id": extraRuleIds } }] : []),
+              ],
+              minimum_should_match: 1,
+            },
+          },
         ],
         // Un accesso riuscito non e' un fallimento: meglio non scaricarlo
         must_not: [{ terms: { "rule.groups": EXCLUDED_OUTCOME_GROUPS } }],

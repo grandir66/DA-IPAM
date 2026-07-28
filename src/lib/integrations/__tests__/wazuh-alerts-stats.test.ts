@@ -330,7 +330,7 @@ test("an unknown system id is ignored rather than emptying the result", () => {
 test("the query ranks destination and request origin, not only the account", () => {
   const q = buildStatsQuery({ since: "2026-07-26T12:00:00.000Z", interval: "1h" });
   // dove avviene la violazione
-  assert.equal(q.aggs.targets.terms.field, "agent.name");
+  assert.equal(q.aggs.targets.aggs.r.terms.field, "agent.name");
   // da dove parte la richiesta: ogni sorgente usa un campo diverso
   // le sotto-aggregazioni vanno sotto `aggs`, altrimenti OpenSearch legge il
   // nome come un tipo di aggregazione e risponde 400
@@ -349,7 +349,7 @@ test("parseStatsResponse returns the three rankings ready to render", () => {
     hits: { total: { value: 100 } },
     aggregations: {
       targets: {
-        buckets: [
+        r: { buckets: [
           {
             key: "DA-RDP",
             doc_count: 90,
@@ -357,7 +357,7 @@ test("parseStatsResponse returns the three rankings ready to render", () => {
             top_source: { buckets: [{ key: "85.34.43.2" }] },
             last_seen: { value_as_string: "2026-07-28T09:00:00.000Z" },
           },
-        ],
+        ] },
       },
       sources: {
         by_win: { buckets: [{ key: "::ffff:85.34.43.2", doc_count: 90, top_user: { buckets: [{ key: "pippo" }] } }] },
@@ -379,4 +379,22 @@ test("empty aggregations give empty rankings, not a crash", () => {
   const s = parseStatsResponse({ hits: { total: { value: 0 } }, aggregations: {} });
   assert.deepEqual(s.byTarget, []);
   assert.deepEqual(s.bySource, []);
+});
+
+test("our own activity is excluded from every ranking, not just the accounts", () => {
+  // Visto a schermo: il nostro scanner sui MikroTik era la prima origine con
+  // 5.2K tentativi. Se e' nostro non e' un attacco, in nessuna delle tabelle.
+  const q = buildStatsQuery({
+    since: "2026-07-26T12:00:00.000Z",
+    interval: "1h",
+    excludeAccounts: ["domarc"],
+    excludeIps: ["192.168.4.8"],
+  });
+  for (const [name, agg] of [
+    ["targets", q.aggs.targets],
+    ["sources", q.aggs.sources],
+  ] as const) {
+    const json = JSON.stringify((agg as { filter?: unknown }).filter);
+    assert.ok(json.includes("192.168.4.8"), `${name} non esclude i nostri IP`);
+  }
 });

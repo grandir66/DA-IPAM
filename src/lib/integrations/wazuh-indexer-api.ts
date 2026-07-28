@@ -241,6 +241,7 @@ export class WazuhIndexerClient {
     maxRows?: number;
     searchAfter?: unknown[];
     self?: SelfIdentity;
+    deviceRuleIds?: string[];
   }): Promise<{ alerts: NormalizedAlert[]; nextCursor: unknown[] | null }> {
     const maxRows = args.maxRows ?? 2_000;
     const pageSize = Math.min(500, maxRows);
@@ -254,6 +255,7 @@ export class WazuhIndexerClient {
         minLevel: args.minLevel,
         size: Math.min(pageSize, maxRows - out.length),
         searchAfter,
+        extraRuleIds: args.deviceRuleIds,
       });
       const res = await this.json<IndexerSearchResponse<WazuhAlertDoc>>(
         "POST",
@@ -262,7 +264,8 @@ export class WazuhIndexerClient {
       );
       const hits = res.hits?.hits ?? [];
       if (hits.length === 0) break;
-      for (const h of hits) out.push(normalizeAlert(h._source, h._id, args.self));
+      for (const h of hits)
+        out.push(normalizeAlert(h._source, h._id, args.self, args.deviceRuleIds));
 
       const last = hits[hits.length - 1] as IndexerHit<WazuhAlertDoc> & {
         sort?: unknown[];
@@ -285,6 +288,7 @@ export class WazuhIndexerClient {
     excludeAccounts?: string[];
     excludeIps?: string[];
     system?: string;
+    extraRuleIds?: string[];
   }): Promise<AlertStats> {
     const body = buildStatsQuery(args);
     const res = await this.json<Record<string, unknown>>(

@@ -88,6 +88,7 @@ export async function GET(req: Request) {
         excludeAccounts: self.accounts,
         excludeIps: self.ips,
         system: parsed.data.system,
+        extraRuleIds: cfg.deviceRuleIds,
       });
       return NextResponse.json({ ...base, stats });
     } catch (e) {

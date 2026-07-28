@@ -18,6 +18,7 @@ import {
   AlertsComposition,
   AlertsOverTime,
   RankedTable,
+  SYSTEM_CHOICES,
   StatTile,
   TargetedAccounts,
   seriesColor,
@@ -211,7 +212,7 @@ export function SecurityAlertsClient() {
   const topAccounts = stats?.stats?.topAccounts ?? [];
   const byTarget = stats?.stats?.byTarget ?? [];
   const bySource = stats?.stats?.bySource ?? [];
-  const systems = stats?.systems ?? [];
+  const systems = SYSTEM_CHOICES;
 
   return (
     <div className="space-y-6 p-6">

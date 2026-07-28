@@ -36,13 +36,26 @@ export interface CategorySlice {
 export type SeriesRow = { bucket: string } & Record<string, number | string>;
 
 /** Ordine fisso: mai ciclato, mai riassegnato in base al volume. */
+/**
+ * Sistemi filtrabili. Lista COSTANTE lato client: prima arrivava dalla risposta
+ * dell'API, quindi se le statistiche fallivano il filtro spariva del tutto —
+ * proprio quando serve capire cosa sta succedendo.
+ */
+export const SYSTEM_CHOICES = [
+  { id: "windows", labelIt: "Windows" },
+  { id: "microsoft365", labelIt: "Microsoft 365" },
+  { id: "linux", labelIt: "Linux" },
+  { id: "vpn", labelIt: "VPN / apparati" },
+] as const;
+
 const SERIES_SLOT: Record<string, number> = {
   ransomware: 1,
   auth_failure: 2,
   privileged_change: 3,
   log_tampering: 4,
   agent_health: 5,
-  self_probe: 6,
+  network_auth_failure: 6,
+  self_probe: 7,
 };
 
 export function seriesColor(categoryId: string): string {
@@ -186,15 +199,18 @@ export function AlertsComposition({ categories }: { categories: CategorySlice[] 
     );
   }
   return (
-    <div className="flex flex-col items-center gap-4 md:flex-row">
-      <ResponsiveContainer width="100%" height={220} className="md:max-w-[240px]">
-        <PieChart>
+    <div className="flex flex-col items-center gap-4 md:flex-row md:items-start">
+      {/* Box quadrato a dimensione FISSA: dentro un flex, ResponsiveContainer
+          misurava male la larghezza e la ciambella usciva tagliata a spicchi. */}
+      <div className="h-[200px] w-[200px] shrink-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
           <Pie
             data={categories}
             dataKey="count"
             nameKey="labelIt"
-            innerRadius={52}
-            outerRadius={88}
+            innerRadius={48}
+            outerRadius={78}
             paddingAngle={2}
             stroke="var(--chart-surface)"
             strokeWidth={2}
@@ -217,8 +233,9 @@ export function AlertsComposition({ categories }: { categories: CategorySlice[] 
               );
             }}
           />
-        </PieChart>
-      </ResponsiveContainer>
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
 
       {/* La legenda porta il valore accanto al colore: è il sostegno testuale
           richiesto dalle tinte a basso contrasto in modalità chiara. */}

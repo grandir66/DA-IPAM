@@ -33,7 +33,8 @@ test("every category declares the groups it matches", () => {
   assert.ok(ALERT_CATEGORIES.length >= 5);
   for (const c of ALERT_CATEGORIES) {
     assert.ok(c.id.length > 0, c.id);
-    assert.ok(c.groups.length > 0, c.id);
+    // O dichiara i gruppi, o e' selezionata per id regola configurati (apparati)
+    assert.ok(c.groups.length > 0 || c.ruleIdsFromConfig === true, c.id);
     assert.ok(c.labelIt.length > 3, c.id);
   }
   const ids = ALERT_CATEGORIES.map((c) => c.id);
@@ -58,9 +59,12 @@ test("buildAlertsQuery filters by time window and minimum level", () => {
 
 test("buildAlertsQuery restricts to the curated rule groups", () => {
   const q = buildAlertsQuery({ since: SINCE, minLevel: 8, size: 100 });
-  const groupFilter = q.query.bool.filter.find((f) => "terms" in f);
-  assert.ok(groupFilter && "terms" in groupFilter);
-  const groups = groupFilter.terms["rule.groups"];
+  // i gruppi stanno dentro un bool.should, per convivere con gli id regola
+  const shouldFilter = q.query.bool.filter.find((f) => "bool" in f);
+  assert.ok(shouldFilter && "bool" in shouldFilter);
+  const groupClause = shouldFilter.bool.should.find((c) => "rule.groups" in c.terms);
+  assert.ok(groupClause);
+  const groups = groupClause.terms["rule.groups"]!;
   assert.ok(groups.includes("authentication_failures"));
   assert.ok(groups.includes("ransomware_detection"));
   // Operational noise measured on the field must not be pulled in
@@ -368,4 +372,41 @@ test("successful logins are excluded already in the query", () => {
     JSON.stringify(q.query.bool).includes("authentication_success"),
     "gli accessi riusciti vengono ancora scaricati",
   );
+});
+
+test("the user is also read from data.username, used by device decoders", () => {
+  // MikroTik: "login failure for user root from 192.168.4.8" mette l'utente in
+  // data.username, non in srcuser/dstuser.
+  const a = normalizeAlert(
+    {
+      "@timestamp": "2026-07-28T10:00:00.000Z",
+      rule: { id: "100202", level: 11, description: "Mikrotik: Login failure", groups: ["mikrotik"] },
+      data: { username: "root", srcip: "51.89.15.26" },
+    },
+    "h",
+    undefined,
+    ["100202"],
+  );
+  assert.equal(a.targetUser, "root");
+  assert.equal(a.sourceIp, "51.89.15.26");
+  assert.equal(a.category, "network_auth_failure");
+});
+
+test("device rules are selected by id, since their groups carry no outcome", () => {
+  // Le regole locali degli apparati non emettono authentication_failed: senza
+  // selezione per id resterebbero invisibili.
+  const doc = {
+    "@timestamp": "2026-07-28T10:00:00.000Z",
+    rule: { id: "100202", level: 11, description: "x", groups: ["mikrotik"] },
+    data: { username: "admin" },
+  };
+  assert.equal(normalizeAlert(doc, "h").category, null);
+  assert.equal(normalizeAlert(doc, "h", undefined, ["100202"]).category, "network_auth_failure");
+});
+
+test("the query fetches configured device rule ids alongside the groups", () => {
+  const q = buildAlertsQuery({ since: SINCE, size: 100, extraRuleIds: ["100202", "100435"] });
+  const json = JSON.stringify(q.query.bool);
+  assert.ok(json.includes("100202"));
+  assert.ok(json.includes("rule.id"));
 });

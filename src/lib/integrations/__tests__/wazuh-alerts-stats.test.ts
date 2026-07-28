@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   STATS_WINDOWS,
+  SYSTEM_FILTERS,
   bucketIntervalFor,
   buildStatsQuery,
   parseStatsResponse,
@@ -300,4 +301,82 @@ test("our own scanner is excluded by IP too, not only by account name", () => {
   assert.ok(json.includes("192.168.4.8"));
   assert.ok(json.includes("data.srcip"));
   assert.ok(json.includes("data.win.eventdata.ipAddress"));
+});
+
+// ── Le tre dimensioni diagnostiche + filtro per sistema ─────────────────────
+
+test("every selectable system declares a label and a filter", () => {
+  assert.ok(SYSTEM_FILTERS.length >= 4);
+  for (const s of SYSTEM_FILTERS) {
+    assert.ok(s.id.length > 0);
+    assert.ok(s.labelIt.length > 1, s.id);
+    assert.ok(s.match.length > 0, s.id);
+  }
+  assert.ok(SYSTEM_FILTERS.some((s) => s.id === "vpn"), "la VPN deve restare selezionabile");
+});
+
+test("the query can be narrowed to a single system", () => {
+  const all = buildStatsQuery({ since: "2026-07-26T12:00:00.000Z", interval: "1h" });
+  const win = buildStatsQuery({ since: "2026-07-26T12:00:00.000Z", interval: "1h", system: "windows" });
+  assert.equal(JSON.stringify(all.query).includes('"windows"'), false);
+  assert.ok(JSON.stringify(win.query).includes('"windows"'));
+});
+
+test("an unknown system id is ignored rather than emptying the result", () => {
+  const q = buildStatsQuery({ since: "2026-07-26T12:00:00.000Z", interval: "1h", system: "chissa" });
+  assert.equal(JSON.stringify(q.query).includes("chissa"), false);
+});
+
+test("the query ranks destination and request origin, not only the account", () => {
+  const q = buildStatsQuery({ since: "2026-07-26T12:00:00.000Z", interval: "1h" });
+  // dove avviene la violazione
+  assert.equal(q.aggs.targets.terms.field, "agent.name");
+  // da dove parte la richiesta: ogni sorgente usa un campo diverso
+  // le sotto-aggregazioni vanno sotto `aggs`, altrimenti OpenSearch legge il
+  // nome come un tipo di aggregazione e risponde 400
+  assert.ok(q.aggs.sources.filter, "sources deve essere un'aggregazione a bucket");
+  assert.equal(q.aggs.sources.aggs.by_win.terms.field, "data.win.eventdata.ipAddress");
+  assert.equal(q.aggs.sources.aggs.by_unix.terms.field, "data.srcip");
+  assert.equal(q.aggs.sources.aggs.by_cloud.terms.field, "data.office365.ClientIP");
+  assert.equal(
+    q.aggs.sources.aggs.by_workstation.terms.field,
+    "data.win.eventdata.workstationName",
+  );
+});
+
+test("parseStatsResponse returns the three rankings ready to render", () => {
+  const s = parseStatsResponse({
+    hits: { total: { value: 100 } },
+    aggregations: {
+      targets: {
+        buckets: [
+          {
+            key: "DA-RDP",
+            doc_count: 90,
+            top_user: { buckets: [{ key: "pippo" }] },
+            top_source: { buckets: [{ key: "85.34.43.2" }] },
+            last_seen: { value_as_string: "2026-07-28T09:00:00.000Z" },
+          },
+        ],
+      },
+      sources: {
+        by_win: { buckets: [{ key: "::ffff:85.34.43.2", doc_count: 90, top_user: { buckets: [{ key: "pippo" }] } }] },
+        by_workstation: { buckets: [{ key: "WKS-05", doc_count: 90, top_user: { buckets: [] } }] },
+      },
+    },
+  });
+  assert.equal(s.byTarget[0]!.key, "DA-RDP");
+  assert.equal(s.byTarget[0]!.count, 90);
+  assert.equal(s.byTarget[0]!.detail, "pippo");
+
+  const ip = s.bySource.find((x) => x.key === "85.34.43.2");
+  assert.ok(ip, "l'IP deve comparire normalizzato");
+  assert.equal(ip!.count, 90);
+  assert.ok(s.bySource.some((x) => x.key === "WKS-05"), "anche la postazione e' un'origine");
+});
+
+test("empty aggregations give empty rankings, not a crash", () => {
+  const s = parseStatsResponse({ hits: { total: { value: 0 } }, aggregations: {} });
+  assert.deepEqual(s.byTarget, []);
+  assert.deepEqual(s.bySource, []);
 });

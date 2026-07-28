@@ -28,6 +28,30 @@ import {
  */
 const TOP_ACCOUNTS = 100;
 
+/**
+ * Sistemi selezionabili come filtro. Il match e' su rule.groups: sono le
+ * etichette che Wazuh assegna in base al decoder, quindi dicono da che mondo
+ * arriva l'alert. La VPN resta in elenco anche dove nessun apparato la manda:
+ * meglio una lista vuota che far credere che la voce non esista.
+ */
+export interface SystemFilter {
+  id: string;
+  labelIt: string;
+  /** rule.groups che identificano il sistema. */
+  match: string[];
+}
+
+export const SYSTEM_FILTERS: SystemFilter[] = [
+  { id: "windows", labelIt: "Windows", match: ["windows", "windows_security"] },
+  { id: "microsoft365", labelIt: "Microsoft 365", match: ["office365"] },
+  { id: "linux", labelIt: "Linux", match: ["sshd", "pam", "sudo"] },
+  { id: "vpn", labelIt: "VPN / apparati", match: ["fortigate", "pfsense", "openvpn", "radius", "vpn", "cisco"] },
+];
+
+export function systemFilterById(id: string | undefined): SystemFilter | undefined {
+  return id ? SYSTEM_FILTERS.find((s) => s.id === id) : undefined;
+}
+
 export interface StatsWindow {
   id: string;
   labelIt: string;
@@ -117,6 +141,43 @@ export interface StatsQuery {
     agents: { cardinality: { field: string } };
     rules: { cardinality: { field: string } };
     accounts: AccountsAgg;
+    /** Dove avviene la violazione. */
+    targets: RankedAgg;
+    /**
+     * Da dove parte la richiesta: IP e postazione, per ogni sorgente.
+     * Deve essere un'aggregazione a bucket con le sue sotto-aggregazioni sotto
+     * `aggs`: un oggetto nudo verrebbe letto come un TIPO di aggregazione
+     * inesistente ("Unknown aggregation type [by_win]").
+     */
+    sources: {
+      filter: { match_all: Record<string, never> };
+      aggs: {
+        by_win: RankedAgg;
+        by_unix: RankedAgg;
+        by_cloud: RankedAgg;
+        by_workstation: RankedAgg;
+      };
+    };
+  };
+}
+
+interface RankedAgg {
+  terms: { field: string; size: number };
+  aggs: {
+    top_user: { terms: { field: string; size: number } };
+    top_source?: { terms: { field: string; size: number } };
+    last_seen: { max: { field: string } };
+  };
+}
+
+function ranked(field: string, userField: string, sourceField?: string): RankedAgg {
+  return {
+    terms: { field, size: TOP_ACCOUNTS },
+    aggs: {
+      top_user: { terms: { field: userField, size: 1 } },
+      ...(sourceField ? { top_source: { terms: { field: sourceField, size: 1 } } } : {}),
+      last_seen: { max: { field: "@timestamp" } },
+    },
   };
 }
 
@@ -127,7 +188,10 @@ export function buildStatsQuery(args: {
   excludeAccounts?: string[];
   /** IP nostri: il nostro scanner prova credenziali note (admin, oracle, …). */
   excludeIps?: string[];
+  /** Restringe a un solo sistema (windows | microsoft365 | linux | vpn). */
+  system?: string;
 }): StatsQuery {
+  const sys = systemFilterById(args.system);
   const cats = queryableCategories();
   const authGroups = [
     ...(cats.find((c) => c.id === "auth_failure")?.groups ?? []),
@@ -156,6 +220,7 @@ export function buildStatsQuery(args: {
           { range: { "@timestamp": { gte: args.since } } },
           { range: { "rule.level": { gte: minSelectedLevel() } } },
           { terms: { "rule.groups": selectedGroups() } },
+          ...(sys ? [{ terms: { "rule.groups": sys.match } }] : []),
         ],
         must_not: [{ terms: { "rule.groups": EXCLUDED_OUTCOME_GROUPS } }],
       },
@@ -175,6 +240,23 @@ export function buildStatsQuery(args: {
       },
       agents: { cardinality: { field: "agent.id" } },
       rules: { cardinality: { field: "rule.id" } },
+      targets: ranked(
+        "agent.name",
+        "data.win.eventdata.targetUserName",
+        "data.win.eventdata.ipAddress",
+      ),
+      sources: {
+        filter: { match_all: {} },
+        aggs: {
+          by_win: ranked("data.win.eventdata.ipAddress", "data.win.eventdata.targetUserName"),
+          by_unix: ranked("data.srcip", "data.srcuser"),
+          by_cloud: ranked("data.office365.ClientIP", "data.office365.UserId"),
+          by_workstation: ranked(
+            "data.win.eventdata.workstationName",
+            "data.win.eventdata.targetUserName",
+          ),
+        },
+      },
       // Chi viene bersagliato, non solo dove atterra l'evento. L'event store
       // non puo' rispondere: deduplica per (agent, regola) e perde l'account.
       accounts: {
@@ -268,11 +350,24 @@ export interface TargetedAccount {
   kind: "utente" | "computer";
 }
 
+/** Riga di una classifica diagnostica. */
+export interface RankedEntry {
+  key: string;
+  count: number;
+  /** Contesto: per la destinazione l'utente piu' colpito, per l'origine chi prova. */
+  detail: string | null;
+  lastSeenAt: string | null;
+}
+
 export interface AlertStats {
   totals: { alerts: number; agents: number; rules: number };
   byCategory: CategorySlice[];
   series: SeriesRow[];
   topAccounts: TargetedAccount[];
+  /** Dove avviene la violazione (host che registra il fallimento). */
+  byTarget: RankedEntry[];
+  /** Da dove parte la richiesta: IP pubblici/privati e postazioni. */
+  bySource: RankedEntry[];
 }
 
 interface UserBucket {
@@ -281,6 +376,14 @@ interface UserBucket {
   top_source?: { buckets?: TermsBucket[] };
   top_workstation?: { buckets?: TermsBucket[] };
   top_agent?: { buckets?: TermsBucket[] };
+  last_seen?: { value_as_string?: string };
+}
+
+interface RankedBucket {
+  key?: string;
+  doc_count?: number;
+  top_user?: { buckets?: TermsBucket[] };
+  top_source?: { buckets?: TermsBucket[] };
   last_seen?: { value_as_string?: string };
 }
 
@@ -293,6 +396,13 @@ interface RawAgg {
       by_user?: { buckets?: UserBucket[] };
       by_user_cloud?: { u?: { buckets?: UserBucket[] } };
       by_user_unix?: { buckets?: UserBucket[] };
+    };
+    targets?: { buckets?: RankedBucket[] };
+    sources?: {
+      by_win?: { buckets?: RankedBucket[] };
+      by_unix?: { buckets?: RankedBucket[] };
+      by_cloud?: { buckets?: RankedBucket[] };
+      by_workstation?: { buckets?: RankedBucket[] };
     };
     per_category?: {
       buckets?: Record<
@@ -363,7 +473,29 @@ export function parseStatsResponse(raw: RawAgg): AlertStats {
   ]
     .sort((a, b) => b.count - a.count);
 
+  const rank = (buckets: RankedBucket[] | undefined, normalize = false): RankedEntry[] =>
+    (buckets ?? [])
+      .map((b) => ({
+        key: (normalize ? normalizeIp(b.key) : (b.key ?? null)) ?? "",
+        count: b.doc_count ?? 0,
+        detail: b.top_user?.buckets?.[0]?.key ?? b.top_source?.buckets?.[0]?.key ?? null,
+        lastSeenAt: b.last_seen?.value_as_string ?? null,
+      }))
+      .filter((e) => e.key !== "" && e.key !== "-");
+
+  // Le origini arrivano da campi diversi: si uniscono e si ordinano insieme,
+  // cosi' un IP pubblico e una postazione interna stanno nella stessa classifica.
+  const src = raw.aggregations?.sources;
+  const bySource = [
+    ...rank(src?.by_win?.buckets, true),
+    ...rank(src?.by_unix?.buckets, true),
+    ...rank(src?.by_cloud?.buckets, true),
+    ...rank(src?.by_workstation?.buckets),
+  ].sort((a, b) => b.count - a.count);
+
   return {
+    byTarget: rank(raw.aggregations?.targets?.buckets).sort((a, b) => b.count - a.count),
+    bySource,
     totals: {
       alerts,
       agents: raw.aggregations?.agents?.value ?? 0,

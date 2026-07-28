@@ -17,10 +17,12 @@ import { RefreshCw, Check, Siren, Pause, Play } from "lucide-react";
 import {
   AlertsComposition,
   AlertsOverTime,
+  RankedTable,
   StatTile,
   TargetedAccounts,
   seriesColor,
   type CategorySlice,
+  type RankedEntry,
   type SeriesRow,
   type TargetedAccount,
 } from "./alert-charts";
@@ -66,6 +68,8 @@ interface StatsWindowDto {
 
 interface StatsResponse {
   windows: StatsWindowDto[];
+  systems: { id: string; labelIt: string }[];
+  system: string | null;
   window: string;
   interval: string;
   openTotal: number;
@@ -76,6 +80,8 @@ interface StatsResponse {
     byCategory: CategorySlice[];
     series: SeriesRow[];
     topAccounts: TargetedAccount[];
+    byTarget: RankedEntry[];
+    bySource: RankedEntry[];
   } | null;
 }
 
@@ -98,6 +104,7 @@ export function SecurityAlertsClient() {
   const [category, setCategory] = useState<string | null>(null);
   const [onlyOpen, setOnlyOpen] = useState(true);
   const [windowId, setWindowId] = useState("24h");
+  const [system, setSystem] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -115,9 +122,11 @@ export function SecurityAlertsClient() {
         if (onlyOpen) qs.set("onlyOpen", "1");
         const [listRes, statsRes] = await Promise.all([
           fetch(`/api/integrations/wazuh/alerts?${qs}`, { signal: ac.signal }),
-          fetch(`/api/integrations/wazuh/alerts/stats?window=${windowId}`, {
-            signal: ac.signal,
-          }),
+          fetch(
+            `/api/integrations/wazuh/alerts/stats?window=${windowId}` +
+              (system ? `&system=${system}` : ""),
+            { signal: ac.signal },
+          ),
         ]);
         if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
         setData((await listRes.json()) as AlertsResponse);
@@ -131,7 +140,7 @@ export function SecurityAlertsClient() {
         if (!opts?.silent) setLoading(false);
       }
     },
-    [category, onlyOpen, windowId],
+    [category, onlyOpen, windowId, system],
   );
 
   useEffect(() => {
@@ -200,6 +209,9 @@ export function SecurityAlertsClient() {
   const byCategory = stats?.stats?.byCategory ?? [];
   const series = stats?.stats?.series ?? [];
   const topAccounts = stats?.stats?.topAccounts ?? [];
+  const byTarget = stats?.stats?.byTarget ?? [];
+  const bySource = stats?.stats?.bySource ?? [];
+  const systems = stats?.systems ?? [];
 
   return (
     <div className="space-y-6 p-6">
@@ -242,6 +254,24 @@ export function SecurityAlertsClient() {
             onClick={() => setWindowId(w.id)}
           >
             {w.labelIt}
+          </Button>
+        ))}
+        <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+        <Button
+          variant={system === null ? "default" : "outline"}
+          size="sm"
+          onClick={() => setSystem(null)}
+        >
+          Tutti i sistemi
+        </Button>
+        {systems.map((sy) => (
+          <Button
+            key={sy.id}
+            variant={system === sy.id ? "default" : "outline"}
+            size="sm"
+            onClick={() => setSystem(sy.id)}
+          >
+            {sy.labelIt}
           </Button>
         ))}
         <span className="mx-1 h-5 w-px bg-border" aria-hidden />
@@ -317,6 +347,44 @@ export function SecurityAlertsClient() {
           </CardHeader>
           <CardContent>
             <AlertsComposition categories={byCategory} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Dove avviene</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Host su cui il tentativo fallito viene registrato: la destinazione
+              della violazione.
+            </p>
+            <RankedTable
+              entries={byTarget}
+              keyHeader="Destinazione"
+              detailHeader="Account più colpito"
+              emptyLabel="Nessuna destinazione nella finestra selezionata."
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Da dove parte</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Origine della richiesta: IP pubblici o interni e postazioni di
+              provenienza.
+            </p>
+            <RankedTable
+              entries={bySource}
+              keyHeader="Origine della richiesta"
+              detailHeader="Account provato"
+              emptyLabel="Nessuna origine ricavabile nella finestra selezionata."
+            />
           </CardContent>
         </Card>
       </div>

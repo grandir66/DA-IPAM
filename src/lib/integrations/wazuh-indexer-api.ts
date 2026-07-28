@@ -284,6 +284,7 @@ export class WazuhIndexerClient {
     interval: string;
     excludeAccounts?: string[];
     excludeIps?: string[];
+    system?: string;
   }): Promise<AlertStats> {
     const body = buildStatsQuery(args);
     const res = await this.json<Record<string, unknown>>(

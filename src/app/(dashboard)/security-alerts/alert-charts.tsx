@@ -409,3 +409,109 @@ export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) 
     </div>
   );
 }
+
+export interface RankedEntry {
+  key: string;
+  count: number;
+  detail: string | null;
+  lastSeenAt: string | null;
+}
+
+/**
+ * Classifica diagnostica generica (destinazione, origine della richiesta).
+ * Stessa forma della tabella account: barra a tinta unica ancorata al massimo
+ * assoluto e paginazione, così la coda lunga non sparisce.
+ */
+export function RankedTable({
+  entries,
+  keyHeader,
+  detailHeader,
+  emptyLabel,
+}: {
+  entries: RankedEntry[];
+  keyHeader: string;
+  detailHeader: string;
+  emptyLabel: string;
+}) {
+  const [page, setPage] = useState(0);
+  if (entries.length === 0) {
+    return <p className="py-6 text-center text-sm text-muted-foreground">{emptyLabel}</p>;
+  }
+  const max = Math.max(...entries.map((e) => e.count), 1);
+  const pages = Math.ceil(entries.length / ACCOUNTS_PER_PAGE);
+  const current = Math.min(page, pages - 1);
+  const visible = entries.slice(
+    current * ACCOUNTS_PER_PAGE,
+    current * ACCOUNTS_PER_PAGE + ACCOUNTS_PER_PAGE,
+  );
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-muted-foreground">
+            <th className="pb-2 font-normal">{keyHeader}</th>
+            <th className="pb-2 font-normal">Tentativi falliti</th>
+            <th className="pb-2 font-normal">{detailHeader}</th>
+            <th className="pb-2 text-right font-normal">Ultimo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visible.map((e) => (
+            <tr key={e.key} className="border-t">
+              <td className="py-2 pr-3 font-medium">{e.key}</td>
+              <td className="w-2/5 py-2 pr-3">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="h-3 rounded-r-sm"
+                    style={{
+                      width: `${Math.max(2, (e.count / max) * 100)}%`,
+                      background: "var(--series-1)",
+                    }}
+                    aria-hidden
+                  />
+                  <span className="shrink-0 tabular-nums">{compact(e.count)}</span>
+                </div>
+              </td>
+              <td className="py-2 pr-3 text-xs text-muted-foreground">{e.detail ?? "—"}</td>
+              <td className="py-2 text-right text-xs tabular-nums text-muted-foreground">
+                {e.lastSeenAt
+                  ? new Date(e.lastSeenAt).toLocaleString("it-IT", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {pages > 1 ? (
+        <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
+          <span>
+            {entries.length} voci · pagina {current + 1} di {pages}
+          </span>
+          <div className="ml-auto flex gap-2">
+            <button
+              type="button"
+              className="rounded border px-2 py-1 disabled:opacity-40"
+              onClick={() => setPage(current - 1)}
+              disabled={current === 0}
+            >
+              Precedente
+            </button>
+            <button
+              type="button"
+              className="rounded border px-2 py-1 disabled:opacity-40"
+              onClick={() => setPage(current + 1)}
+              disabled={current >= pages - 1}
+            >
+              Successiva
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}

@@ -12,6 +12,7 @@ import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { createWazuhIndexerClient } from "@/lib/integrations/wazuh-indexer-api";
 import {
   STATS_WINDOWS,
+  SYSTEM_FILTERS,
   bucketIntervalFor,
   sinceForWindow,
   windowById,
@@ -24,7 +25,10 @@ import {
 } from "@/lib/integrations/wazuh-alerts-db";
 import { collectSelfIdentity } from "@/lib/integrations/self-identity";
 
-const QuerySchema = z.object({ window: z.string().max(10).optional() });
+const QuerySchema = z.object({
+  window: z.string().max(10).optional(),
+  system: z.string().max(20).optional(),
+});
 
 export async function GET(req: Request) {
   return withTenantFromSession(async () => {
@@ -45,6 +49,8 @@ export async function GET(req: Request) {
 
     const base = {
       windows: STATS_WINDOWS,
+      systems: SYSTEM_FILTERS.map((s) => ({ id: s.id, labelIt: s.labelIt })),
+      system: parsed.data.system ?? null,
       window: win.id,
       interval: bucketIntervalFor(win.hours),
       openByCategory,
@@ -81,6 +87,7 @@ export async function GET(req: Request) {
         // che una nostra credenziale scaduta finisca in cima alla classifica.
         excludeAccounts: self.accounts,
         excludeIps: self.ips,
+        system: parsed.data.system,
       });
       return NextResponse.json({ ...base, stats });
     } catch (e) {

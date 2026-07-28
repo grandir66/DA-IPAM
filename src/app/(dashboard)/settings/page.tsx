@@ -49,6 +49,7 @@ import {
   Shield,
   ArrowUpCircle,
   Bell,
+  Siren,
   Sparkles,
   Play,
   RefreshCw,
@@ -65,6 +66,7 @@ import { DeviceIdentificationTab } from "@/components/settings/device-identifica
 import { ModulesTab } from "@/components/settings/modules-tab";
 import { UpdatesTab } from "@/components/settings/updates-tab";
 import { NotificationsTab } from "@/components/settings/notifications-tab";
+import { SecurityAlertsTab } from "@/components/settings/security-alerts-tab";
 
 const JOB_TYPE_LABELS: Record<string, string> = {
   ping_sweep: "Scoperta rete (ICMP + Nmap quick + DNS + ARP)",
@@ -108,6 +110,7 @@ type TabKey =
   | "jobs"
   | "https"
   | "moduli"
+  | "alert-sicurezza"
   | "notifiche"
   | "aggiornamenti"
   | "sistema";
@@ -131,7 +134,9 @@ const TAB_ALIASES: Record<string, TabKey> = {
   features: "moduli",
   notifiche: "notifiche",
   notifications: "notifiche",
-  alert: "notifiche",
+  "alert-sicurezza": "alert-sicurezza",
+  alert: "alert-sicurezza",
+  alerts: "alert-sicurezza",
   aggiornamenti: "aggiornamenti",
   updates: "aggiornamenti",
   sistema: "sistema",
@@ -603,6 +608,7 @@ function SettingsPageInner() {
     { key: "jobs", label: "Job pianificati", icon: Clock },
     { key: "https", label: "HTTPS", icon: Shield },
     { key: "moduli", label: "Moduli", icon: PackageOpen },
+    { key: "alert-sicurezza", label: "Alert sicurezza", icon: Siren },
     { key: "notifiche", label: "Notifiche", icon: Bell },
     { key: "aggiornamenti", label: "Aggiornamenti", icon: ArrowUpCircle },
     { key: "sistema", label: "Sistema", icon: Wrench },
@@ -1125,6 +1131,8 @@ function SettingsPageInner() {
       {activeTab === "moduli" && <ModulesTab isAdmin={isAdmin} />}
 
       {/* === Tab: Aggiornamenti === */}
+      {activeTab === "alert-sicurezza" && <SecurityAlertsTab />}
+
       {activeTab === "notifiche" && <NotificationsTab />}
 
       {activeTab === "aggiornamenti" && <UpdatesTab />}

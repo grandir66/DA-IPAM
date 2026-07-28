@@ -142,15 +142,18 @@ export function AlertsOverTime({
   series,
   categories,
   interval,
+  emptyNote,
 }: {
   series: SeriesRow[];
   categories: CategorySlice[];
   interval: string;
+  /** Perche' il grafico e' vuoto, quando del traffico c'e' ma non e' ostile. */
+  emptyNote?: string;
 }) {
   if (series.length === 0 || categories.length === 0) {
     return (
       <p className="py-12 text-center text-sm text-muted-foreground">
-        Nessun alert nella finestra selezionata.
+        {emptyNote ?? "Nessun alert nella finestra selezionata."}
       </p>
     );
   }
@@ -200,13 +203,19 @@ export function AlertsOverTime({
   );
 }
 
-export function AlertsComposition({ categories }: { categories: CategorySlice[] }) {
+export function AlertsComposition({
+  categories,
+  emptyNote,
+}: {
+  categories: CategorySlice[];
+  emptyNote?: string;
+}) {
   const [hovered, setHovered] = useState<string | null>(null);
   const total = categories.reduce((s, c) => s + c.count, 0);
   if (total === 0) {
     return (
       <p className="py-12 text-center text-sm text-muted-foreground">
-        Nessun alert da comporre.
+        {emptyNote ?? "Nessun alert da comporre."}
       </p>
     );
   }
@@ -321,6 +330,32 @@ export function AlertsComposition({ categories }: { categories: CategorySlice[] 
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * Cio' che i grafici non mostrano, con il suo perche'.
+ *
+ * Serve a non far sembrare "zero" un periodo in cui di traffico ce n'era:
+ * semplicemente non era ostile. Deliberatamente sobria — niente colore di
+ * serie, niente grafico: non deve competere con i numeri degli attacchi.
+ */
+export function DiagnosticStrip({ categories }: { categories: CategorySlice[] }) {
+  if (categories.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-dashed bg-[var(--chart-surface)] px-4 py-3">
+      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm">
+        <span className="text-muted-foreground">
+          Fuori dai grafici perché non è un attacco:
+        </span>
+        {categories.map((c) => (
+          <span key={c.id} className="flex items-baseline gap-2">
+            <span className="text-muted-foreground">{c.labelIt}</span>
+            <span className="font-medium tabular-nums">{compact(c.count)}</span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

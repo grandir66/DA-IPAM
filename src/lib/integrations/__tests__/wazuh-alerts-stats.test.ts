@@ -7,6 +7,7 @@ import {
   buildStatsQuery,
   parseStatsResponse,
   sinceForWindow,
+  splitCategories,
 } from "../wazuh-alerts-stats";
 
 test("every selectable window declares a label and a duration", () => {
@@ -431,4 +432,34 @@ test("our own probing is counted as self_probe, not as an attack", () => {
 test("without declared identities there is no self_probe bucket", () => {
   const q = buildStatsQuery({ since: "2026-07-28T09:00:00.000Z", interval: "5m" });
   assert.equal(q.aggs.per_category.filters.filters.self_probe, undefined);
+});
+
+test("diagnostic activity stays out of the hero chart but is not lost", () => {
+  // Segnalato a schermo: rese categoria a pieno titolo, le nostre sonde
+  // facevano colonne altissime che annegavano gli attacchi veri. Il grafico
+  // principale racconta gli attacchi; il resto resta visibile a parte.
+  const split = splitCategories([
+    { id: "self_probe", labelIt: "Attività delle nostre sonde", count: 215, diagnostic: true },
+    { id: "auth_failure", labelIt: "Autenticazioni fallite", count: 12, diagnostic: false },
+    { id: "agent_health", labelIt: "Salute agent", count: 3, diagnostic: true },
+  ]);
+  assert.deepEqual(
+    split.attacks.map((c) => c.id),
+    ["auth_failure"],
+  );
+  assert.deepEqual(
+    split.diagnostic.map((c) => c.id),
+    ["self_probe", "agent_health"],
+  );
+  assert.equal(split.attackTotal, 12);
+  assert.equal(split.diagnosticTotal, 218);
+});
+
+test("with only our own probes the attack total is zero, not 215", () => {
+  const split = splitCategories([
+    { id: "self_probe", labelIt: "Attività delle nostre sonde", count: 215, diagnostic: true },
+  ]);
+  assert.equal(split.attacks.length, 0);
+  assert.equal(split.attackTotal, 0);
+  assert.equal(split.diagnosticTotal, 215);
 });

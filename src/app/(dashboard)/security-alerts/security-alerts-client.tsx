@@ -367,7 +367,7 @@ export function SecurityAlertsClient() {
               entries={byTarget}
               keyHeader="Destinazione"
               detailHeader="Account più colpito"
-              emptyLabel="Nessuna destinazione nella finestra selezionata."
+              emptyLabel="Nessuna destinazione da segnalare. L'attività originata dalle reti e dagli account dichiarati come nostri è esclusa da questa classifica."
             />
           </CardContent>
         </Card>
@@ -385,7 +385,7 @@ export function SecurityAlertsClient() {
               entries={bySource}
               keyHeader="Origine della richiesta"
               detailHeader="Account provato"
-              emptyLabel="Nessuna origine ricavabile nella finestra selezionata."
+              emptyLabel="Nessuna origine da segnalare. L'attività originata dalle reti e dagli account dichiarati come nostri è esclusa da questa classifica."
             />
           </CardContent>
         </Card>

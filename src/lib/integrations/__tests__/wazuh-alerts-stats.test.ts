@@ -408,3 +408,27 @@ test("our own activity is excluded from every ranking, not just the accounts", (
     assert.ok(json.includes("192.168.4.8"), `${name} non esclude i nostri IP`);
   }
 });
+
+test("our own probing is counted as self_probe, not as an attack", () => {
+  // Bug visto a schermo: con filtro Linux l'istogramma contava 215 alert ma le
+  // classifiche erano vuote, perche' l'esclusione valeva solo per le tabelle.
+  // Ora il traffico nostro finisce nella sua categoria: totali e tabelle
+  // raccontano la stessa storia.
+  const q = buildStatsQuery({
+    since: "2026-07-28T09:00:00.000Z",
+    interval: "5m",
+    excludeAccounts: ["domarc"],
+    excludeIps: ["192.168.4.8"],
+  });
+  const f = q.aggs.per_category.filters.filters;
+  assert.ok(f.self_probe, "manca la categoria delle nostre sonde");
+  const json = JSON.stringify(f.self_probe);
+  assert.ok(json.includes("192.168.4.8") && json.includes("domarc"));
+  // e auth_failure non deve piu' rivendicarli
+  assert.ok(JSON.stringify(f.auth_failure!.bool.must_not).includes("192.168.4.8"));
+});
+
+test("without declared identities there is no self_probe bucket", () => {
+  const q = buildStatsQuery({ since: "2026-07-28T09:00:00.000Z", interval: "5m" });
+  assert.equal(q.aggs.per_category.filters.filters.self_probe, undefined);
+});

@@ -47,6 +47,10 @@ data/*
 !data/ipam.empty.db
 !data/README.md
 !data/package-dictionary.json
+# KB vendorizzata attribuzione (Attribution v2 Fase 2) — artefatto rigenerabile via
+# scripts/build-attribution-kb.ts ma committato per evitare download a runtime.
+!data/attribution-kb.sqlite
+!data/NOTICE-attribution-kb.md
 # Backup data-dir generati dai fix runtime (es. data.wrong-*, data.backup-*):
 # non devono mai sporcare la working tree e bloccare l'auto-update.
 data.wrong-*

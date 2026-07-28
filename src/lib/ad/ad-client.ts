@@ -673,11 +673,11 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
       const samName = comp.sam_account_name.replace(/\$$/, "").toLowerCase();
       const shortDns = dnsHostName.split(".")[0];
 
-      type HostRow = { id: number; ip: string; hostname: string | null; os_info: string | null; classification: string | null };
+      type HostRow = { id: number; ip: string; hostname: string | null; os_info: string | null };
 
       // 1. Cerca per hostname/dns nei host IPAM
       let host: HostRow | undefined = (dnsHostName || samName) ? db.prepare(`
-        SELECT id, ip, hostname, os_info, classification FROM hosts
+        SELECT id, ip, hostname, os_info FROM hosts
         WHERE LOWER(hostname) = ? OR LOWER(hostname) = ? OR LOWER(hostname) = ?
            OR LOWER(dns_forward) LIKE ? OR LOWER(dns_reverse) LIKE ?
         LIMIT 1
@@ -685,7 +685,7 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
 
       // 2. Cerca per IP (da DNS lookup o DHCP)
       if (!host && comp.ip_address) {
-        host = db.prepare("SELECT id, ip, hostname, os_info, classification FROM hosts WHERE ip = ? LIMIT 1")
+        host = db.prepare("SELECT id, ip, hostname, os_info FROM hosts WHERE ip = ? LIMIT 1")
           .get(comp.ip_address) as HostRow | undefined;
       }
 
@@ -698,7 +698,7 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
           LIMIT 1
         `).get(integrationId, `${dnsHostName}%`, `${samName}%`, `${shortDns}%`) as { mac_address: string } | undefined;
         if (dhcpLease?.mac_address) {
-          host = db.prepare("SELECT id, ip, hostname, os_info, classification FROM hosts WHERE LOWER(mac) = ? LIMIT 1")
+          host = db.prepare("SELECT id, ip, hostname, os_info FROM hosts WHERE LOWER(mac) = ? LIMIT 1")
             .get(dhcpLease.mac_address.toLowerCase()) as HostRow | undefined;
         }
       }
@@ -714,17 +714,19 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
         `).get(samName, dnsHostName, shortDns, `${samName}.%`, `${shortDns}.%`) as { mac_normalized: string } | undefined;
         if (mipLease?.mac_normalized) {
           host = db.prepare(`
-            SELECT id, ip, hostname, os_info, classification FROM hosts
+            SELECT id, ip, hostname, os_info FROM hosts
             WHERE LOWER(mac) = ? OR LOWER(REPLACE(mac, ':', '')) = LOWER(REPLACE(?, ':', ''))
             LIMIT 1
           `).get(mipLease.mac_normalized, mipLease.mac_normalized) as HostRow | undefined;
         }
       }
 
-      // Calcola classificazione e OS string per enrich/create
+      // OS string per enrich/create. Fase 4: l'euristica server_windows/workstation
+      // (da os_info) è stata rimossa — un solo scrittore (attribution v2).
+      // L'evidenza "ad" emessa da emitEvidenceFromSignals (dimension category,
+      // claim compute.server/compute.workstation da questo stesso operating_system)
+      // la sostituisce nella fusione.
       const osRaw = comp.operating_system ?? "";
-      const osLower = osRaw.toLowerCase();
-      const classification = osLower.includes("server") ? "server_windows" : "workstation";
       const hostname = comp.dns_host_name ?? comp.sam_account_name.replace(/\$$/, "");
 
       if (host) {
@@ -735,7 +737,6 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
         if (osRaw && (!host.os_info || host.os_info === "unknown")) updates.os_info = osRaw;
         // AD è la fonte più affidabile per hostname: sovrascrive SEMPRE
         if (hostname) { updates.hostname = hostname; updates.hostname_source = "ad"; }
-        if (!host.classification || host.classification === "unknown") updates.classification = classification;
 
         if (Object.keys(updates).length > 0) {
           const setClause = Object.keys(updates).map((k) => `${k} = ?`).join(", ");
@@ -759,7 +760,6 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
             hostname,
             hostname_source: "ad",
             os_info: osRaw || undefined,
-            classification,
           });
           if (updated) {
             linkHost(integrationId, comp.object_guid, updated.id);

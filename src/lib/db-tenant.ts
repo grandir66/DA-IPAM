@@ -1050,31 +1050,13 @@ export function getTenantDb(tenantCode: string): Database.Database {
       newDb.pragma("foreign_keys = ON");
       console.info(`[db-tenant] ${tenantCode}: network_devices.device_type esteso (access_point/nas/server)`);
     }
-    // Backfill/upgrade:
-    //   - host senza inferred_at → mai classificato
-    //   - host con inferred_classifier_version < CLASSIFIER_VERSION → ricomputo richiesto
-    // Idempotente: alle prossime apriture del tenant nessuno rientra nel WHERE
-    // (applyAutoClassification scrive sempre il numero di versione corrente).
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { applyAutoClassification, CLASSIFIER_VERSION } = require("./devices/auto-classify");
-      const toBackfill = newDb.prepare(
-        "SELECT id FROM hosts WHERE inferred_at IS NULL OR inferred_classifier_version IS NULL OR inferred_classifier_version < ?"
-      ).all(CLASSIFIER_VERSION) as Array<{ id: number }>;
-      if (toBackfill.length > 0) {
-        // v0.2.641 audit perf DB1: backfill di N host in singola transazione.
-        // Prima: 1 fsync per host (SELECT + UPDATE). Su 2000 host = ~30s.
-        // Ora: 1 fsync totale per tutto il backfill (~1s).
-        newDb.transaction(() => {
-          for (const row of toBackfill) {
-            try { applyAutoClassification(newDb, row.id); } catch { /* skip singolo host non classificabile */ }
-          }
-        })();
-        console.info(`[db-tenant] ${tenantCode}: auto-classify backfill v${CLASSIFIER_VERSION} su ${toBackfill.length} host`);
-      }
-    } catch (e) {
-      console.warn(`[db-tenant] ${tenantCode}: backfill auto-classify fallito:`, e);
-    }
+    // Fase 4 (ritiro legacy, 2026-07-28): il backfill auto-classify al boot
+    // tenant è stato rimosso — era lavoro inutile ad ogni avvio (v0.2.641
+    // l'aveva già reso 1 fsync/tenant, ma resta comunque un giro completo
+    // della tabella hosts ad ogni boot). Le colonne inferred_*/classification
+    // sono ora una proiezione dell'attribution v2 (vedi
+    // src/lib/attribution/legacy-projection.ts + persist.ts), scritta quando
+    // la fusione ricomputa un host — nessun backfill dedicato necessario.
     // v0.2.610: bridge multihomed. Identity-resolver automatico (anchor=serial_number/
     // primary_mac) ha popolato hosts.physical_device_id, ma `recomputeMultihomedLinks`
     // non era chiamato in quel path → tabella multihomed_links vuota nonostante
@@ -2171,13 +2153,17 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
         syncIpAssignmentsForNetwork(input.network_id);
       }
     }
-    // v0.2.637 audit B3: ricomputo classifier SOLO se cambia un signal rilevante.
-    // Prima `applyAutoClassification` veniva chiamato a ogni upsert — quindi
-    // anche su passaggi `status=online ↔ offline` da fast_scan/ping → migliaia
-    // di UPDATE+ricalcoli inutili al minuto. Ora gate con shouldRecomputeClassification.
+    // v0.2.637 audit B3: ricomputo SOLO se cambia un signal rilevante. Prima
+    // `applyAutoClassification` veniva chiamato a ogni upsert — quindi anche
+    // su passaggi `status=online ↔ offline` da fast_scan/ping → migliaia di
+    // UPDATE+ricalcoli inutili al minuto. Gate con shouldRecomputeClassification
+    // (preservato dall'audit, i segnali rilevanti non cambiano con l'engine).
+    // Fase 4: applyAutoClassification (legacy) rimosso — un solo scrittore
+    // (attribution v2, vedi src/lib/attribution/). recomputeAttributionSafe
+    // emette evidenza dai segnali già in DB e proietta classification/inferred_*.
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { applyAutoClassification, shouldRecomputeClassification } = require("./devices/auto-classify");
+      const { shouldRecomputeClassification } = require("./devices/auto-classify");
       const changedSignals = new Set<string>();
       if (input.open_ports !== undefined && input.open_ports !== existingRow?.open_ports) changedSignals.add("open_ports");
       if (input.snmp_data !== undefined && input.snmp_data !== existingRow?.snmp_data) changedSignals.add("snmp_data");
@@ -2187,9 +2173,11 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       if (input.detection_json !== undefined && input.detection_json !== existingRow?.detection_json) changedSignals.add("detection_json");
       if (input.os_info !== undefined && input.os_info !== existingRow?.os_info) changedSignals.add("os_info");
       if (shouldRecomputeClassification(changedSignals)) {
-        applyAutoClassification(db(), host.id);
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+        recomputeAttributionSafe(host.id, "scan");
       }
-    } catch { /* non blocca l'upsert se la classificazione fallisce */ }
+    } catch { /* non blocca l'upsert se il recompute fallisce */ }
     // F4 v0.2.597: reverse trigger — se esiste un network_device con host = IP
     // dell'host appena aggiornato e host_id NULL, lo collega ora (caso tipico:
     // device creato manualmente prima che l'host fosse scoperto via discovery).
@@ -2254,12 +2242,14 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       hostname: host.hostname ?? undefined,
     });
   }
-  // F1: prima classificazione automatica all'insert.
+  // F1: prima attribuzione all'insert. Fase 4: applyAutoClassification
+  // (legacy) rimosso — recomputeAttributionSafe emette evidenza dai segnali
+  // già scritti sopra e proietta classification/inferred_* (un solo scrittore).
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { applyAutoClassification } = require("./devices/auto-classify");
-    applyAutoClassification(db(), host.id);
-  } catch { /* non blocca l'insert se la classificazione fallisce */ }
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    recomputeAttributionSafe(host.id, "scan");
+  } catch { /* non blocca l'insert se il recompute fallisce */ }
   // F4 v0.2.597: reverse trigger anche nel branch INSERT (host nuovo) — un device
   // potrebbe già esistere col suo IP e attendere il host_id.
   try {
@@ -5752,7 +5742,7 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
   const d = db();
   let linked = 0;
   let enriched = 0;
-  const hosts = d.prepare(`SELECT id, ip, mac, hostname, dns_forward, dns_reverse, os_info, classification FROM hosts WHERE network_id = ?`).all(networkId) as Array<{ id: number; ip: string; mac: string | null; hostname: string | null; dns_forward: string | null; dns_reverse: string | null; os_info: string | null; classification: string | null }>;
+  const hosts = d.prepare(`SELECT id, ip, mac, hostname, dns_forward, dns_reverse, os_info FROM hosts WHERE network_id = ?`).all(networkId) as Array<{ id: number; ip: string; mac: string | null; hostname: string | null; dns_forward: string | null; dns_reverse: string | null; os_info: string | null }>;
   if (hosts.length === 0) return { linked: 0, enriched: 0 };
   const unlinked = d.prepare(`SELECT ac.id, ac.integration_id, ac.object_guid, ac.dns_host_name, ac.sam_account_name, ac.ip_address, ac.operating_system, ac.host_id FROM ad_computers ac WHERE ac.host_id IS NULL OR ac.host_id IN (SELECT id FROM hosts WHERE network_id = ?)`).all(networkId) as Array<{ id: number; integration_id: number; object_guid: string; dns_host_name: string | null; sam_account_name: string; ip_address: string | null; operating_system: string | null; host_id: number | null }>;
   const hostByIp = new Map(hosts.map((h) => [h.ip, h]));
@@ -5763,17 +5753,18 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
     if (h.dns_forward) hostByHostname.set(h.dns_forward.toLowerCase(), h);
   }
   const linkStmt = d.prepare(`UPDATE ad_computers SET host_id = ? WHERE integration_id = ? AND object_guid = ?`);
+  // Fase 4: l'euristica server_windows/workstation (da os_info) è stata
+  // rimossa — l'evidenza "ad" già emessa in emitters.ts (dimension category,
+  // claim compute.server/compute.workstation) la sostituisce nella fusione
+  // v2. os_info/hostname restano: sono anagrafica, non attribuzione.
   function enrichHost(hostId: number, comp: typeof unlinked[0], currentHost: typeof hosts[0]) {
     const adHostname = comp.dns_host_name || comp.sam_account_name.replace(/\$$/, "");
     const osRaw = comp.operating_system ?? "";
-    const osLower = osRaw.toLowerCase();
-    const classification = osLower.includes("server") ? "server_windows" : "workstation";
     const sets: string[] = [];
     const vals: unknown[] = [];
     if (adHostname) { sets.push("hostname = ?", "hostname_source = 'ad'"); vals.push(adHostname); }
     if (adHostname && !currentHost.hostname) { sets.push("custom_name = CASE WHEN custom_name IS NULL OR custom_name = '' THEN ? ELSE custom_name END"); vals.push(adHostname); }
     if (osRaw && (!currentHost.os_info || currentHost.os_info === "unknown")) { sets.push("os_info = ?"); vals.push(osRaw); }
-    if (!currentHost.classification || currentHost.classification === "unknown") { sets.push("classification = ?"); vals.push(classification); }
     if (sets.length > 0) { sets.push("updated_at = datetime('now')"); d.prepare(`UPDATE hosts SET ${sets.join(", ")} WHERE id = ?`).run(...vals, hostId); enriched++; }
   }
   const touchedHostIds: number[] = [];

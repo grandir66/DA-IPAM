@@ -11,6 +11,8 @@
  * deliberately left out are documented in EXCLUDED_GROUPS.
  */
 
+import { ipInCidr, isCidr } from "./ip-range";
+
 export interface AlertCategory {
   id: string;
   labelIt: string;
@@ -204,7 +206,14 @@ export function isSelfOrigin(
 ): boolean {
   if (!self) return false;
   const ip = normalizeIp(args.sourceIp);
-  if (ip && self.ips.some((s) => normalizeIp(s) === ip)) return true;
+  // Le voci possono essere indirizzi singoli o reti in notazione CIDR: le reti
+  // aziendali e cloud non si elencano host per host.
+  if (
+    ip &&
+    self.ips.some((entry) => (isCidr(entry) ? ipInCidr(ip, entry) : normalizeIp(entry) === ip))
+  ) {
+    return true;
+  }
   const user = normalizeAccount(args.targetUser);
   if (user && self.accounts.some((a) => normalizeAccount(a) === user)) return true;
   return false;

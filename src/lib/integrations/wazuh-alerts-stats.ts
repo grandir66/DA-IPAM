@@ -10,6 +10,7 @@
  * Modulo puro: query e parsing sono testabili senza indexer.
  */
 
+import { expandIpEntries } from "./ip-range";
 import {
   ALERT_CATEGORIES,
   EXCLUDED_OUTCOME_GROUPS,
@@ -206,6 +207,7 @@ export function buildStatsQuery(args: {
 }): StatsQuery {
   const sys = systemFilterById(args.system);
   const extraIds = args.extraRuleIds ?? [];
+  const expandedExcludeIps = expandIpEntries(args.excludeIps ?? []);
   // Cio' che parte da noi non e' un attacco: vale per TUTTE le classifiche.
   const selfExclusions = [
     ...((args.excludeAccounts ?? []).length
@@ -216,10 +218,13 @@ export function buildStatsQuery(args: {
           { terms: { "data.office365.UserId": args.excludeAccounts! } },
         ]
       : []),
-    ...((args.excludeIps ?? []).length
+    // I campi IP sono keyword: le reti CIDR vanno espanse in indirizzi,
+    // altrimenti il terms non aggancia nulla.
+    ...(expandedExcludeIps.length
       ? [
-          { terms: { "data.srcip": args.excludeIps! } },
-          { terms: { "data.win.eventdata.ipAddress": args.excludeIps! } },
+          { terms: { "data.srcip": expandedExcludeIps } },
+          { terms: { "data.win.eventdata.ipAddress": expandedExcludeIps } },
+          { terms: { "data.office365.ClientIP": expandedExcludeIps } },
         ]
       : []),
   ];

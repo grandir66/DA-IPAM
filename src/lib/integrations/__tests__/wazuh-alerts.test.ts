@@ -5,6 +5,7 @@ import {
   buildAlertsQuery,
   categorizeAlert,
   minSelectedLevel,
+  isSelfOrigin,
   normalizeIp,
   accountKind,
   selectedGroups,
@@ -409,4 +410,13 @@ test("the query fetches configured device rule ids alongside the groups", () => 
   const json = JSON.stringify(q.query.bool);
   assert.ok(json.includes("100202"));
   assert.ok(json.includes("rule.id"));
+});
+
+test("a whole network can be declared as ours, not just single addresses", () => {
+  const self = { ips: ["95.230.196.128/28", "51.89.15.16/28"], accounts: [] };
+  assert.equal(isSelfOrigin({ sourceIp: "95.230.196.132", targetUser: null }, self), true);
+  assert.equal(isSelfOrigin({ sourceIp: "51.89.15.26", targetUser: null }, self), true);
+  assert.equal(isSelfOrigin({ sourceIp: "::ffff:51.89.15.29", targetUser: null }, self), true);
+  // fuori dalla rete resta un estraneo
+  assert.equal(isSelfOrigin({ sourceIp: "95.230.196.200", targetUser: null }, self), false);
 });

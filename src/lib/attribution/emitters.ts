@@ -3,7 +3,9 @@
 import { classifyDevice } from "@/lib/device-classifier";
 import { lookupSysObjectId } from "@/lib/scanner/snmp-sysobj-lookup";
 import { mapSysObjCategory } from "@/lib/attribution/sysobj-category";
+import { kbLookupSysObjectId } from "./kb";
 import { mapLegacyClassification } from "./taxonomy";
+import type { CategorySlug } from "./taxonomy";
 import type { AttributionSource, EvidenceInput } from "./types";
 
 /**
@@ -142,33 +144,42 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
     }
   }
 
-  // 2. SNMP: sysObjectID via KB + sysDescr (incl. caso Ubiquiti)
+  // 2. SNMP: sysObjectID via KB (9.554 entry GLPI) con fallback alla LOOKUP_TABLE
+  //    builtin (94 entry, ma con distinzione switch/router/AP che la KB — TYPE
+  //    GLPI "NETWORKING" — non offre, livello 1 soltanto) + sysDescr (incl. Ubiquiti).
   const snmp = safeJson<{ sysDescr?: string | null; sysObjectID?: string | null; manufacturer?: string | null }>(host.snmp_data);
   if (snmp?.sysObjectID) {
-    const match = lookupSysObjectId(snmp.sysObjectID);
-    if (match) {
+    const kbMatch = kbLookupSysObjectId(snmp.sysObjectID);
+    const legacyMatch = kbMatch ? null : lookupSysObjectId(snmp.sysObjectID);
+    const vendor = kbMatch?.vendor ?? legacyMatch?.vendor ?? null;
+    // "product": testo prodotto/modello, usato sia per il filtro placeholder sia
+    // per arricchire raw_value. KB → model (spec Task 2: "se la KB fornisce
+    // model, finisce in raw_value"); legacy → product.
+    const product = kbMatch ? kbMatch.model : (legacyMatch?.product ?? null);
+    const category: CategorySlug | null = kbMatch
+      ? kbMatch.category
+      : (legacyMatch ? (mapSysObjCategory(legacyMatch) ? mapLegacyClassification(mapSysObjCategory(legacyMatch)!).category : null) : null);
+
+    if (vendor) {
       // Match generico (OID net-snmp 1.3.6.1.4.1.8072.* OPPURE vendor/product
       // che matcha il filtro placeholder, es. vendor "Linux"): non è un
       // produttore identificabile né una categoria device — niente vendor,
       // niente categoria. Lascia parlare sysDescr e gli altri segnali.
       const generic = GENERIC_NETSNMP_OID_RE.test(snmp.sysObjectID.trim())
-        || VENDOR_PLACEHOLDER_RE.test(match.vendor.trim())
-        || VENDOR_PLACEHOLDER_RE.test(match.product.trim());
-      if (!VENDOR_PLACEHOLDER_RE.test(match.vendor.trim())) {
+        || VENDOR_PLACEHOLDER_RE.test(vendor.trim())
+        || (product ? VENDOR_PLACEHOLDER_RE.test(product.trim()) : false);
+      if (!VENDOR_PLACEHOLDER_RE.test(vendor.trim())) {
         out.push({
           source: "snmp_sysobj", phase: "scan_snmp_verify", dimension: "vendor",
-          claim: vendorSlug(match.vendor), confidence: 0.95, raw_value: match.vendor,
+          claim: vendorSlug(vendor), confidence: 0.95, raw_value: vendor,
         });
       }
-      if (!generic) {
-        const legacyCat = mapSysObjCategory(match);
-        const cat = legacyCat ? mapLegacyClassification(legacyCat).category : null;
-        if (cat) {
-          out.push({
-            source: "snmp_sysobj", phase: "scan_snmp_verify", dimension: "category",
-            claim: cat, confidence: 0.95, raw_value: `${snmp.sysObjectID} → ${match.product}`,
-          });
-        }
+      if (!generic && category) {
+        out.push({
+          source: "snmp_sysobj", phase: "scan_snmp_verify", dimension: "category",
+          claim: category, confidence: 0.95,
+          raw_value: product ? `${snmp.sysObjectID} → ${product}` : snmp.sysObjectID,
+        });
       }
     }
   }

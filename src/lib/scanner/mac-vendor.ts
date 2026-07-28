@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs";
+import { kbLookupMac } from "@/lib/attribution/kb";
 
 // Use oui-data directly — the 'oui' package is a CLI tool, not a library
 let ouiData: Record<string, string> | null = null;
@@ -46,7 +47,11 @@ function getOuiData(): Record<string, string> {
 }
 
 /** Lookup OUI sincrono (la logica è già sync; lookupVendor è async solo per firma
- *  storica). Usato dove serve il vendor in contesto sincrono (es. upsertArpEntries). */
+ *  storica). Usato dove serve il vendor in contesto sincrono (es. upsertArpEntries).
+ *  Ordine: `custom_oui.txt` (override locale) → KB vendorizzata (copre anche i
+ *  blocchi MA-M/28 e MA-S/36 che `oui-data` non conosce) → `oui-data` (fallback,
+ *  solo MA-L/24). Se la KB manca `kbLookupMac` torna null senza eccezioni e si
+ *  ricade su `oui-data` come prima. */
 export function lookupVendorSync(mac: string): string | null {
   if (!mac) return null;
   try {
@@ -54,6 +59,8 @@ export function lookupVendorSync(mac: string): string | null {
     const custom = getCustomOui();
     const customResult = custom[prefix];
     if (customResult) return customResult;
+    const kbMatch = kbLookupMac(mac);
+    if (kbMatch) return kbMatch.vendor_name;
     const data = getOuiData();
     const result = data[prefix];
     if (!result) return null;

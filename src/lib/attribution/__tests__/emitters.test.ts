@@ -115,15 +115,24 @@ describe("emitEvidenceFromSignals", () => {
     assert.equal(mk("USW-24-PoE 7.0.1")[0]?.claim, "network.switch");
     assert.equal(mk("UDM-Pro 3.1")[0]?.claim, "network.router");
   });
-  it("sysObjectID via lookup KB → vendor + categoria (fallback tabella builtin)", () => {
+  it("sysObjectID via lookup KB → vendor + categoria livello 1 (KB ha priorità sulla LOOKUP_TABLE builtin)", () => {
     const s = base();
-    // 1.3.6.1.4.1.41112.1.6 è UniFi AP nella LOOKUP_TABLE builtin
+    // 1.3.6.1.4.1.41112.1.6 è "UniFi AP" nella LOOKUP_TABLE builtin (categoria
+    // level-2 "network.access_point"), MA la KB (Task 2) ha un match ESATTO
+    // sullo stesso OID (vendor "Ubiquiti", TYPE GLPI "NETWORKING", model "UniFi")
+    // e vince per priorità — la KB però, a differenza della LOOKUP_TABLE, non
+    // distingue router/switch/AP (TYPE "NETWORKING" → livello 1 "network"
+    // soltanto, vedi mappa TYPE→categoria nel piano). La fusione (fuse.ts)
+    // recupera comunque la profondità da altre fonti (es. sysDescr, vedi
+    // recompute.test.ts "emette evidenze, fonde e scrive hosts.attr_*").
     s.host.snmp_data = JSON.stringify({ sysObjectID: "1.3.6.1.4.1.41112.1.6", sysDescr: null, collected_at: "x" });
     const out = emitEvidenceFromSignals(s);
     const cat = out.find((e) => e.source === "snmp_sysobj" && e.dimension === "category");
     const ven = out.find((e) => e.source === "snmp_sysobj" && e.dimension === "vendor");
-    assert.equal(cat?.claim, "network.access_point");
+    assert.equal(cat?.claim, "network");
+    assert.equal(cat?.raw_value, "1.3.6.1.4.1.41112.1.6 → UniFi", "il model della KB deve finire in raw_value");
     assert.ok(ven);
+    assert.equal(ven?.claim, "ubiquiti");
   });
   it("caso reale 192.168.40.23 (Synology): sysObjectID net-snmp generico 1.3.6.1.4.1.8072.3.2.10 → nessuna evidenza vendor/categoria", () => {
     const s = base();

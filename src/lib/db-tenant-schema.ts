@@ -128,6 +128,14 @@ CREATE TABLE IF NOT EXISTS credentials (
   credential_type TEXT NOT NULL CHECK(credential_type IN ('ssh', 'snmp', 'api', 'windows', 'linux')),
   encrypted_username TEXT,
   encrypted_password TEXT,
+  -- SNMPv3 completo (Fase 4b Task 2, §7.1): niente CHECK sui protocolli (non
+  -- estendibili senza migrazione, vedi ADR pattern rebuild) — validati in
+  -- TypeScript da buildV3Options (src/lib/protocols/snmpv3.ts).
+  encrypted_auth_key TEXT,
+  auth_protocol TEXT,
+  encrypted_priv_key TEXT,
+  priv_protocol TEXT,
+  security_level TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

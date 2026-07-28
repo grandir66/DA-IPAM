@@ -216,10 +216,22 @@ export function getDb(): Database.Database {
       credential_type TEXT NOT NULL CHECK(credential_type IN ('ssh', 'snmp', 'api')),
       encrypted_username TEXT,
       encrypted_password TEXT,
+      encrypted_auth_key TEXT,
+      auth_protocol TEXT,
+      encrypted_priv_key TEXT,
+      priv_protocol TEXT,
+      security_level TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     )`);
   } catch { /* table already exists */ }
+  // Fase 4b Task 2 — colonne SNMPv3 completo (§7.1), idempotente per DB creati
+  // prima di questa versione. Niente CHECK sui protocolli (validati in TS).
+  for (const col of ["encrypted_auth_key", "auth_protocol", "encrypted_priv_key", "priv_protocol", "security_level"]) {
+    try {
+      _db.exec(`ALTER TABLE credentials ADD COLUMN ${col} TEXT`);
+    } catch { /* column already exists */ }
+  }
   try {
     _db.exec("ALTER TABLE network_devices ADD COLUMN credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL");
   } catch { /* column already exists */ }
@@ -3499,24 +3511,60 @@ export function getCredentialById(id: number): Credential | undefined {
   return getDb().prepare("SELECT * FROM credentials WHERE id = ?").get(id) as Credential | undefined;
 }
 
-export function createCredential(input: CredentialInput & { encrypted_username?: string | null; encrypted_password?: string | null }): Credential {
+export function createCredential(
+  input: CredentialInput & {
+    encrypted_username?: string | null;
+    encrypted_password?: string | null;
+    encrypted_auth_key?: string | null;
+    auth_protocol?: string | null;
+    encrypted_priv_key?: string | null;
+    priv_protocol?: string | null;
+    security_level?: string | null;
+  }
+): Credential {
   const stmt = getDb().prepare(
-    `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password)
-     VALUES (?, ?, ?, ?)`
+    `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password, encrypted_auth_key, auth_protocol, encrypted_priv_key, priv_protocol, security_level)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name,
     input.credential_type,
     input.encrypted_username ?? null,
-    input.encrypted_password ?? null
+    input.encrypted_password ?? null,
+    input.encrypted_auth_key ?? null,
+    input.auth_protocol ?? null,
+    input.encrypted_priv_key ?? null,
+    input.priv_protocol ?? null,
+    input.security_level ?? null
   );
   return getDb().prepare("SELECT * FROM credentials WHERE id = ?").get(result.lastInsertRowid) as Credential;
 }
 
-export function updateCredential(id: number, input: Partial<CredentialInput> & { encrypted_username?: string | null; encrypted_password?: string | null }): Credential | undefined {
+export function updateCredential(
+  id: number,
+  input: Partial<CredentialInput> & {
+    encrypted_username?: string | null;
+    encrypted_password?: string | null;
+    encrypted_auth_key?: string | null;
+    auth_protocol?: string | null;
+    encrypted_priv_key?: string | null;
+    priv_protocol?: string | null;
+    security_level?: string | null;
+  }
+): Credential | undefined {
   const fields: string[] = [];
   const values: unknown[] = [];
-  const keys = ["name", "credential_type", "encrypted_username", "encrypted_password"] as const;
+  const keys = [
+    "name",
+    "credential_type",
+    "encrypted_username",
+    "encrypted_password",
+    "encrypted_auth_key",
+    "auth_protocol",
+    "encrypted_priv_key",
+    "priv_protocol",
+    "security_level",
+  ] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);

@@ -36,16 +36,44 @@ interface Credential {
   credential_type: string;
   encrypted_username: string | null;
   encrypted_password: string | null;
+  /** SNMPv3 (Fase 4b Task 2) — mai il valore reale, solo indicatore di presenza. */
+  encrypted_auth_key: string | null;
+  auth_protocol: string | null;
+  encrypted_priv_key: string | null;
+  priv_protocol: string | null;
+  security_level: string | null;
   created_at: string;
   updated_at: string;
 }
+
+const SNMP_V3_AUTH_PROTOCOLS = ["MD5", "SHA", "SHA224", "SHA256", "SHA384", "SHA512"] as const;
+const SNMP_V3_PRIV_PROTOCOLS = ["DES", "AES", "AES192", "AES256"] as const;
+
+const emptyForm = {
+  name: "",
+  credential_type: "ssh" as "ssh" | "snmp" | "api" | "windows" | "linux",
+  username: "",
+  password: "",
+  // SNMPv3 (solo per credential_type="snmp"): "" = nessuna (community v2c
+  // legacy). Le chiavi sono write-only, sempre vuote all'apertura del form.
+  security_level: "" as "" | "noAuthNoPriv" | "authNoPriv" | "authPriv",
+  auth_protocol: "",
+  auth_key: "",
+  priv_protocol: "",
+  priv_key: "",
+};
 
 export default function CredentialsPage() {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState({ name: "", credential_type: "ssh" as "ssh" | "snmp" | "api" | "windows" | "linux", username: "", password: "" });
+  const [form, setForm] = useState(emptyForm);
+  // Indicatori "già impostata" per le chiavi SNMPv3 in modifica (write-only:
+  // il form non le vede mai, ma deve poter dire "lascia vuoto per non
+  // modificare" solo se una chiave esiste già).
+  const [existingAuthKey, setExistingAuthKey] = useState(false);
+  const [existingPrivKey, setExistingPrivKey] = useState(false);
   // v0.2.649: guida WinRM accessibile dal form quando type=windows.
   const [winrmGuideOpen, setWinrmGuideOpen] = useState(false);
   const [testingId, setTestingId] = useState<number | null>(null);
@@ -82,16 +110,43 @@ export default function CredentialsPage() {
       toast.error("Username e password richiesti");
       return;
     }
-    if (form.credential_type === "snmp" && !editingId && !form.password?.trim()) {
-      toast.error("Community string richiesta per credenziali SNMP");
+    if (form.credential_type === "snmp" && !editingId && !form.security_level && !form.password?.trim()) {
+      toast.error("Community string richiesta per credenziali SNMP v2c (oppure imposta la sicurezza SNMPv3)");
       return;
+    }
+    if (form.credential_type === "snmp" && form.security_level) {
+      if ((form.security_level === "authNoPriv" || form.security_level === "authPriv") && !form.auth_protocol) {
+        toast.error("Protocollo di autenticazione SNMPv3 richiesto");
+        return;
+      }
+      if ((form.security_level === "authNoPriv" || form.security_level === "authPriv") && !form.auth_key.trim() && !existingAuthKey) {
+        toast.error("Chiave di autenticazione SNMPv3 richiesta");
+        return;
+      }
+      if (form.security_level === "authPriv" && !form.priv_protocol) {
+        toast.error("Protocollo di privacy SNMPv3 richiesto");
+        return;
+      }
+      if (form.security_level === "authPriv" && !form.priv_key.trim() && !existingPrivKey) {
+        toast.error("Chiave di privacy SNMPv3 richiesta");
+        return;
+      }
     }
     try {
       const url = editingId ? `/api/credentials/${editingId}` : "/api/credentials";
       const method = editingId ? "PUT" : "POST";
+      const snmpV3Fields = form.credential_type === "snmp"
+        ? {
+            security_level: form.security_level || null,
+            auth_protocol: form.auth_protocol || null,
+            auth_key: form.auth_key || undefined,
+            priv_protocol: form.priv_protocol || null,
+            priv_key: form.priv_key || undefined,
+          }
+        : {};
       const body = editingId
-        ? { name: form.name, credential_type: form.credential_type, username: form.username || undefined, password: form.password || undefined }
-        : form;
+        ? { name: form.name, credential_type: form.credential_type, username: form.username || undefined, password: form.password || undefined, ...snmpV3Fields }
+        : { name: form.name, credential_type: form.credential_type, username: form.username, password: form.password, ...snmpV3Fields };
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!res.ok) {
         const err = await res.json();
@@ -100,7 +155,9 @@ export default function CredentialsPage() {
       toast.success(editingId ? "Credenziale aggiornata" : "Credenziale creata");
       setDialogOpen(false);
       setEditingId(null);
-      setForm({ name: "", credential_type: "ssh" as const, username: "", password: "" });
+      setForm(emptyForm);
+      setExistingAuthKey(false);
+      setExistingPrivKey(false);
       fetchCredentials();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore");
@@ -131,13 +188,28 @@ export default function CredentialsPage() {
         }
       } catch { /* ignore */ }
     }
-    setForm({ name: c.name, credential_type: c.credential_type as "ssh" | "snmp" | "api" | "windows" | "linux", username, password: "" });
+    setForm({
+      ...emptyForm,
+      name: c.name,
+      credential_type: c.credential_type as "ssh" | "snmp" | "api" | "windows" | "linux",
+      username,
+      // SNMPv3: le chiavi sono write-only — non arrivano mai dalla GET, il
+      // form parte sempre vuoto per auth_key/priv_key ("lascia vuoto per non
+      // modificare"). Protocolli/livello non sono segreti: precompilati.
+      security_level: (c.security_level as "" | "noAuthNoPriv" | "authNoPriv" | "authPriv") ?? "",
+      auth_protocol: c.auth_protocol ?? "",
+      priv_protocol: c.priv_protocol ?? "",
+    });
+    setExistingAuthKey(!!c.encrypted_auth_key);
+    setExistingPrivKey(!!c.encrypted_priv_key);
     setDialogOpen(true);
   };
 
   const openCreate = () => {
     setEditingId(null);
-    setForm({ name: "", credential_type: "ssh" as const, username: "", password: "" });
+    setForm(emptyForm);
+    setExistingAuthKey(false);
+    setExistingPrivKey(false);
     setDialogOpen(true);
   };
 
@@ -284,15 +356,106 @@ export default function CredentialsPage() {
                   </>
                 )}
                 {form.credential_type === "snmp" && (
-                  <div>
-                    <Label>Community string {editingId && "(lascia vuoto per non modificare)"}</Label>
-                    <Input
-                      type="password"
-                      value={form.password}
-                      onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                      placeholder="es. public"
-                    />
-                  </div>
+                  <>
+                    <div>
+                      <Label>Community string (SNMPv2c) {editingId && "(lascia vuoto per non modificare)"}</Label>
+                      <Input
+                        type="password"
+                        value={form.password}
+                        onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                        placeholder="es. public"
+                      />
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Non serve se sotto imposti la sicurezza SNMPv3.
+                      </p>
+                    </div>
+                    <div className="border-t pt-4">
+                      <Label>Sicurezza SNMPv3 (opzionale)</Label>
+                      <Select
+                        value={form.security_level || "none"}
+                        onValueChange={(v) =>
+                          setForm((f) => ({ ...f, security_level: v === "none" ? "" : (v as "noAuthNoPriv" | "authNoPriv" | "authPriv") }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Nessuna — SNMPv2c (community string)</SelectItem>
+                          <SelectItem value="noAuthNoPriv">SNMPv3 noAuthNoPriv</SelectItem>
+                          <SelectItem value="authNoPriv">SNMPv3 authNoPriv</SelectItem>
+                          <SelectItem value="authPriv">SNMPv3 authPriv (completo)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Lo Username SNMPv3 è il campo Username qui sopra. Per apparati enterprise dove
+                        v2c è disabilitato per policy.
+                      </p>
+                    </div>
+                    {(form.security_level === "authNoPriv" || form.security_level === "authPriv") && (
+                      <>
+                        <div>
+                          <Label>Protocollo di autenticazione</Label>
+                          <Select
+                            value={form.auth_protocol || undefined}
+                            onValueChange={(v) => setForm((f) => ({ ...f, auth_protocol: v ?? "" }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Seleziona protocollo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {SNMP_V3_AUTH_PROTOCOLS.map((p) => (
+                                <SelectItem key={p} value={p}>{p}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Chiave di autenticazione {existingAuthKey && "(già impostata — lascia vuoto per non modificare)"}</Label>
+                          <Input
+                            type="password"
+                            value={form.auth_key}
+                            onChange={(e) => setForm((f) => ({ ...f, auth_key: e.target.value }))}
+                            placeholder={existingAuthKey ? "••••••••" : "chiave di autenticazione"}
+                          />
+                        </div>
+                      </>
+                    )}
+                    {form.security_level === "authPriv" && (
+                      <>
+                        <div>
+                          <Label>Protocollo di privacy</Label>
+                          <Select
+                            value={form.priv_protocol || undefined}
+                            onValueChange={(v) => setForm((f) => ({ ...f, priv_protocol: v ?? "" }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Seleziona protocollo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {SNMP_V3_PRIV_PROTOCOLS.map((p) => (
+                                <SelectItem key={p} value={p}>{p}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {form.priv_protocol === "AES192" && (
+                            <p className="text-[11px] text-destructive mt-1">
+                              AES192 non è supportato dalla libreria SNMP disponibile: usa AES o AES256.
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <Label>Chiave di privacy {existingPrivKey && "(già impostata — lascia vuoto per non modificare)"}</Label>
+                          <Input
+                            type="password"
+                            value={form.priv_key}
+                            onChange={(e) => setForm((f) => ({ ...f, priv_key: e.target.value }))}
+                            placeholder={existingPrivKey ? "••••••••" : "chiave di privacy"}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </>
                 )}
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>

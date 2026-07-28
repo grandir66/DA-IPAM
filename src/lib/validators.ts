@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PRODUCT_PROFILE_IDS } from "@/lib/device-product-profiles";
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
+import { SNMP_V3_AUTH_PROTOCOLS, SNMP_V3_PRIV_PROTOCOLS, SNMP_V3_SECURITY_LEVELS } from "@/lib/protocols/snmpv3";
 
 const cidrRegex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
 const ipRegex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
@@ -130,6 +131,16 @@ export const CredentialSchema = z.object({
   credential_type: z.enum(["ssh", "snmp", "api", "windows", "linux"]),
   username: z.string().max(100).optional(),
   password: z.string().max(200).optional(),
+  // SNMPv3 completo (Fase 4b Task 2, §7.1) — solo per credential_type='snmp'.
+  // Niente CHECK lato DB sui protocolli (non estendibili): qui è l'unica
+  // validazione degli enum: campi non ammessi respinti già a livello Zod,
+  // le combinazioni incoerenti (es. authPriv senza privKey) le rifiuta
+  // buildV3Options (src/lib/protocols/snmpv3.ts) al momento dell'uso.
+  security_level: z.preprocess(emptyToUndefined, z.enum(SNMP_V3_SECURITY_LEVELS).optional().nullable()),
+  auth_protocol: z.preprocess(emptyToUndefined, z.enum(SNMP_V3_AUTH_PROTOCOLS).optional().nullable()),
+  auth_key: z.string().max(200).optional(),
+  priv_protocol: z.preprocess(emptyToUndefined, z.enum(SNMP_V3_PRIV_PROTOCOLS).optional().nullable()),
+  priv_key: z.string().max(200).optional(),
 });
 
 export const ScheduledJobSchema = z.object({

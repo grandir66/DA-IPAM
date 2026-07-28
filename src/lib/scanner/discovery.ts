@@ -65,6 +65,7 @@ import {
   getMultihomedStatus,
   recordCredentialFailure,
   recordCredentialSuccess,
+  getCredentialById,
 } from "@/lib/db";
 import { resolveCredentialsFor } from "@/lib/credentials/resolve";
 import type { CredProtocol } from "@/lib/credentials/resolve";
@@ -74,6 +75,7 @@ import type { AuthOutcome } from "@/lib/attribution/credential-evidence";
 import { recordEvidence } from "@/lib/attribution/evidence";
 import { recomputeAttributionSafe } from "@/lib/attribution/recompute";
 import { redfishDetect, redfishValidate, redfishFetchInfo, redfishEvidence } from "@/lib/protocols/redfish";
+import { snmpValidateV3 } from "@/lib/protocols/snmpv3";
 import type { ScanProgress, DiscoveryResult, DeviceFingerprintSnapshot } from "@/types";
 import type { DnsResolution } from "./dns";
 
@@ -2348,6 +2350,44 @@ async function runDiscovery(
 
         if (credType === "snmp" && !validatedProtos.has("snmp")) {
           if (!gateCredential("snmp", credId, credType, 161)) continue;
+
+          // Fase 4b Task 2 (§7.1/§7.4): credenziali con security_level
+          // impostato (noAuthNoPriv/authNoPriv/authPriv) sono SNMPv3 vero —
+          // niente community string, sessione dedicata via createV3Session.
+          // Le credenziali v2c legacy (security_level assente/NULL) restano
+          // sul percorso community esistente sotto. Stesso gate anti-lockout
+          // (`gateCredential` sopra) e stessa persistenza esito di ogni altro
+          // protocollo — nessun bypass del budget di run.
+          const credRow = getCredentialById(credId);
+          if (credRow?.security_level) {
+            try {
+              const v3 = await snmpValidateV3(ip, credId, { port: 161 });
+              if (v3.ok) {
+                recordCredentialSuccess(host.id, credId, "snmp", 161);
+                autoBindCredentialToDevice(ip, credId, "snmp", 161, host.id);
+                runBudget.recordSuccess(credId);
+                log(`✓ ${ip}:161 SNMPv3 cred#${credId} (${nc.credential_name})`);
+                validated++;
+                validatedProtos.add("snmp");
+                // Nessuna evidenza aggiuntiva qui: sysObjectID/sysDescr restano
+                // emessi da emitEvidenceFromSignals sui dati persistiti (Task 4) —
+                // stesso motivo del percorso v2c sotto, snmpValidateV3 fa solo il
+                // test di autenticazione, non il fingerprint completo.
+              } else {
+                const msg = v3.error ?? "autenticazione SNMPv3 non riuscita";
+                recordCredentialFailure(host.id, credId, "snmp", 161, msg.slice(0, 500));
+                runBudget.recordFailure(credId);
+                log(`✗ ${ip}:161 SNMPv3 cred#${credId}: ${msg.slice(0, 160)}`);
+              }
+            } catch (e) {
+              const msg = (e as Error).message ?? String(e);
+              recordCredentialFailure(host.id, credId, "snmp", 161, msg.slice(0, 500));
+              runBudget.recordFailure(credId);
+              log(`✗ ${ip}:161 SNMPv3 cred#${credId}: ${msg.slice(0, 60)}`);
+            }
+            continue;
+          }
+
           const com = getCredentialCommunityString(credId);
           if (!com) continue;
           try {

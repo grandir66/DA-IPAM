@@ -930,6 +930,24 @@ export function getTenantDb(tenantCode: string): Database.Database {
     newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension)");
     newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_active ON attribution_evidence(host_id, superseded_by) WHERE superseded_by IS NULL");
 
+    // Fase 4b Task 2 — colonne SNMPv3 completo su credentials (§7.1): niente
+    // CHECK sui protocolli (validati in TS da buildV3Options), idempotente
+    // come il pattern attrCols sopra.
+    const credCols = newDb.prepare("PRAGMA table_info(credentials)").all() as Array<{ name: string }>;
+    const credV3Cols: Array<{ name: string; sql: string }> = [
+      { name: "encrypted_auth_key", sql: "ALTER TABLE credentials ADD COLUMN encrypted_auth_key TEXT" },
+      { name: "auth_protocol", sql: "ALTER TABLE credentials ADD COLUMN auth_protocol TEXT" },
+      { name: "encrypted_priv_key", sql: "ALTER TABLE credentials ADD COLUMN encrypted_priv_key TEXT" },
+      { name: "priv_protocol", sql: "ALTER TABLE credentials ADD COLUMN priv_protocol TEXT" },
+      { name: "security_level", sql: "ALTER TABLE credentials ADD COLUMN security_level TEXT" },
+    ];
+    for (const col of credV3Cols) {
+      if (!credCols.some((c) => c.name === col.name)) {
+        newDb.exec(col.sql);
+        console.info(`[db-tenant] ${tenantCode}: credentials.${col.name} aggiunto`);
+      }
+    }
+
     // Fase 1b credenziali — stato fallimenti su host_credentials (resolver unico, §7.5)
     const hostCredCols = newDb.prepare("PRAGMA table_info(host_credentials)").all() as Array<{ name: string }>;
     const hostCredNewCols: Array<{ name: string; sql: string }> = [
@@ -2980,24 +2998,60 @@ export function getCredentialById(id: number): Credential | undefined {
   return db().prepare("SELECT * FROM credentials WHERE id = ?").get(id) as Credential | undefined;
 }
 
-export function createCredential(input: CredentialInput & { encrypted_username?: string | null; encrypted_password?: string | null }): Credential {
+export function createCredential(
+  input: CredentialInput & {
+    encrypted_username?: string | null;
+    encrypted_password?: string | null;
+    encrypted_auth_key?: string | null;
+    auth_protocol?: string | null;
+    encrypted_priv_key?: string | null;
+    priv_protocol?: string | null;
+    security_level?: string | null;
+  }
+): Credential {
   const stmt = db().prepare(
-    `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password)
-     VALUES (?, ?, ?, ?)`
+    `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password, encrypted_auth_key, auth_protocol, encrypted_priv_key, priv_protocol, security_level)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name,
     input.credential_type,
     input.encrypted_username ?? null,
-    input.encrypted_password ?? null
+    input.encrypted_password ?? null,
+    input.encrypted_auth_key ?? null,
+    input.auth_protocol ?? null,
+    input.encrypted_priv_key ?? null,
+    input.priv_protocol ?? null,
+    input.security_level ?? null
   );
   return db().prepare("SELECT * FROM credentials WHERE id = ?").get(result.lastInsertRowid) as Credential;
 }
 
-export function updateCredential(id: number, input: Partial<CredentialInput> & { encrypted_username?: string | null; encrypted_password?: string | null }): Credential | undefined {
+export function updateCredential(
+  id: number,
+  input: Partial<CredentialInput> & {
+    encrypted_username?: string | null;
+    encrypted_password?: string | null;
+    encrypted_auth_key?: string | null;
+    auth_protocol?: string | null;
+    encrypted_priv_key?: string | null;
+    priv_protocol?: string | null;
+    security_level?: string | null;
+  }
+): Credential | undefined {
   const fields: string[] = [];
   const values: unknown[] = [];
-  const keys = ["name", "credential_type", "encrypted_username", "encrypted_password"] as const;
+  const keys = [
+    "name",
+    "credential_type",
+    "encrypted_username",
+    "encrypted_password",
+    "encrypted_auth_key",
+    "auth_protocol",
+    "encrypted_priv_key",
+    "priv_protocol",
+    "security_level",
+  ] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);

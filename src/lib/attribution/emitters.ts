@@ -3,7 +3,11 @@
 import { classifyDevice } from "@/lib/device-classifier";
 import { lookupSysObjectId } from "@/lib/scanner/snmp-sysobj-lookup";
 import { mapSysObjCategory } from "@/lib/attribution/sysobj-category";
-import { mapLegacyClassification } from "./taxonomy";
+import { kbLookupSysObjectId } from "./kb";
+import type { KbSysObjMatch } from "./kb";
+import { matchMacProduct } from "./mac-product";
+import { categoryDepth, isValidCategory, mapLegacyClassification } from "./taxonomy";
+import type { CategorySlug } from "./taxonomy";
 import type { AttributionSource, EvidenceInput } from "./types";
 
 /**
@@ -16,7 +20,7 @@ import type { AttributionSource, EvidenceInput } from "./types";
  * ogni recompute anche se l'agente è ancora presente).
  */
 export const RECOMPUTED_SOURCES = [
-  "oui", "snmp_sysobj", "snmp_sysdescr", "nmap_os", "hostname", "ports", "ad", "wazuh", "lldp", "cdp",
+  "oui", "mac_product", "snmp_sysobj", "snmp_sysdescr", "nmap_os", "hostname", "ports", "ad", "wazuh", "lldp", "cdp",
 ] as const satisfies readonly AttributionSource[];
 
 export interface AttributionSignals {
@@ -117,6 +121,45 @@ function categoryFromLegacyText(input: Parameters<typeof classifyDevice>[0]): st
   return mapLegacyClassification(legacy).category;
 }
 
+/** Normalizzazione della LOOKUP_TABLE builtin allo stesso shape della KB, per il merge. */
+interface BuiltinSysObjMatch {
+  vendor: string;
+  product: string | null;
+  category: CategorySlug | null;
+}
+
+/**
+ * Combina KB (9.554 voci GLPI) e LOOKUP_TABLE builtin (94 voci curate a mano)
+ * per un match sysObjectID, invece di far vincere una sola fonte:
+ * - **vendor/modello**: preferisci la KB (molto più ricca), fallback alla builtin.
+ * - **categoria**: la PIÙ PROFONDA fra le due (`categoryDepth`, taxonomy.ts) —
+ *   la KB deriva la categoria dal solo TYPE GLPI (per gli apparati di rete è
+ *   sempre "NETWORKING" → livello 1 "network"), mentre la builtin distingue
+ *   spesso router/switch/access_point (livello 2). A parità di profondità
+ *   vince la builtin (curata a mano). Se solo una fonte ha una categoria, si
+ *   usa quella. Caso guida (regressione): OID 1.3.6.1.4.1.41112.1.6 con SOLO
+ *   sysObjectID (niente sysDescr) → deve restare "network.access_point", non
+ *   degradare a "network" solo perché la KB matcha anch'essa l'OID.
+ */
+export function mergeSysObjSources(
+  kbMatch: KbSysObjMatch | null,
+  builtinMatch: BuiltinSysObjMatch | null
+): { vendor: string | null; product: string | null; category: CategorySlug | null } {
+  const vendor = kbMatch?.vendor ?? builtinMatch?.vendor ?? null;
+  const product = kbMatch?.model ?? builtinMatch?.product ?? null;
+
+  const kbCategory = kbMatch?.category ?? null;
+  const builtinCategory = builtinMatch?.category ?? null;
+  let category: CategorySlug | null;
+  if (kbCategory && builtinCategory) {
+    category = categoryDepth(builtinCategory) >= categoryDepth(kbCategory) ? builtinCategory : kbCategory;
+  } else {
+    category = kbCategory ?? builtinCategory;
+  }
+
+  return { vendor, product, category };
+}
+
 export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceInput[] {
   const out: EvidenceInput[] = [];
   const { host } = signals;
@@ -142,33 +185,70 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
     }
   }
 
-  // 2. SNMP: sysObjectID via KB + sysDescr (incl. caso Ubiquiti)
+  // 1b. Linea di prodotto da mac_product_map (hub, Task 3): prefisso MAC +
+  //     hostname_pattern opzionale risolvono famiglia prodotto/categoria quando
+  //     l'OUI da solo non basta (es. Ubiquiti: stesso vendor per AP/switch/
+  //     gateway). `matchMacProduct` valida già la categoria internamente
+  //     (isValidCategory) — qui il controllo è ridondante ma esplicito: nessuna
+  //     evidenza categoria se non c'è un match valido.
+  if (host.mac) {
+    const mp = matchMacProduct(host.mac, host.hostname);
+    if (mp) {
+      out.push({
+        source: "mac_product", phase: "scan_icmp", dimension: "vendor",
+        claim: vendorSlug(mp.vendor), confidence: mp.confidence, raw_value: mp.product_family ?? mp.vendor,
+      });
+      if (mp.category && isValidCategory(mp.category)) {
+        out.push({
+          source: "mac_product", phase: "scan_icmp", dimension: "category",
+          claim: mp.category, confidence: mp.confidence, raw_value: mp.product_family ?? mp.vendor,
+        });
+      }
+    }
+  }
+
+  // 2. SNMP: sysObjectID via KB (9.554 entry GLPI) COMBINATA con la LOOKUP_TABLE
+  //    builtin (94 entry, curate a mano con distinzione switch/router/AP che la
+  //    KB — TYPE GLPI "NETWORKING" — non offre da sola, livello 1 soltanto):
+  //    vendor/modello dalla KB (fallback builtin), categoria la più profonda fra
+  //    le due (mergeSysObjSources) — mai una fonte sola "vince" a prescindere,
+  //    altrimenti si perde la profondità nota alla builtin (regressione Ubiquiti,
+  //    vedi commento su mergeSysObjSources) + sysDescr (incl. Ubiquiti).
   const snmp = safeJson<{ sysDescr?: string | null; sysObjectID?: string | null; manufacturer?: string | null }>(host.snmp_data);
   if (snmp?.sysObjectID) {
-    const match = lookupSysObjectId(snmp.sysObjectID);
-    if (match) {
+    const kbMatch = kbLookupSysObjectId(snmp.sysObjectID);
+    const legacyMatch = lookupSysObjectId(snmp.sysObjectID);
+    const builtinMatch: BuiltinSysObjMatch | null = legacyMatch
+      ? {
+          vendor: legacyMatch.vendor,
+          product: legacyMatch.product ?? null,
+          category: mapSysObjCategory(legacyMatch)
+            ? (mapLegacyClassification(mapSysObjCategory(legacyMatch)!).category ?? null)
+            : null,
+        }
+      : null;
+    const { vendor, product, category } = mergeSysObjSources(kbMatch, builtinMatch);
+
+    if (vendor) {
       // Match generico (OID net-snmp 1.3.6.1.4.1.8072.* OPPURE vendor/product
       // che matcha il filtro placeholder, es. vendor "Linux"): non è un
       // produttore identificabile né una categoria device — niente vendor,
       // niente categoria. Lascia parlare sysDescr e gli altri segnali.
       const generic = GENERIC_NETSNMP_OID_RE.test(snmp.sysObjectID.trim())
-        || VENDOR_PLACEHOLDER_RE.test(match.vendor.trim())
-        || VENDOR_PLACEHOLDER_RE.test(match.product.trim());
-      if (!VENDOR_PLACEHOLDER_RE.test(match.vendor.trim())) {
+        || VENDOR_PLACEHOLDER_RE.test(vendor.trim())
+        || (product ? VENDOR_PLACEHOLDER_RE.test(product.trim()) : false);
+      if (!VENDOR_PLACEHOLDER_RE.test(vendor.trim())) {
         out.push({
           source: "snmp_sysobj", phase: "scan_snmp_verify", dimension: "vendor",
-          claim: vendorSlug(match.vendor), confidence: 0.95, raw_value: match.vendor,
+          claim: vendorSlug(vendor), confidence: 0.95, raw_value: vendor,
         });
       }
-      if (!generic) {
-        const legacyCat = mapSysObjCategory(match);
-        const cat = legacyCat ? mapLegacyClassification(legacyCat).category : null;
-        if (cat) {
-          out.push({
-            source: "snmp_sysobj", phase: "scan_snmp_verify", dimension: "category",
-            claim: cat, confidence: 0.95, raw_value: `${snmp.sysObjectID} → ${match.product}`,
-          });
-        }
+      if (!generic && category) {
+        out.push({
+          source: "snmp_sysobj", phase: "scan_snmp_verify", dimension: "category",
+          claim: category, confidence: 0.95,
+          raw_value: product ? `${snmp.sysObjectID} → ${product}` : snmp.sysObjectID,
+        });
       }
     }
   }

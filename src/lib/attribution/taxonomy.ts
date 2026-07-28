@@ -32,6 +32,10 @@ export function isValidCategory(s: string): s is CategorySlug {
   return ALL_SLUGS.has(s);
 }
 
+/** Tutti gli slug validi (radici + foglie), ordine stabile di `CATEGORY_TAXONOMY`.
+ *  Per popolare select in UI senza duplicare la costruzione dell'insieme sopra. */
+export const ALL_CATEGORY_SLUGS: readonly string[] = Array.from(ALL_SLUGS);
+
 export function categoryDepth(s: CategorySlug): 1 | 2 {
   return s.includes(".") ? 2 : 1;
 }

@@ -2084,6 +2084,55 @@ export function resetBuiltinSysObjLookup(): void {
 }
 
 // ========================
+// MAC Product Map (Attribution v2 Fase 2, Task 3) — delega a db-hub (tabella hub-global)
+// ========================
+
+export interface MacProductMapRow {
+  id: number;
+  mac_prefix: string;
+  hostname_pattern: string | null;
+  vendor: string;
+  product_family: string | null;
+  category: string | null;
+  confidence: number;
+  source: "seed" | "domarc" | "feedback";
+  enabled: number;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function getMacProductMap(): MacProductMapRow[] {
+  const hub = require("./db-hub");
+  return hub.getMacProductMap();
+}
+
+export function createMacProductEntry(input: {
+  mac_prefix: string; hostname_pattern?: string | null; vendor: string;
+  product_family?: string | null; category?: string | null;
+  confidence?: number; source?: "seed" | "domarc" | "feedback";
+  enabled?: number; note?: string | null;
+}): MacProductMapRow {
+  const hub = require("./db-hub");
+  return hub.createMacProductEntry(input);
+}
+
+export function updateMacProductEntry(id: number, input: Partial<{
+  mac_prefix: string; hostname_pattern: string | null; vendor: string;
+  product_family: string | null; category: string | null;
+  confidence: number; source: "seed" | "domarc" | "feedback";
+  enabled: number; note: string | null;
+}>): MacProductMapRow | undefined {
+  const hub = require("./db-hub");
+  return hub.updateMacProductEntry(id, input);
+}
+
+export function deleteMacProductEntry(id: number): boolean {
+  const hub = require("./db-hub");
+  return hub.deleteMacProductEntry(id);
+}
+
+// ========================
 // Users
 // ========================
 

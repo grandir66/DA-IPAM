@@ -115,15 +115,35 @@ describe("emitEvidenceFromSignals", () => {
     assert.equal(mk("USW-24-PoE 7.0.1")[0]?.claim, "network.switch");
     assert.equal(mk("UDM-Pro 3.1")[0]?.claim, "network.router");
   });
-  it("sysObjectID via lookup KB → vendor + categoria (fallback tabella builtin)", () => {
+  it("sysObjectID: KB e builtin si combinano — vendor dalla KB, categoria la più profonda (regressione Ubiquiti)", () => {
     const s = base();
-    // 1.3.6.1.4.1.41112.1.6 è UniFi AP nella LOOKUP_TABLE builtin
+    // 1.3.6.1.4.1.41112.1.6 è "UniFi AP" nella LOOKUP_TABLE builtin (categoria
+    // level-2 "network.access_point"). La KB (Task 2) ha un match ESATTO sullo
+    // stesso OID (vendor "Ubiquiti", TYPE GLPI "NETWORKING", model "UniFi") ma
+    // TYPE "NETWORKING" non distingue router/switch/AP → livello 1 "network"
+    // soltanto. Se la KB "vincesse" sempre si perderebbe la profondità nota
+    // dalla builtin: qui host ha SOLO il sysObjectID (niente sysDescr), quindi
+    // nessun'altra fonte può recuperare access_point — il merge DEVE farlo.
     s.host.snmp_data = JSON.stringify({ sysObjectID: "1.3.6.1.4.1.41112.1.6", sysDescr: null, collected_at: "x" });
     const out = emitEvidenceFromSignals(s);
     const cat = out.find((e) => e.source === "snmp_sysobj" && e.dimension === "category");
     const ven = out.find((e) => e.source === "snmp_sysobj" && e.dimension === "vendor");
-    assert.equal(cat?.claim, "network.access_point");
+    assert.equal(cat?.claim, "network.access_point", "la categoria più profonda (builtin) deve vincere sulla KB (livello 1)");
+    assert.equal(cat?.raw_value, "1.3.6.1.4.1.41112.1.6 → UniFi", "il model della KB deve finire in raw_value anche con categoria builtin");
     assert.ok(ven);
+    assert.equal(ven?.claim, "ubiquiti", "il vendor deve venire dalla KB (fonte più ricca)");
+  });
+  it("sysObjectID presente SOLO nella KB (AKCP, non in LOOKUP_TABLE builtin) → vendor/modello/categoria dalla KB", () => {
+    const s = base();
+    // 1.3.6.1.4.1.3854 (AKCP) è in attribution-kb.sqlite (TYPE GLPI NETWORKING)
+    // ma l'enterprise 3854 non compare nella LOOKUP_TABLE builtin: legacyMatch
+    // è null, quindi il merge deve restituire integralmente i dati KB.
+    s.host.snmp_data = JSON.stringify({ sysObjectID: "1.3.6.1.4.1.3854", sysDescr: null, collected_at: "x" });
+    const out = emitEvidenceFromSignals(s);
+    const cat = out.find((e) => e.source === "snmp_sysobj" && e.dimension === "category");
+    const ven = out.find((e) => e.source === "snmp_sysobj" && e.dimension === "vendor");
+    assert.equal(cat?.claim, "network");
+    assert.equal(ven?.claim, "akcp");
   });
   it("caso reale 192.168.40.23 (Synology): sysObjectID net-snmp generico 1.3.6.1.4.1.8072.3.2.10 → nessuna evidenza vendor/categoria", () => {
     const s = base();
@@ -194,5 +214,39 @@ describe("emitEvidenceFromSignals", () => {
   it("nessun segnale → nessuna evidenza (mai claim vuoti)", () => {
     assert.deepEqual(emitEvidenceFromSignals(base()), []);
     for (const e of emitEvidenceFromSignals(base())) assert.ok(e.claim.length > 0);
+  });
+});
+
+// Sorgente mac_product (Task 3): contro il vero hub.db, seedato da
+// seedBuiltinMacProductMap (db-hub.ts) con prefissi Ubiquiti reali + hostname_pattern
+// ^ap-/^sw-/^gw-|^fw-. Vedi anche mac-product.test.ts per i test puri sul matcher.
+describe("emitEvidenceFromSignals — sorgente mac_product", () => {
+  it("MAC Ubiquiti seedato + hostname 'ap-...' → vendor + categoria valida, raw_value = product_family", () => {
+    const s = base();
+    s.host.mac = "00:15:6D:AA:BB:CC";
+    s.host.hostname = "ap-piano2";
+    const out = emitEvidenceFromSignals(s);
+    const v = out.find((e) => e.source === "mac_product" && e.dimension === "vendor");
+    const cat = out.find((e) => e.source === "mac_product" && e.dimension === "category");
+    assert.ok(v, "attesa evidenza vendor da mac_product");
+    assert.equal(v!.claim, "ubiquiti");
+    assert.equal(v!.raw_value, "UniFi AP");
+    assert.ok(cat, "attesa evidenza categoria da mac_product");
+    assert.equal(cat!.claim, "network.access_point");
+    assert.equal(cat!.raw_value, "UniFi AP");
+    assert.ok(v!.confidence <= 0.7 && cat!.confidence <= 0.7, "il seed deve restare <= 0.7");
+  });
+  it("MAC presente ma nessun match (hostname che non combacia con alcun pattern seed) → nessuna evidenza mac_product", () => {
+    const s = base();
+    s.host.mac = "00:15:6D:AA:BB:CC";
+    s.host.hostname = "desktop-marco";
+    const out = emitEvidenceFromSignals(s);
+    assert.equal(out.find((e) => e.source === "mac_product"), undefined);
+  });
+  it("nessun MAC → nessuna evidenza mac_product (nessuna eccezione)", () => {
+    const s = base();
+    s.host.hostname = "ap-piano2";
+    const out = emitEvidenceFromSignals(s);
+    assert.equal(out.find((e) => e.source === "mac_product"), undefined);
   });
 });

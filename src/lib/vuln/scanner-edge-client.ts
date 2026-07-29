@@ -35,7 +35,7 @@ import { safeDecrypt } from "@/lib/crypto";
  * connection pooling, e il listener di noi può arrivare tardi. Una
  * `tls.connect` esplicita ha API sincrona pulita.
  */
-function probePinTls(
+export function probePinTls(
   hostname: string,
   port: number,
   expectedPin: string | null,

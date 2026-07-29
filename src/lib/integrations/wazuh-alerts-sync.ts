@@ -6,8 +6,9 @@
  */
 
 import type { Database } from "better-sqlite3";
-import { createWazuhIndexerClient } from "./wazuh-indexer-api";
-import { getWazuhConfig } from "./wazuh-config";
+import { createWazuhIndexerClient, type WazuhIndexerConfig, type WazuhIndexerClient } from "./wazuh-indexer-api";
+import { getWazuhConfig, isWazuhConfigured } from "./wazuh-config";
+import { getImmutableStoreConfig } from "./immutable-store-api";
 import { getCurrentTenantCode } from "../db-tenant";
 import { collectSelfIdentity } from "./self-identity";
 import { getNotificationConfig } from "../notifications/config";
@@ -28,6 +29,7 @@ import {
   tenantDb,
   upsertAlertEvent,
 } from "./wazuh-alerts-db";
+import { evaluateAndNotifyWazuhHealth } from "./wazuh-health-notify";
 
 /** Finestra iniziale al primo run, quando non esiste ancora un cursore. */
 const DEFAULT_LOOKBACK_HOURS = 24;
@@ -43,6 +45,29 @@ export interface WazuhAlertsSyncResult {
   ignored: number;
   notifiedImmediate: number;
   notifiedDigest: number;
+}
+
+/** Minima superficie usata dal sync: solo `searchAlerts`. Lascia ai test di
+ *  iniettare un fake senza implementare l'intera `WazuhIndexerClient` (stesso
+ *  pattern di `MeshControlClientLike` in meshcentral/mesh-sync.ts). */
+export interface AlertsIndexerClientLike {
+  searchAlerts: WazuhIndexerClient["searchAlerts"];
+}
+
+/** Test-only: inject a fake indexer client factory. Pass `null` to restore the real one
+ *  (stesso pattern di `_setControlClientFactory` in meshcentral/mesh-sync.ts — niente
+ *  `mock.module`, non supportato sotto Node22+tsx). */
+let indexerClientFactory: ((cfg: WazuhIndexerConfig) => AlertsIndexerClientLike | null) | null = null;
+export function _setWazuhIndexerClientFactory(
+  f: ((cfg: WazuhIndexerConfig) => AlertsIndexerClientLike | null) | null,
+): void {
+  indexerClientFactory = f;
+}
+
+/** Test-only: inject a fake valutatore di salute. Pass `null` per ripristinare quello vero. */
+let healthEvaluator: typeof evaluateAndNotifyWazuhHealth | null = null;
+export function _setHealthEvaluator(f: typeof evaluateAndNotifyWazuhHealth | null): void {
+  healthEvaluator = f;
 }
 
 function digestDue(lastDigestAt: string | null, intervalMinutes: number): boolean {
@@ -126,75 +151,105 @@ export async function syncWazuhAlertsForTenant(opts?: {
     notifiedDigest: 0,
   };
   const cfg = getWazuhConfig();
-  if (!cfg.enabled) return { skipped: true, reason: "integrazione disabilitata", ...empty };
-  if (!cfg.indexerUrl || !cfg.indexerUsername || !cfg.indexerPassword) {
-    return { skipped: true, reason: "indexer non configurato", ...empty };
+  const tenantCode = getCurrentTenantCode() ?? "DA-IPAM";
+
+  // La valutazione della salute (manager/indexer/ingestione/repliche) deve
+  // avvenire SEMPRE, indipendentemente dall'esito del sync degli alert:
+  // altrimenti un'interruzione dell'indexer produce zero notifiche di salute
+  // (nè durante il guasto nè dopo), e un tenant con solo le repliche
+  // configurate ma senza credenziali indexer non le riceverebbe mai (era il
+  // bug: la valutazione viveva dentro il try del sync, dopo searchAlerts, e
+  // i return "skipped" la saltavano del tutto). Si salta solo quando non c'è
+  // proprio nulla da valutare: nè Wazuh nè l'endpoint delle repliche sono
+  // configurati (i quattro blocchi risulterebbero tutti "non configurato").
+  const healthRelevant = isWazuhConfigured() || getImmutableStoreConfig() !== null;
+
+  async function evaluateHealthSafely(): Promise<void> {
+    if (!healthRelevant) return;
+    // Try/catch proprio: un problema qui non deve mascherare l'esito del
+    // sync già deciso sopra (return o throw). evaluateAndNotifyWazuhHealth
+    // ha già il proprio try/catch interno, questo è un ulteriore livello di
+    // difesa.
+    try {
+      await (healthEvaluator ?? evaluateAndNotifyWazuhHealth)(tenantCode);
+    } catch (e) {
+      console.error("[wazuh-health] notifiche di salute fallite:", (e as Error).message);
+    }
   }
 
-  const client = createWazuhIndexerClient({
-    url: cfg.indexerUrl,
-    username: cfg.indexerUsername,
-    password: cfg.indexerPassword,
-    verifyTls: cfg.verifyTls,
-  });
-  if (!client) return { skipped: true, reason: "client indexer non creato", ...empty };
-
-  const db = tenantDb();
-  ensureWazuhAlertSchema(db);
-  const state = getAlertSyncState(db);
-
-  const lookback = opts?.lookbackHours ?? DEFAULT_LOOKBACK_HOURS;
-  const since =
-    state.lastTimestamp ?? new Date(Date.now() - lookback * 3_600_000).toISOString();
-
   try {
-    const { alerts, nextCursor } = await client.searchAlerts({
-      since,
-      minLevel: opts?.minLevel,
-      maxRows: opts?.maxRows ?? DEFAULT_MAX_ROWS,
-      searchAfter: state.cursor ?? undefined,
-      // Le nostre stesse sonde non devono comparire come attacco
-      self: collectSelfIdentity(db),
-      deviceRuleIds: cfg.deviceRuleIds,
+    if (!cfg.enabled) return { skipped: true, reason: "integrazione disabilitata", ...empty };
+    if (!cfg.indexerUrl || !cfg.indexerUsername || !cfg.indexerPassword) {
+      return { skipped: true, reason: "indexer non configurato", ...empty };
+    }
+
+    const client = (indexerClientFactory ?? createWazuhIndexerClient)({
+      url: cfg.indexerUrl,
+      username: cfg.indexerUsername,
+      password: cfg.indexerPassword,
+      verifyTls: cfg.verifyTls,
     });
+    if (!client) return { skipped: true, reason: "client indexer non creato", ...empty };
 
-    let opened = 0;
-    let updated = 0;
-    let ignored = 0;
-    let maxTs = state.lastTimestamp;
+    const db = tenantDb();
+    ensureWazuhAlertSchema(db);
+    const state = getAlertSyncState(db);
 
-    const apply = db.transaction(() => {
-      for (const a of alerts) {
-        const r = upsertAlertEvent(db, a);
-        if (r.skipped) ignored++;
-        else if (r.created) opened++;
-        else updated++;
-        if (!maxTs || a.timestamp > maxTs) maxTs = a.timestamp;
-      }
-    });
-    apply();
+    const lookback = opts?.lookbackHours ?? DEFAULT_LOOKBACK_HOURS;
+    const since =
+      state.lastTimestamp ?? new Date(Date.now() - lookback * 3_600_000).toISOString();
 
-    setAlertSyncState(db, {
-      lastTimestamp: maxTs ?? since,
-      cursor: nextCursor,
-      lastError: null,
-    });
+    try {
+      const { alerts, nextCursor } = await client.searchAlerts({
+        since,
+        minLevel: opts?.minLevel,
+        maxRows: opts?.maxRows ?? DEFAULT_MAX_ROWS,
+        searchAfter: state.cursor ?? undefined,
+        // Le nostre stesse sonde non devono comparire come attacco
+        self: collectSelfIdentity(db),
+        deviceRuleIds: cfg.deviceRuleIds,
+      });
 
-    const notified = await notifyPendingEvents(db, getCurrentTenantCode() ?? "DA-IPAM");
+      let opened = 0;
+      let updated = 0;
+      let ignored = 0;
+      let maxTs = state.lastTimestamp;
 
-    return {
-      skipped: false,
-      fetched: alerts.length,
-      opened,
-      updated,
-      ignored,
-      notifiedImmediate: notified.immediate,
-      notifiedDigest: notified.digest,
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    // Il cursore resta invariato: il prossimo giro riprova la stessa finestra.
-    setAlertSyncState(db, { cursor: state.cursor, lastError: message });
-    throw err;
+      const apply = db.transaction(() => {
+        for (const a of alerts) {
+          const r = upsertAlertEvent(db, a);
+          if (r.skipped) ignored++;
+          else if (r.created) opened++;
+          else updated++;
+          if (!maxTs || a.timestamp > maxTs) maxTs = a.timestamp;
+        }
+      });
+      apply();
+
+      setAlertSyncState(db, {
+        lastTimestamp: maxTs ?? since,
+        cursor: nextCursor,
+        lastError: null,
+      });
+
+      const notified = await notifyPendingEvents(db, tenantCode);
+
+      return {
+        skipped: false,
+        fetched: alerts.length,
+        opened,
+        updated,
+        ignored,
+        notifiedImmediate: notified.immediate,
+        notifiedDigest: notified.digest,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Il cursore resta invariato: il prossimo giro riprova la stessa finestra.
+      setAlertSyncState(db, { cursor: state.cursor, lastError: message });
+      throw err;
+    }
+  } finally {
+    await evaluateHealthSafely();
   }
 }

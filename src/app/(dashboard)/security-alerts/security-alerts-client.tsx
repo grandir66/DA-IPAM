@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RefreshCw, Check, Siren, Pause, Play } from "lucide-react";
+import { WazuhHealthBand } from "@/components/integrations/wazuh-health-band";
 import { splitCategories } from "@/lib/integrations/wazuh-alerts-stats";
 import {
   AlertsComposition,
@@ -111,6 +112,9 @@ export function SecurityAlertsClient() {
   const [system, setSystem] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  // Contatore per <WazuhHealthBand>: incrementato dallo stesso ciclo di
+  // aggiornamento a 60s usato per gli alert, nessun setInterval aggiuntivo.
+  const [refreshTick, setRefreshTick] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -159,6 +163,7 @@ export function SecurityAlertsClient() {
     if (!autoRefresh) return;
     timerRef.current = setInterval(() => {
       void load({ silent: true });
+      setRefreshTick((t) => t + 1);
     }, AUTO_REFRESH_MS);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -184,6 +189,7 @@ export function SecurityAlertsClient() {
           `${body.fetched ?? 0} alert letti, ${body.opened ?? 0} nuovi eventi aperti`,
         );
       await load();
+      setRefreshTick((t) => t + 1);
     } catch (e) {
       toast.error(`Errore: ${(e as Error).message}`);
     } finally {
@@ -243,6 +249,8 @@ export function SecurityAlertsClient() {
           {syncing ? "Aggiornamento…" : "Aggiorna ora"}
         </Button>
       </div>
+
+      <WazuhHealthBand refreshKey={refreshTick} />
 
       {stats?.unavailable ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">

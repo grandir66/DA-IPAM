@@ -16,6 +16,7 @@ import {
   getWazuhConfigPublic,
   setWazuhConfig,
 } from "@/lib/integrations/wazuh-config";
+import { invalidateWazuhHealth } from "@/lib/integrations/wazuh-health";
 
 const PostSchema = z.object({
   enabled:         z.boolean().optional(),
@@ -28,7 +29,34 @@ const PostSchema = z.object({
   indexerPassword: z.string().max(500).optional(),
   /** Intervallo di sync schedulato in minuti (default 60) */
   syncIntervalMinutes: z.number().int().min(5).max(1440).optional(),
+  // Endpoint di stato repliche/archivio immutabile (cruscotto salute, fase 2).
+  // Il token e' write-only: stringa vuota o assente NON sovrascrive quello
+  // gia' salvato (stesso pattern di password/indexerPassword sopra).
+  immutableStoreUrl:      z.string().max(500).optional(),
+  immutableStoreToken:    z.string().max(500).optional(),
+  immutableStoreCertPin:  z.string().max(200).nullable().optional(),
+}).superRefine((data, ctx) => {
+  // Un URL http:// manda il token in chiaro sulla rete e rende inutile il
+  // pinning TLS (probePinTls non viene nemmeno chiamato senza https, vedi
+  // fetchImmutableStoreState): l'errore deve bloccare il salvataggio, non
+  // essere scoperto in silenzio più tardi guardando i log.
+  if (data.immutableStoreUrl && !/^https:\/\//i.test(data.immutableStoreUrl.trim())) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["immutableStoreUrl"],
+      message: "L'endpoint di stato delle repliche deve usare HTTPS: con HTTP il token viaggia in chiaro e il pin TLS non ha effetto",
+    });
+  }
 });
+
+/** Invalida la cache health Wazuh su TUTTI i tenant attivi: la config
+ *  dell'endpoint di stato repliche e' hub-level (condivisa), ma la cache
+ *  health e' tenuta per tenant in `wazuh-health.ts`. */
+function invalidateWazuhHealthForAllTenants(): void {
+  for (const tenant of getActiveTenants()) {
+    invalidateWazuhHealth(tenant.codice_cliente);
+  }
+}
 
 /** Crea/aggiorna il job wazuh_sync (network_id NULL = tutti i tenant network)
  *  su TUTTI i tenant attivi. Default 60 min. */
@@ -135,6 +163,17 @@ export async function POST(req: Request) {
 
   const { syncIntervalMinutes, ...cfg } = parsed.data;
   setWazuhConfig(cfg);
+
+  // Se cambia uno dei tre campi dell'endpoint di stato repliche, la cache
+  // health (60s per tenant, vedi wazuh-health.ts) va invalidata subito:
+  // altrimenti l'operatore salva e per un minuto vede ancora l'esito
+  // calcolato con l'endpoint precedente. Stessa condizione di scrittura
+  // usata da setWazuhConfig (token write-only: vuoto/assente non conta).
+  const immutableStoreChanged =
+    cfg.immutableStoreUrl !== undefined ||
+    (cfg.immutableStoreToken !== undefined && cfg.immutableStoreToken !== "") ||
+    cfg.immutableStoreCertPin !== undefined;
+  if (immutableStoreChanged) invalidateWazuhHealthForAllTenants();
 
   // Se l'integrazione viene abilitata (o resta abilitata) registra il cron job.
   const after = getWazuhConfig();

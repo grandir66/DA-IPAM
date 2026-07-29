@@ -42,4 +42,14 @@ describe("parseImmutableStoreState", () => {
     assert.equal(s.runs.archive.outcome, "failed");
     assert.equal(s.runs.archive.error, "NAS irraggiungibile");
   });
+
+  // Fix review "Minor": la spec §3 documenta backend.disk.use_percent come
+  // NUMERO (33), l'endpoint reale oggi manda la stringa df -h ("11%"). Se
+  // parseBackend accettasse solo la stringa, una versione conforme alla spec
+  // spegnerebbe in silenzio la soglia disco 85/95% (verde falso).
+  it("accetta backend.disk.use_percent anche come numero (formato spec §3)", () => {
+    const s = parseImmutableStoreState({ ...COMPLETO,
+      backend: { ...COMPLETO.backend, disk: { ...COMPLETO.backend.disk, use_percent: 33 } } });
+    assert.equal(s.backend.disk?.use_percent, 33);
+  });
 });

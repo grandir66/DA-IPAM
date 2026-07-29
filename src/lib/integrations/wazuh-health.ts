@@ -123,6 +123,11 @@ async function probeIndexer(): Promise<BlockHealth> {
  * Non avvolto in try/catch proprio: un errore nella lettura delle statistiche
  * analysisd propaga fino a `Promise.allSettled` in `compute()`, che isola il
  * fallimento sul blocco "ingestion" (comportamento voluto, non un bug).
+ *
+ * Con Wazuh non configurato il blocco è `configured: false` (come manager e
+ * indexer), non un verde "allineata": senza credenziali non c'è nulla da
+ * verificare, e un semaforo verde su un'appliance appena installata sarebbe
+ * una falsa rassicurazione (fix review fase 2, Important 2).
  */
 async function probeIngestion(tenantCode: string): Promise<BlockHealth> {
   const cfg = getWazuhConfig();
@@ -133,14 +138,15 @@ async function probeIngestion(tenantCode: string): Promise<BlockHealth> {
     verifyTls: cfg.verifyTls,
   });
 
-  let stats: { eventsDropped: number; queueUsage: number } | null = null;
-  if (cfg.enabled && mgr) {
-    stats = await withTimeoutReject(
-      mgr.getAnalysisdStats(),
-      PROBE_TIMEOUT_MS,
-      "timeout statistiche analysisd",
-    );
+  if (!cfg.enabled || !mgr) {
+    return classifyIngestion({ configured: false, nowMs: Date.now() });
   }
+
+  const stats = await withTimeoutReject(
+    mgr.getAnalysisdStats(),
+    PROBE_TIMEOUT_MS,
+    "timeout statistiche analysisd",
+  );
 
   // L'alert più recente viene dal DB tenant (wazuh_alert_event.last_seen_at),
   // non dall'indexer: più economico e riflette ciò che DA-IPAM ha davvero

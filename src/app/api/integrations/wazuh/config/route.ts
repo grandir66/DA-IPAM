@@ -35,6 +35,18 @@ const PostSchema = z.object({
   immutableStoreUrl:      z.string().max(500).optional(),
   immutableStoreToken:    z.string().max(500).optional(),
   immutableStoreCertPin:  z.string().max(200).nullable().optional(),
+}).superRefine((data, ctx) => {
+  // Un URL http:// manda il token in chiaro sulla rete e rende inutile il
+  // pinning TLS (probePinTls non viene nemmeno chiamato senza https, vedi
+  // fetchImmutableStoreState): l'errore deve bloccare il salvataggio, non
+  // essere scoperto in silenzio più tardi guardando i log.
+  if (data.immutableStoreUrl && !/^https:\/\//i.test(data.immutableStoreUrl.trim())) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["immutableStoreUrl"],
+      message: "L'endpoint di stato delle repliche deve usare HTTPS: con HTTP il token viaggia in chiaro e il pin TLS non ha effetto",
+    });
+  }
 });
 
 /** Invalida la cache health Wazuh su TUTTI i tenant attivi: la config

@@ -176,24 +176,45 @@ export function classifyIndexer(
 }
 
 export function classifyIngestion(input: {
+  /** `false` quando Wazuh non è configurato: nessun'altra soglia si applica,
+   *  il blocco è neutro (come indexer/repliche), mai un falso verde. */
+  configured?: boolean;
   eventsDropped?: number;
   queueUsage?: number;
   newestAlertIso?: string | null;
   nowMs: number;
 }): BlockHealth {
+  if (input.configured === false) {
+    return {
+      key: "ingestion",
+      verdict: "ok",
+      headline: "Wazuh non configurato",
+      configured: false,
+    };
+  }
+
   const newestMs = parseFlexibleDate(input.newestAlertIso);
+  // Nessun alert MAI ricevuto (indice appena creato, o Wazuh configurato da
+  // pochi minuti): non è "allineata", è "non sappiamo ancora". Un verde qui
+  // sarebbe una falsa rassicurazione su un'appliance appena installata.
+  const noAlertsYet = newestMs === null;
   const lagMinutes = newestMs !== null ? (input.nowMs - newestMs) / 60000 : null;
   const isLate = lagMinutes !== null && lagMinutes > INGESTION_LAG_WARN_MINUTES;
   const hasDropped = (input.eventsDropped ?? 0) > 0;
 
-  const verdict = worst(isLate ? "degraded" : "ok", hasDropped ? "degraded" : "ok");
+  const verdict = worst(
+    noAlertsYet ? "degraded" : isLate ? "degraded" : "ok",
+    hasDropped ? "degraded" : "ok",
+  );
 
   const detail: string[] = [];
   if (hasDropped) detail.push(`eventi scartati: ${input.eventsDropped}`);
   if (typeof input.queueUsage === "number") detail.push(`code al ${Math.round(input.queueUsage)}%`);
 
   let headline: string;
-  if (isLate) {
+  if (noAlertsYet) {
+    headline = "nessun alert ricevuto finora";
+  } else if (isLate) {
     headline = `in ritardo di ${Math.round(lagMinutes as number)} minuti`;
   } else if (hasDropped) {
     headline = "eventi scartati in ingestione";

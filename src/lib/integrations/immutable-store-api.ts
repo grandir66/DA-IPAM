@@ -58,7 +58,12 @@ export interface ImmutableStoreState {
       size?: string;
       used?: string;
       available?: string;
-      use_percent?: string;
+      // La spec §3 lo documenta come numero (`use_percent: 33`); l'endpoint
+      // reale oggi manda una stringa `df -h` ("11%"). `parsePercent` a valle
+      // (wazuh-health-thresholds.ts) gestisce già entrambi i formati: se qui
+      // si accettasse solo la stringa, una versione del servizio conforme
+      // alla spec spegnerebbe in silenzio la regola disco 85/95% (verde falso).
+      use_percent?: string | number;
     };
   };
   local_disk: {
@@ -137,6 +142,15 @@ function num(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
+/** Come `str`, ma accetta anche un numero finito: `backend.disk.use_percent`
+ *  arriva come stringa `df -h` sull'endpoint reale, ma come numero secondo
+ *  la spec §3 — entrambi validi, non lanciare su nessuno dei due. */
+function strOrNum(v: unknown): string | number | undefined {
+  if (typeof v === "string") return v;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  return undefined;
+}
+
 function bool(v: unknown): boolean | undefined {
   return typeof v === "boolean" ? v : undefined;
 }
@@ -163,7 +177,7 @@ function parseBackend(raw: Record<string, unknown> | undefined): ImmutableStoreS
         size: str(diskRaw.size),
         used: str(diskRaw.used),
         available: str(diskRaw.available),
-        use_percent: str(diskRaw.use_percent),
+        use_percent: strOrNum(diskRaw.use_percent),
       })
     : undefined;
   return withDefined({

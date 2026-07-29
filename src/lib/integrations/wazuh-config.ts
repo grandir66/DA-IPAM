@@ -91,11 +91,18 @@ export function setWazuhConfig(cfg: Partial<WazuhConfig>): void {
     setSetting(KEY_IDX_PASSWORD, encrypt(cfg.indexerPassword));
   }
   if (cfg.immutableStoreUrl !== undefined) setSetting(KEY_IMMUTABLE_URL, cfg.immutableStoreUrl.trim());
-  if (cfg.immutableStoreToken !== undefined && cfg.immutableStoreToken !== "") {
-    setSetting(KEY_IMMUTABLE_TOKEN, encrypt(cfg.immutableStoreToken));
+  if (cfg.immutableStoreToken !== undefined) {
+    // Trim come url/username/indexerUrl sopra: un token incollato da un
+    // terminale porta spesso un newline finale, che poi manda in crash Node
+    // (ERR_INVALID_CHAR) mascherato da "errore di rete" nella chiamata HTTP.
+    const trimmed = cfg.immutableStoreToken.trim();
+    if (trimmed !== "") setSetting(KEY_IMMUTABLE_TOKEN, encrypt(trimmed));
   }
   if (cfg.immutableStoreCertPin !== undefined) {
-    setSetting(KEY_IMMUTABLE_CERT_PIN, cfg.immutableStoreCertPin ?? "");
+    // Trim: un pin copiato da un terminale con un newline in coda fa fallire
+    // il confronto esatto in probePinTls (got !== expectedPin) con due
+    // impronte visivamente identiche — un debug frustrante e ingannevole.
+    setSetting(KEY_IMMUTABLE_CERT_PIN, (cfg.immutableStoreCertPin ?? "").trim());
   }
 }
 

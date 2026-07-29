@@ -67,6 +67,18 @@ describe("ingestione", () => {
     const b = classifyIngestion({ eventsDropped: 42, newestAlertIso: "2026-07-29T11:59:00Z", nowMs: ORA });
     assert.equal(b.verdict, "degraded");
   });
+  it("nessun alert mai ricevuto non è 'allineata': lo dice onestamente e non è ok", () => {
+    // Prima del fix: newestAlertIso null produceva verdict "ok" e headline
+    // "allineata" — un semaforo verde falso su un'appliance appena installata
+    // o su Wazuh mai configurato.
+    const b = classifyIngestion({ newestAlertIso: null, nowMs: ORA });
+    assert.notEqual(b.verdict, "ok");
+    assert.equal(b.headline, "nessun alert ricevuto finora");
+  });
+  it("Wazuh non configurato produce configured:false, non un verde 'allineata'", () => {
+    const b = classifyIngestion({ configured: false, nowMs: ORA });
+    assert.equal(b.configured, false);
+  });
 });
 
 describe("repliche", () => {

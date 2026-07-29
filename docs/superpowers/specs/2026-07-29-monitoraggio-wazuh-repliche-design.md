@@ -154,6 +154,7 @@ Le soglie sono esplicite e poche:
 | Un demone del manager non in esecuzione | errore |
 | Cluster indexer **rosso** | errore · **giallo** degradato |
 | Alert più recente più vecchio di **30 minuti** | degradato |
+| Eventi scartati dal manager (`analysisd`, `events_dropped > 0`) | degradato |
 
 La notifica passa dal sistema già usato per gli alert di sicurezza. Regola anti-rumore: si notifica **al cambio di verdetto** di un blocco, non a ogni ciclo; se la condizione persiste si ripete al massimo ogni **6 ore**; il rientro alla normalità produce una notifica di chiusura.
 

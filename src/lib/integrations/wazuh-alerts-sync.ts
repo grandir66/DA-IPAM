@@ -28,6 +28,7 @@ import {
   tenantDb,
   upsertAlertEvent,
 } from "./wazuh-alerts-db";
+import { evaluateAndNotifyWazuhHealth } from "./wazuh-health-notify";
 
 /** Finestra iniziale al primo run, quando non esiste ancora un cursore. */
 const DEFAULT_LOOKBACK_HOURS = 24;
@@ -180,7 +181,17 @@ export async function syncWazuhAlertsForTenant(opts?: {
       lastError: null,
     });
 
-    const notified = await notifyPendingEvents(db, getCurrentTenantCode() ?? "DA-IPAM");
+    const tenantCode = getCurrentTenantCode() ?? "DA-IPAM";
+    const notified = await notifyPendingEvents(db, tenantCode);
+
+    // Un problema nella valutazione della salute non deve far fallire il
+    // sync degli alert: logga e prosegui (evaluateAndNotifyWazuhHealth ha già
+    // il proprio try/catch interno, questo è un ulteriore livello di difesa).
+    try {
+      await evaluateAndNotifyWazuhHealth(tenantCode);
+    } catch (e) {
+      console.error("[wazuh-health] notifiche di salute fallite:", (e as Error).message);
+    }
 
     return {
       skipped: false,

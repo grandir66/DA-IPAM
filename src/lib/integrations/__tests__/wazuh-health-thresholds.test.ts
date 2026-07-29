@@ -25,6 +25,40 @@ describe("manager", () => {
     assert.equal(b.verdict, "fail");
     assert.ok(b.headline.includes("wazuh-analysisd"));
   });
+
+  // Bug di campo (appliance 192.168.4.8 vs Wazuh 192.168.4.19): questi sette
+  // demoni sono OPZIONALI e disabilitati per default in un'installazione
+  // Wazuh sana (agentless, syslog, output DB, integrazioni esterne, email,
+  // report, solo-cluster). Prima del fix producevano un falso "fail" su
+  // praticamente ogni appliance sul campo.
+  const DEMONI_OPZIONALI_FERMI = [
+    "wazuh-agentlessd", "wazuh-csyslogd", "wazuh-dbd", "wazuh-integratord",
+    "wazuh-maild", "wazuh-reportd", "wazuh-clusterd",
+  ].map((name) => ({ name, status: "stopped" }));
+
+  const ESSENZIALI_ATTIVI = [
+    "wazuh-analysisd", "wazuh-remoted", "wazuh-monitord", "wazuh-execd",
+    "wazuh-modulesd", "wazuh-syscheckd", "wazuh-logcollector", "wazuh-db", "wazuh-apid",
+  ].map((name) => ({ name, status: "running" }));
+
+  it("demoni opzionali fermi con tutti gli essenziali attivi non produce fail (caso reale sul campo)", () => {
+    const b = classifyManager([...ESSENZIALI_ATTIVI, ...DEMONI_OPZIONALI_FERMI]);
+    assert.equal(b.verdict, "ok");
+    assert.ok(b.detail?.some((d) => d.includes("opzionali")));
+  });
+
+  it("un demone essenziale fermo resta fail con il suo nome in headline, anche con opzionali fermi", () => {
+    const essenzialiConAnalysisdFermo = ESSENZIALI_ATTIVI.map((d) =>
+      d.name === "wazuh-analysisd" ? { name: d.name, status: "stopped" } : d);
+    const b = classifyManager([...essenzialiConAnalysisdFermo, ...DEMONI_OPZIONALI_FERMI]);
+    assert.equal(b.verdict, "fail");
+    assert.ok(b.headline.includes("wazuh-analysisd"));
+  });
+
+  it("elenco vuoto è gestito senza lanciare", () => {
+    assert.doesNotThrow(() => classifyManager([]));
+    assert.equal(classifyManager([]).verdict, "ok");
+  });
 });
 
 describe("indexer", () => {

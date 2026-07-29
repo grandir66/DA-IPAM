@@ -24,7 +24,7 @@ import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
 import { URL } from "node:url";
 import { probePinTls } from "@/lib/vuln/scanner-edge-client";
-import { getWazuhConfig } from "./wazuh-config";
+import { getWazuhConfig, normalizeSpkiPin } from "./wazuh-config";
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const MAX_BODY_BYTES = 256 * 1024;
@@ -334,7 +334,13 @@ export async function fetchImmutableStoreState(
 
   if (isHttps && cfg.certPin) {
     try {
-      await probePinTls(parsed.hostname, port, cfg.certPin, timeoutMs);
+      // Normalizza PRIMA del confronto: un pin già salvato senza il
+      // prefisso `sha256/` (script di installazione più vecchi) o con
+      // whitespace non deve produrre un mismatch fantasma contro il pin
+      // canonico calcolato da `probePinTls`. `probePinTls` stesso resta
+      // invariato — lo riusa anche lo scanner-edge, che passa già pin
+      // canonici.
+      await probePinTls(parsed.hostname, port, normalizeSpkiPin(cfg.certPin), timeoutMs);
     } catch (e) {
       // La verifica del pin fallisce PRIMA di inviare il token: nessun
       // segreto raggiunge un endpoint potenzialmente sostituito.

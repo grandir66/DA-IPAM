@@ -154,15 +154,17 @@ export function classifyIndexer(
   const diskVerdicts = nodes.map((n) => classifyDiskUsage(n.diskPercent));
   const verdict = worst(colorVerdict, ...diskVerdicts);
 
-  const percentValues = nodes.map((n) => n.diskPercent).filter((p): p is number => p !== null);
-  const avgPercent =
-    percentValues.length > 0
-      ? Math.round(percentValues.reduce((a, b) => a + b, 0) / percentValues.length)
-      : null;
+  // Il nodo peggiore, non la media: una media rassicurante accanto a un
+  // verdetto rosso nasconderebbe proprio il nodo che lo causa.
+  const worstNode = nodes.reduce<{ node: string; diskPercent: number } | null>((acc, n) => {
+    if (n.diskPercent === null) return acc;
+    if (acc === null || n.diskPercent > acc.diskPercent) return { node: n.node, diskPercent: n.diskPercent };
+    return acc;
+  }, null);
 
   const headline =
-    avgPercent !== null
-      ? `cluster ${colorLabel} · ${avgPercent}% su ${nodes.length} nod${nodes.length === 1 ? "o" : "i"}`
+    worstNode !== null
+      ? `cluster ${colorLabel} · ${worstNode.diskPercent}% su ${nodes.length} nod${nodes.length === 1 ? "o" : "i"} (peggiore: ${worstNode.node})`
       : `cluster ${colorLabel}`;
 
   const detail =
@@ -219,10 +221,38 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
 
   const newestMs = parseFlexibleDate(state.archives.newest);
   const ageMinutes = newestMs !== null ? (nowMs - newestMs) / 60000 : null;
-  const tooOld = ageMinutes === null || ageMinutes > thresholdMinutes;
 
   const archiveRun = state.runs.archive;
-  const archiveFailed = archiveRun.outcome !== "success" || (archiveRun.failed ?? 0) > 0;
+  // "never" = non ancora tentato (es. endpoint appena configurato, prima che
+  // il ciclo orario abbia potuto girare): NON è un guasto immediato, si
+  // concede la stessa soglia di grazia (thresholdMinutes, minimo 3h) usata
+  // per la staleness. Un tentativo REALMENTE fallito (`failed`/`partial`,
+  // o `failed > 0`) resta un errore da subito.
+  const archiveNeverRun = archiveRun.outcome === "never";
+  const archiveAttemptFailed =
+    archiveRun.outcome === "failed" || archiveRun.outcome === "partial" || (archiveRun.failed ?? 0) > 0;
+
+  // Verdetto di "freschezza": se esiste un `archives.newest` valido, la sua
+  // età decide subito (staleness reale). Se non esiste (mai archiviato o
+  // campo non parsabile), si usa `generated_at` come proxy di "da quanto
+  // tempo attendiamo il primo ciclo" e si concede la stessa soglia di grazia
+  // prima di dichiarare fail; nel frattempo il blocco è "degraded", non "ok"
+  // (in attesa, non necessariamente sano) e non "fail" (non ancora provato
+  // che sia rotto).
+  let freshnessVerdict: HealthVerdict;
+  let waitingForFirstCycle = false;
+  if (ageMinutes !== null) {
+    freshnessVerdict = ageMinutes > thresholdMinutes ? "fail" : "ok";
+  } else {
+    const generatedMs = parseFlexibleDate(state.generated_at);
+    const waitMinutes = generatedMs !== null ? (nowMs - generatedMs) / 60000 : null;
+    if (waitMinutes !== null && waitMinutes > thresholdMinutes) {
+      freshnessVerdict = "fail";
+    } else {
+      freshnessVerdict = "degraded";
+      waitingForFirstCycle = true;
+    }
+  }
 
   // `verify` vale spesso "never" a riposo: non è un guasto. Solo una catena
   // dichiarata esplicitamente non valida lo è.
@@ -234,9 +264,9 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
   const destVerdict = classifyDiskUsage(destPercent);
   const localVerdict = classifyDiskUsage(localPercent);
 
-  const verdict: HealthVerdict = tooOld || archiveFailed || integrityFailed
+  const verdict: HealthVerdict = archiveAttemptFailed || integrityFailed
     ? "fail"
-    : worst(destVerdict, localVerdict);
+    : worst(freshnessVerdict, destVerdict, localVerdict);
 
   const detail: string[] = [`ultimo archivio: ${archiveRun.outcome}`];
   if ((archiveRun.failed ?? 0) > 0) detail.push(`upload falliti: ${archiveRun.failed}`);
@@ -245,16 +275,20 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
   if (localPercent !== null) detail.push(`disco locale host wazuh: ${localPercent}%`);
 
   let headline: string;
-  if (tooOld) {
-    headline = ageMinutes === null
-      ? "nessuna replica riuscita"
-      : `nessuna replica riuscita da ${formatDuration(ageMinutes)}`;
-  } else if (archiveFailed) {
+  if (archiveAttemptFailed) {
     headline = (archiveRun.failed ?? 0) > 0
       ? `upload falliti nell'ultimo run di archiviazione (${archiveRun.failed})`
       : "ultimo run di archiviazione non riuscito";
   } else if (integrityFailed) {
     headline = "verifica di integrità fallita";
+  } else if (freshnessVerdict === "fail") {
+    headline = ageMinutes === null
+      ? "nessuna replica riuscita"
+      : `nessuna replica riuscita da ${formatDuration(ageMinutes)}`;
+  } else if (waitingForFirstCycle) {
+    headline = archiveNeverRun
+      ? "in attesa del primo ciclo di archiviazione"
+      : "nessuna replica riuscita finora, in attesa del prossimo ciclo";
   } else if (destVerdict === "fail" || localVerdict === "fail") {
     headline = "spazio esaurito sul disco di replica";
   } else if (destVerdict === "degraded" || localVerdict === "degraded") {

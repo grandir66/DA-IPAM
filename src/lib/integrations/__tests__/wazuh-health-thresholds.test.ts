@@ -42,6 +42,16 @@ describe("indexer", () => {
     const b = classifyIndexer({ status: "green" }, [{ node: "n1", diskPercent: 96 }]);
     assert.equal(b.verdict, "fail");
   });
+  it("la headline mostra il nodo peggiore, non la media", () => {
+    const b = classifyIndexer({ status: "green" }, [
+      { node: "n1", diskPercent: 10 },
+      { node: "n2", diskPercent: 10 },
+      { node: "n3", diskPercent: 96 },
+    ]);
+    assert.equal(b.verdict, "fail");
+    assert.ok(b.headline.includes("96"));
+    assert.ok(b.headline.includes("n3"));
+  });
 });
 
 describe("ingestione", () => {
@@ -95,5 +105,32 @@ describe("repliche", () => {
     const b = classifyReplication(null, ORA);
     assert.equal(b.configured, false);
     assert.equal(b.verdict, "ok");
+  });
+  it("archivio mai eseguito ma appena configurato è in attesa, non guasto", () => {
+    const s = {
+      ...(base as object),
+      generated_at: "2026-07-29T11:58:00Z", // 2 minuti fa: entro la soglia di grazia
+      runs: { ...(base as { runs: object }).runs, archive: { outcome: "never" } },
+      archives: {}, // nessuna replica riuscita finora
+    } as never;
+    assert.equal(classifyReplication(s, ORA).verdict, "degraded");
+  });
+  it("archivio mai eseguito oltre la soglia di grazia è errore", () => {
+    const s = {
+      ...(base as object),
+      generated_at: "2026-07-29T08:00:00Z", // 4 ore fa: oltre la soglia (min 3h)
+      runs: { ...(base as { runs: object }).runs, archive: { outcome: "never" } },
+      archives: {},
+    } as never;
+    assert.equal(classifyReplication(s, ORA).verdict, "fail");
+  });
+  it("outcome failed è errore subito, senza attendere la soglia di grazia", () => {
+    const s = { ...(base as object),
+      runs: { ...(base as { runs: object }).runs, archive: { outcome: "failed", failed: 0 } } } as never;
+    assert.equal(classifyReplication(s, ORA).verdict, "fail");
+  });
+  it("archives.newest con microsecondi e senza Z (formato reale sul campo) viene interpretato", () => {
+    const s = { ...(base as object), archives: { newest: "2026-07-29T11:59:58.544552" } } as never;
+    assert.equal(classifyReplication(s, ORA).verdict, "ok");
   });
 });

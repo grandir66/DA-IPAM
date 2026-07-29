@@ -18,6 +18,21 @@
  *    il verdetto di replica NON usa `retention` (non compare nella tabella
  *    §7) e per `verify` guarda solo `manifest_chain_valid === false`, mai
  *    l'outcome da solo.
+ *  - `classifyReplication` misura il CICLO di archiviazione
+ *    (`runs.archive.last_finished_at` + outcome), non il suo prodotto: con
+ *    `retention_policy.days_before_archive >= 1` un ciclo orario che riesce
+ *    regolarmente può creare 0 archivi per oltre 24h, quindi
+ *    `archives.newest` resta legittimamente indietro su un sistema sano.
+ *    `archives.newest` resta un segnale di staleness di LUNGO periodo,
+ *    valutato solo quando `days_before_archive` è noto (fix campo, appliance
+ *    Domarc / Wazuh 192.168.4.19: il blocco era rosso permanentemente su un
+ *    sistema sano — vedi brief `.superpowers/sdd/fix-misure-brief.md`).
+ *  - `classifyIngestion` misura il `@timestamp` più recente nell'INDEXER
+ *    (`wazuh-alerts-*`), non `wazuh_alert_event.last_seen_at` di DA-IPAM: la
+ *    sincronizzazione scarta gli alert non rilevanti, quindi la tabella
+ *    locale può restare indietro di ore su un'ingestione Wazuh perfettamente
+ *    normale (misurava il soggetto sbagliato). L'ultimo alert importato
+ *    resta comunque utile all'operatore, mostrato in `detail`.
  */
 
 import type { ImmutableStoreState } from "./immutable-store-api";
@@ -216,7 +231,39 @@ export function classifyIngestion(input: {
   configured?: boolean;
   eventsDropped?: number;
   queueUsage?: number;
-  newestAlertIso?: string | null;
+  /**
+   * `false` quando l'indexer (facoltativo) non è configurato — stesso
+   * trattamento del blocco `indexer` (`classifyIndexer`/`probeIndexer`):
+   * nessun allarme, `configured: false`. Distinto da "indexer configurato
+   * ma irraggiungibile": quello resta un guasto (vedi `newestIndexerAlertIso`
+   * sotto). Fix review: prima del fix "non configurato" e "irraggiungibile"
+   * producevano entrambi `fail` — un tenant senza indexer configurato
+   * vedeva il blocco ingestione rosso per sempre, la stessa classe di
+   * difetto spostata da un blocco all'altro.
+   */
+  indexerConfigured?: boolean;
+  /**
+   * `@timestamp` del documento più recente in `wazuh-alerts-*` (indexer):
+   * fonte di verità del verdetto (misura Wazuh, non DA-IPAM — vedi brief
+   * Difetto 2). Tre stati distinti, nessuno equivalente agli altri due:
+   *  - stringa ISO: alert più recente davvero ricevuto da Wazuh.
+   *  - `null`: indice raggiungibile ma vuoto — nessun alert mai ricevuto
+   *    (appliance appena installata).
+   *  - `undefined` (con `indexerConfigured !== false`): indexer configurato
+   *    ma non raggiungibile/in errore — non si può misurare l'ingestione.
+   *    Non deve MAI produrre un "ok" inventato: il chiamante
+   *    (wazuh-health.ts) passa esplicitamente `undefined` quando la sonda
+   *    indexer fallisce, senza spacciarlo per "nessun alert".
+   */
+  newestIndexerAlertIso?: string | null;
+  /**
+   * Ultimo alert importato in DA-IPAM (`wazuh_alert_event.last_seen_at`):
+   * informativo per l'operatore (mostrato in `detail`), NON concorre più al
+   * verdetto — la sincronizzazione scarta gli alert non rilevanti, quindi
+   * questa tabella può restare indietro di ore su un sistema perfettamente
+   * sano (misurava il soggetto sbagliato, vedi brief Difetto 2).
+   */
+  latestImportedAlertIso?: string | null;
   nowMs: number;
 }): BlockHealth {
   if (input.configured === false) {
@@ -228,26 +275,54 @@ export function classifyIngestion(input: {
     };
   }
 
-  const newestMs = parseFlexibleDate(input.newestAlertIso);
+  if (input.indexerConfigured === false) {
+    // Indexer facoltativo assente: nessun allarme, come fa `probeIndexer`
+    // per il proprio blocco. Non si può verificare l'ingestione, ma la sua
+    // assenza non è un guasto — configurarlo è un invito, non un obbligo.
+    return {
+      key: "ingestion",
+      verdict: "ok",
+      headline: "indexer non configurato: ingestione non verificabile (facoltativo)",
+      configured: false,
+    };
+  }
+
+  const indexerUnavailable = input.newestIndexerAlertIso === undefined;
+  const newestMs = indexerUnavailable ? null : parseFlexibleDate(input.newestIndexerAlertIso ?? null);
   // Nessun alert MAI ricevuto (indice appena creato, o Wazuh configurato da
   // pochi minuti): non è "allineata", è "non sappiamo ancora". Un verde qui
   // sarebbe una falsa rassicurazione su un'appliance appena installata.
-  const noAlertsYet = newestMs === null;
+  // Distinto da `indexerUnavailable`: lì l'indice potrebbe benissimo avere
+  // alert, semplicemente non siamo riusciti a interrogarlo.
+  const noAlertsYet = !indexerUnavailable && newestMs === null;
   const lagMinutes = newestMs !== null ? (input.nowMs - newestMs) / 60000 : null;
   const isLate = lagMinutes !== null && lagMinutes > INGESTION_LAG_WARN_MINUTES;
   const hasDropped = (input.eventsDropped ?? 0) > 0;
 
-  const verdict = worst(
-    noAlertsYet ? "degraded" : isLate ? "degraded" : "ok",
-    hasDropped ? "degraded" : "ok",
-  );
+  const freshnessVerdict: HealthVerdict = indexerUnavailable
+    ? "fail"
+    : noAlertsYet || isLate
+      ? "degraded"
+      : "ok";
+
+  const verdict = worst(freshnessVerdict, hasDropped ? "degraded" : "ok");
 
   const detail: string[] = [];
   if (hasDropped) detail.push(`eventi scartati: ${input.eventsDropped}`);
   if (typeof input.queueUsage === "number") detail.push(`code al ${Math.round(input.queueUsage)}%`);
+  if (input.latestImportedAlertIso) {
+    const importedMs = parseFlexibleDate(input.latestImportedAlertIso);
+    detail.push(
+      importedMs !== null
+        ? `ultimo alert rilevante importato: ${formatDuration((input.nowMs - importedMs) / 60000)} fa`
+        : `ultimo alert rilevante importato: ${input.latestImportedAlertIso}`,
+    );
+  }
 
   let headline: string;
-  if (noAlertsYet) {
+  if (indexerUnavailable) {
+    headline = "indexer non raggiungibile: ingestione non verificabile";
+  } else if (noAlertsYet) {
     headline = "nessun alert ricevuto finora";
   } else if (isLate) {
     headline = `in ritardo di ${Math.round(lagMinutes as number)} minuti`;
@@ -270,13 +345,8 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
     };
   }
 
-  const thresholdMinutes = Math.max(
-    2 * intervalToMinutes(state.schedule.archive_interval),
-    REPLICATION_MIN_HOURS * 60,
-  );
-
-  const newestMs = parseFlexibleDate(state.archives.newest);
-  const ageMinutes = newestMs !== null ? (nowMs - newestMs) / 60000 : null;
+  const intervalMinutes = intervalToMinutes(state.schedule.archive_interval);
+  const thresholdMinutes = Math.max(2 * intervalMinutes, REPLICATION_MIN_HOURS * 60);
 
   const archiveRun = state.runs.archive;
   // "never" = non ancora tentato (es. endpoint appena configurato, prima che
@@ -288,27 +358,57 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
   const archiveAttemptFailed =
     archiveRun.outcome === "failed" || archiveRun.outcome === "partial" || (archiveRun.failed ?? 0) > 0;
 
-  // Verdetto di "freschezza": se esiste un `archives.newest` valido, la sua
-  // età decide subito (staleness reale). Se non esiste (mai archiviato o
-  // campo non parsabile), si usa `generated_at` come proxy di "da quanto
-  // tempo attendiamo il primo ciclo" e si concede la stessa soglia di grazia
-  // prima di dichiarare fail; nel frattempo il blocco è "degraded", non "ok"
-  // (in attesa, non necessariamente sano) e non "fail" (non ancora provato
-  // che sia rotto).
-  let freshnessVerdict: HealthVerdict;
+  // Segnale PRIMARIO di freschezza: quando si è concluso l'ultimo CICLO di
+  // archiviazione, non il suo prodotto. Con `days_before_archive >= 1` un
+  // ciclo orario che riesce regolarmente può creare 0 archivi per oltre 24h:
+  // misurare solo `archives.newest` produce un falso rosso strutturale su un
+  // sistema perfettamente sano (vedi brief Difetto 1 — caso reale sul campo).
+  const lastFinishedMs = parseFlexibleDate(archiveRun.last_finished_at);
+  const cycleAgeMinutes = lastFinishedMs !== null ? (nowMs - lastFinishedMs) / 60000 : null;
+
+  let cycleVerdict: HealthVerdict;
   let waitingForFirstCycle = false;
-  if (ageMinutes !== null) {
-    freshnessVerdict = ageMinutes > thresholdMinutes ? "fail" : "ok";
-  } else {
+  if (cycleAgeMinutes === null) {
+    // Nessun `last_finished_at` leggibile (mai tentato, o timestamp non
+    // parsabile): non sappiamo da quanto gira il ciclo. `generated_at` fa da
+    // orologio surrogato con la stessa soglia di grazia prima di dichiarare
+    // fail; nel frattempo il blocco è "degraded" (in attesa), non "ok" (non
+    // provato sano) e non "fail" (non ancora provato rotto).
     const generatedMs = parseFlexibleDate(state.generated_at);
     const waitMinutes = generatedMs !== null ? (nowMs - generatedMs) / 60000 : null;
     if (waitMinutes !== null && waitMinutes > thresholdMinutes) {
-      freshnessVerdict = "fail";
+      cycleVerdict = "fail";
     } else {
-      freshnessVerdict = "degraded";
+      cycleVerdict = "degraded";
       waitingForFirstCycle = true;
     }
+  } else if (archiveRun.outcome === "success") {
+    cycleVerdict = cycleAgeMinutes <= thresholdMinutes ? "ok" : "fail";
+  } else {
+    // Outcome noto ma diverso da "success"/"never": `failed`/`partial` sono
+    // già forzati a "fail" più sotto via `archiveAttemptFailed`; qualsiasi
+    // altro valore non standard non deve comunque produrre un falso ok —
+    // decide l'età dell'ultimo tentativo.
+    cycleVerdict = cycleAgeMinutes <= thresholdMinutes ? "degraded" : "fail";
   }
+
+  // Segnale SECONDARIO: staleness di LUNGO periodo di `archives.newest`,
+  // valutabile solo quando `retention_policy.days_before_archive` è noto —
+  // serve a calcolare l'orizzonte oltre il quale un archivio dovrebbe
+  // comunque essere arrivato a destinazione (davvero non arriva più nulla).
+  // Se il campo manca (endpoint più vecchio) NON si deduce nessun fail da
+  // `archives.newest`: si reintrodurrebbe lo stesso falso rosso del difetto
+  // originale su un endpoint che non espone l'informazione necessaria.
+  const newestMs = parseFlexibleDate(state.archives.newest);
+  const newestAgeMinutes = newestMs !== null ? (nowMs - newestMs) / 60000 : null;
+  const daysBeforeArchive = state.retention_policy.days_before_archive;
+  let longTermVerdict: HealthVerdict = "ok";
+  if (typeof daysBeforeArchive === "number" && newestAgeMinutes !== null) {
+    const horizonMinutes = (daysBeforeArchive + 1) * 1440 + 2 * intervalMinutes;
+    if (newestAgeMinutes > horizonMinutes) longTermVerdict = "fail";
+  }
+
+  const freshnessVerdict = worst(cycleVerdict, longTermVerdict);
 
   // `verify` vale spesso "never" a riposo: non è un guasto. Solo una catena
   // dichiarata esplicitamente non valida lo è.
@@ -327,6 +427,13 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
   const detail: string[] = [`ultimo archivio: ${archiveRun.outcome}`];
   if ((archiveRun.failed ?? 0) > 0) detail.push(`upload falliti: ${archiveRun.failed}`);
   detail.push(`verifica integrità: ${verifyRun.outcome}`);
+  // `archives.newest` resta mostrato: non concorre più da sola al verdetto,
+  // ma è informazione utile all'operatore (vedi brief Difetto 1).
+  detail.push(
+    newestAgeMinutes !== null
+      ? `archivio più recente: creato ${formatDuration(newestAgeMinutes)} fa`
+      : "archivio più recente: nessuno",
+  );
   if (destPercent !== null) detail.push(`disco destinazione: ${destPercent}%`);
   if (localPercent !== null) detail.push(`disco locale host wazuh: ${localPercent}%`);
 
@@ -337,10 +444,12 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
       : "ultimo run di archiviazione non riuscito";
   } else if (integrityFailed) {
     headline = "verifica di integrità fallita";
-  } else if (freshnessVerdict === "fail") {
-    headline = ageMinutes === null
-      ? "nessuna replica riuscita"
-      : `nessuna replica riuscita da ${formatDuration(ageMinutes)}`;
+  } else if (cycleVerdict === "fail") {
+    headline = cycleAgeMinutes === null
+      ? "nessun ciclo di archiviazione riuscito"
+      : `ciclo di archiviazione fermo da ${formatDuration(cycleAgeMinutes)}`;
+  } else if (longTermVerdict === "fail") {
+    headline = `nessun archivio arrivato a destinazione da ${formatDuration(newestAgeMinutes ?? 0)}`;
   } else if (waitingForFirstCycle) {
     headline = archiveNeverRun
       ? "in attesa del primo ciclo di archiviazione"
@@ -350,7 +459,8 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
   } else if (destVerdict === "degraded" || localVerdict === "degraded") {
     headline = "disco di replica in esaurimento";
   } else {
-    headline = `ultima replica riuscita ${formatDuration(ageMinutes ?? 0)} fa`;
+    const okAgeMinutes = cycleAgeMinutes ?? newestAgeMinutes ?? 0;
+    headline = `ultimo ciclo di archiviazione riuscito ${formatDuration(okAgeMinutes)} fa`;
   }
 
   return { key: "replication", verdict, headline, detail, configured: true };

@@ -89,29 +89,73 @@ describe("indexer", () => {
 });
 
 describe("ingestione", () => {
-  it("alert recente è ok", () => {
-    const b = classifyIngestion({ newestAlertIso: "2026-07-29T11:50:00Z", nowMs: ORA });
+  it("alert recente nell'indexer è ok", () => {
+    const b = classifyIngestion({ newestIndexerAlertIso: "2026-07-29T11:50:00Z", nowMs: ORA });
     assert.equal(b.verdict, "ok");
   });
   it("alert più vecchio di 30 minuti è degradato", () => {
-    const b = classifyIngestion({ newestAlertIso: "2026-07-29T11:20:00Z", nowMs: ORA });
+    const b = classifyIngestion({ newestIndexerAlertIso: "2026-07-29T11:20:00Z", nowMs: ORA });
     assert.equal(b.verdict, "degraded");
   });
   it("eventi scartati sono degradato", () => {
-    const b = classifyIngestion({ eventsDropped: 42, newestAlertIso: "2026-07-29T11:59:00Z", nowMs: ORA });
+    const b = classifyIngestion({ eventsDropped: 42, newestIndexerAlertIso: "2026-07-29T11:59:00Z", nowMs: ORA });
     assert.equal(b.verdict, "degraded");
   });
-  it("nessun alert mai ricevuto non è 'allineata': lo dice onestamente e non è ok", () => {
+  it("nessun alert mai ricevuto (indice vuoto) non è 'allineata': lo dice onestamente e non è ok", () => {
     // Prima del fix: newestAlertIso null produceva verdict "ok" e headline
     // "allineata" — un semaforo verde falso su un'appliance appena installata
     // o su Wazuh mai configurato.
-    const b = classifyIngestion({ newestAlertIso: null, nowMs: ORA });
+    const b = classifyIngestion({ newestIndexerAlertIso: null, nowMs: ORA });
     assert.notEqual(b.verdict, "ok");
     assert.equal(b.headline, "nessun alert ricevuto finora");
   });
   it("Wazuh non configurato produce configured:false, non un verde 'allineata'", () => {
     const b = classifyIngestion({ configured: false, nowMs: ORA });
     assert.equal(b.configured, false);
+  });
+
+  // Difetto 2 del brief fix-misure: il verdetto misurava
+  // wazuh_alert_event.last_seen_at (tabella locale DA-IPAM), non l'indexer.
+  // La sincronizzazione scarta gli alert non rilevanti (upsertAlertEvent
+  // "skipped", filtri self/deviceRuleIds): la tabella locale avanza solo
+  // quando arriva un alert interessante, quindi può restare indietro di ore
+  // su un'ingestione Wazuh perfettamente sana. Dati reali osservati:
+  // indexer @timestamp di 13 minuti fa, tabella DA-IPAM ferma a 41 ore.
+  it("indexer con alert di 13 minuti fa è ok anche con la tabella DA-IPAM ferma a 41 ore (dato reale)", () => {
+    const indexerRecente = new Date(ORA - 13 * 60_000).toISOString();
+    const importatoVecchio = new Date(ORA - 41 * 3_600_000).toISOString();
+    const b = classifyIngestion({
+      newestIndexerAlertIso: indexerRecente,
+      latestImportedAlertIso: importatoVecchio,
+      nowMs: ORA,
+    });
+    assert.equal(b.verdict, "ok");
+    assert.ok(b.detail?.some((d) => d.includes("ultimo alert rilevante importato")));
+  });
+  it("indexer non raggiungibile non produce un 'ok' inventato", () => {
+    // `undefined` (non `null`): l'indexer non è stato interrogabile, non
+    // sappiamo se ci sono alert o no — diverso da "indice vuoto".
+    const b = classifyIngestion({ newestIndexerAlertIso: undefined, nowMs: ORA });
+    assert.notEqual(b.verdict, "ok");
+  });
+
+  // Fix review Critical: prima di questo fix "indexer non configurato" e
+  // "indexer configurato ma irraggiungibile" producevano ENTRAMBI
+  // newestIndexerAlertIso undefined → verdict "fail". Un tenant con manager
+  // sano e indexer (facoltativo) non configurato vedeva il blocco
+  // ingestione rosso per sempre — la stessa classe di difetto che questo
+  // fix doveva eliminare, spostata da un blocco all'altro. `indexerConfigured`
+  // distingue esplicitamente i due casi, coerentemente con come
+  // `classifyIndexer`/`probeIndexer` già trattano la propria assenza.
+  it("indexer non configurato (facoltativo) non produce nessun allarme, come fa classifyIndexer per il proprio blocco", () => {
+    const b = classifyIngestion({ indexerConfigured: false, eventsDropped: 0, nowMs: ORA });
+    assert.equal(b.verdict, "ok");
+    assert.equal(b.configured, false);
+  });
+  it("indexer configurato ma irraggiungibile resta un guasto, distinto da 'non configurato'", () => {
+    const b = classifyIngestion({ indexerConfigured: true, newestIndexerAlertIso: undefined, nowMs: ORA });
+    assert.notEqual(b.verdict, "ok");
+    assert.equal(b.configured, true);
   });
 });
 
@@ -120,7 +164,8 @@ describe("repliche", () => {
     schema_version: 1, generated_at: "2026-07-29T11:55:00Z", host: "srv",
     backend: { reachable: true, disk: { use_percent: "33%" } },
     local_disk: { use_percent: 57 },
-    runs: { archive: { outcome: "success", failed: 0 }, retention: { outcome: "success" },
+    runs: { archive: { outcome: "success", failed: 0, last_finished_at: "2026-07-29T11:50:00Z" },
+            retention: { outcome: "success" },
             verify: { outcome: "success", manifest_chain_valid: true } },
     archives: { newest: "2026-07-29T11:11:00Z" },
     retention_policy: {}, schedule: { archive_interval: "hourly" },
@@ -129,8 +174,13 @@ describe("repliche", () => {
   it("replica recente e pulita è ok", () => {
     assert.equal(classifyReplication(base, ORA).verdict, "ok");
   });
-  it("nessuna replica da oltre il doppio dell'intervallo è errore", () => {
-    const s = { ...(base as object), archives: { newest: "2026-07-29T02:00:00Z" } } as never;
+  it("nessun ciclo di archiviazione da oltre la soglia (last_finished_at fermo) è errore", () => {
+    // Segnale primario ora è il CICLO (last_finished_at), non più il
+    // prodotto (archives.newest): un ciclo fermo da 10h su intervallo
+    // orario (soglia 3h) è un guasto anche se `archives.newest` non è dato.
+    const s = { ...(base as object),
+      runs: { ...(base as { runs: object }).runs,
+              archive: { outcome: "success", failed: 0, last_finished_at: "2026-07-29T02:00:00Z" } } } as never;
     assert.equal(classifyReplication(s, ORA).verdict, "fail");
   });
   it("upload falliti sono errore", () => {
@@ -175,8 +225,72 @@ describe("repliche", () => {
       runs: { ...(base as { runs: object }).runs, archive: { outcome: "failed", failed: 0 } } } as never;
     assert.equal(classifyReplication(s, ORA).verdict, "fail");
   });
-  it("archives.newest con microsecondi e senza Z (formato reale sul campo) viene interpretato", () => {
-    const s = { ...(base as object), archives: { newest: "2026-07-29T11:59:58.544552" } } as never;
+  it("archives.newest con microsecondi e senza Z (formato reale sul campo) viene interpretato per la staleness di lungo periodo", () => {
+    const s = { ...(base as object),
+      archives: { newest: "2026-07-29T11:59:58.544552" },
+      retention_policy: { days_before_archive: 1 } } as never;
     assert.equal(classifyReplication(s, ORA).verdict, "ok");
+  });
+});
+
+// Difetto 1 del brief fix-misure: `classifyReplication` misurava la
+// "freschezza" dall'età di `archives.newest`. Dati reali (appliance Domarc,
+// Wazuh 192.168.4.19, sistema SANO): il ciclo gira ogni ora e riesce, ma con
+// `days_before_archive: 1` un log viene archiviato solo dopo un giorno —
+// `archives.newest` resta legittimamente indietro di oltre 24h e la soglia
+// di 3h era strutturalmente inarrivabile (blocco rosso per sempre).
+describe("repliche — Difetto 1 (dati reali)", () => {
+  const NOW_REALE = Date.parse("2026-07-29T19:00:00Z");
+
+  function statoReale(overrides: {
+    archiveLastFinishedAt?: string;
+    newest?: string | null;
+    daysBeforeArchive?: number;
+  } = {}) {
+    return {
+      schema_version: 1, generated_at: "2026-07-29T18:50:30Z", host: "wazuh-domarc",
+      backend: { reachable: true, disk: { use_percent: "11%" } },
+      local_disk: { use_percent: 42 },
+      runs: {
+        archive: {
+          last_finished_at: overrides.archiveLastFinishedAt ?? "2026-07-29T18:50:25Z",
+          outcome: "success",
+          archives_created: 0,
+        },
+        retention: { outcome: "success" },
+        verify: { outcome: "success", manifest_chain_valid: true },
+      },
+      archives: { newest: overrides.newest ?? "2026-07-29T14:12:58.544552" },
+      retention_policy: {
+        remote_days: 365,
+        mode: "qnap-nfs",
+        days_before_archive: overrides.daysBeforeArchive,
+        days_keep_local: 30,
+      },
+      schedule: { archive_interval: "hourly" },
+    } as never;
+  }
+
+  it("1. ciclo success alle 18:50 + archives.newest alle 14:12 + days_before_archive:1 → ok (lo scenario che oggi accende il rosso)", () => {
+    const s = statoReale({ daysBeforeArchive: 1 });
+    assert.equal(classifyReplication(s, NOW_REALE).verdict, "ok");
+  });
+
+  it("2. archives.newest vecchio di 5 giorni con days_before_archive:1 → fail", () => {
+    const cinqueGiorniFa = new Date(NOW_REALE - 5 * 24 * 3_600_000).toISOString();
+    const s = statoReale({ newest: cinqueGiorniFa, daysBeforeArchive: 1 });
+    assert.equal(classifyReplication(s, NOW_REALE).verdict, "fail");
+  });
+
+  it("3. days_before_archive assente + archives.newest vecchio di 5 giorni + ciclo recente success → ok (nessun fail deducibile)", () => {
+    const cinqueGiorniFa = new Date(NOW_REALE - 5 * 24 * 3_600_000).toISOString();
+    const s = statoReale({ newest: cinqueGiorniFa });
+    assert.equal(classifyReplication(s, NOW_REALE).verdict, "ok");
+  });
+
+  it("4. ciclo success ma concluso 9 ore fa con intervallo orario → fail (il ciclo è fermo)", () => {
+    const noveOreFa = new Date(NOW_REALE - 9 * 3_600_000).toISOString();
+    const s = statoReale({ archiveLastFinishedAt: noveOreFa, daysBeforeArchive: 1 });
+    assert.equal(classifyReplication(s, NOW_REALE).verdict, "fail");
   });
 });

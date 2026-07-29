@@ -120,14 +120,38 @@ async function probeIndexer(): Promise<BlockHealth> {
 
 // ── Probe: ingestione ──────────────────────────────────────────────────────────
 /**
- * Non avvolto in try/catch proprio: un errore nella lettura delle statistiche
- * analysisd propaga fino a `Promise.allSettled` in `compute()`, che isola il
- * fallimento sul blocco "ingestion" (comportamento voluto, non un bug).
+ * Le statistiche analysisd non sono avvolte in try/catch proprio: un errore
+ * nella loro lettura propaga fino a `Promise.allSettled` in `compute()`, che
+ * isola il fallimento sul blocco "ingestion" (comportamento voluto, non un
+ * bug).
  *
  * Con Wazuh non configurato il blocco è `configured: false` (come manager e
  * indexer), non un verde "allineata": senza credenziali non c'è nulla da
  * verificare, e un semaforo verde su un'appliance appena installata sarebbe
- * una falsa rassicurazione (fix review fase 2, Important 2).
+ * una falsa rassicurazione (fix review fase 2, Important 2). Con l'indexer
+ * (facoltativo) non configurato vale lo stesso principio — `configured:
+ * false`, nessun allarme — passando `indexerConfigured: false` a
+ * `classifyIngestion` (fix review Critical: prima "non configurato" e
+ * "irraggiungibile" producevano entrambi `fail`, spostando su questo blocco
+ * lo stesso difetto appena corretto sulle repliche).
+ *
+ * Il verdetto viene dal `@timestamp` più recente nell'INDEXER
+ * (`wazuh-alerts-*`), non da `wazuh_alert_event.last_seen_at` di DA-IPAM: la
+ * sincronizzazione scarta gli alert non rilevanti (`upsertAlertEvent` →
+ * `skipped`, filtri `self`/`deviceRuleIds`), quindi la tabella locale può
+ * restare indietro di ore su un'ingestione Wazuh perfettamente normale
+ * (misurava il soggetto sbagliato — vedi brief fix-misure Difetto 2). Le due
+ * chiamate di rete (statistiche manager + query indexer) girano in
+ * `Promise.all`, non in sequenza: in caso di doppio timeout il blocco
+ * impiega comunque solo `PROBE_TIMEOUT_MS`, non il doppio (gli altri tre
+ * blocchi restano comunque isolati da `Promise.allSettled` in
+ * `composeHealthBlocks`, indipendentemente da questo). L'eventuale errore
+ * dell'indexer è catturato PRIMA di raggiungere `Promise.all` (mai una
+ * `Promise.all` che rigetta per colpa dell'indexer): un indexer
+ * irraggiungibile non deve far perdere anche `eventsDropped`/`queueUsage`
+ * già ottenuti dal manager, né produrre il messaggio generico di
+ * `composeHealthBlocks` al posto di uno specifico ("indexer non
+ * raggiungibile: ingestione non verificabile").
  */
 async function probeIngestion(tenantCode: string): Promise<BlockHealth> {
   const cfg = getWazuhConfig();
@@ -142,23 +166,39 @@ async function probeIngestion(tenantCode: string): Promise<BlockHealth> {
     return classifyIngestion({ configured: false, nowMs: Date.now() });
   }
 
-  const stats = await withTimeoutReject(
+  const idx = createWazuhIndexerClient({
+    url: cfg.indexerUrl,
+    username: cfg.indexerUsername,
+    password: cfg.indexerPassword,
+    verifyTls: cfg.verifyTls,
+  });
+
+  const statsPromise = withTimeoutReject(
     mgr.getAnalysisdStats(),
     PROBE_TIMEOUT_MS,
     "timeout statistiche analysisd",
   );
+  // undefined = "non verificabile" (diverso da null = "indice vuoto"):
+  // catturato qui, mai lasciato propagare — classifyIngestion distingue i
+  // due casi e non deve mai confonderli.
+  const indexerPromise: Promise<string | null | undefined> = idx
+    ? withTimeoutReject(idx.getLatestAlertTimestamp(), PROBE_TIMEOUT_MS, "timeout indexer").catch(() => undefined)
+    : Promise.resolve(undefined);
 
-  // L'alert più recente viene dal DB tenant (wazuh_alert_event.last_seen_at),
-  // non dall'indexer: più economico e riflette ciò che DA-IPAM ha davvero
-  // ricevuto (vedi brief Task 3).
+  const [stats, newestIndexerAlertIso] = await Promise.all([statsPromise, indexerPromise]);
+
+  // L'ultimo alert importato in DA-IPAM resta utile all'operatore (mostrato
+  // in detail da classifyIngestion), ma non concorre più al verdetto.
   const db = getTenantDb(tenantCode);
   ensureWazuhAlertSchema(db);
-  const newestAlertIso = getLatestAlertTimestamp(db);
+  const latestImportedAlertIso = getLatestAlertTimestamp(db);
 
   return classifyIngestion({
     eventsDropped: stats?.eventsDropped,
     queueUsage: stats?.queueUsage,
-    newestAlertIso,
+    indexerConfigured: idx !== null,
+    newestIndexerAlertIso,
+    latestImportedAlertIso,
     nowMs: Date.now(),
   });
 }

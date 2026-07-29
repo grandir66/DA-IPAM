@@ -52,4 +52,22 @@ describe("parseImmutableStoreState", () => {
       backend: { ...COMPLETO.backend, disk: { ...COMPLETO.backend.disk, use_percent: 33 } } });
     assert.equal(s.backend.disk?.use_percent, 33);
   });
+
+  // Fix fix-misure Difetto 1: retention_policy.days_before_archive serve al
+  // cruscotto salute per calcolare l'orizzonte di staleness di lungo periodo
+  // di archives.newest. Facoltativo (endpoint più vecchi non lo mandano):
+  // il parser non deve mai lanciare né su assenza né su valore non numerico.
+  it("accetta retention_policy.days_before_archive e days_keep_local quando presenti", () => {
+    const s = parseImmutableStoreState({ ...COMPLETO,
+      retention_policy: { ...COMPLETO.retention_policy, days_before_archive: 1, days_keep_local: 30 } });
+    assert.equal(s.retention_policy.days_before_archive, 1);
+    assert.equal(s.retention_policy.days_keep_local, 30);
+  });
+
+  it("non lancia se days_before_archive è assente o non numerico", () => {
+    assert.doesNotThrow(() => parseImmutableStoreState({ ...COMPLETO,
+      retention_policy: { ...COMPLETO.retention_policy, days_before_archive: "uno" } }));
+    const s = parseImmutableStoreState(COMPLETO);
+    assert.equal(s.retention_policy.days_before_archive, undefined);
+  });
 });

@@ -172,20 +172,46 @@ async function probeReplication(): Promise<BlockHealth> {
   }
 }
 
-async function compute(tenantCode: string): Promise<WazuhHealth> {
-  const probedAt = new Date().toISOString();
+/** Le quattro dipendenze di `composeHealthBlocks`: una funzione per blocco,
+ *  ciascuna `() => Promise<BlockHealth>`. Iniettabili per testare l'isolamento
+ *  dei fallimenti senza aprire socket (vedi `wazuh-health.test.ts`). */
+export interface WazuhHealthProbes {
+  manager: () => Promise<BlockHealth>;
+  indexer: () => Promise<BlockHealth>;
+  ingestion: () => Promise<BlockHealth>;
+  replication: () => Promise<BlockHealth>;
+}
+
+/**
+ * Compone i quattro blocchi eseguendo i probe in parallelo con
+ * `Promise.allSettled`: un probe che lancia produce SOLO il suo blocco a
+ * "fail" (messaggio dell'errore), senza influenzare gli altri tre né
+ * propagare l'eccezione al chiamante. L'ordine del risultato è sempre
+ * manager → indexer → ingestion → replication (la UI vi si appoggia).
+ */
+export async function composeHealthBlocks(probes: WazuhHealthProbes): Promise<BlockHealth[]> {
   const tasks: Array<[BlockHealth["key"], Promise<BlockHealth>]> = [
-    ["manager", probeManager()],
-    ["indexer", probeIndexer()],
-    ["ingestion", probeIngestion(tenantCode)],
-    ["replication", probeReplication()],
+    ["manager", probes.manager()],
+    ["indexer", probes.indexer()],
+    ["ingestion", probes.ingestion()],
+    ["replication", probes.replication()],
   ];
   const settled = await Promise.allSettled(tasks.map(([, p]) => p));
-  const blocks = settled.map((res, i) => {
+  return settled.map((res, i) => {
     const key = tasks[i][0];
     if (res.status === "fulfilled") return res.value;
     const reason = res.reason instanceof Error ? res.reason.message : "errore sconosciuto";
     return failBlock(key, `probe fallito: ${reason}`);
+  });
+}
+
+async function compute(tenantCode: string): Promise<WazuhHealth> {
+  const probedAt = new Date().toISOString();
+  const blocks = await composeHealthBlocks({
+    manager: probeManager,
+    indexer: probeIndexer,
+    ingestion: () => probeIngestion(tenantCode),
+    replication: probeReplication,
   });
   return { blocks, probedAt };
 }

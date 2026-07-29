@@ -20,7 +20,24 @@ Il programma di replica (`wazuh-immutable-store`) non è osservabile dall'estern
 
 Entrambe eseguono la **v1** del programma (nessuna `storage_backends/`), con timer attivi: archiviazione oraria, retention giornaliera, verifica settimanale.
 
-**Decisione**: le modifiche si implementano sulla **v1**, che è ciò che gira in produzione, e si riportano identiche sulla v2 del repository per non far divergere le due copie. Il modulo di stato è indipendente dall'astrazione dei backend, quindi il porting è meccanico.
+### 2.1 Consolidamento su un'unica base di codice (prerequisito)
+
+Il repository contiene due copie: `wazuh-immutable-store/` (v1) e `wazuh-immutable-store-v2/`. Analisi del 2026-07-29:
+
+- Sono **cloni dello stesso repo fermi sullo stesso commit** `17152bb`. La v2 **non è un branch né un commit**: è lavoro nel working tree, con `src/storage_backends/` **non tracciata da git**. Un `git clean` la cancellerebbe. Metterla al sicuro è il primo passo, prima di ogni altra cosa.
+- La v2 aggiunge un'astrazione dei backend (QNAP NFS, NFS generico, S3-compatibile con Object Lock); la v1 aveva la destinazione cablata su QNAP.
+- **Retro-compatibile**: senza sezione `storage:` in `config.yaml` la v2 ricade sul QNAP legacy; CLI, unit systemd, layout remoto, firma e hash chain sono invariati e gli archivi prodotti dalla v1 restano verificabili.
+- **Due regressioni reali sul percorso NFS**, cioè quello in uso: persa la logica di **retry con backoff** (v1: 3 tentativi; v2: tentativo singolo, poi `failed`) e perso il concetto di coda (`TransferManager` non è più usato da `main.py`).
+- I backend non-QNAP sono **incompleti**: con S3 la retention va in `AttributeError` (`retention.py:211` su `mount_point` nullo), la pulizia dei log locali non avviene mai (disco che si riempie), i comandi di lettura ignorano il backend, `boto3` non è dichiarato in `requirements.txt` e le credenziali non arrivano al servizio systemd. Il wizard va in `KeyError` se il test di connessione fallisce e l'operatore risponde "no".
+- Nessuna delle due versioni ha test; la documentazione non menziona i backend nuovi.
+
+**Decisione**: si consolida **sulla v2 come unica base di codice**, con tre condizioni preliminari:
+
+1. committare il lavoro v2 (oggi a rischio di perdita);
+2. **ripristinare il retry con backoff** sul percorso di upload — è una regressione su ciò che gira ogni ora su entrambe le installazioni;
+3. **dichiarare non pronti** i backend `generic-nfs` e `s3-compatible` con un controllo all'avvio che rifiuta di partire con un messaggio esplicito, invece di fallire a metà run. Completarli è un lavoro separato che non deve bloccare il monitoraggio.
+
+L'aggiornamento delle due installazioni avviene a configurazione invariata. Unica accortezza operativa: copiare ricorsivamente `src/` (un `cp` senza `-r` lascerebbe `storage_backends/` fuori e ogni comando fallirebbe con `ImportError`).
 
 Ogni DA-IPAM punta al proprio Wazuh e al proprio endpoint di stato: la configurazione è per installazione, come già avviene per l'integrazione Wazuh (settings a livello hub).
 
@@ -154,10 +171,15 @@ Lo stato precedente sta in una tabella tenant `wazuh_health_state` (singleton, c
 
 | Fase | Contenuto | Repository |
 |---|---|---|
+| **0** | Consolidamento (§2.1): commit della v2, ripristino del retry, guardia sui backend non pronti | `WazuhIStore_imm` |
 | **1** | `state.json`, correzione dell'esito silenzioso, comando `serve`, unit systemd, installazione su Duerre e Domarc | `WazuhIStore_imm` |
 | **2** | Client, modulo di salute, API, fascia di stato, notifiche | `DA-IPAM` |
 
-La fase 1 definisce il contratto e va completata per prima. Le due fasi avranno piani di implementazione separati.
+La fase 0 mette al sicuro codice oggi a rischio di perdita e va fatta per prima; la fase 1 definisce il contratto. Fase 0 e 1 possono stare in un unico piano; la fase 2 avrà il suo.
+
+### 9.1 Accesso per l'installazione
+
+Su **Domarc** l'accesso è root via jump host, nessun ostacolo. Su **Duerre** l'utente `dts` non ha sudo passwordless: per la finestra di installazione l'utente viene aggiunto temporaneamente ai sudoers e **rimosso al termine**. La rimozione fa parte della procedura, non è un passo opzionale: va verificata esplicitamente a fine deploy.
 
 ## 10. Fuori scope
 

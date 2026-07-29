@@ -232,16 +232,28 @@ export function classifyIngestion(input: {
   eventsDropped?: number;
   queueUsage?: number;
   /**
+   * `false` quando l'indexer (facoltativo) non è configurato — stesso
+   * trattamento del blocco `indexer` (`classifyIndexer`/`probeIndexer`):
+   * nessun allarme, `configured: false`. Distinto da "indexer configurato
+   * ma irraggiungibile": quello resta un guasto (vedi `newestIndexerAlertIso`
+   * sotto). Fix review: prima del fix "non configurato" e "irraggiungibile"
+   * producevano entrambi `fail` — un tenant senza indexer configurato
+   * vedeva il blocco ingestione rosso per sempre, la stessa classe di
+   * difetto spostata da un blocco all'altro.
+   */
+  indexerConfigured?: boolean;
+  /**
    * `@timestamp` del documento più recente in `wazuh-alerts-*` (indexer):
    * fonte di verità del verdetto (misura Wazuh, non DA-IPAM — vedi brief
    * Difetto 2). Tre stati distinti, nessuno equivalente agli altri due:
    *  - stringa ISO: alert più recente davvero ricevuto da Wazuh.
    *  - `null`: indice raggiungibile ma vuoto — nessun alert mai ricevuto
    *    (appliance appena installata).
-   *  - `undefined`: indexer non raggiungibile/non configurato — non si può
-   *    misurare l'ingestione. Non deve MAI produrre un "ok" inventato: il
-   *    chiamante (wazuh-health.ts) passa esplicitamente `undefined` quando
-   *    la sonda indexer fallisce, senza spacciarlo per "nessun alert".
+   *  - `undefined` (con `indexerConfigured !== false`): indexer configurato
+   *    ma non raggiungibile/in errore — non si può misurare l'ingestione.
+   *    Non deve MAI produrre un "ok" inventato: il chiamante
+   *    (wazuh-health.ts) passa esplicitamente `undefined` quando la sonda
+   *    indexer fallisce, senza spacciarlo per "nessun alert".
    */
   newestIndexerAlertIso?: string | null;
   /**
@@ -259,6 +271,18 @@ export function classifyIngestion(input: {
       key: "ingestion",
       verdict: "ok",
       headline: "Wazuh non configurato",
+      configured: false,
+    };
+  }
+
+  if (input.indexerConfigured === false) {
+    // Indexer facoltativo assente: nessun allarme, come fa `probeIndexer`
+    // per il proprio blocco. Non si può verificare l'ingestione, ma la sua
+    // assenza non è un guasto — configurarlo è un invito, non un obbligo.
+    return {
+      key: "ingestion",
+      verdict: "ok",
+      headline: "indexer non configurato: ingestione non verificabile (facoltativo)",
       configured: false,
     };
   }

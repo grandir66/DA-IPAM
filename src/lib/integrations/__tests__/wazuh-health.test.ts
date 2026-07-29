@@ -62,6 +62,27 @@ test("tutti e quattro i probe lanciano → quattro blocchi fail, nessuna eccezio
   assert.match(byKey.replication.headline, /replication down/);
 });
 
+test("blocco ingestione con indexer facoltativo non configurato resta configured:false, non diventa un errore (fix review Critical)", async () => {
+  // Prima del fix: "indexer non configurato" e "indexer irraggiungibile"
+  // producevano entrambi un verdetto fail in classifyIngestion. Questo test
+  // copre esplicitamente la combinazione che mancava (wazuh-health.test.ts
+  // esercitava solo sonde iniettate a mano, mai questo caso).
+  const probes = healthyProbes({
+    ingestion: async () => ({
+      key: "ingestion",
+      verdict: "ok",
+      headline: "indexer non configurato: ingestione non verificabile (facoltativo)",
+      configured: false,
+    }),
+  });
+
+  const blocks = await composeHealthBlocks(probes);
+  const ingestion = blocks.find((b) => b.key === "ingestion");
+  assert.ok(ingestion);
+  assert.equal(ingestion.configured, false);
+  assert.equal(ingestion.verdict, "ok");
+});
+
 test("blocco repliche non configurato resta configured:false, non diventa un errore", async () => {
   const probes = healthyProbes({
     replication: async () => ({

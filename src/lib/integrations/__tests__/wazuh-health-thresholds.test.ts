@@ -138,6 +138,25 @@ describe("ingestione", () => {
     const b = classifyIngestion({ newestIndexerAlertIso: undefined, nowMs: ORA });
     assert.notEqual(b.verdict, "ok");
   });
+
+  // Fix review Critical: prima di questo fix "indexer non configurato" e
+  // "indexer configurato ma irraggiungibile" producevano ENTRAMBI
+  // newestIndexerAlertIso undefined → verdict "fail". Un tenant con manager
+  // sano e indexer (facoltativo) non configurato vedeva il blocco
+  // ingestione rosso per sempre — la stessa classe di difetto che questo
+  // fix doveva eliminare, spostata da un blocco all'altro. `indexerConfigured`
+  // distingue esplicitamente i due casi, coerentemente con come
+  // `classifyIndexer`/`probeIndexer` già trattano la propria assenza.
+  it("indexer non configurato (facoltativo) non produce nessun allarme, come fa classifyIndexer per il proprio blocco", () => {
+    const b = classifyIngestion({ indexerConfigured: false, eventsDropped: 0, nowMs: ORA });
+    assert.equal(b.verdict, "ok");
+    assert.equal(b.configured, false);
+  });
+  it("indexer configurato ma irraggiungibile resta un guasto, distinto da 'non configurato'", () => {
+    const b = classifyIngestion({ indexerConfigured: true, newestIndexerAlertIso: undefined, nowMs: ORA });
+    assert.notEqual(b.verdict, "ok");
+    assert.equal(b.configured, true);
+  });
 });
 
 describe("repliche", () => {

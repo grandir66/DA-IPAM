@@ -307,9 +307,13 @@ export class WazuhIndexerClient {
    * reale (>390M doc). Si legge `value` (epoch millis), non
    * `value_as_string`, per non dipendere da un parametro `format`
    * sull'aggregazione. `null` = indice raggiungibile ma senza alcun
-   * documento (fresh install); un errore di rete/HTTP diverso da 404 lancia,
-   * e il chiamante (wazuh-health.ts) decide come trattarlo senza inventare
-   * un verdetto "ok".
+   * documento (fresh install). Una ricerca su pattern wildcard
+   * (`wazuh-alerts-*`) senza indici corrispondenti risponde normalmente 200
+   * con l'aggregazione a `null`, non 404: il ramo 404 sotto è una difesa in
+   * più per varianti di OpenSearch/Elasticsearch meno comuni che lo
+   * restituissero comunque, non il percorso atteso. Qualsiasi altro errore
+   * di rete/HTTP lancia, e il chiamante (wazuh-health.ts) decide come
+   * trattarlo senza inventare un verdetto "ok".
    */
   async getLatestAlertTimestamp(): Promise<string | null> {
     try {

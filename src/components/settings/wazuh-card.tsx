@@ -15,6 +15,16 @@ interface WazuhConfig {
   indexerUrl: string;
   indexerUsername: string;
   indexerPasswordSet: boolean;
+  immutableStoreUrl: string;
+  immutableStoreCertPin: string | null;
+  immutableStoreTokenSet: boolean;
+}
+
+interface ReplicationBlock {
+  verdict: "ok" | "degraded" | "fail";
+  headline: string;
+  detail?: string[];
+  configured: boolean;
 }
 
 interface WazuhStatus {
@@ -61,6 +71,14 @@ export function WazuhCard() {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [storeForm, setStoreForm] = useState({
+    immutableStoreUrl: "",
+    immutableStoreToken: "",
+    immutableStoreCertPin: "",
+  });
+  const [storeSaving, setStoreSaving] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [replicationResult, setReplicationResult] = useState<ReplicationBlock | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [setupContent, setSetupContent] = useState<{ script: string; playbook: string } | null>(null);
   const [scriptBusy, setScriptBusy] = useState<"windows" | "linux" | "macos" | null>(null);
@@ -141,6 +159,12 @@ export function WazuhCard() {
             indexerUsername: data.indexerUsername,
           }));
         }
+        // Il token è write-only: non viene mai ripopolato in lettura.
+        setStoreForm({
+          immutableStoreUrl: data.immutableStoreUrl ?? "",
+          immutableStoreToken: "",
+          immutableStoreCertPin: data.immutableStoreCertPin ?? "",
+        });
       }
       if (sRes.ok) setStatus((await sRes.json()) as WazuhStatus);
     } finally {
@@ -264,6 +288,68 @@ export function WazuhCard() {
       await load();
     } else {
       toast.error("Operazione fallita");
+    }
+  };
+
+  const handleSaveStore = async () => {
+    setStoreSaving(true);
+    try {
+      // Il token è write-only: omesso se vuoto, il backend lascia invariato
+      // quello già salvato (stesso pattern di password/indexerPassword).
+      const payload: Record<string, unknown> = {
+        immutableStoreUrl: storeForm.immutableStoreUrl,
+        immutableStoreCertPin: storeForm.immutableStoreCertPin || null,
+      };
+      if (storeForm.immutableStoreToken) payload.immutableStoreToken = storeForm.immutableStoreToken;
+      const r = await fetch("/api/integrations/wazuh/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const d = (await r.json()) as { error?: string };
+        toast.error(d.error ?? "Salvataggio fallito");
+        return;
+      }
+      toast.success("Endpoint di stato repliche salvato");
+      setReplicationResult(null);
+      await load();
+    } catch (e) {
+      toast.error(`Errore rete: ${(e as Error).message}`);
+    } finally {
+      setStoreSaving(false);
+    }
+  };
+
+  const handleVerify = async () => {
+    setVerifying(true);
+    setReplicationResult(null);
+    try {
+      const r = await fetch("/api/integrations/wazuh/health", { method: "POST" });
+      const d = (await r.json()) as {
+        blocks?: Array<{ key: string; verdict: "ok" | "degraded" | "fail"; headline: string; detail?: string[]; configured: boolean }>;
+        error?: string;
+      };
+      if (!r.ok) {
+        toast.error(d.error ?? "Verifica fallita");
+        return;
+      }
+      const block = d.blocks?.find((b) => b.key === "replication") ?? null;
+      if (!block) {
+        toast.error("Blocco repliche assente nella risposta");
+        return;
+      }
+      setReplicationResult(block);
+      const verdictLabel = block.verdict === "ok" ? "OK" : block.verdict === "degraded" ? "degradato" : "non riuscito";
+      if (block.verdict === "ok") {
+        toast.success(`Repliche: ${verdictLabel} — ${block.headline}`);
+      } else {
+        toast.error(`Repliche: ${verdictLabel} — ${block.headline}`);
+      }
+    } catch (e) {
+      toast.error(`Errore rete: ${(e as Error).message}`);
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -468,6 +554,80 @@ export function WazuhCard() {
           )}
         </div>
       )}
+
+      {/* ──────────────── Endpoint di stato repliche (cruscotto salute) ──────────────── */}
+      <div className="border-t pt-3 mt-1 space-y-2">
+        <div className="text-sm font-medium flex items-center gap-1.5">
+          <Shield className="h-3.5 w-3.5" /> Endpoint di stato repliche (cruscotto salute)
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Servizio separato dal Manager Wazuh: espone lo stato dell&apos;archivio immutabile e
+          delle repliche. Il token è write-only — non viene mai ripopolato in lettura.
+        </p>
+        <fieldset className="border rounded-md p-3 space-y-2">
+          <legend className="text-xs font-semibold px-1 text-muted-foreground">Endpoint di stato</legend>
+          <label className="text-sm space-y-1 block">
+            <span>URL</span>
+            <input
+              className="w-full rounded border px-2 py-1 text-sm bg-background"
+              placeholder="https://192.168.4.19:9443"
+              value={storeForm.immutableStoreUrl}
+              onChange={(e) => { setStoreForm({ ...storeForm, immutableStoreUrl: e.target.value }); setReplicationResult(null); }}
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-sm space-y-1 block">
+              <span>Token</span>
+              <input
+                className="w-full rounded border px-2 py-1 text-sm bg-background font-mono"
+                placeholder={cfg?.immutableStoreTokenSet ? "•••• (salvato — lascia vuoto per non cambiarlo)" : "••••••••"}
+                value={storeForm.immutableStoreToken}
+                onChange={(e) => { setStoreForm({ ...storeForm, immutableStoreToken: e.target.value }); setReplicationResult(null); }}
+                type="password"
+                autoComplete="off"
+              />
+            </label>
+            <label className="text-sm space-y-1 block">
+              <span>Impronta certificato <span className="text-xs text-muted-foreground">(opzionale)</span></span>
+              <input
+                className="w-full rounded border px-2 py-1 text-sm bg-background font-mono"
+                placeholder="sha256/AAAA..."
+                value={storeForm.immutableStoreCertPin}
+                onChange={(e) => { setStoreForm({ ...storeForm, immutableStoreCertPin: e.target.value }); setReplicationResult(null); }}
+                autoComplete="off"
+              />
+            </label>
+          </div>
+        </fieldset>
+
+        <div className="flex gap-2 flex-wrap">
+          <Button size="sm" onClick={handleSaveStore} disabled={storeSaving}>
+            {storeSaving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+            Salva
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleVerify} disabled={verifying}>
+            {verifying && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+            Verifica
+          </Button>
+        </div>
+
+        {replicationResult && (
+          <div
+            className={`rounded-md border px-3 py-2 text-xs ${
+              replicationResult.verdict === "ok"
+                ? "border-green-300 bg-green-50 dark:bg-green-950/20 text-green-800 dark:text-green-300"
+                : replicationResult.verdict === "degraded"
+                  ? "border-amber-300 bg-amber-50 dark:bg-amber-950/20 text-amber-900 dark:text-amber-300"
+                  : "border-red-300 bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-300"
+            }`}
+          >
+            <strong>Repliche:</strong>{" "}
+            {replicationResult.verdict === "ok" ? "OK" : replicationResult.verdict === "degraded" ? "Degradato" : "Non riuscito"}
+            {" · "}
+            {replicationResult.headline}
+          </div>
+        )}
+      </div>
 
       {/* ──────────── Script install AGENTE per sistema operativo ──────────── */}
       {configured && (

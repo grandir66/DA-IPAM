@@ -149,16 +149,27 @@ export interface WebhookPayload {
   }>;
 }
 
+/**
+ * @param message Testo già composto dal chiamante (es. una notifica di
+ *   salute Wazuh, non legata a un `NotifiableEvent`): se presente ha SEMPRE
+ *   precedenza sulla ricostruzione da `events`. Senza, con `events` vuoto
+ *   (`kind: "immediate"` e nessun evento, o digest senza eventi) il testo
+ *   ricostruito sarebbe vuoto — è esattamente il bug per cui è stato
+ *   aggiunto questo parametro: un chiamante che notifica qualcosa che non è
+ *   un `NotifiableEvent` non deve finire con un payload silenziosamente vuoto.
+ */
 export function buildWebhookPayload(
   kind: "immediate" | "digest",
   events: NotifiableEvent[],
   tenant: string,
+  message?: NotificationMessage,
   generatedAt: string = new Date().toISOString(),
 ): WebhookPayload {
   const msg =
-    kind === "immediate" && events[0]
+    message ??
+    (kind === "immediate" && events[0]
       ? buildImmediateMessage(events[0], tenant)
-      : buildDigestMessage(events, tenant);
+      : buildDigestMessage(events, tenant));
   return {
     source: "da-ipam",
     kind,

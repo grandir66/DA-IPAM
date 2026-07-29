@@ -19,11 +19,15 @@
  *
  * L'invio riusa `dispatchNotification` da `notifications/notifier.ts`, lo
  * stesso fan-out SMTP/webhook già impiegato da `wazuh-alerts-sync.ts`: nessun
- * client SMTP nuovo. Il canale webhook, come già fa `sendTestNotification` per
- * i messaggi non legati a un `NotifiableEvent`, riceve una lista eventi vuota:
- * il payload JSON porta comunque kind/tenant/generatedAt, solo senza il
- * dettaglio strutturato degli alert (che non ha senso per un blocco di
- * salute). Il testo del messaggio SMTP resta completo.
+ * client SMTP nuovo. Passiamo `events: []` (non c'è un `NotifiableEvent` per
+ * un blocco di salute) ma SEMPRE anche `message`: `buildWebhookPayload`
+ * (in `notifications/policy.ts`) usa `message` quando presente invece di
+ * ricostruire il testo dagli eventi, quindi il payload webhook porta comunque
+ * blocco/verdetto/headline nel campo `text`, solo con `events: []` nel
+ * dettaglio strutturato (che non ha senso per un blocco di salute). Prima di
+ * questa correzione, `events: []` produceva un `text` vuoto ma un HTTP 200
+ * comunque valido: il sistema segnava "notificato" un avviso che in realtà
+ * non conteneva nulla (bug corretto in fix(notifiche): vedi report Task 5).
  */
 
 import type { Database } from "better-sqlite3";
@@ -163,8 +167,13 @@ const REASON_LABELS: Record<NotifyDecision["reason"], string> = {
  * Compone il messaggio di notifica per un blocco di salute. Mai un URL con
  * token: solo nome del blocco, verdetto ed headline (già priva di segreti,
  * vedi wazuh-health-thresholds.ts).
+ *
+ * Esportata (non solo uso interno) perché è anche l'oggetto del test che
+ * dimostra il fix del payload webhook vuoto: senza un modo diretto di
+ * costruire questo messaggio, il test dovrebbe passare da
+ * `evaluateAndNotifyWazuhHealth` con l'intero stack DB/config/probe mockato.
  */
-function buildHealthMessage(
+export function buildHealthMessage(
   block: BlockHealth,
   tenant: string,
   reason: NotifyDecision["reason"],

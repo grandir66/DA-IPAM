@@ -47,6 +47,7 @@ async function sendWebhook(
   kind: "immediate" | "digest",
   events: NotifiableEvent[],
   tenant: string,
+  message?: NotificationMessage,
 ): Promise<ChannelResult> {
   const cfg = getNotificationConfig();
   if (!cfg.webhookUrl) {
@@ -62,7 +63,11 @@ async function sendWebhook(
           "Content-Type": "application/json",
           ...(cfg.webhookAuthHeader ? { Authorization: cfg.webhookAuthHeader } : {}),
         },
-        body: JSON.stringify(buildWebhookPayload(kind, events, tenant)),
+        // `message` (se il chiamante lo passa) ha sempre precedenza sulla
+        // ricostruzione da `events`: senza, un chiamante con `events: []`
+        // (es. una notifica di salute, non un NotifiableEvent) riceverebbe
+        // un payload con `text` vuoto pur avendo un canale che risponde 200.
+        body: JSON.stringify(buildWebhookPayload(kind, events, tenant, message)),
         signal: controller.signal,
       });
       if (!res.ok) {
@@ -92,7 +97,7 @@ export async function dispatchNotification(args: {
 
   const tasks: Promise<ChannelResult>[] = [];
   if (cfg.smtpEnabled) tasks.push(sendSmtp(args.message));
-  if (cfg.webhookEnabled) tasks.push(sendWebhook(args.kind, args.events, args.tenant));
+  if (cfg.webhookEnabled) tasks.push(sendWebhook(args.kind, args.events, args.tenant, args.message));
   if (tasks.length === 0) return [];
 
   return Promise.all(tasks);
@@ -110,6 +115,8 @@ export async function sendTestNotification(tenant: string): Promise<ChannelResul
   const tasks: Promise<ChannelResult>[] = [];
   // Il test ignora `enabled`: serve proprio a validare prima di attivare.
   if (cfg.smtpEnabled) tasks.push(sendSmtp(message));
-  if (cfg.webhookEnabled) tasks.push(sendWebhook("digest", [], tenant));
+  // Stesso motivo del fix in dispatchNotification: senza passare `message`,
+  // events: [] produrrebbe un payload webhook con `text` vuoto.
+  if (cfg.webhookEnabled) tasks.push(sendWebhook("digest", [], tenant, message));
   return Promise.all(tasks);
 }

@@ -51,6 +51,14 @@ export const DISK_WARN_PERCENT = 85;
 export const DISK_FAIL_PERCENT = 95;
 export const INGESTION_LAG_WARN_MINUTES = 30;
 export const REPLICATION_MIN_HOURS = 3;
+/**
+ * Soglie della verifica d'integrità. Quando lo stato non dichiara la propria
+ * cadenza (`schedule.verify_interval`) non si può calcolare "in ritardo di
+ * quanto": si concede una finestra prudenziale fissa, oltre la quale una
+ * verifica che non si completa va comunque detta.
+ */
+export const VERIFY_STALE_FALLBACK_MINUTES = 7 * 1440;
+export const VERIFY_MIN_THRESHOLD_MINUTES = 1440;
 
 const VERDICT_SEVERITY: Record<HealthVerdict, number> = { ok: 0, degraded: 1, fail: 2 };
 
@@ -113,6 +121,20 @@ function intervalToMinutes(interval: string | undefined): number {
   if (interval === "daily") return 1440;
   if (interval === "hourly") return 60;
   return 60;
+}
+
+/**
+ * Minuti della cadenza di verifica, `null` se non la si riconosce. Volutamente
+ * separata da `intervalToMinutes`: quella assume l'orario sui valori ignoti, e
+ * su una verifica che gira ogni tre giorni la dichiarerebbe in ritardo a ogni
+ * sguardo. Tenerle distinte evita anche che allargare i valori riconosciuti
+ * qui cambi di riflesso la soglia del ciclo di archiviazione.
+ */
+function verifyIntervalToMinutes(interval: string | undefined): number | null {
+  if (interval === "hourly") return 60;
+  if (interval === "daily") return 1440;
+  if (interval === "weekly") return 7 * 1440;
+  return null;
 }
 
 export function classifyDiskUsage(usePercent: number | null | undefined): HealthVerdict {
@@ -447,23 +469,82 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
 
   const freshnessVerdict = worst(cycleVerdict, longTermVerdict);
 
-  // `verify` vale spesso "never" a riposo: non è un guasto. Solo una catena
-  // dichiarata esplicitamente non valida lo è.
+  // ── Verifica d'integrità ────────────────────────────────────────────────
+  // Sul campo il comando di verifica ha riportato `outcome: "success"` con
+  // `archives_checked: 0`: aveva validato solo la catena dei manifest (un file
+  // di 6 KB, in 18 millesimi di secondo) senza rileggere nessuno dei 340
+  // archivi presenti sullo storage né verificarne le firme. Un `success` così
+  // non è una conferma d'integrità, e mostrarlo come tale è peggio che tacere.
+  // Prima di questa modifica, inoltre, la sezione restava `{"outcome":"never"}`
+  // per giorni dopo un crash del comando, senza che nulla lo segnalasse.
   const verifyRun = state.runs.verify;
-  const integrityFailed = verifyRun.manifest_chain_valid === false;
+  const verifyIntervalMinutes = verifyIntervalToMinutes(state.schedule.verify_interval);
+  const verifyThresholdMinutes = verifyIntervalMinutes !== null
+    ? Math.max(2 * verifyIntervalMinutes, VERIFY_MIN_THRESHOLD_MINUTES)
+    : VERIFY_STALE_FALLBACK_MINUTES;
+
+  const verifyLastMs = parseFlexibleDate(verifyRun.last_finished_at);
+  const verifyAgeMinutes = verifyLastMs !== null ? (nowMs - verifyLastMs) / 60000 : null;
+  const verifyChecked = verifyRun.archives_checked;
+  const verifyValid = verifyRun.archives_valid;
+
+  const chainInvalid = verifyRun.manifest_chain_valid === false;
+  const verifyOutcomeFailed = verifyRun.outcome === "failed";
+  // Archivi ricontrollati che NON corrispondono più: è la manomissione che
+  // questa verifica esiste per rilevare.
+  const verifyMismatch =
+    typeof verifyChecked === "number" &&
+    typeof verifyValid === "number" &&
+    verifyChecked > 0 &&
+    verifyValid < verifyChecked;
+  // Archivi contati ma senza esito riportato: non si può dire quanti fossero
+  // validi, quindi non si dice. Dedurre `validi = ricontrollati` sarebbe la
+  // stessa falsa conferma che questo blocco esiste per eliminare.
+  const verifyValidUnknown =
+    typeof verifyChecked === "number" && verifyChecked > 0 && typeof verifyValid !== "number";
+  const verifyNeverCompleted = verifyRun.outcome === "never";
+  const verifyStale = verifyAgeMinutes !== null && verifyAgeMinutes > verifyThresholdMinutes;
+  // `archives_checked` assente = endpoint che non espone il dato: non si
+  // inventa un allarme. Solo uno zero DICHIARATO dice "non ho controllato
+  // nulla".
+  const verifyCheckedNothing = verifyRun.outcome === "success" && verifyChecked === 0;
+
+  const integrityFailed = chainInvalid || verifyOutcomeFailed || verifyMismatch;
+  const verifyVerdict: HealthVerdict = integrityFailed
+    ? "fail"
+    : verifyNeverCompleted || verifyStale || verifyCheckedNothing || verifyValidUnknown
+      ? "degraded"
+      : "ok";
+
+  /** Riga di dettaglio: dice cosa è stato controllato, non solo l'esito. */
+  function describeVerify(): string {
+    if (chainInvalid) return "catena dei manifest non valida";
+    if (verifyMismatch) return `${verifyValid} archivi validi su ${verifyChecked} ricontrollati`;
+    if (verifyOutcomeFailed) return "fallita";
+    if (verifyNeverCompleted) return "mai completata";
+    const eta = verifyStale && verifyAgeMinutes !== null
+      ? `, ferma da ${formatDuration(verifyAgeMinutes)}`
+      : "";
+    if (verifyCheckedNothing) return `catena valida, 0 archivi ricontrollati${eta}`;
+    if (verifyValidUnknown) return `${verifyChecked} archivi ricontrollati, esito non riportato${eta}`;
+    if (typeof verifyChecked === "number" && verifyChecked > 0) {
+      return `${verifyChecked} archivi ricontrollati, ${verifyValid} validi${eta}`;
+    }
+    return `${verifyRun.outcome}${eta}`;
+  }
 
   const destPercent = parsePercent(state.backend.disk?.use_percent);
   const localPercent = parsePercent(state.local_disk.use_percent);
   const destVerdict = classifyDiskUsage(destPercent);
   const localVerdict = classifyDiskUsage(localPercent);
 
-  const verdict: HealthVerdict = archiveAttemptFailed || integrityFailed
+  const verdict: HealthVerdict = archiveAttemptFailed
     ? "fail"
-    : worst(freshnessVerdict, destVerdict, localVerdict);
+    : worst(freshnessVerdict, destVerdict, localVerdict, verifyVerdict);
 
   const detail: string[] = [`ultimo archivio: ${archiveRun.outcome}`];
   if ((archiveRun.failed ?? 0) > 0) detail.push(`upload falliti: ${archiveRun.failed}`);
-  detail.push(`verifica integrità: ${verifyRun.outcome}`);
+  detail.push(`verifica integrità: ${describeVerify()}`);
   // `archives.newest` resta mostrato: non concorre più da sola al verdetto,
   // ma è informazione utile all'operatore (vedi brief Difetto 1).
   detail.push(
@@ -479,6 +560,8 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
     headline = (archiveRun.failed ?? 0) > 0
       ? `upload falliti nell'ultimo run di archiviazione (${archiveRun.failed})`
       : "ultimo run di archiviazione non riuscito";
+  } else if (verifyMismatch) {
+    headline = `integrità compromessa: ${verifyValid} archivi validi su ${verifyChecked} ricontrollati`;
   } else if (integrityFailed) {
     headline = "verifica di integrità fallita";
   } else if (cycleVerdict === "fail") {
@@ -495,6 +578,14 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
     headline = "spazio esaurito sul disco di replica";
   } else if (destVerdict === "degraded" || localVerdict === "degraded") {
     headline = "disco di replica in esaurimento";
+  } else if (verifyNeverCompleted) {
+    headline = "integrità mai verificata";
+  } else if (verifyStale) {
+    headline = `integrità non verificata da ${formatDuration(verifyAgeMinutes as number)}`;
+  } else if (verifyCheckedNothing) {
+    headline = "nessun archivio ricontrollato dalla verifica d'integrità";
+  } else if (verifyValidUnknown) {
+    headline = "verifica d'integrità senza esito sugli archivi ricontrollati";
   } else {
     const okAgeMinutes = cycleAgeMinutes ?? newestAgeMinutes ?? 0;
     headline = `ultimo ciclo di archiviazione riuscito ${formatDuration(okAgeMinutes)} fa`;

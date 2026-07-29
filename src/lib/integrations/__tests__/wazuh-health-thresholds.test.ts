@@ -353,3 +353,136 @@ describe("repliche — Difetto 1 (dati reali)", () => {
     assert.equal(classifyReplication(s, NOW_REALE).verdict, "fail");
   });
 });
+
+// Verifica d'integrità — dati reali dall'host Wazuh (2026-07-29). Il comando
+// `verify` ha riportato `outcome: "success"` con `archives_checked: 0`: aveva
+// validato solo la catena dei manifest, senza rileggere nessuno dei 340
+// archivi sullo storage né verificarne le firme. Prima di questo fix quel
+// `success` risultava indistinguibile da un'integrità confermata, e una
+// sezione rimasta `{"outcome":"never"}` per giorni dopo un crash del comando
+// non produceva nessun segnale.
+describe("repliche — verifica d'integrità (dati reali)", () => {
+  const ORA = Date.parse("2026-07-29T21:00:00Z");
+
+  function stato(verify: Record<string, unknown>, schedule: Record<string, unknown> = {}) {
+    return {
+      schema_version: 1, generated_at: "2026-07-29T20:59:00Z", host: "da-wazuh",
+      backend: { reachable: true, disk: { use_percent: "11%" } },
+      local_disk: { use_percent: 47 },
+      runs: {
+        archive: { last_finished_at: "2026-07-29T20:50:25Z", outcome: "success", archives_created: 0 },
+        retention: { outcome: "success" },
+        verify,
+      },
+      archives: { newest: "2026-07-29T14:12:58.544552" },
+      retention_policy: { remote_days: 365, mode: "qnap-nfs", days_before_archive: 1, days_keep_local: 30 },
+      schedule: { archive_interval: "hourly", ...schedule },
+    } as never;
+  }
+
+  it("1. success con archives_checked:0 → degraded, e il dettaglio dice che nessun archivio è stato ricontrollato", () => {
+    const b = classifyReplication(stato({
+      last_finished_at: "2026-07-29T20:23:58Z", outcome: "success",
+      manifest_chain_valid: true, archives_checked: 0, archives_valid: 0, errors: [],
+    }), ORA);
+    assert.equal(b.verdict, "degraded");
+    assert.ok(
+      b.detail?.some((d) => d.includes("0 archivi ricontrollati")),
+      `dettaglio senza la riga sui 0 archivi: ${JSON.stringify(b.detail)}`,
+    );
+  });
+
+  it("2. 10 archivi ricontrollati e tutti validi → ok", () => {
+    const b = classifyReplication(stato({
+      last_finished_at: "2026-07-29T20:23:58Z", outcome: "success",
+      manifest_chain_valid: true, archives_checked: 10, archives_valid: 10,
+    }), ORA);
+    assert.equal(b.verdict, "ok");
+    assert.ok(b.detail?.some((d) => d.includes("10 archivi ricontrollati")));
+  });
+
+  it("3. 9 validi su 10 ricontrollati → fail, ed è l'intestazione a dirlo", () => {
+    const b = classifyReplication(stato({
+      last_finished_at: "2026-07-29T20:23:58Z", outcome: "success",
+      manifest_chain_valid: true, archives_checked: 10, archives_valid: 9,
+    }), ORA);
+    assert.equal(b.verdict, "fail");
+    assert.ok(b.headline.includes("integrità compromessa"), `intestazione: ${b.headline}`);
+  });
+
+  it("4. outcome failed → fail (prima veniva ignorato)", () => {
+    const b = classifyReplication(stato({
+      last_finished_at: "2026-07-29T20:23:58Z", outcome: "failed", manifest_chain_valid: true,
+    }), ORA);
+    assert.equal(b.verdict, "fail");
+  });
+
+  it("5. outcome never → degraded, indipendentemente dal resto", () => {
+    const b = classifyReplication(stato({ outcome: "never" }), ORA);
+    assert.equal(b.verdict, "degraded");
+    assert.ok(b.detail?.some((d) => d.includes("mai completata")));
+  });
+
+  it("6. ultima verifica 10 giorni fa senza verify_interval → degraded (oltre i 7 giorni prudenziali)", () => {
+    const dieciGiorniFa = new Date(ORA - 10 * 24 * 3_600_000).toISOString();
+    const b = classifyReplication(stato({
+      last_finished_at: dieciGiorniFa, outcome: "success",
+      manifest_chain_valid: true, archives_checked: 10, archives_valid: 10,
+    }), ORA);
+    assert.equal(b.verdict, "degraded");
+  });
+
+  it("7. ultima verifica 4 giorni fa con verify_interval weekly → ok (entro il doppio della cadenza)", () => {
+    const quattroGiorniFa = new Date(ORA - 4 * 24 * 3_600_000).toISOString();
+    const b = classifyReplication(stato({
+      last_finished_at: quattroGiorniFa, outcome: "success",
+      manifest_chain_valid: true, archives_checked: 10, archives_valid: 10,
+    }, { verify_interval: "weekly" }), ORA);
+    assert.equal(b.verdict, "ok");
+  });
+
+  it("8. catena dei manifest non valida → fail (invariato)", () => {
+    const b = classifyReplication(stato({
+      last_finished_at: "2026-07-29T20:23:58Z", outcome: "success", manifest_chain_valid: false,
+    }), ORA);
+    assert.equal(b.verdict, "fail");
+  });
+
+  it("9. archives_checked assente (endpoint che non espone il dato) → nessun allarme inventato", () => {
+    const b = classifyReplication(stato({
+      last_finished_at: "2026-07-29T20:23:58Z", outcome: "success", manifest_chain_valid: true,
+    }), ORA);
+    assert.equal(b.verdict, "ok");
+  });
+  it("10. archives_checked presente ma archives_valid assente → degraded, senza dedurre che fossero tutti validi", () => {
+    const b = classifyReplication(stato({
+      last_finished_at: "2026-07-29T20:23:58Z", outcome: "success",
+      manifest_chain_valid: true, archives_checked: 10,
+    }), ORA);
+    assert.equal(b.verdict, "degraded");
+    assert.ok(
+      b.detail?.some((d) => d.includes("esito non riportato")),
+      `dettaglio che inventa un esito: ${JSON.stringify(b.detail)}`,
+    );
+    assert.ok(!b.detail?.some((d) => d.includes("10 validi")));
+  });
+
+  it("11. archive_interval weekly non allarga la soglia del ciclo di archiviazione (resta 3h)", () => {
+    const quattroOreFa = new Date(ORA - 4 * 3_600_000).toISOString();
+    const s = {
+      schema_version: 1, generated_at: "2026-07-29T20:59:00Z", host: "da-wazuh",
+      backend: { reachable: true, disk: { use_percent: "11%" } },
+      local_disk: { use_percent: 47 },
+      runs: {
+        archive: { last_finished_at: quattroOreFa, outcome: "success", archives_created: 0 },
+        retention: { outcome: "success" },
+        verify: { outcome: "success", manifest_chain_valid: true, archives_checked: 5, archives_valid: 5,
+                  last_finished_at: "2026-07-29T20:23:58Z" },
+      },
+      archives: { newest: "2026-07-29T14:12:58.544552" },
+      retention_policy: { days_before_archive: 1 },
+      schedule: { archive_interval: "weekly" },
+    } as never;
+    assert.equal(classifyReplication(s, ORA).verdict, "fail");
+  });
+});

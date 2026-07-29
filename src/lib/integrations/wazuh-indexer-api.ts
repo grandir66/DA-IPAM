@@ -299,6 +299,34 @@ export class WazuhIndexerClient {
     return parseStatsResponse(res);
   }
 
+  /**
+   * `@timestamp` del documento più recente in `wazuh-alerts-*` (cruscotto
+   * salute, blocco ingestione — misura Wazuh stesso, non la tabella locale
+   * DA-IPAM: vedi brief fix-misure Difetto 2). Aggregazione `max` con
+   * `size: 0`: nessun documento scaricato, costo minimo anche sull'indice
+   * reale (>390M doc). Si legge `value` (epoch millis), non
+   * `value_as_string`, per non dipendere da un parametro `format`
+   * sull'aggregazione. `null` = indice raggiungibile ma senza alcun
+   * documento (fresh install); un errore di rete/HTTP diverso da 404 lancia,
+   * e il chiamante (wazuh-health.ts) decide come trattarlo senza inventare
+   * un verdetto "ok".
+   */
+  async getLatestAlertTimestamp(): Promise<string | null> {
+    try {
+      const res = await this.json<{
+        aggregations?: { latest?: { value?: number | null } };
+      }>("POST", "/wazuh-alerts-*/_search", {
+        size: 0,
+        aggs: { latest: { max: { field: "@timestamp" } } },
+      });
+      const value = res.aggregations?.latest?.value;
+      return typeof value === "number" && Number.isFinite(value) ? new Date(value).toISOString() : null;
+    } catch (e) {
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return null;
+      throw e;
+    }
+  }
+
   /** Numero totale di documenti CVE nell'indice (sanity check). */
   async totalVulnDocs(): Promise<number> {
     const res = await this.json<{ count: number }>("GET", "/wazuh-states-vulnerabilities-*/_count");

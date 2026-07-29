@@ -120,14 +120,27 @@ async function probeIndexer(): Promise<BlockHealth> {
 
 // ── Probe: ingestione ──────────────────────────────────────────────────────────
 /**
- * Non avvolto in try/catch proprio: un errore nella lettura delle statistiche
- * analysisd propaga fino a `Promise.allSettled` in `compute()`, che isola il
- * fallimento sul blocco "ingestion" (comportamento voluto, non un bug).
+ * Le statistiche analysisd non sono avvolte in try/catch proprio: un errore
+ * nella loro lettura propaga fino a `Promise.allSettled` in `compute()`, che
+ * isola il fallimento sul blocco "ingestion" (comportamento voluto, non un
+ * bug).
  *
  * Con Wazuh non configurato il blocco è `configured: false` (come manager e
  * indexer), non un verde "allineata": senza credenziali non c'è nulla da
  * verificare, e un semaforo verde su un'appliance appena installata sarebbe
  * una falsa rassicurazione (fix review fase 2, Important 2).
+ *
+ * Il verdetto viene dal `@timestamp` più recente nell'INDEXER
+ * (`wazuh-alerts-*`), non da `wazuh_alert_event.last_seen_at` di DA-IPAM: la
+ * sincronizzazione scarta gli alert non rilevanti (`upsertAlertEvent` →
+ * `skipped`, filtri `self`/`deviceRuleIds`), quindi la tabella locale può
+ * restare indietro di ore su un'ingestione Wazuh perfettamente normale
+ * (misurava il soggetto sbagliato — vedi brief fix-misure Difetto 2). La
+ * query all'indexer È avvolta in try/catch, a differenza di quella
+ * analysisd sopra: un indexer irraggiungibile non deve far perdere anche
+ * `eventsDropped`/`queueUsage` già ottenuti dal manager, né produrre il
+ * messaggio generico di `composeHealthBlocks` al posto di uno specifico
+ * ("indexer non raggiungibile: ingestione non verificabile").
  */
 async function probeIngestion(tenantCode: string): Promise<BlockHealth> {
   const cfg = getWazuhConfig();
@@ -148,17 +161,40 @@ async function probeIngestion(tenantCode: string): Promise<BlockHealth> {
     "timeout statistiche analysisd",
   );
 
-  // L'alert più recente viene dal DB tenant (wazuh_alert_event.last_seen_at),
-  // non dall'indexer: più economico e riflette ciò che DA-IPAM ha davvero
-  // ricevuto (vedi brief Task 3).
+  const idx = createWazuhIndexerClient({
+    url: cfg.indexerUrl,
+    username: cfg.indexerUsername,
+    password: cfg.indexerPassword,
+    verifyTls: cfg.verifyTls,
+  });
+  let newestIndexerAlertIso: string | null | undefined;
+  if (idx) {
+    try {
+      newestIndexerAlertIso = await withTimeoutReject(
+        idx.getLatestAlertTimestamp(),
+        PROBE_TIMEOUT_MS,
+        "timeout indexer",
+      );
+    } catch {
+      // undefined = "non verificabile", diverso da null ("indice vuoto"):
+      // classifyIngestion non deve mai confondere i due casi.
+      newestIndexerAlertIso = undefined;
+    }
+  } else {
+    newestIndexerAlertIso = undefined;
+  }
+
+  // L'ultimo alert importato in DA-IPAM resta utile all'operatore (mostrato
+  // in detail da classifyIngestion), ma non concorre più al verdetto.
   const db = getTenantDb(tenantCode);
   ensureWazuhAlertSchema(db);
-  const newestAlertIso = getLatestAlertTimestamp(db);
+  const latestImportedAlertIso = getLatestAlertTimestamp(db);
 
   return classifyIngestion({
     eventsDropped: stats?.eventsDropped,
     queueUsage: stats?.queueUsage,
-    newestAlertIso,
+    newestIndexerAlertIso,
+    latestImportedAlertIso,
     nowMs: Date.now(),
   });
 }

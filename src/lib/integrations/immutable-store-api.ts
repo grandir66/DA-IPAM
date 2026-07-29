@@ -112,6 +112,15 @@ export interface ImmutableStoreState {
     remote_days?: number;
     mode?: string;
     lock_until?: string | null;
+    // Facoltativi: servono al cruscotto salute (wazuh-health-thresholds.ts)
+    // per calcolare l'orizzonte di staleness di lungo periodo di
+    // `archives.newest` — con `days_before_archive: 1` un ciclo orario che
+    // riesce può creare 0 archivi per oltre 24h, quindi `archives.newest`
+    // resta legittimamente indietro su un sistema sano (vedi brief Difetto
+    // 1). Assenti su endpoint più vecchi: `num()` tollera undefined/non
+    // numerico senza mai lanciare, come il resto del parser.
+    days_before_archive?: number;
+    days_keep_local?: number;
   };
   schedule: {
     archive_interval?: string;
@@ -255,6 +264,8 @@ function parseRetentionPolicy(raw: Record<string, unknown> | undefined): Immutab
     remote_days: num(raw?.remote_days),
     mode: str(raw?.mode),
     lock_until: strOrNull(raw?.lock_until),
+    days_before_archive: num(raw?.days_before_archive),
+    days_keep_local: num(raw?.days_keep_local),
   });
 }
 

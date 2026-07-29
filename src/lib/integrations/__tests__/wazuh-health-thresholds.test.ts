@@ -66,11 +66,11 @@ describe("indexer", () => {
     const b = classifyIndexer({ status: "green" }, [{ node: "n1", diskPercent: 60 }]);
     assert.equal(b.verdict, "ok");
   });
-  it("cluster giallo è degradato", () => {
+  it("cluster giallo con numero di nodi assente resta degradato (comportamento di oggi preservato)", () => {
     assert.equal(classifyIndexer({ status: "yellow" }, []).verdict, "degraded");
   });
-  it("cluster rosso è errore", () => {
-    assert.equal(classifyIndexer({ status: "red" }, []).verdict, "fail");
+  it("cluster rosso a nodo singolo resta errore (invariato)", () => {
+    assert.equal(classifyIndexer({ status: "red", number_of_nodes: 1 }, []).verdict, "fail");
   });
   it("un nodo oltre il 95% è errore anche con cluster verde", () => {
     const b = classifyIndexer({ status: "green" }, [{ node: "n1", diskPercent: 96 }]);
@@ -85,6 +85,65 @@ describe("indexer", () => {
     assert.equal(b.verdict, "fail");
     assert.ok(b.headline.includes("96"));
     assert.ok(b.headline.includes("n3"));
+  });
+
+  // Difetto 3 del brief fix-indexer: dato reale (appliance Domarc, indexer
+  // Wazuh) — stato yellow, 1 nodo, 450 shard attivi, 29 non assegnati, 0 in
+  // inizializzazione. Su un cluster a un solo nodo gli shard replica non
+  // possono mai essere assegnati (nessun secondo nodo su cui copiarli):
+  // l'installazione Wazuh predefinita è single-node, quindi prima del fix
+  // questo blocco nasceva ambra e non tornava mai verde per nessuna azione
+  // dell'operatore.
+  describe("giallo a nodo singolo (dato reale)", () => {
+    it("1. yellow, 1 nodo, 0 in inizializzazione, dischi sani → ok, con il motivo in detail", () => {
+      const b = classifyIndexer(
+        { status: "yellow", number_of_nodes: 1, initializing_shards: 0 },
+        [{ node: "n1", diskPercent: 40 }],
+      );
+      assert.equal(b.verdict, "ok");
+      assert.ok(b.headline.includes("giallo"), "l'intestazione continua a dire il colore reale");
+      assert.ok(b.detail?.some((d) => d.includes("nodo singolo") && d.includes("giallo strutturale")));
+    });
+
+    it("2. yellow, 3 nodi → degradato (invariato: lì il giallo indica repliche davvero non assegnate)", () => {
+      const b = classifyIndexer(
+        { status: "yellow", number_of_nodes: 3, initializing_shards: 0 },
+        [],
+      );
+      assert.equal(b.verdict, "degraded");
+    });
+
+    it("3. yellow, 1 nodo, shard in inizializzazione → degradato (non ancora a riposo)", () => {
+      const b = classifyIndexer(
+        { status: "yellow", number_of_nodes: 1, initializing_shards: 2 },
+        [],
+      );
+      assert.equal(b.verdict, "degraded");
+    });
+
+    it("4. yellow, numero di nodi assente → degradato (comportamento di oggi preservato)", () => {
+      const b = classifyIndexer(
+        { status: "yellow", initializing_shards: 0 },
+        [],
+      );
+      assert.equal(b.verdict, "degraded");
+    });
+
+    it("5. yellow, 1 nodo, ma un nodo al 96% di disco → errore (il disco non viene mascherato dal giallo strutturale)", () => {
+      const b = classifyIndexer(
+        { status: "yellow", number_of_nodes: 1, initializing_shards: 0 },
+        [{ node: "n1", diskPercent: 96 }],
+      );
+      assert.equal(b.verdict, "fail");
+    });
+
+    it("6. red, 1 nodo → errore (invariato)", () => {
+      const b = classifyIndexer(
+        { status: "red", number_of_nodes: 1, initializing_shards: 0 },
+        [],
+      );
+      assert.equal(b.verdict, "fail");
+    });
   });
 });
 

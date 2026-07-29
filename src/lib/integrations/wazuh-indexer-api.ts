@@ -158,16 +158,33 @@ export class WazuhIndexerClient {
     }
   }
 
-  /** Test connessione + ritorna stato cluster. */
-  async ping(): Promise<{ clusterName?: string; status?: string; numberOfNodes?: number }> {
-    const res = await this.json<{ cluster_name?: string; status?: string; number_of_nodes?: number }>(
-      "GET",
-      "/_cluster/health",
-    );
+  /**
+   * Test connessione + ritorna stato cluster. `numberOfNodes` e
+   * `initializingShards` (fix cruscotto salute, blocco indexer: cluster
+   * yellow a nodo singolo) servono a `classifyIndexer` per distinguere un
+   * giallo strutturale (repliche non assegnabili su un solo nodo) da un
+   * giallo vero su un cluster multi-nodo — non aggiungono chiamate, sono già
+   * nella risposta di `_cluster/health`. Firma retrocompatibile: i chiamanti
+   * esistenti (route di test, `modules/health.ts`) che leggono solo
+   * `status`/`clusterName` non sono affetti.
+   */
+  async ping(): Promise<{
+    clusterName?: string;
+    status?: string;
+    numberOfNodes?: number;
+    initializingShards?: number;
+  }> {
+    const res = await this.json<{
+      cluster_name?: string;
+      status?: string;
+      number_of_nodes?: number;
+      initializing_shards?: number;
+    }>("GET", "/_cluster/health");
     return {
       clusterName: res.cluster_name,
       status: res.status,
       numberOfNodes: res.number_of_nodes,
+      initializingShards: res.initializing_shards,
     };
   }
 

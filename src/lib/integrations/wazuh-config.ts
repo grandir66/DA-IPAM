@@ -38,6 +38,25 @@ export interface WazuhConfig {
   immutableStoreCertPin: string | null;   // sha256/<base64>, null = nessun pinning
 }
 
+/**
+ * Normalizza un'impronta SPKI nella forma canonica `sha256/<base64>` usata
+ * dal confronto (`probePinTls` in scanner-edge-client.ts).
+ *
+ * Accetta sia la forma con prefisso (`sha256/AAA...`, quella prodotta da
+ * `spkiPinFromDer`) sia il solo base64 (quella stampata da alcuni script di
+ * installazione dell'endpoint di stato repliche): senza normalizzazione le
+ * due forme sono visivamente quasi identiche ma non fanno mai match, un
+ * mismatch fantasma che blocca la funzionalità alla prima configurazione.
+ * Spazi/newline attorno vengono tollerati. Stringa vuota resta vuota (nessun
+ * pin configurato non deve diventare "sha256/").
+ */
+export function normalizeSpkiPin(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "") return "";
+  const base64 = trimmed.startsWith("sha256/") ? trimmed.slice("sha256/".length).trim() : trimmed;
+  return `sha256/${base64}`;
+}
+
 const KEY_ENABLED       = "integration_wazuh_enabled";
 const KEY_URL           = "integration_wazuh_url";
 const KEY_USERNAME      = "integration_wazuh_username";
@@ -99,10 +118,12 @@ export function setWazuhConfig(cfg: Partial<WazuhConfig>): void {
     if (trimmed !== "") setSetting(KEY_IMMUTABLE_TOKEN, encrypt(trimmed));
   }
   if (cfg.immutableStoreCertPin !== undefined) {
-    // Trim: un pin copiato da un terminale con un newline in coda fa fallire
-    // il confronto esatto in probePinTls (got !== expectedPin) con due
-    // impronte visivamente identiche — un debug frustrante e ingannevole.
-    setSetting(KEY_IMMUTABLE_CERT_PIN, (cfg.immutableStoreCertPin ?? "").trim());
+    // Normalizza (trim + forma canonica sha256/<base64>): un pin copiato da
+    // un terminale con un newline in coda, o senza il prefisso sha256/ (come
+    // lo stampano alcuni script di installazione), fa fallire il confronto
+    // esatto in probePinTls (got !== expectedPin) con due impronte
+    // visivamente identiche — un debug frustrante e ingannevole.
+    setSetting(KEY_IMMUTABLE_CERT_PIN, normalizeSpkiPin(cfg.immutableStoreCertPin ?? ""));
   }
 }
 

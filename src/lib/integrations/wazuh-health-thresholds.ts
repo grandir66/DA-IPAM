@@ -109,20 +109,55 @@ export function classifyDiskUsage(usePercent: number | null | undefined): Health
   return "ok";
 }
 
+/**
+ * Demoni essenziali del manager: il verdetto del blocco dipende solo da
+ * questi. Gli altri demoni Wazuh standard (agentlessd, csyslogd, dbd,
+ * integratord, maild, reportd, clusterd) sono OPZIONALI e disabilitati per
+ * default in un'installazione sana — contarli come guasto produce un falso
+ * rosso su praticamente ogni appliance sul campo, e un semaforo sempre rosso
+ * è un semaforo che l'operatore smette di guardare.
+ */
+const ESSENTIAL_MANAGER_DAEMONS = new Set([
+  "wazuh-analysisd",
+  "wazuh-remoted",
+  "wazuh-monitord",
+  "wazuh-execd",
+  "wazuh-modulesd",
+  "wazuh-syscheckd",
+  "wazuh-logcollector",
+  "wazuh-db",
+  "wazuh-apid",
+]);
+
 export function classifyManager(daemons: Array<{ name: string; status: string }>): BlockHealth {
   const stopped = daemons.filter((d) => d.status !== "running").map((d) => d.name);
+  const stoppedEssential = stopped.filter((name) => ESSENTIAL_MANAGER_DAEMONS.has(name));
+  const stoppedOptional = stopped.filter((name) => !ESSENTIAL_MANAGER_DAEMONS.has(name));
 
-  if (stopped.length === 0) {
-    return { key: "manager", verdict: "ok", headline: "tutti i demoni attivi", configured: true };
+  if (stoppedEssential.length === 0) {
+    return {
+      key: "manager",
+      verdict: "ok",
+      headline: "tutti i demoni attivi",
+      detail: stoppedOptional.length > 0
+        ? [`demoni opzionali non attivi: ${stoppedOptional.join(", ")}`]
+        : undefined,
+      configured: true,
+    };
   }
 
-  const headline = stopped.length === 1 ? `${stopped[0]} fermo` : `demoni fermi: ${stopped.join(", ")}`;
+  const headline = stoppedEssential.length === 1
+    ? `${stoppedEssential[0]} fermo`
+    : `demoni fermi: ${stoppedEssential.join(", ")}`;
+
+  const detail = stoppedEssential.map((name) => `${name}: fermo`);
+  if (stoppedOptional.length > 0) detail.push(`demoni opzionali non attivi: ${stoppedOptional.join(", ")}`);
 
   return {
     key: "manager",
     verdict: "fail",
     headline,
-    detail: stopped.map((name) => `${name}: fermo`),
+    detail,
     configured: true,
   };
 }

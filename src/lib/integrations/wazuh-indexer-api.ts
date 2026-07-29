@@ -304,6 +304,32 @@ export class WazuhIndexerClient {
     const res = await this.json<{ count: number }>("GET", "/wazuh-states-vulnerabilities-*/_count");
     return res.count;
   }
+
+  /**
+   * Spazio disco per nodo (cruscotto salute, blocco indexer). Verificato
+   * contro l'API reale (192.168.4.19): `_cat/allocation?format=json` ritorna
+   * righe con chiave letterale `"disk.percent"` (stringa, es. "53", o `null`
+   * per lo pseudo-nodo "UNASSIGNED" che rappresenta shard non assegnate — non
+   * un nodo fisico, escluso dal risultato).
+   */
+  async getNodesDiskUsage(): Promise<Array<{ node: string; diskPercent: number | null }>> {
+    try {
+      const rows = await this.json<Array<Record<string, string | null>>>(
+        "GET",
+        "/_cat/allocation?format=json",
+      );
+      return rows
+        .filter((r) => r.node && r.node !== "UNASSIGNED")
+        .map((r) => {
+          const raw = r["disk.percent"];
+          const n = raw !== null && raw !== undefined && raw !== "" ? Number(raw) : NaN;
+          return { node: r.node ?? "", diskPercent: Number.isFinite(n) ? n : null };
+        });
+    } catch (e) {
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
+      throw e;
+    }
+  }
 }
 
 export function createWazuhIndexerClient(cfg: WazuhIndexerConfig): WazuhIndexerClient | null {

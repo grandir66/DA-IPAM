@@ -251,6 +251,19 @@ export function purgeAcknowledgedOlderThan(db: Database, days: number): number {
   return res.changes;
 }
 
+/**
+ * Timestamp (`last_seen_at`) dell'evento più recente, aperto o storico.
+ * Usato dal cruscotto salute (blocco ingestione) al posto di interrogare
+ * l'indexer per l'alert più recente: più economico e riflette esattamente
+ * ciò che DA-IPAM ha già selezionato e persistito.
+ */
+export function getLatestAlertTimestamp(db: Database): string | null {
+  const row = db
+    .prepare("SELECT last_seen_at FROM wazuh_alert_event ORDER BY last_seen_at DESC LIMIT 1")
+    .get() as { last_seen_at: string } | undefined;
+  return row?.last_seen_at ?? null;
+}
+
 export function countOpenByCategory(db: Database): Record<string, number> {
   const rows = db
     .prepare(

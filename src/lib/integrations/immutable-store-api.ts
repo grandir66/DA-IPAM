@@ -124,6 +124,10 @@ export interface ImmutableStoreState {
   };
   schedule: {
     archive_interval?: string;
+    // Cadenza della verifica d'integrità: serve a distinguere "verifica in
+    // ritardo" da "non è ancora il suo turno". Facoltativo — gli endpoint che
+    // non lo espongono ricadono su una soglia prudenziale fissa.
+    verify_interval?: string;
     next_archive_at?: string | null;
   };
 }
@@ -272,6 +276,7 @@ function parseRetentionPolicy(raw: Record<string, unknown> | undefined): Immutab
 function parseSchedule(raw: Record<string, unknown> | undefined): ImmutableStoreState["schedule"] {
   return withDefined({
     archive_interval: str(raw?.archive_interval),
+    verify_interval: str(raw?.verify_interval),
     next_archive_at: strOrNull(raw?.next_archive_at),
   });
 }

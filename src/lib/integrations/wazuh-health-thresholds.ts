@@ -177,15 +177,41 @@ export function classifyManager(daemons: Array<{ name: string; status: string }>
   };
 }
 
+/** `true` solo per un numero finito — mai per stringhe, `null` o `undefined`:
+ *  i due campi opzionali di `cluster` arrivano da un endpoint HTTP esterno e
+ *  non vanno mai fidati ciecamente. */
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
 export function classifyIndexer(
-  cluster: { status?: string },
+  cluster: { status?: string; number_of_nodes?: number; initializing_shards?: number },
   nodes: Array<{ node: string; diskPercent: number | null }>,
 ): BlockHealth {
+  // Giallo "strutturale" a nodo singolo (fix campo, appliance Domarc, dato
+  // reale: stato yellow, 1 nodo, 450 shard attivi, 29 non assegnati, 0 in
+  // inizializzazione): su un cluster OpenSearch a un solo nodo gli shard
+  // replica non hanno un secondo nodo su cui essere copiati, quindi restano
+  // "non assegnati" per definizione — è lo stato di riposo dell'installazione
+  // Wazuh predefinita (single-node), non un sintomo di guasto, e nessuna
+  // azione dell'operatore lo farà mai tornare verde. Vale SOLO quando sia il
+  // numero di nodi sia l'assenza di shard in inizializzazione sono noti e
+  // verificati numericamente: un valore mancante, non numerico, un cluster a
+  // più nodi (lì il giallo indica repliche davvero assegnabili) o shard
+  // ancora in inizializzazione (il giallo potrebbe risolversi o peggiorare,
+  // non è ancora "a riposo") fanno restare il verdetto "degraded" di oggi —
+  // stessa convenzione dei due fix precedenti su questo file (v0.3.244,
+  // v0.3.245): ciò che è strutturale/facoltativo non spegne l'allarme se non
+  // è stato verificato per davvero.
+  const singleNode = isFiniteNumber(cluster.number_of_nodes) && cluster.number_of_nodes === 1;
+  const noInitializingShards = isFiniteNumber(cluster.initializing_shards) && cluster.initializing_shards === 0;
+  const structuralYellow = cluster.status === "yellow" && singleNode && noInitializingShards;
+
   const colorVerdict: HealthVerdict =
     cluster.status === "red"
       ? "fail"
       : cluster.status === "yellow"
-        ? "degraded"
+        ? (structuralYellow ? "ok" : "degraded")
         : cluster.status === "green"
           ? "ok"
           // Stato sconosciuto: non si dichiara "ok" un cluster di cui non si
@@ -202,6 +228,10 @@ export function classifyIndexer(
           : "sconosciuto";
 
   const diskVerdicts = nodes.map((n) => classifyDiskUsage(n.diskPercent));
+  // Il giallo strutturale spiega solo il COLORE del cluster: i dischi dei
+  // nodi restano un segnale indipendente e concorrono comunque con
+  // `worst(...)` — un nodo al 96% deve poter portare il blocco a rosso anche
+  // quando il cluster è "sano" a nodo singolo.
   const verdict = worst(colorVerdict, ...diskVerdicts);
 
   // Il nodo peggiore, non la media: una media rassicurante accanto a un
@@ -212,17 +242,24 @@ export function classifyIndexer(
     return acc;
   }, null);
 
+  // L'intestazione dice sempre il colore REALE del cluster: il giallo
+  // strutturale non va nascosto, va spiegato (nel detail sotto) — l'operatore
+  // deve poter vedere che il cluster è giallo e capire perché non è un
+  // problema.
   const headline =
     worstNode !== null
       ? `cluster ${colorLabel} · ${worstNode.diskPercent}% su ${nodes.length} nod${nodes.length === 1 ? "o" : "i"} (peggiore: ${worstNode.node})`
       : `cluster ${colorLabel}`;
 
-  const detail =
-    nodes.length > 0
-      ? nodes.map((n) => `${n.node}: ${n.diskPercent !== null ? `${n.diskPercent}%` : "n/d"}`)
-      : undefined;
+  const detail: string[] = [];
+  if (structuralYellow) {
+    detail.push("nodo singolo: gli shard replica non sono assegnabili (giallo strutturale)");
+  }
+  for (const n of nodes) {
+    detail.push(`${n.node}: ${n.diskPercent !== null ? `${n.diskPercent}%` : "n/d"}`);
+  }
 
-  return { key: "indexer", verdict, headline, detail, configured: true };
+  return { key: "indexer", verdict, headline, detail: detail.length > 0 ? detail : undefined, configured: true };
 }
 
 export function classifyIngestion(input: {

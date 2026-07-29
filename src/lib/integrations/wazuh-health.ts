@@ -111,7 +111,18 @@ async function probeIndexer(): Promise<BlockHealth> {
       PROBE_TIMEOUT_MS,
       "timeout indexer",
     );
-    return classifyIndexer({ status: cluster.status }, nodes);
+    // number_of_nodes/initializing_shards: servono a classifyIndexer per
+    // riconoscere il giallo strutturale a nodo singolo (vedi
+    // wazuh-health-thresholds.ts). Se il client non li espone (undefined),
+    // classifyIndexer si comporta come oggi (yellow → degraded).
+    return classifyIndexer(
+      {
+        status: cluster.status,
+        number_of_nodes: cluster.numberOfNodes,
+        initializing_shards: cluster.initializingShards,
+      },
+      nodes,
+    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : "errore sconosciuto";
     return failBlock("indexer", `indexer non raggiungibile: ${msg}`);

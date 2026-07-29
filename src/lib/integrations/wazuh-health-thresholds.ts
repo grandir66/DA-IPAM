@@ -116,22 +116,25 @@ function formatDuration(minutes: number): string {
   return `${h} or${h === 1 ? "a" : "e"}`;
 }
 
+/** Minuti dell'intervallo pianificato. Sconosciuto → si assume orario. */
+function intervalToMinutes(interval: string | undefined): number {
+  if (interval === "daily") return 1440;
+  if (interval === "hourly") return 60;
+  return 60;
+}
+
 /**
- * Minuti di una cadenza, `null` se non la si riconosce. Distinguere
- * "sconosciuta" da un valore di comodo è necessario per la verifica
- * d'integrità: assumere l'orario su una verifica che gira ogni tre giorni la
- * dichiarerebbe in ritardo a ogni sguardo.
+ * Minuti della cadenza di verifica, `null` se non la si riconosce. Volutamente
+ * separata da `intervalToMinutes`: quella assume l'orario sui valori ignoti, e
+ * su una verifica che gira ogni tre giorni la dichiarerebbe in ritardo a ogni
+ * sguardo. Tenerle distinte evita anche che allargare i valori riconosciuti
+ * qui cambi di riflesso la soglia del ciclo di archiviazione.
  */
-function knownIntervalToMinutes(interval: string | undefined): number | null {
+function verifyIntervalToMinutes(interval: string | undefined): number | null {
   if (interval === "hourly") return 60;
   if (interval === "daily") return 1440;
   if (interval === "weekly") return 7 * 1440;
   return null;
-}
-
-/** Minuti dell'intervallo pianificato. Sconosciuto → si assume orario. */
-function intervalToMinutes(interval: string | undefined): number {
-  return knownIntervalToMinutes(interval) ?? 60;
 }
 
 export function classifyDiskUsage(usePercent: number | null | undefined): HealthVerdict {
@@ -475,7 +478,7 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
   // Prima di questa modifica, inoltre, la sezione restava `{"outcome":"never"}`
   // per giorni dopo un crash del comando, senza che nulla lo segnalasse.
   const verifyRun = state.runs.verify;
-  const verifyIntervalMinutes = knownIntervalToMinutes(state.schedule.verify_interval);
+  const verifyIntervalMinutes = verifyIntervalToMinutes(state.schedule.verify_interval);
   const verifyThresholdMinutes = verifyIntervalMinutes !== null
     ? Math.max(2 * verifyIntervalMinutes, VERIFY_MIN_THRESHOLD_MINUTES)
     : VERIFY_STALE_FALLBACK_MINUTES;
@@ -494,6 +497,11 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
     typeof verifyValid === "number" &&
     verifyChecked > 0 &&
     verifyValid < verifyChecked;
+  // Archivi contati ma senza esito riportato: non si può dire quanti fossero
+  // validi, quindi non si dice. Dedurre `validi = ricontrollati` sarebbe la
+  // stessa falsa conferma che questo blocco esiste per eliminare.
+  const verifyValidUnknown =
+    typeof verifyChecked === "number" && verifyChecked > 0 && typeof verifyValid !== "number";
   const verifyNeverCompleted = verifyRun.outcome === "never";
   const verifyStale = verifyAgeMinutes !== null && verifyAgeMinutes > verifyThresholdMinutes;
   // `archives_checked` assente = endpoint che non espone il dato: non si
@@ -504,7 +512,7 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
   const integrityFailed = chainInvalid || verifyOutcomeFailed || verifyMismatch;
   const verifyVerdict: HealthVerdict = integrityFailed
     ? "fail"
-    : verifyNeverCompleted || verifyStale || verifyCheckedNothing
+    : verifyNeverCompleted || verifyStale || verifyCheckedNothing || verifyValidUnknown
       ? "degraded"
       : "ok";
 
@@ -518,8 +526,9 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
       ? `, ferma da ${formatDuration(verifyAgeMinutes)}`
       : "";
     if (verifyCheckedNothing) return `catena valida, 0 archivi ricontrollati${eta}`;
+    if (verifyValidUnknown) return `${verifyChecked} archivi ricontrollati, esito non riportato${eta}`;
     if (typeof verifyChecked === "number" && verifyChecked > 0) {
-      return `${verifyChecked} archivi ricontrollati, ${verifyValid ?? verifyChecked} validi${eta}`;
+      return `${verifyChecked} archivi ricontrollati, ${verifyValid} validi${eta}`;
     }
     return `${verifyRun.outcome}${eta}`;
   }
@@ -575,6 +584,8 @@ export function classifyReplication(state: ImmutableStoreState | null, nowMs: nu
     headline = `integrità non verificata da ${formatDuration(verifyAgeMinutes as number)}`;
   } else if (verifyCheckedNothing) {
     headline = "nessun archivio ricontrollato dalla verifica d'integrità";
+  } else if (verifyValidUnknown) {
+    headline = "verifica d'integrità senza esito sugli archivi ricontrollati";
   } else {
     const okAgeMinutes = cycleAgeMinutes ?? newestAgeMinutes ?? 0;
     headline = `ultimo ciclo di archiviazione riuscito ${formatDuration(okAgeMinutes)} fa`;

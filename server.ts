@@ -103,5 +103,15 @@ app.prepare().then(() => {
     }).catch((error) => {
       console.error("WARNING: Backup scheduler init failed (backup nightly NON attivo):", error);
     });
+
+    // Notifica salute appliance (disco/Docker) ogni 30 min, indipendente
+    // dalla UI: l'incident DTS 2026-07-28 (disco 100%) è passato inosservato
+    // proprio perché nessuno aveva la dashboard aperta.
+    import("./src/lib/modules/appliance-health-notify").then(({ initializeApplianceHealthNotifier }) => {
+      initializeApplianceHealthNotifier();
+      console.log("> Appliance health notifier initialized");
+    }).catch((error) => {
+      console.error("WARNING: appliance health notifier init failed:", error);
+    });
   }
 });

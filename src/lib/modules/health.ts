@@ -13,6 +13,8 @@
  *
  * Ogni probe è bounded con withTimeout (PROBE_TIMEOUT_MS).
  */
+import { statfs } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { withTenant, getTenantDb } from "@/lib/db-tenant";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
@@ -23,6 +25,7 @@ import { getFeatureStatus } from "@/lib/patch/feature";
 import { getNetServicesState } from "@/lib/network-services/feature";
 import { probeBridgeWithAuth } from "@/lib/network-services/client";
 import { safeDecrypt } from "@/lib/crypto";
+import { classifyDiskUsage } from "@/lib/integrations/wazuh-health-thresholds";
 import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
 import { MeshControlClient } from "@/lib/integrations/meshcentral/control-client";
 import type { ModuleKey } from "./registry";
@@ -400,6 +403,98 @@ async function probePatch(tenantCode: string, probedAt: string): Promise<ModuleH
   });
 }
 
+// ── Probe: sistema appliance (disco + Docker) ────────────────────────────────
+/**
+ * Salute della macchina che ospita DA-IPAM. Il disco pieno è la morte
+ * silenziosa delle appliance: DTS 2026-07-28 e PX-NAS 2026-07-30 si sono
+ * fermate (build falliti, SQLite in "disk I/O error") senza che la griglia
+ * moduli desse alcun segnale. Le soglie sono le stesse della fascia Wazuh
+ * (`classifyDiskUsage`, ambra ≥85% / rosso ≥95%): un solo concetto di
+ * "disco pieno" in tutto il prodotto.
+ */
+export interface ApplianceProbeReading {
+  disk: { usePercent: number; freeGb: number } | { error: string };
+  docker: { state: "attivo" | "assente" | "giu"; detail: string };
+}
+
+/** Composizione pura verdetto+messaggio: testabile senza I/O. */
+export function composeApplianceHealth(reading: ApplianceProbeReading): {
+  verdict: ModuleVerdict;
+  detail: string;
+} {
+  const rank: Record<ModuleVerdict, number> = { ok: 0, degraded: 1, fail: 2 };
+  const worst = (a: ModuleVerdict, b: ModuleVerdict): ModuleVerdict => (rank[b] > rank[a] ? b : a);
+
+  let diskVerdict: ModuleVerdict;
+  let diskLabel: string;
+  if ("error" in reading.disk) {
+    // Non sapere quanto disco resta non è "ok": è esattamente lo stato in cui
+    // eravamo durante i due incident. Ma nemmeno "fail": il filesystem
+    // potrebbe essere sano e il probe no.
+    diskVerdict = "degraded";
+    diskLabel = `disco non leggibile (${reading.disk.error})`;
+  } else {
+    diskVerdict = classifyDiskUsage(reading.disk.usePercent);
+    diskLabel = `disco ${reading.disk.usePercent}% occupato (${reading.disk.freeGb} GB liberi)`;
+  }
+
+  // Docker assente non è un guasto (host senza container); demone
+  // irraggiungibile sì — è il caso da-va-ovh 2026-07-29: docker giù dal boot
+  // e l'intero stack Greenbone spento per 3 giorni.
+  const dockerVerdict: ModuleVerdict = reading.docker.state === "giu" ? "fail" : "ok";
+
+  return {
+    verdict: worst(diskVerdict, dockerVerdict),
+    detail: `${diskLabel} · ${reading.docker.detail}`,
+  };
+}
+
+function probeDockerDaemon(): Promise<ApplianceProbeReading["docker"]> {
+  return new Promise((resolve) => {
+    execFile("docker", ["version", "--format", "{{.Server.Version}}"], { timeout: 5000 }, (err, stdout, stderr) => {
+      if (!err) {
+        resolve({ state: "attivo", detail: `Docker ${stdout.trim()} attivo` });
+        return;
+      }
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        resolve({ state: "assente", detail: "Docker non installato" });
+        return;
+      }
+      const why = (stderr || err.message || "errore sconosciuto").trim().slice(0, 120);
+      resolve({ state: "giu", detail: `demone Docker non raggiungibile: ${why}` });
+    });
+  });
+}
+
+async function probeAppliance(probedAt: string): Promise<ModuleHealth> {
+  let disk: ApplianceProbeReading["disk"];
+  try {
+    const s = await statfs("/");
+    const total = s.blocks * s.bsize;
+    // `bavail` = spazio per processi non-root, lo stesso che vede `df` (e che
+    // vedono npm/SQLite quando falliscono): `bfree` mentirebbe per ottimismo.
+    const avail = s.bavail * s.bsize;
+    disk = {
+      usePercent: total > 0 ? Math.round(((total - avail) / total) * 100) : 0,
+      freeGb: Math.round((avail / 1e9) * 10) / 10,
+    };
+  } catch (e) {
+    disk = { error: e instanceof Error ? e.message : "errore sconosciuto" };
+  }
+  const dockerTimeoutFallback: ApplianceProbeReading["docker"] = {
+    state: "giu",
+    detail: "timeout interrogando il demone Docker",
+  };
+  const docker = await withTimeout(probeDockerDaemon(), PROBE_TIMEOUT_MS, dockerTimeoutFallback);
+  const { verdict, detail } = composeApplianceHealth({ disk, docker });
+  return mk("appliance", probedAt, {
+    reachable: true,
+    authOk: true,
+    verdict,
+    detail,
+  });
+}
+
 async function compute(tenantCode: string): Promise<ModuleHealth[]> {
   const probedAt = new Date().toISOString();
   // I probe per-modulo sono indipendenti → in parallelo (ognuno bounded).
@@ -414,6 +509,7 @@ async function compute(tenantCode: string): Promise<ModuleHealth[]> {
     ["network_services", probeNetServices(tenantCode, probedAt)],
     ["patch_management", probePatch(tenantCode, probedAt)],
     ["meshcentral", withTenant(tenantCode, () => probeMeshcentral(tenantCode, probedAt))],
+    ["appliance", probeAppliance(probedAt)],
   ];
   const settled = await Promise.allSettled(tasks.map(([, p]) => p));
   const byKey = {} as Record<ModuleKey, ModuleHealth>;

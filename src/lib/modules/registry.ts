@@ -38,9 +38,10 @@ export type ModuleKey =
   | "wazuh"
   | "meshcentral"
   | "inventory_agent"
-  | "nis2_inventory";
+  | "nis2_inventory"
+  | "appliance";
 
-export type ModuleCategory = "va" | "patch" | "network" | "nms" | "logs" | "siem" | "rmm" | "inventory";
+export type ModuleCategory = "va" | "patch" | "network" | "nms" | "logs" | "siem" | "rmm" | "inventory" | "sistema";
 
 export interface ModuleDescriptor {
   key: ModuleKey;
@@ -191,6 +192,19 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
     icon: "Workflow",
     access: "native",
     configHref: "/settings?tab=moduli#module-nis2_inventory",
+  },
+  {
+    // Non è un'integrazione ma la macchina che le ospita tutte: disco root e
+    // demone Docker. Due appliance si sono fermate sul campo per disco pieno
+    // (DTS 2026-07-28, PX-NAS 2026-07-30) senza che questa griglia desse
+    // alcun segnale — questa voce esiste per non ripetere quell'incidente.
+    key: "appliance",
+    label: "Sistema appliance",
+    category: "sistema",
+    description: "Salute della macchina che ospita DA-IPAM: spazio disco e demone Docker.",
+    icon: "HardDrive",
+    access: "native",
+    configHref: "/settings?tab=moduli",
   },
 ];
 

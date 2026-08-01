@@ -13,6 +13,7 @@ const VALID_KEYS: ModuleKey[] = [
   "patch_management",
   "network_services",
   "meshcentral",
+  "appliance",
 ];
 
 /**

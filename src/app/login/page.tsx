@@ -13,6 +13,15 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
+  // Secondi residui del backoff di login (0 = non bloccato). Mostrato come countdown
+  // così l'utente sa di dover aspettare, non di aver perso la password.
+  const [lockSec, setLockSec] = useState(0);
+
+  useEffect(() => {
+    if (lockSec <= 0) return;
+    const id = setTimeout(() => setLockSec((s) => Math.max(0, s - 1)), 1000);
+    return () => clearTimeout(id);
+  }, [lockSec]);
 
   useEffect(() => {
     // Non lasciare mai “Caricamento…” all’infinito (DB bloccato, /api/setup lento, rete locale).
@@ -56,6 +65,25 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
+        // Distinguere un blocco temporaneo (backoff) da credenziali errate:
+        // interroga lo stato del lock e mostra il countdown, invece di far credere
+        // all'utente di aver perso la password.
+        try {
+          const u = String(formData.get("username") || "");
+          const r = await fetch(`/api/auth/lock-state?u=${encodeURIComponent(u)}`, {
+            credentials: "same-origin",
+          });
+          const data = (await r.json().catch(() => null)) as
+            | { locked?: boolean; retryAfterSec?: number }
+            | null;
+          if (data?.locked && (data.retryAfterSec ?? 0) > 0) {
+            setLockSec(data.retryAfterSec as number);
+            setError("");
+            return;
+          }
+        } catch {
+          /* endpoint non raggiungibile → messaggio generico sotto */
+        }
         setError("Credenziali non valide");
         return;
       }
@@ -104,8 +132,15 @@ export default function LoginPage() {
               <Label htmlFor="password">Password</Label>
               <Input id="password" name="password" type="password" required />
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
+            {lockSec > 0 ? (
+              <p className="text-sm text-destructive">
+                Troppi tentativi falliti. Riprova tra {Math.floor(lockSec / 60)}:
+                {String(lockSec % 60).padStart(2, "0")}.
+              </p>
+            ) : (
+              error && <p className="text-sm text-destructive">{error}</p>
+            )}
+            <Button type="submit" className="w-full" disabled={loading || lockSec > 0}>
               {loading ? "Accesso in corso..." : "Accedi"}
             </Button>
           </form>

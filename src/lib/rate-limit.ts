@@ -102,3 +102,42 @@ export function getAttemptCount(key: string, windowMs: number = 15 * 60 * 1000):
   if (!entry) return 0;
   return entry.timestamps.filter((t) => now - t < windowMs).length;
 }
+
+/**
+ * Backoff INCREMENTALE per il login.
+ *
+ * I primi `LOGIN_FREE_ATTEMPTS` fallimenti non bloccano. Dal successivo scatta un
+ * cooldown che RADDOPPIA a ogni ulteriore fallimento (30s → 1m → 2m → 4m → …,
+ * fino a `LOGIN_MAX_COOLDOWN_MS`), calcolato dall'ULTIMO fallimento. Dopo
+ * `LOGIN_WINDOW_MS` senza fallimenti la storia si dimentica.
+ *
+ * Da usare in `auth.ts` PRIMA di verificare la password: se `locked`, tornare
+ * senza controllare le credenziali e **senza** `recordFailedAttempt` — i tentativi
+ * durante il cooldown non devono aggravare il blocco. `retryAfterSec` è il tempo
+ * residuo, da mostrare all'utente: così sa di dover aspettare invece di credere di
+ * aver perso la password (incidenti 99.50 del 2026-07-17 e appliance DTS del
+ * 2026-08-02, entrambi da blocco "muto" indistinguibile da "credenziali errate").
+ */
+export const LOGIN_FREE_ATTEMPTS = 4; // il 5° fallimento è il primo blocco
+export const LOGIN_BASE_COOLDOWN_MS = 30 * 1000; // 30s al primo blocco
+export const LOGIN_MAX_COOLDOWN_MS = 15 * 60 * 1000; // tetto: 15 min
+export const LOGIN_WINDOW_MS = 30 * 60 * 1000; // oltre, i fallimenti decadono
+
+export function loginLockState(
+  key: string,
+  now: number = Date.now(),
+): { locked: boolean; retryAfterSec: number; fails: number } {
+  const entry = store.get(key);
+  if (!entry) return { locked: false, retryAfterSec: 0, fails: 0 };
+  const recent = entry.timestamps.filter((t) => now - t < LOGIN_WINDOW_MS);
+  const fails = recent.length;
+  if (fails <= LOGIN_FREE_ATTEMPTS) return { locked: false, retryAfterSec: 0, fails };
+  const over = fails - LOGIN_FREE_ATTEMPTS; // ≥ 1
+  const cooldown = Math.min(
+    LOGIN_BASE_COOLDOWN_MS * 2 ** (over - 1),
+    LOGIN_MAX_COOLDOWN_MS,
+  );
+  const lastFail = recent[recent.length - 1];
+  const retryAfterSec = Math.max(0, Math.ceil((lastFail + cooldown - now) / 1000));
+  return { locked: retryAfterSec > 0, retryAfterSec, fails };
+}

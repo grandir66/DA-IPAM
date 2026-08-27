@@ -5,6 +5,11 @@ import {
   clearRateLimit,
   recordFailedAttempt,
   checkRateLimit,
+  loginLockState,
+  LOGIN_FREE_ATTEMPTS,
+  LOGIN_BASE_COOLDOWN_MS,
+  LOGIN_MAX_COOLDOWN_MS,
+  LOGIN_WINDOW_MS,
 } from "@/lib/rate-limit";
 
 const WINDOW = 15 * 60 * 1000;
@@ -92,4 +97,71 @@ test("checkRateLimit CONSUMA un tentativo a ogni chiamata (il footgun, documenta
     assert.equal(checkRateLimit(key, MAX, WINDOW), true, `chiamata n.${i + 1} consentita`);
   }
   assert.equal(checkRateLimit(key, MAX, WINDOW), false, "esaurita la soglia senza alcun fallimento");
+});
+
+// ── Backoff INCREMENTALE del login (loginLockState) ──
+// Sostituisce il blocco "muto" a 15 min: cooldown crescente e visibile.
+
+test("backoff login: i primi LOGIN_FREE_ATTEMPTS fallimenti non bloccano", () => {
+  const key = k();
+  for (let i = 0; i < LOGIN_FREE_ATTEMPTS; i++) {
+    recordFailedAttempt(key);
+    assert.equal(loginLockState(key).locked, false, `dopo ${i + 1} fallimenti niente blocco`);
+  }
+});
+
+test("backoff login: al superamento della soglia si blocca, entro il cooldown base", () => {
+  const key = k();
+  for (let i = 0; i <= LOGIN_FREE_ATTEMPTS; i++) recordFailedAttempt(key); // FREE+1 fallimenti
+  const st = loginLockState(key);
+  assert.equal(st.locked, true, "al superamento della soglia si blocca");
+  assert.ok(
+    st.retryAfterSec > 0 && st.retryAfterSec <= LOGIN_BASE_COOLDOWN_MS / 1000,
+    `retryAfterSec (${st.retryAfterSec}) entro il cooldown base (${LOGIN_BASE_COOLDOWN_MS / 1000}s)`,
+  );
+});
+
+test("backoff login: il cooldown CRESCE a ogni ulteriore fallimento (incrementale)", () => {
+  const key = k();
+  for (let i = 0; i <= LOGIN_FREE_ATTEMPTS; i++) recordFailedAttempt(key); // primo blocco
+  const s1 = loginLockState(key).retryAfterSec;
+  recordFailedAttempt(key); // un fallimento in più
+  const s2 = loginLockState(key).retryAfterSec;
+  assert.ok(s2 > s1, `il cooldown deve crescere: ${s2}s > ${s1}s`);
+});
+
+test("backoff login: il cooldown è limitato a LOGIN_MAX_COOLDOWN_MS", () => {
+  const key = k();
+  for (let i = 0; i < 40; i++) recordFailedAttempt(key); // moltissimi fallimenti
+  const st = loginLockState(key);
+  assert.equal(st.locked, true);
+  assert.ok(
+    st.retryAfterSec <= LOGIN_MAX_COOLDOWN_MS / 1000,
+    `retryAfterSec (${st.retryAfterSec}s) non supera il tetto (${LOGIN_MAX_COOLDOWN_MS / 1000}s)`,
+  );
+});
+
+test("backoff login: passato il cooldown, retryAfterSec torna a 0", () => {
+  const key = k();
+  for (let i = 0; i <= LOGIN_FREE_ATTEMPTS; i++) recordFailedAttempt(key);
+  // Molto dopo qualunque cooldown, ma ancora entro la finestra di memoria.
+  const st = loginLockState(key, Date.now() + LOGIN_MAX_COOLDOWN_MS + 1000);
+  assert.equal(st.locked, false, "trascorso il cooldown si può riprovare");
+  assert.equal(st.retryAfterSec, 0);
+});
+
+test("backoff login: oltre LOGIN_WINDOW_MS la storia dei fallimenti si azzera", () => {
+  const key = k();
+  for (let i = 0; i < 10; i++) recordFailedAttempt(key);
+  const st = loginLockState(key, Date.now() + LOGIN_WINDOW_MS + 1000);
+  assert.equal(st.fails, 0, "oltre la finestra i fallimenti non contano più");
+  assert.equal(st.locked, false);
+});
+
+test("backoff login: un login riuscito (clearRateLimit) sblocca subito", () => {
+  const key = k();
+  for (let i = 0; i < 10; i++) recordFailedAttempt(key);
+  assert.equal(loginLockState(key).locked, true);
+  clearRateLimit(key);
+  assert.equal(loginLockState(key).locked, false, "dopo il successo niente blocco");
 });

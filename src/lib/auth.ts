@@ -26,20 +26,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
-        // Rate limiting: max 5 tentativi FALLITI per username ogni 15 minuti.
-        // isRateLimited() e NON checkRateLimit(): quest'ultima consuma un tentativo
-        // a ogni chiamata, quindi contava anche i login RIUSCITI — 5 accessi
-        // corretti in 15 minuti bastavano a bloccare l'utente, e un fallimento
-        // contava doppio (checkRateLimit + recordFailedAttempt), riducendo la
-        // soglia reale a ~3 errori. Poiche' qui si torna `null` sia per il blocco
-        // sia per la password errata, l'utente vedeva "credenziali errate" e si
-        // convinceva di aver dimenticato la password. Incidente reale su 99.50
-        // il 2026-07-17: utente bloccato fuori dalla propria appliance.
-        const { isRateLimited, recordFailedAttempt, clearRateLimit } = await import("./rate-limit");
+        // Login: backoff INCREMENTALE e VISIBILE. I primi tentativi non bloccano;
+        // dal superamento della soglia scatta un cooldown che raddoppia a ogni
+        // ulteriore fallimento (30s → 1m → 2m → … cap 15m). Solo i FALLIMENTI
+        // contano; un successo azzera (clearRateLimit). Se bloccato si torna qui
+        // SENZA toccare la password e SENZA registrare un nuovo fallimento (i
+        // tentativi durante il cooldown non aggravano il blocco). La UI mostra il
+        // countdown via GET /api/auth/lock-state, così l'utente sa di dover
+        // aspettare e non crede di aver perso la password. Radice degli incidenti
+        // 99.50 (17/07) e appliance DTS (blocco "muto" = "credenziali errate").
+        const { loginLockState, recordFailedAttempt, clearRateLimit } = await import("./rate-limit");
         const rateLimitKey = `login:${username}`;
-        if (isRateLimited(rateLimitKey, 5, 15 * 60 * 1000)) {
+        const lock = loginLockState(rateLimitKey);
+        if (lock.locked) {
           console.warn(
-            `[Auth] Rate limit raggiunto per utente: ${username} — bloccato per 15 min dopo 5 tentativi falliti`,
+            `[Auth] ${username}: login bloccato ancora ${lock.retryAfterSec}s dopo ${lock.fails} tentativi falliti`,
           );
           return null;
         }

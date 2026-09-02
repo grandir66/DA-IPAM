@@ -8,7 +8,7 @@
  * - Gli host senza SNMP vengono ignorati (non aggiunti, non rimossi)
  * - Gli host rimossi dall'inventario locale vengono rimossi anche da LibreNMS
  */
-import { getHostsByNetwork, getNetworkById, getHostById, getNetworkDeviceById } from "../db-tenant";
+import { getHostsByNetwork, getNetworkById, getHostById, getNetworkDeviceById, getNetworks } from "../db-tenant";
 import { getIntegrationConfig } from "./config";
 import { createLibreNMSClient } from "./librenms-api";
 import {
@@ -372,7 +372,12 @@ export async function addSingleNetworkDeviceToLibreNMS(
  * Deve essere chiamata con contesto tenant attivo.
  */
 export async function syncAllNetworksToLibreNMS(): Promise<LibreNMSSyncResult[]> {
-  const { getNetworks } = await import("../db-tenant");
+  // getNetworks va importato STATICAMENTE (riga 11). Con `await import()` tsx
+  // restituisce una SECONDA istanza del modulo, con la propria AsyncLocalStorage
+  // vuota: getCurrentTenantCode() torna null e ogni accesso al DB tenant muore
+  // con "Nessun contesto tenant". Non si vede sui build Next (il bundler
+  // deduplica), solo sulle installazioni che girano da sorgente con tsx —
+  // dove il job schedulato librenms_sync falliva a ogni esecuzione.
   const networks = getNetworks();
   const results: LibreNMSSyncResult[] = [];
 

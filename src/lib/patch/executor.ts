@@ -20,7 +20,7 @@
 
 import type { Database } from "better-sqlite3";
 import { runWinrmCommand } from "@/lib/devices/winrm-run";
-import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
+import { getTenantDb, getCurrentTenantCode, withTenant } from "@/lib/db-tenant";
 import { loadWinrmCredentialsForHost, loadSshCredentialsForHost } from "./credentials";
 import { runSshCommand } from "@/lib/devices/ssh-run";
 import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
@@ -1074,7 +1074,12 @@ async function executeUpgradeAsync(
           const { getWazuhAgentForHost, syncSingleAgent } = await import(
             "@/lib/integrations/wazuh-sync"
           );
-          const { withTenant } = await import("@/lib/db-tenant");
+          // withTenant DEVE venire dall'import statico (riga 23): con
+          // `await import("@/lib/db-tenant")` tsx restituisce una seconda
+          // istanza del modulo con la propria AsyncLocalStorage, e il contesto
+          // impostato qui resterebbe invisibile a chi legge dall'istanza
+          // statica. Vale solo per db-tenant: importare dinamicamente ALTRI
+          // moduli (come wazuh-sync qui sopra) è sicuro, il contesto lo vedono.
           await withTenant(tenantCode, async () => {
             const agent = getWazuhAgentForHost(opts.hostId);
             if (!agent) return; // host non collegato a Wazuh: skip

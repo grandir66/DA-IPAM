@@ -1,7 +1,7 @@
 import cron from "node-cron";
-import { getEnabledJobs, updateJobLastRun } from "@/lib/db";
+import { currentFacadeTenant, getEnabledJobs, updateJobLastRun } from "@/lib/db";
 import { getActiveTenants } from "@/lib/db-hub";
-import { withTenant, getCurrentTenantCode } from "@/lib/db-tenant";
+import { withTenant } from "@/lib/db-tenant";
 import { runJob } from "./jobs";
 import {
   createFailureState,
@@ -38,13 +38,17 @@ const failureState = createFailureState();
  * se il modulo legge qualcosa di diverso, si ferma prima di toccare il DB.
  */
 function assertTenantContext(key: string, tenantCode: string): void {
-  const seen = getCurrentTenantCode();
+  // Si interroga il FACADE, non l'import statico qui sopra. Cruciale: withTenant
+  // ha aperto il contesto sull'istanza importata staticamente, che quindi vede
+  // sempre il codice giusto — chiedere a lei darebbe un "tutto bene" falso. La
+  // scrittura passa da getDb(), ed e' la SUA risoluzione che va verificata.
+  const seen = currentFacadeTenant();
   if (seen === tenantCode) return;
 
   markContextCorruption(failureState, { tenantCode, seen }, Date.now());
   console.error(
     `[Scheduler] CONTESTO TENANT CORROTTO su ${key}: withTenant("${tenantCode}") ` +
-      `e' attivo ma db-tenant legge ${seen === null ? "nessun contesto" : `"${seen}"`}. ` +
+      `e' attivo ma il facade getDb() risolve su ${seen === null ? "nessun contesto (-> tenant DEFAULT)" : `"${seen}"`}. ` +
       "Causa tipica: due istanze del modulo db-tenant nello stesso processo " +
       "(import dinamico di db-tenant sotto tsx). Il job NON viene eseguito, per non " +
       "scrivere sul database del tenant sbagliato. Ogni job successivo fallira' " +

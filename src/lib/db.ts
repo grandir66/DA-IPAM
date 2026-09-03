@@ -95,6 +95,30 @@ export function closeDb(): void {
   }
 }
 
+/**
+ * Il tenant che `getDb()` userebbe ADESSO, ovvero come il facade risolve il
+ * contesto in questo istante. `null` = nessun contesto, e quindi il fallback
+ * silenzioso a DEFAULT poche righe sotto.
+ *
+ * PERCHE' STA QUI e non nel chiamante: deve usare la risoluzione di QUESTO
+ * modulo. Sotto tsx possono coesistere due istanze di `db-tenant` (import
+ * dinamico -> seconda istanza con AsyncLocalStorage vuota); chi volesse
+ * ricostruire il controllo da fuori rischierebbe di interrogare l'istanza
+ * sbagliata e ricevere un "tutto bene" falso. Il `require` qui sotto e' lo
+ * stesso di `getDb()`, quindi la risposta e' per costruzione quella che conta.
+ *
+ * Usato dalla guardia in `cron/scheduler.ts` per non far partire un job che
+ * scriverebbe sul database del tenant sbagliato (incidente 2026-09-02).
+ */
+export function currentFacadeTenant(): string | null {
+  try {
+    const { getCurrentTenantCode } = require("./db-tenant");
+    return getCurrentTenantCode() ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function getDb(): Database.Database {
   // Multi-tenant: se c'è un contesto tenant attivo, usa il tenant DB
   try {

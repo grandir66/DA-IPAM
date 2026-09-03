@@ -113,5 +113,15 @@ app.prepare().then(() => {
     }).catch((error) => {
       console.error("WARNING: appliance health notifier init failed:", error);
     });
+
+    // Allarme sulle sincronizzazioni ferme, ogni 30 min. Stesso motivo del
+    // precedente, incidente diverso: il 2026-09-02 tutti i job di un tenant
+    // hanno fallito per 4h40 senza che nessun canale lo dicesse.
+    import("./src/lib/health/scheduler-health-notify").then(({ initializeSchedulerHealthNotifier }) => {
+      initializeSchedulerHealthNotifier();
+      console.log("> Scheduler health notifier initialized");
+    }).catch((error) => {
+      console.error("WARNING: scheduler health notifier init failed:", error);
+    });
   }
 });

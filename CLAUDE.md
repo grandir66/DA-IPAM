@@ -54,6 +54,13 @@ git push origin <branch>  # senza push, il server in produzione non vede la nuov
 11. **Hub vs Tenant**: dati specifici cliente → DB tenant. Hub contiene solo utenti, registry tenant, settings globali, profili template.
 12. **Coerenza funzioni DB**: modifiche a una funzione DB → verificare presenza in `db-tenant.ts` (+ `db-hub.ts` se hub); `db.ts` è facade. Non lasciare divergenze. (Prima era "triplica" con `db-legacy.ts`, rimosso in v0.3.151.)
 13. **TypeScript strict, no `any`**. Functional components, named exports. Testo UI/errori **in italiano**. Server Components per letture; client fetch + `router.refresh()` per mutazioni. Palette Domarc: Primary `#00A7E7`, Navy `#0D2537`, Gold `#FFD400`, BG `#EDEDED`.
+14. **`db-tenant` si importa SOLO staticamente**: `await import()` di quel modulo
+    crea una seconda istanza con `AsyncLocalStorage` vuota sotto `tsx` (appliance che
+    girano da sorgente), e da lì il contesto tenant è perso per tutto il processo —
+    invisibile sui build Next. Presidiata da
+    `src/lib/__tests__/no-dynamic-db-tenant-import.test.ts`. Incidente 2026-09-02:
+    340 job falliti in 4h40 + 179 host scritti nel DB del tenant sbagliato. Vedi
+    [ADR 0002](docs/adr/0002-static-db-tenant-import.md) e CONTEXT.md §7.
 
 ## Verifica obbligatoria post-modifica
 

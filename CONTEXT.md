@@ -45,3 +45,36 @@ Versione corrente: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non sc
 - Branch remoti potabili: `bugfix/code-audit-20260426-*`, `claude/flamboyant-proskuriakova`, `feature/remote-agents` (tutti confluiti/morti). Ref orfano `refs/remotes/github/dev` (remote `github` non esiste più).
 - Zombie su disco (gitignored): `backups/` 125M (snapshot 2026-05-26), `data/.before-restore-*` e `data/.backup-before-pull-*` (marzo, pre-multitenant), 3-4 worktree orfani in `.claude/worktrees/`, 1 stash su branch morto (`feature/edge-tls` — "preservare" nel messaggio), 9 tag `pre-*`/`backup/*`.
 - Doc storica con path pre-Domarc o stale: `docs/superpowers/plans/2026-06-29-rmm-meshcentral.md`, `docs/audit/audit-2026-05-26.md`, `ROADMAP-EVOLUZIONE.md` (mar 2026), `CHANGELOG.md` (fermo a mag 2026). `docs/CLAUDE-legacy-20260511.md` = narrativa storica intenzionale.
+
+## 7. Trappola: `db-tenant` e le due istanze sotto `tsx` (2026-09-02)
+
+L'appliance esegue `tsx server.ts`, cioè **dai sorgenti**, mentre i build Next
+deduplicano i moduli. Conseguenza: **`await import()` di `db-tenant` restituisce
+una SECONDA istanza** del modulo, con la propria `AsyncLocalStorage` vuota — e da
+quel momento anche il `require()` del facade `db.ts` risolve su quella, quindi il
+contesto tenant è perso per **tutto il processo** fino al riavvio.
+
+Il difetto è **invisibile in produzione sui build Next** (DTS, appliance cliente):
+si manifesta solo dove si gira da sorgente. Costo reale: 340 job falliti in 4h40
+sul tenant 70791, con il messaggio fuorviante `Job #N non trovato` (il facade
+ripiegava in silenzio sul tenant DEFAULT, che quei job non li ha), e 179 host del
+tenant scritti dentro `DEFAULT.db` dai `fast_scan` già in corso.
+
+- **Regola**: `db-tenant` si importa **staticamente**. Presidiata dal test
+  invariante `src/lib/__tests__/no-dynamic-db-tenant-import.test.ts`.
+- Restano leciti `require("./db-tenant")` e `typeof import(...)` (tipo, cancellato
+  a compile-time). Importare dinamicamente **altri** moduli è sano, anche se
+  quelli importano `db-tenant` staticamente — verificato sull'appliance.
+- **Difese aggiunte**: guardia `assertTenantContext()` in `cron/scheduler.ts` (via
+  `currentFacadeTenant()` di `db.ts`: interroga la risoluzione del facade, non il
+  proprio import statico — quello vede sempre il contesto giusto e darebbe un
+  falso "tutto bene"); tracker dei fallimenti in serie
+  `src/lib/health/job-failure-tracker.ts`; allarme via
+  `src/lib/health/scheduler-health-notify.ts`.
+- Dettaglio e alternative scartate: [ADR 0002](docs/adr/0002-static-db-tenant-import.md).
+
+**Igiene nota**: `data/tenants/DEFAULT.db` esiste ma `DEFAULT` **non è un tenant
+registrato** nel hub (ci sono solo `70791` e `70791a`), quindi è un file orfano:
+i 179 host contaminati non sono raggiungibili da alcuna interfaccia. Il fallback
+silenzioso a DEFAULT in `db.ts` resta il motivo per cui una scrittura fuori
+contesto non fa rumore da sola.

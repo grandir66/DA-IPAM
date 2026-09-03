@@ -72,6 +72,9 @@ tenant scritti dentro `DEFAULT.db` dai `fast_scan` già in corso.
   `src/lib/health/job-failure-tracker.ts`; allarme via
   `src/lib/health/scheduler-health-notify.ts`.
 - Dettaglio e alternative scartate: [ADR 0002](docs/adr/0002-static-db-tenant-import.md).
+- **Rapporto dell'intervento** (sede unica, si aggiorna — non scriverne uno nuovo
+  accanto, vedi `~/Progetti/CLAUDE.md` §«I rapporti si integrano»):
+  <https://claude.ai/code/artifact/722a75ac-e824-4828-8e8a-0f20bb8c5b50>
 
 **Igiene nota**: `data/tenants/DEFAULT.db` esiste ma `DEFAULT` **non è un tenant
 registrato** nel hub (ci sono solo `70791` e `70791a`), quindi è un file orfano:

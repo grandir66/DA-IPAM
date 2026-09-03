@@ -1,13 +1,87 @@
 import cron from "node-cron";
 import { getEnabledJobs, updateJobLastRun } from "@/lib/db";
 import { getActiveTenants } from "@/lib/db-hub";
-import { withTenant } from "@/lib/db-tenant";
+import { withTenant, getCurrentTenantCode } from "@/lib/db-tenant";
 import { runJob } from "./jobs";
+import {
+  createFailureState,
+  findTenantOutages,
+  markContextCorruption,
+  recordOutcome,
+  shouldEmitAlarm,
+  summarizeFailures,
+} from "@/lib/health/job-failure-tracker";
 
 type ScheduledTask = ReturnType<typeof cron.schedule>;
 const activeTasks = new Map<string, ScheduledTask>();
 /** Guard: job keys currently running (prevents overlapping execution) */
 const runningJobs = new Set<string>();
+/**
+ * Serie di fallimenti per chiave job. Vive SOLO in questo processo (quello che
+ * regge node-cron): non va esposto alle route Next, che sotto build girano in un
+ * bundle separato e ne vedrebbero una copia sempre vuota. La superficie di
+ * allarme verso l'esterno resta `/api/health?strict=1`, che legge da DB.
+ */
+const failureState = createFailureState();
+
+/**
+ * Guardia del contesto tenant, da eseguire DENTRO withTenant e PRIMA del job.
+ *
+ * PERCHE' ESISTE: il 2026-09-02 il processo ha perso l'AsyncLocalStorage di
+ * `db-tenant` (istanza duplicata del modulo sotto tsx). Senza contesto il facade
+ * `getDb()` ripiega in silenzio sul tenant DEFAULT, e questo ha prodotto DUE
+ * danni: 340 job falliti con un messaggio fuorviante ("Job #N non trovato",
+ * perche' quei job non esistono nel DB di DEFAULT) e — piu' grave — 179 host del
+ * tenant 70791 scritti dentro DEFAULT.db dai fast_scan gia' in corso.
+ *
+ * Qui il confronto e' possibile perche' lo scheduler SA quale tenant ha aperto:
+ * se il modulo legge qualcosa di diverso, si ferma prima di toccare il DB.
+ */
+function assertTenantContext(key: string, tenantCode: string): void {
+  const seen = getCurrentTenantCode();
+  if (seen === tenantCode) return;
+
+  markContextCorruption(failureState, { tenantCode, seen }, Date.now());
+  console.error(
+    `[Scheduler] CONTESTO TENANT CORROTTO su ${key}: withTenant("${tenantCode}") ` +
+      `e' attivo ma db-tenant legge ${seen === null ? "nessun contesto" : `"${seen}"`}. ` +
+      "Causa tipica: due istanze del modulo db-tenant nello stesso processo " +
+      "(import dinamico di db-tenant sotto tsx). Il job NON viene eseguito, per non " +
+      "scrivere sul database del tenant sbagliato. Ogni job successivo fallira' " +
+      "allo stesso modo: IL PROCESSO VA RIAVVIATO (systemctl restart da-invent).",
+  );
+  throw new Error(
+    `Contesto tenant corrotto: atteso "${tenantCode}", letto ${seen ?? "null"} — processo da riavviare`,
+  );
+}
+
+/**
+ * Escalation sui fallimenti in serie. Un singolo errore e' gia' nel log; qui si
+ * alza la voce quando il guasto si ripete, e si distingue il caso sistemico
+ * (piu' job dello stesso tenant) da un'integrazione rotta per conto sua.
+ *
+ * PERCHE' ESISTE: cinque ore di fallimento totale senza un solo allarme. Il log
+ * conteneva 340 righe identiche e nessuna che dicesse "stanno fallendo tutti".
+ */
+function escalateIfSerial(key: string, tenantCode: string): void {
+  const now = Date.now();
+  if (!shouldEmitAlarm(failureState, key, now)) return;
+
+  const health = summarizeFailures(failureState);
+  console.error(
+    `[Scheduler] ALLARME: il job ${key} e' fallito ${health.worstStreak ?? "?"} volte di fila. ` +
+      `Job in fallimento seriale nel processo: ${health.failingJobs}.`,
+  );
+
+  const outage = findTenantOutages(failureState).find((o) => o.tenantCode === tenantCode);
+  if (outage) {
+    console.error(
+      `[Scheduler] ALLARME SISTEMICO: ${outage.jobCount} job del tenant ${tenantCode} ` +
+        "falliscono in serie. Un guasto comune a piu' job non e' un'integrazione rotta: " +
+        "cercare 'CONTESTO TENANT CORROTTO' nel log e verificare /api/health?strict=1.",
+    );
+  }
+}
 
 export function initializeScheduler(): void {
   console.info("[Scheduler] Inizializzazione scheduler multi-tenant...");
@@ -75,12 +149,17 @@ export function scheduleJob(
     console.info(`[Scheduler] Esecuzione job ${key} (tenant: ${tenantCode})`);
     try {
       await withTenant(tenantCode, async () => {
+        assertTenantContext(key, tenantCode);
         await runJob(jobId);
         updateJobLastRun(jobId);
       });
+      recordOutcome(failureState, key, { ok: true }, Date.now());
       console.info(`[Scheduler] Job ${key} completato`);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      recordOutcome(failureState, key, { ok: false, error: message }, Date.now());
       console.error(`[Scheduler] Job ${key} fallito:`, error);
+      escalateIfSerial(key, tenantCode);
     } finally {
       runningJobs.delete(key);
     }

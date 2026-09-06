@@ -1,0 +1,105 @@
+🎯 INSTALL FINALE — tutti i 6 launchpad attivi
+#	Card	URL	User	Password
+1	DA-IPAM (entry)	https://192.168.99.115/	admin	yZ943WLWB3JVdStmLLKD
+2	Wazuh Dashboard	https://192.168.99.115:8443/	admin	Z4nNC1pe*OTz2HwHzzTeP.4*HLgOWJdF
+3	Graylog	https://192.168.99.115:9443/	admin	msQk2bshT8hQA2EKiSYz
+4	LibreNMS	https://192.168.99.115:7443/	admin	NRnWzLN7qSMUa77hiGMs
+5	Scanner-Edge	https://192.168.99.115:6443/	admin	VKFmugfKTuLnZTrArAa1!
+6	PVE (via Tailscale)	https://100.76.9.51:8006	root	(root SSH pwd)
+Fix v0.1.268 confermati funzionanti questa run:
+✅ Tailscale ENABLED automaticamente (Fix C — tailscale_install_on_pve PRIMA di connect)
+✅ Bootstrap launchpad 6/6 con tailscale_ip valorizzato (Fix C)
+✅ Self-heal verify alla fine di app-stack install ("Self-heal completato")
+✅ DA-IPAM v0.2.675 in container (Fix A — SHA su build context, /opt/da-ipam tier prima di operator-provided)
+✅ Cloud-init wait + apt retry funzionante (Fix D — niente crash early)
+✅ Scanner-Edge moduli auto-installati + 13k templates
+Bug scoperti DURANTE il test (fixati nel codice):
+✅ wazuh.sh:13 grep -v active matchava anche "inactive" (substring) → erroneamente saltava install. Fix v0.1.269 in wazuh.sh con grep -qvxF active (match esatto).
+✅ app_stack_push_bundle privilegiava compose/da-ipam/src/ stale su /opt/da-ipam fresco (causa container v0.2.661 invece di v0.2.675). Fix: invertito tier priority, /opt/da-ipam PRIMA.
+✅ SHA tracking era basato su /opt/da-ipam HEAD invece del build context effettivo → cache non invalidata se context era stale. Fix: SHA computato su compose/da-ipam/src/.
+Single intervento residuo richiesto
+Sul Wazuh install iniziale ha avuto SocketTimeoutException su indexer security init (30s troppo bassi su prima boot). Il bundle ha emesso [WARN] install wazuh fallito ma installer Wazuh fa rollback completo → ho dovuto rerun manualmente (apt purge + reinstall).
+
+Fix per il prossimo run: aggiungo retry esplicito su wazuh.sh quando esce con error "security configuration could not be initialized" → uninstall pulito + reinstall automatico.
+
+Vuoi che applico questo ultimo fix Wazuh-security-retry + release v0.1.269 prima di chiudere?
+
+si procedi alla riconfigurazione
+Read wazuh.sh (lines 2-76)
+Edit wazuh.sh
+Added 39 lines
+Bash Shellcheck
+IN
+shellcheck -S warning -x Deploy-Security-Platform/services/wazuh.sh 2>&1 | tail -5; echo EXIT $?
+
+OUT
+EXIT 0
+Bash Release v0.1.269
+IN
+npm run version:release 2>&1 | tail -5
+
+OUT
+✓ Commit release: v0.1.282
+→ git push origin main (1 commit ahead)
+To https://github.com/grandir66/DA-Vul-can.git
+   c8ad620..542b7f3  main -> main
+✓ Push main → origin completato
+Bash Sync fix to PVE
+IN
+rsync -az Deploy-Security-Platform/services/wazuh.sh root@192.168.99.1:/opt/da-vulcan/Deploy-Security-Platform/services/wazuh.sh && echo "wazuh.sh syncato su PVE"
+
+OUT
+wazuh.sh syncato su PVE
+Update Todos
+
+Bundle hardening A-G + wazuh retry/ultra-purge
+
+v0.1.282 pushed + syncato PVE
+
+Install attuale PX-NAS funzionante: 6/6 launchpad + tutti servizi up
+✅ v0.1.282 pushed + syncato su PVE
+Fix Wazuh security-init retry implementato in wazuh.sh:35-78
+
+for install_attempt in 1 2 3; do
+  if bash /root/wazuh-install.sh -a -i; then break; fi
+  if ! grep -q 'security configuration could not be initialized'; then
+    die  # errore diverso, no retry
+  fi
+  warn "SocketTimeoutException — ultra-purge + retry"
+  # ultra-purge:
+  # 1) Patch pre/post script dpkg a "exit 0" (bypass pre-removal script bug)
+  # 2) dpkg --remove --force-all + --purge --force-all
+  # 3) rm -rf /var/ossec /etc/wazuh-* /etc/filebeat /var/lib/wazuh-* /var/log/wazuh-*
+  # 4) rm /etc/systemd/system/wazuh-*
+  # 5) systemctl daemon-reload
+  # 6) sleep 30 (stabilizza I/O VM)
+done
+Stato install corrente PX-NAS — completo
+Tutto già funzionante e verificato:
+
+Componente	Status
+App-stack VM 100 (23 container)	✅ Up + healthy
+Wazuh VM 101 (manager+indexer+dashboard+filebeat)	✅ Tutti active
+Graylog VM 102 (OpenSearch + Graylog server)	✅ Up
+DA-IPAM v0.2.675	✅ Login admin OK
+Scanner-Edge (nuclei + web-discovery + 13k templates)	✅ Moduli abilitati
+Tailscale	✅ 100.76.9.51
+Backup vzdump	✅ Cron 02:00
+Launchpad	✅ 6/6 entries popolate
+Bug fix totali oggi nel bundle (incident → patch)
+admin_pubkey PRIVATE KEY banner → validation regex + grep filter
+DNS 127.0.0.53 da DHCP → fallback 1.1.1.1 8.8.8.8 automatico
+known_hosts stale post-promote → cleanup proattivo
+Docker pull Greenbone registry TLS → retry 3x + 15s backoff
+DA-IPAM container cache vecchio → SHA tracking su build context + auto --no-cache --force-recreate
+/opt/da-ipam tier priority sbagliato → invertito sopra operator-provided
+Tailscale shared key bloccava install → opt-OUT invece di opt-IN
+tailscaled not running dopo apt install → wait + restart loop (5x)
+Connect.sh PRIMA di Tailscale → bootstrap launchpad mancava PVE entry → reorder fasi
+Cloud-init not done → cloud-init status --wait esplicito
+apt lock occupato → wait 10x x 5s
+Curl/apt transient down → retry 3x
+App-stack senza self-heal → app_stack_finalize_verify + da-appliance verify
+wazuh.sh grep -v active matching "inactive" → grep -qvxF active exact match
+Wazuh security init SocketTimeoutException → retry 3x con ultra-purge automatico
+Prossimo install fresh dovrebbe essere veramente one-shot. Se vuoi metterlo alla prova: nuke --hard + ./deploy.sh install --yes. Io rimango disponibile per eventuali sorprese.

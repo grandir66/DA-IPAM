@@ -9,6 +9,16 @@ import Credentials from "next-auth/providers/credentials";
  */
 export const authConfig: NextAuthConfig = {
   providers: [
+    // Segnaposto per l'Edge runtime, come quello sotto: la `authorize` vera
+    // vive in auth.ts, che qui non può essere importato (usa il database).
+    // Deve però ESISTERE anche qui, o il middleware non riconoscerebbe il
+    // provider e la sessione emessa da «domarc» risulterebbe di nessuno.
+    Credentials({
+      id: "domarc",
+      name: "Account Domarc",
+      credentials: {},
+      authorize: () => null,
+    }),
     Credentials({
       name: "credentials",
       credentials: {

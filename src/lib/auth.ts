@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { authConfig } from "./auth.config";
+import { identitaDaAuth } from "./daauth";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -9,6 +10,70 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   // AUTH_TRUST_HOST=false solo se serve vincolare a un solo host (es. dietro proxy con nome DNS fisso).
   trustHost: process.env.AUTH_TRUST_HOST !== "false",
   providers: [
+    // ── Accesso con l'account Domarc (DA-Auth) ────────────────────────────
+    //
+    // La via normale dal 2026-09-08. Non chiede credenziali: legge il cookie
+    // di sessione di auth.domarc.it che il browser manda già (è emesso su
+    // `.domarc.it`) e chiede a DA-Auth chi è quella persona.
+    //
+    // Il login locale qui sotto NON si spegne: è la riserva. Se DA-Auth non
+    // risponde, `identitaDaAuth` restituisce null e si entra come prima.
+    Credentials({
+      id: "domarc",
+      name: "Account Domarc",
+      credentials: {},
+      async authorize(_credentials, request) {
+        const identita = await identitaDaAuth(request?.headers?.get("cookie"));
+        if (!identita) return null;
+
+        // Autenticare non è autorizzare: chi arriva da DA-Auth deve comunque
+        // esistere qui. **Nessun auto-provisioning** — è la stessa regola che
+        // DA-Auth applica agli account Microsoft senza utenza Domarc, e qui
+        // conta doppio perché una riga nuova senza tenant non servirebbe a
+        // niente mentre una con i tenant sbagliati sarebbe un danno.
+        const { getUserByUsername, getUserTenantAccess, getActiveTenants } = await import("./db-hub");
+        const { updateUserLastLogin } = await import("./db");
+
+        const user = getUserByUsername(identita.username);
+        if (!user) {
+          console.warn(
+            `[Auth] ${identita.username}: riconosciuto da DA-Auth ma senza utenza DA-IPAM`,
+          );
+          return null;
+        }
+        updateUserLastLogin(user.id);
+
+        // ⚠️ Ruolo e tenant vengono dalla riga LOCALE, non da DA-Auth. I due
+        // sistemi parlano vocabolari diversi (DA-IPAM ha `superadmin` e
+        // l'accesso per tenant, DA-Auth no): tradurre in silenzio vorrebbe
+        // dire inventare una corrispondenza che nessuno ha deciso, e in una
+        // direzione darebbe a qualcuno più di quello che ha oggi.
+        let tenantList: Array<{ code: string; name: string; role: string }>;
+        if (user.role === "superadmin") {
+          tenantList = getActiveTenants().map(t => ({
+            code: t.codice_cliente, name: t.ragione_sociale, role: "superadmin",
+          }));
+        } else {
+          tenantList = getUserTenantAccess(user.id).map(t => ({
+            code: t.codice_cliente, name: t.ragione_sociale, role: t.role,
+          }));
+        }
+
+        return {
+          id: String(user.id),
+          name: user.username,
+          email: user.email || `${user.username}@da-invent.local`,
+          role: user.role,
+          tenants: tenantList,
+          tenantCode:
+            tenantList.length === 1
+              ? tenantList[0].code
+              : user.role === "superadmin"
+                ? "__ALL__"
+                : null,
+        };
+      },
+    }),
     Credentials({
       name: "credentials",
       credentials: {

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { urlAccessoDomarc } from "@/lib/daauth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +17,53 @@ export default function LoginPage() {
   // Secondi residui del backoff di login (0 = non bloccato). Mostrato come countdown
   // così l'utente sa di dover aspettare, non di aver perso la password.
   const [lockSec, setLockSec] = useState(0);
+  // Sta provando a entrare con l'account Domarc (o è appena tornato da
+  // auth.domarc.it): la pagina lo dice, invece di restare ferma un secondo.
+  const [domarcInCorso, setDomarcInCorso] = useState(false);
+  const [domarcErrore, setDomarcErrore] = useState("");
+
+  /**
+   * Accesso con l'account Domarc.
+   *
+   * Due tempi, e sono l'uno la conseguenza dell'altro: prima si prova con il
+   * cookie che il browser ha già (chi è entrato in un'altra applicazione
+   * Domarc non deve rifare niente); se non c'è, si va su auth.domarc.it e si
+   * torna qui con `?domarc=1`, che fa ripartire il primo tempo.
+   */
+  const entraConDomarc = useCallback(async (mandaAllAccesso: boolean) => {
+    setDomarcErrore("");
+    setDomarcInCorso(true);
+    try {
+      const esito = await signIn("domarc", { redirect: false });
+      if (esito?.ok && !esito?.error) {
+        window.location.assign("/");
+        return;
+      }
+      if (mandaAllAccesso) {
+        window.location.assign(
+          urlAccessoDomarc(`${window.location.origin}/login?domarc=1`),
+        );
+        return;
+      }
+      // Tornati dall'accesso e ancora non riconosciuti: l'utenza Domarc esiste
+      // ma qui no. Dirlo, invece di rimandare in un giro che rifarebbe lo
+      // stesso percorso all'infinito.
+      setDomarcErrore(
+        "Il tuo account Domarc è valido, ma non risulta un'utenza DA-INVENT. Chiedi a un amministratore.",
+      );
+    } catch {
+      setDomarcErrore("Servizio di autenticazione non raggiungibile. Usa username e password.");
+    } finally {
+      setDomarcInCorso(false);
+    }
+  }, []);
+
+  // Ritorno da auth.domarc.it: si riprova una volta sola, senza rimbalzare.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("domarc") !== "1") return;
+    void entraConDomarc(false);
+  }, [entraConDomarc]);
 
   useEffect(() => {
     if (lockSec <= 0) return;
@@ -123,6 +171,21 @@ export default function LoginPage() {
           <CardDescription>Accedi al sistema di gestione IP</CardDescription>
         </CardHeader>
         <CardContent>
+          <Button
+            type="button"
+            className="w-full"
+            disabled={domarcInCorso}
+            onClick={() => void entraConDomarc(true)}
+          >
+            {domarcInCorso ? "Accesso in corso..." : "Accedi con l'account Domarc"}
+          </Button>
+          {domarcErrore && <p className="mt-2 text-sm text-destructive">{domarcErrore}</p>}
+          <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            oppure con username e password
+            <span className="h-px flex-1 bg-border" />
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
@@ -140,7 +203,12 @@ export default function LoginPage() {
             ) : (
               error && <p className="text-sm text-destructive">{error}</p>
             )}
-            <Button type="submit" className="w-full" disabled={loading || lockSec > 0}>
+            <Button
+              type="submit"
+              variant="outline"
+              className="w-full"
+              disabled={loading || lockSec > 0}
+            >
               {loading ? "Accesso in corso..." : "Accedi"}
             </Button>
           </form>

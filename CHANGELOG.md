@@ -8,6 +8,25 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunte
 
+- **Si entra con l'account Domarc.** Un bottone «Accedi con l'account Domarc»
+  sulla pagina di accesso: si viene riconosciuti da `auth.domarc.it` — con
+  Microsoft e MFA, con le credenziali di dominio o col PIN — e si entra senza
+  digitare niente qui. Chi ha già una sessione Domarc aperta da un'altra
+  applicazione non rifà nulla. **Non serve una registrazione Entra per
+  DA-INVENT**: quella ce l'ha DA-Auth, che in più conosce i nostri utenti, sa
+  dire il ruolo per singola applicazione e tiene il registro degli ingressi,
+  compresi quelli falliti.
+- **Username e password restano**, e non per inerzia: sono la riserva. Se
+  `auth.domarc.it` non risponde si entra come prima — la funzione che lo
+  interroga restituisce «non lo so» invece di sollevare, ed è provato. Il
+  backoff sui tentativi falliti non è stato toccato.
+- ⚠️ **Chi arriva da DA-Auth deve avere un'utenza DA-INVENT**: nessun
+  auto-provisioning. Una riga creata al volo non avrebbe tenant (inutile) o li
+  avrebbe sbagliati (dannoso). E **ruolo e tenant restano quelli della riga
+  locale**, non quelli che dice DA-Auth: i due sistemi parlano vocabolari
+  diversi (qui c'è `superadmin` e l'accesso per tenant, là no), e tradurli in
+  silenzio darebbe a qualcuno più permessi di quelli che ha oggi.
+
 - **I CPE dei servizi arrivano fino al database.** `parseNmapXml` leggeva solo
   gli attributi `product`/`version` di `<service>` e scartava i figli `<cpe>`:
   misurato su 664 porte reali, 194 avevano la versione e **zero** un CPE. Senza

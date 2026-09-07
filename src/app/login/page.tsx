@@ -68,7 +68,12 @@ export default function LoginPage() {
   useEffect(() => {
     if (!daauthUrl || typeof window === "undefined") return;
     if (new URLSearchParams(window.location.search).get("domarc") !== "1") return;
-    void entraConDomarc(false, daauthUrl);
+    // Differito, non chiamato qui dentro: `entraConDomarc` imposta stato
+    // appena parte, e farlo in modo sincrono in un effetto innesca un giro di
+    // render in più (il lint di DA-Vul-can lo segnala; qui la regola non c'è,
+    // ma il codice è lo stesso e non deve divergere).
+    const id = setTimeout(() => void entraConDomarc(false, daauthUrl), 0);
+    return () => clearTimeout(id);
   }, [entraConDomarc, daauthUrl]);
 
   useEffect(() => {

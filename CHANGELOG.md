@@ -4,6 +4,26 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-09-07
+
+### Aggiunte
+
+- **I CPE dei servizi arrivano fino al database.** `parseNmapXml` leggeva solo
+  gli attributi `product`/`version` di `<service>` e scartava i figli `<cpe>`:
+  misurato su 664 porte reali, 194 avevano la versione e **zero** un CPE. Senza
+  CPE il match con l'NVD non e' possibile — `cpe:/a:openbsd:openssh:9.6p1` si
+  confronta con i cpeMatch, la stringa "OpenSSH 9.6p1 Ubuntu 3ubuntu13.15" no.
+  `NmapPort` ora porta anche `product`, `product_version` e `cpes`; la stringa
+  unita `version` resta identica, perche' la leggono UI, classificatore e
+  fingerprint. Primo passo del match CVE da feed locali (NVD + EPSS + KEV),
+  scelti al posto dell'API vulners.com per non far uscire l'inventario software
+  dei clienti verso terzi.
+- **Intensita' `-sV` configurabile** via `DA_INVENT_NMAP_VERSION_INTENSITY`
+  (0-9). **Default invariato a 0**: alzarla costa tempo di scansione su ogni
+  host di ogni cliente, e si decide misurando su rete vera, non a sensazione.
+- Test-invariante `src/lib/scanner/__tests__/nmap-cpe.test.ts`: la perdita dei
+  CPE era silenziosa — nessun test falliva, il campo semplicemente non c'era.
+
 ## [Unreleased] — branch `feature/remote-agents`
 
 Aggiunge l'architettura **hub + agenti remoti via Tailscale**: l'hub IPAM

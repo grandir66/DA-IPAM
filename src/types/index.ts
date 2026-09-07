@@ -889,7 +889,19 @@ export interface NmapPort {
   protocol: string;
   state: string;
   service: string | null;
+  /** Prodotto e versione uniti in una stringa ("OpenSSH 9.6p1 Ubuntu 3ubuntu13.15").
+   *  E' cio' che mostra la UI e che leggono classificatore e fingerprint: resta
+   *  invariata. I tre campi qui sotto la **affiancano**, non la sostituiscono. */
   version: string | null;
+  /** Solo il prodotto ("OpenSSH"). Separato perche' dalla stringa unita non si
+   *  torna indietro in modo affidabile: "Samba smbd 4" non si scompone a colpo sicuro. */
+  product?: string | null;
+  /** Solo la versione ("9.6p1 Ubuntu 3ubuntu13.15"). */
+  product_version?: string | null;
+  /** I `cpe:/...` dichiarati da nmap sotto `<service>`. Chiave del match CVE:
+   *  `cpe:/a:openbsd:openssh:9.6p1` si confronta con i cpeMatch dell'NVD, la
+   *  stringa libera no. Fino al 2026-09-07 venivano scartati dal parser. */
+  cpes?: string[];
 }
 
 export interface ScanProgress {

@@ -33,6 +33,22 @@ export function getNmapHostTimeoutSeconds(): number {
 }
 
 /**
+ * Intensita' delle probe `-sV` (0-9), da `DA_INVENT_NMAP_VERSION_INTENSITY`.
+ *
+ * **Resta 0 di default, di proposito**: e' il valore con cui gira oggi in
+ * produzione, e alzarlo costa tempo di scansione su ogni host di ogni cliente.
+ * La manopola esiste perche' il match CVE (piano `daipam-cve-locali`) vive sui
+ * CPE che nmap emette quando riconosce un servizio, e a intensita' piu' alta ne
+ * riconosce di piu'. Si alza **misurando** il tempo prima e dopo su una rete
+ * vera, non a sensazione: un default cambiato al buio si paga su tutta la flotta.
+ */
+export function getNmapVersionIntensity(): number {
+  const n = parseInt(process.env.DA_INVENT_NMAP_VERSION_INTENSITY || "0", 10);
+  if (Number.isNaN(n)) return 0;
+  return Math.min(9, Math.max(0, n));
+}
+
+/**
  * Porte TCP "quick" per scoperta rete dopo ICMP (SSH, HTTP/S, RDP, SMB, …).
  *
  * Criteri: ogni porta serve per **identificare il tipo di device** (fingerprint / product profile).
@@ -143,7 +159,7 @@ export function buildTargetedServiceTcpArgs(
   const list = unionTcpPorts(ports);
   if (list.length === 0) return buildNetworkDiscoveryQuickTcpArgs();
   const ht = opts?.hostTimeoutSeconds ?? getNetworkDiscoveryQuickHostTimeoutSeconds();
-  return `-Pn -sT -p ${list.join(",")} -sV --version-intensity 0 -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
+  return `-Pn -sT -p ${list.join(",")} -sV --version-intensity ${getNmapVersionIntensity()} -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
 }
 
 /** Parse comma-separated TCP port specs → sorted unique numbers. */
@@ -188,7 +204,7 @@ export function buildTcpScanArgs(customPorts?: string | null, explicitTcpPorts?:
    * v0.2.643 audit perf SC5: --max-retries 3→1, --min-rate 35→200. Su host già
    * confermati live i retry pesanti raramente cambiano l'esito; min-rate basso
    * era pensato per reti congestionate ma rallenta enormemente lo scan profondo. */
-  return `-Pn -sT -p ${tcpList} -sV --version-intensity 0 -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
+  return `-Pn -sT -p ${tcpList} -sV --version-intensity ${getNmapVersionIntensity()} -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
 }
 
 /**
@@ -205,7 +221,7 @@ export function buildUdpScanArgs(explicitUdpPorts?: string | null): string {
     : NMAP_DEFAULT_UDP_PORTS;
   const ht = getNmapHostTimeoutSeconds();
   /* -Pn: host già verificato online; UDP scan spesso richiede root, -Pn evita doppio controllo liveness */
-  return `-Pn -sU -p ${udpList} -sV --version-intensity 0 -T4 --max-retries 2 --min-rate 40 --host-timeout ${ht}s`;
+  return `-Pn -sU -p ${udpList} -sV --version-intensity ${getNmapVersionIntensity()} -T4 --max-retries 2 --min-rate 40 --host-timeout ${ht}s`;
 }
 
 /** @deprecated Usa buildTcpScanArgs — mantenuto per retrocompatibilità */

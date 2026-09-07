@@ -21,6 +21,10 @@ export default function LoginPage() {
   // auth.domarc.it): la pagina lo dice, invece di restare ferma un secondo.
   const [domarcInCorso, setDomarcInCorso] = useState(false);
   const [domarcErrore, setDomarcErrore] = useState("");
+  // Indirizzo del servizio di autenticazione Domarc, letto da /api/setup.
+  // Vuoto = questa installazione non lo usa: è il caso delle appliance dei
+  // clienti, dove il bottone non deve nemmeno comparire.
+  const [daauthUrl, setDaauthUrl] = useState("");
 
   /**
    * Accesso con l'account Domarc.
@@ -30,7 +34,8 @@ export default function LoginPage() {
    * Domarc non deve rifare niente); se non c'è, si va su auth.domarc.it e si
    * torna qui con `?domarc=1`, che fa ripartire il primo tempo.
    */
-  const entraConDomarc = useCallback(async (mandaAllAccesso: boolean) => {
+  const entraConDomarc = useCallback(async (mandaAllAccesso: boolean, base: string) => {
+    if (!base) return;
     setDomarcErrore("");
     setDomarcInCorso(true);
     try {
@@ -41,7 +46,7 @@ export default function LoginPage() {
       }
       if (mandaAllAccesso) {
         window.location.assign(
-          urlAccessoDomarc(`${window.location.origin}/login?domarc=1`),
+          urlAccessoDomarc(base, `${window.location.origin}/login?domarc=1`),
         );
         return;
       }
@@ -59,11 +64,12 @@ export default function LoginPage() {
   }, []);
 
   // Ritorno da auth.domarc.it: si riprova una volta sola, senza rimbalzare.
+  // Parte solo quando si sa che l'opzione è accesa, cioè dopo /api/setup.
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (!daauthUrl || typeof window === "undefined") return;
     if (new URLSearchParams(window.location.search).get("domarc") !== "1") return;
-    void entraConDomarc(false);
-  }, [entraConDomarc]);
+    void entraConDomarc(false, daauthUrl);
+  }, [entraConDomarc, daauthUrl]);
 
   useEffect(() => {
     if (lockSec <= 0) return;
@@ -81,7 +87,8 @@ export default function LoginPage() {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((data: { needsSetup?: boolean }) => {
+      .then((data: { needsSetup?: boolean; daauthUrl?: string }) => {
+        setDaauthUrl((data.daauthUrl || "").trim());
         if (data.needsSetup) {
           router.replace("/setup");
         } else {
@@ -171,20 +178,24 @@ export default function LoginPage() {
           <CardDescription>Accedi al sistema di gestione IP</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button
-            type="button"
-            className="w-full"
-            disabled={domarcInCorso}
-            onClick={() => void entraConDomarc(true)}
-          >
-            {domarcInCorso ? "Accesso in corso..." : "Accedi con l'account Domarc"}
-          </Button>
-          {domarcErrore && <p className="mt-2 text-sm text-destructive">{domarcErrore}</p>}
-          <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="h-px flex-1 bg-border" />
-            oppure con username e password
-            <span className="h-px flex-1 bg-border" />
-          </div>
+          {daauthUrl && (
+            <>
+              <Button
+                type="button"
+                className="w-full"
+                disabled={domarcInCorso}
+                onClick={() => void entraConDomarc(true, daauthUrl)}
+              >
+                {domarcInCorso ? "Accesso in corso..." : "Accedi con l'account Domarc"}
+              </Button>
+              {domarcErrore && <p className="mt-2 text-sm text-destructive">{domarcErrore}</p>}
+              <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+                <span className="h-px flex-1 bg-border" />
+                oppure con username e password
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            </>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
@@ -205,7 +216,7 @@ export default function LoginPage() {
             )}
             <Button
               type="submit"
-              variant="outline"
+              variant={daauthUrl ? "outline" : "default"}
               className="w-full"
               disabled={loading || lockSec > 0}
             >

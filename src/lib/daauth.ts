@@ -12,6 +12,15 @@
  * Noi lo giriamo a `/whoami`, che risponde **sempre 200** con gli header
  * dell'identità valorizzati o assenti — non è una guardia, dice solo chi è chi.
  *
+ * ⚠️ **È un'opzione, e nasce spenta.** DA-INVENT è installato anche presso i
+ * clienti, su appliance che non hanno — e non devono avere — un servizio di
+ * autenticazione Domarc da contattare. Il freno è la variabile `DAAUTH_URL`:
+ * se non è impostata la funzione non esiste, il bottone non compare e
+ * l'installazione si comporta esattamente come prima. Non c'è un valore
+ * predefinito, di proposito: un default puntato su `auth.domarc.it` farebbe
+ * comparire su ogni appliance di cliente un bottone che tenta di parlare con
+ * un nostro servizio.
+ *
  * ⚠️ Questo modulo dà l'IDENTITÀ, non i permessi. Chi entra da qui deve
  * comunque esistere in `users` di DA-IPAM: ruolo e tenant restano quelli della
  * sua riga locale (vedi `auth.ts`). DA-Auth parla di ruoli suoi
@@ -31,13 +40,32 @@ export const DAAUTH_COOKIE = "da_auth";
  */
 export const APPLICAZIONE = "ipam";
 
+/**
+ * L'indirizzo del servizio di autenticazione, o `""` se non è configurato.
+ *
+ * **Nessun valore predefinito**: è il freno che tiene la funzione spenta sulle
+ * installazioni dei clienti.
+ */
 export function urlDaAuth(): string {
-  return (process.env.DAAUTH_URL || "https://auth.domarc.it").replace(/\/+$/, "");
+  return (process.env.DAAUTH_URL || "").trim().replace(/\/+$/, "");
 }
 
-/** Dove mandare chi sceglie «Accedi con l'account Domarc». */
-export function urlAccessoDomarc(ritorno: string): string {
-  return `${urlDaAuth()}/?da=${APPLICAZIONE}&ritorno=${encodeURIComponent(ritorno)}`;
+/** Se l'accesso con l'account Domarc è disponibile su questa installazione. */
+export function accessoDomarcAttivo(): boolean {
+  return urlDaAuth() !== "";
+}
+
+/**
+ * Dove mandare chi sceglie «Accedi con l'account Domarc», o `""` se spento.
+ *
+ * `base` si passa esplicitamente perché questa funzione serve anche al
+ * browser, dove `process.env.DAAUTH_URL` non esiste: la pagina di accesso
+ * riceve l'indirizzo da `/api/setup`, che lo legge dall'ambiente del server.
+ */
+export function urlAccessoDomarc(base: string, ritorno: string): string {
+  const pulito = (base || "").trim().replace(/\/+$/, "");
+  if (!pulito) return "";
+  return `${pulito}/?da=${APPLICAZIONE}&ritorno=${encodeURIComponent(ritorno)}`;
 }
 
 /**
@@ -72,12 +100,17 @@ export async function identitaDaAuth(
   cookieHeader: string | null | undefined,
   timeoutMs = 6000,
 ): Promise<IdentitaDomarc | null> {
+  // Prima di tutto il freno: se l'opzione non è accesa qui non si contatta
+  // nessuno, e non si guarda nemmeno il cookie.
+  const base = urlDaAuth();
+  if (!base) return null;
+
   const cookie = cookieDaAuth(cookieHeader);
   if (!cookie) return null;
 
   const stop = AbortSignal.timeout(timeoutMs);
   try {
-    const r = await fetch(`${urlDaAuth()}/whoami`, {
+    const r = await fetch(`${base}/whoami`, {
       headers: {
         cookie: `${DAAUTH_COOKIE}=${cookie}`,
         // Con quale applicazione stiamo chiedendo: è così che DA-Auth risponde

@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { authConfig } from "./auth.config";
-import { identitaDaAuth } from "./daauth";
+import { accessoDomarcAttivo, identitaDaAuth } from "./daauth";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -23,6 +23,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       name: "Account Domarc",
       credentials: {},
       async authorize(_credentials, request) {
+        // Difesa in profondità: la pagina non mostra il bottone quando
+        // l'opzione è spenta, ma una richiesta costruita a mano arriverebbe
+        // comunque qui. Su un'appliance di cliente questa strada non esiste.
+        if (!accessoDomarcAttivo()) return null;
+
         const identita = await identitaDaAuth(request?.headers?.get("cookie"));
         if (!identita) return null;
 

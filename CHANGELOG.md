@@ -8,6 +8,13 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunte
 
+- ⚠️ **È un'OPZIONE, e nasce spenta.** DA-INVENT è installato anche presso i
+  clienti, su appliance che non hanno — e non devono avere — un servizio di
+  autenticazione Domarc da contattare. Il freno è la variabile `DAAUTH_URL`:
+  **senza, la funzione non esiste**, il bottone non compare e l'installazione
+  si comporta esattamente come prima. Non c'è un valore predefinito, di
+  proposito. Si accende solo sugli impianti Domarc mettendo l'indirizzo del
+  servizio in `.env.local` (o nel compose) e riavviando.
 - **Si entra con l'account Domarc.** Un bottone «Accedi con l'account Domarc»
   sulla pagina di accesso: si viene riconosciuti da `auth.domarc.it` — con
   Microsoft e MFA, con le credenziali di dominio o col PIN — e si entra senza

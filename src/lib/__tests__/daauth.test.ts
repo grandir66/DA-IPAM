@@ -8,7 +8,67 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { APPLICAZIONE, cookieDaAuth, urlAccessoDomarc, urlDaAuth } from "../daauth";
+import {
+  APPLICAZIONE,
+  accessoDomarcAttivo,
+  cookieDaAuth,
+  identitaDaAuth,
+  urlAccessoDomarc,
+  urlDaAuth,
+} from "../daauth";
+
+test("senza DAAUTH_URL l'accesso Domarc non esiste", async () => {
+  /*
+   * DA-INVENT è installato ANCHE presso i clienti, su appliance che non hanno
+   * — e non devono avere — un servizio di autenticazione Domarc da contattare.
+   * Quindi la funzione nasce spenta e non ha un valore predefinito: un default
+   * puntato su auth.domarc.it farebbe comparire su ogni appliance un bottone
+   * che tenta di parlare con un nostro servizio.
+   *
+   * Questa prova gira in un ambiente dove DAAUTH_URL non è impostata: è lo
+   * stato di un'appliance appena installata.
+   */
+  const prima = process.env.DAAUTH_URL;
+  delete process.env.DAAUTH_URL;
+  try {
+    assert.equal(urlDaAuth(), "");
+    assert.equal(accessoDomarcAttivo(), false);
+    assert.equal(urlAccessoDomarc(urlDaAuth(), "https://qualsiasi/login"), "");
+    // Nemmeno con un cookie in mano si contatta nessuno: se una richiesta
+    // arrivasse, non deve partire una connessione verso l'esterno.
+    assert.equal(await identitaDaAuth("da_auth=un-cookie-qualunque"), null);
+  } finally {
+    if (prima === undefined) delete process.env.DAAUTH_URL;
+    else process.env.DAAUTH_URL = prima;
+  }
+});
+
+test("con DAAUTH_URL impostata la funzione si accende", () => {
+  const prima = process.env.DAAUTH_URL;
+  process.env.DAAUTH_URL = "https://auth.domarc.it/";
+  try {
+    // La barra finale non deve raddoppiarsi nell'indirizzo costruito.
+    assert.equal(urlDaAuth(), "https://auth.domarc.it");
+    assert.equal(accessoDomarcAttivo(), true);
+  } finally {
+    if (prima === undefined) delete process.env.DAAUTH_URL;
+    else process.env.DAAUTH_URL = prima;
+  }
+});
+
+test("il bottone compare solo se il servizio lo dichiara", () => {
+  /*
+   * La pagina è un componente client e non può leggere `process.env` del
+   * server: riceve l'indirizzo da `/api/setup`. Se quella riga sparisse, il
+   * bottone non comparirebbe mai (innocuo) — ma se sparisse la condizione,
+   * comparirebbe su ogni appliance di cliente, che è il danno.
+   */
+  const setup = readFileSync(join(process.cwd(), "src/app/api/setup/route.ts"), "utf8");
+  assert.ok(setup.includes("daauthUrl"), "/api/setup non dichiara più l'indirizzo");
+
+  const pagina = readFileSync(join(process.cwd(), "src/app/login/page.tsx"), "utf8");
+  assert.ok(pagina.includes("{daauthUrl && ("), "il bottone non è più condizionato");
+});
 
 test("il cookie si estrae per nome intero, non per somiglianza", () => {
   assert.equal(cookieDaAuth("da_auth=abc123"), "abc123");
@@ -29,8 +89,8 @@ test("un cookie senza valore non diventa un cookie valido", () => {
 });
 
 test("l'indirizzo di accesso porta l'applicazione e il ritorno codificato", () => {
-  const url = urlAccessoDomarc("https://da-ipam.domarc.it/login?domarc=1");
-  assert.ok(url.startsWith(`${urlDaAuth()}/?da=ipam&ritorno=`));
+  const url = urlAccessoDomarc("https://auth.domarc.it", "https://da-ipam.domarc.it/login?domarc=1");
+  assert.ok(url.startsWith("https://auth.domarc.it/?da=ipam&ritorno="));
   assert.ok(url.includes("https%3A%2F%2Fda-ipam.domarc.it%2Flogin%3Fdomarc%3D1"));
   // Senza codifica il `?domarc=1` verrebbe letto come un parametro di
   // auth.domarc.it e il ritorno arriverebbe troncato.

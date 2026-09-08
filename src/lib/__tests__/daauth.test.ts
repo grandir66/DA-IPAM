@@ -10,6 +10,8 @@ import { join } from "node:path";
 
 import {
   APPLICAZIONE,
+  RUOLO_DOMARC_A_LOCALE,
+  traduzionePer,
   accessoDomarcAttivo,
   cookieDaAuth,
   identitaDaAuth,
@@ -122,21 +124,79 @@ test("il login locale non è stato spento: è la riserva", () => {
   assert.ok(pagina.includes("entraConDomarc"), "la pagina non offre l'accesso Domarc");
 });
 
-test("chi arriva da DA-Auth deve esistere anche qui", () => {
+test("il ruolo di chi ha già un'utenza NON viene sovrascritto da DA-Auth", () => {
   /*
-   * Nessun auto-provisioning, come in DA-Auth per gli account Microsoft senza
-   * utenza Domarc. Qui conta doppio: una riga creata al volo non avrebbe
-   * tenant (inutile) o li avrebbe sbagliati (dannoso). E il ruolo resta
-   * quello LOCALE, non quello che dice DA-Auth: i due sistemi parlano
-   * vocabolari diversi, e tradurli in silenzio darebbe a qualcuno più
-   * permessi di quelli che ha oggi.
+   * Il ruolo di DA-Auth serve a UNA cosa sola: tradurlo per creare l'utenza
+   * che non c'è. Su una che c'è già vale quello locale — chi l'ha messo lì
+   * sapeva cosa faceva, e i due vocabolari non si equivalgono. Lo stesso vale
+   * per i clienti: si assegnano alla creazione, non a ogni accesso.
    */
   const auth = readFileSync(join(process.cwd(), "src/lib/auth.ts"), "utf8");
   const blocco = auth.slice(auth.indexOf('id: "domarc"'), auth.indexOf('name: "credentials"'));
   assert.ok(blocco.includes("getUserByUsername"), "non cerca l'utenza locale");
-  assert.ok(blocco.includes("if (!user)"), "non rifiuta chi non ha utenza qui");
-  assert.ok(
-    !blocco.includes("identita.role"),
-    "il ruolo di DA-Auth non deve sovrascrivere quello locale",
-  );
+  assert.ok(blocco.includes("role: user.role"), "il ruolo restituito non è quello locale");
+  // `identita.role` e l'assegnazione dei clienti stanno SOLO nel ramo della
+  // creazione: dopo, non si tocca più niente di quello che c'è.
+  const creazione = blocco.indexOf("createUser(");
+  assert.ok(blocco.lastIndexOf("identita.role") < creazione);
+  assert.ok(blocco.lastIndexOf("setUserTenantAccess") > creazione);
+});
+
+
+test("la traduzione dei ruoli è scritta in chiaro, coi clienti per codice", () => {
+  // Domarc è l'unico cliente vero qui dentro, e sono due righe dello stesso:
+  // `70791` la sede, `70791a` l'infrastruttura a OVH.
+  assert.deepEqual(traduzionePer("admin"), { ruolo: "superadmin" });
+  assert.deepEqual(traduzionePer("tecnico_advanced"), {
+    ruolo: "admin",
+    tenant: ["70791", "70791a"],
+  });
+  assert.deepEqual(traduzionePer("readonly"), { ruolo: "viewer", tenant: ["70791", "70791a"] });
+});
+
+
+test("un ruolo senza traduzione non diventa il più basso: non si traduce", () => {
+  /*
+   * La tentazione è mappare l'ignoto su «viewer senza clienti» per non
+   * bloccare nessuno. Sarebbe un permesso inventato: chi fa un altro mestiere
+   * non entra in un inventario di rete per il fatto di lavorare qui. Se serve,
+   * lo si dichiara su questa applicazione con un ruolo esplicito — che è
+   * esattamente ciò per cui la dichiarazione esiste.
+   */
+  assert.equal(traduzionePer("standard"), null);
+  assert.equal(traduzionePer("commerciale"), null);
+  assert.equal(traduzionePer("un-ruolo-nuovo"), null);
+  assert.equal(traduzionePer(""), null);
+});
+
+
+test("il superadmin non elenca clienti, e chi li elenca non è superadmin", () => {
+  /*
+   * `superadmin` vede tutti i tenant per costruzione (auth.ts li ricarica a
+   * ogni accesso): elencarglieli sarebbe una lista da tenere allineata a mano
+   * il giorno che nasce un cliente nuovo. Gli altri invece DEVONO elencarli,
+   * altrimenti entrano e non vedono niente senza che si capisca perché.
+   */
+  for (const [domarc, t] of Object.entries(RUOLO_DOMARC_A_LOCALE)) {
+    if (t.ruolo === "superadmin") {
+      assert.equal(t.tenant, undefined, `${domarc}: un superadmin non elenca clienti`);
+    } else {
+      assert.ok(t.tenant && t.tenant.length > 0, `${domarc}: entrerebbe senza vedere niente`);
+    }
+  }
+});
+
+
+test("la creazione avviene solo su dichiarazione, e i clienti si risolvono per codice", () => {
+  const auth = readFileSync(join(process.cwd(), "src/lib/auth.ts"), "utf8");
+  const blocco = auth.slice(auth.indexOf('id: "domarc"'), auth.indexOf('name: "credentials"'));
+  const creazione = blocco.indexOf("createUser(");
+
+  assert.ok(blocco.includes("if (!identita.dichiarato)"), "non controlla la dichiarazione");
+  // I due rifiuti vengono PRIMA della creazione: invertirli significherebbe
+  // creare l'utenza e poi accorgersi che non si doveva.
+  assert.ok(blocco.indexOf("if (!identita.dichiarato)") < creazione);
+  assert.ok(blocco.indexOf("if (!traduzione)") < creazione);
+  // Un codice cliente che non esiste viene saltato, non diventa «tutti».
+  assert.ok(blocco.includes("continue"), "un codice sconosciuto non viene saltato");
 });

@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { authConfig } from "./auth.config";
-import { accessoDomarcAttivo, identitaDaAuth } from "./daauth";
+import { accessoDomarcAttivo, identitaDaAuth, traduzionePer } from "./daauth";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -31,20 +31,64 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const identita = await identitaDaAuth(request?.headers?.get("cookie"));
         if (!identita) return null;
 
-        // Autenticare non è autorizzare: chi arriva da DA-Auth deve comunque
-        // esistere qui. **Nessun auto-provisioning** — è la stessa regola che
-        // DA-Auth applica agli account Microsoft senza utenza Domarc, e qui
-        // conta doppio perché una riga nuova senza tenant non servirebbe a
-        // niente mentre una con i tenant sbagliati sarebbe un danno.
-        const { getUserByUsername, getUserTenantAccess, getActiveTenants } = await import("./db-hub");
+        const { getUserByUsername, getUserTenantAccess, getActiveTenants, createUser, setUserTenantAccess } =
+          await import("./db-hub");
         const { updateUserLastLogin } = await import("./db");
 
-        const user = getUserByUsername(identita.username);
+        let user = getUserByUsername(identita.username);
+
+        // Autenticare non è autorizzare. Chi non ha un'utenza qui entra solo
+        // se **qualcuno l'ha dichiarato** su questa applicazione in DA-Auth:
+        // allora l'utenza si crea, col ruolo e i clienti che la tabella di
+        // traduzione associa al suo. Non è auto-provisioning — non si inventa
+        // niente, si esegue una decisione presa e firmata.
+        //
+        // Qui il rischio è doppio rispetto alle altre applicazioni: una riga
+        // creata al volo senza clienti non servirebbe a niente, e una con i
+        // clienti sbagliati sarebbe un danno. Per questo i clienti si
+        // dichiarano per codice, e un codice che non esiste NON diventa
+        // «tutti»: viene saltato.
         if (!user) {
-          console.warn(
-            `[Auth] ${identita.username}: riconosciuto da DA-Auth ma senza utenza DA-IPAM`,
+          if (!identita.dichiarato) {
+            console.warn(
+              `[Auth] ${identita.username}: riconosciuto da DA-Auth ma non dichiarato su DA-IPAM`,
+            );
+            return null;
+          }
+          const traduzione = traduzionePer(identita.role);
+          if (!traduzione) {
+            console.warn(
+              `[Auth] ${identita.username}: dichiarato con ruolo «${identita.role}», che qui ` +
+                "non ha una traduzione — vedi RUOLO_DOMARC_A_LOCALE",
+            );
+            return null;
+          }
+          const crypto = await import("node:crypto");
+          const bcryptCrea = await import("bcrypt");
+          // Password casuale e subito dimenticata: a questa utenza si arriva
+          // solo da auth.domarc.it. Nessuna seconda credenziale da custodire.
+          const segreto = crypto.randomBytes(32).toString("hex");
+          const creato = createUser(
+            identita.username,
+            await bcryptCrea.hash(segreto, 12),
+            traduzione.ruolo,
+            null,
+            `${identita.username}@domarc.it`,
           );
-          return null;
+          const perCodice = new Map(getActiveTenants().map(t => [t.codice_cliente, t.id]));
+          for (const codice of traduzione.tenant ?? []) {
+            const id = perCodice.get(codice);
+            if (id === undefined) {
+              console.warn(`[Auth] ${identita.username}: cliente «${codice}» non esiste, saltato`);
+              continue;
+            }
+            setUserTenantAccess(creato.id, id, traduzione.ruolo);
+          }
+          user = creato;
+          console.warn(
+            `[Auth] ${identita.username}: utenza DA-IPAM creata su dichiarazione di DA-Auth, ` +
+              `ruolo ${traduzione.ruolo}, clienti [${(traduzione.tenant ?? []).join(", ") || "nessuno"}]`,
+          );
         }
         updateUserLastLogin(user.id);
 

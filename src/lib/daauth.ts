@@ -87,7 +87,59 @@ export function cookieDaAuth(header: string | null | undefined): string {
   return "";
 }
 
-export type IdentitaDomarc = { username: string; role: string };
+export type IdentitaDomarc = {
+  username: string;
+  /** Il ruolo su QUESTA applicazione, nel vocabolario di DA-Auth. */
+  role: string;
+  /**
+   * Qualcuno ha dichiarato in DA-Auth che questa persona usa questa
+   * applicazione. È l'unica cosa che autorizza a creare l'utenza locale
+   * mancante: senza, si rifiuta come si è sempre fatto.
+   */
+  dichiarato: boolean;
+};
+
+/** Cosa diventa, qui, una persona dichiarata con un certo ruolo Domarc. */
+export type Traduzione = {
+  /** Il ruolo di DA-INVENT: `superadmin` vede tutti i tenant per definizione. */
+  ruolo: "superadmin" | "admin" | "viewer";
+  /**
+   * I clienti a cui dare accesso, per **codice**. Vuoto significa nessuno: si
+   * entra e non si vede niente finché qualcuno non assegna un cliente da qui.
+   * Un codice che non esiste viene saltato con un avviso, non fa fallire
+   * l'accesso — ma nemmeno diventa «tutti».
+   */
+  tenant?: string[];
+};
+
+/**
+ * Dal ruolo di DA-Auth a quello di qui. **Scritta in chiaro, non dedotta.**
+ *
+ * I due sistemi parlano vocabolari diversi e non si traducono da soli. Questa
+ * tabella è una decisione, e sta qui — nell'applicazione che sa cosa
+ * significano i propri ruoli e cos'è un tenant — non in DA-Auth, che non lo sa.
+ *
+ * Un ruolo che non compare qui **non si traduce**: la persona non viene creata
+ * e si rifiuta. Non c'è un ripiego «al ruolo più basso»: se serve, si dichiara
+ * quella persona su questa applicazione con un ruolo esplicito, che è
+ * esattamente ciò per cui la dichiarazione esiste.
+ *
+ * `standard` e `commerciale` sono fuori di proposito: chi fa un altro mestiere
+ * non entra in un inventario di rete per il fatto di lavorare qui.
+ */
+export const RUOLO_DOMARC_A_LOCALE: Readonly<Record<string, Traduzione>> = {
+  // Amministratore del parco: vede tutti i clienti, senza elencarli.
+  admin: { ruolo: "superadmin" },
+  // Il tecnico vede Domarc — che è l'unico cliente vero qui dentro. Le due
+  // righe sono lo stesso cliente: `70791` è la sede, `70791a` l'infrastruttura
+  // a OVH (bridge remoto).
+  tecnico_advanced: { ruolo: "admin", tenant: ["70791", "70791a"] },
+  readonly: { ruolo: "viewer", tenant: ["70791", "70791a"] },
+};
+
+export function traduzionePer(ruoloDomarc: string): Traduzione | null {
+  return RUOLO_DOMARC_A_LOCALE[(ruoloDomarc || "").trim()] ?? null;
+}
 
 /**
  * Chi è la persona dietro il cookie di DA-Auth, o `null`.
@@ -122,7 +174,13 @@ export async function identitaDaAuth(
     });
     const username = (r.headers.get("x-user") || "").trim();
     if (!username) return null;
-    return { username, role: (r.headers.get("x-role") || "").trim() };
+    return {
+      username,
+      role: (r.headers.get("x-role") || "").trim(),
+      // L'intestazione c'è solo quando la dichiarazione esiste: l'assenza
+      // significa «non dichiarato», non «non lo so».
+      dichiarato: (r.headers.get("x-dichiarato") || "").trim() === "si",
+    };
   } catch {
     // Irraggiungibile, lento, o risposta illeggibile: «non lo so», non un errore.
     return null;

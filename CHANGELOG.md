@@ -9,7 +9,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ### Aggiunte
 
 - **L'utenza si crea su dichiarazione di DA-Auth, non da sola.** Chi arriva da
-  `auth.domarc.it` e non ha un'utenza qui entra **solo** se un amministratore
+  `entra.domarc.it` e non ha un'utenza qui entra **solo** se un amministratore
   l'ha dichiarato su DA-INVENT: allora l'utenza si crea, col ruolo e i clienti
   che la tabella di traduzione associa al suo. Senza dichiarazione, rifiuto
   come prima. Non è auto-provisioning: non si inventa niente, si esegue una
@@ -34,7 +34,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   proposito. Si accende solo sugli impianti Domarc mettendo l'indirizzo del
   servizio in `.env.local` (o nel compose) e riavviando.
 - **Si entra con l'account Domarc.** Un bottone «Accedi con l'account Domarc»
-  sulla pagina di accesso: si viene riconosciuti da `auth.domarc.it` — con
+  sulla pagina di accesso: si viene riconosciuti da `entra.domarc.it` — con
   Microsoft e MFA, con le credenziali di dominio o col PIN — e si entra senza
   digitare niente qui. Chi ha già una sessione Domarc aperta da un'altra
   applicazione non rifà nulla. **Non serve una registrazione Entra per
@@ -42,7 +42,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   dire il ruolo per singola applicazione e tiene il registro degli ingressi,
   compresi quelli falliti.
 - **Username e password restano**, e non per inerzia: sono la riserva. Se
-  `auth.domarc.it` non risponde si entra come prima — la funzione che lo
+  `entra.domarc.it` non risponde si entra come prima — la funzione che lo
   interroga restituisce «non lo so» invece di sollevare, ed è provato. Il
   backoff sui tentativi falliti non è stato toccato.
 - ⚠️ **Chi arriva da DA-Auth deve avere un'utenza DA-INVENT**: nessun

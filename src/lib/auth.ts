@@ -13,7 +13,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     // ── Accesso con l'account Domarc (DA-Auth) ────────────────────────────
     //
     // La via normale dal 2026-09-08. Non chiede credenziali: legge il cookie
-    // di sessione di auth.domarc.it che il browser manda già (è emesso su
+    // di sessione di entra.domarc.it che il browser manda già (è emesso su
     // `.domarc.it`) e chiede a DA-Auth chi è quella persona.
     //
     // Il login locale qui sotto NON si spegne: è la riserva. Se DA-Auth non
@@ -66,7 +66,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           const crypto = await import("node:crypto");
           const bcryptCrea = await import("bcrypt");
           // Password casuale e subito dimenticata: a questa utenza si arriva
-          // solo da auth.domarc.it. Nessuna seconda credenziale da custodire.
+          // solo da entra.domarc.it. Nessuna seconda credenziale da custodire.
           const segreto = crypto.randomBytes(32).toString("hex");
           const creato = createUser(
             identita.username,

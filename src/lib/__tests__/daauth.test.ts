@@ -24,7 +24,7 @@ test("senza DAAUTH_URL l'accesso Domarc non esiste", async () => {
    * DA-INVENT è installato ANCHE presso i clienti, su appliance che non hanno
    * — e non devono avere — un servizio di autenticazione Domarc da contattare.
    * Quindi la funzione nasce spenta e non ha un valore predefinito: un default
-   * puntato su auth.domarc.it farebbe comparire su ogni appliance un bottone
+   * puntato su entra.domarc.it farebbe comparire su ogni appliance un bottone
    * che tenta di parlare con un nostro servizio.
    *
    * Questa prova gira in un ambiente dove DAAUTH_URL non è impostata: è lo
@@ -47,10 +47,10 @@ test("senza DAAUTH_URL l'accesso Domarc non esiste", async () => {
 
 test("con DAAUTH_URL impostata la funzione si accende", () => {
   const prima = process.env.DAAUTH_URL;
-  process.env.DAAUTH_URL = "https://auth.domarc.it/";
+  process.env.DAAUTH_URL = "https://entra.domarc.it/";
   try {
     // La barra finale non deve raddoppiarsi nell'indirizzo costruito.
-    assert.equal(urlDaAuth(), "https://auth.domarc.it");
+    assert.equal(urlDaAuth(), "https://entra.domarc.it");
     assert.equal(accessoDomarcAttivo(), true);
   } finally {
     if (prima === undefined) delete process.env.DAAUTH_URL;
@@ -91,11 +91,11 @@ test("un cookie senza valore non diventa un cookie valido", () => {
 });
 
 test("l'indirizzo di accesso porta l'applicazione e il ritorno codificato", () => {
-  const url = urlAccessoDomarc("https://auth.domarc.it", "https://da-ipam.domarc.it/login?domarc=1");
-  assert.ok(url.startsWith("https://auth.domarc.it/?da=ipam&ritorno="));
+  const url = urlAccessoDomarc("https://entra.domarc.it", "https://da-ipam.domarc.it/login?domarc=1");
+  assert.ok(url.startsWith("https://entra.domarc.it/?da=ipam&ritorno="));
   assert.ok(url.includes("https%3A%2F%2Fda-ipam.domarc.it%2Flogin%3Fdomarc%3D1"));
   // Senza codifica il `?domarc=1` verrebbe letto come un parametro di
-  // auth.domarc.it e il ritorno arriverebbe troncato.
+  // entra.domarc.it e il ritorno arriverebbe troncato.
   assert.ok(!url.endsWith("?domarc=1"));
 });
 

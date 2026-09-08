@@ -18,7 +18,7 @@ export default function LoginPage() {
   // così l'utente sa di dover aspettare, non di aver perso la password.
   const [lockSec, setLockSec] = useState(0);
   // Sta provando a entrare con l'account Domarc (o è appena tornato da
-  // auth.domarc.it): la pagina lo dice, invece di restare ferma un secondo.
+  // entra.domarc.it): la pagina lo dice, invece di restare ferma un secondo.
   const [domarcInCorso, setDomarcInCorso] = useState(false);
   const [domarcErrore, setDomarcErrore] = useState("");
   // Indirizzo del servizio di autenticazione Domarc, letto da /api/setup.
@@ -31,7 +31,7 @@ export default function LoginPage() {
    *
    * Due tempi, e sono l'uno la conseguenza dell'altro: prima si prova con il
    * cookie che il browser ha già (chi è entrato in un'altra applicazione
-   * Domarc non deve rifare niente); se non c'è, si va su auth.domarc.it e si
+   * Domarc non deve rifare niente); se non c'è, si va su entra.domarc.it e si
    * torna qui con `?domarc=1`, che fa ripartire il primo tempo.
    */
   const entraConDomarc = useCallback(async (mandaAllAccesso: boolean, base: string) => {
@@ -63,7 +63,7 @@ export default function LoginPage() {
     }
   }, []);
 
-  // Ritorno da auth.domarc.it: si riprova una volta sola, senza rimbalzare.
+  // Ritorno da entra.domarc.it: si riprova una volta sola, senza rimbalzare.
   // Parte solo quando si sa che l'opzione è accesa, cioè dopo /api/setup.
   useEffect(() => {
     if (!daauthUrl || typeof window === "undefined") return;

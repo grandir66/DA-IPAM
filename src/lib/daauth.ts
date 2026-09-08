@@ -1,5 +1,5 @@
 /**
- * Identità da DA-Auth (auth.domarc.it), il servizio di autenticazione del parco.
+ * Identità da DA-Auth (entra.domarc.it), il servizio di autenticazione del parco.
  *
  * Perché passare di lì invece di registrare DA-IPAM su Entra: DA-Auth conosce
  * già i nostri utenti, sa dire il ruolo **su questa applicazione**, tiene il
@@ -17,7 +17,7 @@
  * autenticazione Domarc da contattare. Il freno è la variabile `DAAUTH_URL`:
  * se non è impostata la funzione non esiste, il bottone non compare e
  * l'installazione si comporta esattamente come prima. Non c'è un valore
- * predefinito, di proposito: un default puntato su `auth.domarc.it` farebbe
+ * predefinito, di proposito: un default puntato su `entra.domarc.it` farebbe
  * comparire su ogni appliance di cliente un bottone che tenta di parlare con
  * un nostro servizio.
  *

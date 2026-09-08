@@ -124,16 +124,20 @@ export type Traduzione = {
  * quella persona su questa applicazione con un ruolo esplicito, che è
  * esattamente ciò per cui la dichiarazione esiste.
  *
- * `standard` e `commerciale` sono fuori di proposito: chi fa un altro mestiere
- * non entra in un inventario di rete per il fatto di lavorare qui.
+ * Dal 2026-09-08 i ruoli del parco sono tre, e qui li usiamo tutti e tre —
+ * `standard` è il livello del tecnico, quello che prima si chiamava
+ * `tecnico_advanced`. Non è un accesso regalato a chiunque lavori in Domarc:
+ * **senza dichiarazione non entra nessuno**, e la traduzione si applica solo
+ * a chi un amministratore ha messo esplicitamente su questa applicazione.
  */
 export const RUOLO_DOMARC_A_LOCALE: Readonly<Record<string, Traduzione>> = {
   // Amministratore del parco: vede tutti i clienti, senza elencarli.
   admin: { ruolo: "superadmin" },
-  // Il tecnico vede Domarc — che è l'unico cliente vero qui dentro. Le due
-  // righe sono lo stesso cliente: `70791` è la sede, `70791a` l'infrastruttura
-  // a OVH (bridge remoto).
-  tecnico_advanced: { ruolo: "admin", tenant: ["70791", "70791a"] },
+  // Il tecnico: amministra Domarc, che è l'unico cliente vero qui dentro. Le
+  // due righe sono lo stesso cliente — `70791` è la sede, `70791a`
+  // l'infrastruttura a OVH (bridge remoto).
+  standard: { ruolo: "admin", tenant: ["70791", "70791a"] },
+  // Chi deve guardare e basta, sugli stessi.
   readonly: { ruolo: "viewer", tenant: ["70791", "70791a"] },
 };
 

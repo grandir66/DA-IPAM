@@ -17,11 +17,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   La traduzione (`RUOLO_DOMARC_A_LOCALE` in `src/lib/daauth.ts`) è scritta in
   chiaro e sta **qui**, perché è questa applicazione a sapere cosa significano
   i propri ruoli e cos'è un cliente: `admin` → `superadmin` (vede tutti);
-  `tecnico_advanced` → `admin` su Domarc (`70791` e `70791a`, che sono la sede
-  e l'infrastruttura a OVH dello stesso cliente); `readonly` → `viewer` sugli
-  stessi. `standard` e `commerciale` **non si traducono**: chi fa un altro
-  mestiere non entra in un inventario di rete per il fatto di lavorare qui — e
-  se serve, lo si dichiara con un ruolo esplicito.
+  `standard` → `admin` su Domarc (`70791` e `70791a`, che sono la sede e
+  l'infrastruttura a OVH dello stesso cliente) — è il livello del tecnico;
+  `readonly` → `viewer` sugli stessi. Non è un accesso regalato a chi lavora in
+  Domarc: **senza dichiarazione non entra nessuno**, e la traduzione vale solo
+  per chi un amministratore ha messo esplicitamente su questa applicazione. Un
+  ruolo che non c'è (o che è stato tolto dal parco) non si traduce.
   ⚠️ I clienti si dichiarano **per codice** e un codice che non esiste viene
   saltato con un avviso: non diventa «tutti». Il ruolo e i clienti di chi ha
   già un'utenza non si toccano.

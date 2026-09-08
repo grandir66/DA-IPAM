@@ -147,10 +147,7 @@ test("la traduzione dei ruoli è scritta in chiaro, coi clienti per codice", () 
   // Domarc è l'unico cliente vero qui dentro, e sono due righe dello stesso:
   // `70791` la sede, `70791a` l'infrastruttura a OVH.
   assert.deepEqual(traduzionePer("admin"), { ruolo: "superadmin" });
-  assert.deepEqual(traduzionePer("tecnico_advanced"), {
-    ruolo: "admin",
-    tenant: ["70791", "70791a"],
-  });
+  assert.deepEqual(traduzionePer("standard"), { ruolo: "admin", tenant: ["70791", "70791a"] });
   assert.deepEqual(traduzionePer("readonly"), { ruolo: "viewer", tenant: ["70791", "70791a"] });
 });
 
@@ -158,12 +155,13 @@ test("la traduzione dei ruoli è scritta in chiaro, coi clienti per codice", () 
 test("un ruolo senza traduzione non diventa il più basso: non si traduce", () => {
   /*
    * La tentazione è mappare l'ignoto su «viewer senza clienti» per non
-   * bloccare nessuno. Sarebbe un permesso inventato: chi fa un altro mestiere
-   * non entra in un inventario di rete per il fatto di lavorare qui. Se serve,
-   * lo si dichiara su questa applicazione con un ruolo esplicito — che è
-   * esattamente ciò per cui la dichiarazione esiste.
+   * bloccare nessuno. Sarebbe un permesso inventato. Vale soprattutto per un
+   * ruolo che è stato TOLTO dal parco: se ricomparisse da qualche parte non
+   * deve tradursi in niente per inerzia.
    */
-  assert.equal(traduzionePer("standard"), null);
+  // I ruoli del parco sono tre e li usiamo tutti: quello che non deve tradursi
+  // è ciò che non esiste — un ruolo scomparso o inventato.
+  assert.equal(traduzionePer("tecnico_advanced"), null);
   assert.equal(traduzionePer("commerciale"), null);
   assert.equal(traduzionePer("un-ruolo-nuovo"), null);
   assert.equal(traduzionePer(""), null);

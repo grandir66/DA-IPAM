@@ -3,10 +3,18 @@ import bcrypt from "bcrypt";
 import { createUser, getUserCount, createTenant, createTenantDatabase, setUserTenantAccess } from "@/lib/db";
 import { SetupSchema } from "@/lib/validators";
 import { ensureEnvSecrets } from "@/lib/env-secrets";
+import { urlDaAuth } from "@/lib/daauth";
 
 export async function GET() {
   const count = getUserCount();
-  return NextResponse.json({ needsSetup: count === 0 });
+  return NextResponse.json({
+    needsSetup: count === 0,
+    // Indirizzo del servizio di autenticazione Domarc, o "" se questa
+    // installazione non lo usa (è il caso delle appliance dei clienti). La
+    // pagina di accesso mostra il bottone solo se arriva valorizzato: la
+    // variabile vive sul server, e il browser non può leggerla da sé.
+    daauthUrl: urlDaAuth(),
+  });
 }
 
 export async function POST(request: Request) {

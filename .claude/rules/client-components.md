@@ -1,6 +1,9 @@
 ---
 scope: React client components
-applies_to: src/components/**, src/app/**/page.tsx, src/app/**/*.tsx (con "use client")
+paths:
+  - "src/components/**"
+  - "src/app/**/page.tsx"
+  - "src/app/**/*.tsx"
 ---
 
 # Client components — regole

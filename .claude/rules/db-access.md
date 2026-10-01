@@ -1,6 +1,10 @@
 ---
 scope: Database access layer
-applies_to: src/lib/db.ts, src/lib/db-tenant.ts, src/lib/db-hub.ts, src/lib/db-*-schema.ts
+paths:
+  - "src/lib/db.ts"
+  - "src/lib/db-tenant.ts"
+  - "src/lib/db-hub.ts"
+  - "src/lib/db-*-schema.ts"
 ---
 
 # DB access — regole

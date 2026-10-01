@@ -63,6 +63,11 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      # pywinrm[kerberos] → pykerberos compila contro gssapi/gssapi.h
+      # (stesse librerie di agent/scripts/install.sh).
+      - name: Install system deps (Kerberos headers)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libkrb5-dev krb5-config
+
       - name: Install agent (editable + dev)
         working-directory: agent
         run: |

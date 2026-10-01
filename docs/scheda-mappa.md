@@ -5,6 +5,7 @@ famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
 prossimo: confermare le pendenze di ../docs/pendenze-20260630.md: refactor F4 (FK host_id) e Patch Management CVE-driven
+applicazione: ipam
 ---
 IPAM e inventario **multi-tenant** per le appliance cliente, e hub di nove
 moduli security/network (edge, patch, LibreNMS, Graylog, Wazuh, MeshCentral,

@@ -26,6 +26,7 @@ import {
 import { discoverNetwork } from "@/lib/scanner/discovery";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
 import { pingHost } from "@/lib/scanner/ping";
+import { getScanIoOverride } from "@/lib/executor";
 import { tcpConnect, FALLBACK_TCP_PORTS } from "@/lib/scanner/tcp-check";
 import { createRouterClient, routerOsDurationToIsoTimestamp } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
@@ -704,7 +705,13 @@ async function checkSingleKnownHost(host: ReturnType<typeof getKnownHosts>[numbe
   let alive = false;
   let latencyMs: number | null = null;
 
-  const pingResult = await pingHost(host.ip, timeoutMs);
+  // Porta delle prove (banco T3-16): vuota in produzione, dove restano il
+  // `pingHost` e il `tcpConnect` locali di sempre.
+  const io = getScanIoOverride();
+  const ping = io ? (ip: string, t: number) => io.executor.pingHost(ip, t) : pingHost;
+  const tcp = io ? (io.tcpConnect ?? (async () => false)) : tcpConnect;
+
+  const pingResult = await ping(host.ip, timeoutMs);
   latencyMs = pingResult.latency_ms;
   if (pingResult.alive) {
     alive = true;
@@ -717,9 +724,17 @@ async function checkSingleKnownHost(host: ReturnType<typeof getKnownHosts>[numbe
       } catch { /* invalid JSON, fallback */ }
     }
     for (const port of portsToCheck) {
-      const ok = await tcpConnect(host.ip, port, 2000);
+      const ok = await tcp(host.ip, port, 2000);
       if (ok) { alive = true; break; }
     }
+  }
+
+  // T3-19 (INV-2): un ping che non ha potuto girare non è «nessuna risposta».
+  // Se nemmeno il TCP ha recuperato l'host, lo stato resta com'era e lo
+  // storico non riceve una riga che direbbe «offline» senza saperlo.
+  if (!alive && pingResult.error) {
+    console.warn(`[KnownHostCheck] host ${host.ip}: esito sconosciuto, stato invariato (${pingResult.error})`);
+    return;
   }
 
   const newStatus = alive ? "online" : "offline";

@@ -27,8 +27,11 @@ export function classifyPingError(
   if (err == null) return { esito: "vivo" };
   if (typeof err !== "object") return { esito: "sconosciuto", errore: "ping: errore non riconosciuto" };
   const e = err as { code?: unknown; killed?: unknown; signal?: unknown };
-  if (e.killed === true || (typeof e.signal === "string" && e.signal.length > 0)) {
-    return { esito: "nessuna_risposta" };
+  // Solo il timeout di execFile (killed) vale «nessuna risposta»: un segnale
+  // arrivato da fuori (OOM killer, SIGTERM al gruppo) non dice niente dell'host.
+  if (e.killed === true) return { esito: "nessuna_risposta" };
+  if (typeof e.signal === "string" && e.signal.length > 0) {
+    return { esito: "sconosciuto", errore: `ping terminato da segnale ${e.signal}` };
   }
   if (typeof e.code === "string") {
     return { esito: "sconosciuto", errore: `ping non eseguibile (${e.code})` };

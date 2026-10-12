@@ -556,6 +556,17 @@
             "title": "Alive",
             "type": "boolean"
           },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
           "ip": {
             "title": "Ip",
             "type": "string"

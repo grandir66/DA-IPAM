@@ -19,6 +19,7 @@ import { closeHubDb, createTenant } from "@/lib/db-hub";
 import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { classifyPingError } from "@/lib/scanner/ping";
 import { discoverNetwork, getScanProgress } from "@/lib/scanner/discovery";
+import { runKnownHostCheck } from "@/lib/cron/jobs";
 import { creaEsecutoreFinto, installaEsecutoreFinto, togliEsecutoreFinto } from "./support/esecutore-finto";
 
 function errSpawn(code: "ENOENT" | "EACCES"): NodeJS.ErrnoException {
@@ -68,6 +69,16 @@ describe("classifyPingError", () => {
   test("processo terminato per timeout → nessuna risposta", () => {
     assert.equal(classifyPingError(errTimeout(), "linux").esito, "nessuna_risposta");
     assert.equal(classifyPingError(errTimeout(), "darwin").esito, "nessuna_risposta");
+  });
+
+  test("processo ucciso da fuori (segnale senza timeout) → sconosciuto", () => {
+    // OOM killer o SIGTERM al gruppo: execFile riporta killed false e il segnale.
+    const ucciso = Object.assign(new Error("Command failed: ping"), {
+      code: null, killed: false, signal: "SIGKILL", stdout: "", stderr: "",
+    });
+    const r = classifyPingError(ucciso, "linux");
+    assert.equal(r.esito, "sconosciuto");
+    assert.match(r.errore ?? "", /SIGKILL/);
   });
 
   test("errore senza forma riconoscibile → sconosciuto", () => {
@@ -169,4 +180,26 @@ test("discovery «ping» con esiti misti: lo sconosciuto resta com'era, il silen
     { ip: "10.250.0.4", status: "offline" },
     { ip: "10.250.0.5", status: "online" },
   ]);
+});
+
+// Controllo degli host noti (job e rotta «run-check»): stesso principio. Un
+// esito sconosciuto del ping, se il TCP non recupera l'host, non scrive niente.
+test("controllo host noti: lo sconosciuto resta com'era e non lascia storico, il silenzioso va offline", async () => {
+  const reteId = withTenant(T, preparaRete);
+  getTenantDb(T).prepare("UPDATE hosts SET known_host = 1 WHERE network_id = ?").run(reteId);
+  const { override, chiamate } = creaEsecutoreFinto({ vivi: [], sconosciuti: ["10.250.0.5"] });
+  installaEsecutoreFinto(override);
+
+  await withTenant(T, () => runKnownHostCheck(null));
+
+  assert.deepEqual(tentativiBloccati, []);
+  assert.equal(chiamate.pingHost, 2);
+  assert.deepEqual(host(reteId), [
+    { ip: "10.250.0.4", status: "offline" },
+    { ip: "10.250.0.5", status: "online" },
+  ]);
+  const storico = getTenantDb(T)
+    .prepare("SELECT h.ip FROM status_history s JOIN hosts h ON h.id = s.host_id ORDER BY h.ip")
+    .all() as Array<{ ip: string }>;
+  assert.deepEqual(storico.map((r) => r.ip), ["10.250.0.4"]);
 });

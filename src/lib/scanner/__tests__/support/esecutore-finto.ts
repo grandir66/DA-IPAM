@@ -15,6 +15,8 @@ const CHIAVE = Symbol.for("da-ipam.executor.override");
 export interface ScenarioFinto {
   /** IP che rispondono al ping (gli altri risultano spenti). */
   vivi: string[];
+  /** IP su cui il ping non ha potuto girare (esito sconosciuto, T3-19). */
+  sconosciuti?: string[];
   /** IP che rispondono al secondo passaggio TCP (porta qualunque). */
   viviTcp?: string[];
   /** Voci della cache ARP locale. */
@@ -46,8 +48,13 @@ export function creaEsecutoreFinto(s: ScenarioFinto): { override: ScanIoOverride
     runArpPoll: 0,
   };
   const vivi = new Set(s.vivi);
+  const sconosciuti = new Set(s.sconosciuti ?? []);
   const ping = (ip: string): PingResult =>
-    vivi.has(ip) ? { ip, alive: true, latency_ms: 1.2, ttl: 64 } : { ip, alive: false, latency_ms: null, ttl: null };
+    vivi.has(ip)
+      ? { ip, alive: true, latency_ms: 1.2, ttl: 64 }
+      : sconosciuti.has(ip)
+        ? { ip, alive: false, latency_ms: null, ttl: null, error: "ping non eseguibile (ENOENT)" }
+        : { ip, alive: false, latency_ms: null, ttl: null };
   const risolvi = (ip: string): DnsResolution => {
     const nome = s.ptr?.[ip] ?? null;
     return { reverse: nome, forward: nome };

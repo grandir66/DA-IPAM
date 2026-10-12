@@ -57,6 +57,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **Un ping che non può girare non spegne più gli host** (tappa 3, T3-19, INV-2): il ping ora ha tre esiti, «vivo», «nessuna risposta» e «sconosciuto». Quando il comando di ping non può partire o esce con un errore suo (e non per mancanza di risposta), l'indirizzo resta com'era invece di essere segnato spento; se nessun indirizzo ha avuto un esito vero, il giro finisce «fallito» senza toccare gli host. *Perché*: prima ogni errore del ping valeva «host spento», quindi un problema della macchina che scansiona poteva spegnere in un colpo tutta una rete. Il codice di uscita si legge secondo la piattaforma (Linux e macOS lo usano in modo diverso).
+
 - **Ordinamenti giusti nelle liste paginate.** Nelle liste DHCP e Subnet gli IP e
   i CIDR si ordinavano come testo («10.0.0.10» prima di «10.0.0.2»); la colonna
   «Ultimo visto» del DHCP ordinava in realtà per «Ultimo sync»; a valori uguali

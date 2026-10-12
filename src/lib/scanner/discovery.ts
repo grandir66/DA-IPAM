@@ -348,10 +348,39 @@ async function runDiscovery(
       _exec = null;
     }
   }
-  const pingSweep = _exec
+  const rawPingSweep = _exec
     ? (ips: string[], concurrency: number = 50, onProgress?: (scanned: number, found: number) => void) =>
         _exec!.pingSweep(ips, concurrency, onProgress ? { onProgress } : undefined)
     : _localPingSweep;
+  /* T3-19 (INV-2): il ping ha tre esiti. Gli IP con esito «sconosciuto» (ping che
+   * non ha potuto girare) non sono candidati offline; se nessun IP ha avuto un
+   * esito vero il giro fallisce qui, prima di scrivere qualunque host. */
+  const pingSconosciuti = new Set<string>();
+  const pingSweep = async (
+    sweepIps: string[],
+    concurrency: number = 50,
+    onProgress?: (scanned: number, found: number) => void,
+  ) => {
+    const results = await rawPingSweep(sweepIps, concurrency, onProgress);
+    let sconosciuti = 0;
+    let primoErrore: string | undefined;
+    for (const r of results) {
+      if (!r.alive && r.error) {
+        pingSconosciuti.add(r.ip);
+        sconosciuti++;
+        primoErrore ??= r.error;
+      } else {
+        pingSconosciuti.delete(r.ip);
+      }
+    }
+    if (results.length > 0 && sconosciuti === results.length) {
+      throw new Error(
+        `Ping non eseguibile su tutti i ${results.length} indirizzi (esito sconosciuto: ${primoErrore}): nessun host modificato`,
+      );
+    }
+    if (sconosciuti > 0) log(`Ping: ${sconosciuti} indirizzi con esito sconosciuto, non marcati offline (${primoErrore})`);
+    return results;
+  };
   const nmapDiscoverHosts = _exec
     ? (target: string, timeoutMs?: number) => _exec!.nmapDiscoverHosts(target, timeoutMs)
     : _localNmapDiscoverHosts;
@@ -3139,14 +3168,18 @@ async function runDiscovery(
   //   (scan manuali, l'utente può avere visioni parziali su CIDR grandi).
   // - ping: marca offline (solo ICMP, comportamento classico).
   // ═══════════════════════════════════════════════════════════════
+  // T3-19: gli IP col ping «sconosciuto» restano fuori, né offline né annotati.
+  const ipsDecisi = pingSconosciuti.size > 0 ? ips.filter((ip) => !pingSconosciuti.has(ip)) : ips;
   if (scanType === "network_discovery" || scanType === "fast" || scanType === "scan_naabu") {
     progress.phase = "Aggiornamento host offline";
-    noteHostsNonResponding(networkId, onlineIps, ips, scanType);
-    markHostsOffline(networkId, onlineIps, ips);
-    log(`Host non rispondenti (${ips.length - onlineIps.length}): marcati offline dopo ICMP + TCP fallback`);
+    noteHostsNonResponding(networkId, onlineIps, ipsDecisi, scanType);
+    markHostsOffline(networkId, onlineIps, ipsDecisi);
+    const onlineSet = new Set(onlineIps);
+    const nonRispondenti = ipsDecisi.filter((ip) => !onlineSet.has(ip)).length;
+    log(`Host non rispondenti (${nonRispondenti}): marcati offline dopo ICMP + TCP fallback`);
   } else if (scanType === "nmap" || scanType === "ipam_full") {
     progress.phase = "Annotazione host non rispondenti";
-    noteHostsNonResponding(networkId, onlineIps, ips, scanType);
+    noteHostsNonResponding(networkId, onlineIps, ipsDecisi, scanType);
     log(`Host non rispondenti (${ips.length - onlineIps.length}): annotati nelle note per revisione`);
   } else if (
     scanType !== "snmp" &&
@@ -3156,7 +3189,7 @@ async function runDiscovery(
     // ping e altri sweep ICMP-only: marca offline. I sub-step UI additivi
     // (nmap_base / snmp_verify) non devono flippare host non in target.
     progress.phase = "Aggiornamento host offline";
-    markHostsOffline(networkId, onlineIps, ips);
+    markHostsOffline(networkId, onlineIps, ipsDecisi);
   }
 
   // ═══════════════════════════════════════════════════════════════

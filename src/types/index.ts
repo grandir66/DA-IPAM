@@ -873,6 +873,12 @@ export interface PingResult {
   latency_ms: number | null;
   /** TTL ICMP se ricavato dall'output di ping (fingerprint OS). */
   ttl?: number | null;
+  /**
+   * Presente quando il ping non ha potuto girare (binario assente, permessi,
+   * errore locale): l'esito è «sconosciuto», non «host spento» (T3-19, INV-2).
+   * `alive: false` senza `error` vuol dire «nessuna risposta».
+   */
+  error?: string;
 }
 
 export interface NmapResult {

@@ -97,7 +97,7 @@ e si esegue com'è, con queste correzioni. **`dev` arriva da solo all'appliance 
 > importa da lì e i test partono da `parseStatDeviceResponse(fixture)`: i test d'esempio qui
 > sotto (LLDP dentro le porte, `lldp_chassis_id`) hanno la forma sbagliata — correzione 1.
 
-- [ ] **Step 1: test (falliscono)** — `unifi-map.test.ts`:
+- [x] **Step 1: test (falliscono)** — `unifi-map.test.ts` *(scritti sulla fixture vera, non su questo esempio: vedi l'esito sotto)*:
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -150,10 +150,29 @@ test("device senza MAC/port_table non crasha", () => {
   assert.doesNotThrow(() => mapUnifiLldp({ type: "usw" } as any));
 });
 ```
-- [ ] **Step 2:** `node --import tsx --test src/lib/integrations/__tests__/unifi-map.test.ts` → FAIL (modulo assente).
-- [ ] **Step 3:** implementare `unifi-map.ts` (tipo `UnifiDevice` + le 4 funzioni; `port.up ? "up" : "down"`; `trunk_neighbor_name = port.lldp_table?.[0]?.lldp_chassis_id ?? null`; iterazioni con `?? []`).
-- [ ] **Step 4:** test → PASS.
-- [ ] **Step 5:** `git commit -m "feat(unifi): mapping puro controller→DB (device/porte/lldp) + test"`.
+- [x] **Step 2:** `node --import tsx --test src/lib/integrations/__tests__/unifi-map.test.ts` → FAIL (modulo assente).
+- [x] **Step 3:** implementare `unifi-map.ts` (tipo `UnifiDevice` + le 4 funzioni; `port.up ? "up" : "down"`; `trunk_neighbor_name = port.lldp_table?.[0]?.lldp_chassis_id ?? null`; iterazioni con `?? []`).
+- [x] **Step 4:** test → PASS. *(16/16; tre mutazioni viste cadere: indice per MAC, regola del sottotipo, porta letta dal vicino)*
+- [x] **Step 5:** `git commit -m "feat(unifi): mapping puro controller→DB (device/porte/lldp) + test"`.
+
+> **Esito del passo 2 (12/10), dove differisce da sopra.** Firme: `mapUnifiDeviceType(t)`,
+> `mapUnifiDevice(d)` → `{ok:true, device} | {ok:false, reason}` (tipo ignoto o apparato senza IP:
+> scartato col motivo, per gli `skipped` della sync), `buildUnifiMacIndex(devices)` (una volta per
+> risposta), `mapUnifiPorts(d, index)`, `mapUnifiLldp(d, index)`: l'indice è obbligatorio perché il
+> nome del vicino si risolve fra gli apparati della stessa risposta. L'apparato esce coi nomi delle
+> colonne (`host`, `serial_number`, `firmware`, `model`) più `mac`; i vicini nella forma di
+> `upsertNeighbors` (`localPort`, `remoteDevice`, `remotePort`, `remoteMac`, `remoteIp`, `remotePlatform`).
+> - **MAC del vicino**: `chassis_id_subtype` sugli switch MANCA (c'è solo sugli AP); senza sottotipo
+>   un `chassis_id` con forma di MAC vale come MAC, altrimenti nessun vicino degli switch avrebbe nome.
+>   Forma del DB (`normalizeMacForStorage`, AA:BB:…): `upsertNeighbors` confronta `remote_mac = hosts.mac`.
+> - **Porta remota**: `port_id` senza "local "; se è un MAC (il vicino non annuncia la porta) si legge
+>   dalla voce LLDP del vicino che punta a noi (SW-1 porta 7 → AP-3 `eth0`), altrimenti `""`.
+> - **IP del vicino**: primo di `mgmt_ips`, altrimenti l'IP dell'apparato risolto nella risposta;
+>   `remotePlatform` = suo modello.
+> - **Porte**: `Port <idx>` se senza nome; stato `disabled`/`up`/`down`/null (offline); velocità
+>   `"1000 Mbps"` e PoE `delivering`/`searching`/`disabled` come la scansione SNMP; `is_trunk` anche per
+>   uplink, LAG e porta con vicino LLDP (altrimenti la pagina dell'apparato non mostra il vicino).
+>   VLAN, MAC singolo, host e peer principale restano null: li può riempire la sync.
 
 ---
 

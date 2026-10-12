@@ -456,7 +456,7 @@ export function OnboardingWizard() {
         {step === 2 && (
           <div className="space-y-4 text-sm max-h-[55vh] overflow-y-auto pr-1">
             <p className="text-muted-foreground">
-              Credenziali archiviate per provare automaticamente SNMP, SSH e accesso host Windows/Linux durante le analisi. Potrai modificarle in Impostazioni.
+              Credenziali archiviate per provare automaticamente SNMP, SSH e accesso host Windows/Linux durante le analisi. Potrai modificarle in Network → Credenziali.
             </p>
 
             <div className="rounded-lg border p-3 space-y-2">

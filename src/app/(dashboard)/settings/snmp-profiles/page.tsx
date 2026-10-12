@@ -576,7 +576,7 @@ export default function SnmpProfilesPage() {
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center gap-4">
-        <Link href="/settings">
+        <Link href="/settings?tab=identificazione">
           <Button variant="ghost" size="sm">
             <ChevronLeft className="h-4 w-4 mr-1" />
             Impostazioni

@@ -18,6 +18,11 @@ const HUB_DB_PATH = process.env.DA_IPAM_HUB_DB_PATH?.trim()
 
 let _hubDb: Database.Database | null = null;
 
+/** Percorso di hub.db, per chi deve sapere se esiste senza crearlo. */
+export function getHubDbPath(): string {
+  return HUB_DB_PATH;
+}
+
 // ========================
 // Seed functions
 // ========================

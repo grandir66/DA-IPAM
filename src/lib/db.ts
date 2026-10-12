@@ -58,6 +58,7 @@ import type {
   ExcludedIpWithNetwork,
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
+import { registraRipiego } from "./db-maintenance/ripieghi";
 
 const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
@@ -98,8 +99,8 @@ export function closeDb(): void {
 
 /**
  * Il tenant che `getDb()` userebbe ADESSO, ovvero come il facade risolve il
- * contesto in questo istante. `null` = nessun contesto, e quindi il fallback
- * silenzioso a DEFAULT poche righe sotto.
+ * contesto in questo istante. `null` = nessun contesto, e quindi il ripiego
+ * su DEFAULT (contato nel registro dei ripieghi) poche righe sotto.
  *
  * PERCHE' STA QUI e non nel chiamante: deve usare la risoluzione di QUESTO
  * modulo. Sotto tsx possono coesistere due istanze di `db-tenant` (import
@@ -120,23 +121,45 @@ export function currentFacadeTenant(): string | null {
   }
 }
 
+/** Le due funzioni di `db-tenant` che servono al facade (via `require`, vedi sopra). */
+interface FacadeTenantModule {
+  getCurrentTenantCode(): string | null;
+  getTenantDb(code: string): Database.Database;
+  TenantContextError: new (code: string, cause?: unknown) => Error;
+}
+
 export function getDb(): Database.Database {
-  // Multi-tenant: se c'è un contesto tenant attivo, usa il tenant DB
+  let tenantMod: FacadeTenantModule | null = null;
   try {
-    const { getCurrentTenantCode, getTenantDb } = require("./db-tenant");
-    const tenantCode = getCurrentTenantCode();
-    if (tenantCode) return getTenantDb(tenantCode);
+    tenantMod = require("./db-tenant") as FacadeTenantModule;
   } catch { /* db-tenant non disponibile (build-time) */ }
 
-  // Fallback: se esiste hub.db (multi-tenant attivo) ma nessun contesto, usa DEFAULT
-  const hubPath = path.join(DATA_DIR, "hub.db");
-  const defaultTenantPath = path.join(DATA_DIR, "tenants", "DEFAULT.db");
-  if (fs.existsSync(hubPath) && fs.existsSync(defaultTenantPath)) {
+  // Multi-tenant: se c'è un contesto tenant attivo, usa il tenant DB.
+  // NUC-1: se quel database NON si apre è un errore. Prima si ripiegava in
+  // silenzio su DEFAULT, cioè si scriveva nel database del tenant sbagliato.
+  const tenantCode = tenantMod?.getCurrentTenantCode() ?? null;
+  if (tenantMod && tenantCode) {
     try {
-      const { getTenantDb } = require("./db-tenant");
-      return getTenantDb("DEFAULT");
+      return tenantMod.getTenantDb(tenantCode);
+    } catch (error) {
+      throw new tenantMod.TenantContextError(tenantCode, error);
+    }
+  }
+
+  // Senza contesto, con hub.db presente (multi-tenant attivo): l'esito resta
+  // quello di sempre (DEFAULT, o ipam.db se DEFAULT manca), ma ogni accesso si
+  // conta nel registro dei ripieghi (NUC-1 fase A) per sapere chi correggere.
+  const hubPath = path.join(DATA_DIR, "hub.db");
+  const hubPresente = fs.existsSync(hubPath);
+  const defaultTenantPath = path.join(DATA_DIR, "tenants", "DEFAULT.db");
+  if (hubPresente && tenantMod && fs.existsSync(defaultTenantPath)) {
+    try {
+      const def = tenantMod.getTenantDb("DEFAULT");
+      registraRipiego("default", "DEFAULT");
+      return def;
     } catch { /* fallback a legacy */ }
   }
+  if (hubPresente) registraRipiego("legacy");
 
   // Legacy single-tenant: apre ipam.db come prima
   if (_db) return _db;

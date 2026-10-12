@@ -8,6 +8,16 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunte
 
+- **Registro dei ripieghi del database** (tappa 3, NUC-1 fase A). Ogni accesso al
+  database senza contesto tenant, su un'installazione con hub, si conta: il
+  ripiego su DEFAULT, quello su `ipam.db` e il file di un tenant che l'hub non
+  conosce. Il registro è in `data/logs/ripieghi/` (un file JSONL al giorno, 30
+  giorni, una riga per chiamante e ora, lo stack una volta sola). `/api/health`
+  dà solo il numero; `/api/modules/health`, autenticata, dice chi e da dove.
+  Perché: il 02/09 un contesto perso ha mandato dati di un tenant in DEFAULT senza
+  un allarme; prima di trasformare questi ripieghi in errori bisogna sapere, con
+  una settimana di dati che sopravvive agli aggiornamenti, chi li usa ancora.
+
 - **Misura del database di un tenant, in sola lettura** (tappa 3, strumento per
   DB-1, DB-2, DB-3). `npx tsx scripts/misura-db-tenant.ts <file.db>` stampa righe
   e spazio per tabella, righe al giorno dello storico MAC-IP, coppie già viste,
@@ -65,6 +75,11 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
     compresi, perché il resto del DDL della v8 è ancora scritto a mano.
 
 ### Correzioni
+
+- **Un tenant il cui database non si apre è un errore** (NUC-1). Prima il facade
+  ripiegava in silenzio su DEFAULT: le scritture finivano nel database sbagliato.
+  `/api/health` verifica il database sull'hub invece che passare dal facade, che
+  senza contesto è proprio un ripiego.
 
 - **Ordinamenti giusti nelle liste paginate.** Nelle liste DHCP e Subnet gli IP e
   i CIDR si ordinavano come testo («10.0.0.10» prima di «10.0.0.2»); la colonna

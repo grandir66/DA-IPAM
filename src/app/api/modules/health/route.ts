@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getCurrentTenantCode } from "@/lib/db-tenant";
+import { riepilogoRipieghi } from "@/lib/db-maintenance/ripieghi";
 import { getModulesHealth, invalidateModulesHealth, PROBED_MODULE_KEYS } from "@/lib/modules/health";
 import type { ModuleKey } from "@/lib/modules/registry";
 
@@ -19,8 +20,10 @@ export async function GET() {
     if (isAuthError(authErr)) return authErr;
     const tenantCode = getCurrentTenantCode() ?? "DEFAULT";
     const health = await getModulesHealth(tenantCode);
+    // Ripieghi del facade del DB (NUC-1): chi accede senza contesto tenant,
+    // dal processo corrente. Lo storico persistente è in data/logs/ripieghi/.
     return NextResponse.json(
-      { ok: true, health },
+      { ok: true, health, ripieghi: riepilogoRipieghi() },
       {
         headers: {
           "Cache-Control": "private, max-age=60, stale-while-revalidate=300",

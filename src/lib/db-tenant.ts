@@ -24,7 +24,8 @@ import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
-import { getActiveTenants } from "./db-hub";
+import { getActiveTenants, getHubDbPath, getTenantByCode } from "./db-hub";
+import { registraRipiego } from "./db-maintenance/ripieghi";
 import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
 
 import type {
@@ -63,6 +64,20 @@ import type {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const tenantContext = new AsyncLocalStorage<string>();
+
+/**
+ * Il contesto tenant c'è ma il suo database non si apre (NUC-1). Prima il
+ * facade `getDb()` ripiegava in silenzio su DEFAULT: una scrittura nel
+ * database del tenant sbagliato al posto di un errore (incidente 2026-09-02).
+ */
+export class TenantContextError extends Error {
+  readonly tenantCode: string;
+  constructor(tenantCode: string, cause?: unknown) {
+    super(`Database del tenant ${tenantCode} non apribile`, { cause });
+    this.name = "TenantContextError";
+    this.tenantCode = tenantCode;
+  }
+}
 
 export function withTenant<T>(tenantCode: string, fn: () => T): T {
   return tenantContext.run(tenantCode, fn);
@@ -193,6 +208,16 @@ export function getTenantDb(tenantCode: string): Database.Database {
   // applicandovi schema/migrazioni e corrompendolo. Fail-closed.
   if (path.dirname(path.resolve(dbPath)) !== path.resolve(TENANTS_DIR)) {
     throw new Error(`Tenant code non valido: ${tenantCode}`);
+  }
+  // NUC-1 fase A: un file tenant che sta per nascere per un codice che l'hub
+  // non conosce si conta (l'esito non cambia ancora). Solo con l'hub presente:
+  // senza hub (script, generazione del template) non c'è un registro da consultare.
+  if (!fs.existsSync(dbPath) && fs.existsSync(getHubDbPath())) {
+    let registrato = true;
+    try {
+      registrato = getTenantByCode(tenantCode) !== undefined;
+    } catch { /* hub illeggibile: non si sa, non si conta */ }
+    if (!registrato) registraRipiego("tenant_non_registrato", tenantCode);
   }
   const newDb = new Database(dbPath);
   // Ordinamento numerico di IP e CIDR nelle liste paginate (UI-9).

@@ -25,6 +25,7 @@ import { request as httpRequest } from "node:http";
 import { connect as tlsConnect } from "node:tls";
 import { URL } from "node:url";
 import { safeDecrypt } from "@/lib/crypto";
+import { parseEdgeProfilesResponse, type EdgeProfilesList } from "@/lib/vuln/edge-profiles";
 
 /**
  * Probe TLS preliminare: apre una connessione, legge il cert peer e
@@ -300,7 +301,7 @@ async function edgeFetch<T>(
     expectedPin: scanner.cert_pin ?? null,
   });
   if (res.status < 200 || res.status >= 300) {
-    const detail = res.body.slice(0, 200);
+    const detail = edgeErrorDetail(res.body);
     throw new EdgeClientError(res.status, `edge ${res.status}: ${detail || res.statusText}`);
   }
   try {
@@ -308,6 +309,25 @@ async function edgeFetch<T>(
   } catch {
     throw new EdgeClientError(res.status, `risposta non-JSON: ${res.body.slice(0, 100)}`);
   }
+}
+
+/**
+ * Testo di una risposta d'errore dell'edge. FastAPI risponde
+ * `{"detail": "Profilo sconosciuto: x"}`: all'utente arriva la frase, non il
+ * JSON. Il resto (testo, `detail` non stringa come nei 422 di validazione) si
+ * mostra com'è, tagliato a 200 caratteri.
+ */
+function edgeErrorDetail(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (parsed && typeof parsed === "object" && "detail" in parsed) {
+      const detail = (parsed as { detail: unknown }).detail;
+      if (typeof detail === "string" && detail.trim()) return detail.trim().slice(0, 200);
+    }
+  } catch {
+    // non JSON: si mostra il testo com'è
+  }
+  return body.slice(0, 200);
 }
 
 /**
@@ -429,6 +449,23 @@ export async function edgeApiDelete<T>(
   opts: { timeoutMs?: number } = {},
 ): Promise<T> {
   return edgeFetch<T>(scanner, path, { method: "DELETE" }, opts);
+}
+
+/**
+ * GET /api/v1/profiles — profili assessment del catalogo dell'edge (EDG-1).
+ * Stessa via delle altre chiamate: token, pin del certificato, timeout ed
+ * errori di `edgeFetch`. Una risposta con la forma sbagliata è un errore,
+ * non un elenco vuoto.
+ */
+export async function listEdgeProfiles(
+  scanner: Pick<VulnScannerRow, "base_url" | "token_encrypted" | "cert_pin">,
+  opts: { image?: string; timeoutMs?: number } = {},
+): Promise<EdgeProfilesList> {
+  const q = opts.image ? `?image=${encodeURIComponent(opts.image)}` : "";
+  const raw = await edgeFetch<unknown>(scanner, `/api/v1/profiles${q}`, {}, { timeoutMs: opts.timeoutMs ?? 8000 });
+  const parsed = parseEdgeProfilesResponse(raw);
+  if (!parsed.ok) throw new EdgeClientError(200, parsed.error);
+  return parsed.list;
 }
 
 export async function listScans(

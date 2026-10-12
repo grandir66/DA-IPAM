@@ -24,14 +24,16 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Clock, ExternalLink, Loader2, Save, ShieldAlert, Trash2 } from "lucide-react";
+import { LoadError } from "@/components/shared/load-error";
+import { AlertTriangle, Clock, ExternalLink, Loader2, Save, ShieldAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type {
-  AssessmentProfileId,
   EdgeScanProfile,
   EdgeSubnetStatus,
   EdgeTargetingMode,
 } from "@/lib/vuln/edge-subnet-bridge";
+import { findEdgeProfile, type EdgeProfilesList } from "@/lib/vuln/edge-profiles";
+import { fetchJson } from "@/lib/fetch-json";
 import { ScheduleBuilder, type ScheduleBuilderValue } from "@/components/networks/schedule-builder";
 import { slugifyJobName, type Frequency } from "@/lib/vuln/cron-builder";
 
@@ -42,12 +44,12 @@ const SLOT_LABELS: Record<string, string> = {
   ad: "AD (assessment)",
 };
 
-const ASSESSMENT_PROFILE_LABELS: Record<AssessmentProfileId, string> = {
-  "smoke-interno": "Smoke (verifica orchestrazione)",
-  "safe-interno": "Safe interno",
-  "validation-plus": "Validation plus (AD / TLS / CIS)",
-  "interno-approfondito": "Interno approfondito",
-};
+/** Profili assessment letti dall'edge (EDG-1): mai una lista scritta qui. */
+type EdgeProfilesState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | ({ status: "ok" } & EdgeProfilesList)
+  | { status: "error"; message: string };
 
 const PROFILE_LABELS: Record<EdgeScanProfile, string> = {
   fast: "Veloce (~15–30 min /24)",
@@ -153,8 +155,8 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
   const [syncCredentials, setSyncCredentials] = useState(true);
   const [targetingMode, setTargetingMode] = useState<EdgeTargetingMode>("full_subnet");
   const [assessmentEnabled, setAssessmentEnabled] = useState(false);
-  const [assessmentProfileId, setAssessmentProfileId] =
-    useState<AssessmentProfileId>("validation-plus");
+  const [assessmentProfileId, setAssessmentProfileId] = useState<string | null>(null);
+  const [edgeProfiles, setEdgeProfiles] = useState<EdgeProfilesState>({ status: "idle" });
 
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleProfile, setScheduleProfile] = useState<EdgeScanProfile>("balanced");
@@ -180,7 +182,20 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
   const resolvedCidr = cidr ?? status?.edgeNetwork?.cidr;
   const fullSubnetCount = resolvedCidr ? cidrAddressCount(resolvedCidr) : null;
 
-  const refresh = useCallback(async () => {
+  const loadEdgeProfiles = useCallback(async () => {
+    setEdgeProfiles({ status: "loading" });
+    const res = await fetchJson<{ ok: true } & EdgeProfilesList>("/api/integrations/scanner-edge/profiles");
+    if (res.ok) {
+      setEdgeProfiles({ status: "ok", profiles: res.data.profiles, ignored: res.data.ignored });
+    } else {
+      setEdgeProfiles({ status: "error", message: res.message });
+    }
+  }, []);
+
+  /** `withProfiles`: rilegge anche i profili dall'edge (all'apertura del dialogo).
+   *  Senza, li legge solo se la rete ha un assessment salvato, per dire sul
+   *  pulsante se quel profilo non esiste più. */
+  const refresh = useCallback(async (opts?: { withProfiles?: boolean }) => {
     try {
       const r = await fetch(`/api/networks/${networkId}/edge-scan`);
       if (r.ok) {
@@ -192,6 +207,12 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
         setAssessmentEnabled(Boolean(data.assessment_enabled));
         if (data.assessment_profile_id) {
           setAssessmentProfileId(data.assessment_profile_id);
+        }
+        if (
+          data.edgeConfigured &&
+          (opts?.withProfiles || (data.assessment_enabled && data.assessment_profile_id))
+        ) {
+          void loadEdgeProfiles();
         }
         if (saved) {
           setHasSchedule(true);
@@ -217,15 +238,39 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
     } finally {
       setLoading(false);
     }
-  }, [networkId]);
+  }, [networkId, loadEdgeProfiles]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   useEffect(() => {
-    if (open) void refresh();
+    if (open) void refresh({ withProfiles: true });
   }, [open, refresh]);
+
+  const edgeProfileList = edgeProfiles.status === "ok" ? edgeProfiles.profiles : null;
+  const selectedProfile = edgeProfileList ? findEdgeProfile(edgeProfileList, assessmentProfileId) : null;
+  const selectedProfileMissing = !!edgeProfileList && !!assessmentProfileId && !selectedProfile;
+  // Profilo salvato sulla rete che l'edge non ha (più): l'assessment dopo ogni
+  // scansione, anche pianificata, fallirebbe sull'edge senza che qui si veda.
+  const savedProfileId = status?.assessment_enabled ? status.assessment_profile_id : null;
+  const savedProfileMissing =
+    !!edgeProfileList && !!savedProfileId && !findEdgeProfile(edgeProfileList, savedProfileId);
+
+  function profileLabel(id: string | null): string {
+    if (!id) return "";
+    return (edgeProfileList && findEdgeProfile(edgeProfileList, id)?.label) || id;
+  }
+
+  /** Assessment acceso senza un profilo scelto fra quelli dell'edge: si ferma qui. */
+  function assessmentChoiceError(): string | null {
+    if (!assessmentEnabled) return null;
+    if (!assessmentProfileId) return "Scegli il profilo assessment, oppure disattiva l'assessment";
+    if (selectedProfileMissing) {
+      return `Il profilo «${assessmentProfileId}» non esiste sull'edge: scegline un altro, oppure disattiva l'assessment`;
+    }
+    return null;
+  }
 
   // Auto-compila il nome job finché l'utente non lo modifica a mano.
   useEffect(() => {
@@ -240,6 +285,11 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
   }, [jobNameTouched, networkName, resolvedCidr, targetingMode, sched.frequency]);
 
   async function handleScan() {
+    const choiceError = assessmentChoiceError();
+    if (choiceError) {
+      toast.error(choiceError);
+      return;
+    }
     setScanning(true);
     try {
       const r = await fetch(`/api/networks/${networkId}/edge-scan`, {
@@ -259,7 +309,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
         toast.success(
           `Scan VA avviato (#${d.scan_id ?? "?"})` +
             (d.host_count != null ? ` — ${d.host_count} host target` : "") +
-            (assessmentEnabled ? ` · assessment ${assessmentProfileId}` : ""),
+            (assessmentEnabled ? ` · assessment ${profileLabel(assessmentProfileId)}` : ""),
         );
         await refresh();
       } else {
@@ -275,6 +325,11 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
   async function handleSaveSchedule() {
     if (!jobName.trim()) {
       toast.error("Indica un nome job/report");
+      return;
+    }
+    const choiceError = assessmentChoiceError();
+    if (choiceError) {
+      toast.error(choiceError);
       return;
     }
     setSavingSchedule(true);
@@ -396,17 +451,31 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
         className={triggerButtonClass}
         onClick={() => setOpen(true)}
         disabled={disabled}
-        title="Avvia o schedula VA Scan su questa subnet"
+        title={
+          savedProfileMissing
+            ? `Il profilo assessment «${savedProfileId}» salvato per questa subnet non esiste sull'edge: apri per sceglierne un altro`
+            : "Avvia o schedula VA Scan su questa subnet"
+        }
       >
         <ShieldAlert className="h-3.5 w-3.5 mr-1 shrink-0" />
         VA Scan
-        {summaryBadge && (
+        {savedProfileMissing ? (
           <Badge
             variant="outline"
-            className="ml-1.5 h-5 px-1.5 text-[10px] font-semibold border-white/40 text-white bg-white/10"
+            className="ml-1.5 h-5 px-1.5 text-[10px] font-semibold border-white/70 text-white bg-destructive"
           >
-            {summaryBadge}
+            <AlertTriangle />
+            Profilo assente
           </Badge>
+        ) : (
+          summaryBadge && (
+            <Badge
+              variant="outline"
+              className="ml-1.5 h-5 px-1.5 text-[10px] font-semibold border-white/40 text-white bg-white/10"
+            >
+              {summaryBadge}
+            </Badge>
+          )
         )}
       </Button>
 
@@ -424,6 +493,21 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                 : " · la rete verrà registrata sull'edge al primo scan"}
             </DialogDescription>
           </DialogHeader>
+
+          {savedProfileMissing && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <p>
+                Il profilo assessment <strong>«{savedProfileId}»</strong> salvato per questa subnet non
+                esiste sull&apos;edge: dopo ogni scansione, anche quelle pianificate, l&apos;assessment
+                fallisce. Scegli uno dei profili dell&apos;edge qui sotto e salva di nuovo la
+                schedulazione, oppure disattiva l&apos;assessment.
+              </p>
+            </div>
+          )}
 
           {last && (
             <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs space-y-0.5">
@@ -539,7 +623,12 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                       <Switch
                         id={`edge-assessment-${networkId}`}
                         checked={assessmentEnabled}
-                        onCheckedChange={setAssessmentEnabled}
+                        onCheckedChange={(on) => {
+                          setAssessmentEnabled(on);
+                          if (on && (edgeProfiles.status === "idle" || edgeProfiles.status === "error")) {
+                            void loadEdgeProfiles();
+                          }
+                        }}
                         disabled={scanning || disabled || !status.edgeEnabled}
                       />
                       <Label htmlFor={`edge-assessment-${networkId}`} className="text-xs leading-snug cursor-pointer">
@@ -548,22 +637,77 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                     </div>
                     {assessmentEnabled && (
                       <div className="space-y-1.5 pl-1">
-                        <Label className="text-xs">Profilo assessment</Label>
-                        <Select
-                          value={assessmentProfileId}
-                          onValueChange={(v) => setAssessmentProfileId(v as AssessmentProfileId)}
-                        >
-                          <SelectTrigger className="h-9 text-sm">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(Object.keys(ASSESSMENT_PROFILE_LABELS) as AssessmentProfileId[]).map((p) => (
-                              <SelectItem key={p} value={p}>
-                                {ASSESSMENT_PROFILE_LABELS[p]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Label className="text-xs">Profilo assessment (catalogo dell&apos;edge)</Label>
+                        {edgeProfiles.status === "ok" ? (
+                          edgeProfiles.profiles.length > 0 ? (
+                            <>
+                              <Select
+                                value={selectedProfile ? selectedProfile.id : null}
+                                onValueChange={(v) => setAssessmentProfileId(v)}
+                                disabled={scanning || disabled || !status.edgeEnabled}
+                              >
+                                <SelectTrigger
+                                  className="h-9 text-sm"
+                                  aria-invalid={selectedProfileMissing || undefined}
+                                >
+                                  <SelectValue placeholder="Scegli un profilo dell'edge" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {edgeProfiles.profiles.map((p) => (
+                                    <SelectItem key={p.id} value={p.id}>
+                                      {p.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {selectedProfileMissing && (
+                                <p role="alert" className="text-sm text-destructive">
+                                  Il profilo «{assessmentProfileId}» non esiste sull&apos;edge: scegline uno
+                                  dell&apos;elenco, oppure disattiva l&apos;assessment.
+                                </p>
+                              )}
+                              {selectedProfile?.requires_authorization && (
+                                <p className="text-xs text-amber-700 dark:text-amber-400">
+                                  Profilo intrusivo: serve l&apos;autorizzazione scritta del cliente.
+                                </p>
+                              )}
+                              {edgeProfiles.ignored > 0 && (
+                                <p className="text-xs text-amber-700 dark:text-amber-400">
+                                  {edgeProfiles.ignored === 1
+                                    ? "1 voce del catalogo dell'edge è stata scartata"
+                                    : `${edgeProfiles.ignored} voci del catalogo dell'edge sono state scartate`}
+                                  : id mancante, non valido o ripetuto.
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <p role="alert" className="text-sm text-destructive">
+                              L&apos;edge non ha profili assessment nel suo catalogo
+                              {edgeProfiles.ignored > 0 ? ` (${edgeProfiles.ignored} voci scartate perché non valide)` : ""}:
+                              disattiva l&apos;assessment.
+                            </p>
+                          )
+                        ) : edgeProfiles.status === "error" ? (
+                          <LoadError
+                            what="i profili assessment dall'edge"
+                            message={edgeProfiles.message}
+                            onRetry={() => void loadEdgeProfiles()}
+                          />
+                        ) : edgeProfiles.status === "loading" ? (
+                          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Lettura dei profili dall&apos;edge…
+                          </p>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void loadEdgeProfiles()}
+                            disabled={scanning || disabled || !status.edgeEnabled}
+                          >
+                            Leggi i profili dall&apos;edge
+                          </Button>
+                        )}
                         <p className="text-[11px] text-muted-foreground">
                           Target e filtri porte dall&apos;inventario IPAM (stessa modalità targeting sopra).
                         </p>

@@ -14,9 +14,7 @@ import {
   traduzionePer,
   accessoDomarcAttivo,
   cookieDaAuth,
-  decidiAccessoDomarc,
   identitaDaAuth,
-  type IdentitaDomarc,
   urlAccessoDomarc,
   urlDaAuth,
 } from "../daauth";
@@ -188,122 +186,15 @@ test("il superadmin non elenca clienti, e chi li elenca non è superadmin", () =
 
 
 test("la creazione avviene solo su dichiarazione, e i clienti si risolvono per codice", () => {
-  /*
-   * Dal T3-29 (SEC-4) i rifiuti li decide `decidiAccessoDomarc`, provata qui
-   * sotto senza sorgente. Qui resta l'ordine nel provider: la decisione PRIMA
-   * di qualunque creazione, e la creazione solo nel ramo «crea» — invertirli
-   * significherebbe creare l'utenza e poi accorgersi che non si doveva.
-   */
   const auth = readFileSync(join(process.cwd(), "src/lib/auth.ts"), "utf8");
   const blocco = auth.slice(auth.indexOf('id: "domarc"'), auth.indexOf('name: "credentials"'));
   const creazione = blocco.indexOf("createUser(");
-  const decisione = blocco.indexOf("decidiAccessoDomarc(");
 
-  assert.ok(decisione > 0, "il provider non passa dalla decisione");
-  assert.ok(decisione < creazione, "si crea prima di aver deciso");
-  assert.ok(blocco.includes('esito === "rifiuta"'), "il rifiuto non ferma l'accesso");
+  assert.ok(blocco.includes("if (!identita.dichiarato)"), "non controlla la dichiarazione");
+  // I due rifiuti vengono PRIMA della creazione: invertirli significherebbe
+  // creare l'utenza e poi accorgersi che non si doveva.
+  assert.ok(blocco.indexOf("if (!identita.dichiarato)") < creazione);
+  assert.ok(blocco.indexOf("if (!traduzione)") < creazione);
   // Un codice cliente che non esiste viene saltato, non diventa «tutti».
   assert.ok(blocco.includes("continue"), "un codice sconosciuto non viene saltato");
-});
-
-
-// ── T3-29 (SEC-4): risposta valida e dichiarazione ──────────────────────────
-//
-// Le prove qui sotto sostituiscono `globalThis.fetch` e `DAAUTH_URL` e li
-// rimettono com'erano: non contattano nessuno.
-
-/** Una risposta di `/whoami` con la forma vera: identità negli header. */
-function rispostaWhoami(status: number, headers: Record<string, string>): Response {
-  return new Response(status === 200 ? "" : "errore", { status, headers });
-}
-
-async function conFetchFinta<T>(
-  risposta: () => Response,
-  corpo: (chiamate: string[]) => Promise<T>,
-): Promise<T> {
-  const fetchPrima = globalThis.fetch;
-  const urlPrima = process.env.DAAUTH_URL;
-  const chiamate: string[] = [];
-  process.env.DAAUTH_URL = "https://auth.prova.invalid";
-  globalThis.fetch = (async (input: string | URL | Request) => {
-    chiamate.push(String(input));
-    return risposta();
-  }) as typeof fetch;
-  try {
-    return await corpo(chiamate);
-  } finally {
-    globalThis.fetch = fetchPrima;
-    if (urlPrima === undefined) delete process.env.DAAUTH_URL;
-    else process.env.DAAUTH_URL = urlPrima;
-  }
-}
-
-const HEADER_DICHIARATO = { "x-user": "tecnico.prova", "x-role": "standard", "x-dichiarato": "si" };
-
-test("una risposta 200 di /whoami dà l'identità (controllo della prova)", async () => {
-  const id = await conFetchFinta(() => rispostaWhoami(200, HEADER_DICHIARATO), async chiamate => {
-    const r = await identitaDaAuth("da_auth=sessione-finta");
-    assert.deepEqual(chiamate, ["https://auth.prova.invalid/whoami"]);
-    return r;
-  });
-  assert.deepEqual(id, { username: "tecnico.prova", role: "standard", dichiarato: true });
-});
-
-for (const status of [401, 403, 500, 502]) {
-  test(`una risposta ${status} di /whoami non è un'identità, anche con gli header`, async () => {
-    /*
-     * /whoami risponde sempre 200. Un altro codice vuol dire che a rispondere
-     * non è stato /whoami (un errore, un proxy davanti, una pagina di
-     * manutenzione): gli header che porta non dicono chi è nessuno.
-     */
-    const id = await conFetchFinta(() => rispostaWhoami(status, HEADER_DICHIARATO), () =>
-      identitaDaAuth("da_auth=sessione-finta"),
-    );
-    assert.equal(id, null);
-  });
-}
-
-const UTENTE_LOCALE = { id: 7, username: "tecnico.prova", role: "superadmin" as const };
-
-function identita(parziale: Partial<IdentitaDomarc>): IdentitaDomarc {
-  return { username: "tecnico.prova", role: "standard", dichiarato: true, ...parziale };
-}
-
-test("utente locale omonimo ma NON dichiarato: rifiuto (SEC-4)", () => {
-  /*
-   * Prima bastava che esistesse un'utenza locale con lo stesso nome per
-   * entrare col suo ruolo — anche superadmin — senza che nessuno avesse messo
-   * quella persona su DA-IPAM in DA-Auth. Il nome uguale non è una
-   * dichiarazione.
-   */
-  const d = decidiAccessoDomarc(identita({ dichiarato: false }), UTENTE_LOCALE);
-  assert.equal(d.esito, "rifiuta");
-});
-
-test("utente locale dichiarato: entra col ruolo LOCALE, non con quello di DA-Auth", () => {
-  const d = decidiAccessoDomarc(identita({ role: "readonly" }), UTENTE_LOCALE);
-  assert.equal(d.esito, "entra");
-  assert.ok(d.esito === "entra" && d.utente === UTENTE_LOCALE);
-  assert.ok(d.esito === "entra" && d.utente.role === "superadmin");
-});
-
-test("utente dichiarato con ruolo senza traduzione ma già presente: entra", () => {
-  // La traduzione serve solo a CREARE: su un'utenza che c'è vale la riga locale.
-  const d = decidiAccessoDomarc(identita({ role: "un-ruolo-nuovo" }), UTENTE_LOCALE);
-  assert.equal(d.esito, "entra");
-});
-
-test("senza utenza locale: crea solo su dichiarazione e con traduzione (ramo invariato)", () => {
-  const crea = decidiAccessoDomarc(identita({ role: "standard" }), undefined);
-  assert.equal(crea.esito, "crea");
-  assert.ok(crea.esito === "crea");
-  assert.deepEqual(crea.traduzione, { ruolo: "admin", tenant: ["70791", "70791a"] });
-
-  assert.equal(decidiAccessoDomarc(identita({ dichiarato: false }), undefined).esito, "rifiuta");
-  assert.equal(decidiAccessoDomarc(identita({ role: "tecnico_advanced" }), null).esito, "rifiuta");
-});
-
-test("nessuna identità: rifiuto, con o senza utenza locale", () => {
-  assert.equal(decidiAccessoDomarc(null, UTENTE_LOCALE).esito, "rifiuta");
-  assert.equal(decidiAccessoDomarc(null, undefined).esito, "rifiuta");
 });

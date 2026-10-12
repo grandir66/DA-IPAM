@@ -176,10 +176,6 @@ export async function identitaDaAuth(
       cache: "no-store",
       signal: stop,
     });
-    // /whoami risponde sempre 200. Qualunque altro codice vuol dire che a
-    // rispondere non è stato lui (un errore, un proxy davanti, una pagina di
-    // manutenzione): gli header di quella risposta non dicono chi è nessuno.
-    if (r.status !== 200) return null;
     const username = (r.headers.get("x-user") || "").trim();
     if (!username) return null;
     return {
@@ -193,39 +189,4 @@ export async function identitaDaAuth(
     // Irraggiungibile, lento, o risposta illeggibile: «non lo so», non un errore.
     return null;
   }
-}
-
-/** Cosa fare di chi arriva col pulsante Domarc. */
-export type DecisioneAccessoDomarc<U> =
-  | { esito: "entra"; utente: U }
-  | { esito: "crea"; traduzione: Traduzione }
-  | { esito: "rifiuta"; motivo: string };
-
-/**
- * Chi arriva da DA-Auth entra, va creato o resta fuori. **Pura**: niente rete
- * né database, così si prova riga per riga.
- *
- * La dichiarazione vale per TUTTI, anche per chi ha già un'utenza qui: un
- * nome uguale a quello di un'utenza locale non è una dichiarazione (SEC-4).
- * Chi è dichiarato ed esiste già entra con la sua riga locale — ruolo e
- * clienti di qui, non quelli di DA-Auth; la traduzione serve solo a creare
- * l'utenza che manca.
- */
-export function decidiAccessoDomarc<U>(
-  identita: IdentitaDomarc | null,
-  utenteLocale: U | null | undefined,
-): DecisioneAccessoDomarc<U> {
-  if (!identita) return { esito: "rifiuta", motivo: "nessuna identità da DA-Auth" };
-  if (!identita.dichiarato) {
-    return { esito: "rifiuta", motivo: "riconosciuto da DA-Auth ma non dichiarato su DA-IPAM" };
-  }
-  if (utenteLocale) return { esito: "entra", utente: utenteLocale };
-  const traduzione = traduzionePer(identita.role);
-  if (!traduzione) {
-    return {
-      esito: "rifiuta",
-      motivo: `dichiarato con ruolo «${identita.role}», che qui non ha una traduzione — vedi RUOLO_DOMARC_A_LOCALE`,
-    };
-  }
-  return { esito: "crea", traduzione };
 }

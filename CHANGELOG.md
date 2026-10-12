@@ -8,6 +8,18 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **Accesso con l'account Domarc solo per chi è dichiarato su DA-IPAM, e solo
+  su una risposta valida di DA-Auth (SEC-4).** La dichiarazione su DA-Auth
+  era richiesta solo per creare un'utenza nuova: chi aveva già un'utenza
+  locale con lo stesso nome entrava col suo ruolo anche senza dichiarazione.
+  Ora la dichiarazione vale per tutti; chi è dichiarato ed esiste già entra
+  come prima, col ruolo e i clienti della sua utenza locale. Inoltre una
+  risposta di DA-Auth che non è un 200 non vale più come identità. La
+  decisione sta in una funzione sola, provata caso per caso. **Cambia sulle
+  installazioni del canale `dev`** solo dove l'accesso Domarc è acceso (non
+  sulle appliance dei clienti, dove è spento): chi entra col pulsante Domarc
+  senza essere dichiarato su DA-IPAM in DA-Auth vede di nuovo la pagina di
+  accesso; il login locale resta. Prova: `daauth.test.ts`.
 - **MeshCentral comanda solo se il modulo è attivo (SEC-18).** «Disinstalla»
   spegneva il modulo ma lasciava salvati i parametri di collegamento (per non
   perderli a un clic) e, di default, nodi e storico: comandi remoti, sessioni

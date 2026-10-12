@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { authConfig } from "./auth.config";
-import { accessoDomarcAttivo, identitaDaAuth, traduzionePer } from "./daauth";
+import { accessoDomarcAttivo, decidiAccessoDomarc, identitaDaAuth } from "./daauth";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -35,34 +35,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           await import("./db-hub");
         const { updateUserLastLogin } = await import("./db");
 
-        let user = getUserByUsername(identita.username);
-
-        // Autenticare non è autorizzare. Chi non ha un'utenza qui entra solo
-        // se **qualcuno l'ha dichiarato** su questa applicazione in DA-Auth:
-        // allora l'utenza si crea, col ruolo e i clienti che la tabella di
-        // traduzione associa al suo. Non è auto-provisioning — non si inventa
-        // niente, si esegue una decisione presa e firmata.
+        // Autenticare non è autorizzare: entra solo chi **qualcuno ha
+        // dichiarato** su questa applicazione in DA-Auth, anche se un'utenza
+        // locale con lo stesso nome esiste già (SEC-4: il nome uguale non è
+        // una dichiarazione). Chi è dichiarato e non ha un'utenza la riceve,
+        // col ruolo e i clienti della tabella di traduzione. Non è
+        // auto-provisioning — non si inventa niente, si esegue una decisione
+        // presa e firmata.
         //
         // Qui il rischio è doppio rispetto alle altre applicazioni: una riga
         // creata al volo senza clienti non servirebbe a niente, e una con i
         // clienti sbagliati sarebbe un danno. Per questo i clienti si
         // dichiarano per codice, e un codice che non esiste NON diventa
         // «tutti»: viene saltato.
-        if (!user) {
-          if (!identita.dichiarato) {
-            console.warn(
-              `[Auth] ${identita.username}: riconosciuto da DA-Auth ma non dichiarato su DA-IPAM`,
-            );
-            return null;
-          }
-          const traduzione = traduzionePer(identita.role);
-          if (!traduzione) {
-            console.warn(
-              `[Auth] ${identita.username}: dichiarato con ruolo «${identita.role}», che qui ` +
-                "non ha una traduzione — vedi RUOLO_DOMARC_A_LOCALE",
-            );
-            return null;
-          }
+        const decisione = decidiAccessoDomarc(identita, getUserByUsername(identita.username));
+        if (decisione.esito === "rifiuta") {
+          console.warn(`[Auth] ${identita.username}: ${decisione.motivo}`);
+          return null;
+        }
+        let user: NonNullable<ReturnType<typeof getUserByUsername>>;
+        if (decisione.esito === "entra") {
+          user = decisione.utente;
+        } else {
+          const traduzione = decisione.traduzione;
           const crypto = await import("node:crypto");
           const bcryptCrea = await import("bcrypt");
           // Password casuale e subito dimenticata: a questa utenza si arriva

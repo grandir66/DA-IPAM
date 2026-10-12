@@ -9,6 +9,7 @@
 import type { Executor } from "@/lib/executor";
 import type { ScanIoOverride } from "@/lib/executor";
 import type { DnsResolution, NmapResult, PingResult } from "@/lib/executor/types";
+import { isIpInCidr } from "@/lib/utils";
 
 const CHIAVE = Symbol.for("da-ipam.executor.override");
 
@@ -23,6 +24,13 @@ export interface ScenarioFinto {
   arp?: Array<{ ip: string; mac: string }>;
   /** Nomi del DNS inverso per IP. */
   ptr?: Record<string, string>;
+  /** Ritardo (ms) prima che ping e nmap rispondano: un giro lento. */
+  ritardoMs?: number;
+  /** Promessa che trattiene ping e nmap finché la prova non la risolve:
+   *  serve a forzare l'ordine di due giri accavallati (INV-1). */
+  cancello?: Promise<void>;
+  /** Se presente, ping e nmap falliscono con questo errore (esecutore guasto). */
+  lancia?: Error;
 }
 
 export interface Chiamate {
@@ -55,6 +63,12 @@ export function creaEsecutoreFinto(s: ScenarioFinto): { override: ScanIoOverride
       : sconosciuti.has(ip)
         ? { ip, alive: false, latency_ms: null, ttl: null, error: "ping non eseguibile (ENOENT)" }
         : { ip, alive: false, latency_ms: null, ttl: null };
+  // Passaggio comune di ping e nmap: attende cancello e ritardo, poi lancia se richiesto.
+  const attesa = async (): Promise<void> => {
+    if (s.cancello) await s.cancello;
+    if (s.ritardoMs) await new Promise((r) => setTimeout(r, s.ritardoMs));
+    if (s.lancia) throw s.lancia;
+  };
   const risolvi = (ip: string): DnsResolution => {
     const nome = s.ptr?.[ip] ?? null;
     return { reverse: nome, forward: nome };
@@ -67,18 +81,25 @@ export function creaEsecutoreFinto(s: ScenarioFinto): { override: ScanIoOverride
     },
     async pingHost(ip) {
       chiamate.pingHost++;
+      await attesa();
       return ping(ip);
     },
     async pingSweep(ips, _concurrency, cb) {
       chiamate.pingSweep++;
+      await attesa();
       const out = ips.map(ping);
       cb?.onProgress?.(ips.length, out.filter((r) => r.alive).length);
       return out;
     },
     async nmapDiscoverHosts(target) {
       chiamate.nmapDiscoverHosts++;
-      const out: NmapResult[] = s.vivi.map((ip) => ({ ip, alive: true, ports: [], os: null, mac: null }));
-      return target ? out : [];
+      await attesa();
+      if (!target) return [];
+      // Solo gli host della rete chiesta: con due reti sul banco non si mescolano.
+      const dentro = (ip: string): boolean => (target.includes("/") ? isIpInCidr(ip, target) : ip === target);
+      return s.vivi
+        .filter(dentro)
+        .map((ip): NmapResult => ({ ip, alive: true, ports: [], os: null, mac: null }));
     },
     async nmapPortScan() {
       chiamate.nmapPortScan++;

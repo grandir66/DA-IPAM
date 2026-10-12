@@ -117,3 +117,42 @@ test("getExecutor: senza doppio restituisce l'esecutore normale; col doppio lo l
   // Letto in testa: vale anche per un tenant che non esiste.
   assert.equal(getExecutor("TENANT-INESISTENTE"), override.executor);
 });
+
+// Il doppio deve saper riprodurre giri lenti, accavallati o in errore: le prove
+// di INV-1/INV-2 (T3-17, T3-20, T3-22) forzano l'ordine dei passi.
+test("doppio: nmapDiscoverHosts restituisce solo gli host della rete chiesta", async () => {
+  const { override } = creaEsecutoreFinto({ vivi: ["10.250.0.5", "10.251.0.7"] });
+  const r1 = await override.executor.nmapDiscoverHosts("10.250.0.0/29");
+  const r2 = await override.executor.nmapDiscoverHosts("10.251.0.0/29");
+  assert.deepEqual(r1.map((h) => h.ip), ["10.250.0.5"]);
+  assert.deepEqual(r2.map((h) => h.ip), ["10.251.0.7"]);
+});
+
+test("doppio: il cancello trattiene ping e nmap finché la prova non lo apre", async () => {
+  let apri!: () => void;
+  const cancello = new Promise<void>((r) => { apri = r; });
+  const { override } = creaEsecutoreFinto({ vivi: ["10.250.0.5"], cancello });
+  let finiti = 0;
+  const sweep = override.executor.pingSweep(["10.250.0.5"]).then(() => finiti++);
+  const nmap = override.executor.nmapDiscoverHosts("10.250.0.0/29").then(() => finiti++);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(finiti, 0);
+  apri();
+  await Promise.all([sweep, nmap]);
+  assert.equal(finiti, 2);
+});
+
+test("doppio: ritardoMs rallenta il giro", async () => {
+  const { override } = creaEsecutoreFinto({ vivi: [], ritardoMs: 60 });
+  const t0 = Date.now();
+  await override.executor.pingSweep(["10.250.0.1"]);
+  assert.ok(Date.now() - t0 >= 55, `durata ${Date.now() - t0} ms`);
+});
+
+test("doppio: lancia fa fallire ping e nmap con l'errore dato", async () => {
+  const errore = new Error("esecutore guasto");
+  const { override } = creaEsecutoreFinto({ vivi: [], lancia: errore });
+  await assert.rejects(override.executor.pingSweep(["10.250.0.1"]), errore);
+  await assert.rejects(override.executor.nmapDiscoverHosts("10.250.0.0/29"), errore);
+  await assert.rejects(override.executor.pingHost("10.250.0.1"), errore);
+});

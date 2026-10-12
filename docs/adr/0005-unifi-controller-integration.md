@@ -68,13 +68,21 @@ mappatura si scrive e si prova sulla risposta vera, e una risposta vuota non can
    solo da `@/lib/db-tenant`, con import statico, e c'è una transazione per apparato.
    - Abbinamento: per seriale, poi per i MAC noti, poi per IP. Per IP solo se nessun MAC lo
      smentisce e l'apparato già censito è `ubiquiti` o `other`; altrimenti l'IP è conteso,
-     si salta e lo si scrive fra gli errori.
+     si salta e lo si scrive fra gli errori. Un apparato censito con un altro seriale è un
+     altro apparato, né il MAC né l'IP lo fanno diventare questo; il giro fa prima chi si
+     ritrova per seriale (e libera l'IP vecchio), così l'esito non dipende dall'ordine del
+     controller. Chi si sposta di IP si porta dietro `host_id`. *(Revisione del ramo,
+     12/10.)*
+   - Apparati non adottati (`adopted: false`) si scartano col motivo.
    - Di un apparato già censito si aggiornano i fatti (vendor, tipo, modello, firmware,
      seriale), non le scelte (nome, protocollo, credenziali, abilitazione).
    - Gli apparati nuovi nascono spenti (`enabled = 0`, `use_for_arp_poll = 0`) e agganciati
      all'host con lo stesso IP. L'identità fisica si collega solo se esiste già.
    - Guardia «zero sospetto»: se il controller non riporta porte o vicini per un apparato
      che nel database ne ha, non si cancella niente e lo si segnala.
+   - Apparato non connesso al controller (`state` diverso da 1): ne arriva solo la parte
+     statica, quindi porte e vicini già scritti restano quelli dell'ultima sync e
+     l'apparato è elencato a parte (`offline[]`), senza essere un errore.
 6. **Tutto nasce spento.** Modalità «Disattivata», e nessun job `unifi_sync` si crea da
    solo: la sync parte a mano dalla card. I tipi di job stanno in un solo elenco
    (`src/lib/scheduled-job-types.ts`), da cui derivano il CHECK dello schema, la migrazione
@@ -131,6 +139,19 @@ verificato, e le prove usano la risposta vera.
   accetta la nuova impronta.
 - L'host e il dispositivo di rete dello stesso apparato restano due righe, legate da
   `host_id`.
+- **Limiti lasciati aperti dalla revisione del 12/10** (da decidere, non dimenticati):
+  - `uplink` non si usa: un apparato senza `lldp_table` (a DTS 5 su 74; nella fixture è
+    SW-2, che è offline) resta senza collegamento anche se `uplink` dice a chi è attaccato.
+    Usarlo vuol dire scegliere che protocollo scrivere e se fidarsi dell'uplink di un
+    apparato offline.
+  - Due scrittori sulle stesse righe: su un apparato già censito e interrogato da DA-IPAM
+    (`enabled = 1`, SNMP), la sync sostituisce porte e vicini con righe senza VLAN, MAC
+    singolo e host collegato, finché il poll ARP non le riscrive. Serve una scelta: una
+    fonte per apparato, o un'unione per `port_index`.
+  - La configurazione del controller è dell'hub e non è legata a un tenant: la sync scrive
+    nel tenant di contesto (della sessione, o del job). Su un hub con più tenant va
+    salvato il tenant del controller quando si accende l'integrazione, e rifiutato ogni
+    altro.
 
 ### Cosa diventa difficile in futuro
 
@@ -149,7 +170,9 @@ verificato, e le prove usano la risposta vera.
 - **Omada e i client Wi-Fi** (tappa 4) dovranno seguire lo stesso schema (fixture vera,
   sola lettura, certificato fissato, guardia sulle cancellazioni) o spiegare perché no.
 - **Spostare il controller a un altro indirizzo è un primo uso nuovo**: l'impronta si
-  azzera e chi lo configura deve controllare quella che il controller presenta.
+  azzera, la password salvata si cancella (non parte verso un host mai verificato) e chi
+  lo configura la riscrive e controlla l'impronta che il controller presenta. La prova di
+  connessione è un `POST`, perché fissa quella fiducia.
 
 ## Riferimenti
 

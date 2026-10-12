@@ -24,21 +24,34 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   - **Il certificato del controller si fissa al primo collegamento riuscito.**
     Se cambia, la sincronizzazione si ferma e la card mostra le due impronte:
     la nuova si accetta solo a mano. La password non parte mai verso un
-    certificato che non è quello fissato.
+    certificato che non è quello fissato. Cambiando l'indirizzo del
+    controller la password salvata si cancella e va riscritta: altrimenti
+    un errore di battitura (o chi non la conosce) la farebbe arrivare al
+    primo host che risponde. La prova di connessione è un POST, così un
+    link aperto con la sessione attiva non la fa partire.
   - **Una risposta vuota non cancella niente.** Se il controller non riporta
     porte o vicini per un apparato che nel database ne ha, si tengono i dati
-    di prima e lo si segnala.
+    di prima e lo si segnala. Lo stesso per un apparato spento o scollegato:
+    il controller ne dà solo le porte senza stato, quindi porte e vicini
+    restano quelli dell'ultima sincronizzazione e la card lo elenca a parte.
   - **Nessun doppione e nessuna scelta sovrascritta.** Un apparato già censito
     si ritrova per seriale, MAC o IP, e se ne aggiornano solo i dati di fatto
     (modello, firmware, seriale), non nome, credenziali e abilitazione. Un IP
-    occupato da un altro apparato (MAC diverso o altro produttore) si salta e
-    lo si dice.
+    occupato da un altro apparato (MAC diverso, altro produttore o altro
+    seriale) si salta e lo si dice. Se un AP cambia IP e uno nuovo prende il
+    suo, il nuovo non sovrascrive più quello censito, qualunque sia l'ordine
+    in cui il controller li elenca. Gli apparati non ancora adottati non
+    entrano.
   - **Compare in «Stato moduli»**, con una sonda che non fissa mai il
     certificato da sola e non interroga il controller più di una volta ogni
-    cinque minuti.
+    cinque minuti. Il controllo del disco dell'appliance, ogni 30 minuti, non
+    lo interroga affatto: la verifica di un solo modulo fa partire solo la
+    sua sonda.
   - Il job `unifi_sync` esiste nello scheduler (migrazione v8 di
     `scheduled_jobs`) ma nessuno lo crea da solo. I tipi di job ora stanno in
-    un solo elenco, così schema e migrazioni non possono più divergere.
+    un solo elenco, condiviso da schema e migrazione; una prova confronta la
+    tabella aggiornata con quella di un tenant nuovo, vincoli e indici
+    compresi, perché il resto del DDL della v8 è ancora scritto a mano.
 
 ### Correzioni
 

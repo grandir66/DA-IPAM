@@ -12,6 +12,13 @@
  *
  * Una rotta nuova sotto /api/users (o un metodo nuovo) fa fallire la prova
  * finché non la si aggiunge qui sotto, con la funzione del servizio che usa.
+ * Ogni `export` deve avere la forma `export async function METODO(`: un gestore
+ * esportato come `export const PATCH = …` o `export { f as PATCH }` sfuggiva al
+ * censimento (revisione del 12/10). Niente riferimenti al database, nemmeno con
+ * `await import("@/lib/db-hub")` o un percorso relativo, che è proprio la forma
+ * con cui la vecchia [id]/route.ts contava i superadmin. E la risposta gira lo
+ * stato del servizio: senza `{ status: result.status }` un rifiuto arrivava al
+ * browser come 200, e la pagina diceva «Utente eliminato» a utente ancora vivo.
  *
  * Run: node --import tsx --test src/lib/users/__tests__/routes-use-service.test.ts
  */
@@ -28,6 +35,9 @@ const EXPECTED: Record<string, Record<string, string>> = {
   "[id]/route.ts": { PUT: "updateUserAs", DELETE: "deleteUserAs" },
   "[id]/reset-password/route.ts": { POST: "resetPasswordAs" },
 };
+
+/** L'unica forma ammessa per un `export` in queste rotte. */
+const HANDLER_EXPORT = /^export\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s*\(/;
 
 /** Funzioni del database che scrivono o leggono utenti: solo il servizio le usa. */
 const DB_USER_FUNCTIONS = [
@@ -80,12 +90,25 @@ for (const [rel, methods] of Object.entries(EXPECTED)) {
 
     assert.ok(!/requireSuperAdmin/.test(src), "usa ancora requireSuperAdmin");
     assert.match(src, /from\s+["']@\/lib\/users\/service["']/, "non importa il servizio utenti");
+    // Il database in qualunque forma: import statico o dinamico, alias o percorso relativo.
     assert.ok(
-      !/from\s+["']@\/lib\/(db|db-hub)["']/.test(src),
-      "importa il database: le letture e le scritture sugli utenti passano dal servizio",
+      !/lib\/db\b|db-hub|db-tenant|better-sqlite3/.test(src),
+      "nomina il database: le letture e le scritture sugli utenti passano dal servizio",
     );
+    assert.ok(!/\bimport\s*\(|\brequire\s*\(/.test(src), "import dinamico: una rotta guscio importa solo in testa");
+    assert.ok(!/\b(getHubDb|getDb|getTenantDb)\s*\(|\.prepare\s*\(|\.transaction\s*\(/.test(src), "usa il database direttamente");
     for (const fn of DB_USER_FUNCTIONS) {
       assert.ok(!new RegExp(`\\b${fn}\\s*\\(`).test(src), `chiama ${fn}() senza passare dal servizio`);
+    }
+
+    const exportRe = /\bexport\b/g;
+    for (let m = exportRe.exec(src); m; m = exportRe.exec(src)) {
+      const rest = src.slice(m.index);
+      assert.match(
+        rest,
+        HANDLER_EXPORT,
+        `esportazione in una forma che la prova non controlla: «${rest.slice(0, 50).replace(/\s+/g, " ")}…» (usare export async function METODO)`,
+      );
     }
 
     const found = handlers(src);
@@ -105,6 +128,14 @@ for (const [rel, methods] of Object.entries(EXPECTED)) {
         body,
         new RegExp(`if\\s*\\(\\s*isAuthError\\(\\s*${sessionVar}\\s*\\)\\s*\\)\\s*return\\s+${sessionVar}`),
         `${method}: manca il ritorno anticipato su isAuthError`,
+      );
+      // la risposta porta corpo e stato del servizio: un rifiuto non diventa 200
+      const resultVar = new RegExp(`(?:const|let)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:await\\s+)?${serviceFn}\\s*\\(`).exec(body)?.[1];
+      assert.ok(resultVar, `${method}: il risultato di ${serviceFn}() non è assegnato`);
+      assert.match(
+        body,
+        new RegExp(`return\\s+NextResponse\\.json\\(\\s*${resultVar}\\.body\\s*,\\s*\\{\\s*status:\\s*${resultVar}\\.status\\b`),
+        `${method}: la risposta non porta lo stato restituito da ${serviceFn}()`,
       );
     }
   });

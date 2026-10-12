@@ -14,7 +14,9 @@
  *   accesso anche a un altro cliente vorrebbe dire entrare in quel cliente.
  *   Mai un superadmin, mai il ruolo superadmin. Non elimina sé stesso, non si
  *   toglie il ruolo admin e non cambia i propri clienti: un'installazione non
- *   deve restare senza amministratori. Gli utenti che crea vanno nel suo cliente.
+ *   deve restare senza amministratori. Non reimposta la propria password (per
+ *   quella c'è «Cambia password», che chiede l'attuale). Gli utenti che crea
+ *   vanno nel suo cliente.
  * - **viewer**: nessuna gestione. Lo esclude già `resolveUserManager`, prima
  *   di arrivare qui.
  */
@@ -167,8 +169,17 @@ export function decideDelete(actor: UserManager, target: ManagedUser): Decision 
   return { ok: true };
 }
 
-/** Reimpostazione della password. L'admin solo per i suoi utenti, mai per un superadmin. */
+/**
+ * Reimpostazione della password. L'admin solo per i suoi utenti, mai per un
+ * superadmin, e mai per sé stesso: «Cambia password» nel menu utente chiede la
+ * password attuale, questa rotta no. Una sessione rubata o lasciata aperta
+ * diventerebbe una credenziale che sopravvive alla scadenza della sessione.
+ * Il superadmin resta com'era.
+ */
 export function decideResetPassword(actor: UserManager, target: ManagedUser): Decision {
+  if (actor.role === "admin" && isSelf(actor, target)) {
+    return deny(400, "Per la tua password usa «Cambia password» nel menu utente");
+  }
   if (!canManageUser(actor, target)) {
     return denyTarget(target, "Non puoi reimpostare la password di un super amministratore");
   }

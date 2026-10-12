@@ -156,8 +156,11 @@ test("admin: non elimina sé stesso, non si toglie il ruolo admin, non cambia i 
   // salvare senza cambiare niente resta possibile
   assert.deepEqual(decideUpdate(ADMIN_AB, me, { role: "admin" }), { ok: true, tenantIds: [A, B] });
   assert.deepEqual(decideUpdate(ADMIN_AB, me, { role: "admin", tenantIds: [B, A] }), { ok: true, tenantIds: [B, A] });
-  // la propria password sì: è un utente del suo cliente
-  assert.deepEqual(decideResetPassword(ADMIN_AB, me), { ok: true });
+  // la propria password no: «Cambia password» chiede quella attuale, questa rotta
+  // no, e una sessione rubata diventerebbe una credenziale permanente.
+  const ownReset = decideResetPassword(ADMIN_AB, me);
+  assert.equal(ownReset.ok, false);
+  if (!ownReset.ok) assert.equal(ownReset.status, 400);
 });
 
 test("superadmin: invariato — tutto, tranne eliminare sé stesso", () => {
@@ -209,7 +212,10 @@ test("sicurezza: nessuna decisione positiva dell'admin esce dai suoi clienti o t
           }
         }
       }
-      if (target.self) assert.equal(decideDelete(actor, target).ok, false, "l'admin ha eliminato sé stesso");
+      if (target.self) {
+        assert.equal(decideDelete(actor, target).ok, false, "l'admin ha eliminato sé stesso");
+        assert.equal(decideResetPassword(actor, target).ok, false, "l'admin ha reimpostato la propria password");
+      }
     }
     for (const role of ROLES) {
       for (const tenantIds of INPUT_TENANTS) {

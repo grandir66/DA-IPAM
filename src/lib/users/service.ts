@@ -8,10 +8,10 @@
  * simulate (`__tests__/service.test.ts`); che ogni rotta passi da qui lo verifica
  * `__tests__/routes-use-service.test.ts`.
  *
- * L'admin non si fida del token: ruolo e clienti si rileggono dal database a ogni
- * richiesta, così chi è stato declassato smette subito di gestire utenti, anche
- * con la sessione vecchia ancora aperta. Il superadmin resta com'era (dal token:
- * l'utenza di servizio Domarc non ha una riga nel database).
+ * Nessuno si fida del token: ruolo (e, per l'admin, clienti) si rileggono dal
+ * database a ogni richiesta, così chi è stato declassato smette subito di gestire
+ * utenti, anche con la sessione vecchia ancora aperta. Fa eccezione solo l'utenza
+ * di servizio Domarc (id "0"), che una riga nel database non ce l'ha.
  */
 import bcrypt from "bcrypt";
 import {
@@ -63,6 +63,17 @@ const NEED_TENANT = "Seleziona almeno un cliente per questo ruolo";
 const INVALID_ROLE = "Il ruolo deve essere 'superadmin', 'admin' o 'viewer'";
 
 const fail = (status: number, error: string): UsersResult => ({ status, body: { error } });
+
+/**
+ * Lo username dell'utenza di servizio Domarc (`DOMARC_USERNAME`, «domarc» se non
+ * è impostato), che entra senza una riga nel database. Un utente locale con lo
+ * stesso nome passerebbe per lei: nei log le sue azioni sembrerebbero del
+ * supporto Domarc, e quando il supporto entra `isSelf` lo scambierebbe per sé.
+ */
+function isServiceUsername(username: string): boolean {
+  const service = (process.env.DOMARC_USERNAME || "domarc").trim().toLowerCase();
+  return username.trim().toLowerCase() === service;
+}
 const fromDenial = (d: Denial): UsersResult => fail(d.status, d.error);
 
 /** id positivo intero, altrimenti null. */
@@ -81,13 +92,7 @@ export function resolveUserManager(session: SessionLike): { ok: true; actor: Use
   const role = user?.role;
   const username = (user?.name ?? "").trim();
 
-  if (role === "superadmin") {
-    return {
-      ok: true,
-      actor: { role: "superadmin", userId: parseId(user?.id), username, tenantIds: [], currentTenantId: null },
-    };
-  }
-  if (role !== "admin") {
+  if (role !== "superadmin" && role !== "admin") {
     return { ok: false, status: 403, error: "Richiesti privilegi di amministratore" };
   }
 
@@ -97,6 +102,16 @@ export function resolveUserManager(session: SessionLike): { ok: true; actor: Use
     error: "Il tuo account non risulta più amministratore: esci e rientra",
   };
   const userId = parseId(user?.id);
+
+  if (role === "superadmin") {
+    // id null = utenza di servizio Domarc (id "0"), senza riga: vale il token.
+    if (userId !== null) {
+      const row = getUserById(userId);
+      if (!row || row.role !== "superadmin" || row.username.trim() !== username) return stale;
+    }
+    return { ok: true, actor: { role: "superadmin", userId, username, tenantIds: [], currentTenantId: null } };
+  }
+
   if (userId === null) return stale;
   const row = getUserById(userId);
   if (!row || row.role !== "admin" || row.username.trim() !== username) return stale;
@@ -195,6 +210,7 @@ export async function createUserAs(session: SessionLike, request: Request): Prom
     return fail(400, "Lo username può contenere solo lettere, numeri, punti, trattini e underscore");
   }
   if (password.length < 8) return fail(400, "La password deve avere almeno 8 caratteri");
+  if (isServiceUsername(username)) return fail(409, "Username riservato all'utenza di servizio Domarc");
 
   // Ruolo assente → viewer, come prima.
   const rawRole = b.role;

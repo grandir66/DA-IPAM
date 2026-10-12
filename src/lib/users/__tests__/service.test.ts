@@ -92,7 +92,11 @@ function seed(): World {
   const A = tenant("CLIA", "Cliente A");
   const B = tenant("CLIB", "Cliente B");
   const id: Record<string, number> = {};
-  id["root"] = user("root", "superadmin", []);
+  // Il superadmin con un accesso al cliente A, come nei dati veri:
+  // migrate-to-multitenant gli dà una riga 'admin' sul cliente di default, ed
+  // enable-multitenant promuove l'admin del setup, che la riga ce l'ha già.
+  // Senza, i 403 su di lui passerebbero dalla barriera «utente senza clienti».
+  id["root"] = user("root", "superadmin", [[A, "admin"]]);
   id["admin-a"] = user("admin-a", "admin", [[A, "admin"]]);
   id["admin-a2"] = user("admin-a2", "admin", [[A, "admin"]]);
   id["viewer-a"] = user("viewer-a", "viewer", [[A, "viewer"]]);
@@ -352,6 +356,22 @@ test("reset password: l'admin → 403 su un altro cliente, su chi sta anche su B
   }
 });
 
+test("reset password: l'admin non reimposta la propria (400): «Cambia password» chiede quella attuale", async () => {
+  const r = await resetPasswordAs(asAdminA(), String(w.id["admin-a"]), req({ new_password: "nuova-password-1" }));
+  assert.equal(r.status, 400, JSON.stringify(r.body));
+  assert.equal(getUserById(w.id["admin-a"])?.password_hash, HASH, "password cambiata");
+});
+
+test("POST: lo username dell'utenza di servizio Domarc è riservato, per tutti (409)", async () => {
+  for (const s of [asAdminA(), asSuper()]) {
+    for (const username of ["domarc", "Domarc"]) {
+      const r = await createUserAs(s, req({ username, password: "password-lunga", role: "viewer", tenant_ids: [w.A] }));
+      assert.equal(r.status, 409, `${username}: ${JSON.stringify(r.body)}`);
+      assert.equal(getUserByUsername(username), undefined);
+    }
+  }
+});
+
 // ─── La sessione di un admin si confronta col database ───
 
 test("admin declassato dopo l'accesso: la sessione vecchia non gestisce più (403)", () => {
@@ -362,6 +382,21 @@ test("admin declassato dopo l'accesso: la sessione vecchia non gestisce più (40
 test("admin senza più accesso da admin al suo cliente → 403", () => {
   getHubDb().prepare("UPDATE user_tenant_access SET role = 'viewer' WHERE user_id = ?").run(w.id["admin-a"]);
   assert.equal(listUsersAs(asAdminA()).status, 403);
+});
+
+test("superadmin declassato dopo l'accesso: la sessione vecchia non gestisce più e non si ripromuove (403)", async () => {
+  getHubDb().prepare("UPDATE users SET role = 'viewer' WHERE id = ?").run(w.id["root"]);
+  assert.equal(listUsersAs(asSuper()).status, 403);
+  const r = await updateUserAs(asSuper(), String(w.id["root"]), req({ role: "superadmin" }));
+  assert.equal(r.status, 403, JSON.stringify(r.body));
+  assert.equal(getUserById(w.id["root"])?.role, "viewer");
+});
+
+test("utenza di servizio Domarc (id 0, senza riga): resta superadmin dal token", () => {
+  const s: SessionLike = { user: { id: "0", name: "domarc", role: "superadmin", tenantCode: "__ALL__" } };
+  const r = listUsersAs(s);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(usernames(r.body).length, 7);
 });
 
 test("sessione con id di un altro utente → 403", () => {

@@ -21,6 +21,14 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   Network Services dicono che cosa non torna. Il comportamento sui dati non
   cambia (è la tappa 7): cambiano solo i testi, e due prove eseguono la
   cancellazione vera e la confrontano con ciò che la conferma promette.
+- **Le righe «Stato moduli» della dashboard portano al modulo (UI-20).**
+  Aprivano sempre la configurazione, anche per un modulo attivo con la sua
+  pagina, e un modulo mai installato diceva «Mai eseguita», che si legge come
+  «c'è ma non ha ancora girato». Ora un modulo attivo apre la sua pagina in
+  DA-IPAM, o il Launchpad se ha un'interfaccia esterna; uno non installato, da
+  configurare, spento o in errore apre la sua scheda in Impostazioni → Moduli,
+  e al posto dell'ora dice «Modulo non attivo», «da configurare» o
+  «disattivato».
 - **I filtri mostrano l'etichetta della voce scelta, non il suo codice.** Dopo
   una scelta, i menu a tendina dei filtri mostravano il valore tecnico: «all»
   invece di «Tutti gli stati», «unacked» invece di «Non gestiti», il numero della

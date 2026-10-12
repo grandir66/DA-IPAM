@@ -21,6 +21,22 @@ function byName(devs: UnifiDevice[], name: string): UnifiDevice {
   return d;
 }
 
+test("fixture: i campi di versione non sono stati presi per IP dall'anonimizzatore", () => {
+  // L'anonimizzatore della cattura del 12/10 aveva riscritto come IP la
+  // versione di SW-2 (quattro numeri puntati): «10.99.0.27» accanto all'ip
+  // 10.99.0.26. Il valore vero non è noto: corretto a mano in una forma da
+  // versione. I campi IP veri (ip, inform_ip, gateway, ...) restano IP.
+  const grezzo = raw as { data: Array<Record<string, unknown>> };
+  const campi = ["version", "upgrade_to_firmware", "displayable_version", "required_version", "kernel_version"];
+  for (const d of grezzo.data) {
+    for (const c of campi) {
+      const v = d[c];
+      if (typeof v !== "string") continue;
+      assert.doesNotMatch(v, /^10\.99\./, `${String(d.name)}.${c} = ${v}: è un indirizzo anonimizzato, non una versione`);
+    }
+  }
+});
+
 test("fixture vera: 4 apparati con tipo, modello, MAC, IP, seriale", () => {
   const devs = parseStatDeviceResponse(raw);
   assert.equal(devs.length, 4);

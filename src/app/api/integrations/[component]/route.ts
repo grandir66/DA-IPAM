@@ -6,7 +6,7 @@ import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-serv
 import type { IntegrationComponent } from "@/lib/integrations/types";
 import { z } from "zod";
 
-const VALID_COMPONENTS: IntegrationComponent[] = ["librenms", "loki", "graylog"];
+const VALID_COMPONENTS: IntegrationComponent[] = ["librenms", "loki", "graylog", "unifi"];
 
 function parseComponent(raw: string): IntegrationComponent | null {
   return VALID_COMPONENTS.includes(raw as IntegrationComponent)
@@ -26,6 +26,24 @@ export async function GET(
   if (!component) return NextResponse.json({ error: "Componente non valido" }, { status: 400 });
 
   const cfg = getIntegrationConfig(component);
+
+  if (component === "unifi") {
+    // Le credenziali del controller non tornano al browser (questo GET basta
+    // a un utente in sola lettura): si dice solo se sono impostate.
+    const { password, apiToken, ...visible } = cfg;
+    return NextResponse.json({
+      component,
+      config: {
+        ...visible,
+        password: "",
+        apiToken: "",
+        passwordSet: !!password,
+        apiTokenSet: !!apiToken,
+      },
+      browserUrl: cfg.browserUrl ?? "",
+      containerStatus: null,
+    });
+  }
 
   let containerStatus = null;
   if (cfg.mode === "managed" && cfg.containerName) {
@@ -48,6 +66,14 @@ const ConfigSchema = z.object({
   password: z.string().optional(),
   containerName: z.string().optional(),
   uiUrl: z.string().optional(),
+  // solo unifi
+  kind: z.enum(["self_hosted", "udm", "cloud"]).optional(),
+  site: z
+    .string()
+    .trim()
+    .max(64, "Nome del site troppo lungo")
+    .regex(/^[A-Za-z0-9_-]*$/, "Nome del site non valido: solo lettere, cifre, - e _")
+    .optional(),
 });
 
 export async function PUT(
@@ -71,6 +97,22 @@ export async function PUT(
   const parsed = ConfigSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dati non validi" }, { status: 400 });
+  }
+
+  if (component === "unifi") {
+    if (parsed.data.mode === "managed") {
+      return NextResponse.json(
+        { error: "UniFi non ha una modalità gestita: usare «external» o «disabled»" },
+        { status: 400 },
+      );
+    }
+    const url = parsed.data.url?.trim();
+    if (url && !/^https?:\/\/[^/\s]+/i.test(url)) {
+      return NextResponse.json(
+        { error: "L'indirizzo del controller deve iniziare con https:// (es. https://192.168.1.10:8443)" },
+        { status: 400 },
+      );
+    }
   }
 
   setIntegrationConfig(component, parsed.data);

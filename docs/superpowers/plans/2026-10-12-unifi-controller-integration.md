@@ -77,11 +77,11 @@ e si esegue com'è, con queste correzioni. **`dev` arriva da solo all'appliance 
 
 **Interfaces:** Produces: `IntegrationComponent` include `"unifi"`; `getIntegrationConfig("unifi")`/`setIntegrationConfig("unifi", …)` accettano `kind/url/site/username/password/apiToken`.
 
-- [ ] **Step 1:** In `types.ts` aggiungere `"unifi"` a `IntegrationComponent` e i campi `kind`/`site` a `ComponentConfig` (o un `UnifiConfig` esteso).
-- [ ] **Step 2:** In `config.ts` aggiungere `unifi` a `DEFAULTS` e gestire le chiavi `integration_unifi_kind` (plain), `integration_unifi_site` (plain), `integration_unifi_username` (plain), `integration_unifi_password` (secret), oltre a url/apiToken già generici.
-- [ ] **Step 3:** In `api/integrations/[component]/route.ts` aggiungere `"unifi"` a `VALID_COMPONENTS` ed estendere lo schema Zod del PUT con `kind` (`z.enum(["self_hosted","udm","cloud"])`), `site`, `username`.
+- [x] **Step 1:** In `types.ts` aggiungere `"unifi"` a `IntegrationComponent` e i campi `kind`/`site` a `ComponentConfig` (o un `UnifiConfig` esteso).
+- [x] **Step 2:** In `config.ts` aggiungere `unifi` a `DEFAULTS` e gestire le chiavi `integration_unifi_kind` (plain), `integration_unifi_site` (plain), `integration_unifi_username` (plain), `integration_unifi_password` (secret), oltre a url/apiToken già generici.
+- [x] **Step 3:** In `api/integrations/[component]/route.ts` aggiungere `"unifi"` a `VALID_COMPONENTS` ed estendere lo schema Zod del PUT con `kind` (`z.enum(["self_hosted","udm","cloud"])`), `site`, `username`.
 - [ ] **Step 4:** `npx tsc --noEmit && npm run lint` → 0 errori.
-- [ ] **Step 5:** `git commit -m "feat(unifi): whitelist componente + campi config (kind/site/username)"`.
+- [x] **Step 5:** `git commit -m "feat(unifi): whitelist componente + campi config (kind/site/username)"`.
 
 ---
 

@@ -40,7 +40,7 @@ Versione corrente: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non sc
 ## 5. Tooling
 
 - `.claude/`: hook PostToolUse (tsc incrementale) + PreToolUse (blocca force-push main e `--no-verify`); skill `release`, `deploy-prod`, `winrm-kerberos`; rules `api-routes`, `client-components`, `db-access`.
-- Test: `npm test` (node test runner, 121 file, **1.092 test verdi** il 2026-10-12, 5 s). Lanciarli con `DA_INVENT_DATA_DIR` puntato a una cartella temporanea: alcuni test aprono hub/tenant DB. Type-check: `npx tsc --noEmit` (pulito). Lint: 0 errori, 81 avvisi.
+- Test: `npm test` (node test runner, **1.440 test verdi** il 2026-10-12 sera, v0.3.272). Lanciarli con `DA_INVENT_DATA_DIR` puntato a una cartella temporanea: alcuni test aprono hub/tenant DB. Type-check: `npx tsc --noEmit` (pulito). Lint: 0 errori, 81 avvisi.
 - CI `.github/workflows/ci.yml`: Node 22, lint advisory, type-check, test, build, pytest agente. **Nessun test di interfaccia né di autorizzazione delle API.**
 
 ## 6. Stato & igiene (fotografia 2026-10-12)

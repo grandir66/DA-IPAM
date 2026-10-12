@@ -142,6 +142,22 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Tabella ARP: si vede quando la lista è troncata.** Mostra al massimo 500
   righe; arrivata al limite, ora lo dice e invita a restringere con i filtri,
   invece di tagliare in silenzio.
+- **VA Scan: i profili assessment sono quelli dell'edge (EDG-1).** Il pannello
+  della subnet offriva quattro profili scritti nel codice, ma l'edge conosce solo
+  quelli del suo catalogo: due dei quattro non li ha mai avuti. L'id si salvava
+  senza errori e l'assessment falliva dopo la scansione, sull'edge, con «Profilo
+  sconosciuto», senza che DA-IPAM lo mostrasse. Ora l'elenco si legge dall'edge
+  (`GET /api/v1/profiles`) con la sua etichetta; se l'edge non risponde la pagina
+  lo dice e non offre una lista inventata. Prima di avviare una scansione o di
+  salvare una pianificazione DA-IPAM controlla che l'edge abbia il profilo, e se
+  non c'è risponde con l'errore e l'elenco dei profili disponibili. Un profilo
+  salvato che l'edge non ha più si vede sul pulsante «VA Scan» e nel pannello.
+  Acceso senza profilo non ripiega più su «validation-plus»: chiede di sceglierlo.
+  Il profilo nuovo si salva in DA-IPAM solo dopo che l'edge l'ha accettato: prima
+  si scriveva subito, e se l'edge rifiutava la richiesta (integrazione IPAM spenta,
+  token senza permessi, timeout) l'avviso spariva mentre l'edge teneva il profilo
+  vecchio. L'avviso c'è solo a pagina aperta: le reti che nessuno apre non lo
+  mostrano ancora.
 
 ## [Non rilasciato] — 2026-09-07
 

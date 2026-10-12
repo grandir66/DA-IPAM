@@ -19,18 +19,20 @@ import {
   edgeApiPost,
   edgeApiPut,
   edgeApiDelete,
+  listEdgeProfiles,
 } from "@/lib/vuln/scanner-edge-client";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { saveEdgeSchedule } from "@/lib/vuln/edge-schedule-store";
 import { nearestIntervalForFrequency, type Frequency } from "@/lib/vuln/cron-builder";
+import {
+  effectiveAssessment,
+  findEdgeProfile,
+  missingProfileMessage,
+  type AssessmentRequest,
+} from "@/lib/vuln/edge-profiles";
 
 export type EdgeScanProfile = "fast" | "balanced" | "deep";
 export type EdgeTargetingMode = "full_subnet" | "found_ips" | "populated_24";
-export type AssessmentProfileId =
-  | "smoke-interno"
-  | "safe-interno"
-  | "validation-plus"
-  | "interno-approfondito";
 
 export interface EdgeSubnetLastScan {
   id: number;
@@ -60,7 +62,8 @@ export interface EdgeSubnetStatus {
   ipamCredentials: EdgeCredentialPreview[];
   targeting_mode: EdgeTargetingMode;
   assessment_enabled: boolean;
-  assessment_profile_id: AssessmentProfileId | null;
+  /** Id salvato sulla rete: può non esistere più sull'edge (lo controlla il pannello). */
+  assessment_profile_id: string | null;
   edgeNetwork: {
     network_id: number;
     cidr: string;
@@ -78,14 +81,60 @@ export interface EdgeSubnetStatus {
 
 function assessmentFromNetwork(network: { assessment_enabled?: number | null; assessment_profile_id?: string | null } | null | undefined): {
   assessment_enabled: boolean;
-  assessment_profile_id: AssessmentProfileId | null;
+  assessment_profile_id: string | null;
 } {
   const enabled = Number(network?.assessment_enabled ?? 0) === 1;
   const pid = (network?.assessment_profile_id || "").trim() || null;
   return {
     assessment_enabled: enabled,
-    assessment_profile_id: (pid as AssessmentProfileId | null) ?? null,
+    assessment_profile_id: pid,
   };
+}
+
+export type ResolvedAssessment =
+  | { ok: true; enabled: boolean; profileId: string | null }
+  | { ok: false; status: 400 | 404 | 409 | 422 | 502; error: string };
+
+/**
+ * Configurazione assessment che una richiesta lascia sulla rete, controllata
+ * sull'edge PRIMA di scrivere qualcosa (EDG-1). L'edge salva l'id del profilo
+ * senza controllarlo e lo scopre sconosciuto solo dopo la scansione, nei suoi
+ * log: un profilo che non ha (anche quello di una pianificazione salvata) si
+ * ferma qui, con un errore che la pagina mostra.
+ */
+export async function resolveAssessmentForNetwork(
+  networkId: number,
+  req: AssessmentRequest,
+): Promise<ResolvedAssessment> {
+  const network = getNetworkById(networkId);
+  if (!network) return { ok: false, status: 404, error: "Rete non trovata" };
+
+  const saved = assessmentFromNetwork(network);
+  const eff = effectiveAssessment(req, {
+    enabled: saved.assessment_enabled,
+    profileId: saved.assessment_profile_id,
+  });
+  if (!eff.ok) return { ok: false, status: 400, error: eff.error };
+  if (!eff.enabled) return { ok: true, enabled: false, profileId: null };
+
+  const scanner = getActiveEdgeScanner();
+  if (!scanner || scanner.enabled !== 1) {
+    return { ok: false, status: 409, error: "Scanner-Edge non configurato o disabilitato" };
+  }
+  try {
+    const { profiles } = await listEdgeProfiles(scanner);
+    if (!findEdgeProfile(profiles, eff.profileId)) {
+      return { ok: false, status: 422, error: missingProfileMessage(eff.profileId, profiles) };
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "errore sconosciuto";
+    return {
+      ok: false,
+      status: 502,
+      error: `Impossibile verificare il profilo assessment sull'edge: ${msg}`,
+    };
+  }
+  return { ok: true, enabled: true, profileId: eff.profileId };
 }
 
 export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubnetStatus> {
@@ -184,6 +233,24 @@ function tcpPortsFromHost(openPortsJson: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Salva sulla rete la configurazione assessment che l'edge ha appena accettato
+ * con /networks/ensure. Va chiamata solo DOPO l'ensure riuscito: il pannello
+ * calcola «Profilo assente» sul DB di DA-IPAM, e un DB scritto prima di un ensure
+ * fallito (toggle IPAM spento sull'edge, token senza scope admin, timeout)
+ * spegnerebbe l'avviso mentre l'edge tiene il profilo vecchio (EDG-1).
+ */
+function rememberAssessmentAcceptedByEdge(
+  networkId: number,
+  opts: { assessmentEnabled?: boolean; assessmentProfileId?: string | null },
+): void {
+  if (opts.assessmentEnabled == null) return;
+  setNetworkAssessmentConfig(networkId, {
+    enabled: opts.assessmentEnabled,
+    profileId: opts.assessmentEnabled ? (opts.assessmentProfileId ?? null) : null,
+  });
 }
 
 function buildEdgeEnsureBody(
@@ -303,7 +370,8 @@ export async function triggerSubnetEdgeScan(
     runArp?: boolean;
     targetingMode?: EdgeTargetingMode;
     assessmentEnabled?: boolean;
-    assessmentProfileId?: AssessmentProfileId | null;
+    /** Id già controllato sull'edge (`resolveAssessmentForNetwork`). */
+    assessmentProfileId?: string | null;
   } = {},
 ): Promise<{
   ok: boolean;
@@ -326,16 +394,13 @@ export async function triggerSubnetEdgeScan(
   const syncHosts = opts.syncHosts !== false;
   const syncCredentials = opts.syncCredentials !== false;
 
-  try {
-    if (opts.assessmentEnabled != null) {
-      setNetworkAssessmentConfig(networkId, {
-        enabled: opts.assessmentEnabled,
-        profileId: opts.assessmentEnabled
-          ? (opts.assessmentProfileId ?? "validation-plus")
-          : null,
-      });
-    }
+  // Acceso senza profilo: prima si ripiegava su un id scritto nel codice, che
+  // l'edge poteva non avere (EDG-1). Le rotte passano l'id già controllato.
+  if (opts.assessmentEnabled === true && !opts.assessmentProfileId) {
+    return { ok: false, error: "Scegli il profilo assessment, oppure disattiva l'assessment." };
+  }
 
+  try {
     const ensured = await edgeApiPost<{
       ok: boolean;
       network_id: number;
@@ -353,6 +418,7 @@ export async function triggerSubnetEdgeScan(
       }),
       { timeoutMs: 120000 },
     );
+    rememberAssessmentAcceptedByEdge(networkId, opts);
 
     const scan = await edgeApiPost<{
       ok: boolean;
@@ -401,6 +467,9 @@ export async function saveEdgeSubnetSchedule(
     atTime: string;
     daysOfWeek?: number[];
     dayOfMonth?: number;
+    assessmentEnabled?: boolean;
+    /** Id già controllato sull'edge (`resolveAssessmentForNetwork`). */
+    assessmentProfileId?: string | null;
   },
 ): Promise<{ ok: boolean; error?: string; degraded?: boolean; warning?: string }> {
   const scanner = getActiveEdgeScanner();
@@ -422,9 +491,12 @@ export async function saveEdgeSubnetSchedule(
         syncCredentials: true,
         targetingMode: opts.targetingMode,
         label: opts.jobName,
+        assessmentEnabled: opts.assessmentEnabled,
+        assessmentProfileId: opts.assessmentProfileId,
       }),
       { timeoutMs: 120000 },
     );
+    rememberAssessmentAcceptedByEdge(networkId, opts);
 
     let degraded = false;
     let warning: string | undefined;

@@ -78,6 +78,17 @@ test("apparato di tipo ignoto o senza IP: scartato con un motivo, mai un device_
   assert.match(senzaIp.ok ? "" : senzaIp.reason, /IP/);
 });
 
+test("apparato non adottato (in attesa o di un altro controller): scartato col motivo; adopted assente non scarta", () => {
+  const attesa = mapUnifiDevice(
+    device({ type: "uap", model: "U7PRO", ip: "192.168.1.20", mac: "aa:bb:cc:dd:ee:05", adopted: false, state: 1 }),
+  );
+  assert.equal(attesa.ok, false);
+  assert.match(attesa.ok ? "" : attesa.reason, /adottato/);
+  const ignoto = mapUnifiDevice(device({ type: "uap", name: "AP", ip: "10.0.0.5", mac: "aa:bb:cc:dd:ee:06" }));
+  assert.ok(ignoto.ok);
+  assert.equal(mapUnifiDevice(byName("SW-1")).ok, true);
+});
+
 test("apparato senza nome: si ripiega sul modello, poi sul MAC", () => {
   const r = mapUnifiDevice(device({ type: "uap", model: "U7PRO", ip: "10.0.0.3", mac: "aa:bb:cc:dd:ee:03" }));
   assert.ok(r.ok);
@@ -145,6 +156,29 @@ test("SW-11: vede SW-1 dall'altra parte del collegamento, coi MAC fuori risposta
   assert.equal(p4.remoteMac, "02:00:00:00:00:0E");
   assert.equal(p4.remoteDevice, "02:00:00:00:00:0E");
   assert.equal(p4.remotePort, "");
+});
+
+test("mgmt_ips: il vicino risolto prende l'IP dell'apparato; fuori risposta il primo IPv4, mai un IPv6", () => {
+  // mgmt_ips manca nella fixture: forma ipotizzata (elenco di indirizzi), da verificare sul controller vero.
+  const grezzo = JSON.parse(fs.readFileSync(FIXTURE, "utf-8")) as { data: Array<Record<string, unknown>> };
+  const raw = grezzo.data.find((x) => x.name === "SW-11");
+  assert.ok(raw);
+  const lldp = (raw.lldp_table as Array<Record<string, unknown>>).map((e) => {
+    if (e.local_port_idx === 14) return { ...e, mgmt_ips: ["fe80::1", "10.99.0.70"] }; // verso SW-1
+    if (e.local_port_idx === 4) return { ...e, mgmt_ips: ["fe80::2", "10.99.0.80"] }; // fuori risposta
+    if (e.local_port_idx === 7) return { ...e, chassis_id: null, mgmt_ips: ["fe80::3", "10.99.0.90"] }; // solo IP
+    return e;
+  });
+  const n = mapUnifiLldp(device({ ...raw, lldp_table: lldp }), index);
+  const versoSw1 = n.find((x) => x.localPort === "Port 14");
+  assert.ok(versoSw1);
+  assert.equal(versoSw1.remoteDevice, "SW-1");
+  assert.equal(versoSw1.remoteIp, "10.99.0.7", "l'IP che la sync scrive in network_devices.host");
+  assert.equal(n.find((x) => x.localPort === "Port 4")?.remoteIp, "10.99.0.80");
+  const soloIp = n.find((x) => x.localPort === "Port 7");
+  assert.ok(soloIp);
+  assert.equal(soloIp.remoteDevice, "10.99.0.90");
+  assert.equal(soloIp.remoteIp, "10.99.0.90");
 });
 
 test("SW-2 offline e senza LLDP: nessun vicino, porte con stato sconosciuto, nessun errore", () => {

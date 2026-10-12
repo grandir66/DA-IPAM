@@ -64,14 +64,19 @@ export type UnifiDeviceMapping =
 
 /**
  * Apparato del controller → campi di `network_devices`. Scarta (con il motivo,
- * da mettere fra gli scartati della sync) un tipo ignoto e un apparato senza IP:
- * `network_devices.host` è obbligatorio.
+ * da mettere fra gli scartati della sync) un tipo ignoto, un apparato non
+ * adottato (`adopted: false`: in attesa di adozione o gestito da un altro
+ * controller, quindi fuori dall'inventario gestito; `adopted` assente non
+ * scarta) e un apparato senza IP: `network_devices.host` è obbligatorio.
  */
 export function mapUnifiDevice(d: UnifiDevice): UnifiDeviceMapping {
   const deviceType = mapUnifiDeviceType(d.type);
   const label = d.name ?? d.mac ?? d.ip ?? "apparato senza nome";
   if (!deviceType) {
     return { ok: false, reason: `${label}: tipo "${d.type ?? "assente"}" non gestito` };
+  }
+  if (d.adopted === false) {
+    return { ok: false, reason: `${label}: non adottato dal controller (in attesa o gestito da un altro)` };
   }
   if (!d.ip) {
     return { ok: false, reason: `${label}: nessun indirizzo IP dal controller` };
@@ -120,6 +125,16 @@ export interface UnifiNeighbor {
 export type UnifiSwitchPortRow = Omit<SwitchPort, "id" | "device_id" | "timestamp">;
 
 const MAC_SHAPE = /^[0-9a-f]{2}([:-]?)[0-9a-f]{2}(\1[0-9a-f]{2}){4}$/i;
+const IPV4_SHAPE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+
+/**
+ * Il primo IPv4 di `mgmt_ips`. Il campo manca nella fixture di DTS e la sua
+ * forma non è misurata: un IPv6 (anche link-local) in testa non si prende,
+ * perché topologia e attribuzione abbinano per IPv4 (`hosts.ip`).
+ */
+function firstIpv4(ips: readonly string[]): string | null {
+  return ips.find((ip) => IPV4_SHAPE.test(ip)) ?? null;
+}
 
 /** Il MAC del vicino, se `chassis_id` lo è (sottotipo "mac", o assente con forma di MAC). */
 function chassisMac(e: UnifiLldpEntry): string | null {
@@ -174,7 +189,7 @@ function lldpLinks(d: UnifiDevice, index: UnifiMacIndex): LldpLink[] {
   for (const e of d.lldp_table) {
     const mac = chassisMac(e);
     const remote = mac ? index.get(mac) : undefined;
-    const mgmtIp = e.mgmt_ips[0];
+    const mgmtIp = firstIpv4(e.mgmt_ips);
     // Identità del vicino: il nome dell'apparato se è nella risposta, altrimenti
     // il chassis_id (normalizzato se è un MAC). Senza nessuna delle due e senza
     // IP, la voce non dice chi c'è dall'altra parte: si scarta.
@@ -185,7 +200,9 @@ function lldpLinks(d: UnifiDevice, index: UnifiMacIndex): LldpLink[] {
     if (!remotePort && remote) remotePort = portSeenByRemote(remote, selfMac, localPort);
     const neighbor: UnifiNeighbor = { localPort, remoteDevice, remotePort, protocol: "lldp" };
     if (mac) neighbor.remoteMac = mac;
-    const ip = mgmtIp ?? remote?.ip ?? null;
+    // Risolto nella risposta: il suo IP, quello che la sync scrive in
+    // network_devices.host e che topologia e attribuzione sanno abbinare.
+    const ip = remote?.ip ?? mgmtIp;
     if (ip) neighbor.remoteIp = ip;
     if (remote?.model) neighbor.remotePlatform = remote.model;
     links.push({ localPortIdx: e.local_port_idx, neighbor });

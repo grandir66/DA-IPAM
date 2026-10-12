@@ -18,6 +18,8 @@ import { moduleRowTarget, type DestinazioneRigaModulo } from "@/lib/modules/dash
 type StatoModuloRiga = IntegrationHealth & {
   apre?: DestinazioneRigaModulo["apre"];
   notaStato?: string | null;
+  /** false = modulo non installato: fuori dal conteggio errori, icona neutra. */
+  contaNegliErrori?: boolean;
 };
 
 export const dynamic = "force-dynamic";
@@ -70,14 +72,18 @@ export default async function DashboardPage() {
       href: target.href,
       apre: target.apre,
       notaStato: target.notaStato,
+      contaNegliErrori: target.contaNegliErrori,
     };
   });
   const adRows = withTenant(tenantCode, () => getIntegrationsOverview()).filter((i) =>
     i.key.startsWith("ad_"),
   );
   const integrations: StatoModuloRiga[] = [...moduleRows, ...adRows];
-  const integrationErrors = integrations.filter((i) => i.status === "error").length;
-  const integrationWarnings = integrations.filter(
+  // Un modulo non installato non conta: la sua sonda può fallire (MeshCentral
+  // disinstallato tiene i parametri di collegamento) senza che sia un guasto.
+  const contate = integrations.filter((i) => i.contaNegliErrori !== false);
+  const integrationErrors = contate.filter((i) => i.status === "error").length;
+  const integrationWarnings = contate.filter(
     (i) => i.status === "warning" || i.status === "stale",
   ).length;
 
@@ -382,6 +388,7 @@ const TITOLO_APRE: Record<DestinazioneRigaModulo["apre"], string> = {
 
 function IntegrationRow({ item }: { item: StatoModuloRiga }) {
   const icon =
+    item.contaNegliErrori === false ? <HelpCircle className="h-4 w-4 text-muted-foreground" /> :
     item.status === "ok" ? <CheckCircle2 className="h-4 w-4 text-success" /> :
     item.status === "error" ? <XCircle className="h-4 w-4 text-destructive" /> :
     item.status === "warning" ? <AlertTriangle className="h-4 w-4 text-amber-500" /> :
@@ -402,7 +409,8 @@ function IntegrationRow({ item }: { item: StatoModuloRiga }) {
       <span className="flex items-center gap-2 min-w-0">
         {icon}
         <span className="text-sm font-medium truncate">{item.label}</span>
-        {item.message && (
+        {/* Di un modulo non installato non si mostra l'esito della sonda. */}
+        {item.message && item.contaNegliErrori !== false && (
           <span className="text-xs text-muted-foreground truncate hidden sm:inline">
             — {item.message}
           </span>

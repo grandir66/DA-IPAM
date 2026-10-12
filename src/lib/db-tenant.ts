@@ -7797,3 +7797,89 @@ export function countHostsByClassification(classification: string): number {
 export function deleteCustomClassification(slug: string): void {
   db().prepare("DELETE FROM device_classifications_custom WHERE slug = ?").run(slug);
 }
+
+// ─── Topologia: posizioni salvate + dati per la mappa ────────────────────────
+
+export function getTopologyPositions(view: string): import("@/lib/topology/types").SavedPosition[] {
+  const rows = db()
+    .prepare("SELECT node_id, x, y, pinned FROM topology_position WHERE view = ?")
+    .all(view) as Array<{ node_id: string; x: number; y: number; pinned: number }>;
+  return rows.map((r) => ({ nodeId: r.node_id, x: r.x, y: r.y, pinned: r.pinned === 1 }));
+}
+
+export function upsertTopologyPositions(
+  view: string,
+  rows: import("@/lib/topology/types").SavedPosition[],
+): void {
+  const d = db();
+  const ins = d.prepare(`
+    INSERT INTO topology_position (view, node_id, x, y, pinned, updated_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(view, node_id) DO UPDATE SET
+      x = excluded.x, y = excluded.y, pinned = excluded.pinned, updated_at = datetime('now')
+  `);
+  d.transaction(() => {
+    for (const r of rows) ins.run(view, r.nodeId, r.x, r.y, r.pinned ? 1 : 0);
+  })();
+}
+
+export function getTopologyData(): {
+  devices: import("@/lib/topology/types").DeviceRow[];
+  hosts: import("@/lib/topology/types").HostRow[];
+  neighbors: import("@/lib/topology/types").NeighborRow[];
+  portsDown: Set<number>;
+  libreStatus: Map<string, number>;
+  anomalyBySeverity: Map<string, "low" | "medium" | "high">;
+} {
+  const d = db();
+  const tableExists = (name: string): boolean =>
+    !!d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+
+  const devices = d
+    .prepare("SELECT id, name, device_type, model, host, enabled FROM network_devices")
+    .all() as import("@/lib/topology/types").DeviceRow[];
+  const hosts = d
+    .prepare(
+      "SELECT id, ip, hostname, custom_name, classification, status, last_response_time_ms, last_seen, model, network_id FROM hosts",
+    )
+    .all() as import("@/lib/topology/types").HostRow[];
+  const neighbors = d
+    .prepare(
+      "SELECT device_id, local_port, remote_device_name, remote_port, protocol, remote_ip FROM device_neighbors",
+    )
+    .all() as import("@/lib/topology/types").NeighborRow[];
+
+  const downRows = d
+    .prepare(
+      "SELECT DISTINCT device_id FROM switch_ports WHERE status = 'down' AND trunk_neighbor_name IS NOT NULL AND trunk_neighbor_name <> ''",
+    )
+    .all() as Array<{ device_id: number }>;
+  const portsDown = new Set(downRows.map((r) => r.device_id));
+
+  const libreStatus = new Map<string, number>();
+  if (tableExists("librenms_host_map")) {
+    const libre = d
+      .prepare("SELECT network_id, host_ip, last_status FROM librenms_host_map")
+      .all() as Array<{ network_id: number; host_ip: string; last_status: string | null }>;
+    for (const l of libre) {
+      if (l.last_status != null) {
+        libreStatus.set(`${l.network_id}|${l.host_ip}`, l.last_status === "up" || l.last_status === "1" ? 1 : 0);
+      }
+    }
+  }
+
+  const anomalyBySeverity = new Map<string, "low" | "medium" | "high">();
+  if (tableExists("anomaly_events")) {
+    const anomalies = d
+      .prepare("SELECT host_id, severity FROM anomaly_events WHERE acknowledged = 0 AND host_id IS NOT NULL")
+      .all() as Array<{ host_id: number; severity: "low" | "medium" | "high" }>;
+    const rank = { low: 1, medium: 2, high: 3 } as const;
+    for (const a of anomalies) {
+      const k = `host:${a.host_id}`;
+      const cur = anomalyBySeverity.get(k);
+      if (!cur || rank[a.severity] > rank[cur]) anomalyBySeverity.set(k, a.severity);
+    }
+  }
+
+  return { devices, hosts, neighbors, portsDown, libreStatus, anomalyBySeverity };
+}

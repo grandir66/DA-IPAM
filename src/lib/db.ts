@@ -7863,4 +7863,7 @@ export {
   closeAllTenantDbs,
   createTenantDatabase,
   deleteTenantDatabase,
+  getTopologyPositions,
+  upsertTopologyPositions,
+  getTopologyData,
 } from "./db-tenant";

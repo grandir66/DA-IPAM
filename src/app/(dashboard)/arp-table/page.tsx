@@ -1,5 +1,7 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
+import { fetchJson } from "@/lib/fetch-json";
+import { LoadError } from "@/components/shared/load-error";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +29,9 @@ import type { Network } from "@/types";
 import { useClientTableSort } from "@/hooks/use-table-sort";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 
+/** Tetto della lista: oltre, la pagina lo dice (UI-5) invece di tagliare in silenzio. */
+const ARP_LIMIT = 500;
+
 const SOURCE_LABELS: Record<string, string> = {
   arp: "ARP",
   dhcp: "DHCP",
@@ -36,6 +41,7 @@ const SOURCE_LABELS: Record<string, string> = {
 
 export default function ArpTablePage() {
   const [mappings, setMappings] = useState<MacIpMapping[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [networks, setNetworks] = useState<Network[]>([]);
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
@@ -50,14 +56,16 @@ export default function ArpTablePage() {
       if (networkId) params.set("network_id", networkId);
       if (source) params.set("source", source);
       if (q.trim()) params.set("q", q.trim());
-      params.set("limit", "500");
-      const res = await fetch(`/api/mac-ip-mapping?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        setMappings(data);
+      params.set("limit", String(ARP_LIMIT));
+      const r = await fetchJson<MacIpMapping[]>(`/api/mac-ip-mapping?${params}`);
+      // Prima un errore lasciava a schermo l'elenco vecchio senza messaggio (UI-7).
+      if (r.ok) {
+        setMappings(Array.isArray(r.data) ? r.data : []);
+        setError(null);
+      } else {
+        setMappings([]);
+        setError(r.message);
       }
-    } catch {
-      setMappings([]);
     } finally {
       setLoading(false);
     }
@@ -216,8 +224,15 @@ export default function ArpTablePage() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
+          {!loading && !error && mappings.length >= ARP_LIMIT && (
+            <p className="mb-3 text-sm text-amber-700 dark:text-amber-400">
+              Sono mostrati i primi {ARP_LIMIT} risultati: restringi con la ricerca o i filtri per vedere gli altri.
+            </p>
+          )}
           {loading ? (
             <div className="py-12 text-center text-muted-foreground">Caricamento...</div>
+          ) : error ? (
+            <LoadError what="la tabella ARP" message={error} onRetry={() => void fetchData()} />
           ) : mappings.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               Nessun mapping trovato. I dati vengono popolati da ARP, DHCP e scansioni host.

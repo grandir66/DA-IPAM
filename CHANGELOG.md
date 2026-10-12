@@ -28,6 +28,16 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   viene dall'host scansionato con lo stesso IP (con «stale» se l'ultima risposta
   è vecchia), e un dispositivo che nessuna scansione ha mai visto è
   «Sconosciuto», con una voce apposta nel filtro.
+- **Un errore non si presenta più come «nessun dato».** Scansioni, IP esclusi,
+  Anomalie e Tabella ARP, se il server rispondeva con un errore (sessione
+  scaduta, errore interno, server irraggiungibile), mostravano una lista vuota
+  («Nessuna scansione eseguita») oppure lasciavano a schermo i dati vecchi senza
+  dire niente. Ora compare «Impossibile caricare …» con il motivo e il pulsante
+  «Riprova». Due pezzi riusabili per le altre pagine: `fetchJson`
+  (`src/lib/fetch-json.ts`) e il riquadro `LoadError`.
+- **Tabella ARP: si vede quando la lista è troncata.** Mostra al massimo 500
+  righe; arrivata al limite, ora lo dice e invita a restringere con i filtri,
+  invece di tagliare in silenzio.
 
 ## [Non rilasciato] — 2026-09-07
 

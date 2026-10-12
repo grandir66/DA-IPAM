@@ -1,7 +1,9 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
+import { fetchJson } from "@/lib/fetch-json";
+import { LoadError } from "@/components/shared/load-error";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,15 +21,22 @@ import type { ScanHistory } from "@/types";
 export default function ScansPage() {
   const [history, setHistory] = useState<ScanHistory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Guard r.ok + Array.isArray (fix UI#1 2026-06-23): su 401 (sessione scaduta)
-    // o 500 il body è {error} → history.map crashava la pagina.
-    fetch("/api/scans/history?limit=200")
-      .then(async (r) => (r.ok ? r.json() : null))
-      .then((data) => { setHistory(Array.isArray(data) ? data : []); setLoading(false); })
-      .catch(() => { setLoading(false); });
+  // Un 401/500 non è "nessuna scansione" (UI-7): si mostra l'errore.
+  const load = useCallback(async () => {
+    setLoading(true);
+    const r = await fetchJson<ScanHistory[]>("/api/scans/history?limit=200");
+    if (r.ok) {
+      setHistory(Array.isArray(r.data) ? r.data : []);
+      setError(null);
+    } else {
+      setError(r.message);
+    }
+    setLoading(false);
   }, []);
+
+  useEffect(() => { void load(); }, [load]);
 
   return (
     <div className="space-y-6">
@@ -38,6 +47,8 @@ export default function ScansPage() {
 
       {loading ? (
         <Card><CardContent className="py-12 text-center text-muted-foreground">Caricamento...</CardContent></Card>
+      ) : error ? (
+        <LoadError what="le scansioni" message={error} onRetry={() => void load()} />
       ) : history.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">

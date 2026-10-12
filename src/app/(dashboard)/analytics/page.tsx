@@ -1,5 +1,7 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
+import { fetchJson } from "@/lib/fetch-json";
+import { LoadError } from "@/components/shared/load-error";
 
 import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -127,6 +129,7 @@ export default function AnalyticsPage() {
   const [filterType, setFilterType] = useState<string>("all");
   const [filterAck, setFilterAck] = useState<string>("unacked");
   const [selected, setSelected] = useState<AnomalyEvent | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -139,9 +142,15 @@ export default function AnalyticsPage() {
       if (filterAck === "unacked") params.set("acknowledged", "false");
       if (filterAck === "acked") params.set("acknowledged", "true");
 
-      const res = await fetch(`/api/analytics/anomalies?${params}`);
-      if (!res.ok) return;
-      const data = await res.json() as { events: AnomalyEvent[]; total: number; unacked: number };
+      const r = await fetchJson<{ events: AnomalyEvent[]; total: number; unacked: number }>(`/api/analytics/anomalies?${params}`);
+      // Prima un errore lasciava a schermo gli eventi vecchi senza dire niente (UI-7).
+      if (!r.ok) {
+        setEvents([]);
+        setError(r.message);
+        return;
+      }
+      setError(null);
+      const data = r.data;
       setEvents(data.events.map((e) => ({ ...e, _detailParsed: parseDetail(e) })));
       setTotal(data.total);
       setUnacked(data.unacked);
@@ -256,7 +265,14 @@ export default function AnalyticsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {events.length === 0 && !loading && (
+              {error && !loading && (
+                <TableRow>
+                  <TableCell colSpan={6} className="p-4">
+                    <LoadError what="le anomalie" message={error} onRetry={() => void fetchEvents()} />
+                  </TableCell>
+                </TableRow>
+              )}
+              {events.length === 0 && !loading && !error && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">
                     Nessun evento trovato

@@ -60,6 +60,11 @@ export async function GET(request: Request) {
     const rawOffset = Number(searchParams.get("offset") ?? 0);
     const offset =
       Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+    // Ricerca e soglia di gravità: prima le applicava il browser alla sola pagina
+    // caricata, e un host a pagina 2 "non esisteva" (UI-4, analisi 2026-10-12).
+    const search = (searchParams.get("search") ?? "").trim().toLowerCase();
+    const rawSeverity = searchParams.get("severity") ?? "all";
+    const severity = ["critical", "high", "medium"].includes(rawSeverity) ? rawSeverity : "all";
 
     const tenantCode = getCurrentTenantCode();
     if (!tenantCode) {
@@ -208,11 +213,21 @@ export async function GET(request: Request) {
         LEFT JOIN winrm_status ws ON ws.host_id = h.id
         LEFT JOIN last_probe lp ON lp.host_id = h.id
         WHERE LOWER(h.os_family) = 'windows'
-        ORDER BY cve_critical DESC, cve_high DESC, h.hostname ASC
+          AND (? = '' OR LOWER(COALESCE(h.hostname, '') || ' ' || COALESCE(h.custom_name, '') || ' '
+                 || COALESCE(h.ip, '') || ' ' || COALESCE(h.os_info, '')) LIKE ?)
+          AND (? = 'all'
+               OR (? = 'critical' AND COALESCE(hcc.cve_critical, 0) > 0)
+               OR (? = 'high' AND COALESCE(hcc.cve_critical, 0) + COALESCE(hcc.cve_high, 0) > 0)
+               OR (? = 'medium' AND COALESCE(hcc.cve_critical, 0) + COALESCE(hcc.cve_high, 0)
+                                    + COALESCE(hcc.cve_medium, 0) > 0))
+        ORDER BY cve_critical DESC, cve_high DESC, h.hostname ASC, h.id ASC
         LIMIT ? OFFSET ?
       `;
 
-      const rows = db.prepare(sql).all(limit, offset) as DeviceListRow[];
+      const like = `%${search}%`;
+      const rows = db
+        .prepare(sql)
+        .all(search, like, severity, severity, severity, severity, limit, offset) as DeviceListRow[];
 
       const items = rows.map((r) => ({
         hostId: r.host_id,

@@ -20,7 +20,7 @@ import { SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
-import { sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
+import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
@@ -195,6 +195,8 @@ export function getTenantDb(tenantCode: string): Database.Database {
     throw new Error(`Tenant code non valido: ${tenantCode}`);
   }
   const newDb = new Database(dbPath);
+  // Ordinamento numerico di IP e CIDR nelle liste paginate (UI-9).
+  newDb.function("ip_sort_key", { deterministic: true }, (v: unknown) => ipSortKey(v));
 
   // Apply PRAGMAs
   newDb.pragma("journal_mode = WAL");
@@ -6278,6 +6280,8 @@ export function getDhcpLeasesPaginated(
     sourceType?: string;
     sourceDeviceId?: number;
     networkId?: number;
+    /** Solo lease visti negli ultimi N giorni (prima filtrato nel browser sulla sola pagina, UI-4). */
+    recentDays?: number;
     sortKey?: string;
     sortDir?: SortDirection;
   }
@@ -6289,6 +6293,7 @@ export function getDhcpLeasesPaginated(
   if (filters?.sourceType) { conditions.push("d.source_type = ?"); params.push(filters.sourceType); }
   if (filters?.sourceDeviceId) { conditions.push("d.source_device_id = ?"); params.push(filters.sourceDeviceId); }
   if (filters?.networkId) { conditions.push("d.network_id = ?"); params.push(filters.networkId); }
+  if (filters?.recentDays && filters.recentDays > 0) { conditions.push("datetime(d.last_seen) >= datetime('now', ?)"); params.push(`-${Math.floor(filters.recentDays)} days`); }
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const total = (db().prepare(`SELECT COUNT(*) as c FROM dhcp_leases d ${whereClause}`).get(...params) as { c: number }).c;
   const orderSql = sqlOrderByDhcpLeases(filters?.sortKey, filters?.sortDir ?? "desc");

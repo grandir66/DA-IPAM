@@ -23,7 +23,7 @@ import { resolveDataDir } from "./data-dir";
 import fs from "fs";
 import { SCHEMA_SQL } from "./db-schema";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
-import { sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
+import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
@@ -159,6 +159,7 @@ export function getDb(): Database.Database {
   }
 
   _db = new Database(DB_PATH);
+  _db.function("ip_sort_key", { deterministic: true }, (v: unknown) => ipSortKey(v));
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
   _db.pragma("synchronous = NORMAL");
@@ -7601,6 +7602,8 @@ export function getDhcpLeasesPaginated(
     sourceType?: string;
     sourceDeviceId?: number;
     networkId?: number;
+    /** Solo lease visti negli ultimi N giorni (prima filtrato nel browser sulla sola pagina, UI-4). */
+    recentDays?: number;
     sortKey?: string;
     sortDir?: SortDirection;
   }
@@ -7625,6 +7628,10 @@ export function getDhcpLeasesPaginated(
   if (filters?.networkId) {
     conditions.push("d.network_id = ?");
     params.push(filters.networkId);
+  }
+  if (filters?.recentDays && filters.recentDays > 0) {
+    conditions.push("datetime(d.last_seen) >= datetime('now', ?)");
+    params.push(`-${Math.floor(filters.recentDays)} days`);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

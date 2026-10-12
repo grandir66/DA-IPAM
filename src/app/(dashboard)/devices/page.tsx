@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { compareUnknown } from "@/lib/table-sort";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -283,16 +284,13 @@ export default function DevicesUnifiedPage() {
           bVal = b.source === "device" ? b.name : (b.hostname || b.custom_name || b.ip);
           break;
         case "ip":
-          aVal = a.source === "device" ? a.host : a.ip;
-          bVal = b.source === "device" ? b.host : b.ip;
-          const aParts = aVal.split(".").map(Number);
-          const bParts = bVal.split(".").map(Number);
-          for (let i = 0; i < 4; i++) {
-            if (aParts[i] !== bParts[i]) {
-              return sortDirection === "asc" ? aParts[i] - bParts[i] : bParts[i] - aParts[i];
-            }
-          }
-          return 0;
+          // compareUnknown: IP in ordine numerico, e un hostname al posto dell'IP
+          // non dà più NaN (prima le righe "saltavano" di posto, UI-9).
+          return compareUnknown(
+            a.source === "device" ? a.host : a.ip,
+            b.source === "device" ? b.host : b.ip,
+            sortDirection,
+          );
         case "classification":
           aVal = a.classification || "zzz";
           bVal = b.classification || "zzz";

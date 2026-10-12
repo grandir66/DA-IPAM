@@ -274,10 +274,28 @@ function DeviceTab() {
   const [error, setError] = useState<string | null>(null);
   const [moduleMissing, setModuleMissing] = useState(false);
 
+  const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [severityThreshold, setSeverityThreshold] =
     useState<SeverityThreshold>("all");
   const [offset, setOffset] = useState(0);
+
+  // Ricerca e soglia le applica il server (UI-4). La pagina torna alla prima
+  // nello stesso passo in cui cambia il filtro: niente richiesta doppia.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      if (searchInput !== searchQuery) {
+        setSearchQuery(searchInput);
+        setOffset(0);
+      }
+    }, 350);
+    return () => clearTimeout(id);
+  }, [searchInput, searchQuery]);
+
+  const chooseSeverity = (s: SeverityThreshold) => {
+    setSeverityThreshold(s);
+    setOffset(0);
+  };
 
   // Selezione bulk multi-host (cap MAX_BULK_SELECTION).
   // Solo host con winrmValidated=true sono selezionabili.
@@ -318,6 +336,8 @@ function DeviceTab() {
       const params = new URLSearchParams();
       params.set("limit", String(PAGE_SIZE));
       params.set("offset", String(offset));
+      if (searchQuery.trim()) params.set("search", searchQuery.trim());
+      if (severityThreshold !== "all") params.set("severity", severityThreshold);
       const res = await fetch(`/api/patch/device?${params.toString()}`, {
         cache: "no-store",
       });
@@ -344,7 +364,7 @@ function DeviceTab() {
     } finally {
       setLoading(false);
     }
-  }, [offset]);
+  }, [offset, searchQuery, severityThreshold]);
 
   useEffect(() => {
     void fetchDevices();
@@ -486,31 +506,8 @@ function DeviceTab() {
     void fetchDevices();
   };
 
-  // Filtri client-side
-  const filtered = items.filter((d) => {
-    if (severityThreshold === "critical" && d.cveCritical === 0) return false;
-    if (
-      severityThreshold === "high" &&
-      d.cveCritical === 0 &&
-      d.cveHigh === 0
-    )
-      return false;
-    if (
-      severityThreshold === "medium" &&
-      d.cveCritical === 0 &&
-      d.cveHigh === 0 &&
-      d.cveMedium === 0
-    )
-      return false;
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      (d.hostname ?? "").toLowerCase().includes(q) ||
-      (d.customName ?? "").toLowerCase().includes(q) ||
-      (d.ip ?? "").toLowerCase().includes(q) ||
-      (d.osInfo ?? "").toLowerCase().includes(q)
-    );
-  });
+  // I filtri li applica il server: la lista è già quella giusta.
+  const filtered = items;
 
   const pageIndex = Math.floor(offset / PAGE_SIZE) + 1;
 
@@ -523,8 +520,8 @@ function DeviceTab() {
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Cerca hostname, IP, OS..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="pl-8"
             />
           </div>
@@ -533,28 +530,28 @@ function DeviceTab() {
             <Button
               variant={severityThreshold === "all" ? "default" : "outline"}
               size="sm"
-              onClick={() => setSeverityThreshold("all")}
+              onClick={() => chooseSeverity("all")}
             >
               Tutti
             </Button>
             <Button
               variant={severityThreshold === "critical" ? "default" : "outline"}
               size="sm"
-              onClick={() => setSeverityThreshold("critical")}
+              onClick={() => chooseSeverity("critical")}
             >
               Solo Critical
             </Button>
             <Button
               variant={severityThreshold === "high" ? "default" : "outline"}
               size="sm"
-              onClick={() => setSeverityThreshold("high")}
+              onClick={() => chooseSeverity("high")}
             >
               Critical + High
             </Button>
             <Button
               variant={severityThreshold === "medium" ? "default" : "outline"}
               size="sm"
-              onClick={() => setSeverityThreshold("medium")}
+              onClick={() => chooseSeverity("medium")}
             >
               + Medium
             </Button>

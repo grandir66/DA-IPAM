@@ -117,6 +117,9 @@ export default function DhcpPage() {
       if (searchTerm) params.set("search", searchTerm);
       if (sourceTypeFilter !== "all") params.set("sourceType", sourceTypeFilter);
       if (sourceDeviceFilter !== "all") params.set("sourceDeviceId", sourceDeviceFilter);
+      // "Solo recenti" lo applica il server: prima filtrava solo la pagina corrente
+      // e totali e pagine restavano quelli non filtrati (UI-4).
+      if (onlyRecent) params.set("recentDays", String(recentDays));
       if (sortColumn) {
         params.set("sortBy", sortColumn);
         params.set("sortOrder", sortDirection);
@@ -132,7 +135,7 @@ export default function DhcpPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, searchTerm, sourceTypeFilter, sourceDeviceFilter, sortColumn, sortDirection]);
+  }, [page, pageSize, searchTerm, sourceTypeFilter, sourceDeviceFilter, sortColumn, sortDirection, onlyRecent, recentDays]);
 
   const fetchSources = useCallback(async () => {
     try {
@@ -370,12 +373,12 @@ export default function DhcpPage() {
               <input
                 type="checkbox"
                 checked={onlyRecent}
-                onChange={(e) => setOnlyRecent(e.target.checked)}
+                onChange={(e) => { setOnlyRecent(e.target.checked); setPage(1); }}
                 className="h-3.5 w-3.5"
               />
               Solo attivi negli ultimi
             </label>
-            <Select value={String(recentDays)} onValueChange={(v) => v && setRecentDays(parseInt(v, 10))} disabled={!onlyRecent}>
+            <Select value={String(recentDays)} onValueChange={(v) => { if (v) { setRecentDays(parseInt(v, 10)); setPage(1); } }} disabled={!onlyRecent}>
               <SelectTrigger className="w-[110px] h-8 text-xs">
                 <SelectValue />
               </SelectTrigger>
@@ -400,9 +403,7 @@ export default function DhcpPage() {
           ) : (() => {
               // v0.2.661: se il filtro "solo attivi recenti" nasconde TUTTI i lease,
               // mostra un messaggio chiaro invece di tabella vuota silenziosa.
-              const visibleCount = onlyRecent
-                ? leases.filter((l) => l.last_seen && (Date.now() - Date.parse(l.last_seen)) / 86400000 <= recentDays).length
-                : leases.length;
+              const visibleCount = leases.length;
               if (visibleCount === 0 && onlyRecent) {
                 return (
                   <div className="text-center py-12 text-muted-foreground">
@@ -453,12 +454,6 @@ export default function DhcpPage() {
                   </TableHeader>
                   <TableBody>
                     {leases
-                      .filter((lease) => {
-                        if (!onlyRecent) return true;
-                        if (!lease.last_seen) return false;
-                        const ageDays = (Date.now() - Date.parse(lease.last_seen)) / 86400000;
-                        return ageDays <= recentDays;
-                      })
                       .map((lease) => (
                       <TableRow key={lease.id}>
                         <TableCell className="font-mono">

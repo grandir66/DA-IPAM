@@ -55,6 +55,17 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **Ordinamenti giusti nelle liste paginate.** Nelle liste DHCP e Subnet gli IP e
+  i CIDR si ordinavano come testo («10.0.0.10» prima di «10.0.0.2»); la colonna
+  «Ultimo visto» del DHCP ordinava in realtà per «Ultimo sync»; a valori uguali
+  le righe potevano ripetersi o saltare fra una pagina e l'altra. Ora IP e CIDR
+  vanno in ordine numerico, ogni colonna cliccabile è ammessa dal server (una
+  prova lo controlla) e a parità di valore l'ordine è stabile. Nella pagina
+  Dispositivi l'ordinamento per IP non si confonde più con un nome host.
+- **I filtri valgono su tutta la lista, non sulla sola pagina.** «Solo recenti»
+  del DHCP e, in Patch, la ricerca e la soglia di gravità filtravano soltanto le
+  righe già caricate: si cercava un host e «non c'era», ma stava a pagina 2, e i
+  totali restavano quelli non filtrati. Ora li applica il server.
 - **L'amministratore del cliente gestisce gli utenti del proprio cliente (UI-18).**
   Su un'appliance installata per un solo cliente, l'amministratore creato dal
   setup apriva Impostazioni → Utenti e leggeva «Nessun utente trovato»: le rotte

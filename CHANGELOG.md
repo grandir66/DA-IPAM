@@ -76,6 +76,20 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **Pulizia dei riferimenti orfani su ogni tenant** (tappa 3, NUC-2 gruppo 0).
+  La pulizia dei collegamenti rimasti a reti, host e apparati cancellati (tabelle
+  dello storico MAC-IP e dei lease DHCP) partiva una volta sola per processo: su
+  un hub con più tenant toccava il primo database e mai gli altri. Ora gira una
+  volta per ciascun database. Cambia il comportamento sull'hub: alla prima
+  interrogazione di un apparato, ogni tenant azzera i propri riferimenti orfani.
+  Insieme, quattro funzioni dati (pulizia, intervallo dei job, andamento degli
+  stati, ultimi cambi di stato) esistono ora in una sola copia, quella per
+  tenant; la vecchia facciata le riesporta. Un test conta le funzioni ancora
+  duplicate nella facciata e impedisce che risalgano, e un banco di prova
+  confronta le due copie sugli stessi dati prima di ogni spostamento. Perché: le
+  due copie si erano separate, e una correzione fatta in una non arrivava
+  all'altra.
+
 - **Un tenant il cui database non si apre è un errore** (NUC-1). Prima il facade
   ripiegava in silenzio su DEFAULT: le scritture finivano nel database sbagliato.
   `/api/health` verifica il database sull'hub invece che passare dal facade, che

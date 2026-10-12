@@ -6,6 +6,8 @@
  * risiedono solo nel DB centrale.
  */
 
+import { SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
+
 export const TENANT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS networks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -288,7 +290,7 @@ CREATE TABLE IF NOT EXISTS switch_ports (
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync', 'vuln_sync', 'wazuh_sync', 'wazuh_alerts_sync', 'mdm_sync', 'meshcentral_sync')),
+  job_type TEXT NOT NULL CHECK(${SCHEDULED_JOB_TYPES_CHECK_SQL}),
   interval_minutes INTEGER NOT NULL DEFAULT 60,
   last_run TEXT,
   next_run TEXT,

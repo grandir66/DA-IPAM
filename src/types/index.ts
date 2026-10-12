@@ -1,3 +1,5 @@
+import type { ScheduledJobType } from "@/lib/scheduled-job-types";
+
 // ========================
 // Database Row Types
 // ========================
@@ -666,7 +668,7 @@ export interface SwitchPort {
 export interface ScheduledJob {
   id: number;
   network_id: number | null;
-  job_type: "ping_sweep" | "fast_scan" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check" | "librenms_sync" | "vuln_sync" | "wazuh_sync" | "wazuh_alerts_sync" | "mdm_sync" | "meshcentral_sync";
+  job_type: ScheduledJobType;
   interval_minutes: number;
   last_run: string | null;
   next_run: string | null;
@@ -856,7 +858,7 @@ export interface CredentialInput {
 
 export interface ScheduledJobInput {
   network_id?: number | null;
-  job_type: "ping_sweep" | "fast_scan" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check" | "librenms_sync" | "vuln_sync" | "wazuh_sync" | "wazuh_alerts_sync" | "mdm_sync" | "meshcentral_sync";
+  job_type: ScheduledJobType;
   interval_minutes: number;
   config?: Record<string, unknown>;
 }

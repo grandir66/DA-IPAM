@@ -16,6 +16,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
+import { SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
@@ -78,6 +79,85 @@ export function getCurrentTenantCode(): string | null {
 const TENANTS_DIR = path.join(resolveDataDir(), "tenants");
 const MAX_OPEN_DBS = 20;
 const tenantDbs = new Map<string, { db: Database.Database; lastUsed: number }>();
+
+/** Colonne di `scheduled_jobs`, nell'ordine dello schema (copia per nome nella v8). */
+const SCHEDULED_JOBS_COLUMNS = [
+  "id",
+  "network_id",
+  "job_type",
+  "interval_minutes",
+  "last_run",
+  "next_run",
+  "enabled",
+  "config",
+  "created_at",
+  "updated_at",
+] as const;
+
+/**
+ * Migrazione runtime v8 di `scheduled_jobs` (tappa 2 UniFi): il CHECK di
+ * `job_type` accetta `'unifi_sync'`. Stessa forma delle v2…v7 (guardia sul
+ * testo dello schema, tabella ricostruita con `foreign_keys` OFF), con tre
+ * differenze:
+ * - il CHECK viene da `SCHEDULED_JOB_TYPES_CHECK_SQL`, la stessa costante dello
+ *   schema: un DB nuovo e uno aggiornato accettano gli stessi job;
+ * - le colonne si copiano per nome (non `SELECT *` per posizione), il contatore
+ *   AUTOINCREMENT resta dov'era (gli id dei job cancellati non si riusano) e
+ *   l'indice `idx_scheduled_jobs_enabled_next` si ricrea subito: nelle v2…v7
+ *   spariva con la vecchia tabella fino al riavvio successivo;
+ * - tutto in una transazione: se la copia non riesce la tabella resta com'era
+ *   (e l'errore sale al chiamante, che lo registra).
+ *
+ * Restituisce true se ha ricostruito, false se non c'era niente da fare.
+ * Esportata per le prove (`scheduled-jobs-v8.test.ts`).
+ */
+export function migrateScheduledJobsV8(db: Database.Database): boolean {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as
+    | { sql?: string }
+    | undefined;
+  if (!row?.sql || row.sql.includes("'unifi_sync'")) return false;
+
+  const present = new Set(
+    (db.prepare("PRAGMA table_info(scheduled_jobs)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  const cols = SCHEDULED_JOBS_COLUMNS.filter((c) => present.has(c)).join(", ");
+
+  // PRAGMA foreign_keys non ha effetto dentro una transazione: si spegne prima.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'scheduled_jobs'").get() as
+        | { seq: number }
+        | undefined;
+      db.exec("DROP TABLE IF EXISTS scheduled_jobs_v8");
+      db.exec(`CREATE TABLE scheduled_jobs_v8 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(${SCHEDULED_JOB_TYPES_CHECK_SQL}),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      db.exec(`INSERT INTO scheduled_jobs_v8 (${cols}) SELECT ${cols} FROM scheduled_jobs`);
+      if (seq) {
+        const upd = db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'scheduled_jobs_v8'").run(seq.seq);
+        if (upd.changes === 0) {
+          db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('scheduled_jobs_v8', ?)").run(seq.seq);
+        }
+      }
+      db.exec("DROP TABLE scheduled_jobs");
+      db.exec("ALTER TABLE scheduled_jobs_v8 RENAME TO scheduled_jobs");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run)");
+    })();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+  return true;
+}
 
 export function getTenantDb(tenantCode: string): Database.Database {
   const existing = tenantDbs.get(tenantCode);
@@ -503,6 +583,16 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione wazuh_alerts_sync fallita:`, e);
+  }
+
+  // Migrazione runtime v8: scheduled_jobs.job_type CHECK include 'unifi_sync'
+  // (sync del controller UniFi). CHECK dalla stessa costante dello schema.
+  try {
+    if (migrateScheduledJobsV8(newDb)) {
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'unifi_sync' (v8)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione unifi_sync fallita:`, e);
   }
 
   // Migrazione runtime: vuln_scanners.{cert_pin,cert_fingerprint} per

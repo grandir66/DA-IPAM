@@ -1905,6 +1905,31 @@ export function getHostBasic(
     .get(id) as Pick<Host, "id" | "ip" | "custom_name" | "hostname" | "vendor" | "device_manufacturer"> | undefined;
 }
 
+/**
+ * Stato di raggiungibilità degli host scansionati per un insieme di IP, in una
+ * sola query (a blocchi, per il limite di parametri di SQLite). Se lo stesso IP
+ * sta in più reti vince l'host visto più di recente. Serve alla lista
+ * Dispositivi, che prima mostrava "Online" per ogni dispositivo abilitato in
+ * anagrafica (difetto UI-8, analisi 2026-10-12). Gli IP senza host non compaiono.
+ */
+export function getHostStatusesByIp(ips: string[]): Map<string, { status: string; last_seen: string | null }> {
+  const stati = new Map<string, { status: string; last_seen: string | null }>();
+  const unici = [...new Set(ips.filter((ip) => ip && ip.trim()))];
+  for (let i = 0; i < unici.length; i += 500) {
+    const blocco = unici.slice(i, i + 500);
+    const righe = db()
+      .prepare(
+        `SELECT ip, status, last_seen FROM hosts WHERE ip IN (${blocco.map(() => "?").join(",")})
+         ORDER BY last_seen DESC`
+      )
+      .all(...blocco) as { ip: string; status: string; last_seen: string | null }[];
+    for (const r of righe) {
+      if (!stati.has(r.ip)) stati.set(r.ip, { status: r.status, last_seen: r.last_seen });
+    }
+  }
+  return stati;
+}
+
 export function getHostByIp(ip: string): Host | undefined {
   return db().prepare("SELECT * FROM hosts WHERE ip = ? LIMIT 1").get(ip) as Host | undefined;
 }

@@ -13,7 +13,7 @@ import {
 import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 import { getTenantMode, withTenantFromSession } from "@/lib/api-tenant";
-import { queryAllTenants } from "@/lib/db-tenant";
+import { queryAllTenants, getHostStatusesByIp } from "@/lib/db-tenant";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -98,9 +98,12 @@ export async function GET(request: Request) {
 
     if (classification) {
       const networkDevices = getDevicesByClassificationOrLegacy(classification);
+      const statiClasse = getHostStatusesByIp(networkDevices.map((d) => d.host));
       const maskedDevices = networkDevices.map((d) => ({
         ...d,
         source: "network_device" as const,
+        host_status: statiClasse.get(d.host)?.status ?? null,
+        host_last_seen: statiClasse.get(d.host)?.last_seen ?? null,
         credential_protocols: credMap.get(d.id) || [],
         last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
         encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,
@@ -115,9 +118,14 @@ export async function GET(request: Request) {
       : type === "switch"
         ? getSwitches()
         : getNetworkDevices();
+    // Stato di raggiungibilità dagli host scansionati con lo stesso IP (UI-8):
+    // "enabled" dice solo se il dispositivo è attivo in anagrafica.
+    const stati = getHostStatusesByIp(devices.map((d) => d.host));
     const masked = devices.map((d) => ({
       ...d,
       source: "network_device" as const,
+      host_status: stati.get(d.host)?.status ?? null,
+      host_last_seen: stati.get(d.host)?.last_seen ?? null,
       credential_protocols: credMap.get(d.id) || [],
       last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
       encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,

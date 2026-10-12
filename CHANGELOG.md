@@ -22,6 +22,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   sola funzione, `parseDbDate` (`src/lib/db-date.ts`), legge quelle date come UTC
   ed è usata in tutte le pagine; la dashboard, preparata sul server (che in
   produzione è in UTC), indica in più il fuso di Roma.
+- **Dispositivi: lo stato è la raggiungibilità vera.** La colonna «Stato» e il
+  filtro Online/Offline guardavano se il dispositivo era *abilitato in
+  anagrafica*: un router spento ma abilitato risultava «Online». Ora lo stato
+  viene dall'host scansionato con lo stesso IP (con «stale» se l'ultima risposta
+  è vecchia), e un dispositivo che nessuna scansione ha mai visto è
+  «Sconosciuto», con una voce apposta nel filtro.
 
 ## [Non rilasciato] — 2026-09-07
 

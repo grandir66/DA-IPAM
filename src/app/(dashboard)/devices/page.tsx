@@ -71,8 +71,19 @@ import {
 } from "@/lib/network-device-acquisition";
 
 type DeviceOrHost = 
-  | (NetworkDevice & { source: "device"; host_status?: string })
+  | (NetworkDevice & { source: "device"; host_status?: string | null; host_last_seen?: string | null })
   | (Host & { source: "host"; device_id?: number });
+
+/**
+ * Stato di raggiungibilità di una riga. Per i dispositivi viene dall'host
+ * scansionato con lo stesso IP (`host_status` dall'API): prima si usava
+ * `enabled`, cioè "attivo in anagrafica", e ogni dispositivo abilitato
+ * risultava Online anche se spento (difetto UI-8, analisi 2026-10-12).
+ */
+function rowStatus(item: DeviceOrHost): "online" | "offline" | "unknown" {
+  const s = item.source === "device" ? item.host_status : item.status;
+  return s === "online" || s === "offline" ? s : "unknown";
+}
 
 interface ClassificationCount {
   classification: string;
@@ -244,10 +255,7 @@ export default function DevicesUnifiedPage() {
 
     if (statusFilter !== "all") {
       result = result.filter((item) => {
-        if (item.source === "device") {
-          return statusFilter === "online" ? item.enabled : !item.enabled;
-        }
-        return item.status === statusFilter;
+        return rowStatus(item) === statusFilter;
       });
     }
 
@@ -308,12 +316,10 @@ export default function DevicesUnifiedPage() {
           bVal = b.source === "host" ? (b.mac ?? "").toLowerCase() : "zzz";
           break;
         case "status":
-          if (a.source === "device" && b.source === "device") {
-            aVal = a.enabled ? 0 : 1;
-            bVal = b.enabled ? 0 : 1;
-          } else {
-            aVal = a.source === "host" ? (a.status === "online" ? 0 : 1) : 0;
-            bVal = b.source === "host" ? (b.status === "online" ? 0 : 1) : 0;
+          {
+            const ordine = { online: 0, offline: 1, unknown: 2 } as const;
+            aVal = ordine[rowStatus(a)];
+            bVal = ordine[rowStatus(b)];
           }
           break;
       }
@@ -455,6 +461,7 @@ export default function DevicesUnifiedPage() {
                 <SelectItem value="all">Tutti gli stati</SelectItem>
                 <SelectItem value="online">Online</SelectItem>
                 <SelectItem value="offline">Offline</SelectItem>
+                <SelectItem value="unknown">Sconosciuto</SelectItem>
               </SelectContent>
             </Select>
             <Select value={vendorFilter} onValueChange={(v) => { if (v) { setVendorFilter(v); setPage(1); } }}>
@@ -567,9 +574,8 @@ export default function DevicesUnifiedPage() {
                   const mac = item.source === "device" ? null : item.mac;
                   const classification = item.classification || "unknown";
                   const Icon = CLASSIFICATION_ICONS[classification] || Server;
-                  const status = item.source === "device" 
-                    ? (item.enabled ? "online" : "offline") 
-                    : (item.status || "unknown");
+                  const status = rowStatus(item);
+                  const lastSeen = item.source === "device" ? item.host_last_seen : item.last_seen;
                   const acquisitionAt =
                     item.source === "device" ? networkDeviceAcquisitionAt(item) : null;
                   const showAcquisitionBadge =
@@ -626,7 +632,7 @@ export default function DevicesUnifiedPage() {
                         {mac || "—"}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={status} />
+                        <StatusBadge status={status} lastSeen={lastSeen} />
                       </TableCell>
                       <TableCell>
                         <ProtocolBadges protocols={(item as unknown as { credential_protocols?: string[] }).credential_protocols || []} />

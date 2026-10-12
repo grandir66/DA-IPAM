@@ -436,7 +436,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
                     type={showAdminPassword ? "text" : "password"}
                     value={installAdminPassword}
                     onChange={(e) => setInstallAdminPassword(e.target.value)}
-                    placeholder="min. 6 caratteri"
+                    placeholder="vuota = generata (min. 6 caratteri)"
                     className="pr-8"
                   />
                   <button

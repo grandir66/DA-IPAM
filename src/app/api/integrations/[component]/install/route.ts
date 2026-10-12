@@ -5,6 +5,7 @@ import { installLibreNMS } from "@/lib/integrations/librenms";
 import { installLoki } from "@/lib/integrations/loki";
 import { installGraylog } from "@/lib/integrations/graylog";
 import { getIntegrationConfig } from "@/lib/integrations/config";
+import { parametriInstallazione } from "@/lib/integrations/segreti-installazione";
 import type { ContainerIntegrationComponent } from "@/lib/integrations/types";
 import { randomUUID } from "crypto";
 import { networkInterfaces } from "os";
@@ -52,17 +53,16 @@ export async function POST(
   const cfg = getIntegrationConfig(component);
   const containerName = cfg.containerName ?? `da-${component}`;
 
-  let adminPassword = "admin";
-  let serverUrl = "";
+  // Password admin: quella della richiesta (almeno 6 caratteri) oppure una
+  // generata qui — mai un valore predefinito (SEC-13). Si salva cifrata e la
+  // mostra la card dell'integrazione agli admin.
+  let corpo: unknown = {};
   try {
-    const body = await req.json() as { adminPassword?: string; serverUrl?: string };
-    if (body.adminPassword && typeof body.adminPassword === "string" && body.adminPassword.trim().length >= 6) {
-      adminPassword = body.adminPassword.trim();
-    }
-    if (body.serverUrl && typeof body.serverUrl === "string" && body.serverUrl.trim()) {
-      serverUrl = body.serverUrl.trim().replace(/\/$/, "");
-    }
+    corpo = await req.json();
   } catch { /* body vuoto ok */ }
+  const parametri = parametriInstallazione(corpo);
+  const adminPassword = parametri.adminPassword;
+  let serverUrl = parametri.serverUrl;
 
   // Se l'utente non ha specificato un URL, lo rileva automaticamente
   if (!serverUrl) {

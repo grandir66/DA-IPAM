@@ -8,6 +8,21 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **Installazioni di LibreNMS e Graylog con segreti propri, mai nel registro
+  (SEC-13).** Fino a oggi ogni installazione gestita usava gli stessi segreti
+  interni, scritti nel sorgente (che è pubblico), e il registro
+  dell'installazione, visibile dalla pagina, riportava la password admin.
+  Ora ogni installazione nuova genera i propri segreti, li salva cifrati
+  nell'hub e li passa ai container per ambiente invece che fra gli argomenti
+  dei comandi; il registro dice solo che sono stati salvati. Se la richiesta
+  d'installazione non indica una password admin, se ne genera una invece di
+  usare un valore predefinito: la si legge nella card dell'integrazione (solo
+  admin). **Cambia all'avvio sulle installazioni del canale `dev`**: per le
+  installazioni già presenti l'hub legge i segreti dall'ambiente dei container
+  (sola lettura) e ne salva una copia cifrata, così i comandi di manutenzione
+  continuano a funzionare; i container non vengono toccati. La sostituzione
+  dei segreti delle installazioni esistenti è un passo a parte, non fatto qui.
+  Prove: `install-segreti.test.ts`, `install-segreti-invariante.test.ts`.
 - **Accesso automatico a LibreNMS solo per gli admin (SEC-6, parte utenti in
   sola lettura).** L'accesso automatico entra in LibreNMS con l'utenza admin
   salvata nell'hub, ma bastava essere collegati a DA-IPAM per usarlo: anche un

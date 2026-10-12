@@ -2,6 +2,7 @@ import { getSetting, setSetting } from "../db-hub";
 import { encrypt, safeDecrypt } from "../crypto";
 import { isInternalIntegrationUrl } from "./public-url";
 import { normalizeSpkiPin } from "./wazuh-config";
+import type { SegretiGraylog, SegretiLibreNMS } from "./segreti-installazione";
 
 // Segreti integrazioni (token/password) cifrati AES-GCM at-rest in hub settings.
 const CIPHERTEXT_RE = /^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/i;
@@ -249,4 +250,33 @@ export function setIntegrationConfig(component: IntegrationComponent, cfg: Parti
       setSetting(`integration_${component}_ui_url`, "");
     }
   }
+}
+
+// ── Segreti interni delle installazioni gestite (SEC-13) ─────────────────────
+// Chiavi separate da ComponentConfig: non passano mai dalla rotta che
+// restituisce la configurazione, nemmeno a un admin. Servono solo ai comandi
+// che l'hub manda ai container (database di LibreNMS, avvio di Graylog).
+
+/** Segreti di LibreNMS salvati, o null se l'installazione non li ha (ancora). */
+export function leggiSegretiLibreNMS(): SegretiLibreNMS | null {
+  const dbPassword = readSecret("integration_librenms_secret_db_password");
+  const dbRootPassword = readSecret("integration_librenms_secret_db_root_password");
+  const appKey = readSecret("integration_librenms_secret_app_key");
+  if (!dbPassword) return null;
+  return { dbPassword, dbRootPassword, appKey };
+}
+
+export function salvaSegretiLibreNMS(s: SegretiLibreNMS): void {
+  writeSecret("integration_librenms_secret_db_password", s.dbPassword);
+  writeSecret("integration_librenms_secret_db_root_password", s.dbRootPassword);
+  writeSecret("integration_librenms_secret_app_key", s.appKey);
+}
+
+export function leggiSegretiGraylog(): SegretiGraylog | null {
+  const passwordSecret = readSecret("integration_graylog_secret_password_secret");
+  return passwordSecret ? { passwordSecret } : null;
+}
+
+export function salvaSegretiGraylog(s: SegretiGraylog): void {
+  writeSecret("integration_graylog_secret_password_secret", s.passwordSecret);
 }

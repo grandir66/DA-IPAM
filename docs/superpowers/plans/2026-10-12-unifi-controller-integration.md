@@ -314,8 +314,8 @@ test("device senza MAC/port_table non crasha", () => {
 
 **Files:** Create `src/components/settings/unifi-card.tsx`; Modify `src/components/settings/modules-tab.tsx`.
 
-- [ ] **Step 1:** Leggere `integration-card.tsx` (load/save/test/sync) e `WazuhCard` (card custom) come template.
-- [ ] **Step 2:** `UnifiCard` ("use client"): `load()` da `GET /api/integrations/unifi`; selettore `kind`; campi url/site/username/password o api_token condizionati; `Salva` (PUT poi `load()`); `Test` (test-connection); `Sincronizza` (POST sync). Testi in italiano, `@base-ui` (`render={<…/>}`).
+- [x] **Step 1:** Leggere `integration-card.tsx` (load/save/test/sync) e `WazuhCard` (card custom) come template.
+- [x] **Step 2:** `UnifiCard` ("use client"): `load()` da `GET /api/integrations/unifi`; selettore `kind`; campi url/site/username/password o api_token condizionati; `Salva` (PUT poi `load()`); `Test` (test-connection); `Sincronizza` (POST sync). Testi in italiano, `@base-ui` (`render={<…/>}`).
 
 > **Nota dal Task 6 (12/10):** oggi **nessuna strada crea il job `unifi_sync`** (come
 > `librenms_sync`; `POST /api/jobs` non lo ammette). Se la sync automatica serve, la card
@@ -326,9 +326,47 @@ test("device senza MAC/port_table non crasha", () => {
 > `{ ok, devices, certPin, certPinRecorded }` o `{ ok:false, reason, message, presentedPin?,
 > expectedPin? }`: con `reason: "cert"` la card mostra le due impronte. La sync risponde
 > `{ ok, ...UnifiSyncResult }`: mostrare `errors[]` e `skippedReasons`.
-- [ ] **Step 3:** Aggiungere `<UnifiCard/>` in `modules-tab.tsx` (sezione dedicata).
-- [ ] **Step 4:** `npx tsc --noEmit && npm run lint && npm run build`; verifica visiva della card.
-- [ ] **Step 5:** `git commit -m "feat(unifi): card configurazione integrazione in impostazioni"`.
+- [x] **Step 3:** Aggiungere `<UnifiCard/>` in `modules-tab.tsx` (sezione dedicata).
+- [ ] **Step 4:** `npx tsc --noEmit && npm run lint && npm run build`; verifica visiva della card. *(12/10, passo 5: tsc completo una volta e eslint sui file toccati, verdi; la vista è resa sul server nelle prove. Restano build e verifica a schermo: una volta per tappa, sul dev)*
+- [x] **Step 5:** `git commit -m "feat(unifi): card configurazione integrazione in impostazioni"`.
+
+> **Esito (12/10, passo 5) — Task 7 e correzione 8.** Dove differisce dal testo sopra:
+> - **Card** `src/components/settings/unifi-card.tsx`, sezione propria `#module-unifi` nel tab
+>   Moduli, dopo Network Services (fonte di dati, non dashboard esterna; niente import JSON).
+>   `UnifiCardView` disegna senza stato né rete; la parte pura (modulo, corpo del PUT, testi
+>   degli esiti) sta in `unifi-card-model.ts`. Modalità «Disattivata» di default; i campi
+>   cambiano col tipo (self-hosted/UDM: indirizzo, site, utente, password; cloud: chiave API e
+>   site), con l'avviso «non ancora supportato» per UDM e cloud. Password e chiave in sola
+>   scrittura («Impostata: lascia vuoto per non cambiarla»).
+> - **Prova e sync usano la configurazione salvata**: restano ferme finché il modulo ha
+>   modifiche non salvate, e lo dicono. «Sincronizza ora» compare solo a integrazione attiva.
+>   Esito della sync in colonne (letti, aggiunti, aggiornati, porte, vicini, saltati), motivi
+>   dei saltati ed errori uno per riga.
+> - **Certificato**: stato dell'impronta fissata; «Dimentica il certificato» (DELETE) e, sul
+>   «certificato cambiato», le due impronte e «Accetta la nuova impronta» (POST con l'impronta
+>   presentata e quella vista fissata: se nel frattempo è cambiata → 409). Entrambe con
+>   conferma. Rotta nuova `src/app/api/integrations/unifi/cert-pin/route.ts`, admin (nel
+>   contratto di `api-auth-guards.test.ts`); logica in `acceptUnifiCertPin` (config.ts).
+> - **Correzione 8**: voce `unifi` «Controller UniFi» nel registry (accesso nativo, apre
+>   `/topology`, console del controller come interfaccia esterna) e sonda in `health.ts`, così
+>   compare in «Stato moduli». Spenta = `configured:false` → «Non configurato», non un errore.
+>   La sonda (`src/lib/integrations/unifi-health.ts`) è il test di connessione con tre
+>   differenze: **non fissa mai l'impronta** (senza impronta non contatta il controller: la
+>   password non parte verso un certificato mai visto, e il verdetto è «degradato: collegamento
+>   mai provato»); **tiene il risultato 5 minuti** (niente login sul controller del cliente a
+>   ogni apertura della dashboard; «Verifica» o configurazione cambiata rileggono, la notifica
+>   disco che forza `only: "appliance"` no); **tetto di 8 s** come le altre sonde. Credenziali
+>   solo da `integration_unifi_*`, niente vault.
+> - `/api/modules/health` accetta i moduli di `PROBED_MODULE_KEYS` (health.ts), non più una
+>   copia dell'elenco; `/api/modules/[key]/repair` accetta `unifi` con i suggerimenti
+>   `reconfigure_unifi` e `check_unifi_cert`. Icona `Network` nella griglia del Launchpad.
+> - **Sync automatica: non attivabile dalla card** (fuori dal compito di questo passo). Il job
+>   `unifi_sync` esiste ma nessuna strada lo crea (vedi la nota dal Task 6); la card dice «per
+>   ora la sincronizzazione parte solo a mano».
+> - Prove: `unifi-cert-pin.test.ts` (5), `unifi-health.test.ts` (10),
+>   `modules/__tests__/unifi-module.test.ts` (6, tenant temporaneo; l'unico indirizzo
+>   contattato è 127.0.0.1:1, chiuso), `components/settings/__tests__/unifi-card.test.ts` (16,
+>   vista resa con `renderToStaticMarkup` sulla forma vera delle risposte).
 
 ---
 

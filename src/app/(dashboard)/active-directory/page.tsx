@@ -199,6 +199,17 @@ const defaultForm = {
   winrm_credential_id: null as number | null,
 };
 
+/** Valore che segue `value` 300 ms dopo l'ultima modifica: la ricerca non
+ * parte a ogni tasto. */
+function useDebounced<T>(value: T, ms = 300): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
 export default function ActiveDirectoryPage() {
   const router = useRouter();
   const [integrations, setIntegrations] = useState<AdIntegration[]>([]);
@@ -228,6 +239,11 @@ export default function ActiveDirectoryPage() {
   const [dhcpTotal, setDhcpTotal] = useState(0);
   const [dhcpPage, setDhcpPage] = useState(1);
   const [dhcpSearch, setDhcpSearch] = useState("");
+
+  const computersQuery = useDebounced(computersSearch);
+  const usersQuery = useDebounced(usersSearch);
+  const groupsQuery = useDebounced(groupsSearch);
+  const dhcpQuery = useDebounced(dhcpSearch);
 
   const [winrmCredentials, setWinrmCredentials] = useState<WinrmCredential[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -312,79 +328,83 @@ export default function ActiveDirectoryPage() {
     } catch { /* ignora */ }
   }, []);
 
-  const fetchComputers = useCallback(async () => {
+  const fetchComputers = useCallback(async (signal?: AbortSignal) => {
     if (!selectedIntegration) return;
     try {
       const params = new URLSearchParams({
         page: String(computersPage),
         pageSize: String(pageSize),
-        ...(computersSearch ? { search: computersSearch } : {}),
+        ...(computersQuery ? { search: computersQuery } : {}),
         ...(computersActiveOnly ? { activeDays: "90" } : {}),
       });
-      const res = await fetch(`/api/ad/${selectedIntegration.id}/computers?${params}`);
+      const res = await fetch(`/api/ad/${selectedIntegration.id}/computers?${params}`, { signal });
       if (!res.ok) throw new Error("Errore caricamento computer");
       const data = await res.json();
       setComputers(data.rows);
       setComputersTotal(data.total);
     } catch (err) {
+      if (signal?.aborted) return;
       toast.error(err instanceof Error ? err.message : "Errore");
     }
-  }, [selectedIntegration, computersPage, computersSearch, computersActiveOnly]);
+  }, [selectedIntegration, computersPage, computersQuery, computersActiveOnly]);
 
-  const fetchUsers = useCallback(async () => {
+  const fetchUsers = useCallback(async (signal?: AbortSignal) => {
     if (!selectedIntegration) return;
     try {
       const params = new URLSearchParams({
         page: String(usersPage),
         pageSize: String(pageSize),
-        ...(usersSearch ? { search: usersSearch } : {}),
+        ...(usersQuery ? { search: usersQuery } : {}),
         ...(usersActiveOnly ? { activeDays: "90" } : {}),
       });
-      const res = await fetch(`/api/ad/${selectedIntegration.id}/users?${params}`);
+      const res = await fetch(`/api/ad/${selectedIntegration.id}/users?${params}`, { signal });
       if (!res.ok) throw new Error("Errore caricamento utenti");
       const data = await res.json();
       setUsers(data.rows);
       setUsersTotal(data.total);
     } catch (err) {
+      if (signal?.aborted) return;
       toast.error(err instanceof Error ? err.message : "Errore");
     }
-  }, [selectedIntegration, usersPage, usersSearch, usersActiveOnly]);
+  }, [selectedIntegration, usersPage, usersQuery, usersActiveOnly]);
 
-  const fetchGroups = useCallback(async () => {
+  const fetchGroups = useCallback(async (signal?: AbortSignal) => {
     if (!selectedIntegration) return;
     try {
       const params = new URLSearchParams({
         page: String(groupsPage),
         pageSize: String(pageSize),
-        ...(groupsSearch ? { search: groupsSearch } : {}),
+        ...(groupsQuery ? { search: groupsQuery } : {}),
       });
-      const res = await fetch(`/api/ad/${selectedIntegration.id}/groups?${params}`);
+      const res = await fetch(`/api/ad/${selectedIntegration.id}/groups?${params}`, { signal });
       if (!res.ok) throw new Error("Errore caricamento gruppi");
       const data = await res.json();
       setGroups(data.rows);
       setGroupsTotal(data.total);
     } catch (err) {
+      if (signal?.aborted) return;
       toast.error(err instanceof Error ? err.message : "Errore");
     }
-  }, [selectedIntegration, groupsPage, groupsSearch]);
+  }, [selectedIntegration, groupsPage, groupsQuery]);
 
-  const fetchDhcpLeases = useCallback(async () => {
+  const fetchDhcpLeases = useCallback(async (signal?: AbortSignal) => {
     if (!selectedIntegration) return;
     try {
       const params = new URLSearchParams({
         page: String(dhcpPage),
         pageSize: String(pageSize),
-        ...(dhcpSearch ? { search: dhcpSearch } : {}),
+        ...(dhcpQuery ? { search: dhcpQuery } : {}),
       });
-      const res = await fetch(`/api/ad/${selectedIntegration.id}/dhcp-leases?${params}`);
+      const res = await fetch(`/api/ad/${selectedIntegration.id}/dhcp-leases?${params}`, { signal });
       if (!res.ok) throw new Error("Errore caricamento DHCP");
       const data = await res.json();
       setDhcpLeases(data.rows);
       setDhcpTotal(data.total);
     } catch (err) {
+      if (signal?.aborted) return;
       toast.error(err instanceof Error ? err.message : "Errore");
     }
-  }, [selectedIntegration, dhcpPage, dhcpSearch]);
+  }, [selectedIntegration, dhcpPage, dhcpQuery]);
 
   const fetchHealth = useCallback(async () => {
     if (!selectedIntegration) {
@@ -429,10 +449,26 @@ export default function ActiveDirectoryPage() {
 
   useEffect(() => { fetchIntegrations(); }, [fetchIntegrations]);
   useEffect(() => { fetchWinrmCredentials(); }, [fetchWinrmCredentials]);
-  useEffect(() => { fetchComputers(); }, [fetchComputers]);
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
-  useEffect(() => { fetchGroups(); }, [fetchGroups]);
-  useEffect(() => { fetchDhcpLeases(); }, [fetchDhcpLeases]);
+  useEffect(() => {
+    const ac = new AbortController();
+    void fetchComputers(ac.signal);
+    return () => ac.abort();
+  }, [fetchComputers]);
+  useEffect(() => {
+    const ac = new AbortController();
+    void fetchUsers(ac.signal);
+    return () => ac.abort();
+  }, [fetchUsers]);
+  useEffect(() => {
+    const ac = new AbortController();
+    void fetchGroups(ac.signal);
+    return () => ac.abort();
+  }, [fetchGroups]);
+  useEffect(() => {
+    const ac = new AbortController();
+    void fetchDhcpLeases(ac.signal);
+    return () => ac.abort();
+  }, [fetchDhcpLeases]);
   useEffect(() => { fetchHealth(); }, [fetchHealth]);
 
   const handleSync = async (id: number) => {
@@ -1147,7 +1183,7 @@ export default function ActiveDirectoryPage() {
                       {computersActiveOnly ? "Attivi (90gg)" : "Tutti"}
                     </Button>
                     {computersActiveOnly && (
-                      <span className="text-xs text-muted-foreground">Solo logon negli ultimi 90 giorni</span>
+                      <span className="text-xs text-muted-foreground">Solo logon negli ultimi 90 giorni: {computersTotal} di {selectedIntegration.computers_count}</span>
                     )}
                   </div>
                   <div className="border rounded-lg overflow-hidden">
@@ -1231,7 +1267,7 @@ export default function ActiveDirectoryPage() {
                       {usersActiveOnly ? "Attivi (90gg)" : "Tutti"}
                     </Button>
                     {usersActiveOnly && (
-                      <span className="text-xs text-muted-foreground">Solo logon negli ultimi 90 giorni</span>
+                      <span className="text-xs text-muted-foreground">Solo logon negli ultimi 90 giorni: {usersTotal} di {selectedIntegration.users_count}</span>
                     )}
                   </div>
                   <div className="border rounded-lg overflow-hidden">

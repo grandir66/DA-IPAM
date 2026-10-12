@@ -18,17 +18,23 @@ import { Scan } from "lucide-react";
 import { formatPortsDisplay } from "@/lib/utils";
 import type { ScanHistory } from "@/types";
 
+const SCANS_LIMIT = 200;
+
 export default function ScansPage() {
   const [history, setHistory] = useState<ScanHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
 
   // Un 401/500 non è "nessuna scansione" (UI-7): si mostra l'errore.
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await fetchJson<ScanHistory[]>("/api/scans/history?limit=200");
+    // Una riga in più per sapere se ce ne sono di più vecchie.
+    const r = await fetchJson<ScanHistory[]>(`/api/scans/history?limit=${SCANS_LIMIT + 1}`);
     if (r.ok) {
-      setHistory(Array.isArray(r.data) ? r.data : []);
+      const rows = Array.isArray(r.data) ? r.data : [];
+      setHistory(rows.slice(0, SCANS_LIMIT));
+      setTruncated(rows.length > SCANS_LIMIT);
       setError(null);
     } else {
       setError(r.message);
@@ -59,7 +65,10 @@ export default function ScansPage() {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Ultime {history.length} scansioni</CardTitle>
+            <CardTitle className="text-base">
+              Ultime {history.length} scansioni
+              {truncated && <span className="ml-2 text-sm font-normal text-muted-foreground">(le più vecchie non sono mostrate)</span>}
+            </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <Table>

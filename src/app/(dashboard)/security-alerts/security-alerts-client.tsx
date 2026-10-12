@@ -1,5 +1,6 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
+import { LoadError } from "@/components/shared/load-error";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -60,6 +61,8 @@ interface AlertEventDto {
   acknowledged_by: string | null;
 }
 
+const ALERTS_LIMIT = 200;
+
 interface AlertsResponse {
   categories: AlertCategoryDto[];
   openByCategory: Record<string, number>;
@@ -104,6 +107,7 @@ function formatDate(iso: string): string {
 
 export function SecurityAlertsClient() {
   const [data, setData] = useState<AlertsResponse | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -129,6 +133,8 @@ export function SecurityAlertsClient() {
         const qs = new URLSearchParams();
         if (category) qs.set("category", category);
         if (onlyOpen) qs.set("onlyOpen", "1");
+        // Una riga in più per sapere se la lista è troncata.
+        qs.set("limit", String(ALERTS_LIMIT + 1));
         const [listRes, statsRes] = await Promise.all([
           fetch(`/api/integrations/wazuh/alerts?${qs}`, { signal: ac.signal }),
           fetch(
@@ -139,10 +145,13 @@ export function SecurityAlertsClient() {
         ]);
         if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
         setData((await listRes.json()) as AlertsResponse);
+        setLoadError(null);
         if (statsRes.ok) setStats((await statsRes.json()) as StatsResponse);
         setLastRefresh(new Date());
       } catch (e) {
         if ((e as Error).name !== "AbortError" && !opts?.silent) {
+          // Senza dati non si mostra «Nessun evento» (UI-7): si mostra l'errore.
+          setLoadError((e as Error).message);
           toast.error(`Errore nel caricamento: ${(e as Error).message}`);
         }
       } finally {
@@ -214,7 +223,9 @@ export function SecurityAlertsClient() {
 
   const categories = data?.categories ?? [];
   const openCounts = data?.openByCategory ?? {};
-  const events = data?.events ?? [];
+  const allEvents = data?.events ?? [];
+  const truncated = allEvents.length > ALERTS_LIMIT;
+  const events = truncated ? allEvents.slice(0, ALERTS_LIMIT) : allEvents;
   const windows = WINDOW_CHOICES;
   const totals = stats?.stats?.totals;
   const byCategory = stats?.stats?.byCategory ?? [];
@@ -463,11 +474,18 @@ export function SecurityAlertsClient() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            {loading ? "Caricamento…" : `${events.length} eventi`}
+            {loading ? "Caricamento…" : truncated ? `Primi ${ALERTS_LIMIT} eventi` : `${events.length} eventi`}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {!loading && events.length === 0 ? (
+          {!loading && truncated && (
+            <p className="pb-3 text-sm text-amber-700 dark:text-amber-400">
+              Sono mostrati i {ALERTS_LIMIT} eventi più recenti: scegli una categoria per vedere gli altri.
+            </p>
+          )}
+          {!loading && loadError && !data ? (
+            <LoadError what="gli allarmi di sicurezza" message={loadError} onRetry={() => void load()} />
+          ) : !loading && events.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               Nessun evento. Se l&apos;integrazione Wazuh è appena stata configurata,
               usa &quot;Aggiorna ora&quot; per il primo poll.

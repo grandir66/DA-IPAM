@@ -10,7 +10,7 @@ import { parseDbDate } from "@/lib/db-date";
  *
  * Backend: `GET /api/patch/operations?hostId=&cveId=&userId=&status=&action=&since=&until=&limit=&offset=`
  *
- * NOTA: la search "host" è client-side su `hostHostname/hostIp/hostCustomName`
+ * NOTA: la search "host" è server-side (`search=`, su `hostHostname/hostIp/hostCustomName`)
  * (campi che il backend già JOIN-a su `hosts`). Per CVE/user/status/action/since
  * il filtro è server-side (riavvia la fetch).
  *
@@ -268,8 +268,18 @@ export default function PatchHistoryPage() {
   const [sinceFilter, setSinceFilter] = useState(""); // YYYY-MM-DD
   const [onlyMine, setOnlyMine] = useState(false);
 
-  // Filtro client-side: search host
+  // Search host e CVE: si scrivono nei campi, la fetch parte 350 ms dopo
+  // l'ultimo tasto (non a ogni carattere).
   const [searchHost, setSearchHost] = useState("");
+  const [debouncedHost, setDebouncedHost] = useState("");
+  const [debouncedCve, setDebouncedCve] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedHost(searchHost.trim());
+      setDebouncedCve(cveIdFilter.trim());
+    }, 350);
+    return () => clearTimeout(t);
+  }, [searchHost, cveIdFilter]);
 
   // Paginazione
   const [offset, setOffset] = useState(0);
@@ -288,8 +298,8 @@ export default function PatchHistoryPage() {
       const params = new URLSearchParams();
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (actionFilter !== "all") params.set("action", actionFilter);
-      const trimmedCve = cveIdFilter.trim();
-      if (trimmedCve) params.set("cveId", trimmedCve);
+      if (debouncedCve) params.set("cveId", debouncedCve);
+      if (debouncedHost) params.set("search", debouncedHost);
       if (sinceFilter) params.set("since", sinceFilter);
       if (onlyMine && sessionUserId != null) {
         params.set("userId", String(sessionUserId));
@@ -328,7 +338,8 @@ export default function PatchHistoryPage() {
   }, [
     statusFilter,
     actionFilter,
-    cveIdFilter,
+    debouncedCve,
+    debouncedHost,
     sinceFilter,
     onlyMine,
     sessionUserId,
@@ -342,17 +353,9 @@ export default function PatchHistoryPage() {
   // Reset offset quando cambiano i filtri server-side
   useEffect(() => {
     setOffset(0);
-  }, [statusFilter, actionFilter, cveIdFilter, sinceFilter, onlyMine]);
+  }, [statusFilter, actionFilter, debouncedCve, debouncedHost, sinceFilter, onlyMine]);
 
-  const filteredItems = items.filter((op) => {
-    if (!searchHost) return true;
-    const q = searchHost.toLowerCase();
-    return (
-      hostDisplayName(op).toLowerCase().includes(q) ||
-      (op.hostIp ?? "").toLowerCase().includes(q) ||
-      (op.hostHostname ?? "").toLowerCase().includes(q)
-    );
-  });
+  const filteredItems = items;
 
   const pageIndex = Math.floor(offset / PAGE_SIZE) + 1;
 

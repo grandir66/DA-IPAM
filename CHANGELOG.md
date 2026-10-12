@@ -55,6 +55,25 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **Liste che non dicono di essere troncate.** Inventario, Scansioni e Alert
+  sicurezza caricano al massimo 200 righe, ma non lo dicevano: chi cercava un
+  asset o un evento oltre la duecentesima riga concludeva che non esistesse. Ora
+  compare «Sono mostrati i primi 200…» (o «le più vecchie non sono mostrate»)
+  quando ce ne sono altre. In Inventario il filtro «Solo con gap» lavorava sulle
+  sole 200 righe caricate: con il filtro attivo se ne caricano fino a 1000, il
+  massimo che il server concede. Un errore di caricamento in Inventario e negli
+  Alert sicurezza ora si vede, con «Riprova», invece di sembrare una lista vuota.
+- **Ricerca host nella cronologia Patch.** La ricerca per hostname o IP filtrava
+  solo le 50 righe della pagina aperta: un host presente nelle pagine successive
+  risultava assente. Ora la ricerca la fa il server su tutta la cronologia, e i
+  campi host e CVE aspettano che si finisca di scrivere invece di interrogare il
+  server a ogni tasto.
+- **Ricerche di Active Directory.** Computer, utenti, gruppi e DHCP interrogavano
+  il server a ogni tasto, e una risposta lenta poteva arrivare dopo quella giusta
+  e sostituirla. Ora la ricerca parte 300 ms dopo l'ultimo tasto e le richieste
+  superate si annullano. Accanto a «Attivi (90gg)», che è acceso di default, si
+  legge quanti ne mostra sul totale («40 di 500»): prima la linguetta diceva 500
+  e la tabella ne mostrava 40 senza spiegare perché.
 - **Ordinamenti giusti nelle liste paginate.** Nelle liste DHCP e Subnet gli IP e
   i CIDR si ordinavano come testo («10.0.0.10» prima di «10.0.0.2»); la colonna
   «Ultimo visto» del DHCP ordinava in realtà per «Ultimo sync»; a valori uguali

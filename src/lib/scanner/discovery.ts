@@ -2,9 +2,9 @@ import { getAllHostIps } from "@/lib/utils";
 import { getCurrentTenantCode, withTenant } from "@/lib/db-tenant";
 import { pingSweep as _localPingSweep } from "./ping";
 import { nmapDiscoverHosts as _localNmapDiscoverHosts, nmapPortScan as _localNmapPortScan, isNmapAvailable as _localIsNmapAvailable } from "./nmap";
-import { tcpConnect, FALLBACK_TCP_PORTS } from "./tcp-check";
+import { tcpConnect as _localTcpConnect, FALLBACK_TCP_PORTS } from "./tcp-check";
 import type { Executor } from "@/lib/executor";
-import { getExecutor } from "@/lib/executor";
+import { getExecutor, getScanIoOverride } from "@/lib/executor";
 import {
   buildTcpScanArgs,
   buildNetworkDiscoveryQuickTcpArgs,
@@ -21,7 +21,7 @@ import {
   setGetSettingFn,
 } from "./ports";
 import { isNaabuAvailable, runNaabuTcpPorts } from "./naabu";
-import { readArpCache } from "./arp-cache";
+import { readArpCache as _localReadArpCache } from "./arp-cache";
 import { lookupVendor } from "./mac-vendor";
 import { querySnmpInfoMultiCommunity, querySnmpSysGroupMultiCommunity, normalizeOidString } from "./snmp-query";
 import { classifyDeviceDetailed } from "@/lib/device-classifier";
@@ -230,7 +230,7 @@ export async function discoverNetwork(
       // v0.2.634 audit B9: anche le scan in stato `failed` devono uscire dalla
       // progressMap dopo 5 min, come quelle `completed`. Senza questo cleanup
       // la mappa cresce indefinitamente con ogni scan fallita (memory slow leak).
-      setTimeout(() => getProgressMap().delete(id), 300_000);
+      setTimeout(() => getProgressMap().delete(id), 300_000).unref?.();
     }
   );
 
@@ -371,9 +371,32 @@ async function runDiscovery(
   // Per executor remoto saltiamo il check locale di nmap (sul hub nmap può
   // mancare): ci fidiamo dell'agente. Per executor locale usiamo il check
   // originale (subprocess `nmap --version`).
-  const isNmapAvailable: () => Promise<boolean> = _exec && _exec.mode === "remote"
+  /* Porta delle prove (T3-16): con l'esecutore finto installato, anche le uscite
+   * che non passano dall'esecutore (TCP del secondo passaggio, cache ARP locale,
+   * ARP dagli apparati, controllo di nmap) restano nel banco. In produzione
+   * `getScanIoOverride()` è null e tutto resta com'era. */
+  const ioOverride = getScanIoOverride();
+  const isNmapAvailable: () => Promise<boolean> = ioOverride || (_exec && _exec.mode === "remote")
     ? async () => true
     : _localIsNmapAvailable;
+  const tcpConnect = ioOverride
+    ? (ioOverride.tcpConnect ?? (async () => false))
+    : _localTcpConnect;
+  const readArpCache = ioOverride
+    ? (ioOverride.readArpCache ?? (async () => []))
+    : _localReadArpCache;
+  const runArpPollForScan = async (
+    netId: number,
+    opts?: { onlyEnrichIps?: string[]; skipDhcpLeases?: boolean },
+  ): Promise<{ phase?: string; error?: string }> => {
+    if (ioOverride) {
+      return ioOverride.runArpPoll
+        ? ioOverride.runArpPoll(netId, opts)
+        : { error: "non eseguito (banco di prova)" };
+    }
+    const { runArpPoll } = await import("@/lib/cron/jobs");
+    return runArpPoll(netId, opts);
+  };
 
   const startTime = Date.now();
   const progressRef = getProgressMap().get(scanId);
@@ -581,7 +604,7 @@ async function runDiscovery(
         progress.error =
           "Naabu non disponibile: installa il binary ProjectDiscovery o configura il path in Impostazioni → Scansione";
         log("Scan Naabu annullato: installa naabu (ProjectDiscovery) e/o configura path in Impostazioni → Scansione");
-        setTimeout(() => getProgressMap().delete(scanId), 300_000);
+        setTimeout(() => getProgressMap().delete(scanId), 300_000).unref?.();
         return {
           network_id: networkId,
           total_ips: ips.length,
@@ -709,7 +732,7 @@ async function runDiscovery(
     progress.scanned = ips.length;
     progress.found = onlineIps.length;
     console.info(`[Discovery] scan_icmp completato: ${onlineIps.length}/${ips.length} online, ${Date.now() - startTime}ms`);
-    setTimeout(() => getProgressMap().delete(scanId), 300000);
+    setTimeout(() => getProgressMap().delete(scanId), 300_000).unref?.();
     return {
       network_id: networkId,
       total_ips: ips.length,
@@ -1012,8 +1035,7 @@ async function runDiscovery(
     // sicuro chiamarlo prima del flip offline.
     progress.phase = "ARP/DHCP dal router…";
     try {
-      const { runArpPoll } = await import("@/lib/cron/jobs");
-      const arpResult = await runArpPoll(networkId);
+      const arpResult = await runArpPollForScan(networkId);
       if (arpResult.error) {
         log(`ARP/DHCP router: ${arpResult.error}`);
       } else {
@@ -2173,7 +2195,7 @@ async function runDiscovery(
         raw_output: null,
         duration_ms: Date.now() - startTime,
       });
-      setTimeout(() => getProgressMap().delete(scanId), 300000);
+      setTimeout(() => getProgressMap().delete(scanId), 300_000).unref?.();
       return { network_id: networkId, total_ips: ips.length, hosts_found: 0, hosts_online: 0, hosts_offline: ips.length, new_hosts: 0, duration_ms: Date.now() - startTime };
     }
 
@@ -2584,7 +2606,7 @@ async function runDiscovery(
       duration_ms: Date.now() - startTime,
     });
 
-    setTimeout(() => getProgressMap().delete(scanId), 300000);
+    setTimeout(() => getProgressMap().delete(scanId), 300_000).unref?.();
     return { network_id: networkId, total_ips: ips.length, hosts_found: targetHosts.length, hosts_online: targetHosts.length, hosts_offline: 0, new_hosts: 0, duration_ms: Date.now() - startTime };
   }
 
@@ -2613,7 +2635,9 @@ async function runDiscovery(
     process.env.DA_INVENT_FINGERPRINT_TTL !== "false"
   ) {
     progress.phase = "Fingerprint — TTL ICMP";
-    const { pingHost } = await import("./ping");
+    const pingHost = ioOverride
+      ? (aip: string, ms?: number) => ioOverride.executor.pingHost(aip, ms)
+      : (await import("./ping")).pingHost;
     const TTL_BATCH = 8;
     for (let t = 0; t < onlineIps.length; t += TTL_BATCH) {
       const chunk = onlineIps.slice(t, t + TTL_BATCH);
@@ -2642,11 +2666,13 @@ async function runDiscovery(
     }
   }
   if (ipsNeedingNetworkDns.length > 0) {
-    const { resolveDnsBatch } = await import("./dns");
-    const merged = await resolveDnsBatch(ipsNeedingNetworkDns, dnsServer, dnsConcurrency, (done, tot) => {
+    const onDnsProgress = (done: number, tot: number) => {
       progress.scanned = done;
       progress.phase = `Risoluzione DNS — ${done}/${tot}`;
-    });
+    };
+    const merged = ioOverride
+      ? await ioOverride.executor.resolveDnsBatch(ipsNeedingNetworkDns, dnsServer, dnsConcurrency, { onProgress: onDnsProgress })
+      : await (await import("./dns")).resolveDnsBatch(ipsNeedingNetworkDns, dnsServer, dnsConcurrency, onDnsProgress);
     for (const [k, v] of merged) dnsByIp.set(k, v);
   } else {
     progress.phase = "Risoluzione DNS (da archivio locale)";
@@ -3089,8 +3115,7 @@ async function runDiscovery(
     progress.phase = "ARP dal router…";
     log("Aggiornamento MAC da tabella ARP del router…");
     try {
-      const { runArpPoll } = await import("@/lib/cron/jobs");
-      const arpResult = await runArpPoll(networkId, {
+      const arpResult = await runArpPollForScan(networkId, {
         onlyEnrichIps: onlineIps,
         skipDhcpLeases: true,
       });
@@ -3199,7 +3224,7 @@ async function runDiscovery(
 
   console.info(`[Discovery] Completata: ${onlineIps.length} host, ${totalPorts} porte, ${Date.now() - startTime}ms`);
 
-  setTimeout(() => getProgressMap().delete(scanId), 300000);
+  setTimeout(() => getProgressMap().delete(scanId), 300_000).unref?.();
 
   return {
     network_id: networkId,

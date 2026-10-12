@@ -8,6 +8,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunte
 
+- **Banco di prova delle scansioni** (tappa 3, T3-16): il vero giro di scoperta della rete ora si può far girare in una prova con un esecutore finto, mentre una guardia fa fallire la prova se qualcosa prova a uscire davvero sulla rete. *Perché*: le correzioni delle scansioni che si accavallano e degli host vivi segnati spenti (INV-1, INV-2) vanno provate sul codice vero, e fin qui l'unico modo era mandare pacchetti veri. In produzione non cambia niente: la porta per le prove è vuota. Di contorno, i timer che puliscono l'avanzamento di una scansione finita non tengono più vivo il processo per cinque minuti.
+
 - **Controller UniFi come fonte di dati (spento finché non lo si accende).** A
   DTS il controller UniFi gestisce 74 apparati, ma per DA-IPAM erano solo host:
   nessuno fra i dispositivi di rete, nessuna porta, nessun vicino LLDP, e la

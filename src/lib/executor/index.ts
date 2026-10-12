@@ -58,7 +58,39 @@ export class ExecutorNotConfiguredError extends Error {
   }
 }
 
+/**
+ * Porta per le prove (T3-16): su `globalThis` sotto questa chiave una prova
+ * può mettere un esecutore finto, con le uscite di rete che non passano
+ * dall'esecutore (secondo passaggio TCP, cache ARP locale, ARP dagli apparati).
+ * In produzione è vuota: nessun codice dell'applicazione la scrive, la mette
+ * solo il banco `scanner/__tests__/support/esecutore-finto.ts`.
+ */
+const SCAN_IO_OVERRIDE_KEY = Symbol.for("da-ipam.executor.override");
+
+export interface ScanIoOverride {
+  executor: Executor;
+  /** Secondo passaggio TCP della discovery (al posto di `tcpConnect`). Assente = nessuna porta risponde. */
+  tcpConnect?: (host: string, port: number, timeoutMs?: number) => Promise<boolean>;
+  /** Cache ARP della macchina (al posto di `arp -a`). Assente = cache vuota. */
+  readArpCache?: () => Promise<Array<{ ip: string; mac: string }>>;
+  /** ARP/DHCP letti dagli apparati (al posto di `runArpPoll`). Assente = non eseguito. */
+  runArpPoll?: (
+    networkId: number,
+    options?: { onlyEnrichIps?: string[]; skipDhcpLeases?: boolean },
+  ) => Promise<{ phase?: string; error?: string }>;
+}
+
+/** L'override delle prove, se presente; `null` in produzione. */
+export function getScanIoOverride(): ScanIoOverride | null {
+  const o = (globalThis as Record<symbol, unknown>)[SCAN_IO_OVERRIDE_KEY];
+  return o && typeof o === "object" && "executor" in o ? (o as ScanIoOverride) : null;
+}
+
 export function getExecutor(tenantCode: string): Executor {
+  // Porta delle prove: letta prima della ricerca del tenant (vuota in produzione).
+  const override = getScanIoOverride();
+  if (override) return override.executor;
+
   const tenant = getTenantByCode(tenantCode);
   if (!tenant) {
     throw new ExecutorNotConfiguredError(tenantCode, `Tenant '${tenantCode}' non trovato`);

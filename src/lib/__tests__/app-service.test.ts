@@ -260,7 +260,7 @@ test("rete di sicurezza con timer finti: niente prima dei 90 s, uscita con 1 all
 test("scheduleUnref: il timer non trattiene il processo (unref)", (t) => {
   const timer = { unref: t.mock.fn() };
   const originale = globalThis.setTimeout;
-  const finto = t.mock.fn(() => timer);
+  const finto = t.mock.fn<(fn: () => void, ms: number) => typeof timer>(() => timer);
   globalThis.setTimeout = finto as unknown as typeof setTimeout;
   try {
     scheduleUnref(() => {}, 1234);

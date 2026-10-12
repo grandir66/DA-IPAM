@@ -13,9 +13,28 @@ import {
 } from "@/lib/health/job-failure-tracker";
 
 type ScheduledTask = ReturnType<typeof cron.schedule>;
-const activeTasks = new Map<string, ScheduledTask>();
-/** Guard: job keys currently running (prevents overlapping execution) */
-const runningJobs = new Set<string>();
+
+/**
+ * Cron attivi e job in esecuzione: UNO stato per processo, non per istanza del
+ * modulo. Sotto tsx (e nei bundle delle rotte) questo file può essere caricato
+ * due volte nello stesso processo: con lo stato nel modulo, una rotta che
+ * chiamava `reloadTenantScheduler` non vedeva i cron registrati da server.ts,
+ * non li fermava e ne aggiungeva altri — su DTS il controllo host è partito due
+ * volte alle 15:04 del 2026-10-12 (NUC-5). Stessa classe dell'incidente
+ * db-tenant del 2026-09-02 (ADR 0002).
+ */
+interface SchedulerState {
+  activeTasks: Map<string, ScheduledTask>;
+  /** Guard: job keys currently running (prevents overlapping execution) */
+  runningJobs: Set<string>;
+}
+const STATE_KEY = Symbol.for("da-ipam.cron.scheduler.state");
+const processGlobals = globalThis as unknown as Record<symbol, SchedulerState | undefined>;
+const state: SchedulerState =
+  processGlobals[STATE_KEY] ??
+  (processGlobals[STATE_KEY] = { activeTasks: new Map(), runningJobs: new Set() });
+const activeTasks = state.activeTasks;
+const runningJobs = state.runningJobs;
 /**
  * Serie di fallimenti per chiave job. Vive SOLO in questo processo (quello che
  * regge node-cron): non va esposto alle route Next, che sotto build girano in un
@@ -170,6 +189,11 @@ export function scheduleJob(
   });
 
   activeTasks.set(key, task);
+}
+
+/** Chiavi dei cron attivi in questo processo (diagnostica e prove). */
+export function activeJobKeys(): string[] {
+  return [...activeTasks.keys()];
 }
 
 export function stopJob(key: string): void {

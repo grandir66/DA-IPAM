@@ -27,6 +27,48 @@
 - **Contesto tenant perso** (import dinamico di db-tenant) → scrittura nel DB sbagliato: vietato, import statici. → coperto da `no-dynamic-db-tenant-import.test.ts`.
 - **Device_type UniFi sconosciuto** (es. `uxg`, `udm`) → mappato a `router` o skip, mai CHECK violation su `network_devices.device_type`. → test in T2.
 
+
+## Correzioni prima di eseguire (integrazione col piano di miglioramento, 12/10 sera)
+
+Questo piano è la **tappa 2** di `docs/superpowers/specs/2026-10-12-piano-miglioramento-design.md`
+e si esegue com'è, con queste correzioni. **`dev` arriva da solo all'appliance di DTS in
+15 minuti**: niente si accende da solo, e ciò che tocca il database si prova prima su una copia.
+
+1. **Dati di prova con la forma vera.** La misura su DTS ha contato `lldp_table` **a livello
+   di dispositivo** (72 su 74); i test del Task 2 lo leggono dentro ogni porta, con campi
+   `lldp_chassis_id` / `lldp_port_id` / `lldp_mgmt_addr` scritti a mano. **Prima del Task 2**:
+   una risposta vera di `stat/device` presa in sola lettura con l'account `map`, anonimizzata
+   (MAC, IP, nomi, seriali), salvata come fixture in `src/lib/integrations/__tests__/fixtures/`;
+   i test si scrivono su quella. Altrimenti la prova passa e la sync vera non trova vicini.
+2. **Vicino LLDP anche per MAC.** Il `chassis_id` degli apparati UniFi di solito è un MAC: va in
+   `remote_mac` (normalizzato come fa `macToHex`), non solo in `remote_device_name`. La mappa
+   oggi abbina solo per nome e IP (`topology/match.ts`): l'abbinamento per MAC è nella tappa 5,
+   ma il dato si salva giusto da subito.
+3. **Funzioni del database da `@/lib/db-tenant`**, import statico. `upsertNeighbors`,
+   `createNetworkDevice`, `updateNetworkDevice`, `getNetworkDeviceByHost`, `getNetworks` hanno
+   due copie divergenti (`db.ts` e `db-tenant.ts`, NUC-2): il codice nuovo non passa dal facade.
+4. **Guardia "zero sospetto".** `upsertSwitchPorts` e `upsertNeighbors` cancellano e
+   riscrivono: se il controller restituisce zero porte o zero vicini per un apparato che ne
+   aveva, si salta la sostituzione e lo si segnala in `errors[]`. Una risposta vuota per errore
+   non deve cancellare dati buoni. Test dedicato nel Task 4.
+5. **Certificato del controller fissato al primo uso** (stesso schema del `cert_pin` dell'edge),
+   invece di accettare qualunque certificato. Task 3.
+6. **Migrazione del job (Task 6).** Lo schema c'è già: ricostruzioni `scheduled_jobs_v2…v7` in
+   `db-tenant.ts`. La v8 aggiunge `unifi_sync`, con un elenco **identico** a quello di
+   `db-tenant-schema.ts` (test che confronta i due). Si prova su una copia di un database tenant
+   vero prima del push.
+7. **Prima sincronizzazione = scrittura su dati di un cliente.** Il Task 4, passo 4, si fa prima
+   su una **copia locale** del database del tenant DTS (controller letto in sola lettura),
+   contando prima e dopo; poi sull'appliance, con backup del database del tenant e conferma di
+   Riccardo.
+8. **Salute e stato**: una voce nel registry dei moduli con la sonda (= test-connection), così
+   compare in "Stato moduli". Credenziali solo nella configurazione `integration_unifi_*`,
+   nessuna voce nel vault (MOD-22).
+9. **ADR**: la decisione di prodotto è l'ADR 0004 (DA-IPAM è l'appliance). Il Task 8 scrive le
+   scelte tecniche come **ADR 0005**.
+10. **Fuori da questo piano**: client e Omada (tappa 4, nel catalogo, dopo le fondamenta della
+    tappa 3); backend UDM e cloud (fase D) quando un cliente li usa.
+
 ---
 
 ## Task 1: Whitelist `unifi` + campi config
@@ -173,7 +215,7 @@ test("device senza MAC/port_table non crasha", () => {
 
 ## Task 8: ADR + rilascio
 
-- [ ] **Step 1:** `docs/adr/0004-unifi-controller-integration.md` (template 0000): decisione, alternative (SNMP-only, per-tenant table), conseguenze.
+- [ ] **Step 1:** `docs/adr/0005-unifi-controller-integration.md` (template 0000; la 0004 è la decisione di prodotto, correzione 9): decisione, alternative (SNMP-only, per-tenant table), conseguenze.
 - [ ] **Step 2:** Gate completo `npm run lint && npx tsc --noEmit && npm run build && npm test`.
 - [ ] **Step 3:** `npm run version:release && git push origin dev`.
 - [ ] **Step 4:** Aggiornare `CONTEXT.md` di DA-IPAM (feature UniFi) e il `CONTEXT.md` DTS.

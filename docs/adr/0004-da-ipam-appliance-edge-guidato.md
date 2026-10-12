@@ -116,5 +116,8 @@ per una console centrale.
 - Piano: [`../superpowers/specs/2026-10-12-piano-miglioramento-design.md`](../superpowers/specs/2026-10-12-piano-miglioramento-design.md)
 - Analisi: `docs/analisi-sistema.md` §14 — solo locale, contiene dettagli di sicurezza.
 - DA-IPAM: [ADR 0003](0003-topology-map.md) (mappa topologia).
+- Integrazione controller UniFi (tappa 2 del piano):
+  [`../superpowers/specs/2026-10-12-unifi-controller-integration-design.md`](../superpowers/specs/2026-10-12-unifi-controller-integration-design.md);
+  le sue scelte tecniche vanno nell'ADR 0005.
 - DA-Vul-can (`~/Progetti/Domarc/DA-Vul-can/docs/adr/`): ADR-0001, ADR-0007,
   ADR-0008, ADR-0009, ADR-0011; spec `docs/superpowers/specs/2026-07-21-unified-edge-profiles-design.md`.

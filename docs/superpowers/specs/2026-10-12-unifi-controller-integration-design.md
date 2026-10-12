@@ -5,7 +5,10 @@
 > **arricchisce il DB** (device, porte, adiacenze LLDP) coi dati del controller.
 > A valle, la mappa `/topology` si popola da sola e ne beneficia tutto DA-IPAM.
 > Driver: DTS (controller self-hosted `172.16.1.222`, 74 device, 72 con LLDP, oggi
-> fuori da `network_devices`). Decisione architetturale → ADR `0004`.
+> fuori da `network_devices`). Decisione di prodotto → ADR `0004` (DA-IPAM è
+> l'appliance; i controller creano oggetti); scelte tecniche di questa integrazione →
+> ADR `0005`. È la **tappa 2** del piano di miglioramento
+> (`2026-10-12-piano-miglioramento-design.md`): correzioni in testa al piano.
 
 ## 1. Obiettivo
 
@@ -155,5 +158,7 @@ auth+endpoint nel client. DTS = `self_hosted` (session, account `map`). Domarc =
   ricreazione tabella vs validazione applicativa.
 - **Client UniFi**: gli apparati UniFi espongono anche i **client Wi-Fi** (→ `hosts`): per
   ora **fuori scope** (solo apparati di rete); valutarlo come arricchimento host in F.
+  *Deciso il 12/10 sera (ADR 0004, decisione 5): i client diventano host — tappa 4
+  del piano di miglioramento, dopo le fondamenta della tappa 3, insieme al backend Omada.*
 - **Endpoint esatti udm/cloud** e scoping della cloud API-key (Domarc) — da verificare in D.
 - **Relazione Proxmox hypervisor→VM** sulla mappa: arricchimento separato (fase F).

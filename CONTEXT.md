@@ -26,7 +26,7 @@ Versione corrente: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non sc
 - Branch di lavoro: **`dev`** (unico pushabile). `main` avanza SOLO via **promote in-app**: `src/app/api/system/promote/route.ts` (merge `--no-ff origin/dev` + push, PAT cifrato in `hub.settings`). `main` indietro di ~100+ commit su dev = **fisiologico**: le appliance cliente pullano `main`.
 - Canale update appliance: `src/app/api/system/update-channel/route.ts` → `DA_INVENT_BRANCH` in `.env.local`, consumato da `da-invent-update.service`.
 - Ogni modifica: `npm run version:release` + `git push origin dev` (vedi skill `release`).
-- Prod ufficiale hub: **VM 533, `192.168.4.8`**, `/opt/da-invent`, `da-invent.service`; dopo `git pull` sempre `npm run build` (skill `deploy-prod`).
+- Prod ufficiale hub: **VM 533, `192.168.4.8`**, `/opt/da-invent`, `da-invent.service`; dopo `git pull` sempre `npm run build` (skill `deploy-prod`). **L'hub segue il ramo `dev`**, non `main` (verificato 2026-10-12: v0.3.258, gira con `tsx server.ts`); `main` è il canale delle appliance cliente.
 
 ## 4. Integrazione cross-repo (loose-coupled HTTP)
 
@@ -37,14 +37,24 @@ Versione corrente: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non sc
 ## 5. Tooling
 
 - `.claude/`: hook PostToolUse (tsc incrementale) + PreToolUse (blocca force-push main e `--no-verify`); skill `release`, `deploy-prod`, `winrm-kerberos`; rules `api-routes`, `client-components`, `db-access`.
-- Test: `npm test` (node test runner, ~25 file in `src/lib/**/__tests__/`). Type-check: `npx tsc --noEmit` (nessuno script dedicato).
-- CI `.github/workflows/ci.yml`: Node 22, lint advisory (~900 issue di debito), type-check, build.
+- Test: `npm test` (node test runner, 121 file, **1.092 test verdi** il 2026-10-12, 5 s). Lanciarli con `DA_INVENT_DATA_DIR` puntato a una cartella temporanea: alcuni test aprono hub/tenant DB. Type-check: `npx tsc --noEmit` (pulito). Lint: 0 errori, 81 avvisi.
+- CI `.github/workflows/ci.yml`: Node 22, lint advisory, type-check, test, build, pytest agente. **Nessun test di interfaccia né di autorizzazione delle API.**
 
-## 6. Stato & igiene (fotografia 2026-07-25)
+## 6. Stato & igiene (fotografia 2026-10-12)
 
-- Branch remoti potabili: `bugfix/code-audit-20260426-*`, `claude/flamboyant-proskuriakova`, `feature/remote-agents` (tutti confluiti/morti). Ref orfano `refs/remotes/github/dev` (remote `github` non esiste più).
-- Zombie su disco (gitignored): `backups/` 125M (snapshot 2026-05-26), `data/.before-restore-*` e `data/.backup-before-pull-*` (marzo, pre-multitenant), 3-4 worktree orfani in `.claude/worktrees/`, 1 stash su branch morto (`feature/edge-tls` — "preservare" nel messaggio), 9 tag `pre-*`/`backup/*`.
-- Doc storica con path pre-Domarc o stale: `docs/superpowers/plans/2026-06-29-rmm-meshcentral.md`, `docs/audit/audit-2026-05-26.md`, `ROADMAP-EVOLUZIONE.md` (mar 2026), `CHANGELOG.md` (fermo a mag 2026). `docs/CLAUDE-legacy-20260511.md` = narrativa storica intenzionale.
+- Rami remoti già interamente in `dev`, da potare: `auth/accesso-domarc`, `feat/ad-health-native`, `feature/attribution-fase-3-probe`, `fix/probe-real-world`. `claude/project-thread-7swirj` ha 18 commit non in `dev`: da rivedere prima di toccarlo. Worktree orfani e stash del 07/25: non ci sono più.
+- Produzione: in `data/tenants/` oltre ai tenant registrati (`70791`, `70791a`) ci sono `DEFAULT.db` (orfano, vedi §7) e un `.db` di 0 byte senza nome (apertura con codice tenant vuoto).
+- Doc superata: gli audit di maggio-luglio (`docs/audit-bug-sintesi.md`, `docs/audit/`, `WAVE-0-report.md`, `auth-matrix.md`, `db-drift.md`) — lo stato attuale di ogni loro punto è nell'analisi del §8. `scripts/verify-bug-report.ts` è rotto (cerca una rotta rimossa). `ROADMAP-EVOLUZIONE.md` superata; `CHANGELOG.md` non rispecchia le release recenti. `docs/CLAUDE-legacy-20260511.md` = narrativa storica intenzionale.
+
+## 8. Analisi di sistema (2026-10-12)
+
+Analisi completa — architettura, difetti per area con codici (`SEC`, `NUC`, `DB`, `INV`, `MOD`, `UI`, `IG`), cosa è solido, piano a blocchi — in **`docs/analisi-sistema.md`**. È **solo locale** (escluso da git con `.git/info/exclude`) perché contiene dettagli di sicurezza e il repo GitHub è pubblico: se manca su questa macchina, chiederla sul MacBook. Le trappole che chi tocca il codice deve sapere subito:
+
+- **Filtri che mostrano `all`/`critical_high`**: nessun `Select` passa `items` a base-ui, che senza `items` mostra il valore grezzo. Si corregge nel wrapper `components/ui/select.tsx`, non pagina per pagina.
+- **Date**: il DB salva UTC senza `Z`; `new Date("YYYY-MM-DD HH:MM:SS")` lo legge come ora locale (1-2 ore di scarto). Serve un unico parser.
+- **`db.ts` e `db-tenant.ts` divergono** (~43 funzioni): prima di correggere una funzione DB, guardare **da quale dei due** la importa il chiamante.
+- **Le scansioni non sono attese dallo scheduler** (`discoverNetwork` ritorna subito): il job risulta riuscito prima di finire e le scansioni si accavallano.
+- **Crescita del DB**: niente retention sugli storici; `mac_ip_history` registra un "cambio" ogni volta che un MAC con più IP viene visto con l'altro IP (~31.000 righe/giorno sul tenant 70791, 2,1 GB in tutto).
 
 ## 7. Trappola: `db-tenant` e le due istanze sotto `tsx` (2026-09-02)
 

@@ -74,8 +74,10 @@ questo repo è pubblico; DA-IPAM riceve l'edge come immagine pronta.
    del parco) e si guarda resa a 1920 px.
 7. **Livello di controllo per tappa** (§4); il cancello completo precede sempre il
    promote a `main`.
-8. **Una tappa per volta su questo repo.** Prima di cominciare si guarda chi ci sta
-   già lavorando (worktree, sessioni vive) e si lavora in un worktree proprio.
+8. **Ogni tappa nel suo ramo.** Più tappe procedono insieme solo se toccano parti
+   diverse; ciascuna lavora in un ramo proprio e si integra in `dev` una alla volta
+   (rebase su `dev`, cancello, push). Prima di cominciare si guarda chi sta già
+   lavorando sul repo (rami recenti, worktree, sessioni vive).
 9. **Ogni regola che può diventare un test lo diventa**: ogni modulo del manifesto
    ha salute e disattivazione; nessuna rotta di modulo senza guardia; il token
    dell'edge di sola lettura non comanda niente; il vincolo dei job nello schema e
@@ -107,6 +109,33 @@ La tappa 2 il piano ce l'ha già. Finché si resta dentro quanto scritto qui non
 un nuovo via; serve se cambia lo scope, per il promote a `main` e per ogni scrittura
 su dati di produzione.
 
+### Esecuzione in cloud (decisione di Riccardo, 12/10 sera)
+
+Le tappe le portano avanti **sessioni di Claude Code in cloud** (claude.ai/code) sul
+repo `grandir66/DA-IPAM`, lanciate da Riccardo. Lo stato condiviso è il §9 di questo
+documento; la bacheca sul Mac si riallinea da qui.
+
+- **In cloud**: codice, prove, lint, type-check, build, documenti; lavoro su un ramo
+  proprio, poi rebase su `dev`, cancello e push su `dev`.
+- **In locale** (MacBook, rete Domarc e DTS), perché il cloud non ci arriva o non deve
+  vederlo:
+  - le risposte vere di controller ed edge, prese in sola lettura, **ridotte e
+    anonimizzate prima del commit** (il repo è pubblico: si guarda il file prima);
+  - le prove su copie di database veri: sono dati di clienti, mai in cloud né in git;
+  - le verifiche su hub, DTS e DA-Vul-can, e tutto ciò che usa il vault;
+  - le parti della tappa 3 descritte solo nell'analisi locale (sicurezza);
+  - promote e conferme.
+- **Regole che in cloud non arrivano da sole** (sul Mac stanno in `~/.claude`) e
+  valgono per ogni sessione che esegue questo piano:
+  - si risponde e si scrive in italiano, in linguaggio semplice;
+  - livello di controllo della tappa (§4);
+  - dopo due tentativi falliti uguali ci si ferma, si legge l'errore intero e si
+    scrive la causa, invece di riprovare;
+  - niente push su `main`, niente promote, niente scritture su dati di produzione;
+  - a fine sessione si aggiornano il §9 (cosa è fatto, come è verificato, **cosa resta
+    da fare in locale**) e `CONTEXT.md`, e si chiude con un rapporto in linguaggio
+    semplice e i miglioramenti consigliati.
+
 ## 5. Le tappe nel dettaglio
 
 ### Tappa 1 — Correzioni visibili e difetti d'installazione
@@ -127,6 +156,31 @@ attivo fra `da-invent` e `da-ipam`, verificato su DTS). Non si duplica.
 - Installazione: anche il pulsante "Riavvia" dell'interfaccia riconosce tutti e due
   i nomi del servizio (resto di INS-1); l'installazione su VM esistente parte da
   `main` (INS-2).
+
+**Dove si mette mano** (righe indicative al 12/10, per chi esegue senza l'analisi
+locale):
+
+- setup: `src/app/setup/page.tsx`, `src/app/api/setup/route.ts:63-64` (ramo
+  multi-tenant);
+- utenti: `src/app/api/users/route.ts:10,41` usa `requireSuperAdmin`; l'admin deve
+  poter gestire gli utenti del proprio cliente, e un errore va mostrato come errore,
+  non come "Nessun utente trovato";
+- link: `vulnerabilities-list-client.tsx:399` e
+  `lib/integrations/meshcentral/install.ts:138` ("Impostazioni → Integrazioni", che
+  non esiste più); `rmm/page.tsx:131` (apre il tab Utenti invece di Moduli);
+  `modules-grid.tsx:317-328` ("Interfaccia edge" che apre MeshCentral);
+- nome: `components/shared/sidebar.tsx:358` ("DA-INVENT") e il setup;
+- disinstallazione: `settings/modules-tab.tsx:536-541` contro
+  `api/features/[key]/uninstall/route.ts:68-79`; `settings/scanner-edge-card.tsx:252`;
+- profili: `api/networks/[id]/edge-scan/route.ts:20-25` (lista fissa) → elenco letto
+  da `GET /api/v1/profiles` dell'edge (`{ "profiles": [...] }`; la forma delle voci si
+  conferma in locale su un edge vero), con un avviso a schermo se l'edge non risponde;
+- dashboard: `(dashboard)/page.tsx:48` (le righe aprono la configurazione),
+  `lib/modules/health.ts:504-513`;
+- riavvio: `api/system/update/route.ts:544-571` cerca solo `da-invent`; stesso
+  criterio di `scripts/update.sh` (il servizio attivo fra `da-invent` e `da-ipam`);
+- INS-2 sta nel repo Deploy-Appliance (`scripts/install-on-vm.sh:54`): in locale o in
+  una sessione su quel repo.
 
 **Verifica**: prove mirate; foto a 1920 di setup, Utenti, Moduli, dashboard.
 **Fatto quando**: tutto su `dev`, verificato sull'hub e su DTS, promote confermato.
@@ -150,6 +204,19 @@ installato a sessione, mappatura pura, sync, job, card). Si esegue com'è, con l
 - **prima sincronizzazione su una copia del database di DTS**, poi sull'appliance con
   backup e conferma;
 - voce nel registry con la sonda di salute, credenziali solo nella configurazione.
+
+**Chi fa cosa:**
+
+1. *in locale, prima* (10-15 minuti, rete DTS): la risposta vera di `stat/device`
+   presa con l'account di sola lettura, **ridotta** a pochi apparati rappresentativi
+   (uno switch con LLDP verso un altro, un access point, il gateway se c'è) e
+   **anonimizzata** in modo coerente (nomi, MAC, IP, seriali sostituiti; campi `x_*`
+   tolti), poi committata come fixture. Il repo è pubblico: il file si guarda prima
+   del commit;
+2. *in cloud*: i task 1-8 del piano UniFi sulla fixture, tutto spento di default,
+   push su `dev`;
+3. *in locale, dopo*: la sync su una copia del database DTS, poi sull'appliance con
+   backup e conferma di Riccardo.
 
 Non crea host: per questo non aspetta le fondamenta della tappa 3. I client e Omada
 arrivano nella tappa 4. Il backend UDM e cloud (fase D della spec) si fa quando serve
@@ -345,7 +412,7 @@ vive la console centrale (tappa 9).
 | Tappa | Stato | Data | Note |
 |---|---|---|---|
 | 1 | in parte | 12/10 | INS-1 (aggiornamento automatico) e NUC-5 chiusi; blocco filtri in corso in un'altra sessione |
-| 2 | piano pronto | 12/10 | spec e piano UniFi in `dev` (`c72413c`); correzioni in testa al piano |
+| 2 | piano pronto | 12/10 | spec e piano UniFi in `dev`; correzioni in testa al piano; prima la fixture vera, in locale |
 | 3 | da fare | — | |
 | 4 | da fare | — | |
 | 5 | da fare | — | la mappa di base è già su `dev` (v0.3.260) |

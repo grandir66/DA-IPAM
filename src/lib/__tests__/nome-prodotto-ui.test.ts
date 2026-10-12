@@ -69,3 +69,25 @@ test("nei testi visibili il prodotto si chiama DA-IPAM, non DA-INVENT (UI-23)", 
     `Testi per l'utente con il nome vecchio (usare DA-IPAM; se è un identificatore tecnico, aggiungerlo a TECNICI col perché):\n${offenders.join("\n")}`,
   );
 });
+
+/**
+ * Il manuale utente lo mostra l'app stessa (Manuale → Manuale utente, /manual:
+ * la radice di docs/ è fra le ALLOWED_DIRS di manual/page.tsx). Fino al
+ * 2026-10-12 la sua nota diceva «l'interfaccia mostra DA-INVENT» proprio mentre
+ * lo schermo passava a DA-IPAM: la confusione «due nomi, due prodotti?» tornava
+ * dalla porta del manuale. Nel Markdown «#» è un titolo e «*» un corsivo, quindi
+ * qui non si saltano righe come commenti. Resta lecita solo la nota che dice che
+ * il prodotto si chiama DA-IPAM e perché alcune schermate mostrano il nome vecchio.
+ */
+const MANUALE = path.join(process.cwd(), "docs/MANUALE-UTENTE.md");
+const NOTA_NOME = /Nota nome prodotto:\*\* il prodotto si chiama \*\*DA-IPAM\*\*/;
+
+test("il manuale utente mostrato in /manual chiama il prodotto DA-IPAM (UI-23)", () => {
+  const offenders: string[] = [];
+  fs.readFileSync(MANUALE, "utf8").split("\n").forEach((line, i) => {
+    if (line.includes("DA-INVENT") && !NOTA_NOME.test(line)) {
+      offenders.push(`docs/MANUALE-UTENTE.md:${i + 1}: ${line.trim()}`);
+    }
+  });
+  assert.deepEqual(offenders, [], `Il manuale usa ancora il nome vecchio:\n${offenders.join("\n")}`);
+});

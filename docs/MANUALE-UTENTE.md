@@ -1,10 +1,10 @@
-# DA-INVENT — Manuale utente
+# DA-IPAM — Manuale utente
 
 > **Versione di riferimento:** 0.3.116
-> **Ultima modifica:** 2026-06-26
+> **Ultima modifica:** 2026-10-12
 > Prodotto open source di [Domarc](https://domarc.it). Per i fork pubblici è richiesta attribuzione (vedi `LICENSE`).
 
-> ℹ️ **Nota nome prodotto:** l'interfaccia mostra **DA-INVENT** (codice progetto interno: *DA-IPAM*). I due nomi indicano lo stesso prodotto; nel manuale usiamo **DA-INVENT** per coerenza con ciò che vedi a schermo.
+> ℹ️ **Nota nome prodotto:** il prodotto si chiama **DA-IPAM**, ed è il nome che vedi a schermo. Le versioni precedenti mostravano **DA-INVENT**, e alcune schermate di questo manuale lo mostrano ancora: è lo stesso prodotto.
 
 > 🖼️ **Screenshot:** le immagini di questo manuale provengono da un ambiente dimostrativo con dati oscurati (IP, hostname e nomi cliente sono fittizi/redatti). Le tue schermate reali avranno lo stesso layout ma dati differenti.
 
@@ -12,7 +12,7 @@
 
 ## Indice
 
-1. [Cos'è DA-INVENT](#1-cosè-da-invent)
+1. [Cos'è DA-IPAM](#1-cosè-da-ipam)
 2. [Primo avvio e setup](#2-primo-avvio-e-setup)
 3. [Login e navigazione](#3-login-e-navigazione)
 4. [Dashboard](#4-dashboard)
@@ -45,9 +45,9 @@
 
 ---
 
-## 1. Cos'è DA-INVENT
+## 1. Cos'è DA-IPAM
 
-**DA-INVENT** (codice progetto: DA-IPAM) è un IPAM (IP Address Management) + Inventario di rete con uno strato **security e integrazioni** che lo rende il punto unico di regia dell'infrastruttura del cliente:
+**DA-IPAM** è un IPAM (IP Address Management) + Inventario di rete con uno strato **security e integrazioni** che lo rende il punto unico di regia dell'infrastruttura del cliente:
 
 - **Discovery attiva** delle reti: ICMP + TCP fallback + ARP/DHCP poll dai router
 - **Inventario dispositivi** (host + network device gestibili: router, switch, firewall, hypervisor)
@@ -71,14 +71,16 @@ Differenze chiave rispetto ad altri IPAM:
 
 ## 2. Primo avvio e setup
 
-Al **primo accesso** (DB vuoto) l'app reindirizza a `/setup`.
+Al **primo accesso** (DB vuoto) l'app reindirizza a `/setup`, che installa DA-IPAM per **un cliente**: crea il cliente di questa installazione e il suo account amministratore.
 
 Campi richiesti:
+- Codice cliente (es. `ACME-001`)
+- Ragione sociale
 - Username (min 3 caratteri)
 - Password (min 8 caratteri)
 - Conferma password
 
-L'account creato ha ruolo `admin` (oppure `superadmin` se è il primo utente del cluster multi-tenant). Dopo la creazione si viene reindirizzati al login.
+L'account creato ha ruolo `admin` sul cliente appena creato. Il `superadmin`, che gestisce più clienti dalla stessa installazione (§28), non si crea da questa pagina. Dopo la creazione si viene reindirizzati al login.
 
 `/setup` non è più raggiungibile una volta esistente almeno un utente.
 
@@ -94,12 +96,12 @@ Inserire username e password. Dopo **5 tentativi errati in 15 minuti** per lo st
 
 ### Struttura sidebar (tenant attivo)
 
-![Sidebar di navigazione DA-INVENT con i gruppi Network, Inventario e Network Services](/manual/img/sidebar.png)
+![Sidebar di navigazione di DA-IPAM con i gruppi Network, Inventario e Network Services](/manual/img/sidebar.png)
 *La sidebar reale (v0.3.116): voci di primo livello + tre gruppi collassabili (Network, Inventario, Network Services).*
 
 ```
 ─────────────────────────
-[ Logo / DA-INVENT ]
+[ Logo / DA-IPAM ]
 ─────────────────────────
 (solo superadmin)
 🏢 Clienti
@@ -538,9 +540,9 @@ Colonne: MAC, IP, Network, Vendor (OUI), Hostname, Sorgente (`arp`/`dhcp`/`host`
 
 ### Configurazione integrazione
 
-Da **Impostazioni → Integrazioni → Active Directory**:
-- URL LDAP (es. `ldap://dc.cliente.local:389` o `ldaps://...:636`)
-- Bind DN + password (con account che può leggere `Computer` objects)
+Dalla stessa pagina **Network → Active Directory**, pulsante **Nuova integrazione**:
+- Nome, Dominio, Domain Controller e Porta (389, oppure 636 con **Usa LDAPS (SSL)**)
+- Username e Password LDAP (un account che può leggere gli oggetti `Computer`)
 - Base DN per la ricerca
 - Filtri opzionali
 
@@ -554,7 +556,7 @@ Dopo ogni `network_discovery`, lo scanner tenta di **collegare** i computer AD a
 
 ### LDAPS su DC con signing forzato
 
-Se il tuo DC impone LDAP signing senza certificato installato, l'integrazione fallisce con `OPERATIONS_ERROR`. **Il fix è sul DC, non su DA-INVENT**: installa un certificato self-signed (o aziendale) nei store `My` + `Trusted Root` del DC e riavvia il servizio `NTDS`. Vedi `playbooks/ad-ldaps-windows.md`.
+Se il tuo DC impone LDAP signing senza certificato installato, l'integrazione fallisce con `OPERATIONS_ERROR`. **Il fix è sul DC, non su DA-IPAM**: installa un certificato self-signed (o aziendale) nei store `My` + `Trusted Root` del DC e riavvia il servizio `NTDS`. Vedi `playbooks/ad-ldaps-windows.md`.
 
 Dettagli completi: [Manuale Active Directory](MANUALE-ACTIVE-DIRECTORY.md).
 
@@ -813,7 +815,7 @@ L'health è in polling (≈60s). Le icone: 🛡️ ShieldAlert (Vulnerabilità),
 
 ### Dove si configurano le integrazioni
 
-La configurazione vera e propria vive in **Impostazioni → Moduli/Integrazioni**: LibreNMS, Wazuh, Scanner-Edge, Network Services, Active Directory, Graylog. Il Launchpad è il cruscotto; le impostazioni sono il pannello di controllo.
+La configurazione vera e propria vive in **Impostazioni → Moduli**: LibreNMS, Wazuh, Scanner-Edge, Network Services, Graylog. Active Directory si configura invece da **Network → Active Directory** (§12). Il Launchpad è il cruscotto; le impostazioni sono il pannello di controllo.
 
 ---
 
@@ -865,8 +867,8 @@ La gestione dei **job schedulati** (abilita/disabilita, interval, prossima esecu
 ### Credenziali globali fallback
 - "Host Linux" globale per fallback SSH non-router
 
-### Moduli / Integrazioni
-- Attivazione e configurazione di **LibreNMS, Wazuh, Scanner-Edge, Network Services, Active Directory, Graylog, Patch Management**
+### Moduli
+- Attivazione e configurazione di **LibreNMS, Wazuh, Scanner-Edge, Network Services, Graylog, Patch Management** (Active Directory sta in **Network → Active Directory**, §12)
 - Lo stato runtime di questi moduli si vede nel **Launchpad** (§22)
 
 ### Scansione periodica
@@ -909,7 +911,7 @@ Discovery → pulsante ⬇️ esporta la **vista filtrata corrente** (rispetta f
 - `hub.db` (utenti, tenant, anagrafica)
 - Tutti i DB tenant `tenants/[codice].db`
 
-Conservazione: ultimi 7 backup. **Restore**: manuale via script `scripts/restore-from-backup.sh [data]`. **Backup manuale** da Impostazioni → Backup → "Esegui backup ora".
+Conservazione: ultimi 7 backup. **Restore**: manuale via script `scripts/restore-from-backup.sh [data]`. **Backup manuale** da Impostazioni → Sistema → «Backup database», che scarica una copia del database (`hub-backup-<data>.db`).
 
 > **IMPORTANTE**: il backup NON include `.env.local` (per sicurezza). In disaster recovery serve ripristinare separatamente `ENCRYPTION_KEY`, `NEXTAUTH_SECRET`, ecc.
 
@@ -917,7 +919,7 @@ Conservazione: ultimi 7 backup. **Restore**: manuale via script `scripts/restore
 
 ## 28. Multi-tenant e Superadmin
 
-DA-INVENT è single-server ma multi-tenant: una sola installazione gestisce N clienti separati.
+DA-IPAM è single-server ma multi-tenant: una sola installazione gestisce N clienti separati.
 
 ### Modello tenant
 

@@ -17,11 +17,17 @@ import path from "node:path";
  *
  * I nomi dei tab si leggono da settings/page.tsx (l'elenco `tabs` e
  * `TAB_ALIASES`): un tab rinominato là fa fallire qui i rimandi rimasti indietro.
+ *
+ * Oltre al codice si legge il manuale utente, che l'app mostra in /manual (la
+ * radice di docs/ è fra le ALLOWED_DIRS di manual/page.tsx): il 2026-10-12
+ * rimandava ancora a «Impostazioni → Integrazioni → Active Directory»,
+ * «Impostazioni → Moduli/Integrazioni» e «Impostazioni → Backup», che non esistono.
  */
 
 const ROOT = process.cwd();
 const SRC = path.join(ROOT, "src");
 const SETTINGS_PAGE = path.join(SRC, "app/(dashboard)/settings/page.tsx");
+const MANUALE = path.join(ROOT, "docs/MANUALE-UTENTE.md");
 
 function isComment(line: string): boolean {
   const t = line.trim();
@@ -43,6 +49,16 @@ function sourceFiles(dir: string): string[] {
 }
 
 const rel = (file: string) => path.relative(ROOT, file);
+
+/** I testi che l'utente legge: il codice in src/ e il manuale utente. */
+function textFiles(): string[] {
+  return [...sourceFiles(SRC), MANUALE];
+}
+
+/** Nel Markdown «#» è un titolo e «*» un corsivo: nel manuale non c'è niente da saltare. */
+function skipLine(file: string, line: string): boolean {
+  return !file.endsWith(".md") && isComment(line);
+}
 
 /** Etichetta del tab → chiave, dall'elenco `tabs` della pagina Impostazioni. */
 function tabLabels(): Map<string, string> {
@@ -91,11 +107,11 @@ test("i nomi dei tab si leggono dalla pagina Impostazioni", () => {
 });
 
 test("nessun testo rimanda a «Integrazioni», che è diventato il tab Moduli (UI-24)", () => {
-  const RIMANDO = /Integrazioni\s*→|→\s*Integrazioni|\b(?:in|da|a)\s+Integrazioni\b/;
+  const RIMANDO = /Integrazioni\s*→|→\s*Integrazioni|\b(?:in|da|a)\s+Integrazioni\b|\/\s*Integrazioni\b/;
   const offenders: string[] = [];
-  for (const file of sourceFiles(SRC)) {
+  for (const file of textFiles()) {
     fs.readFileSync(file, "utf8").split("\n").forEach((line, i) => {
-      if (!isComment(line) && RIMANDO.test(line)) offenders.push(`${rel(file)}:${i + 1}: ${line.trim()}`);
+      if (!skipLine(file, line) && RIMANDO.test(line)) offenders.push(`${rel(file)}:${i + 1}: ${line.trim()}`);
     });
   }
   assert.deepEqual(offenders, [], `Rimandi a «Integrazioni» (usare «Impostazioni → Moduli»):\n${offenders.join("\n")}`);
@@ -106,9 +122,9 @@ test("ogni «Impostazioni → X» nomina un tab che esiste (UI-24)", () => {
   // «Impostazioni» di altri prodotti (l'interfaccia dell'edge, LibreNMS): non sono le nostre.
   const ALTRUI = /(?:edge|LibreNMS)\s*→\s*$/i;
   const offenders: string[] = [];
-  for (const file of sourceFiles(SRC)) {
+  for (const file of textFiles()) {
     fs.readFileSync(file, "utf8").split("\n").forEach((line, i) => {
-      if (isComment(line)) return;
+      if (skipLine(file, line)) return;
       for (const m of line.matchAll(/Impostazioni\s*→\s*/g)) {
         if (ALTRUI.test(line.slice(Math.max(0, m.index - 30), m.index))) continue;
         if (!tabNamed(line.slice(m.index + m[0].length), labels)) {

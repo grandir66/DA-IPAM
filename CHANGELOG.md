@@ -16,11 +16,18 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   reimposta la password ed elimina gli utenti dei clienti che amministra, e solo
   quelli: non tocca un super amministratore, non assegna quel ruolo, non elimina
   sé stesso e non si toglie il ruolo di amministratore, così l'installazione non
-  resta mai senza. Nella pagina il ruolo «Super amministratore» non gli viene
-  proposto e il cliente è fisso sul suo; un errore del server si mostra come
-  errore. Il super amministratore resta com'era, il solo-lettura non gestisce
-  utenti. Le regole stanno in un punto solo (`src/lib/users/`), provate su tutte
-  le combinazioni e su ogni rotta.
+  resta mai senza. La propria password la cambia da «Cambia password» nel menu
+  utente, che chiede quella attuale: da Utenti no, altrimenti una sessione
+  rubata diventerebbe una password nuova che dura oltre la sessione. Nella
+  pagina il ruolo «Super amministratore» non gli viene proposto e il cliente è
+  fisso sul suo; un errore del server si mostra come errore. Il solo-lettura non
+  gestisce utenti e non vede più la scheda Utenti (prima l'avrebbe vista come un
+  errore da riprovare). Un super amministratore declassato smette subito di
+  gestire utenti, senza aspettare che la sessione scada; per il resto resta
+  com'era. Lo username dell'utenza di servizio Domarc («domarc») non si può più
+  dare a un utente locale, che nei log sembrerebbe il supporto. Le regole stanno
+  in un punto solo (`src/lib/users/`), provate su tutte le combinazioni e su
+  ogni rotta.
 - **I filtri mostrano l'etichetta della voce scelta, non il suo codice.** Dopo
   una scelta, i menu a tendina dei filtri mostravano il valore tecnico: «all»
   invece di «Tutti gli stati», «unacked» invece di «Non gestiti», il numero della

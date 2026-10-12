@@ -238,16 +238,19 @@ export default function SettingsPage() {
 function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin"
     || (session?.user as { role?: string } | undefined)?.role === "superadmin";
   const isSuperAdmin = (session?.user as { role?: string } | undefined)?.role === "superadmin";
   const sessionUsername = session?.user?.name ?? "";
+  // Sessione caricata e ruolo di sola lettura: la gestione utenti non lo riguarda
+  // (/api/users gli risponde 403 per scelta). Finché la sessione carica non si decide.
+  const isViewer = sessionStatus === "authenticated" && !isAdmin;
 
   const initialTab: TabKey = useMemo(() => {
     const raw = (searchParams?.get("tab") ?? "").toLowerCase();
-    return TAB_ALIASES[raw] ?? "utenti";
-  }, [searchParams]);
+    return TAB_ALIASES[raw] ?? (isViewer ? "scansione" : "utenti");
+  }, [searchParams, isViewer]);
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
 
   useEffect(() => {
@@ -311,9 +314,10 @@ function SettingsPageInner() {
     }
   }, []);
 
+  // Solo per chi gestisce utenti: al viewer il 403 è voluto, non un guasto da mostrare.
   useEffect(() => {
-    void loadUsers();
-  }, [loadUsers]);
+    if (isAdmin) void loadUsers();
+  }, [isAdmin, loadUsers]);
 
   // L'admin assegna solo i clienti che amministra (il server lo impone comunque).
   // Con un cliente solo — l'appliance di un cliente — il cliente è fisso: non si
@@ -687,7 +691,7 @@ function SettingsPageInner() {
 
   // ============ RENDER ============
 
-  const tabs: Array<{ key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+  const allTabs: Array<{ key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }> = [
     { key: "utenti", label: "Utenti", icon: Users },
     { key: "scansione", label: "Scansione", icon: Radar },
     { key: "identificazione", label: "Identificazione", icon: Fingerprint },
@@ -699,6 +703,7 @@ function SettingsPageInner() {
     { key: "aggiornamenti", label: "Aggiornamenti", icon: ArrowUpCircle },
     { key: "sistema", label: "Sistema", icon: Wrench },
   ];
+  const tabs = isViewer ? allTabs.filter((tab) => tab.key !== "utenti") : allTabs;
 
   return (
     <div className="space-y-6">
@@ -748,7 +753,14 @@ function SettingsPageInner() {
       </div>
 
       {/* === Tab: Utenti === */}
-      {activeTab === "utenti" && (
+      {activeTab === "utenti" && isViewer && (
+        <Card>
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            La gestione degli utenti è riservata agli amministratori.
+          </CardContent>
+        </Card>
+      )}
+      {activeTab === "utenti" && !isViewer && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -937,7 +949,10 @@ function SettingsPageInner() {
                         <Button
                           size="sm" variant="ghost"
                           onClick={() => openResetPassword(user)}
-                          title="Reset password"
+                          disabled={!isSuperAdmin && user.username === sessionUsername}
+                          title={!isSuperAdmin && user.username === sessionUsername
+                            ? "Per la tua password usa «Cambia password» nel menu utente"
+                            : "Reset password"}
                         >
                           <KeyRound className="h-3.5 w-3.5" />
                         </Button>

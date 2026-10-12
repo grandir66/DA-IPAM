@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import type { ModuleState, ModuleKey } from "@/lib/modules/registry";
 import type { ModuleHealth, ModuleHealthStatus, ModuleVerdict } from "@/lib/modules/health";
 import { isModuleLaunchable } from "@/lib/modules/launchable";
+import { externalUiText } from "@/lib/modules/external-ui";
 
 const ICONS: Record<string, LucideIcon> = {
   ShieldAlert,
@@ -319,11 +320,11 @@ function ModuleTile({
             href={m.externalUiUrl}
             target="_blank"
             rel="noopener noreferrer"
-            title="Apri l'interfaccia web completa dell'appliance (scan, reti, Greenbone)"
+            title={externalUiText(m.key, m.label).title}
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors"
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            Interfaccia edge
+            {externalUiText(m.key, m.label).label}
           </a>
         )}
         {!compact && (

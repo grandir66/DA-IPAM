@@ -20,8 +20,9 @@
  *   - `tipo:"conteggio"` per (firma, ora) quando il conteggio di quell'ora tocca
  *     1, 10, 100, 1000…: il numero vero dell'ora è il massimo `n` letto, con
  *     un'approssimazione per ordine di grandezza. Mille chiamate = quattro righe.
- *   - `tipo:"limite"` se in un'ora si supera `MAX_RIGHE_ORA` righe: da lì fino
- *     all'ora dopo si conta solo in memoria.
+ *   - `tipo:"limite"` se in un'ora le righe di conteggio superano
+ *     `MAX_RIGHE_ORA`: da lì fino all'ora dopo si conta solo in memoria. Le
+ *     righe di stack restano fuori dal tetto (una per firma e per processo).
  *
  * Non lancia mai: il registro non deve far fallire l'accesso che registra.
  * Nessun dato del cliente: solo caso, codice del tenant, firma del chiamante.
@@ -84,27 +85,58 @@ export function DIR_REGISTRO_RIPIEGHI(): string {
   return path.join(resolveDataDir(), "logs", "ripieghi");
 }
 
-const FILE_INTERNI = /[\\/](db|db-tenant|ripieghi)\.[cm]?[jt]s\b|node:internal|[\\/]node_modules[\\/]/;
+// Frame del facade e del registro, riconoscibili solo quando si gira dai
+// sorgenti (tsx: scheduler, script). Nel build di Next i file si chiamano
+// `.next/server/chunks/<hash>._.js` e i nomi delle funzioni sono minificati.
+const FILE_INTERNI = /[\\/](db|db-tenant|ripieghi)\.[cm]?[jt]s\b/;
+const FRAME_ESTRANEI = /node:internal|[\\/]node_modules[\\/]/;
+/** Frame del build messi in catena nella firma: getDb, la funzione dati, la rotta, il suo chiamante. */
+const FRAME_CATENA = 6;
 
-/** Il primo frame dello stack che non sta nel facade: «funzione @ file:riga». */
+/** Stack dal chiamante di `registraRipiego` in giù (il registro stesso è escluso per riferimento, non per nome). */
 function righeStack(): string[] {
   const vecchioLimite = Error.stackTraceLimit;
   Error.stackTraceLimit = 25;
-  const stack = new Error().stack ?? "";
+  const contenitore: { stack?: string } = {};
+  Error.captureStackTrace(contenitore, registraRipiego);
   Error.stackTraceLimit = vecchioLimite;
-  return stack.split("\n").slice(1).map((r) => r.trim());
+  return (contenitore.stack ?? "").split("\n").slice(1).map((r) => r.trim());
 }
 
-function firmaDa(righe: string[]): string {
-  const esterna = righe.find((r) => r.startsWith("at ") && !FILE_INTERNI.test(r));
-  if (!esterna) return "sconosciuto";
-  const m = /^at (?:(.+?) \()?(.+?):(\d+):\d+\)?$/.exec(esterna);
-  if (!m) return esterna.slice(3, 160);
-  const funzione = m[1] ?? "<anonima>";
-  const file = m[2].replace(/^file:\/\//, "");
-  const idx = file.lastIndexOf("/src/");
-  const corto = idx >= 0 ? file.slice(idx + 1) : file.split(/[\\/]/).slice(-3).join("/");
-  return `${funzione} @ ${corto}:${m[3]}`;
+function scomponi(riga: string): { funzione: string | null; file: string; posizione: string } | null {
+  const m = /^at (?:async )?(?:(.+?) \()?(.+?):(\d+):(\d+)\)?$/.exec(riga);
+  if (!m) return null;
+  return { funzione: m[1] ?? null, file: m[2].replace(/^file:\/\//, ""), posizione: `${m[3]}:${m[4]}` };
+}
+
+/**
+ * Firma del chiamante.
+ * - Dai sorgenti: «funzione @ src/…/file.ts:riga:colonna» del primo frame fuori
+ *   dal facade.
+ * - Dal build di Next (nessun frame sotto `/src/`): la catena dei primi frame,
+ *   «chunk:riga:colonna < …». Un frame solo non basta: nel build è getDb,
+ *   uguale per tutti; la rotta che chiama sta qualche frame più in basso.
+ */
+export function firmaDa(righe: string[]): string {
+  const frame = righe.filter((r) => r.startsWith("at ") && !FRAME_ESTRANEI.test(r));
+  const sorgente = frame.find((r) => /[\\/]src[\\/]/.test(r) && !FILE_INTERNI.test(r));
+  if (sorgente) {
+    const p = scomponi(sorgente);
+    if (!p) return sorgente.slice(3, 160);
+    const idx = p.file.lastIndexOf("/src/");
+    return `${p.funzione ?? "<anonima>"} @ ${p.file.slice(idx + 1)}:${p.posizione}`;
+  }
+  const catena = frame
+    .filter((r) => !FILE_INTERNI.test(r))
+    .slice(0, FRAME_CATENA)
+    .map((r) => {
+      const p = scomponi(r);
+      if (!p) return r.slice(3, 80);
+      const idx = p.file.lastIndexOf("/.next/server/");
+      const corto = idx >= 0 ? p.file.slice(idx + "/.next/server/".length) : p.file.split(/[\\/]/).slice(-2).join("/");
+      return `${corto}:${p.posizione}`;
+    });
+  return catena.length > 0 ? catena.join(" < ").slice(0, 600) : "sconosciuto";
 }
 
 function scrivi(riga: Record<string, unknown>, adesso: Date): void {
@@ -167,26 +199,24 @@ export function registraRipiego(caso: CasoRipiego, tenant: string | null = null)
     if (c.ora !== ora) { c.ora = ora; c.nOra = 0; }
     c.nOra += 1;
 
-    const daScrivere: Record<string, unknown>[] = [];
     const base = { ts: c.ultimo, caso, tenant, firma };
     if (!s.stackScritti.has(chiave)) {
+      // La riga di stack sta FUORI dal tetto orario: è già limitata a una per
+      // firma e per processo, ed è proprio il dettaglio che serve per correggere
+      // il chiamante. Si segna come scritta solo dopo averla scritta.
+      scrivi({ ...base, tipo: "stack", stack: righe.filter((r) => !/node:internal/.test(r)).slice(0, 15) }, adesso);
       s.stackScritti.add(chiave);
-      daScrivere.push({ ...base, tipo: "stack", stack: righe.filter((r) => !/node:internal/.test(r)).slice(0, 15) });
       // Una sola riga nel journal per chiamante e processo: niente inondazione.
       console.warn(`[db] ripiego ${caso}${tenant ? ` (${tenant})` : ""} da ${firma}`);
     }
-    if (potenzaDiDieci(c.nOra)) daScrivere.push({ ...base, tipo: "conteggio", ora, n: c.nOra });
-
-    for (const riga of daScrivere) {
-      if (s.righeOra >= MAX_RIGHE_ORA) {
-        if (!s.limiteSegnalato) {
-          s.limiteSegnalato = true;
-          scrivi({ ts: c.ultimo, tipo: "limite", ora, max_righe: MAX_RIGHE_ORA }, adesso);
-        }
-        break;
+    if (potenzaDiDieci(c.nOra)) {
+      if (s.righeOra < MAX_RIGHE_ORA) {
+        s.righeOra += 1;
+        scrivi({ ...base, tipo: "conteggio", ora, n: c.nOra }, adesso);
+      } else if (!s.limiteSegnalato) {
+        s.limiteSegnalato = true;
+        scrivi({ ts: c.ultimo, tipo: "limite", ora, max_righe: MAX_RIGHE_ORA }, adesso);
       }
-      s.righeOra += 1;
-      scrivi(riga, adesso);
     }
   } catch {
     /* il registro non fa mai fallire l'accesso che registra */
@@ -212,4 +242,13 @@ export function riepilogoRipieghi(limite = 20): RiepilogoRipieghi {
     .slice(0, limite)
     .map(({ firma, caso, tenant, n, ultimo }) => ({ firma, caso, tenant, n, ultimo }));
   return { totale: s.totale, per_caso: { ...s.perCaso }, chiamanti };
+}
+
+/**
+ * Il dettaglio è lo stato dell'intero processo: firme del codice e codici di
+ * TUTTI i tenant coinvolti. Lo riceve solo il superadmin; gli altri ruoli, che
+ * vedono un tenant solo, non ricevono niente (il numero è già in /api/health).
+ */
+export function riepilogoPerRuolo(ruolo: string | undefined): RiepilogoRipieghi | undefined {
+  return ruolo === "superadmin" ? riepilogoRipieghi() : undefined;
 }

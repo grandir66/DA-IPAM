@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { getDb, closeDb } from "@/lib/db";
-import { withTenant, getTenantDb, closeAllTenantDbs, TenantContextError } from "@/lib/db-tenant";
+import { withTenant, getTenantDb, closeTenantDb, closeAllTenantDbs, TenantContextError } from "@/lib/db-tenant";
 import { getHubDb, closeHubDb, createTenant } from "@/lib/db-hub";
 import { contaRipieghi, riepilogoRipieghi, DIR_REGISTRO_RIPIEGHI } from "@/lib/db-maintenance/ripieghi";
 import { GET as healthGet } from "@/app/api/health/route";
@@ -66,6 +66,21 @@ test("tenant non registrato nell'hub: contato prima che getTenantDb crei il file
   createTenant({ codice_cliente: "REGISTRATO", ragione_sociale: "Prova", active: 1 } as Parameters<typeof createTenant>[0]);
   getTenantDb("REGISTRATO");
   assert.equal(riepilogoRipieghi().per_caso.tenant_non_registrato, prima + 1);
+});
+
+test("tenant non registrato con il file già presente (anche da 0 byte): si conta a ogni apertura", () => {
+  // In produzione esistono già file nati prima del registro (NUC-3: un `.db` da
+  // 0 byte): contarli solo alla creazione li lascerebbe a zero per sempre.
+  closeTenantDb("NONREGISTRATO");
+  const prima = riepilogoRipieghi().per_caso.tenant_non_registrato ?? 0;
+  getTenantDb("NONREGISTRATO");
+  assert.equal(riepilogoRipieghi().per_caso.tenant_non_registrato, prima + 1);
+
+  fs.writeFileSync(path.join(TEST_DATA_DIR, "tenants", "ORFANOVUOTO.db"), "");
+  getTenantDb("ORFANOVUOTO");
+  assert.equal(riepilogoRipieghi().per_caso.tenant_non_registrato, prima + 2);
+  getTenantDb("ORFANOVUOTO"); // già aperto: nessuna apertura nuova, nessun conteggio
+  assert.equal(riepilogoRipieghi().per_caso.tenant_non_registrato, prima + 2);
 });
 
 test("un tenant che non si apre è un errore, non una scrittura su DEFAULT", () => {

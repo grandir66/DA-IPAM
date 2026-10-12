@@ -13,7 +13,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   ripiego su DEFAULT, quello su `ipam.db` e il file di un tenant che l'hub non
   conosce. Il registro è in `data/logs/ripieghi/` (un file JSONL al giorno, 30
   giorni, una riga per chiamante e ora, lo stack una volta sola). `/api/health`
-  dà solo il numero; `/api/modules/health`, autenticata, dice chi e da dove.
+  dà solo il numero; `/api/modules/health` dice chi e da dove solo al
+  superadmin, perché il dettaglio riguarda tutti i tenant del processo. Il
+  chiamante si riconosce anche quando il codice gira dal build di Next (file
+  minificati, dove il nome del file non dice niente): la firma è la catena dei
+  primi punti di chiamata con riga e colonna. Il file di un tenant sconosciuto
+  si conta a ogni apertura, anche se esisteva già prima del registro.
   Perché: il 02/09 un contesto perso ha mandato dati di un tenant in DEFAULT senza
   un allarme; prima di trasformare questi ripieghi in errori bisogna sapere, con
   una settimana di dati che sopravvive agli aggiornamenti, chi li usa ancora.

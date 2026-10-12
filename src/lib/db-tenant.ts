@@ -210,10 +210,12 @@ export function getTenantDb(tenantCode: string): Database.Database {
   if (path.dirname(path.resolve(dbPath)) !== path.resolve(TENANTS_DIR)) {
     throw new Error(`Tenant code non valido: ${tenantCode}`);
   }
-  // NUC-1 fase A: un file tenant che sta per nascere per un codice che l'hub
-  // non conosce si conta (l'esito non cambia ancora). Solo con l'hub presente:
-  // senza hub (script, generazione del template) non c'è un registro da consultare.
-  if (!fs.existsSync(dbPath) && fs.existsSync(getHubDbPath())) {
+  // NUC-1 fase A: ogni apertura (fuori dalla cache) del database di un codice
+  // che l'hub non conosce si conta, che il file stia per nascere o esista già
+  // (file orfani nati prima del registro, anche da 0 byte). L'esito non cambia
+  // ancora. Solo con l'hub presente: senza hub (script, generazione del
+  // template) non c'è un registro da consultare.
+  if (fs.existsSync(getHubDbPath())) {
     let registrato = true;
     try {
       registrato = getTenantByCode(tenantCode) !== undefined;

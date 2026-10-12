@@ -3,17 +3,23 @@
  * Prima la bandierina «già fatto» era una sola per tutto il processo: sull'hub
  * con più tenant la pulizia avveniva sul primo database toccato e mai sugli
  * altri (NUC-2, revisione 2026-10-12).
- * Lanciare con DA_INVENT_DATA_DIR di prova.
+ * La cartella dati è di prova (import per primo): senza, `npm test` dalla
+ * cartella principale lavorerebbe nel `data/` vero di sviluppo.
  */
-process.env.ENCRYPTION_KEY ||= "test-encryption-key-fk-per-tenant";
+import { TEST_DATA_DIR } from "./support/data-dir-isolata";
 
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
+import fs from "node:fs";
+import { withTenant, getTenantDb, deleteTenantDatabase, closeAllTenantDbs } from "@/lib/db-tenant";
 import { cleanOrphanedForeignKeys } from "@/lib/db";
 
 const TENANTS = ["TESTFKORFANIUNO", "TESTFKORFANIDUE"];
-after(() => TENANTS.forEach((t) => deleteTenantDatabase(t)));
+after(() => {
+  TENANTS.forEach((t) => deleteTenantDatabase(t));
+  closeAllTenantDbs();
+  fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true });
+});
 
 function orfanoIn(codice: string): void {
   const db = getTenantDb(codice);

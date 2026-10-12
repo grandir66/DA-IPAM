@@ -89,9 +89,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   interrogazione di un apparato, ogni tenant azzera i propri riferimenti orfani.
   Insieme, quattro funzioni dati (pulizia, intervallo dei job, andamento degli
   stati, ultimi cambi di stato) esistono ora in una sola copia, quella per
-  tenant; la vecchia facciata le riesporta. Un test conta le funzioni ancora
-  duplicate nella facciata e impedisce che risalgano, e un banco di prova
-  confronta le due copie sugli stessi dati prima di ogni spostamento. Perché: le
+  tenant; la vecchia facciata le riesporta. Un test tiene il numero esatto delle
+  funzioni ancora definite nella facciata (anche quelle scritte come costanti) e
+  impedisce che una funzione spostata vi ricompaia, anche non esportata. Un
+  banco di prova confronta la copia per tenant con la vecchia copia della
+  facciata, conservata nel test, sugli stessi dati; il banco rifiuta un
+  confronto di una funzione con se stessa, che passerebbe sempre. Perché: le
   due copie si erano separate, e una correzione fatta in una non arrivava
   all'altra.
 

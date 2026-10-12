@@ -8,7 +8,8 @@
  * tenant sul secondo; poi si confrontano il valore restituito e il contenuto
  * delle tabelle toccate.
  *
- * Gira su tenant temporanei: lanciare con DA_INVENT_DATA_DIR di prova.
+ * Gira su tenant temporanei: il file di prova importa per primo
+ * `../support/data-dir-isolata`.
  */
 import type Database from "better-sqlite3";
 import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
@@ -18,10 +19,17 @@ export interface CasoParita<R> {
   nome: string;
   /** Stessi dati su entrambi i tenant (gli id coincidono: i due database partono vuoti). */
   fixture: (db: Database.Database) => void;
-  /** La copia della facciata (`@/lib/db`), eseguita nel contesto del tenant A. */
+  /** La copia della facciata (`@/lib/db`, o la sua copia congelata se già spostata), eseguita nel contesto del tenant A. */
   facciata: () => R;
   /** La copia tenant (`@/lib/db-tenant`), eseguita nel contesto del tenant B. */
   tenant: () => R;
+  /**
+   * Le due funzioni confrontate, come oggetti. Se sono lo stesso oggetto (la
+   * facciata ormai riesporta la copia tenant) il confronto non può fallire e il
+   * banco lo rifiuta: dopo lo spostamento si confronta con la copia della
+   * vecchia facciata congelata nel test (revisione 2026-10-12).
+   */
+  funzioni: readonly [unknown, unknown];
   /** Tabelle da confrontare dopo la chiamata. */
   tabelle: string[];
   /**
@@ -64,6 +72,9 @@ let progressivo = 0;
 
 /** Esegue il caso sui due tenant e restituisce i due esiti; i tenant si cancellano sempre. */
 export function eseguiParita<R>(caso: CasoParita<R>): EsitoParita<R> {
+  if (caso.funzioni[0] === caso.funzioni[1]) {
+    throw new Error(`parità «${caso.nome}»: le due funzioni sono lo stesso oggetto, il confronto non proverebbe niente`);
+  }
   progressivo += 1;
   const base = `PARITA${caso.nome.toUpperCase().replace(/[^A-Z0-9]/g, "")}${process.pid}${progressivo}`;
   const a = `${base}A`;

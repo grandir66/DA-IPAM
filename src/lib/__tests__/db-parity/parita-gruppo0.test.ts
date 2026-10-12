@@ -2,16 +2,30 @@
  * Parità delle quattro funzioni dati che esistevano solo in `db.ts` (NUC-2,
  * gruppo 0): la copia tenant deve fare quello che faceva la facciata, sul
  * valore restituito e sulle tabelle toccate.
- * Lanciare con DA_INVENT_DATA_DIR di prova.
+ *
+ * Il confronto è con la copia congelata della vecchia facciata
+ * (`gruppo0-vecchia-facciata.ts`): `@/lib/db` ora riesporta le funzioni di
+ * `@/lib/db-tenant`, e confrontarle fra loro passerebbe per costruzione
+ * (revisione 2026-10-12; il banco ora rifiuta quel caso).
  */
-process.env.ENCRYPTION_KEY ||= "test-encryption-key-parita-gruppo0";
+import { TEST_DATA_DIR } from "../support/data-dir-isolata";
 
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import type Database from "better-sqlite3";
 import * as facciata from "@/lib/db";
 import * as tenant from "@/lib/db-tenant";
+import { closeHubDb } from "@/lib/db-hub";
+import * as vecchia from "./gruppo0-vecchia-facciata";
 import { eseguiParita, type CasoParita, type EsitoParita } from "./harness";
+
+after(() => {
+  facciata.closeDb();
+  tenant.closeAllTenantDbs();
+  closeHubDb();
+  fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true });
+});
 
 const sqlOra = (msFa: number) => new Date(Date.now() - msFa).toISOString().replace("T", " ").slice(0, 19);
 
@@ -58,8 +72,9 @@ test("getStatusOverTime: stessa serie", () => {
     stessoEsito({
       nome: `sot${ore}`,
       fixture: storicoStati,
-      facciata: () => facciata.getStatusOverTime(ore),
-      tenant: () => tenant.getStatusOverTime(ore),
+      facciata: () => vecchia.getStatusOverTime(ore),
+      funzioni: [vecchia.getStatusOverTime, tenant.getStatusOverTime],
+    tenant: () => tenant.getStatusOverTime(ore),
       tabelle: [],
     });
   }
@@ -69,7 +84,8 @@ test("getRecentStatusChanges: stesse transizioni", () => {
   stessoEsito({
     nome: "rsc",
     fixture: storicoStati,
-    facciata: () => facciata.getRecentStatusChanges(10, 48),
+    facciata: () => vecchia.getRecentStatusChanges(10, 48),
+    funzioni: [vecchia.getRecentStatusChanges, tenant.getRecentStatusChanges],
     tenant: () => tenant.getRecentStatusChanges(10, 48),
     tabelle: [],
   });
@@ -82,7 +98,8 @@ test("updateScheduledJobInterval: stessa riga del job", () => {
   stessoEsito({
     nome: "usji",
     fixture: job,
-    facciata: () => facciata.updateScheduledJobInterval(1, 180),
+    facciata: () => vecchia.updateScheduledJobInterval(1, 180),
+    funzioni: [vecchia.updateScheduledJobInterval, tenant.updateScheduledJobInterval],
     tenant: () => tenant.updateScheduledJobInterval(1, 180),
     tabelle: ["scheduled_jobs"],
     colonneOra: ["next_run", "updated_at", "created_at"],
@@ -93,7 +110,8 @@ test("cleanOrphanedForeignKeys: stessi riferimenti azzerati", () => {
   const e = stessoEsito({
     nome: "cofk",
     fixture: riferimentiOrfani,
-    facciata: () => facciata.cleanOrphanedForeignKeys(),
+    facciata: () => vecchia.cleanOrphanedForeignKeys(),
+    funzioni: [vecchia.cleanOrphanedForeignKeys, tenant.cleanOrphanedForeignKeys],
     tenant: () => tenant.cleanOrphanedForeignKeys(),
     tabelle: ["mac_ip_mapping", "dhcp_leases"],
     colonneOra: ["first_seen", "last_seen", "last_synced"],
@@ -106,4 +124,10 @@ test("cleanOrphanedForeignKeys: stessi riferimenti azzerati", () => {
   const [leaseBuono, leaseOrfano] = e.tabelleTenant.dhcp_leases as Record<string, unknown>[];
   assert.deepEqual([leaseOrfano.host_id, leaseOrfano.network_id], [null, null]);
   assert.notEqual(leaseBuono.host_id, null);
+});
+
+test("gruppo 0: db.ts riesporta la copia tenant, non ne ha una sua", () => {
+  for (const nome of ["getStatusOverTime", "getRecentStatusChanges", "updateScheduledJobInterval", "cleanOrphanedForeignKeys"] as const) {
+    assert.equal(facciata[nome], tenant[nome], `${nome}: la facciata ha di nuovo una copia propria`);
+  }
 });

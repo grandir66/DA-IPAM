@@ -53,8 +53,7 @@ Versione corrente: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non sc
 
 Analisi completa — architettura, difetti per area con codici (`SEC`, `NUC`, `DB`, `INV`, `MOD`, `UI`, `IG`), cosa è solido, piano a blocchi — in **`docs/analisi-sistema.md`**. È **solo locale** (escluso da git con `.git/info/exclude`) perché contiene dettagli di sicurezza e il repo GitHub è pubblico: se manca su questa macchina, chiederla sul MacBook. Le trappole che chi tocca il codice deve sapere subito:
 
-- **Filtri che mostrano `all`/`critical_high`**: nessun `Select` passa `items` a base-ui, che senza `items` mostra il valore grezzo. Si corregge nel wrapper `components/ui/select.tsx`, non pagina per pagina.
-- **Date**: il DB salva UTC senza `Z`; `new Date("YYYY-MM-DD HH:MM:SS")` lo legge come ora locale (1-2 ore di scarto). Serve un unico parser.
+- **Corretti il 12/10 (v0.3.261-263), da non reintrodurre**: il wrapper `Select` (`components/ui/select.tsx`) ricava `items` dalle `SelectItem`, altrimenti base-ui mostra il valore grezzo; **le date del DB si leggono con `parseDbDate`** (`lib/db-date.ts`), mai `new Date(x)`, perché SQLite salva UTC senza fuso; nelle pagine rese sul server si aggiunge `timeZone: FUSO_UTENTI`; **un caricamento usa `fetchJson` + `LoadError`**, così un errore non diventa «lista vuota». Regole anche in `.claude/rules/client-components.md`.
 - **`db.ts` e `db-tenant.ts` divergono** (~43 funzioni): prima di correggere una funzione DB, guardare **da quale dei due** la importa il chiamante.
 - **Le scansioni non sono attese dallo scheduler** (`discoverNetwork` ritorna subito): il job risulta riuscito prima di finire e le scansioni si accavallano.
 - **Crescita del DB**: niente retention sugli storici; `mac_ip_history` registra un "cambio" ogni volta che un MAC con più IP viene visto con l'altro IP (~31.000 righe/giorno sul tenant 70791, 2,1 GB in tutto).

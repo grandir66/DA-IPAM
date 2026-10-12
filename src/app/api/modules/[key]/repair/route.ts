@@ -17,6 +17,7 @@ const VALID_KEYS: ModuleKey[] = [
   "patch_management",
   "network_services",
   "meshcentral",
+  "unifi",
 ];
 
 /** Deep-link alla pagina di configurazione del modulo (per la UI "Ripara"). */
@@ -28,6 +29,7 @@ function configHrefFor(key: ModuleKey): string | null {
     case "edge": return "/settings?tab=moduli#module-edge";
     case "network_services": return "/network-services";
     case "meshcentral": return "/settings?tab=moduli#module-meshcentral";
+    case "unifi": return "/settings?tab=moduli#module-unifi";
     default: return null;
   }
 }
@@ -47,6 +49,10 @@ function fixHintFor(action: ModuleRepairAction): string {
       return "Verifica URL Graylog (API raggiungibile su /api/).";
     case "reconfigure_net_services":
       return "Verifica apiUrl + token del bridge Network-Services (:8443).";
+    case "reconfigure_unifi":
+      return "Controlla indirizzo, site, utente e password nella card Controller UniFi, poi usa «Prova connessione».";
+    case "check_unifi_cert":
+      return "Il certificato del controller UniFi è cambiato: nella card Controller UniFi confronta le due impronte e accetta la nuova solo se il rinnovo del certificato è atteso.";
     default:
       return "Nessuna azione automatica disponibile — controlla la configurazione del modulo.";
   }

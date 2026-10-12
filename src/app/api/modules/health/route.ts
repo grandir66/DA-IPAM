@@ -2,19 +2,12 @@ import { NextResponse } from "next/server";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getCurrentTenantCode } from "@/lib/db-tenant";
-import { getModulesHealth, invalidateModulesHealth } from "@/lib/modules/health";
+import { getModulesHealth, invalidateModulesHealth, PROBED_MODULE_KEYS } from "@/lib/modules/health";
 import type { ModuleKey } from "@/lib/modules/registry";
 
-const VALID_KEYS: ModuleKey[] = [
-  "edge",
-  "librenms",
-  "wazuh",
-  "graylog",
-  "patch_management",
-  "network_services",
-  "meshcentral",
-  "appliance",
-];
+// I moduli con una sonda: un elenco solo, quello di health.ts (prima era
+// ricopiato qui e un modulo nuovo restava «sconosciuto» alla Verifica).
+const VALID_KEYS: readonly ModuleKey[] = PROBED_MODULE_KEYS;
 
 /**
  * GET /api/modules/health — stato di salute dei moduli (cache 60s per tenant).

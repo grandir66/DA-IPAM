@@ -109,24 +109,23 @@ La tappa 2 il piano ce l'ha già. Finché si resta dentro quanto scritto qui non
 un nuovo via; serve se cambia lo scope, per il promote a `main` e per ogni scrittura
 su dati di produzione.
 
-### Esecuzione in cloud (decisione di Riccardo, 12/10 sera)
+### Esecuzione (decisione di Riccardo, 12/10 sera): in locale
 
-Le tappe le portano avanti **sessioni di Claude Code in cloud** (claude.ai/code) sul
-repo `grandir66/DA-IPAM`, lanciate da Riccardo. Lo stato condiviso è il §9 di questo
-documento; la bacheca sul Mac si riallinea da qui.
+Le tappe si eseguono **sul Mac**, con gruppi di agenti: uno per parte indipendente,
+ciascuno nel suo worktree, poi revisori avversari con lenti diverse, poi un agente che
+verifica i rilievi e corregge quelli reali; l'integrazione in `dev` (fusione, cancello
+completo, foto a schermo, rilascio) la fa la sessione principale. Lo stato condiviso è
+il §9 di questo documento; la bacheca sul Mac (`piano-miglioramento-da-ipam`) lo segue.
 
-- **In cloud**: codice, prove, lint, type-check, build, documenti; lavoro su un ramo
-  proprio, poi rebase su `dev`, cancello e push su `dev`.
-- **In locale** (MacBook, rete Domarc e DTS), perché il cloud non ci arriva o non deve
-  vederlo:
-  - le risposte vere di controller ed edge, prese in sola lettura, **ridotte e
-    anonimizzate prima del commit** (il repo è pubblico: si guarda il file prima);
-  - le prove su copie di database veri: sono dati di clienti, mai in cloud né in git;
-  - le verifiche su hub, DTS e DA-Vul-can, e tutto ciò che usa il vault;
-  - le parti della tappa 3 descritte solo nell'analisi locale (sicurezza);
-  - promote e conferme.
-- **Regole che in cloud non arrivano da sole** (sul Mac stanno in `~/.claude`) e
-  valgono per ogni sessione che esegue questo piano:
+- **Memoria**: la macchina ha ceduto una volta (12/10) con tre gruppi in parallelo; al
+  massimo due agenti che compilano insieme, e il controllo di tipo completo una sola
+  volta per agente, alla fine.
+- **Dati veri** (risposte di controller ed edge, copie di database di clienti) li
+  prende la sessione principale, in sola lettura; le copie restano nello scratchpad,
+  mai in git; ciò che va in git è ridotto e anonimizzato, con controllo automatico.
+
+- **Regole per ogni sessione o agente** che esegue questo piano (valgono anche
+  per chi non carica `~/.claude`):
   - si risponde e si scrive in italiano, in linguaggio semplice;
   - livello di controllo della tappa (§4);
   - dopo due tentativi falliti uguali ci si ferma, si legge l'errore intero e si
@@ -213,7 +212,7 @@ installato a sessione, mappatura pura, sync, job, card). Si esegue com'è, con l
    **anonimizzata** in modo coerente (nomi, MAC, IP, seriali sostituiti; campi `x_*`
    tolti), poi committata come fixture. Il repo è pubblico: il file si guarda prima
    del commit;
-2. *in cloud*: i task 1-8 del piano UniFi sulla fixture, tutto spento di default,
+2. *con un gruppo di agenti*: i task 1-8 del piano UniFi sulla fixture, tutto spento di default,
    push su `dev`;
 3. *in locale, dopo*: la sync su una copia del database DTS, poi sull'appliance con
    backup e conferma di Riccardo.
@@ -411,8 +410,8 @@ vive la console centrale (tappa 9).
 
 | Tappa | Stato | Data | Note |
 |---|---|---|---|
-| 1 | in parte | 12/10 | INS-1 (aggiornamento automatico) e NUC-5 chiusi; blocco filtri in corso in un'altra sessione |
-| 2 | piano pronto | 12/10 | spec e piano UniFi in `dev`; correzioni in testa al piano; prima la fixture vera, in locale |
+| 1 | fatta | 12/10 | UI-17, UI-18, UI-20 (righe Stato moduli), UI-23 (nome), UI-24, MOD-19, EDG-1, INS-1 chiusi; INS-2 in Deploy-Appliance (`e4609c7`). Da vedere su un edge vero: l'elenco dei profili. Rimandati con motivo: import del JSON dell'edge che cancella lo storico (tappa 7), manuale utente da riallineare (igiene), finestra degli agenti che perde il token con Esc (tappa 6), `GET /api/tenants` che elenca tutti i clienti a un admin (tappa 3) |
+| 2 | in corso | 12/10 | fixture vera anonimizzata nel ramo `tappa2/unifi`; gruppo di agenti al lavoro; copia del DB DTS pronta per la prova |
 | 3 | da fare | — | |
 | 4 | da fare | — | |
 | 5 | da fare | — | la mappa di base è già su `dev` (v0.3.260) |

@@ -56,7 +56,7 @@ import {
 import { normalizeMacForStorage } from "@/lib/utils";
 import type { NetworkDevice } from "@/types";
 import { getIntegrationConfig, unifiCertPinStore } from "./config";
-import { createUnifiClient } from "./unifi-api";
+import { createUnifiClient, type UnifiClientOptions, type UnifiProbeResult } from "./unifi-api";
 import type { UnifiDevice } from "./unifi-device";
 import {
   buildUnifiMacIndex,
@@ -437,4 +437,39 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
     result.errors.push(`Sync UniFi interrotta: ${errorMessage(e)}`);
   }
   return result;
+}
+
+/**
+ * Perché un giro di sync è da considerare fallito; `null` se è andato.
+ *
+ * Fallito = niente letto (controller in errore, integrazione spenta, zero
+ * apparati, nessun contesto tenant) oppure apparati letti ma nessuno scritto,
+ * con errori. Gli avvisi su qualche apparato, con gli altri scritti, non fanno
+ * fallire il giro; nemmeno gli apparati scartati per tipo ignoto o senza IP
+ * (`skippedReasons`, non errori). Lo usano la rotta manuale (`ok`) e il job
+ * `unifi_sync`, che su un fallimento lancia: così lo scheduler lo conta fra i
+ * job falliti invece di dirlo «completato» (niente ripieghi muti).
+ */
+export function unifiSyncFailure(r: UnifiSyncResult): string | null {
+  if (r.errors.length === 0) return null;
+  if (r.total > 0 && r.added + r.updated > 0) return null;
+  return r.errors.join("; ");
+}
+
+/**
+ * Test di connessione col controller della configurazione salvata
+ * (`integration_unifi_*`): login, lettura di stat/device, logout. Non scrive
+ * nel tenant; al primo collegamento riuscito fissa l'impronta del certificato
+ * nella configurazione dell'hub (`unifiCertPinStore`). Gira anche a
+ * integrazione spenta: l'amministratore prova il collegamento prima di
+ * accenderla. Non lancia. `opts` serve alle prove (trasporto finto).
+ */
+export async function probeUnifiController(opts: UnifiClientOptions = {}): Promise<UnifiProbeResult> {
+  let cfg: ReturnType<typeof getIntegrationConfig>;
+  try {
+    cfg = getIntegrationConfig("unifi");
+  } catch (e) {
+    return { ok: false, reason: "config", message: `Configurazione UniFi non leggibile: ${errorMessage(e)}` };
+  }
+  return createUnifiClient(cfg, unifiCertPinStore, opts).probe();
 }

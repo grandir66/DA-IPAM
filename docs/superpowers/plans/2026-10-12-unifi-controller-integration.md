@@ -249,10 +249,26 @@ test("device senza MAC/port_table non crasha", () => {
 
 **Files:** Create `src/app/api/integrations/unifi/sync/route.ts`, `src/app/api/integrations/unifi/test-connection/route.ts`.
 
-- [ ] **Step 1:** `sync/route.ts`: `POST` come `librenms/sync/route.ts` — `withTenantFromSession` → `requireAdmin` → `syncUnifiForTenant()` → json.
-- [ ] **Step 2:** `test-connection/route.ts`: `GET` `requireAuth` → `createUnifiClient(getIntegrationConfig("unifi")).probe()` → json `{ok, reason?, message?}`.
-- [ ] **Step 3:** `npx tsc --noEmit && npm run lint && npm run build`.
-- [ ] **Step 4:** `git commit -m "feat(unifi): rotte sync manuale + test-connection"`.
+- [x] **Step 1:** `sync/route.ts`: `POST` come `librenms/sync/route.ts` — `withTenantFromSession` → `requireAdmin` → `syncUnifiForTenant()` → json.
+- [x] **Step 2:** `test-connection/route.ts`: `GET` `requireAuth` → `createUnifiClient(getIntegrationConfig("unifi")).probe()` → json `{ok, reason?, message?}`.
+- [x] **Step 3:** `npx tsc --noEmit && npm run lint && npm run build`. *(tsc completo una volta a fine passo + eslint sui file toccati; build esclusa in questo giro, 12/10)*
+- [x] **Step 4:** `git commit -m "feat(unifi): rotte sync manuale + test-connection"`.
+
+> **Esito (12/10, passo 4).** Dove differisce dal testo sopra:
+> - **Auth per prima** in entrambe: `requireAdmin()` prima di `withTenantFromSession` (un
+>   viewer riceve 403 prima di qualunque risoluzione del tenant).
+> - **test-connection è `requireAdmin`, non `requireAuth`**: manda al controller le
+>   credenziali salvate e al primo collegamento riuscito **fissa l'impronta del certificato**
+>   nella configurazione (`integration_unifi_cert_pin`), cioè scrive configurazione; stesso
+>   livello del PUT. Stessa scelta delle sonde `test-snmp`/`test-arp` (audit SEC-9). Resta
+>   `GET` come da spec, con `Cache-Control: no-store`; non tocca il tenant, quindi niente
+>   `withTenantFromSession`. Gira anche a integrazione spenta (si prova prima di accendere).
+> - La logica sta in `src/lib/integrations/unifi-sync.ts`, così si prova senza la sessione:
+>   `probeUnifiController(opts?)` (config salvata + `unifiCertPinStore`, non lancia) e
+>   `unifiSyncFailure(result)` (motivo se il giro non ha letto o scritto niente, altrimenti
+>   `null`), che la rotta usa per `ok` e il job per fallire (Task 6).
+> - Risposta della sync: `{ ok, ...UnifiSyncResult }`, sempre 200 col resoconto.
+> - Le due rotte sono nel contratto di `src/lib/__tests__/api-auth-guards.test.ts`.
 
 ---
 

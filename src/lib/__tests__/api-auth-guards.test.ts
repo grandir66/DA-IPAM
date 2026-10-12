@@ -43,6 +43,11 @@ const CONTRACT: Contract[] = [
   { route: "credentials/[id]", method: "PUT", guard: "requireAdmin" },
   { route: "credentials/[id]", method: "DELETE", guard: "requireAdmin" },
   { route: "client-config/export", method: "GET", guard: "requireAdmin" },
+  // UniFi (tappa 2): la sync scrive nel tenant; il test di connessione manda le
+  // credenziali salvate al controller e al primo uso fissa l'impronta del
+  // certificato nella configurazione → entrambe admin.
+  { route: "integrations/unifi/sync", method: "POST", guard: "requireAdmin" },
+  { route: "integrations/unifi/test-connection", method: "GET", guard: "requireAdmin" },
   // route hub globali → superadmin (H3: requireSuperAdmin era definito ma inutilizzato)
   { route: "users", method: "POST", guard: "requireSuperAdmin" },
   { route: "users/[id]", method: "DELETE", guard: "requireSuperAdmin" },

@@ -8,6 +8,23 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunte
 
+- **Censimento delle guardie di tutte le rotte API (prova nel cancello).** Prima
+  una prova copriva solo un elenco di rotte scelte a mano, e lo script di audit
+  leggeva i sorgenti con espressioni regolari: nei due proxy delle integrazioni
+  non vedeva nessun metodo (14 gestori fuori dal conto). Ora un rilevatore unico
+  (`src/lib/permessi/`) legge l'albero sintattico e la prova
+  `rotte-censite.test.ts` controlla tutti i 452 gestori: ognuno deve avere la
+  guardia attesa (lettura → accesso, scrittura → admin, lettura sensibile →
+  admin), oppure un'eccezione col motivo scritto, oppure un debito col codice
+  del difetto che lo chiude. Una rotta nuova non dichiarata fa fallire il
+  cancello; un debito sanato pure, finché non lo si toglie dall'elenco; e le
+  rotte aperte senza accesso devono essere esattamente quelle ammesse da
+  `auth.config.ts`. Le letture delle credenziali aperte ai viewer hanno una prova
+  loro (`letture-mascherate.test.ts`): ogni colonna cifrata va mascherata,
+  anche una aggiunta domani. `scripts/audit-api-auth.ts` usa lo stesso
+  rilevatore e scrive la matrice nel percorso che gli si passa. Nessun
+  comportamento cambia: sono solo prove.
+
 - **Controller UniFi come fonte di dati (spento finché non lo si accende).** A
   DTS il controller UniFi gestisce 74 apparati, ma per DA-IPAM erano solo host:
   nessuno fra i dispositivi di rete, nessuna porta, nessun vicino LLDP, e la

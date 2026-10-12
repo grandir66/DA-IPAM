@@ -412,7 +412,7 @@ vive la console centrale (tappa 9).
 | Tappa | Stato | Data | Note |
 |---|---|---|---|
 | 1 | in parte | 12/10 | INS-1 (aggiornamento automatico) e NUC-5 chiusi; blocco filtri in corso in un'altra sessione |
-| 2 | piano pronto | 12/10 | spec e piano UniFi in `dev`; correzioni in testa al piano; prima la fixture vera, in locale |
+| 2 | codice pronto | 12/10 | codice pronto sul ramo `tappa2/unifi`; verifica su copia del DB DTS da fare |
 | 3 | da fare | — | |
 | 4 | da fare | — | |
 | 5 | da fare | — | la mappa di base è già su `dev` (v0.3.260) |

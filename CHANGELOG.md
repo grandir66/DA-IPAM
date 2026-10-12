@@ -6,6 +6,40 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-10-12
 
+### Aggiunte
+
+- **Controller UniFi come fonte di dati (spento finché non lo si accende).** A
+  DTS il controller UniFi gestisce 74 apparati, ma per DA-IPAM erano solo host:
+  nessuno fra i dispositivi di rete, nessuna porta, nessun vicino LLDP, e la
+  mappa della topologia mostrava quasi solo i tre MikroTik. Ora DA-IPAM legge il
+  controller in sola lettura e scrive nel tenant gli switch e gli access point,
+  le loro porte e i collegamenti fra apparati. Si configura in Impostazioni →
+  Moduli → «Controller UniFi» (indirizzo, site, utente in sola lettura,
+  password), si prova con «Prova connessione» e si lancia con «Sincronizza ora».
+  Per ora funziona solo il controller installato su un server (self-hosted):
+  UDM e cloud rispondono «non ancora supportato». Le scelte sono nell'ADR 0005.
+  - **Nasce spento**: modalità «Disattivata» e nessuna sincronizzazione
+    automatica. Gli apparati nuovi entrano disabilitati, così il poll ARP non
+    li interroga via SNMP.
+  - **Il certificato del controller si fissa al primo collegamento riuscito.**
+    Se cambia, la sincronizzazione si ferma e la card mostra le due impronte:
+    la nuova si accetta solo a mano. La password non parte mai verso un
+    certificato che non è quello fissato.
+  - **Una risposta vuota non cancella niente.** Se il controller non riporta
+    porte o vicini per un apparato che nel database ne ha, si tengono i dati
+    di prima e lo si segnala.
+  - **Nessun doppione e nessuna scelta sovrascritta.** Un apparato già censito
+    si ritrova per seriale, MAC o IP, e se ne aggiornano solo i dati di fatto
+    (modello, firmware, seriale), non nome, credenziali e abilitazione. Un IP
+    occupato da un altro apparato (MAC diverso o altro produttore) si salta e
+    lo si dice.
+  - **Compare in «Stato moduli»**, con una sonda che non fissa mai il
+    certificato da sola e non interroga il controller più di una volta ogni
+    cinque minuti.
+  - Il job `unifi_sync` esiste nello scheduler (migrazione v8 di
+    `scheduled_jobs`) ma nessuno lo crea da solo. I tipi di job ora stanno in
+    un solo elenco, così schema e migrazioni non possono più divergere.
+
 ### Correzioni
 
 - **I filtri mostrano l'etichetta della voce scelta, non il suo codice.** Dopo

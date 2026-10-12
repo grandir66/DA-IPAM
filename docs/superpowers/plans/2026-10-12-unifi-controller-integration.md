@@ -372,10 +372,10 @@ test("device senza MAC/port_table non crasha", () => {
 
 ## Task 8: ADR + rilascio
 
-- [ ] **Step 1:** `docs/adr/0005-unifi-controller-integration.md` (template 0000; la 0004 è la decisione di prodotto, correzione 9): decisione, alternative (SNMP-only, per-tenant table), conseguenze.
-- [ ] **Step 2:** Gate completo `npm run lint && npx tsc --noEmit && npm run build && npm test`.
-- [ ] **Step 3:** `npm run version:release && git push origin dev`.
-- [ ] **Step 4:** Aggiornare `CONTEXT.md` di DA-IPAM (feature UniFi) e il `CONTEXT.md` DTS.
+- [x] **Step 1:** `docs/adr/0005-unifi-controller-integration.md` (template 0000; la 0004 è la decisione di prodotto, correzione 9): decisione, alternative (SNMP-only, per-tenant table), conseguenze.
+- [ ] **Step 2:** Gate completo `npm run lint && npx tsc --noEmit && npm run build && npm test`. *(12/10, passo 6: `npm test` con `DA_INVENT_DATA_DIR` temporanea → 1274 prove, 1273 verdi, 0 rosse, 1 saltata (golden del codec, preesistente); `npx tsc --noEmit` → 0 errori. Restano `npm run lint` sull'intero repo e `npm run build`, da fare prima del merge in `dev`)*
+- [ ] **Step 3:** `npm run version:release && git push origin dev`. *(non fatto: il ramo resta locale finché la verifica su copia del DB DTS — correzione 7, Task 4 passo 4 — non è fatta)*
+- [ ] **Step 4:** Aggiornare `CONTEXT.md` di DA-IPAM (feature UniFi) e il `CONTEXT.md` DTS. *(12/10: `CONTEXT.md` di DA-IPAM aggiornato (§6), CHANGELOG in `[Non rilasciato]`, riga della tappa 2 nel §9 del piano di miglioramento. Il `CONTEXT.md` DTS resta da fare dopo la prima sync vera)*
 
 ## Self-review
 

@@ -1,7 +1,9 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
+import { fetchJson } from "@/lib/fetch-json";
+import { LoadError } from "@/components/shared/load-error";
 
-import { useEffect, useState, useMemo, Suspense } from "react";
+import { useEffect, useState, useMemo, useCallback, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -177,6 +179,54 @@ interface TlsStatus {
   cert_info: Record<string, string> | null;
 }
 
+/**
+ * Clienti di un utente nei dialoghi Nuovo/Modifica. Per l'admin di un cliente
+ * solo il cliente è fisso (UI-18): si mostra, non si sceglie.
+ */
+function TenantPicker({
+  fixedName,
+  tenants,
+  selected,
+  onChange,
+}: {
+  fixedName: string | null;
+  tenants: TenantEntry[];
+  selected: number[];
+  onChange: (update: (prev: number[]) => number[]) => void;
+}) {
+  if (fixedName) {
+    return (
+      <div className="space-y-2">
+        <Label>Cliente</Label>
+        <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm">{fixedName}</p>
+      </div>
+    );
+  }
+  if (tenants.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <Label>Clienti assegnati</Label>
+      <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-1">
+        {tenants.map((t) => (
+          <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+            <input
+              type="checkbox"
+              checked={selected.includes(t.id)}
+              onChange={(e) => {
+                if (e.target.checked) onChange((prev) => [...prev, t.id]);
+                else onChange((prev) => prev.filter((id) => id !== t.id));
+              }}
+              className="rounded"
+            />
+            <span>{t.ragione_sociale || t.codice_cliente}</span>
+          </label>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">Le modifiche avranno effetto al prossimo accesso dell&apos;utente</p>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   return (
     <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Caricamento…</div>}>
@@ -191,6 +241,8 @@ function SettingsPageInner() {
   const { data: session } = useSession();
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin"
     || (session?.user as { role?: string } | undefined)?.role === "superadmin";
+  const isSuperAdmin = (session?.user as { role?: string } | undefined)?.role === "superadmin";
+  const sessionUsername = session?.user?.name ?? "";
 
   const initialTab: TabKey = useMemo(() => {
     const raw = (searchParams?.get("tab") ?? "").toLowerCase();
@@ -226,6 +278,8 @@ function SettingsPageInner() {
 
   // === Users ===
   const [users, setUsers] = useState<UserWithAccess[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [usersError, setUsersError] = useState<string | null>(null);
   const [tenantsList, setTenantsList] = useState<TenantEntry[]>([]);
   const [newUserOpen, setNewUserOpen] = useState(false);
   const [newUsername, setNewUsername] = useState("");
@@ -239,6 +293,39 @@ function SettingsPageInner() {
   const [editUserRole, setEditUserRole] = useState<"superadmin" | "admin" | "viewer">("admin");
   const [editUserTenantIds, setEditUserTenantIds] = useState<number[]>([]);
   const [savingEditUser, setSavingEditUser] = useState(false);
+
+  // UI-18: un errore dell'API (403, 500, server giù) si mostra come errore,
+  // non come «Nessun utente trovato».
+  const loadUsers = useCallback(async () => {
+    setUsersLoading(true);
+    try {
+      const r = await fetchJson<UserWithAccess[]>("/api/users");
+      if (r.ok && Array.isArray(r.data)) {
+        setUsers(r.data);
+        setUsersError(null);
+      } else {
+        setUsersError(r.ok ? "Risposta non valida dal server" : r.message);
+      }
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadUsers();
+  }, [loadUsers]);
+
+  // L'admin assegna solo i clienti che amministra (il server lo impone comunque).
+  // Con un cliente solo — l'appliance di un cliente — il cliente è fisso: non si
+  // manda tenant_ids e il server mette l'utente nel suo cliente.
+  const sessionTenants =
+    (session?.user as { tenants?: Array<{ code: string; name: string; role: string }> } | undefined)?.tenants ?? [];
+  const adminTenants = sessionTenants.filter((t) => t.role === "admin");
+  const fixedTenantName =
+    !isSuperAdmin && adminTenants.length === 1 ? adminTenants[0].name || adminTenants[0].code : null;
+  const assignableTenants = isSuperAdmin
+    ? tenantsList
+    : tenantsList.filter((t) => adminTenants.some((a) => a.code === t.codice_cliente));
 
   // === Reset password (admin action on a user) ===
   const [resetPwOpen, setResetPwOpen] = useState(false);
@@ -281,13 +368,7 @@ function SettingsPageInner() {
         }
       })
       .catch(() => {});
-    // /api/users è super-admin-only: per un admin NON super torna 403 (oggetto
-    // errore, non array). Senza la guardia Array.isArray, setUsers(errObj) rende
-    // `users` un oggetto e il successivo users.map() fa crashare TUTTA la pagina
-    // impostazioni. Guardia identica a /api/tenants qui sotto.
-    fetch("/api/users").then((r) => r.json()).then((data) => {
-      if (Array.isArray(data)) setUsers(data);
-    }).catch(() => {});
+    // /api/users si carica con loadUsers (sopra), che distingue errore e lista vuota.
     fetch("/api/tenants").then((r) => r.json()).then((data: TenantEntry[]) => {
       if (Array.isArray(data)) setTenantsList(data);
     }).catch(() => {});
@@ -389,23 +470,25 @@ function SettingsPageInner() {
     e.preventDefault();
     setSavingUser(true);
     try {
+      const payload: Record<string, unknown> = {
+        username: newUsername,
+        password: newUserPassword,
+        role: newUserRole,
+        email: newUserEmail || null,
+      };
+      // Cliente fisso (admin di un cliente solo): lo decide il server.
+      if (isSuperAdmin) payload.tenant_ids = newUserRole !== "superadmin" ? newUserTenantIds : [];
+      else if (!fixedTenantName) payload.tenant_ids = newUserTenantIds;
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: newUsername,
-          password: newUserPassword,
-          role: newUserRole,
-          email: newUserEmail || null,
-          tenant_ids: newUserRole !== "superadmin" ? newUserTenantIds : [],
-        }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         toast.success("Utente creato");
         setNewUserOpen(false);
         setNewUsername(""); setNewUserEmail(""); setNewUserPassword(""); setNewUserRole("viewer"); setNewUserTenantIds([]);
-        const updated = await fetch("/api/users").then((r) => r.json());
-        if (Array.isArray(updated)) setUsers(updated);
+        await loadUsers();
       } else {
         const data = await res.json();
         toast.error(data.error || "Errore nella creazione utente");
@@ -426,19 +509,19 @@ function SettingsPageInner() {
     if (editUserId == null) return;
     setSavingEditUser(true);
     try {
+      const payload: Record<string, unknown> = { role: editUserRole };
+      // Cliente fisso: senza tenant_ids il server lascia i clienti che l'utente ha già.
+      if (isSuperAdmin) payload.tenant_ids = editUserRole !== "superadmin" ? editUserTenantIds : [];
+      else if (!fixedTenantName) payload.tenant_ids = editUserTenantIds;
       const res = await fetch(`/api/users/${editUserId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          role: editUserRole,
-          tenant_ids: editUserRole !== "superadmin" ? editUserTenantIds : [],
-        }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         toast.success("Utente aggiornato");
         setEditUserOpen(false);
-        const updated = await fetch("/api/users").then((r) => r.json());
-        if (Array.isArray(updated)) setUsers(updated);
+        await loadUsers();
       } else {
         const data = await res.json();
         toast.error(data.error || "Errore");
@@ -449,14 +532,16 @@ function SettingsPageInner() {
 
   async function handleDeleteUser(userId: number, username: string) {
     if (!confirm(`Eliminare l'utente "${username}"? L'azione è irreversibile.`)) return;
-    const res = await fetch(`/api/users/${userId}`, { method: "DELETE" });
-    if (res.ok) {
-      toast.success("Utente eliminato");
-      setUsers((prev) => prev.filter((u) => u.id !== userId));
-    } else {
-      const data = await res.json();
-      toast.error(data.error || "Errore nell'eliminazione");
-    }
+    try {
+      const res = await fetch(`/api/users/${userId}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Utente eliminato");
+        setUsers((prev) => prev.filter((u) => u.id !== userId));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Errore nell'eliminazione");
+      }
+    } catch { toast.error("Errore di rete"); }
   }
 
   function openResetPassword(user: UserWithAccess) {
@@ -672,13 +757,18 @@ function SettingsPageInner() {
                 <CardTitle className="text-base">Gestione utenti</CardTitle>
               </div>
               <CardDescription className="mt-1">
-                Gestisci gli account di accesso al sistema. Per cambiare la tua password usa il menu utente in alto a destra.
+                {isSuperAdmin
+                  ? "Gestisci gli account di accesso al sistema."
+                  : "Gestisci gli account di accesso del tuo cliente."}{" "}
+                Per cambiare la tua password usa il menu utente in alto a destra.
               </CardDescription>
             </div>
             <Dialog open={newUserOpen} onOpenChange={setNewUserOpen}>
-              <DialogTrigger render={<Button size="sm" />}>
-                <Plus className="h-4 w-4 mr-2" />Nuovo utente
-              </DialogTrigger>
+              {!usersError && (
+                <DialogTrigger render={<Button size="sm" />}>
+                  <Plus className="h-4 w-4 mr-2" />Nuovo utente
+                </DialogTrigger>
+              )}
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Nuovo utente</DialogTitle>
@@ -701,33 +791,19 @@ function SettingsPageInner() {
                     <Select value={newUserRole} onValueChange={(v) => { setNewUserRole((v ?? newUserRole) as "superadmin" | "admin" | "viewer"); if (v === "superadmin") setNewUserTenantIds([]); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="superadmin">Super amministratore</SelectItem>
+                        {isSuperAdmin && <SelectItem value="superadmin">Super amministratore</SelectItem>}
                         <SelectItem value="admin">Amministratore</SelectItem>
                         <SelectItem value="viewer">Solo lettura</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  {newUserRole !== "superadmin" && tenantsList.length > 0 && (
-                    <div className="space-y-2">
-                      <Label>Clienti assegnati</Label>
-                      <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-1">
-                        {tenantsList.map((t) => (
-                          <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
-                            <input
-                              type="checkbox"
-                              checked={newUserTenantIds.includes(t.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) setNewUserTenantIds((prev) => [...prev, t.id]);
-                                else setNewUserTenantIds((prev) => prev.filter((id) => id !== t.id));
-                              }}
-                              className="rounded"
-                            />
-                            <span>{t.ragione_sociale || t.codice_cliente}</span>
-                          </label>
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground">Le modifiche avranno effetto al prossimo accesso dell&apos;utente</p>
-                    </div>
+                  {newUserRole !== "superadmin" && (
+                    <TenantPicker
+                      fixedName={fixedTenantName}
+                      tenants={assignableTenants}
+                      selected={newUserTenantIds}
+                      onChange={setNewUserTenantIds}
+                    />
                   )}
                   <Button type="submit" disabled={savingUser}>Crea utente</Button>
                 </form>
@@ -746,33 +822,19 @@ function SettingsPageInner() {
                     <Select value={editUserRole} onValueChange={(v) => { setEditUserRole((v ?? editUserRole) as "superadmin" | "admin" | "viewer"); if (v === "superadmin") setEditUserTenantIds([]); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="superadmin">Super amministratore</SelectItem>
+                        {isSuperAdmin && <SelectItem value="superadmin">Super amministratore</SelectItem>}
                         <SelectItem value="admin">Amministratore</SelectItem>
                         <SelectItem value="viewer">Solo lettura</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  {editUserRole !== "superadmin" && tenantsList.length > 0 && (
-                    <div className="space-y-2">
-                      <Label>Clienti assegnati</Label>
-                      <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-1">
-                        {tenantsList.map((t) => (
-                          <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
-                            <input
-                              type="checkbox"
-                              checked={editUserTenantIds.includes(t.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) setEditUserTenantIds((prev) => [...prev, t.id]);
-                                else setEditUserTenantIds((prev) => prev.filter((id) => id !== t.id));
-                              }}
-                              className="rounded"
-                            />
-                            <span>{t.ragione_sociale || t.codice_cliente}</span>
-                          </label>
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground">Le modifiche avranno effetto al prossimo accesso dell&apos;utente</p>
-                    </div>
+                  {editUserRole !== "superadmin" && (
+                    <TenantPicker
+                      fixedName={fixedTenantName}
+                      tenants={assignableTenants}
+                      selected={editUserTenantIds}
+                      onChange={setEditUserTenantIds}
+                    />
                   )}
                   <Button type="submit" disabled={savingEditUser}>Salva</Button>
                 </form>
@@ -818,6 +880,12 @@ function SettingsPageInner() {
             </Dialog>
           </CardHeader>
           <CardContent>
+            {usersError ? (
+              <LoadError what="gli utenti" message={usersError} onRetry={() => void loadUsers()} />
+            ) : usersLoading && users.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">Caricamento…</p>
+            ) : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -877,7 +945,8 @@ function SettingsPageInner() {
                           size="sm" variant="ghost"
                           onClick={() => handleDeleteUser(user.id, user.username)}
                           className="text-destructive hover:text-destructive"
-                          title="Elimina utente"
+                          disabled={user.username === sessionUsername}
+                          title={user.username === sessionUsername ? "Non puoi eliminare il tuo stesso account" : "Elimina utente"}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -889,6 +958,8 @@ function SettingsPageInner() {
             </Table>
             {users.length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-4">Nessun utente trovato</p>
+            )}
+            </>
             )}
           </CardContent>
         </Card>

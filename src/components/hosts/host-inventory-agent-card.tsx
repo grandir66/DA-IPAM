@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import Link from "next/link";
@@ -77,7 +78,7 @@ interface InvAgentResponse {
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("it-IT");
+    return parseDbDate(iso).toLocaleString("it-IT");
   } catch {
     return iso;
   }

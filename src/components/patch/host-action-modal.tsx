@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 /**
  * Patch Management — Modal esecuzione bulk con tail log live (F8).
@@ -164,9 +165,9 @@ function statusBadge(state: OperationState) {
 
 function elapsed(state: OperationState): string {
   if (!state.startedAt) return "—";
-  const start = new Date(state.startedAt).getTime();
+  const start = parseDbDate(state.startedAt).getTime();
   const end = state.finishedAt
-    ? new Date(state.finishedAt).getTime()
+    ? parseDbDate(state.finishedAt).getTime()
     : Date.now();
   const secs = Math.max(0, Math.floor((end - start) / 1000));
   if (secs < 60) return `${secs}s`;

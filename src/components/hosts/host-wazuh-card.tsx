@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -454,7 +455,7 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
                       <td className="px-2 py-1">{v.package_name ?? "—"}</td>
                       <td className="px-2 py-1 font-mono text-muted-foreground">{v.package_version ?? "—"}</td>
                       <td className="px-2 py-1 text-muted-foreground text-[10px]">
-                        {v.detection_time ? new Date(v.detection_time).toLocaleDateString("it-IT") : "—"}
+                        {v.detection_time ? parseDbDate(v.detection_time).toLocaleDateString("it-IT") : "—"}
                       </td>
                     </tr>
                   );
@@ -520,7 +521,7 @@ export function HostWazuhCard({ hostId }: { hostId: number }) {
                       </a>
                     </td>
                     <td className="px-2 py-1 text-muted-foreground text-[10px]">
-                      {h.scan_time ? new Date(h.scan_time).toLocaleString("it-IT") : "—"}
+                      {h.scan_time ? parseDbDate(h.scan_time).toLocaleString("it-IT") : "—"}
                     </td>
                   </tr>
                 ))}

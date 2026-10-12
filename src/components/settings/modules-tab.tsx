@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -58,7 +59,7 @@ interface FeatureEntry {
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("it-IT");
+    return parseDbDate(iso).toLocaleString("it-IT");
   } catch {
     return iso;
   }

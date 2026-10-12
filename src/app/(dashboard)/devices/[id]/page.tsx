@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -477,7 +478,7 @@ function DeviceInventoryCard({ deviceId, onRefresh }: { deviceId: number; onRefr
             {asset.fine_garanzia && (
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Fine garanzia</p>
-                <p className="text-sm font-medium mt-0.5">{new Date(asset.fine_garanzia).toLocaleDateString("it-IT")}</p>
+                <p className="text-sm font-medium mt-0.5">{parseDbDate(asset.fine_garanzia).toLocaleDateString("it-IT")}</p>
               </div>
             )}
             {!asset.asset_tag && !asset.serial_number && !asset.stato && !asset.fine_garanzia && (
@@ -1022,7 +1023,7 @@ function DeviceDetailPage() {
             <div>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Ultimo aggiornamento</p>
               <p className="text-sm font-medium mt-0.5">
-                {lastRefresh ? new Date(lastRefresh).toLocaleString("it-IT") : <span className="text-muted-foreground">Mai</span>}
+                {lastRefresh ? parseDbDate(lastRefresh).toLocaleString("it-IT") : <span className="text-muted-foreground">Mai</span>}
               </p>
             </div>
           </div>
@@ -1096,7 +1097,7 @@ function DeviceDetailPage() {
               </CardTitle>
               {di.scanned_at && (
                 <span className="text-xs text-muted-foreground">
-                  Acquisiti il {new Date(di.scanned_at).toLocaleString("it-IT")}
+                  Acquisiti il {parseDbDate(di.scanned_at).toLocaleString("it-IT")}
                 </span>
               )}
             </div>
@@ -1123,9 +1124,9 @@ function DeviceDetailPage() {
                 {di.domain_role && <div><dt className="text-xs text-muted-foreground">Ruolo</dt><dd><Badge variant="outline" className="text-xs">{di.domain_role}</Badge></dd></div>}
                 {di.uptime_days != null && <div><dt className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Uptime</dt><dd className="font-semibold">{di.uptime_days} giorni</dd></div>}
                 {!di.uptime_days && di.uptime && <div className="col-span-2"><dt className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Uptime</dt><dd className="text-xs">{di.uptime}</dd></div>}
-                {di.last_boot && <div className="col-span-2"><dt className="text-xs text-muted-foreground">Ultimo avvio</dt><dd className="text-xs font-mono">{(() => { try { return new Date(di.last_boot!).toLocaleString("it-IT"); } catch { return di.last_boot; } })()}</dd></div>}
+                {di.last_boot && <div className="col-span-2"><dt className="text-xs text-muted-foreground">Ultimo avvio</dt><dd className="text-xs font-mono">{(() => { try { return parseDbDate(di.last_boot!).toLocaleString("it-IT"); } catch { return di.last_boot; } })()}</dd></div>}
                 {di.load_average && <div className="col-span-2"><dt className="text-xs text-muted-foreground">Load average</dt><dd className="font-mono text-xs">{di.load_average}</dd></div>}
-                {di.install_date && <div><dt className="text-xs text-muted-foreground">Data installazione</dt><dd className="text-xs">{(() => { try { return new Date(di.install_date!).toLocaleDateString("it-IT"); } catch { return di.install_date; } })()}</dd></div>}
+                {di.install_date && <div><dt className="text-xs text-muted-foreground">Data installazione</dt><dd className="text-xs">{(() => { try { return parseDbDate(di.install_date!).toLocaleDateString("it-IT"); } catch { return di.install_date; } })()}</dd></div>}
                 {di.registered_user && <div><dt className="text-xs text-muted-foreground">Utente registrato</dt><dd>{di.registered_user}</dd></div>}
                 {di.organization && <div><dt className="text-xs text-muted-foreground">Organizzazione</dt><dd>{di.organization}</dd></div>}
               </dl>
@@ -1541,7 +1542,7 @@ function DeviceDetailPage() {
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
                         <span className="font-mono font-medium">{u.username}</span>
                         {u.session_type && <Badge variant="secondary" className="text-[10px] py-0">{u.session_type}</Badge>}
-                        {u.logon_time && <span className="text-muted-foreground">{new Date(u.logon_time).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</span>}
+                        {u.logon_time && <span className="text-muted-foreground">{parseDbDate(u.logon_time).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</span>}
                       </div>
                     ))}
                   </div>
@@ -1567,11 +1568,11 @@ function DeviceDetailPage() {
                           <div className="flex flex-wrap gap-1">
                             {p.ad_department && <Badge variant="outline" className="text-[10px] py-0">{p.ad_department}</Badge>}
                             {p.ad_title && <Badge variant="outline" className="text-[10px] py-0">{p.ad_title}</Badge>}
-                            {p.last_use && <span className="text-muted-foreground text-[10px]">Ultimo uso: {new Date(p.last_use).toLocaleDateString("it-IT")}</span>}
+                            {p.last_use && <span className="text-muted-foreground text-[10px]">Ultimo uso: {parseDbDate(p.last_use).toLocaleDateString("it-IT")}</span>}
                           </div>
                         </div>
                         {p.ad_email && <div className="text-muted-foreground mt-0.5">{p.ad_email}</div>}
-                        {p.ad_last_logon && <div className="text-muted-foreground text-[10px]">Ultimo login AD: {new Date(p.ad_last_logon).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</div>}
+                        {p.ad_last_logon && <div className="text-muted-foreground text-[10px]">Ultimo login AD: {parseDbDate(p.ad_last_logon).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</div>}
                       </div>
                     ))}
                   </div>
@@ -1623,7 +1624,7 @@ function DeviceDetailPage() {
               Dati Proxmox
             </CardTitle>
             <CardDescription>
-              Scan del {proxmoxScanData.scanned_at ? new Date(proxmoxScanData.scanned_at).toLocaleString("it-IT") : "—"}
+              Scan del {proxmoxScanData.scanned_at ? parseDbDate(proxmoxScanData.scanned_at).toLocaleString("it-IT") : "—"}
               {proxmoxScanData._truncated && (
                 <span className="ml-2 text-amber-600">
                   (mostrate {proxmoxScanData.vms?.length ?? 0} di {proxmoxScanData._total_vm_rows} VM)
@@ -2229,7 +2230,7 @@ function DeviceDetailPage() {
                           ) : "—"}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {new Date(entry.timestamp).toLocaleString("it-IT")}
+                          {parseDbDate(entry.timestamp).toLocaleString("it-IT")}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -2426,7 +2427,7 @@ function DeviceDetailPage() {
                             ) : "—"}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                            {new Date(entry.timestamp).toLocaleString("it-IT")}
+                            {parseDbDate(entry.timestamp).toLocaleString("it-IT")}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -2583,7 +2584,7 @@ function DeviceDetailPage() {
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{l.lease_expires || "—"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {new Date(l.last_synced).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}
+                          {parseDbDate(l.last_synced).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}
                         </TableCell>
                       </TableRow>
                     ))}

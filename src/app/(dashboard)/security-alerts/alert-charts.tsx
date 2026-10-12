@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 /**
  * Grafici degli alert di sicurezza.
@@ -77,7 +78,7 @@ function compact(n: number): string {
 }
 
 function formatBucket(iso: string, interval: string): string {
-  const d = new Date(iso);
+  const d = parseDbDate(iso);
   if (Number.isNaN(d.getTime())) return iso;
   // Bucket sotto l'ora: serve il minuto, altrimenti l'asse ripete la stessa ora.
   if (interval.endsWith("m")) {
@@ -481,7 +482,7 @@ export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) 
               </td>
               <td className="py-2 text-right text-xs tabular-nums text-muted-foreground">
                 {a.lastSeenAt
-                  ? new Date(a.lastSeenAt).toLocaleString("it-IT", {
+                  ? parseDbDate(a.lastSeenAt).toLocaleString("it-IT", {
                       day: "2-digit",
                       month: "2-digit",
                       hour: "2-digit",
@@ -588,7 +589,7 @@ export function RankedTable({
               <td className="py-2 pr-3 text-xs text-muted-foreground">{e.detail ?? "—"}</td>
               <td className="py-2 text-right text-xs tabular-nums text-muted-foreground">
                 {e.lastSeenAt
-                  ? new Date(e.lastSeenAt).toLocaleString("it-IT", {
+                  ? parseDbDate(e.lastSeenAt).toLocaleString("it-IT", {
                       day: "2-digit",
                       month: "2-digit",
                       hour: "2-digit",

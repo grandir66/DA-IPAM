@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -105,7 +106,7 @@ export function KnownHostsClient({ initialRows }: { initialRows: Row[] }) {
                       </div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                      {h.last_seen ? new Date(h.last_seen).toLocaleString("it-IT") : "—"}
+                      {h.last_seen ? parseDbDate(h.last_seen).toLocaleString("it-IT") : "—"}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs">
                       {h.last_response_time_ms != null ? h.last_response_time_ms : "—"}

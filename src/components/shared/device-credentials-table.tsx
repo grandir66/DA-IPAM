@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useState, useCallback, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -338,7 +339,7 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
                       </span>
                       {b.tested_at && (
                         <span className="text-[10px] text-muted-foreground">
-                          {new Date(b.tested_at).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}
+                          {parseDbDate(b.tested_at).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}
                         </span>
                       )}
                     </div>

@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
@@ -145,7 +146,7 @@ export default function InventoryPage() {
     fetchGaps();
   }, [fetchGaps, assets.length]);
 
-  const formatDate = (d: string | null) => d ? new Date(d).toLocaleDateString("it-IT") : "—";
+  const formatDate = (d: string | null) => d ? parseDbDate(d).toLocaleDateString("it-IT") : "—";
 
   // ─── Selezione helpers ────────────────────────────────
   function toggleSelect(id: number) {

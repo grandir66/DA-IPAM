@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -117,7 +118,7 @@ export default function ArpTablePage() {
   }, [fetchData, q]);
 
   const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleString("it-IT", {
+    parseDbDate(dateStr).toLocaleString("it-IT", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
@@ -133,7 +134,7 @@ export default function ArpTablePage() {
       network_name: (m: MacIpMapping) => m.network_name ?? "",
       hostname: (m: MacIpMapping) => m.hostname ?? "",
       vendor: (m: MacIpMapping) => m.vendor ?? "",
-      last_seen: (m: MacIpMapping) => new Date(m.last_seen).getTime(),
+      last_seen: (m: MacIpMapping) => parseDbDate(m.last_seen).getTime(),
       previous_ip: (m: MacIpMapping) => m.previous_ip ?? "",
     }),
     []

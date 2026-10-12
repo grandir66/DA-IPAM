@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -854,7 +855,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
                   <TableCell className="text-center text-success font-medium">{net.online_count}</TableCell>
                   <TableCell className="text-center text-destructive font-medium">{net.offline_count}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {net.last_scan ? new Date(net.last_scan).toLocaleString("it-IT") : "Mai"}
+                    {net.last_scan ? parseDbDate(net.last_scan).toLocaleString("it-IT") : "Mai"}
                   </TableCell>
                   <TableCell>
                     <Button

@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -77,7 +78,7 @@ type WizardStep = "tenant" | "agent" | "token";
 
 const formatLastSeen = (iso: string | null): string => {
   if (!iso) return "—";
-  try { return new Date(iso).toLocaleString("it-IT"); } catch { return iso; }
+  try { return parseDbDate(iso).toLocaleString("it-IT"); } catch { return iso; }
 };
 
 export default function AgentsOverviewPage() {

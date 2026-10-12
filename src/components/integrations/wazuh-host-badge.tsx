@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 /**
  * Badge "Wazuh agent presente" riusabile in tutte le viste host (header detail,
@@ -95,7 +96,7 @@ function colorClass(kind: "active" | "disconnected" | "unknown" | "absent"): str
 function formatTs(ts: string | null | undefined): string {
   if (!ts) return "—";
   try {
-    return new Date(ts).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
+    return parseDbDate(ts).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
   } catch {
     return ts;
   }

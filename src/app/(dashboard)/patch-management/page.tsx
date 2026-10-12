@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 /**
  * Patch Management — Home hub asset-first (F12 PR3).
@@ -138,7 +139,7 @@ function formatProbeStatus(status: string | null): {
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   try {
-    const d = new Date(iso);
+    const d = parseDbDate(iso);
     if (Number.isNaN(d.getTime())) return "—";
     return d.toLocaleString("it-IT", {
       day: "2-digit",

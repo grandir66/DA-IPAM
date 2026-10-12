@@ -1,3 +1,4 @@
+import { parseDbDate, FUSO_UTENTI } from "@/lib/db-date";
 import { getDashboardStats, getNetworks, getRecentActivity, getUserCount, getKnownHostStats, getOfflineKnownHosts } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -182,7 +183,7 @@ export default async function DashboardPage() {
                       </span>
                       {h.last_seen && (
                         <span className="text-xs text-muted-foreground">
-                          Ultimo contatto: {new Date(h.last_seen).toLocaleString("it-IT")}
+                          Ultimo contatto: {parseDbDate(h.last_seen).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}
                         </span>
                       )}
                     </Link>
@@ -282,7 +283,7 @@ export default async function DashboardPage() {
                       </span>
                       {net.last_scan && (
                         <span className="hidden md:inline text-[11px] text-muted-foreground whitespace-nowrap w-24 text-right shrink-0">
-                          {new Date(net.last_scan).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                          {parseDbDate(net.last_scan).toLocaleString("it-IT", { timeZone: FUSO_UTENTI, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                         </span>
                       )}
                     </Link>
@@ -314,7 +315,7 @@ export default async function DashboardPage() {
                     {activity.status}
                   </span>
                   <span className="ml-auto text-xs text-muted-foreground">
-                    {new Date(activity.timestamp).toLocaleString("it-IT")}
+                    {parseDbDate(activity.timestamp).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}
                   </span>
                 </div>
               ))}
@@ -357,7 +358,7 @@ function IntegrationRow({ item }: { item: IntegrationHealth }) {
     item.status === "stale" ? <Clock className="h-4 w-4 text-amber-500" /> :
     <HelpCircle className="h-4 w-4 text-muted-foreground" />;
   const lastSyncLabel = item.lastSync
-    ? new Date(item.lastSync).toLocaleString("it-IT")
+    ? parseDbDate(item.lastSync).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })
     : "Mai eseguita";
   return (
     <Link

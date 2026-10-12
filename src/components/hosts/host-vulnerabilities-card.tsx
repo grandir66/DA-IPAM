@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,7 +45,7 @@ interface VulnPayload {
 const PAGE_SIZE = 50;
 
 function formatDate(ts: string): string {
-  try { return new Date(ts).toLocaleDateString("it-IT"); } catch { return ts; }
+  try { return parseDbDate(ts).toLocaleDateString("it-IT"); } catch { return ts; }
 }
 
 function BreakdownBadges({ b }: { b: FindingGroup["breakdown"] }) {
@@ -134,7 +135,7 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
           </span>
           {data.last_run && (
             <span className="text-xs text-muted-foreground font-normal">
-              Ultimo scan: {new Date(data.last_run.finished_at || data.last_run.started_at).toLocaleString("it-IT")}
+              Ultimo scan: {parseDbDate(data.last_run.finished_at || data.last_run.started_at).toLocaleString("it-IT")}
               {" · "}{totalFindings} CVE · {totalGroups} pacchetti
             </span>
           )}

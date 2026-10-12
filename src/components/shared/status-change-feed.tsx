@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -78,7 +79,7 @@ export function StatusChangeFeed() {
 }
 
 function timeAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
+  const ms = Date.now() - parseDbDate(iso).getTime();
   const s = Math.max(0, Math.floor(ms / 1000));
   if (s < 60) return `${s}s fa`;
   const m = Math.floor(s / 60);

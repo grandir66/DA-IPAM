@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -522,7 +523,7 @@ export default function DhcpPage() {
                               ageDays < 365 ? `${Math.round(ageDays / 30)}mesi fa` :
                               `${(ageDays / 365).toFixed(1)}a fa`;
                             return (
-                              <Badge variant="outline" className={`text-xs ${color}`} title={new Date(lease.last_seen).toLocaleString("it-IT")}>
+                              <Badge variant="outline" className={`text-xs ${color}`} title={parseDbDate(lease.last_seen).toLocaleString("it-IT")}>
                                 {label}
                               </Badge>
                             );
@@ -531,7 +532,7 @@ export default function DhcpPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {new Date(lease.last_synced).toLocaleString("it-IT")}
+                          {parseDbDate(lease.last_synced).toLocaleString("it-IT")}
                         </TableCell>
                       </TableRow>
                     ))}

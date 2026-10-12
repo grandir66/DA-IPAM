@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -112,7 +113,7 @@ function attrCategoryLabel(slug: string): string {
 
 /** Formatta un ISO timestamp come "il DD/MM HH:mm" per la riga di stato fase. */
 function formatPhaseLastRun(iso: string): string {
-  const d = new Date(iso);
+  const d = parseDbDate(iso);
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const hh = String(d.getHours()).padStart(2, "0");
@@ -1794,8 +1795,8 @@ export function NetworkDetailClient({
                       <StatusBadge status={host.status} />
                       {host.last_seen && (
                         <div className="text-[10px] text-muted-foreground mt-0.5">
-                          {new Date(host.last_seen).toLocaleDateString("it-IT", { day: "2-digit", month: "short" })}{" "}
-                          {new Date(host.last_seen).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                          {parseDbDate(host.last_seen).toLocaleDateString("it-IT", { day: "2-digit", month: "short" })}{" "}
+                          {parseDbDate(host.last_seen).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
                         </div>
                       )}
                     </TableCell>

@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -706,7 +707,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
       last_scan: (d: DeviceOrHost) => {
         if (isHostItem(d)) return 0;
         const at = (d as NetworkDevice).last_proxmox_scan_at;
-        return at ? new Date(at).getTime() : 0;
+        return at ? parseDbDate(at).getTime() : 0;
       },
       vendor: (d: DeviceOrHost) => d.vendor ?? "",
       profile: (d: DeviceOrHost) => {
@@ -981,7 +982,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                   {isHypervisor && devices.some((d) => !isHostItem(d)) && (
                     <TableCell className="text-sm text-muted-foreground">
                       {!isHostItem(dev) && (dev as NetworkDevice & { last_proxmox_scan_at?: string | null }).last_proxmox_scan_at
-                        ? new Date((dev as NetworkDevice & { last_proxmox_scan_at: string }).last_proxmox_scan_at).toLocaleString("it-IT")
+                        ? parseDbDate((dev as NetworkDevice & { last_proxmox_scan_at: string }).last_proxmox_scan_at).toLocaleString("it-IT")
                         : "—"}
                     </TableCell>
                   )}
@@ -1259,7 +1260,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
               Dati estratti da {proxmoxSelectedDevice.name}
             </CardTitle>
             <CardDescription>
-              Scan del {proxmoxScanResult.scanned_at ? new Date(proxmoxScanResult.scanned_at).toLocaleString("it-IT") : "—"}
+              Scan del {proxmoxScanResult.scanned_at ? parseDbDate(proxmoxScanResult.scanned_at).toLocaleString("it-IT") : "—"}
             </CardDescription>
           </CardHeader>
           <CardContent>

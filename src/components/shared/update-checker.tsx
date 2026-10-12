@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -340,7 +341,7 @@ export function UpdateChecker() {
             </div>
 
             <p className="text-xs text-muted-foreground text-center">
-              Ultimo controllo: {updateInfo?.lastCheck ? new Date(updateInfo.lastCheck).toLocaleString("it-IT") : "—"}
+              Ultimo controllo: {updateInfo?.lastCheck ? parseDbDate(updateInfo.lastCheck).toLocaleString("it-IT") : "—"}
             </p>
           </div>
         </DialogContent>

@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -319,7 +320,7 @@ export function ScannerEdgeCard() {
                 Auto-disabilitato dopo {scanner.consecutive_errors} errori consecutivi
               </div>
               <div className="text-xs">
-                Disabilitato il {new Date(scanner.auto_disabled_at).toLocaleString("it-IT")}.
+                Disabilitato il {parseDbDate(scanner.auto_disabled_at).toLocaleString("it-IT")}.
                 Il cron è fermo finché non riattivi. Token e SPKI pin restano salvati.
               </div>
             </div>

@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -599,7 +600,7 @@ export default function ActiveDirectoryPage() {
   const formatDate = (iso: string | null) => {
     if (!iso) return "—";
     try {
-      return new Date(iso).toLocaleString("it-IT");
+      return parseDbDate(iso).toLocaleString("it-IT");
     } catch {
       return iso;
     }

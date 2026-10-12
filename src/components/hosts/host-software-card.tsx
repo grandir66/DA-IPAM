@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 /**
  * Card "Software" sulla pagina dettaglio host o device.
@@ -98,15 +99,15 @@ interface ScanResultResponse {
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";
-  const d = new Date(iso.replace(" ", "T") + (iso.includes("Z") ? "" : "Z"));
+  const d = parseDbDate(iso.replace(" ", "T") + (iso.includes("Z") ? "" : "Z"));
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString("it-IT");
 }
 
 function fmtDuration(scan: SoftwareScan): string {
   if (!scan.finished_at) return "—";
-  const s = new Date(scan.started_at.replace(" ", "T") + "Z").getTime();
-  const f = new Date(scan.finished_at.replace(" ", "T") + "Z").getTime();
+  const s = parseDbDate(scan.started_at.replace(" ", "T") + "Z").getTime();
+  const f = parseDbDate(scan.finished_at.replace(" ", "T") + "Z").getTime();
   if (!Number.isFinite(s) || !Number.isFinite(f) || f <= s) return "—";
   const ms = f - s;
   if (ms < 1000) return `${ms} ms`;

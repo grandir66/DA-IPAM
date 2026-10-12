@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 /**
  * Pagina unificata "Oggetto di rete" — `/objects/[hostId]`.
@@ -126,8 +127,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
  * Forziamo UTC se manca un marker esplicito.
  */
 function parseUtcDate(s: string): Date {
-  if (/Z$|[+-]\d{2}:?\d{2}$/.test(s)) return new Date(s);
-  return new Date(s.replace(" ", "T") + "Z");
+  if (/Z$|[+-]\d{2}:?\d{2}$/.test(s)) return parseDbDate(s);
+  return parseDbDate(s.replace(" ", "T") + "Z");
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -1248,7 +1249,7 @@ export default function ObjectDetailPage() {
               {host.inferred_at && (
                 <InfoRow
                   label="Auto-classificazione"
-                  value={`${host.inferred_confidence ?? 0}% · ${new Date(host.inferred_at).toLocaleDateString("it-IT")}`}
+                  value={`${host.inferred_confidence ?? 0}% · ${parseDbDate(host.inferred_at).toLocaleDateString("it-IT")}`}
                 />
               )}
             </dl>
@@ -1949,7 +1950,7 @@ export default function ObjectDetailPage() {
           <Section icon={<Server className="h-4 w-4" />} title="Proxmox VE"
             badge={px.scanned_at && (
               <span className="ml-2 text-[10px] text-muted-foreground">
-                scan {new Date(px.scanned_at).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                scan {parseDbDate(px.scanned_at).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
               </span>
             )}>
             <Tabs defaultValue="px-host" className="space-y-3">

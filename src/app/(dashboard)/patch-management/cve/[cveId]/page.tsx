@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 /**
  * Patch Management — Drill-down singola CVE (F7 PR2).
@@ -148,7 +149,7 @@ function hostLabel(h: VulnHost): string {
 
 function relativeTime(iso: string | null): string {
   if (!iso) return "—";
-  const t = new Date(iso).getTime();
+  const t = parseDbDate(iso).getTime();
   if (Number.isNaN(t)) return "—";
   const diffSec = Math.floor((Date.now() - t) / 1000);
   if (diffSec < 60) return `${diffSec}s fa`;

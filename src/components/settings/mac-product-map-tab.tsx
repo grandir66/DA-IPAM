@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -439,7 +440,7 @@ export function MacProductMapTab() {
                     return (
                       <TableRow key={fb.id}>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                          {new Date(fb.created_at).toLocaleString("it-IT")}
+                          {parseDbDate(fb.created_at).toLocaleString("it-IT")}
                         </TableCell>
                         <TableCell className="text-sm">{hostLabel}</TableCell>
                         <TableCell className="text-xs">

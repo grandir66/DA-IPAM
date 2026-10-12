@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import {
@@ -54,7 +55,7 @@ const CHANNEL_LABEL: Record<string, string> = {
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("it-IT");
+    return parseDbDate(iso).toLocaleString("it-IT");
   } catch {
     return iso;
   }

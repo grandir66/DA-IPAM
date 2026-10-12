@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -139,7 +140,7 @@ export function StatusBadge({ status, className, lastSeen, staleAfterHours = 24,
 
   const absolute = lastSeen
     ? (() => {
-        try { return new Date(lastSeen).toLocaleString("it-IT"); } catch { return lastSeen; }
+        try { return parseDbDate(lastSeen).toLocaleString("it-IT"); } catch { return lastSeen; }
       })()
     : null;
 

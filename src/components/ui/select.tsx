@@ -6,7 +6,38 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+/**
+ * base-ui 1.3 mostra nel trigger l'etichetta della voce scelta solo se la Root
+ * riceve `items`: senza, mostra il valore grezzo ("all", "critical_high", l'id
+ * di una rete). Qui `items` si ricava dalle <SelectItem> figlie, così ogni
+ * <Select> mostra il testo dell'opzione senza ripeterlo. Le voci generate da
+ * componenti propri non si vedono: per quelle si passa `items` a mano.
+ */
+function collectSelectItems(
+  node: React.ReactNode,
+  found: Map<unknown, React.ReactNode>
+): void {
+  React.Children.forEach(node, (child) => {
+    if (!React.isValidElement<{ value?: unknown; children?: React.ReactNode }>(child)) return
+    if (child.type === SelectItem) {
+      if (!found.has(child.props.value)) found.set(child.props.value, child.props.children)
+      return
+    }
+    collectSelectItems(child.props.children, found)
+  })
+}
+
+function Select<Value, Multiple extends boolean | undefined = false>(
+  props: SelectPrimitive.Root.Props<Value, Multiple>
+) {
+  let items = props.items
+  if (items === undefined) {
+    const found = new Map<unknown, React.ReactNode>()
+    collectSelectItems(props.children, found)
+    if (found.size > 0) items = Array.from(found, ([value, label]) => ({ value, label }))
+  }
+  return <SelectPrimitive.Root {...props} items={items} />
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (

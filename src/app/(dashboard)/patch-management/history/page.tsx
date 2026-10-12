@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 /**
  * Patch Management — Storico operazioni (F9).
@@ -197,14 +198,14 @@ function formatRelative(iso: string | null): string {
   if (h < 24) return `${h}h fa`;
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}g fa`;
-  return new Date(t).toLocaleDateString("it-IT");
+  return parseDbDate(t).toLocaleDateString("it-IT");
 }
 
 function formatAbsolute(iso: string | null): string {
   if (!iso) return "—";
   const t = Date.parse(iso);
   if (!Number.isFinite(t)) return iso;
-  return new Date(t).toLocaleString("it-IT", {
+  return parseDbDate(t).toLocaleString("it-IT", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

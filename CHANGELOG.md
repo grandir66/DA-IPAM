@@ -4,6 +4,25 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-12
+
+### Correzioni
+
+- **I filtri mostrano l'etichetta della voce scelta, non il suo codice.** Dopo
+  una scelta, i menu a tendina dei filtri mostravano il valore tecnico: «all»
+  invece di «Tutti gli stati», «unacked» invece di «Non gestiti», il numero della
+  rete invece del suo nome. La libreria dei componenti (base-ui) mostra
+  l'etichetta solo se riceve l'elenco delle voci, e nessuna pagina glielo
+  passava. Ora il componente comune `Select` lo ricava da solo dalle voci che
+  contiene: la correzione vale per tutti i menu senza toccarli uno per uno.
+- **Gli orari sono quelli di Roma, non indietro di una o due ore.** Il database
+  scrive le date in UTC senza indicare il fuso (`2026-10-12 08:00:00`) e le
+  pagine le leggevano come ora locale: ogni orario mostrato era indietro di
+  un'ora d'inverno e di due d'estate, e su Safari compariva «Invalid Date». Una
+  sola funzione, `parseDbDate` (`src/lib/db-date.ts`), legge quelle date come UTC
+  ed è usata in tutte le pagine; la dashboard, preparata sul server (che in
+  produzione è in UTC), indica in più il fuso di Roma.
+
 ## [Non rilasciato] — 2026-09-07
 
 ### Aggiunte

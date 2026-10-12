@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -77,7 +78,7 @@ const OS_FILTERS: OsFamily[] = ["Windows", "Linux", "Apple", "Unknown"];
 function formatDate(ts: string | null): string {
   if (!ts) return "—";
   try {
-    return new Date(ts).toLocaleDateString("it-IT");
+    return parseDbDate(ts).toLocaleDateString("it-IT");
   } catch {
     return ts;
   }

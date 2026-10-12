@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import {
@@ -70,7 +71,7 @@ export function OnlineChart() {
           <XAxis
             dataKey="time"
             tickFormatter={(t) => {
-              const d = new Date(t);
+              const d = parseDbDate(t);
               return period === "24h"
                 ? d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
                 : d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" });
@@ -86,7 +87,7 @@ export function OnlineChart() {
               borderRadius: "8px",
               fontSize: "12px",
             }}
-            labelFormatter={(t) => new Date(t).toLocaleString("it-IT")}
+            labelFormatter={(t) => parseDbDate(t).toLocaleString("it-IT")}
           />
           <Area
             type="monotone"

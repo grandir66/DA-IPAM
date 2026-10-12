@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import { Switch } from "@/components/ui/switch";
@@ -27,7 +28,7 @@ const INTERVAL_OPTIONS = [
 
 function formatRelative(iso: string | null | undefined): string {
   if (!iso) return "mai";
-  const ts = new Date(iso.endsWith("Z") ? iso : iso.replace(" ", "T") + "Z").getTime();
+  const ts = parseDbDate(iso.endsWith("Z") ? iso : iso.replace(" ", "T") + "Z").getTime();
   if (Number.isNaN(ts)) return iso;
   const diffMs = Date.now() - ts;
   const absMin = Math.floor(Math.abs(diffMs) / 60000);

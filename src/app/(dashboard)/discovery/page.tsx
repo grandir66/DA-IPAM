@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { librenmsDevicePath } from "@/lib/integrations/public-url";
@@ -288,7 +289,7 @@ function displayName(h: EnrichedHost): string {
 
 function formatDate(d: string | null): string {
   if (!d) return "—";
-  return new Date(d).toLocaleString("it-IT", {
+  return parseDbDate(d).toLocaleString("it-IT", {
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
@@ -936,8 +937,8 @@ export default function DiscoveryPage() {
     model:               (h: EnrichedHost) => h.model ?? "",
     serial_number:       (h: EnrichedHost) => h.serial_number ?? "",
     firmware:            (h: EnrichedHost) => h.firmware ?? "",
-    last_seen:           (h: EnrichedHost) => h.last_seen ? new Date(h.last_seen).getTime() : 0,
-    first_seen:          (h: EnrichedHost) => h.first_seen ? new Date(h.first_seen).getTime() : 0,
+    last_seen:           (h: EnrichedHost) => h.last_seen ? parseDbDate(h.last_seen).getTime() : 0,
+    first_seen:          (h: EnrichedHost) => h.first_seen ? parseDbDate(h.first_seen).getTime() : 0,
     // v0.2.646 audit perf UI3: accessor leggono dalla Map precalcolata (O(1))
     // invece di JSON.parse per ogni invocazione (sort = O(N log N) × parse).
     fp_confidence:       (h: EnrichedHost) => hostExtras.get(h.id)?.fpConfidence ?? 0,

@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -97,7 +98,7 @@ function levelBadgeClass(level: number): string {
 }
 
 function formatDate(iso: string): string {
-  const d = new Date(iso);
+  const d = parseDbDate(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("it-IT");
 }
 

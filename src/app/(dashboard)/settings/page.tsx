@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSession } from "next-auth/react";
@@ -854,8 +855,8 @@ function SettingsPageInner() {
                         <span className="text-xs text-muted-foreground">Nessuno</span>
                       )}
                     </TableCell>
-                    <TableCell>{new Date(user.created_at).toLocaleDateString("it-IT")}</TableCell>
-                    <TableCell>{user.last_login ? new Date(user.last_login).toLocaleString("it-IT") : "Mai"}</TableCell>
+                    <TableCell>{parseDbDate(user.created_at).toLocaleDateString("it-IT")}</TableCell>
+                    <TableCell>{user.last_login ? parseDbDate(user.last_login).toLocaleString("it-IT") : "Mai"}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         <Button
@@ -1020,10 +1021,10 @@ function SettingsPageInner() {
                         {INTERVAL_OPTIONS.find((o) => o.value === String(job.interval_minutes))?.label || `${job.interval_minutes} min`}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {job.last_run ? new Date(job.last_run).toLocaleString("it-IT") : "Mai"}
+                        {job.last_run ? parseDbDate(job.last_run).toLocaleString("it-IT") : "Mai"}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {job.next_run ? new Date(job.next_run).toLocaleString("it-IT") : "—"}
+                        {job.next_run ? parseDbDate(job.next_run).toLocaleString("it-IT") : "—"}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">

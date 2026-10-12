@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,7 +58,7 @@ function computeStats(data: LatencyPoint[]): LatencyStats {
 }
 
 function formatTime(timeStr: string, hours: number): string {
-  const d = new Date(timeStr + "Z");
+  const d = parseDbDate(timeStr + "Z");
   if (hours <= 6) {
     return d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
   }
@@ -76,7 +77,7 @@ interface CustomTooltipProps {
 function CustomTooltip({ active, payload }: CustomTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
   const point = payload[0].payload;
-  const d = new Date(point.time + "Z");
+  const d = parseDbDate(point.time + "Z");
 
   return (
     <div className="bg-popover border border-border rounded-md px-3 py-2 shadow-md text-sm">
@@ -249,7 +250,7 @@ export function LatencyChart({ hostId }: { hostId: number }) {
 
         {stats.lastCheck && (
           <p className="text-xs text-muted-foreground text-right">
-            Ultimo controllo: {new Date(stats.lastCheck + "Z").toLocaleString("it-IT")}
+            Ultimo controllo: {parseDbDate(stats.lastCheck + "Z").toLocaleString("it-IT")}
           </p>
         )}
       </CardContent>

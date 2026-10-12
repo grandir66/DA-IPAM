@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import {
@@ -113,7 +114,7 @@ export function StatusOverTimeChart() {
             <XAxis
               dataKey="time"
               tickFormatter={(t: string) => {
-                const d = new Date(t);
+                const d = parseDbDate(t);
                 return period === "24h"
                   ? d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
                   : d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" });
@@ -138,7 +139,7 @@ export function StatusOverTimeChart() {
                 borderRadius: "8px",
                 fontSize: "12px",
               }}
-              labelFormatter={(t) => (typeof t === "string" ? new Date(t).toLocaleString("it-IT") : String(t ?? ""))}
+              labelFormatter={(t) => (typeof t === "string" ? parseDbDate(t).toLocaleString("it-IT") : String(t ?? ""))}
               formatter={(v, name) => {
                 const val = typeof v === "number" ? v : Number(v ?? 0);
                 return name === "Health %" ? [`${val}%`, name as string] : [val, name as string];

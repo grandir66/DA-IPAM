@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { memo, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -117,7 +118,7 @@ export const IpGrid = memo(function IpGrid({ cidr, hosts, gateway }: IpGridProps
         const full = hostOpenPortsToFullLabel(cell.host.open_ports);
         if (full) lines.push(`Porte: ${full}`);
       }
-      if (cell.host.last_seen) lines.push(`Ultimo contatto: ${new Date(cell.host.last_seen).toLocaleString("it-IT")}`);
+      if (cell.host.last_seen) lines.push(`Ultimo contatto: ${parseDbDate(cell.host.last_seen).toLocaleString("it-IT")}`);
     } else if (!cell.isNetwork && !cell.isBroadcast) lines.push("Non occupato");
     return lines;
   };

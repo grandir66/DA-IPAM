@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
@@ -78,7 +79,7 @@ function TechnicalDataCard({ data }: { data: string }) {
     <Card>
       <CardHeader>
         <CardTitle>Dati archiviati (Proxmox)</CardTitle>
-        {scannedAt && <p className="text-sm text-muted-foreground mt-1">Scansione: {new Date(scannedAt).toLocaleString("it-IT")}</p>}
+        {scannedAt && <p className="text-sm text-muted-foreground mt-1">Scansione: {parseDbDate(scannedAt).toLocaleString("it-IT")}</p>}
       </CardHeader>
       <CardContent className="space-y-4">
         {host && (
@@ -621,7 +622,7 @@ export default function InventoryAssetPage() {
                       {assetLicenses.map((s) => (
                         <TableRow key={s.id}>
                           <TableCell className="font-medium">{s.license_name ?? `Licenza #${s.license_id}`}</TableCell>
-                          <TableCell className="text-muted-foreground">{new Date(s.assigned_at).toLocaleDateString("it-IT")}</TableCell>
+                          <TableCell className="text-muted-foreground">{parseDbDate(s.assigned_at).toLocaleDateString("it-IT")}</TableCell>
                           <TableCell>
                             <Button variant="ghost" size="icon" onClick={() => handleUnassignLicense(s.id)} title="Rimuovi assegnazione">
                               <Trash2 className="h-4 w-4 text-destructive" />
@@ -656,7 +657,7 @@ export default function InventoryAssetPage() {
                     <TableBody>
                       {auditLog.map((entry) => (
                         <TableRow key={entry.id}>
-                          <TableCell className="text-muted-foreground text-sm">{new Date(entry.created_at).toLocaleString("it-IT")}</TableCell>
+                          <TableCell className="text-muted-foreground text-sm">{parseDbDate(entry.created_at).toLocaleString("it-IT")}</TableCell>
                           <TableCell><Badge variant="outline">{entry.action}</Badge></TableCell>
                           <TableCell>{entry.field_name ?? "—"}</TableCell>
                           <TableCell className="font-mono text-xs max-w-[120px] truncate" title={entry.old_value ?? ""}>{entry.old_value ?? "—"}</TableCell>

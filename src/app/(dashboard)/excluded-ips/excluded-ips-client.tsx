@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -107,7 +108,7 @@ export function ExcludedIpsClient() {
                       <TableCell>{reasonLabel(it.reason)}</TableCell>
                       <TableCell>{it.excluded_by ?? "—"}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {new Date(it.excluded_at).toLocaleString("it-IT")}
+                        {parseDbDate(it.excluded_at).toLocaleString("it-IT")}
                       </TableCell>
                       <TableCell>
                         <Button

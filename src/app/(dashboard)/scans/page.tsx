@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,7 +75,7 @@ export default function ScansPage() {
                       {scan.duration_ms ? `${(scan.duration_ms / 1000).toFixed(1)}s` : "—"}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {new Date(scan.timestamp).toLocaleString("it-IT")}
+                      {parseDbDate(scan.timestamp).toLocaleString("it-IT")}
                     </TableCell>
                   </TableRow>
                 ))}

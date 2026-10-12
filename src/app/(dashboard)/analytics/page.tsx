@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -280,7 +281,7 @@ export default function AnalyticsPage() {
                     {ev.description}
                   </TableCell>
                   <TableCell className="py-2 text-xs text-muted-foreground">
-                    {new Date(ev.detected_at).toLocaleString("it-IT", {
+                    {parseDbDate(ev.detected_at).toLocaleString("it-IT", {
                       day: "2-digit", month: "2-digit", year: "2-digit",
                       hour: "2-digit", minute: "2-digit",
                     })}
@@ -334,11 +335,11 @@ export default function AnalyticsPage() {
                 <p className="text-sm">{selected.description}</p>
                 <DetailContent ev={selected} />
                 <p className="text-xs text-muted-foreground">
-                  Rilevato: {new Date(selected.detected_at).toLocaleString("it-IT")}
+                  Rilevato: {parseDbDate(selected.detected_at).toLocaleString("it-IT")}
                 </p>
                 {selected.acknowledged && (
                   <p className="text-xs text-green-700">
-                    Gestito da {selected.acknowledged_by ?? "—"} il {selected.acknowledged_at ? new Date(selected.acknowledged_at).toLocaleString("it-IT") : "—"}
+                    Gestito da {selected.acknowledged_by ?? "—"} il {selected.acknowledged_at ? parseDbDate(selected.acknowledged_at).toLocaleString("it-IT") : "—"}
                   </p>
                 )}
                 {!selected.acknowledged && (

@@ -16,10 +16,16 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
 import { encrypt } from "@/lib/crypto";
 import { EdgeClientError, listEdgeProfiles } from "@/lib/vuln/scanner-edge-client";
-import { resolveAssessmentForNetwork } from "@/lib/vuln/edge-subnet-bridge";
+import {
+  resolveAssessmentForNetwork,
+  saveEdgeSubnetSchedule,
+  triggerSubnetEdgeScan,
+} from "@/lib/vuln/edge-subnet-bridge";
 
 const T = "TESTEDGEPROFILES";
 const TOKEN = "tok-edge-di-prova";
@@ -28,16 +34,28 @@ const TOKEN = "tok-edge-di-prova";
 const RISPOSTA_VERA =
   '{"profiles":[{"id":"safe-esterno","label":"Safe esterno","image":"advanced","requires_authorization":false,"steps":["amass","dns-enum","tls-deep"]},{"id":"smoke-interno","label":"Smoke interno","image":"advanced","requires_authorization":false,"steps":["service-fp"]},{"id":"validation-plus","label":"Validation plus","image":"advanced","requires_authorization":true,"steps":["enum4linux-ng","ldap-enum","cred-bind","tls-deep","cis-check","service-fp","snmp-enum"]}]}';
 
+type Reply = { status: number; body: string; type?: string };
+
 let server: Server;
 let baseUrl = "";
-let reply: { status: number; body: string; type?: string } = { status: 200, body: RISPOSTA_VERA };
-const seen: Array<{ method: string; url: string; auth: string | undefined }> = [];
+let reply: Reply = { status: 200, body: RISPOSTA_VERA };
+/** Risposte per "METODO /percorso" (senza query): se c'è, vince su `reply`. */
+let routes: Record<string, Reply> = {};
+const seen: Array<{ method: string; url: string; auth: string | undefined; body: string }> = [];
 
 before(async () => {
   server = createServer((req, res) => {
-    seen.push({ method: req.method ?? "", url: req.url ?? "", auth: req.headers.authorization });
-    res.writeHead(reply.status, { "Content-Type": reply.type ?? "application/json" });
-    res.end(reply.body);
+    let body = "";
+    req.on("data", (chunk: Buffer) => {
+      body += chunk.toString("utf8");
+    });
+    req.on("end", () => {
+      seen.push({ method: req.method ?? "", url: req.url ?? "", auth: req.headers.authorization, body });
+      const path = (req.url ?? "").split("?")[0];
+      const r = routes[`${req.method} ${path}`] ?? reply;
+      res.writeHead(r.status, { "Content-Type": r.type ?? "application/json" });
+      res.end(r.body);
+    });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -184,4 +202,83 @@ test("resolveAssessmentForNetwork: il profilo si controlla sull'edge prima di sc
     assert.equal(spento.ok, false);
     if (!spento.ok) assert.equal(spento.status, 409);
   });
+});
+
+test("pianificazione e avvio: il profilo nuovo si scrive nel DB solo dopo che l'edge l'ha accettato con /networks/ensure", async () => {
+  await withTenant(T, async () => {
+    const db = getTenantDb(T);
+    db.prepare("UPDATE vuln_scanners SET enabled = 1").run();
+    // Rete con un profilo che l'edge non ha più: la pagina mostra «Profilo assente»
+    // finché il DB dice così. Il badge si calcola sul DB: il DB deve dire cosa ha l'edge.
+    const net = Number(
+      db
+        .prepare(
+          "INSERT INTO networks (cidr, name, assessment_enabled, assessment_profile_id) VALUES ('10.9.1.0/24', 'prova ensure', 1, 'safe-interno')",
+        )
+        .run().lastInsertRowid,
+    );
+    const letto = () =>
+      db.prepare("SELECT assessment_enabled, assessment_profile_id FROM networks WHERE id = ?").get(net) as {
+        assessment_enabled: number;
+        assessment_profile_id: string | null;
+      };
+    const pianificazione = {
+      enabled: true,
+      profile: "balanced" as const,
+      cronExpr: "0 3 1 * *",
+      jobName: "prova ensure",
+      frequency: "monthly" as const,
+      atTime: "03:00",
+      dayOfMonth: 1,
+      assessmentEnabled: true,
+      assessmentProfileId: "smoke-interno",
+    };
+    reply = { status: 200, body: RISPOSTA_VERA };
+
+    try {
+      // L'edge rifiuta /ensure (toggle IPAM spento): il DB resta com'era, il badge resta.
+      routes = { "POST /api/v1/networks/ensure": { status: 404, body: '{"detail":"ipam integration disabled"}' } };
+      const pianificaKo = await saveEdgeSubnetSchedule(net, pianificazione);
+      assert.equal(pianificaKo.ok, false);
+      assert.match(pianificaKo.error ?? "", /ipam integration disabled/);
+      assert.deepEqual({ ...letto() }, { assessment_enabled: 1, assessment_profile_id: "safe-interno" });
+
+      const avviaKo = await triggerSubnetEdgeScan(net, { assessmentEnabled: true, assessmentProfileId: "smoke-interno" });
+      assert.equal(avviaKo.ok, false);
+      assert.deepEqual({ ...letto() }, { assessment_enabled: 1, assessment_profile_id: "safe-interno" });
+
+      // /ensure accettato: il profilo nuovo va all'edge nel corpo, poi nel DB.
+      routes = {
+        "POST /api/v1/networks/ensure": { status: 200, body: '{"ok":true,"network_id":7,"host_count":0}' },
+        "PUT /api/v1/networks/7/schedule": { status: 200, body: '{"ok":true}' },
+      };
+      const pianificaOk = await saveEdgeSubnetSchedule(net, pianificazione);
+      assert.equal(pianificaOk.ok, true, pianificaOk.error);
+      const ensure = seen.filter((s) => s.url === "/api/v1/networks/ensure").at(-1)!;
+      const inviato = JSON.parse(ensure.body) as { assessment_enabled: boolean; assessment_profile_id: string | null };
+      assert.equal(inviato.assessment_enabled, true);
+      assert.equal(inviato.assessment_profile_id, "smoke-interno");
+      assert.deepEqual({ ...letto() }, { assessment_enabled: 1, assessment_profile_id: "smoke-interno" });
+
+      // Avvio: /ensure accettato e scansione rifiutata. L'edge ha già il profilo
+      // nuovo, quindi il DB lo segue.
+      routes = {
+        "POST /api/v1/networks/ensure": { status: 200, body: '{"ok":true,"network_id":7,"host_count":0}' },
+        "POST /api/v1/networks/7/scan": { status: 500, body: "Internal Server Error", type: "text/plain" },
+      };
+      const avviaScanKo = await triggerSubnetEdgeScan(net, {
+        assessmentEnabled: true,
+        assessmentProfileId: "validation-plus",
+      });
+      assert.equal(avviaScanKo.ok, false);
+      assert.deepEqual({ ...letto() }, { assessment_enabled: 1, assessment_profile_id: "validation-plus" });
+    } finally {
+      routes = {};
+    }
+  });
+});
+
+test("lucchetto: la rotta edge-scan non scrive l'assessment da sé (lo scrive il bridge dopo /networks/ensure)", () => {
+  const src = readFileSync(join(process.cwd(), "src/app/api/networks/[id]/edge-scan/route.ts"), "utf8");
+  assert.doesNotMatch(src, /setNetworkAssessmentConfig\s*\(/);
 });

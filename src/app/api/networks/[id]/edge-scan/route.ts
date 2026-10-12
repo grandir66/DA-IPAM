@@ -18,7 +18,6 @@ import {
   resolveAssessmentForNetwork,
   type EdgeScanProfile,
 } from "@/lib/vuln/edge-subnet-bridge";
-import { setNetworkAssessmentConfig } from "@/lib/db";
 import { z } from "zod";
 import { buildCron } from "@/lib/vuln/cron-builder";
 import { getEdgeSchedule, deleteEdgeSchedule } from "@/lib/vuln/edge-schedule-store";
@@ -161,11 +160,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ ok: false, error: assessment.error }, { status: assessment.status });
     }
 
-    setNetworkAssessmentConfig(networkId, {
-      enabled: assessment.enabled,
-      profileId: assessment.profileId,
-    });
-
+    // Il DB prende il profilo nuovo solo dopo che l'edge l'ha accettato con
+    // /networks/ensure (lo fa il bridge): il pannello calcola «Profilo assente»
+    // sul DB, che deve dire quello che ha l'edge.
     const result = await saveEdgeSubnetSchedule(networkId, {
       enabled: body.enabled,
       profile: body.profile,
@@ -176,6 +173,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       atTime: body.at_time,
       daysOfWeek: body.days_of_week,
       dayOfMonth: body.day_of_month,
+      assessmentEnabled: assessment.enabled,
+      assessmentProfileId: assessment.profileId,
     });
 
     if (!result.ok) {

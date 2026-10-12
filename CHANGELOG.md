@@ -70,6 +70,11 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   non c'è risponde con l'errore e l'elenco dei profili disponibili. Un profilo
   salvato che l'edge non ha più si vede sul pulsante «VA Scan» e nel pannello.
   Acceso senza profilo non ripiega più su «validation-plus»: chiede di sceglierlo.
+  Il profilo nuovo si salva in DA-IPAM solo dopo che l'edge l'ha accettato: prima
+  si scriveva subito, e se l'edge rifiutava la richiesta (integrazione IPAM spenta,
+  token senza permessi, timeout) l'avviso spariva mentre l'edge teneva il profilo
+  vecchio. L'avviso c'è solo a pagina aperta: le reti che nessuno apre non lo
+  mostrano ancora.
 
 ## [Non rilasciato] — 2026-09-07
 

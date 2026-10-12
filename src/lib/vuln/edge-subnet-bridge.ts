@@ -235,6 +235,24 @@ function tcpPortsFromHost(openPortsJson: string | null): string | null {
   }
 }
 
+/**
+ * Salva sulla rete la configurazione assessment che l'edge ha appena accettato
+ * con /networks/ensure. Va chiamata solo DOPO l'ensure riuscito: il pannello
+ * calcola «Profilo assente» sul DB di DA-IPAM, e un DB scritto prima di un ensure
+ * fallito (toggle IPAM spento sull'edge, token senza scope admin, timeout)
+ * spegnerebbe l'avviso mentre l'edge tiene il profilo vecchio (EDG-1).
+ */
+function rememberAssessmentAcceptedByEdge(
+  networkId: number,
+  opts: { assessmentEnabled?: boolean; assessmentProfileId?: string | null },
+): void {
+  if (opts.assessmentEnabled == null) return;
+  setNetworkAssessmentConfig(networkId, {
+    enabled: opts.assessmentEnabled,
+    profileId: opts.assessmentEnabled ? (opts.assessmentProfileId ?? null) : null,
+  });
+}
+
 function buildEdgeEnsureBody(
   networkId: number,
   opts: {
@@ -383,13 +401,6 @@ export async function triggerSubnetEdgeScan(
   }
 
   try {
-    if (opts.assessmentEnabled != null) {
-      setNetworkAssessmentConfig(networkId, {
-        enabled: opts.assessmentEnabled,
-        profileId: opts.assessmentEnabled ? (opts.assessmentProfileId ?? null) : null,
-      });
-    }
-
     const ensured = await edgeApiPost<{
       ok: boolean;
       network_id: number;
@@ -407,6 +418,7 @@ export async function triggerSubnetEdgeScan(
       }),
       { timeoutMs: 120000 },
     );
+    rememberAssessmentAcceptedByEdge(networkId, opts);
 
     const scan = await edgeApiPost<{
       ok: boolean;
@@ -455,6 +467,9 @@ export async function saveEdgeSubnetSchedule(
     atTime: string;
     daysOfWeek?: number[];
     dayOfMonth?: number;
+    assessmentEnabled?: boolean;
+    /** Id già controllato sull'edge (`resolveAssessmentForNetwork`). */
+    assessmentProfileId?: string | null;
   },
 ): Promise<{ ok: boolean; error?: string; degraded?: boolean; warning?: string }> {
   const scanner = getActiveEdgeScanner();
@@ -476,9 +491,12 @@ export async function saveEdgeSubnetSchedule(
         syncCredentials: true,
         targetingMode: opts.targetingMode,
         label: opts.jobName,
+        assessmentEnabled: opts.assessmentEnabled,
+        assessmentProfileId: opts.assessmentProfileId,
       }),
       { timeoutMs: 120000 },
     );
+    rememberAssessmentAcceptedByEdge(networkId, opts);
 
     let degraded = false;
     let warning: string | undefined;

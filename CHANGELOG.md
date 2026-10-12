@@ -43,6 +43,13 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   conserva il suo ultimo stato per 24 ore (oltre torna «sconosciuto»), la serie
   ha un punto per ogni ora anche senza controlli, e la salute si calcola sugli
   host di stato noto (`src/lib/status-over-time.ts`).
+- **L'aggiornamento automatico delle appliance non si blocca più su WinRM e
+  riavvia il servizio giusto.** Su DTS da giugno ogni aggiornamento si fermava:
+  l'ambiente Python per WinRM era stato creato senza `pip` e lo script, trovando
+  `python3`, non lo ricreava; dopo il `git pull` si fermava tutto e la build
+  nuova non partiva mai. Ora un ambiente senza `pip` si ricrea, un guasto di
+  WinRM (funzione facoltativa) è solo un avviso, e il riavvio cerca il servizio
+  attivo (`da-invent` o `da-ipam`) invece del solo `da-invent`.
 - **Tabella ARP: si vede quando la lista è troncata.** Mostra al massimo 500
   righe; arrivata al limite, ora lo dice e invita a restringere con i filtri,
   invece di tagliare in silenzio.

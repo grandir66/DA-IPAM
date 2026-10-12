@@ -16,6 +16,7 @@ import { parseDbDate } from "@/lib/db-date";
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -474,8 +475,11 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
         <CardContent className="space-y-3">
           {noCompatCredentials && target.kind === "host" && (
             <p className="text-xs text-amber-600">
-              Nessuna credenziale Windows o Linux configurata. Aggiungila da
-              Impostazioni → Credenziali.
+              Nessuna credenziale Windows o Linux configurata. Aggiungila da{" "}
+              <Link href="/credentials" className="underline underline-offset-2">
+                Network → Credenziali
+              </Link>
+              .
             </p>
           )}
           {(submitting || running) && (

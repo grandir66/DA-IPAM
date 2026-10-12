@@ -689,8 +689,24 @@ export default function AgentsOverviewPage() {
                     Il comando sotto usa <code className="font-mono">{typeof window !== "undefined" ? window.location.origin : "?"}</code>
                     {" "}come HUB_URL. Se stai accedendo a questa UI da rete interna, il cliente
                     non riuscirà a raggiungerlo. Imposta <em>Hub URL pubblico</em> o
-                    <em> Hostname Tailscale</em> in <a href="/settings" className="underline">Impostazioni</a>{" "}
-                    prima di eseguire l&apos;install, oppure apri questa UI via MagicDNS tailnet.
+                    <em> Hostname Tailscale</em> nel riquadro{" "}
+                    <a
+                      href="#hub-url-config"
+                      className="underline"
+                      onClick={(e) => {
+                        // Il riquadro sta su questa pagina, sotto la finestra: si chiude la
+                        // finestra, si apre il riquadro e ci si scorre (UI-24).
+                        e.preventDefault();
+                        setWizardOpen(false);
+                        requestAnimationFrame(() => {
+                          if (hubUrlDetailsRef.current) hubUrlDetailsRef.current.open = true;
+                          document.getElementById("hub-url-config")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                        });
+                      }}
+                    >
+                      Hub URL pubblico
+                    </a>{" "}
+                    di questa pagina prima di eseguire l&apos;install, oppure apri questa UI via MagicDNS tailnet.
                   </p>
                 </div>
               )}

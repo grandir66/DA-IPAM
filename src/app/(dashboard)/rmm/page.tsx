@@ -128,7 +128,7 @@ export default function RmmPage() {
             <p className="text-sm text-muted-foreground">
               Modulo MeshCentral non configurato per questo tenant.
             </p>
-            <Link href="/settings">
+            <Link href="/settings?tab=moduli#module-meshcentral">
               <Button variant="outline" size="sm">
                 <Settings className="h-4 w-4 mr-1" /> Vai a Impostazioni → Moduli
               </Button>

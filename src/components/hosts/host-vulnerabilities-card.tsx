@@ -2,6 +2,7 @@
 import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -144,7 +145,11 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
       <CardContent>
         {!hasFindings ? (
           <p className="text-sm text-muted-foreground">
-            {"Nessun finding archiviato. Verifica che scanner-edge e/o Wazuh siano configurati in Impostazioni → Integrazioni e che il sync sia avvenuto."}
+            Nessun finding archiviato. Verifica che lo Scanner-Edge e/o Wazuh siano configurati in{" "}
+            <Link href="/settings?tab=moduli" className="underline underline-offset-2 hover:text-foreground">
+              Impostazioni → Moduli
+            </Link>{" "}
+            e che il sync sia avvenuto.
           </p>
         ) : (
           <>

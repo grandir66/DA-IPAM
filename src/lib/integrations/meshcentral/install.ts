@@ -135,7 +135,7 @@ export async function installMeshCentral(jobId: string, opts: MeshInstallOptions
 
     if (!(await isDockerAvailable())) {
       throw new Error(
-        "Docker non disponibile sul server: installalo da Impostazioni → Integrazioni prima di procedere.",
+        "Docker non disponibile sul server: installalo da Impostazioni → Moduli («Installa Docker automaticamente») prima di procedere.",
       );
     }
 

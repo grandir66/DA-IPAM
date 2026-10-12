@@ -394,9 +394,17 @@ export function VulnerabilitiesListClient() {
                 {!loading && data.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
-                      {hasFilters
-                        ? "Nessuna vulnerabilità trovata con questi filtri."
-                        : "Nessuna vulnerabilità archiviata. Configura scanner-edge o Wazuh in Impostazioni → Integrazioni."}
+                      {hasFilters ? (
+                        "Nessuna vulnerabilità trovata con questi filtri."
+                      ) : (
+                        <>
+                          Nessuna vulnerabilità archiviata. Configura lo Scanner-Edge o Wazuh in{" "}
+                          <Link href="/settings?tab=moduli" className="underline underline-offset-2 hover:text-foreground">
+                            Impostazioni → Moduli
+                          </Link>
+                          .
+                        </>
+                      )}
                     </TableCell>
                   </TableRow>
                 )}

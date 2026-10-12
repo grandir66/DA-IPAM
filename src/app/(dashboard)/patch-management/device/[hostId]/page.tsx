@@ -633,7 +633,7 @@ export default function DeviceDetailPage() {
     if (!detail) return;
     if (!wazuhConfigured) {
       toast.error(
-        "Wazuh manager non configurato. Vai a Integrazioni → Wazuh per impostare URL e credenziali."
+        "Wazuh manager non configurato. Vai a Impostazioni → Moduli → Wazuh per impostare URL e credenziali."
       );
       return;
     }
@@ -1095,7 +1095,7 @@ export default function DeviceDetailPage() {
                 }
                 title={
                   !wazuhConfigured
-                    ? "Wazuh manager non configurato (Integrazioni → Wazuh)"
+                    ? "Wazuh manager non configurato (Impostazioni → Moduli → Wazuh)"
                     : !detail?.winrmValidated
                       ? "WinRM non configurato per questo host"
                       : `Installa Wazuh agent (manager: ${wazuhManagerHost})`

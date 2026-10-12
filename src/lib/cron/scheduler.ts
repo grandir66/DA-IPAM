@@ -71,7 +71,8 @@ function assertTenantContext(key: string, tenantCode: string): void {
       "Causa tipica: due istanze del modulo db-tenant nello stesso processo " +
       "(import dinamico di db-tenant sotto tsx). Il job NON viene eseguito, per non " +
       "scrivere sul database del tenant sbagliato. Ogni job successivo fallira' " +
-      "allo stesso modo: IL PROCESSO VA RIAVVIATO (systemctl restart da-invent).",
+      "allo stesso modo: IL PROCESSO VA RIAVVIATO (systemctl restart da-invent, " +
+      "o da-ipam sulle appliance).",
   );
   throw new Error(
     `Contesto tenant corrotto: atteso "${tenantCode}", letto ${seen ?? "null"} — processo da riavviare`,

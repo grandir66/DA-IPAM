@@ -64,7 +64,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   richiesta: con `Restart=on-failure` un'uscita senza errore non si riavvia, e se
   la richiesta non arrivava in tempo il servizio restava spento. Se systemd
   rifiuta (per esempio per i permessi), il motivo va nel log e il processo esce
-  con errore, così riparte comunque.
+  con errore, così riparte comunque. Con lo stesso criterio i comandi da copiare
+  dell'aggiornamento manuale (prima `systemctl restart da-invent`, che su DTS
+  falliva) e il messaggio dello scheduler che chiede di riavviare il processo.
 - **Un job non parte più due volte nello stesso processo.** Quando una pagina
   salvava la configurazione dei job (job, AD, Wazuh, MeshCentral, Scanner-Edge,
   import moduli), lo scheduler veniva ricaricato da una seconda copia del suo

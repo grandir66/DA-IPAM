@@ -636,7 +636,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                         variant="outline"
                         size="sm"
                         className="flex-1"
-                        onClick={() => window.open(item.url!, "_blank", "noopener,noreferrer")}
+                        onClick={() => window.open(item.open_url ?? item.url!, "_blank", "noopener,noreferrer")}
                       >
                         <ExternalLink className="h-3 w-3 mr-1" />
                         Apri

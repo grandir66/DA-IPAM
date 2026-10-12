@@ -116,6 +116,16 @@ test("proxy, admin con accesso automatico spento: inoltra la richiesta com'è, s
   assert.equal(inoltrate[0]!.headers.get("cookie"), COOKIE_BROWSER, "la sessione LibreNMS dell'admin resta");
 });
 
+// Revisione del 12/10: ad accesso automatico spento non c'è una sessione admin
+// da cui difendersi, e togliere i cookie impediva al viewer il login suo.
+test("proxy, viewer con accesso automatico spento: inoltra la richiesta com'è, col suo login", async () => {
+  const { conta, inoltrate, deps } = finte(false);
+  await gestisciProxyLibreNMS(richiesta(), "viewer", deps);
+  assert.equal(conta.login, 0);
+  assert.equal(inoltrate.length, 1);
+  assert.equal(inoltrate[0]!.headers.get("cookie"), COOKIE_BROWSER, "la sessione LibreNMS del viewer resta");
+});
+
 test("proxy, admin con login non riuscito: 502 senza inoltro", async () => {
   const { inoltrate, deps } = finte(true);
   deps.cookieAccessoAutomatico = async () => null;
@@ -204,6 +214,17 @@ test("i link verso LibreNMS si risolvono col ruolo (parametro obbligatorio)", ()
   }
   const vault = leggi("src/lib/credentials-vault.ts");
   assert.doesNotMatch(vault, /resolveLibreNMSOperatorUrl/, "il vault salva l'URL diretto");
+});
+
+// Revisione del 12/10: il vault salva l'URL diretto, ma «Apri» nella scheda
+// della credenziale apriva quello e l'admin perdeva l'accesso automatico.
+test("vault: «Apri» usa l'URL scelto col ruolo, il vault resta con l'URL diretto", () => {
+  const rotta = leggi("src/app/api/system-credentials/route.ts");
+  const get = rotta.slice(rotta.indexOf("export async function GET"), rotta.indexOf("export async function POST"));
+  assert.match(get, /resolveLibreNMSOperatorUrl\(\s*[\w.]+,\s*\w+\.user\.role\s*\)/);
+  assert.match(get, /open_url/);
+  const client = leggi("src/app/(dashboard)/launchpad/launchpad-client.tsx");
+  assert.match(client, /window\.open\(\s*item\.open_url\s*\?\?\s*item\.url/);
 });
 
 // --- vault su hub temporaneo -----------------------------------------------

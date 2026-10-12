@@ -31,6 +31,8 @@ export interface SystemCredential {
   kind: CredentialKind;
   label: string;
   url: string | null;
+  /** Solo nella risposta di GET /api/system-credentials: l'URL che «Apri» usa, scelto col ruolo (LibreNMS). Mai salvato. */
+  open_url?: string;
   api_url: string | null;
   username: string | null;
   /** True se è valorizzato in DB. Plaintext NON viene mai restituito da list/get. */

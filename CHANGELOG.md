@@ -8,6 +8,18 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **Impostazioni dell'hub senza segreti per chi non è admin (SEC-5, seconda
+  strada).** Chiusa la configurazione delle integrazioni, la lettura generale
+  delle impostazioni restituiva ancora a ogni utente con accesso tutta la
+  tabella dell'hub, dove stanno anche password e token delle integrazioni e
+  della posta: di solito cifrati, ma non sulle installazioni nate prima della
+  cifratura. Ora chi non è admin la riceve senza le chiavi dei segreti
+  (riconosciute dal nome; nel dubbio si nascondono), con il solo conteggio di
+  quelle tolte; l'admin la riceve come prima. Il censimento delle guardie la
+  dichiara lettura «mascherata» e la verifica dal di fuori la prova col
+  viewer. **Cambia sulle installazioni del canale `dev`** solo per chi non è
+  admin, e nessuna pagina aperta ai viewer legge quelle chiavi. Prova:
+  `impostazioni-viewer.test.ts`.
 - **Scritture verso la dashboard Wazuh dal proxy solo per gli admin (SEC-6).**
   Il proxy della dashboard Wazuh accettava ogni metodo da chiunque avesse una
   sessione, viewer compresi: le letture restavano a tutti, ma anche le
@@ -28,7 +40,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   installazioni del canale `dev`** solo dove l'accesso Domarc è acceso (non
   sulle appliance dei clienti, dove è spento): chi entra col pulsante Domarc
   senza essere dichiarato su DA-IPAM in DA-Auth vede di nuovo la pagina di
-  accesso; il login locale resta. Prova: `daauth.test.ts`.
+  accesso; il login locale resta. **Prima che arrivi all'hub** va letto su
+  DA-Auth che le utenze dell'hub che entrano col pulsante Domarc siano
+  dichiarate su DA-IPAM (lettura non ancora fatta: va dichiarato chi manca, o
+  confermato che conosce la password locale). Prova: `daauth.test.ts`.
 - **MeshCentral comanda solo se il modulo è attivo (SEC-18).** «Disinstalla»
   spegneva il modulo ma lasciava salvati i parametri di collegamento (per non
   perderli a un clic) e, di default, nodi e storico: comandi remoti, sessioni
@@ -66,13 +81,17 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   utente in sola lettura si trovava dentro LibreNMS da amministratore. Ora lo
   usa solo chi è admin; gli altri arrivano alla pagina di login di LibreNMS
   (dal Launchpad, dalla dashboard e dal proxy) ed entrano con un'utenza
-  LibreNMS loro. **Cambia subito sulle installazioni del canale `dev`** (deroga
+  LibreNMS loro; ad accesso automatico spento il proxy passa la richiesta
+  com'è, così quel login funziona anche da lì. Limite: in un browser condiviso
+  in cui un admin ha usato l'accesso automatico, la sua sessione di LibreNMS
+  resta nel browser finché LibreNMS non la fa scadere. **Cambia subito sulle installazioni del canale `dev`** (deroga
   a «nasce spento», decisa nel piano): chi era viewer e apriva LibreNMS senza
   login ora vede il login; secondo la lettura del 12/10 sull'hub c'è un utente
   viewer, a DTS nessuno. Per l'admin non cambia niente, tranne la voce
   LibreNMS del vault delle credenziali, che ora tiene l'indirizzo diretto
   dell'interfaccia (la scelta dell'accesso automatico si fa quando si apre il
-  link, in base al ruolo); le voci salvate in passato si correggono alla
+  link, in base al ruolo: anche «Apri» nella scheda della credenziale porta
+  l'admin dentro con l'accesso automatico); le voci salvate in passato si correggono alla
   prossima sincronizzazione del vault. Prova: `librenms-accesso.test.ts`.
 - **Configurazione delle integrazioni senza segreti per chi non è admin
   (SEC-5, SEC-13).** La lettura della configurazione di LibreNMS, Graylog e Loki

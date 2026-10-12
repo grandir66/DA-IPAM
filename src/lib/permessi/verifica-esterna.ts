@@ -15,7 +15,8 @@
  *   Si scelgono solo queste perché la guardia viene prima di tutto: il gestore
  *   non arriva a fare niente;
  * - **viewer, senza segreti**: le letture aperte al viewer che toccano segreti
- *   (configurazione delle integrazioni, SEC-5) rispondono senza i valori, e
+ *   (configurazione delle integrazioni e impostazioni dell'hub, SEC-5)
+ *   rispondono senza i valori, e
  *   l'accesso automatico a LibreNMS non consegna i suoi cookie (SEC-6).
  *
  * Modulo puro: niente rete, niente database. Lo usa `scripts/verifica-permessi.ts`
@@ -23,11 +24,16 @@
  * `__tests__/verifica-esterna.test.ts` lo esercita con risposte della forma vera,
  * vecchie (che devono fallire) e nuove.
  */
-import { CAMPI_SEGRETI_INTEGRAZIONE } from "./politica";
+import { CAMPI_SEGRETI_INTEGRAZIONE, CHIAVE_SEGRETI_NASCOSTI, eImpostazioneSegreta } from "./politica";
 import { eConsentita, type Consentiti, type Valutazione } from "./rotte";
 
 export type Chi = "anonimo" | "viewer";
-export type Attesa = "rifiuto-anonimo" | "rifiuto-viewer" | "config-senza-segreti" | "accesso-automatico-negato";
+export type Attesa =
+  | "rifiuto-anonimo"
+  | "rifiuto-viewer"
+  | "config-senza-segreti"
+  | "impostazioni-senza-segreti"
+  | "accesso-automatico-negato";
 
 export interface Caso {
   chi: Chi;
@@ -85,6 +91,13 @@ export const CASI_SEGRETI: Caso[] = [
       origine: "SEC-5",
     }),
   ),
+  {
+    chi: "viewer",
+    metodo: "GET",
+    percorso: "/api/settings",
+    attesa: "impostazioni-senza-segreti",
+    origine: "SEC-5",
+  },
   {
     chi: "viewer",
     metodo: "GET",
@@ -169,6 +182,18 @@ export function giudica(caso: Caso, r: Risposta): Giudizio {
       const senzaFlag = CAMPI_SEGRETI_INTEGRAZIONE.filter((k) => typeof c[`${k}Set`] !== "boolean");
       if (senzaFlag.length) return { esito: "ko", nota: `configurazione non mascherata (manca ${senzaFlag.map((k) => `${k}Set`).join(", ")})` };
       return { esito: "ok", nota: "segreti vuoti, flag «impostato» presenti" };
+    }
+
+    case "impostazioni-senza-segreti": {
+      if (r.status !== 200) return { esito: "ko", nota: `il viewer riceve ${r.status} invece di 200` };
+      const j = leggiJson(r.corpo);
+      if (!j || typeof j !== "object" || Array.isArray(j)) return { esito: "ko", nota: "risposta che non è un elenco di impostazioni" };
+      const segrete = Object.keys(j).filter(eImpostazioneSegreta);
+      if (segrete.length) return { esito: "ko", nota: `chiavi segrete consegnate al viewer: ${segrete.join(", ")}` };
+      if (typeof (j as Record<string, unknown>)[CHIAVE_SEGRETI_NASCOSTI] !== "string") {
+        return { esito: "ko", nota: `impostazioni non mascherate (manca ${CHIAVE_SEGRETI_NASCOSTI})` };
+      }
+      return { esito: "ok", nota: "nessuna chiave segreta, segno della maschera presente" };
     }
 
     case "accesso-automatico-negato": {

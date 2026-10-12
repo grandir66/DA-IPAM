@@ -51,3 +51,36 @@ export function mascheraConfigIntegrazione(cfg: ComponentConfig, vedeSegreti: bo
 export function puoUsareAccessoAutomatico(ruolo: unknown): boolean {
   return livelloAlmeno(ruolo, "admin");
 }
+
+/**
+ * Chiavi della tabella `settings` dell'hub che contengono un segreto: password,
+ * token, chiavi, valori cifrati. Si decide dal nome, e nel dubbio si nasconde:
+ * le pagine aperte ai viewer leggono solo chiavi che qui non rientrano
+ * (prova: `__tests__/impostazioni-viewer.test.ts`).
+ */
+const IMPOSTAZIONE_SEGRETA = /(password|secret|token|_key$|_key_|_pat$|_pat_|encrypted|_auth$|_auth_)/i;
+
+export function eImpostazioneSegreta(chiave: string): boolean {
+  return IMPOSTAZIONE_SEGRETA.test(chiave);
+}
+
+/** Chiave aggiunta alla vista di chi non è admin: quante chiavi segrete sono state tolte. */
+export const CHIAVE_SEGRETI_NASCOSTI = "_segreti_nascosti";
+
+/**
+ * Impostazioni dell'hub per chi le legge (SEC-5): l'admin le riceve tutte; gli
+ * altri senza le chiavi segrete, col conteggio di quelle tolte. Il conteggio
+ * dice alla verifica dal di fuori che la maschera è passata anche dove non
+ * c'erano segreti da togliere.
+ */
+export function impostazioniPerRuolo(impostazioni: Record<string, string>, vedeSegreti: boolean): Record<string, string> {
+  if (vedeSegreti) return impostazioni;
+  const out: Record<string, string> = {};
+  let tolte = 0;
+  for (const [k, v] of Object.entries(impostazioni)) {
+    if (eImpostazioneSegreta(k)) tolte++;
+    else out[k] = v;
+  }
+  out[CHIAVE_SEGRETI_NASCOSTI] = String(tolte);
+  return out;
+}

@@ -80,6 +80,19 @@ test("casi: ci sono quelli di SEC-13, SEC-5 e SEC-6", () => {
   assert.equal(caso("/api/integrations/librenms").attesa, "config-senza-segreti");
   assert.equal(caso("/api/integrations/graylog").attesa, "config-senza-segreti");
   assert.equal(caso("/api/integrations/librenms/sso").attesa, "accesso-automatico-negato");
+  assert.equal(caso("/api/settings", "viewer").attesa, "impostazioni-senza-segreti");
+});
+
+test("SEC-5: impostazioni dell'hub al viewer — prima con le chiavi dei segreti, ora senza e col segno", () => {
+  const c = caso("/api/settings", "viewer");
+  const libere = { public_hub_url: "https://hub.esempio.lan", host_linux_credential_id: "3" };
+  const prima = risposta({ corpo: JSON.stringify({ ...libere, integration_librenms_admin_password: "pw-finta" }) });
+  assert.equal(giudica(c, prima).esito, "ko");
+  assert.match(giudica(c, prima).nota, /integration_librenms_admin_password/);
+  // Codice di prima su un hub senza segreti salvati: senza il segno non prova niente.
+  assert.equal(giudica(c, risposta({ corpo: JSON.stringify(libere) })).esito, "ko");
+  assert.equal(giudica(c, risposta({ corpo: JSON.stringify({ ...libere, _segreti_nascosti: "4" }) })).esito, "ok");
+  assert.equal(giudica(c, risposta({ status: 403 })).esito, "ko");
 });
 
 // ---------------------------------------------------------------------------

@@ -101,13 +101,14 @@ export async function gestisciProxyLibreNMS(
   ruolo: unknown,
   deps: DipendenzeProxyLibreNMS,
 ): Promise<Response> {
+  // Accesso automatico spento: nessuna sessione admin da cui difendersi, la
+  // richiesta passa così com'è e ognuno entra col proprio login di LibreNMS.
+  if (!deps.accessoAutomaticoAttivo()) return deps.inoltra(req);
   if (!puoUsareAccessoAutomatico(ruolo)) {
     // Senza cookie di LibreNMS: una sessione nata da un accesso automatico
     // precedente (o di un altro utente sullo stesso browser) non passa.
     return deps.inoltra(richiestaConCookieLibreNMS(req, ""));
   }
-  // Admin con l'accesso automatico spento: come prima, la richiesta così com'è.
-  if (!deps.accessoAutomaticoAttivo()) return deps.inoltra(req);
 
   const cookie = await deps.cookieAccessoAutomatico();
   if (!cookie) {

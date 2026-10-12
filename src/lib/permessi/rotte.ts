@@ -87,6 +87,13 @@ export const ATTESI: Atteso[] = [
     motivo: "configurazione delle integrazioni: per chi non è admin solo senza segreti",
   },
   {
+    rotta: "/api/settings",
+    metodi: ["GET"],
+    livello: "admin",
+    codice: "SEC-5",
+    motivo: "impostazioni dell'hub: per chi non è admin solo senza le chiavi dei segreti",
+  },
+  {
     rotta: "/api/integrations/install-progress/[jobId]",
     metodi: ["GET"],
     livello: "admin",
@@ -125,7 +132,7 @@ export const ECCEZIONI: Eccezione[] = [
     tipo: "motivata",
     guardia: "auth",
     motivo:
-      "proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6)",
+      "proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri, con l'accesso automatico acceso, inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6)",
     prova: "src/lib/integrations/__tests__/librenms-accesso.test.ts",
   },
 
@@ -154,6 +161,14 @@ export const ECCEZIONI: Eccezione[] = [
     guardia: "auth",
     motivo: "token e password vuoti con i flag «impostato» per chi non è admin (SEC-5)",
     prova: "src/lib/permessi/__tests__/politica.test.ts",
+  },
+  {
+    rotta: "/api/settings",
+    metodi: ["GET"],
+    tipo: "mascherata",
+    guardia: "auth",
+    motivo: "chiavi dei segreti tolte per chi non è admin (SEC-5)",
+    prova: "src/lib/permessi/__tests__/impostazioni-viewer.test.ts",
   },
 ];
 

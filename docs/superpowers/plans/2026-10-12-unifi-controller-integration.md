@@ -263,6 +263,9 @@ test("device senza MAC/port_table non crasha", () => {
 >   livello del PUT. Stessa scelta delle sonde `test-snmp`/`test-arp` (audit SEC-9). Resta
 >   `GET` come da spec, con `Cache-Control: no-store`; non tocca il tenant, quindi niente
 >   `withTenantFromSession`. Gira anche a integrazione spenta (si prova prima di accendere).
+>   *Revisione del ramo (12/10): diventata `POST`. Ha effetti (credenziali al controller,
+>   fiducia nel certificato al primo uso) e un `GET` partirebbe da un link seguito con la
+>   sessione aperta (cookie SameSite=Lax).*
 > - La logica sta in `src/lib/integrations/unifi-sync.ts`, così si prova senza la sessione:
 >   `probeUnifiController(opts?)` (config salvata + `unifiCertPinStore`, non lancia) e
 >   `unifiSyncFailure(result)` (motivo se il giro non ha letto o scritto niente, altrimenti

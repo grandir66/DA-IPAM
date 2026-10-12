@@ -102,7 +102,7 @@ Card nella tab "moduli" (`modules-tab.tsx`). `IntegrationCard` è generico su
 `component`, ma UniFi ha il campo **`kind`** (self_hosted/udm/cloud) e campi
 condizionati → serve una **`UnifiCard`** dedicata (precedente: `WazuhCard`), con:
 selettore kind, url, site, username/password o api_token, pulsanti **Test** (→
-`GET /api/integrations/unifi/test-connection`) e **Sincronizza** (→ `POST
+`POST /api/integrations/unifi/test-connection`: ha effetti, quindi niente GET) e **Sincronizza** (→ `POST
 /api/integrations/unifi/sync`). Salvataggio: `PUT /api/integrations/unifi` poi `load()`.
 
 ## 3. Mapping puro (testabile) — `src/lib/integrations/unifi-map.ts`

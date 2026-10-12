@@ -533,7 +533,10 @@ export function UnifiCard({ isAdmin }: { isAdmin: boolean }) {
     setBusy("test");
     setProbe(null);
     try {
-      const r = await fetchJson<UnifiProbeResult>("/api/integrations/unifi/test-connection", { cache: "no-store" });
+      const r = await fetchJson<UnifiProbeResult>("/api/integrations/unifi/test-connection", {
+        method: "POST",
+        cache: "no-store",
+      });
       if (!r.ok) {
         toast.error(`Prova non eseguita: ${r.message}`);
         return;

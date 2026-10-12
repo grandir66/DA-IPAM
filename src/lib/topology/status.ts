@@ -17,7 +17,7 @@ export function deriveNodeStatus(sig: StatusSignals): TopologyStatus {
   if (sig.libreStatus === 0) return "fail";
   if (sig.anomalySeverity === "high") return "fail";
 
-  const isLive = sig.hostStatus === "online" || sig.libreStatus === 1;
+  const isLive = sig.hostStatus === "online" || sig.libreStatus === 1 || sig.deviceEnabled === true;
 
   // UNKNOWN: nessun segnale di liveness
   if (!isLive) return "unknown";

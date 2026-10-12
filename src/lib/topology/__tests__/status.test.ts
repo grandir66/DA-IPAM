@@ -28,6 +28,12 @@ test("libreStatus 1 pulito → ok", () => {
 test("device disabilitato senza segnali → unknown (non fail)", () => {
   assert.equal(deriveNodeStatus({ deviceEnabled: false, nowMs: NOW }), "unknown");
 });
+test("device abilitato pulito → ok", () => {
+  assert.equal(deriveNodeStatus({ deviceEnabled: true, nowMs: NOW }), "ok");
+});
+test("device abilitato con uplink down → warning", () => {
+  assert.equal(deriveNodeStatus({ deviceEnabled: true, uplinkDown: true, nowMs: NOW }), "warning");
+});
 test("nessun segnale → unknown", () => {
   assert.equal(deriveNodeStatus({ nowMs: NOW }), "unknown");
 });

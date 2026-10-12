@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { upsertTopologyPositions } from "@/lib/db";
-import { requireAuth, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
 const BodySchema = z.object({
@@ -20,7 +20,7 @@ const BodySchema = z.object({
 
 export async function PUT(request: Request) {
   return withTenantFromSession(async () => {
-    const authCheck = await requireAuth();
+    const authCheck = await requireAdmin();
     if (isAuthError(authCheck)) return authCheck;
     try {
       const parsed = BodySchema.safeParse(await request.json());

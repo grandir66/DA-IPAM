@@ -1,7 +1,7 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpCircle,
   RefreshCw,
@@ -46,6 +46,20 @@ interface ChannelStatus {
   envFileWritable: boolean;
 }
 
+/** Risposta di POST /api/system/update con action=apply. */
+interface ApplyResponse {
+  status?: string;
+  message?: string;
+  error?: string;
+  detail?: string;
+  steps?: Array<{ status: string; message: string }>;
+  /** Il server ha già programmato il riavvio: non se ne chiede un secondo. */
+  restartScheduled?: boolean;
+}
+
+/** Dopo un aggiornamento riuscito la pagina si ricarica da sola fra questo tempo. */
+const RICARICA_DOPO_MS = 60_000;
+
 const CHANNEL_LABEL: Record<string, string> = {
   stable: "Stable (main)",
   dev: "Dev (dev)",
@@ -68,6 +82,13 @@ export function UpdatesTab() {
   const [checking, setChecking] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [updateLog, setUpdateLog] = useState<string[]>([]);
+  const ricaricaRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (ricaricaRef.current) clearTimeout(ricaricaRef.current);
+    };
+  }, []);
 
   const fetchChannel = async () => {
     try {
@@ -121,28 +142,52 @@ export function UpdatesTab() {
       return;
     }
     setUpdating(true);
-    setUpdateLog(["Avvio aggiornamento…"]);
+    setUpdateLog(["Avvio aggiornamento… (può durare alcuni minuti)"]);
     try {
       const r = await fetch("/api/system/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "apply" }),
       });
-      const d = (await r.json()) as {
-        status?: string;
-        message?: string;
-        steps?: Array<{ status: string; message: string }>;
-        error?: string;
-      };
-      if (d.steps) {
-        setUpdateLog(d.steps.map((s) => `[${s.status}] ${s.message}`));
+      let d: ApplyResponse | null = null;
+      try {
+        d = (await r.json()) as ApplyResponse;
+      } catch {
+        d = null;
       }
-      if (d.error) {
-        toast.error(d.error);
-      } else if (d.status === "completed") {
+      if (!d) {
+        // Tipicamente un 504 di nginx: la build ha superato il tempo d'attesa del
+        // proxy. Il server la porta a termine e si riavvia da solo.
+        setUpdateLog((l) => [
+          ...l,
+          `ERRORE: risposta non leggibile dal server (HTTP ${r.status}).`,
+          "Se l'aggiornamento era partito, il server lo porta a termine e riavvia il servizio da solo: ricarica la pagina fra qualche minuto e controlla la versione installata.",
+        ]);
+        toast.error(`Risposta non leggibile dal server (HTTP ${r.status})`);
+        return;
+      }
+      const righe = (d.steps ?? []).map((s) => `[${s.status}] ${s.message}`);
+      if (!r.ok || d.error || d.status !== "completed") {
+        const errore = d.error ?? `Aggiornamento non riuscito (HTTP ${r.status})`;
+        righe.push(`ERRORE: ${errore}`);
+        if (d.detail) righe.push(d.detail);
+        if (d.message) righe.push(d.message);
+        setUpdateLog((l) => [...l, ...righe]);
+        toast.error(errore);
+        return;
+      }
+      righe.push(d.message ?? "Aggiornamento completato.");
+      if (d.restartScheduled) {
+        righe.push(
+          `Il server riavvia il servizio da solo: la pagina si ricarica fra ${RICARICA_DOPO_MS / 1000} secondi.`,
+        );
         toast.success("Aggiornamento applicato. Riavvio in corso…");
-        setTimeout(() => window.location.reload(), 60_000);
+        ricaricaRef.current = setTimeout(() => window.location.reload(), RICARICA_DOPO_MS);
+      } else {
+        righe.push("Il servizio NON è stato riavviato: va riavviato sul server.");
+        toast.warning("Aggiornamento applicato, ma il servizio non è stato riavviato.");
       }
+      setUpdateLog((l) => [...l, ...righe]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setUpdateLog((l) => [...l, `ERRORE: ${msg}`]);

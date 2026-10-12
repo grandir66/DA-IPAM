@@ -43,6 +43,8 @@ export function UpdateChecker() {
   const [showBanner, setShowBanner] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const restartIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Il server ha già programmato il riavvio dopo «Installa»: niente «Riavvia ora». */
+  const [riavvioProgrammato, setRiavvioProgrammato] = useState(false);
 
   const checkForUpdates = useCallback(async (silent = false) => {
     try {
@@ -127,7 +129,12 @@ export function UpdateChecker() {
         setStatusMessage(data.message);
         toast.success("Aggiornamento completato!");
 
-        if (data.requiresRestart) {
+        if (data.restartScheduled) {
+          // Il riavvio l'ha già programmato il server: chiederne un secondo
+          // riavvierebbe il processo nuovo appena partito.
+          setRiavvioProgrammato(true);
+          attendiRiavvio();
+        } else if (data.requiresRestart) {
           setTimeout(() => {
             handleRestart();
           }, 3000);
@@ -143,32 +150,40 @@ export function UpdateChecker() {
     try {
       setStatusMessage("Riavvio del server...");
       await fetch("/api/system/update?action=restart", { method: "POST" });
-      
-      toast.info("Il server si sta riavviando. La pagina si ricaricherà automaticamente.");
-      
-      let attempts = 0;
-      const checkServer = setInterval(async () => {
-        attempts++;
-        try {
-          const res = await fetch("/api/health", { cache: "no-store" });
-          if (res.ok) {
-            clearInterval(checkServer);
-            restartIntervalRef.current = null;
-            window.location.reload();
-          }
-        } catch {
-          if (attempts > 30) {
-            clearInterval(checkServer);
-            restartIntervalRef.current = null;
-            toast.error("Il server non risponde. Ricarica manualmente la pagina.");
-          }
-        }
-      }, 2000);
-      restartIntervalRef.current = checkServer;
+      attendiRiavvio();
     } catch {
       toast.error("Errore durante il riavvio");
     }
   };
+
+  /** Aspetta che il server torni a rispondere, poi ricarica la pagina. */
+  function attendiRiavvio() {
+    toast.info("Il server si sta riavviando. La pagina si ricaricherà automaticamente.");
+    if (restartIntervalRef.current) clearInterval(restartIntervalRef.current);
+
+    let attempts = 0;
+    const checkServer = setInterval(async () => {
+      attempts++;
+      // I primi giri si saltano: il riavvio parte un secondo dopo la risposta, e
+      // fino ad allora /api/health lo darebbe ancora il processo vecchio.
+      if (attempts <= 2) return;
+      try {
+        const res = await fetch("/api/health", { cache: "no-store" });
+        if (res.ok) {
+          clearInterval(checkServer);
+          restartIntervalRef.current = null;
+          window.location.reload();
+        }
+      } catch {
+        if (attempts > 30) {
+          clearInterval(checkServer);
+          restartIntervalRef.current = null;
+          toast.error("Il server non risponde. Ricarica manualmente la pagina.");
+        }
+      }
+    }, 2000);
+    restartIntervalRef.current = checkServer;
+  }
 
   const updateAvailable = !!updateInfo?.updateAvailable;
   const showReopenFab = updateAvailable && dismissed && !showBanner && !dialogOpen;
@@ -328,7 +343,7 @@ export function UpdateChecker() {
                 </Button>
               )}
 
-              {updateStatus === "completed" && (
+              {updateStatus === "completed" && !riavvioProgrammato && (
                 <Button
                   onClick={handleRestart}
                   variant="default"

@@ -15,6 +15,11 @@
  * - guardia «zero sospetto» (correzione 4): se il controller non riporta porte
  *   o vicini per un apparato che nel DB ne ha, non si cancella niente e lo si
  *   dice in `errors[]`;
+ * - apparato non connesso al controller (`state` diverso da 1): il controller
+ *   ne manda solo la parte statica (porte senza stato, velocità, MAC e PoE,
+ *   niente LLDP). Porte e vicini già nel DB restano quelli dell'ultima sync,
+ *   e l'apparato finisce in `offline[]` (non è un errore); se nel DB non c'è
+ *   niente, si scrive quel che c'è;
  * - una sola lettura del controller per giro: `probe()` e `listDevices()` fanno
  *   la stessa sequenza login → stat/device → logout, chiamarle entrambe
  *   vorrebbe dire due sessioni e due letture complete. Un errore di lettura
@@ -91,6 +96,11 @@ export interface UnifiSyncResult {
   portsUpserted: number;
   neighborsUpserted: number;
   errors: string[];
+  /**
+   * Apparati che il controller non vede connessi («nome (ip)»): i fatti si
+   * aggiornano, porte e vicini già nel DB restano quelli dell'ultima sync.
+   */
+  offline: string[];
 }
 
 /** Seriale confrontabile: senza spazi ai lati, maiuscolo; null se vuoto. */
@@ -294,10 +304,14 @@ function writeDevice(
   }
 
   const before = ctx.counts.get(nd.id) ?? { ports: 0, neighbors: 0 };
+  // Offline: il controller dà solo la parte statica, l'ultimo stato buono vale di più.
+  const connected = d.state === 1;
 
   const ports = mapUnifiPorts(d, ctx.index);
   let portsWritten = 0;
-  if (ports.length > 0) {
+  if (!connected && before.ports > 0) {
+    // porte dell'ultima sync: l'apparato è in `offline[]`
+  } else if (ports.length > 0) {
     upsertSwitchPorts(nd.id, ports);
     portsWritten = ports.length;
   } else if (before.ports > 0) {
@@ -306,7 +320,9 @@ function writeDevice(
 
   const neighbors = uniqueNeighbors(mapUnifiLldp(d, ctx.index));
   let neighborsWritten = 0;
-  if (neighbors.length > 0) {
+  if (!connected && before.neighbors > 0) {
+    // vicini dell'ultima sync: l'apparato è in `offline[]`
+  } else if (neighbors.length > 0) {
     upsertNeighbors(nd.id, neighbors);
     neighborsWritten = neighbors.length;
   } else if (before.neighbors > 0) {
@@ -370,6 +386,7 @@ function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult): void {
     result.portsUpserted += out.ports;
     result.neighborsUpserted += out.neighbors;
     result.errors.push(...out.warnings);
+    if (d.state !== 1) result.offline.push(`${m.name} (${m.host})`);
   }
 }
 
@@ -391,6 +408,7 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
     portsUpserted: 0,
     neighborsUpserted: 0,
     errors: [],
+    offline: [],
   };
   // Senza tenant non si legge nemmeno il controller: non ci sarebbe dove scrivere.
   if (!tenantCode) {

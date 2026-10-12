@@ -69,6 +69,7 @@ const SYNC_CON_AVVISI = {
   portsUpserted: 62,
   neighborsUpserted: 5,
   errors: ["SW-2: zero porte dal controller, il DB ne ha 24: porte lasciate com'erano"],
+  offline: ["SW-7 (10.99.0.30)"],
 };
 
 function vista(over: Partial<UnifiCardViewProps> & { saved?: UnifiSavedConfig } = {}): string {
@@ -186,6 +187,7 @@ describe("esiti", () => {
     );
     assert.equal(v.errors.length, 1);
     assert.equal(v.skippedReasons.length, 1);
+    assert.deepEqual(v.offline, ["SW-7 (10.99.0.30)"]);
   });
 
   it("sync fallita: tono d'errore e «niente è stato scritto»", () => {
@@ -249,6 +251,8 @@ describe("vista resa", () => {
     assert.match(html, /Saltati, con il motivo/);
     assert.match(html, /AP-9: apparato senza indirizzo IP/);
     assert.match(html, /SW-2: zero porte/);
+    assert.match(html, /Non connessi al controller/);
+    assert.match(html, /SW-7 \(10\.99\.0\.30\)/);
   });
 
   it("utente non amministratore: tutto fermo, nessuna azione sul certificato", () => {

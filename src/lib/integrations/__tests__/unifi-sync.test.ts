@@ -15,7 +15,7 @@ import { closeHubDb } from "@/lib/db-hub";
 import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { getIntegrationConfig, setIntegrationConfig, unifiCertPinStore } from "../config";
 import { checkPresentedPin, UnifiApiError, type UnifiHttpRequest, type UnifiTransportFactory } from "../unifi-api";
-import { parseStatDeviceResponse, type UnifiDevice } from "../unifi-device";
+import { parseStatDeviceResponse, parseUnifiDevice, type UnifiDevice } from "../unifi-device";
 import {
   probeUnifiController,
   syncUnifiForTenant,
@@ -35,6 +35,26 @@ function risposta(ritocco?: { nome: string; con: Partial<UnifiDevice> }): UnifiD
   const copia = structuredClone(FIXTURE_DEVICES);
   if (!ritocco) return copia;
   return copia.map((d) => (d.name === ritocco.nome ? { ...d, ...ritocco.con } : d));
+}
+
+/**
+ * Un apparato della risposta vera reso offline come il controller manda SW-2
+ * (state 0, niente lldp_table, porte coi soli campi statici): forma vera.
+ */
+function offline(nome: string): UnifiDevice {
+  const grezzo = JSON.parse(fs.readFileSync(FIXTURE, "utf-8")) as { data: Array<Record<string, unknown>> };
+  const sw2 = grezzo.data.find((x) => x.name === "SW-2");
+  const raw = grezzo.data.find((x) => x.name === nome);
+  assert.ok(sw2 && raw);
+  const statici = new Set(Object.keys((sw2.port_table as Array<Record<string, unknown>>)[0]));
+  const porte = (raw.port_table as Array<Record<string, unknown>>).map((p) =>
+    Object.fromEntries(Object.entries(p).filter(([k]) => statici.has(k))),
+  );
+  const copia: Record<string, unknown> = { ...raw, state: 0, port_table: porte };
+  delete copia.lldp_table;
+  const d = parseUnifiDevice(copia);
+  assert.ok(d);
+  return d;
 }
 
 function sorgente(devices: UnifiDevice[]): UnifiDeviceSource & { chiamate: number } {
@@ -233,6 +253,39 @@ test("zero sospetto: port_table e lldp_table vuote per SW-1 non cancellano porte
   assert.equal(conta(T, "switch_ports", "device_id = ?", apparato("SW-11").id), 26);
 });
 
+test("apparato offline: porte e vicini dell'ultima sync restano com'erano, ed è fra gli offline", async () => {
+  await sync();
+  const id = apparato("SW-1").id;
+  const db = getTenantDb(T);
+  const istantanea = () => ({
+    porte: db
+      .prepare(
+        `SELECT port_index, port_name, status, speed, poe_status, poe_power_mw, mac_count, is_trunk,
+                trunk_neighbor_name, trunk_neighbor_port
+           FROM switch_ports WHERE device_id = ? ORDER BY port_index`,
+      )
+      .all(id),
+    vicini: db
+      .prepare(
+        "SELECT local_port, remote_device_name, remote_port, remote_mac, protocol FROM device_neighbors WHERE device_id = ? ORDER BY local_port",
+      )
+      .all(id),
+  });
+  const prima = istantanea();
+  assert.equal(prima.porte.length, 8);
+  assert.equal(prima.vicini.length, 3);
+  // L'ultimo stato buono: uplink verso SW-11 sulla 6, l'AP alimentato sulla 7.
+  assert.match(JSON.stringify(prima.porte), /"port_index":6[^}]*"trunk_neighbor_name":"SW-11"/);
+  assert.match(JSON.stringify(prima.porte), /"port_index":7[^}]*"poe_status":"delivering"/);
+
+  const r = await sync(risposta().map((d) => (d.name === "SW-1" ? offline("SW-1") : d)));
+  assert.deepEqual(istantanea(), prima);
+  assert.deepEqual(r.errors, []);
+  assert.ok(r.offline.some((x) => x.startsWith("SW-1")), r.offline.join("; "));
+  // I fatti dell'apparato si aggiornano lo stesso.
+  assert.equal(r.updated, 4);
+});
+
 test("i vicini MNDP e le porte di un altro apparato restano intatti", async () => {
   const mt = inserisciApparato({ name: "MT-1", host: "10.99.0.1", device_type: "router", vendor: "mikrotik", protocol: "ssh" });
   const db = getTenantDb(T);
@@ -423,6 +476,7 @@ function esito(campi: Partial<UnifiSyncResult> = {}): UnifiSyncResult {
     portsUpserted: 39,
     neighborsUpserted: 7,
     errors: [],
+    offline: [],
     ...campi,
   };
 }

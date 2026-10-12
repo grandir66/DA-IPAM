@@ -212,7 +212,10 @@ function portStatus(p: UnifiPort): UnifiSwitchPortRow["status"] {
 function poeStatus(p: UnifiPort): string | null {
   if (!p.port_poe) return null;
   if (p.poe_mode === "off") return "disabled";
-  return p.poe_enable === true ? "delivering" : "searching";
+  // Apparato offline: il controller manda `port_poe` ma non `poe_enable`, e
+  // «in ricerca» su un apparato spento sarebbe un'invenzione.
+  if (p.poe_enable === null) return null;
+  return p.poe_enable ? "delivering" : "searching";
 }
 
 /**

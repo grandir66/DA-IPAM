@@ -145,6 +145,8 @@ export interface UnifiSyncResponse {
   portsUpserted: number;
   neighborsUpserted: number;
   errors: string[];
+  /** Apparati non connessi al controller: porte e vicini dell'ultima sync. */
+  offline: string[];
 }
 
 export interface UnifiSyncView {
@@ -153,6 +155,7 @@ export interface UnifiSyncView {
   counts: Array<{ label: string; value: number }>;
   skippedReasons: string[];
   errors: string[];
+  offline: string[];
 }
 
 /** Legge la risposta della sync in modo difensivo (403, risposta vecchia, campi mancanti). */
@@ -171,6 +174,7 @@ export function parseUnifiSyncResponse(raw: unknown): UnifiSyncResponse | null {
     portsUpserted: n(r.portsUpserted),
     neighborsUpserted: n(r.neighborsUpserted),
     errors: list(r.errors),
+    offline: list(r.offline),
   };
 }
 
@@ -194,5 +198,6 @@ export function describeUnifiSync(r: UnifiSyncResponse): UnifiSyncView {
     ],
     skippedReasons: r.skippedReasons,
     errors: r.errors,
+    offline: r.offline,
   };
 }

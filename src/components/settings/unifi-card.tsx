@@ -351,6 +351,18 @@ export function UnifiCardView(props: UnifiCardViewProps) {
                 </ul>
               </div>
             )}
+            {syncView.offline.length > 0 && (
+              <div className="text-foreground">
+                <p className="text-xs font-medium">
+                  Non connessi al controller: porte e vicini restano quelli dell&apos;ultima sincronizzazione
+                </p>
+                <ul className="list-disc pl-5 text-xs">
+                  {syncView.offline.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {syncView.errors.length > 0 && (
               <div>
                 <p className="text-xs font-medium">Errori</p>

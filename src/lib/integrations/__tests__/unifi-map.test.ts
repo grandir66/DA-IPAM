@@ -161,6 +161,36 @@ test("SW-2 offline e senza LLDP: nessun vicino, porte con stato sconosciuto, nes
   }
 });
 
+/**
+ * Un apparato della fixture reso offline come lo manda il controller per SW-2
+ * (state 0, niente lldp_table, porte coi soli campi statici): forma vera.
+ */
+function offline(nome: string): UnifiDevice {
+  const grezzo = JSON.parse(fs.readFileSync(FIXTURE, "utf-8")) as { data: Array<Record<string, unknown>> };
+  const sw2 = grezzo.data.find((x) => x.name === "SW-2");
+  const raw = grezzo.data.find((x) => x.name === nome);
+  assert.ok(sw2 && raw);
+  const statici = new Set(Object.keys((sw2.port_table as Array<Record<string, unknown>>)[0]));
+  const porte = (raw.port_table as Array<Record<string, unknown>>).map((p) =>
+    Object.fromEntries(Object.entries(p).filter(([k]) => statici.has(k))),
+  );
+  const copia: Record<string, unknown> = { ...raw, state: 0, port_table: porte };
+  delete copia.lldp_table;
+  return device(copia);
+}
+
+test("switch PoE offline (SW-1 come SW-2): lo stato PoE non è noto, non «in ricerca»", () => {
+  const sw1 = offline("SW-1");
+  assert.equal(sw1.state, 0);
+  const ports = mapUnifiPorts(sw1, index);
+  assert.equal(ports.length, 8);
+  const p7 = ports.find((p) => p.port_index === 7);
+  assert.ok(p7);
+  assert.equal(p7.status, null);
+  assert.equal(p7.poe_status, null);
+  for (const p of ports) assert.equal(p.poe_status, null, `porta ${p.port_index}`);
+});
+
 test("porte di SW-1: trunk_neighbor sulla porta giusta, colonne di switch_ports", () => {
   const ports = mapUnifiPorts(byName("SW-1"), index);
   assert.equal(ports.length, 8);

@@ -4,6 +4,7 @@ import {
   librenmsHostHeaderFromUiUrl,
 } from "@/lib/integrations/librenms-web-session";
 import { isInternalIntegrationUrl } from "@/lib/integrations/public-url";
+import { scegliUrlOperatoreLibreNMS } from "@/lib/integrations/librenms-accesso";
 
 const DEFAULT_USERNAME = "admin";
 
@@ -62,41 +63,6 @@ export async function librenmsAutologinCookieHeader(): Promise<string | null> {
   }
 }
 
-export function mergeCookieHeaders(a: string | null | undefined, b: string | null | undefined): string {
-  const parts = [a, b].filter((x) => x?.trim());
-  if (parts.length === 0) return "";
-  if (parts.length === 1) return parts[0]!;
-  return `${parts[0]}; ${parts[1]}`;
-}
-
-export function stripLibreNMSCookies(cookieHeader: string | null | undefined): string {
-  if (!cookieHeader?.trim()) return "";
-  return cookieHeader
-    .split(";")
-    .map((s) => s.trim())
-    .filter((p) => p && !/^laravel_session=/i.test(p) && !/^XSRF-TOKEN=/i.test(p))
-    .join("; ");
-}
-
-export async function withLibreNMSAutologin(
-  req: Request,
-  sessionCookie?: string | null,
-): Promise<Request> {
-  const auto = sessionCookie ?? (await librenmsAutologinCookieHeader());
-  if (!auto) return req;
-
-  const headers = new Headers(req.headers);
-  const cleaned = stripLibreNMSCookies(req.headers.get("cookie"));
-  headers.set("cookie", mergeCookieHeaders(cleaned, auto));
-
-  const init: RequestInit = { method: req.method, headers };
-  if (req.body) {
-    init.body = req.body;
-    (init as RequestInit & { duplex?: string }).duplex = "half";
-  }
-  return new Request(req.url, init);
-}
-
 export function librenmsAutologinEnabled(): boolean {
   const cfg = getIntegrationConfig("librenms");
   return (
@@ -107,19 +73,13 @@ export function librenmsAutologinEnabled(): boolean {
   );
 }
 
-/** Path same-origin per SSO → redirect a ui_url :7443 con cookie Laravel. */
-export function librenmsSsoEntryPath(): string {
-  return "/api/integrations/librenms/sso";
-}
-
 /**
- * URL da usare in Launchpad / link operatore: SSO se configurato, altrimenti dashboard diretta.
+ * URL da usare in Launchpad e nei link verso LibreNMS. Il ruolo è obbligatorio:
+ * l'accesso automatico (che entra con la password admin) solo per chi è almeno
+ * admin; per gli altri, e per un ruolo sconosciuto, l'URL diretto (T3-26).
  */
-export function resolveLibreNMSOperatorUrl(browserUrl: string): string {
-  if (librenmsAutologinEnabled() && browserUrl) {
-    return librenmsSsoEntryPath();
-  }
-  return browserUrl;
+export function resolveLibreNMSOperatorUrl(browserUrl: string, ruolo: unknown): string {
+  return scegliUrlOperatoreLibreNMS(browserUrl, ruolo, librenmsAutologinEnabled);
 }
 
 /** Cookie da impostare nel browser (Path = proxy base). */

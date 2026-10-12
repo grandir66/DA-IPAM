@@ -7,7 +7,8 @@
  * uninstall→ dropMcSchema + setFeatureDisabled (riga resta per audit).
  *
  * NB: mc_config NON viene toccata da uninstall — i secret restano per evitare
- * di perderli a un toggle UI; la rimozione avviene dalla settings page.
+ * di perderli a un toggle UI; la rimozione avviene dalla settings page. Per
+ * questo ogni azione chiede meshAttivo() e non la sola presenza dei secret.
  *
  * Self-check del codec (loginTokenSelfCheck) è agganciato nella config POST route
  * (soft warning, C3), non qui: install applica solo schema + flag.
@@ -44,6 +45,21 @@ function readInstalledFromHub(tenantCode: string): boolean {
     )
     .get(tenantCode, MESH_FEATURE_KEY) as { enabled: number } | undefined;
   return row?.enabled === 1;
+}
+
+/** Messaggio (e codice 409) di ogni azione rifiutata a modulo spento. */
+export const MESH_DISATTIVATO = "Modulo MeshCentral disattivato";
+
+/**
+ * SEC-18: il modulo può comandare? Legge SOLO il flag in hub, senza cache, così
+ * «Disinstalla» vale dalla richiesta successiva. Non guarda né mc_config (che
+ * la disinstallazione non tocca) né le tabelle del modulo (che di default
+ * restano): erano quelle a lasciar partire comandi e sessioni a modulo spento.
+ * Senza contesto tenant risponde no.
+ */
+export function meshAttivo(tenantCode: string | null = getCurrentTenantCode()): boolean {
+  if (!tenantCode) return false;
+  return readInstalledFromHub(tenantCode);
 }
 
 /** Stato installazione del modulo per il tenant corrente. */

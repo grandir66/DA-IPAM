@@ -10,10 +10,10 @@ import { resolveModules } from "@/lib/modules/registry";
  */
 export async function GET() {
   return withTenantFromSession(async () => {
-    const authErr = await requireAuth();
-    if (isAuthError(authErr)) return authErr;
+    const session = await requireAuth();
+    if (isAuthError(session)) return session;
     const tenantCode = getCurrentTenantCode() ?? "DEFAULT";
-    const modules = await resolveModules(tenantCode);
+    const modules = await resolveModules(tenantCode, session.user.role);
     return NextResponse.json(
       { ok: true, modules },
       { headers: { "Cache-Control": "private, max-age=30" } },

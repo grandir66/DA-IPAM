@@ -6,6 +6,7 @@ import {
   createCredential,
   logCredentialEvent,
 } from "@/lib/credentials-vault";
+import { resolveLibreNMSOperatorUrl } from "@/lib/integrations/librenms-proxy-auth";
 
 const KindEnum = z.enum([
   "wazuh",
@@ -38,7 +39,11 @@ const CreateSchema = z.object({
 export async function GET() {
   const session = await requireAuth();
   if (session instanceof NextResponse) return session;
-  const items = listCredentials();
+  // Il vault tiene l'URL diretto di LibreNMS; «Apri» usa l'URL scelto col
+  // ruolo, così l'admin entra con l'accesso automatico e gli altri no (T3-26).
+  const items = listCredentials().map((c) =>
+    c.kind === "librenms" && c.url ? { ...c, open_url: resolveLibreNMSOperatorUrl(c.url, session.user.role) } : c,
+  );
   return NextResponse.json({ items });
 }
 

@@ -88,6 +88,15 @@ app.prepare().then(() => {
       console.error("WARNING: scheduler-defaults module load failed:", error);
     });
 
+    // Segreti delle installazioni LibreNMS/Graylog fatte prima di T3-27: se
+    // manca la copia cifrata nell'hub, la legge dall'ambiente del container
+    // (sola lettura) e la salva. Non blocca l'avvio.
+    import("./src/lib/integrations/segreti-migrazione").then(({ migraSegretiInstallazioniAllAvvio }) =>
+      migraSegretiInstallazioniAllAvvio(),
+    ).catch((error) => {
+      console.error("WARNING: migrazione dei segreti delle installazioni fallita:", error);
+    });
+
     import("./src/lib/cron/scheduler").then(({ initializeScheduler }) => {
       initializeScheduler();
       console.log("> Cron scheduler initialized");

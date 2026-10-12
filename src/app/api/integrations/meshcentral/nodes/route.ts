@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { guardiaMesh } from "@/lib/integrations/meshcentral/guardia";
 import { listMeshNodes } from "@/lib/integrations/meshcentral/db";
 import { syncMeshForTenant } from "@/lib/integrations/meshcentral/mesh-sync";
 
@@ -24,6 +25,8 @@ export async function POST() {
   return withTenantFromSession(async () => {
     const auth = await requireAdmin();
     if (isAuthError(auth)) return auth;
+    const spento = guardiaMesh();
+    if (spento) return spento;
     try {
       const result = await syncMeshForTenant();
       return NextResponse.json({ ok: true, ...result, nodes: listMeshNodes() });

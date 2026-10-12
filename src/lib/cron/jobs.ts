@@ -57,6 +57,9 @@ import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrat
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
 // db-tenant, che sotto tsx non va mai caricato con `await import()` (ADR 0002).
 import { syncUnifiForTenant, unifiSyncFailure } from "@/lib/integrations/unifi-sync";
+// Statici per la stessa ragione: mesh-sync e feature importano db-tenant.
+import { syncMeshForTenant } from "@/lib/integrations/meshcentral/mesh-sync";
+import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
 
 export async function runJob(jobId: number): Promise<void> {
   // v0.2.642 audit perf MC3: SELECT WHERE id invece di full-scan + .find().
@@ -141,7 +144,12 @@ export async function runJob(jobId: number): Promise<void> {
       break;
     }
     case "meshcentral_sync": {
-      const { syncMeshForTenant } = await import("@/lib/integrations/meshcentral/mesh-sync");
+      // SEC-18: a modulo disinstallato il job resta in tabella ma non gira.
+      // Non è un guasto: niente eccezione, così non si accumulano avvisi.
+      if (!meshAttivo()) {
+        console.info("[Scheduler] meshcentral_sync saltato: modulo MeshCentral disattivato");
+        break;
+      }
       const result = await syncMeshForTenant();
       console.info(
         `[Scheduler] meshcentral_sync: ${result.matched}/${result.totalNodes} nodi matchati, ` +

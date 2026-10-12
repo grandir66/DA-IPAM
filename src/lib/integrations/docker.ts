@@ -21,13 +21,51 @@ export interface ExecResult {
  * Esegue un comando docker con argomenti come array (nessuna shell injection).
  * Lancia un errore se il processo esce con codice != 0.
  */
-export async function execDockerCommand(args: string[]): Promise<ExecResult> {
-  const result = await execFile("docker", args, {
-    timeout: 120_000,
+export async function execDockerCommand(args: string[], opzioni: OpzioniDocker = {}): Promise<ExecResult> {
+  const p = execFile("docker", args, {
+    timeout: opzioni.timeout ?? 120_000,
     maxBuffer: 5 * 1024 * 1024,
+    env: ambienteDocker(opzioni.env),
   });
+  if (opzioni.input !== undefined) p.child.stdin?.end(opzioni.input);
+  const result = await p;
   return { stdout: result.stdout, stderr: result.stderr };
 }
+
+/**
+ * Opzioni di un comando docker. `env` serve a passare un segreto a un
+ * container senza metterlo fra gli argomenti: si scrive `-e NOME` (senza
+ * `=valore`) e il client docker prende il valore dal proprio ambiente, così
+ * il segreto non compare nella riga di comando né in un messaggio d'errore
+ * che la riporta (SEC-13).
+ */
+export interface OpzioniDocker {
+  env?: Record<string, string>;
+  timeout?: number;
+  /** Testo sullo standard input (con `docker exec -i`): per un SQL che porta un segreto. */
+  input?: string;
+}
+
+function ambienteDocker(extra?: Record<string, string>): NodeJS.ProcessEnv | undefined {
+  return extra ? { ...process.env, ...extra } : undefined;
+}
+
+/** Docker come dipendenza iniettabile delle installazioni (prove con docker finto). */
+export interface DockerIniettabile {
+  /** Lancia un errore se il comando esce con codice != 0. */
+  exec(args: string[], opzioni?: OpzioniDocker): Promise<ExecResult>;
+  stream(
+    args: string[],
+    onLine: (line: string) => void,
+    opzioni?: OpzioniDocker & { throwOnError?: boolean },
+  ): Promise<number>;
+}
+
+export const dockerReale: DockerIniettabile = {
+  exec: (args, opzioni) => execDockerCommand(args, opzioni),
+  stream: (args, onLine, opzioni) =>
+    spawnDockerStream(args, onLine, opzioni?.throwOnError ?? true, opzioni?.env),
+};
 
 /**
  * Esegue un comando docker in streaming, invocando onLine per ogni riga di output.
@@ -40,10 +78,11 @@ export async function execDockerCommand(args: string[]): Promise<ExecResult> {
 export function spawnDockerStream(
   args: string[],
   onLine: (line: string) => void,
-  throwOnError = true
+  throwOnError = true,
+  env?: Record<string, string>,
 ): Promise<number> {
   return new Promise((resolve, reject) => {
-    const proc = spawn("docker", args, { stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn("docker", args, { stdio: ["ignore", "pipe", "pipe"], env: ambienteDocker(env) });
 
     const outputLines: string[] = [];
 

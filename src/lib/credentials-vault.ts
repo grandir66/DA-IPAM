@@ -31,6 +31,8 @@ export interface SystemCredential {
   kind: CredentialKind;
   label: string;
   url: string | null;
+  /** Solo nella risposta di GET /api/system-credentials: l'URL che «Apri» usa, scelto col ruolo (LibreNMS). Mai salvato. */
+  open_url?: string;
   api_url: string | null;
   username: string | null;
   /** True se è valorizzato in DB. Plaintext NON viene mai restituito da list/get. */
@@ -358,7 +360,7 @@ import { getTenantDb } from "./db-tenant";
 import { getActiveTenants } from "./db-hub";
 import { isInternalIntegrationUrl } from "./integrations/public-url";
 import { resolveIntegrationBrowserUrl } from "./integrations/public-url-server";
-import { resolveLibreNMSOperatorUrl } from "./integrations/librenms-proxy-auth";
+import { eUrlAccessoAutomaticoLibreNMS } from "./integrations/librenms-accesso";
 
 /**
  * Importa le credenziali esistenti nel vault cifrato.
@@ -471,21 +473,20 @@ export function syncFromLegacySettings(): { created: number; skipped: number } {
   );
   const lnmsApi = getSetting("integration_librenms_url") ?? undefined;
   const lnmsUi = resolveIntegrationBrowserUrl("librenms", lnmsApi);
-  const lnmsLaunch = lnmsUi ? resolveLibreNMSOperatorUrl(lnmsUi) : lnmsUi;
-  if (lnmsLaunch && lnmsUi) {
-    const uiNorm = lnmsUi.replace(/\/+$/, "");
+  // Il vault tiene l'URL diretto: l'accesso automatico (solo admin) si sceglie
+  // alla resa, in base al ruolo (T3-26). Le voci salvate dalle versioni che ci
+  // scrivevano l'URL di accesso automatico tornano all'URL diretto.
+  if (lnmsUi) {
     for (const cred of existing) {
-      if (cred.kind !== "librenms" || !cred.url || cred.url === lnmsLaunch) continue;
-      const credNorm = cred.url.replace(/\/+$/, "");
-      if (credNorm === uiNorm || cred.url.startsWith(`${uiNorm}/`)) {
-        updateCredential(cred.id, { url: lnmsLaunch });
+      if (cred.kind === "librenms" && eUrlAccessoAutomaticoLibreNMS(cred.url)) {
+        updateCredential(cred.id, { url: lnmsUi });
       }
     }
     if (!byKind.has("librenms:LibreNMS Dashboard")) {
       createCredential({
         kind: "librenms",
         label: "LibreNMS Dashboard",
-        url: lnmsLaunch,
+        url: lnmsUi,
         username: "admin",
         password: getSetting("integration_librenms_admin_password") ?? null,
         notes: "UI nginx LAN (browser). L'URL API interno resta in Impostazioni → Moduli.",

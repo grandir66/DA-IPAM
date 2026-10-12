@@ -6,6 +6,105 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-10-12
 
+### Correzioni
+
+- **Impostazioni dell'hub senza segreti per chi non è admin (SEC-5, seconda
+  strada).** Chiusa la configurazione delle integrazioni, la lettura generale
+  delle impostazioni restituiva ancora a ogni utente con accesso tutta la
+  tabella dell'hub, dove stanno anche password e token delle integrazioni e
+  della posta: di solito cifrati, ma non sulle installazioni nate prima della
+  cifratura. Ora chi non è admin la riceve senza le chiavi dei segreti
+  (riconosciute dal nome; nel dubbio si nascondono), con il solo conteggio di
+  quelle tolte; l'admin la riceve come prima. Il censimento delle guardie la
+  dichiara lettura «mascherata» e la verifica dal di fuori la prova col
+  viewer. **Cambia sulle installazioni del canale `dev`** solo per chi non è
+  admin, e nessuna pagina aperta ai viewer legge quelle chiavi. Prova:
+  `impostazioni-viewer.test.ts`.
+- **Scritture verso la dashboard Wazuh dal proxy solo per gli admin (SEC-6).**
+  Il proxy della dashboard Wazuh accettava ogni metodo da chiunque avesse una
+  sessione, viewer compresi: le letture restavano a tutti, ma anche le
+  scritture, a differenza di ogni altra scrittura di `/api`. Ora le letture
+  (GET, HEAD, OPTIONS) restano a chi ha una sessione e le scritture chiedono
+  l'admin. Era l'ultimo debito del censimento delle guardie, che adesso è vuoto
+  e resta tale (una prova lo tiene vuoto). **Cambia sulle installazioni del
+  canale `dev`** solo in teoria: nessuna pagina di DA-IPAM usa questo proxy (i
+  collegamenti vanno all'indirizzo diretto della dashboard).
+- **Accesso con l'account Domarc solo per chi è dichiarato su DA-IPAM, e solo
+  su una risposta valida di DA-Auth (SEC-4).** La dichiarazione su DA-Auth
+  era richiesta solo per creare un'utenza nuova: chi aveva già un'utenza
+  locale con lo stesso nome entrava col suo ruolo anche senza dichiarazione.
+  Ora la dichiarazione vale per tutti; chi è dichiarato ed esiste già entra
+  come prima, col ruolo e i clienti della sua utenza locale. Inoltre una
+  risposta di DA-Auth che non è un 200 non vale più come identità. La
+  decisione sta in una funzione sola, provata caso per caso. **Cambia sulle
+  installazioni del canale `dev`** solo dove l'accesso Domarc è acceso (non
+  sulle appliance dei clienti, dove è spento): chi entra col pulsante Domarc
+  senza essere dichiarato su DA-IPAM in DA-Auth vede di nuovo la pagina di
+  accesso; il login locale resta. **Prima che arrivi all'hub** va letto su
+  DA-Auth che le utenze dell'hub che entrano col pulsante Domarc siano
+  dichiarate su DA-IPAM (lettura non ancora fatta: va dichiarato chi manca, o
+  confermato che conosce la password locale). Prova: `daauth.test.ts`.
+- **MeshCentral comanda solo se il modulo è attivo (SEC-18).** «Disinstalla»
+  spegneva il modulo ma lasciava salvati i parametri di collegamento (per non
+  perderli a un clic) e, di default, nodi e storico: comandi remoti, sessioni
+  di controllo remoto, associazioni nodo-host, sincronizzazione e
+  installazione degli agenti guardavano solo se i parametri c'erano, e quindi
+  continuavano a funzionare a modulo spento. Ora ognuna di queste azioni
+  controlla prima che il modulo sia attivo e, se non lo è, risponde «Modulo
+  MeshCentral disattivato» senza contattare il server MeshCentral; il job di
+  sincronizzazione resta in elenco ma non gira (e non conta come guasto),
+  l'icona Mesh sparisce dall'elenco degli host e la conferma di
+  disinstallazione lo dice. Configurazione e dati restano: reinstallando il
+  modulo tutto torna come prima. **Cambia sulle installazioni del canale
+  `dev`** solo per chi ha il modulo spento con la configurazione salvata:
+  a DTS il modulo non è configurato, sull'hub (letture del 12/10) risulta
+  attivo su due clienti; resta da confermare che nessun cliente dell'hub abbia
+  la configurazione col modulo spento. Prova: `disinstallato.test.ts`.
+- **Installazioni di LibreNMS e Graylog con segreti propri, mai nel registro
+  (SEC-13).** Fino a oggi ogni installazione gestita usava gli stessi segreti
+  interni, scritti nel sorgente (che è pubblico), e il registro
+  dell'installazione, visibile dalla pagina, riportava la password admin.
+  Ora ogni installazione nuova genera i propri segreti, li salva cifrati
+  nell'hub e li passa ai container per ambiente invece che fra gli argomenti
+  dei comandi; il registro dice solo che sono stati salvati. Se la richiesta
+  d'installazione non indica una password admin, se ne genera una invece di
+  usare un valore predefinito: la si legge nella card dell'integrazione (solo
+  admin). **Cambia all'avvio sulle installazioni del canale `dev`**: per le
+  installazioni già presenti l'hub legge i segreti dall'ambiente dei container
+  (sola lettura) e ne salva una copia cifrata, così i comandi di manutenzione
+  continuano a funzionare; i container non vengono toccati. La sostituzione
+  dei segreti delle installazioni esistenti è un passo a parte, non fatto qui.
+  Prove: `install-segreti.test.ts`, `install-segreti-invariante.test.ts`.
+- **Accesso automatico a LibreNMS solo per gli admin (SEC-6, parte utenti in
+  sola lettura).** L'accesso automatico entra in LibreNMS con l'utenza admin
+  salvata nell'hub, ma bastava essere collegati a DA-IPAM per usarlo: anche un
+  utente in sola lettura si trovava dentro LibreNMS da amministratore. Ora lo
+  usa solo chi è admin; gli altri arrivano alla pagina di login di LibreNMS
+  (dal Launchpad, dalla dashboard e dal proxy) ed entrano con un'utenza
+  LibreNMS loro; ad accesso automatico spento il proxy passa la richiesta
+  com'è, così quel login funziona anche da lì. Limite: in un browser condiviso
+  in cui un admin ha usato l'accesso automatico, la sua sessione di LibreNMS
+  resta nel browser finché LibreNMS non la fa scadere. **Cambia subito sulle installazioni del canale `dev`** (deroga
+  a «nasce spento», decisa nel piano): chi era viewer e apriva LibreNMS senza
+  login ora vede il login; secondo la lettura del 12/10 sull'hub c'è un utente
+  viewer, a DTS nessuno. Per l'admin non cambia niente, tranne la voce
+  LibreNMS del vault delle credenziali, che ora tiene l'indirizzo diretto
+  dell'interfaccia (la scelta dell'accesso automatico si fa quando si apre il
+  link, in base al ruolo: anche «Apri» nella scheda della credenziale porta
+  l'admin dentro con l'accesso automatico); le voci salvate in passato si correggono alla
+  prossima sincronizzazione del vault. Prova: `librenms-accesso.test.ts`.
+- **Configurazione delle integrazioni senza segreti per chi non è admin
+  (SEC-5, SEC-13).** La lettura della configurazione di LibreNMS, Graylog e Loki
+  era aperta a ogni utente con accesso, anche in sola lettura, e restituiva i
+  campi segreti così come erano salvati; UniFi li nascondeva già, le altre no.
+  Ora chi non è admin riceve quei campi vuoti e un'indicazione «impostato»,
+  così la scheda in Impostazioni → Moduli mostra lo stesso stato senza il
+  valore; per l'admin non cambia niente (e quindi il salvataggio della scheda
+  non può sovrascrivere un segreto con un campo vuoto). L'avanzamento di
+  un'installazione ora si legge solo da admin, come l'installazione stessa. La
+  prova `politica.test.ts` controlla la maschera e che la rotta ci passi prima
+  di rispondere; il censimento delle guardie toglie i due debiti.
+
 ### Aggiunte
 
 - **Registro dei ripieghi del database** (tappa 3, NUC-1 fase A). Ogni accesso al
@@ -34,6 +133,35 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   modo. Il file si apre in sola lettura e l'output contiene solo numeri e nomi di
   colonna, mai MAC, IP o nomi del cliente: si può incollare in un documento.
 - **Banco di prova delle scansioni** (tappa 3, T3-16): il vero giro di scoperta della rete ora si può far girare in una prova con un esecutore finto, mentre una guardia fa fallire la prova se qualcosa prova a uscire davvero sulla rete. *Perché*: le correzioni delle scansioni che si accavallano e degli host vivi segnati spenti (INV-1, INV-2) vanno provate sul codice vero, e fin qui l'unico modo era mandare pacchetti veri. In produzione non cambia niente: la porta per le prove è vuota. Il doppio sa anche rallentare, trattenere fino a un segnale della prova o fallire, così due giri accavallati si possono mettere nell'ordine voluto; e la guardia copre anche le richieste DNS dirette e i processi lanciati in modo sincrono. Di contorno, i timer che puliscono l'avanzamento di una scansione finita non tengono più vivo il processo per cinque minuti.
+- **Censimento delle guardie di tutte le rotte API (prova nel cancello).** Prima
+  una prova copriva solo un elenco di rotte scelte a mano, e lo script di audit
+  leggeva i sorgenti con espressioni regolari: nei due proxy delle integrazioni
+  non vedeva nessun metodo (14 gestori fuori dal conto). Ora un rilevatore unico
+  (`src/lib/permessi/`) legge l'albero sintattico e la prova
+  `rotte-censite.test.ts` controlla tutti i 452 gestori: ognuno deve avere la
+  guardia attesa (lettura → accesso, scrittura → admin, lettura sensibile →
+  admin), oppure un'eccezione col motivo scritto, oppure un debito col codice
+  del difetto che lo chiude. Una rotta nuova non dichiarata fa fallire il
+  cancello; un debito sanato pure, finché non lo si toglie dall'elenco; e le
+  rotte aperte senza accesso devono essere esattamente quelle ammesse da
+  `auth.config.ts`. Le letture delle credenziali aperte ai viewer hanno una prova
+  loro (`letture-mascherate.test.ts`): ogni colonna cifrata va mascherata,
+  anche una aggiunta domani. `scripts/audit-api-auth.ts` usa lo stesso
+  rilevatore e scrive la matrice nel percorso che gli si passa. Nessun
+  comportamento cambia: sono solo prove.
+- **Verifica dei permessi dal di fuori, in locale
+  (`scripts/verifica-permessi.sh`).** Il censimento legge il codice; uno strato
+  che sta prima del gestore, o una rotta che fa qualcosa prima della guardia,
+  lì non si vede. La verifica chiede all'applicazione accesa in locale, come
+  farebbe un browser: crea un utente in sola lettura di prova (password
+  generata sul posto, mai stampata), fa solo letture senza sessione e da viewer
+  sulle rotte che il censimento indica, controlla che i rifiuti siano rifiuti e
+  che le configurazioni delle integrazioni arrivino senza segreti, poi toglie
+  l'utente. Rifiuta un indirizzo che non sia locale: un'utenza di prova su un
+  server vero sarebbe una scrittura in produzione. Il giudizio sulle risposte
+  ha una prova sua (`verifica-esterna.test.ts`) che fa fallire le risposte del
+  codice di prima. `docs/auth-matrix.md` è rigenerata dal censimento (452
+  gestori, nessun debito, nessuna rotta scoperta) e torna a valere.
 
 - **Controller UniFi come fonte di dati (spento finché non lo si accende).** A
   DTS il controller UniFi gestisce 74 apparati, ma per DA-IPAM erano solo host:

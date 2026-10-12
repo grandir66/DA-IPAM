@@ -39,7 +39,7 @@ after(() => {
 });
 
 function unifiState() {
-  return withTenant(T, async () => (await resolveModules(T)).find((m) => m.key === "unifi"));
+  return withTenant(T, async () => (await resolveModules(T, "admin")).find((m) => m.key === "unifi"));
 }
 
 test("descrittore: Controller UniFi, accesso nativo, card in Impostazioni → Moduli", () => {

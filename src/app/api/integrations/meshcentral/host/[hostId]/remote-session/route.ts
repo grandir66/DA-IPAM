@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { guardiaMesh } from "@/lib/integrations/meshcentral/guardia";
 import { prepareRemoteSession } from "@/lib/integrations/meshcentral/remote-session";
 
 const bodySchema = z.object({
@@ -35,6 +36,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ hostId: string
   return withTenantFromSession(async () => {
     const auth = await requireAdmin();
     if (isAuthError(auth)) return auth;
+    const spento = guardiaMesh();
+    if (spento) return spento;
 
     // Body opzionale (può mancare del tutto se la UI non manda nulla).
     let body: unknown = {};

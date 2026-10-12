@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { getIntegrationConfig, setIntegrationConfig } from "@/lib/integrations/config";
+import { mascheraConfigIntegrazione, puoVedereSegreti } from "@/lib/permessi/politica";
 import { getContainerStatus } from "@/lib/integrations/docker";
 import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
 import type { IntegrationComponent } from "@/lib/integrations/types";
@@ -18,8 +19,8 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ component: string }> }
 ) {
-  const authError = await requireAuth();
-  if (isAuthError(authError)) return authError;
+  const session = await requireAuth();
+  if (isAuthError(session)) return session;
 
   const { component: raw } = await params;
   const component = parseComponent(raw);
@@ -28,18 +29,11 @@ export async function GET(
   const cfg = getIntegrationConfig(component);
 
   if (component === "unifi") {
-    // Le credenziali del controller non tornano al browser (questo GET basta
-    // a un utente in sola lettura): si dice solo se sono impostate.
-    const { password, apiToken, ...visible } = cfg;
+    // Le credenziali del controller non tornano al browser, nemmeno all'admin
+    // (la UnifiCard lavora coi soli flag «impostato»).
     return NextResponse.json({
       component,
-      config: {
-        ...visible,
-        password: "",
-        apiToken: "",
-        passwordSet: !!password,
-        apiTokenSet: !!apiToken,
-      },
+      config: mascheraConfigIntegrazione(cfg, false),
       browserUrl: cfg.browserUrl ?? "",
       containerStatus: null,
     });
@@ -52,7 +46,8 @@ export async function GET(
 
   return NextResponse.json({
     component,
-    config: cfg,
+    // Questo GET basta a un utente in sola lettura: i segreti solo all'admin (SEC-5).
+    config: mascheraConfigIntegrazione(cfg, puoVedereSegreti(session.user.role)),
     browserUrl: cfg.browserUrl ?? resolveIntegrationBrowserUrl(component, cfg.url),
     containerStatus,
   });

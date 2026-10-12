@@ -8,6 +8,22 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **MeshCentral comanda solo se il modulo è attivo (SEC-18).** «Disinstalla»
+  spegneva il modulo ma lasciava salvati i parametri di collegamento (per non
+  perderli a un clic) e, di default, nodi e storico: comandi remoti, sessioni
+  di controllo remoto, associazioni nodo-host, sincronizzazione e
+  installazione degli agenti guardavano solo se i parametri c'erano, e quindi
+  continuavano a funzionare a modulo spento. Ora ognuna di queste azioni
+  controlla prima che il modulo sia attivo e, se non lo è, risponde «Modulo
+  MeshCentral disattivato» senza contattare il server MeshCentral; il job di
+  sincronizzazione resta in elenco ma non gira (e non conta come guasto),
+  l'icona Mesh sparisce dall'elenco degli host e la conferma di
+  disinstallazione lo dice. Configurazione e dati restano: reinstallando il
+  modulo tutto torna come prima. **Cambia sulle installazioni del canale
+  `dev`** solo per chi ha il modulo spento con la configurazione salvata:
+  a DTS il modulo non è configurato, sull'hub (letture del 12/10) risulta
+  attivo su due clienti; resta da confermare che nessun cliente dell'hub abbia
+  la configurazione col modulo spento. Prova: `disinstallato.test.ts`.
 - **Installazioni di LibreNMS e Graylog con segreti propri, mai nel registro
   (SEC-13).** Fino a oggi ogni installazione gestita usava gli stessi segreti
   interni, scritti nel sorgente (che è pubblico), e il registro

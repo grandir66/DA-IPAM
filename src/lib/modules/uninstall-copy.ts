@@ -67,7 +67,7 @@ export const UNINSTALL_COPY: Record<UninstallableFeature, UninstallCopy> = {
   },
   meshcentral: {
     effetto:
-      "La voce «Controllo remoto» sparisce dal menu. Il server MeshCentral sull'appliance, gli agenti sugli endpoint e i parametri di collegamento non vengono toccati.",
+      "La voce «Controllo remoto» sparisce dal menu e da DA-IPAM non partono più comandi, sessioni remote, associazioni né sincronizzazioni finché non lo reinstalli. Il server MeshCentral sull'appliance, gli agenti sugli endpoint e i parametri di collegamento non vengono toccati.",
     senzaCasella:
       "Senza la casella, l'elenco dei nodi con i collegamenti agli host, lo storico delle sessioni remote e il registro dei comandi eseguiti restano nel database e ricompaiono se reinstalli il modulo.",
     conCasella:

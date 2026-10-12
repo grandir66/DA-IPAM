@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
 import {
   getEndpointAgentsForHosts,
   type EndpointAgentCapabilities,
@@ -27,6 +28,25 @@ function hasAny(c: EndpointAgentCapabilities): boolean {
   return c.glpi.present || c.choco.present || c.mesh.present || c.wazuh.present;
 }
 
+/**
+ * Stati per host. A modulo MeshCentral spento (SEC-18) la presenza Mesh non
+ * si mostra: l'icona porterebbe ad azioni che rispondono 409. Gli altri agenti
+ * restano.
+ */
+export function statiPresenza(
+  hostIds: number[],
+  map: Map<number, EndpointAgentCapabilities>,
+  meshOn: boolean,
+): Record<string, EndpointAgentCapabilities | null> {
+  const statuses: Record<string, EndpointAgentCapabilities | null> = {};
+  for (const id of hostIds) {
+    const found = map.get(id);
+    const caps = found && !meshOn ? { ...found, mesh: { present: false } } : found;
+    statuses[id] = caps && hasAny(caps) ? caps : null;
+  }
+  return statuses;
+}
+
 export async function POST(request: Request) {
   return withTenantFromSession(async () => {
     const auth = await requireAuth();
@@ -40,13 +60,7 @@ export async function POST(request: Request) {
     }
 
     const hostIds = parseHostIdsCapped((body as { host_ids?: unknown }).host_ids);
-    const map = getEndpointAgentsForHosts(hostIds);
-
-    const statuses: Record<string, EndpointAgentCapabilities | null> = {};
-    for (const id of hostIds) {
-      const caps = map.get(id);
-      statuses[id] = caps && hasAny(caps) ? caps : null;
-    }
+    const statuses = statiPresenza(hostIds, getEndpointAgentsForHosts(hostIds), meshAttivo());
     return NextResponse.json({ statuses });
   });
 }

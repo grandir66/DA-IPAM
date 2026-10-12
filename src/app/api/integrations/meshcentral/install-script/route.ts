@@ -14,6 +14,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { guardiaMesh } from "@/lib/integrations/meshcentral/guardia";
 import { getMeshCreds, type MeshCreds } from "@/lib/integrations/meshcentral/config";
 import { MeshControlClient } from "@/lib/integrations/meshcentral/control-client";
 import {
@@ -98,6 +99,8 @@ export async function POST(request: Request) {
   return withTenantFromSession(async () => {
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
+    const spento = guardiaMesh();
+    if (spento) return spento;
 
     let raw: unknown;
     try {

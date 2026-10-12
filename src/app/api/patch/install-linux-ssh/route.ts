@@ -23,6 +23,7 @@ import { isInventoryAgentEnabled, getStoredInventoryIngestTokenPlaintext } from 
 import { publicIngestUrl, publicHubOrigin } from "@/lib/inventory-agent/public-url";
 import { buildMeshInstallScript } from "@/lib/integrations/meshcentral/install-scripts";
 import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
+import { guardiaMesh } from "@/lib/integrations/meshcentral/guardia";
 
 const AGENTS = new Set(["wazuh", "glpi", "mesh"]);
 
@@ -92,6 +93,8 @@ export async function POST(request: Request) {
         });
         packageId = "glpi-agent";
       } else {
+        const spento = guardiaMesh();
+        if (spento) return spento;
         const creds = getMeshCreds();
         if (!creds) {
           return NextResponse.json({ error: "MeshCentral non configurato" }, { status: 400 });

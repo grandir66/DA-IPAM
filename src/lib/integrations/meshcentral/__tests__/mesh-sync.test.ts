@@ -2,9 +2,10 @@ process.env.ENCRYPTION_KEY ||= "test-encryption-key-mesh-sync00";
 
 import { test, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { withTenant, deleteTenantDatabase, getTenantDb, upsertHost } from "@/lib/db-tenant";
+import { withTenant, deleteTenantDatabase, getTenantDb, upsertHost, getCurrentTenantCode } from "@/lib/db-tenant";
 import { applyMcSchemaMigrations } from "@/lib/integrations/meshcentral/schema";
 import { saveMeshConfig } from "@/lib/integrations/meshcentral/config";
+import { setFeatureEnabled } from "@/lib/patch/feature";
 import { syncMeshForTenant, _setControlClientFactory } from "@/lib/integrations/meshcentral/mesh-sync";
 import type { MeshNode } from "@/lib/integrations/meshcentral/control-client";
 
@@ -28,6 +29,8 @@ function node(over: Partial<MeshNode> = {}): MeshNode {
 }
 
 function seedConfig() {
+  // Modulo attivo: a modulo spento la sync si rifiuta (SEC-18, disinstallato.test.ts).
+  setFeatureEnabled(getCurrentTenantCode()!, "meshcentral", null);
   saveMeshConfig({
     serverUrl: "https://mesh.example.it",
     domain: "",
@@ -114,6 +117,7 @@ test("re-sync does NOT overwrite a manual binding", () => {
 test("no creds → returns zeros, no throw", () => {
   return withTenant("TESTMESHNOCFG", async () => {
     applyMcSchemaMigrations(getTenantDb("TESTMESHNOCFG"));
+    setFeatureEnabled("TESTMESHNOCFG", "meshcentral", null);
     const r = await syncMeshForTenant();
     assert.deepEqual(r, { totalNodes: 0, matched: 0, unmatched: 0 });
     deleteTenantDatabase("TESTMESHNOCFG");

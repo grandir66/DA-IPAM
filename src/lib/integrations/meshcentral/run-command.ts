@@ -11,8 +11,9 @@
  * ed esito. Stesso principio di mc_remote_session, che non salva mai il token.
  */
 import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
-import { getMeshCreds } from "./config";
+import { getMeshCreds, type MeshCreds } from "./config";
 import { MeshControlClient } from "./control-client";
+import { meshAttivo, MESH_DISATTIVATO } from "./feature";
 
 export interface RunCommandInput {
   hostId: number;
@@ -28,6 +29,22 @@ export type RunCommandResult =
   | { ok: true; output: string }
   | { ok: false; status: number; error: string };
 
+/**
+ * Dipendenze iniettabili, come in remote-session.ts: le prove sostituiscono il
+ * client verso il server MeshCentral senza `mock.module` (non va sotto tsx).
+ */
+export interface RunCommandDeps {
+  meshAttivo: () => boolean;
+  getMeshCreds: () => MeshCreds | null;
+  creaClient: (creds: MeshCreds) => Pick<MeshControlClient, "runCommand" | "close">;
+}
+
+const defaultDeps: RunCommandDeps = {
+  meshAttivo: () => meshAttivo(),
+  getMeshCreds,
+  creaClient: (creds) => new MeshControlClient(creds),
+};
+
 /** Limite di lunghezza: evita di spedire payload assurdi al control WebSocket. */
 const MAX_COMMAND_LEN = 8_000;
 
@@ -39,9 +56,14 @@ const MAX_COMMAND_LEN = 8_000;
  * Il comando NON viene interpolato in una shell da noi: viaggia come stringa JSON
  * fino all'agente, quindi non c'e' rischio di injection nel nostro layer.
  */
-export async function runRemoteCommand(input: RunCommandInput): Promise<RunCommandResult> {
+export async function runRemoteCommand(
+  input: RunCommandInput,
+  deps: RunCommandDeps = defaultDeps,
+): Promise<RunCommandResult> {
   const code = getCurrentTenantCode();
   if (!code) return { ok: false, status: 401, error: "Nessun contesto tenant" };
+  // SEC-18: a modulo disinstallato credenziali e nodi restano, il comando no.
+  if (!deps.meshAttivo()) return { ok: false, status: 409, error: MESH_DISATTIVATO };
 
   const cmd = input.command.trim();
   if (!cmd) return { ok: false, status: 400, error: "Comando vuoto" };
@@ -68,12 +90,12 @@ export async function runRemoteCommand(input: RunCommandInput): Promise<RunComma
     return { ok: false, status: 409, error: "L'agente risulta offline: comando non eseguibile" };
   }
 
-  const creds = getMeshCreds();
+  const creds = deps.getMeshCreds();
   if (!creds) return { ok: false, status: 412, error: "MeshCentral non configurato" };
 
   const shell = input.powershell ? "powershell" : "auto";
   const runAsUser = input.runAsUser ?? 0;
-  const client = new MeshControlClient(creds);
+  const client = deps.creaClient(creds);
   try {
     const output = await client.runCommand(node.node_id, cmd, {
       powershell: input.powershell,

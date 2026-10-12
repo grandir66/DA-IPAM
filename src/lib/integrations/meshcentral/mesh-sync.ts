@@ -13,6 +13,7 @@ import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
 import { getMeshCreds } from "./config";
 import { resolveNodeToHostId } from "./node-resolver";
 import { MeshControlClient } from "./control-client";
+import { meshAttivo, MESH_DISATTIVATO } from "./feature";
 import type { MeshNode } from "./control-client";
 import type { MeshCreds } from "./config";
 
@@ -33,6 +34,9 @@ export function _setControlClientFactory(
 export async function syncMeshForTenant(): Promise<{ totalNodes: number; matched: number; unmatched: number }> {
   const tenantCode = getCurrentTenantCode();
   if (!tenantCode) throw new Error("Nessun contesto tenant attivo");
+  // SEC-18: il job lo salta prima (cron/jobs.ts); qui resta il fermo per
+  // chiunque altro la chiami a modulo spento.
+  if (!meshAttivo(tenantCode)) throw new Error(MESH_DISATTIVATO);
 
   const creds = getMeshCreds();
   if (!creds) {

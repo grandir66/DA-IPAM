@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { guardiaMesh } from "@/lib/integrations/meshcentral/guardia";
 import { bindNodeToHost } from "@/lib/integrations/meshcentral/db";
 
 const schema = z.object({
@@ -18,6 +19,8 @@ export async function POST(request: Request) {
   return withTenantFromSession(async () => {
     const auth = await requireAdmin();
     if (isAuthError(auth)) return auth;
+    const spento = guardiaMesh();
+    if (spento) return spento;
 
     let body: unknown;
     try {

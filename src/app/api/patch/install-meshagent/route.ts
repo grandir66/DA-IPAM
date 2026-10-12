@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { guardiaMesh } from "@/lib/integrations/meshcentral/guardia";
 import { patchModuleGuard, userIdFromSession } from "@/lib/patch/route-guard";
 import { executeMeshAgentInstall } from "@/lib/patch/executor";
 
@@ -33,6 +34,8 @@ export async function POST(request: Request) {
     if (isAuthError(guard)) return guard;
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
+    const spento = guardiaMesh();
+    if (spento) return spento;
 
     let body: unknown;
     try {

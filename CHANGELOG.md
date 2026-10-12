@@ -106,12 +106,6 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   nuova non partiva mai. Ora un ambiente senza `pip` si ricrea, un guasto di
   WinRM (funzione facoltativa) è solo un avviso, e il riavvio cerca il servizio
   attivo (`da-invent` o `da-ipam`) invece del solo `da-invent`.
-- **«Aggiorna» dall'interfaccia non lascia più l'app spenta sulle appliance
-  consolidate.** Dopo l'aggiornamento il riavvio cercava solo il servizio
-  `da-invent`; su DTS il servizio si chiama `da-ipam`, quindi si ripiegava su un
-  auto-riavvio che systemd interpretava come uscita normale: chiudeva tutto e
-  l'app restava spenta finché qualcuno non la riavviava a mano (successo due
-  volte il 12/10). Ora si riavvia il servizio attivo, quale che sia il nome.
 - **Il controllo finale dell'aggiornamento non segnala più un falso errore.**
   Partiva un secondo dopo il riavvio, quando l'app non ascoltava ancora, e
   falliva sempre con un avviso che rimandava a WinRM. Ora aspetta fino a 60
@@ -120,19 +114,39 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   documentazione.** Un commit che cambia solo `docs/` o file `.md` aggiorna i
   file senza build né riavvio: prima ogni nota pubblicata riavviava DTS e
   interrompeva il controllo degli host in corso.
-- **«Aggiorna» e «Riavvia» dall'interfaccia riavviano il servizio giusto, e lo fanno ripartire davvero.**
-  Cercava solo `da-invent`; sulle appliance installate con Deploy-Appliance, come
-  DTS, il servizio si chiama `da-ipam`, e il pulsante ripiegava sul rilancio da
-  sé, che sotto systemd viene chiuso insieme al processo che esce. Ora sceglie il
-  servizio attivo fra `da-invent` e `da-ipam`, con lo stesso criterio
-  dell'aggiornamento automatico (`src/lib/app-service.ts`), e lascia che sia
-  systemd a fermare e far ripartire il processo. Prima usciva subito dopo la
-  richiesta: con `Restart=on-failure` un'uscita senza errore non si riavvia, e se
-  la richiesta non arrivava in tempo il servizio restava spento. Se systemd
-  rifiuta (per esempio per i permessi), il motivo va nel log e il processo esce
-  con errore, così riparte comunque. Con lo stesso criterio i comandi da copiare
-  dell'aggiornamento manuale (prima `systemctl restart da-invent`, che su DTS
-  falliva) e il messaggio dello scheduler che chiede di riavviare il processo.
+- **«Aggiorna» e «Riavvia» dall'interfaccia non lasciano più l'app spenta, e
+  «Aggiorna ora» di Impostazioni funziona.** Il riavvio cercava solo il servizio
+  `da-invent`; sulle appliance installate con Deploy-Appliance, come DTS, si
+  chiama `da-ipam`, e il pulsante ripiegava sul rilancio da sé (un processo
+  staccato e un'uscita senza errore), che sotto systemd chiude tutto: l'app
+  restava spenta finché qualcuno non la riavviava a mano (successo due volte il
+  12/10). Ora, sotto systemd, si riavvia l'unità in cui gira il processo, letta
+  da `/proc/self/cgroup` qualunque nome abbia, con `systemctl --no-block
+  restart`, e si lascia che sia systemd a fermare il processo e a farlo
+  ripartire. Il processo esce con errore, e con `Restart=on-failure` riparte
+  comunque, in tre casi: se risulta sotto systemd (variabile `INVOCATION_ID`)
+  ma non si capisce quale unità; se systemd rifiuta la richiesta (per esempio
+  per i permessi) o non risponde entro 15 secondi, e il motivo va nel log; se
+  systemd l'accetta ma dopo 90 secondi il processo è ancora vivo. Sotto systemd
+  non esce mai senza errore e non si rilancia mai da sé: il rilancio resta solo
+  fuori da systemd, in sviluppo, dopo PM2 se c'è. Non si sceglie più il primo
+  servizio attivo fra `da-invent` e `da-ipam`: con `systemctl` lento (macchina
+  sotto carico) o un nome diverso risultava «nessun servizio» e si tornava al
+  rilancio da sé, e con tutti e due attivi si poteva riavviare quello sbagliato
+  (`src/lib/app-service.ts`).
+  Dopo un «Aggiorna» riuscito il riavvio lo programma il server, un secondo
+  dopo aver risposto, sulla stessa strada di «Riavvia»: prima lo chiedeva il
+  browser alla risposta, e con una build più lunga dell'attesa di nginx (300 s)
+  o con la scheda chiusa la build nuova restava su disco col processo vecchio.
+  L'interfaccia non chiede un secondo riavvio, mostra i passi eseguiti e
+  l'esito, e se la risposta si perde spiega che il server finisce da solo.
+  «Aggiorna ora» in Impostazioni → Aggiornamenti mandava l'azione nel corpo
+  della richiesta, che la rotta non leggeva, e riceveva «Azione non
+  supportata»: ora l'azione si legge dall'indirizzo o dal corpo.
+  I comandi da copiare dell'aggiornamento manuale riavviano il servizio attivo
+  fra `da-invent` e `da-ipam` (prima solo `systemctl restart da-invent`, che su
+  DTS falliva) e, se nessuno dei due è attivo, lo scrivono; il messaggio dello
+  scheduler che chiede di riavviare il processo nomina tutti e due.
 - **Un job non parte più due volte nello stesso processo.** Quando una pagina
   salvava la configurazione dei job (job, AD, Wazuh, MeshCentral, Scanner-Edge,
   import moduli), lo scheduler veniva ricaricato da una seconda copia del suo

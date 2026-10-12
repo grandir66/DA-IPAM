@@ -35,6 +35,14 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   dire niente. Ora compare «Impossibile caricare …» con il motivo e il pulsante
   «Riprova». Due pezzi riusabili per le altre pagine: `fetchJson`
   (`src/lib/fetch-json.ts`) e il riquadro `LoadError`.
+- **Grafico «Stato host nel tempo»: niente più denti di sega.** Il grafico
+  contava, ora per ora, solo gli host controllati dentro quell'ora e metteva
+  tutti gli altri fra gli «Sconosciuti». Dove il controllo degli host gira ogni
+  3 ore (DTS) la curva saliva all'ora del controllo e crollava nelle due ore
+  dopo, con la salute al 3%, anche se nessun host cambiava stato. Ora ogni host
+  conserva il suo ultimo stato per 24 ore (oltre torna «sconosciuto»), la serie
+  ha un punto per ogni ora anche senza controlli, e la salute si calcola sugli
+  host di stato noto (`src/lib/status-over-time.ts`).
 - **Tabella ARP: si vede quando la lista è troncata.** Mostra al massimo 500
   righe; arrivata al limite, ora lo dice e invita a restringere con i filtri,
   invece di tagliare in silenzio.

@@ -146,6 +146,8 @@ export default function AnalyticsPage() {
       // Prima un errore lasciava a schermo gli eventi vecchi senza dire niente (UI-7).
       if (!r.ok) {
         setEvents([]);
+        setTotal(0);
+        setUnacked(0);
         setError(r.message);
         return;
       }

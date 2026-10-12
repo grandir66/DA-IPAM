@@ -20,7 +20,7 @@ export function LoadError({
   onRetry?: () => void;
 }) {
   return (
-    <Card className="border-destructive/40">
+    <Card className="ring-destructive/40 bg-destructive/5">
       <CardContent className="py-10 text-center space-y-3">
         <AlertTriangle className="h-10 w-10 mx-auto text-destructive" />
         <p className="font-medium">Impossibile caricare {what}</p>

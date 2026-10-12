@@ -20,7 +20,7 @@ interface Point {
   offline: number;
   unknown: number;
   total: number;
-  health_pct: number;
+  health_pct: number | null;
 }
 
 type Period = "24h" | "7d" | "30d";
@@ -83,7 +83,7 @@ export function StatusOverTimeChart() {
             </span>
             <span className="inline-flex items-center gap-1 ml-2 pl-2 border-l border-border">
               <span className="text-muted-foreground">Health</span>
-              <span className="font-mono font-semibold text-primary">{latest.health_pct}%</span>
+              <span className="font-mono font-semibold text-primary">{latest.health_pct === null ? "—" : `${latest.health_pct}%`}</span>
             </span>
           </div>
         )}

@@ -58,6 +58,30 @@ describe("fetchJson", () => {
     }
   });
 
+  it("sessione scaduta vera: il proxy rimanda a /login e arriva la pagina HTML con 200", async () => {
+    // NextAuth non risponde 401 alle /api: fa 307 verso /login e fetch segue il rinvio
+    // (revisione 2026-10-12, riprodotto con il proxy vero).
+    finto(() => {
+      const r = new Response("<html>login</html>", { status: 200, headers: { "Content-Type": "text/html" } });
+      Object.defineProperty(r, "redirected", { value: true });
+      Object.defineProperty(r, "url", { value: "http://localhost/login?callbackUrl=%2Fapi%2Fx" });
+      return Promise.resolve(r);
+    });
+    const r = await fetchJson("/api/x");
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(r.status, 401);
+      assert.match(r.message, /sessione/i);
+    }
+  });
+
+  it("200 ma il corpo non è JSON: errore, non dati vuoti", async () => {
+    finto(() => Promise.resolve(new Response("<html>", { status: 200, headers: { "Content-Type": "text/html" } })));
+    const r = await fetchJson("/api/x");
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.message, /non valida/i);
+  });
+
   it("richiesta annullata: rilancia, così il chiamante la ignora", async () => {
     finto(() => Promise.reject(new DOMException("aborted", "AbortError")));
     await assert.rejects(fetchJson("/api/x"), { name: "AbortError" });

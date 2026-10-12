@@ -11,8 +11,9 @@ export async function GET(request: NextRequest) {
   return withTenantFromSession(async () => {
     const auth = await requireAuth();
     if (isAuthError(auth)) return auth;
-    const hours = Number(request.nextUrl.searchParams.get("hours") || "24");
-    const data = getStatusOverTime(Math.min(Math.max(hours, 1), 720));
+    const h = Number(request.nextUrl.searchParams.get("hours") || "24");
+    const hours = Number.isFinite(h) ? Math.min(Math.max(Math.round(h), 1), 720) : 24;
+    const data = getStatusOverTime(hours);
     return NextResponse.json(data);
   });
 }

@@ -42,6 +42,7 @@ const SOURCE_LABELS: Record<string, string> = {
 export default function ArpTablePage() {
   const [mappings, setMappings] = useState<MacIpMapping[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [networks, setNetworks] = useState<Network[]>([]);
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
@@ -56,14 +57,18 @@ export default function ArpTablePage() {
       if (networkId) params.set("network_id", networkId);
       if (source) params.set("source", source);
       if (q.trim()) params.set("q", q.trim());
-      params.set("limit", String(ARP_LIMIT));
+      // uno in più del tetto: se arriva, la lista è davvero troncata
+      params.set("limit", String(ARP_LIMIT + 1));
       const r = await fetchJson<MacIpMapping[]>(`/api/mac-ip-mapping?${params}`);
       // Prima un errore lasciava a schermo l'elenco vecchio senza messaggio (UI-7).
       if (r.ok) {
-        setMappings(Array.isArray(r.data) ? r.data : []);
+        const rows = Array.isArray(r.data) ? r.data : [];
+        setMappings(rows.slice(0, ARP_LIMIT));
+        setTruncated(rows.length > ARP_LIMIT);
         setError(null);
       } else {
         setMappings([]);
+        setTruncated(false);
         setError(r.message);
       }
     } finally {
@@ -224,15 +229,17 @@ export default function ArpTablePage() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {!loading && !error && mappings.length >= ARP_LIMIT && (
-            <p className="mb-3 text-sm text-amber-700 dark:text-amber-400">
+          {!loading && !error && truncated && (
+            <p className="px-4 pt-3 text-sm text-amber-700 dark:text-amber-400">
               Sono mostrati i primi {ARP_LIMIT} risultati: restringi con la ricerca o i filtri per vedere gli altri.
             </p>
           )}
           {loading ? (
             <div className="py-12 text-center text-muted-foreground">Caricamento...</div>
           ) : error ? (
-            <LoadError what="la tabella ARP" message={error} onRetry={() => void fetchData()} />
+            <div className="p-4">
+              <LoadError what="la tabella ARP" message={error} onRetry={() => void fetchData()} />
+            </div>
           ) : mappings.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               Nessun mapping trovato. I dati vengono popolati da ARP, DHCP e scansioni host.

@@ -17,6 +17,7 @@
  * Per capire l'architettura: leggere CLAUDE.md sezione "Architettura Multi-Tenant"
  */
 import Database from "better-sqlite3";
+import { buildStatusSeries, statusWindowStartMs, type StatusObservation, type StatusPoint } from "./status-over-time";
 import path from "path";
 import { resolveDataDir } from "./data-dir";
 import fs from "fs";
@@ -6021,48 +6022,53 @@ export function getOnlineCountsOverTime(
  * - ≤ 14gg → bucket giornalieri
  * - > 14gg → bucket giornalieri (limite di leggibilità asse X)
  *
- * "unknown" si calcola come `total_hosts_corrente - online - offline` clampato a ≥0:
- * status_history salva solo online/offline per design (CHECK constraint).
- * È un'approssimazione (il totale storico cambia nel tempo) ma utile per
- * spotting trend di copertura monitoraggio.
+ * Ogni host conta col suo ultimo stato noto, valido 24 h (status-over-time.ts).
+ * "unknown" = `total_hosts_corrente - online - offline` clampato a ≥0: host mai
+ * controllati o con l'ultimo controllo più vecchio di 24 h. È un'approssimazione
+ * (il totale storico cambia nel tempo).
  *
- * `health_pct` = online / (online + offline + unknown) × 100, arrotondato.
+ * `health_pct` = online / (online + offline) × 100, arrotondato; null quando
+ * nessuno stato è noto. Serie vuota se nella finestra non c'è nessun controllo.
  */
 export function getStatusOverTime(
   hours: number = 24
-): { time: string; online: number; offline: number; unknown: number; total: number; health_pct: number }[] {
+): StatusPoint[] {
+  // Ultimo stato noto di ogni host portato avanti per 24 h (status-over-time.ts):
+  // prima un host contava solo nell'ora in cui era stato controllato, e con il
+  // controllo ogni 3 ore il grafico andava su e giù (DTS, ottobre 2026).
+  const STALE_HOURS = 24;
+  if (!Number.isFinite(hours)) hours = 24;
+  hours = Math.min(Math.max(Math.round(hours), 1), 720);
+  const nowMs = Date.now();
+  const startMs = statusWindowStartMs(hours, nowMs);
+  const toSql = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
   const bucketFmt = hours <= 48 ? "%Y-%m-%dT%H:00:00" : "%Y-%m-%dT00:00:00";
   const totalRow = getDb().prepare("SELECT COUNT(*) as c FROM hosts").get() as { c: number };
-  const total = totalRow.c;
-  // Dedup per host nel bucket: prendiamo l'ULTIMO check di ogni host in ciascun
-  // bucket (ROW_NUMBER…ORDER BY checked_at DESC, filtro rn=1). Senza questo
-  // dedup il SUM conta tutti i check del bucket, non gli host distinti — un
-  // host pingato 6 volte in un'ora veniva contato 6 volte.
-  const rows = getDb().prepare(`
-    WITH last_in_bucket AS (
-      SELECT
-        strftime(?, checked_at) AS bucket,
-        host_id,
-        status,
-        ROW_NUMBER() OVER (PARTITION BY strftime(?, checked_at), host_id ORDER BY checked_at DESC) AS rn
+  // Per ogni host: l'ultimo controllo di ciascun periodo della finestra, più
+  // l'ultimo prima della finestra (entro STALE_HOURS) come stato di partenza.
+  const observations = getDb().prepare(`
+    WITH dentro AS (
+      SELECT host_id, status, checked_at,
+        ROW_NUMBER() OVER (PARTITION BY strftime(?, checked_at), host_id ORDER BY checked_at DESC, id DESC) AS rn
       FROM status_history
-      WHERE checked_at >= datetime('now', '-' || ? || ' hours')
+      WHERE checked_at >= ?
+    ),
+    prima AS (
+      SELECT host_id, status, checked_at,
+        ROW_NUMBER() OVER (PARTITION BY host_id ORDER BY checked_at DESC, id DESC) AS rn
+      FROM status_history
+      WHERE checked_at >= ? AND checked_at < ?
     )
-    SELECT
-      bucket AS time,
-      SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) AS online,
-      SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) AS offline
-    FROM last_in_bucket
-    WHERE rn = 1
-    GROUP BY bucket
-    ORDER BY bucket ASC
-  `).all(bucketFmt, bucketFmt, hours) as { time: string; online: number; offline: number }[];
-  return rows.map((r) => {
-    const unknown = Math.max(0, total - r.online - r.offline);
-    const denom = r.online + r.offline + unknown;
-    const health_pct = denom > 0 ? Math.round((r.online / denom) * 100) : 0;
-    return { ...r, unknown, total, health_pct };
-  });
+    SELECT host_id, status, checked_at FROM dentro WHERE rn = 1
+    UNION ALL
+    SELECT host_id, status, checked_at FROM prima WHERE rn = 1
+  `).all(
+    bucketFmt,
+    toSql(startMs),
+    toSql(startMs - STALE_HOURS * 3_600_000),
+    toSql(startMs),
+  ) as StatusObservation[];
+  return buildStatusSeries({ hours, nowMs, totalHosts: totalRow.c, observations, staleAfterHours: STALE_HOURS });
 }
 
 /**

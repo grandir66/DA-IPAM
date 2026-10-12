@@ -10,7 +10,8 @@ cd "$DA_INVENT_DIR"
 ./scripts/update.sh --restart`;
 
 // Riavvio: il servizio attivo fra da-invent e da-ipam, come scripts/update.sh
-// (da-ipam sulle appliance installate con Deploy-Appliance).
+// (da-ipam sulle appliance installate con Deploy-Appliance). Se nessuno dei due
+// è attivo lo dice, invece di finire in silenzio senza aver riavviato niente.
 const MANUAL_SNIPPET = `cd /opt/da-invent
 git pull
 npm install
@@ -19,6 +20,9 @@ if systemctl is-active --quiet da-invent; then
   sudo systemctl restart da-invent
 elif systemctl is-active --quiet da-ipam; then
   sudo systemctl restart da-ipam
+else
+  echo "Nessun servizio attivo fra da-invent e da-ipam: niente è stato riavviato." >&2
+  echo "Cerca il servizio con: systemctl list-units --all 'da-*'" >&2
 fi`;
 
 function CopySnippetButton({ text, label }: { text: string; label: string }) {
@@ -122,7 +126,8 @@ export function ManualUpdateInstructions({ variant = "default", className }: Man
         <p className="text-[11px] text-muted-foreground">
           Le ultime righe riavviano il servizio attivo fra{" "}
           <code className="text-[10px] bg-muted px-1 rounded">da-invent</code> e{" "}
-          <code className="text-[10px] bg-muted px-1 rounded">da-ipam</code>, come lo script. Adatta il percorso
+          <code className="text-[10px] bg-muted px-1 rounded">da-ipam</code>, come lo script; se nessuno dei due
+          è attivo lo scrivono e non riavviano niente. Adatta il percorso
           se l&apos;installazione sta in un&apos;altra directory (sulle appliance è{" "}
           <code className="text-[10px] bg-muted px-1 rounded">/opt/da-ipam</code>). Come root puoi omettere{" "}
           <code className="text-[10px] bg-muted px-1 rounded">sudo</code>.

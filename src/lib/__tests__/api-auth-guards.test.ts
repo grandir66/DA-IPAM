@@ -44,9 +44,13 @@ const CONTRACT: Contract[] = [
   { route: "credentials/[id]", method: "DELETE", guard: "requireAdmin" },
   { route: "client-config/export", method: "GET", guard: "requireAdmin" },
   // route hub globali → superadmin (H3: requireSuperAdmin era definito ma inutilizzato)
-  { route: "users", method: "POST", guard: "requireSuperAdmin" },
-  { route: "users/[id]", method: "DELETE", guard: "requireSuperAdmin" },
-  { route: "users/[id]/reset-password", method: "POST", guard: "requireSuperAdmin" },
+  // utenti → admin dal 2026-10-12 (UI-18, decisione «un'installazione = un cliente»):
+  // l'admin gestisce gli utenti del proprio cliente. I limiti fini (solo il proprio
+  // cliente, mai superadmin, mai sé stesso) stanno in src/lib/users/service.ts e
+  // sono provati da src/lib/users/__tests__/{service,routes-use-service}.test.ts.
+  { route: "users", method: "POST", guard: "requireAdmin" },
+  { route: "users/[id]", method: "DELETE", guard: "requireAdmin" },
+  { route: "users/[id]/reset-password", method: "POST", guard: "requireAdmin" },
   { route: "tenants", method: "POST", guard: "requireSuperAdmin" },
   { route: "tenants/[id]", method: "DELETE", guard: "requireSuperAdmin" },
 ];

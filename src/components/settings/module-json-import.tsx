@@ -14,6 +14,14 @@ interface ImportResult {
   error?: string;
 }
 
+interface ImportResponse {
+  ok: boolean;
+  results: ImportResult[];
+  error?: string;
+  /** 409 con ?chiediConferma=1: l'import sostituirebbe uno Scanner-Edge con uno storico. */
+  edgeReplace?: { runs: number; findings: number; confirmText: string };
+}
+
 interface Props {
   /** Se valorizzato, importa solo le entry di questo modulo (card singola). */
   presetModule?: ModuleKey;
@@ -55,14 +63,31 @@ export function ModuleJsonImport({ presetModule, size = "default" }: Props) {
         payload = filtered.length === 1 ? filtered[0] : filtered;
       }
 
-      const res = await fetch("/api/modules/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = (await res.json().catch(() => null)) as
-        | { ok: boolean; results: ImportResult[]; error?: string }
-        | null;
+      const invia = async (chiediConferma: boolean) => {
+        const res = await fetch(
+          chiediConferma ? "/api/modules/import?chiediConferma=1" : "/api/modules/import",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+        const data = (await res.json().catch(() => null)) as ImportResponse | null;
+        return { res, data };
+      };
+
+      // MOD-19: se il JSON sostituisce uno Scanner-Edge con uno storico, la
+      // rotta risponde 409 con il testo della conferma (findings e scansioni
+      // che si cancellano). Nulla è stato scritto: si chiede e, se l'utente
+      // conferma, si ripete la richiesta.
+      let { res, data } = await invia(true);
+      if (res.status === 409 && data?.edgeReplace) {
+        if (!confirm(data.edgeReplace.confirmText)) {
+          toast.info("Import annullato: nessun modulo è stato modificato");
+          return;
+        }
+        ({ res, data } = await invia(false));
+      }
       if (!res.ok || !data) {
         toast.error(data?.error ? String(data.error) : `Import fallito (HTTP ${res.status})`);
         return;

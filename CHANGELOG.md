@@ -26,6 +26,13 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   `appliance-integrate-fix.sh`), dopo la disinstallazione resta attivo con lo
   stesso bridge: la conferma ora lo dice, e se il bridge viene solo da lì il
   pulsante «Disinstalla» lascia il posto a una nota che spiega come spegnerlo.
+  Anche l'import del JSON dello Scanner-Edge (Impostazioni → Moduli →
+  «Importa configurazione modulo») sostituisce lo scanner cancellando a
+  cascata findings e storico delle scansioni, e lo faceva senza dire niente:
+  ora, se c'è uno storico, prima di scrivere chiede conferma dicendo quanti
+  findings e quante scansioni si cancellano e che la sincronizzazione
+  riscarica solo ciò che l'edge conserva ancora. Il connect di
+  Deploy-Appliance, che usa la stessa rotta, non cambia.
 - **Le righe «Stato moduli» della dashboard portano al modulo (UI-20).**
   Aprivano sempre la configurazione, anche per un modulo attivo con la sua
   pagina, e un modulo mai installato diceva «Mai eseguita», che si legge come

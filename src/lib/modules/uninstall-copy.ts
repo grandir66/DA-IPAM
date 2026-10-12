@@ -103,6 +103,39 @@ export function edgeRemovalConfirmText(findingCount: number): string {
   );
 }
 
+/**
+ * Conferma dell'import del JSON con il modulo edge quando uno scanner con uno
+ * storico esiste già (POST /api/modules/import?chiediConferma=1 risponde 409
+ * e la chiede).
+ *
+ * L'import sostituisce lo scanner con DELETE + INSERT
+ * (replaceEdgeScannerFromImport): le scansioni importate e i loro findings se
+ * ne vanno a cascata, come con «Rimuovi». Lo scanner nuovo non ha
+ * last_sync_at, quindi la sincronizzazione successiva riscarica tutte le
+ * scansioni che l'edge indicato nel JSON conserva: torna quello che l'edge ha
+ * ancora, non quello che non ha più (edge ricostruito, report eliminati, edge
+ * diverso). Chi reimporta il JSON per aggiornare token o URL deve saperlo
+ * prima.
+ */
+export function edgeImportReplaceConfirmText(counts: { runs: number; findings: number }): string {
+  const intero = (v: number) => (Number.isFinite(v) && v > 0 ? Math.trunc(v) : 0);
+  const f = intero(counts.findings);
+  const r = intero(counts.runs);
+  const scansioni = r === 1 ? "una scansione importata" : `${migliaia(r)} scansioni importate`;
+  const cosa =
+    f === 0
+      ? `lo storico delle scansioni (${scansioni})`
+      : f === 1
+        ? `il finding importato e lo storico delle scansioni (${scansioni})`
+        : `i ${migliaia(f)} findings importati e lo storico delle scansioni (${scansioni})`;
+  return (
+    "Il JSON contiene lo Scanner-Edge e uno scanner è già configurato: l'import lo sostituisce.\n\n" +
+    `Si cancellano ${cosa}. Alla sincronizzazione successiva DA-IPAM riscarica le scansioni che l'edge ` +
+    "conserva ancora; quelle che l'edge non ha più (edge ricostruito o diverso, report eliminati) non tornano.\n\n" +
+    "Procedere con l'import?"
+  );
+}
+
 /** Container che «Elimina tutto e ricrea» toglie oltre a quello principale. */
 const DIPENDENZE_DOCKER: Record<IntegrationComponent, string> = {
   librenms: "MariaDB, Redis e il dispatcher dei grafici",

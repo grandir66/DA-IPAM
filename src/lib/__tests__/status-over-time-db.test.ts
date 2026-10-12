@@ -10,7 +10,7 @@ process.env.ENCRYPTION_KEY ||= "test-encryption-key-status-over-time-db";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
-import { getStatusOverTime } from "@/lib/db";
+import { getStatusOverTime } from "@/lib/db-tenant";
 
 const T = "TESTSTATUSOVERTIME";
 after(() => deleteTenantDatabase(T));

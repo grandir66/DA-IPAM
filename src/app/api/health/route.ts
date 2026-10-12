@@ -20,8 +20,8 @@
  * zero sync da giorni, perche' guardava solo DB e chiave di cifratura.
  */
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
-import { getActiveTenants } from "@/lib/db-hub";
+import { getActiveTenants, getHubDb } from "@/lib/db-hub";
+import { contaRipieghi } from "@/lib/db-maintenance/ripieghi";
 import { getTenantDb } from "@/lib/db-tenant";
 import { probeEncryptionKeyHealth } from "@/lib/encryption-key-health";
 import { getDeployModeLabel } from "@/lib/env-secrets";
@@ -70,8 +70,10 @@ function probeScheduler(): SchedulerProbe {
 export async function GET(request: Request) {
   const strict = new URL(request.url).searchParams.get("strict") === "1";
   try {
-    // Verifica accesso DB con query minimale
-    const dbCheck = getDb().prepare("SELECT 1 as ok").get() as { ok: number } | undefined;
+    // Verifica accesso DB con query minimale sull'hub. Non `getDb()`: senza
+    // contesto tenant ripiegherebbe su DEFAULT o su ipam.db (NUC-1), e il probe
+    // risulterebbe esso stesso un ripiego.
+    const dbCheck = getHubDb().prepare("SELECT 1 as ok").get() as { ok: number } | undefined;
     const dbOk = dbCheck?.ok === 1;
     const encryption = probeEncryptionKeyHealth();
     const secretsOk = encryption.ok;
@@ -105,6 +107,9 @@ export async function GET(request: Request) {
         worst_overdue_minutes: scheduler.worstOverdueMinutes,
         detail: scheduler.detail,
       },
+      // Accessi al DB senza contesto tenant da quando il processo è partito
+      // (NUC-1). Solo il numero: chi e da dove sta su /api/modules/health.
+      ripieghi: contaRipieghi(),
       timestamp: new Date().toISOString(),
     }, { status: overallOk ? 200 : 503 });
   } catch (error) {

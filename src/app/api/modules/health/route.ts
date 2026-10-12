@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getCurrentTenantCode } from "@/lib/db-tenant";
+import { riepilogoPerRuolo } from "@/lib/db-maintenance/ripieghi";
 import { getModulesHealth, invalidateModulesHealth, PROBED_MODULE_KEYS } from "@/lib/modules/health";
 import type { ModuleKey } from "@/lib/modules/registry";
 
@@ -19,8 +20,12 @@ export async function GET() {
     if (isAuthError(authErr)) return authErr;
     const tenantCode = getCurrentTenantCode() ?? "DEFAULT";
     const health = await getModulesHealth(tenantCode);
+    // Ripieghi del facade del DB (NUC-1): chi accede senza contesto tenant,
+    // dal processo corrente, solo per il superadmin (contiene i codici di tutti
+    // i tenant). Lo storico persistente è in data/logs/ripieghi/.
+    const ripieghi = riepilogoPerRuolo((authErr.user as { role?: string }).role);
     return NextResponse.json(
-      { ok: true, health },
+      { ok: true, health, ...(ripieghi ? { ripieghi } : {}) },
       {
         headers: {
           "Cache-Control": "private, max-age=60, stale-while-revalidate=300",

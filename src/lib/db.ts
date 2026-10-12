@@ -17,7 +17,6 @@
  * Per capire l'architettura: leggere CLAUDE.md sezione "Architettura Multi-Tenant"
  */
 import Database from "better-sqlite3";
-import { buildStatusSeries, statusWindowStartMs, type StatusObservation, type StatusPoint } from "./status-over-time";
 import path from "path";
 import { resolveDataDir } from "./data-dir";
 import fs from "fs";
@@ -58,6 +57,8 @@ import type {
   ExcludedIpWithNetwork,
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
+import { registraRipiego } from "./db-maintenance/ripieghi";
+import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu } from "./db-tenant";
 
 const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
@@ -98,8 +99,8 @@ export function closeDb(): void {
 
 /**
  * Il tenant che `getDb()` userebbe ADESSO, ovvero come il facade risolve il
- * contesto in questo istante. `null` = nessun contesto, e quindi il fallback
- * silenzioso a DEFAULT poche righe sotto.
+ * contesto in questo istante. `null` = nessun contesto, e quindi il ripiego
+ * su DEFAULT (contato nel registro dei ripieghi) poche righe sotto.
  *
  * PERCHE' STA QUI e non nel chiamante: deve usare la risoluzione di QUESTO
  * modulo. Sotto tsx possono coesistere due istanze di `db-tenant` (import
@@ -120,23 +121,45 @@ export function currentFacadeTenant(): string | null {
   }
 }
 
+/** Le due funzioni di `db-tenant` che servono al facade (via `require`, vedi sopra). */
+interface FacadeTenantModule {
+  getCurrentTenantCode(): string | null;
+  getTenantDb(code: string): Database.Database;
+  TenantContextError: new (code: string, cause?: unknown) => Error;
+}
+
 export function getDb(): Database.Database {
-  // Multi-tenant: se c'è un contesto tenant attivo, usa il tenant DB
+  let tenantMod: FacadeTenantModule | null = null;
   try {
-    const { getCurrentTenantCode, getTenantDb } = require("./db-tenant");
-    const tenantCode = getCurrentTenantCode();
-    if (tenantCode) return getTenantDb(tenantCode);
+    tenantMod = require("./db-tenant") as FacadeTenantModule;
   } catch { /* db-tenant non disponibile (build-time) */ }
 
-  // Fallback: se esiste hub.db (multi-tenant attivo) ma nessun contesto, usa DEFAULT
-  const hubPath = path.join(DATA_DIR, "hub.db");
-  const defaultTenantPath = path.join(DATA_DIR, "tenants", "DEFAULT.db");
-  if (fs.existsSync(hubPath) && fs.existsSync(defaultTenantPath)) {
+  // Multi-tenant: se c'è un contesto tenant attivo, usa il tenant DB.
+  // NUC-1: se quel database NON si apre è un errore. Prima si ripiegava in
+  // silenzio su DEFAULT, cioè si scriveva nel database del tenant sbagliato.
+  const tenantCode = tenantMod?.getCurrentTenantCode() ?? null;
+  if (tenantMod && tenantCode) {
     try {
-      const { getTenantDb } = require("./db-tenant");
-      return getTenantDb("DEFAULT");
+      return tenantMod.getTenantDb(tenantCode);
+    } catch (error) {
+      throw new tenantMod.TenantContextError(tenantCode, error);
+    }
+  }
+
+  // Senza contesto, con hub.db presente (multi-tenant attivo): l'esito resta
+  // quello di sempre (DEFAULT, o ipam.db se DEFAULT manca), ma ogni accesso si
+  // conta nel registro dei ripieghi (NUC-1 fase A) per sapere chi correggere.
+  const hubPath = path.join(DATA_DIR, "hub.db");
+  const hubPresente = fs.existsSync(hubPath);
+  const defaultTenantPath = path.join(DATA_DIR, "tenants", "DEFAULT.db");
+  if (hubPresente && tenantMod && fs.existsSync(defaultTenantPath)) {
+    try {
+      const def = tenantMod.getTenantDb("DEFAULT");
+      registraRipiego("default", "DEFAULT");
+      return def;
     } catch { /* fallback a legacy */ }
   }
+  if (hubPresente) registraRipiego("legacy");
 
   // Legacy single-tenant: apre ipam.db come prima
   if (_db) return _db;
@@ -4626,23 +4649,7 @@ export function deleteNetworkDevice(id: number): boolean {
   return getDb().prepare("DELETE FROM network_devices WHERE id = ?").run(id).changes > 0;
 }
 
-// ========================
-// Cleanup FK orfani (una tantum)
-// ========================
-
-let _fkCleaned = false;
-
-/** Pulisce riferimenti FK orfani in mac_ip_mapping (causati da migrazioni con foreign_keys=OFF). */
-export function cleanOrphanedForeignKeys(): void {
-  if (_fkCleaned) return;
-  const db = getDb();
-  db.prepare("UPDATE mac_ip_mapping SET source_device_id = NULL WHERE source_device_id IS NOT NULL AND source_device_id NOT IN (SELECT id FROM network_devices)").run();
-  db.prepare("UPDATE mac_ip_mapping SET network_id = NULL WHERE network_id IS NOT NULL AND network_id NOT IN (SELECT id FROM networks)").run();
-  db.prepare("UPDATE mac_ip_mapping SET host_id = NULL WHERE host_id IS NOT NULL AND host_id NOT IN (SELECT id FROM hosts)").run();
-  db.prepare("UPDATE dhcp_leases SET host_id = NULL WHERE host_id IS NOT NULL AND host_id NOT IN (SELECT id FROM hosts)").run();
-  db.prepare("UPDATE dhcp_leases SET network_id = NULL WHERE network_id IS NOT NULL AND network_id NOT IN (SELECT id FROM networks)").run();
-  _fkCleaned = true;
-}
+// Cleanup FK orfani: vive in db-tenant.ts (riesportata in fondo, NUC-2 gruppo 0).
 
 // ========================
 // ARP Entries
@@ -4653,7 +4660,8 @@ export function upsertArpEntries(
   entries: { mac: string; ip: string | null; interface_name: string | null }[],
   getNetworkIdForIp?: (ip: string) => number | null
 ): void {
-  cleanOrphanedForeignKeys();
+  // Sul database che la facciata ha risolto (tenant, DEFAULT o legacy), come prima.
+  cleanOrphanedForeignKeysSu(getDb());
   const db = getDb();
 
   const stmt = db.prepare(
@@ -5844,12 +5852,6 @@ export function toggleJob(id: number, enabled: boolean): void {
   getDb().prepare("UPDATE scheduled_jobs SET enabled = ?, updated_at = datetime('now') WHERE id = ?").run(enabled ? 1 : 0, id);
 }
 
-export function updateScheduledJobInterval(id: number, intervalMinutes: number): void {
-  getDb().prepare(
-    `UPDATE scheduled_jobs SET interval_minutes = ?, next_run = datetime('now', '+' || ? || ' minutes'), updated_at = datetime('now') WHERE id = ?`
-  ).run(intervalMinutes, intervalMinutes, id);
-}
-
 export function deleteScheduledJob(id: number): boolean {
   return getDb().prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
 }
@@ -6015,98 +6017,6 @@ export function getOnlineCountsOverTime(
     GROUP BY strftime('%Y-%m-%dT%H:00:00', checked_at)
     ORDER BY time ASC
   `).all(hours) as { time: string; online: number; offline: number }[];
-}
-
-/**
- * Stato host nel tempo, bucket dinamico in base al periodo richiesto:
- * - ≤ 48h → bucket orari
- * - ≤ 14gg → bucket giornalieri
- * - > 14gg → bucket giornalieri (limite di leggibilità asse X)
- *
- * Ogni host conta col suo ultimo stato noto, valido 24 h (status-over-time.ts).
- * "unknown" = `total_hosts_corrente - online - offline` clampato a ≥0: host mai
- * controllati o con l'ultimo controllo più vecchio di 24 h. È un'approssimazione
- * (il totale storico cambia nel tempo).
- *
- * `health_pct` = online / (online + offline) × 100, arrotondato; null quando
- * nessuno stato è noto. Serie vuota se nella finestra non c'è nessun controllo.
- */
-export function getStatusOverTime(
-  hours: number = 24
-): StatusPoint[] {
-  // Ultimo stato noto di ogni host portato avanti per 24 h (status-over-time.ts):
-  // prima un host contava solo nell'ora in cui era stato controllato, e con il
-  // controllo ogni 3 ore il grafico andava su e giù (DTS, ottobre 2026).
-  const STALE_HOURS = 24;
-  if (!Number.isFinite(hours)) hours = 24;
-  hours = Math.min(Math.max(Math.round(hours), 1), 720);
-  const nowMs = Date.now();
-  const startMs = statusWindowStartMs(hours, nowMs);
-  const toSql = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
-  const bucketFmt = hours <= 48 ? "%Y-%m-%dT%H:00:00" : "%Y-%m-%dT00:00:00";
-  const totalRow = getDb().prepare("SELECT COUNT(*) as c FROM hosts").get() as { c: number };
-  // Per ogni host: l'ultimo controllo di ciascun periodo della finestra, più
-  // l'ultimo prima della finestra (entro STALE_HOURS) come stato di partenza.
-  const observations = getDb().prepare(`
-    WITH dentro AS (
-      SELECT host_id, status, checked_at,
-        ROW_NUMBER() OVER (PARTITION BY strftime(?, checked_at), host_id ORDER BY checked_at DESC, id DESC) AS rn
-      FROM status_history
-      WHERE checked_at >= ?
-    ),
-    prima AS (
-      SELECT host_id, status, checked_at,
-        ROW_NUMBER() OVER (PARTITION BY host_id ORDER BY checked_at DESC, id DESC) AS rn
-      FROM status_history
-      WHERE checked_at >= ? AND checked_at < ?
-    )
-    SELECT host_id, status, checked_at FROM dentro WHERE rn = 1
-    UNION ALL
-    SELECT host_id, status, checked_at FROM prima WHERE rn = 1
-  `).all(
-    bucketFmt,
-    toSql(startMs),
-    toSql(startMs - STALE_HOURS * 3_600_000),
-    toSql(startMs),
-  ) as StatusObservation[];
-  return buildStatusSeries({ hours, nowMs, totalHosts: totalRow.c, observations, staleAfterHours: STALE_HOURS });
-}
-
-/**
- * Recenti transizioni di stato dei known-hosts (host registrati / con MAC noto).
- * Una "transizione" è una riga di `status_history` il cui status differisce
- * dalla riga precedente per lo stesso host.
- * Ritorna gli ultimi `limit` cambi entro le ultime `hoursWindow` ore.
- *
- * Per ogni cambio: { host_id, ip, hostname, from_status, to_status, changed_at }.
- */
-export function getRecentStatusChanges(
-  limit: number = 10,
-  hoursWindow: number = 24
-): { host_id: number; ip: string; hostname: string | null; from_status: string | null; to_status: string; changed_at: string }[] {
-  // CTE: per ogni riga di status_history, recupera il PREV status dello stesso host
-  // (window LAG). Filtra dove status != prev_status → vere transizioni.
-  return getDb().prepare(`
-    WITH ordered AS (
-      SELECT
-        sh.host_id, sh.status, sh.checked_at,
-        LAG(sh.status) OVER (PARTITION BY sh.host_id ORDER BY sh.checked_at) AS prev_status
-      FROM status_history sh
-      WHERE sh.checked_at >= datetime('now', '-' || ? || ' hours')
-    )
-    SELECT
-      o.host_id,
-      h.ip,
-      COALESCE(h.custom_name, h.hostname) AS hostname,
-      o.prev_status AS from_status,
-      o.status AS to_status,
-      o.checked_at AS changed_at
-    FROM ordered o
-    JOIN hosts h ON h.id = o.host_id
-    WHERE o.prev_status IS NOT NULL AND o.prev_status != o.status
-    ORDER BY o.checked_at DESC
-    LIMIT ?
-  `).all(hoursWindow, limit) as { host_id: number; ip: string; hostname: string | null; from_status: string | null; to_status: string; changed_at: string }[];
 }
 
 // ========================
@@ -7879,4 +7789,9 @@ export {
   getTopologyPositions,
   upsertTopologyPositions,
   getTopologyData,
+  // NUC-2 gruppo 0 (T3-04): una sola copia, in db-tenant.ts
+  cleanOrphanedForeignKeys,
+  updateScheduledJobInterval,
+  getStatusOverTime,
+  getRecentStatusChanges,
 } from "./db-tenant";

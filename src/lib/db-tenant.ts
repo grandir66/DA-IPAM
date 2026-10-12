@@ -24,7 +24,9 @@ import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection
 import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
-import { getActiveTenants } from "./db-hub";
+import { getActiveTenants, getHubDbPath, getSetting, getTenantByCode } from "./db-hub";
+import { buildStatusSeries, statusWindowStartMs, type StatusObservation, type StatusPoint } from "./status-over-time";
+import { registraRipiego } from "./db-maintenance/ripieghi";
 import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
 
 import type {
@@ -63,6 +65,20 @@ import type {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const tenantContext = new AsyncLocalStorage<string>();
+
+/**
+ * Il contesto tenant c'è ma il suo database non si apre (NUC-1). Prima il
+ * facade `getDb()` ripiegava in silenzio su DEFAULT: una scrittura nel
+ * database del tenant sbagliato al posto di un errore (incidente 2026-09-02).
+ */
+export class TenantContextError extends Error {
+  readonly tenantCode: string;
+  constructor(tenantCode: string, cause?: unknown) {
+    super(`Database del tenant ${tenantCode} non apribile`, { cause });
+    this.name = "TenantContextError";
+    this.tenantCode = tenantCode;
+  }
+}
 
 export function withTenant<T>(tenantCode: string, fn: () => T): T {
   return tenantContext.run(tenantCode, fn);
@@ -193,6 +209,18 @@ export function getTenantDb(tenantCode: string): Database.Database {
   // applicandovi schema/migrazioni e corrompendolo. Fail-closed.
   if (path.dirname(path.resolve(dbPath)) !== path.resolve(TENANTS_DIR)) {
     throw new Error(`Tenant code non valido: ${tenantCode}`);
+  }
+  // NUC-1 fase A: ogni apertura (fuori dalla cache) del database di un codice
+  // che l'hub non conosce si conta, che il file stia per nascere o esista già
+  // (file orfani nati prima del registro, anche da 0 byte). L'esito non cambia
+  // ancora. Solo con l'hub presente: senza hub (script, generazione del
+  // template) non c'è un registro da consultare.
+  if (fs.existsSync(getHubDbPath())) {
+    let registrato = true;
+    try {
+      registrato = getTenantByCode(tenantCode) !== undefined;
+    } catch { /* hub illeggibile: non si sa, non si conta */ }
+    if (!registrato) registraRipiego("tenant_non_registrato", tenantCode);
   }
   const newDb = new Database(dbPath);
   // Ordinamento numerico di IP e CIDR nelle liste paginate (UI-9).
@@ -3098,6 +3126,33 @@ export function deleteNetworkDevice(id: number): boolean {
   return db().prepare("DELETE FROM network_devices WHERE id = ?").run(id).changes > 0;
 }
 
+// ========================
+// Cleanup FK orfani (una volta per database)
+// ========================
+
+/**
+ * Database già ripuliti in questo processo. Uno per database e non uno solo
+ * per il processo: con la bandierina unica di `db.ts` sull'hub con più tenant
+ * la pulizia avveniva sul primo tenant toccato e mai sugli altri (NUC-2).
+ */
+const fkCleanedDbs = new WeakSet<Database.Database>();
+
+/**
+ * Pulisce riferimenti FK orfani in mac_ip_mapping e dhcp_leases (causati da
+ * migrazioni con foreign_keys=OFF). `target` serve alla facciata `db.ts`, che
+ * lo chiama sul database che ha già risolto; senza, il tenant del contesto.
+ */
+export function cleanOrphanedForeignKeys(target?: Database.Database): void {
+  const d = target ?? db();
+  if (fkCleanedDbs.has(d)) return;
+  d.prepare("UPDATE mac_ip_mapping SET source_device_id = NULL WHERE source_device_id IS NOT NULL AND source_device_id NOT IN (SELECT id FROM network_devices)").run();
+  d.prepare("UPDATE mac_ip_mapping SET network_id = NULL WHERE network_id IS NOT NULL AND network_id NOT IN (SELECT id FROM networks)").run();
+  d.prepare("UPDATE mac_ip_mapping SET host_id = NULL WHERE host_id IS NOT NULL AND host_id NOT IN (SELECT id FROM hosts)").run();
+  d.prepare("UPDATE dhcp_leases SET host_id = NULL WHERE host_id IS NOT NULL AND host_id NOT IN (SELECT id FROM hosts)").run();
+  d.prepare("UPDATE dhcp_leases SET network_id = NULL WHERE network_id IS NOT NULL AND network_id NOT IN (SELECT id FROM networks)").run();
+  fkCleanedDbs.add(d);
+}
+
 export function getDevicesPaginated(
   page: number,
   pageSize: number,
@@ -3357,8 +3412,6 @@ export function deleteCredential(id: number): boolean {
  * Importa getSetting dal hub.
  */
 export function getHostWindowsCredentials(): { username: string; password: string } | null {
-  // getSetting lives in the hub DB — lazy import to avoid circular deps
-  const { getSetting } = require("./db") as { getSetting: (key: string) => string | null };
   const idStr = getSetting("host_windows_credential_id");
   if (!idStr?.trim()) return null;
   const id = parseInt(idStr, 10);
@@ -3372,7 +3425,6 @@ export function getHostWindowsCredentials(): { username: string; password: strin
 }
 
 export function getHostLinuxCredentials(): { username: string; password: string } | null {
-  const { getSetting } = require("./db") as { getSetting: (key: string) => string | null };
   const idStr = getSetting("host_linux_credential_id");
   if (!idStr?.trim()) return null;
   const id = parseInt(idStr, 10);
@@ -3531,7 +3583,6 @@ export function getHostDetectCredentialsEnriched(hostId: number): Array<{
  * quindi l'allargamento non ha impatto osservabile oggi.
  */
 export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux"): number[] {
-  const { getSetting } = require("./db") as { getSetting: (key: string) => string | null };
   const protocol: CredProtocol = role === "windows" ? "winrm" : "ssh";
   const resolved = resolveCredentialsForDb(db(), { networkId }, protocol);
   const out: number[] = [];
@@ -3555,7 +3606,6 @@ export function getOrderedDetectCredentialIds(networkId: number, role: "windows"
  * globale Impostazioni. Dedup preservando l'ordine.
  */
 export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
-  const { getSetting } = require("./db") as { getSetting: (key: string) => string | null };
   const resolved = resolveCredentialsForDb(db(), { networkId }, "ssh");
   const out: number[] = [];
   const seen = new Set<number>();
@@ -4857,6 +4907,12 @@ export function toggleJob(id: number, enabled: boolean): void {
   db().prepare("UPDATE scheduled_jobs SET enabled = ?, updated_at = datetime('now') WHERE id = ?").run(enabled ? 1 : 0, id);
 }
 
+export function updateScheduledJobInterval(id: number, intervalMinutes: number): void {
+  db().prepare(
+    `UPDATE scheduled_jobs SET interval_minutes = ?, next_run = datetime('now', '+' || ? || ' minutes'), updated_at = datetime('now') WHERE id = ?`
+  ).run(intervalMinutes, intervalMinutes, id);
+}
+
 export function deleteScheduledJob(id: number): boolean {
   return db().prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
 }
@@ -5017,6 +5073,98 @@ export function recordHostHeartbeat(
     }
   });
   tx();
+}
+
+/**
+ * Stato host nel tempo, bucket dinamico in base al periodo richiesto:
+ * - ≤ 48h → bucket orari
+ * - ≤ 14gg → bucket giornalieri
+ * - > 14gg → bucket giornalieri (limite di leggibilità asse X)
+ *
+ * Ogni host conta col suo ultimo stato noto, valido 24 h (status-over-time.ts).
+ * "unknown" = `total_hosts_corrente - online - offline` clampato a ≥0: host mai
+ * controllati o con l'ultimo controllo più vecchio di 24 h. È un'approssimazione
+ * (il totale storico cambia nel tempo).
+ *
+ * `health_pct` = online / (online + offline) × 100, arrotondato; null quando
+ * nessuno stato è noto. Serie vuota se nella finestra non c'è nessun controllo.
+ */
+export function getStatusOverTime(
+  hours: number = 24
+): StatusPoint[] {
+  // Ultimo stato noto di ogni host portato avanti per 24 h (status-over-time.ts):
+  // prima un host contava solo nell'ora in cui era stato controllato, e con il
+  // controllo ogni 3 ore il grafico andava su e giù (DTS, ottobre 2026).
+  const STALE_HOURS = 24;
+  if (!Number.isFinite(hours)) hours = 24;
+  hours = Math.min(Math.max(Math.round(hours), 1), 720);
+  const nowMs = Date.now();
+  const startMs = statusWindowStartMs(hours, nowMs);
+  const toSql = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
+  const bucketFmt = hours <= 48 ? "%Y-%m-%dT%H:00:00" : "%Y-%m-%dT00:00:00";
+  const totalRow = db().prepare("SELECT COUNT(*) as c FROM hosts").get() as { c: number };
+  // Per ogni host: l'ultimo controllo di ciascun periodo della finestra, più
+  // l'ultimo prima della finestra (entro STALE_HOURS) come stato di partenza.
+  const observations = db().prepare(`
+    WITH dentro AS (
+      SELECT host_id, status, checked_at,
+        ROW_NUMBER() OVER (PARTITION BY strftime(?, checked_at), host_id ORDER BY checked_at DESC, id DESC) AS rn
+      FROM status_history
+      WHERE checked_at >= ?
+    ),
+    prima AS (
+      SELECT host_id, status, checked_at,
+        ROW_NUMBER() OVER (PARTITION BY host_id ORDER BY checked_at DESC, id DESC) AS rn
+      FROM status_history
+      WHERE checked_at >= ? AND checked_at < ?
+    )
+    SELECT host_id, status, checked_at FROM dentro WHERE rn = 1
+    UNION ALL
+    SELECT host_id, status, checked_at FROM prima WHERE rn = 1
+  `).all(
+    bucketFmt,
+    toSql(startMs),
+    toSql(startMs - STALE_HOURS * 3_600_000),
+    toSql(startMs),
+  ) as StatusObservation[];
+  return buildStatusSeries({ hours, nowMs, totalHosts: totalRow.c, observations, staleAfterHours: STALE_HOURS });
+}
+
+/**
+ * Recenti transizioni di stato dei known-hosts (host registrati / con MAC noto).
+ * Una "transizione" è una riga di `status_history` il cui status differisce
+ * dalla riga precedente per lo stesso host.
+ * Ritorna gli ultimi `limit` cambi entro le ultime `hoursWindow` ore.
+ *
+ * Per ogni cambio: { host_id, ip, hostname, from_status, to_status, changed_at }.
+ */
+export function getRecentStatusChanges(
+  limit: number = 10,
+  hoursWindow: number = 24
+): { host_id: number; ip: string; hostname: string | null; from_status: string | null; to_status: string; changed_at: string }[] {
+  // CTE: per ogni riga di status_history, recupera il PREV status dello stesso host
+  // (window LAG). Filtra dove status != prev_status → vere transizioni.
+  return db().prepare(`
+    WITH ordered AS (
+      SELECT
+        sh.host_id, sh.status, sh.checked_at,
+        LAG(sh.status) OVER (PARTITION BY sh.host_id ORDER BY sh.checked_at) AS prev_status
+      FROM status_history sh
+      WHERE sh.checked_at >= datetime('now', '-' || ? || ' hours')
+    )
+    SELECT
+      o.host_id,
+      h.ip,
+      COALESCE(h.custom_name, h.hostname) AS hostname,
+      o.prev_status AS from_status,
+      o.status AS to_status,
+      o.checked_at AS changed_at
+    FROM ordered o
+    JOIN hosts h ON h.id = o.host_id
+    WHERE o.prev_status IS NOT NULL AND o.prev_status != o.status
+    ORDER BY o.checked_at DESC
+    LIMIT ?
+  `).all(hoursWindow, limit) as { host_id: number; ip: string; hostname: string | null; from_status: string | null; to_status: string; changed_at: string }[];
 }
 
 export function getStatusHistory(hostId: number, limit: number = 100): StatusHistory[] {

@@ -8,6 +8,32 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunte
 
+- **Registro dei ripieghi del database** (tappa 3, NUC-1 fase A). Ogni accesso al
+  database senza contesto tenant, su un'installazione con hub, si conta: il
+  ripiego su DEFAULT, quello su `ipam.db` e il file di un tenant che l'hub non
+  conosce. Il registro è in `data/logs/ripieghi/` (un file JSONL al giorno, 30
+  giorni, una riga per chiamante e ora, lo stack una volta sola). `/api/health`
+  dà solo il numero; `/api/modules/health` dice chi e da dove solo al
+  superadmin, perché il dettaglio riguarda tutti i tenant del processo. Il
+  chiamante si riconosce anche quando il codice gira dal build di Next (file
+  minificati, dove il nome del file non dice niente): la firma è la catena dei
+  primi punti di chiamata con riga e colonna. Il file di un tenant sconosciuto
+  si conta a ogni apertura, anche se esisteva già prima del registro.
+  Perché: il 02/09 un contesto perso ha mandato dati di un tenant in DEFAULT senza
+  un allarme; prima di trasformare questi ripieghi in errori bisogna sapere, con
+  una settimana di dati che sopravvive agli aggiornamenti, chi li usa ancora.
+
+- **Misura del database di un tenant, in sola lettura** (tappa 3, strumento per
+  DB-1, DB-2, DB-3). `npx tsx scripts/misura-db-tenant.ts <file.db>` stampa righe
+  e spazio per tabella, righe al giorno dello storico MAC-IP, coppie già viste,
+  MAC con più IP, forme dei MAC e delle date per colonna, righe oltre 30/90/180
+  giorni e ultima scansione per rete e tipo (`--json` per la forma macchina,
+  `--senza-spazio` per saltare il calcolo dello spazio sui file grandi).
+  Perché: gli interventi della tappa 3 sul database (chiave dei MAC, storico,
+  retention) vanno misurati prima e dopo sullo stesso file, sempre allo stesso
+  modo. Il file si apre in sola lettura e l'output contiene solo numeri e nomi di
+  colonna, mai MAC, IP o nomi del cliente: si può incollare in un documento.
+
 - **Controller UniFi come fonte di dati (spento finché non lo si accende).** A
   DTS il controller UniFi gestisce 74 apparati, ma per DA-IPAM erano solo host:
   nessuno fra i dispositivi di rete, nessuna porta, nessun vicino LLDP, e la
@@ -74,6 +100,28 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   superate si annullano. Accanto a «Attivi (90gg)», che è acceso di default, si
   legge quanti ne mostra sul totale («40 di 500»): prima la linguetta diceva 500
   e la tabella ne mostrava 40 senza spiegare perché.
+- **Pulizia dei riferimenti orfani su ogni tenant** (tappa 3, NUC-2 gruppo 0).
+  La pulizia dei collegamenti rimasti a reti, host e apparati cancellati (tabelle
+  dello storico MAC-IP e dei lease DHCP) partiva una volta sola per processo: su
+  un hub con più tenant toccava il primo database e mai gli altri. Ora gira una
+  volta per ciascun database. Cambia il comportamento sull'hub: alla prima
+  interrogazione di un apparato, ogni tenant azzera i propri riferimenti orfani.
+  Insieme, quattro funzioni dati (pulizia, intervallo dei job, andamento degli
+  stati, ultimi cambi di stato) esistono ora in una sola copia, quella per
+  tenant; la vecchia facciata le riesporta. Un test tiene il numero esatto delle
+  funzioni ancora definite nella facciata (anche quelle scritte come costanti) e
+  impedisce che una funzione spostata vi ricompaia, anche non esportata. Un
+  banco di prova confronta la copia per tenant con la vecchia copia della
+  facciata, conservata nel test, sugli stessi dati; il banco rifiuta un
+  confronto di una funzione con se stessa, che passerebbe sempre. Perché: le
+  due copie si erano separate, e una correzione fatta in una non arrivava
+  all'altra.
+
+- **Un tenant il cui database non si apre è un errore** (NUC-1). Prima il facade
+  ripiegava in silenzio su DEFAULT: le scritture finivano nel database sbagliato.
+  `/api/health` verifica il database sull'hub invece che passare dal facade, che
+  senza contesto è proprio un ripiego.
+
 - **Ordinamenti giusti nelle liste paginate.** Nelle liste DHCP e Subnet gli IP e
   i CIDR si ordinavano come testo («10.0.0.10» prima di «10.0.0.2»); la colonna
   «Ultimo visto» del DHCP ordinava in realtà per «Ultimo sync»; a valori uguali

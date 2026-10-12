@@ -4442,6 +4442,78 @@ export function getNeighborsByDevice(deviceId: number): DbNeighborEntry[] {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// SYNC DA CONTROLLER (UniFi) — letture in blocco, collegamento, transazione
+// ═══════════════════════════════════════════════════════════════════════════
+// Una query per tutto il giro invece di una per apparato (no N+1). Qui e non
+// in `devices/physical-device-db.ts`: quel modulo passa da `getDb()` del
+// facade, che risolve il tenant con un `require` di db-tenant.
+
+/**
+ * MAC noti di ogni network_device: dell'host collegato (`host_id`, o stesso
+ * IP in qualunque rete) e dell'identità fisica. I MAC escono come sono
+ * scritti: li normalizza chi li confronta.
+ */
+export function getNetworkDeviceKnownMacs(): Array<{ device_id: number; mac: string }> {
+  return db().prepare(`
+    SELECT nd.id AS device_id, h.mac AS mac
+      FROM network_devices nd JOIN hosts h ON h.id = nd.host_id
+     WHERE h.mac IS NOT NULL AND h.mac <> ''
+    UNION
+    SELECT nd.id, h.mac
+      FROM network_devices nd JOIN hosts h ON h.ip = nd.host
+     WHERE h.mac IS NOT NULL AND h.mac <> ''
+    UNION
+    SELECT nd.id, p.primary_mac
+      FROM network_devices nd JOIN physical_devices p ON p.id = nd.physical_device_id
+     WHERE p.primary_mac IS NOT NULL AND p.primary_mac <> ''
+  `).all() as Array<{ device_id: number; mac: string }>;
+}
+
+/** Ancore d'identità delle `physical_devices` esistenti: solo lettura, per collegare senza creare. */
+export function getPhysicalDeviceAnchors(): Array<{ id: number; serial_number: string | null; primary_mac: string | null }> {
+  return db().prepare(
+    "SELECT id, serial_number, primary_mac FROM physical_devices WHERE serial_number IS NOT NULL OR primary_mac IS NOT NULL"
+  ).all() as Array<{ id: number; serial_number: string | null; primary_mac: string | null }>;
+}
+
+/** Quante porte e quanti vicini ha oggi ogni apparato (due query, per la guardia «zero sospetto»). */
+export function getPortAndNeighborCountsByDevice(): Map<number, { ports: number; neighbors: number }> {
+  const d = db();
+  const out = new Map<number, { ports: number; neighbors: number }>();
+  const entry = (id: number) => {
+    let e = out.get(id);
+    if (!e) {
+      e = { ports: 0, neighbors: 0 };
+      out.set(id, e);
+    }
+    return e;
+  };
+  for (const r of d.prepare("SELECT device_id, COUNT(*) AS n FROM switch_ports GROUP BY device_id").all() as Array<{ device_id: number; n: number }>) {
+    entry(r.device_id).ports = r.n;
+  }
+  for (const r of d.prepare("SELECT device_id, COUNT(*) AS n FROM device_neighbors GROUP BY device_id").all() as Array<{ device_id: number; n: number }>) {
+    entry(r.device_id).neighbors = r.n;
+  }
+  return out;
+}
+
+/** Collega un network_device a un'identità fisica GIÀ esistente. */
+export function linkNetworkDeviceToPhysicalDevice(deviceId: number, physicalDeviceId: number): void {
+  db().prepare(
+    "UPDATE network_devices SET physical_device_id = ?, updated_at = datetime('now') WHERE id = ?"
+  ).run(physicalDeviceId, deviceId);
+}
+
+/**
+ * Esegue `fn` in una transazione del DB del tenant corrente: o tutto o niente.
+ * Le upsert che hanno già una loro transazione (`upsertSwitchPorts`,
+ * `upsertNeighbors`) dentro diventano savepoint.
+ */
+export function runInTenantTransaction<T>(fn: () => T): T {
+  return db().transaction(fn)();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // DEVICE ROUTES (Routing Table)
 // ═══════════════════════════════════════════════════════════════════════════
 

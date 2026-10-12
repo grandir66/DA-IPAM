@@ -205,11 +205,43 @@ test("device senza MAC/port_table non crasha", () => {
 
 **Interfaces:** Produces: `syncUnifiForTenant(): Promise<UnifiSyncResult>` (`{added,updated,portsUpserted,neighborsUpserted,skipped,errors[]}`).
 
-- [ ] **Step 1:** Leggere `src/lib/integrations/wazuh-sync.ts` (`syncWazuhForTenant`) come template direzionale (pull→upsert, match per IP/MAC) e `librenms-sync.ts` per struttura errori/probe.
-- [ ] **Step 2:** Implementare: `cfg = getIntegrationConfig("unifi")`; se `mode!=="external"` return skip. `client = createUnifiClient(cfg)`; `const p = await client.probe(); if(!p.ok) return {…errors:[p.message]}`. `devices = await client.listDevices()`. Per ogni device (dentro la transazione per-device o batch): `mapUnifiDeviceType` (skip se null); trovare il `network_device` esistente (`resolveMacToNetworkDevice(mac)` → `getNetworkDeviceByHost(ip)`) → `updateNetworkDevice` o `createNetworkDevice(mapUnifiDevice(d))`; `resolvePhysicalDevice` + `setNetworkDevicePhysicalDevice`; `upsertSwitchPorts(id, mapUnifiPorts(d))`; `upsertNeighbors(id, mapUnifiLldp(d))`. Accumulare conteggi/errori, **non lanciare**.
-- [ ] **Step 3:** `npx tsc --noEmit && npm run lint && npm test` (incl. `no-dynamic-db-tenant-import.test.ts` verde).
-- [ ] **Step 4: verifica reale su DTS** (tenant 71734): configurare `integration_unifi_*` (kind self_hosted, url `https://172.16.1.222:8443`, site `3oumjv0i`, user `map` dal vault), lanciare la sync e **contare** `network_devices`/`device_neighbors`/`switch_ports` prima/dopo (attesi ~74 device, molte adiacenze). Poi aprire `/topology` → mappa piena.
-- [ ] **Step 5:** `git commit -m "feat(unifi): sync engine pull→upsert (device/porte/adiacenze)"`.
+- [x] **Step 1:** Leggere `src/lib/integrations/wazuh-sync.ts` (`syncWazuhForTenant`) come template direzionale (pull→upsert, match per IP/MAC) e `librenms-sync.ts` per struttura errori/probe.
+- [x] **Step 2:** Implementare: `cfg = getIntegrationConfig("unifi")`; se `mode!=="external"` return skip. `client = createUnifiClient(cfg)`; `const p = await client.probe(); if(!p.ok) return {…errors:[p.message]}`. `devices = await client.listDevices()`. Per ogni device (dentro la transazione per-device o batch): `mapUnifiDeviceType` (skip se null); trovare il `network_device` esistente (`resolveMacToNetworkDevice(mac)` → `getNetworkDeviceByHost(ip)`) → `updateNetworkDevice` o `createNetworkDevice(mapUnifiDevice(d))`; `resolvePhysicalDevice` + `setNetworkDevicePhysicalDevice`; `upsertSwitchPorts(id, mapUnifiPorts(d))`; `upsertNeighbors(id, mapUnifiLldp(d))`. Accumulare conteggi/errori, **non lanciare**.
+- [x] **Step 3:** `npx tsc --noEmit && npm run lint && npm test` (incl. `no-dynamic-db-tenant-import.test.ts` verde). *(tsc completo, eslint sui file toccati, prove mirate UniFi + `no-dynamic-db-tenant-import` + `host-status-by-ip`; `npm test` completo non lanciato per la memoria della macchina, 12/10)*
+- [ ] **Step 4: verifica reale su DTS** (tenant 71734) — *da fare, correzione 7: prima su una copia locale del DB del tenant, poi sull'appliance con backup e conferma di Riccardo*: configurare `integration_unifi_*` (kind self_hosted, url `https://172.16.1.222:8443`, site `3oumjv0i`, user `map` dal vault), lanciare la sync e **contare** `network_devices`/`device_neighbors`/`switch_ports` prima/dopo (attesi ~74 device, molte adiacenze). Poi aprire `/topology` → mappa piena.
+- [x] **Step 5:** `git commit -m "feat(unifi): sync engine pull→upsert (device/porte/adiacenze)"`.
+
+> **Esito del passo 3 (12/10), dove differisce da sopra.** `syncUnifiForTenant(opts?)` in
+> `src/lib/integrations/unifi-sync.ts` (`opts.source` sostituisce il controller nelle prove) →
+> `{tenantCode, total, added, updated, skipped, skippedReasons, portsUpserted, neighborsUpserted, errors}`.
+> Non lancia; senza contesto tenant non legge nemmeno il controller; ricontrolla il contesto dopo
+> l'attesa della rete; integrazione spenta o zero apparati dal controller → niente scritto, detto in `errors`.
+> - **Una sola lettura**: `probe()` e `listDevices()` fanno la stessa sequenza login → stat/device →
+>   logout; la sync chiama solo `listDevices()`, il cui errore arriva già classificato come nella sonda.
+> - **Funzioni DB** solo da `@/lib/db-tenant` (correzione 3). Nuove lì: `getNetworkDeviceKnownMacs`,
+>   `getPhysicalDeviceAnchors`, `getPortAndNeighborCountsByDevice`, `linkNetworkDeviceToPhysicalDevice`,
+>   `runInTenantTransaction`. **Non** `resolvePhysicalDevice`/`physical-device-db.ts`: il primo CREA un
+>   record quando non trova (a DTS `physical_devices` è vuota: sarebbero 74 record fittizi), il secondo
+>   passa da `getDb()` del facade, che risolve il tenant con un `require` di db-tenant.
+> - **Abbinamento** seriale → MAC noti (host collegato o con lo stesso IP, identità fisica) → IP; per IP
+>   solo se nessun MAC lo smentisce e l'apparato è `ubiquiti`/`other`, altrimenti «IP conteso»: saltato,
+>   detto in `errors`. Senza il seriale la seconda sync scambiava per conteso un apparato creato da lei se
+>   l'host della rete ha un MAC diverso da quello del controller (prova dedicata). Trovato per seriale o
+>   MAC a un IP diverso → spostato all'IP del controller. Già censito: si aggiornano i fatti (vendor,
+>   tipo, modello, firmware, seriale), non le scelte (nome, protocollo, credenziali, `enabled`).
+> - **Nuovi apparati spenti** (`enabled=0`, `use_for_arp_poll=0`, `protocol=api`): il poll ARP gira su
+>   ogni `network_device` abilitato e per un ubiquiti `api` userebbe SNMP con community «public»
+>   (`getDeviceCommunityString`, timeout di 10 s a richiesta) su ognuno dei 74 apparati. In topologia
+>   compaiono lo stesso (grigi, «unknown»). Si aggancia `host_id` all'host con lo stesso IP (niente doppioni).
+> - **Per apparato una transazione** (scheda + identità + porte + vicini): un errore annulla solo
+>   quell'apparato. Guardia «zero sospetto» (correzione 4) su porte e vicini, detta in `errors`.
+> - Prove: `__tests__/unifi-sync.test.ts`, 19, tenant temporaneo + fixture vera; viste fallire senza
+>   modulo e sulle mutazioni (guardia porte, guardia vicini, contesto, conflitto per MAC, abbinamento per
+>   MAC e per seriale, nati spenti, integrazione spenta, identità per MAC).
+> - **Hub delle prove**: assegnato in testa al file, `DA_IPAM_HUB_DB_PATH` arrivava dopo gli `import`
+>   e le prove scrivevano in `DA_INVENT_DATA_DIR/hub.db`, condiviso fra i processi paralleli (e, senza
+>   quella variabile, il vero hub). Ora `__tests__/support/hub-isolato.ts`, importato per primo, anche
+>   in `unifi-config.test.ts`. Restano col vecchio schema `wazuh-config.test.ts` e `wazuh-alerts-sync.test.ts`.
 
 ---
 

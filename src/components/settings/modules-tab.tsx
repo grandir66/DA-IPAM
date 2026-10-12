@@ -46,6 +46,7 @@ import { IntegrationViewer } from "@/components/integrations/integration-viewer"
 import { CredentialsVaultPanel } from "./credentials-vault-panel";
 import type { InstallJob } from "@/lib/integrations/types";
 import type { ModuleKey } from "@/lib/modules/registry";
+import { UNINSTALL_COPY, isUninstallableFeature } from "@/lib/modules/uninstall-copy";
 
 interface FeatureEntry {
   key: string;
@@ -263,7 +264,18 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
         const err = (await r.json().catch(() => null)) as { error?: string } | null;
         throw new Error(err?.error ?? `HTTP ${r.status}`);
       }
-      toast.success(`Modulo "${feature.title}" disinstallato`);
+      // MOD-19: il messaggio dice cosa è successo davvero ai dati, letto dalla
+      // risposta (dataDropped), non da cosa si era chiesto.
+      const res = (await r.json().catch(() => null)) as { dataDropped?: boolean } | null;
+      if (!uninstallDialog.dropData) {
+        toast.success(`Modulo "${feature.title}" disinstallato. I dati storici restano nel database.`);
+      } else if (res?.dataDropped === true) {
+        toast.success(`Modulo "${feature.title}" disinstallato e dati storici cancellati.`);
+      } else {
+        toast.warning(
+          `Modulo "${feature.title}" disinstallato, ma nessun dato è stato cancellato: le tabelle del modulo non c'erano o erano incomplete.`,
+        );
+      }
       setUninstallDialog({ open: false, feature: null, dropData: false });
       await fetchFeatures();
     } catch (e) {
@@ -272,6 +284,9 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
       setBusyKey(null);
     }
   };
+
+  const uninstallKey = uninstallDialog.feature?.key ?? "";
+  const uninstallCopy = isUninstallableFeature(uninstallKey) ? UNINSTALL_COPY[uninstallKey] : null;
 
   const patchInstalled = patch?.status === "installed";
   const patchBusy = busyKey === "patch_management";
@@ -519,11 +534,10 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Disinstalla modulo?</DialogTitle>
-            <DialogDescription>
-              La voce di menu sparirà e gli endpoint del modulo torneranno 404. I dati
-              storici restano nel DB tenant (salvo richiesta esplicita).
-            </DialogDescription>
+            <DialogTitle>
+              Disinstallare {uninstallDialog.feature?.title ?? "il modulo"}?
+            </DialogTitle>
+            <DialogDescription>{uninstallCopy?.effetto}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <label className="flex items-start gap-2 text-sm cursor-pointer">
@@ -533,13 +547,20 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
                   setUninstallDialog((prev) => ({ ...prev, dropData: v === true }))
                 }
               />
-              <span>
-                Elimina anche i dati storici del modulo
-                <span className="block text-xs text-muted-foreground">
-                  (richiede F1 — al momento il flag viene accettato ma non droppa).
-                </span>
-              </span>
+              <span>Elimina anche i dati storici del modulo</span>
             </label>
+            {uninstallCopy &&
+              (uninstallDialog.dropData ? (
+                <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive space-y-1">
+                  <p className="font-medium">{uninstallCopy.conCasella}</p>
+                  <p className="text-xs">
+                    Tabelle cancellate:{" "}
+                    <span className="font-mono">{uninstallCopy.tabelle.join(", ")}</span>
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">{uninstallCopy.senzaCasella}</p>
+              ))}
           </div>
           <DialogFooter>
             <Button
@@ -556,7 +577,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
               onClick={handleUninstallConfirm}
             >
               {busyKey !== null && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Disinstalla
+              {uninstallDialog.dropData ? "Disinstalla e cancella i dati" : "Disinstalla"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -649,7 +670,15 @@ function NetServicesConfigCard({ isAdmin }: { isAdmin: boolean }) {
   }
 
   async function uninstall() {
-    if (!confirm("Disinstallare il modulo Network Services? La config verrà rimossa.")) return;
+    // MOD-19: uninstallNetServices spegne il modulo e cancella URL e token
+    // del bridge (config_json = NULL); non contatta il bridge.
+    if (
+      !confirm(
+        "Disinstallare Network Services? La voce sparisce dal menu e si cancellano URL e token del bridge: per riattivarlo vanno reinseriti. Il bridge e i suoi servizi DNS/DHCP non vengono toccati.",
+      )
+    ) {
+      return;
+    }
     setBusy(true);
     try {
       const r = await fetch("/api/network-services/setup", { method: "DELETE" });

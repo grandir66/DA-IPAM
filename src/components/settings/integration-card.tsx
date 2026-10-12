@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Terminal } from "lucide-react";
 import type { IntegrationComponent, IntegrationMode, ComponentConfig, InstallJob, ContainerStatus } from "@/lib/integrations/types";
+import { containerRemovalConfirmText } from "@/lib/modules/uninstall-copy";
 
 interface Props {
   component: IntegrationComponent;
@@ -128,8 +129,13 @@ export function IntegrationCard({ component, title, description, dockerAvailable
   };
 
   const handleAction = async (action: "start" | "stop" | "restart" | "remove" | "remove-all") => {
-    if (action === "remove" && !confirm(`Rimuovere il container Docker di ${title}?`)) return;
-    if (action === "remove-all" && !confirm(`Eliminare tutti i container Docker di ${title} (incluse dipendenze come database e cache)? I dati non saranno conservati.`)) return;
+    // MOD-19: la conferma dice cosa si perde (testi in lib/modules/uninstall-copy).
+    if (
+      (action === "remove" || action === "remove-all") &&
+      !confirm(containerRemovalConfirmText(component, title, action))
+    ) {
+      return;
+    }
     try {
       const res = await fetch(`/api/integrations/${component}/action`, {
         method: "POST",

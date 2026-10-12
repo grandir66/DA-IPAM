@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { CheckCircle2, Loader2, RefreshCw, ShieldCheck, ShieldAlert, Trash2, PlayCircle, Network, ExternalLink, Plug } from "lucide-react";
 import { deriveEdgeUiBase } from "@/lib/integrations/edge-ui-url";
+import { edgeRemovalConfirmText } from "@/lib/modules/uninstall-copy";
 
 interface ScannerRow {
   id: number;
@@ -249,10 +250,12 @@ export function ScannerEdgeCard() {
   };
 
   const handleDelete = async () => {
-    if (!confirm("Rimuovere la configurazione scanner-edge? I findings storici restano in archivio.")) return;
+    // MOD-19: la rimozione cancella a cascata findings e storico delle
+    // scansioni (vedi removeEdgeScanner): la conferma lo dice, con il numero.
+    if (!confirm(edgeRemovalConfirmText(scanner?.finding_count ?? 0))) return;
     const r = await fetch("/api/integrations/scanner-edge", { method: "DELETE" });
     if (r.ok) {
-      toast.success("Scanner-edge rimosso");
+      toast.success("Scanner-Edge rimosso, con i suoi findings e lo storico delle scansioni");
       await load();
     } else {
       toast.error("Rimozione fallita");

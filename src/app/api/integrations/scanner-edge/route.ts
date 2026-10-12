@@ -3,7 +3,8 @@
  *
  *  GET    — ritorna config attuale o null
  *  POST   — crea/sostituisce (409 se esiste già senza ?replace=1)
- *  DELETE — rimuove e azzera findings collegate via cascade
+ *  DELETE — rimuove lo scanner: findings e storico delle scansioni se ne vanno
+ *           a cascata (ON DELETE CASCADE), e la UI lo dice nella conferma
  *
  * Vincolo 1:1: applicato a livello applicativo. Schema DB consente più
  * righe ma la POST rifiuta. Per cambiare token: DELETE → POST.
@@ -16,6 +17,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { encrypt } from "@/lib/crypto";
 import { validateBaseUrl } from "@/lib/vuln/scanner-edge-client";
+import { removeEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { reloadTenantScheduler } from "@/lib/cron/scheduler";
 
 const PostSchema = z.object({
@@ -203,11 +205,9 @@ export async function DELETE() {
   if (session instanceof NextResponse) return session;
   return await withTenantFromSession(() => {
     const code = getCurrentTenantCode() ?? "DEFAULT";
-    const db = getTenantDb(code);
-    db.prepare("DELETE FROM vuln_scanners").run();
-    db.prepare(
-      "DELETE FROM scheduled_jobs WHERE job_type = 'vuln_sync' AND network_id IS NULL",
-    ).run();
+    // Cancella a cascata anche findings e storico delle scansioni: la
+    // conferma in UI lo dice (MOD-19). Vedi removeEdgeScanner.
+    removeEdgeScanner(getTenantDb(code));
     reloadTenantScheduler(code);
     return NextResponse.json({ ok: true });
   });

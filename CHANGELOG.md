@@ -8,6 +8,19 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **Le conferme di disinstallazione e rimozione dicono cosa si perde (MOD-19).**
+  Sotto «Elimina anche i dati storici» c'era scritto che la richiesta veniva
+  accettata «ma non droppa», mentre la disinstallazione cancellava davvero le
+  tabelle del modulo; «Rimuovi» dello Scanner-Edge prometteva che i findings
+  restavano in archivio, e invece se ne vanno a cascata con lo storico delle
+  scansioni. Ora la conferma di Patch Management, Inventory Agent e MeshCentral
+  dice cosa resta senza la casella e cosa si cancella con la casella (con
+  l'elenco delle tabelle), e il messaggio finale dice se i dati sono stati
+  cancellati davvero; «Rimuovi» dello Scanner-Edge dice quanti findings si
+  cancellano; le conferme dei container di LibreNMS, Graylog e Loki e quella di
+  Network Services dicono che cosa non torna. Il comportamento sui dati non
+  cambia (è la tappa 7): cambiano solo i testi, e due prove eseguono la
+  cancellazione vera e la confrontano con ciò che la conferma promette.
 - **I filtri mostrano l'etichetta della voce scelta, non il suo codice.** Dopo
   una scelta, i menu a tendina dei filtri mostravano il valore tecnico: «all»
   invece di «Tutti gli stati», «unacked» invece di «Non gestiti», il numero della

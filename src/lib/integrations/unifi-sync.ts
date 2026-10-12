@@ -449,11 +449,15 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
  * (`skippedReasons`, non errori). Lo usano la rotta manuale (`ok`) e il job
  * `unifi_sync`, che su un fallimento lancia: così lo scheduler lo conta fra i
  * job falliti invece di dirlo «completato» (niente ripieghi muti).
+ *
+ * Il testo finisce nel log dello scheduler: porta il motivo del giro, non gli
+ * errori dei singoli apparati (nomi e IP), che restano nel resoconto.
  */
 export function unifiSyncFailure(r: UnifiSyncResult): string | null {
   if (r.errors.length === 0) return null;
-  if (r.total > 0 && r.added + r.updated > 0) return null;
-  return r.errors.join("; ");
+  if (r.total === 0) return r.errors.join("; ");
+  if (r.added + r.updated > 0) return null;
+  return `nessuno dei ${r.total} apparati del controller è stato scritto (${r.errors.length} errori: il dettaglio è nel resoconto della sync manuale)`;
 }
 
 /**

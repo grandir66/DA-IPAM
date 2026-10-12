@@ -276,10 +276,37 @@ test("device senza MAC/port_table non crasha", () => {
 
 **Files:** Modify `src/lib/db-tenant-schema.ts` (CHECK `scheduled_jobs.job_type`), `src/lib/cron/jobs.ts`.
 
-- [ ] **Step 1:** Verificare come viene creato un record `librenms_sync` (API con validazione lato codice vs seed) → decidere migration. Aggiungere `'unifi_sync'` al CHECK di `scheduled_jobs.job_type`; se serve, migration idempotente (ricreazione tabella guardata) in `getTenantDb`.
-- [ ] **Step 2:** `jobs.ts`: import statico `import { syncUnifiForTenant } from "@/lib/integrations/unifi-sync";` + `case "unifi_sync": await syncUnifiForTenant(); break;`.
-- [ ] **Step 3:** `npx tsc --noEmit && npm run lint && npm run build && npm test`.
-- [ ] **Step 4:** `git commit -m "feat(unifi): job schedulato unifi_sync"`.
+- [x] **Step 1:** Verificare come viene creato un record `librenms_sync` (API con validazione lato codice vs seed) → decidere migration. Aggiungere `'unifi_sync'` al CHECK di `scheduled_jobs.job_type`; se serve, migration idempotente (ricreazione tabella guardata) in `getTenantDb`.
+- [x] **Step 2:** `jobs.ts`: import statico `import { syncUnifiForTenant } from "@/lib/integrations/unifi-sync";` + `case "unifi_sync": await syncUnifiForTenant(); break;`.
+- [x] **Step 3:** `npx tsc --noEmit && npm run lint && npm run build && npm test`. *(tsc completo una volta a fine passo, eslint sui file toccati, prove mirate; build e `npm test` completo esclusi in questo giro, 12/10)*
+- [x] **Step 4:** `git commit -m "feat(unifi): job schedulato unifi_sync"`.
+
+> **Esito (12/10, passo 4).**
+> - **Come nasce `librenms_sync`: da nessuna parte.** Nessun seed, nessuna rotta: lo schema
+>   `ScheduledJobSchema` di `POST /api/jobs` ammette solo i job di rete, e nessun codice
+>   inserisce `librenms_sync`. Per `unifi_sync` lo stesso: **nessun record si crea da solo**
+>   (provato: né la configurazione né la sync né l'apertura del DB lo creano). Il modo di
+>   attivarlo arriva col Task 7 (vedi la nota lì).
+> - **Un solo elenco dei tipi**: `src/lib/scheduled-job-types.ts` (`SCHEDULED_JOB_TYPES`,
+>   `SCHEDULED_JOB_TYPES_CHECK_SQL`, `ScheduledJobType`). Ne derivano il CHECK di
+>   `db-tenant-schema.ts`, quello della v8 e `ScheduledJob["job_type"]` /
+>   `ScheduledJobInput["job_type"]` in `@/types`: non possono divergere.
+> - **Migrazione v8** = `migrateScheduledJobsV8(db)` esportata da `db-tenant.ts`, chiamata in
+>   `getTenantDb` dopo la v7 (stesso try/catch e log). Rispetto alle v2…v7: colonne copiate
+>   per nome, contatore AUTOINCREMENT conservato, indice `idx_scheduled_jobs_enabled_next`
+>   ricreato subito (nelle v2…v7 spariva fino al riavvio), tutto in una transazione (una
+>   copia che non riesce lascia la tabella com'era).
+> - **Il job fallisce davvero**: `case "unifi_sync"` lancia se `unifiSyncFailure(result)` dà un
+>   motivo (niente letto o niente scritto), così lo scheduler lo conta fra i falliti. Il
+>   motivo non porta nomi e IP degli apparati (finisce nel log); il log del giro riuscito
+>   porta solo i conteggi.
+> - Prove: `src/lib/__tests__/scheduled-jobs-v8.test.ts` (6: schema = costante, v8 = schema e
+>   tabella uguale a una nuova, idempotenza, **DB tenant vero col CHECK della v7 e righe
+>   dentro aperto con `getTenantDb`**, copia per nome, transazione) e
+>   `src/lib/cron/__tests__/unifi-sync-job.test.ts` (2, via `runJob`, senza rete).
+> - Etichetta «Sincronizzazione controller UniFi» nell'elenco job delle impostazioni.
+> - Resta (correzione 6): provare la v8 su una **copia** di un DB tenant vero (DTS) prima del
+>   push.
 
 ---
 
@@ -289,6 +316,16 @@ test("device senza MAC/port_table non crasha", () => {
 
 - [ ] **Step 1:** Leggere `integration-card.tsx` (load/save/test/sync) e `WazuhCard` (card custom) come template.
 - [ ] **Step 2:** `UnifiCard` ("use client"): `load()` da `GET /api/integrations/unifi`; selettore `kind`; campi url/site/username/password o api_token condizionati; `Salva` (PUT poi `load()`); `Test` (test-connection); `Sincronizza` (POST sync). Testi in italiano, `@base-ui` (`render={<…/>}`).
+
+> **Nota dal Task 6 (12/10):** oggi **nessuna strada crea il job `unifi_sync`** (come
+> `librenms_sync`; `POST /api/jobs` non lo ammette). Se la sync automatica serve, la card
+> deve avere un comando esplicito «Sincronizzazione automatica» che crea o aggiorna **un
+> solo** job per tenant (`network_id` NULL), idempotente come `seedMeshSyncJobForTenant`, con
+> un intervallo minimo ragionevole (un login sul controller a ogni giro) e
+> `reloadTenantScheduler` dopo. `test-connection` è **admin** e restituisce
+> `{ ok, devices, certPin, certPinRecorded }` o `{ ok:false, reason, message, presentedPin?,
+> expectedPin? }`: con `reason: "cert"` la card mostra le due impronte. La sync risponde
+> `{ ok, ...UnifiSyncResult }`: mostrare `errors[]` e `skippedReasons`.
 - [ ] **Step 3:** Aggiungere `<UnifiCard/>` in `modules-tab.tsx` (sezione dedicata).
 - [ ] **Step 4:** `npx tsc --noEmit && npm run lint && npm run build`; verifica visiva della card.
 - [ ] **Step 5:** `git commit -m "feat(unifi): card configurazione integrazione in impostazioni"`.

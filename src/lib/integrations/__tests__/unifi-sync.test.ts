@@ -446,9 +446,19 @@ test("esito: niente letto è un fallimento, col motivo", () => {
   assert.match(unifiSyncFailure(r) ?? "", /Credenziali rifiutate/);
 });
 
-test("esito: apparati letti ma nessuno scritto per errore è un fallimento, con tutti i motivi", () => {
-  const r = esito({ total: 2, updated: 0, skipped: 2, portsUpserted: 0, neighborsUpserted: 0, errors: ["primo guasto", "secondo guasto"] });
-  assert.match(unifiSyncFailure(r) ?? "", /primo guasto.*secondo guasto/);
+test("esito: apparati letti ma nessuno scritto per errore è un fallimento, senza nomi e IP degli apparati", () => {
+  const r = esito({
+    total: 2,
+    updated: 0,
+    skipped: 2,
+    portsUpserted: 0,
+    neighborsUpserted: 0,
+    errors: ["SW-1 (10.99.0.7): scrittura annullata", "SW-2 (10.99.0.26): IP conteso"],
+  });
+  const motivo = unifiSyncFailure(r) ?? "";
+  assert.match(motivo, /nessuno dei 2 apparati.*2 errori/);
+  // Il motivo finisce nel log dello scheduler: niente nomi né IP degli apparati.
+  assert.doesNotMatch(motivo, /SW-1|SW-2|10\.99\./);
 });
 
 test("esito sulla sync vera: controller in errore e integrazione spenta falliscono, il giro buono no", async () => {
@@ -541,4 +551,12 @@ test("test di connessione: senza indirizzo non parte nessuna richiesta e lo dice
     assert.match(r.message, /non configurato/);
   }
   assert.equal(calls.length, 0);
+});
+
+test("il job unifi_sync non nasce da solo: né la configurazione né la sync lo creano", async () => {
+  await sync();
+  setIntegrationConfig("unifi", { mode: "external" });
+  await sync();
+  assert.equal(conta(T, "scheduled_jobs", "job_type = 'unifi_sync'"), 0);
+  assert.equal(conta(T_ALTRO, "scheduled_jobs", "job_type = 'unifi_sync'"), 0);
 });

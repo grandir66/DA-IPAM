@@ -53,6 +53,9 @@ import {
   getScanHistory,
 } from "@/lib/db-tenant";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
+// Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
+// db-tenant, che sotto tsx non va mai caricato con `await import()` (ADR 0002).
+import { syncUnifiForTenant, unifiSyncFailure } from "@/lib/integrations/unifi-sync";
 
 export async function runJob(jobId: number): Promise<void> {
   // v0.2.642 audit perf MC3: SELECT WHERE id invece di full-scan + .find().
@@ -143,6 +146,22 @@ export async function runJob(jobId: number): Promise<void> {
         `[Scheduler] meshcentral_sync: ${result.matched}/${result.totalNodes} nodi matchati, ` +
         `${result.unmatched} unmatched`
       );
+      break;
+    }
+    case "unifi_sync": {
+      // Il job esiste solo se un amministratore l'ha creato: nessun seed.
+      const result = await syncUnifiForTenant();
+      const failure = unifiSyncFailure(result);
+      // Niente letto o niente scritto: si lancia, così lo scheduler lo conta
+      // fra i job falliti invece di dirlo completato.
+      if (failure) throw new Error(`Sync UniFi non riuscita: ${failure}`);
+      console.info(
+        `[Scheduler] unifi_sync: ${result.total} apparati dal controller, ${result.added} nuovi, ` +
+        `${result.updated} aggiornati, ${result.skipped} saltati, ${result.portsUpserted} porte, ` +
+        `${result.neighborsUpserted} vicini, ${result.errors.length} avvisi`
+      );
+      // Gli avvisi per apparato (nomi e IP) non vanno nel log: si leggono nel
+      // resoconto della sync manuale.
       break;
     }
   }

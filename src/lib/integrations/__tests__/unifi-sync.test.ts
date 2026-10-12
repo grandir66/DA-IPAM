@@ -286,6 +286,85 @@ test("apparato offline: porte e vicini dell'ultima sync restano com'erano, ed è
   assert.equal(r.updated, 4);
 });
 
+/** Un AP appena adottato, con la forma vera di AP-3 ma un altro seriale e un altro MAC. */
+function apNuovo(ip: string): UnifiDevice {
+  const ap3 = risposta().find((d) => d.name === "AP-3");
+  assert.ok(ap3);
+  return { ...ap3, name: "AP-NUOVO", serial: "SN000099", mac: "02:00:00:00:00:99", ip };
+}
+
+interface NdChiave {
+  name: string;
+  host: string;
+  serial_number: string | null;
+  host_id: number | null;
+}
+
+function perId(id: number): NdChiave {
+  const r = getTenantDb(T).prepare("SELECT name, host, serial_number, host_id FROM network_devices WHERE id = ?").get(id) as
+    | NdChiave
+    | undefined;
+  assert.ok(r, `network_device ${id} assente`);
+  return r;
+}
+
+test("un AP nuovo sull'IP lasciato da un apparato censito: non lo sovrascrive, anche se il controller lo elenca prima", async () => {
+  await sync();
+  const ap3 = apparato("AP-3").id;
+  // AP-3 passa a .50 e un AP appena adottato prende .5; il controller elenca prima il nuovo.
+  const r = await sync([apNuovo("10.99.0.5"), ...risposta({ nome: "AP-3", con: { ip: "10.99.0.50" } })]);
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.added, 1);
+  assert.equal(r.updated, 4);
+  assert.deepEqual(
+    { ...perId(ap3), host_id: null },
+    { name: "AP-3", host: "10.99.0.50", serial_number: "SN000003", host_id: null },
+  );
+  assert.equal(apparato("AP-NUOVO").serial_number, "SN000099");
+  assert.equal(apparato("AP-NUOVO").host, "10.99.0.5");
+  assert.equal(conta(T, "network_devices", "name = 'AP-3'"), 1);
+  // Il giro dopo ritrova tutti per seriale: niente doppioni.
+  const r2 = await sync([apNuovo("10.99.0.5"), ...risposta({ nome: "AP-3", con: { ip: "10.99.0.50" } })]);
+  assert.deepEqual(r2.errors, []);
+  assert.equal(r2.added, 0);
+  assert.equal(conta(T, "network_devices"), 5);
+});
+
+test("un apparato con un altro seriale sullo stesso IP (sostituito, non più nel controller): conflitto, il censito resta", async () => {
+  await sync();
+  const ap3 = apparato("AP-3").id;
+  const prima = getTenantDb(T).prepare("SELECT * FROM network_devices WHERE id = ?").get(ap3);
+  const r = await sync([apNuovo("10.99.0.5"), ...risposta().filter((d) => d.name !== "AP-3")]);
+  assert.equal(r.skipped, 1);
+  assert.match(r.errors.join("\n"), /AP-NUOVO.*AP-3.*seriale/);
+  assert.deepEqual(getTenantDb(T).prepare("SELECT * FROM network_devices WHERE id = ?").get(ap3), prima);
+  assert.equal(conta(T, "network_devices"), 4);
+});
+
+test("spostamento: host_id segue il nuovo IP, e un AP nuovo sul vecchio IP viene censito", async () => {
+  const rete = inserisciRete();
+  const h5 = inserisciHost(rete, "10.99.0.5", "02:00:00:00:00:05"); // AP-3
+  const h50 = inserisciHost(rete, "10.99.0.50", null);
+  await sync();
+  const ap3 = apparato("AP-3").id;
+  assert.equal(perId(ap3).host_id, h5);
+  // AP-3 passa a .50; il poll ARP scrive su .5 il MAC dell'AP nuovo e su .50 quello di AP-3.
+  const db = getTenantDb(T);
+  db.prepare("UPDATE hosts SET mac = ? WHERE id = ?").run("02:00:00:00:00:99", h5);
+  db.prepare("UPDATE hosts SET mac = ? WHERE id = ?").run("02:00:00:00:00:05", h50);
+  const giro = () => [...risposta({ nome: "AP-3", con: { ip: "10.99.0.50" } }), apNuovo("10.99.0.5")];
+
+  const r = await sync(giro());
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.added, 1);
+  assert.deepEqual(perId(ap3), { name: "AP-3", host: "10.99.0.50", serial_number: "SN000003", host_id: h50 });
+  assert.equal(apparato("AP-NUOVO").host_id, h5);
+  const r2 = await sync(giro());
+  assert.deepEqual(r2.errors, []);
+  assert.equal(r2.added, 0);
+  assert.equal(conta(T, "network_devices"), 5);
+});
+
 test("i vicini MNDP e le porte di un altro apparato restano intatti", async () => {
   const mt = inserisciApparato({ name: "MT-1", host: "10.99.0.1", device_type: "router", vendor: "mikrotik", protocol: "ssh" });
   const db = getTenantDb(T);

@@ -34,8 +34,15 @@
  *    IP, identità fisica);
  * 3. per IP: solo se nessun MAC lo smentisce e l'apparato del DB è `ubiquiti`
  *    o `other`; altrimenti è un IP conteso e si salta, con l'errore.
+ * Un apparato del DB con un ALTRO seriale è un altro apparato: né il MAC (che
+ * l'host del vecchio IP può aver preso da chi è arrivato dopo) né l'IP lo
+ * fanno diventare questo. Per questo il giro ha due passate: prima gli
+ * apparati che si ritrovano per seriale (che così lasciano libero l'IP
+ * vecchio), poi gli altri; l'esito non dipende dall'ordine del controller.
  * Trovato per seriale o per MAC con un IP diverso, l'apparato si sposta
- * all'IP del controller (se nessun altro apparato lo occupa).
+ * all'IP del controller (se nessun altro apparato lo occupa), e con lui
+ * `host_id`: restando sull'host del vecchio IP gli attribuirebbe il MAC di chi
+ * ci arriva dopo.
  * Di un apparato già censito si aggiornano i fatti (vendor, tipo, modello,
  * firmware, seriale) e non le scelte (nome, protocollo, credenziali, `enabled`).
  *
@@ -48,6 +55,7 @@
 import {
   createNetworkDevice,
   getCurrentTenantCode,
+  getHostByIp,
   getNetworkDeviceKnownMacs,
   getNetworkDevices,
   getPhysicalDeviceAnchors,
@@ -181,14 +189,25 @@ function findExisting(m: UnifiMappedDevice, ex: ExistingIndex): Match {
   const serial = serialKey(m.serial_number);
   const sameSerial = serial ? ex.bySerial.get(serial) : undefined;
   if (sameSerial) return { kind: "found", device: sameSerial, by: "serial" };
+  // Seriale diverso = apparato diverso, con certezza (la sync scrive il seriale).
+  const otherSerial = (nd: NetworkDevice): boolean => {
+    const s = serialKey(nd.serial_number);
+    return serial !== null && s !== null && s !== serial;
+  };
   if (m.mac) {
-    const sameMac = ex.byMac.get(m.mac);
-    if (sameMac && sameMac.length > 0) {
+    const sameMac = (ex.byMac.get(m.mac) ?? []).filter((x) => !otherSerial(x));
+    if (sameMac.length > 0) {
       return { kind: "found", device: sameMac.find((x) => x.host === m.host) ?? sameMac[0], by: "mac" };
     }
   }
   const sameIp = ex.byHost.get(m.host);
   if (!sameIp) return { kind: "new" };
+  if (otherSerial(sameIp)) {
+    return {
+      kind: "conflict",
+      message: `${m.name} (${m.host}): l'IP è di «${sameIp.name}», che ha un altro seriale (${sameIp.serial_number}): è un altro apparato, non lo sovrascrivo`,
+    };
+  }
   const known = ex.macsById.get(sameIp.id);
   if (m.mac && known && known.size > 0) {
     // Ha MAC noti e nessuno è il nostro: sopra l'avremmo trovato per MAC.
@@ -265,6 +284,8 @@ function writeDevice(
         );
       } else {
         patch.host = m.host;
+        // L'host del vecchio IP non è più il suo (createNetworkDevice fa la stessa ricerca).
+        patch.host_id = getHostByIp(m.host)?.id ?? null;
         movedFrom = match.device.host;
       }
     }
@@ -341,8 +362,16 @@ function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult): void {
   };
   const claimed = new Set<number>();
 
-  for (const d of devices) {
-    const mapped = mapUnifiDevice(d);
+  // Due passate: prima chi si ritrova per seriale, poi gli altri (vedi in testa).
+  const mappedAll = devices.map((d) => ({ d, mapped: mapUnifiDevice(d) }));
+  const knownSerial = (x: (typeof mappedAll)[number]): boolean => {
+    if (!x.mapped.ok) return false;
+    const s = serialKey(x.mapped.device.serial_number);
+    return s !== null && ctx.existing.bySerial.has(s);
+  };
+  const ordered = [...mappedAll.filter(knownSerial), ...mappedAll.filter((x) => !knownSerial(x))];
+
+  for (const { d, mapped } of ordered) {
     if (!mapped.ok) {
       result.skipped++;
       result.skippedReasons.push(mapped.reason);

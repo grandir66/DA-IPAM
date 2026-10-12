@@ -32,6 +32,18 @@ export interface NetServicesConfigState {
   apiToken: string;
   enabledAt: string | null;
   enabledBy: number | null;
+  /**
+   * Da dove viene la configurazione: la riga di tenant_features ("database"),
+   * le variabili d'ambiente NET_SERVICES_API_URL e NET_SERVICES_API_TOKEN
+   * ("env"), oppure niente (null).
+   */
+  source: "database" | "env" | null;
+  /**
+   * Le due variabili d'ambiente sono impostate: senza una riga attiva in
+   * tenant_features il modulo resta acceso da lì, quindi la disinstallazione
+   * da DA-IPAM non lo spegne (MOD-19, la conferma lo deve dire).
+   */
+  envFallback: boolean;
 }
 
 /**
@@ -49,13 +61,14 @@ export async function getNetServicesState(
   tenantCode: string,
 ): Promise<NetServicesConfigState> {
   const status = await getFeatureStatus(tenantCode, NET_SERVICES_FEATURE_KEY);
+  const envUrl = (process.env.NET_SERVICES_API_URL ?? "").trim();
+  const envTok = (process.env.NET_SERVICES_API_TOKEN ?? "").trim();
+  const envFallback = Boolean(envUrl && envTok);
 
   // Backward-compat: se feature non in DB ma env var presenti → enabled
   // (così cluster pre-existing continua a funzionare durante la transizione).
   if (!status.enabled) {
-    const envUrl = (process.env.NET_SERVICES_API_URL ?? "").trim();
-    const envTok = (process.env.NET_SERVICES_API_TOKEN ?? "").trim();
-    if (envUrl && envTok) {
+    if (envFallback) {
       return {
         enabled: true,
         configured: true,
@@ -63,6 +76,8 @@ export async function getNetServicesState(
         apiToken: envTok,
         enabledAt: null,
         enabledBy: null,
+        source: "env",
+        envFallback,
       };
     }
     return {
@@ -72,6 +87,8 @@ export async function getNetServicesState(
       apiToken: "",
       enabledAt: null,
       enabledBy: null,
+      source: null,
+      envFallback,
     };
   }
 
@@ -83,6 +100,8 @@ export async function getNetServicesState(
       apiToken: "",
       enabledAt: status.enabledAt,
       enabledBy: status.enabledBy,
+      source: "database",
+      envFallback,
     };
   }
 
@@ -102,6 +121,8 @@ export async function getNetServicesState(
       apiToken: apiTokenPlain,
       enabledAt: status.enabledAt,
       enabledBy: status.enabledBy,
+      source: "database",
+      envFallback,
     };
   } catch {
     return {
@@ -111,6 +132,8 @@ export async function getNetServicesState(
       apiToken: "",
       enabledAt: status.enabledAt,
       enabledBy: status.enabledBy,
+      source: "database",
+      envFallback,
     };
   }
 }
@@ -154,6 +177,12 @@ export function installNetServices(
  * Disabilita la feature (la riga resta per audit). Non rimuove le forward-zones
  * / adblock rules / DNS zones già configurate sul bridge — quello è responsabilità
  * del bridge VM 192.168.99.52 e va gestito separatamente.
+ *
+ * Se NET_SERVICES_API_URL e NET_SERVICES_API_TOKEN sono nell'ambiente, dopo
+ * questa chiamata getNetServicesState ripiega su di loro e il modulo resta
+ * attivo (stato `envFallback`). La conferma in UI lo dice
+ * (netServicesUninstallConfirmText, MOD-19); se la disinstallazione debba
+ * prevalere sull'ambiente si decide nella tappa 7 (MOD-5).
  */
 export function uninstallNetServices(tenantCode: string): void {
   getHubDb()

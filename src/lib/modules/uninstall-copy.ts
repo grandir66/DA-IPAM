@@ -141,3 +141,44 @@ export function containerRemovalConfirmText(
   const tutti = dip ? `tutti i container Docker di ${title} (${dip} compresi)` : `il container Docker di ${title}`;
   return `Eliminare ${tutti}? ${nonTornano}`;
 }
+
+const NET_SERVICES_ENV_VARS = "NET_SERVICES_API_URL e NET_SERVICES_API_TOKEN";
+const NET_SERVICES_BRIDGE_INTATTO = "Il bridge e i suoi servizi DNS/DHCP non vengono toccati.";
+
+/**
+ * Conferma di «Disinstalla» di Network Services (Impostazioni → Moduli e
+ * pagina /network-services).
+ *
+ * DELETE /api/network-services/setup (uninstallNetServices) mette enabled=0 e
+ * config_json=NULL in tenant_features e non contatta il bridge. Ma se
+ * NET_SERVICES_API_URL e NET_SERVICES_API_TOKEN sono nell'ambiente del
+ * container (scripts/appliance-integrate-fix.sh le scrive nel compose),
+ * getNetServicesState ripiega su di loro e il modulo resta attivo: in quel
+ * caso la conferma non può promettere che la voce sparisce. Presidiata da
+ * src/lib/network-services/__tests__/uninstall-env.test.ts.
+ *
+ * @param envFallback le due variabili sono impostate (stato `envFallback` di
+ *   GET /api/network-services/setup)
+ */
+export function netServicesUninstallConfirmText(envFallback: boolean): string {
+  if (!envFallback) {
+    return (
+      "Disinstallare Network Services? La voce sparisce dal menu e si cancellano URL e token del bridge: " +
+      `per riattivarlo vanno reinseriti. ${NET_SERVICES_BRIDGE_INTATTO}`
+    );
+  }
+  return (
+    "Disinstallare Network Services? Si cancellano URL e token del bridge salvati qui, ma il modulo resta attivo: " +
+    `${NET_SERVICES_ENV_VARS} sono impostate nell'ambiente del container e lo tengono acceso con il bridge indicato lì. ` +
+    `Per spegnerlo vanno tolte dall'ambiente. ${NET_SERVICES_BRIDGE_INTATTO}`
+  );
+}
+
+/**
+ * Nota al posto di «Disinstalla» quando il bridge viene solo dalle variabili
+ * d'ambiente (stato `source: "env"`): la disinstallazione da DA-IPAM non
+ * cambierebbe niente.
+ */
+export const NET_SERVICES_ENV_NOTE =
+  `Configurato dalle variabili d'ambiente ${NET_SERVICES_ENV_VARS} del container: da qui non si disinstalla. ` +
+  "Per spegnerlo vanno tolte dall'ambiente.";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -23,6 +23,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  netServicesUninstallConfirmText,
+  NET_SERVICES_ENV_NOTE,
+} from "@/lib/modules/uninstall-copy";
 
 interface Props {
   isAdmin: boolean;
@@ -256,13 +260,34 @@ export function NetworkServicesSetup({
 export function NetworkServicesSettings({ apiUrl }: { apiUrl: string }) {
   const router = useRouter();
   const [removing, setRemoving] = useState(false);
+  // MOD-19: da dove viene la configurazione. Se le variabili d'ambiente
+  // NET_SERVICES_API_* tengono acceso il modulo, la disinstallazione da qui non
+  // lo spegne: la conferma lo dice, e se il bridge viene solo da lì il
+  // pulsante non c'è. null = non ancora letto, o lettura fallita: pulsante
+  // visibile e conferma del caso comune (senza variabili d'ambiente).
+  const [origine, setOrigine] = useState<{
+    source: "database" | "env" | null;
+    envFallback: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    let annullato = false;
+    fetch("/api/network-services/setup", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { source?: "database" | "env" | null; envFallback?: boolean } | null) => {
+        if (annullato || !d) return;
+        setOrigine({ source: d.source ?? null, envFallback: d.envFallback === true });
+      })
+      .catch(() => {
+        /* resta null: conferma generica, pulsante visibile */
+      });
+    return () => {
+      annullato = true;
+    };
+  }, []);
 
   async function uninstall() {
-    if (
-      !confirm(
-        "Disinstallare il modulo Network Services? La configurazione sarà rimossa. I servizi sottostanti sulla VM bridge non vengono toccati.",
-      )
-    ) {
+    if (!confirm(netServicesUninstallConfirmText(origine?.envFallback === true))) {
       return;
     }
     setRemoving(true);
@@ -289,14 +314,18 @@ export function NetworkServicesSettings({ apiUrl }: { apiUrl: string }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Button variant="destructive" onClick={uninstall} disabled={removing}>
-          {removing ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Trash2 className="h-4 w-4 mr-2" />
-          )}
-          Disinstalla modulo
-        </Button>
+        {origine?.source === "env" ? (
+          <p className="text-sm text-muted-foreground">{NET_SERVICES_ENV_NOTE}</p>
+        ) : (
+          <Button variant="destructive" onClick={uninstall} disabled={removing}>
+            {removing ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4 mr-2" />
+            )}
+            Disinstalla modulo
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

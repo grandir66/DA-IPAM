@@ -21,6 +21,11 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   Network Services dicono che cosa non torna. Il comportamento sui dati non
   cambia (è la tappa 7): cambiano solo i testi, e due prove eseguono la
   cancellazione vera e la confrontano con ciò che la conferma promette.
+  Network Services, sulle appliance dove il bridge viene dalle variabili
+  d'ambiente `NET_SERVICES_API_URL` e `NET_SERVICES_API_TOKEN` (le scrive
+  `appliance-integrate-fix.sh`), dopo la disinstallazione resta attivo con lo
+  stesso bridge: la conferma ora lo dice, e se il bridge viene solo da lì il
+  pulsante «Disinstalla» lascia il posto a una nota che spiega come spegnerlo.
 - **Le righe «Stato moduli» della dashboard portano al modulo (UI-20).**
   Aprivano sempre la configurazione, anche per un modulo attivo con la sua
   pagina, e un modulo mai installato diceva «Mai eseguita», che si legge come

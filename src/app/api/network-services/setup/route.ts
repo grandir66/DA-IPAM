@@ -32,6 +32,11 @@ export async function GET() {
       // NB: il token NON viene mai restituito plain — solo flag presente/assente
       hasToken: state.apiToken.length > 0,
       enabledAt: state.enabledAt,
+      // MOD-19: da dove viene la configurazione e se le variabili d'ambiente
+      // tengono acceso il modulo anche dopo la disinstallazione: la conferma
+      // di «Disinstalla» lo deve dire.
+      source: state.source,
+      envFallback: state.envFallback,
     });
   });
 }

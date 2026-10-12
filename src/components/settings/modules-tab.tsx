@@ -46,7 +46,12 @@ import { IntegrationViewer } from "@/components/integrations/integration-viewer"
 import { CredentialsVaultPanel } from "./credentials-vault-panel";
 import type { InstallJob } from "@/lib/integrations/types";
 import type { ModuleKey } from "@/lib/modules/registry";
-import { UNINSTALL_COPY, isUninstallableFeature } from "@/lib/modules/uninstall-copy";
+import {
+  UNINSTALL_COPY,
+  isUninstallableFeature,
+  netServicesUninstallConfirmText,
+  NET_SERVICES_ENV_NOTE,
+} from "@/lib/modules/uninstall-copy";
 
 interface FeatureEntry {
   key: string;
@@ -592,15 +597,22 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
+/** Stato di GET /api/network-services/setup usato dalla card. */
+interface NetServicesSetupState {
+  installed: boolean;
+  configured: boolean;
+  apiUrl: string;
+  hasToken: boolean;
+  /** Da dove viene la configurazione (MOD-19). Assente = risposta vecchia. */
+  source?: "database" | "env" | null;
+  /** Le variabili d'ambiente tengono acceso il modulo anche dopo la disinstallazione. */
+  envFallback?: boolean;
+}
+
 /** Config compatta Network Services (riusa /api/network-services/setup). */
 function NetServicesConfigCard({ isAdmin }: { isAdmin: boolean }) {
   const router = useRouter();
-  const [state, setState] = useState<{
-    installed: boolean;
-    configured: boolean;
-    apiUrl: string;
-    hasToken: boolean;
-  } | null>(null);
+  const [state, setState] = useState<NetServicesSetupState | null>(null);
   const [apiUrl, setApiUrl] = useState("https://192.168.99.52:8443");
   const [apiToken, setApiToken] = useState("");
   const [busy, setBusy] = useState(false);
@@ -610,7 +622,7 @@ function NetServicesConfigCard({ isAdmin }: { isAdmin: boolean }) {
     fetch("/api/network-services/setup")
       .then((r) => (r.ok ? r.json() : null))
       .then(
-        (d: { installed: boolean; configured: boolean; apiUrl: string; hasToken: boolean } | null) => {
+        (d: NetServicesSetupState | null) => {
           if (d) {
             setState(d);
             if (d.apiUrl) setApiUrl(d.apiUrl);
@@ -671,12 +683,10 @@ function NetServicesConfigCard({ isAdmin }: { isAdmin: boolean }) {
 
   async function uninstall() {
     // MOD-19: uninstallNetServices spegne il modulo e cancella URL e token
-    // del bridge (config_json = NULL); non contatta il bridge.
-    if (
-      !confirm(
-        "Disinstallare Network Services? La voce sparisce dal menu e si cancellano URL e token del bridge: per riattivarlo vanno reinseriti. Il bridge e i suoi servizi DNS/DHCP non vengono toccati.",
-      )
-    ) {
+    // del bridge (config_json = NULL); non contatta il bridge. Se le variabili
+    // d'ambiente NET_SERVICES_API_* ci sono, il modulo resta acceso da lì e
+    // la conferma lo dice.
+    if (!confirm(netServicesUninstallConfirmText(state?.envFallback === true))) {
       return;
     }
     setBusy(true);
@@ -730,17 +740,24 @@ function NetServicesConfigCard({ isAdmin }: { isAdmin: boolean }) {
           </p>
         ) : configured ? (
           <div className="flex items-center justify-between gap-4">
-            <p className="text-sm text-muted-foreground">
-              Bridge corrente: <code>{state?.apiUrl}</code>
-            </p>
-            <Button variant="destructive" size="sm" disabled={busy} onClick={uninstall}>
-              {busy ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-2" />
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">
+                Bridge corrente: <code>{state?.apiUrl}</code>
+              </p>
+              {state?.source === "env" && (
+                <p className="text-sm text-muted-foreground">{NET_SERVICES_ENV_NOTE}</p>
               )}
-              Disinstalla
-            </Button>
+            </div>
+            {state?.source !== "env" && (
+              <Button variant="destructive" size="sm" disabled={busy} onClick={uninstall}>
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-2" />
+                )}
+                Disinstalla
+              </Button>
+            )}
           </div>
         ) : (
           <>

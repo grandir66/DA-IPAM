@@ -29,6 +29,7 @@ Versione corrente: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non sc
 - Canale update appliance: `src/app/api/system/update-channel/route.ts` → `DA_INVENT_BRANCH` in `.env.local`, consumato da `da-invent-update.service`.
 - Ogni modifica: `npm run version:release` + `git push origin dev` (vedi skill `release`).
 - Prod ufficiale hub: **VM 533, `192.168.4.8`**, `/opt/da-invent`, `da-invent.service`; dopo `git pull` sempre `npm run build` (skill `deploy-prod`). **L'hub segue il ramo `dev`**, non `main` (verificato 2026-10-12: v0.3.258, gira con `tsx server.ts`); `main` è il canale delle appliance cliente.
+- **ATTENZIONE — `dev` arriva anche a DTS** (verificato 2026-10-12): l'appliance DTS (`DTS-Inventory`, 172.16.0.2, tenant 71734, `/opt/da-ipam`, servizio `da-ipam`) segue **`dev`** con `da-ipam-update.timer` ogni 15 minuti (`scripts/auto-update.sh` → git pull + npm install + setup-winrm-venv + build + restart). Quindi **un push su `dev` è un rilascio al cliente DTS**: si pubblica su `dev` solo codice pronto per la produzione. Al 12/10 l'aggiornamento si ferma su `setup-winrm-venv` (manca `/root/.da-invent-venv/bin/pip`, exit 127): i sorgenti si aggiornano, build e riavvio no — finché non si ripara, su DTS gira la build fatta a mano. Proxmox di DTS: 172.16.1.141, .142, .144.
 
 ## 4. Integrazione cross-repo (loose-coupled HTTP)
 

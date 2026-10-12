@@ -8,6 +8,20 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **Accesso automatico a LibreNMS solo per gli admin (SEC-6, parte utenti in
+  sola lettura).** L'accesso automatico entra in LibreNMS con l'utenza admin
+  salvata nell'hub, ma bastava essere collegati a DA-IPAM per usarlo: anche un
+  utente in sola lettura si trovava dentro LibreNMS da amministratore. Ora lo
+  usa solo chi è admin; gli altri arrivano alla pagina di login di LibreNMS
+  (dal Launchpad, dalla dashboard e dal proxy) ed entrano con un'utenza
+  LibreNMS loro. **Cambia subito sulle installazioni del canale `dev`** (deroga
+  a «nasce spento», decisa nel piano): chi era viewer e apriva LibreNMS senza
+  login ora vede il login; secondo la lettura del 12/10 sull'hub c'è un utente
+  viewer, a DTS nessuno. Per l'admin non cambia niente, tranne la voce
+  LibreNMS del vault delle credenziali, che ora tiene l'indirizzo diretto
+  dell'interfaccia (la scelta dell'accesso automatico si fa quando si apre il
+  link, in base al ruolo); le voci salvate in passato si correggono alla
+  prossima sincronizzazione del vault. Prova: `librenms-accesso.test.ts`.
 - **Configurazione delle integrazioni senza segreti per chi non è admin
   (SEC-5, SEC-13).** La lettura della configurazione di LibreNMS, Graylog e Loki
   era aperta a ogni utente con accesso, anche in sola lettura, e restituiva i

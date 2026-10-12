@@ -235,7 +235,7 @@ interface VulnScannerLite {
  * getCurrentTenantCode). I getter hub (wazuh/integration) sono globali; edge
  * usa il DB tenant esplicito; net_services/patch prendono tenantCode in arg.
  */
-export async function resolveModules(tenantCode: string): Promise<ModuleState[]> {
+export async function resolveModules(tenantCode: string, ruolo: unknown): Promise<ModuleState[]> {
   const desc = (key: ModuleKey): ModuleDescriptor =>
     MODULE_DESCRIPTORS.find((d) => d.key === key)!;
   const creds = listCredentials() as SystemCredentialLite[];
@@ -309,7 +309,8 @@ export async function resolveModules(tenantCode: string): Promise<ModuleState[]>
     const cfg = getIntegrationConfig("librenms");
     const entry = findLaunchpadEntry(creds, "librenms", "LibreNMS");
     const browserUrl = resolveIntegrationBrowserUrl("librenms", cfg.url);
-    const launchUrl = browserUrl ? resolveLibreNMSOperatorUrl(browserUrl) : null;
+    // Accesso automatico solo per chi è almeno admin (T3-26).
+    const launchUrl = browserUrl ? resolveLibreNMSOperatorUrl(browserUrl, ruolo) : null;
     const installed = cfg.mode !== "disabled" || !!entry;
     const configured = cfg.mode !== "disabled" && !!cfg.url;
     out.push({

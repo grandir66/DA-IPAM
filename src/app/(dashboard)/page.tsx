@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
 import { Network, Monitor, Wifi, WifiOff, HelpCircle, Shield, AlertTriangle, Activity, TrendingUp, PlugZap, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { StatusOverTimeChart } from "@/components/shared/status-over-time-chart";
 import { StatusChangeFeed } from "@/components/shared/status-change-feed";
@@ -45,7 +46,9 @@ export default async function DashboardPage() {
   // tornano ad aprire la configurazione, come prima, e l'errore va nel log.
   let moduleStates: ModuleState[] = [];
   try {
-    moduleStates = await withTenant(tenantCode, () => resolveModules(tenantCode));
+    // Il ruolo decide il link di LibreNMS (accesso automatico solo admin, T3-26).
+    const ruolo = ((await auth())?.user as { role?: string } | undefined)?.role;
+    moduleStates = await withTenant(tenantCode, () => resolveModules(tenantCode, ruolo));
   } catch (e) {
     console.error("[dashboard] stato dei moduli non leggibile:", e);
   }

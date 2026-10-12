@@ -43,3 +43,11 @@ export function mascheraConfigIntegrazione(cfg: ComponentConfig, vedeSegreti: bo
   }
   return out;
 }
+
+/**
+ * L'accesso automatico alle interfacce collegate (LibreNMS) entra con la
+ * password admin salvata nell'hub: solo per chi è almeno admin (T3-26, SEC-6).
+ */
+export function puoUsareAccessoAutomatico(ruolo: unknown): boolean {
+  return livelloAlmeno(ruolo, "admin");
+}

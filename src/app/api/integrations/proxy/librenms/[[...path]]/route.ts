@@ -1,19 +1,21 @@
 /**
- * Reverse proxy verso LibreNMS con SSO DA-IPAM.
+ * Reverse proxy verso LibreNMS. Accesso automatico solo per chi è almeno admin;
+ * per gli altri inoltra senza i cookie di LibreNMS (T3-26, SEC-6 parte viewer).
+ * La decisione sta in `gestisciProxyLibreNMS`, con le dipendenze iniettate.
  */
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import {
   attachLibreNMSCookiesToResponse,
-  librenmsAutologinEnabled,
   librenmsAutologinCookieHeader,
+  librenmsAutologinEnabled,
   librenmsProxyHostHeader,
-  withLibreNMSAutologin,
 } from "@/lib/integrations/librenms-proxy-auth";
+import { gestisciProxyLibreNMS, LIBRENMS_PROXY_BASE } from "@/lib/integrations/librenms-accesso";
 import { proxyRequest, type ReverseProxyOptions } from "@/lib/integrations/reverse-proxy";
 import type { ComponentConfig } from "@/lib/integrations/types";
 
-const BASE_PATH = "/api/integrations/proxy/librenms";
+const BASE_PATH = LIBRENMS_PROXY_BASE;
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,53 +45,21 @@ function librenmsProxyOpts(cfg: ComponentConfig, hostHeader?: string): ReversePr
 }
 
 async function handle(req: Request): Promise<Response> {
-  const authCheck = await requireAuth();
-  if (isAuthError(authCheck)) return authCheck;
+  const session = await requireAuth();
+  if (isAuthError(session)) return session;
 
   const cfg = getIntegrationConfig("librenms");
   if (cfg.mode === "disabled" || !cfg.url) {
     return new Response("LibreNMS non configurato", { status: 404 });
   }
 
-  const sso = librenmsAutologinEnabled();
-  let autologinCookies: string | null = null;
-
-  if (sso) {
-    autologinCookies = await librenmsAutologinCookieHeader();
-    if (!autologinCookies) {
-      return new Response(
-        "SSO LibreNMS non disponibile — verifica integration_librenms_admin_password",
-        { status: 502, headers: { "content-type": "text/plain; charset=utf-8" } },
-      );
-    }
-  }
-
-  const proxiedReq = autologinCookies
-    ? await withLibreNMSAutologin(req, autologinCookies)
-    : req;
-  const hostHeader = librenmsProxyHostHeader();
-  const proxyOpts = librenmsProxyOpts(cfg, hostHeader);
-
-  let resp = await proxyRequest(proxiedReq, proxyOpts);
-
-  // Login page dopo autologin → redirect alla home proxy con cookie impostati.
-  const reqPath = new URL(req.url).pathname;
-  if (
-    autologinCookies &&
-    (reqPath.endsWith("/login") || resp.headers.get("location")?.includes("/login"))
-  ) {
-    const overviewReq = new Request(
-      new URL(`${BASE_PATH}/`, req.url),
-      { method: "GET", headers: proxiedReq.headers },
-    );
-    resp = await proxyRequest(overviewReq, proxyOpts);
-  }
-
-  if (autologinCookies) {
-    return attachLibreNMSCookiesToResponse(resp, autologinCookies, BASE_PATH);
-  }
-
-  return resp;
+  const proxyOpts = librenmsProxyOpts(cfg, librenmsProxyHostHeader());
+  return gestisciProxyLibreNMS(req, session.user.role, {
+    accessoAutomaticoAttivo: librenmsAutologinEnabled,
+    cookieAccessoAutomatico: librenmsAutologinCookieHeader,
+    inoltra: (r) => proxyRequest(r, proxyOpts),
+    allegaCookie: (resp, cookie) => attachLibreNMSCookiesToResponse(resp, cookie, BASE_PATH),
+  });
 }
 
 export { handle as GET, handle as POST, handle as PUT, handle as PATCH, handle as DELETE, handle as HEAD, handle as OPTIONS };

@@ -119,6 +119,15 @@ export const ECCEZIONI: Eccezione[] = [
   { rotta: "/api/integrations/meshcentral/host-status", metodi: ["POST"], tipo: "motivata", guardia: "auth", motivo: MOTIVO_LETTURA_POST },
   { rotta: "/api/integrations/wazuh/host-status", metodi: ["POST"], tipo: "motivata", guardia: "auth", motivo: MOTIVO_LETTURA_POST },
   { rotta: "/api/networks/export-csv", metodi: ["POST"], tipo: "motivata", guardia: "auth", motivo: "esportazione con l'elenco delle reti nel corpo: non scrive" },
+  {
+    rotta: "/api/integrations/proxy/librenms/[[...path]]",
+    metodi: ["POST", "PUT", "PATCH", "DELETE"],
+    tipo: "motivata",
+    guardia: "auth",
+    motivo:
+      "proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6)",
+    prova: "src/lib/integrations/__tests__/librenms-accesso.test.ts",
+  },
 
   // --- letture col nome sensibile che non restituiscono segreti
   { rotta: "/api/export", metodi: ["GET"], tipo: "motivata", guardia: "sessione", motivo: MOTIVO_ESPORTA },
@@ -153,7 +162,6 @@ export const ECCEZIONI: Eccezione[] = [
  * finché la voce non si toglie: l'elenco si svuota da solo.
  */
 export const DEBITI: Debito[] = [
-  { rotta: "/api/integrations/proxy/librenms/[[...path]]", metodi: ["POST", "PUT", "PATCH", "DELETE"], codice: "SEC-6" },
   { rotta: "/api/integrations/proxy/wazuh/[[...path]]", metodi: ["POST", "PUT", "PATCH", "DELETE"], codice: "SEC-6" },
 ];
 

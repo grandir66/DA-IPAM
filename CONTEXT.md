@@ -17,6 +17,8 @@ Versione corrente: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non sc
 - UI: 33 route in `src/app/(dashboard)/`; API in `src/app/api/`.
 - `agent/`: pacchetto Python `da_invent_agent` con versioning indipendente (`agent-vX.Y.Z`).
 
+> **Regola di Riccardo (2026-10-12) — non riaprire:** le appliance dei clienti (DTS e le prossime) **non** si integrano nell'autenticazione Domarc (DA-Auth): niente `DAAUTH_URL` né pulsante Domarc su un'appliance cliente. L'accesso Domarc vale solo per l'hub di Domarc (VM 533). Il controllo «solo chi è dichiarato» (SEC-4, T3-29) è rimandato finché non si verifica in DA-Auth chi dei 3 utenti dell'hub è dichiarato per DA-IPAM.
+
 ## 2. I 9 moduli (sorgente di verità: `src/lib/modules/registry.ts`)
 
 `edge · patch_management · network_services · librenms · graylog · wazuh · meshcentral · inventory_agent · nis2_inventory` — ciascuno con `access: native` (UI dentro DA-IPAM) o `external` (dashboard esterna). Gating menu via `/api/modules` ← `resolveModules()`. Doc per-modulo: `docs/modules/`.

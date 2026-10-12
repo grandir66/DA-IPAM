@@ -182,8 +182,10 @@ function resolveToken(scanner: Pick<VulnScannerRow, "token_encrypted">): string 
 /**
  * Calcola SPKI pin (sha256/<base64>) dal cert raw DER.
  * Formato RFC 7469 — invariante a rotazione del cert se la key resta uguale.
+ * Esportata per il client UniFi (`unifi-api.ts`), che verifica il pin sullo
+ * stesso socket su cui poi manda le credenziali.
  */
-function spkiPinFromDer(rawDer: Buffer): string {
+export function spkiPinFromDer(rawDer: Buffer): string {
   const x509 = new X509Certificate(rawDer);
   const spkiDer = x509.publicKey.export({ type: "spki", format: "der" }) as Buffer;
   return "sha256/" + createHash("sha256").update(spkiDer).digest("base64");

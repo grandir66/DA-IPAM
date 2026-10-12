@@ -43,6 +43,14 @@ const CONTRACT: Contract[] = [
   { route: "credentials/[id]", method: "PUT", guard: "requireAdmin" },
   { route: "credentials/[id]", method: "DELETE", guard: "requireAdmin" },
   { route: "client-config/export", method: "GET", guard: "requireAdmin" },
+  // UniFi (tappa 2): la sync scrive nel tenant; il test di connessione manda le
+  // credenziali salvate al controller e al primo uso fissa l'impronta del
+  // certificato nella configurazione → entrambe admin.
+  { route: "integrations/unifi/sync", method: "POST", guard: "requireAdmin" },
+  { route: "integrations/unifi/test-connection", method: "POST", guard: "requireAdmin" },
+  // l'impronta del certificato decide di quale controller fidarsi: admin.
+  { route: "integrations/unifi/cert-pin", method: "POST", guard: "requireAdmin" },
+  { route: "integrations/unifi/cert-pin", method: "DELETE", guard: "requireAdmin" },
   // route hub globali → superadmin (H3: requireSuperAdmin era definito ma inutilizzato)
   // utenti → admin dal 2026-10-12 (UI-18, decisione «un'installazione = un cliente»):
   // l'admin gestisce gli utenti del proprio cliente. I limiti fini (solo il proprio
@@ -84,3 +92,11 @@ for (const c of CONTRACT) {
     );
   });
 }
+
+// La prova di connessione UniFi manda le credenziali al controller e al primo
+// uso fissa la fiducia nel certificato: un effetto, quindi niente GET (un link
+// seguito con la sessione aperta, cookie SameSite=Lax, la farebbe partire).
+test("GET /api/integrations/unifi/test-connection non esiste: la prova è un POST", () => {
+  const src = readFileSync(join(ROOT, "src/app/api/integrations/unifi/test-connection/route.ts"), "utf8");
+  assert.equal(methodSlice(src, "GET"), null);
+});

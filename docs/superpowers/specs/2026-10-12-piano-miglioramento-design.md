@@ -410,8 +410,8 @@ vive la console centrale (tappa 9).
 
 | Tappa | Stato | Data | Note |
 |---|---|---|---|
-| 1 | fatta | 12/10 | UI-17, UI-18, UI-20 (righe Stato moduli), UI-23 (nome), UI-24, MOD-19, EDG-1, INS-1 chiusi; INS-2 in Deploy-Appliance (`e4609c7`). Da vedere su un edge vero: l'elenco dei profili. Rimandati con motivo: import del JSON dell'edge che cancella lo storico (tappa 7), manuale utente da riallineare (igiene), finestra degli agenti che perde il token con Esc (tappa 6), `GET /api/tenants` che elenca tutti i clienti a un admin (tappa 3) |
-| 2 | in corso | 12/10 | fixture vera anonimizzata nel ramo `tappa2/unifi`; gruppo di agenti al lavoro; copia del DB DTS pronta per la prova |
+| 1 | fatta (v0.3.269, verificata su DTS) | 12/10 | UI-17, UI-18, UI-20 (righe Stato moduli), UI-23 (nome), UI-24, MOD-19, EDG-1, INS-1 chiusi; INS-2 in Deploy-Appliance (`e4609c7`). Da vedere su un edge vero: l'elenco dei profili. Rimandati con motivo: import del JSON dell'edge che cancella lo storico (tappa 7), manuale utente da riallineare (igiene), finestra degli agenti che perde il token con Esc (tappa 6), `GET /api/tenants` che elenca tutti i clienti a un admin (tappa 3) |
+| 2 | fatta, spenta (in rilascio) | 12/10 | Provata sul controller vero di DTS (sola lettura) verso una COPIA del DB: migrazione v8 ok; 74 apparati aggiunti (50 switch, 24 AP), 753 porte, 168 vicini LLDP su 69 apparati (138 col nome risolto), 0 errori; secondo giro 0 aggiunti; dati esistenti intatti (11 dispositivi, 138 vicini MNDP, 965 host). Mappa di DTS piena a schermo. Da fare: accendere su DTS (scrittura sul DB del cliente: backup + conferma di Riccardo); rimandati: uplink non usato, due scrittori sulle porte (sync e poll ARP), tenant del controller da fissare, anonimizzatore della fixture |
 | 3 | da fare | — | |
 | 4 | da fare | — | |
 | 5 | da fare | — | la mappa di base è già su `dev` (v0.3.260) |

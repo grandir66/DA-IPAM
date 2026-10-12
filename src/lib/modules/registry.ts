@@ -22,6 +22,7 @@ import { listCredentials } from "@/lib/credentials-vault";
 import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
 import { resolveLibreNMSOperatorUrl } from "@/lib/integrations/librenms-proxy-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
+import { isUnifiConfigured, unifiConfigGap } from "@/lib/integrations/unifi-health";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { getNetServicesState } from "@/lib/network-services/feature";
 import { getFeatureStatus } from "@/lib/patch/feature";
@@ -39,6 +40,7 @@ export type ModuleKey =
   | "meshcentral"
   | "inventory_agent"
   | "nis2_inventory"
+  | "unifi"
   | "appliance";
 
 export type ModuleCategory = "va" | "patch" | "network" | "nms" | "logs" | "siem" | "rmm" | "inventory" | "sistema";
@@ -192,6 +194,19 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
     icon: "Workflow",
     access: "native",
     configHref: "/settings?tab=moduli#module-nis2_inventory",
+  },
+  {
+    // Fonte di dati, non dashboard: switch e AP del controller del cliente
+    // finiscono in DA-IPAM (apparati, porte, vicini LLDP). La console del
+    // controller resta raggiungibile come interfaccia esterna.
+    key: "unifi",
+    label: "Controller UniFi",
+    category: "network",
+    description:
+      "Switch e access point letti dal controller UniFi in sola lettura: apparati, porte e vicini LLDP nella mappa di rete.",
+    icon: "Network",
+    access: "native",
+    configHref: "/settings?tab=moduli#module-unifi",
   },
   {
     // Non è un'integrazione ma la macchina che le ospita tutte: disco root e
@@ -396,6 +411,28 @@ export async function resolveModules(tenantCode: string): Promise<ModuleState[]>
       uiUrl: "/services",
       uiIsInternal: true,
       note: enabled ? undefined : "Disattivato. Attivalo da Impostazioni → Moduli.",
+    });
+  }
+
+  // ── unifi (hub settings integration_unifi_*) — dati nativi (/topology) + console del controller ──
+  {
+    const cfg = getIntegrationConfig("unifi");
+    const installed = cfg.mode === "external";
+    const configured = isUnifiConfigured(cfg);
+    const gap = unifiConfigGap(cfg);
+    out.push({
+      ...desc("unifi"),
+      installed,
+      configured,
+      enabled: configured,
+      uiUrl: "/topology",
+      uiIsInternal: true,
+      externalUiUrl: cfg.browserUrl || null,
+      note: !installed
+        ? "Non configurato. Inserisci indirizzo e credenziali del controller nella card Controller UniFi."
+        : gap
+          ? `Controller attivato ma ${gap}: completa la card Controller UniFi.`
+          : undefined,
     });
   }
 

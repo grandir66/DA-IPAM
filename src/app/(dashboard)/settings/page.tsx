@@ -85,6 +85,7 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   vuln_sync: "Sincronizzazione vulnerability scanner",
   wazuh_sync: "Sincronizzazione Wazuh (agent/sysc/CVE)",
   ad_sync: "Sincronizzazione Active Directory",
+  unifi_sync: "Sincronizzazione controller UniFi",
 };
 
 const HEAVY_JOB_TYPES = new Set(["fast_scan", "ping_sweep"]);

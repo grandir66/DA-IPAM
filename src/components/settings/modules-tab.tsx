@@ -37,6 +37,7 @@ import {
 import { IntegrationCard } from "./integration-card";
 import { ScannerEdgeCard } from "./scanner-edge-card";
 import { WazuhCard } from "./wazuh-card";
+import { UnifiCard } from "./unifi-card";
 import { InventoryAgentCard } from "./inventory-agent-card";
 import { MeshCentralCard } from "./meshcentral-card";
 import { MeshCentralInstallDialog } from "./meshcentral-install-dialog";
@@ -423,6 +424,12 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
         title="Network Services — DNS / DHCP / AdGuard / Unbound"
       >
         <NetServicesConfigCard isAdmin={isAdmin} />
+      </ModuleSection>
+
+      {/* Fonte di dati, non dashboard esterna: switch e AP del controller del
+          cliente in DA-IPAM. Niente import JSON (nessun installer). */}
+      <ModuleSection id="module-unifi" title="Controller UniFi">
+        <UnifiCard isAdmin={isAdmin} />
       </ModuleSection>
 
       <Separator />

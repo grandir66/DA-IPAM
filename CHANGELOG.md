@@ -6,6 +6,53 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-10-12
 
+### Aggiunte
+
+- **Controller UniFi come fonte di dati (spento finché non lo si accende).** A
+  DTS il controller UniFi gestisce 74 apparati, ma per DA-IPAM erano solo host:
+  nessuno fra i dispositivi di rete, nessuna porta, nessun vicino LLDP, e la
+  mappa della topologia mostrava quasi solo i tre MikroTik. Ora DA-IPAM legge il
+  controller in sola lettura e scrive nel tenant gli switch e gli access point,
+  le loro porte e i collegamenti fra apparati. Si configura in Impostazioni →
+  Moduli → «Controller UniFi» (indirizzo, site, utente in sola lettura,
+  password), si prova con «Prova connessione» e si lancia con «Sincronizza ora».
+  Per ora funziona solo il controller installato su un server (self-hosted):
+  UDM e cloud rispondono «non ancora supportato». Le scelte sono nell'ADR 0005.
+  - **Nasce spento**: modalità «Disattivata» e nessuna sincronizzazione
+    automatica. Gli apparati nuovi entrano disabilitati, così il poll ARP non
+    li interroga via SNMP.
+  - **Il certificato del controller si fissa al primo collegamento riuscito.**
+    Se cambia, la sincronizzazione si ferma e la card mostra le due impronte:
+    la nuova si accetta solo a mano. La password non parte mai verso un
+    certificato che non è quello fissato. Cambiando l'indirizzo del
+    controller la password salvata si cancella e va riscritta: altrimenti
+    un errore di battitura (o chi non la conosce) la farebbe arrivare al
+    primo host che risponde. La prova di connessione è un POST, così un
+    link aperto con la sessione attiva non la fa partire.
+  - **Una risposta vuota non cancella niente.** Se il controller non riporta
+    porte o vicini per un apparato che nel database ne ha, si tengono i dati
+    di prima e lo si segnala. Lo stesso per un apparato spento o scollegato:
+    il controller ne dà solo le porte senza stato, quindi porte e vicini
+    restano quelli dell'ultima sincronizzazione e la card lo elenca a parte.
+  - **Nessun doppione e nessuna scelta sovrascritta.** Un apparato già censito
+    si ritrova per seriale, MAC o IP, e se ne aggiornano solo i dati di fatto
+    (modello, firmware, seriale), non nome, credenziali e abilitazione. Un IP
+    occupato da un altro apparato (MAC diverso, altro produttore o altro
+    seriale) si salta e lo si dice. Se un AP cambia IP e uno nuovo prende il
+    suo, il nuovo non sovrascrive più quello censito, qualunque sia l'ordine
+    in cui il controller li elenca. Gli apparati non ancora adottati non
+    entrano.
+  - **Compare in «Stato moduli»**, con una sonda che non fissa mai il
+    certificato da sola e non interroga il controller più di una volta ogni
+    cinque minuti. Il controllo del disco dell'appliance, ogni 30 minuti, non
+    lo interroga affatto: la verifica di un solo modulo fa partire solo la
+    sua sonda.
+  - Il job `unifi_sync` esiste nello scheduler (migrazione v8 di
+    `scheduled_jobs`) ma nessuno lo crea da solo. I tipi di job ora stanno in
+    un solo elenco, condiviso da schema e migrazione; una prova confronta la
+    tabella aggiornata con quella di un tenant nuovo, vincoli e indici
+    compresi, perché il resto del DDL della v8 è ancora scritto a mano.
+
 ### Correzioni
 
 - **L'amministratore del cliente gestisce gli utenti del proprio cliente (UI-18).**

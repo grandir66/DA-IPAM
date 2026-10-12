@@ -5,7 +5,7 @@ import { installLibreNMS } from "@/lib/integrations/librenms";
 import { installLoki } from "@/lib/integrations/loki";
 import { installGraylog } from "@/lib/integrations/graylog";
 import { getIntegrationConfig } from "@/lib/integrations/config";
-import type { IntegrationComponent } from "@/lib/integrations/types";
+import type { ContainerIntegrationComponent } from "@/lib/integrations/types";
 import { randomUUID } from "crypto";
 import { networkInterfaces } from "os";
 
@@ -22,11 +22,11 @@ function detectServerIp(): string {
   return "localhost";
 }
 
-const VALID_COMPONENTS: IntegrationComponent[] = ["librenms", "loki", "graylog"];
+const VALID_COMPONENTS: ContainerIntegrationComponent[] = ["librenms", "loki", "graylog"];
 
-function parseComponent(raw: string): IntegrationComponent | null {
-  return VALID_COMPONENTS.includes(raw as IntegrationComponent)
-    ? (raw as IntegrationComponent)
+function parseComponent(raw: string): ContainerIntegrationComponent | null {
+  return VALID_COMPONENTS.includes(raw as ContainerIntegrationComponent)
+    ? (raw as ContainerIntegrationComponent)
     : null;
 }
 
@@ -67,7 +67,7 @@ export async function POST(
   // Se l'utente non ha specificato un URL, lo rileva automaticamente
   if (!serverUrl) {
     const ip = detectServerIp();
-    const defaultPorts: Record<IntegrationComponent, number> = { librenms: 8090, graylog: 9000, loki: 3100 };
+    const defaultPorts: Record<ContainerIntegrationComponent, number> = { librenms: 8090, graylog: 9000, loki: 3100 };
     serverUrl = `http://${ip}:${defaultPorts[component]}`;
   }
 
@@ -81,7 +81,7 @@ export async function POST(
   });
 
   // Avvia in background
-  const runners: Record<IntegrationComponent, () => Promise<void>> = {
+  const runners: Record<ContainerIntegrationComponent, () => Promise<void>> = {
     librenms: () => installLibreNMS(jobId, containerName, adminPassword, serverUrl),
     loki: () => installLoki(jobId, containerName),
     graylog: () => installGraylog(jobId, containerName, adminPassword, serverUrl),

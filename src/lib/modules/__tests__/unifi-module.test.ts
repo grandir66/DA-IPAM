@@ -14,7 +14,7 @@ import { setIntegrationConfig, unifiCertPinStore } from "@/lib/integrations/conf
 import { checkPresentedPin, type UnifiTransportFactory } from "@/lib/integrations/unifi-api";
 import { readUnifiHealth, resetUnifiHealthMemo } from "@/lib/integrations/unifi-health";
 import { MODULE_DESCRIPTORS, resolveModules } from "../registry";
-import { getModulesHealth, PROBED_MODULE_KEYS } from "../health";
+import { getModulesHealth, invalidateModulesHealth, PROBED_MODULE_KEYS } from "../health";
 
 const T = "TESTUNIFIMODULO";
 const PIN = `sha256/${Buffer.alloc(32, 5).toString("base64")}`;
@@ -120,6 +120,7 @@ test("Stato moduli: la verifica forzata di un altro modulo non diventa un login 
   await readUnifiHealth({ clientOptions: { transportFactory: finto } });
   const conAppliance = await getModulesHealth(T, { force: true, only: "appliance" });
   assert.deepEqual(conAppliance.map((h) => h.key), ["appliance"]);
+  invalidateModulesHealth(T);
   const [u2] = (await getModulesHealth(T)).filter((h) => h.key === "unifi");
   assert.equal(u2.status, "ok", "la verifica di «appliance» non ha riletto il controller");
   assert.equal(u2.message, "4 apparati letti dal controller");
@@ -128,4 +129,37 @@ test("Stato moduli: la verifica forzata di un altro modulo non diventa un login 
   assert.equal(u3.key, "unifi");
   assert.equal(u3.status, "error", "«Verifica» su UniFi rilegge davvero");
   assert.equal(u3.reachable, false);
+});
+
+test("Stato moduli: la notifica disco ogni 30 minuti non rilegge il controller nemmeno a risultato scaduto", async (t) => {
+  setIntegrationConfig("unifi", { mode: "external", url: "https://127.0.0.1:1", username: "map", password: "x" });
+  unifiCertPinStore.set(PIN);
+  const finto: UnifiTransportFactory = (_b, pins) => async (req) => {
+    checkPresentedPin(pins, PIN);
+    if (req.path === "/api/login") {
+      return {
+        status: 200,
+        headers: { "set-cookie": ["unifises=S1; Path=/; Secure"] },
+        body: JSON.stringify({ meta: { rc: "ok" }, data: [] }),
+      };
+    }
+    if (req.path === "/api/logout") return { status: 200, headers: {}, body: JSON.stringify({ meta: { rc: "ok" }, data: [] }) };
+    return { status: 200, headers: {}, body: STAT_BODY };
+  };
+  // Solo l'orologio è finto: rete e timeout restano veri.
+  const inizio = Date.now();
+  t.mock.timers.enable({ apis: ["Date"], now: inizio });
+  assert.equal((await readUnifiHealth({ clientOptions: { transportFactory: finto } })).verdict, "ok");
+
+  // Mezz'ora dopo: il risultato tenuto (5 minuti) è scaduto, scatta il cron della notifica disco.
+  t.mock.timers.tick(30 * 60_000);
+  const rows = await getModulesHealth(T, { force: true, only: "appliance" });
+  assert.deepEqual(rows.map((h) => h.key), ["appliance"]);
+
+  // Se la sonda UniFi fosse partita avrebbe provato 127.0.0.1:1 (chiuso) e
+  // tenuto quel risultato d'errore: tornando all'inizio si leggerebbe lui.
+  t.mock.timers.setTime(inizio);
+  const r = await readUnifiHealth();
+  assert.equal(r.verdict, "ok", "la notifica disco ha fatto un login sul controller");
+  assert.equal(r.detail, "4 apparati letti dal controller");
 });

@@ -547,23 +547,30 @@ export const PROBED_MODULE_KEYS: readonly ModuleKey[] = [
   "appliance",
 ];
 
-async function compute(tenantCode: string, forceUnifi: boolean): Promise<ModuleHealth[]> {
+async function compute(tenantCode: string, forceUnifi: boolean, only?: ModuleKey): Promise<ModuleHealth[]> {
   const probedAt = new Date().toISOString();
   // I probe per-modulo sono indipendenti → in parallelo (ognuno bounded).
   // allSettled (NON all): se un probe RIGETTA (es. lettura DB fuori try su
   // disk-full / integrity-check failed) NON deve abbattere l'intera health API
   // né la home dashboard SSR che la consuma. Il probe fallito → verdict "fail".
-  const tasks: Array<[ModuleKey, Promise<ModuleHealth>]> = [
-    ["edge", withTenant(tenantCode, () => probeEdge(tenantCode, probedAt))],
-    ["wazuh", probeWazuh(probedAt)],
-    ["librenms", probeHttpIntegration("librenms", probedAt)],
-    ["graylog", probeHttpIntegration("graylog", probedAt)],
-    ["network_services", probeNetServices(tenantCode, probedAt)],
-    ["patch_management", probePatch(tenantCode, probedAt)],
-    ["meshcentral", withTenant(tenantCode, () => probeMeshcentral(tenantCode, probedAt))],
-    ["unifi", withTenant(tenantCode, () => probeUnifi(tenantCode, probedAt, forceUnifi))],
-    ["appliance", probeAppliance(probedAt)],
+  const all: Array<[ModuleKey, () => Promise<ModuleHealth>]> = [
+    ["edge", () => withTenant(tenantCode, () => probeEdge(tenantCode, probedAt))],
+    ["wazuh", () => probeWazuh(probedAt)],
+    ["librenms", () => probeHttpIntegration("librenms", probedAt)],
+    ["graylog", () => probeHttpIntegration("graylog", probedAt)],
+    ["network_services", () => probeNetServices(tenantCode, probedAt)],
+    ["patch_management", () => probePatch(tenantCode, probedAt)],
+    ["meshcentral", () => withTenant(tenantCode, () => probeMeshcentral(tenantCode, probedAt))],
+    ["unifi", () => withTenant(tenantCode, () => probeUnifi(tenantCode, probedAt, forceUnifi))],
+    ["appliance", () => probeAppliance(probedAt)],
   ];
+  // `only`: parte SOLO la sonda chiesta. La notifica disco dell'appliance
+  // (`only: "appliance"` ogni 30 minuti) non deve diventare un login sul
+  // controller UniFi (il suo risultato tenuto dura 5 minuti, quindi a ogni
+  // scatto sarebbe scaduto) né una raffica di sonde di rete sugli altri moduli.
+  const tasks: Array<[ModuleKey, Promise<ModuleHealth>]> = all
+    .filter(([key]) => !only || key === only)
+    .map(([key, run]) => [key, run()]);
   const settled = await Promise.allSettled(tasks.map(([, p]) => p));
   const byKey = {} as Record<ModuleKey, ModuleHealth>;
   settled.forEach((res, i) => {
@@ -591,7 +598,8 @@ async function compute(tenantCode: string, forceUnifi: boolean): Promise<ModuleH
 /**
  * Stato di salute dei moduli per il tenant.
  * @param opts.force bypassa la cache (re-probe live).
- * @param opts.only limita il risultato a un singolo modulo (force consigliato).
+ * @param opts.only esegue la sonda di un solo modulo (force consigliato); la
+ *   voce si aggiorna anche nella cache completa, se c'è, senza allungarla.
  */
 export async function getModulesHealth(
   tenantCode: string,
@@ -604,11 +612,18 @@ export async function getModulesHealth(
       return opts?.only ? cached.value.filter((h) => h.key === opts.only) : cached.value;
     }
   }
-  // Il controller UniFi si rilegge davvero solo se la verifica forzata
-  // riguarda lui (o tutti): la notifica disco dell'appliance forza `only:
-  // "appliance"` ogni 30 minuti e non deve diventare un login sul controller.
-  const forceUnifi = !!opts?.force && (!opts.only || opts.only === "unifi");
-  const value = await compute(tenantCode, forceUnifi);
-  cache.set(tenantCode, { value, expiresAt: now + TTL_MS });
-  return opts?.only ? value.filter((h) => h.key === opts.only) : value;
+  // Con `only` parte solo quella sonda (vedi `compute`): la notifica disco
+  // dell'appliance forza `only: "appliance"` ogni 30 minuti e non deve
+  // diventare un login sul controller UniFi.
+  const value = await compute(tenantCode, !!opts?.force, opts?.only);
+  if (!opts?.only) {
+    cache.set(tenantCode, { value, expiresAt: now + TTL_MS });
+    return value;
+  }
+  const cached = cache.get(tenantCode);
+  if (cached && cached.expiresAt > now) {
+    const fresh = new Map(value.map((h) => [h.key, h]));
+    cache.set(tenantCode, { value: cached.value.map((h) => fresh.get(h.key) ?? h), expiresAt: cached.expiresAt });
+  }
+  return value;
 }

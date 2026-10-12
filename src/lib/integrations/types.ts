@@ -85,6 +85,14 @@ export interface UnifiCertPinStore {
   get(): string | null;
   set(pin: string): void;
   clear(): void;
+  /**
+   * true se la configurazione punta ancora al controller di `origin`
+   * (schema+host+porta). Il client lo chiede prima di salvare l'impronta del
+   * primo uso: una sessione partita prima di un cambio d'indirizzo non fissa
+   * il certificato del vecchio controller sul nuovo. Assente = nessun vincolo
+   * (store in memoria, store in sola lettura della sonda).
+   */
+  matchesOrigin?(origin: string): boolean;
 }
 
 export interface IntegrationStatus {

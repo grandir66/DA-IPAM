@@ -15,6 +15,7 @@ import {
   parseUnifiSavedConfig,
   parseUnifiSyncResponse,
   unifiFormFromConfig,
+  unifiUrlChangesController,
   type UnifiSavedConfig,
 } from "../unifi-card-model";
 import { UnifiCardView, type UnifiCardViewProps } from "../unifi-card";
@@ -221,6 +222,19 @@ describe("vista resa", () => {
     assert.match(html, /Impostata: lascia vuoto per non cambiarla/);
     assert.ok(bottone(html, "Sincronizza ora"));
     assert.match(html, /Apri la console del controller/);
+  });
+
+  it("indirizzo di un altro controller: avvisa che la password salvata si cancella e va riscritta", () => {
+    const saved = parseUnifiSavedConfig(GET_ACCESA);
+    assert.equal(saved.passwordSet, true);
+    const altro = vista({ saved, form: { ...unifiFormFromConfig(saved), url: "https://10.99.0.11:8443" } });
+    assert.match(altro, /la password salvata si cancella/);
+    assert.match(altro, /Da riscrivere per il nuovo indirizzo/);
+    assert.doesNotMatch(altro, /Impostata: lascia vuoto per non cambiarla/);
+    // Stesso controller scritto diverso (barra finale): nessun avviso.
+    const stesso = vista({ saved, form: { ...unifiFormFromConfig(saved), url: `${saved.url}/` } });
+    assert.doesNotMatch(stesso, /la password salvata si cancella/);
+    assert.equal(unifiUrlChangesController({ ...unifiFormFromConfig(saved), url: ` ${saved.url.toUpperCase()} ` }, saved), false);
   });
 
   it("modifiche non salvate: prova e sync ferme, con il perché", () => {

@@ -73,6 +73,26 @@ export function isUnifiFormDirty(form: UnifiForm, cfg: UnifiSavedConfig): boolea
   );
 }
 
+/** Schema+host+porta, come lo confronta il server (`config.ts`) per decidere che è un altro controller. */
+function urlOrigin(raw: string): string {
+  const v = raw.trim();
+  if (!v) return "";
+  try {
+    return new URL(v).origin.toLowerCase();
+  } catch {
+    return v.toLowerCase();
+  }
+}
+
+/**
+ * L'indirizzo nel modulo è di un altro controller rispetto a quello salvato.
+ * Al salvataggio il server azzera l'impronta e cancella la password salvata
+ * (non parte verso un host mai verificato): la card lo dice accanto ai campi.
+ */
+export function unifiUrlChangesController(form: UnifiForm, cfg: UnifiSavedConfig): boolean {
+  return cfg.url.trim() !== "" && urlOrigin(form.url) !== urlOrigin(cfg.url);
+}
+
 /**
  * Corpo del PUT. Password e chiave partono solo se scritte: il server tratta
  * un campo vuoto come «non cambiare», qui non lo si manda nemmeno.

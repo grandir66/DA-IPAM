@@ -131,6 +131,8 @@ interface FakeOpts {
   presentedPin?: string;
   login?: UnifiHttpResponse;
   stat?: UnifiHttpResponse;
+  /** Chiamata mentre si serve stat/device: per cambiare lo stato a metà sessione. */
+  duranteLettura?: () => void;
 }
 
 function json(status: number, body: unknown, headers: Record<string, string | string[]> = {}): UnifiHttpResponse {
@@ -149,6 +151,7 @@ function fakeController(o: FakeOpts = {}): { factory: UnifiTransportFactory; cal
     calls.push(req);
     if (req.path === "/api/login") return o.login ?? LOGIN_OK;
     if (req.path === "/api/logout") return json(200, { meta: { rc: "ok" }, data: [] });
+    o.duranteLettura?.();
     return o.stat ?? { status: 200, headers: {}, body: FIXTURE_BODY };
   };
   return { factory, calls };
@@ -186,6 +189,43 @@ test("probe riuscito: numero di apparati e pin registrato al primo uso, poi solo
   const second = await createUnifiClient(CFG, store, { transportFactory: factory }).probe();
   assert.deepEqual(second, { ok: true, devices: 4, certPin: "sha256/CONTROLLER=", certPinRecorded: false });
   assert.equal(store.writes, 1);
+});
+
+test("primo uso: se a metà sessione qualcuno fissa un'impronta, la sessione non la sovrascrive", async () => {
+  // Una prova riuscita (o un «Dimentica» seguito da una prova) mentre la sync
+  // legge: l'impronta verificata dall'amministratore resta.
+  const store = memoryStore();
+  const { factory } = fakeController({
+    duranteLettura: () => {
+      store.value = "sha256/VERIFICATA=";
+    },
+  });
+  const r = await createUnifiClient(CFG, store, { transportFactory: factory }).probe();
+  assert.equal(r.ok, true);
+  assert.equal(r.ok && r.certPinRecorded, false);
+  assert.equal(store.value, "sha256/VERIFICATA=");
+  assert.equal(store.writes, 0);
+});
+
+test("primo uso: se nel frattempo la configurazione punta a un altro controller, l'impronta non si salva", async () => {
+  const store = memoryStore();
+  let origineConfigurata = "https://10.99.0.10:8443";
+  const conOrigine: UnifiCertPinStore = { ...store, set: store.set, matchesOrigin: (o: string) => o === origineConfigurata };
+  const { factory } = fakeController({
+    duranteLettura: () => {
+      origineConfigurata = "https://10.99.0.11:8443"; // l'amministratore cambia indirizzo
+    },
+  });
+  const r = await createUnifiClient(CFG, conOrigine, { transportFactory: factory }).probe();
+  assert.equal(r.ok && r.certPinRecorded, false);
+  assert.equal(store.value, null);
+  // Stesso controller dall'inizio alla fine: si salva.
+  origineConfigurata = "https://10.99.0.10:8443";
+  const ok = await createUnifiClient(CFG, conOrigine, {
+    transportFactory: fakeController().factory,
+  }).probe();
+  assert.equal(ok.ok && ok.certPinRecorded, true);
+  assert.equal(store.value, "sha256/CONTROLLER=");
 });
 
 test("lettura fallita: logout fatto lo stesso, errore server, pin NON registrato", async () => {

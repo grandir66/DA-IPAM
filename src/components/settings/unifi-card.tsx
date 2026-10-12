@@ -52,6 +52,7 @@ import {
   parseUnifiSavedConfig,
   parseUnifiSyncResponse,
   unifiFormFromConfig,
+  unifiUrlChangesController,
   type UnifiForm,
   type UnifiSavedConfig,
   type UnifiSyncResponse,
@@ -95,6 +96,7 @@ export function UnifiCardView(props: UnifiCardViewProps) {
   const dirty = isUnifiFormDirty(form, saved);
   const locked = !isAdmin || busy !== null;
   const isCloud = form.kind === "cloud";
+  const urlChanged = unifiUrlChangesController(form, saved);
   const probeView = probe ? describeUnifiProbe(probe) : null;
   const syncView = sync ? describeUnifiSync(sync) : null;
   const canUseSaved = isAdmin && busy === null && !dirty;
@@ -185,6 +187,12 @@ export function UnifiCardView(props: UnifiCardViewProps) {
                 onChange={(e) => set({ url: e.target.value })}
               />
               <p className="text-xs text-muted-foreground mt-1">Solo https; di solito la porta è 8443.</p>
+              {urlChanged && saved.passwordSet && (
+                <p className="text-xs text-foreground mt-1">
+                  Indirizzo di un altro controller: al salvataggio la password salvata si cancella e il
+                  certificato si fissa di nuovo. Riscrivi la password del nuovo controller.
+                </p>
+              )}
             </div>
           )}
           <div>
@@ -230,7 +238,13 @@ export function UnifiCardView(props: UnifiCardViewProps) {
                   className="mt-1"
                   type="password"
                   autoComplete="new-password"
-                  placeholder={saved.passwordSet ? "Impostata: lascia vuoto per non cambiarla" : ""}
+                  placeholder={
+                    saved.passwordSet
+                      ? urlChanged
+                        ? "Da riscrivere per il nuovo indirizzo"
+                        : "Impostata: lascia vuoto per non cambiarla"
+                      : ""
+                  }
                   value={form.password}
                   disabled={locked}
                   onChange={(e) => set({ password: e.target.value })}

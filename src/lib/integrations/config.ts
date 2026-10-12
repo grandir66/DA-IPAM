@@ -95,6 +95,10 @@ export const unifiCertPinStore: UnifiCertPinStore = {
   get: () => normalizeSpkiPin(getSetting(KEY_UNIFI_CERT_PIN) ?? "") || null,
   set: (pin: string) => setSetting(KEY_UNIFI_CERT_PIN, normalizeSpkiPin(pin)),
   clear: () => setSetting(KEY_UNIFI_CERT_PIN, ""),
+  matchesOrigin: (origin: string) => {
+    const current = urlOrigin(getSetting("integration_unifi_url") ?? "");
+    return current !== "" && current === urlOrigin(origin);
+  },
 };
 
 /** Forma di un'impronta di `spkiPinFromDer`: sha256/ + base64 di 32 byte. */
@@ -156,7 +160,16 @@ function writeUnifiConfig(cfg: Partial<ComponentConfig>): void {
     const prev = getSetting("integration_unifi_url") ?? "";
     // Il pin vale per UN controller: un indirizzo nuovo è un primo uso nuovo,
     // altrimenti il controller giusto verrebbe rifiutato come "cambiato".
-    if (urlOrigin(prev) !== urlOrigin(next)) unifiCertPinStore.clear();
+    // Anche la password vale per quel controller: verso un indirizzo nuovo
+    // (mai verificato, si accetterebbe il primo certificato) non parte quella
+    // vecchia. Si cancella; se ne arriva una nuova in questa stessa richiesta,
+    // la scrive il blocco dei segreti qui sotto. Altrimenti un errore di
+    // battitura, o chi non conosce la password, la farebbe arrivare a un host
+    // qualunque cambiando solo l'indirizzo.
+    if (urlOrigin(prev) !== urlOrigin(next)) {
+      unifiCertPinStore.clear();
+      writeSecret("integration_unifi_password", "");
+    }
     setSetting("integration_unifi_url", next);
   }
   if (cfg.kind !== undefined) setSetting("integration_unifi_kind", parseUnifiKind(cfg.kind));

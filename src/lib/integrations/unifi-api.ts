@@ -589,8 +589,20 @@ export function createUnifiClient(
     if (failure) throw failure;
     if (logoutFailure?.reason === "cert") throw logoutFailure;
 
-    if (pins.recorded) pinStore.set(pins.recorded);
-    return { devices, pin: pins.expected, recorded: pins.recorded !== null };
+    // Primo uso (si registra solo partendo da nessuna impronta): si salva solo
+    // se nel frattempo nessuno ne ha fissata una (prova riuscita, accetta) e se
+    // la configurazione punta ancora a questo controller. Confronto e
+    // scrittura sono sincroni: niente può infilarsi in mezzo.
+    let recorded = false;
+    if (
+      pins.recorded &&
+      pinStore.get() === null &&
+      (pinStore.matchesOrigin?.(base.origin) ?? true)
+    ) {
+      pinStore.set(pins.recorded);
+      recorded = true;
+    }
+    return { devices, pin: pins.expected, recorded };
   }
 
   return {

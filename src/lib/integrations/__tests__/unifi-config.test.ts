@@ -97,6 +97,32 @@ test("controller diverso → il pin si azzera (primo uso nuovo, non 'certificato
   assert.equal(unifiCertPinStore.get(), null);
 });
 
+test("controller diverso senza password nuova: quella salvata si cancella, non parte verso un host mai verificato", () => {
+  setIntegrationConfig("unifi", { url: "https://10.99.0.10:8443", username: "map", password: "vera" });
+  // Una cifra sbagliata, o un server di chi non conosce la password: il pin è
+  // azzerato e il primo certificato che arriva sarebbe accettato.
+  setIntegrationConfig("unifi", { url: "https://10.99.0.11:8443", username: "map" });
+  assert.equal(getIntegrationConfig("unifi").password, "");
+});
+
+test("controller diverso con la password nella stessa richiesta: vale quella nuova", () => {
+  setIntegrationConfig("unifi", { url: "https://10.99.0.10:8443", password: "vecchia" });
+  setIntegrationConfig("unifi", { url: "https://10.99.0.11:8443", password: "nuova" });
+  assert.equal(getIntegrationConfig("unifi").password, "nuova");
+});
+
+test("stesso controller (barra finale, maiuscole): la password resta", () => {
+  setIntegrationConfig("unifi", { url: "https://10.99.0.10:8443", password: "vera" });
+  setIntegrationConfig("unifi", { url: "HTTPS://10.99.0.10:8443/", site: "default" });
+  assert.equal(getIntegrationConfig("unifi").password, "vera");
+});
+
+test("l'impronta si salva solo per il controller configurato adesso", () => {
+  setIntegrationConfig("unifi", { url: "https://10.99.0.10:8443/" });
+  assert.equal(unifiCertPinStore.matchesOrigin?.("https://10.99.0.10:8443"), true);
+  assert.equal(unifiCertPinStore.matchesOrigin?.("https://10.99.0.11:8443"), false);
+});
+
 test("le chiavi unifi non toccano quelle di graylog", () => {
   setSetting("integration_graylog_username", "admin-graylog");
   setIntegrationConfig("unifi", { username: "map" });

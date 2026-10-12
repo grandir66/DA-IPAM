@@ -980,6 +980,16 @@ export function getUserTenantAccess(userId: number): Array<{ tenant_id: number; 
   ).all(userId) as Array<{ tenant_id: number; codice_cliente: string; ragione_sociale: string; role: string }>;
 }
 
+/** Gli accessi di TUTTI gli utenti in una query sola: l'elenco utenti senza una query per riga. */
+export function getAllUserTenantAccess(): Array<{ user_id: number; tenant_id: number; codice_cliente: string; ragione_sociale: string; role: string }> {
+  return getHubDb().prepare(
+    `SELECT uta.user_id, uta.tenant_id, t.codice_cliente, t.ragione_sociale, uta.role
+     FROM user_tenant_access uta
+     JOIN tenants t ON t.id = uta.tenant_id
+     ORDER BY uta.user_id, t.ragione_sociale`
+  ).all() as Array<{ user_id: number; tenant_id: number; codice_cliente: string; ragione_sociale: string; role: string }>;
+}
+
 export function setUserTenantAccess(userId: number, tenantId: number, role: string): void {
   getHubDb().prepare(
     `INSERT INTO user_tenant_access (user_id, tenant_id, role)

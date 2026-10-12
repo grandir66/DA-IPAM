@@ -60,7 +60,11 @@ export async function POST(request: Request) {
       const user = createUser(username, passwordHash, "admin", tenant.id);
       setUserTenantAccess(user.id, tenant.id, "admin");
     } else {
-      // Multi-tenant (MSP): crea superadmin
+      // Superadmin non legato a un cliente. La pagina /setup non lo propone più
+      // (UI-17: un'installazione = un cliente), ma lo chiede ancora l'installer
+      // di Deploy-Appliance `core/ipam-installer.sh` con "mode":"multi". Si
+      // toglie quando quell'installer passa a "single" (piano di miglioramento,
+      // tappa 8): lo ricorda la prova in __tests__/setup-un-cliente.test.ts.
       createUser(username, passwordHash, "superadmin");
     }
 

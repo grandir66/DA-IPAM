@@ -468,7 +468,7 @@ export default function InventoryAssetPage() {
                     </Select>
                   </div>
                   {assignees.length === 0 && (
-                    <p className="text-sm text-muted-foreground">Nessun assegnatario. Aggiungine dalla pagina Impostazioni o dalla gestione inventario.</p>
+                    <p className="text-sm text-muted-foreground">Nessun assegnatario. Aggiungine da <Link href="/inventory/assignees" className="underline">Inventario → Assegnatari</Link>.</p>
                   )}
                 </div>
               </CardContent>

@@ -343,7 +343,7 @@ export function OnboardingWizard() {
     <Card className="w-full max-w-lg border-border/80 shadow-lg">
       <CardHeader className="text-center space-y-3 pb-2">
         <div className="flex justify-center rounded-md bg-[#0D2537] px-6 py-4">
-          <img src="/logo-white.png" alt="DA-INVENT" className="h-12 w-auto max-w-[260px] object-contain" />
+          <img src="/logo-white.png" alt="DA-IPAM" className="h-12 w-auto max-w-[260px] object-contain" />
         </div>
         <CardTitle className="text-xl">Configurazione iniziale</CardTitle>
         <CardDescription>
@@ -456,7 +456,7 @@ export function OnboardingWizard() {
         {step === 2 && (
           <div className="space-y-4 text-sm max-h-[55vh] overflow-y-auto pr-1">
             <p className="text-muted-foreground">
-              Credenziali archiviate per provare automaticamente SNMP, SSH e accesso host Windows/Linux durante le analisi. Potrai modificarle in Impostazioni.
+              Credenziali archiviate per provare automaticamente SNMP, SSH e accesso host Windows/Linux durante le analisi. Potrai modificarle in Network → Credenziali.
             </p>
 
             <div className="rounded-lg border p-3 space-y-2">

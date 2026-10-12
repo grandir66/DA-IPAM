@@ -119,7 +119,7 @@ export function buildSchedulerHealthMessage(
       `Stato delle sincronizzazioni schedulate (${REASON_LABELS[reason]}).\n\n` +
       `Stato: ${VERDICT_LABELS[verdict]}\n` +
       `Dettaglio: ${headline}\n\n` +
-      "Apri DA-IPAM → Impostazioni → Job schedulati per il dettaglio, " +
+      "Apri DA-IPAM → Impostazioni → Job pianificati per il dettaglio, " +
       "oppure interroga /api/health?strict=1 sulla macchina.",
   };
 }

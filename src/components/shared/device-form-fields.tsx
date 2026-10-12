@@ -457,7 +457,7 @@ export function DeviceFormFields({
           {onProductProfileChange && (
             <FieldRow
               label="Tipologia prodotto"
-              tip="Dettaglio per questa marca (es. switch gestito). Influenza scan e inventario. Catalogo OID: Impostazioni → SNMP."
+              tip="Dettaglio per questa marca (es. switch gestito). Influenza scan e inventario. Catalogo OID: Impostazioni → Identificazione → Gestisci profili SNMP."
               tipWide
             >
               <Select

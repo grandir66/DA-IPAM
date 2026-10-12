@@ -74,7 +74,7 @@ const WIN_AGENTS: WinAgent[] = [
   {
     key: "wazuh",
     label: "Wazuh Agent (SIEM/HIDS)",
-    desc: "Agente Wazuh. Richiede il manager Wazuh configurato in Integrazioni.",
+    desc: "Agente Wazuh. Richiede il manager Wazuh configurato in Impostazioni → Moduli.",
     endpoint: "/api/patch/install-wazuh",
     icon: <ShieldCheck className="h-4 w-4" />,
   },
@@ -342,7 +342,7 @@ export function InstallAgentsDialog({
                   ))}
                   <p className="text-xs text-muted-foreground px-1">
                     Chocolatey è solo Windows. Gli script vanno lanciati come root/sudo sul target;
-                    l&apos;agente Wazuh richiede il manager configurato in Integrazioni.
+                    l&apos;agente Wazuh richiede il manager configurato in Impostazioni → Moduli.
                   </p>
                 </>
               )}

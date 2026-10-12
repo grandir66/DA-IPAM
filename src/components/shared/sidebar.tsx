@@ -355,7 +355,7 @@ export function Sidebar() {
           alt="Logo"
           className={cn("h-9 mx-auto object-contain", collapsed ? "hidden md:block" : "hidden")}
         />
-        <h1 className={cn("text-xl font-bold text-primary mt-3", collapsed && "md:hidden")}>DA-INVENT</h1>
+        <h1 className={cn("text-xl font-bold text-primary mt-3", collapsed && "md:hidden")}>DA-IPAM</h1>
         <p className={cn("text-xs text-sidebar-foreground/60 mt-0.5", collapsed && "md:hidden")}>IP Address Management</p>
       </div>
 

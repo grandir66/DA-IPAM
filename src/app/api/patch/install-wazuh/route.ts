@@ -99,7 +99,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Wazuh manager non configurato (Integrazioni → Wazuh). Specifica managerHost esplicito nel body o configura prima il manager.",
+            "Wazuh manager non configurato (Impostazioni → Moduli → Wazuh). Specifica managerHost esplicito nel body o configura prima il manager.",
         },
         { status: 400 }
       );

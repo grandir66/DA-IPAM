@@ -6,18 +6,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Shield, Building2 } from "lucide-react";
 
-type SetupMode = "single" | "multi";
-
+/**
+ * Primo avvio: crea il cliente di questa installazione e il suo amministratore.
+ *
+ * Un'installazione = un cliente (decisione del 2026-10-12, UI-17): la pagina non
+ * offre altre modalità. L'API conserva la vecchia modalità senza cliente solo
+ * per l'installer di Deploy-Appliance (vedi `src/app/api/setup/route.ts`).
+ */
 export default function SetupPage() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [checkDone, setCheckDone] = useState(false);
-  const [mode, setMode] = useState<SetupMode>("single");
 
-  // Campi single-tenant
+  // Dati del cliente
   const [codiceCliente, setCodiceCliente] = useState("");
   const [ragioneSociale, setRagioneSociale] = useState("");
 
@@ -56,34 +59,28 @@ export default function SetupPage() {
       return;
     }
 
-    if (mode === "single") {
-      if (!codiceCliente.trim()) {
-        setError("Il codice cliente è obbligatorio");
-        setLoading(false);
-        return;
-      }
-      if (!ragioneSociale.trim()) {
-        setError("La ragione sociale è obbligatoria");
-        setLoading(false);
-        return;
-      }
+    if (!codiceCliente.trim()) {
+      setError("Il codice cliente è obbligatorio");
+      setLoading(false);
+      return;
+    }
+    if (!ragioneSociale.trim()) {
+      setError("La ragione sociale è obbligatoria");
+      setLoading(false);
+      return;
     }
 
     try {
-      const body: Record<string, unknown> = {
-        username,
-        password,
-        mode,
-      };
-      if (mode === "single") {
-        body.codice_cliente = codiceCliente.trim().toUpperCase();
-        body.ragione_sociale = ragioneSociale.trim();
-      }
-
       const res = await fetch("/api/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          username,
+          password,
+          mode: "single",
+          codice_cliente: codiceCliente.trim().toUpperCase(),
+          ragione_sociale: ragioneSociale.trim(),
+        }),
       });
 
       if (!res.ok) {
@@ -102,11 +99,6 @@ export default function SetupPage() {
 
   if (!checkDone) return null;
 
-  const descriptions: Record<SetupMode, string> = {
-    single: "Installazione per un singolo cliente — crea il database e l'account amministratore",
-    multi: "Installazione multi-tenant — per MSP e gestione di più clienti",
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
@@ -114,70 +106,35 @@ export default function SetupPage() {
           <div className="flex justify-center mb-4">
             <img src="/logo-color.png" alt="Logo" className="h-14 w-64 object-contain" />
           </div>
-          <CardTitle className="text-2xl font-bold text-primary">DA-INVENT</CardTitle>
-          <CardDescription>{descriptions[mode]}</CardDescription>
+          <CardTitle className="text-2xl font-bold text-primary">DA-IPAM</CardTitle>
+          <CardDescription>
+            Installazione per un cliente: crea il database del cliente e l&apos;account amministratore
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Selettore modalità */}
+            {/* Dati del cliente */}
             <div className="space-y-2">
-              <Label>Tipo di installazione</Label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setMode("single")}
-                  className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 text-sm transition-colors ${
-                    mode === "single"
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-muted hover:border-muted-foreground/30"
-                  }`}
-                >
-                  <Building2 className="h-6 w-6" />
-                  <span className="font-medium">Singolo Cliente</span>
-                  <span className="text-xs text-muted-foreground text-center">Un&apos;azienda, un database</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("multi")}
-                  className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 text-sm transition-colors ${
-                    mode === "multi"
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-muted hover:border-muted-foreground/30"
-                  }`}
-                >
-                  <Shield className="h-6 w-6" />
-                  <span className="font-medium">Multi-Tenant</span>
-                  <span className="text-xs text-muted-foreground text-center">MSP / più clienti</span>
-                </button>
-              </div>
+              <Label htmlFor="codice_cliente">Codice Cliente</Label>
+              <Input
+                id="codice_cliente"
+                value={codiceCliente}
+                onChange={(e) => setCodiceCliente(e.target.value)}
+                required
+                placeholder="es. ACME-001"
+                className="uppercase"
+              />
             </div>
-
-            {/* Dati azienda: solo single-tenant */}
-            {mode === "single" && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="codice_cliente">Codice Cliente</Label>
-                  <Input
-                    id="codice_cliente"
-                    value={codiceCliente}
-                    onChange={(e) => setCodiceCliente(e.target.value)}
-                    required
-                    placeholder="es. ACME-001"
-                    className="uppercase"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="ragione_sociale">Ragione Sociale</Label>
-                  <Input
-                    id="ragione_sociale"
-                    value={ragioneSociale}
-                    onChange={(e) => setRagioneSociale(e.target.value)}
-                    required
-                    placeholder="es. ACME S.r.l."
-                  />
-                </div>
-              </>
-            )}
+            <div className="space-y-2">
+              <Label htmlFor="ragione_sociale">Ragione Sociale</Label>
+              <Input
+                id="ragione_sociale"
+                value={ragioneSociale}
+                onChange={(e) => setRagioneSociale(e.target.value)}
+                required
+                placeholder="es. ACME S.r.l."
+              />
+            </div>
 
             {/* Credenziali */}
             <div className="space-y-2">

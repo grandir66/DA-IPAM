@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       if (agent === "wazuh") {
         const cfg = getWazuhConfig();
         if (!cfg.enabled || !cfg.url) {
-          return NextResponse.json({ error: "Wazuh non configurato in Integrazioni" }, { status: 400 });
+          return NextResponse.json({ error: "Wazuh non configurato: vai a Impostazioni → Moduli → Wazuh" }, { status: 400 });
         }
         const managerHost = new URL(cfg.url).hostname;
         let managerIp: string | undefined;

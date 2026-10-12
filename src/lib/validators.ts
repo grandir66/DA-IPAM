@@ -325,7 +325,11 @@ export const SetupSchema = z.object({
   username: z.string().trim().min(3, "Username minimo 3 caratteri").max(50),
   password: z.string().min(8, "Password minimo 8 caratteri").max(100),
   confirm_password: z.string(),
-  /** Modalità installazione: single = un cliente, multi = MSP/multi-tenant */
+  /**
+   * Modalità installazione: single = un cliente, l'unica che offre la pagina
+   * /setup (UI-17); multi = superadmin senza cliente, rimasta solo per
+   * l'installer di Deploy-Appliance `core/ipam-installer.sh`.
+   */
   mode: z.enum(["single", "multi"]).default("single"),
   /** Campi obbligatori in modalità single-tenant */
   codice_cliente: z.string().trim().min(1, "Codice cliente obbligatorio").max(50).optional(),

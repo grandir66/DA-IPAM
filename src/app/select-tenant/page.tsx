@@ -76,11 +76,11 @@ export default function SelectTenantPage() {
             <div className="flex justify-center mb-4 rounded-md bg-[#0D2537] px-6 py-4">
               <img
                 src="/logo-white.png"
-                alt="DA-INVENT"
+                alt="DA-IPAM"
                 className="h-12 w-auto max-w-[260px] object-contain"
               />
             </div>
-            <CardTitle className="text-xl font-bold text-primary">DA-INVENT</CardTitle>
+            <CardTitle className="text-xl font-bold text-primary">DA-IPAM</CardTitle>
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto" />
@@ -109,7 +109,7 @@ export default function SelectTenantPage() {
           <div className="flex justify-center mb-4 rounded-md bg-[#0D2537] px-6 py-4 mx-auto w-fit">
             <img
               src="/logo-white.png"
-              alt="DA-INVENT"
+              alt="DA-IPAM"
               className="h-12 w-auto max-w-[260px] object-contain"
             />
           </div>

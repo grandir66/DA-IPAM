@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   const cfg = getWazuhConfig();
   if (!cfg.enabled || !cfg.url) {
     return NextResponse.json(
-      { error: "Wazuh non configurato. Vai a Integrazioni → Wazuh." },
+      { error: "Wazuh non configurato. Vai a Impostazioni → Moduli → Wazuh." },
       { status: 400 },
     );
   }

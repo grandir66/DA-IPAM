@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DA-INVENT — IP Address Management",
+  title: "DA-IPAM — IP Address Management",
   description:
     "IPAM e inventario asset — software open source by Domarc (domarc.it). Fork pubblici: attribuzione richiesta (LICENSE).",
 };

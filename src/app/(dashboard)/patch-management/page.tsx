@@ -830,7 +830,7 @@ function DeviceTab() {
             disabled={selected.size === 0 || bulkBusy || !wazuhConfigured}
             title={
               !wazuhConfigured
-                ? "Wazuh manager non configurato (Integrazioni → Wazuh)"
+                ? "Wazuh manager non configurato (Impostazioni → Moduli → Wazuh)"
                 : `Installa Wazuh agent (manager: ${wazuhManagerHost})`
             }
           >

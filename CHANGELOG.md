@@ -50,16 +50,21 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   nuova non partiva mai. Ora un ambiente senza `pip` si ricrea, un guasto di
   WinRM (funzione facoltativa) è solo un avviso, e il riavvio cerca il servizio
   attivo (`da-invent` o `da-ipam`) invece del solo `da-invent`.
-- **«Aggiorna» dall'interfaccia non lascia più l'app spenta sulle appliance
-  consolidate.** Dopo l'aggiornamento il riavvio cercava solo il servizio
-  `da-invent`; su DTS il servizio si chiama `da-ipam`, quindi si ripiegava su un
-  auto-riavvio che systemd interpretava come uscita normale: chiudeva tutto e
-  l'app restava spenta finché qualcuno non la riavviava a mano (successo due
-  volte il 12/10). Ora si riavvia il servizio attivo, quale che sia il nome.
 - **L'aggiornamento automatico non riavvia per i commit di sola
   documentazione.** Un commit che cambia solo `docs/` o file `.md` aggiorna i
   file senza build né riavvio: prima ogni nota pubblicata riavviava DTS e
   interrompeva il controllo degli host in corso.
+- **«Aggiorna» e «Riavvia» dall'interfaccia riavviano il servizio giusto, e lo fanno ripartire davvero.**
+  Cercava solo `da-invent`; sulle appliance installate con Deploy-Appliance, come
+  DTS, il servizio si chiama `da-ipam`, e il pulsante ripiegava sul rilancio da
+  sé, che sotto systemd viene chiuso insieme al processo che esce. Ora sceglie il
+  servizio attivo fra `da-invent` e `da-ipam`, con lo stesso criterio
+  dell'aggiornamento automatico (`src/lib/app-service.ts`), e lascia che sia
+  systemd a fermare e far ripartire il processo. Prima usciva subito dopo la
+  richiesta: con `Restart=on-failure` un'uscita senza errore non si riavvia, e se
+  la richiesta non arrivava in tempo il servizio restava spento. Se systemd
+  rifiuta (per esempio per i permessi), il motivo va nel log e il processo esce
+  con errore, così riparte comunque.
 - **Un job non parte più due volte nello stesso processo.** Quando una pagina
   salvava la configurazione dei job (job, AD, Wazuh, MeshCentral, Scanner-Edge,
   import moduli), lo scheduler veniva ricaricato da una seconda copia del suo

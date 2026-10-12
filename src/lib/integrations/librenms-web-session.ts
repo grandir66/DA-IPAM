@@ -28,13 +28,15 @@ function cacheKey(opts: LibreNMSWebSessionOptions): string {
   return `${opts.upstreamOrigin}|${opts.hostHeader ?? ""}|${opts.username}`;
 }
 
-function parseSetCookies(headers: http.IncomingHttpHeaders): string[] {
+/** Esportata anche per il client UniFi (sessione a cookie). */
+export function parseSetCookies(headers: http.IncomingHttpHeaders): string[] {
   const raw = headers["set-cookie"];
   if (!raw) return [];
   return Array.isArray(raw) ? raw : [raw];
 }
 
-function mergeCookieHeader(existing: string, setCookies: string[]): string {
+/** Esportata anche per il client UniFi (sessione a cookie). */
+export function mergeCookieHeader(existing: string, setCookies: string[]): string {
   const jar = new Map<string, string>();
   for (const part of existing.split(";")) {
     const trimmed = part.trim();

@@ -107,7 +107,7 @@ export async function PUT(
       );
     }
     const url = parsed.data.url?.trim();
-    if (url && !/^https?:\/\/[^/\s]+/i.test(url)) {
+    if (url && !/^https:\/\/[^/\s]+/i.test(url)) {
       return NextResponse.json(
         { error: "L'indirizzo del controller deve iniziare con https:// (es. https://192.168.1.10:8443)" },
         { status: 400 },

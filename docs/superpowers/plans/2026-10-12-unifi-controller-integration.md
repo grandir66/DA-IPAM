@@ -80,7 +80,7 @@ e si esegue com'è, con queste correzioni. **`dev` arriva da solo all'appliance 
 - [x] **Step 1:** In `types.ts` aggiungere `"unifi"` a `IntegrationComponent` e i campi `kind`/`site` a `ComponentConfig` (o un `UnifiConfig` esteso).
 - [x] **Step 2:** In `config.ts` aggiungere `unifi` a `DEFAULTS` e gestire le chiavi `integration_unifi_kind` (plain), `integration_unifi_site` (plain), `integration_unifi_username` (plain), `integration_unifi_password` (secret), oltre a url/apiToken già generici.
 - [x] **Step 3:** In `api/integrations/[component]/route.ts` aggiungere `"unifi"` a `VALID_COMPONENTS` ed estendere lo schema Zod del PUT con `kind` (`z.enum(["self_hosted","udm","cloud"])`), `site`, `username`.
-- [ ] **Step 4:** `npx tsc --noEmit && npm run lint` → 0 errori.
+- [x] **Step 4:** `npx tsc --noEmit && npm run lint` → 0 errori. *(tsc completo + eslint sui file toccati, 12/10)*
 - [x] **Step 5:** `git commit -m "feat(unifi): whitelist componente + campi config (kind/site/username)"`.
 
 ---
@@ -90,6 +90,12 @@ e si esegue com'è, con queste correzioni. **`dev` arriva da solo all'appliance 
 **Files:** Create `src/lib/integrations/unifi-map.ts`, `src/lib/integrations/__tests__/unifi-map.test.ts`.
 
 **Interfaces:** Produces: `mapUnifiDeviceType(t)`, `mapUnifiDevice(d)`, `mapUnifiPorts(d)`, `mapUnifiLldp(d)` e il tipo `UnifiDevice`.
+
+> **Già fatto nel passo 1 (12/10):** il tipo `UnifiDevice` (con `UnifiPort`, `UnifiLldpEntry`,
+> `UnifiUplink`) e `parseStatDeviceResponse` stanno in `src/lib/integrations/unifi-device.ts`,
+> coi **nomi dei campi del controller** e la `lldp_table` a livello di apparato. Il mapping li
+> importa da lì e i test partono da `parseStatDeviceResponse(fixture)`: i test d'esempio qui
+> sotto (LLDP dentro le porte, `lldp_chassis_id`) hanno la forma sbagliata — correzione 1.
 
 - [ ] **Step 1: test (falliscono)** — `unifi-map.test.ts`:
 ```ts
@@ -157,11 +163,20 @@ test("device senza MAC/port_table non crasha", () => {
 
 **Interfaces:** Produces: `createUnifiClient(cfg): UnifiClient` con `probe()` e `listDevices(): Promise<UnifiDevice[]>`.
 
-- [ ] **Step 1:** Leggere `src/lib/integrations/librenms-api.ts` (factory+probe) e `librenms-web-session.ts` (login cookie) come template.
-- [ ] **Step 2:** Implementare per `kind: "self_hosted"`: `POST ${url}/api/login` con `{username,password,remember:false}` (TLS self-signed → agent `rejectUnauthorized:false`), conservare cookie `unifises` + header `X-CSRF-Token` dalla risposta; poi `GET ${url}/api/s/${site}/stat/device` → `data.data` normalizzato in `UnifiDevice[]` (map dei campi grezzi: `mac,model,name,type,ip,state,version,serial,port_table,lldp_table`). `udm`/`cloud`: `throw new Error("backend non ancora implementato")` (fase D).
-- [ ] **Step 3:** `probe()` come LibreNMS: tenta login + 1 device; 401/403→auth, 5xx→server, ECONN/timeout→network.
-- [ ] **Step 4:** `npx tsc --noEmit && npm run lint`. (HTTP non unit-testato qui; verifica reale nel Task 4.)
-- [ ] **Step 5:** `git commit -m "feat(unifi): client controller self-hosted (session) + probe"`.
+- [x] **Step 1:** Leggere `src/lib/integrations/librenms-api.ts` (factory+probe) e `librenms-web-session.ts` (login cookie) come template.
+- [x] **Step 2:** Implementare per `kind: "self_hosted"`: `POST ${url}/api/login` con `{username,password,remember:false}` (TLS self-signed → agent `rejectUnauthorized:false`), conservare cookie `unifises` + header `X-CSRF-Token` dalla risposta; poi `GET ${url}/api/s/${site}/stat/device` → `data.data` normalizzato in `UnifiDevice[]` (map dei campi grezzi: `mac,model,name,type,ip,state,version,serial,port_table,lldp_table`). `udm`/`cloud`: `throw new Error("backend non ancora implementato")` (fase D).
+- [x] **Step 3:** `probe()` come LibreNMS: tenta login + 1 device; 401/403→auth, 5xx→server, ECONN/timeout→network.
+- [x] **Step 4:** `npx tsc --noEmit && npm run lint`. (HTTP non unit-testato qui; verifica reale nel Task 4.)
+- [x] **Step 5:** `git commit -m "feat(unifi): client controller self-hosted (session) + probe"`.
+
+> **Esito del passo 1 (12/10), dove differisce da sopra:** `createUnifiClient(cfg, pinStore)` —
+> il secondo argomento è obbligatorio (`unifiCertPinStore` da `config.ts`). Niente
+> `rejectUnauthorized:false` nudo: correzione 5, impronta SPKI fissata al primo uso riuscito
+> (`spkiPinFromDer` dell'edge), verificata sul socket che porta la richiesta; certificato diverso →
+> `reason: "cert"`, «certificato del controller cambiato». Solo `https://`. Richieste ammesse:
+> login, logout, `stat/device` (`isUnifiRequestAllowed`). `probe()` restituisce anche `devices`
+> (numero) e, sul certificato cambiato, `presentedPin`/`expectedPin` per l'azione di rinnovo.
+> HTTP provato su un controller finto TLS in locale (`unifi-api.test.ts`).
 
 ---
 

@@ -48,6 +48,9 @@ const CONTRACT: Contract[] = [
   // certificato nella configurazione → entrambe admin.
   { route: "integrations/unifi/sync", method: "POST", guard: "requireAdmin" },
   { route: "integrations/unifi/test-connection", method: "GET", guard: "requireAdmin" },
+  // l'impronta del certificato decide di quale controller fidarsi: admin.
+  { route: "integrations/unifi/cert-pin", method: "POST", guard: "requireAdmin" },
+  { route: "integrations/unifi/cert-pin", method: "DELETE", guard: "requireAdmin" },
   // route hub globali → superadmin (H3: requireSuperAdmin era definito ma inutilizzato)
   { route: "users", method: "POST", guard: "requireSuperAdmin" },
   { route: "users/[id]", method: "DELETE", guard: "requireSuperAdmin" },

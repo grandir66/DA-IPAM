@@ -97,6 +97,42 @@ export const unifiCertPinStore: UnifiCertPinStore = {
   clear: () => setSetting(KEY_UNIFI_CERT_PIN, ""),
 };
 
+/** Forma di un'impronta di `spkiPinFromDer`: sha256/ + base64 di 32 byte. */
+const SPKI_PIN_RE = /^sha256\/[A-Za-z0-9+/]{43}=$/;
+
+export type UnifiCertPinUpdate =
+  | { ok: true; certPin: string }
+  | { ok: false; status: 400 | 409; error: string };
+
+/**
+ * «Accetta la nuova impronta» della card UniFi: l'amministratore ha visto
+ * l'errore «certificato del controller cambiato» con le due impronte e
+ * conferma quella nuova. `replaces` è l'impronta che lui ha visto fissata
+ * (null = nessuna): se nel frattempo è cambiata si rifiuta (409) invece di
+ * sovrascrivere una scelta che non ha visto. L'impronta si scrive esatta,
+ * senza riaprire un primo uso in cui varrebbe qualunque certificato.
+ */
+export function acceptUnifiCertPin(pin: string, replaces: string | null): UnifiCertPinUpdate {
+  const next = normalizeSpkiPin(pin);
+  if (!SPKI_PIN_RE.test(next)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Impronta non valida: è attesa la forma sha256/ seguita da 44 caratteri base64",
+    };
+  }
+  const seen = replaces ? normalizeSpkiPin(replaces) : null;
+  if (unifiCertPinStore.get() !== seen) {
+    return {
+      ok: false,
+      status: 409,
+      error: "L'impronta fissata è cambiata nel frattempo: ripeti la prova di connessione",
+    };
+  }
+  unifiCertPinStore.set(next);
+  return { ok: true, certPin: next };
+}
+
 function readUnifiConfig(base: ComponentConfig): ComponentConfig {
   // Fail-closed: UniFi non ha modalità gestita; un valore vuoto o inatteso
   // nel DB vale "spento", mai "acceso per sbaglio".

@@ -33,6 +33,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   retention) vanno misurati prima e dopo sullo stesso file, sempre allo stesso
   modo. Il file si apre in sola lettura e l'output contiene solo numeri e nomi di
   colonna, mai MAC, IP o nomi del cliente: si può incollare in un documento.
+- **Banco di prova delle scansioni** (tappa 3, T3-16): il vero giro di scoperta della rete ora si può far girare in una prova con un esecutore finto, mentre una guardia fa fallire la prova se qualcosa prova a uscire davvero sulla rete. *Perché*: le correzioni delle scansioni che si accavallano e degli host vivi segnati spenti (INV-1, INV-2) vanno provate sul codice vero, e fin qui l'unico modo era mandare pacchetti veri. In produzione non cambia niente: la porta per le prove è vuota. Il doppio sa anche rallentare, trattenere fino a un segnale della prova o fallire, così due giri accavallati si possono mettere nell'ordine voluto; e la guardia copre anche le richieste DNS dirette e i processi lanciati in modo sincrono. Di contorno, i timer che puliscono l'avanzamento di una scansione finita non tengono più vivo il processo per cinque minuti.
 
 - **Controller UniFi come fonte di dati (spento finché non lo si accende).** A
   DTS il controller UniFi gestisce 74 apparati, ma per DA-IPAM erano solo host:
@@ -121,6 +122,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   ripiegava in silenzio su DEFAULT: le scritture finivano nel database sbagliato.
   `/api/health` verifica il database sull'hub invece che passare dal facade, che
   senza contesto è proprio un ripiego.
+- **Un ping che non può girare non spegne più gli host** (tappa 3, T3-19, INV-2): il ping ora ha tre esiti, «vivo», «nessuna risposta» e «sconosciuto». Quando il comando di ping non può partire o esce con un errore suo (e non per mancanza di risposta), l'indirizzo resta com'era invece di essere segnato spento; se nessun indirizzo ha avuto un esito vero, il giro finisce «fallito» senza toccare gli host. *Perché*: prima ogni errore del ping valeva «host spento», quindi un problema della macchina che scansiona poteva spegnere in un colpo tutta una rete. Il codice di uscita si legge secondo la piattaforma (Linux e macOS lo usano in modo diverso), e un ping fermato da fuori (non per il suo tempo massimo) conta come sconosciuto. Vale in tre punti: la scoperta della rete, il controllo periodico degli host noti (che con un esito sconosciuto non scrive né lo stato né lo storico) e l'agente remoto, che ora riporta anche lui l'esito sconosciuto. Un agente remoto non ancora aggiornato continua a rispondere come prima, cioè a segnare spento ciò che non ha potuto provare, finché non riceve la nuova versione.
 
 - **Ordinamenti giusti nelle liste paginate.** Nelle liste DHCP e Subnet gli IP e
   i CIDR si ordinavano come testo («10.0.0.10» prima di «10.0.0.2»); la colonna

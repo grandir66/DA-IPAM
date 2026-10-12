@@ -17,7 +17,7 @@ from da_invent_agent.models import (
 def test_ping_result_serializza_campi_minimi() -> None:
     pr = PingResult(ip="10.0.0.1", alive=False)
     payload = pr.model_dump()
-    assert payload == {"ip": "10.0.0.1", "alive": False, "latency_ms": None, "ttl": None}
+    assert payload == {"ip": "10.0.0.1", "alive": False, "latency_ms": None, "ttl": None, "error": None}
 
 
 def test_ping_result_round_trip_con_latency() -> None:

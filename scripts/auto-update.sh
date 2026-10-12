@@ -64,5 +64,16 @@ if [ "$LOCAL" = "$REMOTE" ]; then
   exit 0
 fi
 
+# Solo documentazione: si aggiornano i file senza build né riavvio. Ogni commit di
+# docs su dev riavviava DTS e interrompeva il controllo host in corso (2026-10-12).
+# L'app legge i .md dal disco a ogni richiesta, quindi non serve la build.
+CAMBIATI="$(git diff --name-only "$LOCAL" "$REMOTE")"
+if [ -n "$CAMBIATI" ] && ! printf '%s\n' "$CAMBIATI" | grep -q -v -E '^docs/|\.md$'; then
+  if git merge --ff-only --quiet "origin/$BRANCH"; then
+    echo "[auto-update] solo documentazione ($(git rev-parse --short HEAD)): file aggiornati, nessun riavvio."
+    exit 0
+  fi
+fi
+
 echo "[auto-update] nuovo commit su origin/$BRANCH ($(git rev-parse --short "$REMOTE")): aggiorno..."
 exec "$SCRIPT_DIR/update.sh" --restart

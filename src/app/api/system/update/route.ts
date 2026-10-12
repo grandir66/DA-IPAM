@@ -546,11 +546,14 @@ export async function POST(request: NextRequest) {
       setTimeout(() => {
         const projectRoot = getProjectRoot();
 
-        // Tentativo 1: systemd (produzione tipica)
-        try {
-          execSync("systemctl is-active da-invent", { timeout: 3000, stdio: "pipe" });
-          // Il servizio systemd esiste ed è attivo → usa systemctl restart
-          const restarter = spawn("systemctl", ["restart", "da-invent"], {
+        // Tentativo 1: systemd (produzione tipica). Il servizio si chiama da-invent
+        // sulle installazioni classiche e da-ipam sulle appliance consolidate: prima
+        // si cercava solo da-invent, e su DTS dopo "Aggiorna" si finiva nel
+        // self-restart; uscendo con 0 systemd chiudeva tutto senza riavviare e l'app
+        // restava spenta finché qualcuno non la riavviava a mano (2026-10-12, 2 volte).
+        const service = activeSystemdService();
+        if (service) {
+          const restarter = spawn("systemctl", ["restart", service], {
             detached: true,
             stdio: "ignore",
             cwd: projectRoot,
@@ -558,8 +561,6 @@ export async function POST(request: NextRequest) {
           restarter.unref();
           process.exit(0);
           return;
-        } catch {
-          // systemd non disponibile o servizio non registrato → self-restart
         }
 
         // Tentativo 2: PM2
@@ -608,4 +609,17 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ error: "Azione non supportata" }, { status: 400 });
+}
+
+/** Il servizio systemd attivo fra quelli dell'applicazione, o null se non c'è systemd. */
+function activeSystemdService(): string | null {
+  for (const name of ["da-invent", "da-ipam"]) {
+    try {
+      execSync(`systemctl is-active ${name}`, { timeout: 3000, stdio: "pipe" });
+      return name;
+    } catch {
+      /* non attivo o systemd assente */
+    }
+  }
+  return null;
 }

@@ -106,7 +106,7 @@ export default function SetupPage() {
           <div className="flex justify-center mb-4">
             <img src="/logo-color.png" alt="Logo" className="h-14 w-64 object-contain" />
           </div>
-          <CardTitle className="text-2xl font-bold text-primary">DA-INVENT</CardTitle>
+          <CardTitle className="text-2xl font-bold text-primary">DA-IPAM</CardTitle>
           <CardDescription>
             Installazione per un cliente: crea il database del cliente e l&apos;account amministratore
           </CardDescription>

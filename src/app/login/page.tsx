@@ -54,7 +54,7 @@ export default function LoginPage() {
       // ma qui no. Dirlo, invece di rimandare in un giro che rifarebbe lo
       // stesso percorso all'infinito.
       setDomarcErrore(
-        "Il tuo account Domarc è valido, ma non risulta un'utenza DA-INVENT. Chiedi a un amministratore.",
+        "Il tuo account Domarc è valido, ma non risulta un'utenza DA-IPAM. Chiedi a un amministratore.",
       );
     } catch {
       setDomarcErrore("Servizio di autenticazione non raggiungibile. Usa username e password.");
@@ -175,11 +175,11 @@ export default function LoginPage() {
           <div className="flex justify-center mb-4 rounded-md bg-[#0D2537] px-6 py-4">
             <img
               src="/logo-white.png"
-              alt="DA-INVENT"
+              alt="DA-IPAM"
               className="h-12 w-auto max-w-[260px] object-contain"
             />
           </div>
-          <CardTitle className="text-2xl font-bold text-primary">DA-INVENT</CardTitle>
+          <CardTitle className="text-2xl font-bold text-primary">DA-IPAM</CardTitle>
           <CardDescription>Accedi al sistema di gestione IP</CardDescription>
         </CardHeader>
         <CardContent>

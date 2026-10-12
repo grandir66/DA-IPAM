@@ -228,7 +228,7 @@ export function UpdateChecker() {
               Aggiornamento Sistema
             </DialogTitle>
             <DialogDescription>
-              Gestisci gli aggiornamenti di DA-INVENT
+              Gestisci gli aggiornamenti di DA-IPAM
             </DialogDescription>
           </DialogHeader>
 

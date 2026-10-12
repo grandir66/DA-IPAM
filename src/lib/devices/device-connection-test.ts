@@ -282,7 +282,7 @@ export async function runProvisionalDeviceTest(provisional: ProvisionalDevice): 
 
 export function getWindowsHint(errorMessage: string): string {
   if (errorMessage.includes("pywinrm") || errorMessage.includes("Modulo Python")) {
-    return " Sul server Linux che ospita DA-INVENT installa pywinrm: ~/.da-invent-venv/bin/pip install pywinrm requests-ntlm requests-credssp oppure esegui scripts/install.sh come root (crea il venv). Opzioni: WINRM_PYTHON, WINRM_TRANSPORT (ntlm/credssp) in .env.local.";
+    return " Sul server Linux che ospita DA-IPAM installa pywinrm: ~/.da-invent-venv/bin/pip install pywinrm requests-ntlm requests-credssp oppure esegui scripts/install.sh come root (crea il venv). Opzioni: WINRM_PYTHON, WINRM_TRANSPORT (ntlm/credssp) in .env.local.";
   }
   if (
     errorMessage.includes("NTLM") ||
@@ -295,7 +295,7 @@ export function getWindowsHint(errorMessage: string): string {
     return " Assegna una credenziale di tipo Windows al dispositivo.";
   }
   if (errorMessage.includes("Connessione rifiutata") || errorMessage.includes("ECONNREFUSED")) {
-    return " Su Windows: winrm quickconfig e firewall in ingresso verso questo server (5985/5986). DA-INVENT usa solo WinRM, non WMI su RPC.";
+    return " Su Windows: winrm quickconfig e firewall in ingresso verso questo server (5985/5986). DA-IPAM usa solo WinRM, non WMI su RPC.";
   }
   return "";
 }

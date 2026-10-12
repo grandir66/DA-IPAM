@@ -146,9 +146,19 @@ if [ -f "$APP_DIR/scripts/verify-install.sh" ]; then
   if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
     PORT="$(grep -E '^PORT=' "$APP_DIR/.env.local" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
     VERIFY_ARGS=(--url "http://127.0.0.1:${PORT:-3001}")
+    # Il servizio appena riavviato impiega qualche secondo ad ascoltare: senza
+    # attesa verify-install falliva sempre, con un avviso che rimandava a WinRM
+    # (DTS, 2026-10-12). Si aspetta fino a 60 s una risposta qualsiasi, http o https.
+    for _ in $(seq 1 30); do
+      if curl -s -o /dev/null --max-time 2 "http://127.0.0.1:${PORT:-3001}/api/health" \
+        || curl -sk -o /dev/null --max-time 2 "https://127.0.0.1:${PORT:-3001}/api/health"; then
+        break
+      fi
+      sleep 2
+    done
   fi
   bash "$APP_DIR/scripts/verify-install.sh" "${VERIFY_ARGS[@]}" || {
-    echo "AVVISO: verify-install fallito — controllare scripts/setup-winrm-venv.sh" >&2
+    echo "AVVISO: verify-install fallito (dettagli sopra)" >&2
   }
 fi
 

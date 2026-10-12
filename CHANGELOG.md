@@ -56,6 +56,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   auto-riavvio che systemd interpretava come uscita normale: chiudeva tutto e
   l'app restava spenta finché qualcuno non la riavviava a mano (successo due
   volte il 12/10). Ora si riavvia il servizio attivo, quale che sia il nome.
+- **Il controllo finale dell'aggiornamento non segnala più un falso errore.**
+  Partiva un secondo dopo il riavvio, quando l'app non ascoltava ancora, e
+  falliva sempre con un avviso che rimandava a WinRM. Ora aspetta fino a 60
+  secondi che l'app risponda.
 - **L'aggiornamento automatico non riavvia per i commit di sola
   documentazione.** Un commit che cambia solo `docs/` o file `.md` aggiorna i
   file senza build né riavvio: prima ogni nota pubblicata riavviava DTS e

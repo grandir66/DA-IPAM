@@ -8,6 +8,17 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunte
 
+- **Misura del database di un tenant, in sola lettura** (tappa 3, strumento per
+  DB-1, DB-2, DB-3). `npx tsx scripts/misura-db-tenant.ts <file.db>` stampa righe
+  e spazio per tabella, righe al giorno dello storico MAC-IP, coppie già viste,
+  MAC con più IP, forme dei MAC e delle date per colonna, righe oltre 30/90/180
+  giorni e ultima scansione per rete e tipo (`--json` per la forma macchina,
+  `--senza-spazio` per saltare il calcolo dello spazio sui file grandi).
+  Perché: gli interventi della tappa 3 sul database (chiave dei MAC, storico,
+  retention) vanno misurati prima e dopo sullo stesso file, sempre allo stesso
+  modo. Il file si apre in sola lettura e l'output contiene solo numeri e nomi di
+  colonna, mai MAC, IP o nomi del cliente: si può incollare in un documento.
+
 - **Controller UniFi come fonte di dati (spento finché non lo si accende).** A
   DTS il controller UniFi gestisce 74 apparati, ma per DA-IPAM erano solo host:
   nessuno fra i dispositivi di rete, nessuna porta, nessun vicino LLDP, e la

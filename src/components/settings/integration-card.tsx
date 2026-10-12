@@ -9,11 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Terminal } from "lucide-react";
-import type { IntegrationComponent, IntegrationMode, ComponentConfig, InstallJob, ContainerStatus } from "@/lib/integrations/types";
+import type { ContainerIntegrationComponent, IntegrationMode, ComponentConfig, InstallJob, ContainerStatus } from "@/lib/integrations/types";
 import { containerRemovalConfirmText } from "@/lib/modules/uninstall-copy";
 
 interface Props {
-  component: IntegrationComponent;
+  /** Solo i componenti installati come container: UniFi ha la sua scheda (UnifiCard). */
+  component: ContainerIntegrationComponent;
   title: string;
   description: string;
   dockerAvailable: boolean;

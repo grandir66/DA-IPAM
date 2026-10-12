@@ -20,7 +20,7 @@
 import { PATCH_MODULE_TABLES } from "@/lib/patch/schema";
 import { INVENTORY_AGENT_TABLES } from "@/lib/inventory-agent/schema";
 import { MC_TABLES } from "@/lib/integrations/meshcentral/schema";
-import type { IntegrationComponent } from "@/lib/integrations/types";
+import type { ContainerIntegrationComponent } from "@/lib/integrations/types";
 
 /** Moduli che /api/features/[key]/uninstall sa disinstallare. */
 export const UNINSTALLABLE_FEATURES = [
@@ -137,7 +137,7 @@ export function edgeImportReplaceConfirmText(counts: { runs: number; findings: n
 }
 
 /** Container che «Elimina tutto e ricrea» toglie oltre a quello principale. */
-const DIPENDENZE_DOCKER: Record<IntegrationComponent, string> = {
+const DIPENDENZE_DOCKER: Record<ContainerIntegrationComponent, string> = {
   librenms: "MariaDB, Redis e il dispatcher dei grafici",
   graylog: "MongoDB e OpenSearch",
   loki: "",
@@ -154,7 +154,7 @@ const DIPENDENZE_DOCKER: Record<IntegrationComponent, string> = {
  * i dati raccolti fino a quel momento non tornano.
  */
 export function containerRemovalConfirmText(
-  component: IntegrationComponent,
+  component: ContainerIntegrationComponent,
   title: string,
   action: "remove" | "remove-all",
 ): string {

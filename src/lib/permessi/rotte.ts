@@ -160,10 +160,12 @@ export const ECCEZIONI: Eccezione[] = [
 /**
  * Guardie da alzare. Quando una guardia sale al livello atteso la prova fallisce
  * finché la voce non si toglie: l'elenco si svuota da solo.
+ *
+ * Vuoto dal 12/10 (T3-30): l'ultimo debito (scritture del proxy Wazuh, SEC-6) è
+ * chiuso. La prova `rotte-censite.test.ts` lo tiene vuoto: un debito nuovo è una
+ * scelta da scrivere anche lì, non una riga che si aggiunge di passaggio.
  */
-export const DEBITI: Debito[] = [
-  { rotta: "/api/integrations/proxy/wazuh/[[...path]]", metodi: ["POST", "PUT", "PATCH", "DELETE"], codice: "SEC-6" },
-];
+export const DEBITI: Debito[] = [];
 
 export interface GestoreCensito extends GestoreRilevato {
   rotta: string;

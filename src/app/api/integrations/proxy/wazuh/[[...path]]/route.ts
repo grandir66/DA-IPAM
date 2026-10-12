@@ -19,8 +19,13 @@
  * `server.basePath: "/api/integrations/proxy/wazuh"` +
  * `server.rewriteBasePath: true` in /etc/wazuh-dashboard/opensearch_dashboards.yml.
  * Senza quella config: navigazione base OK, alcune view dinamiche no.
+ *
+ * Permessi (T3-30, SEC-6): le letture (GET, HEAD, OPTIONS) bastano a chi ha una
+ * sessione; le scritture verso la dashboard solo all'admin, come ogni altra
+ * scrittura di `/api`. Nessuna pagina di DA-IPAM usa questo proxy (i link
+ * vanno all'indirizzo diretto della dashboard).
  */
-import { requireAuth, isAuthError } from "@/lib/api-auth";
+import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { proxyRequest } from "@/lib/integrations/reverse-proxy";
 
@@ -29,10 +34,19 @@ const BASE_PATH = "/api/integrations/proxy/wazuh";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-async function handle(req: Request): Promise<Response> {
+async function lettura(req: Request): Promise<Response> {
   const authCheck = await requireAuth();
   if (isAuthError(authCheck)) return authCheck;
+  return inoltra(req);
+}
 
+async function scrittura(req: Request): Promise<Response> {
+  const authCheck = await requireAdmin();
+  if (isAuthError(authCheck)) return authCheck;
+  return inoltra(req);
+}
+
+async function inoltra(req: Request): Promise<Response> {
   const cfg = getWazuhConfig();
   if (!cfg.enabled || !cfg.url) {
     return new Response("Wazuh non configurato", { status: 404 });
@@ -67,4 +81,5 @@ async function handle(req: Request): Promise<Response> {
   });
 }
 
-export { handle as GET, handle as POST, handle as PUT, handle as PATCH, handle as DELETE, handle as HEAD, handle as OPTIONS };
+export { lettura as GET, lettura as HEAD, lettura as OPTIONS };
+export { scrittura as POST, scrittura as PUT, scrittura as PATCH, scrittura as DELETE };

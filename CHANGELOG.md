@@ -8,6 +8,15 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **Scritture verso la dashboard Wazuh dal proxy solo per gli admin (SEC-6).**
+  Il proxy della dashboard Wazuh accettava ogni metodo da chiunque avesse una
+  sessione, viewer compresi: le letture restavano a tutti, ma anche le
+  scritture, a differenza di ogni altra scrittura di `/api`. Ora le letture
+  (GET, HEAD, OPTIONS) restano a chi ha una sessione e le scritture chiedono
+  l'admin. Era l'ultimo debito del censimento delle guardie, che adesso è vuoto
+  e resta tale (una prova lo tiene vuoto). **Cambia sulle installazioni del
+  canale `dev`** solo in teoria: nessuna pagina di DA-IPAM usa questo proxy (i
+  collegamenti vanno all'indirizzo diretto della dashboard).
 - **Accesso con l'account Domarc solo per chi è dichiarato su DA-IPAM, e solo
   su una risposta valida di DA-Auth (SEC-4).** La dichiarazione su DA-Auth
   era richiesta solo per creare un'utenza nuova: chi aveva già un'utenza
@@ -95,6 +104,19 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   anche una aggiunta domani. `scripts/audit-api-auth.ts` usa lo stesso
   rilevatore e scrive la matrice nel percorso che gli si passa. Nessun
   comportamento cambia: sono solo prove.
+- **Verifica dei permessi dal di fuori, in locale
+  (`scripts/verifica-permessi.sh`).** Il censimento legge il codice; uno strato
+  che sta prima del gestore, o una rotta che fa qualcosa prima della guardia,
+  lì non si vede. La verifica chiede all'applicazione accesa in locale, come
+  farebbe un browser: crea un utente in sola lettura di prova (password
+  generata sul posto, mai stampata), fa solo letture senza sessione e da viewer
+  sulle rotte che il censimento indica, controlla che i rifiuti siano rifiuti e
+  che le configurazioni delle integrazioni arrivino senza segreti, poi toglie
+  l'utente. Rifiuta un indirizzo che non sia locale: un'utenza di prova su un
+  server vero sarebbe una scrittura in produzione. Il giudizio sulle risposte
+  ha una prova sua (`verifica-esterna.test.ts`) che fa fallire le risposte del
+  codice di prima. `docs/auth-matrix.md` è rigenerata dal censimento (452
+  gestori, nessun debito, nessuna rotta scoperta) e torna a valere.
 
 - **Controller UniFi come fonte di dati (spento finché non lo si accende).** A
   DTS il controller UniFi gestisce 74 apparati, ma per DA-IPAM erano solo host:

@@ -20,6 +20,7 @@ import { rilevaGestori } from "../rilevatore-guardie";
 import {
   censisci,
   consentitiDaAuthConfig,
+  DEBITI,
   ECCEZIONI,
   gestoriDellAlbero,
   type Elenchi,
@@ -286,6 +287,22 @@ test("albero: i due proxy espongono i sette metodi e il rilevatore li vede tutti
 test("albero: ogni gestore ha la guardia attesa, un'eccezione con motivo o un debito con codice", () => {
   const { problemi } = censisci(ALBERO.gestori, CONSENTITI);
   assert.deepEqual(problemi, []);
+});
+
+/**
+ * T3-30 (12/10): la tappa 3a ha chiuso tutti i debiti di guardia; l'ultimo erano
+ * le scritture del proxy Wazuh aperte a chi ha solo una sessione (SEC-6). Un
+ * debito nuovo si dichiara cambiando anche questa prova, di proposito.
+ */
+test("albero: nessun debito di guardia aperto", () => {
+  assert.deepEqual(DEBITI, []);
+});
+
+test("albero: il proxy Wazuh accetta scritture solo dall'admin, letture da chi ha una sessione", () => {
+  const proxy = ALBERO.gestori.filter((g) => g.rotta === "/api/integrations/proxy/wazuh/[[...path]]");
+  const guardia = (m: string) => proxy.find((g) => g.metodo === m)?.guardia;
+  for (const m of ["POST", "PUT", "PATCH", "DELETE"]) assert.equal(guardia(m), "admin", m);
+  for (const m of ["GET", "HEAD", "OPTIONS"]) assert.equal(guardia(m), "auth", m);
 });
 
 test("albero: le eccezioni mascherate rimandano a una prova che esiste", () => {

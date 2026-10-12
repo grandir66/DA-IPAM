@@ -41,7 +41,7 @@ Versione corrente: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non sc
 
 - `.claude/`: hook PostToolUse (tsc incrementale) + PreToolUse (blocca force-push main e `--no-verify`); skill `release`, `deploy-prod`, `winrm-kerberos`; rules `api-routes`, `client-components`, `db-access`.
 - Test: `npm test` (node test runner, 121 file, **1.092 test verdi** il 2026-10-12, 5 s). Lanciarli con `DA_INVENT_DATA_DIR` puntato a una cartella temporanea: alcuni test aprono hub/tenant DB. Type-check: `npx tsc --noEmit` (pulito). Lint: 0 errori, 81 avvisi.
-- CI `.github/workflows/ci.yml`: Node 22, lint advisory, type-check, test, build, pytest agente. **Nessun test di interfaccia né di autorizzazione delle API.**
+- CI `.github/workflows/ci.yml`: Node 22, lint advisory, type-check, test, build, pytest agente. Nessun test di interfaccia. **Permessi delle API** (dal 12/10, T3-24/T3-30): il censimento `src/lib/permessi/rotte.ts` (prova `rotte-censite.test.ts`, debiti vuoti) e la verifica dal di fuori `scripts/verifica-permessi.sh`, **solo in locale** con l'app accesa; matrice in `docs/auth-matrix.md` (`npx tsx scripts/audit-api-auth.ts docs/auth-matrix.md`).
 
 ## 6. Stato & igiene (fotografia 2026-10-12)
 
@@ -50,7 +50,7 @@ Versione corrente: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non sc
 - **Nuovo (2026-10-12, ramo `feat/topology-map`, v0.3.259)**: feature **mappa topologia** interattiva (`/topology`) — React Flow + dagre, logica pura in `src/lib/topology/` (match/stato/grafo/layout, TDD), tabella tenant `topology_position`, API `GET/PUT /api/topology[/positions]`, stato a 4 livelli dal monitoraggio (host/LibreNMS/anomalie). Spec/piano/ADR in `docs/superpowers/{specs,plans}/2026-10-12-topology-map*` e `docs/adr/0003-topology-map.md`. **Da mergiare in `dev`.** Fase 2 (export drawio, collector API controller UniFi multi-backend) = piano separato.
 - Rami remoti già interamente in `dev`, da potare: `auth/accesso-domarc`, `feat/ad-health-native`, `feature/attribution-fase-3-probe`, `fix/probe-real-world`. `claude/project-thread-7swirj` ha 18 commit non in `dev`: da rivedere prima di toccarlo. Worktree orfani e stash del 07/25: non ci sono più.
 - Produzione: in `data/tenants/` oltre ai tenant registrati (`70791`, `70791a`) ci sono `DEFAULT.db` (orfano, vedi §7) e un `.db` di 0 byte senza nome (apertura con codice tenant vuoto).
-- Doc superata: gli audit di maggio-luglio (`docs/audit-bug-sintesi.md`, `docs/audit/`, `WAVE-0-report.md`, `auth-matrix.md`, `db-drift.md`) — lo stato attuale di ogni loro punto è nell'analisi del §8. `scripts/verify-bug-report.ts` è rotto (cerca una rotta rimossa). `ROADMAP-EVOLUZIONE.md` superata; `CHANGELOG.md` non rispecchia le release recenti. `docs/CLAUDE-legacy-20260511.md` = narrativa storica intenzionale.
+- Doc superata: gli audit di maggio-luglio (`docs/audit-bug-sintesi.md`, `docs/audit/`, `WAVE-0-report.md`, `db-drift.md`) — lo stato attuale di ogni loro punto è nell'analisi del §8. `scripts/verify-bug-report.ts` è rotto (cerca una rotta rimossa). `ROADMAP-EVOLUZIONE.md` superata; `CHANGELOG.md` non rispecchia le release recenti. `docs/CLAUDE-legacy-20260511.md` = narrativa storica intenzionale.
 
 ## 8. Analisi di sistema (2026-10-12)
 

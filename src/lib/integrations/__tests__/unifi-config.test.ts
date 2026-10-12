@@ -1,16 +1,8 @@
 // Configurazione hub dell'integrazione UniFi (tappa 2, Task 1).
-// Hub DB isolato: va impostato PRIMA di importare moduli che toccano db-hub
-// (vedi wazuh-config.test.ts per il perché).
-import os from "node:os";
-import path from "node:path";
-import fs from "node:fs";
-
-process.env.ENCRYPTION_KEY ||= "test-encryption-key-unifi-cfg01";
-process.env.DA_IPAM_HUB_DB_PATH = path.join(
-  os.tmpdir(),
-  `da-ipam-test-hub-unifi-config-${process.pid}.db`,
-);
-
+// Hub DB isolato: `support/hub-isolato` va importato PER PRIMO (il perché sta
+// lì: assegnato qui in testa, il percorso arrivava tardi e la prova scriveva
+// nell'hub condiviso della cartella dati).
+import { removeTestHubDb } from "./support/hub-isolato";
 import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb, getSetting, setSetting } from "@/lib/db-hub";
@@ -27,13 +19,7 @@ beforeEach(() => {
 
 after(() => {
   closeHubDb();
-  for (const suffix of ["", "-wal", "-shm"]) {
-    try {
-      fs.rmSync(process.env.DA_IPAM_HUB_DB_PATH + suffix, { force: true });
-    } catch {
-      /* ignore */
-    }
-  }
+  removeTestHubDb();
 });
 
 test("nasce spenta: modo disabled, controller self_hosted, site default, nessun pin", () => {

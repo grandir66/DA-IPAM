@@ -8,7 +8,9 @@ Versione corrente: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non sc
 
 ## 1. Cos'è
 
-**DA-INVENT** (alias DA-IPAM): IPAM/inventario **multi-tenant** per appliance cliente Domarc + hub di **9 moduli** security/network. Next.js 16 App Router + React 19 + TS strict, custom server [server.ts](server.ts) (tsx) che ospita lo scheduler node-cron. better-sqlite3 WAL, NextAuth v5 beta, Tailwind v4 + shadcn v4 (`@base-ui/react`), Zod v4.
+> **Decisione 2026-10-12 (Riccardo) — non riaprire: la logica multi-tenant è morta, un'installazione = un cliente.** Il codice resta a tenant (hub + un DB per tenant) e `withTenantFromSession` resta obbligatorio, perché senza contesto si scrive in `DEFAULT.db` e i dati spariscono. Ma il tenant **non è un confine di sicurezza**: passaggi di un utente fra tenant, dati di un cliente visibili a un altro, Wazuh o LibreNMS condivisi fra clienti **non sono difetti da correggere**.
+
+**DA-INVENT** (alias DA-IPAM): IPAM/inventario per appliance cliente Domarc (nato multi-tenant, vedi decisione sopra) + hub di **9 moduli** security/network. Next.js 16 App Router + React 19 + TS strict, custom server [server.ts](server.ts) (tsx) che ospita lo scheduler node-cron. better-sqlite3 WAL, NextAuth v5 beta, Tailwind v4 + shadcn v4 (`@base-ui/react`), Zod v4.
 
 - **Hub + spoke**: un DB SQLite per tenant (`data/tenants/<CODE>.db`) + `data/hub.db` (utenti, registry tenant, settings globali, profili template). Facade: `src/lib/db.ts` → `db-tenant.ts` / `db-hub.ts`; contesto tenant via `withTenantFromSession()` (`src/lib/api-tenant.ts`, ~65 route).
 - **Nessun framework migrazioni**: `ALTER TABLE` idempotente inline negli `*-schema.ts`.

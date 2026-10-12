@@ -50,6 +50,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   nuova non partiva mai. Ora un ambiente senza `pip` si ricrea, un guasto di
   WinRM (funzione facoltativa) è solo un avviso, e il riavvio cerca il servizio
   attivo (`da-invent` o `da-ipam`) invece del solo `da-invent`.
+- **Un job non parte più due volte nello stesso processo.** Quando una pagina
+  salvava la configurazione dei job (job, AD, Wazuh, MeshCentral, Scanner-Edge,
+  import moduli), lo scheduler veniva ricaricato da una seconda copia del suo
+  modulo, che non vedeva i cron già attivi: non li fermava e ne aggiungeva
+  altri. Su DTS, il 12/10 alle 15:04, il controllo degli host è partito due
+  volte insieme. Ora l'elenco dei cron è unico per processo.
 - **Tabella ARP: si vede quando la lista è troncata.** Mostra al massimo 500
   righe; arrivata al limite, ora lo dice e invita a restringere con i filtri,
   invece di tagliare in silenzio.

@@ -21,9 +21,11 @@ import { SCHEDULED_JOB_TYPES, type ScheduledJobType } from "@/lib/scheduled-job-
 import type { ScheduledJob, ScheduledJobInput } from "@/types";
 
 const T = "TESTSCHEDJOBSV8";
+const T_NUOVO = "TESTSCHEDJOBSV8NUOVO";
 
 after(() => {
   deleteTenantDatabase(T);
+  deleteTenantDatabase(T_NUOVO);
   closeHubDb();
   removeTestHubDb();
 });
@@ -81,6 +83,21 @@ function dbV7(ddl = V7_DDL): Database.Database {
   db.exec("CREATE TABLE networks (id INTEGER PRIMARY KEY AUTOINCREMENT, cidr TEXT NOT NULL UNIQUE, name TEXT NOT NULL)");
   db.exec(ddl);
   return db;
+}
+
+/**
+ * Tabella e indici di scheduled_jobs come li ha scritti SQLite, a meno di spazi
+ * e virgolette (un RENAME scrive il nome fra virgolette). Coglie quello che
+ * PRAGMA table_info non mostra: vincoli di tabella (UNIQUE, CHECK) e indici.
+ */
+function oggettiJobs(db: Database.Database): Array<{ type: string; name: string; sql: string | null }> {
+  const norm = (sql: string | null) =>
+    sql === null ? null : sql.replace(/"/g, "").replace(/\s+/g, " ").replace(/\(\s/g, "(").replace(/\s\)/g, ")").trim();
+  return (
+    db
+      .prepare("SELECT type, name, sql FROM sqlite_master WHERE tbl_name = 'scheduled_jobs' ORDER BY type, name")
+      .all() as Array<{ type: string; name: string; sql: string | null }>
+  ).map((o) => ({ ...o, sql: norm(o.sql) }));
 }
 
 function dbNuovo(): Database.Database {
@@ -167,6 +184,11 @@ test("DB tenant vero col CHECK della v7 e righe dentro: aperto con getTenantDb p
     db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND tbl_name='scheduled_jobs' AND name='idx_scheduled_jobs_enabled_next'").get(),
     "indice idx_scheduled_jobs_enabled_next assente dopo la v8",
   );
+  // Tabella e indici uguali, testo compreso, a quelli di un tenant nuovo
+  // (TENANT_SCHEMA_SQL + TENANT_INDEXES_SQL): la v8 riscrive il DDL a mano e
+  // l'indice ha una terza copia, una divergenza non la vedrebbe nessun PRAGMA.
+  deleteTenantDatabase(T_NUOVO);
+  assert.deepEqual(oggettiJobs(db), oggettiJobs(getTenantDb(T_NUOVO)));
   // Il job unifi_sync non si crea da solo.
   assert.equal(
     (db.prepare("SELECT COUNT(*) AS n FROM scheduled_jobs WHERE job_type = 'unifi_sync'").get() as { n: number }).n,

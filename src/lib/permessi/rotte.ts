@@ -138,6 +138,14 @@ export const ECCEZIONI: Eccezione[] = [
   { rotta: "/api/devices/[id]/credentials", metodi: ["GET"], tipo: "mascherata", guardia: "sessione", motivo: "password in linea sostituita dalla maschera", prova: PROVA_MASCHERATE },
   { rotta: "/api/hosts/[id]/credentials", metodi: ["GET"], tipo: "mascherata", guardia: "sessione", motivo: "solo le associazioni host-credenziale, nessun campo cifrato", prova: PROVA_MASCHERATE },
   { rotta: "/api/networks/[id]/credentials", metodi: ["GET"], tipo: "mascherata", guardia: "sessione", motivo: "solo le associazioni rete-credenziale, nessun campo cifrato", prova: PROVA_MASCHERATE },
+  {
+    rotta: "/api/integrations/[component]",
+    metodi: ["GET"],
+    tipo: "mascherata",
+    guardia: "auth",
+    motivo: "token e password vuoti con i flag «impostato» per chi non è admin (SEC-5)",
+    prova: "src/lib/permessi/__tests__/politica.test.ts",
+  },
 ];
 
 /**
@@ -145,8 +153,6 @@ export const ECCEZIONI: Eccezione[] = [
  * finché la voce non si toglie: l'elenco si svuota da solo.
  */
 export const DEBITI: Debito[] = [
-  { rotta: "/api/integrations/[component]", metodi: ["GET"], codice: "SEC-5" },
-  { rotta: "/api/integrations/install-progress/[jobId]", metodi: ["GET"], codice: "SEC-13" },
   { rotta: "/api/integrations/proxy/librenms/[[...path]]", metodi: ["POST", "PUT", "PATCH", "DELETE"], codice: "SEC-6" },
   { rotta: "/api/integrations/proxy/wazuh/[[...path]]", metodi: ["POST", "PUT", "PATCH", "DELETE"], codice: "SEC-6" },
 ];

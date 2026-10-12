@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Terminal } from "lucide-react";
 import type { ContainerIntegrationComponent, IntegrationMode, ComponentConfig, InstallJob, ContainerStatus } from "@/lib/integrations/types";
 import { containerRemovalConfirmText } from "@/lib/modules/uninstall-copy";
+import type { ConfigIntegrazioneVista } from "@/lib/permessi/politica";
 
 interface Props {
   /** Solo i componenti installati come container: UniFi ha la sua scheda (UnifiCard). */
@@ -23,7 +24,8 @@ interface Props {
 }
 
 interface ApiState {
-  config: ComponentConfig;
+  /** Per chi non è admin i segreti arrivano vuoti, con i flag «impostato». */
+  config: ConfigIntegrazioneVista;
   containerStatus: ContainerStatus | null;
   browserUrl?: string;
 }
@@ -245,6 +247,9 @@ export function IntegrationCard({ component, title, description, dockerAvailable
 
   const containerRunning = state?.containerStatus?.running ?? false;
   const isManaged = localConfig.mode === "managed";
+  // Il valore c'è per l'admin; per chi non lo vede resta il flag «impostato».
+  const apiTokenImpostato = !!localConfig.apiToken || !!state?.config.apiTokenSet;
+  const adminPasswordImpostata = !!localConfig.adminPassword || !!state?.config.adminPasswordSet;
   const isExternal = localConfig.mode === "external";
   const isDisabled = localConfig.mode === "disabled";
 
@@ -358,7 +363,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
                   onChange={(e) => setLocalConfig((c) => ({ ...c, apiToken: e.target.value }))}
                 />
               </div>
-            ) : isManaged && localConfig.apiToken ? (
+            ) : isManaged && apiTokenImpostato ? (
               <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                 API token configurato automaticamente
@@ -401,7 +406,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             )}
 
             {/* URL di accesso per il prossimo install (managed, librenms/graylog) */}
-            {isManaged && !containerRunning && !localConfig.apiToken && (component === "librenms" || component === "graylog") && (
+            {isManaged && !containerRunning && !apiTokenImpostato && (component === "librenms" || component === "graylog") && (
               <div>
                 <Label className="text-xs text-muted-foreground">
                   URL di accesso <span className="text-muted-foreground/60">(rilevato automaticamente se vuoto)</span>
@@ -420,9 +425,9 @@ export function IntegrationCard({ component, title, description, dockerAvailable
               <div>
                 <Label className="text-xs text-muted-foreground">
                   Password admin — prossimo install
-                  {localConfig.adminPassword && (
+                  {adminPasswordImpostata && (
                     <span className="ml-2 text-green-600 dark:text-green-400">
-                      (attuale: {localConfig.adminPassword})
+                      {localConfig.adminPassword ? `(attuale: ${localConfig.adminPassword})` : "(impostata)"}
                     </span>
                   )}
                 </Label>

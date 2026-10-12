@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { requireAuth, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { getJob } from "@/lib/integrations/job-store";
 
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ) {
-  const authError = await requireAuth();
+  // Avanzamento di un'installazione: solo l'admin le lancia (SEC-13).
+  const authError = await requireAdmin();
   if (isAuthError(authError)) return authError;
 
   const { jobId } = await params;

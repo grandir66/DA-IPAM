@@ -6,6 +6,20 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-10-12
 
+### Correzioni
+
+- **Configurazione delle integrazioni senza segreti per chi non è admin
+  (SEC-5, SEC-13).** La lettura della configurazione di LibreNMS, Graylog e Loki
+  era aperta a ogni utente con accesso, anche in sola lettura, e restituiva i
+  campi segreti così come erano salvati; UniFi li nascondeva già, le altre no.
+  Ora chi non è admin riceve quei campi vuoti e un'indicazione «impostato»,
+  così la scheda in Impostazioni → Moduli mostra lo stesso stato senza il
+  valore; per l'admin non cambia niente (e quindi il salvataggio della scheda
+  non può sovrascrivere un segreto con un campo vuoto). L'avanzamento di
+  un'installazione ora si legge solo da admin, come l'installazione stessa. La
+  prova `politica.test.ts` controlla la maschera e che la rotta ci passi prima
+  di rispondere; il censimento delle guardie toglie i due debiti.
+
 ### Aggiunte
 
 - **Censimento delle guardie di tutte le rotte API (prova nel cancello).** Prima

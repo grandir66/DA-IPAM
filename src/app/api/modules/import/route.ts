@@ -18,6 +18,12 @@ import { setFeatureEnabled, invalidateFeatureCache } from "@/lib/patch/feature";
 import { applyPatchModuleMigrations } from "@/lib/patch/schema";
 import { reloadTenantScheduler } from "@/lib/cron/scheduler";
 import { invalidateModulesHealth } from "@/lib/modules/health";
+import { edgeImportReplaceConfirmText } from "@/lib/modules/uninstall-copy";
+import {
+  edgeHistoryCounts,
+  edgeImportNeedsConfirm,
+  replaceEdgeScannerFromImport,
+} from "@/lib/vuln/edge-scanner-db";
 import {
   ModuleImportSchema,
   type ModuleImportEntry,
@@ -104,17 +110,15 @@ function applyModuleConfig(
         throw new Error("edge richiede api_url + api_key (>=8 char)");
       }
       const db = getTenantDb(tenantCode);
-      db.prepare("DELETE FROM vuln_scanners").run();
-      db.prepare(
-        `INSERT INTO vuln_scanners (name, base_url, token_encrypted, enabled, cert_pin, cert_fingerprint)
-         VALUES (?, ?, ?, 1, ?, ?)`,
-      ).run(
-        e.label ?? "Scanner-Edge",
-        baseUrl.replace(/\/$/, ""),
-        encrypt(token),
-        extraStr(e, "cert_pin") ?? null,
-        extraStr(e, "cert_fingerprint") ?? null,
-      );
+      // DELETE + INSERT: findings e storico se ne vanno a cascata. POST lo
+      // conferma prima (MOD-19); UPDATE sul posto è la tappa 7 (MOD-5).
+      replaceEdgeScannerFromImport(db, {
+        name: e.label ?? "Scanner-Edge",
+        baseUrl: baseUrl.replace(/\/$/, ""),
+        tokenEncrypted: encrypt(token),
+        certPin: extraStr(e, "cert_pin") ?? null,
+        certFingerprint: extraStr(e, "cert_fingerprint") ?? null,
+      });
       const job = db
         .prepare(
           "SELECT id FROM scheduled_jobs WHERE job_type='vuln_sync' AND network_id IS NULL",
@@ -204,6 +208,28 @@ export async function POST(req: Request) {
     const userId =
       numericUserId !== null && Number.isFinite(numericUserId) ? numericUserId : null;
     const actor = session.user?.name ?? "module-import";
+
+    // MOD-19 (revisione del 12/10): sostituire lo Scanner-Edge cancella a
+    // cascata scansioni e findings importati. Con ?chiediConferma=1 (la UI) e
+    // uno storico da perdere ci si ferma prima di scrivere qualunque modulo e
+    // si risponde 409 con il testo della conferma; se l'utente conferma, la UI
+    // ripete la richiesta senza il parametro. Senza il parametro (connect di
+    // Deploy-Appliance) si procede come prima.
+    const moduli = entries.map((e) => e.module);
+    const chiediConferma = new URL(req.url).searchParams.get("chiediConferma") === "1";
+    const daPerdere =
+      chiediConferma && moduli.includes("edge")
+        ? edgeImportNeedsConfirm(moduli, edgeHistoryCounts(getTenantDb(tenantCode)), true)
+        : null;
+    if (daPerdere) {
+      return NextResponse.json(
+        {
+          error: "Conferma richiesta: l'import cancella lo storico dello Scanner-Edge",
+          edgeReplace: { ...daPerdere, confirmText: edgeImportReplaceConfirmText(daPerdere) },
+        },
+        { status: 409 },
+      );
+    }
 
     const results: ModuleImportResult[] = [];
     for (const e of entries) {

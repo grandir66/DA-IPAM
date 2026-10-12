@@ -28,6 +28,42 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   dare a un utente locale, che nei log sembrerebbe il supporto. Le regole stanno
   in un punto solo (`src/lib/users/`), provate su tutte le combinazioni e su
   ogni rotta.
+- **Le conferme di disinstallazione e rimozione dicono cosa si perde (MOD-19).**
+  Sotto «Elimina anche i dati storici» c'era scritto che la richiesta veniva
+  accettata «ma non droppa», mentre la disinstallazione cancellava davvero le
+  tabelle del modulo; «Rimuovi» dello Scanner-Edge prometteva che i findings
+  restavano in archivio, e invece se ne vanno a cascata con lo storico delle
+  scansioni. Ora la conferma di Patch Management, Inventory Agent e MeshCentral
+  dice cosa resta senza la casella e cosa si cancella con la casella (con
+  l'elenco delle tabelle), e il messaggio finale dice se i dati sono stati
+  cancellati davvero; «Rimuovi» dello Scanner-Edge dice quanti findings si
+  cancellano; le conferme dei container di LibreNMS, Graylog e Loki e quella di
+  Network Services dicono che cosa non torna. Il comportamento sui dati non
+  cambia (è la tappa 7): cambiano solo i testi, e due prove eseguono la
+  cancellazione vera e la confrontano con ciò che la conferma promette.
+  Network Services, sulle appliance dove il bridge viene dalle variabili
+  d'ambiente `NET_SERVICES_API_URL` e `NET_SERVICES_API_TOKEN` (le scrive
+  `appliance-integrate-fix.sh`), dopo la disinstallazione resta attivo con lo
+  stesso bridge: la conferma ora lo dice, e se il bridge viene solo da lì il
+  pulsante «Disinstalla» lascia il posto a una nota che spiega come spegnerlo.
+  Anche l'import del JSON dello Scanner-Edge (Impostazioni → Moduli →
+  «Importa configurazione modulo») sostituisce lo scanner cancellando a
+  cascata findings e storico delle scansioni, e lo faceva senza dire niente:
+  ora, se c'è uno storico, prima di scrivere chiede conferma dicendo quanti
+  findings e quante scansioni si cancellano e che la sincronizzazione
+  riscarica solo ciò che l'edge conserva ancora. Il connect di
+  Deploy-Appliance, che usa la stessa rotta, non cambia.
+- **Le righe «Stato moduli» della dashboard portano al modulo (UI-20).**
+  Aprivano sempre la configurazione, anche per un modulo attivo con la sua
+  pagina, e un modulo mai installato diceva «Mai eseguita», che si legge come
+  «c'è ma non ha ancora girato». Ora un modulo attivo apre la sua pagina in
+  DA-IPAM anche quando la sonda è in errore (i findings e i nodi in cache si
+  leggono lo stesso), o il Launchpad se ha un'interfaccia esterna e non è in
+  errore; uno non installato, da configurare o spento apre la sua scheda in
+  Impostazioni → Moduli, e al posto dell'ora dice «Modulo non attivo», «da
+  configurare» o «disattivato». Un modulo non installato non conta più fra
+  quelli «in errore»: MeshCentral disinstallato tiene i parametri di
+  collegamento e la sua sonda poteva accendere il badge rosso.
 - **I filtri mostrano l'etichetta della voce scelta, non il suo codice.** Dopo
   una scelta, i menu a tendina dei filtri mostravano il valore tecnico: «all»
   invece di «Tutti gli stati», «unacked» invece di «Non gestiti», il numero della

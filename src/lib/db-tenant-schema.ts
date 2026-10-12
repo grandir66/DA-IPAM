@@ -1306,6 +1306,18 @@ CREATE TABLE IF NOT EXISTS attribution_evidence (
   expires_at TEXT,
   superseded_by INTEGER REFERENCES attribution_evidence(id) ON DELETE SET NULL
 );
+
+-- Topologia: posizioni salvate dei nodi della mappa (per vista/tenant)
+CREATE TABLE IF NOT EXISTS topology_position (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  view TEXT NOT NULL DEFAULT 'default',
+  node_id TEXT NOT NULL,
+  x REAL NOT NULL,
+  y REAL NOT NULL,
+  pinned INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(view, node_id)
+);
 `;
 
 export const TENANT_INDEXES_SQL = `
@@ -1444,6 +1456,7 @@ CREATE INDEX IF NOT EXISTS idx_classification_feedback_created ON classification
 -- Neighbors / Routes
 CREATE INDEX IF NOT EXISTS idx_device_neighbors_device ON device_neighbors(device_id);
 CREATE INDEX IF NOT EXISTS idx_device_neighbors_remote ON device_neighbors(remote_device_name);
+CREATE INDEX IF NOT EXISTS idx_topology_position_view ON topology_position(view);
 CREATE INDEX IF NOT EXISTS idx_routing_table_device ON routing_table(device_id);
 CREATE INDEX IF NOT EXISTS idx_routing_table_dest ON routing_table(destination);
 

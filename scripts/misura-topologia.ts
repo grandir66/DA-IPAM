@@ -86,6 +86,10 @@ async function main(): Promise<number> {
   const out: Record<string, unknown> = { tenant, integrita_prima: integrita(dest) };
 
   const t0 = Date.now();
+  // Import dinamico voluto e sicuro qui: l'ambiente (cartella dati, copia del
+  // DB) va impostato prima che db-tenant venga caricato, e questo script è un
+  // processo solo, fuori dall'app. ADR 0002 riguarda il runtime tsx dell'app,
+  // dove una seconda istanza del modulo perde il contesto tenant.
   const tenantDb = await import("../src/lib/db-tenant");
   const db = tenantDb.getTenantDb(tenant);
   out.migrazione_ms = Date.now() - t0;

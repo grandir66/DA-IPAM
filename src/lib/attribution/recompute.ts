@@ -45,6 +45,16 @@ export function recomputeHostAttribution(
 }
 
 /**
+ * Copia IDENTICA di db-tenant.ts::NEIGHBORS_LATEST_ROUND_SQL (solo l'ultimo giro
+ * dei vicini per apparato e fonte, ADR 0008: il perché sta là). Copia e non
+ * import: questo modulo non importa db-tenant staticamente (ciclo db-tenant ↔
+ * attribution) e un import dinamico è vietato (ADR 0002). Che le due stringhe
+ * restino uguali lo verifica src/lib/__tests__/neighbors-old-readers.test.ts.
+ */
+export const NEIGHBORS_LATEST_ROUND_SQL =
+  "dn.timestamp >= (SELECT datetime(MAX(d2.timestamp), '-5 minutes') FROM device_neighbors d2 WHERE d2.device_id = dn.device_id AND d2.source = dn.source)";
+
+/**
  * Snapshot dei segnali di un host per un handle DB esplicito (fix I2, review
  * fase 4): stessa query di db-tenant.ts::getAttributionSignalsForHost /
  * db.ts::getAttributionSignalsForHost, ma parametrizzata sull'handle passato
@@ -78,6 +88,7 @@ function getAttributionSignalsFromHandle(
      WHERE h.id = ?
        AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
          OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))
+       AND ${NEIGHBORS_LATEST_ROUND_SQL}
      ORDER BY dn.timestamp DESC LIMIT 5`
   ).all(hostId) as AttributionSignals["neighborSightings"];
   return { host, adComputer, wazuh, neighborSightings };

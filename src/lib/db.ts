@@ -58,7 +58,7 @@ import type {
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
-import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu } from "./db-tenant";
+import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, NEIGHBORS_LATEST_ROUND_SQL } from "./db-tenant";
 
 const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
@@ -3154,6 +3154,7 @@ export function getAttributionSignalsForHost(hostId: number): AttributionSignals
      WHERE h.id = ?
        AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
          OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))
+       AND ${NEIGHBORS_LATEST_ROUND_SQL}
      ORDER BY dn.timestamp DESC LIMIT 5`
   ).all(hostId) as AttributionSignals["neighborSightings"];
   return { host, adComputer, wazuh, neighborSightings };
@@ -5535,8 +5536,12 @@ export function upsertNeighbors(...args: Parameters<typeof import("./db-tenant")
 }
 
 export function getNeighborsByDevice(deviceId: number): DbNeighborEntry[] {
+  // Solo l'ultimo giro per fonte, come db-tenant.ts (ADR 0008): la scheda
+  // «Neighbors» dell'apparato passa da qui.
   return getDb().prepare(
-    "SELECT * FROM device_neighbors WHERE device_id = ? ORDER BY local_port, protocol"
+    `SELECT dn.* FROM device_neighbors dn
+      WHERE dn.device_id = ? AND ${NEIGHBORS_LATEST_ROUND_SQL}
+      ORDER BY dn.local_port, dn.protocol`
   ).all(deviceId) as DbNeighborEntry[];
 }
 

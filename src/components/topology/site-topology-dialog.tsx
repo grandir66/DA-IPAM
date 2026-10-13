@@ -105,7 +105,7 @@ export function SiteTopologyDialog({ location, open, onOpenChange }: {
                   </SelectContent>
                 </Select>
                 {view.proposed_head && view.head_device_id == null && (
-                  <p className="text-sm">Proposta del sistema: <strong>{view.proposed_head.name}</strong> (gateway di più subnet della sede)</p>
+                  <p className="text-sm">Proposta del sistema: <strong>{view.proposed_head.name}</strong> (gateway di una o più subnet della sede)</p>
                 )}
                 {view.head_device_id != null && view.head_set_by && view.head_set_at && (
                   <p className="text-sm text-muted-foreground">

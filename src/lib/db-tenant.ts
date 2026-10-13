@@ -775,6 +775,7 @@ export function getTenantDb(tenantCode: string): Database.Database {
       newDb.pragma("foreign_keys = OFF");
       newDb.exec("DROP TABLE IF EXISTS network_devices_v2");
       // CREATE TABLE con nuovo CHECK (compresi firewall e use_for_arp_poll). Copiamo la definizione completa.
+      // Le colonne non elencate qui si perdono; quelle della topologia fase 1 le aggiunge dopo migrateTopologyPhase1 (ADR 0008).
       newDb.exec(`CREATE TABLE network_devices_v2 (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -1183,6 +1184,7 @@ export function getTenantDb(tenantCode: string): Database.Database {
         const physicalDeviceCol = hasPhysicalDevices
           ? "physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL,"
           : "physical_device_id INTEGER,";
+        // Le colonne non elencate qui si perdono; quelle della topologia fase 1 le aggiunge dopo migrateTopologyPhase1 (ADR 0008).
         newDb.exec(`CREATE TABLE network_devices__ap_new (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
@@ -2515,6 +2517,7 @@ export function getAttributionSignalsForHost(hostId: number): AttributionSignals
      WHERE h.id = ?
        AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
          OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))
+       AND ${NEIGHBORS_LATEST_ROUND_SQL}
      ORDER BY dn.timestamp DESC LIMIT 5`
   ).all(hostId) as AttributionSignals["neighborSightings"];
   return { host, adComputer, wazuh, neighborSightings };
@@ -4711,6 +4714,26 @@ export interface DbNeighborEntry {
 
 export type NeighborSource = "device" | "unifi";
 
+/**
+ * Condizione SQL «solo l'ultimo giro di questo apparato per questa fonte», da
+ * mettere in AND nel WHERE di un lettore che usa l'alias `dn` per
+ * device_neighbors.
+ *
+ * Perché: fino alla topologia fase 1 upsertNeighbors cancellava i vicini
+ * dell'apparato a ogni giro, quindi la tabella conteneva solo l'ultimo poll.
+ * Ora le righe restano (timestamp = ultima volta visto, pulizia a 90 giorni,
+ * ADR 0008) e il modello nuovo le usa tutte per dire «non visto». I lettori
+ * scritti prima (scheda «Neighbors» dell'apparato, vecchia mappa /topology,
+ * attribuzione) mostrerebbero come attuali anche vicini spariti: con questa
+ * condizione rivedono la semantica di prima. Un giro scrive tutte le righe
+ * nella stessa transazione con lo stesso datetime('now'); i 5 minuti di
+ * margine coprono un giro che scavalca il secondo, mai due giri distinti.
+ * Una copia identica sta in attribution/recompute.ts (vedi lì il perché),
+ * presidiata da src/lib/__tests__/neighbors-old-readers.test.ts.
+ */
+export const NEIGHBORS_LATEST_ROUND_SQL =
+  "dn.timestamp >= (SELECT datetime(MAX(d2.timestamp), '-5 minutes') FROM device_neighbors d2 WHERE d2.device_id = dn.device_id AND d2.source = dn.source)";
+
 /** Un vicino non visto da più di tanti giorni si toglie alla scrittura successiva del suo apparato. */
 const NEIGHBOR_RETENTION_DAYS = 90;
 
@@ -4767,8 +4790,11 @@ export function upsertNeighbors(
 }
 
 export function getNeighborsByDevice(deviceId: number): DbNeighborEntry[] {
+  // Solo l'ultimo giro per fonte: la scheda «Neighbors» mostra i vicini di adesso.
   return db().prepare(
-    "SELECT * FROM device_neighbors WHERE device_id = ? ORDER BY local_port, protocol"
+    `SELECT dn.* FROM device_neighbors dn
+      WHERE dn.device_id = ? AND ${NEIGHBORS_LATEST_ROUND_SQL}
+      ORDER BY dn.local_port, dn.protocol`
   ).all(deviceId) as DbNeighborEntry[];
 }
 
@@ -8394,7 +8420,9 @@ export function getTopologyData(): {
     .all() as import("@/lib/topology/types").HostRow[];
   const neighbors = d
     .prepare(
-      "SELECT device_id, local_port, remote_device_name, remote_port, protocol, remote_ip FROM device_neighbors",
+      // Vecchia mappa /topology: solo l'ultimo giro per apparato e fonte (ADR 0008).
+      `SELECT dn.device_id, dn.local_port, dn.remote_device_name, dn.remote_port, dn.protocol, dn.remote_ip
+         FROM device_neighbors dn WHERE ${NEIGHBORS_LATEST_ROUND_SQL}`,
     )
     .all() as import("@/lib/topology/types").NeighborRow[];
 

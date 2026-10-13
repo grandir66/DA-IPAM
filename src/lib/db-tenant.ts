@@ -4245,6 +4245,8 @@ export function upsertArpEntries(
      VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?)`
   );
 
+  let legamiSaltati = 0;
+  let primoErrore: string | null = null;
   const replaceAll = d.transaction((items: typeof entries) => {
     d.prepare("DELETE FROM arp_entries WHERE device_id = ?").run(deviceId);
 
@@ -4263,6 +4265,9 @@ export function upsertArpEntries(
         // 13 dei 14 host che l'ARP avrebbe cambiato avevano il loro MAC
         // confermato da un'altra voce ARP dello stesso IP (più router, VRRP,
         // voci vecchie): l'ultima tabella letta avrebbe vinto a caso.
+        // Vale solo qui: il giro arp_poll chiama prima updateHostIfExists, che
+        // il MAC lo sovrascrive come sempre (decisione aperta, vedi la prova
+        // «giro arp_poll» in db-parity/behaviour-upsert-arp-entries.test.ts).
         if (networkId != null) {
           const normMac = normalizeMacForStorage(entry.mac);
           if (normMac) {
@@ -4291,24 +4296,24 @@ export function upsertArpEntries(
             network_id: networkId,
           });
         } catch (err) {
-          // Diagnostica FK: dump valori e stato FK esistenti
-          const macHex = macToHex(entry.mac);
-          const existingMapping = d.prepare("SELECT source_device_id, network_id, host_id FROM mac_ip_mapping WHERE mac_normalized = ?").get(macHex) as { source_device_id: number | null; network_id: number | null; host_id: number | null } | undefined;
-          const deviceOk = d.prepare("SELECT id FROM network_devices WHERE id = ?").get(deviceId);
-          console.error(`[upsertArpEntries] FK error per MAC ${entry.mac} IP ${entry.ip}:`, {
-            deviceId,
-            deviceExists: !!deviceOk,
-            networkId,
-            existingMapping,
-            error: err instanceof Error ? err.message : err,
-          });
-          // Non propagare: skippa questa entry e continua
+          // Non propagare: si salta questa voce e si continua (comportamento
+          // della copia tenant, dichiarato in T3-07). Il riepilogo sotto le
+          // conta; nel log niente MAC né IP (regola 10 del CLAUDE.md di Domarc).
+          legamiSaltati++;
+          if (primoErrore === null) primoErrore = err instanceof Error ? err.message : String(err);
         }
       }
     }
   });
 
   replaceAll(entries);
+  if (legamiSaltati > 0) {
+    const apparatoEsiste = !!d.prepare("SELECT id FROM network_devices WHERE id = ?").get(deviceId);
+    console.error(
+      `[upsertArpEntries] apparato ${deviceId}${apparatoEsiste ? "" : " (non più presente)"}: ` +
+        `${legamiSaltati} legami MAC-IP su ${entries.length} voci non scritti; primo errore: ${primoErrore}`,
+    );
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -11,7 +11,9 @@
  * tenant di allora cambiava il MAC a 11 host che ne avevano già uno, e 13 dei 14
  * host candidati avevano il loro MAC confermato da un'altra voce ARP dello
  * stesso IP. Era un dato buono perso: l'ARP ora RIEMPIE un MAC mancante e non
- * sovrascrive quello che c'è.
+ * sovrascrive quello che c'è. Attenzione: la misura è di upsertArpEntries da
+ * sola. Nel giro arp_poll il MAC lo scrive prima updateHostIfExists, che lo
+ * sovrascrive come sempre: vedi l'ultima prova di questo file.
  */
 import { TEST_DATA_DIR } from "../support/data-dir-isolata";
 
@@ -85,4 +87,30 @@ test("upsertArpEntries: prima di scrivere pulisce i riferimenti orfani dei legam
     },
   );
   assert.deepEqual(orfani, { source_device_id: null, network_id: null, host_id: null });
+});
+
+/**
+ * Il giro arp_poll (cron/jobs.ts) NON è upsertArpEntries da sola: per ogni voce
+ * chiama prima updateHostIfExists → upsertHost, che scrive il MAC dell'host
+ * senza condizioni, e poi upsertArpEntries. La regola «l'ARP riempie, non
+ * sovrascrive» vale solo per upsertArpEntries; nel giro il MAC lo cambia
+ * comunque upsertHost, come prima di T3-07. Misura sulla copia del DB DTS
+ * (13/10, revisione della parte 3b), rigiocando il corpo del giro su 3 router:
+ * 11 host cambiano MAC con il codice di prima e con quello di adesso, e per 10
+ * host il MAC finale dipende dall'ordine in cui si leggono i router. Se
+ * applicare la stessa regola anche a upsertHost per le fonti passive è una
+ * decisione aperta (passa da Riccardo): questa prova fissa il comportamento di
+ * oggi, così una modifica non passa senza che il testo qui e nel CHANGELOG la
+ * racconti.
+ */
+test("giro arp_poll: updateHostIfExists sovrascrive il MAC prima di upsertArpEntries (comportamento invariato)", () => {
+  const h = nelTenant("arpgiro", retiHostCredenziali, (db) => {
+    const voci = [{ mac: MAC_VMWARE, ip: "10.40.0.20", interface_name: "bridge" }];
+    for (const v of voci) {
+      facciata.updateHostIfExists({ network_id: RETE_UFFICI, ip: v.ip, mac: v.mac, hostname_source: "arp" });
+    }
+    facciata.upsertArpEntries(APPARATO.router, voci, reteUffici);
+    return host(db, HOST.pcAmmin);
+  });
+  assert.equal(h.mac, MAC_VMWARE);
 });

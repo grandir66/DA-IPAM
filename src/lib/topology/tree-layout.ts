@@ -1,0 +1,122 @@
+// src/lib/topology/tree-layout.ts
+/**
+ * Disposizione dell'albero (spec §4 livello 2, §5 pezzo 2, §10): livelli fissi,
+ * figli infrastruttura in fila sotto il genitore, AP senza figli in un gruppo a
+ * griglia che occupa SEMPRE AP_COLS colonne (un AP in più non sposta gli altri
+ * rami), attaccati in colonna a destra del riquadro (non coprono le linee verso
+ * i figli), riquadro centrato sopra i figli. Ritocchi a mano: valgono finché la
+ * firma (genitore + fratelli) non cambia. Logica pura: stessi dati, stesse
+ * coordinate.
+ */
+import type { TopologyModel } from "@/lib/topology/model-types";
+import { nodeClass } from "@/lib/topology/identity";
+import type { TreeResult } from "@/lib/topology/tree";
+
+export const BOX_H = 44, GAP = 18, LEVEL_GAP = 56, AP_W = 150, AP_H = 40, AP_COLS = 4, AP_HEAD = 18;
+export const ATT_W = 160, ATT_ROW = 20, ATT_MAX = 4, CHAR_W = 7, ROOT_GAP = 60, MARGIN = 40;
+const AP_BLOCK = AP_COLS * (AP_W + 8);
+const ATT_SIDE = ATT_W + 10;
+
+export function nodeWidth(label: string): number {
+  return Math.min(230, Math.max(170, label.length * CHAR_W + 44));
+}
+
+export function fitLabel(label: string, width: number): string {
+  const max = Math.floor((width - 44) / CHAR_W);
+  return label.length > max ? `${label.slice(0, Math.max(1, max - 1))}…` : label;
+}
+
+export function structureSig(tree: TreeResult, nodeId: string): string {
+  let parent = "";
+  for (const [p, kids] of tree.children) if (kids.includes(nodeId)) { parent = p; break; }
+  const siblings = parent ? [...(tree.children.get(parent) ?? [])].sort() : [...tree.roots].sort();
+  return `${parent}|${siblings.join(",")}`;
+}
+
+export interface SavedTweak { nodeId: string; x: number; y: number; sig: string | null }
+export interface LayoutNode { id: string; x: number; y: number; w: number; h: number; role: "box" | "ap" | "attached"; parent: string | null }
+export interface LayoutResult {
+  nodes: Map<string, LayoutNode>;
+  apGroups: Array<{ parent: string; x: number; y: number; w: number; h: number; count: number }>;
+  moreAttached: Map<string, number>;
+  width: number;
+  height: number;
+  expired: string[];
+}
+
+export function layoutTree(model: TopologyModel, tree: TreeResult, tweaks: SavedTweak[]): LayoutResult {
+  const byId = new Map(model.nodes.map((n) => [n.id, n]));
+  const name = (id: string) => byId.get(id)?.name ?? id;
+  const cls = (id: string) => { const n = byId.get(id); return n ? nodeClass(n) : "client"; };
+  const order = (a: string, b: string) =>
+    Number(cls(a) !== "infra") - Number(cls(b) !== "infra") || name(a).localeCompare(name(b), "it") || (a < b ? -1 : 1);
+  const parts = (id: string) => {
+    const kids = tree.children.get(id) ?? [];
+    const att = kids.filter((k) => cls(k) === "att" || cls(k) === "client").sort(order);
+    const ap = kids.filter((k) => cls(k) === "ap" && (tree.children.get(k)?.length ?? 0) === 0).sort(order);
+    const inf = kids.filter((k) => !att.includes(k) && !ap.includes(k)).sort(order);
+    return { inf, ap, att };
+  };
+
+  const levelH: number[] = [];
+  const width = new Map<string, number>();
+  const kidsWidth = (p: ReturnType<typeof parts>) => {
+    const items = p.inf.map((k) => width.get(k)!).concat(p.ap.length ? [AP_BLOCK] : []);
+    return items.length ? items.reduce((s, v) => s + v, 0) + GAP * (items.length - 1) : 0;
+  };
+  const measure = (id: string, lvl: number): void => {
+    const p = parts(id);
+    const shown = Math.min(p.att.length, ATT_MAX) + (p.att.length > ATT_MAX ? 1 : 0);
+    levelH[lvl] = Math.max(levelH[lvl] ?? 0, BOX_H, shown * ATT_ROW);
+    for (const k of p.inf) measure(k, lvl + 1);
+    if (p.ap.length) levelH[lvl + 1] = Math.max(levelH[lvl + 1] ?? 0, AP_HEAD + Math.ceil(p.ap.length / AP_COLS) * (AP_H + 6));
+    // Il riquadro sta al centro: lo spazio della fascia si riserva da tutti e due i lati.
+    width.set(id, Math.max(nodeWidth(name(id)) + (p.att.length ? 2 * ATT_SIDE : 0), kidsWidth(p)));
+  };
+  for (const r of tree.roots) measure(r, 0);
+  const y: number[] = [MARGIN];
+  for (let i = 1; i <= levelH.length; i++) y[i] = y[i - 1] + (levelH[i - 1] ?? BOX_H) + LEVEL_GAP;
+
+  const nodes = new Map<string, LayoutNode>();
+  const apGroups: LayoutResult["apGroups"] = [];
+  const moreAttached = new Map<string, number>();
+  const place = (id: string, x: number, lvl: number, parent: string | null): void => {
+    const p = parts(id);
+    const w = width.get(id)!;
+    const box = nodeWidth(name(id));
+    const cx = x + w / 2;
+    nodes.set(id, { id, x: cx - box / 2, y: y[lvl], w: box, h: BOX_H, role: "box", parent });
+    p.att.slice(0, ATT_MAX).forEach((a, i) =>
+      nodes.set(a, { id: a, x: cx + box / 2 + 10, y: y[lvl] + i * ATT_ROW, w: ATT_W, h: ATT_ROW - 2, role: "attached", parent: id }));
+    if (p.att.length > ATT_MAX) moreAttached.set(id, p.att.length - ATT_MAX);
+    let cur = cx - kidsWidth(p) / 2;
+    for (const k of p.inf) { place(k, cur, lvl + 1, id); cur += width.get(k)! + GAP; }
+    if (p.ap.length) {
+      p.ap.forEach((a, i) => nodes.set(a, {
+        id: a, x: cur + 4 + (i % AP_COLS) * (AP_W + 8), y: y[lvl + 1] + AP_HEAD + Math.floor(i / AP_COLS) * (AP_H + 6),
+        w: AP_W, h: AP_H, role: "ap", parent: id,
+      }));
+      apGroups.push({ parent: id, x: cur, y: y[lvl + 1], w: AP_BLOCK, h: AP_HEAD + Math.ceil(p.ap.length / AP_COLS) * (AP_H + 6) + 4, count: p.ap.length });
+    }
+  };
+  let x = MARGIN;
+  for (const r of tree.roots) { place(r, x, 0, null); x += width.get(r)! + ROOT_GAP; }
+
+  // Ritocchi: lo scarto vale per il nodo e tutto il suo ramo (attaccati e gruppo AP compresi).
+  const expired: string[] = [];
+  for (const t of [...tweaks].sort((a, b) => (a.nodeId < b.nodeId ? -1 : 1))) {
+    const n = nodes.get(t.nodeId);
+    if (!n || n.role !== "box") continue;
+    if (t.sig !== structureSig(tree, t.nodeId)) { expired.push(t.nodeId); continue; }
+    const dx = t.x - n.x, dy = t.y - n.y;
+    const branch = new Set<string>([t.nodeId]);
+    const q = [t.nodeId];
+    while (q.length) for (const k of tree.children.get(q.shift()!) ?? []) if (!branch.has(k)) { branch.add(k); q.push(k); }
+    for (const id of branch) { const m = nodes.get(id); if (m) nodes.set(id, { ...m, x: m.x + dx, y: m.y + dy }); }
+    for (const g of apGroups) if (branch.has(g.parent)) { g.x += dx; g.y += dy; }
+  }
+  let maxX = 0, maxY = 0;
+  for (const n of nodes.values()) { maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h); }
+  for (const g of apGroups) { maxX = Math.max(maxX, g.x + g.w); maxY = Math.max(maxY, g.y + g.h); }
+  return { nodes, apGroups, moreAttached, width: maxX + MARGIN, height: maxY + MARGIN, expired };
+}

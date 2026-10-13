@@ -331,8 +331,11 @@ async function runPingSweep(networkId: number | null, opzioni?: OpzioniRunJob): 
 }
 
 async function runFastScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
-  // Scansione veloce schedulata: ICMP ping sweep + ARP/DHCP router (vedi discovery.ts blocco "fast").
-  // Non fa port scan, non marca offline i non rispondenti: è una fotografia di presenza.
+  // Scansione veloce schedulata: nmap -sn (ripiego ping sweep) + secondo passaggio TCP
+  // sugli host già online + ARP/DHCP router (vedi discovery.ts blocco "fast"). Niente
+  // port scan. A fine giro MANDA offline i non rispondenti, come network_discovery,
+  // passando dal filtro sulla partenza del giro e dalla soglia: se debba farlo è una
+  // decisione aperta (ADR 0006), fino ad allora il codice resta così.
   return suOgniRete(networkId, (nid) => giroCompleto(nid, discoverNetwork(nid, "fast"), opzioni));
 }
 

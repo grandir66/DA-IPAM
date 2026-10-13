@@ -1025,9 +1025,11 @@ async function runDiscovery(
 
   // ═══════════════════════════════════════════════════════════════
   // FAST: presenza rapida — nmap -sn sull'intero CIDR (fallback ping sweep ad
-  // alta concorrenza) + ARP/DHCP dal router associato. Nessun port scan, niente
-  // fingerprint, niente SNMP per-host. Additiva: NON marca offline i non
-  // rispondenti (è una fotografia di presenza, non autoritativa).
+  // alta concorrenza) + secondo passaggio TCP sugli host già online + ARP/DHCP dal
+  // router associato. Nessun port scan, niente fingerprint, niente SNMP per-host.
+  // A fine giro (Phase 4) i non rispondenti PASSANO offline, come in
+  // network_discovery: se la scansione veloce debba farlo è una decisione aperta
+  // (ADR 0006); fino ad allora il codice resta così e questo commento dice cosa fa.
   // ═══════════════════════════════════════════════════════════════
   else if (scanType === "fast") {
     progress.phase = "Sweep rapido (nmap -sn)";
@@ -3212,13 +3214,16 @@ async function runDiscovery(
 
   // ═══════════════════════════════════════════════════════════════
   // Phase 4: Gestione host non rispondenti
-  // - network_discovery / fast: dopo ICMP + second-pass TCP, marca offline
-  //   (policy P1 strict). Entrambi gli scan ora hanno fallback TCP, quindi
-  //   sono autoritativi: chi non risponde a ICMP NÉ a TCP è davvero spento.
-  //   Aggiunge anche la nota per traccia diagnostica.
+  // - network_discovery / fast / scan_naabu: dopo ICMP + second-pass TCP, marca
+  //   offline (policy P1 strict): chi non risponde a ICMP NÉ a TCP è considerato
+  //   spento. Per fast è una decisione aperta (ADR 0006). Aggiunge anche la nota
+  //   per traccia diagnostica.
   // - nmap / ipam_full: restano additivi → annotano nelle note, non flippano
   //   (scan manuali, l'utente può avere visioni parziali su CIDR grandi).
   // - ping: marca offline (solo ICMP, comportamento classico).
+  // Ogni passaggio a offline passa da passaggioOfflineConSoglia: solo host non
+  // offline e non visti dopo `inizioGiro` (T3-20), con la soglia sugli
+  // spegnimenti in massa (T3-21). Le scelte sono in docs/adr/0006.
   // ═══════════════════════════════════════════════════════════════
   // T3-19: gli IP col ping «sconosciuto» restano fuori, né offline né annotati.
   const ipsDecisi = pingSconosciuti.size > 0 ? ips.filter((ip) => !pingSconosciuti.has(ip)) : ips;

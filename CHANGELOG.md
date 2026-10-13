@@ -76,6 +76,20 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunte
 
+- **Le scelte sulle scansioni scritte in un ADR (INV-1, INV-2, T3-23).** Le
+  correzioni dei giri di scansione (T3-17…T3-22) si reggono su tre scelte che
+  dal codice non si capiscono: il lucchetto «un giro per rete» vive in memoria
+  e vale solo finché scheduler e applicazione sono un processo solo; la soglia
+  sugli spegnimenti in massa conferma per intersezione, così non resta mai
+  bloccata; «Ultima esecuzione» di un job di scansione vuol dire fine del giro.
+  Stanno in `docs/adr/0006-una-scansione-per-rete-e-soglia-offline.md`, con
+  ciò che diventa difficile dopo (uno scheduler in un processo a parte, più
+  scrittori sulla stessa rete). Corretti anche i commenti della scansione
+  veloce: dicevano che non manda offline gli host che non rispondono, ma lo fa
+  (e lo faceva già), come la discovery completa; se debba farlo è una
+  decisione ancora aperta e intanto il codice resta com'è. Nessun cambio
+  di comportamento.
+
 - **Prova dei giri sovrapposti su una copia del database (INV-1, INV-2,
   T3-22).** Le correzioni sulle scansioni (un giro alla volta per rete, un
   giro vecchio che non spegne host visti dopo, la soglia sugli spegnimenti in

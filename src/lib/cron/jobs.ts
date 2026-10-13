@@ -22,8 +22,9 @@ import {
   syncIpAssignmentsForNetwork,
   upsertNeighbors,
   upsertRoutes,
+  updateJobLastRun,
 } from "@/lib/db";
-import { discoverNetwork } from "@/lib/scanner/discovery";
+import { discoverNetwork, type AvvioDiscovery } from "@/lib/scanner/discovery";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
 import { pingHost } from "@/lib/scanner/ping";
 import { getScanIoOverride } from "@/lib/executor";
@@ -61,23 +62,36 @@ import { syncUnifiForTenant, unifiSyncFailure } from "@/lib/integrations/unifi-s
 import { syncMeshForTenant } from "@/lib/integrations/meshcentral/mesh-sync";
 import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
 
-export async function runJob(jobId: number): Promise<void> {
+/** Job che lanciano giri di discovery: durano quanto il giro (fino a ~49 minuti misurati). */
+export const JOB_DI_SCANSIONE: ReadonlySet<string> = new Set(["ping_sweep", "fast_scan", "snmp_scan", "nmap_scan"]);
+
+export interface OpzioniRunJob {
+  /** Chiamata alla partenza di ogni giro di scansione, con il suo id (per «Esegui ora»). */
+  onGiroAvviato?: (scanId: string, networkId: number) => void;
+}
+
+/**
+ * Esegue un job e torna quando il lavoro è FINITO (T3-17, INV-1): per i job di
+ * scansione vuol dire a giro chiuso, e un giro fallito fa rifiutare `runJob`,
+ * così lo scheduler lo conta fra i fallimenti e `last_run` segna la fine.
+ */
+export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<void> {
   // v0.2.642 audit perf MC3: SELECT WHERE id invece di full-scan + .find().
   const job = getScheduledJobById(jobId);
   if (!job) throw new Error(`Job #${jobId} non trovato`);
 
   switch (job.job_type) {
     case "ping_sweep":
-      await runPingSweep(job.network_id);
+      await runPingSweep(job.network_id, opzioni);
       break;
     case "fast_scan":
-      await runFastScan(job.network_id);
+      await runFastScan(job.network_id, opzioni);
       break;
     case "snmp_scan":
-      await runSnmpScan(job.network_id);
+      await runSnmpScan(job.network_id, opzioni);
       break;
     case "nmap_scan":
-      await runNmapScan(job.network_id);
+      await runNmapScan(job.network_id, opzioni);
       break;
     case "arp_poll":
       await runArpPoll();
@@ -176,48 +190,116 @@ export async function runJob(jobId: number): Promise<void> {
   }
 }
 
-async function runPingSweep(networkId: number | null): Promise<void> {
-  if (networkId) {
-    await discoverNetwork(networkId, "network_discovery");
-  } else {
-    const networks = getNetworks();
-    for (const net of networks) {
-      await discoverNetwork(net.id, "network_discovery");
-    }
+/**
+ * «Esegui ora» dalla UI. Un job di scansione non si aspetta: la richiesta HTTP
+ * resterebbe aperta per tutto il giro (fino a ~49 minuti). Si risponde appena
+ * parte il primo giro, con il suo id; `last_run` si scrive a giro finito, come
+ * fa lo scheduler. Gli altri job si aspettano come prima.
+ */
+export type EsitoEseguiOra =
+  | { modo: "avviato"; scanId: string }
+  | { modo: "eseguito"; durationMs: number };
+
+export async function eseguiJobOra(jobId: number): Promise<EsitoEseguiOra> {
+  const job = getScheduledJobById(jobId);
+  if (!job) throw new Error(`Job #${jobId} non trovato`);
+  const inizio = Date.now();
+
+  if (!JOB_DI_SCANSIONE.has(job.job_type)) {
+    await runJob(jobId);
+    updateJobLastRun(jobId);
+    return { modo: "eseguito", durationMs: Date.now() - inizio };
+  }
+
+  return new Promise<EsitoEseguiOra>((resolve, reject) => {
+    let risposto = false;
+    runJob(jobId, {
+      onGiroAvviato: (scanId) => {
+        if (risposto) return;
+        risposto = true;
+        resolve({ modo: "avviato", scanId });
+      },
+    }).then(
+      () => {
+        updateJobLastRun(jobId);
+        if (!risposto) {
+          // Nessun giro partito (nessuna rete): il job è già finito.
+          risposto = true;
+          resolve({ modo: "eseguito", durationMs: Date.now() - inizio });
+        }
+      },
+      (error: unknown) => {
+        if (!risposto) {
+          risposto = true;
+          reject(error);
+          return;
+        }
+        // La risposta è già partita: il fallimento resta nel log, come per lo scheduler.
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(`[Jobs] Esecuzione manuale del job #${jobId} fallita a giro avviato: ${msg}`);
+      },
+    );
+  });
+}
+
+/** Un giro su una rete, atteso fino alla fine vera; se fallisce, lancia. */
+async function giroCompleto(
+  networkId: number,
+  avvio: Promise<AvvioDiscovery>,
+  opzioni: OpzioniRunJob | undefined,
+): Promise<void> {
+  const { id, done } = await avvio;
+  opzioni?.onGiroAvviato?.(id, networkId);
+  const esito = await done;
+  if (esito.status === "failed") {
+    throw new Error(`Scansione ${id} della rete ${networkId} fallita: ${esito.error ?? "errore sconosciuto"}`);
   }
 }
 
-async function runFastScan(networkId: number | null): Promise<void> {
+/**
+ * Rete indicata: un giro. Rete nulla: tutte le reti, una dopo l'altra (prima
+ * partivano tutte insieme); una rete che fallisce non ferma le altre e il job
+ * fallisce alla fine con l'elenco degli errori.
+ */
+async function suOgniRete(networkId: number | null, giro: (nid: number) => Promise<void>): Promise<void> {
+  if (networkId) {
+    await giro(networkId);
+    return;
+  }
+  const networks = getNetworks();
+  const errori: string[] = [];
+  for (const net of networks) {
+    try {
+      await giro(net.id);
+    } catch (e) {
+      errori.push(e instanceof Error ? e.message : String(e));
+    }
+  }
+  if (errori.length > 0) {
+    throw new Error(`${errori.length} reti su ${networks.length} non scansionate: ${errori.join(" · ")}`);
+  }
+}
+
+async function runPingSweep(networkId: number | null, opzioni?: OpzioniRunJob): Promise<void> {
+  await suOgniRete(networkId, (nid) => giroCompleto(nid, discoverNetwork(nid, "network_discovery"), opzioni));
+}
+
+async function runFastScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<void> {
   // Scansione veloce schedulata: ICMP ping sweep + ARP/DHCP router (vedi discovery.ts blocco "fast").
   // Non fa port scan, non marca offline i non rispondenti: è una fotografia di presenza.
-  if (networkId) {
-    await discoverNetwork(networkId, "fast");
-  } else {
-    const networks = getNetworks();
-    for (const net of networks) {
-      await discoverNetwork(net.id, "fast");
-    }
-  }
+  await suOgniRete(networkId, (nid) => giroCompleto(nid, discoverNetwork(nid, "fast"), opzioni));
 }
 
-async function runSnmpScan(networkId: number | null): Promise<void> {
-  const runForNetwork = async (nid: number) => {
+async function runSnmpScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<void> {
+  await suOgniRete(networkId, async (nid) => {
     const network = getNetworkById(nid);
     if (!network) return;
     const snmpCommunity = network.snmp_community ?? null;
-    await discoverNetwork(nid, "snmp", undefined, snmpCommunity);
-  };
-  if (networkId) {
-    await runForNetwork(networkId);
-  } else {
-    const networks = getNetworks();
-    for (const net of networks) {
-      await runForNetwork(net.id);
-    }
-  }
+    await giroCompleto(nid, discoverNetwork(nid, "snmp", undefined, snmpCommunity), opzioni);
+  });
 }
 
-async function runNmapScan(networkId: number | null): Promise<void> {
+async function runNmapScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<void> {
   const { buildCustomScanArgs } = await import("@/lib/scanner/ports");
   const profile = getActiveNmapProfile();
   const runForNetwork = async (nid: number) => {
@@ -239,16 +321,9 @@ async function runNmapScan(networkId: number | null): Promise<void> {
       nmapArgs = buildCustomScanArgs(null);
     }
     const snmpCommunity = profile?.snmp_community || network.snmp_community || null;
-    await discoverNetwork(nid, "nmap", nmapArgs, snmpCommunity, { tcpPorts, udpPorts });
+    await giroCompleto(nid, discoverNetwork(nid, "nmap", nmapArgs, snmpCommunity, { tcpPorts, udpPorts }), opzioni);
   };
-  if (networkId) {
-    await runForNetwork(networkId);
-  } else {
-    const networks = getNetworks();
-    for (const net of networks) {
-      await runForNetwork(net.id);
-    }
-  }
+  await suOgniRete(networkId, runForNetwork);
 }
 
 export type RunArpPollOptions = {

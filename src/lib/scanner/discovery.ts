@@ -168,13 +168,35 @@ function autoBindCredentialToDevice(
   } catch { /* ignore: device non trovato o duplicato */ }
 }
 
+/**
+ * Esito di un giro a fine corsa (T3-17). `done` lo restituisce SEMPRE, non
+ * rifiuta mai: lo stato si legge da `progress.status` a giro finito, così anche
+ * i rami che segnano `failed` e ritornano senza lanciare risultano falliti.
+ */
+export type EsitoGiro = { status: "completed" | "failed"; error?: string };
+
+export type AvvioDiscovery = {
+  id: string;
+  progress: ScanProgress;
+  /** Si risolve quando il giro è finito davvero (INV-1): chi deve aspettarlo, aspetta questo. */
+  done: Promise<EsitoGiro>;
+};
+
 export async function discoverNetwork(
   networkId: number,
   scanType: DiscoveryScanType,
   nmapArgs?: string,
   snmpCommunity?: string | null,
   options?: DiscoverNetworkOptions
-): Promise<{ id: string; progress: ScanProgress }> {
+): Promise<AvvioDiscovery> {
+  // Contesto tenant catturato per il giro in background. Senza contesto il giro
+  // girerebbe fuori da withTenant e il facade del DB ripiegherebbe sul tenant
+  // DEFAULT (NUC-1): meglio non partire. Rotte e scheduler aprono sempre un tenant.
+  const tenantCode = getCurrentTenantCode();
+  if (!tenantCode) {
+    throw new Error("Scansione senza contesto tenant: non avviata (aprire il tenant con withTenant)");
+  }
+
   // Inietta getSetting per leggere porte custom dal DB (ports.ts è usato anche client-side)
   try { setGetSettingFn(getSetting); } catch { /* ignore */ }
 
@@ -206,35 +228,39 @@ export async function discoverNetwork(
 
   getProgressMap().set(id, progress);
 
-  // Cattura il contesto tenant corrente per preservarlo nel background task
-  const tenantCode = getCurrentTenantCode();
-
   const runInBackground = () =>
     runDiscovery(id, network.id, network.cidr, ips, scanType, nmapArgs, snmpCommunity, network.dns_server ?? null, options);
 
-  const backgroundTask = tenantCode
-    ? withTenant(tenantCode, runInBackground)
-    : runInBackground();
-
-  backgroundTask.catch(
-    (error) => {
+  const done: Promise<EsitoGiro> = withTenant(tenantCode, runInBackground).then(
+    (): EsitoGiro => {
+      // Ogni ramo di runDiscovery chiude il giro; se uno ritornasse senza farlo,
+      // il giro non si dichiara riuscito.
+      if (progress.status === "running") {
+        progress.status = "failed";
+        progress.error = "Giro terminato senza esito";
+        progress.logs = [...(progress.logs ?? []), "[ERRORE] Giro terminato senza esito"];
+        setTimeout(() => getProgressMap().delete(id), 300_000).unref?.();
+      }
+      return progress.status === "failed"
+        ? { status: "failed", error: progress.error ?? "Giro fallito" }
+        : { status: "completed" };
+    },
+    (error): EsitoGiro => {
       const msg = error instanceof Error ? error.message : "Errore sconosciuto";
       const stack = error instanceof Error ? error.stack : "";
-      console.error(`[Discovery] Fatal error (tenant: ${tenantCode ?? "DEFAULT"}, network: ${networkId}):`, msg, stack);
-      const p = getProgressMap().get(id);
-      if (p) {
-        p.status = "failed";
-        p.error = msg;
-        p.logs = [...(p.logs ?? []), `[ERRORE] ${msg}`];
-      }
+      console.error(`[Discovery] Fatal error (tenant: ${tenantCode}, network: ${networkId}):`, msg, stack);
+      progress.status = "failed";
+      progress.error = msg;
+      progress.logs = [...(progress.logs ?? []), `[ERRORE] ${msg}`];
       // v0.2.634 audit B9: anche le scan in stato `failed` devono uscire dalla
       // progressMap dopo 5 min, come quelle `completed`. Senza questo cleanup
       // la mappa cresce indefinitamente con ogni scan fallita (memory slow leak).
       setTimeout(() => getProgressMap().delete(id), 300_000).unref?.();
-    }
+      return { status: "failed", error: msg };
+    },
   );
 
-  return { id, progress };
+  return { id, progress, done };
 }
 
 type HostScanData = {

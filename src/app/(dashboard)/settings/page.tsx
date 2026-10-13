@@ -668,7 +668,12 @@ function SettingsPageInner() {
     try {
       const res = await fetch(`/api/jobs/${id}/run`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) {
+      if (res.status === 202) {
+        // Job di scansione: il giro continua in background, «Ultima esecuzione» si aggiorna a fine giro.
+        toast.success("Scansione avviata: l'ultima esecuzione si aggiorna a fine giro");
+        const updated = await fetch("/api/jobs").then((r) => r.json());
+        setJobs(updated);
+      } else if (res.ok) {
         const ms = typeof data.duration_ms === "number" ? `${data.duration_ms} ms` : "ok";
         toast.success(`Job eseguito (${ms})`);
         const updated = await fetch("/api/jobs").then((r) => r.json());

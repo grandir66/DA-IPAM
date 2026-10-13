@@ -4,6 +4,30 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-13
+
+### Modifiche
+
+- **Un job di scansione dura quanto il suo giro (INV-1, T3-17).** I job
+  «ping sweep», «scansione veloce», SNMP e nmap tornavano appena il giro era
+  partito: la scansione continuava in background, «Ultima esecuzione» segnava
+  la partenza, il tick successivo poteva farne partire un'altra sulla stessa
+  rete mentre la prima scriveva ancora (21 accavallamenti nella storia di
+  un'installazione), e un giro fallito risultava riuscito. Ora il job resta in
+  esecuzione fino alla fine vera del giro; se il giro fallisce (anche nei rami
+  che si chiudevano in errore senza segnalarlo) il job fallisce e finisce nel
+  conteggio dei fallimenti dello scheduler. Un job su tutte le reti le
+  scansiona una dopo l'altra invece che tutte insieme; una rete in errore non
+  ferma le altre, ma fa fallire il job. Una scansione senza tenant aperto non
+  parte più. **Cosa cambia sulle installazioni del canale `dev`:** «Ultima
+  esecuzione» vuol dire fine del giro; un giro più lungo dell'intervallo fa
+  saltare i tick nel frattempo (voluto); un job i cui giri falliscono non
+  aggiorna più «Ultima esecuzione», quindi il controllo di salute lo vede
+  fermo e gli errori prima muti fanno scattare l'allarme dei fallimenti in
+  serie (voluto). «Esegui ora» su un job di scansione risponde subito
+  («Scansione avviata») invece di tenere aperta la richiesta per tutto il giro.
+  Prova: `scansione-attesa.test.ts`.
+
 ## [Non rilasciato] — 2026-10-12
 
 ### Correzioni

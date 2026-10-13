@@ -74,7 +74,9 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex): { links: 
 
   // 1. Correzioni manuali (la scelta manuale vince sempre).
   for (const o of [...input.overrides].sort((x, y) => x.id - y.id)) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- useNode non è un hook React (nome fissato dall'interfaccia)
     const a = useNode(idx, canonical(idx, o.a_node));
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- useNode non è un hook React (nome fissato dall'interfaccia)
     const b = useNode(idx, canonical(idx, o.b_node));
     if (!a || !b || a === b) continue;
     if (o.action === "ignore") ignored.add(pairKey(a, b));

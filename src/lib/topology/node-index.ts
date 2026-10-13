@@ -138,6 +138,7 @@ export function resolveNode(idx: NodeIndex, ref: { ip?: string | null; mac?: str
     })(),
   ];
   for (const c of candidates) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- useNode non è un hook React (nome fissato dall'interfaccia)
     if (typeof c === "string") return useNode(idx, c);
   }
   return null;

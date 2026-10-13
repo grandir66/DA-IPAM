@@ -6,6 +6,25 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-10-12
 
+### Modifiche
+
+- **Le letture del database in una sola copia** (tappa 3, NUC-2 gruppo 1a).
+  103 funzioni di lettura e 18 tipi esistevano due volte, nella vecchia
+  facciata `db.ts` e nel modulo per tenant, con lo stesso testo: una
+  correzione fatta in una copia non arrivava all'altra, ed è così che altre
+  funzioni si sono separate nel tempo. Ora resta solo la copia per tenant e la
+  facciata la riesporta. L'elenco non è scritto a mano: lo sceglie il parser di
+  TypeScript (testo uguale, funzioni e tipi da cui dipendono uguali, nessuna
+  scrittura). Prima e dopo lo spostamento le letture sono state eseguite sulla
+  copia del database di un cliente: 268 chiamate, stessi risultati. **Cambia
+  solo un caso**: una di queste letture chiamata senza un cliente scelto prima
+  ripiegava sul tenant predefinito, ora è un errore, come già nel modulo per
+  tenant. Il registro dei ripieghi (T3-03) finora non ne ha contato nessuno
+  sulle installazioni del canale `dev`; il rilascio aspetta comunque la fine
+  della finestra di osservazione. Prove: `db-facade-als.test.ts` (stesso
+  oggetto funzione, stesso contesto tenant anche dopo un `await`, niente
+  ripiego fuori contesto) e il cricchetto della facciata, sceso a 168.
+
 ### Correzioni
 
 - **Impostazioni dell'hub senza segreti per chi non è admin (SEC-5, seconda

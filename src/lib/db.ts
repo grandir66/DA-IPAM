@@ -22,11 +22,10 @@ import { resolveDataDir } from "./data-dir";
 import fs from "fs";
 import { SCHEMA_SQL } from "./db-schema";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
-import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
-import { decrypt, safeDecrypt } from "./crypto";
+import { ipSortKey, sqlOrderByDhcpLeases, type SortDirection } from "./table-sort";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
-import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
+import type { CredProtocol } from "./credentials/resolve";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 
@@ -37,28 +36,55 @@ function ipToNum(ip: string): number {
 }
 import type {
   Network,
-  NetworkWithStats,
   Host,
-  KnownHostWithNetworkRow,
   HostDetail,
   ScanHistory,
   NetworkDevice,
   Credential,
-  ArpEntry,
-  MacPortEntry,
   ScheduledJob,
-  StatusHistory,
   User,
   NetworkInput,
   HostInput,
   HostUpdate,
   ScheduledJobInput,
   CredentialInput,
-  ExcludedIpWithNetwork,
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
 import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu } from "./db-tenant";
+// NUC-2 gruppo 1a (T3-05): letture spostate che il resto della facciata usa ancora.
+import {
+  getNetworks,
+  getNetworkById,
+  mergeOpenPortsJson,
+  isIpExcluded,
+  getCredentialById,
+  getHostDetectCredentialsEnriched,
+  getNetworkCredentials,
+  getHostCredentials,
+  getNetworkDeviceById,
+  getNetworkDeviceByHost,
+  getNetworkDeviceByHostId,
+  getInventoryAssetById,
+  getInventoryAssetByNetworkDevice,
+  getInventoryAssetByHost,
+  getAssetAssigneeById,
+  getLocationById,
+  findExistingBinding,
+  getProxmoxHostById,
+  getAdIntegrationById,
+} from "./db-tenant";
+import type {
+  CredentialCoverageRow,
+  NetworkCredentialRole,
+  HostDetectCredentialRole,
+  MacIpMappingSource,
+  DeviceCredentialBinding,
+  AdIntegration,
+  AdComputer,
+  AdUser,
+  AdDhcpLease,
+} from "./db-tenant";
 
 const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
@@ -2303,163 +2329,6 @@ export function updateUserLastLogin(userId: number): void {
 // Networks
 // ========================
 
-export function getNetworks(): (NetworkWithStats & { router_id: number | null })[] {
-  return getDb().prepare(`
-    SELECT
-      n.*,
-      nr.router_id,
-      COALESCE(h.total_hosts, 0) as total_hosts,
-      COALESCE(h.online_count, 0) as online_count,
-      COALESCE(h.offline_count, 0) as offline_count,
-      COALESCE(h.unknown_count, 0) as unknown_count,
-      (SELECT MAX(timestamp) FROM scan_history WHERE network_id = n.id) as last_scan
-    FROM networks n
-    LEFT JOIN network_router nr ON nr.network_id = n.id
-    LEFT JOIN (
-      SELECT
-        network_id,
-        COUNT(*) as total_hosts,
-        SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online_count,
-        SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline_count,
-        SUM(CASE WHEN status = 'unknown' THEN 1 ELSE 0 END) as unknown_count
-      FROM hosts
-      GROUP BY network_id
-    ) h ON h.network_id = n.id
-    ORDER BY n.name
-  `).all() as (NetworkWithStats & { router_id: number | null })[];
-}
-
-export function getNetworksPaginated(
-  page: number,
-  pageSize: number,
-  search?: string,
-  sort?: { key?: string; dir?: SortDirection }
-): { data: (NetworkWithStats & { router_id: number | null })[]; total: number } {
-  const offset = (page - 1) * pageSize;
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-
-  if (search && search.trim()) {
-    const like = `%${search.trim()}%`;
-    conditions.push("(n.name LIKE ? OR n.cidr LIKE ? OR n.location LIKE ?)");
-    params.push(like, like, like);
-  }
-
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
-  const total = (getDb().prepare(`SELECT COUNT(*) as cnt FROM networks n ${whereClause}`).get(...params) as { cnt: number }).cnt;
-
-  const orderSql = sqlOrderByNetworks(sort?.key, sort?.dir ?? "asc");
-
-  const data = getDb().prepare(`
-    SELECT
-      n.*,
-      nr.router_id,
-      COALESCE(h.total_hosts, 0) as total_hosts,
-      COALESCE(h.online_count, 0) as online_count,
-      COALESCE(h.offline_count, 0) as offline_count,
-      COALESCE(h.unknown_count, 0) as unknown_count,
-      (SELECT MAX(timestamp) FROM scan_history WHERE network_id = n.id) as last_scan
-    FROM networks n
-    LEFT JOIN network_router nr ON nr.network_id = n.id
-    LEFT JOIN (
-      SELECT
-        network_id,
-        COUNT(*) as total_hosts,
-        SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online_count,
-        SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline_count,
-        SUM(CASE WHEN status = 'unknown' THEN 1 ELSE 0 END) as unknown_count
-      FROM hosts
-      GROUP BY network_id
-    ) h ON h.network_id = n.id
-    ${whereClause}
-    ORDER BY ${orderSql}
-    LIMIT ? OFFSET ?
-  `).all(...params, pageSize, offset) as (NetworkWithStats & { router_id: number | null })[];
-
-  return { data, total };
-}
-
-export function getDevicesPaginated(
-  page: number,
-  pageSize: number,
-  search?: string
-): { data: NetworkDevice[]; total: number } {
-  const offset = (page - 1) * pageSize;
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-
-  if (search && search.trim()) {
-    const like = `%${search.trim()}%`;
-    conditions.push("(name LIKE ? OR host LIKE ? OR vendor LIKE ? OR classification LIKE ?)");
-    params.push(like, like, like, like);
-  }
-
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
-  const total = (getDb().prepare(`SELECT COUNT(*) as cnt FROM network_devices ${whereClause}`).get(...params) as { cnt: number }).cnt;
-
-  const data = getDb().prepare(`
-    SELECT * FROM network_devices ${whereClause} ORDER BY name LIMIT ? OFFSET ?
-  `).all(...params, pageSize, offset) as NetworkDevice[];
-
-  return { data, total };
-}
-
-export function getNetworkById(id: number): Network | undefined {
-  return getDb().prepare("SELECT * FROM networks WHERE id = ?").get(id) as Network | undefined;
-}
-
-/** Router ARP associato alla subnet (tabella network_router), se presente. */
-export function getNetworkRouterBinding(networkId: number): { id: number; name: string; host: string } | null {
-  const row = getDb()
-    .prepare(
-      `SELECT nd.id, nd.name, nd.host
-       FROM network_router nr
-       JOIN network_devices nd ON nd.id = nr.router_id
-       WHERE nr.network_id = ?
-       LIMIT 1`
-    )
-    .get(networkId) as { id: number; name: string; host: string } | undefined;
-  return row ?? null;
-}
-
-export function getNetworkContainingIp(ip: string): Network | undefined {
-  const { isIpInCidr } = require("./utils") as { isIpInCidr: (ip: string, cidr: string) => boolean };
-  const networks = getDb().prepare("SELECT * FROM networks").all() as Network[];
-  for (const net of networks) {
-    if (isIpInCidr(ip, net.cidr)) {
-      return net;
-    }
-  }
-  return undefined;
-}
-
-/**
- * Pre-carica tutte le reti e ritorna una funzione di lookup in-memory.
- * Usare al posto di getNetworkContainingIp() quando si devono risolvere
- * molti IP in un loop (evita N+1 query).
- */
-export function buildNetworkLookup(): (ip: string) => Network | undefined {
-  const { ipToLong, parseCidr } = require("./utils") as {
-    ipToLong: (ip: string) => number;
-    parseCidr: (cidr: string) => { networkLong: number; broadcastLong: number; prefix: number };
-  };
-  const networks = getDb().prepare("SELECT * FROM networks").all() as Network[];
-  const parsed = networks.map((net) => {
-    const { networkLong, broadcastLong } = parseCidr(net.cidr);
-    return { net, networkLong, broadcastLong };
-  });
-
-  return (ip: string) => {
-    const ipLong = ipToLong(ip);
-    for (const { net, networkLong, broadcastLong } of parsed) {
-      if (ipLong >= networkLong && ipLong <= broadcastLong) return net;
-    }
-    return undefined;
-  };
-}
-
 export function createNetwork(input: NetworkInput): Network {
   // Verifica overlap CIDR con reti esistenti
   const { cidrOverlaps } = require("./utils") as { cidrOverlaps: (a: string, b: string) => boolean };
@@ -2556,30 +2425,6 @@ export function setNetworkAssessmentConfig(
 // Hosts
 // ========================
 
-export function getHostsByNetwork(networkId: number): Host[] {
-  const hosts = getDb().prepare(
-    "SELECT * FROM hosts WHERE network_id = ?"
-  ).all(networkId) as Host[];
-  // Sort by numeric IP value (not lexicographic)
-  return hosts.sort((a, b) => ipToNum(a.ip) - ipToNum(b.ip));
-}
-
-/** Tutti gli host di tutte le reti (senza ordinamento per rete). Per export CSV e sync inventario. */
-export function getAllHostsFlat(): Host[] {
-  return getDb().prepare("SELECT * FROM hosts").all() as Host[];
-}
-
-/** Tutti gli host (tutte le reti), per lista dispositivi unificata. limit opzionale (default 10000). */
-export function getAllHosts(limit: number = 10000): Host[] {
-  const hosts = getDb()
-    .prepare("SELECT * FROM hosts ORDER BY network_id, ip LIMIT ?")
-    .all(limit) as Host[];
-  return hosts.sort((a, b) => {
-    if (a.network_id !== b.network_id) return a.network_id - b.network_id;
-    return ipToNum(a.ip) - ipToNum(b.ip);
-  });
-}
-
 /** Hosts con device associato in una sola query (evita N+1 getNetworkDeviceByHost) */
 export function getHostsByNetworkWithDevices(networkId: number): (Host & {
   device_id?: number;
@@ -2640,14 +2485,6 @@ export function getHostsByNetworkWithDevices(networkId: number): (Host & {
     }));
 }
 
-/** Host conosciuti da monitorare (known_host = 1). Opzionale filtro per network_id. */
-export function getKnownHosts(networkId?: number | null): Host[] {
-  if (networkId != null) {
-    return getDb().prepare("SELECT * FROM hosts WHERE known_host = 1 AND network_id = ?").all(networkId) as Host[];
-  }
-  return getDb().prepare("SELECT * FROM hosts WHERE known_host = 1").all() as Host[];
-}
-
 /** Confronto MAC normalizzato (ignora : - .) per match cross-vendor */
 const MAC_HEX = (col: string) => `UPPER(REPLACE(REPLACE(REPLACE(COALESCE(${col},''), ':', ''), '-', ''), '.', ''))`;
 
@@ -2704,18 +2541,6 @@ export function resolveMacToDevice(mac: string): { ip: string | null; hostname: 
     vendor: mapping?.vendor ?? null,
     host_id: mapping?.host_id ?? null,
   };
-}
-
-export function getHostBasic(
-  id: number
-): Pick<Host, "id" | "ip" | "custom_name" | "hostname" | "vendor" | "device_manufacturer"> | undefined {
-  return getDb()
-    .prepare("SELECT id, ip, custom_name, hostname, vendor, device_manufacturer FROM hosts WHERE id = ?")
-    .get(id) as Pick<Host, "id" | "ip" | "custom_name" | "hostname" | "vendor" | "device_manufacturer"> | undefined;
-}
-
-export function getHostByIp(ip: string): Host | undefined {
-  return getDb().prepare("SELECT * FROM hosts WHERE ip = ? LIMIT 1").get(ip) as Host | undefined;
 }
 
 export function getHostById(id: number): HostDetail | undefined {
@@ -2810,24 +2635,6 @@ function parsePortsJson(json: string | null): PortEntry[] {
     }
   } catch { /* ignore */ }
   return [];
-}
-
-/** Merge existing open_ports JSON with new scan result (union by port+protocol). Esportato per sessione Nmap+SNMP unificata. */
-export function mergeOpenPortsJson(existing: string | null, incoming: string): string {
-  const toMap = (ports: PortEntry[]): Map<string, PortEntry> => {
-    const map = new Map<string, PortEntry>();
-    for (const p of ports) {
-      const key = `${p.port}:${p.protocol}`;
-      if (!map.has(key)) map.set(key, p);
-    }
-    return map;
-  };
-  const merged = toMap(parsePortsJson(existing));
-  const incomingMap = toMap(parsePortsJson(incoming));
-  for (const [k, v] of incomingMap) {
-    merged.set(k, v);
-  }
-  return JSON.stringify([...merged.values()].sort((a, b) => a.port - b.port || String(a.protocol).localeCompare(b.protocol)));
 }
 
 /**
@@ -3117,48 +2924,6 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
   return host;
 }
 
-// Snapshot dei segnali di un host già persistiti (nessun probe): input puro per gli
-// emettitori di src/lib/attribution/emitters.ts. Facade di db-tenant.ts::getAttributionSignalsForHost.
-export interface AttributionSignals {
-  host: {
-    id: number; ip: string; mac: string | null; vendor: string | null;
-    hostname: string | null; os_info: string | null; open_ports: string | null;
-    snmp_data: string | null; detection_json: string | null;
-  };
-  adComputer: { operating_system: string | null; operating_system_version: string | null } | null;
-  wazuh: { os_platform: string | null; os_name: string | null; os_version: string | null; board_vendor: string | null } | null;
-  neighborSightings: Array<{ protocol: string; remote_platform: string | null; remote_device_name: string }>;
-}
-
-export function getAttributionSignalsForHost(hostId: number): AttributionSignals | null {
-  const d = getDb();
-  const host = d.prepare(
-    `SELECT id, ip, mac, vendor, hostname, os_info, open_ports, snmp_data, detection_json
-     FROM hosts WHERE id = ?`
-  ).get(hostId) as AttributionSignals["host"] | undefined;
-  if (!host) return null;
-  const adComputer = d.prepare(
-    `SELECT operating_system, operating_system_version FROM ad_computers
-     WHERE host_id = ? ORDER BY synced_at DESC LIMIT 1`
-  ).get(hostId) as AttributionSignals["adComputer"] ?? null;
-  const wazuh = d.prepare(
-    `SELECT wo.os_platform, wo.os_name, wo.os_version, wh.board_vendor
-     FROM wazuh_agent wa
-     LEFT JOIN wazuh_os wo ON wo.agent_id = wa.agent_id
-     LEFT JOIN wazuh_hw wh ON wh.agent_id = wa.agent_id
-     WHERE wa.host_id = ? LIMIT 1`
-  ).get(hostId) as AttributionSignals["wazuh"] ?? null;
-  const neighborSightings = d.prepare(
-    `SELECT dn.protocol, dn.remote_platform, dn.remote_device_name
-     FROM device_neighbors dn, hosts h
-     WHERE h.id = ?
-       AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
-         OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))
-     ORDER BY dn.timestamp DESC LIMIT 5`
-  ).all(hostId) as AttributionSignals["neighborSightings"];
-  return { host, adComputer, wazuh, neighborSightings };
-}
-
 /** Facade di db-tenant.ts::refreshHostVendorsFromMac (regola 12). Vedi lì per la doc completa. */
 export function refreshHostVendorsFromMac(
   networkId?: number
@@ -3274,17 +3039,6 @@ export function deleteHost(id: number, options?: { reason?: string; excludedBy?:
 // excluded_ips — tombstone IP esclusi
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function isIpExcluded(networkId: number, ip: string): boolean {
-  try {
-    const row = getDb()
-      .prepare("SELECT 1 FROM excluded_ips WHERE network_id = ? AND ip = ? LIMIT 1")
-      .get(networkId, ip);
-    return !!row;
-  } catch {
-    return false;
-  }
-}
-
 export function addToExcludedIps(networkId: number, ip: string, reason?: string | null, excludedBy?: string | null): void {
   getDb()
     .prepare(
@@ -3297,20 +3051,6 @@ export function removeFromExcludedIps(networkId: number, ip: string): boolean {
   return getDb()
     .prepare("DELETE FROM excluded_ips WHERE network_id = ? AND ip = ?")
     .run(networkId, ip).changes > 0;
-}
-
-export function getExcludedIps(networkId?: number): ExcludedIpWithNetwork[] {
-  const where = networkId != null ? "WHERE e.network_id = ?" : "";
-  const params = networkId != null ? [networkId] : [];
-  return getDb()
-    .prepare(
-      `SELECT e.*, n.name AS network_name, n.cidr AS network_cidr
-       FROM excluded_ips e
-       JOIN networks n ON n.id = e.network_id
-       ${where}
-       ORDER BY e.excluded_at DESC`
-    )
-    .all(...params) as ExcludedIpWithNetwork[];
 }
 
 /**
@@ -3361,30 +3101,6 @@ export function bulkDeleteHosts(networkId: number, hostIds: number[], options?: 
     } catch { /* tabella mancante: ignora */ }
   }
   return changes;
-}
-
-/** Quanti degli id appartengono alla rete indicata (nessun duplicato negli id). */
-export function countHostsInNetwork(networkId: number, hostIds: number[]): number {
-  if (hostIds.length === 0) return 0;
-  const unique = [...new Set(hostIds)];
-  const placeholders = unique.map(() => "?").join(",");
-  const row = getDb()
-    .prepare(`SELECT COUNT(*) AS c FROM hosts WHERE network_id = ? AND id IN (${placeholders})`)
-    .get(networkId, ...unique) as { c: number };
-  return row.c;
-}
-
-/** Host conosciuti con nome/CIDR rete (per pagina monitoraggio). */
-export function getKnownHostsWithNetwork(): KnownHostWithNetworkRow[] {
-  return getDb()
-    .prepare(
-      `SELECT h.*, n.name AS network_name, n.cidr AS network_cidr
-       FROM hosts h
-       INNER JOIN networks n ON h.network_id = n.id
-       WHERE h.known_host = 1
-       ORDER BY n.name COLLATE NOCASE, h.ip`
-    )
-    .all() as KnownHostWithNetworkRow[];
 }
 
 /**
@@ -3465,98 +3181,6 @@ export function addScanHistory(entry: Omit<ScanHistory, "id" | "timestamp">): vo
   );
 }
 
-export function getScanHistory(filters: { host_id?: number; network_id?: number; limit?: number }): ScanHistory[] {
-  const conditions: string[] = [];
-  const values: unknown[] = [];
-
-  if (filters.host_id) { conditions.push("host_id = ?"); values.push(filters.host_id); }
-  if (filters.network_id) { conditions.push("network_id = ?"); values.push(filters.network_id); }
-
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const limit = filters.limit || 100;
-
-  return getDb().prepare(
-    `SELECT * FROM scan_history ${where} ORDER BY timestamp DESC LIMIT ?`
-  ).all(...values, limit) as ScanHistory[];
-}
-
-// Chiave fase acquisizione (spec §6.2) → scan_type multipli in scan_history che la alimentano.
-// Facade di db-tenant.ts::getScanPhaseStatusForNetwork — vedi lì la nota su 'enrich'.
-export type ScanPhaseKey = "initial" | "nmap_deep" | "snmp" | "enrich" | "credentials";
-
-const SCAN_PHASE_TYPES: Record<ScanPhaseKey, string[]> = {
-  initial: ["scan_icmp", "scan_naabu", "network_discovery"],
-  nmap_deep: ["scan_nmap_base", "nmap", "network_discovery"],
-  snmp: ["scan_snmp_verify", "snmp", "network_discovery"],
-  enrich: ["scan_enrich", "arp", "dhcp", "dns", "network_discovery"],
-  credentials: ["credential_validate"],
-};
-
-export interface ScanPhaseStatus {
-  key: ScanPhaseKey;
-  last_run: string | null;
-  stale: boolean;
-}
-
-const STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
-
-export function getScanPhaseStatusForNetwork(networkId: number): ScanPhaseStatus[] {
-  const rows = getDb().prepare(
-    `SELECT scan_type, MAX(timestamp) t FROM scan_history WHERE network_id = ? GROUP BY scan_type`
-  ).all(networkId) as Array<{ scan_type: string; t: string | null }>;
-  const maxByType = new Map(rows.map((r) => [r.scan_type, r.t]));
-  const now = Date.now();
-  return (Object.keys(SCAN_PHASE_TYPES) as ScanPhaseKey[]).map((key) => {
-    const types = SCAN_PHASE_TYPES[key];
-    let lastRun: string | null = null;
-    for (const t of types) {
-      const v = maxByType.get(t);
-      if (v && (lastRun === null || v > lastRun)) lastRun = v;
-    }
-    const stale = lastRun !== null && now - new Date(lastRun).getTime() > STALE_AFTER_MS;
-    return { key, last_run: lastRun, stale };
-  });
-}
-
-export interface AttributionCompleteness {
-  total: number;
-  level2: number;
-  level1: number;
-  none: number;
-  suggestion: string | null;
-}
-
-export function getAttributionCompletenessForNetwork(networkId: number): AttributionCompleteness {
-  const row = getDb().prepare(
-    `SELECT
-       COUNT(*) AS total,
-       SUM(CASE WHEN attr_category LIKE '%.%' THEN 1 ELSE 0 END) AS level2,
-       SUM(CASE WHEN attr_category IS NOT NULL AND attr_category != 'unknown' AND attr_category NOT LIKE '%.%' THEN 1 ELSE 0 END) AS level1
-     FROM hosts WHERE network_id = ?`
-  ).get(networkId) as { total: number; level2: number | null; level1: number | null };
-  const total = row.total ?? 0;
-  const level2 = row.level2 ?? 0;
-  const level1 = row.level1 ?? 0;
-  const none = total - level2 - level1;
-
-  let suggestion: string | null = null;
-  const snmpNeverRun = getScanPhaseStatusForNetwork(networkId).find((p) => p.key === "snmp")?.last_run == null;
-  if (level1 + none > 0 && snmpNeverRun) {
-    suggestion = `${level1 + none} host fermi al livello 1: esegui SNMP per distinguere AP da switch`;
-  } else if (none > level2) {
-    suggestion = `${none} host senza attribuzione: esegui la scansione iniziale`;
-  }
-
-  return { total, level2, level1, none, suggestion };
-}
-
-export interface CredentialCoverageRow {
-  category: string;
-  hosts: number;
-  withValidCredential: number;
-  expectedProtocol: string;
-}
-
 // Fase 4b Task 4 (§7.6) — stessa mappa categoria→protocolli di db-tenant.ts
 // (duplicata qui per il facade, coerente con la regola "coerenza funzioni DB").
 const CREDENTIAL_COVERAGE_PROTOCOLS: Record<string, readonly CredProtocol[]> = {
@@ -3629,106 +3253,9 @@ export function getCredentialCoverageByCategory(): CredentialCoverageRow[] {
 // Network Devices
 // ========================
 
-export function getNetworkDevices(): NetworkDevice[] {
-  return getDb().prepare("SELECT * FROM network_devices ORDER BY name").all() as NetworkDevice[];
-}
-
-export function getRouters(): NetworkDevice[] {
-  return getDb().prepare("SELECT * FROM network_devices WHERE device_type = 'router' ORDER BY name").all() as NetworkDevice[];
-}
-
-/**
- * v0.2.661: sources DHCP effettive — qualunque network_device con almeno 1
- * lease in `dhcp_leases`. Include Mikrotik, Windows DHCP, ecc.
- */
-export function getDhcpSources(): Array<{ id: number; name: string; host: string; vendor: string; type: string; lease_count: number; last_synced: string | null }> {
-  return getDb().prepare(`
-    SELECT nd.id, nd.name, nd.host, nd.vendor, d.source_type AS type,
-           COUNT(d.id) AS lease_count,
-           MAX(d.last_synced) AS last_synced
-    FROM network_devices nd
-    JOIN dhcp_leases d ON d.source_device_id = nd.id
-    GROUP BY nd.id, nd.name, nd.host, nd.vendor, d.source_type
-    ORDER BY lease_count DESC, nd.name ASC
-  `).all() as Array<{ id: number; name: string; host: string; vendor: string; type: string; lease_count: number; last_synced: string | null }>;
-}
-
-/** Sorgenti ARP utilizzabili come "Router ARP default" di una subnet:
- *  qualsiasi device con use_for_arp_poll=1 (router, firewall, switch L3, ...).
- *  Fallback per record legacy: device_type='router' o vendor='stormshield'. */
-export function getArpSourceDevices(): NetworkDevice[] {
-  return getDb().prepare(
-    `SELECT * FROM network_devices
-     WHERE use_for_arp_poll = 1
-        OR device_type IN ('router', 'firewall')
-        OR vendor = 'stormshield'
-     ORDER BY name`
-  ).all() as NetworkDevice[];
-}
-
-export function getSwitches(): NetworkDevice[] {
-  return getDb().prepare("SELECT * FROM network_devices WHERE device_type = 'switch' ORDER BY name").all() as NetworkDevice[];
-}
-
-export function getDevicesByClassification(classification: string): NetworkDevice[] {
-  if (classification === "storage") {
-    return getDb()
-      .prepare("SELECT * FROM network_devices WHERE classification IN ('storage', 'nas', 'nas_synology', 'nas_qnap') ORDER BY name")
-      .all() as NetworkDevice[];
-  }
-  return getDb()
-    .prepare("SELECT * FROM network_devices WHERE classification = ? ORDER BY name")
-    .all(classification) as NetworkDevice[];
-}
-
-/** Dispositivi per classificazione, includendo legacy (device_type senza classification) per router/switch */
-export function getDevicesByClassificationOrLegacy(classification: string): NetworkDevice[] {
-  if (classification === "router") {
-    // Pagina "Router" unificata: include router, firewall e device con use_for_arp_poll=1 (es. switch L3).
-    return getDb().prepare(
-      `SELECT * FROM network_devices
-       WHERE classification IN ('router', 'firewall')
-          OR use_for_arp_poll = 1
-          OR (device_type = 'router' AND (classification IS NULL OR classification = ''))
-       ORDER BY name`
-    ).all() as NetworkDevice[];
-  }
-  if (classification === "switch") {
-    return getDb().prepare(
-      "SELECT * FROM network_devices WHERE classification = 'switch' OR (device_type = 'switch' AND (classification IS NULL OR classification = '')) ORDER BY name"
-    ).all() as NetworkDevice[];
-  }
-  return getDevicesByClassification(classification);
-}
-
-/** Host con classificazione e nome rete (per lista dispositivi unificata) */
-export function getHostsByClassification(classification: string): (Host & { network_name?: string })[] {
-  if (classification === "storage") {
-    return getDb()
-      .prepare(
-        `SELECT h.*, n.name as network_name FROM hosts h
-         JOIN networks n ON n.id = h.network_id
-         WHERE h.classification IN ('storage', 'nas', 'nas_synology', 'nas_qnap') ORDER BY h.custom_name, h.hostname, h.ip`
-      )
-      .all() as (Host & { network_name?: string })[];
-  }
-  return getDb()
-    .prepare(
-      `SELECT h.*, n.name as network_name FROM hosts h
-       JOIN networks n ON n.id = h.network_id
-       WHERE h.classification = ? ORDER BY h.custom_name, h.hostname, h.ip`
-    )
-    .all(classification) as (Host & { network_name?: string })[];
-}
-
 // ========================
 // Network Router (ARP assignment per subnet)
 // ========================
-
-export function getNetworkRouterId(networkId: number): number | null {
-  const row = getDb().prepare("SELECT router_id FROM network_router WHERE network_id = ?").get(networkId) as { router_id: number } | undefined;
-  return row?.router_id ?? null;
-}
 
 export function setNetworkRouter(networkId: number, routerId: number): void {
   getDb().prepare(
@@ -3743,14 +3270,6 @@ export function deleteNetworkRouter(networkId: number): void {
 // ========================
 // Credentials (riutilizzabili)
 // ========================
-
-export function getAllCredentials(): Credential[] {
-  return getDb().prepare("SELECT * FROM credentials ORDER BY name").all() as Credential[];
-}
-
-export function getCredentialById(id: number): Credential | undefined {
-  return getDb().prepare("SELECT * FROM credentials WHERE id = ?").get(id) as Credential | undefined;
-}
 
 export function createCredential(
   input: CredentialInput & {
@@ -3823,57 +3342,6 @@ export function deleteCredential(id: number): boolean {
   return getDb().prepare("DELETE FROM credentials WHERE id = ?").run(id).changes > 0;
 }
 
-/** Restituisce le credenziali host Windows (da settings host_windows_credential_id). Per WinRM/WMI. */
-export function getHostWindowsCredentials(): { username: string; password: string } | null {
-  const idStr = getSetting("host_windows_credential_id");
-  if (!idStr?.trim()) return null;
-  const id = parseInt(idStr, 10);
-  if (isNaN(id)) return null;
-  const cred = getCredentialById(id);
-  if (!cred || String(cred.credential_type || "").toLowerCase() !== "windows") return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
-}
-
-/** Restituisce le credenziali host Linux (da settings host_linux_credential_id). Per SSH. */
-export function getHostLinuxCredentials(): { username: string; password: string } | null {
-  const idStr = getSetting("host_linux_credential_id");
-  if (!idStr?.trim()) return null;
-  const id = parseInt(idStr, 10);
-  if (isNaN(id)) return null;
-  const cred = getCredentialById(id);
-  if (!cred || String(cred.credential_type || "").toLowerCase() !== "linux") return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
-}
-
-/**
- * Username/password decifrati se la credenziale esiste ed è del tipo atteso
- * (Windows/Linux/API — "api" riusato anche per Redfish/BMC, Fase 4b Task 1:
- * niente tipo dedicato finché il CHECK di host_credentials/device_credential_bindings
- * non viene migrato, vedi Task 4).
- */
-export function getCredentialLoginPair(
-  credentialId: number,
-  expectedType: "windows" | "linux" | "api"
-): { username: string; password: string } | null {
-  const cred = getCredentialById(credentialId);
-  if (!cred) return null;
-  const type = String(cred.credential_type || "").toLowerCase();
-  if (type !== expectedType) return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
-}
-
-/** Ruoli catena credenziali per subnet (detect / SNMP). */
-export type NetworkCredentialRole = "windows" | "linux" | "ssh" | "snmp";
-
 function credentialMatchesNetworkRole(
   credentialType: string,
   role: NetworkCredentialRole
@@ -3884,28 +3352,6 @@ function credentialMatchesNetworkRole(
   if (role === "ssh") return t === "ssh";
   if (role === "snmp") return t === "snmp";
   return false;
-}
-
-/** Username/password per credenziali SSH o Linux (scan SSH unificato). */
-export function getSshLinuxCredentialPair(credentialId: number): { username: string; password: string } | null {
-  const cred = getCredentialById(credentialId);
-  if (!cred) return null;
-  const type = String(cred.credential_type || "").toLowerCase();
-  if (type !== "ssh" && type !== "linux") return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
-}
-
-/** Credenziali Windows/Linux/SSH/SNMP assegnate alla subnet (ordine = priorità tentativi). */
-export function getNetworkHostCredentialIds(networkId: number, role: NetworkCredentialRole): number[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT credential_id FROM network_host_credentials WHERE network_id = ? AND role = ? ORDER BY sort_order ASC, id ASC`
-    )
-    .all(networkId, role) as { credential_id: number }[];
-  return rows.map((r) => r.credential_id);
 }
 
 export function replaceNetworkHostCredentials(
@@ -3934,17 +3380,6 @@ export function replaceNetworkHostCredentials(
   })();
 }
 
-/** Ruoli binding detect su host (stesso nome tabella host_detect_credential). */
-export type HostDetectCredentialRole = "windows" | "linux" | "ssh" | "snmp";
-
-/** Credenziale salvata dopo primo detect riuscito (un solo tentativo per credenziale in scan). */
-export function getHostDetectCredentialId(hostId: number, role: HostDetectCredentialRole): number | null {
-  const row = getDb()
-    .prepare(`SELECT credential_id FROM host_detect_credential WHERE host_id = ? AND role = ?`)
-    .get(hostId, role) as { credential_id: number } | undefined;
-  return row?.credential_id ?? null;
-}
-
 function credentialMatchesDetectRole(credentialType: string, role: HostDetectCredentialRole): boolean {
   const t = credentialType.toLowerCase();
   if (role === "windows") return t === "windows";
@@ -3970,163 +3405,9 @@ export function deleteHostDetectCredential(hostId: number, role: HostDetectCrede
   getDb().prepare(`DELETE FROM host_detect_credential WHERE host_id = ? AND role = ?`).run(hostId, role);
 }
 
-/** Credenziali archiviate per host (detect) con nome per UI. */
-export function getHostDetectCredentialsEnriched(hostId: number): Array<{
-  role: HostDetectCredentialRole;
-  credential_id: number;
-  credential_name: string;
-}> {
-  const rows = getDb()
-    .prepare(`SELECT role, credential_id FROM host_detect_credential WHERE host_id = ? ORDER BY role`)
-    .all(hostId) as Array<{ role: HostDetectCredentialRole; credential_id: number }>;
-  return rows.map((r) => {
-    const c = getCredentialById(r.credential_id);
-    return {
-      role: r.role,
-      credential_id: r.credential_id,
-      credential_name: c?.name ?? `#${r.credential_id}`,
-    };
-  });
-}
-
-/**
- * Ordine: wrapper del resolver unico (fase 1b, §7.1-7.2) — credenziali v2
- * pertinenti (`network_credentials` filtrate per tipo adatto al ruolo), poi
- * legacy attuali (rete), poi quella globale Impostazioni (se non già in elenco).
- * Vedi commento gemello in db-tenant.ts sulla nota role="linux"→protocol "ssh".
- */
-export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux"): number[] {
-  const protocol: CredProtocol = role === "windows" ? "winrm" : "ssh";
-  const resolved = resolveCredentialsForDb(getDb(), { networkId }, protocol);
-  const out: number[] = [];
-  const seen = new Set<number>();
-  for (const r of resolved) {
-    if (seen.has(r.credential_id)) continue;
-    seen.add(r.credential_id);
-    out.push(r.credential_id);
-  }
-  const globalKey = role === "windows" ? "host_windows_credential_id" : "host_linux_credential_id";
-  const gStr = getSetting(globalKey);
-  const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
-  if (!Number.isNaN(gId) && gId > 0 && !seen.has(gId)) out.push(gId);
-  return out;
-}
-
-/**
- * Catena SSH per scan: wrapper del resolver unico — credenziali v2 pertinenti
- * (ssh/linux), poi legacy (ruolo `ssh` poi `linux`, stesso ordine di prima),
- * poi globale Impostazioni. Ordine e dedup preservati.
- */
-export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
-  const resolved = resolveCredentialsForDb(getDb(), { networkId }, "ssh");
-  const out: number[] = [];
-  const seen = new Set<number>();
-  for (const r of resolved) {
-    if (seen.has(r.credential_id)) continue;
-    seen.add(r.credential_id);
-    out.push(r.credential_id);
-  }
-  const gStr = getSetting("host_linux_credential_id");
-  const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
-  if (!Number.isNaN(gId) && gId > 0 && !seen.has(gId)) out.push(gId);
-  return out;
-}
-
-/**
- * Community SNMP per scan su una rete: wrapper del resolver unico — v2
- * (`network_credentials` tipo snmp) poi legacy (ruolo snmp, stesso ordine di
- * prima), poi override profilo/scan, poi community di default sulla rete,
- * infine public/private SEMPRE in fondo.
- */
-export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverride?: string | null): string[] {
-  const fromCreds: string[] = [];
-  for (const r of resolveCredentialsForDb(getDb(), { networkId }, "snmp")) {
-    const com = getCredentialCommunityString(r.credential_id);
-    if (com?.trim()) fromCreds.push(com.trim());
-  }
-  const net = getNetworkById(networkId);
-  const pushSplit = (s: string | null | undefined, into: string[]) => {
-    const t = s?.trim();
-    if (!t) return;
-    for (const part of t.split(",").map((x) => x.trim()).filter(Boolean)) into.push(part);
-  };
-  const mid: string[] = [];
-  pushSplit(profileOrOverride, mid);
-  pushSplit(net?.snmp_community ?? null, mid);
-  const ordered = [...fromCreds, ...mid, "public", "private"];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const x of ordered) {
-    if (!x || seen.has(x)) continue;
-    seen.add(x);
-    out.push(x);
-  }
-  return out;
-}
-
-/**
- * Community SNMP per un host: wrapper del resolver unico con `hostId` — le
- * credenziali già VALIDATE per questo host vengono anteposte alla catena di
- * rete v2 e a quella legacy (incluso il pin `host_detect_credential`, ora
- * parte della catena invece di uno short-circuit esclusivo come prima).
- * `public`/`private` restano SEMPRE in fondo. Vedi commento gemello in db-tenant.ts.
- */
-export function buildSnmpCommunitiesForHost(
-  networkId: number,
-  hostId: number | null,
-  profileOrOverride?: string | null
-): string[] {
-  const fromCreds: string[] = [];
-  for (const r of resolveCredentialsForDb(getDb(), { hostId: hostId ?? undefined, networkId }, "snmp")) {
-    const com = getCredentialCommunityString(r.credential_id);
-    if (com?.trim()) fromCreds.push(com.trim());
-  }
-  const net = getNetworkById(networkId);
-  const pushSplit = (s: string | null | undefined, into: string[]) => {
-    const t = s?.trim();
-    if (!t) return;
-    for (const part of t.split(",").map((x) => x.trim()).filter(Boolean)) into.push(part);
-  };
-  const mid: string[] = [];
-  pushSplit(profileOrOverride, mid);
-  pushSplit(net?.snmp_community ?? null, mid);
-  const ordered = [...fromCreds, ...mid, "public", "private"];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const x of ordered) {
-    if (!x || seen.has(x)) continue;
-    seen.add(x);
-    out.push(x);
-  }
-  return out;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // CREDENTIAL SYSTEM v2: network_credentials + host_credentials
 // ═══════════════════════════════════════════════════════════════════════════
-
-export interface NetworkCredentialRow {
-  id: number;
-  network_id: number;
-  credential_id: number;
-  sort_order: number;
-  credential_name: string;
-  credential_type: string;
-}
-
-/** Lista unificata credenziali assegnate alla subnet (ordinate). */
-export function getNetworkCredentials(networkId: number): NetworkCredentialRow[] {
-  return getDb()
-    .prepare(
-      `SELECT nc.id, nc.network_id, nc.credential_id, nc.sort_order,
-              c.name AS credential_name, c.credential_type
-       FROM network_credentials nc
-       JOIN credentials c ON c.id = nc.credential_id
-       WHERE nc.network_id = ?
-       ORDER BY nc.sort_order ASC, nc.id ASC`
-    )
-    .all(networkId) as NetworkCredentialRow[];
-}
 
 /** Sostituisce atomicamente la lista credenziali della subnet. */
 export function replaceNetworkCredentials(networkId: number, credentialIds: number[]): void {
@@ -4201,69 +3482,7 @@ export function copyNetworkCredentials(sourceNetworkId: number, targetNetworkId:
   return added;
 }
 
-/** Subnet che hanno almeno una credenziale configurata (per UI "importa da altra subnet"). */
-export function getNetworksWithCredentials(): Array<{ id: number; name: string; cidr: string; credential_count: number }> {
-  return getDb()
-    .prepare(
-      `SELECT n.id, n.name, n.cidr, COUNT(nc.id) AS credential_count
-       FROM networks n
-       JOIN network_credentials nc ON nc.network_id = n.id
-       GROUP BY n.id
-       HAVING credential_count > 0
-       ORDER BY n.name`
-    )
-    .all() as Array<{ id: number; name: string; cidr: string; credential_count: number }>;
-}
-
 // ── host_credentials CRUD ──
-
-export interface HostCredentialRow {
-  id: number;
-  host_id: number;
-  credential_id: number;
-  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
-  port: number;
-  validated: number;
-  validated_at: string | null;
-  sort_order: number;
-  auto_detected: number;
-  created_at: string;
-  credential_name: string;
-  credential_type: string;
-}
-
-/** Credenziali associate a un host (con JOIN per nome/tipo). */
-export function getHostCredentials(hostId: number): HostCredentialRow[] {
-  return getDb()
-    .prepare(
-      `SELECT hc.*, c.name AS credential_name, c.credential_type
-       FROM host_credentials hc
-       JOIN credentials c ON c.id = hc.credential_id
-       WHERE hc.host_id = ?
-       ORDER BY hc.sort_order ASC, hc.id ASC`
-    )
-    .all(hostId) as HostCredentialRow[];
-}
-
-/** Mappa batch: per ogni host di una rete, i protocol_type validati. Evita N+1. */
-export function getHostValidatedProtocolsByNetwork(networkId: number): Map<number, string[]> {
-  const rows = getDb()
-    .prepare(
-      `SELECT hc.host_id, hc.protocol_type
-       FROM host_credentials hc
-       JOIN hosts h ON h.id = hc.host_id
-       WHERE h.network_id = ? AND hc.validated = 1
-       ORDER BY hc.host_id, hc.protocol_type`
-    )
-    .all(networkId) as Array<{ host_id: number; protocol_type: string }>;
-  const map = new Map<number, string[]>();
-  for (const r of rows) {
-    const arr = map.get(r.host_id) || [];
-    if (!arr.includes(r.protocol_type)) arr.push(r.protocol_type);
-    map.set(r.host_id, arr);
-  }
-  return map;
-}
 
 /** Aggiunge credenziale a un host. */
 export function addHostCredential(
@@ -4446,143 +3665,9 @@ export function recordCredentialSuccess(
   }
 }
 
-/** Restituisce la community string decifrata per una credenziale SNMP. */
-export function getCredentialCommunityString(credentialId: number): string | null {
-  const cred = getCredentialById(credentialId);
-  if (!cred) return null;
-  const type = String(cred.credential_type || "").toLowerCase();
-  if (type !== "snmp") return null;
-  const enc = cred.encrypted_password || cred.encrypted_username;
-  if (!enc) return null;
-  const s = safeDecrypt(enc);
-  return s && s.trim() ? s : null;
-}
-
-/** Restituisce le credenziali SNMP v3 per un device (user name + auth key). Per v3 serve credential con username e password. */
-export function getDeviceSnmpV3Credentials(device: NetworkDevice): { username: string; authKey: string } | null {
-  const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
-  const credIds = isSnmpPrimary
-    ? [device.credential_id, device.snmp_credential_id]
-    : [device.snmp_credential_id, device.credential_id];
-  for (const credId of credIds) {
-    if (!credId) continue;
-    const cred = getCredentialById(credId);
-    if (!cred || String(cred.credential_type || "").toLowerCase() !== "snmp") continue;
-    const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-    const authKey = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-    if (username?.trim() && authKey?.trim()) return { username: username.trim(), authKey: authKey.trim() };
-  }
-  return null;
-}
-
-/**
- * SNMP usa sempre porta standard 161, indipendentemente da device.port.
- */
-export function getEffectiveSnmpPort(_device: NetworkDevice): number {
-  return 161;
-}
-
-/**
- * Community SNMP: con protocollo principale snmp_v2/v3 la credenziale di «gestione» è credential_id;
- * snmp_credential_id è tipicamente SNMP secondario (porte/LLDP su router). Con SSH/API prima snmp_credential_id.
- */
-export function getDeviceCommunityString(device: NetworkDevice): string {
-  // Prima: cerca nei bindings SNMP (nuovo sistema tabellare)
-  const snmpBinding = getDb().prepare(`
-    SELECT * FROM device_credential_bindings
-    WHERE device_id = ? AND protocol_type = 'snmp'
-    ORDER BY sort_order LIMIT 1
-  `).get(device.id) as DeviceCredentialBinding | undefined;
-
-  if (snmpBinding) {
-    if (snmpBinding.credential_id) {
-      const fromCred = getCredentialCommunityString(snmpBinding.credential_id);
-      if (fromCred) return fromCred;
-    } else if (snmpBinding.inline_encrypted_password) {
-      const s = safeDecrypt(snmpBinding.inline_encrypted_password);
-      if (s?.trim()) return s;
-    }
-  }
-
-  // Fallback: vecchio sistema
-  const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
-  const tryCredIds = isSnmpPrimary
-    ? [device.credential_id, device.snmp_credential_id]
-    : [device.snmp_credential_id, device.credential_id];
-  for (const credId of tryCredIds) {
-    if (!credId) continue;
-    const fromCred = getCredentialCommunityString(credId);
-    if (fromCred) return fromCred;
-  }
-  if (device.community_string) {
-    const s = safeDecrypt(device.community_string);
-    if (s && s.trim()) return s;
-    // Se la decifratura fallisce, prova a usare il valore raw (legacy non cifrato)
-    if (typeof device.community_string === "string") return device.community_string;
-  }
-  return "public";
-}
-
-/** Restituisce { username, password } per un device: da credential_id se presente, altrimenti da device */
-export function getDeviceCredentials(device: NetworkDevice): { username: string; password: string } | null {
-  // Prima: cerca nei bindings (nuovo sistema tabellare) — primo binding SSH/WinRM/API per sort_order
-  const protoType = device.protocol === "winrm" ? "winrm"
-    : device.protocol === "api" ? "api"
-    : "ssh";
-  const binding = getDb().prepare(`
-    SELECT * FROM device_credential_bindings
-    WHERE device_id = ? AND protocol_type = ?
-    ORDER BY sort_order LIMIT 1
-  `).get(device.id, protoType) as DeviceCredentialBinding | undefined;
-
-  if (binding) {
-    if (binding.credential_id) {
-      const cred = getCredentialById(binding.credential_id);
-      if (cred?.encrypted_username && cred?.encrypted_password) {
-        const u = safeDecrypt(cred.encrypted_username);
-        const p = safeDecrypt(cred.encrypted_password);
-        if (u && p) return { username: u, password: p };
-      }
-    } else if (binding.inline_username && binding.inline_encrypted_password) {
-      const p = safeDecrypt(binding.inline_encrypted_password);
-      if (p) return { username: binding.inline_username, password: p };
-    }
-  }
-
-  // Fallback: vecchio sistema (credential_id diretto sul device)
-  if (device.credential_id) {
-    const cred = getCredentialById(device.credential_id);
-    if (cred?.encrypted_username && cred?.encrypted_password) {
-      const u = safeDecrypt(cred.encrypted_username);
-      const p = safeDecrypt(cred.encrypted_password);
-      if (u && p) return { username: u, password: p };
-      return null;
-    }
-  }
-  if (device.username && device.encrypted_password) {
-    const p = safeDecrypt(device.encrypted_password);
-    if (p) return { username: device.username, password: p };
-    return null;
-  }
-  return null;
-}
-
 // ========================
 // Network Devices
 // ========================
-
-export function getNetworkDeviceById(id: number): NetworkDevice | undefined {
-  return getDb().prepare("SELECT * FROM network_devices WHERE id = ?").get(id) as NetworkDevice | undefined;
-}
-
-export function getNetworkDeviceByHost(ip: string): NetworkDevice | undefined {
-  return getDb().prepare("SELECT * FROM network_devices WHERE host = ?").get(ip) as NetworkDevice | undefined;
-}
-
-/** F4: lookup device via FK host_id (più affidabile della string match su IP). */
-export function getNetworkDeviceByHostId(hostId: number): NetworkDevice | undefined {
-  return getDb().prepare("SELECT * FROM network_devices WHERE host_id = ? ORDER BY id LIMIT 1").get(hostId) as NetworkDevice | undefined;
-}
 
 type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll" | "physical_device_id"> & {
   classification?: string | null;
@@ -4695,8 +3780,6 @@ export function upsertArpEntries(
 // ========================
 // MAC-IP Mapping (cumulativo)
 // ========================
-
-export type MacIpMappingSource = "arp" | "dhcp" | "host" | "switch";
 
 export function upsertMacIpMapping(input: {
   mac: string;
@@ -4820,20 +3903,6 @@ const INVENTORY_COLUMNS = [
   "ultimo_audit", "contratto_supporto", "tipo_garanzia", "contatto_supporto", "ultimo_intervento",
   "prossima_manutenzione", "note_tecniche", "technical_data",
 ];
-
-export function getInventoryAssetById(id: number): import("@/types").InventoryAsset | undefined {
-  return getDb().prepare("SELECT * FROM inventory_assets WHERE id = ?").get(id) as import("@/types").InventoryAsset | undefined;
-}
-
-export function getInventoryAssetByNetworkDevice(deviceId: number): import("@/types").InventoryAsset | undefined {
-  return getDb().prepare("SELECT * FROM inventory_assets WHERE network_device_id = ?").get(deviceId) as import("@/types").InventoryAsset | undefined;
-}
-
-/** Set di device IDs che hanno già un asset inventario. Evita N+1 in sync-devices. */
-export function getDeviceIdsWithInventoryAsset(): Set<number> {
-  const rows = getDb().prepare("SELECT network_device_id FROM inventory_assets WHERE network_device_id IS NOT NULL").all() as { network_device_id: number }[];
-  return new Set(rows.map((r) => r.network_device_id));
-}
 
 /** Crea automaticamente un asset in inventario per un network device, se non esiste già. */
 export function ensureInventoryAssetForNetworkDevice(device: NetworkDevice): import("@/types").InventoryAsset {
@@ -5030,16 +4099,6 @@ function mapVendorToMarca(vendor: string): string | null {
   return map[v] ?? null;
 }
 
-export function getInventoryAssetByHost(hostId: number): import("@/types").InventoryAsset | undefined {
-  return getDb().prepare("SELECT * FROM inventory_assets WHERE host_id = ?").get(hostId) as import("@/types").InventoryAsset | undefined;
-}
-
-/** Set di host IDs che hanno già un asset inventario. Evita N+1 in sync-hosts. */
-export function getHostIdsWithInventoryAsset(): Set<number> {
-  const rows = getDb().prepare("SELECT host_id FROM inventory_assets WHERE host_id IS NOT NULL").all() as { host_id: number }[];
-  return new Set(rows.map((r) => r.host_id));
-}
-
 /** Mappa classification host → categoria inventario (workstation→Desktop, notebook→Laptop, ecc.) */
 function mapHostClassificationToInventoryCategoria(classification: string | null): import("@/types").InventoryAssetCategoria | null {
   const c = (classification ?? "").toLowerCase();
@@ -5100,40 +4159,6 @@ export function syncInventoryFromHost(host: Host): import("@/types").InventoryAs
 
   const updated = updateInventoryAsset(asset.id, merged);
   return updated ?? null;
-}
-
-export function getInventoryAssets(opts?: {
-  network_device_id?: number;
-  host_id?: number;
-  stato?: string;
-  categoria?: string;
-  in_scope_nis2?: number;
-  q?: string;
-  limit?: number;
-}): (import("@/types").InventoryAsset & { network_device_name?: string; host_ip?: string; assignee_name?: string })[]
-{
-  let sql = `
-    SELECT a.*, nd.name as network_device_name, h.ip as host_ip, aa.name as assignee_name
-    FROM inventory_assets a
-    LEFT JOIN network_devices nd ON nd.id = a.network_device_id
-    LEFT JOIN hosts h ON h.id = a.host_id
-    LEFT JOIN asset_assignees aa ON aa.id = a.asset_assignee_id
-    WHERE 1=1
-  `;
-  const params: unknown[] = [];
-  if (opts?.network_device_id) { sql += " AND a.network_device_id = ?"; params.push(opts.network_device_id); }
-  if (opts?.host_id) { sql += " AND a.host_id = ?"; params.push(opts.host_id); }
-  if (opts?.stato) { sql += " AND a.stato = ?"; params.push(opts.stato); }
-  if (opts?.categoria) { sql += " AND a.categoria = ?"; params.push(opts.categoria); }
-  if (opts?.in_scope_nis2 != null) { sql += " AND a.in_scope_nis2 = ?"; params.push(opts.in_scope_nis2); }
-  if (opts?.q?.trim()) {
-    const q = `%${opts.q.trim()}%`;
-    sql += " AND (a.asset_tag LIKE ? OR a.serial_number LIKE ? OR a.hostname LIKE ? OR a.nome_prodotto LIKE ? OR a.marca LIKE ? OR a.modello LIKE ?)";
-    params.push(q, q, q, q, q, q);
-  }
-  sql += " ORDER BY a.updated_at DESC";
-  if (opts?.limit) { sql += " LIMIT ?"; params.push(opts.limit); }
-  return getDb().prepare(sql).all(...params) as (import("@/types").InventoryAsset & { network_device_name?: string; host_ip?: string; assignee_name?: string })[];
 }
 
 export function createInventoryAsset(input: import("@/types").InventoryAssetInput): import("@/types").InventoryAsset {
@@ -5274,14 +4299,6 @@ export function deleteInventoryAsset(id: number, auditUserId?: number | null): b
 // Asset Assignees
 // ========================
 
-export function getAssetAssignees(): import("@/types").AssetAssignee[] {
-  return getDb().prepare("SELECT * FROM asset_assignees ORDER BY name").all() as import("@/types").AssetAssignee[];
-}
-
-export function getAssetAssigneeById(id: number): import("@/types").AssetAssignee | undefined {
-  return getDb().prepare("SELECT * FROM asset_assignees WHERE id = ?").get(id) as import("@/types").AssetAssignee | undefined;
-}
-
 export function createAssetAssignee(input: { name: string; email?: string | null; phone?: string | null; note?: string | null }): import("@/types").AssetAssignee {
   const result = getDb().prepare(
     "INSERT INTO asset_assignees (name, email, phone, note) VALUES (?, ?, ?, ?)"
@@ -5310,14 +4327,6 @@ export function deleteAssetAssignee(id: number): boolean {
 // ========================
 // Locations
 // ========================
-
-export function getLocations(): import("@/types").Location[] {
-  return getDb().prepare("SELECT * FROM locations ORDER BY name").all() as import("@/types").Location[];
-}
-
-export function getLocationById(id: number): import("@/types").Location | undefined {
-  return getDb().prepare("SELECT * FROM locations WHERE id = ?").get(id) as import("@/types").Location | undefined;
-}
 
 export function createLocation(input: { name: string; parent_id?: number | null; address?: string | null }): import("@/types").Location {
   const result = getDb().prepare(
@@ -5430,18 +4439,6 @@ export function deleteLicense(id: number): boolean {
 // License Seats
 // ========================
 
-export function getLicenseSeatsByLicense(licenseId: number): import("@/types").LicenseSeat[] {
-  return getDb().prepare("SELECT * FROM license_seats WHERE license_id = ? ORDER BY assigned_at DESC").all(licenseId) as import("@/types").LicenseSeat[];
-}
-
-export function getLicenseSeatsByAsset(assetType: "inventory_asset" | "host", assetId: number): (import("@/types").LicenseSeat & { license_name?: string })[] {
-  return getDb().prepare(`
-    SELECT ls.*, l.name as license_name FROM license_seats ls
-    JOIN licenses l ON l.id = ls.license_id
-    WHERE ls.asset_type = ? AND ls.asset_id = ?
-  `).all(assetType, assetId) as (import("@/types").LicenseSeat & { license_name?: string })[];
-}
-
 export function assignLicenseSeat(licenseId: number, assetType: "inventory_asset" | "host", assetId: number, note?: string | null): import("@/types").LicenseSeat | undefined {
   const lic = getLicenseById(licenseId);
   if (!lic || (lic.free_seats ?? 0) < 1) return undefined;
@@ -5468,22 +4465,6 @@ export function unassignLicenseSeat(seatId: number): boolean {
 // Inventory Audit Log
 // ========================
 
-export function getInventoryAuditLog(assetId: number, limit = 50): import("@/types").InventoryAuditLog[] {
-  return getDb().prepare(
-    "SELECT * FROM inventory_audit_log WHERE asset_id = ? ORDER BY created_at DESC LIMIT ?"
-  ).all(assetId, limit) as import("@/types").InventoryAuditLog[];
-}
-
-export function getArpEntriesByDevice(deviceId: number): (ArpEntry & { host_ip?: string; host_name?: string })[] {
-  return getDb().prepare(`
-    SELECT ae.*, h.ip as host_ip, COALESCE(h.custom_name, h.hostname) as host_name
-    FROM arp_entries ae
-    LEFT JOIN hosts h ON h.id = ae.host_id
-    WHERE ae.device_id = ?
-    ORDER BY ae.ip
-  `).all(deviceId) as (ArpEntry & { host_ip?: string; host_name?: string })[];
-}
-
 // ========================
 // MAC Port Entries
 // ========================
@@ -5506,18 +4487,6 @@ export function upsertMacPortEntries(deviceId: number, entries: { mac: string; p
   replaceAll(entries);
 }
 
-export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { host_ip?: string; host_name?: string })[] {
-  return getDb().prepare(`
-    SELECT mpe.*,
-      COALESCE(h.ip, (SELECT ae.ip FROM arp_entries ae WHERE ${MAC_HEX("ae.mac")} = ${MAC_HEX("mpe.mac")} AND ae.ip IS NOT NULL ORDER BY ae.timestamp DESC LIMIT 1)) as host_ip,
-      COALESCE(h.custom_name, h.hostname) as host_name
-    FROM mac_port_entries mpe
-    LEFT JOIN hosts h ON ${MAC_HEX("h.mac")} = ${MAC_HEX("mpe.mac")}
-    WHERE mpe.device_id = ?
-    ORDER BY mpe.port_name
-  `).all(deviceId) as (MacPortEntry & { host_ip?: string; host_name?: string })[];
-}
-
 // ========================
 // Switch Ports
 // ========================
@@ -5530,28 +4499,9 @@ export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types"
   tenant.upsertSwitchPorts(deviceId, ports);
 }
 
-export function getSwitchPortsByDevice(deviceId: number): import("@/types").SwitchPort[] {
-  return getDb().prepare(
-    "SELECT * FROM switch_ports WHERE device_id = ? ORDER BY port_index"
-  ).all(deviceId) as import("@/types").SwitchPort[];
-}
-
 // ========================
 // Device Neighbors (LLDP/CDP/MNDP)
 // ========================
-
-export interface DbNeighborEntry {
-  id: number;
-  device_id: number;
-  local_port: string;
-  remote_device_name: string;
-  remote_port: string;
-  protocol: string;
-  remote_ip: string | null;
-  remote_mac: string | null;
-  remote_platform: string | null;
-  timestamp: string;
-}
 
 export function upsertNeighbors(
   deviceId: number,
@@ -5595,28 +4545,9 @@ export function upsertNeighbors(
   }
 }
 
-export function getNeighborsByDevice(deviceId: number): DbNeighborEntry[] {
-  return getDb().prepare(
-    "SELECT * FROM device_neighbors WHERE device_id = ? ORDER BY local_port, protocol"
-  ).all(deviceId) as DbNeighborEntry[];
-}
-
 // ========================
 // Device Routes (Routing Table)
 // ========================
-
-export interface DbRouteEntry {
-  id: number;
-  device_id: number;
-  destination: string;
-  gateway: string | null;
-  interface_name: string | null;
-  protocol: string;
-  metric: number | null;
-  distance: number | null;
-  active: number;
-  timestamp: string;
-}
 
 export function upsertRoutes(
   deviceId: number,
@@ -5644,63 +4575,9 @@ export function upsertRoutes(
   })();
 }
 
-export function getRoutesByDevice(deviceId: number, activeOnly = false): DbRouteEntry[] {
-  const sql = activeOnly
-    ? "SELECT * FROM routing_table WHERE device_id = ? AND active = 1 ORDER BY protocol, destination"
-    : "SELECT * FROM routing_table WHERE device_id = ? ORDER BY active DESC, protocol, destination";
-  return getDb().prepare(sql).all(deviceId) as DbRouteEntry[];
-}
-
 // ========================
 // Device Credential Bindings
 // ========================
-
-export interface DeviceCredentialBinding {
-  id: number;
-  device_id: number;
-  credential_id: number | null;
-  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
-  port: number;
-  sort_order: number;
-  inline_username: string | null;
-  inline_encrypted_password: string | null;
-  test_status: "success" | "failed" | "untested";
-  test_message: string | null;
-  tested_at: string | null;
-  auto_detected: number;
-  created_at: string;
-  // JOIN fields
-  credential_name?: string | null;
-  credential_type?: string | null;
-}
-
-export function getDeviceCredentialBindings(deviceId: number): DeviceCredentialBinding[] {
-  return getDb().prepare(`
-    SELECT dcb.*, c.name AS credential_name, c.credential_type
-    FROM device_credential_bindings dcb
-    LEFT JOIN credentials c ON c.id = dcb.credential_id
-    WHERE dcb.device_id = ?
-    ORDER BY dcb.sort_order, dcb.id
-  `).all(deviceId) as DeviceCredentialBinding[];
-}
-
-/** Protocolli credenziali con test_status='success' per tutti i device (batch, no N+1) */
-export function getDeviceCredentialProtocolsSummary(): Map<number, string[]> {
-  const rows = getDb().prepare(
-    `SELECT device_id, protocol_type
-     FROM device_credential_bindings
-     WHERE test_status = 'success'
-     GROUP BY device_id, protocol_type
-     ORDER BY device_id`
-  ).all() as Array<{ device_id: number; protocol_type: string }>;
-  const map = new Map<number, string[]>();
-  for (const r of rows) {
-    const arr = map.get(r.device_id) || [];
-    arr.push(r.protocol_type);
-    map.set(r.device_id, arr);
-  }
-  return map;
-}
 
 export function addDeviceCredentialBinding(input: {
   device_id: number;
@@ -5787,43 +4664,9 @@ export function updateBindingTestStatus(bindingId: number, status: "success" | "
   `).run(status, message, bindingId);
 }
 
-/** Cerca un binding identico (stesso device, credential, protocollo, porta) per evitare duplicati auto-detect */
-export function findExistingBinding(deviceId: number, credentialId: number, protocolType: string, port: number): DeviceCredentialBinding | null {
-  return getDb().prepare(`
-    SELECT dcb.*, c.name AS credential_name, c.credential_type
-    FROM device_credential_bindings dcb
-    LEFT JOIN credentials c ON c.id = dcb.credential_id
-    WHERE dcb.device_id = ? AND dcb.credential_id = ? AND dcb.protocol_type = ? AND dcb.port = ?
-  `).get(deviceId, credentialId, protocolType, port) as DeviceCredentialBinding | null;
-}
-
-/** Ritorna il primo binding funzionante (sort_order più basso con test_status=success) per un protocollo */
-export function getPrimaryBindingForProtocol(deviceId: number, protocolType: string): DeviceCredentialBinding | null {
-  return getDb().prepare(`
-    SELECT dcb.*, c.name AS credential_name, c.credential_type
-    FROM device_credential_bindings dcb
-    LEFT JOIN credentials c ON c.id = dcb.credential_id
-    WHERE dcb.device_id = ? AND dcb.protocol_type = ? AND dcb.test_status = 'success'
-    ORDER BY dcb.sort_order LIMIT 1
-  `).get(deviceId, protocolType) as DeviceCredentialBinding | null;
-}
-
 // ========================
 // Scheduled Jobs
 // ========================
-
-export function getScheduledJobs(): ScheduledJob[] {
-  return getDb().prepare("SELECT * FROM scheduled_jobs ORDER BY id").all() as ScheduledJob[];
-}
-
-// v0.2.642 audit perf MC3: fetch mirato per id (no .find() lato JS sui tick cron).
-export function getScheduledJobById(id: number): ScheduledJob | undefined {
-  return getDb().prepare("SELECT * FROM scheduled_jobs WHERE id = ?").get(id) as ScheduledJob | undefined;
-}
-
-export function getEnabledJobs(): ScheduledJob[] {
-  return getDb().prepare("SELECT * FROM scheduled_jobs WHERE enabled = 1").all() as ScheduledJob[];
-}
 
 export function createScheduledJob(input: ScheduledJobInput): ScheduledJob {
   const stmt = getDb().prepare(
@@ -5877,77 +4720,13 @@ export function recordHostHeartbeat(
   tenant.recordHostHeartbeat(hostId, status, responseTimeMs);
 }
 
-export function getStatusHistory(hostId: number, limit: number = 100): StatusHistory[] {
-  return getDb().prepare(
-    "SELECT * FROM status_history WHERE host_id = ? ORDER BY checked_at DESC LIMIT ?"
-  ).all(hostId, limit) as StatusHistory[];
-}
-
-export function getHostLatencyHistory(hostId: number, hours: number = 24): { time: string; response_time_ms: number | null; status: string }[] {
-  return getDb().prepare(`
-    SELECT strftime('%Y-%m-%dT%H:%M:00', checked_at) as time, response_time_ms, status
-    FROM status_history
-    WHERE host_id = ? AND checked_at >= datetime('now', '-' || ? || ' hours')
-    ORDER BY checked_at ASC
-  `).all(hostId, hours) as { time: string; response_time_ms: number | null; status: string }[];
-}
-
 // ========================
 // Monitoring Stats
 // ========================
 
-export function getKnownHostStats(): { total: number; online: number; offline: number; avg_latency: number | null } {
-  return getDb().prepare(`
-    SELECT
-      COUNT(*) as total,
-      SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
-      SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline,
-      AVG(last_response_time_ms) as avg_latency
-    FROM hosts WHERE known_host = 1
-  `).get() as { total: number; online: number; offline: number; avg_latency: number | null };
-}
-
-export function getOfflineKnownHosts(): { id: number; ip: string; hostname: string | null; custom_name: string | null; last_seen: string | null }[] {
-  return getDb().prepare(`
-    SELECT id, ip, hostname, custom_name, last_seen
-    FROM hosts WHERE known_host = 1 AND status = 'offline'
-    ORDER BY last_seen DESC LIMIT 20
-  `).all() as { id: number; ip: string; hostname: string | null; custom_name: string | null; last_seen: string | null }[];
-}
-
 // ========================
 // Dashboard Stats
 // ========================
-
-export function getDashboardStats(): {
-  total_networks: number;
-  total_hosts: number;
-  online_hosts: number;
-  offline_hosts: number;
-  unknown_hosts: number;
-} {
-  const row = getDb().prepare(`
-    SELECT
-      (SELECT COUNT(*) FROM networks) as total_networks,
-      (SELECT COUNT(*) FROM hosts) as total_hosts,
-      (SELECT COUNT(*) FROM hosts WHERE status = 'online') as online_hosts,
-      (SELECT COUNT(*) FROM hosts WHERE status = 'offline') as offline_hosts,
-      (SELECT COUNT(*) FROM hosts WHERE status = 'unknown') as unknown_hosts
-  `).get() as {
-    total_networks: number;
-    total_hosts: number;
-    online_hosts: number;
-    offline_hosts: number;
-    unknown_hosts: number;
-  };
-  return row;
-}
-
-export function getRecentActivity(limit: number = 10): ScanHistory[] {
-  return getDb().prepare(
-    "SELECT * FROM scan_history ORDER BY timestamp DESC LIMIT ?"
-  ).all(limit) as ScanHistory[];
-}
 
 // ========================
 // Cleanup
@@ -5979,45 +4758,6 @@ export function cleanupStaleHosts(daysUntilStale: number, daysUntilDelete: numbe
 // ========================
 // Global Search
 // ========================
-
-export function globalSearch(query: string, limit: number = 20): {
-  hosts: Host[];
-  networks: Network[];
-} {
-  const like = `%${query}%`;
-  const hosts = getDb().prepare(`
-    SELECT * FROM hosts
-    WHERE ip LIKE ? OR mac LIKE ? OR hostname LIKE ? OR custom_name LIKE ?
-      OR dns_forward LIKE ? OR dns_reverse LIKE ? OR notes LIKE ? OR vendor LIKE ?
-    LIMIT ?
-  `).all(like, like, like, like, like, like, like, like, limit) as Host[];
-  // Sort by numeric IP value
-  hosts.sort((a, b) => ipToNum(a.ip) - ipToNum(b.ip));
-
-  const networks = getDb().prepare(`
-    SELECT * FROM networks
-    WHERE cidr LIKE ? OR name LIKE ? OR description LIKE ? OR location LIKE ?
-    ORDER BY name ASC
-    LIMIT ?
-  `).all(like, like, like, like, limit) as Network[];
-
-  return { hosts, networks };
-}
-
-export function getOnlineCountsOverTime(
-  hours: number = 24
-): { time: string; online: number; offline: number }[] {
-  return getDb().prepare(`
-    SELECT
-      strftime('%Y-%m-%dT%H:00:00', checked_at) as time,
-      SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
-      SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline
-    FROM status_history
-    WHERE checked_at >= datetime('now', '-' || ? || ' hours')
-    GROUP BY strftime('%Y-%m-%dT%H:00:00', checked_at)
-    ORDER BY time ASC
-  `).all(hours) as { time: string; online: number; offline: number }[];
-}
 
 // ========================
 // Settings (key-value)
@@ -6305,14 +5045,6 @@ export function resetConfiguration(): void {
 // Proxmox Hosts
 // ========================
 
-export function getProxmoxHosts(): import("@/types").ProxmoxHost[] {
-  return getDb().prepare("SELECT * FROM proxmox_hosts ORDER BY name").all() as import("@/types").ProxmoxHost[];
-}
-
-export function getProxmoxHostById(id: number): import("@/types").ProxmoxHost | undefined {
-  return getDb().prepare("SELECT * FROM proxmox_hosts WHERE id = ?").get(id) as import("@/types").ProxmoxHost | undefined;
-}
-
 export function createProxmoxHost(input: {
   name: string;
   host: string;
@@ -6527,113 +5259,6 @@ export function syncNetworkDeviceFromHostScan(ip: string, hostOpenPorts: Array<{
 // ACTIVE DIRECTORY INTEGRATIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-export interface AdIntegration {
-  id: number;
-  name: string;
-  dc_host: string;
-  domain: string;
-  base_dn: string;
-  encrypted_username: string;
-  encrypted_password: string;
-  use_ssl: number;
-  port: number;
-  enabled: number;
-  winrm_credential_id: number | null;
-  dhcp_leases_count: number;
-  last_sync_at: string | null;
-  last_sync_status: string | null;
-  computers_count: number;
-  users_count: number;
-  groups_count: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AdComputer {
-  id: number;
-  integration_id: number;
-  object_guid: string;
-  sam_account_name: string;
-  dns_host_name: string | null;
-  display_name: string | null;
-  distinguished_name: string;
-  operating_system: string | null;
-  operating_system_version: string | null;
-  last_logon_at: string | null;
-  enabled: number;
-  host_id: number | null;
-  ip_address: string | null;
-  ou: string | null;
-  raw_data: string | null;
-  synced_at: string;
-}
-
-export interface AdUser {
-  id: number;
-  integration_id: number;
-  object_guid: string;
-  sam_account_name: string;
-  user_principal_name: string | null;
-  display_name: string | null;
-  email: string | null;
-  department: string | null;
-  title: string | null;
-  phone: string | null;
-  ou: string | null;
-  enabled: number;
-  last_logon_at: string | null;
-  password_last_set_at: string | null;
-  raw_data: string | null;
-  synced_at: string;
-}
-
-export interface AdDhcpLease {
-  id: number;
-  integration_id: number;
-  scope_id: string;
-  scope_name: string | null;
-  ip_address: string;
-  mac_address: string;
-  hostname: string | null;
-  lease_expires: string | null;
-  address_state: string | null;
-  description: string | null;
-  last_synced: string;
-}
-
-export interface AdGroup {
-  id: number;
-  integration_id: number;
-  object_guid: string;
-  sam_account_name: string;
-  display_name: string | null;
-  description: string | null;
-  distinguished_name: string;
-  group_type: number | null;
-  member_guids: string | null;
-  synced_at: string;
-}
-
-export function getAdIntegrations(): AdIntegration[] {
-  return getDb().prepare("SELECT * FROM ad_integrations ORDER BY name").all() as AdIntegration[];
-}
-
-/**
- * Restituisce il realm (dominio AD) dalla prima integrazione AD abilitata.
- * Usato per Kerberos auto-kinit nelle connessioni WinRM.
- */
-export function getAdRealm(): { realm: string; dcHost: string } | null {
-  const row = getDb().prepare(
-    "SELECT domain, dc_host FROM ad_integrations WHERE enabled = 1 ORDER BY id LIMIT 1"
-  ).get() as { domain: string; dc_host: string } | undefined;
-  if (!row) return null;
-  return { realm: row.domain, dcHost: row.dc_host };
-}
-
-export function getAdIntegrationById(id: number): AdIntegration | undefined {
-  return getDb().prepare("SELECT * FROM ad_integrations WHERE id = ?").get(id) as AdIntegration | undefined;
-}
-
 export function createAdIntegration(input: {
   name: string;
   dc_host: string;
@@ -6703,10 +5328,6 @@ export function deleteAdIntegration(id: number): boolean {
 }
 
 // AD Computers
-export function getAdComputers(integrationId: number): AdComputer[] {
-  return getDb().prepare("SELECT * FROM ad_computers WHERE integration_id = ? ORDER BY sam_account_name").all(integrationId) as AdComputer[];
-}
-
 export function getAdComputersPaginated(integrationId: number, page: number, pageSize: number, search?: string, activeDays?: number): { rows: AdComputer[]; total: number } {
   const offset = (page - 1) * pageSize;
   let whereClause = "WHERE integration_id = ?";
@@ -7091,62 +5712,7 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
   return { groups: groupCount, hosts_linked: totalLinked };
 }
 
-/**
- * Stato multihomed di un host — usato dai runner di scan/query device per
- * dedurre se la chiamata costosa va deduplicata.
- *
- * Ritorna:
- * - `null` se l'host non è in alcun gruppo multihomed → eseguire normalmente
- * - `{ is_primary: true, ... }` → eseguire (è il primary del device fisico)
- * - `{ is_primary: false, primary_* }` → SKIP, scan deduplicato
- *
- * Idempotente, no side-effect.
- */
-export function getMultihomedStatus(hostId: number): {
-  group_id: string;
-  is_primary: boolean;
-  primary_host_id: number;
-  primary_ip: string;
-  primary_network_name: string | null;
-  peers_count: number;
-} | null {
-  const d = getDb();
-  const link = d.prepare("SELECT group_id, is_primary FROM multihomed_links WHERE host_id = ?").get(hostId) as { group_id: string; is_primary: number } | undefined;
-  if (!link) return null;
-  const primary = d.prepare(`SELECT ml.host_id, h.ip, n.name AS network_name FROM multihomed_links ml JOIN hosts h ON h.id = ml.host_id LEFT JOIN networks n ON n.id = h.network_id WHERE ml.group_id = ? AND ml.is_primary = 1 LIMIT 1`).get(link.group_id) as { host_id: number; ip: string; network_name: string | null } | undefined;
-  const peersCount = (d.prepare("SELECT COUNT(*) AS c FROM multihomed_links WHERE group_id = ?").get(link.group_id) as { c: number }).c;
-  // Edge case: nessuno marked primary (recompute non ancora rieseguito dopo migration)
-  // → trattiamo l'host come primary per non bloccare gli scan ingiustamente.
-  if (!primary) return { group_id: link.group_id, is_primary: true, primary_host_id: hostId, primary_ip: "", primary_network_name: null, peers_count: peersCount };
-  return {
-    group_id: link.group_id,
-    is_primary: link.is_primary === 1,
-    primary_host_id: primary.host_id,
-    primary_ip: primary.ip,
-    primary_network_name: primary.network_name,
-    peers_count: peersCount,
-  };
-}
-
-/**
- * Variante che parte da `network_devices.id`: risolve l'host via
- * `network_devices.host = hosts.ip`. Usata dai 3 runner di scan device.
- */
-export function getMultihomedStatusByDeviceId(deviceId: number): ReturnType<typeof getMultihomedStatus> {
-  const d = getDb();
-  const dev = d.prepare("SELECT host FROM network_devices WHERE id = ?").get(deviceId) as { host: string } | undefined;
-  if (!dev) return null;
-  // L'IP può comparire in più subnet (raro): preferiamo l'host che HA un link multihomed.
-  const host = d.prepare(`SELECT h.id FROM hosts h LEFT JOIN multihomed_links ml ON ml.host_id = h.id WHERE h.ip = ? ORDER BY (ml.id IS NULL), h.id LIMIT 1`).get(dev.host) as { id: number } | undefined;
-  if (!host) return null;
-  return getMultihomedStatus(host.id);
-}
-
 // AD Users
-export function getAdUsers(integrationId: number): AdUser[] {
-  return getDb().prepare("SELECT * FROM ad_users WHERE integration_id = ? ORDER BY sam_account_name").all(integrationId) as AdUser[];
-}
-
 export function getAdUsersPaginated(integrationId: number, page: number, pageSize: number, search?: string, activeDays?: number): { rows: AdUser[]; total: number } {
   const offset = (page - 1) * pageSize;
   let whereClause = "WHERE integration_id = ?";
@@ -7215,24 +5781,6 @@ export function upsertAdUser(integrationId: number, input: {
 }
 
 // AD Groups
-export function getAdGroups(integrationId: number): AdGroup[] {
-  return getDb().prepare("SELECT * FROM ad_groups WHERE integration_id = ? ORDER BY sam_account_name").all(integrationId) as AdGroup[];
-}
-
-export function getAdGroupsPaginated(integrationId: number, page: number, pageSize: number, search?: string): { rows: AdGroup[]; total: number } {
-  const offset = (page - 1) * pageSize;
-  let whereClause = "WHERE integration_id = ?";
-  const params: unknown[] = [integrationId];
-  if (search?.trim()) {
-    whereClause += " AND (sam_account_name LIKE ? OR display_name LIKE ? OR description LIKE ?)";
-    const s = `%${search.trim()}%`;
-    params.push(s, s, s);
-  }
-  const total = (getDb().prepare(`SELECT COUNT(*) as c FROM ad_groups ${whereClause}`).get(...params) as { c: number }).c;
-  const rows = getDb().prepare(`SELECT * FROM ad_groups ${whereClause} ORDER BY sam_account_name LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdGroup[];
-  return { rows, total };
-}
-
 export function upsertAdGroup(integrationId: number, input: {
   object_guid: string;
   sam_account_name: string;
@@ -7273,20 +5821,6 @@ export function clearAdData(integrationId: number): void {
 }
 
 // AD DHCP Leases
-export function getAdDhcpLeasesPaginated(integrationId: number, page: number, pageSize: number, search?: string): { rows: AdDhcpLease[]; total: number } {
-  const offset = (page - 1) * pageSize;
-  let whereClause = "WHERE integration_id = ?";
-  const params: unknown[] = [integrationId];
-  if (search?.trim()) {
-    whereClause += " AND (hostname LIKE ? OR ip_address LIKE ? OR mac_address LIKE ? OR scope_id LIKE ?)";
-    const s = `%${search.trim()}%`;
-    params.push(s, s, s, s);
-  }
-  const total = (getDb().prepare(`SELECT COUNT(*) as c FROM ad_dhcp_leases ${whereClause}`).get(...params) as { c: number }).c;
-  const rows = getDb().prepare(`SELECT * FROM ad_dhcp_leases ${whereClause} ORDER BY ip_address LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdDhcpLease[];
-  return { rows, total };
-}
-
 export function upsertAdDhcpLease(integrationId: number, input: {
   scope_id: string;
   scope_name?: string | null;
@@ -7359,22 +5893,6 @@ export function getSnmpVendorProfiles(): SnmpVendorProfileRow[] {
 export function getEnabledSnmpVendorProfiles(): SnmpVendorProfileRow[] {
   const hub = require("./db-hub");
   return hub.getEnabledSnmpVendorProfiles();
-}
-
-/**
- * Stringhe distinte da vendor MAC / produttore SNMP sugli host (per suggerimenti vendor dispositivo).
- */
-export function getDistinctHostVendorHints(limit = 400): string[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT DISTINCT trim(v) AS v FROM (
-        SELECT vendor AS v FROM hosts WHERE vendor IS NOT NULL AND trim(vendor) != ''
-        UNION
-        SELECT device_manufacturer AS v FROM hosts WHERE device_manufacturer IS NOT NULL AND trim(device_manufacturer) != ''
-      ) ORDER BY v COLLATE NOCASE LIMIT ?`
-    )
-    .all(limit) as { v: string }[];
-  return rows.map((r) => r.v);
 }
 
 // v0.2.633 bug fix audit A8: TUTTE le funzioni `snmp_vendor_profiles` ora
@@ -7726,30 +6244,6 @@ export function deleteDhcpLeasesByDevice(deviceId: number): number {
   return r.changes;
 }
 
-export function getDhcpLeaseStats(): {
-  total: number;
-  bySource: Record<string, number>;
-  byNetwork: Array<{ network_id: number; network_name: string; count: number }>;
-} {
-  const total = (getDb().prepare("SELECT COUNT(*) as c FROM dhcp_leases").get() as { c: number }).c;
-
-  const bySourceRows = getDb().prepare(
-    "SELECT source_type, COUNT(*) as c FROM dhcp_leases GROUP BY source_type"
-  ).all() as Array<{ source_type: string; c: number }>;
-  const bySource: Record<string, number> = {};
-  for (const r of bySourceRows) bySource[r.source_type] = r.c;
-
-  const byNetwork = getDb().prepare(`
-    SELECT d.network_id, COALESCE(n.name, 'Sconosciuta') as network_name, COUNT(*) as count
-    FROM dhcp_leases d
-    LEFT JOIN networks n ON n.id = d.network_id
-    GROUP BY d.network_id
-    ORDER BY count DESC
-  `).all() as Array<{ network_id: number; network_name: string; count: number }>;
-
-  return { total, bySource, byNetwork };
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // MULTI-TENANT: Re-export hub e tenant per transizione graduale
 // I consumer esistenti continuano a usare le funzioni da @/lib/db (single-tenant).
@@ -7794,4 +6288,134 @@ export {
   updateScheduledJobInterval,
   getStatusOverTime,
   getRecentStatusChanges,
+} from "./db-tenant";
+
+// NUC-2 gruppo 1a (T3-05): 103 letture e 18 tipi che erano uguali nelle due
+// copie. Una sola copia, in db-tenant.ts: una correzione fatta lì vale anche qui.
+// Elenco e criterio di scelta: src/lib/__tests__/support/facciata-spostate.ts.
+export {
+  getNetworks,
+  getNetworksPaginated,
+  getDevicesPaginated,
+  getNetworkById,
+  getNetworkRouterBinding,
+  getNetworkContainingIp,
+  buildNetworkLookup,
+  getHostsByNetwork,
+  getAllHostsFlat,
+  getAllHosts,
+  getKnownHosts,
+  getHostBasic,
+  getHostByIp,
+  mergeOpenPortsJson,
+  getAttributionSignalsForHost,
+  isIpExcluded,
+  getExcludedIps,
+  countHostsInNetwork,
+  getKnownHostsWithNetwork,
+  getScanHistory,
+  getScanPhaseStatusForNetwork,
+  getAttributionCompletenessForNetwork,
+  getNetworkDevices,
+  getRouters,
+  getDhcpSources,
+  getArpSourceDevices,
+  getSwitches,
+  getDevicesByClassification,
+  getDevicesByClassificationOrLegacy,
+  getHostsByClassification,
+  getNetworkRouterId,
+  getAllCredentials,
+  getCredentialById,
+  getHostWindowsCredentials,
+  getHostLinuxCredentials,
+  getCredentialLoginPair,
+  getSshLinuxCredentialPair,
+  getNetworkHostCredentialIds,
+  getHostDetectCredentialId,
+  getHostDetectCredentialsEnriched,
+  getOrderedDetectCredentialIds,
+  getOrderedSshLinuxCredentialIds,
+  buildSnmpCommunitiesForNetwork,
+  buildSnmpCommunitiesForHost,
+  getNetworkCredentials,
+  getNetworksWithCredentials,
+  getHostCredentials,
+  getHostValidatedProtocolsByNetwork,
+  getCredentialCommunityString,
+  getDeviceSnmpV3Credentials,
+  getEffectiveSnmpPort,
+  getDeviceCommunityString,
+  getDeviceCredentials,
+  getNetworkDeviceById,
+  getNetworkDeviceByHost,
+  getNetworkDeviceByHostId,
+  getInventoryAssetById,
+  getInventoryAssetByNetworkDevice,
+  getDeviceIdsWithInventoryAsset,
+  getInventoryAssetByHost,
+  getHostIdsWithInventoryAsset,
+  getInventoryAssets,
+  getAssetAssignees,
+  getAssetAssigneeById,
+  getLocations,
+  getLocationById,
+  getLicenseSeatsByLicense,
+  getLicenseSeatsByAsset,
+  getInventoryAuditLog,
+  getArpEntriesByDevice,
+  getMacPortEntriesByDevice,
+  getSwitchPortsByDevice,
+  getNeighborsByDevice,
+  getRoutesByDevice,
+  getDeviceCredentialBindings,
+  getDeviceCredentialProtocolsSummary,
+  findExistingBinding,
+  getPrimaryBindingForProtocol,
+  getScheduledJobs,
+  getScheduledJobById,
+  getEnabledJobs,
+  getStatusHistory,
+  getHostLatencyHistory,
+  getKnownHostStats,
+  getOfflineKnownHosts,
+  getDashboardStats,
+  getRecentActivity,
+  globalSearch,
+  getOnlineCountsOverTime,
+  getProxmoxHosts,
+  getProxmoxHostById,
+  getAdIntegrations,
+  getAdRealm,
+  getAdIntegrationById,
+  getAdComputers,
+  getMultihomedStatus,
+  getMultihomedStatusByDeviceId,
+  getAdUsers,
+  getAdGroups,
+  getAdGroupsPaginated,
+  getAdDhcpLeasesPaginated,
+  getDistinctHostVendorHints,
+  getDhcpLeaseStats,
+} from "./db-tenant";
+
+export type {
+  AttributionSignals,
+  ScanPhaseKey,
+  ScanPhaseStatus,
+  AttributionCompleteness,
+  CredentialCoverageRow,
+  NetworkCredentialRole,
+  HostDetectCredentialRole,
+  NetworkCredentialRow,
+  HostCredentialRow,
+  MacIpMappingSource,
+  DbNeighborEntry,
+  DbRouteEntry,
+  DeviceCredentialBinding,
+  AdIntegration,
+  AdComputer,
+  AdUser,
+  AdDhcpLease,
+  AdGroup,
 } from "./db-tenant";

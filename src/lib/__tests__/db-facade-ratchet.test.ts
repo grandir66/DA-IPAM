@@ -13,7 +13,9 @@
  * - una funzione spostata in `db-tenant.ts` non può riapparire in `db.ts` con
  *   nessuna dichiarazione, esportata o no (una copia locale usata da un'altra
  *   funzione della facciata è di nuovo una seconda copia).
- * Quando un gruppo si sposta, si abbassa SOGLIA e si aggiungono i nomi a SPOSTATE.
+ * Quando un gruppo si sposta, si abbassa SOGLIA e si aggiungono i nomi a SPOSTATE
+ * (`support/facciata-spostate.ts`, condiviso con la prova d'identità). Lo stesso
+ * vale per i tipi: un tipo spostato (TIPI_SPOSTATI) non si ridichiara in `db.ts`.
  * Buchi chiusi nella revisione del 2026-10-12.
  */
 import { test } from "node:test";
@@ -21,18 +23,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import { SPOSTATE, TIPI_SPOSTATI } from "./support/facciata-spostate";
 
-/** Funzioni esportate definite in db.ts dopo il gruppo 0 (erano 275). */
-const SOGLIA = 271;
-
-/** Funzioni che vivono in db-tenant.ts: db.ts le riesporta e basta. */
-const SPOSTATE = [
-  // gruppo 0 (T3-04)
-  "cleanOrphanedForeignKeys",
-  "updateScheduledJobInterval",
-  "getStatusOverTime",
-  "getRecentStatusChanges",
-];
+/**
+ * Funzioni esportate definite in db.ts: 275 all'inizio, 271 dopo il gruppo 0
+ * (T3-04), 168 dopo il gruppo 1a (T3-05, 103 letture).
+ */
+const SOGLIA = 168;
 
 interface Dichiarazione {
   nome: string;
@@ -56,6 +53,8 @@ function dichiarazioni(file: string): Dichiarazione[] {
         const funzione = !!init && (ts.isArrowFunction(init) || ts.isFunctionExpression(init));
         out.push({ nome: d.name.text, esportata: esportata(s), funzione });
       }
+    } else if (ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s)) {
+      out.push({ nome: s.name.text, esportata: esportata(s), funzione: false });
     }
   }
   return out;
@@ -84,4 +83,11 @@ test("db-tenant.ts: definisce tutte le funzioni spostate", () => {
   const definite = new Set(funzioniDefinite(DB_TENANT_TS));
   const mancanti = SPOSTATE.filter((n) => !definite.has(n));
   assert.deepEqual(mancanti, [], "funzioni spostate che db-tenant.ts non definisce");
+});
+
+test("db.ts: i tipi spostati non vi sono ridichiarati; db-tenant.ts li esporta", () => {
+  const inFacciata = new Set(dichiarazioni(DB_TS).map((d) => d.nome));
+  assert.deepEqual(TIPI_SPOSTATI.filter((n) => inFacciata.has(n)), [], "tipi spostati dichiarati di nuovo in db.ts");
+  const esportatiTenant = new Set(dichiarazioni(DB_TENANT_TS).filter((d) => d.esportata).map((d) => d.nome));
+  assert.deepEqual(TIPI_SPOSTATI.filter((n) => !esportatiTenant.has(n)), [], "tipi spostati che db-tenant.ts non esporta");
 });

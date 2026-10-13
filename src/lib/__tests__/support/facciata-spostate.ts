@@ -1,0 +1,69 @@
+/**
+ * Le funzioni e i tipi che vivono SOLO in `db-tenant.ts`: la facciata `db.ts`
+ * li riesporta e basta (NUC-2). Elenco unico per il cricchetto
+ * (`db-facade-ratchet.test.ts`), che vieta di ridichiararli in `db.ts`, e per la
+ * prova d'identità (`db-facade-als.test.ts`), che vuole lo stesso oggetto
+ * funzione nei due moduli.
+ *
+ * Il gruppo 1a (T3-05) è stato scelto con il parser di TypeScript, non a mano:
+ * funzioni esportate da entrambi i file con testo uguale dopo la
+ * normalizzazione (commenti, spazi, virgolette, `getDb()` contro `db()`,
+ * `prepare` contro la cache `prep`), con le funzioni e i tipi da cui dipendono
+ * uguali allo stesso modo (`getSetting` della facciata è già una delega
+ * all'hub, che `db-tenant` importa direttamente), e senza scritture nel
+ * database, nemmeno attraverso una funzione chiamata.
+ */
+
+/** Gruppo 0 (T3-04): le quattro funzioni che mancavano in `db-tenant.ts`. */
+export const SPOSTATE_GRUPPO_0 = [
+  "cleanOrphanedForeignKeys",
+  "updateScheduledJobInterval",
+  "getStatusOverTime",
+  "getRecentStatusChanges",
+] as const;
+
+/** Gruppo 1a (T3-05): 103 letture uguali nelle due copie. */
+export const SPOSTATE_GRUPPO_1A = [
+  "getNetworks", "getNetworksPaginated", "getDevicesPaginated", "getNetworkById",
+  "getNetworkRouterBinding", "getNetworkContainingIp", "buildNetworkLookup", "getHostsByNetwork",
+  "getAllHostsFlat", "getAllHosts", "getKnownHosts", "getHostBasic", "getHostByIp",
+  "mergeOpenPortsJson", "getAttributionSignalsForHost", "isIpExcluded", "getExcludedIps",
+  "countHostsInNetwork", "getKnownHostsWithNetwork", "getScanHistory",
+  "getScanPhaseStatusForNetwork", "getAttributionCompletenessForNetwork", "getNetworkDevices",
+  "getRouters", "getDhcpSources", "getArpSourceDevices", "getSwitches",
+  "getDevicesByClassification", "getDevicesByClassificationOrLegacy", "getHostsByClassification",
+  "getNetworkRouterId", "getAllCredentials", "getCredentialById", "getHostWindowsCredentials",
+  "getHostLinuxCredentials", "getCredentialLoginPair", "getSshLinuxCredentialPair",
+  "getNetworkHostCredentialIds", "getHostDetectCredentialId", "getHostDetectCredentialsEnriched",
+  "getOrderedDetectCredentialIds", "getOrderedSshLinuxCredentialIds",
+  "buildSnmpCommunitiesForNetwork", "buildSnmpCommunitiesForHost", "getNetworkCredentials",
+  "getNetworksWithCredentials", "getHostCredentials", "getHostValidatedProtocolsByNetwork",
+  "getCredentialCommunityString", "getDeviceSnmpV3Credentials", "getEffectiveSnmpPort",
+  "getDeviceCommunityString", "getDeviceCredentials", "getNetworkDeviceById",
+  "getNetworkDeviceByHost", "getNetworkDeviceByHostId", "getInventoryAssetById",
+  "getInventoryAssetByNetworkDevice", "getDeviceIdsWithInventoryAsset", "getInventoryAssetByHost",
+  "getHostIdsWithInventoryAsset", "getInventoryAssets", "getAssetAssignees",
+  "getAssetAssigneeById", "getLocations", "getLocationById", "getLicenseSeatsByLicense",
+  "getLicenseSeatsByAsset", "getInventoryAuditLog", "getArpEntriesByDevice",
+  "getMacPortEntriesByDevice", "getSwitchPortsByDevice", "getNeighborsByDevice",
+  "getRoutesByDevice", "getDeviceCredentialBindings", "getDeviceCredentialProtocolsSummary",
+  "findExistingBinding", "getPrimaryBindingForProtocol", "getScheduledJobs", "getScheduledJobById",
+  "getEnabledJobs", "getStatusHistory", "getHostLatencyHistory", "getKnownHostStats",
+  "getOfflineKnownHosts", "getDashboardStats", "getRecentActivity", "globalSearch",
+  "getOnlineCountsOverTime", "getProxmoxHosts", "getProxmoxHostById", "getAdIntegrations",
+  "getAdRealm", "getAdIntegrationById", "getAdComputers", "getMultihomedStatus",
+  "getMultihomedStatusByDeviceId", "getAdUsers", "getAdGroups", "getAdGroupsPaginated",
+  "getAdDhcpLeasesPaginated", "getDistinctHostVendorHints", "getDhcpLeaseStats",
+] as const;
+
+/** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */
+export const SPOSTATE: readonly string[] = [...SPOSTATE_GRUPPO_0, ...SPOSTATE_GRUPPO_1A];
+
+/** Tipi uguali nelle due copie (T3-05): `db.ts` li riesporta con `export type`. */
+export const TIPI_SPOSTATI: readonly string[] = [
+  "AttributionSignals", "ScanPhaseKey", "ScanPhaseStatus", "AttributionCompleteness",
+  "CredentialCoverageRow", "NetworkCredentialRole", "HostDetectCredentialRole",
+  "NetworkCredentialRow", "HostCredentialRow", "MacIpMappingSource", "DbNeighborEntry",
+  "DbRouteEntry", "DeviceCredentialBinding", "AdIntegration", "AdComputer", "AdUser",
+  "AdDhcpLease", "AdGroup",
+];

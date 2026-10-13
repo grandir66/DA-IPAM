@@ -409,6 +409,8 @@ git commit -m "feat(topologia): la tabella dei MAC per porta si salva da SNMP/SS
   - `UnifiClient.listClients(): Promise<UnifiStaClient[]>`
   - `syncUnifiClientsForController(controllerId: number, trigger: "manual" | "schedule"): Promise<{ ok: boolean; clients: number; saved: number; unmatched: number; failure: string | null }>`
 
+Nota: la tappa 4 del piano di miglioramento (riga aggiunta da un'altra sessione il 13/10 alle 19:07 in `2026-10-12-piano-miglioramento-design.md`) userà la **stessa** lettura `stat/sta` per i dati di riconoscimento dei client (nome, alias, famiglia, sistema operativo, VLAN, primo/ultimo visto). Qui si prendono solo MAC, switch, porta e AP; `listClients()` e il parser si scrivono in modo che la tappa 4 aggiunga campi a `UnifiStaClient` senza cambiare la chiamata.
+
 - [ ] **Step 1: fixture inventata con la forma vera** — `unifi-stat-sta.json`: `{ "meta": { "rc": "ok" }, "data": [...] }` con 4 voci: un cablato (`is_wired: true`, `sw_mac`, `sw_port: 5`), un wireless (`is_wired: false`, `ap_mac`), un cablato senza `sw_mac` (client dietro un apparato non UniFi), una voce senza `mac` (scartata). Campi in più che il controller manda e che si ignorano: `hostname`, `ip`, `essid`, `uptime`, `last_seen`. MAC e nomi **inventati** (prefisso `02:00:00`, localmente amministrato). Al Task 14, punto (c), si confronta la forma con una risposta vera **in sola lettura** sulla copia: se un campo ha un altro nome, si corregge il parser e la fixture.
 
 - [ ] **Step 2: prove che falliscono**

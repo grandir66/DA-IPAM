@@ -24,8 +24,6 @@ import { SCHEMA_SQL } from "./db-schema";
 import { macToHex, normalizeMacForStorage } from "./utils";
 import { ipSortKey } from "./table-sort";
 import { randomUUID } from "crypto";
-import { lookupVendorSync } from "./scanner/mac-vendor";
-import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 
 /** Convert IPv4 string to numeric value for sorting */
 function ipToNum(ip: string): number {
@@ -33,14 +31,11 @@ function ipToNum(ip: string): number {
   return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
 }
 import type {
-  Network,
   Host,
   HostDetail,
   ScanHistory,
   User,
-  NetworkInput,
   HostInput,
-  HostUpdate,
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
@@ -56,7 +51,6 @@ import {
 } from "./db-tenant";
 // NUC-2 gruppo 1a (T3-05): letture spostate che il resto della facciata usa ancora.
 import {
-  getNetworkById,
   mergeOpenPortsJson,
   isIpExcluded,
   getHostDetectCredentialsEnriched,
@@ -2312,98 +2306,6 @@ export function updateUserLastLogin(userId: number): void {
 // Networks
 // ========================
 
-export function createNetwork(input: NetworkInput): Network {
-  // Verifica overlap CIDR con reti esistenti
-  const { cidrOverlaps } = require("./utils") as { cidrOverlaps: (a: string, b: string) => boolean };
-  const existing = getDb().prepare("SELECT cidr FROM networks").all() as { cidr: string }[];
-  for (const net of existing) {
-    if (cidrOverlaps(input.cidr, net.cidr)) {
-      throw new Error(`La rete ${input.cidr} si sovrappone alla rete esistente ${net.cidr}`);
-    }
-  }
-
-  const stmt = getDb().prepare(
-    `INSERT INTO networks (cidr, name, description, gateway, vlan_id, location, snmp_community, dns_server)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  );
-  const result = stmt.run(
-    input.cidr,
-    input.name,
-    input.description || "",
-    input.gateway || null,
-    input.vlan_id || null,
-    input.location || "",
-    input.snmp_community || null,
-    input.dns_server || null
-  );
-  const networkId = Number(result.lastInsertRowid);
-
-  // Fix drift (2026-07-20): la copia `db.ts` di createNetwork non seminava i job
-  // default (known_host_check) presenti in `db-tenant.createNetwork` → creando una
-  // rete via API (che importa da @/lib/db) il monitoring default non partiva.
-  // Allineata a db-tenant; seedDefaultJobsForNetwork opera sul tenant corrente (getDb).
-  try {
-    const { seedDefaultJobsForNetwork } = require("./db-tenant") as {
-      seedDefaultJobsForNetwork: (networkId: number, idx: number, total: number) => void;
-    };
-    const existingNets = (getDb().prepare("SELECT COUNT(*) AS n FROM networks").get() as { n: number }).n;
-    const idx = Math.max(0, existingNets - 1);
-    seedDefaultJobsForNetwork(networkId, idx, Math.max(1, existingNets));
-  } catch (err) {
-    console.warn(`[createNetwork] seed default jobs failed per network ${networkId}:`, err);
-  }
-
-  return getDb().prepare("SELECT * FROM networks WHERE id = ?").get(networkId) as Network;
-}
-
-export function updateNetwork(id: number, input: Partial<NetworkInput>): Network | undefined {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-
-  if (input.cidr !== undefined) { fields.push("cidr = ?"); values.push(input.cidr); }
-  if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
-  if (input.description !== undefined) { fields.push("description = ?"); values.push(input.description); }
-  if (input.gateway !== undefined) { fields.push("gateway = ?"); values.push(input.gateway); }
-  if (input.vlan_id !== undefined) { fields.push("vlan_id = ?"); values.push(input.vlan_id); }
-  if (input.location !== undefined) { fields.push("location = ?"); values.push(input.location); }
-  if (input.snmp_community !== undefined) { fields.push("snmp_community = ?"); values.push(input.snmp_community); }
-  if (input.dns_server !== undefined) { fields.push("dns_server = ?"); values.push(input.dns_server); }
-
-  if (fields.length === 0) return getNetworkById(id);
-
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-
-  getDb().prepare(`UPDATE networks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  return getNetworkById(id);
-}
-
-export function deleteNetwork(id: number): boolean {
-  const result = getDb().prepare("DELETE FROM networks WHERE id = ?").run(id);
-  return result.changes > 0;
-}
-
-export function setNetworkTargetingMode(
-  id: number,
-  mode: "full_subnet" | "found_ips" | "populated_24",
-): void {
-  getDb()
-    .prepare("UPDATE networks SET targeting_mode = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(mode, id);
-}
-
-export function setNetworkAssessmentConfig(
-  id: number,
-  opts: { enabled: boolean; profileId: string | null },
-): void {
-  getDb()
-    .prepare(
-      `UPDATE networks SET assessment_enabled = ?, assessment_profile_id = ?,
-       updated_at = datetime('now') WHERE id = ?`,
-    )
-    .run(opts.enabled ? 1 : 0, opts.profileId, id);
-}
-
 // ========================
 // Hosts
 // ========================
@@ -2907,134 +2809,9 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
   return host;
 }
 
-/** Facade di db-tenant.ts::refreshHostVendorsFromMac (regola 12). Vedi lì per la doc completa. */
-export function refreshHostVendorsFromMac(
-  networkId?: number
-): { examined: number; updated: number; unresolved: number } {
-  const d = getDb();
-  const rows = (
-    networkId != null
-      ? d.prepare(
-          "SELECT id, mac, vendor FROM hosts WHERE network_id = ? AND mac IS NOT NULL AND mac != ''"
-        ).all(networkId)
-      : d.prepare(
-          "SELECT id, mac, vendor FROM hosts WHERE mac IS NOT NULL AND mac != ''"
-        ).all()
-  ) as Array<{ id: number; mac: string; vendor: string | null }>;
-
-  const candidates = rows.filter(
-    (r) => !r.vendor || VENDOR_PLACEHOLDER_RE.test(r.vendor.trim())
-  );
-
-  const result = { examined: candidates.length, updated: 0, unresolved: 0 };
-  const updateStmt = d.prepare("UPDATE hosts SET vendor = ? WHERE id = ?");
-
-  const run = d.transaction((items: typeof candidates) => {
-    for (const row of items) {
-      try {
-        const resolved = lookupVendorSync(row.mac);
-        if (!resolved || VENDOR_PLACEHOLDER_RE.test(resolved.trim())) {
-          result.unresolved += 1;
-          continue;
-        }
-        if (resolved === row.vendor) continue;
-        updateStmt.run(resolved, row.id);
-        result.updated += 1;
-      } catch (err) {
-        result.unresolved += 1;
-        console.error(`[refreshHostVendorsFromMac] host ${row.id} (mac ${row.mac}) fallito:`, err instanceof Error ? err.message : String(err));
-      }
-    }
-  });
-  run(candidates);
-
-  return result;
-}
-
-export function updateHost(id: number, input: HostUpdate): Host | undefined {
-  const prevForMac =
-    input.mac !== undefined
-      ? (getDb().prepare("SELECT network_id, mac FROM hosts WHERE id = ?").get(id) as
-          | { network_id: number; mac: string | null }
-          | undefined)
-      : undefined;
-
-  const fields: string[] = [];
-  const values: unknown[] = [];
-
-  if (input.custom_name !== undefined) { fields.push("custom_name = ?"); values.push(input.custom_name); }
-  if (input.classification !== undefined) {
-    fields.push("classification = ?");
-    values.push(input.classification);
-    fields.push("classification_manual = 1");
-  }
-  if (input.inventory_code !== undefined) { fields.push("inventory_code = ?"); values.push(input.inventory_code); }
-  if (input.notes !== undefined) { fields.push("notes = ?"); values.push(input.notes); }
-  if (input.mac !== undefined) { fields.push("mac = ?"); values.push(normalizeMacForStorage(input.mac) ?? null); }
-  if (input.known_host !== undefined) { fields.push("known_host = ?"); values.push(input.known_host); }
-  if (input.monitor_ports !== undefined) { fields.push("monitor_ports = ?"); values.push(input.monitor_ports); }
-  if (input.device_manufacturer !== undefined) { fields.push("device_manufacturer = ?"); values.push(input.device_manufacturer); }
-  // v0.2.605: editing manuale anagrafica device da scheda asset
-  if (input.serial_number !== undefined) { fields.push("serial_number = ?"); values.push(input.serial_number || null); }
-  if (input.model !== undefined) { fields.push("model = ?"); values.push(input.model || null); }
-  if (input.firmware !== undefined) { fields.push("firmware = ?"); values.push(input.firmware || null); }
-  if (input.ip_assignment !== undefined) { fields.push("ip_assignment = ?"); values.push(input.ip_assignment); }
-  if (input.status !== undefined) {
-    fields.push("status = ?");
-    values.push(input.status);
-    if (input.status === "online") {
-      fields.push("last_seen = datetime('now')");
-    }
-  }
-
-  if (fields.length === 0) return getDb().prepare("SELECT * FROM hosts WHERE id = ?").get(id) as Host | undefined;
-
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-
-  getDb().prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  const updated = getDb().prepare("SELECT * FROM hosts WHERE id = ?").get(id) as Host | undefined;
-  if (input.mac !== undefined && prevForMac && updated) {
-    if (macToHex(prevForMac.mac ?? "") !== macToHex(updated.mac ?? "")) {
-      syncIpAssignmentsForNetwork(prevForMac.network_id);
-    }
-  }
-  return updated;
-}
-
-export function deleteHost(id: number, options?: { reason?: string; excludedBy?: string | null; skipExclusion?: boolean }): boolean {
-  const db = getDb();
-  const row = db.prepare("SELECT network_id, ip FROM hosts WHERE id = ?").get(id) as { network_id: number; ip: string } | undefined;
-  const changes = db.prepare("DELETE FROM hosts WHERE id = ?").run(id).changes;
-  if (changes > 0 && row && !options?.skipExclusion) {
-    // Tombstone: l'IP entra in blacklist così le fonti passive (ARP/DHCP/AD) e
-    // anche i probe attivi non lo ricreano silenziosamente al prossimo scan.
-    try {
-      db.prepare(
-        "INSERT OR IGNORE INTO excluded_ips (network_id, ip, reason, excluded_by) VALUES (?, ?, ?, ?)"
-      ).run(row.network_id, row.ip, options?.reason ?? "host_deleted", options?.excludedBy ?? null);
-    } catch { /* tabella mancante su DB pre-migrazione: ignora */ }
-  }
-  return changes > 0;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // excluded_ips — tombstone IP esclusi
 // ═══════════════════════════════════════════════════════════════════════════
-
-export function addToExcludedIps(networkId: number, ip: string, reason?: string | null, excludedBy?: string | null): void {
-  getDb()
-    .prepare(
-      "INSERT OR IGNORE INTO excluded_ips (network_id, ip, reason, excluded_by) VALUES (?, ?, ?, ?)"
-    )
-    .run(networkId, ip, reason ?? null, excludedBy ?? null);
-}
-
-export function removeFromExcludedIps(networkId: number, ip: string): boolean {
-  return getDb()
-    .prepare("DELETE FROM excluded_ips WHERE network_id = ? AND ip = ?")
-    .run(networkId, ip).changes > 0;
-}
 
 /**
  * UPDATE-only: aggiorna solo host già esistenti (network_id+ip). MAI inserisce.
@@ -3051,91 +2828,9 @@ export function updateHostIfExists(input: HostInput & { mac?: string; vendor?: s
   return upsertHost(input) as Host;
 }
 
-/** Aggiorna known_host per più host della stessa rete. Ritorna il numero di righe aggiornate. */
-export function bulkUpdateHostsKnownHost(networkId: number, hostIds: number[], knownHost: 0 | 1): number {
-  if (hostIds.length === 0) return 0;
-  const placeholders = hostIds.map(() => "?").join(",");
-  const stmt = getDb().prepare(
-    `UPDATE hosts SET known_host = ?, updated_at = datetime('now') WHERE network_id = ? AND id IN (${placeholders})`
-  );
-  return stmt.run(knownHost, networkId, ...hostIds).changes;
-}
-
-/** Elimina host della stessa rete (bulk). Ritorna il numero di righe eliminate. */
-export function bulkDeleteHosts(networkId: number, hostIds: number[], options?: { reason?: string; excludedBy?: string | null; skipExclusion?: boolean }): number {
-  if (hostIds.length === 0) return 0;
-  const db = getDb();
-  const placeholders = hostIds.map(() => "?").join(",");
-  let ips: string[] = [];
-  if (!options?.skipExclusion) {
-    ips = (db.prepare(`SELECT ip FROM hosts WHERE network_id = ? AND id IN (${placeholders})`)
-      .all(networkId, ...hostIds) as { ip: string }[]).map((r) => r.ip);
-  }
-  const stmt = db.prepare(`DELETE FROM hosts WHERE network_id = ? AND id IN (${placeholders})`);
-  const changes = stmt.run(networkId, ...hostIds).changes;
-  if (changes > 0 && ips.length > 0) {
-    try {
-      const ins = db.prepare(
-        "INSERT OR IGNORE INTO excluded_ips (network_id, ip, reason, excluded_by) VALUES (?, ?, ?, ?)"
-      );
-      db.transaction(() => {
-        for (const ip of ips) ins.run(networkId, ip, options?.reason ?? "host_bulk_deleted", options?.excludedBy ?? null);
-      })();
-    } catch { /* tabella mancante: ignora */ }
-  }
-  return changes;
-}
-
-/**
- * Per i tipi di scan "additivi" (nmap/network_discovery): invece di marcare offline,
- * aggiunge una riga nelle note dell'host con data e tipo scan per segnalare la mancata risposta.
- * Non modifica lo status né sovrascrive dati già rilevati — consente revisione manuale.
- */
-export function noteHostsNonResponding(
-  networkId: number,
-  onlineIps: string[],
-  scannedIps: string[],
-  scanType: string
-): void {
-  const onlineSet = new Set(onlineIps);
-  const nonResponding = scannedIps.filter((ip) => !onlineSet.has(ip));
-  if (nonResponding.length === 0) return;
-  const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const tag = `[${dateStr}] Non risposto (${scanType}) — verificare se eliminare`;
-  const db = getDb();
-  for (const ip of nonResponding) {
-    const row = db.prepare(
-      "SELECT id, notes FROM hosts WHERE network_id = ? AND ip = ?"
-    ).get(networkId, ip) as { id: number; notes: string } | undefined;
-    if (!row) continue;
-    const existing = row.notes ?? "";
-    // Evita duplicati dello stesso giorno
-    if (existing.includes(`[${dateStr}]`)) continue;
-    const updated = existing.trim() ? `${existing.trim()}\n${tag}` : tag;
-    db.prepare(
-      "UPDATE hosts SET notes = ?, updated_at = datetime('now') WHERE id = ?"
-    ).run(updated, row.id);
-  }
-}
-
 // ========================
 // Scan History
 // ========================
-
-export function addScanHistory(entry: Omit<ScanHistory, "id" | "timestamp">): void {
-  getDb().prepare(
-    `INSERT INTO scan_history (host_id, network_id, scan_type, status, ports_open, raw_output, duration_ms)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    entry.host_id,
-    entry.network_id,
-    entry.scan_type,
-    entry.status,
-    entry.ports_open,
-    entry.raw_output,
-    entry.duration_ms
-  );
-}
 
 // ========================
 // Network Devices
@@ -3144,16 +2839,6 @@ export function addScanHistory(entry: Omit<ScanHistory, "id" | "timestamp">): vo
 // ========================
 // Network Router (ARP assignment per subnet)
 // ========================
-
-export function setNetworkRouter(networkId: number, routerId: number): void {
-  getDb().prepare(
-    "INSERT OR REPLACE INTO network_router (network_id, router_id) VALUES (?, ?)"
-  ).run(networkId, routerId);
-}
-
-export function deleteNetworkRouter(networkId: number): void {
-  getDb().prepare("DELETE FROM network_router WHERE network_id = ?").run(networkId);
-}
 
 // ========================
 // Credentials (riutilizzabili)
@@ -3268,23 +2953,6 @@ export function upsertArpEntries(
 // Status History
 // ========================
 
-export function addStatusHistory(hostId: number, status: "online" | "offline", responseTimeMs?: number | null): void {
-  getDb().prepare(
-    "INSERT INTO status_history (host_id, status, response_time_ms) VALUES (?, ?, ?)"
-  ).run(hostId, status, responseTimeMs ?? null);
-}
-
-// v0.2.645 audit perf DB8: facade → db-tenant.recordHostHeartbeat (combina
-// INSERT status_history + UPDATE status/last_seen/last_response_time_ms in 1 fsync).
-export function recordHostHeartbeat(
-  hostId: number,
-  status: "online" | "offline",
-  responseTimeMs: number | null,
-): void {
-  const tenant = require("./db-tenant");
-  tenant.recordHostHeartbeat(hostId, status, responseTimeMs);
-}
-
 // ========================
 // Monitoring Stats
 // ========================
@@ -3296,25 +2964,6 @@ export function recordHostHeartbeat(
 // ========================
 // Cleanup
 // ========================
-
-export function cleanupStaleHosts(daysUntilStale: number, daysUntilDelete: number): { flagged: number; deleted: number } {
-  // Fix C2 (fase 4): un host classificato a mano (classification_manual=1) non
-  // deve mai essere sovrascritto automaticamente — nemmeno col sentinel 'stale'.
-  // Vedi db-tenant.ts::cleanupStaleHosts per la spiegazione completa (regola 12:
-  // questa è la facade, stessa logica).
-  const flagged = getDb().prepare(
-    `UPDATE hosts SET classification = 'stale', updated_at = datetime('now')
-     WHERE status = 'offline' AND last_seen < datetime('now', '-' || ? || ' days')
-     AND classification != 'stale' AND classification_manual = 0`
-  ).run(daysUntilStale);
-
-  const deleted = getDb().prepare(
-    `DELETE FROM hosts
-     WHERE classification = 'stale' AND last_seen < datetime('now', '-' || ? || ' days')`
-  ).run(daysUntilDelete);
-
-  return { flagged: flagged.changes, deleted: deleted.changes };
-}
 
 // ========================
 // Status History Aggregation (for charts)
@@ -4255,4 +3904,29 @@ export {
   updateProxmoxHost,
   updateProxmoxHostScanResult,
   deleteProxmoxHost,
+} from "./db-tenant";
+
+// NUC-2 gruppo 1b (T3-06), reti e host: 19 funzioni uguali o con
+// differenze solo di forma fra le due copie, provate con la parità. Una sola copia,
+// in db-tenant.ts. Elenco: src/lib/__tests__/support/facciata-spostate.ts.
+export {
+  createNetwork,
+  updateNetwork,
+  deleteNetwork,
+  setNetworkTargetingMode,
+  setNetworkAssessmentConfig,
+  refreshHostVendorsFromMac,
+  updateHost,
+  deleteHost,
+  addToExcludedIps,
+  removeFromExcludedIps,
+  bulkUpdateHostsKnownHost,
+  bulkDeleteHosts,
+  noteHostsNonResponding,
+  addScanHistory,
+  setNetworkRouter,
+  deleteNetworkRouter,
+  addStatusHistory,
+  cleanupStaleHosts,
+  recordHostHeartbeat,
 } from "./db-tenant";

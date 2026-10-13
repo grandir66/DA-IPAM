@@ -105,6 +105,13 @@ export const SPOSTATE_GRUPPO_1B: Readonly<Record<string, readonly string[]>> = {
     "toggleJob", "deleteScheduledJob", "createProxmoxHost", "updateProxmoxHost",
     "updateProxmoxHostScanResult", "deleteProxmoxHost",
   ],
+  "reti e host": [
+    "createNetwork", "updateNetwork", "deleteNetwork", "setNetworkTargetingMode",
+    "setNetworkAssessmentConfig", "refreshHostVendorsFromMac", "updateHost", "deleteHost",
+    "addToExcludedIps", "removeFromExcludedIps", "bulkUpdateHostsKnownHost", "bulkDeleteHosts",
+    "noteHostsNonResponding", "addScanHistory", "setNetworkRouter", "deleteNetworkRouter",
+    "addStatusHistory", "cleanupStaleHosts", "recordHostHeartbeat",
+  ],
 };
 
 /** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */

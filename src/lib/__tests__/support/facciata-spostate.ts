@@ -127,6 +127,7 @@ export const SPOSTATE_GRUPPO_2 = [
   "getHostsByNetworkWithDevices",
   "recomputeMultihomedLinks",
   "resetConfiguration",
+  "getAdComputersPaginated",
 ] as const;
 
 /** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */

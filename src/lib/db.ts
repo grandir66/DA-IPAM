@@ -50,7 +50,6 @@ import {
   isIpExcluded,
 } from "./db-tenant";
 import type {
-  AdComputer,
   AdUser,
 } from "./db-tenant";
 
@@ -3047,22 +3046,6 @@ export function deleteUser(userId: number): boolean {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // AD Computers
-export function getAdComputersPaginated(integrationId: number, page: number, pageSize: number, search?: string, activeDays?: number): { rows: AdComputer[]; total: number } {
-  const offset = (page - 1) * pageSize;
-  let whereClause = "WHERE integration_id = ?";
-  const params: unknown[] = [integrationId];
-  if (search?.trim()) {
-    whereClause += " AND (sam_account_name LIKE ? OR dns_host_name LIKE ? OR display_name LIKE ? OR operating_system LIKE ?)";
-    const s = `%${search.trim()}%`;
-    params.push(s, s, s, s);
-  }
-  if (activeDays && activeDays > 0) {
-    whereClause += ` AND last_logon_at IS NOT NULL AND last_logon_at >= datetime('now', '-${activeDays} days')`;
-  }
-  const total = (getDb().prepare(`SELECT COUNT(*) as c FROM ad_computers ${whereClause}`).get(...params) as { c: number }).c;
-  const rows = getDb().prepare(`SELECT * FROM ad_computers ${whereClause} ORDER BY sam_account_name LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdComputer[];
-  return { rows, total };
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MULTI-HOMED DETECTION
@@ -3537,4 +3520,5 @@ export {
   getHostsByNetworkWithDevices,
   recomputeMultihomedLinks,
   resetConfiguration,
+  getAdComputersPaginated,
 } from "./db-tenant";

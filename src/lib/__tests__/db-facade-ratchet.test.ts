@@ -31,9 +31,9 @@ import { SPOSTATE, TIPI_SPOSTATI } from "./support/facciata-spostate";
  * 144 dopo le credenziali, 133 dopo AD, 125 dopo DHCP,
  * 104 dopo inventario e licenze, 97 dopo ARP, vicini, rotte e porte,
  * 83 dopo apparati, job e Proxmox, 64 dopo reti e host; nel gruppo 2 (T3-07),
- * una per commit: 63 dopo upsertArpEntries, 62 dopo getHostByMac, 61 dopo getHostById, 60 dopo getHostsByNetworkWithDevices, 59 dopo recomputeMultihomedLinks, 58 dopo resetConfiguration.
+ * una per commit: 63 dopo upsertArpEntries, 62 dopo getHostByMac, 61 dopo getHostById, 60 dopo getHostsByNetworkWithDevices, 59 dopo recomputeMultihomedLinks, 58 dopo resetConfiguration, 57 dopo getAdComputersPaginated.
  */
-const SOGLIA = 58;
+const SOGLIA = 57;
 
 interface Dichiarazione {
   nome: string;

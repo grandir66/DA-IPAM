@@ -1,5 +1,11 @@
 import { getAllHostIps } from "@/lib/utils";
-import { getCurrentTenantCode, getTenantSetting, withTenant } from "@/lib/db-tenant";
+import {
+  getCurrentTenantCode,
+  getTenantSetting,
+  markHostsOffline,
+  oraDelDatabase,
+  withTenant,
+} from "@/lib/db-tenant";
 import { CHIAVE_SOGLIA_ALLARME, prendiRete, sogliaAllarmeDa } from "./network-scan-lock";
 import { pingSweep as _localPingSweep } from "./ping";
 import { nmapDiscoverHosts as _localNmapDiscoverHosts, nmapPortScan as _localNmapPortScan, isNmapAvailable as _localIsNmapAvailable } from "./nmap";
@@ -36,7 +42,6 @@ import {
   getHostsByNetwork,
   getDb,
   upsertHost,
-  markHostsOffline,
   noteHostsNonResponding,
   addScanHistory,
   addStatusHistory,
@@ -225,6 +230,9 @@ export async function discoverNetwork(
   const rilasciaRete = prendiRete(tenantCode, networkId, { scanId: id, scanType }, { sogliaAllarmeMinuti });
 
   try {
+    // Inizio del giro dall'orologio del DB, nella forma di `last_seen` (T3-20):
+    // a fine giro non va offline un host visto vivo dopo questo momento.
+    const inizioGiro = oraDelDatabase();
     const progress: ScanProgress = {
       id,
       network_id: networkId,
@@ -241,7 +249,7 @@ export async function discoverNetwork(
     getProgressMap().set(id, progress);
 
     const runInBackground = () =>
-      runDiscovery(id, network.id, network.cidr, ips, scanType, nmapArgs, snmpCommunity, network.dns_server ?? null, options);
+      runDiscovery(id, network.id, network.cidr, ips, scanType, inizioGiro, nmapArgs, snmpCommunity, network.dns_server ?? null, options);
 
     const done: Promise<EsitoGiro> = withTenant(tenantCode, runInBackground).then(
       (): EsitoGiro => {
@@ -362,6 +370,7 @@ async function runDiscovery(
   cidr: string,
   ips: string[],
   scanType: DiscoveryScanType,
+  inizioGiro: string,
   nmapArgs?: string,
   snmpCommunity?: string | null,
   dnsServer?: string | null,
@@ -3216,10 +3225,11 @@ async function runDiscovery(
   if (scanType === "network_discovery" || scanType === "fast" || scanType === "scan_naabu") {
     progress.phase = "Aggiornamento host offline";
     noteHostsNonResponding(networkId, onlineIps, ipsDecisi, scanType);
-    markHostsOffline(networkId, onlineIps, ipsDecisi);
+    // T3-20: solo host non ancora offline e non visti dopo l'inizio del giro.
+    const passatiOffline = markHostsOffline(networkId, onlineIps, ipsDecisi, inizioGiro);
     const onlineSet = new Set(onlineIps);
     const nonRispondenti = ipsDecisi.filter((ip) => !onlineSet.has(ip)).length;
-    log(`Host non rispondenti (${nonRispondenti}): marcati offline dopo ICMP + TCP fallback`);
+    log(`Host non rispondenti (${nonRispondenti}) dopo ICMP + TCP fallback: ${passatiOffline} passati offline`);
   } else if (scanType === "nmap" || scanType === "ipam_full") {
     progress.phase = "Annotazione host non rispondenti";
     noteHostsNonResponding(networkId, onlineIps, ipsDecisi, scanType);
@@ -3232,7 +3242,8 @@ async function runDiscovery(
     // ping e altri sweep ICMP-only: marca offline. I sub-step UI additivi
     // (nmap_base / snmp_verify) non devono flippare host non in target.
     progress.phase = "Aggiornamento host offline";
-    markHostsOffline(networkId, onlineIps, ipsDecisi);
+    const passatiOffline = markHostsOffline(networkId, onlineIps, ipsDecisi, inizioGiro);
+    log(`Host passati offline: ${passatiOffline}`);
   }
 
   // ═══════════════════════════════════════════════════════════════

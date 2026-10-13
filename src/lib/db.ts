@@ -3388,33 +3388,6 @@ export function getKnownHostsWithNetwork(): KnownHostWithNetworkRow[] {
 }
 
 /**
- * Marca host offline rispetto a un ping/scan.
- * @param scannedIps — se impostato, solo gli IP in questo insieme possono passare a offline (scansioni parziali su host selezionati/elenco). Se omesso, comportamento legacy su tutta la rete.
- */
-export function markHostsOffline(networkId: number, onlineIps: string[], scannedIps?: string[]): void {
-  if (scannedIps?.length) {
-    const onlineSet = new Set(onlineIps);
-    const toOffline = scannedIps.filter((ip) => !onlineSet.has(ip));
-    if (toOffline.length === 0) return;
-    const ph = toOffline.map(() => "?").join(",");
-    getDb().prepare(
-      `UPDATE hosts SET status = 'offline', updated_at = datetime('now') WHERE network_id = ? AND ip IN (${ph})`
-    ).run(networkId, ...toOffline);
-    return;
-  }
-  if (onlineIps.length === 0) {
-    getDb().prepare(
-      "UPDATE hosts SET status = 'offline', updated_at = datetime('now') WHERE network_id = ? AND status = 'online'"
-    ).run(networkId);
-    return;
-  }
-  const placeholders = onlineIps.map(() => "?").join(",");
-  getDb().prepare(
-    `UPDATE hosts SET status = 'offline', updated_at = datetime('now') WHERE network_id = ? AND status = 'online' AND ip NOT IN (${placeholders})`
-  ).run(networkId, ...onlineIps);
-}
-
-/**
  * Per i tipi di scan "additivi" (nmap/network_discovery): invece di marcare offline,
  * aggiunge una riga nelle note dell'host con data e tipo scan per segnalare la mancata risposta.
  * Non modifica lo status né sovrascrive dati già rilevati — consente revisione manuale.
@@ -7794,4 +7767,8 @@ export {
   updateScheduledJobInterval,
   getStatusOverTime,
   getRecentStatusChanges,
+  // T3-20: passaggio a offline con un solo filtro, una sola copia
+  markHostsOffline,
+  selectOfflineCandidates,
+  oraDelDatabase,
 } from "./db-tenant";

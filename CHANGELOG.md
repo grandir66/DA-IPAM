@@ -47,6 +47,28 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   l'impostazione `scan_lock_alarm_minutes`. Restano fuori dal controllo le
   letture ARP e DHCP, che non sono giri di scansione. Prova:
   `network-scan-lock.test.ts`.
+- **Un giro vecchio non spegne un host visto dopo la sua partenza (INV-1,
+  INV-2, T3-20).** A fine giro le scansioni ping, veloce, discovery e naabu
+  mandavano offline ogni indirizzo scansionato che non aveva risposto, senza
+  guardare lo stato né quando l'host era stato visto l'ultima volta: un host
+  visto vivo durante il giro (dal controllo degli host noti, che gira ogni 15
+  minuti, o da un'altra scansione) veniva spento da un giro partito prima, e
+  gli host già offline si vedevano riscrivere la data di modifica a ogni giro
+  (su una copia del database di un'installazione: fino a 248 righe per giro
+  su una rete, 676 in tutto se le scansionasse tutte). Ora passano offline
+  solo gli host non ancora offline e non visti dopo l'inizio del giro;
+  l'inizio si prende dall'orologio del database, nella stessa forma della
+  data «ultimo visto». Il conteggio delle righe da cambiare e la scrittura
+  usano lo stesso filtro, che servirà alla soglia di sicurezza sugli
+  spegnimenti in massa. Una scansione che non ha nessun indirizzo da decidere
+  non tocca niente (prima valeva come «tutta la rete»). **Cosa cambia sulle
+  installazioni del canale `dev`:** la data di modifica degli host offline
+  smette di avanzare a ogni giro (la pulizia degli host vecchi guarda «ultimo
+  visto», non questa data, e non cambia); un host visto vivo mentre un giro
+  era in corso resta online fino al giro successivo che non lo vede; il
+  registro del giro dice quanti host sono passati offline. Nessuna bonifica:
+  gli host eventualmente spenti per errore tornano online al primo giro che li
+  vede. Prova: `mark-hosts-offline.test.ts`.
 
 ## [Non rilasciato] — 2026-10-12
 

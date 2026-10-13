@@ -2683,27 +2683,93 @@ export function getKnownHostsWithNetwork(): KnownHostWithNetworkRow[] {
     .all() as KnownHostWithNetworkRow[];
 }
 
-export function markHostsOffline(networkId: number, onlineIps: string[], scannedIps?: string[]): void {
-  if (scannedIps?.length) {
-    const onlineSet = new Set(onlineIps);
-    const toOffline = scannedIps.filter((ip) => !onlineSet.has(ip));
-    if (toOffline.length === 0) return;
-    const ph = toOffline.map(() => "?").join(",");
-    db().prepare(
-      `UPDATE hosts SET status = 'offline', updated_at = datetime('now') WHERE network_id = ? AND ip IN (${ph})`
-    ).run(networkId, ...toOffline);
-    return;
+/** Forma di `datetime('now')` di SQLite, la stessa di `hosts.last_seen`. */
+const FORMA_DATA_SQLITE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+
+/**
+ * Ora del database del tenant, nella forma di `datetime('now')`: è l'inizio di un
+ * giro di scansione, da confrontare come testo con `hosts.last_seen` (stesso
+ * formato e stesso fuso, UTC). Un'ora presa da JavaScript (`toISOString`, col
+ * «T») si confronterebbe male.
+ */
+export function oraDelDatabase(): string {
+  const r = db().prepare("SELECT datetime('now') AS ora").get() as { ora: string };
+  return r.ora;
+}
+
+/**
+ * Filtro unico del passaggio a offline di fine giro (T3-20, INV-1/INV-2), usato
+ * sia dalla lettura dei candidati sia dalla scrittura:
+ * - solo gli IP scansionati dal giro che non hanno risposto;
+ * - solo host non ancora offline (un host già offline non si riscrive: prima
+ *   ogni giro ne aggiornava `updated_at`);
+ * - solo host con `last_seen` nullo o anteriore all'inizio del giro: un host
+ *   visto vivo dopo la partenza (da un altro giro, dal controllo degli host
+ *   noti) non lo spegne un giro che non l'ha visto.
+ */
+const WHERE_OFFLINE =
+  "network_id = ? AND (status IS NULL OR status <> 'offline') AND (last_seen IS NULL OR last_seen < ?)";
+
+function candidatiOffline(
+  networkId: number,
+  onlineIps: readonly string[],
+  scannedIps: readonly string[],
+  startedAt: string,
+): Array<{ id: number; ip: string }> {
+  if (!FORMA_DATA_SQLITE.test(startedAt)) {
+    throw new Error("Inizio del giro non valido: serve la forma di datetime('now') (AAAA-MM-GG hh:mm:ss)");
   }
-  if (onlineIps.length === 0) {
-    db().prepare(
-      "UPDATE hosts SET status = 'offline', updated_at = datetime('now') WHERE network_id = ? AND status = 'online'"
-    ).run(networkId);
-    return;
-  }
-  const placeholders = onlineIps.map(() => "?").join(",");
-  db().prepare(
-    `UPDATE hosts SET status = 'offline', updated_at = datetime('now') WHERE network_id = ? AND status = 'online' AND ip NOT IN (${placeholders})`
-  ).run(networkId, ...onlineIps);
+  if (scannedIps.length === 0) return [];
+  const online = new Set(onlineIps);
+  const scansionati = new Set(scannedIps);
+  const righe = db()
+    .prepare(`SELECT id, ip FROM hosts WHERE ${WHERE_OFFLINE} ORDER BY id`)
+    .all(networkId, startedAt) as Array<{ id: number; ip: string }>;
+  return righe.filter((r) => scansionati.has(r.ip) && !online.has(r.ip));
+}
+
+/**
+ * Host che il giro manderebbe offline, senza scrivere (T3-20). Stesso filtro di
+ * `markHostsOffline`: le righe restituite sono quelle che cambierebbe.
+ * @param startedAt inizio del giro, da `oraDelDatabase()`
+ */
+export function selectOfflineCandidates(
+  networkId: number,
+  onlineIps: readonly string[],
+  scannedIps: readonly string[],
+  startedAt: string,
+): Array<{ id: number; ip: string }> {
+  return candidatiOffline(networkId, onlineIps, scannedIps, startedAt);
+}
+
+/**
+ * Marca offline gli host scansionati che non hanno risposto, col filtro di
+ * `selectOfflineCandidates` (T3-20). Una lista di scansionati vuota non tocca
+ * niente (prima valeva come «tutta la rete»). Restituisce quanti host ha
+ * cambiato.
+ * @param startedAt inizio del giro, da `oraDelDatabase()`
+ */
+export function markHostsOffline(
+  networkId: number,
+  onlineIps: readonly string[],
+  scannedIps: readonly string[],
+  startedAt: string,
+): number {
+  const d = db();
+  return d.transaction((): number => {
+    const ids = candidatiOffline(networkId, onlineIps, scannedIps, startedAt).map((r) => r.id);
+    let cambiati = 0;
+    for (let i = 0; i < ids.length; i += 500) {
+      const blocco = ids.slice(i, i + 500);
+      cambiati += d
+        .prepare(
+          `UPDATE hosts SET status = 'offline', updated_at = datetime('now')
+           WHERE id IN (${blocco.map(() => "?").join(",")}) AND ${WHERE_OFFLINE}`,
+        )
+        .run(...blocco, networkId, startedAt).changes;
+    }
+    return cambiati;
+  })();
 }
 
 export function noteHostsNonResponding(

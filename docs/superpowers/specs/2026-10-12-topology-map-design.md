@@ -183,7 +183,7 @@ Ognuna rilasciabile e guardata a schermo sul dato vero.
 
 | Fase | Contenuto | Livello di controllo |
 | --- | --- | --- |
-| 1 · I dati giusti | uplink UniFi salvato; abbinamento per MAC; fusione apparato↔host; proposta «promuovi ad apparato»; sede = Ubicazione con subnet e testa; correzioni; età dei collegamenti | **completo** (schema DB, dati del cliente) |
+| 1 · I dati giusti (**fatta, v0.3.277, 13/10**) | uplink UniFi salvato; abbinamento per MAC; fusione apparato↔host; proposta «promuovi ad apparato»; sede = Ubicazione con subnet e testa; correzioni; età dei collegamenti | **completo** (schema DB, dati del cliente) |
 | 2 · L'albero della sede | livello 2 completo: icone, fascia degli attaccati, AP in fila, ritocchi, «Da sistemare». **Sostituisce la mappa di oggi** | leggero |
 | 3 · Le sedi | livello 1, collegamenti fra sedi, stato che risale, ricerca | leggero |
 | 4 · Il dettaglio | livello 3 (porte), filtri, correzioni col clic destro, export drawio | leggero |
@@ -215,3 +215,8 @@ Ognuna rilasciabile e guardata a schermo sul dato vero.
 
 Rilievo fisico di rack e cablaggio; topologia logica per VLAN (si valuta dopo);
 Omada (tappa 4); scrittura sui controller (mai).
+
+## 10. Input di Riccardo per la fase 2 (13/10 sera, da discutere prima del codice)
+
+- **Mappa costruita un oggetto alla volta**: elenco degli oggetti → si inserisce l'oggetto scelto → si vede cosa gli è collegato → clic su un collegato per aggiungerlo; interruttore fra «tutto automatico» e «un oggetto alla volta». Caso d'uso: a DTS scegliere l'apparato principale e quello dell'altra sede, vedere i collegamenti fra i due e decidere cosa mostrare. Le scelte si possono salvare come correzioni (tabella `topology_link_overrides` / nodo nascosto).
+- **Partire da un apparato qualunque, senza controller**: router o switch MikroTik, Cisco, HP (porte, tabella dei MAC per porta, vicini LLDP), o anche un server. LLDP/CDP/MNDP via SNMP/SSH sono già nel modello; manca la tabella dei MAC per porta (`mac_port_entries`) per gli attaccati, già prevista dalla fase 2.

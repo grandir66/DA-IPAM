@@ -49,9 +49,6 @@ import {
   mergeOpenPortsJson,
   isIpExcluded,
 } from "./db-tenant";
-import type {
-  AdUser,
-} from "./db-tenant";
 
 const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
@@ -3055,22 +3052,6 @@ export function deleteUser(userId: number): boolean {
 
 
 // AD Users
-export function getAdUsersPaginated(integrationId: number, page: number, pageSize: number, search?: string, activeDays?: number): { rows: AdUser[]; total: number } {
-  const offset = (page - 1) * pageSize;
-  let whereClause = "WHERE integration_id = ?";
-  const params: unknown[] = [integrationId];
-  if (search?.trim()) {
-    whereClause += " AND (sam_account_name LIKE ? OR user_principal_name LIKE ? OR display_name LIKE ? OR email LIKE ? OR department LIKE ?)";
-    const s = `%${search.trim()}%`;
-    params.push(s, s, s, s, s);
-  }
-  if (activeDays && activeDays > 0) {
-    whereClause += ` AND last_logon_at IS NOT NULL AND last_logon_at >= datetime('now', '-${activeDays} days')`;
-  }
-  const total = (getDb().prepare(`SELECT COUNT(*) as c FROM ad_users ${whereClause}`).get(...params) as { c: number }).c;
-  const rows = getDb().prepare(`SELECT * FROM ad_users ${whereClause} ORDER BY sam_account_name LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdUser[];
-  return { rows, total };
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SNMP VENDOR PROFILES
@@ -3521,4 +3502,5 @@ export {
   recomputeMultihomedLinks,
   resetConfiguration,
   getAdComputersPaginated,
+  getAdUsersPaginated,
 } from "./db-tenant";

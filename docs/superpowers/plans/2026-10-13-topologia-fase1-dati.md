@@ -2258,7 +2258,7 @@ git commit -m "feat(topologia): letture del modello in blocco, sede, testa e sub
 **Files:**
 - Create: `src/lib/topology/anonimizza.ts`
 - Create: `scripts/estrai-fixture-topologia.ts`
-- Create: `src/lib/topology/__tests__/fixtures/topologia-domarc.json`, `topologia-dts.json` (generate)
+- Create: `src/lib/topology/__tests__/fixtures/topologia-domarc.json`, `topologia-cliente-a.json` (generate)
 - Test: `src/lib/topology/__tests__/anonimizza.test.ts`, `src/lib/topology/__tests__/fixture-anonime.test.ts`, `src/lib/topology/__tests__/model-fixtures.test.ts`
 
 **Interfaces:**
@@ -2337,7 +2337,7 @@ const MAC = /\b[0-9a-f]{2}(?::[0-9a-f]{2}){5}\b/gi;
 const NOME = /^(RTR|SW|AP|FW|HV|NAS|SRV|DEV|host|ext|Sede|Ubicazione|Rete)-\d+$/;
 
 test("ci sono le due fixture", () => {
-  assert.deepEqual(FILES.sort(), ["topologia-domarc.json", "topologia-dts.json"]);
+  assert.deepEqual(FILES.sort(), ["topologia-domarc.json", "topologia-cliente-a.json"]);
 });
 
 for (const f of FILES) {
@@ -2567,10 +2567,10 @@ main().then((c) => process.exit(c), (e) => { process.stderr.write(`${e instanceo
 cd /Users/riccardo/Progetti/Domarc/DA-IPAM/.claude/worktrees/topologia-f1
 F=src/lib/topology/__tests__/fixtures; mkdir -p "$F"
 npx tsx scripts/estrai-fixture-topologia.ts "$S/copie/70791.db" --cartella "$S" --uscita "$F/topologia-domarc.json"; echo "exit=$?"
-npx tsx scripts/estrai-fixture-topologia.ts "$S/copie/71734.db" --cartella "$S" --uscita "$F/topologia-dts.json"; echo "exit=$?"
+npx tsx scripts/estrai-fixture-topologia.ts "$S/copie/71734.db" --cartella "$S" --uscita "$F/topologia-cliente-a.json"; echo "exit=$?"
 node --import tsx --test src/lib/topology/__tests__/fixture-anonime.test.ts src/lib/topology/__tests__/anonimizza.test.ts
 ```
-Atteso: `exit=0` due volte, prove PASS. **Se `fixture-anonime` fallisce, le fixture non si committano**: si corregge `anonimizzaInput` e si rigenera. Prima del commit si guarda a occhio un campione: `head -c 1500 "$F/topologia-dts.json"`.
+Atteso: `exit=0` due volte, prove PASS. **Se `fixture-anonime` fallisce, le fixture non si committano**: si corregge `anonimizzaInput` e si rigenera. Prima del commit si guarda a occhio un campione: `head -c 1500 "$F/topologia-cliente-a.json"`.
 
 - [ ] **Step 6: le prove sulla forma vera**
 
@@ -2605,7 +2605,7 @@ function vecchiaMappa(i: TopologyModelInput) {
   };
 }
 
-for (const nome of ["topologia-domarc.json", "topologia-dts.json"]) {
+for (const nome of ["topologia-domarc.json", "topologia-cliente-a.json"]) {
   test(`${nome}: il modello nuovo non perde collegamenti fra apparati`, () => {
     const i = carica(nome);
     const m = buildTopologyModel(i);
@@ -2629,7 +2629,7 @@ test("Domarc: i doppi apparato/host si fondono (spec §2: almeno i 5 Proxmox)", 
 // Numeri misurati alla prima estrazione (Task 9, Step 7): si riscrivono solo sapendo perché cambiano.
 const MISURATI: Record<string, Partial<Record<string, number>>> = {
   "topologia-domarc.json": {},
-  "topologia-dts.json": {},
+  "topologia-cliente-a.json": {},
 };
 for (const [nome, attesi] of Object.entries(MISURATI)) {
   test(`${nome}: conteggi misurati`, () => {
@@ -2642,14 +2642,14 @@ for (const [nome, attesi] of Object.entries(MISURATI)) {
 - [ ] **Step 7: fissare i numeri misurati**
 
 ```bash
-node --import tsx -e 'const fs=require("fs");const {buildTopologyModel}=require("./src/lib/topology/model");for(const f of ["topologia-domarc.json","topologia-dts.json"]){const c=buildTopologyModel(JSON.parse(fs.readFileSync("src/lib/topology/__tests__/fixtures/"+f,"utf8"))).counts;console.log(f,JSON.stringify({deviceLinks:c.deviceLinks,attachedLinks:c.attachedLinks,unmatchedNeighbors:c.unmatchedNeighbors,isolatedDevices:c.isolatedDevices,fusedHosts:c.fusedHosts,promoteProposals:c.promoteProposals,suspiciousTypes:c.suspiciousTypes}))}'
+node --import tsx -e 'const fs=require("fs");const {buildTopologyModel}=require("./src/lib/topology/model");for(const f of ["topologia-domarc.json","topologia-cliente-a.json"]){const c=buildTopologyModel(JSON.parse(fs.readFileSync("src/lib/topology/__tests__/fixtures/"+f,"utf8"))).counts;console.log(f,JSON.stringify({deviceLinks:c.deviceLinks,attachedLinks:c.attachedLinks,unmatchedNeighbors:c.unmatchedNeighbors,isolatedDevices:c.isolatedDevices,fusedHosts:c.fusedHosts,promoteProposals:c.promoteProposals,suspiciousTypes:c.suspiciousTypes}))}'
 ```
 Scrivere i due oggetti stampati in `MISURATI` e la data dell'estrazione nel commento in testa, poi rilanciare: PASS. Se `fusedHosts` di Domarc è sotto 5, **non** si abbassa la soglia: si capisce perché i Proxmox non si fondono (host_id, IP, identità fisica) e lo si scrive nel rapporto del task.
 
 - [ ] **Step 8: commit**
 
 ```bash
-git add src/lib/topology/anonimizza.ts scripts/estrai-fixture-topologia.ts src/lib/topology/__tests__/anonimizza.test.ts src/lib/topology/__tests__/fixture-anonime.test.ts src/lib/topology/__tests__/model-fixtures.test.ts src/lib/topology/__tests__/fixtures/topologia-domarc.json src/lib/topology/__tests__/fixtures/topologia-dts.json
+git add src/lib/topology/anonimizza.ts scripts/estrai-fixture-topologia.ts src/lib/topology/__tests__/anonimizza.test.ts src/lib/topology/__tests__/fixture-anonime.test.ts src/lib/topology/__tests__/model-fixtures.test.ts src/lib/topology/__tests__/fixtures/topologia-domarc.json src/lib/topology/__tests__/fixtures/topologia-cliente-a.json
 git commit -m "test(topologia): fixture anonime di Domarc e DTS e prove del modello sulla forma vera"
 ```
 

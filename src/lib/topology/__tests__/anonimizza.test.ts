@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { anonimizzaInput } from "@/lib/topology/anonimizza";
+import { anonimizzaInput, contaValoriVeri } from "@/lib/topology/anonimizza";
 import { buildTopologyModel } from "@/lib/topology/model";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 import { dev, host } from "./support/righe";
@@ -72,4 +72,34 @@ test("un nome vuoto: l'host resta senza nome, l'apparato prende una sigla", () =
   assert.equal(out.hosts[1].custom_name, null);
   assert.match(out.devices[2].name, /^SW-\d+$/);
   assert.deepEqual(buildTopologyModel(out).counts, buildTopologyModel(vuoti).counts);
+});
+
+test("una porta a forma di IP o di MAC passa per l'IP o il MAC finto", () => {
+  const conPorte: TopologyModelInput = {
+    ...VERO,
+    neighbors: [
+      { ...VERO.neighbors[0], local_port: "192.168.15.1", remote_port: "f4:1e:57:aa:bb:01" },
+      { ...VERO.neighbors[0], local_port: "f41e.57aa.bb01", remote_port: "F41E57AABB01" },
+    ],
+  };
+  const out = anonimizzaInput(conPorte);
+  assert.equal(out.neighbors[0].local_port, out.devices[0].host);
+  assert.equal(out.neighbors[0].remote_port, out.devices[0].controller_mac);
+  assert.equal(out.neighbors[1].local_port, out.devices[0].controller_mac);
+  assert.equal(out.neighbors[1].remote_port, out.devices[0].controller_mac);
+  assert.equal(contaValoriVeri(conPorte, out).ip + contaValoriVeri(conPorte, out).mac, 0);
+});
+
+test("il conto dei valori veri: zero sull'anonimo, li trova se ci sono", () => {
+  assert.deepEqual(contaValoriVeri(VERO, anonimizzaInput(VERO)), { ip: 0, mac: 0, nomi: 0 });
+  const fuga = anonimizzaInput(VERO);
+  fuga.neighbors[0].local_port = "uplink 192.168.20.5";
+  fuga.neighbors[0].remote_port = "F41E.57AA.BB01";
+  fuga.hosts[0].hostname = "USW-Piano1";
+  fuga.uplinkPorts = [{ device_id: 1, port_index: 1, port_name: "verso bergamo" }];
+  const c = contaValoriVeri(VERO, fuga);
+  assert.equal(c.ip, 1);
+  assert.equal(c.mac, 1);
+  // «usw-piano1» (chiave del nome) e «bergamo» (parola di un nome di ubicazione)
+  assert.equal(c.nomi, 2);
 });

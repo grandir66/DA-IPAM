@@ -1,4 +1,4 @@
-// Il modello sulle fixture anonime di Domarc e DTS (estratte il 2026-10-13 dalle
+// Il modello sulle fixture anonime di Domarc e di un cliente (estratte il 2026-10-13 dalle
 // copie dei DB, Task 9): il modello nuovo non perde niente rispetto alla mappa
 // vecchia, ed è stabile. I numeri fissati sotto sono quelli misurati alla prima
 // estrazione: se cambiano, si legge il perché prima di riscriverli.
@@ -27,7 +27,7 @@ function vecchiaMappa(i: TopologyModelInput) {
   };
 }
 
-for (const nome of ["topologia-domarc.json", "topologia-dts.json"]) {
+for (const nome of ["topologia-domarc.json", "topologia-cliente-a.json"]) {
   test(`${nome}: il modello nuovo non perde collegamenti fra apparati`, () => {
     const i = carica(nome);
     const m = buildTopologyModel(i);
@@ -51,7 +51,7 @@ test("Domarc: i doppi apparato/host si fondono (spec §2: almeno i 5 Proxmox)", 
 // Numeri misurati alla prima estrazione (Task 9, Step 7): si riscrivono solo sapendo perché cambiano.
 const MISURATI: Record<string, Partial<Record<string, number>>> = {
   "topologia-domarc.json": { deviceLinks: 20, attachedLinks: 19, unmatchedNeighbors: 12, isolatedDevices: 22, fusedHosts: 58, promoteProposals: 14, suspiciousTypes: 17 },
-  "topologia-dts.json": { deviceLinks: 78, attachedLinks: 59, unmatchedNeighbors: 16, isolatedDevices: 10, fusedHosts: 77, promoteProposals: 14, suspiciousTypes: 7 },
+  "topologia-cliente-a.json": { deviceLinks: 78, attachedLinks: 59, unmatchedNeighbors: 16, isolatedDevices: 10, fusedHosts: 77, promoteProposals: 14, suspiciousTypes: 7 },
 };
 for (const [nome, attesi] of Object.entries(MISURATI)) {
   test(`${nome}: conteggi misurati`, () => {

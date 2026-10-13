@@ -11,9 +11,12 @@
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 import { normalizeName } from "@/lib/topology/match";
 import { normalizeMacForStorage } from "@/lib/utils";
+import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
 
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 const MAC = /^[0-9a-f]{2}([:-]?)[0-9a-f]{2}(\1[0-9a-f]{2}){4}$/i;
+/** MAC in ogni forma comune: «aa:bb:…», «aa-bb-…», «aabb.ccdd.eeff», 12 cifre esadecimali. */
+const MAC_ANY = /^([0-9a-f]{2}([:-])[0-9a-f]{2}(\2[0-9a-f]{2}){4}|[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}|[0-9a-f]{12})$/i;
 const SIGLA: Record<string, string> = {
   router: "RTR", switch: "SW", access_point: "AP", firewall: "FW", hypervisor: "HV", nas: "NAS", server: "SRV",
 };
@@ -56,8 +59,30 @@ function parseCidr(cidr: string): Cidr | null {
 const sizeOf = (c: Cidr): number => 2 ** (32 - c.len);
 const contains = (o: Cidr, ip: number): boolean => ip >= o.base && ip < o.base + sizeOf(o);
 
+/**
+ * I valori chiusi che una fixture può contenere così come sono: lo schema del DB
+ * (CHECK) e le classificazioni dell'app. `windows` è la classificazione di prima
+ * di `server_windows`, ancora presente nei dati.
+ */
+export const VOCABOLARIO = {
+  vendor: ["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"],
+  device_type: ["router", "switch", "firewall", "hypervisor", "access_point", "nas", "server"],
+  classification: [...DEVICE_CLASSIFICATIONS, "windows"] as string[],
+  status: ["online", "offline", "unknown"],
+  protocol: ["lldp", "cdp", "mndp", "unknown"],
+  source: ["device", "unifi"],
+} as const;
+
+function portsOf(input: TopologyModelInput): string[] {
+  return [
+    ...input.neighbors.flatMap((n) => [n.local_port, n.remote_port]), ...input.uplinkPorts.map((p) => p.port_name),
+    ...input.overrides.flatMap((o) => [o.a_port, o.b_port]),
+  ].filter((p): p is string => typeof p === "string" && p.trim() !== "");
+}
+
 export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
   // Valori veri: gli pseudonimi li evitano.
+  const rawPorts = portsOf(input).map((p) => p.trim());
   const nameFields = [
     ...input.devices.map((d) => d.name),
     ...input.hosts.flatMap((h) => [h.hostname, h.custom_name]),
@@ -68,7 +93,7 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
   const realIps = new Set<number>(
     [
       ...input.devices.map((d) => d.host), ...input.hosts.map((h) => h.ip), ...input.neighbors.map((n) => n.remote_ip),
-      ...input.networks.map((n) => n.gateway), ...nameFields.map((s) => s.trim()),
+      ...input.networks.map((n) => n.gateway), ...nameFields.map((s) => s.trim()), ...rawPorts,
     ]
       .filter((v): v is string => typeof v === "string" && IPV4.test(v))
       .map(toInt),
@@ -77,18 +102,13 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
     [
       ...input.hosts.map((h) => h.mac), ...input.devices.flatMap((d) => [d.controller_mac, d.uplink_mac]),
       ...input.knownMacs.map((k) => k.mac), ...input.neighbors.map((n) => n.remote_mac),
-      ...nameFields.filter((s) => MAC.test(s.trim())),
+      ...nameFields.filter((s) => MAC.test(s.trim())), ...rawPorts.filter((p) => MAC_ANY.test(p)),
     ]
       .map((v) => normalizeMacForStorage(v))
       .filter((v): v is string => v !== null),
   );
   const realNameKeys = new Set(nameFields.map((s) => normalizeName(s)));
-  const realPorts = new Set(
-    [
-      ...input.neighbors.flatMap((n) => [n.local_port, n.remote_port]), ...input.uplinkPorts.map((p) => p.port_name),
-      ...input.overrides.flatMap((o) => [o.a_port, o.b_port]),
-    ].map((p) => (p ?? "").toLowerCase()),
-  );
+  const realPorts = new Set(rawPorts.map((p) => p.toLowerCase()));
 
   // Reti esterne → blocchi nuovi in 10.0.0.0/8, allineati alla loro dimensione,
   // che non toccano nessuna rete e nessun IP veri.
@@ -209,7 +229,11 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
   const portMap = new Map<string, string>();
   let portSeq = 0;
   const porta = (v: string): string => {
-    if (!v || v.trim() === "" || PORTA_GENERICA.test(v.trim())) return v;
+    if (!v || v.trim() === "") return v;
+    // Prima IP e MAC: «192.168.1.1» e «00:11:22:33:44:55» passerebbero per numeri di porta di serie.
+    if (IPV4.test(v.trim())) return ip(v.trim()) as string;
+    if (MAC_ANY.test(v.trim())) return mac(v.trim()) as string;
+    if (PORTA_GENERICA.test(v.trim())) return v;
     let out = portMap.get(v);
     if (!out) {
       do out = `porta-${++portSeq}`;
@@ -247,4 +271,75 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
     uplinkPorts: input.uplinkPorts.map((p) => ({ ...p, port_name: porta(p.port_name) })),
     overrides: input.overrides.map((o) => ({ ...o, a_port: porta(o.a_port), b_port: porta(o.b_port) })),
   };
+}
+
+/** Parole che l'anonimo contiene di suo (sigle, vocabolario, porte di serie): non sono dati del cliente. */
+const PAROLE_DELL_APP = new Set<string>([
+  ...Object.values(VOCABOLARIO).flatMap((vs) => [...vs]).flatMap((v) => v.toLowerCase().split(/[^a-z0-9]+/)),
+  "rtr", "sw", "ap", "fw", "hv", "nas", "srv", "dev", "host", "ext", "sede", "ubicazione", "rete", "porta", "port", "fd00",
+  "ether", "eth", "sfp", "sfpplus", "sfp28", "qsfp", "qsfpplus", "combo", "wlan", "bridge", "bond", "vmbr", "vlan", "lan", "wan",
+  "mgmt", "gigabitethernet", "tengigabitethernet", "twentyfivegige", "fortygigabitethernet", "hundredgige", "fastethernet",
+  "ethernet", "channel", "interface", "wifi",
+]);
+
+const tokens = (s: string): string[] => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+const seq = (t: string[]): string => ` ${t.join(" ")} `;
+
+/**
+ * Quanti valori di testo di `anonimo` contengono un IP, un MAC (in ogni forma) o un
+ * nome veri di `vero`. Per i nomi: la chiave, ogni etichetta fra i punti e ogni parola
+ * di almeno 4 caratteri (non solo cifre, non del vocabolario dell'app), a parola
+ * intera e senza distinzione di maiuscole. Lo script d'estrazione rifiuta di scrivere
+ * una fixture se il conto non è zero. Logica pura.
+ */
+export function contaValoriVeri(vero: TopologyModelInput, anonimo: unknown): { ip: number; mac: number; nomi: number } {
+  const ports = portsOf(vero).map((p) => p.trim());
+  const names = [
+    ...vero.devices.flatMap((d) => [d.name, d.host]), ...vero.hosts.flatMap((h) => [h.hostname, h.custom_name, h.ip]),
+    ...vero.neighbors.map((n) => n.remote_device_name), ...vero.locations.map((l) => l.name), ...vero.networks.map((n) => n.name),
+  ].filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim());
+  const ips = new Set<string>(
+    [
+      ...vero.devices.map((d) => d.host), ...vero.hosts.map((h) => h.ip), ...vero.neighbors.map((n) => n.remote_ip),
+      ...vero.networks.flatMap((n) => [n.gateway, n.cidr.split("/")[0]]), ...names, ...ports,
+    ].filter((v): v is string => typeof v === "string" && IPV4.test(v.trim())).map((v) => v.trim()),
+  );
+  const macs = new Set<string>(
+    [
+      ...vero.hosts.map((h) => h.mac), ...vero.devices.flatMap((d) => [d.controller_mac, d.uplink_mac]),
+      ...vero.knownMacs.map((k) => k.mac), ...vero.neighbors.map((n) => n.remote_mac),
+      ...[...names, ...ports].filter((s) => MAC_ANY.test(s)),
+    ]
+      .map((v) => normalizeMacForStorage(v))
+      .filter((v): v is string => v !== null)
+      .map((v) => v.replace(/:/g, "").toLowerCase()),
+  );
+  const nomi = new Set<string>();
+  for (const n of names) {
+    if (IPV4.test(n) || MAC_ANY.test(n)) continue;
+    const parti = [normalizeName(n), ...n.split(".")].map(tokens).filter((t) => t.join("").length >= 4);
+    const parole = tokens(n).filter((t) => t.length >= 4 && !/^\d+$/.test(t)).map((t) => [t]);
+    for (const t of [...parti, ...parole]) {
+      if (t.length === 1 && PAROLE_DELL_APP.has(t[0])) continue;
+      nomi.add(seq(t));
+    }
+  }
+
+  const valori: string[] = [];
+  const raccogli = (v: unknown): void => {
+    if (typeof v === "string") valori.push(v);
+    else if (Array.isArray(v)) v.forEach(raccogli);
+    else if (v !== null && typeof v === "object") Object.values(v).forEach(raccogli);
+  };
+  raccogli(anonimo);
+
+  const conto = { ip: 0, mac: 0, nomi: 0 };
+  for (const v of valori) {
+    if ((v.match(/(?<![\d.])\d{1,3}(?:\.\d{1,3}){3}(?![\d.])/g) ?? []).some((x) => ips.has(x))) conto.ip++;
+    const compatto = v.toLowerCase().replace(/[\s:.-]/g, "");
+    if ([...macs].some((m) => compatto.includes(m))) conto.mac++;
+    const t = seq(tokens(v));
+    if ([...nomi].some((n) => t.includes(n))) conto.nomi++;
+  }
+  return conto;
 }

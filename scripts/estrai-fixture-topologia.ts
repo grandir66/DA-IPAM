@@ -3,7 +3,8 @@
  * un tenant (piano topologia fase 1, Task 9). Copia della copia in una cartella
  * temporanea (stesse guardie di prova-giri-sovrapposti), migrazione applicata
  * lì, sola lettura. Tiene solo gli host che servono al modello. Stampa solo
- * conteggi.
+ * conteggi. Rifiuta di scrivere (exit 1/2) se il modello della fixture non dà i
+ * conteggi del dato vero, o se nella fixture c'è un IP, un MAC o un nome veri.
  *
  * Uso:  npx tsx scripts/estrai-fixture-topologia.ts <copia.db> --cartella <scratchpad> --uscita <file.json>
  */
@@ -48,7 +49,7 @@ async function main(): Promise<number> {
   for (const k of ["log", "info", "warn", "debug", "error"] as const) console[k] = () => {};
 
   const { withTenant, getTopologyModelInput } = await import("../src/lib/db-tenant");
-  const { anonimizzaInput } = await import("../src/lib/topology/anonimizza");
+  const { anonimizzaInput, contaValoriVeri } = await import("../src/lib/topology/anonimizza");
   const { buildNodeIndex, resolveNode } = await import("../src/lib/topology/node-index");
   const { PROMOTE_CLASSES, buildTopologyModel } = await import("../src/lib/topology/model");
   const { normalizeName } = await import("../src/lib/topology/match");
@@ -115,6 +116,13 @@ async function main(): Promise<number> {
     process.stderr.write(`Conteggi diversi, fixture NON scritta.\n  ridotto: ${conteggiRidotto}\n  anonimo: ${conteggiAnonimo}\n`);
     return 1;
   }
+  // Il repo è pubblico: nessun IP, MAC o nome veri (dell'input COMPLETO) nella fixture, o niente fixture.
+  const fughe = contaValoriVeri(input, JSON.parse(JSON.stringify(anonimo)));
+  if (fughe.ip + fughe.mac + fughe.nomi > 0) {
+    process.stderr.write(`Valori veri nella fixture, NON scritta: IP ${fughe.ip} · MAC ${fughe.mac} · nomi ${fughe.nomi} (valori di testo che li contengono)\n`);
+    return 2;
+  }
+  process.stdout.write("valori veri nella fixture: 0 IP · 0 MAC · 0 nomi\n");
   fs.writeFileSync(path.resolve(uscita), `${JSON.stringify(anonimo, null, 1)}\n`);
   process.stdout.write(
     `apparati ${anonimo.devices.length} · host ${anonimo.hosts.length} (di ${input.hosts.length}) · vicini ${anonimo.neighbors.length} · reti ${anonimo.networks.length} · ubicazioni ${anonimo.locations.length}\n`,

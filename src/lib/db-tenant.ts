@@ -8658,6 +8658,16 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
   };
 }
 
+/** Sede confermata di un apparato e chi l'ha scelta; null se l'apparato non esiste. */
+export function getDeviceLocation(
+  deviceId: number,
+): { location_id: number | null; location_set_by: string | null; location_set_at: string | null } | null {
+  const row = db().prepare("SELECT location_id, location_set_by, location_set_at FROM network_devices WHERE id = ?").get(deviceId) as
+    | { location_id: number | null; location_set_by: string | null; location_set_at: string | null }
+    | undefined;
+  return row ?? null;
+}
+
 export function setDeviceLocation(deviceId: number, locationId: number | null, author: string): Esito {
   const d = db();
   if (!d.prepare("SELECT 1 FROM network_devices WHERE id = ?").get(deviceId)) return { ok: false, error: "Apparato non trovato" };

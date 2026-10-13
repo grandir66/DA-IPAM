@@ -14,7 +14,7 @@
  * Submit: PUT /api/devices/[id]
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +33,7 @@ import { getClassificationLabel } from "@/lib/device-classifications";
 import { isProxmoxVeDevice } from "@/lib/devices/device-acquisition-resolve";
 import { applyProductProfileScanDefaults, type ProductProfileId } from "@/lib/device-product-profiles";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
+import { DeviceLocationField } from "@/components/topology/device-location-field";
 import { toast } from "sonner";
 import type { NetworkDevice } from "@/types";
 
@@ -54,6 +55,10 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
   const [editClassification, setEditClassification] = useState<string>((device as { classification?: string | null }).classification ?? "");
   const [editUseForArpPoll, setEditUseForArpPoll] = useState<boolean>(() => networkDeviceUsesArpPoll(device));
   const [editSaving, setEditSaving] = useState(false);
+  const saveLocation = useRef<() => Promise<string | null>>(async () => null);
+  const registerLocationSave = useCallback((f: () => Promise<string | null>) => {
+    saveLocation.current = f;
+  }, []);
   const [credentials, setCredentials] = useState<Array<{ id: number; name: string; credential_type: string }>>([]);
 
   // Re-syncronizza lo state quando cambia il device (es. dopo onSaved)
@@ -114,9 +119,16 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
       });
       if (res.ok) {
         const updated = await res.json() as NetworkDevice;
-        toast.success("Dispositivo aggiornato");
-        onOpenChange(false);
-        onSaved?.(updated);
+        const errLoc = await saveLocation.current();
+        if (errLoc) {
+          // L'apparato è salvato, la sede no: la finestra resta aperta con l'errore.
+          toast.error(errLoc);
+          onSaved?.(updated);
+        } else {
+          toast.success("Dispositivo aggiornato");
+          onOpenChange(false);
+          onSaved?.(updated);
+        }
       } else {
         const data = await res.json();
         toast.error(data.error || "Errore nell'aggiornamento");
@@ -224,6 +236,8 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
               onUseForArpPollChange={setEditUseForArpPoll}
               defaultUseForArpPoll={editClassification === "router" || editClassification === "firewall"}
             />
+
+            <DeviceLocationField deviceId={device.id} onReady={registerLocationSave} />
 
             <DeviceCredentialsTable deviceId={device.id} />
 

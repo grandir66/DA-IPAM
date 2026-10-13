@@ -90,11 +90,32 @@ test("apparato trovato per MAC: un AP censito diventa un collegamento mac_table"
   assert.deepEqual(r.portClients, []);
 });
 
-test("vecchio: oltre la soglia è stale ma conta", () => {
-  const r = run(input({ macPorts: [mp(3, mac(5), "Port 5", "2026-10-10 12:00:00")] }));
-  assert.equal(r.portClients[0].clients[0].stale, true);
-  assert.equal(r.clientCount["dev:3"], 1);
-  assert.equal(r.portClients[0].clients[0].lastSeen, "2026-10-10 12:00:00");
+test("vecchio: oltre la soglia resta nell'elenco con «visto l'ultima volta» ma non conta nel numero (I4)", () => {
+  const r = run(input({ macPorts: [mp(3, mac(5), "Port 5", "2026-10-10 12:00:00"), mp(3, mac(6), "Port 6")] }));
+  const vecchio = r.portClients.find((p) => p.port === "Port 5")!.clients[0];
+  assert.equal(vecchio.stale, true);
+  assert.equal(vecchio.lastSeen, "2026-10-10 12:00:00");
+  assert.equal(r.clientCount["dev:3"], 1, "conta solo il client fresco");
+});
+
+test("un MAC passato dall'AP1 (3 giorni fa) all'AP2 (oggi) sta sull'AP2, anche se l'AP2 ha più client (I4)", () => {
+  const devices = [...input().devices, dev(8, { name: "AP-8", device_type: "access_point" }), dev(9, { name: "AP-9", device_type: "access_point" })];
+  const m = mac(1);
+  const altri = [mac(201), mac(202), mac(203)].map((x) => mp(9, x, "wlan0"));
+  const r = run(input({ devices, macPorts: [mp(8, m, "wlan0", "2026-10-10 11:00:00"), mp(9, m, "wlan0"), ...altri] }));
+  const dove = r.portClients.filter((p) => p.clients.some((c) => c.mac === m)).map((p) => p.nodeId);
+  assert.deepEqual(dove, ["dev:9"]);
+  assert.equal(r.clientCount["dev:9"], 4);
+  assert.equal(r.clientCount["dev:8"], undefined);
+});
+
+test("i MAC su una porta si contano distinti: due grafie della stessa porta non valgono doppio (I4)", () => {
+  const m = mac(1), m1 = mac(2);
+  const r = run(input({
+    macPorts: [mp(3, m, "Port 5"), mp(3, m1, "Port 5"), mp(3, m1, "port 5"), mp(2, m, "Port 6"), mp(2, mac(3), "Port 6"), mp(2, mac(4), "Port 6")],
+  }));
+  const dove = r.portClients.filter((p) => p.clients.some((c) => c.mac === m)).map((p) => [p.nodeId, p.port]);
+  assert.deepEqual(dove, [["dev:3", "Port 5"]]);
 });
 
 test("stessi dati, stesso risultato", () => {

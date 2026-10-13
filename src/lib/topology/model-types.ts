@@ -226,6 +226,6 @@ export interface TopologyModel {
   counts: ModelCounts;
   /** Client per porta di bordo; i server e gli apparati sono collegamenti «mac_table». */
   portClients: PortClients[];
-  /** Client per nodo (switch/AP), a prescindere dalla porta. */
+  /** Client freschi (visti entro la soglia) per nodo (switch/AP), a prescindere dalla porta: il numero sul riquadro. */
   clientCount: Record<string, number>;
 }

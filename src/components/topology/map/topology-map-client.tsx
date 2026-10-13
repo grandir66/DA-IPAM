@@ -37,7 +37,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const [pending, setPending] = useState<{ view: string; tweak: SavedTweak } | null>(null);
 
   const viewKey = mode === "auto" ? "auto" : chosenMap !== null ? String(chosenMap) : null;
-  const { data, error, reload, send } = useTopologyData(viewKey);
+  const { data, error, refreshError, reload, send } = useTopologyData(viewKey);
   const maps = useMemo(() => data?.maps.maps ?? [], [data]);
 
   // La mappa scelta non c'è più (cancellata, anche da un altro) o non è ancora scelta: si passa alla prima.
@@ -138,6 +138,9 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   let canvas: ReactNode;
   if (mode === "passo" && maps.length === 0) {
     canvas = empty(isAdmin ? "Nessuna mappa passo passo: creane una con «Nuova mappa…»." : "Nessuna mappa passo passo salvata.");
+  } else if (viewLoading && refreshError) {
+    // La vista appena chiesta non è arrivata: niente da tenere a schermo, errore pieno.
+    canvas = <div className="p-6"><LoadError what="la mappa scelta" message={refreshError.message} onRetry={() => void reload()} /></div>;
   } else if (viewLoading) {
     canvas = empty("Caricamento della mappa…");
   } else if (d.visible.size === 0) {
@@ -192,6 +195,9 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         onShowExtra={setShowExtra}
         canRiordina={(view?.tweaks.length ?? 0) > 0}
         onRiordina={() => void send("/api/topology/positions", "PUT", { view: positionsView, clear: true })}
+        refreshFailedAt={refreshError?.at ?? null}
+        refreshMessage={refreshError?.message ?? null}
+        onRetry={() => void reload()}
       />
       <div className="flex min-h-0 flex-1">
         <ObjectList

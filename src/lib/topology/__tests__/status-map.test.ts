@@ -48,16 +48,18 @@ test("LibreNMS e anomalie si leggono per rete+IP e per host", () => {
   assert.equal(s["host:8"], "warning");
 });
 
-test("lo stato peggiore: fail > warning > unknown > ok", () => {
+test("lo stato peggiore fra host: fail > warning > ok > unknown (sconosciuto non batte ok)", () => {
   assert.equal(worstStatus("ok", "fail"), "fail");
   assert.equal(worstStatus("warning", "unknown"), "warning");
-  assert.equal(worstStatus("ok", "unknown"), "unknown");
+  assert.equal(worstStatus("ok", "unknown"), "ok");
+  assert.equal(worstStatus("unknown", "ok"), "ok");
+  assert.equal(worstStatus("unknown", "unknown"), "unknown");
   assert.equal(worstStatus("ok", "ok"), "ok");
 });
 
-test("nel modello un apparato prende lo stato peggiore fra sé e gli host fusi; chiavi canoniche", () => {
+test("un apparato usa il SUO stato, non quello degli host fusi; chiavi canoniche", () => {
   const byNode = computeStatusByNode(
-    data({ devices: [{ id: 1, enabled: 1 }, { id: 2, enabled: 1 }], hosts: [host(10, "offline"), host(11, "online"), host(12, "online")] }),
+    data({ devices: [{ id: 1, enabled: 1 }, { id: 2, enabled: 0 }], hosts: [host(10, "offline"), host(11, "online"), host(12, "online")] }),
     NOW,
   );
   const st = statusForModel(
@@ -68,8 +70,22 @@ test("nel modello un apparato prende lo stato peggiore fra sé e gli host fusi; 
     ],
     byNode,
   );
-  assert.deepEqual(st, { "dev:1": "fail", "dev:2": "ok", "host:12": "ok" });
+  assert.deepEqual(st, { "dev:1": "ok", "dev:2": "unknown", "host:12": "ok" });
   assert.equal(Object.keys(st).some((k) => k === "host:10" || k === "host:11"), false, "gli host fusi non hanno una chiave loro");
+});
+
+test("un nodo senza stato suo prende il peggiore dei suoi host; un host sconosciuto non copre uno ok", () => {
+  const byNode = { "host:20": "unknown", "host:21": "ok", "host:30": "warning", "host:31": "unknown", "host:40": "fail", "host:41": "ok" } as const;
+  const st = statusForModel(
+    [
+      { id: "dev:7", kind: "device", fusedHostIds: [20, 21] },
+      { id: "dev:8", kind: "device", fusedHostIds: [30, 31] },
+      { id: "dev:9", kind: "device", fusedHostIds: [40, 41] },
+      { id: "dev:10", kind: "device", fusedHostIds: [20] },
+    ],
+    byNode,
+  );
+  assert.deepEqual(st, { "dev:7": "ok", "dev:8": "warning", "dev:9": "fail", "dev:10": "unknown" });
 });
 
 test("un nodo senza segnali è unknown, non manca", () => {

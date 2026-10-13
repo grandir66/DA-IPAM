@@ -2,7 +2,8 @@
  * Lo stato di ogni nodo della mappa (ok / avviso / giù / sconosciuto), dai
  * segnali che `getTopologyData()` legge dal DB: stato dell'host, LibreNMS,
  * anomalie aperte, apparato attivo, uplink giù. Logica pura; era nel GET di
- * `/api/topology` e qui è coperta da prova (status-map.test.ts).
+ * `/api/topology` (mappa vecchia, tolta al Task 12) e qui è coperta da prova
+ * (status-map.test.ts).
  */
 import { deriveNodeStatus } from "@/lib/topology/status";
 import type { DeviceRow, HostRow, TopologyStatus } from "@/lib/topology/types";
@@ -37,18 +38,23 @@ export function computeStatusByNode(data: StatusData, nowMs: number): Record<str
   return out;
 }
 
-const GRAVITA: Readonly<Record<TopologyStatus, number>> = { ok: 0, unknown: 1, warning: 2, fail: 3 };
+/**
+ * Gravità per fondere gli stati degli host: giù > avviso > ok > sconosciuto.
+ * «Sconosciuto» vuol dire «nessun segnale», non «guasto»: non deve coprire un
+ * host che risponde (deciso al Task 12, 2026-10-13).
+ */
+const GRAVITA: Readonly<Record<TopologyStatus, number>> = { unknown: 0, ok: 1, warning: 2, fail: 3 };
 
-/** Il peggiore dei due: giù > avviso > sconosciuto > ok. */
+/** Il peggiore dei due: giù > avviso > ok > sconosciuto. */
 export function worstStatus(a: TopologyStatus, b: TopologyStatus): TopologyStatus {
   return GRAVITA[b] > GRAVITA[a] ? b : a;
 }
 
 /**
- * Lo stato coi nodi del modello: un apparato prende il peggiore fra il suo e
- * quello degli host fusi dentro di lui (un router che risponde al ping da un
- * indirizzo e non da un altro è giù da qualche parte). Le chiavi sono gli id
- * del modello; gli host fusi non hanno una chiave loro.
+ * Lo stato coi nodi del modello. Un nodo che ha uno stato suo (l'apparato, o
+ * l'host stesso) usa quello; solo se non ce l'ha prende il peggiore fra gli
+ * host fusi dentro di lui, dove «sconosciuto» non batte «ok». Le chiavi sono
+ * gli id del modello; gli host fusi non hanno una chiave loro.
  */
 export function statusForModel(
   nodes: ReadonlyArray<Pick<MapNode, "id" | "kind" | "fusedHostIds">>,
@@ -56,7 +62,12 @@ export function statusForModel(
 ): Record<string, TopologyStatus> {
   const out: Record<string, TopologyStatus> = {};
   for (const n of nodes) {
-    let s: TopologyStatus = byNode[n.id] ?? "unknown";
+    const own = byNode[n.id];
+    if (own) {
+      out[n.id] = own;
+      continue;
+    }
+    let s: TopologyStatus = "unknown";
     for (const h of n.fusedHostIds) {
       const hs = byNode[`host:${h}`];
       if (hs) s = worstStatus(s, hs);

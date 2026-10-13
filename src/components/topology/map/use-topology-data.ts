@@ -4,11 +4,14 @@
  * I dati della pagina Topologia: il modello (con lo stato dei nodi), le mappe
  * salvate e la vista scelta (nodi e ritocchi). Un errore è un errore, mai una
  * «mappa vuota» (fetchJson + LoadError); si ricarica da solo ogni 30 secondi e
- * dopo ogni scrittura.
+ * dopo ogni scrittura. Un aggiornamento fallito con la mappa già a schermo la
+ * tiene e lo dice (`refreshError`, ora italiana): solo il primo caricamento
+ * fallito diventa l'errore pieno (load-state.ts).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { fetchJson, type FetchJsonResult } from "@/lib/fetch-json";
+import { afterLoadFailure } from "@/lib/topology/load-state";
 import type { TopologyModel } from "@/lib/topology/model-types";
 import type { TopologyStatus } from "@/lib/topology/types";
 import type { SavedTweak } from "@/lib/topology/tree-layout";
@@ -53,6 +56,9 @@ const REFRESH_MS = 30_000;
 export function useTopologyData(viewKey: string | null) {
   const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** L'ultimo aggiornamento non è riuscito: la mappa a schermo è quella di prima. */
+  const [refreshError, setRefreshError] = useState<{ message: string; at: number } | null>(null);
+  const hasDataRef = useRef(false);
   const keyRef = useRef<string | null>(viewKey);
   const seqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -77,11 +83,18 @@ export function useTopologyData(viewKey: string | null) {
       throw e;
     }
     if (seq !== seqRef.current) return; // nel frattempo è partito un caricamento più nuovo
-    if (!m.ok) return setError(m.message);
-    if (!l.ok) return setError(l.message);
+    const fail = (message: string) => {
+      const f = afterLoadFailure(hasDataRef.current, message, Date.now());
+      if (f.kind === "error") setError(f.message);
+      else setRefreshError({ message: f.message, at: f.at });
+    };
+    if (!m.ok) return fail(m.message);
+    if (!l.ok) return fail(l.message);
     // Una mappa cancellata da un altro: niente errore, la pagina ripiega su un'altra.
-    if (v && !v.ok && !(v.status === 404 && key !== "auto")) return setError(v.message);
+    if (v && !v.ok && !(v.status === 404 && key !== "auto")) return fail(v.message);
+    hasDataRef.current = true;
     setError(null);
+    setRefreshError(null);
     setData({ model: m.data, maps: l.data, view: v && v.ok ? v.data : null, viewKey: key });
   }, []);
 
@@ -113,5 +126,5 @@ export function useTopologyData(viewKey: string | null) {
     [reload],
   );
 
-  return { data, error, reload, send };
+  return { data, error, refreshError, reload, send };
 }

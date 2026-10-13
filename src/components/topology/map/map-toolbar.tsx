@@ -9,6 +9,7 @@
 import { useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { cn } from "@/lib/utils";
+import { oraItaliana } from "@/lib/topology/load-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -36,6 +37,10 @@ interface Props {
   onShowExtra: (v: boolean) => void;
   canRiordina: boolean;
   onRiordina: () => void;
+  /** L'ultimo aggiornamento automatico non è riuscito (ms): la mappa è quella di prima. */
+  refreshFailedAt: number | null;
+  refreshMessage: string | null;
+  onRetry: () => void;
 }
 
 type Asked = null | "new" | "rename" | "fromAuto" | "delete";
@@ -95,6 +100,12 @@ export function MapToolbar(p: Props) {
       )}
 
       <span className="ml-auto" />
+      {p.refreshFailedAt !== null && (
+        <span role="status" className="inline-flex items-center gap-1.5 rounded-md border border-destructive bg-destructive/10 px-2 py-0.5 font-medium text-destructive" title={p.refreshMessage ?? undefined}>
+          ▲ Aggiornamento non riuscito alle {oraItaliana(p.refreshFailedAt)} ·
+          <button type="button" onClick={p.onRetry} className="underline underline-offset-2 hover:no-underline">Riprova</button>
+        </span>
+      )}
       <label className="flex cursor-pointer items-center gap-1.5">
         <input type="checkbox" checked={p.showExtra} onChange={(e) => p.onShowExtra(e.target.checked)} className="size-4" />
         Collegamenti in più

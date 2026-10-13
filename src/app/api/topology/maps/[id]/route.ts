@@ -35,31 +35,48 @@ export async function PATCH(req: Request, ctx: Ctx) {
   return withTenantFromSession(async () => {
     const s = await requireAdmin();
     if (isAuthError(s)) return s;
-    const raw = (await ctx.params).id;
-    const json = await readJson(req);
-    try {
-      if (raw === "auto") {
-        const head = parseAutoHeadBody(json);
-        if (!head.ok) return NextResponse.json({ error: head.error }, { status: 400 });
-        setAutoHead(head.data.headNode, actorOf(s) ?? "sconosciuto");
-        return NextResponse.json(getAutoMap());
-      }
-      const id = parseControllerId(raw);
-      if (id === null) return notFound();
-      const body = parseMapPatchBody(json);
-      if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
-      const esito = updateTopologyMap(id, body.data);
-      if (!esito.ok) return notFound();
-      return NextResponse.json(getTopologyMap(id));
-    } catch (error) {
-      console.error("[topology] mappa, modifica:", error);
-      return NextResponse.json({ error: "Errore nella modifica della mappa" }, { status: 500 });
-    }
+    return modifica(req, ctx, s);
   });
 }
 
-/** PUT /api/topology/maps/auto — come PATCH, per chi imposta la testa. */
-export const PUT = PATCH;
+/**
+ * PUT /api/topology/maps/auto — come PATCH, per chi imposta la testa. Gestore
+ * con la sua guardia (non `export const PUT = PATCH`): il censimento delle
+ * rotte (rotte-censite.test.ts) legge la guardia nel corpo del gestore e un
+ * alias lo vedeva «senza guardia» (Task 12, 2026-10-13).
+ */
+export async function PUT(req: Request, ctx: Ctx) {
+  return withTenantFromSession(async () => {
+    const s = await requireAdmin();
+    if (isAuthError(s)) return s;
+    return modifica(req, ctx, s);
+  });
+}
+
+type Sessione = Exclude<Awaited<ReturnType<typeof requireAdmin>>, NextResponse>;
+
+async function modifica(req: Request, ctx: Ctx, s: Sessione): Promise<NextResponse> {
+  const raw = (await ctx.params).id;
+  const json = await readJson(req);
+  try {
+    if (raw === "auto") {
+      const head = parseAutoHeadBody(json);
+      if (!head.ok) return NextResponse.json({ error: head.error }, { status: 400 });
+      setAutoHead(head.data.headNode, actorOf(s) ?? "sconosciuto");
+      return NextResponse.json(getAutoMap());
+    }
+    const id = parseControllerId(raw);
+    if (id === null) return notFound();
+    const body = parseMapPatchBody(json);
+    if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
+    const esito = updateTopologyMap(id, body.data);
+    if (!esito.ok) return notFound();
+    return NextResponse.json(getTopologyMap(id));
+  } catch (error) {
+    console.error("[topology] mappa, modifica:", error);
+    return NextResponse.json({ error: "Errore nella modifica della mappa" }, { status: 500 });
+  }
+}
 
 /** DELETE /api/topology/maps/[id] — toglie la mappa e i suoi ritocchi (gli apparati restano). */
 export async function DELETE(_req: Request, ctx: Ctx) {

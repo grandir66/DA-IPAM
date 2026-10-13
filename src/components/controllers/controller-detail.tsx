@@ -1,19 +1,29 @@
 "use client";
 
 /**
- * Dettaglio di un controller (riga espansa): ultime 10 letture, errori e
- * motivi dell'ultima, impronta del certificato. «Accetta il nuovo certificato»
- * compare solo se l'ultima prova ha detto `cert` con le due impronte.
+ * Dettaglio di un controller (riga espansa): lettura dei client (casella ogni
+ * ora 7-20 e ultimo giro, riga a sé), ultime 10 letture degli apparati, errori
+ * e motivi dell'ultima, impronta del certificato. «Accetta il nuovo
+ * certificato» compare solo se l'ultima prova ha detto `cert` con le due impronte.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
 import type { ControllerRunView, NetworkControllerView } from "@/lib/controllers/types";
-import { formatDuration, formatRome, parseControllerDetail, runOrigin, type ProbeResult } from "./controllers-model";
+import {
+  clientRunLine,
+  clientScheduleLabel,
+  formatDuration,
+  formatRome,
+  parseControllerDetail,
+  runOrigin,
+  type ProbeResult,
+} from "./controllers-model";
 
 function List({ title, items }: { title: string; items: string[] }) {
   if (items.length === 0) return null;
@@ -48,6 +58,7 @@ export function ControllerDetail({
   const [certPin, setCertPin] = useState<string | null>(controller.certPin);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pinBusy, setPinBusy] = useState(false);
+  const [clientBusy, setClientBusy] = useState(false);
   const id = controller.id;
 
   const load = useCallback(async () => {
@@ -90,16 +101,63 @@ export function ControllerDetail({
     }
   };
 
+  const setClientSchedule = async (on: boolean) => {
+    setClientBusy(true);
+    try {
+      const r = await fetchJson<{ warning?: string | null }>(`/api/controllers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_schedule: on }),
+      });
+      if (!r.ok) {
+        toast.error(`Lettura dei client non cambiata: ${r.message}`);
+        return;
+      }
+      if (r.data?.warning) toast.warning(r.data.warning);
+      else toast.success(on ? "Client letti ogni ora dalle 7 alle 20" : "Lettura dei client spenta");
+      onChanged();
+    } finally {
+      setClientBusy(false);
+    }
+  };
+
   if (loadError) return <LoadError what="le letture del controller" message={loadError} onRetry={() => void load()} />;
   if (!runs) return <p className="text-sm text-muted-foreground">Caricamento…</p>;
 
   const last = runs[0];
   const certChanged = lastProbe && !lastProbe.ok && lastProbe.reason === "cert" && lastProbe.presentedPin;
 
+  const clientCheckboxId = `client-schedule-${id}`;
+
   return (
     <div className="space-y-4">
+      <div className="rounded-md border bg-background px-3 py-2 space-y-1">
+        <p className="text-sm font-medium">{clientScheduleLabel(controller)}</p>
+        <p className="text-[13px]">{clientRunLine(controller)}</p>
+        {isAdmin && (
+          <div className="pt-1">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id={clientCheckboxId}
+                checked={controller.clientSchedule === true}
+                disabled={clientBusy || (!controller.enabled && !controller.clientSchedule)}
+                onCheckedChange={(v: boolean) => void setClientSchedule(v === true)}
+              />
+              <label htmlFor={clientCheckboxId} className="text-sm cursor-pointer">
+                Leggi i client ogni ora (7–20)
+              </label>
+              {clientBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            </div>
+            <p className="text-[13px] text-muted-foreground pl-6">
+              Serve alla mappa per sapere a quale porta è attaccato ogni dispositivo. Spenta di default.
+              {!controller.enabled && " Controller spento: accendilo per leggere i client."}
+            </p>
+          </div>
+        )}
+      </div>
+
       <div>
-        <p className="text-[13px] font-medium mb-1">Ultime letture</p>
+        <p className="text-[13px] font-medium mb-1">Ultime letture degli apparati</p>
         {runs.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessuna lettura ancora.</p>
         ) : (

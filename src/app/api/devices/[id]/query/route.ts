@@ -354,7 +354,7 @@ async function runSwitchQuery(deviceId: number, device: Parameters<typeof create
 
   upsertMacPortEntries(deviceId, entries.map((e) => ({
     mac: e.mac, port_name: e.port_name.trim(), vlan: e.vlan, port_status: e.port_status, speed: e.speed,
-  })));
+  })), "device");
   p.scanned = entries.length;
   plog(p, `✓ MAC table salvata`);
 

@@ -83,6 +83,14 @@ export interface ModelKnownMacRow {
   mac: string;
 }
 
+export interface ModelMacPortRow {
+  device_id: number;
+  mac: string;
+  port_name: string;
+  timestamp: string;
+  source: string;
+}
+
 export interface LinkOverrideRow {
   id: number;
   action: "add" | "ignore";
@@ -101,6 +109,8 @@ export interface TopologyModelInput {
   networks: ModelNetworkRow[];
   knownMacs: ModelKnownMacRow[];
   overrides: LinkOverrideRow[];
+  /** Ultimi 30 giorni; spec §10.5. */
+  macPorts: ModelMacPortRow[];
   /** Orologio iniettato: stessi dati + stesso nowMs = stesso modello. */
   nowMs: number;
   /** Giorni dopo cui un collegamento è «non visto» (decisione 13/10: 2). */

@@ -28,7 +28,7 @@ import { getActiveTenants, getHubDbPath, getSetting, getTenantByCode } from "./d
 import { buildStatusSeries, statusWindowStartMs, type StatusObservation, type StatusPoint } from "./status-over-time";
 import { registraRipiego } from "./db-maintenance/ripieghi";
 import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
-import type { ControllerRunTrigger, NetworkControllerRow } from "./controllers/types";
+import type { ControllerRunKind, ControllerRunStoredTrigger, NetworkControllerRow } from "./controllers/types";
 
 import type {
   Network,
@@ -233,6 +233,63 @@ export function migrateTopologyPhase1(db: Database.Database): string[] {
   })();
   return added;
 }
+
+/**
+ * Migrazione runtime «topologia fase 2» (spec §10.5-10.6, piano
+ * 2026-10-13-topologia-fase2-mappa). La tabella dei MAC per porta invecchia
+ * invece di essere riscritta a ogni lettura: serve una riga per (apparato, MAC,
+ * porta), quindi prima si tolgono i doppi (si tiene la più recente, con la prima
+ * volta vista più vecchia) e poi l'indice unico. Più la tabella delle mappe.
+ * Tutto in una transazione. Esportata per le prove.
+ */
+export function migrateTopologyPhase2(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const exists = (name: string): boolean => !!db.prepare("SELECT 1 FROM sqlite_master WHERE name = ?").get(name);
+  db.transaction(() => {
+    if (!has("mac_port_entries", "first_seen")) {
+      db.exec("ALTER TABLE mac_port_entries ADD COLUMN first_seen TEXT");
+      added.push("mac_port_entries.first_seen");
+    }
+    if (!has("mac_port_entries", "source")) {
+      db.exec("ALTER TABLE mac_port_entries ADD COLUMN source TEXT NOT NULL DEFAULT 'device'");
+      added.push("mac_port_entries.source");
+    }
+    if (!exists("idx_mac_port_entries_key")) {
+      db.exec(`UPDATE mac_port_entries SET first_seen = (
+                 SELECT MIN(COALESCE(m2.first_seen, m2.timestamp)) FROM mac_port_entries m2
+                  WHERE m2.device_id = mac_port_entries.device_id AND m2.mac = mac_port_entries.mac AND m2.port_name = mac_port_entries.port_name)
+               WHERE first_seen IS NULL`);
+      db.exec(`DELETE FROM mac_port_entries WHERE id NOT IN (
+                 SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY device_id, mac, port_name ORDER BY timestamp DESC, id DESC) AS rn
+                                   FROM mac_port_entries) WHERE rn = 1)`);
+      db.exec("CREATE UNIQUE INDEX idx_mac_port_entries_key ON mac_port_entries(device_id, mac, port_name)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_mac_port_entries_mac ON mac_port_entries(mac)");
+    }
+    if (!exists("topology_maps")) {
+      db.exec(`CREATE TABLE topology_maps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('auto', 'passo')),
+        roots TEXT NOT NULL DEFAULT '[]',
+        head_node TEXT,
+        created_by TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec("CREATE UNIQUE INDEX idx_topology_maps_auto ON topology_maps(kind) WHERE kind = 'auto'");
+      added.push("topology_maps");
+    }
+  })();
+  return added;
+}
+
+/**
+ * Quanti giorni resta una riga di mac_port_entries non più vista (spec §10.5):
+ * la usano la pulizia all'apertura del database e `cleanupOldMacPortEntries`.
+ */
+export const MAC_PORT_RETENTION_DAYS = 30;
 
 export function getTenantDb(tenantCode: string): Database.Database {
   const existing = tenantDbs.get(tenantCode);
@@ -1262,13 +1319,14 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione physical_devices fallita:`, e);
   }
 
-  // v0.2.651: cleanup one-shot mac_port_entries più vecchi di 24h al boot tenant.
-  // Su tenant esistenti con backlog accumulato (es. 9300 righe in 25 giorni),
-  // libera subito spazio e velocizza getAllHostsEnriched.
+  // v0.2.651: cleanup one-shot mac_port_entries all'apertura del DB tenant.
+  // Topologia fase 2 (spec §10.5): la soglia è la stessa del job cleanup
+  // (30 giorni), non più 24 ore — con le 24 ore ogni riavvio, o ogni riapertura
+  // dopo l'uscita dalla LRU, cancellava il «visto l'ultima volta».
   try {
     const r = newDb.prepare(
-      "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-24 hours')"
-    ).run() as { changes: number };
+      "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' days')"
+    ).run(MAC_PORT_RETENTION_DAYS) as { changes: number };
     if (r.changes > 0) {
       console.info(`[db-tenant] ${tenantCode}: mac_port_entries one-shot cleanup — ${r.changes} righe rimosse`);
     }
@@ -1467,6 +1525,18 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione topologia fase 1 fallita:`, e);
+  }
+
+  // Topologia fase 2 (piano 2026-10-13-topologia-fase2-mappa): MAC per porta
+  // che invecchiano (indice unico, doppi ridotti) e tabella delle mappe. Dopo
+  // la fase 1, per la stessa ragione (ADR 0008 punto 6).
+  try {
+    const added = migrateTopologyPhase2(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia fase 2, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia fase 2 fallita:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -1886,10 +1956,14 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
     -- duplicati osservati su switch_port discovery che inserisce stessa riga ad
     -- ogni tick) → INNER JOIN moltiplicava gli host. MAX(rowid) garantisce 1 riga
     -- per mac (rowid univoco di default in SQLite).
+    -- Topologia fase 2: con le righe aggiornate sul posto (una per apparato, MAC,
+    -- porta) MAX(rowid) non è più la lettura più recente. SQLite, con un solo
+    -- MAX() nel GROUP BY, restituisce le colonne nude della riga che lo realizza:
+    -- una riga per mac, quella col timestamp più recente.
     LEFT JOIN (
       SELECT mac, port_name, device_id
       FROM mac_port_entries
-      WHERE rowid IN (SELECT MAX(rowid) FROM mac_port_entries GROUP BY mac)
+      WHERE rowid IN (SELECT rid FROM (SELECT rowid AS rid, MAX(timestamp) FROM mac_port_entries GROUP BY mac))
     ) mpe ON mpe.mac = h.mac
     LEFT JOIN network_devices sw ON sw.id = mpe.device_id
     LEFT JOIN (
@@ -2160,7 +2234,9 @@ export function getHostById(id: number): HostDetail | undefined {
     FROM mac_port_entries mpe
     JOIN network_devices nd ON nd.id = mpe.device_id
     WHERE ${MAC_HEX("mpe.mac")} = ? AND nd.device_type = 'switch'
-    ORDER BY mpe.rowid DESC LIMIT 1
+    -- Topologia fase 2: le righe si aggiornano sul posto, il rowid non dice più
+    -- «la lettura più recente»; il timestamp sì (rowid solo a parità).
+    ORDER BY mpe.timestamp DESC, mpe.rowid DESC LIMIT 1
   `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; port_name: string; vlan: number | null } | undefined : undefined;
 
   // F4: prefer FK lookup (network_devices.host_id) over fragile IP string match;
@@ -4590,41 +4666,66 @@ export function getArpEntriesByDevice(deviceId: number): (ArpEntry & { host_ip?:
 // MAC PORT ENTRIES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function upsertMacPortEntries(deviceId: number, entries: { mac: string; port_name: string; vlan: number | null; port_status: "up" | "down" | null; speed: string | null }[]): void {
+export type MacPortInput = { mac: string; port_name: string; vlan: number | null; port_status: "up" | "down" | null; speed: string | null };
+
+/**
+ * Le righe invecchiano (spec §10.5, come i vicini nell'ADR 0008): una lettura
+ * aggiorna o crea, non cancella. `timestamp` uguale per tutto il giro = «ultimo
+ * giro» riconoscibile. La pulizia a 30 giorni la fa il job cleanup.
+ * ON CONFLICT sull'indice UNIQUE (device_id, mac, port_name) del Task 1: lo
+ * stesso (MAC, porta) ripetuto nel giro (es. su due VLAN) aggiorna la riga
+ * invece di far fallire la transazione dell'intero apparato.
+ */
+export function upsertMacPortEntries(deviceId: number, entries: MacPortInput[], source: "device" | "unifi"): void {
   const d = db();
-  // ARC-01: DELETE dentro la transazione = replace atomico. Prima il DELETE era
-  // fuori (auto-commit): se l'insert falliva, il device restava con zero MAC
-  // entries. Stesso pattern già applicato a upsertSwitchPorts e alla copia db.ts.
-  const deleteStmt = d.prepare("DELETE FROM mac_port_entries WHERE device_id = ?");
+  const now = (d.prepare("SELECT datetime('now') AS t").get() as { t: string }).t;
   const stmt = d.prepare(
-    `INSERT INTO mac_port_entries (device_id, mac, port_name, vlan, port_status, speed)
-     VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO mac_port_entries (device_id, mac, port_name, vlan, port_status, speed, timestamp, first_seen, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(device_id, mac, port_name) DO UPDATE SET
+       vlan = COALESCE(excluded.vlan, mac_port_entries.vlan),
+       port_status = COALESCE(excluded.port_status, mac_port_entries.port_status),
+       speed = COALESCE(excluded.speed, mac_port_entries.speed),
+       timestamp = excluded.timestamp, source = excluded.source`,
   );
-
-  const replaceAll = d.transaction((items: typeof entries) => {
-    deleteStmt.run(deviceId);
-    for (const entry of items) {
-      stmt.run(deviceId, entry.mac, entry.port_name, entry.vlan, entry.port_status, entry.speed);
-    }
-  });
-
-  replaceAll(entries);
+  d.transaction((items: MacPortInput[]) => {
+    for (const e of items) stmt.run(deviceId, e.mac, e.port_name, e.vlan, e.port_status, e.speed, now, now, source);
+  })(entries);
 }
 
 /**
- * v0.2.651: retention mac_port_entries — elimina row più vecchie di N ore.
- * Lo switch_port discovery inserisce fino a 4096 row per ogni run (intera MAC
- * table dello switch). Senza retention la tabella cresce indefinitamente:
- * misurato su tenant prod 70791 ~9300 righe in 25 giorni con tabelle MAC piccole;
- * su switch enterprise (4096 MAC × 4 scan/giorno) diventa milioni in poche
- * settimane. Default 24h è sicuro: getMacPortEntriesByDevice mostra solo le
- * ultime, e `upsertMacPortEntries` rimpiazza per device ad ogni scan.
+ * Retention mac_port_entries in giorni (prima v0.2.651: 24 ore, perché ogni
+ * giro riscriveva l'intera MAC table). Ora c'è una riga per (apparato, MAC,
+ * porta) aggiornata a ogni giro: il volume non cresce col numero dei giri, e
+ * una riga vecchia vuol dire «visto l'ultima volta» — si tiene 30 giorni.
  */
-export function cleanupOldMacPortEntries(retentionHours: number = 24): number {
-  const r = db().prepare(
-    "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' hours')"
-  ).run(retentionHours) as { changes: number };
-  return r.changes;
+export function cleanupOldMacPortEntries(retentionDays: number = MAC_PORT_RETENTION_DAYS): number {
+  return (db().prepare("DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' days')").run(retentionDays) as { changes: number }).changes;
+}
+
+/**
+ * Apparati del tenant col MAC del controller (UniFi) e nomi delle loro porte:
+ * l'ingresso di `mapClientsToPorts` (lettura dei client collegati). Due query,
+ * niente N+1.
+ */
+export function getControllerDevicePortNames(): {
+  devices: Array<{ id: number; controller_mac: string }>;
+  ports: Array<{ device_id: number; port_index: number; port_name: string }>;
+} {
+  const d = db();
+  return {
+    devices: d
+      .prepare("SELECT id, controller_mac FROM network_devices WHERE controller_mac IS NOT NULL AND controller_mac != '' ORDER BY id")
+      .all() as Array<{ id: number; controller_mac: string }>,
+    ports: d
+      .prepare(
+        `SELECT sp.device_id, sp.port_index, sp.port_name
+           FROM switch_ports sp
+           JOIN network_devices nd ON nd.id = sp.device_id
+          WHERE nd.controller_mac IS NOT NULL AND nd.controller_mac != ''`,
+      )
+      .all() as Array<{ device_id: number; port_index: number; port_name: string }>,
+  };
 }
 
 export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { host_ip?: string; host_name?: string })[] {
@@ -4635,6 +4736,9 @@ export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { h
     FROM mac_port_entries mpe
     LEFT JOIN hosts h ON ${MAC_HEX("h.mac")} = ${MAC_HEX("mpe.mac")}
     WHERE mpe.device_id = ?
+      -- Solo l'ultimo giro di ogni fonte: le righe non viste restano (invecchiano)
+      -- ma non si mostrano come attuali. Stessa idea di NEIGHBORS_LATEST_ROUND_SQL.
+      AND mpe.timestamp = (SELECT MAX(m2.timestamp) FROM mac_port_entries m2 WHERE m2.device_id = mpe.device_id AND m2.source = mpe.source)
     ORDER BY mpe.port_name
   `).all(deviceId) as (MacPortEntry & { host_ip?: string; host_name?: string })[];
 }
@@ -8468,8 +8572,23 @@ export function getTopologyData(): {
 // src/lib/controllers/; qui solo letture e scritture.
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Letture di un controller tenute nello storico: le più vecchie si potano a ogni scrittura. */
+/**
+ * Letture di un controller tenute nello storico, PER TIPO (apparati / client):
+ * le più vecchie si potano a ogni scrittura. Per tipo perché i client si
+ * leggono ogni ora: in tre giorni avrebbero spinto fuori ogni lettura degli apparati.
+ */
 export const CONTROLLER_RUNS_KEPT = 50;
+
+/** Tipo di un giro dalla colonna `trigger` (i giri dei client hanno il prefisso «client:»). */
+const RUN_KIND_SQL = "CASE WHEN trigger LIKE 'client:%' THEN 'client' ELSE 'apparati' END";
+
+export function controllerRunKindOf(trigger: string): ControllerRunKind {
+  return trigger.startsWith("client:") ? "client" : "apparati";
+}
+
+/** Il job unifi_sync è quello dei client (`config.cosa = "client"`); senza `cosa` è degli apparati. */
+const CLIENT_JOB_SQL = "json_extract(COALESCE(NULLIF(config, ''), '{}'), '$.cosa') = 'client'";
+const DEVICE_JOB_SQL = `COALESCE(json_extract(COALESCE(NULLIF(config, ''), '{}'), '$.cosa'), 'apparati') = 'apparati'`;
 
 export function listNetworkControllers(): NetworkControllerRow[] {
   return db().prepare("SELECT * FROM network_controllers ORDER BY name COLLATE NOCASE, id").all() as NetworkControllerRow[];
@@ -8518,7 +8637,10 @@ export function updateNetworkController(id: number, patch: NetworkControllerPatc
   return getNetworkController(id);
 }
 
-/** Cancella il controller, le sue letture (cascade) e la sua pianificazione. Gli apparati letti restano. */
+/**
+ * Cancella il controller, le sue letture (cascade) e le sue pianificazioni
+ * (apparati e client: tutti i job unifi_sync col suo id). Gli apparati letti restano.
+ */
 export function deleteNetworkController(id: number): boolean {
   return runInTenantTransaction(() => {
     db()
@@ -8532,7 +8654,7 @@ export interface ControllerRunInsert {
   controller_id: number;
   started_at: string;
   finished_at: string;
-  trigger: ControllerRunTrigger;
+  trigger: ControllerRunStoredTrigger;
   triggered_by: string | null;
   ok: number;
   total: number;
@@ -8549,10 +8671,15 @@ export interface ControllerRunInsert {
 
 /**
  * Registra una lettura, aggiorna il riepilogo sulla riga del controller e pota
- * lo storico oltre `CONTROLLER_RUNS_KEPT`. Una lettura riuscita aggiorna anche
- * i conteggi; una fallita lascia quelli dell'ultima riuscita.
+ * lo storico oltre `CONTROLLER_RUNS_KEPT` letture dello stesso tipo. Una lettura
+ * riuscita aggiorna anche i conteggi; una fallita lascia quelli dell'ultima
+ * riuscita. Una lettura dei client (trigger «client:…», topologia fase 2)
+ * registra solo lo storico: il riepilogo della riga è quello degli apparati e
+ * lo leggono la pagina e «Stato moduli». `summary` forza l'una o l'altra cosa.
  */
-export function recordControllerRun(run: ControllerRunInsert): void {
+export function recordControllerRun(run: ControllerRunInsert, opts: { summary?: boolean } = {}): void {
+  const kind = controllerRunKindOf(run.trigger);
+  const summary = opts.summary ?? kind === "apparati";
   runInTenantTransaction(() => {
     const d = db();
     d.prepare(
@@ -8562,13 +8689,15 @@ export function recordControllerRun(run: ControllerRunInsert): void {
        VALUES (@controller_id, @started_at, @finished_at, @trigger, @triggered_by, @ok, @total, @added, @updated, @skipped,
           @ports, @neighbors, @message, @errors_json, @skipped_reasons_json, @offline_json)`,
     ).run(run);
-    if (run.ok) {
+    // summary false = lettura che non è quella degli apparati (es. client
+    // collegati): solo storico, il riepilogo della riga resta quello degli apparati.
+    if (summary && run.ok) {
       d.prepare(
         `UPDATE network_controllers
             SET last_run_at = ?, last_ok = 1, last_message = ?, last_devices = ?, last_ports = ?, last_neighbors = ?
           WHERE id = ?`,
       ).run(run.finished_at, run.message, run.total, run.ports, run.neighbors, run.controller_id);
-    } else {
+    } else if (summary) {
       d.prepare("UPDATE network_controllers SET last_run_at = ?, last_ok = 0, last_message = ? WHERE id = ?").run(
         run.finished_at,
         run.message,
@@ -8577,18 +8706,31 @@ export function recordControllerRun(run: ControllerRunInsert): void {
     }
     d.prepare(
       `DELETE FROM network_controller_runs
-        WHERE controller_id = ?
-          AND id NOT IN (SELECT id FROM network_controller_runs WHERE controller_id = ? ORDER BY id DESC LIMIT ?)`,
-    ).run(run.controller_id, run.controller_id, CONTROLLER_RUNS_KEPT);
+        WHERE controller_id = ? AND ${RUN_KIND_SQL} = ?
+          AND id NOT IN (SELECT id FROM network_controller_runs
+                          WHERE controller_id = ? AND ${RUN_KIND_SQL} = ? ORDER BY id DESC LIMIT ?)`,
+    ).run(run.controller_id, kind, run.controller_id, kind, CONTROLLER_RUNS_KEPT);
   });
 }
 
 export type ControllerRunRow = ControllerRunInsert & { id: number };
 
-export function listControllerRuns(controllerId: number, limit = 10): ControllerRunRow[] {
+/** Ultime letture di un controller di un tipo (di default gli apparati: lo storico della pagina). */
+export function listControllerRuns(controllerId: number, limit = 10, kind: ControllerRunKind = "apparati"): ControllerRunRow[] {
   return db()
-    .prepare("SELECT * FROM network_controller_runs WHERE controller_id = ? ORDER BY id DESC LIMIT ?")
-    .all(controllerId, Math.max(1, Math.min(limit, CONTROLLER_RUNS_KEPT))) as ControllerRunRow[];
+    .prepare(`SELECT * FROM network_controller_runs WHERE controller_id = ? AND ${RUN_KIND_SQL} = ? ORDER BY id DESC LIMIT ?`)
+    .all(controllerId, kind, Math.max(1, Math.min(limit, CONTROLLER_RUNS_KEPT))) as ControllerRunRow[];
+}
+
+/** L'ultima lettura dei client di ogni controller, in una query (niente N+1). */
+export function listLastControllerClientRuns(): ControllerRunRow[] {
+  return db()
+    .prepare(
+      `SELECT r.* FROM network_controller_runs r
+         JOIN (SELECT controller_id, MAX(id) AS id FROM network_controller_runs
+                WHERE trigger LIKE 'client:%' GROUP BY controller_id) last ON last.id = r.id`,
+    )
+    .all() as ControllerRunRow[];
 }
 
 export interface ControllerScheduleRow {
@@ -8598,18 +8740,67 @@ export interface ControllerScheduleRow {
   enabled: number;
 }
 
-/** Tutti i job unifi_sync del tenant, col controller a cui puntano (null = job vecchio, senza controller). */
+/**
+ * I job unifi_sync degli apparati del tenant, col controller a cui puntano
+ * (null = job vecchio, senza controller). Il job dei client non c'è: è
+ * `listControllerClientScheduleJobs`.
+ */
 export function listControllerScheduleJobs(): ControllerScheduleRow[] {
   return db()
     .prepare(
       `SELECT id AS job_id, json_extract(config, '$.controller_id') AS controller_id, interval_minutes, enabled
-         FROM scheduled_jobs WHERE job_type = 'unifi_sync' ORDER BY id`,
+         FROM scheduled_jobs WHERE job_type = 'unifi_sync' AND ${DEVICE_JOB_SQL} ORDER BY id`,
     )
     .all() as ControllerScheduleRow[];
 }
 
+/** I job unifi_sync dei client (`config.cosa = "client"`), uno per controller. */
+export function listControllerClientScheduleJobs(): ControllerScheduleRow[] {
+  return db()
+    .prepare(
+      `SELECT id AS job_id, json_extract(config, '$.controller_id') AS controller_id, interval_minutes, enabled
+         FROM scheduled_jobs WHERE job_type = 'unifi_sync' AND ${CLIENT_JOB_SQL} ORDER BY id`,
+    )
+    .all() as ControllerScheduleRow[];
+}
+
+/** Il job dei client gira ogni ora; la finestra 7-20 la guarda il job (`inFinestraClient`). */
+export const CONTROLLER_CLIENT_JOB_MINUTES = 60;
+
 /**
- * Pianificazione di un controller: un solo job unifi_sync per controller.
+ * Lettura dei client di un controller ogni ora (topologia fase 2, spec §10.5):
+ * `on` = un job unifi_sync con `config.cosa = "client"` (creato se manca, uno
+ * solo), `!on` = cancellato. Non tocca il job degli apparati.
+ */
+export function setControllerClientSchedule(controllerId: number, on: boolean): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    const existing = d
+      .prepare(
+        `SELECT id FROM scheduled_jobs
+          WHERE job_type = 'unifi_sync' AND json_extract(config, '$.controller_id') = ? AND ${CLIENT_JOB_SQL} ORDER BY id`,
+      )
+      .all(controllerId) as Array<{ id: number }>;
+    const [keep, ...extra] = existing;
+    const drop = on ? extra : existing;
+    for (const j of drop) d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(j.id);
+    if (!on) return;
+    if (keep) {
+      d.prepare("UPDATE scheduled_jobs SET interval_minutes = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?").run(
+        CONTROLLER_CLIENT_JOB_MINUTES,
+        keep.id,
+      );
+    } else {
+      d.prepare(
+        "INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'unifi_sync', ?, 1, ?)",
+      ).run(CONTROLLER_CLIENT_JOB_MINUTES, JSON.stringify({ controller_id: controllerId, cosa: "client" }));
+    }
+  });
+}
+
+/**
+ * Pianificazione degli apparati di un controller: un solo job unifi_sync
+ * (senza `cosa`) per controller; il job dei client non si tocca.
  * `minutes` null = spenta, e il job si cancella (non resta un job spento che
  * qualcuno riaccende dalla pagina dei job senza vedere il controller).
  */
@@ -8618,7 +8809,8 @@ export function setControllerSchedule(controllerId: number, minutes: number | nu
     const d = db();
     const existing = d
       .prepare(
-        "SELECT id FROM scheduled_jobs WHERE job_type = 'unifi_sync' AND json_extract(config, '$.controller_id') = ? ORDER BY id",
+        `SELECT id FROM scheduled_jobs
+          WHERE job_type = 'unifi_sync' AND json_extract(config, '$.controller_id') = ? AND ${DEVICE_JOB_SQL} ORDER BY id`,
       )
       .all(controllerId) as Array<{ id: number }>;
     if (minutes === null) {
@@ -8681,6 +8873,9 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
     networks: d.prepare("SELECT id, cidr, name, gateway, location_id FROM networks ORDER BY id").all() as ModelInput["networks"],
     knownMacs: getNetworkDeviceKnownMacs(),
     overrides: d.prepare("SELECT id, action, a_node, a_port, b_node, b_port FROM topology_link_overrides ORDER BY id").all() as ModelInput["overrides"],
+    macPorts: d.prepare(`
+      SELECT device_id, mac, port_name, timestamp, source FROM mac_port_entries
+       WHERE timestamp >= datetime('now', '-30 days') ORDER BY device_id, port_name, mac`).all() as ModelInput["macPorts"],
     nowMs,
     staleDays,
   };

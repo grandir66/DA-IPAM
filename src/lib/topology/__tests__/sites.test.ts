@@ -16,7 +16,7 @@ function net(id: number, cidr: string, location_id: number | null, gateway: stri
 function run(over: Partial<TopologyModelInput>) {
   const input: TopologyModelInput = {
     devices: [], hosts: [], neighbors: [], uplinkPorts: [], locations: [SEDE_A, SEDE_B, ARMADIO_A],
-    networks: [], knownMacs: [], overrides: [], nowMs: Date.parse("2026-10-13T12:00:00Z"), staleDays: 2, ...over,
+    networks: [], knownMacs: [], overrides: [], macPorts: [], nowMs: Date.parse("2026-10-13T12:00:00Z"), staleDays: 2, ...over,
   };
   const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs);
   const { links } = buildLinks(input, idx);

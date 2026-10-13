@@ -13,7 +13,6 @@ import {
   getActiveNmapProfile,
   updateHostIfExists,
   upsertArpEntries,
-  upsertMacPortEntries,
   upsertSwitchPorts,
   resolveMacToDevice,
   resolveMacToNetworkDevice,
@@ -63,11 +62,16 @@ import {
   getScanHistory,
   getCurrentTenantCode,
   getTenantSetting,
+  upsertMacPortEntries,
+  cleanupOldMacPortEntries,
+  MAC_PORT_RETENTION_DAYS,
 } from "@/lib/db-tenant";
+import { macPortListFromPorts } from "@/lib/devices/mac-port-list";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
 // db-tenant, che sotto tsx non va mai caricato con `await import()` (ADR 0002).
 import { syncController } from "@/lib/controllers/service";
+import { syncUnifiClientsForController } from "@/lib/integrations/unifi-clients-sync";
 // Statici per la stessa ragione: mesh-sync e feature importano db-tenant.
 import { syncMeshForTenant } from "@/lib/integrations/meshcentral/mesh-sync";
 import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
@@ -144,6 +148,49 @@ export function unifiJobControllerId(configStr: string | null | undefined): numb
   } catch {
     return null;
   }
+}
+
+/**
+ * Che cosa legge un job unifi_sync: `config.cosa = "client"` è la lettura dei
+ * client collegati (topologia fase 2); senza `cosa` (job nati prima) gli apparati.
+ */
+export function unifiJobKind(configStr: string | null | undefined): "apparati" | "client" {
+  try {
+    return (JSON.parse(configStr || "{}") as { cosa?: unknown }).cosa === "client" ? "client" : "apparati";
+  } catch {
+    return "apparati";
+  }
+}
+
+/** Spec §10.5: i client si leggono dalle 7 alle 20 (ora italiana): di notte sono spenti. */
+export function inFinestraClient(d: Date): boolean {
+  const ora = Number(
+    new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", hourCycle: "h23" }).format(d),
+  );
+  return ora >= 7 && ora < 20;
+}
+
+/**
+ * Il job dei client di UN controller. Fuori dalle 7-20 non chiama il controller:
+ * una riga di log e basta, non è un fallimento. Dentro, un giro non riuscito
+ * (rete, chiave, certificato: «non so», le righe esistenti restano) lancia,
+ * così lo scheduler lo conta fra i falliti come per gli apparati.
+ * `adesso` si passa nelle prove.
+ */
+export async function runUnifiClientJob(controllerId: number, adesso: Date = new Date()): Promise<void> {
+  if (!inFinestraClient(adesso)) {
+    console.info(`[Scheduler] unifi_sync client #${controllerId}: fuori dalle 7-20, non letto`);
+    return;
+  }
+  const result = await syncUnifiClientsForController(controllerId, "schedule");
+  if (result.failure) {
+    throw new Error(`Lettura dei client UniFi non riuscita (controller #${controllerId}): ${result.failure}`);
+  }
+  // Solo i numeri: MAC, nomi e IP dei client non vanno nel log.
+  console.info(
+    `[Scheduler] unifi_sync client #${controllerId}: ${result.clients} letti, ${result.saved} salvati, ` +
+      `${result.unmatched} non abbinati`,
+  );
 }
 
 export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
@@ -245,6 +292,10 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
       const controllerId = unifiJobControllerId(job.config);
       if (controllerId === null) {
         throw new Error("Job unifi_sync senza controller: la pianificazione si imposta dalla pagina Controller di rete");
+      }
+      if (unifiJobKind(job.config) === "client") {
+        await runUnifiClientJob(controllerId);
+        break;
       }
       const result = await syncController(controllerId, "schedule", null);
       // Niente letto o niente scritto: si lancia, così lo scheduler lo conta
@@ -733,6 +784,14 @@ export async function runArpPoll(
           });
 
           upsertSwitchPorts(device.id, switchPorts);
+          // Spec §10.5: l'elenco dei MAC per porta si salva (prima si contava e si buttava).
+          upsertMacPortEntries(
+            device.id,
+            macPortListFromPorts(portInfos, macsByPortByIndex, macsByPortByName, normalizePortNameForMatch).map((e) => ({
+              ...e, vlan: null, port_status: null, speed: null,
+            })),
+            "device",
+          );
         }
 
         // Neighbors LLDP/CDP/MNDP
@@ -767,7 +826,7 @@ export async function runArpPoll(
           vlan: e.vlan,
           port_status: e.port_status,
           speed: e.speed,
-        })));
+        })), "device");
 
         // Popola mac_ip_mapping con MAC da switch risolti a IP (hosts/ARP)
         const switchNetwork = networks.find((n) => isIpInCidr(device.host, n.cidr));
@@ -1098,7 +1157,7 @@ export async function runDnsResolve(
 }
 
 async function runCleanup(configStr: string): Promise<void> {
-  let config: { days_until_stale?: number; days_until_delete?: number; mac_port_retention_hours?: number };
+  let config: { days_until_stale?: number; days_until_delete?: number; mac_port_retention_days?: number };
   try {
     config = JSON.parse(configStr || "{}");
   } catch {
@@ -1107,20 +1166,19 @@ async function runCleanup(configStr: string): Promise<void> {
   }
   const daysUntilStale = config.days_until_stale || 30;
   const daysUntilDelete = config.days_until_delete || 90;
-  // v0.2.651: retention mac_port_entries (default 24h). Switch_port discovery
-  // inserisce fino a 4096 row per scan (intera MAC table) → senza cleanup
-  // la tabella cresce a milioni di righe in poche settimane.
-  const macPortRetentionHours = config.mac_port_retention_hours ?? 24;
+  // Retention mac_port_entries in giorni (topologia fase 2, spec §10.5). Fino
+  // alla v0.2.651 erano 24 ore perché ogni giro riscriveva l'intera MAC table;
+  // ora le righe sono una per (apparato, MAC, porta), aggiornate a ogni giro:
+  // il volume non cresce coi giri, e una riga vecchia dice «visto l'ultima volta».
+  const macPortRetentionDays = config.mac_port_retention_days ?? MAC_PORT_RETENTION_DAYS;
 
   const result = cleanupStaleHosts(daysUntilStale, daysUntilDelete);
   console.info(`[Cleanup] ${result.flagged} host segnalati stale, ${result.deleted} eliminati`);
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { cleanupOldMacPortEntries } = require("@/lib/db-tenant");
-    const deleted = cleanupOldMacPortEntries(macPortRetentionHours);
+    const deleted = cleanupOldMacPortEntries(macPortRetentionDays);
     if (deleted > 0) {
-      console.info(`[Cleanup] mac_port_entries: eliminate ${deleted} righe più vecchie di ${macPortRetentionHours}h`);
+      console.info(`[Cleanup] mac_port_entries: eliminate ${deleted} righe più vecchie di ${macPortRetentionDays} giorni`);
     }
   } catch (e) {
     console.warn(`[Cleanup] mac_port_entries cleanup fallito:`, e);

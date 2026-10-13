@@ -6,7 +6,9 @@ import {
   checkControllerInput,
   getControllerView,
   listControllerRunViews,
+  parseControllerPatch,
   removeController,
+  setClientScheduleFor,
   updateController,
 } from "@/lib/controllers/service";
 import {
@@ -51,6 +53,26 @@ export async function PUT(req: Request, ctx: Ctx) {
     if (!controller) return notFound();
     const warning = reloadSchedulerForCurrentTenant();
     return NextResponse.json({ controller, warning }, { headers: NO_STORE });
+  });
+}
+
+/**
+ * PATCH /api/controllers/[id] — `{ client_schedule: boolean }`: accende o spegne
+ * la lettura dei client collegati ogni ora dalle 7 alle 20 (topologia fase 2).
+ * Il resto del controller si cambia col PUT.
+ */
+export async function PATCH(req: Request, ctx: Ctx) {
+  const adminCheck = await requireAdmin();
+  if (isAuthError(adminCheck)) return adminCheck;
+  const id = parseControllerId((await ctx.params).id);
+  if (id === null) return notFound();
+  const body = parseControllerPatch(await readJson(req));
+  if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
+  return withTenantFromSession(() => {
+    const r = setClientScheduleFor(id, body.value.clientSchedule);
+    if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
+    const warning = reloadSchedulerForCurrentTenant();
+    return NextResponse.json({ controller: r.controller, warning }, { headers: NO_STORE });
   });
 }
 

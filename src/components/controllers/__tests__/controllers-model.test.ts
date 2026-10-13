@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 import {
   buildControllerPayload,
   buildTogglePayload,
+  clientRunLine,
+  clientScheduleLabel,
   controllerStatus,
   countOrDash,
   describeProbe,
@@ -55,6 +57,8 @@ function ctrl(over: Partial<NetworkControllerView> = {}): NetworkControllerView 
     lastNeighbors: 31,
     origin: "manual",
     scheduleMinutes: 240,
+    clientSchedule: false,
+    lastClientRun: null,
     ...over,
   };
 }
@@ -282,5 +286,30 @@ describe("lettura delle risposte", () => {
     assert.equal(d.runs.length, 1);
     assert.deepEqual(d.runs[0].errors, []);
     assert.equal(parseControllerDetail({ runs: [] }), null);
+  });
+});
+
+describe("lettura dei client (ogni ora 7-20)", () => {
+  it("lo stato si dice a parole, non solo con la casella", () => {
+    assert.equal(clientScheduleLabel(ctrl()), "Client: non letti");
+    assert.equal(clientScheduleLabel(ctrl({ clientSchedule: true })), "Client: letti ogni ora dalle 7 alle 20");
+    // Una risposta senza il campo (server più vecchio) non accende niente.
+    assert.equal(clientScheduleLabel({ ...ctrl(), clientSchedule: undefined as unknown as boolean }), "Client: non letti");
+  });
+
+  it("riga dell'ultima lettura dei client, in ora italiana, con l'esito in parole", () => {
+    assert.equal(clientRunLine(ctrl()), "Ultima lettura dei client: mai");
+    assert.equal(
+      clientRunLine(ctrl({ lastClientRun: { at: "2026-10-13 16:00:04", ok: true, message: "Lettura client: 40 letti, 38 salvati, 2 non abbinati" } })),
+      "Ultima lettura dei client: 13/10 18:00 · ok · 40 letti, 38 salvati, 2 non abbinati",
+    );
+    assert.equal(
+      clientRunLine(ctrl({ lastClientRun: { at: "2026-12-01 07:00:00", ok: false, message: "Lettura client: Controller non raggiungibile" } })),
+      "Ultima lettura dei client: 01/12 08:00 · ▲ non riuscita · Controller non raggiungibile",
+    );
+    assert.equal(
+      clientRunLine({ ...ctrl(), lastClientRun: "rotto" as unknown as NetworkControllerView["lastClientRun"] }),
+      "Ultima lettura dei client: mai",
+    );
   });
 });

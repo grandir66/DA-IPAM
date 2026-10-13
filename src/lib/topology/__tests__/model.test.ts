@@ -23,7 +23,7 @@ function input(over: Partial<TopologyModelInput> = {}): TopologyModelInput {
     uplinkPorts: [],
     locations: [{ id: 1, name: "Sede A", parent_id: null, head_device_id: null }],
     networks: [{ id: 1, cidr: "10.0.0.0/24", name: "LAN", gateway: "10.0.0.1", location_id: 1 }],
-    knownMacs: [], overrides: [], nowMs: Date.parse("2026-10-13T12:00:00Z"), staleDays: 2, ...over,
+    knownMacs: [], overrides: [], macPorts: [], nowMs: Date.parse("2026-10-13T12:00:00Z"), staleDays: 2, ...over,
   };
 }
 

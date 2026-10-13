@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { ArrowLeft, Plus, Pencil, Trash2, FolderTree } from "lucide-react";
 import { toast } from "sonner";
+import { SiteTopologyDialog } from "@/components/topology/site-topology-dialog";
 import type { Location } from "@/types";
 
 export default function LocationsPage() {
@@ -33,6 +34,7 @@ export default function LocationsPage() {
     name: "", address: "", parent_id: null,
   });
   const [saving, setSaving] = useState(false);
+  const [mappaPer, setMappaPer] = useState<Location | null>(null);
 
   async function fetchLocations() {
     setLoading(true);
@@ -135,6 +137,9 @@ export default function LocationsPage() {
                     <TableCell className="text-sm">{loc.parent_id ? locations.find((l) => l.id === loc.parent_id)?.name ?? `#${loc.parent_id}` : "—"}</TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
+                        {loc.parent_id === null && (
+                          <Button variant="outline" size="sm" onClick={() => setMappaPer(loc)}>Mappa</Button>
+                        )}
                         <Button variant="ghost" size="sm" onClick={() => openEdit(loc)}><Pencil className="h-3.5 w-3.5" /></Button>
                         <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(loc)}><Trash2 className="h-3.5 w-3.5" /></Button>
                       </div>
@@ -146,6 +151,15 @@ export default function LocationsPage() {
           )}
         </CardContent>
       </Card>
+
+      {mappaPer && (
+        <SiteTopologyDialog
+          key={mappaPer.id}
+          location={{ id: mappaPer.id, name: mappaPer.name }}
+          open
+          onOpenChange={(v) => { if (!v) setMappaPer(null); }}
+        />
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>

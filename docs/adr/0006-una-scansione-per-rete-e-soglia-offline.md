@@ -40,7 +40,10 @@ uno spegnimento in massa aspetta la conferma del giro dopo, per intersezione.**
 1. **`last_run` vuol dire fine del giro.** I job di scansione attendono la promessa `done`
    di `discoverNetwork`, che si risolve sempre (mai rifiutata) con l'esito letto a giro
    finito. Un giro fallito fa fallire il job; un job su tutte le reti le scansiona una dopo
-   l'altra.
+   l'altra. L'attesa ha un limite, la soglia d'allarme del punto 3: oltre, il job smette di
+   aspettare, scrive la riga d'allarme e fallisce, ma il giro non si chiude e la rete resta
+   occupata. Così un giro appeso non tiene il job per sempre e, in un job su tutte le reti,
+   non ferma le reti successive.
 2. **Il lucchetto vive in memoria**, in una mappa su `globalThis` con chiave
    `Symbol.for('da-ipam.scanner.network-lock')` e chiave «tenant:rete»
    (`src/lib/scanner/network-scan-lock.ts`). Sta in `discoverNetwork` perché è il punto da
@@ -52,9 +55,15 @@ uno spegnimento in massa aspetta la conferma del giro dopo, per intersezione.**
 3. **Nessun timeout libera il lucchetto.** Un giro che scrive ancora non deve trovarsi
    accanto un secondo giro. Oltre una soglia (100 minuti, il doppio del giro più lungo
    misurato; `scan_lock_alarm_minutes` per tenant) si scrive **una** riga d'allarme e il
-   lucchetto resta preso. Un job che trova la rete occupata è «saltato»: non scrive
-   `last_run` e non conta né come riuscito né come fallito; se salta per tre intervalli il
-   controllo di salute lo vede fermo, ed è voluto.
+   lucchetto resta preso. La scrive chi se ne accorge per primo: una seconda partenza sulla
+   stessa rete, oppure il job stesso quando smette di aspettare il suo giro (punto 1); nel
+   caso comune, un solo job sulla rete, è il job. Un job dello scheduler che trova la rete
+   occupata **aspetta** che il giro che la tiene si chiuda e poi parte: gli intervalli da
+   un'ora in su partono tutti al minuto 0, e due job sulla stessa rete che si saltassero
+   l'un l'altro farebbero perdere sempre il giro allo stesso. Se la rete resta occupata
+   oltre la soglia il job è «saltato»: non scrive `last_run` e non conta né come riuscito né
+   come fallito; il controllo di salute lo vede fermo, ed è voluto. «Esegui ora» e i
+   pulsanti non aspettano: rispondono subito che la rete è occupata.
 4. **Il passaggio a offline guarda l'ora di partenza del giro.** La partenza si prende da
    `datetime('now')` del database, nella stessa forma e nello stesso fuso di `last_seen`;
    passano offline solo gli host con stato diverso da `offline` (gli `unknown` restano
@@ -64,8 +73,12 @@ uno spegnimento in massa aspetta la conferma del giro dopo, per intersezione.**
 5. **La soglia applica per intersezione.** Se un giro spegnerebbe più di `offline_guard_pct`
    (50) degli host non offline fra gli indirizzi scansionati, e almeno `offline_guard_min`
    (5), in modo `applica` non scrive; il giro dopo manda offline solo i candidati presenti
-   in **tutti e due** i giri. Ogni host spento davvero è candidato in due giri di fila,
-   quindi la guardia non resta mai bloccata; un host tornato vivo esce dall'insieme da solo.
+   in **tutti e due** i giri. Ogni giro decide solo dentro il suo **perimetro**, gli host di
+   cui ha scansionato l'indirizzo: i candidati in sospeso fuori restano come sono. Un giro
+   mirato (host selezionati, o indirizzi esclusi perché il ping non ha potuto girare) non
+   cancella quindi la conferma del resto della rete, e ogni host spento davvero è candidato
+   in due giri di fila che lo guardano: la guardia non resta bloccata. Un host tornato vivo
+   esce dall'insieme da solo.
    I candidati in sospeso stanno in `tenant_settings` (una chiave per rete): un riavvio per
    aggiornamento non azzera la conferma. Il modo predefinito è `registra`: si spegne come
    prima e si scrive «qui avrei bloccato N»; il passaggio ad `applica` si fa per tenant,
@@ -110,10 +123,13 @@ uno spegnimento in massa aspetta la conferma del giro dopo, per intersezione.**
 - Con la soglia in `applica` un calo vero oltre soglia arriva con un giro di ritardo (un
   intervallo del job: 60 minuti sul job di scansione di un'installazione).
 - Un giro appeso tiene la rete fino al riavvio del processo: l'allarme lo dice, ma non lo
-  risolve.
-- Un job che salta sempre (rete tenuta da un altro job allo stesso minuto) fa diventare rosso
-  il controllo di salute: è voluto, ma va letto come «due job in conflitto», non come
-  scheduler rotto.
+  risolve. Il job che lo aspettava smette dopo la soglia e passa alle altre reti; quella
+  rete resta senza giri, e i job che la cercano saltano finché il processo non riparte.
+- Due job di scansione sulla stessa rete allo stesso minuto girano uno dopo l'altro: il
+  secondo parte con il ritardo di un giro intero.
+- Il lucchetto è per rete, a prescindere dal tipo di giro e dagli host scelti: anche
+  un'azione su pochi host selezionati (WinRM, SSH, validazione credenziali, nmap) prende
+  tutta la rete. Viene rifiutata mentre gira lo scheduler, e lo scheduler aspetta lei.
 - `last_run` cambia significato: chi lo leggeva come «partenza» ora legge «fine».
 
 ### Cosa diventa difficile in futuro

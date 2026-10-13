@@ -447,3 +447,9 @@ vive la console centrale (tappa 9).
   - Resta aperto: `updated_at` avanza su tutti i 155 host a ogni giro, prima e
     dopo, perché lo riscrive l'aggiornamento delle assegnazioni IP di fine giro
     (non il passaggio a offline). Da sistemare nel nucleo.
+  - Copertura: il giro della prova è di tipo «ping» sulla rete scelta dallo
+    script. Il solo job di scansione acceso su DTS è la scansione veloce di
+    un'altra rete (224 host, 207 offline: sono le righe che T3-20 smette di
+    riscrivere a ogni giro); la rete con più host offline (248) ha il job spento
+    da luglio. Il percorso della scansione veloce (ARP/DHCP, secondo passaggio
+    TCP) non è provato sul dato vero: lo verifica il modo `registra` su DTS.

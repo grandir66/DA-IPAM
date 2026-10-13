@@ -18,8 +18,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   che si chiudevano in errore senza segnalarlo) il job fallisce e finisce nel
   conteggio dei fallimenti dello scheduler. Un job su tutte le reti le
   scansiona una dopo l'altra invece che tutte insieme; una rete in errore non
-  ferma le altre, ma fa fallire il job. Una scansione senza tenant aperto non
-  parte più. **Cosa cambia sulle installazioni del canale `dev`:** «Ultima
+  ferma le altre, ma fa fallire il job. Il giro si aspetta al massimo quanto la
+  soglia d'allarme (100 minuti, `scan_lock_alarm_minutes`): un giro che non si
+  chiude entro quel tempo fa scrivere la riga d'allarme e fallire il job, la
+  rete resta occupata finché il giro non finisce davvero, e un job su tutte le
+  reti passa alle successive invece di restare fermo su quella. Una scansione
+  senza tenant aperto non parte più. **Cosa cambia sulle installazioni del canale `dev`:** «Ultima
   esecuzione» vuol dire fine del giro; un giro più lungo dell'intervallo fa
   saltare i tick nel frattempo (voluto); un job i cui giri falliscono non
   aggiorna più «Ultima esecuzione», quindi il controllo di salute lo vede
@@ -36,17 +40,23 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   rete già in scansione non parte. **Cosa cambia sulle installazioni del canale
   `dev`:** il pulsante dice «Scansione non avviata: su questa rete è già in
   corso …, partita alle …» invece di avviarne un'altra; «Esegui ora» lo dice
-  allo stesso modo; un job dello scheduler che trova la rete occupata salta il
+  allo stesso modo. Un job dello scheduler che trova la rete occupata aspetta
+  che il giro in corso si chiuda e poi parte, così non perde l'intervallo: gli
+  intervalli da un'ora in su partono tutti al minuto 0, e due job sulla stessa
+  rete partirebbero sempre insieme. Il secondo parte quindi con il ritardo di un
+  giro. Se la rete resta occupata oltre la soglia d'allarme il job salta il
   giro, non aggiorna «Ultima esecuzione» e non conta né come riuscito né come
-  fallito (se salta per tre intervalli di fila il controllo di salute lo vede
-  fermo, ed è voluto: vuol dire un giro appeso o due job che partono sempre
-  allo stesso minuto); un job su tutte le reti salta solo quelle occupate. La
-  rete si libera solo quando il giro è chiuso davvero, anche se fallisce: un
-  giro che dura più di 100 minuti scrive una riga d'allarme nel registro (una
-  per giro) ma non libera la rete. La soglia si cambia per tenant con
-  l'impostazione `scan_lock_alarm_minutes`. Restano fuori dal controllo le
-  letture ARP e DHCP, che non sono giri di scansione. Prova:
-  `network-scan-lock.test.ts`.
+  fallito (il controllo di salute lo vede fermo, ed è voluto: vuol dire un giro
+  appeso). Un job su tutte le reti fa prima le reti libere e poi aspetta quelle
+  occupate. La rete si libera solo quando il giro è chiuso davvero, anche se
+  fallisce: un giro che dura più di 100 minuti fa scrivere una riga d'allarme
+  nel registro (una per giro, dal job che lo aspettava o da chi prova a
+  ripartire) ma non libera la rete. La soglia si cambia per tenant con
+  l'impostazione `scan_lock_alarm_minutes`. Il controllo vale per la rete
+  intera, anche per le azioni su pochi host selezionati (WinRM, SSH,
+  validazione credenziali, nmap, SNMP): mentre gira una scansione sulla rete
+  rispondono che è occupata. Restano fuori le letture ARP e DHCP, che non sono
+  giri di scansione. Prova: `network-scan-lock.test.ts`.
 - **Un giro vecchio non spegne un host visto dopo la sua partenza (INV-1,
   INV-2, T3-20).** A fine giro le scansioni ping, veloce, discovery e naabu
   mandavano offline ogni indirizzo scansionato che non aveva risposto, senza
@@ -54,8 +64,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   visto vivo durante il giro (dal controllo degli host noti, che gira ogni 15
   minuti, o da un'altra scansione) veniva spento da un giro partito prima, e
   gli host già offline si vedevano riscrivere la data di modifica a ogni giro
-  (su una copia del database di un'installazione: fino a 248 righe per giro
-  su una rete, 676 in tutto se le scansionasse tutte). Ora passano offline
+  (su una copia del database di un'installazione: 207 righe a ogni giro sulla
+  sola rete che ha un job di scansione acceso, 676 sommando tutte le reti). Ora passano offline
   solo gli host non ancora offline e non visti dopo l'inizio del giro;
   l'inizio si prende dall'orologio del database, nella stessa forma della
   data «ultimo visto». Il conteggio delle righe da cambiare e la scrittura
@@ -117,8 +127,11 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   lo dice nel registro del giro e nella storia delle scansioni («soglia
   superata, N non marcati»); il giro dopo manda offline solo gli host che
   erano candidati in tutti e due i giri, così un calo vero arriva con un giro
-  di ritardo e la guardia non resta bloccata. Un calo sotto soglia si applica
-  subito come prima. I candidati in attesa di conferma si conservano nel
+  di ritardo e la guardia non resta bloccata. Ogni giro decide solo per gli
+  host che ha scansionato: un giro su pochi host selezionati, o con indirizzi
+  esclusi perché il ping non ha potuto girare, non cancella la conferma in
+  attesa per il resto della rete. Un calo sotto soglia si applica subito come
+  prima. I candidati in attesa di conferma si conservano nel
   database del tenant, quindi un riavvio per aggiornamento non azzera la
   conferma. Impostazioni per tenant: `offline_guard_mode` (`registra` o
   `applica`), `offline_guard_pct` (50), `offline_guard_min` (5). **Cosa

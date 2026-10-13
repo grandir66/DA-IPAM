@@ -36,8 +36,11 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **I collegamenti fra apparati non si cancellano più a ogni lettura.** La specifica
   della mappa chiede «non visto da N giorni» al posto di linee che spariscono, e due
   fonti sullo stesso apparato (per esempio SNMP e UniFi) si cancellavano a vicenda.
-  Ora la riga si aggiorna, invecchia e dopo 90 giorni si toglie. Effetto collaterale:
-  la mappa vecchia e l'attribuzione vedono anche i vicini non visti di recente.
+  Ora la riga si aggiorna, invecchia e dopo 90 giorni si toglie. Le pagine di oggi
+  (scheda «Neighbors» dell'apparato, mappa `/topology`, attribuzione) continuano a
+  vedere solo l'ultima lettura di ogni apparato per fonte, come prima: erano state
+  scritte per quella, e mostrerebbero come presenti vicini spariti da settimane.
+  Solo il modello nuovo della mappa legge anche i vicini non visti.
 
 - **La configurazione UniFi esistente passa da sola nella tabella dei
   controller**, al primo accesso dopo l'aggiornamento: una volta per cliente,
@@ -58,9 +61,11 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
-- **I vicini si abbinano anche per MAC.** Prima il MAC del vicino veniva letto e
-  poi ignorato: un vicino senza nome o con nome diverso restava non abbinato, e il
-  collegamento non compariva fra gli apparati.
+- **I vicini si abbinano anche per MAC, nel modello nuovo della mappa** (la pagina
+  «Dati della mappa»). Prima il MAC del vicino veniva letto e poi ignorato: un
+  vicino senza nome o con nome diverso restava non abbinato, e il collegamento non
+  compariva fra gli apparati. La mappa di oggi (`/topology`) non usa ancora il
+  modello nuovo: lì l'abbinamento resta per nome e IP finché non arriva la fase 2.
 
 - Dockerfile e `hub-install.sh`: aggiunti `openssl`, `net-tools` e `krb5-user`,
   mancanti per la lettura ARP, i certificati e Kerberos. Erano su un ramo mai

@@ -3577,7 +3577,7 @@ Hub (Domarc, controller #1 = UDM Beast, chiave API nel vault `da-IPAM-accessi.md
 ```
 Prima di usarlo, il filtro si prova **sul vault** con l'output rediretto in `wc -c` (lunghezza, non il valore). Se il formato del vault non si capisce senza stamparlo, ci si ferma e si chiede a Riccardo come leggerlo (memoria «segreti-verso-ssh-prova-finta»: tre chiavi bruciate così).
 
-DTS (tenant 71734, controller self-hosted 172.16.1.222:8443, utente `map`): stessa cosa con la password del vault, **se il controller risponde dal Mac** (il 12/10 sì). Se non risponde: misura senza `--unifi` e lo si scrive nella richiesta di conferma («i numeri dell'uplink di DTS si vedranno solo dopo la prima lettura su DTS»). Ricordarsi che la password `map` di DTS è da ruotare (bacheca, punto 7): non cambia niente qui.
+DTS (tenant 71734, controller self-hosted 172.16.1.222:8443, utente e password nel vault (`dts-appliance-credentials.md`, sezione UNIFI)): stessa cosa, **se il controller risponde dal Mac** (il 12/10 sì). Se non risponde: misura senza `--unifi` e lo si scrive nella richiesta di conferma («i numeri dell'uplink di DTS si vedranno solo dopo la prima lettura su DTS»).
 
 Atteso, per entrambi: `exit=0`, `integrita_*: ok`, `migrazione_ms`, `prima` e `dopo` (e `dopo_lettura`). Questi numeri vanno nella richiesta di conferma (Task 16).
 

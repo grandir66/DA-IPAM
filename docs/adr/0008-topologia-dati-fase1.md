@@ -36,8 +36,9 @@ La migrazione dello schema è durata ~50-60 ms su entrambe, `integrity_check` ok
 UniFi si salva. Sede, testa e subnet sono scelte confermate da una persona. Tutto il resto il
 modello lo calcola a ogni richiesta e non lo salva.**
 
-- `device_neighbors` tiene `last_seen_at`: una lettura aggiorna la riga se c'è, la crea se manca, e
-  non tocca le altre. La pulizia a 90 giorni avviene quando lo stesso apparato viene riscritto.
+- `device_neighbors` tiene `timestamp` (l'ultima volta che il vicino è stato visto) e `first_seen`
+  (la prima), più `source` (`device` o `unifi`): una lettura aggiorna la riga se c'è (`timestamp`
+  si sposta, `first_seen` resta), la crea se manca, e non tocca le altre. La pulizia a 90 giorni avviene quando lo stesso apparato viene riscritto.
 - L'uplink UniFi va sull'apparato (`uplink_mac`, `uplink_seen_at`), non fra i vicini.
 - La soglia «non visto» è un'impostazione dell'hub, modificabile da un amministratore.
 - Il modello (`src/lib/topology/model.ts`) è una funzione dei dati: niente seconda copia da
@@ -66,8 +67,13 @@ modello lo calcola a ogni richiesta e non lo salva.**
 
 ### Cosa diventa difficile in futuro
 
-1. La mappa vecchia (`getTopologyData`) e l'attribuzione ora vedono anche i vicini non visti di
-   recente (fino a 90 giorni), i più recenti per primi: il loro risultato cambia.
+1. I lettori scritti prima (scheda «Neighbors» dell'apparato, mappa vecchia `getTopologyData`,
+   attribuzione in `db-tenant.ts`, `db.ts` e `attribution/recompute.ts`) vedono solo l'ultimo giro
+   di ogni apparato per fonte, come quando ogni poll cancellava il precedente: condizione
+   `NEIGHBORS_LATEST_ROUND_SQL` in `db-tenant.ts`, copiata identica in `recompute.ts` (che non può
+   importare db-tenant), presidiata da `neighbors-old-readers.test.ts`. Solo il modello nuovo
+   (`getTopologyModelInput`) legge tutte le righe. Un lettore nuovo di `device_neighbors` deve
+   scegliere quale delle due viste vuole.
 2. La pulizia a 90 giorni gira solo quando l'apparato viene riscritto: uno che perde tutti i
    vicini, o che non viene più interrogato, tiene le sue righe (si vedono «non visto»).
 3. Quando poll (SNMP/SSH) e UniFi riportano la stessa chiave di vicino, `source` è di chi ha
@@ -84,6 +90,16 @@ modello lo calcola a ogni richiesta e non lo salva.**
 7. La soglia è un'impostazione dell'hub, cambiata con `requireAdmin`: su un hub con più tenant vale
    per tutti. Punto aperto.
 8. Il ramo `tappa3b/nucleo` toglie `upsertNeighbors` dal facade `db.ts`: nel rebase vince il nucleo.
+9. `INSERT OR IGNORE` è stato tolto dalla scrittura dei vicini (ora `ON CONFLICT … DO UPDATE`): una
+   riga malformata (NOT NULL o CHECK violati) fa fallire tutto il giro di quell'apparato, che resta
+   com'era. I chiamanti nascondono l'errore, quindi si vede solo dal log o dai vicini che
+   invecchiano.
+10. Se `migrateTopologyPhase1` fallisce all'apertura, l'errore va nel log e il tenant si apre lo
+    stesso: da lì `upsertSwitchPorts` e `upsertNeighbors` falliscono a ogni poll (mancano le
+    colonne) fino al riavvio del processo.
+11. Note per la fase 2: le porte di un collegamento vengono dalla fonte di rango più alto (a parità,
+    dalla prima arrivata), non da quella vista più di recente; e la propagazione della sede
+    (`sites.ts`) percorre anche i collegamenti «non visto».
 
 ## Riferimenti
 

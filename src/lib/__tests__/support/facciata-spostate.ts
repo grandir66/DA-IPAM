@@ -124,6 +124,7 @@ export const SPOSTATE_GRUPPO_2 = [
   "upsertArpEntries",
   "getHostByMac",
   "getHostById",
+  "getHostsByNetworkWithDevices",
 ] as const;
 
 /** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */

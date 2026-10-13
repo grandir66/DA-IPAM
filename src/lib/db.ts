@@ -25,11 +25,6 @@ import { macToHex, normalizeMacForStorage } from "./utils";
 import { ipSortKey } from "./table-sort";
 import { randomUUID } from "crypto";
 
-/** Convert IPv4 string to numeric value for sorting */
-function ipToNum(ip: string): number {
-  const p = ip.split(".").map(Number);
-  return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
-}
 import type {
   Host,
   User,
@@ -2307,65 +2302,6 @@ export function updateUserLastLogin(userId: number): void {
 // Hosts
 // ========================
 
-/** Hosts con device associato in una sola query (evita N+1 getNetworkDeviceByHost) */
-export function getHostsByNetworkWithDevices(networkId: number): (Host & {
-  device_id?: number;
-  device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string };
-  ad_dns_host_name?: string | null;
-  multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
-})[] {
-  const hosts = getDb().prepare(
-    `SELECT h.*, nd.id as _dev_id, nd.name as _dev_name, nd.sysname as _dev_sysname, nd.vendor as _dev_vendor, nd.protocol as _dev_protocol,
-            ac.ad_dns as _ad_dns,
-            ml.group_id as _mh_group, ml.match_type as _mh_type
-     FROM hosts h
-     LEFT JOIN network_devices nd ON nd.host = h.ip
-     LEFT JOIN (
-       SELECT host_id, MAX(dns_host_name) as ad_dns
-       FROM ad_computers
-       WHERE host_id IS NOT NULL
-       GROUP BY host_id
-     ) ac ON ac.host_id = h.id
-     LEFT JOIN multihomed_links ml ON ml.host_id = h.id
-     WHERE h.network_id = ?`
-  ).all(networkId) as (Host & {
-    _dev_id?: number; _dev_name?: string; _dev_sysname?: string | null; _dev_vendor?: string; _dev_protocol?: string;
-    _ad_dns?: string | null; _mh_group?: string | null; _mh_type?: string | null;
-  })[];
-
-  // Carica peer multi-homed in batch (evita N+1)
-  const groupIds = new Set<string>();
-  for (const h of hosts) {
-    if (h._mh_group) groupIds.add(h._mh_group);
-  }
-  const peersByGroup = new Map<string, Array<{ ip: string; network_name: string; host_id: number }>>();
-  if (groupIds.size > 0) {
-    const placeholders = [...groupIds].map(() => "?").join(",");
-    const peers = getDb().prepare(
-      `SELECT ml.group_id, h.id as host_id, h.ip, n.name as network_name
-       FROM multihomed_links ml
-       JOIN hosts h ON h.id = ml.host_id
-       JOIN networks n ON n.id = h.network_id
-       WHERE ml.group_id IN (${placeholders}) AND h.network_id != ?`
-    ).all(...groupIds, networkId) as Array<{ group_id: string; host_id: number; ip: string; network_name: string }>;
-    for (const p of peers) {
-      if (!peersByGroup.has(p.group_id)) peersByGroup.set(p.group_id, []);
-      peersByGroup.get(p.group_id)!.push({ ip: p.ip, network_name: p.network_name, host_id: p.host_id });
-    }
-  }
-
-  return hosts
-    .sort((a, b) => ipToNum(a.ip) - ipToNum(b.ip))
-    .map(({ _dev_id, _dev_name, _dev_sysname, _dev_vendor, _dev_protocol, _ad_dns, _mh_group, _mh_type, ...h }) => ({
-      ...h,
-      device_id: _dev_id ?? undefined,
-      device: _dev_id ? { id: _dev_id, name: _dev_name!, sysname: _dev_sysname ?? null, vendor: _dev_vendor!, protocol: _dev_protocol! } : undefined,
-      ad_dns_host_name: _ad_dns ?? undefined,
-      multihomed: _mh_group && peersByGroup.has(_mh_group)
-        ? { group_id: _mh_group, match_type: _mh_type ?? "hostname", peers: peersByGroup.get(_mh_group)! }
-        : null,
-    }));
-}
 
 /** Confronto MAC normalizzato (ignora : - .) per match cross-vendor */
 const MAC_HEX = (col: string) => `UPPER(REPLACE(REPLACE(REPLACE(COALESCE(${col},''), ':', ''), '-', ''), '.', ''))`;
@@ -3815,4 +3751,5 @@ export {
   upsertArpEntries,
   getHostByMac,
   getHostById,
+  getHostsByNetworkWithDevices,
 } from "./db-tenant";

@@ -1,0 +1,106 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { buildLinks } from "@/lib/topology/links";
+import { buildNodeIndex } from "@/lib/topology/node-index";
+import type { ModelNeighborRow, TopologyModelInput } from "@/lib/topology/model-types";
+import { dev, host } from "./support/righe";
+
+const ADESSO = Date.parse("2026-10-13T12:00:00Z");
+
+function input(over: Partial<TopologyModelInput>): TopologyModelInput {
+  return {
+    devices: [], hosts: [], neighbors: [], uplinkPorts: [], locations: [], networks: [], knownMacs: [],
+    overrides: [], nowMs: ADESSO, staleDays: 2, ...over,
+  };
+}
+function nb(device_id: number, over: Partial<ModelNeighborRow> = {}): ModelNeighborRow {
+  return {
+    device_id, local_port: "Port 1", remote_device_name: "", remote_port: "", protocol: "lldp",
+    remote_ip: null, remote_mac: null, timestamp: "2026-10-13 03:00:00", source: "device", ...over,
+  };
+}
+function run(i: TopologyModelInput) {
+  return buildLinks(i, buildNodeIndex(i.devices, i.hosts, i.knownMacs));
+}
+
+test("vicino abbinato per MAC quando IP e nome non bastano", () => {
+  const i = input({
+    devices: [dev(1), dev(2, { name: "USW-AGG", controller_mac: "aa:bb:cc:00:00:02" })],
+    neighbors: [nb(1, { remote_device_name: "aggregation", remote_mac: "AA:BB:CC:00:00:02", remote_port: "Port 3" })],
+  });
+  const { links, unmatched } = run(i);
+  assert.equal(unmatched.length, 0);
+  assert.deepEqual(links.map((l) => [l.a, l.aPort, l.b, l.bPort, l.source]), [["dev:1", "Port 1", "dev:2", "Port 3", "lldp"]]);
+});
+
+test("vicino che non si abbina a niente: contato, non inventato", () => {
+  const { links, unmatched } = run(input({ devices: [dev(1)], neighbors: [nb(1, { remote_device_name: "sconosciuto", remote_ip: "10.9.9.9" })] }));
+  assert.equal(links.length, 0);
+  assert.deepEqual(unmatched, [{ deviceNodeId: "dev:1", localPort: "Port 1", remoteName: "sconosciuto", remoteIp: "10.9.9.9", remoteMac: null }]);
+});
+
+test("uplink UniFi: collegamento dal figlio al padre con le porte; con LLDP sulla stessa coppia vince l'uplink", () => {
+  const i = input({
+    devices: [
+      dev(1, { controller_mac: "aa:bb:cc:00:00:01" }),
+      dev(2, { uplink_mac: "aa:bb:cc:00:00:01", uplink_remote_port: 7, uplink_seen_at: "2026-10-13 03:00:00" }),
+    ],
+    uplinkPorts: [{ device_id: 2, port_index: 25, port_name: "SFP+ 1" }],
+    neighbors: [nb(1, { local_port: "Port 7", remote_ip: "10.0.0.2", remote_port: "", timestamp: "2026-10-10 03:00:00" })],
+  });
+  const [l] = run(i).links;
+  assert.equal(l.source, "unifi_uplink");
+  assert.deepEqual(l.sources, ["unifi_uplink", "lldp"]);
+  assert.equal(l.uplinkFrom, "dev:2");
+  assert.deepEqual([l.a, l.aPort, l.b, l.bPort], ["dev:2", "SFP+ 1", "dev:1", "Port 7"]);
+  assert.equal(l.lastSeen, "2026-10-13 03:00:00", "l'ultima volta è la più recente fra le fonti");
+  assert.equal(l.stale, false);
+});
+
+test("uplink verso un MAC che il DB non conosce: nessun collegamento, nessun errore", () => {
+  assert.equal(run(input({ devices: [dev(2, { uplink_mac: "de:ad:00:00:00:01", uplink_seen_at: "2026-10-13 03:00:00" })] })).links.length, 0);
+});
+
+test("la correzione manuale vince su LLDP: «ignora» toglie, «aggiungi» non invecchia mai", () => {
+  const base = { devices: [dev(1), dev(2), dev(3)], neighbors: [nb(1, { remote_ip: "10.0.0.2", timestamp: "2026-09-01 03:00:00" })] };
+  const ignorato = run(input({ ...base, overrides: [{ id: 1, action: "ignore", a_node: "dev:2", a_port: "", b_node: "dev:1", b_port: "" }] }));
+  assert.equal(ignorato.links.length, 0);
+  const aggiunto = run(input({ ...base, overrides: [{ id: 2, action: "add", a_node: "dev:1", a_port: "Port 9", b_node: "dev:3", b_port: "Port 1" }] }));
+  const man = aggiunto.links.find((l) => l.source === "manual")!;
+  assert.deepEqual([man.a, man.aPort, man.b, man.bPort, man.stale, man.daysUnseen], ["dev:1", "Port 9", "dev:3", "Port 1", false, null]);
+});
+
+test("una correzione su un host poi promosso segue il nodo (Review Focus 4)", () => {
+  const i = input({
+    devices: [dev(1), dev(2, { host_id: 40, host: "10.0.1.40" })],
+    hosts: [host(40, { ip: "10.0.1.40" })],
+    overrides: [{ id: 1, action: "add", a_node: "dev:1", a_port: "", b_node: "host:40", b_port: "" }],
+  });
+  assert.deepEqual(run(i).links.map((l) => [l.a, l.b]), [["dev:1", "dev:2"]]);
+});
+
+test("un collegamento sparito diventa «non visto», non scompare; date in due formati (Review Focus 6)", () => {
+  const i = input({
+    devices: [dev(1), dev(2), dev(3), dev(4)],
+    neighbors: [
+      nb(1, { remote_ip: "10.0.0.2", timestamp: "2026-10-10 11:00:00" }),
+      nb(1, { local_port: "Port 2", remote_ip: "10.0.0.3", timestamp: "2026-10-12T12:00:00Z" }),
+      nb(1, { local_port: "Port 3", remote_ip: "10.0.0.4", timestamp: null }),
+    ],
+  });
+  const per = new Map(run(i).links.map((l) => [l.b, l]));
+  assert.deepEqual([per.get("dev:2")?.stale, per.get("dev:2")?.daysUnseen], [true, 3]);
+  assert.deepEqual([per.get("dev:3")?.stale, per.get("dev:3")?.daysUnseen], [false, 1]);
+  assert.deepEqual([per.get("dev:4")?.stale, per.get("dev:4")?.daysUnseen], [false, null]);
+});
+
+test("stessi dati in ordine diverso: stesso risultato", () => {
+  const neighbors = [
+    nb(1, { remote_ip: "10.0.0.2" }), nb(2, { remote_ip: "10.0.0.1", local_port: "Port 5", remote_port: "Port 1" }),
+    nb(3, { remote_ip: "10.0.0.1", local_port: "Port 2" }),
+  ];
+  const devices = [dev(1), dev(2), dev(3)];
+  const a = run(input({ devices, neighbors }));
+  const b = run(input({ devices: [...devices].reverse(), neighbors: [...neighbors].reverse() }));
+  assert.deepEqual(a, b);
+});

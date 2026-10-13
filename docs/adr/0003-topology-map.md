@@ -4,6 +4,8 @@
 **Data:** 2026-10-12
 **Autore:** riccardo.grandi@domarc.it
 
+> La disposizione con dagre è superata dalla spec v2 del 13/10; il modello dei dati dall'ADR 0008.
+
 ## Contesto
 
 Serve una mappa di rete **fisica + logica** per tenant, con icone per tipo di

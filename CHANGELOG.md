@@ -8,6 +8,13 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunte
 
+- **Pagina «Dati della mappa» (Topologia), testa e subnet nelle Ubicazioni, sede
+  sull'apparato, uplink UniFi salvato (ADR 0008).** La nuova mappa ha bisogno di
+  sapere dove sta ogni apparato e quali reti fanno capo a una sede: prima non era
+  scritto da nessuna parte e la mappa lo tirava a indovinare. Ora una persona lo
+  conferma una volta, e la pagina mostra cosa manca. L'uplink che la lettura UniFi
+  già conosceva (a chi è attaccato ogni apparato) non si butta più.
+
 - **Controller di rete: più controller per cliente, in una pagina propria
   (Rete → Controller di rete, ADR 0007).** Prima c'era un solo controller UniFi,
   configurato nelle impostazioni globali dell'hub da una card in Impostazioni →
@@ -25,6 +32,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   chiave parte solo dopo la verifica del certificato.
 
 ### Modifiche
+
+- **I collegamenti fra apparati non si cancellano più a ogni lettura.** La specifica
+  della mappa chiede «non visto da N giorni» al posto di linee che spariscono, e due
+  fonti sullo stesso apparato (per esempio SNMP e UniFi) si cancellavano a vicenda.
+  Ora la riga si aggiorna, invecchia e dopo 90 giorni si toglie. Effetto collaterale:
+  la mappa vecchia e l'attribuzione vedono anche i vicini non visti di recente.
 
 - **La configurazione UniFi esistente passa da sola nella tabella dei
   controller**, al primo accesso dopo l'aggiornamento: una volta per cliente,
@@ -44,6 +57,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   fallisce col motivo invece di indovinare quale controller leggere.
 
 ### Correzioni
+
+- **I vicini si abbinano anche per MAC.** Prima il MAC del vicino veniva letto e
+  poi ignorato: un vicino senza nome o con nome diverso restava non abbinato, e il
+  collegamento non compariva fra gli apparati.
 
 - Dockerfile e `hub-install.sh`: aggiunti `openssl`, `net-tools` e `krb5-user`,
   mancanti per la lettura ARP, i certificati e Kerberos. Erano su un ramo mai

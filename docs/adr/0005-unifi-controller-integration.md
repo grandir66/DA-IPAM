@@ -140,6 +140,7 @@ verificato, e le prove usano la risposta vera.
 - L'host e il dispositivo di rete dello stesso apparato restano due righe, legate da
   `host_id`.
 - **Limiti lasciati aperti dalla revisione del 12/10** (da decidere, non dimenticati):
+  - *(Superato per i vicini e l'uplink dall'ADR 0008; le porte restano a un solo scrittore per apparato.)*
   - `uplink` non si usa: un apparato senza `lldp_table` (a DTS 5 su 74; nella fixture è
     SW-2, che è offline) resta senza collegamento anche se `uplink` dice a chi è attaccato.
     Usarlo vuol dire scegliere che protocollo scrivere e se fidarsi dell'uplink di un

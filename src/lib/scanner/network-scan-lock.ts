@@ -16,7 +16,12 @@
  * Il lucchetto si rilascia SOLO alla chiusura vera del giro (`done` di
  * `discoverNetwork`). Non c'è un timeout che lo liberi: un giro che scrive
  * ancora non deve trovarsi accanto un secondo giro. Un giro troppo lungo fa
- * scrivere una sola riga d'allarme, e il lucchetto resta preso.
+ * scrivere una sola riga d'allarme, e il lucchetto resta preso. L'allarme lo
+ * scrive chi lo nota per primo: una seconda partenza sulla stessa rete
+ * (`prendiRete`) o il job che smette di aspettare il giro (`segnalaGiroLungo`).
+ *
+ * `attendiRilascio` serve allo scheduler: un job che trova la rete occupata
+ * aspetta che il giro si chiuda invece di perdere l'intervallo (revisione 3b).
  */
 
 /** Soglia predefinita dell'allarme: il doppio del giro più lungo misurato (~49 min). */
@@ -31,6 +36,8 @@ export interface GiroSullaRete {
   startedAtMs: number;
   /** Allarme di durata già scritto per questo giro (una riga sola). */
   allarmato: boolean;
+  /** Si risolve quando il giro rilascia la rete. */
+  rilasciato: Promise<void>;
 }
 
 /** Il giro che occupa la rete, nella forma che va al chiamante e all'interfaccia. */
@@ -116,22 +123,71 @@ export function prendiRete(
   if (presente) {
     const soglia = opzioni.sogliaAllarmeMinuti ?? SOGLIA_ALLARME_MINUTI_PREDEFINITA;
     const minuti = Math.floor((ora - presente.startedAtMs) / 60_000);
-    if (!presente.allarmato && minuti > soglia) {
-      presente.allarmato = true;
-      console.error(
-        `[Scansioni] ALLARME: il giro ${presente.scanId} (${presente.scanType}) sulla rete ${networkId} ` +
-          `del tenant ${tenantCode} è in corso da ${minuti} minuti (soglia ${soglia}). La rete resta ` +
-          "occupata finché il giro non si chiude: se è appeso, il processo va riavviato.",
-      );
-    }
+    if (minuti > soglia) scriviAllarme(tenantCode, networkId, presente, ora, soglia);
     throw new ScanInCorsoError(networkId, occupante(presente));
   }
 
-  const mio: GiroSullaRete = { scanId: giro.scanId, scanType: giro.scanType, startedAtMs: ora, allarmato: false };
+  let segnaRilascio!: () => void;
+  const rilasciato = new Promise<void>((r) => {
+    segnaRilascio = r;
+  });
+  const mio: GiroSullaRete = {
+    scanId: giro.scanId,
+    scanType: giro.scanType,
+    startedAtMs: ora,
+    allarmato: false,
+    rilasciato,
+  };
   giri.set(k, mio);
   return () => {
-    if (giri.get(k) === mio) giri.delete(k);
+    if (giri.get(k) === mio) {
+      giri.delete(k);
+      segnaRilascio();
+    }
   };
+}
+
+/** Una riga d'allarme per giro: la seconda chiamata sullo stesso giro non scrive. */
+function scriviAllarme(tenantCode: string, networkId: number, g: GiroSullaRete, ora: number, soglia: number): boolean {
+  if (g.allarmato) return false;
+  g.allarmato = true;
+  const minuti = Math.floor((ora - g.startedAtMs) / 60_000);
+  console.error(
+    `[Scansioni] ALLARME: il giro ${g.scanId} (${g.scanType}) sulla rete ${networkId} ` +
+      `del tenant ${tenantCode} è in corso da ${minuti} minuti (soglia ${soglia}). La rete resta ` +
+      "occupata finché il giro non si chiude: se è appeso, il processo va riavviato.",
+  );
+  return true;
+}
+
+/**
+ * Allarme di durata scritto da chi smette di aspettare un giro (lo scheduler a
+ * soglia scaduta). Scrive solo se la rete è ancora tenuta da `scanId` e
+ * l'allarme di quel giro non è già stato scritto; la rete resta occupata.
+ */
+export function segnalaGiroLungo(
+  tenantCode: string,
+  networkId: number,
+  scanId: string,
+  opzioni: OpzioniLucchetto = {},
+): boolean {
+  const g = stato().giri.get(chiave(tenantCode, networkId));
+  if (!g || g.scanId !== scanId) return false;
+  return scriviAllarme(
+    tenantCode,
+    networkId,
+    g,
+    opzioni.ora ?? Date.now(),
+    opzioni.sogliaAllarmeMinuti ?? SOGLIA_ALLARME_MINUTI_PREDEFINITA,
+  );
+}
+
+/**
+ * Promessa che si risolve quando il giro che tiene la rete la rilascia;
+ * `undefined` se la rete è libera.
+ */
+export function attendiRilascio(tenantCode: string, networkId: number): Promise<void> | undefined {
+  return stato().giri.get(chiave(tenantCode, networkId))?.rilasciato;
 }
 
 /** Il giro che occupa la rete, se c'è (diagnostica e prove). */

@@ -2,7 +2,7 @@ import cron from "node-cron";
 import { currentFacadeTenant, getEnabledJobs, updateJobLastRun } from "@/lib/db";
 import { getActiveTenants } from "@/lib/db-hub";
 import { withTenant } from "@/lib/db-tenant";
-import { runJob } from "./jobs";
+import { runJob, type OpzioniRunJob } from "./jobs";
 import {
   createFailureState,
   findTenantOutages,
@@ -174,16 +174,25 @@ export function scheduleJob(
 /**
  * Un tick del cron per un job. Esportata per le prove: è il corpo del cron.
  *
- * «saltato» (T3-18): la rete del job era già in scansione, quindi il giro non è
- * partito. Non si scrive `last_run` (non è girato niente) e non si registra nel
- * tracker né come riuscito né come fallito. Se la rete restasse occupata per
- * molti intervalli, `last_run` invecchia e /api/health lo segnala: è voluto,
- * vuol dire un giro appeso (vedi scheduler-freshness.ts).
+ * Rete già in scansione (T3-18, revisione 3b): il job aspetta che il giro che
+ * la tiene si chiuda e poi parte, così non perde l'intervallo (gli intervalli
+ * da un'ora in su partono tutti al minuto 0: due job sulla stessa rete
+ * partirebbero sempre insieme e il secondo non girerebbe mai). Il proprio giro
+ * e quello altrui si aspettano fino alla soglia d'allarme del tenant: oltre, il
+ * job scrive l'allarme e smette di aspettare (vedi `giroCompleto` in jobs.ts).
+ *
+ * «saltato»: la rete è rimasta occupata oltre l'attesa, il giro non è partito.
+ * Non si scrive `last_run` (non è girato niente) e non si registra nel tracker
+ * né come riuscito né come fallito. `last_run` invecchia e /api/health lo
+ * segnala: è voluto, vuol dire un giro appeso (vedi scheduler-freshness.ts).
+ *
+ * @param opzioni solo per le prove (attesa massima accorciata)
  */
 export async function eseguiJobProgrammato(
   key: string,
   jobId: number,
   tenantCode: string,
+  opzioni?: Pick<OpzioniRunJob, "attesaMassimaMs">,
 ): Promise<"eseguito" | "saltato" | "fallito" | "gia_in_esecuzione"> {
   if (runningJobs.has(key)) {
     console.warn(`[Scheduler] Job ${key} già in esecuzione, skip`);
@@ -194,7 +203,7 @@ export async function eseguiJobProgrammato(
   try {
     const esito = await withTenant(tenantCode, async () => {
       assertTenantContext(key, tenantCode);
-      const e = await runJob(jobId);
+      const e = await runJob(jobId, { ...opzioni, attendiReteLibera: true });
       if (e.esito === "eseguito") updateJobLastRun(jobId);
       return e;
     });

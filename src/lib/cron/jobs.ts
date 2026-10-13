@@ -25,7 +25,14 @@ import {
   updateJobLastRun,
 } from "@/lib/db";
 import { discoverNetwork, type AvvioDiscovery } from "@/lib/scanner/discovery";
-import { isScanInCorso, type GiroOccupante } from "@/lib/scanner/network-scan-lock";
+import {
+  attendiRilascio,
+  CHIAVE_SOGLIA_ALLARME,
+  isScanInCorso,
+  segnalaGiroLungo,
+  sogliaAllarmeDa,
+  type GiroOccupante,
+} from "@/lib/scanner/network-scan-lock";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
 import { pingHost } from "@/lib/scanner/ping";
 import { getScanIoOverride } from "@/lib/executor";
@@ -54,6 +61,8 @@ import {
   getStatusHistory,
   getHostLatencyHistory,
   getScanHistory,
+  getCurrentTenantCode,
+  getTenantSetting,
 } from "@/lib/db-tenant";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
@@ -69,6 +78,44 @@ export const JOB_DI_SCANSIONE: ReadonlySet<string> = new Set(["ping_sweep", "fas
 export interface OpzioniRunJob {
   /** Chiamata alla partenza di ogni giro di scansione, con il suo id (per «Esegui ora»). */
   onGiroAvviato?: (scanId: string, networkId: number) => void;
+  /**
+   * Rete occupata da un altro giro: aspetta che si chiuda e parte, invece di
+   * saltare (lo scheduler). Senza, il giro è «saltato» subito («Esegui ora»,
+   * che non può tenere aperta la richiesta per un giro altrui).
+   */
+  attendiReteLibera?: boolean;
+  /**
+   * Quanto si aspetta un giro (il proprio fino al `done`, o quello che tiene la
+   * rete) prima di smettere. Predefinito: la soglia d'allarme del tenant
+   * (`scan_lock_alarm_minutes`, 100 minuti). Le prove la accorciano.
+   */
+  attesaMassimaMs?: number;
+}
+
+/** Attesa massima predefinita: la soglia d'allarme del lucchetto, in ms. */
+function attesaMassimaPredefinitaMs(): number {
+  let valore: string | null = null;
+  try {
+    valore = getTenantSetting(CHIAVE_SOGLIA_ALLARME);
+  } catch {
+    valore = null; // impostazione illeggibile: soglia predefinita
+  }
+  return sogliaAllarmeDa(valore) * 60_000;
+}
+
+const SCADUTO = Symbol("scaduto");
+
+/** La promessa, oppure SCADUTO dopo `ms`; il timer si toglie appena la promessa arriva. */
+async function entro<T>(p: Promise<T>, ms: number): Promise<T | typeof SCADUTO> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const scadenza = new Promise<typeof SCADUTO>((r) => {
+    timer = setTimeout(() => r(SCADUTO), Math.max(0, ms));
+  });
+  try {
+    return await Promise.race([p, scadenza]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /**
@@ -263,56 +310,116 @@ export async function eseguiJobOra(jobId: number): Promise<EsitoEseguiOra> {
 }
 
 /**
- * Un giro su una rete, atteso fino alla fine vera; se fallisce, lancia. Se la
- * rete è già in scansione il giro non parte: «saltato» col giro che la tiene.
+ * Un giro su una rete, atteso fino alla fine vera; se fallisce, lancia.
+ *
+ * Rete già in scansione: senza `attendi` il giro non parte ed è «saltato» col
+ * giro che la tiene; con `attendi` (scheduler) si aspetta che quel giro si
+ * chiuda e si riparte, fino all'attesa massima, poi «saltato».
+ *
+ * Il proprio giro si aspetta fino all'attesa massima (revisione 3b): oltre, il
+ * job smette di aspettare, scrive la riga d'allarme e fallisce, ma il giro NON
+ * si chiude e la rete resta occupata finché non finisce davvero (ADR 0006).
+ * Senza questo limite un giro appeso teneva il job per sempre, in silenzio, e
+ * su un job a rete nulla fermava anche tutte le reti successive.
  */
 async function giroCompleto(
   networkId: number,
-  avvio: Promise<AvvioDiscovery>,
+  avvia: () => Promise<AvvioDiscovery>,
   opzioni: OpzioniRunJob | undefined,
+  attendi: boolean,
 ): Promise<EsitoRunJob> {
+  const tenantCode = getCurrentTenantCode();
+  const attesaMs = opzioni?.attesaMassimaMs ?? attesaMassimaPredefinitaMs();
+  const sogliaAllarmeMinuti = attesaMs / 60_000;
+  const scadenza = Date.now() + attesaMs;
+
   let avviato: AvvioDiscovery;
-  try {
-    avviato = await avvio;
-  } catch (e) {
-    if (!isScanInCorso(e)) throw e;
-    console.info(
-      `[Jobs] Rete ${networkId} già in scansione (giro ${e.giro.scanId}, ${e.giro.scanType}): giro saltato`,
-    );
-    return { esito: "saltato", motivo: `rete ${networkId} già in scansione`, giroInCorso: e.giro };
+  for (;;) {
+    try {
+      avviato = await avvia();
+      break;
+    } catch (e) {
+      if (!isScanInCorso(e)) throw e;
+      const saltato: EsitoRunJob = {
+        esito: "saltato",
+        motivo: `rete ${networkId} già in scansione`,
+        giroInCorso: e.giro,
+      };
+      if (!attendi || !tenantCode) {
+        console.info(
+          `[Jobs] Rete ${networkId} già in scansione (giro ${e.giro.scanId}, ${e.giro.scanType}): giro saltato`,
+        );
+        return saltato;
+      }
+      const resto = scadenza - Date.now();
+      const rilascio = attendiRilascio(tenantCode, networkId);
+      if (resto <= 0 || (rilascio && (await entro(rilascio, resto)) === SCADUTO)) {
+        segnalaGiroLungo(tenantCode, networkId, e.giro.scanId, { sogliaAllarmeMinuti });
+        console.warn(
+          `[Jobs] Rete ${networkId} ancora occupata dal giro ${e.giro.scanId} (${e.giro.scanType}) ` +
+            "oltre l'attesa massima: giro saltato",
+        );
+        return { ...saltato, motivo: `rete ${networkId} occupata oltre l'attesa massima` };
+      }
+      // Rete rilasciata: si riprova subito, prima di chi arriva dopo.
+    }
   }
+
   const { id, done } = avviato;
   opzioni?.onGiroAvviato?.(id, networkId);
-  const esito = await done;
+  const esito = await entro(done, attesaMs);
+  if (esito === SCADUTO) {
+    if (tenantCode) segnalaGiroLungo(tenantCode, networkId, id, { sogliaAllarmeMinuti });
+    // Il giro va avanti per conto suo: la sua chiusura non la aspetta più nessuno.
+    done.catch(() => undefined);
+    throw new Error(
+      `Scansione ${id} della rete ${networkId} non chiusa dopo ${Math.round(attesaMs / 60_000)} minuti: ` +
+        "il job smette di aspettarla, la rete resta occupata finché il giro non si chiude",
+    );
+  }
   if (esito.status === "failed") {
     throw new Error(`Scansione ${id} della rete ${networkId} fallita: ${esito.error ?? "errore sconosciuto"}`);
   }
   return ESEGUITO;
 }
 
+/** Un giro per rete: `attendi` dice se aspettare una rete occupata (vedi `giroCompleto`). */
+type GiroSuRete = (nid: number, attendi: boolean) => Promise<EsitoRunJob>;
+
 /**
  * Rete indicata: un giro. Rete nulla: tutte le reti, una dopo l'altra (prima
- * partivano tutte insieme); una rete che fallisce non ferma le altre e il job
- * fallisce alla fine con l'elenco degli errori. Una rete già in scansione si
- * salta (T3-18): il job è «saltato» solo se le ha saltate tutte.
+ * partivano tutte insieme); una rete che fallisce, o il cui giro non si chiude
+ * entro l'attesa massima, non ferma le altre e il job fallisce alla fine con
+ * l'elenco degli errori. Una rete già in scansione si rimanda in coda: con
+ * `attendiReteLibera` la si riprende aspettando che si liberi, senza si salta
+ * (T3-18). Il job è «saltato» solo se le ha saltate tutte.
  */
 async function suOgniRete(
   networkId: number | null,
-  giro: (nid: number) => Promise<EsitoRunJob>,
+  opzioni: OpzioniRunJob | undefined,
+  giro: GiroSuRete,
 ): Promise<EsitoRunJob> {
-  if (networkId) return giro(networkId);
+  const attendi = opzioni?.attendiReteLibera === true;
+  if (networkId) return giro(networkId, attendi);
 
   const networks = getNetworks();
   const errori: string[] = [];
   const saltate: Array<Extract<EsitoRunJob, { esito: "saltato" }>> = [];
-  for (const net of networks) {
+  const rimandate: number[] = [];
+  const esegui = async (nid: number, attendiQui: boolean, rimandaSeOccupata: boolean): Promise<void> => {
     try {
-      const esito = await giro(net.id);
-      if (esito.esito === "saltato") saltate.push(esito);
+      const esito = await giro(nid, attendiQui);
+      if (esito.esito !== "saltato") return;
+      if (rimandaSeOccupata) rimandate.push(nid);
+      else saltate.push(esito);
     } catch (e) {
       errori.push(e instanceof Error ? e.message : String(e));
     }
-  }
+  };
+  // Prima le reti libere, senza aspettare nessuno; poi, se richiesto, le occupate.
+  for (const net of networks) await esegui(net.id, false, attendi);
+  for (const nid of rimandate) await esegui(nid, true, false);
+
   if (errori.length > 0) {
     throw new Error(`${errori.length} reti su ${networks.length} non scansionate: ${errori.join(" · ")}`);
   }
@@ -327,7 +434,9 @@ async function suOgniRete(
 }
 
 async function runPingSweep(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
-  return suOgniRete(networkId, (nid) => giroCompleto(nid, discoverNetwork(nid, "network_discovery"), opzioni));
+  return suOgniRete(networkId, opzioni, (nid, attendi) =>
+    giroCompleto(nid, () => discoverNetwork(nid, "network_discovery"), opzioni, attendi),
+  );
 }
 
 async function runFastScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
@@ -336,22 +445,24 @@ async function runFastScan(networkId: number | null, opzioni?: OpzioniRunJob): P
   // port scan. A fine giro MANDA offline i non rispondenti, come network_discovery,
   // passando dal filtro sulla partenza del giro e dalla soglia: se debba farlo è una
   // decisione aperta (ADR 0006), fino ad allora il codice resta così.
-  return suOgniRete(networkId, (nid) => giroCompleto(nid, discoverNetwork(nid, "fast"), opzioni));
+  return suOgniRete(networkId, opzioni, (nid, attendi) =>
+    giroCompleto(nid, () => discoverNetwork(nid, "fast"), opzioni, attendi),
+  );
 }
 
 async function runSnmpScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
-  return suOgniRete(networkId, async (nid) => {
+  return suOgniRete(networkId, opzioni, async (nid, attendi) => {
     const network = getNetworkById(nid);
     if (!network) return ESEGUITO;
     const snmpCommunity = network.snmp_community ?? null;
-    return giroCompleto(nid, discoverNetwork(nid, "snmp", undefined, snmpCommunity), opzioni);
+    return giroCompleto(nid, () => discoverNetwork(nid, "snmp", undefined, snmpCommunity), opzioni, attendi);
   });
 }
 
 async function runNmapScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
   const { buildCustomScanArgs } = await import("@/lib/scanner/ports");
   const profile = getActiveNmapProfile();
-  const runForNetwork = async (nid: number): Promise<EsitoRunJob> => {
+  const runForNetwork = async (nid: number, attendi: boolean): Promise<EsitoRunJob> => {
     const network = getNetworkById(nid);
     if (!network) return ESEGUITO;
     let nmapArgs: string | undefined;
@@ -370,9 +481,14 @@ async function runNmapScan(networkId: number | null, opzioni?: OpzioniRunJob): P
       nmapArgs = buildCustomScanArgs(null);
     }
     const snmpCommunity = profile?.snmp_community || network.snmp_community || null;
-    return giroCompleto(nid, discoverNetwork(nid, "nmap", nmapArgs, snmpCommunity, { tcpPorts, udpPorts }), opzioni);
+    return giroCompleto(
+      nid,
+      () => discoverNetwork(nid, "nmap", nmapArgs, snmpCommunity, { tcpPorts, udpPorts }),
+      opzioni,
+      attendi,
+    );
   };
-  return suOgniRete(networkId, runForNetwork);
+  return suOgniRete(networkId, opzioni, runForNetwork);
 }
 
 export type RunArpPollOptions = {

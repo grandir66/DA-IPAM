@@ -203,7 +203,9 @@ test("runJob su rete occupata: «saltato» col giro in corso, e lo scheduler non
     assert.equal(esito.esito, "saltato");
     assert.ok(esito.esito === "saltato" && esito.giroInCorso?.scanId === primo.id);
 
-    const programmato = await eseguiJobProgrammato(`${T}:${jobId}`, jobId, T);
+    // Lo scheduler aspetta la chiusura del giro che tiene la rete, ma non oltre
+    // l'attesa massima: qui il giro non si chiude, quindi «saltato».
+    const programmato = await eseguiJobProgrammato(`${T}:${jobId}`, jobId, T, { attesaMassimaMs: 100 });
     assert.equal(programmato, "saltato");
     assert.equal(lastRun(jobId), null, "un giro saltato non aggiorna last_run");
   } finally {
@@ -262,6 +264,110 @@ test("job su tutte le reti: la rete occupata si salta, le altre girano; tutte oc
   } finally {
     c2.apri();
     await Promise.all([ga.done, gb.done]);
+  }
+});
+
+// ── Revisione 3b: lo scheduler non perde il giro, un giro appeso non blocca ──
+
+/** Raccoglie le righe di console.error finché la prova non chiama `ferma`. */
+function catturaErrori(): { righe: string[]; ferma: () => void } {
+  const righe: string[] = [];
+  const originale = console.error;
+  console.error = (...args: unknown[]) => {
+    righe.push(args.map(String).join(" "));
+  };
+  return { righe, ferma: () => (console.error = originale) };
+}
+
+function righeStoria(reteId: number): number {
+  return (
+    getTenantDb(T)
+      .prepare("SELECT COUNT(*) AS n FROM scan_history WHERE network_id = ? AND host_id IS NULL")
+      .get(reteId) as { n: number }
+  ).n;
+}
+
+// Prima: un job programmato che trovava la rete occupata la saltava e perdeva
+// l'intervallo. Gli intervalli da un'ora in su partono tutti al minuto 0, quindi
+// due job di scansione sulla stessa rete partivano nello stesso istante e quello
+// che arrivava secondo perdeva sempre: non girava mai più.
+test("scheduler su rete occupata da un altro giro: aspetta che si chiuda e poi parte", async () => {
+  const reteId = creaRete(T, 0);
+  const jobId = withTenant(T, () => creaJob("fast_scan", reteId));
+  const c = cancello();
+  installaEsecutoreFinto(creaEsecutoreFinto({ vivi: ["10.251.0.1"], cancello: c.promessa }).override);
+
+  const primo = await withTenant(T, () => discoverNetwork(reteId, "nmap"));
+  const programmato = eseguiJobProgrammato(`${T}:${jobId}`, jobId, T, { attesaMassimaMs: 5_000 });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(lastRun(jobId), null);
+  c.apri();
+  await primo.done;
+
+  assert.equal(await programmato, "eseguito", "il job programmato ha perso il giro");
+  assert.ok(lastRun(jobId));
+  assert.equal(righeStoria(reteId), 2, "devono esserci il giro manuale e quello programmato");
+});
+
+// Prima: lo scheduler aspettava il `done` del giro senza limite. Un giro appeso
+// teneva il job per sempre, nessuna riga d'allarme (l'allarme lo scriveva solo
+// una seconda partenza sulla stessa rete, che lo scheduler non faceva mai).
+test("giro che non si chiude: il job smette di aspettarlo, scrive l'allarme, la rete resta occupata", async () => {
+  const reteId = creaRete(T, 0);
+  const jobId = withTenant(T, () => creaJob("fast_scan", reteId));
+  const c = cancello();
+  installaEsecutoreFinto(creaEsecutoreFinto({ vivi: ["10.251.0.1"], cancello: c.promessa }).override);
+  const err = catturaErrori();
+  let scanId = "";
+  try {
+    await assert.rejects(
+      withTenant(T, () =>
+        jobs.runJob(jobId, { attesaMassimaMs: 150, onGiroAvviato: (id) => (scanId = id) }),
+      ),
+      /non (si è )?chius/,
+    );
+    assert.equal(err.righe.filter((r) => /ALLARME/.test(r)).length, 1, `righe: ${err.righe.join(" | ")}`);
+    assert.equal(lucchetto.giroSullaRete(T, reteId)?.scanId, scanId, "la rete deve restare al giro appeso");
+
+    // Il tick dopo trova la rete ancora occupata: niente seconda riga d'allarme.
+    assert.equal(await eseguiJobProgrammato(`${T}:${jobId}`, jobId, T, { attesaMassimaMs: 100 }), "saltato");
+    assert.equal(err.righe.filter((r) => /ALLARME/.test(r)).length, 1, "l'allarme va scritto una volta per giro");
+  } finally {
+    err.ferma();
+    c.apri();
+    await attendiNessunGiro();
+  }
+});
+
+// Prima: il job su tutte le reti le scorreva una dopo l'altra aspettando ogni
+// giro senza limite: un giro appeso su una rete fermava tutte le successive.
+test("job su tutte le reti: una rete appesa non ferma le successive, il job fallisce alla fine", async () => {
+  const a = creaRete(T, 0);
+  const b = creaRete(T, 1);
+  const jobId = withTenant(T, () => creaJob("fast_scan", null));
+  const c = cancello();
+  const { override } = creaEsecutoreFinto({ vivi: ["10.251.0.1", "10.251.1.1"] });
+  // Solo la rete A resta appesa (il fast passa da nmap -sn e dal ping sweep).
+  const nmap = override.executor.nmapDiscoverHosts.bind(override.executor);
+  const sweep = override.executor.pingSweep.bind(override.executor);
+  override.executor.nmapDiscoverHosts = async (target, ...resto) => {
+    if (target.startsWith("10.251.0.")) await c.promessa;
+    return nmap(target, ...resto);
+  };
+  override.executor.pingSweep = async (ips, ...resto) => {
+    if ((ips[0] ?? "").startsWith("10.251.0.")) await c.promessa;
+    return sweep(ips, ...resto);
+  };
+  installaEsecutoreFinto(override);
+  const err = catturaErrori();
+  try {
+    await assert.rejects(withTenant(T, () => jobs.runJob(jobId, { attesaMassimaMs: 200 })), /1 reti su 2/);
+    assert.equal(righeStoria(b), 1, "la rete B doveva essere scansionata lo stesso");
+    assert.equal(righeStoria(a), 0);
+  } finally {
+    err.ferma();
+    c.apri();
+    await attendiNessunGiro();
   }
 });
 

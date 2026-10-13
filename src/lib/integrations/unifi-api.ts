@@ -6,13 +6,21 @@
  *     → cookie di sessione (`unifises`, `csrf_token`) e, se c'è, X-CSRF-Token
  *   GET  /api/s/<site>/stat/device → apparati (vedi `unifi-device.ts`)
  *   POST /api/logout
+ *   GET  /api/self/sites → i site, per sceglierne uno (facoltativo)
+ *
+ * Backend `udm` (console UniFi OS: UDM, UDM Pro/Beast, Cloud Key Gen2+), con la
+ * chiave API creata sulla console, nell'app Network (Control Plane, poi Integrazioni):
+ *   GET  /proxy/network/api/s/<site>/stat/device   intestazione X-API-KEY
+ *   GET  /proxy/network/api/self/sites
+ * Niente login né logout: la chiave vale a ogni richiesta.
+ *
  * Nient'altro: ogni richiesta passa da `isUnifiRequestAllowed`, che conosce
- * solo questi tre percorsi. Il client non scrive mai sul controller.
- * Backend `udm` e `cloud`: «backend non ancora implementato» (fase D).
+ * solo questi percorsi. Il client non scrive mai sul controller.
+ * Backend `cloud`: «backend non ancora implementato».
  *
  * Certificato: il controller è self-signed, quindi niente CA. Si usa lo
  * stesso schema del `cert_pin` dello scanner-edge — impronta SPKI calcolata
- * da `spkiPinFromDer`, fissata al primo uso (TOFU):
+ * da `spkiPinFromDer`, fissata al primo uso (TOFU), uguale per i due backend:
  * - nessuna impronta salvata → quella presentata vale per la sessione e si
  *   salva SOLO se la sessione riesce (login + lettura), così un indirizzo
  *   sbagliato non lascia un pin sbagliato;
@@ -133,11 +141,19 @@ export function checkPresentedPin(pins: UnifiPinSession, presented: string): voi
 
 const SITE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
-/** true solo per login, logout e lettura degli apparati di un site. */
+/** Prefisso dell'applicazione Network dietro una console UniFi OS. */
+export const UNIFI_OS_PREFIX = "/proxy/network";
+
+/**
+ * true solo per login e logout (self-hosted), lettura degli apparati di un
+ * site ed elenco dei site, con o senza il prefisso delle console UniFi OS.
+ */
 export function isUnifiRequestAllowed(method: string, path: string): boolean {
   if (method === "POST") return path === "/api/login" || path === "/api/logout";
   if (method === "GET") {
-    const m = /^\/api\/s\/([^/]+)\/stat\/device$/.exec(path);
+    const rest = path.startsWith(`${UNIFI_OS_PREFIX}/`) ? path.slice(UNIFI_OS_PREFIX.length) : path;
+    if (rest === "/api/self/sites") return true;
+    const m = /^\/api\/s\/([^/]+)\/stat\/device$/.exec(rest);
     return m !== null && SITE_RE.test(m[1]);
   }
   return false;
@@ -165,9 +181,17 @@ export function controllerMsgFromBody(body: string): string | null {
 export function classifyUnifiHttpError(
   status: number,
   controllerMsg: string | null,
-  ctx: { step: "login" | "lettura"; site?: string },
+  ctx: { step: "login" | "lettura"; site?: string; apiKey?: boolean },
 ): { reason: UnifiErrorReason; message: string } {
   const msg = controllerMsg ?? "";
+  if (ctx.apiKey && (status === 401 || status === 403)) {
+    return {
+      reason: "auth",
+      message:
+        "Chiave API rifiutata dalla console UniFi OS: è stata revocata, o è stata creata su un'altra console " +
+        "(si crea sulla console, nell'app Network: Control Plane, poi Integrazioni)",
+    };
+  }
   if (/2fa|mfa/i.test(msg)) {
     return {
       reason: "auth",
@@ -222,7 +246,7 @@ export function classifyUnifiHttpError(
 
 function httpError(
   res: UnifiHttpResponse,
-  ctx: { step: "login" | "lettura"; site?: string },
+  ctx: { step: "login" | "lettura"; site?: string; apiKey?: boolean },
 ): UnifiApiError {
   const c = classifyUnifiHttpError(res.status, controllerMsgFromBody(res.body), ctx);
   return new UnifiApiError(c.reason, c.message, { status: res.status });
@@ -413,8 +437,21 @@ function readOnly(t: UnifiTransport): UnifiTransport {
 export type UnifiClientConfig = Pick<ComponentConfig, "url"> &
   Partial<Pick<ComponentConfig, "kind" | "site" | "username" | "password" | "apiToken">>;
 
+/** Un site del controller: `name` è il nome interno da configurare, `desc` quello mostrato. */
+export interface UnifiSite {
+  name: string;
+  desc: string;
+}
+
 export type UnifiProbeResult =
-  | { ok: true; devices: number; certPin: string | null; certPinRecorded: boolean }
+  | {
+      ok: true;
+      devices: number;
+      certPin: string | null;
+      certPinRecorded: boolean;
+      /** Site del controller, se l'elenco si è potuto leggere (facoltativo). */
+      sites?: UnifiSite[];
+    }
   | {
       ok: false;
       reason: UnifiErrorReason;
@@ -468,7 +505,7 @@ function parseJsonBody(body: string): unknown {
   }
 }
 
-function validateSelfHosted(cfg: UnifiClientConfig): { base: URL; site: string; username: string; password: string } {
+function parseBaseUrl(cfg: UnifiClientConfig, hint: string): URL {
   const raw = (cfg.url ?? "").trim();
   if (!raw) throw new UnifiApiError("config", "Indirizzo del controller non configurato");
   let base: URL;
@@ -478,14 +515,32 @@ function validateSelfHosted(cfg: UnifiClientConfig): { base: URL; site: string; 
     throw new UnifiApiError("config", "Indirizzo del controller non valido");
   }
   if (base.protocol !== "https:") {
-    throw new UnifiApiError("config", "Il controller si legge solo in https (di solito https://…:8443)");
+    throw new UnifiApiError("config", `Il controller si legge solo in https (${hint})`);
   }
+  return base;
+}
+
+function parseSite(cfg: UnifiClientConfig): string {
   const site = (cfg.site ?? "").trim() || "default";
   if (!SITE_RE.test(site)) throw new UnifiApiError("config", `Nome del site non valido: «${site}»`);
+  return site;
+}
+
+function validateSelfHosted(cfg: UnifiClientConfig): { base: URL; site: string; username: string; password: string } {
+  const base = parseBaseUrl(cfg, "di solito https://…:8443");
+  const site = parseSite(cfg);
   const username = (cfg.username ?? "").trim();
   const password = cfg.password ?? "";
   if (!username || !password) throw new UnifiApiError("config", "Utente e password del controller non configurati");
   return { base, site, username, password };
+}
+
+function validateUnifiOs(cfg: UnifiClientConfig): { base: URL; site: string; apiKey: string } {
+  const base = parseBaseUrl(cfg, "l'indirizzo della console, es. https://192.168.1.1");
+  const site = parseSite(cfg);
+  const apiKey = (cfg.apiToken ?? "").trim();
+  if (!apiKey) throw new UnifiApiError("config", "Chiave API della console UniFi OS non configurata");
+  return { base, site, apiKey };
 }
 
 async function login(
@@ -517,20 +572,55 @@ async function login(
   return { cookie, csrf: csrf ?? null };
 }
 
-async function statDevice(send: UnifiTransport, s: UnifiSession, site: string, timeoutMs: number): Promise<UnifiDevice[]> {
-  const res = await send({ method: "GET", path: `/api/s/${site}/stat/device`, headers: sessionHeaders(s), timeoutMs });
-  if (res.status !== 200) throw httpError(res, { step: "lettura", site });
+/** Come si autentica una lettura: sessione (self-hosted) o chiave API (UniFi OS). */
+interface ReadAuth {
+  prefix: string;
+  headers: Record<string, string>;
+  apiKey: boolean;
+}
+
+async function statDevice(send: UnifiTransport, auth: ReadAuth, site: string, timeoutMs: number): Promise<UnifiDevice[]> {
+  const res = await send({ method: "GET", path: `${auth.prefix}/api/s/${site}/stat/device`, headers: auth.headers, timeoutMs });
+  if (res.status !== 200) throw httpError(res, { step: "lettura", site, apiKey: auth.apiKey });
   const json = parseJsonBody(res.body);
   try {
     return parseStatDeviceResponse(json);
   } catch (e) {
     if (e instanceof UnifiResponseError) {
-      const c = classifyUnifiHttpError(res.status, e.controllerMsg, { step: "lettura", site });
+      const c = classifyUnifiHttpError(res.status, e.controllerMsg, { step: "lettura", site, apiKey: auth.apiKey });
       // Un rc di errore senza codice noto resta un errore del controller.
       if (c.reason === "unknown") throw new UnifiApiError("server", e.message, { status: res.status });
       throw new UnifiApiError(c.reason, c.message, { status: res.status });
     }
     throw e;
+  }
+}
+
+/** Legge `data[]` di una risposta `self/sites`; voci senza nome interno scartate. */
+export function parseSitesResponse(json: unknown): UnifiSite[] {
+  const data = (json as { data?: unknown } | null)?.data;
+  if (!Array.isArray(data)) return [];
+  const out: UnifiSite[] = [];
+  for (const x of data) {
+    if (!x || typeof x !== "object") continue;
+    const name = (x as { name?: unknown }).name;
+    const desc = (x as { desc?: unknown }).desc;
+    if (typeof name !== "string" || !SITE_RE.test(name)) continue;
+    out.push({ name, desc: typeof desc === "string" && desc.trim() ? desc.trim() : name });
+  }
+  return out;
+}
+
+/** Elenco dei site: facoltativo, un suo errore non fa fallire la prova (null = non letto). */
+async function selfSites(send: UnifiTransport, auth: ReadAuth, timeoutMs: number): Promise<UnifiSite[] | null> {
+  try {
+    const res = await send({ method: "GET", path: `${auth.prefix}/api/self/sites`, headers: auth.headers, timeoutMs });
+    if (res.status !== 200) return null;
+    return parseSitesResponse(JSON.parse(res.body) as unknown);
+  } catch (e) {
+    // Un certificato cambiato a metà sessione non è «site non letti».
+    if (e instanceof UnifiApiError && e.reason === "cert") throw e;
+    return null;
   }
 }
 
@@ -545,9 +635,9 @@ async function logout(send: UnifiTransport, s: UnifiSession, timeoutMs: number):
 }
 
 /**
- * Client per la configurazione `integration_unifi_*` (vedi
- * `getIntegrationConfig("unifi")`). `pinStore` è obbligatorio: senza, ogni
- * sessione sarebbe un primo uso e il pin non proteggerebbe niente.
+ * Client per un controller UniFi (`cfg`: indirizzo, tipo, site, credenziali).
+ * `pinStore` è obbligatorio: senza, ogni sessione sarebbe un primo uso e il
+ * pin non proteggerebbe niente.
  */
 export function createUnifiClient(
   cfg: UnifiClientConfig,
@@ -559,22 +649,39 @@ export function createUnifiClient(
   const loginTimeoutMs = opts.loginTimeoutMs ?? 15_000;
   const readTimeoutMs = opts.readTimeoutMs ?? 60_000;
 
-  async function readDevices(): Promise<{ devices: UnifiDevice[]; pin: string | null; recorded: boolean }> {
-    if (kind !== "self_hosted") {
-      throw new UnifiApiError(
-        "not_implemented",
-        `Backend «${kind}» non ancora implementato: per ora si legge solo il controller self-hosted`,
-      );
+  interface ReadResult {
+    devices: UnifiDevice[];
+    sites: UnifiSite[] | null;
+    pin: string | null;
+    recorded: boolean;
+  }
+
+  /** Primo uso riuscito: si salva l'impronta (vedi in testa). */
+  function commitPin(base: URL, pins: UnifiPinSession): boolean {
+    // Primo uso (si registra solo partendo da nessuna impronta): si salva solo
+    // se nel frattempo nessuno ne ha fissata una (prova riuscita, accetta) e se
+    // la configurazione punta ancora a questo controller. Confronto e
+    // scrittura sono sincroni: niente può infilarsi in mezzo.
+    if (pins.recorded && pinStore.get() === null && (pinStore.matchesOrigin?.(base.origin) ?? true)) {
+      pinStore.set(pins.recorded);
+      return true;
     }
+    return false;
+  }
+
+  async function readSelfHosted(withSites: boolean): Promise<ReadResult> {
     const { base, site, username, password } = validateSelfHosted(cfg);
     const pins: UnifiPinSession = { expected: pinStore.get(), recorded: null };
     const send = readOnly(factory(base, pins));
 
     const session = await login(send, username, password, loginTimeoutMs);
+    const auth: ReadAuth = { prefix: "", headers: sessionHeaders(session), apiKey: false };
     let devices: UnifiDevice[] = [];
+    let sites: UnifiSite[] | null = null;
     let failure: UnifiApiError | null = null;
     try {
-      devices = await statDevice(send, session, site, readTimeoutMs);
+      devices = await statDevice(send, auth, site, readTimeoutMs);
+      if (withSites) sites = await selfSites(send, auth, loginTimeoutMs);
     } catch (e) {
       failure = toUnifiError(e);
     }
@@ -588,29 +695,42 @@ export function createUnifiClient(
     }
     if (failure) throw failure;
     if (logoutFailure?.reason === "cert") throw logoutFailure;
+    const recorded = commitPin(base, pins);
+    return { devices, sites, pin: pins.expected, recorded };
+  }
 
-    // Primo uso (si registra solo partendo da nessuna impronta): si salva solo
-    // se nel frattempo nessuno ne ha fissata una (prova riuscita, accetta) e se
-    // la configurazione punta ancora a questo controller. Confronto e
-    // scrittura sono sincroni: niente può infilarsi in mezzo.
-    let recorded = false;
-    if (
-      pins.recorded &&
-      pinStore.get() === null &&
-      (pinStore.matchesOrigin?.(base.origin) ?? true)
-    ) {
-      pinStore.set(pins.recorded);
-      recorded = true;
-    }
-    return { devices, pin: pins.expected, recorded };
+  async function readUnifiOs(withSites: boolean): Promise<ReadResult> {
+    const { base, site, apiKey } = validateUnifiOs(cfg);
+    const pins: UnifiPinSession = { expected: pinStore.get(), recorded: null };
+    const send = readOnly(factory(base, pins));
+    const auth: ReadAuth = { prefix: UNIFI_OS_PREFIX, headers: { "X-API-KEY": apiKey }, apiKey: true };
+    const devices = await statDevice(send, auth, site, readTimeoutMs);
+    const sites = withSites ? await selfSites(send, auth, loginTimeoutMs) : null;
+    const recorded = commitPin(base, pins);
+    return { devices, sites, pin: pins.expected, recorded };
+  }
+
+  async function read(withSites: boolean): Promise<ReadResult> {
+    if (kind === "self_hosted") return readSelfHosted(withSites);
+    if (kind === "udm") return readUnifiOs(withSites);
+    throw new UnifiApiError(
+      "not_implemented",
+      `Backend «${kind}» non ancora implementato: si leggono il controller self-hosted e le console UniFi OS`,
+    );
   }
 
   return {
     kind,
     async probe() {
       try {
-        const r = await readDevices();
-        return { ok: true, devices: r.devices.length, certPin: r.pin, certPinRecorded: r.recorded };
+        const r = await read(true);
+        return {
+          ok: true,
+          devices: r.devices.length,
+          certPin: r.pin,
+          certPinRecorded: r.recorded,
+          ...(r.sites ? { sites: r.sites } : {}),
+        };
       } catch (e) {
         const err = toUnifiError(e);
         return {
@@ -624,7 +744,7 @@ export function createUnifiClient(
     },
     async listDevices() {
       try {
-        return (await readDevices()).devices;
+        return (await read(false)).devices;
       } catch (e) {
         throw toUnifiError(e);
       }

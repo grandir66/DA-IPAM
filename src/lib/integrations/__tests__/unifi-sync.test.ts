@@ -13,11 +13,9 @@ import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
 import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
-import { getIntegrationConfig, setIntegrationConfig, unifiCertPinStore } from "../config";
-import { checkPresentedPin, UnifiApiError, type UnifiHttpRequest, type UnifiTransportFactory } from "../unifi-api";
+import { UnifiApiError } from "../unifi-api";
 import { parseStatDeviceResponse, parseUnifiDevice, type UnifiDevice } from "../unifi-device";
 import {
-  probeUnifiController,
   syncUnifiForTenant,
   unifiSyncFailure,
   type UnifiDeviceSource,
@@ -122,14 +120,6 @@ function inserisciHost(networkId: number, ip: string, mac: string | null): numbe
 beforeEach(() => {
   deleteTenantDatabase(T);
   deleteTenantDatabase(T_ALTRO);
-  setIntegrationConfig("unifi", {
-    mode: "external",
-    url: "https://10.99.0.1:8443",
-    kind: "self_hosted",
-    site: "default",
-    username: "map",
-    password: "segreto-di-prova",
-  });
 });
 
 after(() => {
@@ -516,12 +506,10 @@ test("controller che non restituisce nessun apparato: niente da scrivere, lo dic
   assert.equal(conta(T, "switch_ports"), 39);
 });
 
-test("integrazione spenta: il controller non si legge e non si scrive niente", async () => {
-  setIntegrationConfig("unifi", { mode: "disabled" });
-  const s = sorgente(risposta());
-  const r = await withTenant(T, () => syncUnifiForTenant({ source: s }));
-  assert.equal(s.chiamate, 0);
-  assert.match(r.errors.join("\n"), /disattivata/);
+test("senza controller indicato non si legge niente e non si scrive niente (la configurazione unica dell'hub non si usa più)", async () => {
+  const r = await withTenant(T, () => syncUnifiForTenant());
+  assert.match(r.errors.join("\n"), /Nessun controller indicato/);
+  assert.equal(r.total, 0);
   assert.equal(conta(T, "network_devices"), 0);
 });
 
@@ -594,7 +582,7 @@ test("esito: apparati letti ma nessuno scritto per errore è un fallimento, senz
   assert.doesNotMatch(motivo, /SW-1|SW-2|10\.99\./);
 });
 
-test("esito sulla sync vera: controller in errore e integrazione spenta falliscono, il giro buono no", async () => {
+test("esito sulla sync vera: controller in errore e nessun controller falliscono, il giro buono no", async () => {
   const buono = await sync();
   assert.equal(unifiSyncFailure(buono), null);
 
@@ -609,86 +597,15 @@ test("esito sulla sync vera: controller in errore e integrazione spenta fallisco
   );
   assert.match(unifiSyncFailure(guasto) ?? "", /non raggiungibile/);
 
-  setIntegrationConfig("unifi", { mode: "disabled" });
-  const spenta = await withTenant(T, () => syncUnifiForTenant({ source: sorgente(risposta()) }));
-  assert.match(unifiSyncFailure(spenta) ?? "", /disattivata/);
+  const senza = await withTenant(T, () => syncUnifiForTenant());
+  assert.match(unifiSyncFailure(senza) ?? "", /Nessun controller/);
 });
 
-// ── Test di connessione (rotta GET test-connection) ──────────────────────────
+// Le prove del test di connessione stanno con i controller:
+// src/lib/controllers/__tests__/service.test.ts.
 
-const STAT_BODY = fs.readFileSync(FIXTURE, "utf-8");
-
-function controllerFinto(pin = "sha256/CONTROLLER-PROVA="): { factory: UnifiTransportFactory; calls: UnifiHttpRequest[] } {
-  const calls: UnifiHttpRequest[] = [];
-  const factory: UnifiTransportFactory = (_base, pins) => async (req) => {
-    checkPresentedPin(pins, pin);
-    calls.push(req);
-    if (req.path === "/api/login") {
-      return {
-        status: 200,
-        headers: { "set-cookie": ["unifises=S1; Path=/; Secure; HttpOnly", "csrf_token=C1; Path=/; Secure"] },
-        body: JSON.stringify({ meta: { rc: "ok" }, data: [] }),
-      };
-    }
-    if (req.path === "/api/logout") return { status: 200, headers: {}, body: JSON.stringify({ meta: { rc: "ok" }, data: [] }) };
-    return { status: 200, headers: {}, body: STAT_BODY };
-  };
-  return { factory, calls };
-}
-
-test("test di connessione: legge con la configurazione salvata e al primo uso fissa l'impronta (scrive configurazione)", async () => {
-  unifiCertPinStore.clear();
-  const { factory, calls } = controllerFinto();
-  const r = await probeUnifiController({ transportFactory: factory });
-  assert.deepEqual(r, { ok: true, devices: 4, certPin: "sha256/CONTROLLER-PROVA=", certPinRecorded: true });
-  assert.deepEqual(
-    calls.map((c) => `${c.method} ${c.path}`),
-    ["POST /api/login", "GET /api/s/default/stat/device", "POST /api/logout"],
-  );
-  assert.equal(JSON.parse(calls[0].body ?? "{}").password, "segreto-di-prova");
-  // L'impronta ora sta nella configurazione dell'hub: per questo la rotta è admin.
-  assert.equal(unifiCertPinStore.get(), "sha256/CONTROLLER-PROVA=");
-  assert.equal(getIntegrationConfig("unifi").certPin, "sha256/CONTROLLER-PROVA=");
-  // Il resoconto non porta mai la password al browser.
-  assert.doesNotMatch(JSON.stringify(r), /segreto-di-prova/);
-});
-
-test("test di connessione: un certificato diverso da quello fissato è un errore esplicito, l'impronta resta", async () => {
-  unifiCertPinStore.clear();
-  await probeUnifiController({ transportFactory: controllerFinto("sha256/PRIMO=").factory });
-  const r = await probeUnifiController({ transportFactory: controllerFinto("sha256/SECONDO=").factory });
-  assert.equal(r.ok, false);
-  if (!r.ok) {
-    assert.equal(r.reason, "cert");
-    assert.equal(r.presentedPin, "sha256/SECONDO=");
-    assert.equal(r.expectedPin, "sha256/PRIMO=");
-  }
-  assert.equal(unifiCertPinStore.get(), "sha256/PRIMO=");
-});
-
-test("test di connessione: funziona anche a integrazione spenta (si prova prima di accendere), senza scrivere nel tenant", async () => {
-  unifiCertPinStore.clear();
-  setIntegrationConfig("unifi", { mode: "disabled" });
-  const r = await probeUnifiController({ transportFactory: controllerFinto().factory });
-  assert.equal(r.ok, true);
-  assert.equal(conta(T, "network_devices"), 0);
-});
-
-test("test di connessione: senza indirizzo non parte nessuna richiesta e lo dice", async () => {
-  setIntegrationConfig("unifi", { url: "" });
-  const { factory, calls } = controllerFinto();
-  const r = await probeUnifiController({ transportFactory: factory });
-  assert.equal(r.ok, false);
-  if (!r.ok) {
-    assert.equal(r.reason, "config");
-    assert.match(r.message, /non configurato/);
-  }
-  assert.equal(calls.length, 0);
-});
-
-test("il job unifi_sync non nasce da solo: né la configurazione né la sync lo creano", async () => {
+test("il job unifi_sync non nasce da solo: la sync non lo crea", async () => {
   await sync();
-  setIntegrationConfig("unifi", { mode: "external" });
   await sync();
   assert.equal(conta(T, "scheduled_jobs", "job_type = 'unifi_sync'"), 0);
   assert.equal(conta(T_ALTRO, "scheduled_jobs", "job_type = 'unifi_sync'"), 0);

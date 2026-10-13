@@ -395,26 +395,14 @@ async function probeNetServices(tenantCode: string, probedAt: string): Promise<M
   });
 }
 
-// ── Probe: controller UniFi ──────────────────────────────────────────────────
+// ── Probe: controller di rete (UniFi) ────────────────────────────────────────
 /**
- * La sonda è il test di connessione (correzione 8 del piano UniFi), ma non
- * fissa mai il certificato, non logga sul controller a ogni apertura della
- * dashboard e ha un tetto di tempo: dettagli in `readUnifiHealth`. Spenta =
- * «Non configurato» (configured=false), non un errore. L'ultimo giro riuscito
- * è il `last_run` del job `unifi_sync` del tenant, se c'è.
+ * Non contatta i controller (ADR 0007): legge l'esito dell'ultima lettura di
+ * ciascuno, dettagli in `readUnifiHealth`. Nessun controller acceso =
+ * «Non configurato» (configured=false), non un errore.
  */
-async function probeUnifi(tenantCode: string, probedAt: string, force: boolean): Promise<ModuleHealth> {
-  const lastSyncAt =
-    (
-      getTenantDb(tenantCode)
-        .prepare(
-          `SELECT last_run FROM scheduled_jobs
-            WHERE job_type = 'unifi_sync' AND network_id IS NULL
-            ORDER BY last_run DESC LIMIT 1`,
-        )
-        .get() as { last_run: string | null } | undefined
-    )?.last_run ?? null;
-  const r = await readUnifiHealth({ force, timeoutMs: PROBE_TIMEOUT_MS });
+async function probeUnifi(probedAt: string): Promise<ModuleHealth> {
+  const r = readUnifiHealth();
   return mk("unifi", probedAt, {
     reachable: r.reachable,
     authOk: r.authOk,
@@ -422,7 +410,7 @@ async function probeUnifi(tenantCode: string, probedAt: string, force: boolean):
     detail: r.detail,
     repairAction: r.repair,
     configured: r.configured,
-    lastSyncAt,
+    lastSyncAt: r.lastSyncAt,
   });
 }
 
@@ -547,7 +535,7 @@ export const PROBED_MODULE_KEYS: readonly ModuleKey[] = [
   "appliance",
 ];
 
-async function compute(tenantCode: string, forceUnifi: boolean, only?: ModuleKey): Promise<ModuleHealth[]> {
+async function compute(tenantCode: string, only?: ModuleKey): Promise<ModuleHealth[]> {
   const probedAt = new Date().toISOString();
   // I probe per-modulo sono indipendenti → in parallelo (ognuno bounded).
   // allSettled (NON all): se un probe RIGETTA (es. lettura DB fuori try su
@@ -561,13 +549,12 @@ async function compute(tenantCode: string, forceUnifi: boolean, only?: ModuleKey
     ["network_services", () => probeNetServices(tenantCode, probedAt)],
     ["patch_management", () => probePatch(tenantCode, probedAt)],
     ["meshcentral", () => withTenant(tenantCode, () => probeMeshcentral(tenantCode, probedAt))],
-    ["unifi", () => withTenant(tenantCode, () => probeUnifi(tenantCode, probedAt, forceUnifi))],
+    ["unifi", () => withTenant(tenantCode, () => probeUnifi(probedAt))],
     ["appliance", () => probeAppliance(probedAt)],
   ];
   // `only`: parte SOLO la sonda chiesta. La notifica disco dell'appliance
-  // (`only: "appliance"` ogni 30 minuti) non deve diventare un login sul
-  // controller UniFi (il suo risultato tenuto dura 5 minuti, quindi a ogni
-  // scatto sarebbe scaduto) né una raffica di sonde di rete sugli altri moduli.
+  // (`only: "appliance"` ogni 30 minuti) non deve diventare una raffica di
+  // sonde di rete sugli altri moduli.
   const tasks: Array<[ModuleKey, Promise<ModuleHealth>]> = all
     .filter(([key]) => !only || key === only)
     .map(([key, run]) => [key, run()]);
@@ -614,8 +601,8 @@ export async function getModulesHealth(
   }
   // Con `only` parte solo quella sonda (vedi `compute`): la notifica disco
   // dell'appliance forza `only: "appliance"` ogni 30 minuti e non deve
-  // diventare un login sul controller UniFi.
-  const value = await compute(tenantCode, !!opts?.force, opts?.only);
+  // diventare una raffica di sonde sugli altri moduli.
+  const value = await compute(tenantCode, opts?.only);
   if (!opts?.only) {
     cache.set(tenantCode, { value, expiresAt: now + TTL_MS });
     return value;

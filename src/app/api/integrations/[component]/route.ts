@@ -7,7 +7,19 @@ import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-serv
 import type { IntegrationComponent } from "@/lib/integrations/types";
 import { z } from "zod";
 
-const VALID_COMPONENTS: IntegrationComponent[] = ["librenms", "loki", "graylog", "unifi"];
+const VALID_COMPONENTS: IntegrationComponent[] = ["librenms", "loki", "graylog"];
+
+/**
+ * UniFi non passa più da qui (ADR 0007): i controller sono righe del DB del
+ * cliente, gestite da /api/controllers. Scrivere qui la configurazione unica
+ * dell'hub non farebbe niente, e lo si dice invece di accettarla in silenzio.
+ */
+function unifiMoved(): NextResponse {
+  return NextResponse.json(
+    { error: "I controller UniFi si gestiscono da Rete → Controller di rete (/api/controllers)" },
+    { status: 410 },
+  );
+}
 
 function parseComponent(raw: string): IntegrationComponent | null {
   return VALID_COMPONENTS.includes(raw as IntegrationComponent)
@@ -23,21 +35,11 @@ export async function GET(
   if (isAuthError(session)) return session;
 
   const { component: raw } = await params;
+  if (raw === "unifi") return unifiMoved();
   const component = parseComponent(raw);
   if (!component) return NextResponse.json({ error: "Componente non valido" }, { status: 400 });
 
   const cfg = getIntegrationConfig(component);
-
-  if (component === "unifi") {
-    // Le credenziali del controller non tornano al browser, nemmeno all'admin
-    // (la UnifiCard lavora coi soli flag «impostato»).
-    return NextResponse.json({
-      component,
-      config: mascheraConfigIntegrazione(cfg, false),
-      browserUrl: cfg.browserUrl ?? "",
-      containerStatus: null,
-    });
-  }
 
   let containerStatus = null;
   if (cfg.mode === "managed" && cfg.containerName) {
@@ -61,14 +63,6 @@ const ConfigSchema = z.object({
   password: z.string().optional(),
   containerName: z.string().optional(),
   uiUrl: z.string().optional(),
-  // solo unifi
-  kind: z.enum(["self_hosted", "udm", "cloud"]).optional(),
-  site: z
-    .string()
-    .trim()
-    .max(64, "Nome del site troppo lungo")
-    .regex(/^[A-Za-z0-9_-]*$/, "Nome del site non valido: solo lettere, cifre, - e _")
-    .optional(),
 });
 
 export async function PUT(
@@ -79,6 +73,7 @@ export async function PUT(
   if (isAuthError(authError)) return authError;
 
   const { component: raw } = await params;
+  if (raw === "unifi") return unifiMoved();
   const component = parseComponent(raw);
   if (!component) return NextResponse.json({ error: "Componente non valido" }, { status: 400 });
 
@@ -92,22 +87,6 @@ export async function PUT(
   const parsed = ConfigSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dati non validi" }, { status: 400 });
-  }
-
-  if (component === "unifi") {
-    if (parsed.data.mode === "managed") {
-      return NextResponse.json(
-        { error: "UniFi non ha una modalità gestita: usare «external» o «disabled»" },
-        { status: 400 },
-      );
-    }
-    const url = parsed.data.url?.trim();
-    if (url && !/^https:\/\/[^/\s]+/i.test(url)) {
-      return NextResponse.json(
-        { error: "L'indirizzo del controller deve iniziare con https:// (es. https://192.168.1.10:8443)" },
-        { status: 400 },
-      );
-    }
   }
 
   setIntegrationConfig(component, parsed.data);

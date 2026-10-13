@@ -1320,6 +1320,57 @@ CREATE TABLE IF NOT EXISTS topology_position (
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(view, node_id)
 );
+
+-- Controller di rete (UniFi, poi Omada): uno per riga, nel DB del cliente.
+-- Prima la configurazione era una sola, nelle impostazioni globali dell'hub
+-- (integration_unifi_*): vedi ADR 0007. I segreti sono cifrati come nell'hub
+-- (AES-GCM iv:tag:enc). vendor/kind senza CHECK: si validano in TypeScript
+-- (src/lib/controllers/types.ts), così Omada non chiede un rebuild.
+CREATE TABLE IF NOT EXISTS network_controllers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  vendor TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  url TEXT NOT NULL,
+  site TEXT NOT NULL DEFAULT 'default',
+  username TEXT NOT NULL DEFAULT '',
+  password_enc TEXT NOT NULL DEFAULT '',
+  api_key_enc TEXT NOT NULL DEFAULT '',
+  cert_pin TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_run_at TEXT,
+  last_ok INTEGER,
+  last_message TEXT,
+  last_devices INTEGER,
+  last_ports INTEGER,
+  last_neighbors INTEGER,
+  origin TEXT NOT NULL DEFAULT 'manual',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Storico delle letture di un controller: le ultime 50 per controller
+-- (la potatura la fa recordControllerRun, non una buona intenzione).
+CREATE TABLE IF NOT EXISTS network_controller_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  controller_id INTEGER NOT NULL REFERENCES network_controllers(id) ON DELETE CASCADE,
+  started_at TEXT NOT NULL,
+  finished_at TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  triggered_by TEXT,
+  ok INTEGER NOT NULL,
+  total INTEGER NOT NULL DEFAULT 0,
+  added INTEGER NOT NULL DEFAULT 0,
+  updated INTEGER NOT NULL DEFAULT 0,
+  skipped INTEGER NOT NULL DEFAULT 0,
+  ports INTEGER NOT NULL DEFAULT 0,
+  neighbors INTEGER NOT NULL DEFAULT 0,
+  message TEXT,
+  errors_json TEXT NOT NULL DEFAULT '[]',
+  skipped_reasons_json TEXT NOT NULL DEFAULT '[]',
+  offline_json TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_controller_runs_controller ON network_controller_runs(controller_id, id);
 `;
 
 export const TENANT_INDEXES_SQL = `

@@ -29,6 +29,7 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "proxmox_hosts", scope: "tenant", tier: "config" },
   { table: "mdm_config", scope: "tenant", tier: "config", secretColumns: ["password_encrypted"] },
   { table: "edge_scan_schedules", scope: "tenant", tier: "config" },
+  { table: "network_controllers", scope: "tenant", tier: "config", secretColumns: ["password_enc", "api_key_enc"] },
   // --- asset (default ON) ---
   { table: "hosts", scope: "tenant", tier: "asset" },
   { table: "mobile_devices", scope: "tenant", tier: "asset" },
@@ -41,6 +42,7 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "license_seats", scope: "tenant", tier: "asset" },
   { table: "inventory_audit_log", scope: "tenant", tier: "asset" },
   // --- history (default OFF) ---
+  { table: "network_controller_runs", scope: "tenant", tier: "history" },
   { table: "scan_history", scope: "tenant", tier: "history" },
   { table: "status_history", scope: "tenant", tier: "history" },
   { table: "software_scans", scope: "tenant", tier: "history" },

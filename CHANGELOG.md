@@ -6,6 +6,50 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-10-13
 
+### Aggiunte
+
+- **Controller di rete: più controller per cliente, in una pagina propria
+  (Rete → Controller di rete, ADR 0007).** Prima c'era un solo controller UniFi,
+  configurato nelle impostazioni globali dell'hub da una card in Impostazioni →
+  Moduli: non bastava per la rete Domarc (una console UniFi OS e un Cloud Key)
+  né per i clienti con più impianti, e sull'hub non si sapeva di quale cliente
+  fosse. Ora ogni controller è una riga nel database del cliente, con stato,
+  ultima lettura, apparati, porte e vicini letti, pianificazione (spenta di
+  default) e lo storico delle ultime letture (le ultime 50, potate dall'app).
+  «Prova» si fa prima di salvare; «Sincronizza ora» chiede conferma perché
+  scrive. Omada si vede nel modulo ma non si può ancora scegliere: si accende
+  dopo la misura su un controller vero.
+- **Console UniFi OS (UDM, UDM Pro/Beast, Cloud Key Gen2+) lette con la chiave
+  API** creata in Network → Impostazioni → Control Plane → Integrazioni. Stessa
+  lettura in sola lettura del self-hosted (apparati, porte, vicini LLDP); la
+  chiave parte solo dopo la verifica del certificato.
+
+### Modifiche
+
+- **La configurazione UniFi esistente passa da sola nella tabella dei
+  controller**, al primo accesso dopo l'aggiornamento: una volta per cliente,
+  con la password copiata cifrata com'è e il certificato già fissato. Solo
+  dove l'hub ha un cliente attivo (DTS sì; con più clienti non si indovina di
+  chi sia, e lo si scrive nel log). Le impostazioni vecchie restano nell'hub,
+  non più lette, per poter tornare indietro. Misurato sulla copia del database
+  di DTS: un controller creato, nessuna tabella esistente cambiata.
+- **«Stato moduli» non fa più login sui controller**: legge l'esito
+  dell'ultima lettura di ciascuno. Prima ogni apertura della dashboard (ogni
+  cinque minuti) era un accesso nel registro del controller del cliente.
+  Conseguenza visibile: dopo l'aggiornamento il controller risulta «mai letto»
+  finché non si lancia una lettura.
+- La card «Controller UniFi» delle Impostazioni e le rotte
+  `/api/integrations/unifi/*` sono tolte; `/api/integrations/unifi` risponde
+  410 con l'indirizzo nuovo. Un job `unifi_sync` senza controller (nato prima)
+  fallisce col motivo invece di indovinare quale controller leggere.
+
+### Correzioni
+
+- Dockerfile e `hub-install.sh`: aggiunti `openssl`, `net-tools` e `krb5-user`,
+  mancanti per la lettura ARP, i certificati e Kerberos. Erano su un ramo mai
+  confluito in `dev` (`claude/project-thread-7swirj`), cancellato nella
+  pulizia dei rami del 13/10.
+
 ### Modifiche
 
 - **Un job di scansione dura quanto il suo giro (INV-1, T3-17).** I job

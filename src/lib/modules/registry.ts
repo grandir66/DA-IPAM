@@ -22,7 +22,8 @@ import { listCredentials } from "@/lib/credentials-vault";
 import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
 import { resolveLibreNMSOperatorUrl } from "@/lib/integrations/librenms-proxy-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
-import { isUnifiConfigured, unifiConfigGap } from "@/lib/integrations/unifi-health";
+import { listControllerViews } from "@/lib/controllers/service";
+import { withTenant } from "@/lib/db-tenant";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { getNetServicesState } from "@/lib/network-services/feature";
 import { getFeatureStatus } from "@/lib/patch/feature";
@@ -203,10 +204,10 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
     label: "Controller UniFi",
     category: "network",
     description:
-      "Switch e access point letti dal controller UniFi in sola lettura: apparati, porte e vicini LLDP nella mappa di rete.",
+      "Switch e access point letti dai controller UniFi in sola lettura: apparati, porte e vicini LLDP nella mappa di rete.",
     icon: "Network",
     access: "native",
-    configHref: "/settings?tab=moduli#module-unifi",
+    configHref: "/controllers",
   },
   {
     // Non è un'integrazione ma la macchina che le ospita tutte: disco root e
@@ -415,25 +416,31 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
     });
   }
 
-  // ── unifi (hub settings integration_unifi_*) — dati nativi (/topology) + console del controller ──
+  // ── unifi: controller di rete del tenant (ADR 0007) — dati nativi (/topology) + console del controller ──
   {
-    const cfg = getIntegrationConfig("unifi");
-    const installed = cfg.mode === "external";
-    const configured = isUnifiConfigured(cfg);
-    const gap = unifiConfigGap(cfg);
+    let controllers: ReturnType<typeof listControllerViews> = [];
+    let readError: string | null = null;
+    try {
+      controllers = withTenant(tenantCode, () => listControllerViews());
+    } catch (e) {
+      readError = e instanceof Error ? e.message : String(e);
+    }
+    const on = controllers.filter((c) => c.enabled && c.kind !== "omada");
     out.push({
       ...desc("unifi"),
-      installed,
-      configured,
-      enabled: configured,
+      installed: controllers.length > 0,
+      configured: on.length > 0,
+      enabled: on.length > 0,
       uiUrl: "/topology",
       uiIsInternal: true,
-      externalUiUrl: cfg.browserUrl || null,
-      note: !installed
-        ? "Non configurato. Inserisci indirizzo e credenziali del controller nella card Controller UniFi."
-        : gap
-          ? `Controller attivato ma ${gap}: completa la card Controller UniFi.`
-          : undefined,
+      externalUiUrl: on[0]?.url ?? null,
+      note: readError
+        ? `Controller non leggibili dal database: ${readError}`
+        : controllers.length === 0
+          ? "Nessun controller. Aggiungilo da Rete → Controller di rete."
+          : on.length === 0
+            ? "Controller presenti ma spenti: accendili da Rete → Controller di rete."
+            : undefined,
     });
   }
 

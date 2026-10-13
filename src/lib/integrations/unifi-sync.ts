@@ -68,8 +68,6 @@ import {
 } from "@/lib/db-tenant";
 import { normalizeMacForStorage } from "@/lib/utils";
 import type { NetworkDevice } from "@/types";
-import { getIntegrationConfig, unifiCertPinStore } from "./config";
-import { createUnifiClient, type UnifiClientOptions, type UnifiProbeResult } from "./unifi-api";
 import type { UnifiDevice } from "./unifi-device";
 import {
   buildUnifiMacIndex,
@@ -87,7 +85,12 @@ export interface UnifiDeviceSource {
 }
 
 export interface UnifiSyncOptions {
-  /** Di default il client del controller dalla configurazione `integration_unifi_*`. */
+  /**
+   * Il client del controller da leggere (`src/lib/controllers/service.ts`, che
+   * lo costruisce dalla riga di `network_controllers`), o una fixture nelle
+   * prove. Senza sorgente non si legge niente: la configurazione unica
+   * dell'hub (`integration_unifi_*`) non si usa più (ADR 0007).
+   */
   source?: UnifiDeviceSource;
 }
 
@@ -445,16 +448,9 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
     return result;
   }
 
-  let source: UnifiDeviceSource;
-  try {
-    const cfg = getIntegrationConfig("unifi");
-    if (cfg.mode !== "external") {
-      result.errors.push("Integrazione UniFi disattivata: nessuna sincronizzazione");
-      return result;
-    }
-    source = opts.source ?? createUnifiClient(cfg, unifiCertPinStore);
-  } catch (e) {
-    result.errors.push(`Configurazione UniFi non leggibile: ${errorMessage(e)}`);
+  const source = opts.source;
+  if (!source) {
+    result.errors.push("Nessun controller indicato: la lettura parte dalla pagina Controller di rete");
     return result;
   }
 
@@ -505,22 +501,4 @@ export function unifiSyncFailure(r: UnifiSyncResult): string | null {
   if (r.total === 0) return r.errors.join("; ");
   if (r.added + r.updated > 0) return null;
   return `nessuno dei ${r.total} apparati del controller è stato scritto (${r.errors.length} errori: il dettaglio è nel resoconto della sync manuale)`;
-}
-
-/**
- * Test di connessione col controller della configurazione salvata
- * (`integration_unifi_*`): login, lettura di stat/device, logout. Non scrive
- * nel tenant; al primo collegamento riuscito fissa l'impronta del certificato
- * nella configurazione dell'hub (`unifiCertPinStore`). Gira anche a
- * integrazione spenta: l'amministratore prova il collegamento prima di
- * accenderla. Non lancia. `opts` serve alle prove (trasporto finto).
- */
-export async function probeUnifiController(opts: UnifiClientOptions = {}): Promise<UnifiProbeResult> {
-  let cfg: ReturnType<typeof getIntegrationConfig>;
-  try {
-    cfg = getIntegrationConfig("unifi");
-  } catch (e) {
-    return { ok: false, reason: "config", message: `Configurazione UniFi non leggibile: ${errorMessage(e)}` };
-  }
-  return createUnifiClient(cfg, unifiCertPinStore, opts).probe();
 }

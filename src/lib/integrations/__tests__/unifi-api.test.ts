@@ -151,6 +151,7 @@ function fakeController(o: FakeOpts = {}): { factory: UnifiTransportFactory; cal
     calls.push(req);
     if (req.path === "/api/login") return o.login ?? LOGIN_OK;
     if (req.path === "/api/logout") return json(200, { meta: { rc: "ok" }, data: [] });
+    if (req.path === "/api/self/sites") return json(200, { meta: { rc: "ok" }, data: [{ name: "3oumjv0i", desc: "Sede" }] });
     o.duranteLettura?.();
     return o.stat ?? { status: 200, headers: {}, body: FIXTURE_BODY };
   };
@@ -185,9 +186,10 @@ test("probe riuscito: numero di apparati e pin registrato al primo uso, poi solo
   const store = memoryStore();
   const { factory } = fakeController();
   const first = await createUnifiClient(CFG, store, { transportFactory: factory }).probe();
-  assert.deepEqual(first, { ok: true, devices: 4, certPin: "sha256/CONTROLLER=", certPinRecorded: true });
+  const sites = [{ name: "3oumjv0i", desc: "Sede" }];
+  assert.deepEqual(first, { ok: true, devices: 4, certPin: "sha256/CONTROLLER=", certPinRecorded: true, sites });
   const second = await createUnifiClient(CFG, store, { transportFactory: factory }).probe();
-  assert.deepEqual(second, { ok: true, devices: 4, certPin: "sha256/CONTROLLER=", certPinRecorded: false });
+  assert.deepEqual(second, { ok: true, devices: 4, certPin: "sha256/CONTROLLER=", certPinRecorded: false, sites });
   assert.equal(store.writes, 1);
 });
 
@@ -271,8 +273,8 @@ test("certificato cambiato: errore esplicito, nessuna richiesta partita, pin vec
   assert.equal(store.value, "sha256/VECCHIO=");
 });
 
-test("backend udm e cloud: «non ancora implementato», nessuna richiesta", async () => {
-  for (const kind of ["udm", "cloud"] as const) {
+test("backend cloud: «non ancora implementato», nessuna richiesta (udm si legge: controllers/__tests__/service.test.ts)", async () => {
+  for (const kind of ["cloud"] as const) {
     const { factory, calls } = fakeController();
     const client = createUnifiClient({ ...CFG, kind }, memoryStore(), { transportFactory: factory });
     const r = await client.probe();
@@ -406,7 +408,9 @@ test("TLS vero: primo uso fissa il pin, poi combacia; un altro certificato è ri
   assert.equal(first.ok && first.devices, 4);
   assert.equal(first.ok && first.certPinRecorded, true);
   assert.match(store.value ?? "", /^sha256\/[A-Za-z0-9+/]+=*$/);
-  assert.deepEqual(a.seen, ["POST /api/login", "GET /api/s/default/stat/device", "POST /api/logout"]);
+  // L'elenco dei site è facoltativo: qui risponde 404 e la prova riesce lo stesso.
+  assert.deepEqual(a.seen, ["POST /api/login", "GET /api/s/default/stat/device", "GET /api/self/sites", "POST /api/logout"]);
+  assert.equal(first.ok && first.sites, undefined);
   assert.equal(JSON.parse(a.loginBodies[0]).password, PASSWORD);
 
   const pinA = store.value;

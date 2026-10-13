@@ -67,7 +67,7 @@ import {
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
 // db-tenant, che sotto tsx non va mai caricato con `await import()` (ADR 0002).
-import { syncUnifiForTenant, unifiSyncFailure } from "@/lib/integrations/unifi-sync";
+import { syncController } from "@/lib/controllers/service";
 // Statici per la stessa ragione: mesh-sync e feature importano db-tenant.
 import { syncMeshForTenant } from "@/lib/integrations/meshcentral/mesh-sync";
 import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
@@ -135,6 +135,17 @@ const ESEGUITO: EsitoRunJob = { esito: "eseguito" };
  * così lo scheduler lo conta fra i fallimenti e `last_run` segna la fine.
  * Su una rete già in scansione il giro non parte e l'esito è «saltato» (T3-18).
  */
+/** Il controller di un job unifi_sync (`config.controller_id`); null se manca o non è leggibile. */
+export function unifiJobControllerId(configStr: string | null | undefined): number | null {
+  try {
+    const v = (JSON.parse(configStr || "{}") as { controller_id?: unknown }).controller_id;
+    const n = Number(v);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
   // v0.2.642 audit perf MC3: SELECT WHERE id invece di full-scan + .find().
   const job = getScheduledJobById(jobId);
@@ -228,14 +239,19 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
       break;
     }
     case "unifi_sync": {
-      // Il job esiste solo se un amministratore l'ha creato: nessun seed.
-      const result = await syncUnifiForTenant();
-      const failure = unifiSyncFailure(result);
+      // Pianificazione di UN controller (ADR 0007): la crea la pagina Controller
+      // di rete, con config.controller_id. Un job senza controller (nato prima)
+      // non legge niente: lo si dice, invece di indovinare quale.
+      const controllerId = unifiJobControllerId(job.config);
+      if (controllerId === null) {
+        throw new Error("Job unifi_sync senza controller: la pianificazione si imposta dalla pagina Controller di rete");
+      }
+      const result = await syncController(controllerId, "schedule", null);
       // Niente letto o niente scritto: si lancia, così lo scheduler lo conta
       // fra i job falliti invece di dirlo completato.
-      if (failure) throw new Error(`Sync UniFi non riuscita: ${failure}`);
+      if (result.failure) throw new Error(`Sync UniFi non riuscita (controller #${controllerId}): ${result.failure}`);
       console.info(
-        `[Scheduler] unifi_sync: ${result.total} apparati dal controller, ${result.added} nuovi, ` +
+        `[Scheduler] unifi_sync #${controllerId}: ${result.total} apparati dal controller, ${result.added} nuovi, ` +
         `${result.updated} aggiornati, ${result.skipped} saltati, ${result.portsUpserted} porte, ` +
         `${result.neighborsUpserted} vicini, ${result.errors.length} avvisi`
       );

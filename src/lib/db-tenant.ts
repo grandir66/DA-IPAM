@@ -28,6 +28,7 @@ import { getActiveTenants, getHubDbPath, getSetting, getTenantByCode } from "./d
 import { buildStatusSeries, statusWindowStartMs, type StatusObservation, type StatusPoint } from "./status-over-time";
 import { registraRipiego } from "./db-maintenance/ripieghi";
 import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
+import type { ControllerRunTrigger, NetworkControllerRow } from "./controllers/types";
 
 import type {
   Network,
@@ -8325,4 +8326,194 @@ export function getTopologyData(): {
   }
 
   return { devices, hosts, neighbors, portsDown, libreStatus, anomalyBySeverity };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONTROLLER DI RETE (ADR 0007) — network_controllers, network_controller_runs
+// e le loro pianificazioni (scheduled_jobs di tipo unifi_sync con
+// config.controller_id). La logica (segreti, pin, sincronizzazione) sta in
+// src/lib/controllers/; qui solo letture e scritture.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Letture di un controller tenute nello storico: le più vecchie si potano a ogni scrittura. */
+export const CONTROLLER_RUNS_KEPT = 50;
+
+export function listNetworkControllers(): NetworkControllerRow[] {
+  return db().prepare("SELECT * FROM network_controllers ORDER BY name COLLATE NOCASE, id").all() as NetworkControllerRow[];
+}
+
+export function getNetworkController(id: number): NetworkControllerRow | undefined {
+  return db().prepare("SELECT * FROM network_controllers WHERE id = ?").get(id) as NetworkControllerRow | undefined;
+}
+
+export type NetworkControllerInsert = Pick<
+  NetworkControllerRow,
+  "name" | "vendor" | "kind" | "url" | "site" | "username" | "password_enc" | "api_key_enc" | "cert_pin" | "enabled" | "origin"
+>;
+
+export function insertNetworkController(input: NetworkControllerInsert): NetworkControllerRow {
+  const r = db()
+    .prepare(
+      `INSERT INTO network_controllers (name, vendor, kind, url, site, username, password_enc, api_key_enc, cert_pin, enabled, origin)
+       VALUES (@name, @vendor, @kind, @url, @site, @username, @password_enc, @api_key_enc, @cert_pin, @enabled, @origin)`,
+    )
+    .run(input);
+  const row = getNetworkController(Number(r.lastInsertRowid));
+  if (!row) throw new Error("controller appena inserito non trovato");
+  return row;
+}
+
+export type NetworkControllerPatch = Partial<
+  Pick<
+    NetworkControllerRow,
+    "name" | "kind" | "vendor" | "url" | "site" | "username" | "password_enc" | "api_key_enc" | "cert_pin" | "enabled"
+  >
+>;
+
+const CONTROLLER_PATCH_COLUMNS: ReadonlyArray<keyof NetworkControllerPatch> = [
+  "name", "kind", "vendor", "url", "site", "username", "password_enc", "api_key_enc", "cert_pin", "enabled",
+];
+
+export function updateNetworkController(id: number, patch: NetworkControllerPatch): NetworkControllerRow | undefined {
+  const cols = CONTROLLER_PATCH_COLUMNS.filter((c) => patch[c] !== undefined);
+  if (cols.length > 0) {
+    const set = cols.map((c) => `${c} = @${c}`).join(", ");
+    const params: Record<string, unknown> = { id };
+    for (const c of cols) params[c] = patch[c];
+    db().prepare(`UPDATE network_controllers SET ${set}, updated_at = datetime('now') WHERE id = @id`).run(params);
+  }
+  return getNetworkController(id);
+}
+
+/** Cancella il controller, le sue letture (cascade) e la sua pianificazione. Gli apparati letti restano. */
+export function deleteNetworkController(id: number): boolean {
+  return runInTenantTransaction(() => {
+    db()
+      .prepare("DELETE FROM scheduled_jobs WHERE job_type = 'unifi_sync' AND json_extract(config, '$.controller_id') = ?")
+      .run(id);
+    return db().prepare("DELETE FROM network_controllers WHERE id = ?").run(id).changes > 0;
+  });
+}
+
+export interface ControllerRunInsert {
+  controller_id: number;
+  started_at: string;
+  finished_at: string;
+  trigger: ControllerRunTrigger;
+  triggered_by: string | null;
+  ok: number;
+  total: number;
+  added: number;
+  updated: number;
+  skipped: number;
+  ports: number;
+  neighbors: number;
+  message: string | null;
+  errors_json: string;
+  skipped_reasons_json: string;
+  offline_json: string;
+}
+
+/**
+ * Registra una lettura, aggiorna il riepilogo sulla riga del controller e pota
+ * lo storico oltre `CONTROLLER_RUNS_KEPT`. Una lettura riuscita aggiorna anche
+ * i conteggi; una fallita lascia quelli dell'ultima riuscita.
+ */
+export function recordControllerRun(run: ControllerRunInsert): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    d.prepare(
+      `INSERT INTO network_controller_runs
+         (controller_id, started_at, finished_at, trigger, triggered_by, ok, total, added, updated, skipped,
+          ports, neighbors, message, errors_json, skipped_reasons_json, offline_json)
+       VALUES (@controller_id, @started_at, @finished_at, @trigger, @triggered_by, @ok, @total, @added, @updated, @skipped,
+          @ports, @neighbors, @message, @errors_json, @skipped_reasons_json, @offline_json)`,
+    ).run(run);
+    if (run.ok) {
+      d.prepare(
+        `UPDATE network_controllers
+            SET last_run_at = ?, last_ok = 1, last_message = ?, last_devices = ?, last_ports = ?, last_neighbors = ?
+          WHERE id = ?`,
+      ).run(run.finished_at, run.message, run.total, run.ports, run.neighbors, run.controller_id);
+    } else {
+      d.prepare("UPDATE network_controllers SET last_run_at = ?, last_ok = 0, last_message = ? WHERE id = ?").run(
+        run.finished_at,
+        run.message,
+        run.controller_id,
+      );
+    }
+    d.prepare(
+      `DELETE FROM network_controller_runs
+        WHERE controller_id = ?
+          AND id NOT IN (SELECT id FROM network_controller_runs WHERE controller_id = ? ORDER BY id DESC LIMIT ?)`,
+    ).run(run.controller_id, run.controller_id, CONTROLLER_RUNS_KEPT);
+  });
+}
+
+export type ControllerRunRow = ControllerRunInsert & { id: number };
+
+export function listControllerRuns(controllerId: number, limit = 10): ControllerRunRow[] {
+  return db()
+    .prepare("SELECT * FROM network_controller_runs WHERE controller_id = ? ORDER BY id DESC LIMIT ?")
+    .all(controllerId, Math.max(1, Math.min(limit, CONTROLLER_RUNS_KEPT))) as ControllerRunRow[];
+}
+
+export interface ControllerScheduleRow {
+  job_id: number;
+  controller_id: number | null;
+  interval_minutes: number;
+  enabled: number;
+}
+
+/** Tutti i job unifi_sync del tenant, col controller a cui puntano (null = job vecchio, senza controller). */
+export function listControllerScheduleJobs(): ControllerScheduleRow[] {
+  return db()
+    .prepare(
+      `SELECT id AS job_id, json_extract(config, '$.controller_id') AS controller_id, interval_minutes, enabled
+         FROM scheduled_jobs WHERE job_type = 'unifi_sync' ORDER BY id`,
+    )
+    .all() as ControllerScheduleRow[];
+}
+
+/**
+ * Pianificazione di un controller: un solo job unifi_sync per controller.
+ * `minutes` null = spenta, e il job si cancella (non resta un job spento che
+ * qualcuno riaccende dalla pagina dei job senza vedere il controller).
+ */
+export function setControllerSchedule(controllerId: number, minutes: number | null): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    const existing = d
+      .prepare(
+        "SELECT id FROM scheduled_jobs WHERE job_type = 'unifi_sync' AND json_extract(config, '$.controller_id') = ? ORDER BY id",
+      )
+      .all(controllerId) as Array<{ id: number }>;
+    if (minutes === null) {
+      for (const j of existing) d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(j.id);
+      return;
+    }
+    const [keep, ...extra] = existing;
+    for (const j of extra) d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(j.id);
+    if (keep) {
+      d.prepare("UPDATE scheduled_jobs SET interval_minutes = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?").run(
+        minutes,
+        keep.id,
+      );
+    } else {
+      d.prepare(
+        "INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'unifi_sync', ?, 1, ?)",
+      ).run(minutes, JSON.stringify({ controller_id: controllerId }));
+    }
+  });
+}
+
+/** Lega al controller i job unifi_sync nati prima dei controller multipli (config senza controller_id). */
+export function attachOrphanUnifiJobs(controllerId: number): number {
+  return db()
+    .prepare(
+      `UPDATE scheduled_jobs
+          SET config = json_set(COALESCE(NULLIF(config, ''), '{}'), '$.controller_id', ?), updated_at = datetime('now')
+        WHERE job_type = 'unifi_sync' AND json_extract(COALESCE(NULLIF(config, ''), '{}'), '$.controller_id') IS NULL`,
+    )
+    .run(controllerId).changes;
 }

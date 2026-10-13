@@ -1,5 +1,6 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
+import { scheduledJobLabel } from "@/lib/scheduled-job-types";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
 
@@ -675,7 +676,8 @@ function SettingsPageInner() {
         setJobs(updated);
       } else if (res.ok) {
         const ms = typeof data.duration_ms === "number" ? `${data.duration_ms} ms` : "ok";
-        toast.success(`Job eseguito (${ms})`);
+        if (typeof data.note === "string") toast.warning(data.note);
+        else toast.success(`Job eseguito (${ms})`);
         const updated = await fetch("/api/jobs").then((r) => r.json());
         setJobs(updated);
       } else {
@@ -1100,7 +1102,7 @@ function SettingsPageInner() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline">{JOB_TYPE_LABELS[job.job_type] || job.job_type}</Badge>
+                          <Badge variant="outline">{scheduledJobLabel(job, JOB_TYPE_LABELS)}</Badge>
                           {riskyCpu && (
                             <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-400" title="Scan completo subnet grande con frequenza <12h: rischio saturazione CPU.">
                               ⚠ Carico CPU alto

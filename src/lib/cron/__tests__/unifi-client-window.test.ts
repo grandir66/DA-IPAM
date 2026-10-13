@@ -14,8 +14,8 @@ import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolat
 import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
-import { deleteTenantDatabase, getTenantDb, insertNetworkController, withTenant } from "@/lib/db-tenant";
-import { inFinestraClient, runUnifiClientJob, unifiJobKind } from "@/lib/cron/jobs";
+import { deleteTenantDatabase, getTenantDb, insertNetworkController, setControllerClientSchedule, withTenant } from "@/lib/db-tenant";
+import { eseguiJobOra, inFinestraClient, runUnifiClientJob, unifiJobKind } from "@/lib/cron/jobs";
 
 const T = "TESTUNIFICLIENTJOB";
 
@@ -85,12 +85,23 @@ after(() => {
 
 test("fuori dalle 7-20: non chiama il controller, una riga di log, nessun giro nello storico, nessun errore", async () => {
   const c = controllerSpento();
-  const { righe } = await catturaInfo(() =>
+  const { righe, esito } = await catturaInfo(() =>
     withTenant(T, () => runUnifiClientJob(c, new Date("2026-10-13T19:30:00Z"))), // 21:30 a Roma
   );
   assert.equal(righe.length, 1);
   assert.match(righe[0], /fuori dalle 7-20/);
+  assert.match(String(esito), /Fuori dalle 7-20.*non sono stati letti/, "il motivo torna a chi chiama");
   assert.equal(letture(c).length, 0, "fuori orario non si registra nessun giro");
+});
+
+test("«Esegui ora» fuori dalle 7-20: la risposta dice che i client non sono stati letti (revisione finale)", async () => {
+  const c = controllerSpento();
+  withTenant(T, () => setControllerClientSchedule(c, true));
+  const job = getTenantDb(T).prepare("SELECT id FROM scheduled_jobs WHERE job_type = 'unifi_sync'").get() as { id: number };
+  const { esito } = await catturaInfo(() => withTenant(T, () => eseguiJobOra(job.id, { adesso: new Date("2026-10-13T19:30:00Z") })));
+  assert.equal(esito.modo, "eseguito");
+  assert.match(esito.modo === "eseguito" ? (esito.motivo ?? "") : "", /Fuori dalle 7-20.*non sono stati letti/);
+  assert.equal(letture(c).length, 0);
 });
 
 test("dentro le 7-20: il giro parte (trigger client:schedule) e un giro non riuscito fa fallire il job", async () => {

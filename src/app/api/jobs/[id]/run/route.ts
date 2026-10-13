@@ -44,6 +44,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         job_id: jobId,
         job_type: job.job_type,
         duration_ms: esito.durationMs,
+        // Il job è finito senza fare tutto (es. client UniFi fuori dalle 7-20): la pagina lo mostra.
+        ...(esito.motivo ? { note: esito.motivo } : {}),
       });
     } catch (error) {
       console.error("[/api/jobs/[id]/run] error:", error);

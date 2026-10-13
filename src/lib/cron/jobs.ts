@@ -66,6 +66,7 @@ import {
   cleanupOldMacPortEntries,
   MAC_PORT_RETENTION_DAYS,
 } from "@/lib/db-tenant";
+import { unifiJobKind } from "@/lib/scheduled-job-types";
 import { macPortListFromPorts } from "@/lib/devices/mac-port-list";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
@@ -94,6 +95,8 @@ export interface OpzioniRunJob {
    * (`scan_lock_alarm_minutes`, 100 minuti). Le prove la accorciano.
    */
   attesaMassimaMs?: number;
+  /** L'ora con cui il job dei client UniFi guarda la finestra 7-20 (le prove la fissano). */
+  adesso?: Date;
 }
 
 /** Attesa massima predefinita: la soglia d'allarme del lucchetto, in ms. */
@@ -150,17 +153,8 @@ export function unifiJobControllerId(configStr: string | null | undefined): numb
   }
 }
 
-/**
- * Che cosa legge un job unifi_sync: `config.cosa = "client"` è la lettura dei
- * client collegati (topologia fase 2); senza `cosa` (job nati prima) gli apparati.
- */
-export function unifiJobKind(configStr: string | null | undefined): "apparati" | "client" {
-  try {
-    return (JSON.parse(configStr || "{}") as { cosa?: unknown }).cosa === "client" ? "client" : "apparati";
-  } catch {
-    return "apparati";
-  }
-}
+/** Che cosa legge un job unifi_sync: sta nel modulo puro dei tipi di job, perché serve anche alla pagina. */
+export { unifiJobKind };
 
 /** Spec §10.5: i client si leggono dalle 7 alle 20 (ora italiana): di notte sono spenti. */
 export function inFinestraClient(d: Date): boolean {
@@ -172,15 +166,16 @@ export function inFinestraClient(d: Date): boolean {
 
 /**
  * Il job dei client di UN controller. Fuori dalle 7-20 non chiama il controller:
- * una riga di log e basta, non è un fallimento. Dentro, un giro non riuscito
- * (rete, chiave, certificato: «non so», le righe esistenti restano) lancia,
- * così lo scheduler lo conta fra i falliti come per gli apparati.
+ * una riga di log e il motivo a chi chiama («Esegui ora» lo mostra), non è un
+ * fallimento. Dentro, un giro non riuscito (rete, chiave, certificato: «non
+ * so», le righe esistenti restano) lancia, così lo scheduler lo conta fra i
+ * falliti come per gli apparati. Torna null se ha letto.
  * `adesso` si passa nelle prove.
  */
-export async function runUnifiClientJob(controllerId: number, adesso: Date = new Date()): Promise<void> {
+export async function runUnifiClientJob(controllerId: number, adesso: Date = new Date()): Promise<string | null> {
   if (!inFinestraClient(adesso)) {
     console.info(`[Scheduler] unifi_sync client #${controllerId}: fuori dalle 7-20, non letto`);
-    return;
+    return "Fuori dalle 7-20 (ora italiana): i client non sono stati letti";
   }
   const result = await syncUnifiClientsForController(controllerId, "schedule");
   if (result.failure) {
@@ -191,6 +186,7 @@ export async function runUnifiClientJob(controllerId: number, adesso: Date = new
     `[Scheduler] unifi_sync client #${controllerId}: ${result.clients} letti, ${result.saved} salvati, ` +
       `${result.unmatched} non abbinati`,
   );
+  return null;
 }
 
 export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
@@ -294,7 +290,8 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
         throw new Error("Job unifi_sync senza controller: la pianificazione si imposta dalla pagina Controller di rete");
       }
       if (unifiJobKind(job.config) === "client") {
-        await runUnifiClientJob(controllerId);
+        const nonLetto = await runUnifiClientJob(controllerId, opzioni?.adesso);
+        if (nonLetto) return { esito: "eseguito", motivo: nonLetto };
         break;
       }
       const result = await syncController(controllerId, "schedule", null);
@@ -322,19 +319,20 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
  */
 export type EsitoEseguiOra =
   | { modo: "avviato"; scanId: string }
-  | { modo: "eseguito"; durationMs: number }
+  /** `motivo`: il job è finito senza fare tutto (es. client UniFi fuori dalle 7-20): la pagina lo mostra. */
+  | { modo: "eseguito"; durationMs: number; motivo?: string }
   /** Rete già in scansione (T3-18): niente giro, niente `last_run`. */
   | { modo: "saltato"; motivo: string; giroInCorso?: GiroOccupante };
 
-export async function eseguiJobOra(jobId: number): Promise<EsitoEseguiOra> {
+export async function eseguiJobOra(jobId: number, opzioni?: Pick<OpzioniRunJob, "adesso">): Promise<EsitoEseguiOra> {
   const job = getScheduledJobById(jobId);
   if (!job) throw new Error(`Job #${jobId} non trovato`);
   const inizio = Date.now();
 
   if (!JOB_DI_SCANSIONE.has(job.job_type)) {
-    await runJob(jobId);
+    const e = await runJob(jobId, opzioni);
     updateJobLastRun(jobId);
-    return { modo: "eseguito", durationMs: Date.now() - inizio };
+    return { modo: "eseguito", durationMs: Date.now() - inizio, ...(e.motivo ? { motivo: e.motivo } : {}) };
   }
 
   return new Promise<EsitoEseguiOra>((resolve, reject) => {

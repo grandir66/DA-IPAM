@@ -39,6 +39,10 @@ import type {
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
+// NUC-2 gruppo 2 (T3-07): funzioni spostate che il resto della facciata usa ancora.
+import {
+  getHostByMac,
+} from "./db-tenant";
 // NUC-2 gruppo 1b (T3-06), ARP, vicini, rotte e porte: funzioni spostate che il resto della facciata usa ancora.
 import {
   upsertMacIpMapping,
@@ -2372,11 +2376,6 @@ export function getHostsByNetworkWithDevices(networkId: number): (Host & {
 /** Confronto MAC normalizzato (ignora : - .) per match cross-vendor */
 const MAC_HEX = (col: string) => `UPPER(REPLACE(REPLACE(REPLACE(COALESCE(${col},''), ':', ''), '-', ''), '.', ''))`;
 
-export function getHostByMac(mac: string): Host | undefined {
-  const hex = macToHex(mac);
-  if (hex.length < 12) return undefined;
-  return getDb().prepare(`SELECT * FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1`).get(hex) as Host | undefined;
-}
 
 /** Resolve MAC to a registered network device (router/switch) via ARP or hosts. Used to identify trunk peer when LLDP/CDP unavailable. */
 export function resolveMacToNetworkDevice(mac: string, excludeDeviceId?: number): { device_id: number; device_name: string; device_type: string } | null {
@@ -3900,4 +3899,5 @@ export {
 // Elenco: src/lib/__tests__/support/facciata-spostate.ts.
 export {
   upsertArpEntries,
+  getHostByMac,
 } from "./db-tenant";

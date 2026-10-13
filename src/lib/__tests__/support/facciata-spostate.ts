@@ -122,6 +122,7 @@ export const SPOSTATE_GRUPPO_1B: Readonly<Record<string, readonly string[]>> = {
  */
 export const SPOSTATE_GRUPPO_2 = [
   "upsertArpEntries",
+  "getHostByMac",
 ] as const;
 
 /** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */

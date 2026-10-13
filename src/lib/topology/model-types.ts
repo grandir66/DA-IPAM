@@ -3,7 +3,7 @@
  * Logica pura: nessun import del DB. Gli id dei nodi sono "dev:<id>" (apparato
  * di rete) e "host:<id>" (host non fuso con un apparato).
  */
-export type LinkSource = "manual" | "unifi_uplink" | "lldp" | "cdp" | "mndp";
+export type LinkSource = "manual" | "unifi_uplink" | "lldp" | "cdp" | "mndp" | "mac_table";
 
 /** Più basso = più affidabile (spec §3, «fonti in ordine di fiducia»). */
 export const LINK_SOURCE_RANK: Readonly<Record<LinkSource, number>> = {
@@ -12,6 +12,7 @@ export const LINK_SOURCE_RANK: Readonly<Record<LinkSource, number>> = {
   lldp: 2,
   cdp: 2,
   mndp: 2,
+  mac_table: 3,
 };
 
 export interface ModelDeviceRow {
@@ -127,6 +128,10 @@ export interface MapNode {
   mgmtIp: string | null;
   /** Host assorbiti dall'apparato: niente doppi (spec §3). */
   fusedHostIds: number[];
+  /** Tutti gli indirizzi dell'oggetto fisico; virtual = IP di un MAC VRRP/HSRP (spec §10.4). */
+  addresses: Array<{ ip: string; virtual: boolean; hostId: number | null }>;
+  /** Altri nomi con cui l'oggetto si annuncia (hostname, nome personalizzato, LLDP/CDP/MNDP). */
+  aliases: string[];
   siteId: number | null;
   rackId: number | null;
   /** true = sede proposta dal sistema, non confermata da un admin. */
@@ -174,6 +179,22 @@ export interface UnmatchedNeighbor {
   remoteMac: string | null;
 }
 
+/** Un MAC visto sulla porta di bordo di uno switch o AP (spec §10.5). */
+export interface PortClient {
+  mac: string;
+  nodeId: string | null;
+  name: string | null;
+  ip: string | null;
+  lastSeen: string;
+  stale: boolean;
+}
+
+export interface PortClients {
+  nodeId: string;
+  port: string;
+  clients: PortClient[];
+}
+
 export interface ModelCounts {
   nodes: number;
   devices: number;
@@ -185,6 +206,8 @@ export interface ModelCounts {
   unmatchedNeighbors: number;
   isolatedDevices: number;
   fusedHosts: number;
+  /** Host rimasti fusi fra loro (stesso MAC vero o stesso nome) senza un apparato. */
+  mergedHosts: number;
   devicesWithoutSite: number;
   sitesWithHead: number;
   promoteProposals: number;
@@ -201,4 +224,8 @@ export interface TopologyModel {
   suspicious: string[];
   withoutSite: string[];
   counts: ModelCounts;
+  /** Client per porta di bordo; i server e gli apparati sono collegamenti «mac_table». */
+  portClients: PortClients[];
+  /** Client per nodo (switch/AP), a prescindere dalla porta. */
+  clientCount: Record<string, number>;
 }

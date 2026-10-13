@@ -3,6 +3,7 @@
  * collegamenti con fonte ed età, sedi con testa, proposte e «da sistemare».
  * Si calcola a ogni richiesta, non si salva. Logica pura.
  */
+import { attachMacs } from "@/lib/topology/attach";
 import { buildLinks } from "@/lib/topology/links";
 import {
   LINK_SOURCE_RANK,
@@ -18,8 +19,10 @@ export const PROMOTE_CLASSES = ["switch", "router", "access_point", "firewall"] 
 const SUSPICIOUS_TYPES = ["switch", "access_point"];
 
 export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
-  const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs);
-  const { links, unmatched } = buildLinks(input, idx);
+  const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors);
+  const { links: baseLinks, unmatched } = buildLinks(input, idx);
+  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks);
+  const links = [...baseLinks, ...attachLinks].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const sites = assignSites(input, idx, links);
 
   const degree = new Map<string, number>();
@@ -59,10 +62,11 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
     unmatchedNeighbors: unmatched.length,
     isolatedDevices: isolated.length,
     fusedHosts: idx.fusedHosts,
+    mergedHosts: idx.mergedHosts,
     devicesWithoutSite: withoutSite.length,
     sitesWithHead: sites.filter((s) => s.headNodeId !== null).length,
     promoteProposals: promote.length,
     suspiciousTypes: suspicious.length,
   };
-  return { nodes, links, sites, promote, unmatched, isolated, suspicious, withoutSite, counts };
+  return { nodes, links, sites, promote, unmatched, isolated, suspicious, withoutSite, counts, portClients, clientCount };
 }

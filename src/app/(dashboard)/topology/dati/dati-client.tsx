@@ -12,7 +12,7 @@ import type { MapLink, MapNode, TopologyModel } from "@/lib/topology/model-types
 
 type Model = TopologyModel & { staleDays: number };
 const MAX = 200;
-const FONTE: Record<string, string> = { manual: "manuale", unifi_uplink: "uplink UniFi", lldp: "LLDP", cdp: "CDP", mndp: "MNDP" };
+const FONTE: Record<string, string> = { manual: "manuale", unifi_uplink: "uplink UniFi", lldp: "LLDP", cdp: "CDP", mndp: "MNDP", mac_table: "Tabella MAC" };
 
 function Altri({ n }: { n: number }) {
   return n > MAX ? <p className="mt-2 text-sm text-muted-foreground">+ altri {n - MAX}</p> : null;
@@ -60,7 +60,7 @@ export function DatiClient() {
     ["— fra apparati", c.deviceLinks], ["— verso host attaccati", c.attachedLinks],
     ...Object.entries(c.linksBySource).map(([k, v]) => [`— fonte ${FONTE[k] ?? k}`, v] as [string, number]),
     [`Non visti da più di ${m.staleDays} giorni`, c.staleLinks], ["Vicini non abbinati", c.unmatchedNeighbors],
-    ["Apparati isolati", c.isolatedDevices], ["Host fusi negli apparati", c.fusedHosts],
+    ["Apparati isolati", c.isolatedDevices], ["Host fusi negli apparati", c.fusedHosts], ["Host fusi fra loro", c.mergedHosts],
     ["Apparati senza sede", c.devicesWithoutSite], ["Sedi con testa", c.sitesWithHead],
     ["Proposte «promuovi ad apparato»", c.promoteProposals], ["Tipi sospetti", c.suspiciousTypes],
   ];

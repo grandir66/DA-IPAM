@@ -103,3 +103,8 @@ test("il conto dei valori veri: zero sull'anonimo, li trova se ci sono", () => {
   // «usw-piano1» (chiave del nome) e «bergamo» (parola di un nome di ubicazione)
   assert.equal(c.nomi, 2);
 });
+
+test("macPorts non vuoti: rifiutati finché il Task 13 non li anonimizza", () => {
+  const i = { ...VERO, macPorts: [{ device_id: 1, mac: "aa:bb:cc:dd:ee:ff", port_name: "Port 1", timestamp: "2026-10-13 10:00:00", source: "device" }] };
+  assert.throws(() => anonimizzaInput(i), /macPorts non ancora anonimizzati \(Task 13\)/);
+});

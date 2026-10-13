@@ -4,9 +4,10 @@
  * nome. Una chiave contesa fra due oggetti diversi vale null: non si abbina a
  * caso (un MAC VRRP, due apparati con lo stesso nome). Logica pura.
  */
-import type { MapNode, ModelDeviceRow, ModelHostRow, ModelKnownMacRow } from "@/lib/topology/model-types";
+import type { MapNode, ModelDeviceRow, ModelHostRow, ModelKnownMacRow, ModelNeighborRow } from "@/lib/topology/model-types";
 import { normalizeName } from "@/lib/topology/match";
 import { normalizeMacForStorage } from "@/lib/utils";
+import { IDENTITY_TYPES, announcedNames, isVirtualMac } from "@/lib/topology/identity";
 
 export interface NodeIndex {
   nodes: Map<string, MapNode>;
@@ -16,6 +17,8 @@ export interface NodeIndex {
   byName: Map<string, string | null>;
   hostById: Map<number, ModelHostRow>;
   fusedHosts: number;
+  /** Host fusi fra loro senza apparato (spec §10.4). */
+  mergedHosts: number;
 }
 
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
@@ -45,14 +48,17 @@ function hostNode(h: ModelHostRow): MapNode {
   return {
     id: `host:${h.id}`, kind: "host", refId: h.id, name: h.custom_name || h.hostname || h.ip,
     type: h.classification || "unknown", mgmtIp: h.ip || null, fusedHostIds: [],
+    addresses: h.ip ? [{ ip: h.ip, virtual: isVirtualMac(h.mac), hostId: h.id }] : [], aliases: [],
     siteId: null, rackId: null, siteProposed: false, hidden: false,
   };
 }
 
-export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[], knownMacs: ModelKnownMacRow[]): NodeIndex {
+export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[], knownMacs: ModelKnownMacRow[],
+  neighbors: ModelNeighborRow[] = [],
+): NodeIndex {
   const idx: NodeIndex = {
     nodes: new Map(), alias: new Map(), byIp: new Map(), byMac: new Map(), byName: new Map(),
-    hostById: new Map(), fusedHosts: 0,
+    hostById: new Map(), fusedHosts: 0, mergedHosts: 0,
   };
   const hostsByIp = new Map<string, ModelHostRow[]>();
   const hostsByPhys = new Map<number, ModelHostRow[]>();
@@ -78,7 +84,7 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     if (d.physical_device_id != null) for (const h of hostsByPhys.get(d.physical_device_id) ?? []) take(h);
     idx.nodes.set(id, {
       id, kind: "device", refId: d.id, name: d.name, type: d.device_type, mgmtIp: d.host || null,
-      fusedHostIds: fused.sort((a, b) => a - b), siteId: null, rackId: null, siteProposed: false,
+      fusedHostIds: fused.sort((a, b) => a - b), addresses: [], aliases: [], siteId: null, rackId: null, siteProposed: false,
       hidden: d.topology_hidden === 1,
     });
     put(idx.byIp, d.host || null, id, false);
@@ -104,6 +110,7 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
   for (const h of sortedHosts) {
     if (absorbedBy.has(h.id)) continue;
     const m = normalizeMacForStorage(h.mac);
+    if (isVirtualMac(m)) continue; // un MAC VRRP/HSRP non identifica nessuno
     const owners = m ? macOwners.get(m) : undefined;
     if (!owners || owners.size !== 1) continue;
     const devId = [...owners][0];
@@ -111,6 +118,59 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     if (!node) continue;
     absorbedBy.set(h.id, devId);
     node.fusedHostIds = [...node.fusedHostIds, h.id].sort((a, b) => a - b);
+  }
+  // Spec §10.4 punto 3: il nome annunciato da un host già fuso è un alias dell'apparato.
+  const announced = announcedNames(sortedHosts, neighbors);
+  const namesOf = (h: ModelHostRow): string[] =>
+    [h.hostname, h.custom_name, ...(announced.get(h.id) ?? [])].map((s) => nameKey(s)).filter((k): k is string => !!k);
+  const aliasOwner = new Map<string, string | null>();
+  const claim = (k: string, devId: string): void => {
+    aliasOwner.set(k, aliasOwner.has(k) && aliasOwner.get(k) !== devId ? null : devId);
+  };
+  for (const d of devices) { const k = nameKey(d.name); if (k) claim(k, `dev:${d.id}`); }
+  for (const [hostId, devId] of absorbedBy) { const h = idx.hostById.get(hostId); if (h) for (const k of namesOf(h)) claim(k, devId); }
+  for (const h of sortedHosts) {
+    if (absorbedBy.has(h.id) || !IDENTITY_TYPES.includes(h.classification ?? "")) continue;
+    const m = normalizeMacForStorage(h.mac);
+    const owners = m && !isVirtualMac(m) ? macOwners.get(m) : undefined; // MAC vero di un altro apparato = contraddizione
+    const devId = namesOf(h).map((k) => aliasOwner.get(k)).find((v): v is string => typeof v === "string");
+    if (!devId || (owners && !owners.has(devId))) continue;
+    absorbedBy.set(h.id, devId);
+    const node = idx.nodes.get(devId)!;
+    node.fusedHostIds = [...node.fusedHostIds, h.id].sort((a, b) => a - b);
+  }
+  // Spec §10.4 punti 1-2: gli host rimasti si raggruppano per MAC vero (tutti) e per nome (solo infrastruttura e server).
+  const parent = new Map<number, number>();
+  const find = (x: number): number => { const p = parent.get(x) ?? x; if (p === x) return x; const r = find(p); parent.set(x, r); return r; };
+  const union = (a: number, b: number): void => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(Math.max(ra, rb), Math.min(ra, rb)); };
+  const firstBy = new Map<string, number>();
+  const join = (key: string, id: number): void => { const f = firstBy.get(key); if (f === undefined) firstBy.set(key, id); else union(f, id); };
+  for (const h of sortedHosts) {
+    if (absorbedBy.has(h.id)) continue;
+    const m = normalizeMacForStorage(h.mac);
+    if (m && !isVirtualMac(m)) join(`mac:${m}`, h.id);
+    if (IDENTITY_TYPES.includes(h.classification ?? "")) for (const k of namesOf(h)) join(`nome:${k}`, h.id);
+  }
+  const groupMembers = new Map<number, ModelHostRow[]>(); // rappresentante (id più basso) → membri in ordine di id
+  const repOf = new Map<number, number>();
+  for (const h of sortedHosts) {
+    if (absorbedBy.has(h.id)) continue;
+    const r = find(h.id);
+    repOf.set(h.id, r);
+    groupMembers.set(r, [...(groupMembers.get(r) ?? []), h]);
+  }
+  for (const [rep, members] of groupMembers) {
+    if (members.length < 2) continue;
+    const repHost = idx.hostById.get(rep)!;
+    const node = hostNode(repHost);
+    const named = members
+      .flatMap((m) => [m.custom_name, m.hostname, ...(announced.get(m.id) ?? [])])
+      .find((s) => !!nameKey(s));
+    if (named) node.name = named.trim();
+    node.fusedHostIds = members.filter((m) => m.id !== rep).map((m) => m.id);
+    idx.nodes.set(node.id, node);
+    for (const m of members) if (m.id !== rep) idx.alias.set(`host:${m.id}`, node.id);
+    idx.mergedHosts += members.length - 1;
   }
   for (const [hostId, devId] of absorbedBy) {
     const h = idx.hostById.get(hostId);
@@ -124,11 +184,37 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
   idx.fusedHosts = absorbedBy.size;
   for (const h of sortedHosts) {
     if (absorbedBy.has(h.id)) continue;
-    const id = `host:${h.id}`;
+    const id = `host:${repOf.get(h.id) ?? h.id}`;
     put(idx.byIp, h.ip || null, id, true);
     put(idx.byMac, normalizeMacForStorage(h.mac), id, true);
     put(idx.byName, nameKey(h.hostname), id, true);
     put(idx.byName, nameKey(h.custom_name), id, true);
+  }
+  // Indirizzi e alias di ogni nodo con host fusi.
+  const ipOrder = (a: string, b: string): number => {
+    const pa = a.split(".").map(Number), pb = b.split(".").map(Number);
+    for (let i = 0; i < 4; i++) if (pa[i] !== pb[i]) return (pa[i] || 0) - (pb[i] || 0);
+    return a.localeCompare(b);
+  };
+  for (const node of idx.nodes.values()) {
+    const fused = node.fusedHostIds.map((i) => idx.hostById.get(i)).filter((h): h is ModelHostRow => !!h);
+    const members = node.kind === "host" ? [idx.hostById.get(node.refId), ...fused].filter((h): h is ModelHostRow => !!h) : fused;
+    if (members.length === 0 && node.kind === "host") continue;
+    const addrs = new Map<string, { ip: string; virtual: boolean; hostId: number | null }>();
+    if (node.kind === "device" && node.mgmtIp) {
+      addrs.set(node.mgmtIp, { ip: node.mgmtIp, virtual: false, hostId: members.find((h) => h.ip === node.mgmtIp)?.id ?? null });
+    }
+    for (const h of members) if (h.ip && !addrs.has(h.ip)) addrs.set(h.ip, { ip: h.ip, virtual: isVirtualMac(h.mac), hostId: h.id });
+    node.addresses = [...addrs.values()].sort((a, b) => ipOrder(a.ip, b.ip));
+    const own = nameKey(node.name);
+    const seen = new Map<string, string>();
+    for (const h of members) {
+      for (const s of [h.hostname, h.custom_name, ...(announced.get(h.id) ?? [])]) {
+        const k = nameKey(s);
+        if (k && k !== own && !seen.has(k)) seen.set(k, s!.trim());
+      }
+    }
+    node.aliases = [...seen.values()].sort();
   }
   return idx;
 }

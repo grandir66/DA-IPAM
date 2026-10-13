@@ -176,6 +176,64 @@ export function migrateScheduledJobsV8(db: Database.Database): boolean {
   return true;
 }
 
+/**
+ * Migrazione runtime «topologia fase 1» (spec 2026-10-12-topology-map-design
+ * §5, piano 2026-10-13-topologia-fase1-dati). Solo colonne e una tabella nuove,
+ * in una transazione: o tutto o niente. Gli indici sulle colonne nuove stanno
+ * QUI e non nello schema: lo schema gira prima, e su un DB vecchio un indice su
+ * una colonna che ancora non c'è impedirebbe di aprire il tenant.
+ * Esportata per le prove (`topology-phase1-migration.test.ts`).
+ */
+export function migrateTopologyPhase1(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const add = (table: string, col: string, ddl: string): void => {
+    if (has(table, col)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+    added.push(`${table}.${col}`);
+  };
+  db.transaction(() => {
+    add("network_devices", "location_id", "INTEGER REFERENCES locations(id) ON DELETE SET NULL");
+    add("network_devices", "location_set_by", "TEXT");
+    add("network_devices", "location_set_at", "TEXT");
+    add("network_devices", "topology_role", "TEXT");
+    add("network_devices", "topology_hidden", "INTEGER NOT NULL DEFAULT 0");
+    add("network_devices", "controller_mac", "TEXT");
+    add("network_devices", "uplink_mac", "TEXT");
+    add("network_devices", "uplink_remote_port", "INTEGER");
+    add("network_devices", "uplink_seen_at", "TEXT");
+    add("switch_ports", "is_uplink", "INTEGER NOT NULL DEFAULT 0");
+    add("device_neighbors", "first_seen", "TEXT");
+    add("device_neighbors", "source", "TEXT NOT NULL DEFAULT 'device'");
+    add("locations", "head_device_id", "INTEGER REFERENCES network_devices(id) ON DELETE SET NULL");
+    add("locations", "head_set_by", "TEXT");
+    add("locations", "head_set_at", "TEXT");
+    add("networks", "location_id", "INTEGER REFERENCES locations(id) ON DELETE SET NULL");
+    add("networks", "location_set_by", "TEXT");
+    add("networks", "location_set_at", "TEXT");
+    add("topology_position", "structure_sig", "TEXT");
+    if (added.includes("device_neighbors.first_seen")) {
+      db.exec("UPDATE device_neighbors SET first_seen = timestamp WHERE first_seen IS NULL");
+    }
+    db.exec(`CREATE TABLE IF NOT EXISTS topology_link_overrides (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL CHECK(action IN ('add', 'ignore')),
+      a_node TEXT NOT NULL,
+      a_port TEXT NOT NULL DEFAULT '',
+      b_node TEXT NOT NULL,
+      b_port TEXT NOT NULL DEFAULT '',
+      note TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_network_devices_location ON network_devices(location_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_networks_location ON networks(location_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_device_neighbors_timestamp ON device_neighbors(device_id, timestamp)");
+  })();
+  return added;
+}
+
 export function getTenantDb(tenantCode: string): Database.Database {
   const existing = tenantDbs.get(tenantCode);
   if (existing) {
@@ -1393,6 +1451,20 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione device_credential_bindings protocol_type fallita:`, e);
+  }
+
+  // Topologia fase 1 (piano 2026-10-13): colonne e tabella delle correzioni.
+  // Gira PER ULTIMA: i rebuild di network_devices qui sopra (CHECK 'firewall',
+  // 'access_point') copiano solo le colonne che conoscono, e una migrazione
+  // fatta prima perderebbe colonne e indice fino all'apertura successiva
+  // (prova: topology-phase1-migration.test.ts, «tenant vecchio … rebuild»).
+  try {
+    const added = migrateTopologyPhase1(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia fase 1, aggiunte ${added.length} colonne`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia fase 1 fallita:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });

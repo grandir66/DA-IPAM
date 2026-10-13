@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS networks (
   assessment_enabled INTEGER NOT NULL DEFAULT 0,
   assessment_profile_id TEXT,
   probes_enabled INTEGER DEFAULT 1,
+  location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+  location_set_by TEXT,
+  location_set_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -175,6 +178,15 @@ CREATE TABLE IF NOT EXISTS network_devices (
   product_profile TEXT,
   use_for_arp_poll INTEGER NOT NULL DEFAULT 0,
   physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL,
+  location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+  location_set_by TEXT,
+  location_set_at TEXT,
+  topology_role TEXT,
+  topology_hidden INTEGER NOT NULL DEFAULT 0,
+  controller_mac TEXT,
+  uplink_mac TEXT,
+  uplink_remote_port INTEGER,
+  uplink_seen_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -283,6 +295,7 @@ CREATE TABLE IF NOT EXISTS switch_ports (
   trunk_primary_device_id INTEGER REFERENCES network_devices(id) ON DELETE SET NULL,
   trunk_primary_name TEXT,
   stp_state TEXT,
+  is_uplink INTEGER NOT NULL DEFAULT 0,
   timestamp TEXT DEFAULT (datetime('now')),
   UNIQUE(device_id, port_index)
 );
@@ -431,6 +444,9 @@ CREATE TABLE IF NOT EXISTS locations (
   name TEXT NOT NULL,
   parent_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
   address TEXT,
+  head_device_id INTEGER REFERENCES network_devices(id) ON DELETE SET NULL,
+  head_set_by TEXT,
+  head_set_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -770,6 +786,8 @@ CREATE TABLE IF NOT EXISTS device_neighbors (
   remote_ip TEXT,
   remote_mac TEXT,
   remote_platform TEXT,
+  first_seen TEXT,
+  source TEXT NOT NULL DEFAULT 'device',
   timestamp TEXT DEFAULT (datetime('now')),
   UNIQUE(device_id, local_port, remote_device_name, remote_port)
 );
@@ -1317,8 +1335,24 @@ CREATE TABLE IF NOT EXISTS topology_position (
   x REAL NOT NULL,
   y REAL NOT NULL,
   pinned INTEGER NOT NULL DEFAULT 1,
+  structure_sig TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(view, node_id)
+);
+
+-- Topologia: correzioni manuali dei collegamenti (aggiungi/ignora), vincono sui
+-- dati letti dagli apparati. Stessa definizione della migrazione runtime
+-- (migrateTopologyPhase1 in db-tenant.ts).
+CREATE TABLE IF NOT EXISTS topology_link_overrides (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  action TEXT NOT NULL CHECK(action IN ('add', 'ignore')),
+  a_node TEXT NOT NULL,
+  a_port TEXT NOT NULL DEFAULT '',
+  b_node TEXT NOT NULL,
+  b_port TEXT NOT NULL DEFAULT '',
+  note TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Controller di rete (UniFi, poi Omada): uno per riga, nel DB del cliente.

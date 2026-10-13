@@ -23,6 +23,7 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "physical_devices", scope: "tenant", tier: "config" },
   { table: "device_interfaces", scope: "tenant", tier: "config" },
   { table: "topology_position", scope: "tenant", tier: "config" },
+  { table: "topology_link_overrides", scope: "tenant", tier: "config" },
   { table: "device_interface_addresses", scope: "tenant", tier: "config" },
   { table: "multihomed_links", scope: "tenant", tier: "config" },
   { table: "device_classifications_custom", scope: "tenant", tier: "config" },

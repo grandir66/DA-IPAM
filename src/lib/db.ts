@@ -27,13 +27,18 @@ import type {
   User,
   HostInput,
 } from "@/types";
-import type { FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
 // NUC-2 gruppo 2 (T3-07): funzioni spostate che il resto della facciata usa ancora.
 import {
   getHostByMac,
   upsertHost,
 } from "./db-tenant";
+import {
+  getUserByUsername as hubGetUserByUsername,
+  createUser as hubCreateUser,
+  getUsers as hubGetUsers,
+  getUserById as hubGetUserById,
+} from "./db-hub";
 // T3-08: il ramo del vecchio ipam.db vive in db-legacy.ts.
 import { getLegacyDb } from "./db-legacy";
 export { closeDb } from "./db-legacy";
@@ -107,135 +112,6 @@ export function getDb(): Database.Database {
 
   // Legacy single-tenant: il vecchio ipam.db, aperto e migrato da db-legacy.ts.
   return getLegacyDb();
-}
-
-
-// ========================
-// SysObjectID Lookup CRUD
-// ========================
-
-export interface SysObjLookupRow {
-  id: number;
-  oid: string;
-  vendor: string;
-  product: string;
-  category: string;
-  enterprise_id: number;
-  builtin: number;
-  enabled: number;
-  note: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-// v0.2.633 bug fix audit A8: TUTTE le funzioni `sysobj_lookup` ora delegano a
-// db-hub (tabella globale, vedi db-hub.ts:1394-1442). Prima erano implementate
-// con getDb() (tenant) mentre il list passava da db-hub → POST scriveva in
-// data/tenants/X.db, GET leggeva da data/hub.db → utente vedeva sempre vuoto.
-export function getSysObjLookupEntries(): SysObjLookupRow[] {
-  const hub = require("./db-hub");
-  return hub.getSysObjLookupEntries();
-}
-
-export function createSysObjLookupEntry(input: {
-  oid: string; vendor: string; product: string; category: string;
-  enterprise_id: number; enabled?: number; note?: string | null;
-}): SysObjLookupRow {
-  const hub = require("./db-hub");
-  return hub.createSysObjLookupEntry(input);
-}
-
-export function updateSysObjLookupEntry(id: number, input: Partial<{
-  oid: string; vendor: string; product: string; category: string;
-  enterprise_id: number; enabled: number; note: string | null;
-}>): SysObjLookupRow | undefined {
-  const hub = require("./db-hub");
-  return hub.updateSysObjLookupEntry(id, input);
-}
-
-export function deleteSysObjLookupEntry(id: number): boolean {
-  const hub = require("./db-hub");
-  return hub.deleteSysObjLookupEntry(id);
-}
-
-export function resetBuiltinSysObjLookup(): void {
-  const hub = require("./db-hub");
-  hub.resetBuiltinSysObjLookup();
-}
-
-// ========================
-// MAC Product Map (Attribution v2 Fase 2, Task 3) — delega a db-hub (tabella hub-global)
-// ========================
-
-export interface MacProductMapRow {
-  id: number;
-  mac_prefix: string;
-  hostname_pattern: string | null;
-  vendor: string;
-  product_family: string | null;
-  category: string | null;
-  confidence: number;
-  source: "seed" | "domarc" | "feedback";
-  enabled: number;
-  note: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export function getMacProductMap(): MacProductMapRow[] {
-  const hub = require("./db-hub");
-  return hub.getMacProductMap();
-}
-
-export function createMacProductEntry(input: {
-  mac_prefix: string; hostname_pattern?: string | null; vendor: string;
-  product_family?: string | null; category?: string | null;
-  confidence?: number; source?: "seed" | "domarc" | "feedback";
-  enabled?: number; note?: string | null;
-}): MacProductMapRow {
-  const hub = require("./db-hub");
-  return hub.createMacProductEntry(input);
-}
-
-export function updateMacProductEntry(id: number, input: Partial<{
-  mac_prefix: string; hostname_pattern: string | null; vendor: string;
-  product_family: string | null; category: string | null;
-  confidence: number; source: "seed" | "domarc" | "feedback";
-  enabled: number; note: string | null;
-}>): MacProductMapRow | undefined {
-  const hub = require("./db-hub");
-  return hub.updateMacProductEntry(id, input);
-}
-
-export function deleteMacProductEntry(id: number): boolean {
-  const hub = require("./db-hub");
-  return hub.deleteMacProductEntry(id);
-}
-
-// ========================
-// Users
-// ========================
-
-// ── User functions delegate to hub DB (multi-tenant) ──
-export function getUserByUsername(username: string): User | undefined {
-  const { getUserByUsername: hubGetUser } = require("./db-hub");
-  return hubGetUser(username) as User | undefined;
-}
-
-export function getUserCount(): number {
-  const { getHubDb } = require("./db-hub");
-  const row = getHubDb().prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
-  return row.count;
-}
-
-export function createUser(username: string, passwordHash: string, role: "superadmin" | "admin" | "viewer" = "admin", tenantId?: number | null, email?: string | null): User {
-  const { createUser: hubCreateUser } = require("./db-hub");
-  return hubCreateUser(username, passwordHash, role, tenantId, email) as User;
-}
-
-export function updateUserLastLogin(userId: number): void {
-  const { updateUserLastLogin: hubUpdate } = require("./db-hub");
-  hubUpdate(userId);
 }
 
 // ========================
@@ -322,494 +198,6 @@ export function updateHostIfExists(input: HostInput & { mac?: string; vendor?: s
   return upsertHost(input) as Host;
 }
 
-// ========================
-// Scan History
-// ========================
-
-// ========================
-// Network Devices
-// ========================
-
-// ========================
-// Network Router (ARP assignment per subnet)
-// ========================
-
-// ========================
-// Credentials (riutilizzabili)
-// ========================
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CREDENTIAL SYSTEM v2: network_credentials + host_credentials
-// ═══════════════════════════════════════════════════════════════════════════
-
-// ── host_credentials CRUD ──
-
-// ========================
-// Network Devices
-// ========================
-
-// Cleanup FK orfani: vive in db-tenant.ts (riesportata in fondo, NUC-2 gruppo 0).
-
-// ========================
-// ARP Entries
-// ========================
-
-
-// ========================
-// MAC-IP Mapping (cumulativo)
-// ========================
-
-// ========================
-// Inventory Assets
-// ========================
-
-// ========================
-// Asset Assignees
-// ========================
-
-// ========================
-// Locations
-// ========================
-
-// ========================
-// Licenses
-// ========================
-
-// ========================
-// License Seats
-// ========================
-
-// ========================
-// Inventory Audit Log
-// ========================
-
-// ========================
-// MAC Port Entries
-// ========================
-
-// ========================
-// Switch Ports
-// ========================
-
-// ========================
-// Device Neighbors (LLDP/CDP/MNDP)
-// ========================
-
-// ========================
-// Device Routes (Routing Table)
-// ========================
-
-// ========================
-// Device Credential Bindings
-// ========================
-
-// ========================
-// Scheduled Jobs
-// ========================
-
-// ========================
-// Status History
-// ========================
-
-// ========================
-// Monitoring Stats
-// ========================
-
-// ========================
-// Dashboard Stats
-// ========================
-
-// ========================
-// Cleanup
-// ========================
-
-// ========================
-// Status History Aggregation (for charts)
-// ========================
-
-// ========================
-// Global Search
-// ========================
-
-// ========================
-// Settings (key-value)
-// ========================
-
-// ── Settings functions delegate to hub DB (multi-tenant) ──
-export function getSetting(key: string): string | null {
-  const hub = require("./db-hub");
-  return hub.getSetting(key);
-}
-
-export function isOnboardingCompleted(): boolean {
-  return getSetting("onboarding_completed") === "1";
-}
-
-export function getAllSettings(): Record<string, string> {
-  const hub = require("./db-hub");
-  return hub.getAllSettings();
-}
-
-export function setSetting(key: string, value: string): void {
-  const hub = require("./db-hub");
-  hub.setSetting(key, value);
-}
-
-// ========================
-// Fingerprint → classificazione (regole manuali)
-// ========================
-
-export interface FingerprintClassificationMapRow {
-  id: number;
-  match_kind: "exact" | "contains";
-  pattern: string;
-  classification: string;
-  priority: number;
-  enabled: number;
-  note: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export function getAllFingerprintClassificationMapRows(): FingerprintClassificationMapRow[] {
-  const hub = require("./db-hub");
-  return hub.getAllFingerprintClassificationMapRows();
-}
-
-/** Regole attive per discovery/refresh (priorità crescente). */
-export function getFingerprintClassificationRulesForResolve(): FingerprintUserRule[] {
-  const hub = require("./db-hub");
-  return hub.getFingerprintClassificationRulesForResolve();
-}
-
-export function createFingerprintClassificationMapRow(input: {
-  match_kind: "exact" | "contains";
-  pattern: string;
-  classification: string;
-  priority: number;
-  enabled: boolean;
-  note?: string | null;
-}): FingerprintClassificationMapRow {
-  const hub = require("./db-hub");
-  return hub.createFingerprintClassificationMapRow(input);
-}
-
-export function updateFingerprintClassificationMapRow(
-  id: number,
-  input: {
-    match_kind?: "exact" | "contains";
-    pattern?: string;
-    classification?: string;
-    priority?: number;
-    enabled?: boolean;
-    note?: string | null;
-  }
-): FingerprintClassificationMapRow | undefined {
-  const hub = require("./db-hub");
-  return hub.updateFingerprintClassificationMapRow(id, input);
-}
-
-export function deleteFingerprintClassificationMapRow(id: number): boolean {
-  const hub = require("./db-hub");
-  return hub.deleteFingerprintClassificationMapRow(id);
-}
-
-// ========================
-// Device Fingerprint Rules (tabella unificata)
-// ========================
-
-export interface DeviceFingerprintRuleRow {
-  id: number;
-  name: string;
-  device_label: string;
-  classification: string;
-  priority: number;
-  enabled: number;
-  tcp_ports_key: string | null;
-  tcp_ports_optional: string | null;
-  min_key_ports: number | null;
-  oid_prefix: string | null;
-  sysdescr_pattern: string | null;
-  hostname_pattern: string | null;
-  mac_vendor_pattern: string | null;
-  banner_pattern: string | null;
-  ttl_min: number | null;
-  ttl_max: number | null;
-  note: string | null;
-  builtin: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export function getDeviceFingerprintRules(): DeviceFingerprintRuleRow[] {
-  const hub = require("./db-hub");
-  return hub.getDeviceFingerprintRules();
-}
-
-export function getEnabledDeviceFingerprintRules(): DeviceFingerprintRuleRow[] {
-  const hub = require("./db-hub");
-  return hub.getEnabledDeviceFingerprintRules();
-}
-
-export function createDeviceFingerprintRule(input: {
-  name: string; device_label: string; classification: string; priority?: number;
-  tcp_ports_key?: string | null; tcp_ports_optional?: string | null; min_key_ports?: number | null;
-  oid_prefix?: string | null; sysdescr_pattern?: string | null; hostname_pattern?: string | null;
-  mac_vendor_pattern?: string | null; banner_pattern?: string | null;
-  ttl_min?: number | null; ttl_max?: number | null; note?: string | null; enabled?: boolean;
-}): DeviceFingerprintRuleRow {
-  const hub = require("./db-hub");
-  return hub.createDeviceFingerprintRule(input);
-}
-
-export function updateDeviceFingerprintRule(id: number, input: Partial<{
-  name: string; device_label: string; classification: string; priority: number; enabled: boolean;
-  tcp_ports_key: string | null; tcp_ports_optional: string | null; min_key_ports: number | null;
-  oid_prefix: string | null; sysdescr_pattern: string | null; hostname_pattern: string | null;
-  mac_vendor_pattern: string | null; banner_pattern: string | null;
-  ttl_min: number | null; ttl_max: number | null; note: string | null;
-}>): DeviceFingerprintRuleRow | undefined {
-  const hub = require("./db-hub");
-  return hub.updateDeviceFingerprintRule(id, input);
-}
-
-export function deleteDeviceFingerprintRule(id: number): boolean {
-  const hub = require("./db-hub");
-  return hub.deleteDeviceFingerprintRule(id);
-}
-
-export function resetBuiltinFingerprintRules(): void {
-  const hub = require("./db-hub");
-  hub.resetBuiltinFingerprintRules();
-}
-
-// ========================
-// Nmap Profiles
-// ========================
-
-export interface NmapProfileRow {
-  id: number;
-  name: string;
-  description: string;
-  args: string;
-  snmp_community: string | null;
-  custom_ports: string | null;
-  /** Elenco porte TCP esplicito (sovrascrive default se presente) */
-  tcp_ports: string | null;
-  /** Elenco porte UDP esplicito (sovrascrive default se presente) */
-  udp_ports: string | null;
-  is_default: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export function getNmapProfiles(): NmapProfileRow[] {
-  const hub = require("./db-hub");
-  return hub.getNmapProfiles();
-}
-
-export function getNmapProfileById(id: number): NmapProfileRow | undefined {
-  const hub = require("./db-hub");
-  return hub.getNmapProfileById(id);
-}
-
-export function getActiveNmapProfile(): NmapProfileRow | undefined {
-  const hub = require("./db-hub");
-  return hub.getActiveNmapProfile();
-}
-
-export function createNmapProfile(
-  name: string,
-  description: string,
-  args: string,
-  snmpCommunity?: string | null,
-  customPorts?: string | null,
-  tcpPorts?: string | null,
-  udpPorts?: string | null
-): NmapProfileRow {
-  const hub = require("./db-hub");
-  return hub.createNmapProfile(name, description, args, snmpCommunity, customPorts, tcpPorts, udpPorts);
-}
-
-export function updateNmapProfile(
-  id: number,
-  name: string,
-  description: string,
-  args: string,
-  snmpCommunity?: string | null,
-  customPorts?: string | null,
-  tcpPorts?: string | null,
-  udpPorts?: string | null
-): NmapProfileRow | undefined {
-  const hub = require("./db-hub");
-  return hub.updateNmapProfile(id, name, description, args, snmpCommunity, customPorts, tcpPorts, udpPorts);
-}
-
-export function deleteNmapProfile(id: number): boolean {
-  const hub = require("./db-hub");
-  return hub.deleteNmapProfile(id);
-}
-
-// ── Remaining user functions delegate to hub DB ──
-export function updateUserPassword(userId: number, passwordHash: string): void {
-  const hub = require("./db-hub");
-  hub.updateUserPassword(userId, passwordHash);
-}
-
-export function getUsers(): Omit<User, "password_hash">[] {
-  const hub = require("./db-hub");
-  return hub.getUsers();
-}
-
-export function getUserById(id: number): User | undefined {
-  const hub = require("./db-hub");
-  return hub.getUserById(id);
-}
-
-export function updateUserRole(userId: number, role: "superadmin" | "admin" | "viewer"): boolean {
-  const hub = require("./db-hub");
-  return hub.updateUserRole(userId, role);
-}
-
-export function deleteUser(userId: number): boolean {
-  const hub = require("./db-hub");
-  return hub.deleteUser(userId);
-}
-
-
-// ========================
-// Proxmox Hosts
-// ========================
-
-// ========================
-// Device-to-Host Sync
-// ========================
-
-// ========================
-// Sync network_device da scan host
-// ========================
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ACTIVE DIRECTORY INTEGRATIONS
-// ═══════════════════════════════════════════════════════════════════════════
-
-// AD Computers
-
-// ═══════════════════════════════════════════════════════════════════════════
-// MULTI-HOMED DETECTION
-// ═══════════════════════════════════════════════════════════════════════════
-
-// recomputeMultihomedLinks e i suoi aiutanti vivono in db-tenant.ts (T3-07).
-
-
-// AD Users
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SNMP VENDOR PROFILES
-// ═══════════════════════════════════════════════════════════════════════════
-
-export interface SnmpVendorProfileRow {
-  id: number;
-  profile_id: string;
-  name: string;
-  category: string;
-  enterprise_oid_prefixes: string;
-  sysdescr_pattern: string | null;
-  fields: string;
-  confidence: number;
-  enabled: number;
-  builtin: number;
-  note: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export function getSnmpVendorProfiles(): SnmpVendorProfileRow[] {
-  const hub = require("./db-hub");
-  return hub.getSnmpVendorProfiles();
-}
-
-export function getEnabledSnmpVendorProfiles(): SnmpVendorProfileRow[] {
-  const hub = require("./db-hub");
-  return hub.getEnabledSnmpVendorProfiles();
-}
-
-// v0.2.633 bug fix audit A8: TUTTE le funzioni `snmp_vendor_profiles` ora
-// delegano a db-hub (tabella globale, vedi db-hub.ts:1243-1389). Prima erano
-// implementate con getDb() (tenant) per id/byProfileId/create/update/delete/
-// reset/export/import, mentre i list passavano da db-hub → POST scriveva in
-// data/tenants/X.db, GET leggeva da data/hub.db → utente vedeva sempre vuoto.
-export function getSnmpVendorProfileById(id: number): SnmpVendorProfileRow | undefined {
-  const hub = require("./db-hub");
-  return hub.getSnmpVendorProfileById(id);
-}
-
-export function getSnmpVendorProfileByProfileId(profileId: string): SnmpVendorProfileRow | undefined {
-  const hub = require("./db-hub");
-  return hub.getSnmpVendorProfileByProfileId(profileId);
-}
-
-export function createSnmpVendorProfile(input: {
-  profile_id: string;
-  name: string;
-  category: string;
-  enterprise_oid_prefixes?: string[];
-  sysdescr_pattern?: string | null;
-  fields?: Record<string, string | string[]>;
-  confidence?: number;
-  enabled?: number;
-  builtin?: number;
-  note?: string | null;
-}): SnmpVendorProfileRow {
-  const hub = require("./db-hub");
-  return hub.createSnmpVendorProfile(input);
-}
-
-export function updateSnmpVendorProfile(id: number, input: Partial<{
-  profile_id: string;
-  name: string;
-  category: string;
-  enterprise_oid_prefixes: string[];
-  sysdescr_pattern: string | null;
-  fields: Record<string, string | string[]>;
-  confidence: number;
-  enabled: number;
-  note: string | null;
-}>): SnmpVendorProfileRow | undefined {
-  const hub = require("./db-hub");
-  return hub.updateSnmpVendorProfile(id, input);
-}
-
-export function deleteSnmpVendorProfile(id: number): boolean {
-  const hub = require("./db-hub");
-  return hub.deleteSnmpVendorProfile(id);
-}
-
-export function resetBuiltinSnmpVendorProfiles(): void {
-  const hub = require("./db-hub");
-  hub.resetBuiltinSnmpVendorProfiles();
-}
-
-export function exportSnmpVendorProfiles(): SnmpVendorProfileRow[] {
-  const hub = require("./db-hub");
-  return hub.exportSnmpVendorProfiles();
-}
-
-export function importSnmpVendorProfiles(profiles: Array<{
-  profile_id: string;
-  name: string;
-  category: string;
-  enterprise_oid_prefixes: string[] | string;
-  sysdescr_pattern?: string | null;
-  fields: Record<string, string | string[]> | string;
-  confidence?: number;
-  enabled?: number;
-  note?: string | null;
-}>, replaceExisting: boolean = false): { imported: number; skipped: number; errors: string[] } {
-  const hub = require("./db-hub");
-  return hub.importSnmpVendorProfiles(profiles, replaceExisting);
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // DHCP LEASES (unified table)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -840,6 +228,86 @@ export {
 } from "./db-hub";
 
 export type { Tenant, HubUser } from "./db-hub";
+
+// T3-08: utenti, impostazioni, profili Nmap e SNMP, regole di fingerprint,
+// tabelle sysObjectID e MAC-prodotto vivono nell'hub. La facciata le definiva
+// come deleghe con la stessa firma: ora le riesporta (stesso oggetto funzione,
+// lo prova db-facade-als.test.ts). Elenco: support/facciata-spostate.ts.
+export {
+  getSysObjLookupEntries,
+  createSysObjLookupEntry,
+  updateSysObjLookupEntry,
+  deleteSysObjLookupEntry,
+  resetBuiltinSysObjLookup,
+  getMacProductMap,
+  createMacProductEntry,
+  updateMacProductEntry,
+  deleteMacProductEntry,
+  getUserCount,
+  updateUserLastLogin,
+  updateUserPassword,
+  updateUserRole,
+  deleteUser,
+  getSetting,
+  isOnboardingCompleted,
+  getAllSettings,
+  setSetting,
+  getAllFingerprintClassificationMapRows,
+  getFingerprintClassificationRulesForResolve,
+  createFingerprintClassificationMapRow,
+  updateFingerprintClassificationMapRow,
+  deleteFingerprintClassificationMapRow,
+  getDeviceFingerprintRules,
+  getEnabledDeviceFingerprintRules,
+  createDeviceFingerprintRule,
+  updateDeviceFingerprintRule,
+  deleteDeviceFingerprintRule,
+  resetBuiltinFingerprintRules,
+  getNmapProfiles,
+  getNmapProfileById,
+  getActiveNmapProfile,
+  createNmapProfile,
+  updateNmapProfile,
+  deleteNmapProfile,
+  getSnmpVendorProfiles,
+  getEnabledSnmpVendorProfiles,
+  getSnmpVendorProfileById,
+  getSnmpVendorProfileByProfileId,
+  createSnmpVendorProfile,
+  updateSnmpVendorProfile,
+  deleteSnmpVendorProfile,
+  resetBuiltinSnmpVendorProfiles,
+  exportSnmpVendorProfiles,
+  importSnmpVendorProfiles,
+} from "./db-hub";
+
+export type {
+  SysObjLookupRow,
+  MacProductMapRow,
+  FingerprintClassificationMapRow,
+  DeviceFingerprintRuleRow,
+  NmapProfileRow,
+  SnmpVendorProfileRow,
+} from "./db-hub";
+
+// Le quattro letture degli utenti con un tipo diverso: l'hub restituisce
+// `HubUser` (con email e tenant), la facciata ha sempre promesso `User`.
+// Involucri di una riga, senza accesso al database (T3-08).
+export function getUserByUsername(username: string): User | undefined {
+  return hubGetUserByUsername(username);
+}
+
+export function createUser(...args: Parameters<typeof hubCreateUser>): User {
+  return hubCreateUser(...args);
+}
+
+export function getUsers(): Omit<User, "password_hash">[] {
+  return hubGetUsers();
+}
+
+export function getUserById(id: number): User | undefined {
+  return hubGetUserById(id);
+}
 
 // Tenant DB (context-aware, per-tenant data)
 export {

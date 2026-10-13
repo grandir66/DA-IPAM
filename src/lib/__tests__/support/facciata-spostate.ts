@@ -140,6 +140,43 @@ export const SPOSTATE: readonly string[] = [
   ...SPOSTATE_GRUPPO_2,
 ];
 
+/**
+ * Deleghe all'hub (T3-08): la facciata le definiva come `require("./db-hub")` e
+ * chiamata della funzione omonima, con la stessa firma. Ora le riesporta: `db.ts`
+ * dà lo stesso oggetto funzione di `db-hub.ts` (`getUserCount` aveva la query
+ * scritta due volte, uguale).
+ */
+export const DELEGHE_HUB = [
+  "getSysObjLookupEntries", "createSysObjLookupEntry", "updateSysObjLookupEntry",
+  "deleteSysObjLookupEntry", "resetBuiltinSysObjLookup", "getMacProductMap", "createMacProductEntry",
+  "updateMacProductEntry", "deleteMacProductEntry", "getUserCount", "updateUserLastLogin",
+  "getSetting", "isOnboardingCompleted", "getAllSettings", "setSetting",
+  "getAllFingerprintClassificationMapRows", "getFingerprintClassificationRulesForResolve",
+  "createFingerprintClassificationMapRow", "updateFingerprintClassificationMapRow",
+  "deleteFingerprintClassificationMapRow", "getDeviceFingerprintRules",
+  "getEnabledDeviceFingerprintRules", "createDeviceFingerprintRule", "updateDeviceFingerprintRule",
+  "deleteDeviceFingerprintRule", "resetBuiltinFingerprintRules", "getNmapProfiles",
+  "getNmapProfileById", "getActiveNmapProfile", "createNmapProfile", "updateNmapProfile",
+  "deleteNmapProfile", "updateUserPassword", "updateUserRole", "deleteUser",
+  "getSnmpVendorProfiles", "getEnabledSnmpVendorProfiles", "getSnmpVendorProfileById",
+  "getSnmpVendorProfileByProfileId", "createSnmpVendorProfile", "updateSnmpVendorProfile",
+  "deleteSnmpVendorProfile", "resetBuiltinSnmpVendorProfiles", "exportSnmpVendorProfiles",
+  "importSnmpVendorProfiles",
+] as const;
+
+/**
+ * Le quattro deleghe all'hub con un tipo diverso: l'hub restituisce `HubUser`
+ * (con `email` e `tenant_id`), la facciata ha sempre promesso `User`. Restano
+ * involucri di una riga, senza accesso al database (T3-08).
+ */
+export const INVOLUCRI_HUB = ["getUserByUsername", "createUser", "getUsers", "getUserById"] as const;
+
+/** Tipi uguali in `db-hub.ts` e nella facciata (T3-08): `db.ts` li riesporta. */
+export const TIPI_HUB: readonly string[] = [
+  "SysObjLookupRow", "MacProductMapRow", "FingerprintClassificationMapRow",
+  "DeviceFingerprintRuleRow", "NmapProfileRow", "SnmpVendorProfileRow",
+];
+
 /** Tipi uguali nelle due copie (T3-05): `db.ts` li riesporta con `export type`. */
 export const TIPI_SPOSTATI: readonly string[] = [
   "AttributionSignals", "ScanPhaseKey", "ScanPhaseStatus", "AttributionCompleteness",

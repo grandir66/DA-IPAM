@@ -24,7 +24,8 @@ import fs from "node:fs";
 import path from "node:path";
 import * as facciata from "@/lib/db";
 import * as tenant from "@/lib/db-tenant";
-import { SPOSTATE } from "./support/facciata-spostate";
+import * as hub from "@/lib/db-hub";
+import { DELEGHE_HUB, SPOSTATE } from "./support/facciata-spostate";
 
 const TENANT_A = "TESTALSFACCIATAA";
 const TENANT_B = "TESTALSFACCIATAB";
@@ -44,6 +45,13 @@ test("ogni funzione spostata: db.ts esporta lo stesso oggetto di db-tenant.ts", 
   assert.deepEqual(nonFunzioni, [], "nomi spostati che db-tenant.ts non esporta come funzione");
   const copie = SPOSTATE.filter((n) => f[n] !== t[n]);
   assert.deepEqual(copie, [], "db.ts ha ancora una copia propria di queste funzioni");
+});
+
+test("ogni delega all'hub: db.ts esporta lo stesso oggetto di db-hub.ts (T3-08)", () => {
+  const f = facciata as unknown as Record<string, unknown>;
+  const h = hub as unknown as Record<string, unknown>;
+  assert.deepEqual(DELEGHE_HUB.filter((n) => typeof h[n] !== "function"), [], "deleghe che db-hub.ts non esporta come funzione");
+  assert.deepEqual(DELEGHE_HUB.filter((n) => f[n] !== h[n]), [], "db.ts ha ancora un involucro proprio di queste funzioni dell'hub");
 });
 
 test("withTenant della facciata: db-tenant e currentFacadeTenant vedono lo stesso codice, anche dopo un await", async () => {

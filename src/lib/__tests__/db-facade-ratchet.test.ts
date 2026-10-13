@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { SPOSTATE, TIPI_SPOSTATI } from "./support/facciata-spostate";
+import { DELEGHE_HUB, SPOSTATE, TIPI_HUB, TIPI_SPOSTATI } from "./support/facciata-spostate";
 
 /**
  * Funzioni esportate definite in db.ts: 275 all'inizio, 271 dopo il gruppo 0
@@ -32,9 +32,10 @@ import { SPOSTATE, TIPI_SPOSTATI } from "./support/facciata-spostate";
  * 104 dopo inventario e licenze, 97 dopo ARP, vicini, rotte e porte,
  * 83 dopo apparati, job e Proxmox, 64 dopo reti e host; nel gruppo 2 (T3-07),
  * una per commit: 63 dopo upsertArpEntries, 62 dopo getHostByMac, 61 dopo getHostById, 60 dopo getHostsByNetworkWithDevices, 59 dopo recomputeMultihomedLinks, 58 dopo resetConfiguration, 57 dopo getAdComputersPaginated, 56 dopo getAdUsersPaginated, 55 dopo upsertHost;
- * nel gruppo 3 (T3-08): 54 dopo il ramo del vecchio ipam.db (`closeDb` passa a db-legacy.ts).
+ * nel gruppo 3 (T3-08): 54 dopo il ramo del vecchio ipam.db (`closeDb` passa a db-legacy.ts),
+ * 9 dopo le deleghe all'hub (45 riesportate, 4 involucri restano).
  */
-const SOGLIA = 54;
+const SOGLIA = 9;
 
 interface Dichiarazione {
   nome: string;
@@ -71,6 +72,7 @@ function funzioniDefinite(file: string): string[] {
 
 const DB_TS = path.join(process.cwd(), "src", "lib", "db.ts");
 const DB_TENANT_TS = path.join(process.cwd(), "src", "lib", "db-tenant.ts");
+const DB_HUB_TS = path.join(process.cwd(), "src", "lib", "db-hub.ts");
 
 /**
  * File che il cricchetto NON guarda, ciascuno col suo motivo (T3-08). Per ognuno
@@ -106,6 +108,17 @@ test("db.ts: le funzioni definite sono esattamente SOGLIA", () => {
   const n = funzioniDefinite(DB_TS).length;
   assert.ok(n <= SOGLIA, `db.ts definisce ${n} funzioni, la soglia è ${SOGLIA}: una funzione nuova va in db-tenant.ts`);
   assert.equal(n, SOGLIA, `db.ts definisce ${n} funzioni, meno della soglia ${SOGLIA}: sono scese, abbassa SOGLIA a ${n}`);
+});
+
+test("db.ts: le deleghe all'hub sono riesportazioni, non ridichiarazioni; db-hub.ts le definisce", () => {
+  const nomi = new Set(dichiarazioni(DB_TS).map((d) => d.nome));
+  assert.deepEqual(DELEGHE_HUB.filter((n) => nomi.has(n)), [], "deleghe all'hub ridichiarate in db.ts");
+  assert.deepEqual(TIPI_HUB.filter((n) => nomi.has(n)), [], "tipi dell'hub ridichiarati in db.ts");
+  const hub = dichiarazioni(DB_HUB_TS).filter((d) => d.esportata);
+  const funzioniHub = new Set(hub.filter((d) => d.funzione).map((d) => d.nome));
+  assert.deepEqual(DELEGHE_HUB.filter((n) => !funzioniHub.has(n)), [], "deleghe che db-hub.ts non definisce");
+  const tipiHub = new Set(hub.map((d) => d.nome));
+  assert.deepEqual(TIPI_HUB.filter((n) => !tipiHub.has(n)), [], "tipi che db-hub.ts non esporta");
 });
 
 test("file esclusi dal cricchetto: esistono, hanno un motivo e li importa solo chi è ammesso", () => {

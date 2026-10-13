@@ -31,9 +31,10 @@ import { SPOSTATE, TIPI_SPOSTATI } from "./support/facciata-spostate";
  * 144 dopo le credenziali, 133 dopo AD, 125 dopo DHCP,
  * 104 dopo inventario e licenze, 97 dopo ARP, vicini, rotte e porte,
  * 83 dopo apparati, job e Proxmox, 64 dopo reti e host; nel gruppo 2 (T3-07),
- * una per commit: 63 dopo upsertArpEntries, 62 dopo getHostByMac, 61 dopo getHostById, 60 dopo getHostsByNetworkWithDevices, 59 dopo recomputeMultihomedLinks, 58 dopo resetConfiguration, 57 dopo getAdComputersPaginated, 56 dopo getAdUsersPaginated, 55 dopo upsertHost.
+ * una per commit: 63 dopo upsertArpEntries, 62 dopo getHostByMac, 61 dopo getHostById, 60 dopo getHostsByNetworkWithDevices, 59 dopo recomputeMultihomedLinks, 58 dopo resetConfiguration, 57 dopo getAdComputersPaginated, 56 dopo getAdUsersPaginated, 55 dopo upsertHost;
+ * nel gruppo 3 (T3-08): 54 dopo il ramo del vecchio ipam.db (`closeDb` passa a db-legacy.ts).
  */
-const SOGLIA = 55;
+const SOGLIA = 54;
 
 interface Dichiarazione {
   nome: string;
@@ -71,10 +72,53 @@ function funzioniDefinite(file: string): string[] {
 const DB_TS = path.join(process.cwd(), "src", "lib", "db.ts");
 const DB_TENANT_TS = path.join(process.cwd(), "src", "lib", "db-tenant.ts");
 
+/**
+ * File che il cricchetto NON guarda, ciascuno col suo motivo (T3-08). Per ognuno
+ * la prova sotto vincola chi può importarlo, così l'eccezione non si allarga.
+ */
+const ESCLUSI: Readonly<Record<string, { motivo: string; importatori: readonly string[] }>> = {
+  "src/lib/db-legacy.ts": {
+    motivo:
+      "il vecchio database single-tenant `ipam.db` con le sue migrazioni inline: lo apre solo " +
+      "`getDb()` senza contesto e senza tenant DEFAULT (ripiego contato nel registro, da chiudere " +
+      "in T3-09) e lo script che rigenera il modello vuoto, con un percorso esplicito",
+    importatori: ["src/lib/db.ts", "scripts/generate-empty-db.ts"],
+  },
+};
+
+/** File sotto `dir` (ricorsivo) con estensione .ts/.tsx/.mjs/.cjs/.js, percorsi relativi alla radice. */
+function sorgenti(dir: string): string[] {
+  const radice = process.cwd();
+  const out: string[] = [];
+  const giro = (d: string): void => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (e.name === "node_modules" || e.name === ".next") continue;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) giro(p);
+      else if (/\.(ts|tsx|mjs|cjs|js)$/.test(e.name)) out.push(path.relative(radice, p));
+    }
+  };
+  giro(path.join(radice, dir));
+  return out;
+}
+
 test("db.ts: le funzioni definite sono esattamente SOGLIA", () => {
   const n = funzioniDefinite(DB_TS).length;
   assert.ok(n <= SOGLIA, `db.ts definisce ${n} funzioni, la soglia è ${SOGLIA}: una funzione nuova va in db-tenant.ts`);
   assert.equal(n, SOGLIA, `db.ts definisce ${n} funzioni, meno della soglia ${SOGLIA}: sono scese, abbassa SOGLIA a ${n}`);
+});
+
+test("file esclusi dal cricchetto: esistono, hanno un motivo e li importa solo chi è ammesso", () => {
+  for (const [file, { motivo, importatori }] of Object.entries(ESCLUSI)) {
+    const modulo = path.basename(file).replace(/\.ts$/, "");
+    const importa = new RegExp(`(?:from\\s+|import\\(\\s*|require\\(\\s*)["'][^"']*/${modulo}["']`);
+    assert.ok(fs.existsSync(path.join(process.cwd(), file)), `${file} escluso ma assente`);
+    assert.ok(motivo.length > 40, `${file}: manca il motivo dell'esclusione`);
+    const chi = [...sorgenti("src"), ...sorgenti("scripts"), "server.ts"]
+      .filter((f) => f !== file && fs.existsSync(path.join(process.cwd(), f)))
+      .filter((f) => importa.test(fs.readFileSync(path.join(process.cwd(), f), "utf8")));
+    assert.deepEqual(chi.sort(), [...importatori].sort(), `${file}: importato da file non ammessi`);
+  }
 });
 
 test("db.ts: le funzioni spostate non vi sono ridichiarate, nemmeno in locale", () => {

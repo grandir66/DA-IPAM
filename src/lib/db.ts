@@ -23,7 +23,6 @@ import fs from "fs";
 import { SCHEMA_SQL } from "./db-schema";
 import { macToHex, normalizeMacForStorage } from "./utils";
 import { ipSortKey } from "./table-sort";
-import { randomUUID } from "crypto";
 
 import type {
   Host,
@@ -3105,188 +3104,8 @@ export function getAdComputersPaginated(integrationId: number, page: number, pag
 // MULTI-HOMED DETECTION
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Hostname da escludere dal matching multi-homed (troppo generici). */
-const MH_HOSTNAME_BLACKLIST = new Set([
-  "localhost", "router", "switch", "firewall", "gateway", "server",
-  "ap", "nas", "printer", "unknown", "default", "test",
-]);
+// recomputeMultihomedLinks e i suoi aiutanti vivono in db-tenant.ts (T3-07).
 
-/**
- * IP v4 string → numeric value per ordinamento deterministico nella scelta del primary.
- * Per IP non IPv4 valido ritorna Infinity così va in coda.
- */
-function ipv4ToInt(ip: string): number {
-  const parts = ip.split(".");
-  if (parts.length !== 4) return Number.POSITIVE_INFINITY;
-  let n = 0;
-  for (const p of parts) {
-    const x = Number(p);
-    if (!Number.isInteger(x) || x < 0 || x > 255) return Number.POSITIVE_INFINITY;
-    n = n * 256 + x;
-  }
-  return n;
-}
-
-/**
- * Ricalcola i link multi-homed: stesso dispositivo fisico con IP in subnet diverse.
- * Match per: serial_number > sysName SNMP > hostname > AD dns_host_name.
- * Solo gruppi con host in ≥2 reti diverse.
- */
-export function recomputeMultihomedLinks(): { groups: number; hosts_linked: number } {
-  const db = getDb();
-
-  const hosts = db.prepare(`
-    SELECT h.id, h.network_id, h.ip, h.hostname, h.serial_number, h.snmp_data, h.custom_name,
-           nd.sysname AS dev_sysname, nd.serial_number AS dev_serial,
-           ac.dns_host_name AS ad_dns,
-           CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device
-    FROM hosts h
-    LEFT JOIN network_devices nd ON nd.host = h.ip
-    LEFT JOIN (
-      SELECT host_id, MAX(dns_host_name) as dns_host_name
-      FROM ad_computers WHERE host_id IS NOT NULL
-      GROUP BY host_id
-    ) ac ON ac.host_id = h.id
-  `).all() as Array<{
-    id: number; network_id: number; ip: string;
-    hostname: string | null; serial_number: string | null;
-    snmp_data: string | null; custom_name: string | null;
-    dev_sysname: string | null; dev_serial: string | null;
-    ad_dns: string | null; has_device: number;
-  }>;
-
-  // Metadata per scegliere il primary del gruppo: IP + flag "managed".
-  const hostMeta = new Map<number, { ip: string; has_device: number }>();
-  for (const h of hosts) hostMeta.set(h.id, { ip: h.ip, has_device: h.has_device });
-
-  // Key → Set<host_id>
-  const buckets = new Map<string, Set<number>>();
-  const hostNet = new Map<number, number>();
-  const PRIORITY: Record<string, number> = { serial_number: 4, sysname: 3, hostname: 2, ad_dns: 1 };
-  const hostBest = new Map<number, { type: string; value: string; priority: number }>();
-
-  function addToBucket(key: string, hostId: number, type: string, value: string) {
-    if (!buckets.has(key)) buckets.set(key, new Set());
-    buckets.get(key)!.add(hostId);
-    const p = PRIORITY[type] ?? 0;
-    const cur = hostBest.get(hostId);
-    if (!cur || p > cur.priority) {
-      hostBest.set(hostId, { type, value, priority: p });
-    }
-  }
-
-  for (const h of hosts) {
-    hostNet.set(h.id, h.network_id);
-
-    // 1. Serial number (host o device)
-    const serial = (h.serial_number || h.dev_serial || "").trim().toUpperCase();
-    if (serial && serial.length >= 4) {
-      addToBucket(`serial:${serial}`, h.id, "serial_number", serial);
-    }
-
-    // 2. SNMP sysName
-    let sysName = h.dev_sysname ?? null;
-    if (!sysName && h.snmp_data) {
-      try { sysName = (JSON.parse(h.snmp_data) as { sysName?: string }).sysName ?? null; } catch { /* skip */ }
-    }
-    if (sysName?.trim() && !MH_HOSTNAME_BLACKLIST.has(sysName.trim().toLowerCase())) {
-      addToBucket(`sysname:${sysName.trim().toLowerCase()}`, h.id, "sysname", sysName.trim());
-    }
-
-    // 3. Hostname
-    const hn = (h.hostname ?? "").trim().toLowerCase();
-    if (hn && hn.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(hn)) {
-      // Usa short hostname (prima del primo punto) per matchare FQDN con short
-      const shortHn = hn.split(".")[0];
-      if (shortHn.length >= 3) {
-        addToBucket(`hostname:${shortHn}`, h.id, "hostname", h.hostname!.trim());
-      }
-    }
-
-    // 4. AD dns_host_name
-    const adDns = (h.ad_dns ?? "").trim().toLowerCase();
-    if (adDns && adDns.length >= 3) {
-      const shortAd = adDns.split(".")[0];
-      if (shortAd.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(shortAd)) {
-        addToBucket(`ad_dns:${shortAd}`, h.id, "ad_dns", h.ad_dns!.trim());
-      }
-    }
-  }
-
-  // Filtra: solo bucket con host in ≥2 reti diverse
-  // Union-find per unire bucket che condividono host
-  const parent = new Map<number, number>();
-  function find(x: number): number {
-    if (!parent.has(x)) parent.set(x, x);
-    if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!));
-    return parent.get(x)!;
-  }
-  function union(a: number, b: number) {
-    const ra = find(a), rb = find(b);
-    if (ra !== rb) parent.set(ra, rb);
-  }
-
-  for (const [, hostIds] of buckets) {
-    if (hostIds.size < 2) continue;
-    // Verifica che ci siano ≥2 reti diverse
-    const nets = new Set<number>();
-    for (const hid of hostIds) nets.add(hostNet.get(hid)!);
-    if (nets.size < 2) continue;
-    // Union tutti gli host del bucket
-    const arr = [...hostIds];
-    for (let i = 1; i < arr.length; i++) union(arr[0], arr[i]);
-  }
-
-  // Costruisci gruppi finali
-  const finalGroups = new Map<number, Set<number>>();
-  for (const [hid] of parent) {
-    const root = find(hid);
-    if (!finalGroups.has(root)) finalGroups.set(root, new Set());
-    finalGroups.get(root)!.add(hid);
-  }
-
-  // Filtra gruppi: ≥2 host in ≥2 reti diverse
-  let groupCount = 0;
-  let totalLinked = 0;
-
-  db.transaction(() => {
-    db.prepare("DELETE FROM multihomed_links").run();
-    const ins = db.prepare(
-      "INSERT OR IGNORE INTO multihomed_links (group_id, host_id, match_type, match_value, is_primary) VALUES (?, ?, ?, ?, ?)"
-    );
-
-    for (const [, members] of finalGroups) {
-      if (members.size < 2) continue;
-      const nets = new Set<number>();
-      for (const hid of members) nets.add(hostNet.get(hid)!);
-      if (nets.size < 2) continue;
-
-      const groupId = randomUUID();
-      groupCount++;
-
-      // Auto-pick primary: priorità (1) host con network_device associato (managed),
-      // (2) a parità, IP numericamente più basso. Deterministico → idempotente sui recompute.
-      const ranked = [...members]
-        .map((hid) => ({ hid, meta: hostMeta.get(hid)! }))
-        .filter((m) => m.meta)
-        .sort((a, b) => {
-          if (a.meta.has_device !== b.meta.has_device) return b.meta.has_device - a.meta.has_device;
-          return ipv4ToInt(a.meta.ip) - ipv4ToInt(b.meta.ip);
-        });
-      const primaryHid = ranked.length > 0 ? ranked[0].hid : null;
-
-      for (const hid of members) {
-        const best = hostBest.get(hid);
-        if (best) {
-          ins.run(groupId, hid, best.type, best.value, hid === primaryHid ? 1 : 0);
-          totalLinked++;
-        }
-      }
-    }
-  })();
-
-  return { groups: groupCount, hosts_linked: totalLinked };
-}
 
 // AD Users
 export function getAdUsersPaginated(integrationId: number, page: number, pageSize: number, search?: string, activeDays?: number): { rows: AdUser[]; total: number } {
@@ -3752,4 +3571,5 @@ export {
   getHostByMac,
   getHostById,
   getHostsByNetworkWithDevices,
+  recomputeMultihomedLinks,
 } from "./db-tenant";

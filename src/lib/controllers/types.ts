@@ -79,13 +79,28 @@ export interface NetworkControllerView {
   origin: ControllerOrigin;
   /** Pianificazione in minuti, null = spenta. */
   scheduleMinutes: number | null;
+  /** Lettura dei client collegati ogni ora dalle 7 alle 20 (topologia fase 2): spenta di default. */
+  clientSchedule: boolean;
+  /** Ultima lettura dei client (riga a sé: non è la lettura degli apparati). */
+  lastClientRun: { at: string; ok: boolean; message: string | null } | null;
 }
 
 export type ControllerRunTrigger = "manual" | "schedule";
 
+/** Che cosa ha letto un giro: gli apparati (stat/device) o i client collegati (stat/sta). */
+export type ControllerRunKind = "apparati" | "client";
+
+/**
+ * Il valore della colonna `trigger` dello storico: i giri dei client portano il
+ * prefisso «client:» (lo schema non ha un campo per il tipo, e la potatura e le
+ * letture lo distinguono da qui).
+ */
+export type ControllerRunStoredTrigger = ControllerRunTrigger | `client:${ControllerRunTrigger}`;
+
 /** Una lettura del controller, come la mostra il dettaglio della riga. */
 export interface ControllerRunView {
   id: number;
+  kind: ControllerRunKind;
   startedAt: string;
   finishedAt: string;
   trigger: ControllerRunTrigger;

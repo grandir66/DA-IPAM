@@ -17,8 +17,12 @@ import {
   deleteTenantDatabase,
   getTenantDb,
   getTenantSetting,
+  listControllerScheduleJobs,
   recordControllerRun,
+  setControllerClientSchedule,
+  setControllerSchedule,
   withTenant,
+  type ControllerRunInsert,
 } from "@/lib/db-tenant";
 import { encrypt } from "@/lib/crypto";
 import {
@@ -33,12 +37,15 @@ import {
   acceptControllerCertPin,
   checkControllerInput,
   createController,
+  getControllerView,
   listControllerRunViews,
   listControllerViews,
   migrateLegacyUnifiConfig,
+  parseControllerPatch,
   probeControllerInput,
   probeSavedController,
   removeController,
+  setClientScheduleFor,
   syncController,
   updateController,
 } from "../service";
@@ -288,6 +295,81 @@ test("pianificazione: un job unifi_sync per controller con il suo id; spenta o c
   assert.equal(conta("network_controllers"), 0);
 });
 
+type JobRow = { id: number; interval_minutes: number; enabled: number; config: string };
+const jobUnifi = (): JobRow[] =>
+  getTenantDb(T).prepare("SELECT id, interval_minutes, enabled, config FROM scheduled_jobs WHERE job_type = 'unifi_sync' ORDER BY id").all() as JobRow[];
+
+test("job dei client: spento di default; acceso = un job unifi_sync ogni ora con cosa «client», che la pianificazione degli apparati non tocca", () => {
+  const v = inTenant(() => createController(input()));
+  assert.equal(v.clientSchedule, false, "spento di default");
+  assert.equal(jobUnifi().length, 0);
+
+  inTenant(() => setControllerClientSchedule(v.id, true));
+  inTenant(() => setControllerClientSchedule(v.id, true)); // idempotente
+  let jobs = jobUnifi();
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].interval_minutes, 60);
+  assert.equal(jobs[0].enabled, 1);
+  assert.deepEqual(JSON.parse(jobs[0].config), { controller_id: v.id, cosa: "client" });
+  const clientJobId = jobs[0].id;
+
+  // La pianificazione degli apparati crea il suo job e lascia stare quello dei client.
+  inTenant(() => setControllerSchedule(v.id, 1440));
+  jobs = jobUnifi();
+  assert.equal(jobs.length, 2);
+  assert.equal(jobs.find((j) => j.id === clientJobId)?.interval_minutes, 60);
+  inTenant(() => setControllerSchedule(v.id, 120));
+  assert.equal(jobUnifi().find((j) => j.id === clientJobId)?.interval_minutes, 60);
+  // L'elenco delle pianificazioni degli apparati non vede il job dei client.
+  const elenco = inTenant(() => listControllerScheduleJobs());
+  assert.equal(elenco.length, 1);
+  assert.notEqual(elenco[0].job_id, clientJobId);
+  assert.equal(elenco[0].interval_minutes, 120);
+  const vista = inTenant(() => getControllerView(v.id));
+  assert.equal(vista?.scheduleMinutes, 120, "il job dei client non diventa la pianificazione degli apparati");
+  assert.equal(vista?.clientSchedule, true);
+
+  // Spegnere gli apparati non spegne i client, e viceversa.
+  inTenant(() => setControllerSchedule(v.id, null));
+  assert.deepEqual(jobUnifi().map((j) => j.id), [clientJobId]);
+  inTenant(() => setControllerSchedule(v.id, 60));
+  inTenant(() => setControllerClientSchedule(v.id, false));
+  jobs = jobUnifi();
+  assert.equal(jobs.length, 1);
+  assert.equal(JSON.parse(jobs[0].config).cosa, undefined);
+  assert.equal(inTenant(() => getControllerView(v.id))?.clientSchedule, false);
+
+  // Cancellare il controller toglie tutti e due i job.
+  inTenant(() => setControllerClientSchedule(v.id, true));
+  assert.equal(jobUnifi().length, 2);
+  assert.equal(inTenant(() => removeController(v.id)), true);
+  assert.equal(jobUnifi().length, 0);
+});
+
+test("job dei client: spegnere il controller lo spegne; da spento o Omada non si accende", () => {
+  const v = inTenant(() => createController(input({ scheduleMinutes: 60 })));
+  assert.equal(inTenant(() => setClientScheduleFor(v.id, true)).ok, true);
+  inTenant(() => updateController(v.id, input({ apiKey: "", enabled: false })));
+  assert.equal(jobUnifi().length, 0, "controller spento: nessun job, né apparati né client");
+  const rifiuto = inTenant(() => setClientScheduleFor(v.id, true));
+  assert.equal(rifiuto.ok, false);
+  assert.match(rifiuto.ok ? "" : rifiuto.error, /spento/);
+  assert.equal(jobUnifi().length, 0);
+  // Spegnere si può sempre; un controller che non c'è è «non trovato».
+  assert.equal(inTenant(() => setClientScheduleFor(v.id, false)).ok, true);
+  const assente = inTenant(() => setClientScheduleFor(v.id + 99, true));
+  assert.equal(assente.ok === false && assente.status, 404);
+});
+
+test("PATCH del controller: accetta solo client_schedule booleano", () => {
+  assert.deepEqual(parseControllerPatch({ client_schedule: true }), { ok: true, value: { clientSchedule: true } });
+  assert.deepEqual(parseControllerPatch({ client_schedule: false }), { ok: true, value: { clientSchedule: false } });
+  for (const body of [null, {}, { client_schedule: "si" }, { client_schedule: 1 }, { client_schedule: true, altro: 1 }]) {
+    const r = parseControllerPatch(body);
+    assert.equal(r.ok, false, JSON.stringify(body));
+  }
+});
+
 test("accetta il nuovo certificato: solo se l'impronta fissata è ancora quella vista", () => {
   const v = inTenant(() => createController(input({ certPin: PIN_A })));
   const vecchia = inTenant(() => acceptControllerCertPin(v.id, PIN_B, null));
@@ -380,6 +462,61 @@ test(`storico: si tengono le ultime ${CONTROLLER_RUNS_KEPT} letture per controll
   }
   assert.equal(conta("network_controller_runs", "controller_id = ?", v.id), CONTROLLER_RUNS_KEPT);
   assert.equal(inTenant(() => listControllerRunViews(v.id, 1))[0].message, `giro ${CONTROLLER_RUNS_KEPT + 6}`);
+});
+
+function giro(controllerId: number, trigger: ControllerRunInsert["trigger"], i: number, ok = 1): ControllerRunInsert {
+  return {
+    controller_id: controllerId,
+    started_at: "2026-10-13 10:00:00",
+    finished_at: "2026-10-13 10:00:01",
+    trigger,
+    triggered_by: null,
+    ok,
+    total: i,
+    added: 0,
+    updated: 0,
+    skipped: 0,
+    ports: 0,
+    neighbors: 0,
+    message: `${trigger} ${i}`,
+    errors_json: "[]",
+    skipped_reasons_json: "[]",
+    offline_json: "[]",
+  };
+}
+
+test("storico: letture dei client e degli apparati si potano ciascuna per conto suo; l'elenco mostra solo gli apparati", () => {
+  const v = inTenant(() => createController(input()));
+  inTenant(() => recordControllerRun(giro(v.id, "schedule", 1)));
+  // Un giorno e mezzo di letture dei client ogni ora non deve spingere fuori quella degli apparati.
+  for (let i = 0; i < CONTROLLER_RUNS_KEPT + 10; i++) {
+    inTenant(() => recordControllerRun(giro(v.id, i % 2 ? "client:schedule" : "client:manual", i)));
+  }
+  assert.equal(conta("network_controller_runs", "controller_id = ? AND trigger LIKE 'client:%'", v.id), CONTROLLER_RUNS_KEPT);
+  assert.equal(conta("network_controller_runs", "controller_id = ? AND trigger NOT LIKE 'client:%'", v.id), 1);
+  const elenco = inTenant(() => listControllerRunViews(v.id, 10));
+  assert.deepEqual(elenco.map((r) => r.message), ["schedule 1"]);
+  assert.equal(elenco[0].kind, "apparati");
+
+  for (let i = 0; i < CONTROLLER_RUNS_KEPT + 3; i++) inTenant(() => recordControllerRun(giro(v.id, "manual", 100 + i)));
+  assert.equal(conta("network_controller_runs", "controller_id = ? AND trigger NOT LIKE 'client:%'", v.id), CONTROLLER_RUNS_KEPT);
+  assert.equal(conta("network_controller_runs", "controller_id = ? AND trigger LIKE 'client:%'", v.id), CONTROLLER_RUNS_KEPT);
+});
+
+test("storico: una lettura dei client non tocca il riepilogo degli apparati e si vede come riga a sé sulla vista", () => {
+  const v = inTenant(() => createController(input()));
+  inTenant(() => recordControllerRun({ ...giro(v.id, "schedule", 37), ports: 120, neighbors: 9 }));
+  inTenant(() => recordControllerRun({ ...giro(v.id, "client:schedule", 400), message: "Lettura client: 400 letti" }));
+  inTenant(() => recordControllerRun({ ...giro(v.id, "client:schedule", 0, 0), message: "Lettura client: non raggiungibile" }));
+  const vista = inTenant(() => getControllerView(v.id));
+  assert.equal(vista?.lastDevices, 37, "i conteggi restano quelli degli apparati");
+  assert.equal(vista?.lastPorts, 120);
+  assert.equal(vista?.lastOk, true, "un giro dei client fallito non fa diventare rosso il controller");
+  assert.equal(vista?.lastClientRun?.ok, false);
+  assert.equal(vista?.lastClientRun?.message, "Lettura client: non raggiungibile");
+  assert.equal(vista?.lastClientRun?.at, "2026-10-13 10:00:01");
+  const elenco = inTenant(() => listControllerViews());
+  assert.equal(elenco[0].lastClientRun?.message, "Lettura client: non raggiungibile");
 });
 
 // ── Configurazione vecchia dell'hub ──────────────────────────────────────────

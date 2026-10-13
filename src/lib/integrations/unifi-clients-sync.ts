@@ -10,9 +10,11 @@
  * - Un errore del controller (rete, credenziali, certificato, risposta d'errore)
  *   esce PRIMA di qualunque scrittura: è «non so», non «zero client». Le righe
  *   esistenti restano e invecchiano (pulizia a 30 giorni).
- * - Il giro finisce nello storico del controller con `message` che comincia
- *   per «Lettura client:» (lo storico non ha un campo per il tipo di lettura);
- *   i conteggi della riga del controller restano quelli degli apparati.
+ * - Il giro finisce nello storico del controller con trigger «client:manual» o
+ *   «client:schedule» (lo storico non ha un campo per il tipo: la potatura,
+ *   50 per tipo, e le letture lo distinguono dal prefisso) e `message` che
+ *   comincia per «Lettura client:»; i conteggi della riga del controller
+ *   restano quelli degli apparati.
  * - Nessun log con MAC, nomi o IP dei client (l'unico avviso è uno storico non
  *   registrato, col messaggio del DB).
  *
@@ -116,7 +118,7 @@ export async function syncUnifiClientsForController(
         controller_id: controllerId,
         started_at: startedAt,
         finished_at: nowSql(),
-        trigger,
+        trigger: `client:${trigger}`,
         triggered_by: opts.triggeredBy ?? null,
         ok: result.ok ? 1 : 0,
         total: result.clients,

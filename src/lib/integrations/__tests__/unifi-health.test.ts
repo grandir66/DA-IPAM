@@ -27,6 +27,8 @@ function c(campi: Partial<NetworkControllerView> = {}): NetworkControllerView {
     lastNeighbors: null,
     origin: "manual",
     scheduleMinutes: null,
+    clientSchedule: false,
+    lastClientRun: null,
     ...campi,
   };
 }

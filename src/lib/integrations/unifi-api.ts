@@ -182,12 +182,16 @@ export function controllerMsgFromBody(body: string): string | null {
   return null;
 }
 
+/** Contesto di un errore: il passo e, per una lettura, che cosa si leggeva (apparati di default). */
+type ErrorCtx = { step: "login" | "lettura"; site?: string; apiKey?: boolean; what?: "device" | "sta" };
+
 export function classifyUnifiHttpError(
   status: number,
   controllerMsg: string | null,
-  ctx: { step: "login" | "lettura"; site?: string; apiKey?: boolean },
+  ctx: ErrorCtx,
 ): { reason: UnifiErrorReason; message: string } {
   const msg = controllerMsg ?? "";
+  const cosa = ctx.what === "sta" ? "client" : "apparati";
   if (ctx.apiKey && (status === 401 || status === 403)) {
     return {
       reason: "auth",
@@ -211,7 +215,10 @@ export function classifyUnifiHttpError(
     };
   }
   if (msg === "api.err.NoPermission") {
-    return { reason: "auth", message: "L'account del controller non ha il permesso di leggere gli apparati del site" };
+    return {
+      reason: "auth",
+      message: `L'account del controller non ha il permesso di leggere ${cosa === "client" ? "i client" : "gli apparati"} del site`,
+    };
   }
   if (status === 401 || status === 403 || msg === "api.err.Invalid" || msg === "api.err.LoginRequired") {
     return {
@@ -219,7 +226,7 @@ export function classifyUnifiHttpError(
       message:
         ctx.step === "login"
           ? "Credenziali del controller rifiutate (utente o password errati)"
-          : "Il controller ha rifiutato la sessione durante la lettura degli apparati",
+          : `Il controller ha rifiutato la sessione durante la lettura ${cosa === "client" ? "dei client" : "degli apparati"}`,
     };
   }
   if (status === 429) {
@@ -248,10 +255,7 @@ export function classifyUnifiHttpError(
   };
 }
 
-function httpError(
-  res: UnifiHttpResponse,
-  ctx: { step: "login" | "lettura"; site?: string; apiKey?: boolean },
-): UnifiApiError {
+function httpError(res: UnifiHttpResponse, ctx: ErrorCtx): UnifiApiError {
   const c = classifyUnifiHttpError(res.status, controllerMsgFromBody(res.body), ctx);
   return new UnifiApiError(c.reason, c.message, { status: res.status });
 }
@@ -604,13 +608,13 @@ async function statGet<T>(
   parse: (json: unknown) => T,
 ): Promise<T> {
   const res = await send({ method: "GET", path: `${auth.prefix}/api/s/${site}/stat/${what}`, headers: auth.headers, timeoutMs });
-  if (res.status !== 200) throw httpError(res, { step: "lettura", site, apiKey: auth.apiKey });
+  if (res.status !== 200) throw httpError(res, { step: "lettura", site, apiKey: auth.apiKey, what });
   const json = parseJsonBody(res.body);
   try {
     return parse(json);
   } catch (e) {
     if (e instanceof UnifiResponseError) {
-      const c = classifyUnifiHttpError(res.status, e.controllerMsg, { step: "lettura", site, apiKey: auth.apiKey });
+      const c = classifyUnifiHttpError(res.status, e.controllerMsg, { step: "lettura", site, apiKey: auth.apiKey, what });
       // Un rc di errore senza codice noto resta un errore del controller.
       if (c.reason === "unknown") throw new UnifiApiError("server", e.message, { status: res.status });
       throw new UnifiApiError(c.reason, c.message, { status: res.status });

@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
 import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { checkPresentedPin, UnifiApiError, type UnifiHttpRequest, type UnifiTransportFactory } from "@/lib/integrations/unifi-api";
-import { createController, listControllerRunViews, listControllerViews } from "@/lib/controllers/service";
+import { createController, listControllerClientRunViews, listControllerRunViews, listControllerViews } from "@/lib/controllers/service";
 import { syncUnifiClientsForController } from "@/lib/integrations/unifi-clients-sync";
 import type { ControllerInput } from "@/lib/controllers/types";
 
@@ -100,9 +100,15 @@ test("lettura riuscita: cablato sulla porta dello switch, wireless sull'AP («wi
       { device_id: 20, mac: "02:00:00:00:10:02", port_name: "wifi", source: "unifi" },
     ],
   );
-  const [giro] = w(() => listControllerRunViews(v.id));
+  const [giro] = w(() => listControllerClientRunViews(v.id));
   assert.equal(giro.ok, true);
+  assert.equal(giro.kind, "client");
   assert.equal(giro.trigger, "manual");
+  assert.equal(
+    getTenantDb(T).prepare("SELECT trigger FROM network_controller_runs WHERE id = ?").pluck().get(giro.id),
+    "client:manual",
+  );
+  assert.equal(w(() => listControllerRunViews(v.id)).length, 0, "lo storico degli apparati non vede le letture dei client");
   assert.equal(giro.total, 3);
   assert.equal(giro.ports, 2);
   assert.equal(giro.skipped, 1);
@@ -131,9 +137,10 @@ for (const [caso, opzioni, motivo] of [
     assert.equal(r.saved, 0);
     assert.match(r.failure ?? "", motivo);
     assert.deepEqual(righe(), prima, "un errore non è «zero client»: le righe esistenti invecchiano, non si toccano");
-    const [giro] = w(() => listControllerRunViews(v.id));
+    const [giro] = w(() => listControllerClientRunViews(v.id));
     assert.equal(giro.ok, false);
     assert.equal(giro.trigger, "schedule");
+    assert.equal(giro.kind, "client");
     assert.match(giro.message ?? "", /^Lettura client: /);
   });
 }

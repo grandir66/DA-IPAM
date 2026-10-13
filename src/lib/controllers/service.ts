@@ -23,11 +23,15 @@ import {
   getCurrentTenantCode,
   getNetworkController,
   getTenantSetting,
+  controllerRunKindOf,
   insertNetworkController,
+  listControllerClientScheduleJobs,
   listControllerRuns,
   listControllerScheduleJobs,
+  listLastControllerClientRuns,
   listNetworkControllers,
   recordControllerRun,
+  setControllerClientSchedule,
   setControllerSchedule,
   setTenantSetting,
   updateNetworkController,
@@ -123,7 +127,39 @@ function scheduleByController(): Map<number, number> {
   return out;
 }
 
-export function toControllerView(row: NetworkControllerRow, scheduleMinutes: number | null): NetworkControllerView {
+/** Quello che la vista sa della lettura dei client: pianificazione e ultimo giro. */
+export interface ControllerClientInfo {
+  clientSchedule: boolean;
+  lastClientRun: NetworkControllerView["lastClientRun"];
+}
+
+/** Pianificazione e ultima lettura dei client di tutti i controller: due query, niente N+1. */
+function clientInfoByController(): Map<number, ControllerClientInfo> {
+  const out = new Map<number, ControllerClientInfo>();
+  const get = (id: number) => {
+    let v = out.get(id);
+    if (!v) {
+      v = { clientSchedule: false, lastClientRun: null };
+      out.set(id, v);
+    }
+    return v;
+  };
+  for (const j of listControllerClientScheduleJobs()) {
+    if (j.controller_id !== null && j.enabled === 1) get(Number(j.controller_id)).clientSchedule = true;
+  }
+  for (const r of listLastControllerClientRuns()) {
+    get(r.controller_id).lastClientRun = { at: r.finished_at, ok: r.ok === 1, message: r.message };
+  }
+  return out;
+}
+
+const NO_CLIENT_INFO: ControllerClientInfo = { clientSchedule: false, lastClientRun: null };
+
+export function toControllerView(
+  row: NetworkControllerRow,
+  scheduleMinutes: number | null,
+  client: ControllerClientInfo = NO_CLIENT_INFO,
+): NetworkControllerView {
   return {
     id: row.id,
     name: row.name,
@@ -144,27 +180,31 @@ export function toControllerView(row: NetworkControllerRow, scheduleMinutes: num
     lastNeighbors: row.last_neighbors,
     origin: row.origin,
     scheduleMinutes,
+    clientSchedule: client.clientSchedule,
+    lastClientRun: client.lastClientRun,
   };
 }
 
 export function listControllerViews(): NetworkControllerView[] {
   migrateLegacyUnifiConfig();
   const sched = scheduleByController();
-  return listNetworkControllers().map((r) => toControllerView(r, sched.get(r.id) ?? null));
+  const clients = clientInfoByController();
+  return listNetworkControllers().map((r) => toControllerView(r, sched.get(r.id) ?? null, clients.get(r.id)));
 }
 
 export function getControllerView(id: number): NetworkControllerView | null {
   const row = getNetworkController(id);
   if (!row) return null;
-  return toControllerView(row, scheduleByController().get(id) ?? null);
+  return toControllerView(row, scheduleByController().get(id) ?? null, clientInfoByController().get(id));
 }
 
 export function toRunView(r: ControllerRunRow): ControllerRunView {
   return {
     id: r.id,
+    kind: controllerRunKindOf(r.trigger),
     startedAt: r.started_at,
     finishedAt: r.finished_at,
-    trigger: r.trigger,
+    trigger: r.trigger === "schedule" || r.trigger === "client:schedule" ? "schedule" : "manual",
     triggeredBy: r.triggered_by,
     ok: r.ok === 1,
     total: r.total,
@@ -180,8 +220,49 @@ export function toRunView(r: ControllerRunRow): ControllerRunView {
   };
 }
 
+/** Ultime letture degli apparati (lo storico della pagina; quelle dei client hanno la loro riga). */
 export function listControllerRunViews(id: number, limit = 10): ControllerRunView[] {
-  return listControllerRuns(id, limit).map(toRunView);
+  return listControllerRuns(id, limit, "apparati").map(toRunView);
+}
+
+/** Ultime letture dei client collegati (job ogni ora 7-20, topologia fase 2). */
+export function listControllerClientRunViews(id: number, limit = 10): ControllerRunView[] {
+  return listControllerRuns(id, limit, "client").map(toRunView);
+}
+
+// ── Lettura dei client (topologia fase 2) ────────────────────────────────────
+
+const ControllerPatchSchema = z.object({ client_schedule: z.boolean() }).strict();
+
+/** Corpo di PATCH /api/controllers/[id]: per ora solo `client_schedule`. */
+export function parseControllerPatch(
+  body: unknown,
+): { ok: true; value: { clientSchedule: boolean } } | { ok: false; error: string } {
+  const r = ControllerPatchSchema.safeParse(body);
+  // I messaggi di Zod sono in inglese: la pagina ne riceve uno solo, in italiano.
+  if (!r.success) return { ok: false, error: "Richiesta non valida: serve solo client_schedule, vero o falso" };
+  return { ok: true, value: { clientSchedule: r.data.client_schedule } };
+}
+
+/**
+ * Accende o spegne la lettura dei client ogni ora (7-20). Si accende solo su un
+ * controller UniFi acceso: da spento il job fallirebbe a ogni ora. Spegnere si
+ * può sempre.
+ */
+export function setClientScheduleFor(
+  id: number,
+  on: boolean,
+): { ok: true; controller: NetworkControllerView } | { ok: false; status: 400 | 404; error: string } {
+  const row = getNetworkController(id);
+  if (!row) return { ok: false, status: 404, error: "Controller non trovato" };
+  if (on && row.enabled !== 1) {
+    return { ok: false, status: 400, error: "Controller spento: accendilo prima di pianificare la lettura dei client" };
+  }
+  if (on && row.kind === "omada") {
+    return { ok: false, status: 400, error: "Omada non è ancora disponibile: niente lettura dei client" };
+  }
+  setControllerClientSchedule(id, on);
+  return { ok: true, controller: getControllerView(id) as NetworkControllerView };
 }
 
 // ── Validazione del modulo ───────────────────────────────────────────────────
@@ -320,6 +401,8 @@ export function updateController(id: number, input: ControllerInput): NetworkCon
   if (input.certPin && (moved || !row.cert_pin)) patch.cert_pin = input.certPin;
   updateNetworkController(id, patch);
   setControllerSchedule(id, input.enabled ? input.scheduleMinutes : null);
+  // Controller spento: anche la lettura dei client si spegne (fallirebbe a ogni ora).
+  if (!input.enabled) setControllerClientSchedule(id, false);
   return getControllerView(id);
 }
 

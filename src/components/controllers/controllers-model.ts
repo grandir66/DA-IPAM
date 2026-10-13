@@ -115,6 +115,22 @@ export function runOrigin(r: Pick<ControllerRunView, "trigger" | "triggeredBy">)
   return r.triggeredBy ? `a mano · ${r.triggeredBy}` : "a mano";
 }
 
+// ── Lettura dei client (ogni ora dalle 7 alle 20) ───────────────────────────
+
+/** Lo stato della lettura dei client in parole: la casella da sola non basta. */
+export function clientScheduleLabel(c: Pick<NetworkControllerView, "clientSchedule">): string {
+  return c.clientSchedule === true ? "Client: letti ogni ora dalle 7 alle 20" : "Client: non letti";
+}
+
+/** «Ultima lettura dei client: 13/10 18:00 · ok · 40 letti, …» (ora italiana). */
+export function clientRunLine(c: Pick<NetworkControllerView, "lastClientRun">): string {
+  const r = c.lastClientRun;
+  if (!r || typeof r !== "object" || typeof r.at !== "string") return "Ultima lettura dei client: mai";
+  const esito = r.ok === true ? "ok" : "▲ non riuscita";
+  const testo = typeof r.message === "string" ? r.message.replace(/^Lettura client:\s*/, "") : "";
+  return `Ultima lettura dei client: ${formatRome(r.at)} · ${esito}${testo ? ` · ${testo}` : ""}`;
+}
+
 // ── Modulo ───────────────────────────────────────────────────────────────────
 
 export interface ControllerForm {

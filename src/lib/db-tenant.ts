@@ -28,7 +28,7 @@ import { getActiveTenants, getHubDbPath, getSetting, getTenantByCode } from "./d
 import { buildStatusSeries, statusWindowStartMs, type StatusObservation, type StatusPoint } from "./status-over-time";
 import { registraRipiego } from "./db-maintenance/ripieghi";
 import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
-import type { ControllerRunTrigger, NetworkControllerRow } from "./controllers/types";
+import type { ControllerRunKind, ControllerRunStoredTrigger, NetworkControllerRow } from "./controllers/types";
 
 import type {
   Network,
@@ -4683,7 +4683,9 @@ export function upsertMacPortEntries(deviceId: number, entries: MacPortInput[], 
     `INSERT INTO mac_port_entries (device_id, mac, port_name, vlan, port_status, speed, timestamp, first_seen, source)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(device_id, mac, port_name) DO UPDATE SET
-       vlan = excluded.vlan, port_status = excluded.port_status, speed = excluded.speed,
+       vlan = COALESCE(excluded.vlan, mac_port_entries.vlan),
+       port_status = COALESCE(excluded.port_status, mac_port_entries.port_status),
+       speed = COALESCE(excluded.speed, mac_port_entries.speed),
        timestamp = excluded.timestamp, source = excluded.source`,
   );
   d.transaction((items: MacPortInput[]) => {
@@ -8570,8 +8572,23 @@ export function getTopologyData(): {
 // src/lib/controllers/; qui solo letture e scritture.
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Letture di un controller tenute nello storico: le più vecchie si potano a ogni scrittura. */
+/**
+ * Letture di un controller tenute nello storico, PER TIPO (apparati / client):
+ * le più vecchie si potano a ogni scrittura. Per tipo perché i client si
+ * leggono ogni ora: in tre giorni avrebbero spinto fuori ogni lettura degli apparati.
+ */
 export const CONTROLLER_RUNS_KEPT = 50;
+
+/** Tipo di un giro dalla colonna `trigger` (i giri dei client hanno il prefisso «client:»). */
+const RUN_KIND_SQL = "CASE WHEN trigger LIKE 'client:%' THEN 'client' ELSE 'apparati' END";
+
+export function controllerRunKindOf(trigger: string): ControllerRunKind {
+  return trigger.startsWith("client:") ? "client" : "apparati";
+}
+
+/** Il job unifi_sync è quello dei client (`config.cosa = "client"`); senza `cosa` è degli apparati. */
+const CLIENT_JOB_SQL = "json_extract(COALESCE(NULLIF(config, ''), '{}'), '$.cosa') = 'client'";
+const DEVICE_JOB_SQL = `COALESCE(json_extract(COALESCE(NULLIF(config, ''), '{}'), '$.cosa'), 'apparati') = 'apparati'`;
 
 export function listNetworkControllers(): NetworkControllerRow[] {
   return db().prepare("SELECT * FROM network_controllers ORDER BY name COLLATE NOCASE, id").all() as NetworkControllerRow[];
@@ -8620,7 +8637,10 @@ export function updateNetworkController(id: number, patch: NetworkControllerPatc
   return getNetworkController(id);
 }
 
-/** Cancella il controller, le sue letture (cascade) e la sua pianificazione. Gli apparati letti restano. */
+/**
+ * Cancella il controller, le sue letture (cascade) e le sue pianificazioni
+ * (apparati e client: tutti i job unifi_sync col suo id). Gli apparati letti restano.
+ */
 export function deleteNetworkController(id: number): boolean {
   return runInTenantTransaction(() => {
     db()
@@ -8634,7 +8654,7 @@ export interface ControllerRunInsert {
   controller_id: number;
   started_at: string;
   finished_at: string;
-  trigger: ControllerRunTrigger;
+  trigger: ControllerRunStoredTrigger;
   triggered_by: string | null;
   ok: number;
   total: number;
@@ -8651,13 +8671,15 @@ export interface ControllerRunInsert {
 
 /**
  * Registra una lettura, aggiorna il riepilogo sulla riga del controller e pota
- * lo storico oltre `CONTROLLER_RUNS_KEPT`. Una lettura riuscita aggiorna anche
- * i conteggi; una fallita lascia quelli dell'ultima riuscita. `summary: false`
- * registra solo lo storico (lettura dei client collegati, topologia fase 2):
- * i conteggi della riga sono quelli degli apparati e non si sovrascrivono.
+ * lo storico oltre `CONTROLLER_RUNS_KEPT` letture dello stesso tipo. Una lettura
+ * riuscita aggiorna anche i conteggi; una fallita lascia quelli dell'ultima
+ * riuscita. Una lettura dei client (trigger «client:…», topologia fase 2)
+ * registra solo lo storico: il riepilogo della riga è quello degli apparati e
+ * lo leggono la pagina e «Stato moduli». `summary` forza l'una o l'altra cosa.
  */
 export function recordControllerRun(run: ControllerRunInsert, opts: { summary?: boolean } = {}): void {
-  const summary = opts.summary ?? true;
+  const kind = controllerRunKindOf(run.trigger);
+  const summary = opts.summary ?? kind === "apparati";
   runInTenantTransaction(() => {
     const d = db();
     d.prepare(
@@ -8684,18 +8706,31 @@ export function recordControllerRun(run: ControllerRunInsert, opts: { summary?: 
     }
     d.prepare(
       `DELETE FROM network_controller_runs
-        WHERE controller_id = ?
-          AND id NOT IN (SELECT id FROM network_controller_runs WHERE controller_id = ? ORDER BY id DESC LIMIT ?)`,
-    ).run(run.controller_id, run.controller_id, CONTROLLER_RUNS_KEPT);
+        WHERE controller_id = ? AND ${RUN_KIND_SQL} = ?
+          AND id NOT IN (SELECT id FROM network_controller_runs
+                          WHERE controller_id = ? AND ${RUN_KIND_SQL} = ? ORDER BY id DESC LIMIT ?)`,
+    ).run(run.controller_id, kind, run.controller_id, kind, CONTROLLER_RUNS_KEPT);
   });
 }
 
 export type ControllerRunRow = ControllerRunInsert & { id: number };
 
-export function listControllerRuns(controllerId: number, limit = 10): ControllerRunRow[] {
+/** Ultime letture di un controller di un tipo (di default gli apparati: lo storico della pagina). */
+export function listControllerRuns(controllerId: number, limit = 10, kind: ControllerRunKind = "apparati"): ControllerRunRow[] {
   return db()
-    .prepare("SELECT * FROM network_controller_runs WHERE controller_id = ? ORDER BY id DESC LIMIT ?")
-    .all(controllerId, Math.max(1, Math.min(limit, CONTROLLER_RUNS_KEPT))) as ControllerRunRow[];
+    .prepare(`SELECT * FROM network_controller_runs WHERE controller_id = ? AND ${RUN_KIND_SQL} = ? ORDER BY id DESC LIMIT ?`)
+    .all(controllerId, kind, Math.max(1, Math.min(limit, CONTROLLER_RUNS_KEPT))) as ControllerRunRow[];
+}
+
+/** L'ultima lettura dei client di ogni controller, in una query (niente N+1). */
+export function listLastControllerClientRuns(): ControllerRunRow[] {
+  return db()
+    .prepare(
+      `SELECT r.* FROM network_controller_runs r
+         JOIN (SELECT controller_id, MAX(id) AS id FROM network_controller_runs
+                WHERE trigger LIKE 'client:%' GROUP BY controller_id) last ON last.id = r.id`,
+    )
+    .all() as ControllerRunRow[];
 }
 
 export interface ControllerScheduleRow {
@@ -8705,18 +8740,67 @@ export interface ControllerScheduleRow {
   enabled: number;
 }
 
-/** Tutti i job unifi_sync del tenant, col controller a cui puntano (null = job vecchio, senza controller). */
+/**
+ * I job unifi_sync degli apparati del tenant, col controller a cui puntano
+ * (null = job vecchio, senza controller). Il job dei client non c'è: è
+ * `listControllerClientScheduleJobs`.
+ */
 export function listControllerScheduleJobs(): ControllerScheduleRow[] {
   return db()
     .prepare(
       `SELECT id AS job_id, json_extract(config, '$.controller_id') AS controller_id, interval_minutes, enabled
-         FROM scheduled_jobs WHERE job_type = 'unifi_sync' ORDER BY id`,
+         FROM scheduled_jobs WHERE job_type = 'unifi_sync' AND ${DEVICE_JOB_SQL} ORDER BY id`,
     )
     .all() as ControllerScheduleRow[];
 }
 
+/** I job unifi_sync dei client (`config.cosa = "client"`), uno per controller. */
+export function listControllerClientScheduleJobs(): ControllerScheduleRow[] {
+  return db()
+    .prepare(
+      `SELECT id AS job_id, json_extract(config, '$.controller_id') AS controller_id, interval_minutes, enabled
+         FROM scheduled_jobs WHERE job_type = 'unifi_sync' AND ${CLIENT_JOB_SQL} ORDER BY id`,
+    )
+    .all() as ControllerScheduleRow[];
+}
+
+/** Il job dei client gira ogni ora; la finestra 7-20 la guarda il job (`inFinestraClient`). */
+export const CONTROLLER_CLIENT_JOB_MINUTES = 60;
+
 /**
- * Pianificazione di un controller: un solo job unifi_sync per controller.
+ * Lettura dei client di un controller ogni ora (topologia fase 2, spec §10.5):
+ * `on` = un job unifi_sync con `config.cosa = "client"` (creato se manca, uno
+ * solo), `!on` = cancellato. Non tocca il job degli apparati.
+ */
+export function setControllerClientSchedule(controllerId: number, on: boolean): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    const existing = d
+      .prepare(
+        `SELECT id FROM scheduled_jobs
+          WHERE job_type = 'unifi_sync' AND json_extract(config, '$.controller_id') = ? AND ${CLIENT_JOB_SQL} ORDER BY id`,
+      )
+      .all(controllerId) as Array<{ id: number }>;
+    const [keep, ...extra] = existing;
+    const drop = on ? extra : existing;
+    for (const j of drop) d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(j.id);
+    if (!on) return;
+    if (keep) {
+      d.prepare("UPDATE scheduled_jobs SET interval_minutes = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?").run(
+        CONTROLLER_CLIENT_JOB_MINUTES,
+        keep.id,
+      );
+    } else {
+      d.prepare(
+        "INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'unifi_sync', ?, 1, ?)",
+      ).run(CONTROLLER_CLIENT_JOB_MINUTES, JSON.stringify({ controller_id: controllerId, cosa: "client" }));
+    }
+  });
+}
+
+/**
+ * Pianificazione degli apparati di un controller: un solo job unifi_sync
+ * (senza `cosa`) per controller; il job dei client non si tocca.
  * `minutes` null = spenta, e il job si cancella (non resta un job spento che
  * qualcuno riaccende dalla pagina dei job senza vedere il controller).
  */
@@ -8725,7 +8809,8 @@ export function setControllerSchedule(controllerId: number, minutes: number | nu
     const d = db();
     const existing = d
       .prepare(
-        "SELECT id FROM scheduled_jobs WHERE job_type = 'unifi_sync' AND json_extract(config, '$.controller_id') = ? ORDER BY id",
+        `SELECT id FROM scheduled_jobs
+          WHERE job_type = 'unifi_sync' AND json_extract(config, '$.controller_id') = ? AND ${DEVICE_JOB_SQL} ORDER BY id`,
       )
       .all(controllerId) as Array<{ id: number }>;
     if (minutes === null) {

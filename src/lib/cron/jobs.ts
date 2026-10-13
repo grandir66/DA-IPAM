@@ -71,6 +71,7 @@ import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrat
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
 // db-tenant, che sotto tsx non va mai caricato con `await import()` (ADR 0002).
 import { syncController } from "@/lib/controllers/service";
+import { syncUnifiClientsForController } from "@/lib/integrations/unifi-clients-sync";
 // Statici per la stessa ragione: mesh-sync e feature importano db-tenant.
 import { syncMeshForTenant } from "@/lib/integrations/meshcentral/mesh-sync";
 import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
@@ -147,6 +148,49 @@ export function unifiJobControllerId(configStr: string | null | undefined): numb
   } catch {
     return null;
   }
+}
+
+/**
+ * Che cosa legge un job unifi_sync: `config.cosa = "client"` è la lettura dei
+ * client collegati (topologia fase 2); senza `cosa` (job nati prima) gli apparati.
+ */
+export function unifiJobKind(configStr: string | null | undefined): "apparati" | "client" {
+  try {
+    return (JSON.parse(configStr || "{}") as { cosa?: unknown }).cosa === "client" ? "client" : "apparati";
+  } catch {
+    return "apparati";
+  }
+}
+
+/** Spec §10.5: i client si leggono dalle 7 alle 20 (ora italiana): di notte sono spenti. */
+export function inFinestraClient(d: Date): boolean {
+  const ora = Number(
+    new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", hourCycle: "h23" }).format(d),
+  );
+  return ora >= 7 && ora < 20;
+}
+
+/**
+ * Il job dei client di UN controller. Fuori dalle 7-20 non chiama il controller:
+ * una riga di log e basta, non è un fallimento. Dentro, un giro non riuscito
+ * (rete, chiave, certificato: «non so», le righe esistenti restano) lancia,
+ * così lo scheduler lo conta fra i falliti come per gli apparati.
+ * `adesso` si passa nelle prove.
+ */
+export async function runUnifiClientJob(controllerId: number, adesso: Date = new Date()): Promise<void> {
+  if (!inFinestraClient(adesso)) {
+    console.info(`[Scheduler] unifi_sync client #${controllerId}: fuori dalle 7-20, non letto`);
+    return;
+  }
+  const result = await syncUnifiClientsForController(controllerId, "schedule");
+  if (result.failure) {
+    throw new Error(`Lettura dei client UniFi non riuscita (controller #${controllerId}): ${result.failure}`);
+  }
+  // Solo i numeri: MAC, nomi e IP dei client non vanno nel log.
+  console.info(
+    `[Scheduler] unifi_sync client #${controllerId}: ${result.clients} letti, ${result.saved} salvati, ` +
+      `${result.unmatched} non abbinati`,
+  );
 }
 
 export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
@@ -248,6 +292,10 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
       const controllerId = unifiJobControllerId(job.config);
       if (controllerId === null) {
         throw new Error("Job unifi_sync senza controller: la pianificazione si imposta dalla pagina Controller di rete");
+      }
+      if (unifiJobKind(job.config) === "client") {
+        await runUnifiClientJob(controllerId);
+        break;
       }
       const result = await syncController(controllerId, "schedule", null);
       // Niente letto o niente scritto: si lancia, così lo scheduler lo conta

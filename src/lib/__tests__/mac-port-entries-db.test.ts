@@ -96,3 +96,14 @@ test("la porta di un host è quella vista per ultima, non la riga creata per ult
   assert.equal(w(() => getHostById(1))?.switch_port?.port_name, "Port 3");
   assert.equal(w(() => getAllHostsEnriched()).find((h) => h.id === 1)?.switch_port, "Port 3");
 });
+
+test("la lettura UniFi (senza VLAN, stato, velocità) non cancella quelli scritti da SNMP sulla stessa riga", () => {
+  w(() => upsertMacPortEntries(1, [{ mac: "AA:00:00:00:00:01", port_name: "Port 3", vlan: 10, port_status: "up", speed: "1G" }], "device"));
+  w(() => upsertMacPortEntries(1, [riga("AA:00:00:00:00:01", "Port 3")], "unifi"));
+  const r = db().prepare("SELECT vlan, port_status, speed, source FROM mac_port_entries").all() as Array<Record<string, unknown>>;
+  assert.deepEqual(r, [{ vlan: 10, port_status: "up", speed: "1G", source: "unifi" }]);
+  // Un valore nuovo vero invece sostituisce il vecchio.
+  w(() => upsertMacPortEntries(1, [{ mac: "AA:00:00:00:00:01", port_name: "Port 3", vlan: 20, port_status: "down", speed: "100M" }], "device"));
+  const r2 = db().prepare("SELECT vlan, port_status, speed, source FROM mac_port_entries").all() as Array<Record<string, unknown>>;
+  assert.deepEqual(r2, [{ vlan: 20, port_status: "down", speed: "100M", source: "device" }]);
+});

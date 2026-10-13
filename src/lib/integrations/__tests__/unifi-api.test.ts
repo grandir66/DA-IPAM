@@ -129,6 +129,10 @@ test("classificazione: credenziali, 2FA, site, permessi, percorso, server", () =
   assert.equal(site.reason, "config");
   assert.match(site.message, /«boh»/);
   assert.equal(classifyUnifiHttpError(400, "api.err.NoPermission", lettura).reason, "auth");
+  assert.match(classifyUnifiHttpError(400, "api.err.NoPermission", lettura).message, /gli apparati del site/);
+  const letturaClient = { step: "lettura" as const, site: "boh", what: "sta" as const };
+  assert.match(classifyUnifiHttpError(400, "api.err.NoPermission", letturaClient).message, /leggere i client del site/);
+  assert.match(classifyUnifiHttpError(401, null, letturaClient).message, /lettura dei client/);
   assert.equal(classifyUnifiHttpError(404, null, login).reason, "config");
   assert.equal(classifyUnifiHttpError(302, null, login).reason, "config");
   assert.equal(classifyUnifiHttpError(502, null, lettura).reason, "server");
@@ -206,7 +210,8 @@ test("client collegati: rc di errore → UnifiApiError classificato (non zero cl
   const { factory, calls } = fakeController({ sta: json(200, { meta: { rc: "error", msg: "api.err.NoPermission" }, data: [] }) });
   await assert.rejects(
     createUnifiClient(CFG, store, { transportFactory: factory }).listClients(),
-    (e: unknown) => e instanceof UnifiApiError && e.reason === "auth",
+    (e: unknown) =>
+      e instanceof UnifiApiError && e.reason === "auth" && /i client del site/.test(e.message) && !/apparati/.test(e.message),
   );
   assert.equal(calls.at(-1)?.path, "/api/logout");
   assert.equal(store.value, null);

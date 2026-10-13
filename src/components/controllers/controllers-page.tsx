@@ -34,6 +34,7 @@ import { ControllerDetail } from "./controller-detail";
 import { ControllerDialog } from "./controller-dialog";
 import {
   buildTogglePayload,
+  clientScheduleLabel,
   controllerStatus,
   countOrDash,
   describeSync,
@@ -279,7 +280,10 @@ export function ControllersPage() {
                         <TableCell className="text-right tabular-nums">{countOrDash(c.lastDevices)}</TableCell>
                         <TableCell className="text-right tabular-nums">{countOrDash(c.lastPorts)}</TableCell>
                         <TableCell className="text-right tabular-nums">{countOrDash(c.lastNeighbors)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{scheduleLabel(c.scheduleMinutes)}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {scheduleLabel(c.scheduleMinutes)}
+                          <span className="block text-[13px] text-muted-foreground">{clientScheduleLabel(c)}</span>
+                        </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           {isAdmin ? (
                             <div className="flex items-center gap-1.5">

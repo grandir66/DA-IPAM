@@ -87,6 +87,14 @@ export const SPOSTATE_GRUPPO_1B: Readonly<Record<string, readonly string[]>> = {
     "bulkUpsertDhcpLeases", "deleteDhcpLeasesByDevice", "getDhcpLeases", "getDhcpLeasesPaginated",
     "getDhcpLeasesByDevice",
   ],
+  inventario: [
+    "ensureInventoryAssetForNetworkDevice", "syncInventoryFromDevice", "ensureInventoryAssetForHost",
+    "syncInventoryFromHost", "createInventoryAsset", "updateInventoryAsset", "deleteInventoryAsset",
+    "createAssetAssignee", "updateAssetAssignee", "deleteAssetAssignee", "createLocation",
+    "updateLocation", "deleteLocation", "createLicense", "updateLicense", "deleteLicense",
+    "assignLicenseSeat", "assignLicenseSeatToAssignee", "unassignLicenseSeat", "getLicenses",
+    "getLicenseById",
+  ],
 };
 
 /** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */

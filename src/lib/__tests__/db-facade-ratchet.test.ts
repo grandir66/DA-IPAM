@@ -28,9 +28,10 @@ import { SPOSTATE, TIPI_SPOSTATI } from "./support/facciata-spostate";
 /**
  * Funzioni esportate definite in db.ts: 275 all'inizio, 271 dopo il gruppo 0
  * (T3-04), 168 dopo il gruppo 1a (T3-05, 103 letture); nel gruppo 1b (T3-06):
- * 144 dopo le credenziali, 133 dopo AD, 125 dopo DHCP.
+ * 144 dopo le credenziali, 133 dopo AD, 125 dopo DHCP,
+ * 104 dopo inventario e licenze.
  */
-const SOGLIA = 125;
+const SOGLIA = 104;
 
 interface Dichiarazione {
   nome: string;

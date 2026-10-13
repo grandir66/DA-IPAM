@@ -24,6 +24,26 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   della finestra di osservazione. Prove: `db-facade-als.test.ts` (stesso
   oggetto funzione, stesso contesto tenant anche dopo un `await`, niente
   ripiego fuori contesto) e il cricchetto della facciata, sceso a 168.
+- **Le scritture del database in una sola copia** (tappa 3, NUC-2 gruppo 1b).
+  Dopo le letture, anche 104 funzioni che scrivono (credenziali, Active
+  Directory, DHCP, inventario e licenze, ARP-vicini-rotte-porte, apparati-job-
+  Proxmox, reti e host) e 2 tipi vivono ora solo nel modulo per tenant; la
+  facciata li riesporta, un dominio per commit. Di queste, 32 avevano nelle due
+  copie un testo diverso ma solo nella forma (nomi di variabili, a capo, un
+  valore calcolato in linea): per ciascuna un banco di parità le esegue sugli
+  stessi dati contro una copia congelata della vecchia facciata e vuole lo
+  stesso risultato e le stesse tabelle, prima e dopo lo spostamento. Su una
+  copia del database di un cliente lo stesso giro di 345 scritture, eseguito
+  con la facciata di prima e con quella di adesso, lascia le 86 tabelle
+  identiche (1,1 milioni di righe), salvo gli orari scritti dal giro stesso.
+  Restano a parte, per il passo successivo, le 9 funzioni che cambiano
+  davvero comportamento e le 3 che le chiamano. **Cambia solo un caso**, come
+  per le letture: una di queste funzioni chiamata senza un cliente scelto ora
+  è un errore invece di ripiegare sul tenant predefinito; il registro dei
+  ripieghi non ne ha contato nessuno. Prove: `db-parity/<dominio>.test.ts`,
+  `db-facade-als.test.ts`, il cricchetto (sceso a 64) e
+  `db-createnetwork-drift.test.ts`, che ora prova l'identità invece di
+  confrontare il testo di due copie.
 
 ### Correzioni
 

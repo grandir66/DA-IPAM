@@ -3057,11 +3057,15 @@ export function getNetworkDeviceByHostId(hostId: number): NetworkDevice | undefi
   return db().prepare("SELECT * FROM network_devices WHERE host_id = ? ORDER BY id LIMIT 1").get(hostId) as NetworkDevice | undefined;
 }
 
-type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll"> & {
+// physical_device_id facoltativo (T3-06): createNetworkDevice non lo scrive (il collegamento
+// all'apparato fisico è un passo a parte); la vecchia facciata lo escludeva, la sync UniFi
+// passa null. Facoltativo va bene per tutti e due.
+type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll" | "physical_device_id"> & {
   classification?: string | null;
   scan_target?: string | null;
   product_profile?: string | null;
   use_for_arp_poll?: number | boolean | null;
+  physical_device_id?: number | null;
   /** F4: opzionale — se non passato, lookup automatico via IP. */
   host_id?: number | null;
 };

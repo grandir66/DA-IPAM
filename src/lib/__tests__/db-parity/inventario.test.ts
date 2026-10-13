@@ -126,8 +126,8 @@ test("createInventoryAsset: stessa riga (l'identificativo casuale si confronta s
     host_id: HOST.nas,
     stato: "Attivo" as const,
     ram_gb: 4,
-    backup_configurato: true,
-    mfa_admin: false,
+    backup_configurato: 1,
+    mfa_admin: 0,
     in_scope_nis2: 1,
   };
   stessoEsito({

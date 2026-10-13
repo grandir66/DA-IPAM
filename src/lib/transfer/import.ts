@@ -59,7 +59,7 @@ export function importTenant(args: ImportArgs): ImportResult {
         const spec = tableSpec(tbl);
         if (!spec || spec.scope !== "tenant") continue;
         if (!tableExists(tenantDb, tbl)) continue; // target più vecchio: salta tabella sconosciuta
-        result.tables[tbl] = insertRows(tenantDb, tbl, rows, transportKey, result);
+        result.tables[tbl] = insertRows(tenantDb, tbl, spec.dedupe ? dedupeRows(rows, spec.dedupe) : rows, transportKey, result);
       }
 
       const fk = tenantDb.pragma("foreign_key_check") as unknown[];
@@ -98,6 +98,22 @@ export function importTenant(args: ImportArgs): ImportResult {
   hubTx();
 
   return result;
+}
+
+/** Una riga per chiave: quella col `latest` più recente, a parità l'id più alto (come la migrazione che ha messo l'indice). */
+function dedupeRows(
+  rows: Record<string, unknown>[], spec: { key: string[]; latest: string },
+): Record<string, unknown>[] {
+  const keep = new Map<string, Record<string, unknown>>();
+  const order = (r: Record<string, unknown>): [string, number] => [String(r[spec.latest] ?? ""), Number(r.id ?? 0)];
+  for (const r of rows) {
+    const k = JSON.stringify(spec.key.map((c) => r[c] ?? null));
+    const cur = keep.get(k);
+    if (!cur) { keep.set(k, r); continue; }
+    const [ts, id] = order(r), [cts, cid] = order(cur);
+    if (ts > cts || (ts === cts && id > cid)) keep.set(k, r);
+  }
+  return [...keep.values()];
 }
 
 /** INSERT righe, re-keyando i campi cifrati (transport key → chiave destinazione). */

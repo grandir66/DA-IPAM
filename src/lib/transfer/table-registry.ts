@@ -24,6 +24,7 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "device_interfaces", scope: "tenant", tier: "config" },
   { table: "topology_position", scope: "tenant", tier: "config" },
   { table: "topology_link_overrides", scope: "tenant", tier: "config" },
+  { table: "topology_maps", scope: "tenant", tier: "config" }, // nasce in migrateTopologyPhase2, non nello schema
   { table: "device_interface_addresses", scope: "tenant", tier: "config" },
   { table: "multihomed_links", scope: "tenant", tier: "config" },
   { table: "device_classifications_custom", scope: "tenant", tier: "config" },
@@ -53,7 +54,8 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "host_classification_history", scope: "tenant", tier: "history" },
   { table: "attribution_evidence", scope: "tenant", tier: "history" },
   { table: "arp_entries", scope: "tenant", tier: "history" },
-  { table: "mac_port_entries", scope: "tenant", tier: "history" },
+  // Indice unico (device_id, mac, port_name) dalla fase 2 della topologia: una sorgente più vecchia ha i doppi.
+  { table: "mac_port_entries", scope: "tenant", tier: "history", dedupe: { key: ["device_id", "mac", "port_name"], latest: "timestamp" } },
   { table: "mac_ip_mapping", scope: "tenant", tier: "history" },
   { table: "mac_ip_history", scope: "tenant", tier: "history" },
   { table: "switch_ports", scope: "tenant", tier: "history" },

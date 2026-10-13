@@ -1,13 +1,13 @@
 # Matrice auth API — DA-IPAM
 
-> Generato da `scripts/audit-api-auth.ts` · 2026-10-12 · rilevatore e censimento di `src/lib/permessi/` (gli stessi della prova `rotte-censite.test.ts`).
+> Generato da `scripts/audit-api-auth.ts` · 2026-10-13 · rilevatore e censimento di `src/lib/permessi/` (gli stessi della prova `rotte-censite.test.ts`).
 
 ## Riepilogo
 
-- File `route.ts`: **296** · gestori (metodo × rotta): **452**
-- Forme di export: funzione 436 · destrutturata 2 · rinomina 14
-- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=52 · `auth-diretto`=3 · `auth`=119 · `admin-o-onboarding`=7 · `admin`=256 · `superadmin`=3
-- Esiti: ok **420** · eccezioni **32** · debiti **0** · scoperti **0**
+- File `route.ts`: **308** · gestori (metodo × rotta): **475**
+- Forme di export: funzione 459 · destrutturata 2 · rinomina 14
+- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=52 · `auth-diretto`=3 · `auth`=127 · `admin-o-onboarding`=7 · `admin`=271 · `superadmin`=3
+- Esiti: ok **442** · eccezioni **33** · debiti **0** · scoperti **0**
 
 Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col nome sensibile → `admin`; i livelli dichiarati stanno in `ATTESI` di `src/lib/permessi/rotte.ts`. `withTenantFromSession` (`sessione`) chiede l'accesso ma non il ruolo: per una lettura vale quanto `auth`.
 
@@ -45,16 +45,17 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/integrations/inventory-agent/install/macos.sh` | GET | `nessuna` | `auth` | pubblica: script d'installazione scaricato dall'host del cliente, senza sessione |
 | `/api/integrations/inventory-agent/install/windows.ps1` | GET | `nessuna` | `auth` | pubblica: script d'installazione scaricato dall'host del cliente, senza sessione |
 | `/api/integrations/meshcentral/host-status` | POST | `auth` | `admin` | motivata: lettura in blocco con l'elenco nel corpo (POST per la lunghezza): non scrive |
-| `/api/integrations/proxy/librenms/[[...path]]` | POST | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
-| `/api/integrations/proxy/librenms/[[...path]]` | PUT | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
-| `/api/integrations/proxy/librenms/[[...path]]` | PATCH | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
-| `/api/integrations/proxy/librenms/[[...path]]` | DELETE | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
+| `/api/integrations/proxy/librenms/[[...path]]` | POST | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri, con l'accesso automatico acceso, inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
+| `/api/integrations/proxy/librenms/[[...path]]` | PUT | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri, con l'accesso automatico acceso, inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
+| `/api/integrations/proxy/librenms/[[...path]]` | PATCH | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri, con l'accesso automatico acceso, inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
+| `/api/integrations/proxy/librenms/[[...path]]` | DELETE | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri, con l'accesso automatico acceso, inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
 | `/api/integrations/wazuh/host-status` | POST | `auth` | `admin` | motivata: lettura in blocco con l'elenco nel corpo (POST per la lunghezza): non scrive |
 | `/api/inventory/export` | GET | `sessione` | `admin` | motivata: esporta gli stessi dati che l'utente vede nelle pagine, senza segreti |
 | `/api/inventory/ingest` | GET | `nessuna` | `auth` | pubblica: risponde solo con la descrizione del servizio |
 | `/api/inventory/ingest` | POST | `token` | `admin` | pubblica: l'agente d'inventario si autentica col proprio token, non con una sessione |
 | `/api/networks/[id]/credentials` | GET | `sessione` | `admin` | mascherata: solo le associazioni rete-credenziale, nessun campo cifrato |
 | `/api/networks/export-csv` | POST | `auth` | `admin` | motivata: esportazione con l'elenco delle reti nel corpo: non scrive |
+| `/api/settings` | GET | `auth` | `admin` | mascherata: chiavi dei segreti tolte per chi non è admin (SEC-5) |
 | `/api/setup` | GET | `nessuna` | `auth` | pubblica: prima configurazione, prima che esista un utente |
 | `/api/setup` | POST | `nessuna` | `admin` | pubblica: prima configurazione, prima che esista un utente |
 | `/api/user/preferences` | PUT | `auth` | `admin` | motivata: preferenze del proprio utente |
@@ -114,6 +115,16 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/client-config` | PUT | `admin` | `admin` |  |
 | `/api/client-config/export` | GET | `admin` | `admin` |  |
 | `/api/client-config/import` | POST | `admin` | `admin` |  |
+| `/api/controllers` | GET | `auth` | `auth` |  |
+| `/api/controllers` | POST | `admin` | `admin` |  |
+| `/api/controllers/[id]` | DELETE | `admin` | `admin` |  |
+| `/api/controllers/[id]` | GET | `auth` | `auth` |  |
+| `/api/controllers/[id]` | PATCH | `admin` | `admin` |  |
+| `/api/controllers/[id]` | PUT | `admin` | `admin` |  |
+| `/api/controllers/[id]/cert-pin` | POST | `admin` | `admin` |  |
+| `/api/controllers/[id]/sync` | POST | `admin` | `admin` |  |
+| `/api/controllers/[id]/test` | POST | `admin` | `admin` |  |
+| `/api/controllers/probe` | POST | `admin` | `admin` |  |
 | `/api/credentials` | GET | `sessione` | `admin` | mascherata: campi cifrati sostituiti dalla maschera |
 | `/api/credentials` | POST | `admin-o-onboarding` | `admin-o-onboarding` |  |
 | `/api/credentials/[id]` | DELETE | `admin` | `admin` |  |
@@ -132,6 +143,8 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/devices/[id]/credentials` | GET | `sessione` | `admin` | mascherata: password in linea sostituita dalla maschera |
 | `/api/devices/[id]/credentials` | POST | `admin` | `admin` |  |
 | `/api/devices/[id]/credentials` | PUT | `admin` | `admin` |  |
+| `/api/devices/[id]/location` | GET | `auth` | `auth` |  |
+| `/api/devices/[id]/location` | PUT | `admin` | `admin` |  |
 | `/api/devices/[id]/mikrotik` | GET | `sessione` | `auth` |  |
 | `/api/devices/[id]/mikrotik` | POST | `admin` | `admin` |  |
 | `/api/devices/[id]/proxmox-match` | POST | `admin` | `admin` |  |
@@ -225,13 +238,13 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/integrations/meshcentral/install-script` | POST | `admin` | `admin` |  |
 | `/api/integrations/meshcentral/nodes` | GET | `auth` | `auth` |  |
 | `/api/integrations/meshcentral/nodes` | POST | `admin` | `admin` |  |
-| `/api/integrations/proxy/librenms/[[...path]]` | DELETE | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
+| `/api/integrations/proxy/librenms/[[...path]]` | DELETE | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri, con l'accesso automatico acceso, inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
 | `/api/integrations/proxy/librenms/[[...path]]` | GET | `auth` | `auth` |  |
 | `/api/integrations/proxy/librenms/[[...path]]` | HEAD | `auth` | `auth` |  |
 | `/api/integrations/proxy/librenms/[[...path]]` | OPTIONS | `auth` | `auth` |  |
-| `/api/integrations/proxy/librenms/[[...path]]` | PATCH | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
-| `/api/integrations/proxy/librenms/[[...path]]` | POST | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
-| `/api/integrations/proxy/librenms/[[...path]]` | PUT | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
+| `/api/integrations/proxy/librenms/[[...path]]` | PATCH | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri, con l'accesso automatico acceso, inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
+| `/api/integrations/proxy/librenms/[[...path]]` | POST | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri, con l'accesso automatico acceso, inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
+| `/api/integrations/proxy/librenms/[[...path]]` | PUT | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri, con l'accesso automatico acceso, inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
 | `/api/integrations/proxy/wazuh/[[...path]]` | DELETE | `admin` | `admin` |  |
 | `/api/integrations/proxy/wazuh/[[...path]]` | GET | `auth` | `auth` |  |
 | `/api/integrations/proxy/wazuh/[[...path]]` | HEAD | `auth` | `auth` |  |
@@ -246,10 +259,6 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/integrations/scanner-edge/profiles` | GET | `auth` | `auth` |  |
 | `/api/integrations/scanner-edge/sync` | POST | `admin` | `admin` |  |
 | `/api/integrations/scanner-edge/test` | POST | `admin` | `admin` |  |
-| `/api/integrations/unifi/cert-pin` | DELETE | `admin` | `admin` |  |
-| `/api/integrations/unifi/cert-pin` | POST | `admin` | `admin` |  |
-| `/api/integrations/unifi/sync` | POST | `admin` | `admin` |  |
-| `/api/integrations/unifi/test-connection` | POST | `admin` | `admin` |  |
 | `/api/integrations/wazuh/agent-script` | POST | `admin` | `admin` |  |
 | `/api/integrations/wazuh/agents` | GET | `auth` | `auth` |  |
 | `/api/integrations/wazuh/agents/[agentId]` | GET | `auth` | `auth` |  |
@@ -310,6 +319,8 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/locations/[id]` | DELETE | `admin` | `admin` |  |
 | `/api/locations/[id]` | GET | `admin` | `auth` |  |
 | `/api/locations/[id]` | PUT | `admin` | `admin` |  |
+| `/api/locations/[id]/topology` | GET | `auth` | `auth` |  |
+| `/api/locations/[id]/topology` | PUT | `admin` | `admin` |  |
 | `/api/mac-ip-mapping` | GET | `sessione` | `auth` |  |
 | `/api/mac-product-map` | GET | `auth` | `auth` |  |
 | `/api/mac-product-map` | POST | `admin` | `admin` |  |
@@ -435,7 +446,7 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/services/[id]/assets` | DELETE | `admin` | `admin` |  |
 | `/api/services/[id]/assets` | GET | `auth` | `auth` |  |
 | `/api/services/[id]/assets` | POST | `admin` | `admin` |  |
-| `/api/settings` | GET | `auth` | `auth` |  |
+| `/api/settings` | GET | `auth` | `admin` | mascherata: chiavi dei segreti tolte per chi non è admin (SEC-5) |
 | `/api/settings` | PUT | `admin-o-onboarding` | `admin-o-onboarding` |  |
 | `/api/settings/hub-url` | GET | `auth` | `auth` |  |
 | `/api/setup` | GET | `nessuna` | `auth` | pubblica: prima configurazione, prima che esista un utente |
@@ -502,8 +513,21 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/test-snmp` | GET | `admin` | `admin` |  |
 | `/api/tls` | GET | `admin-o-onboarding` | `auth` |  |
 | `/api/tls` | POST | `admin-o-onboarding` | `admin-o-onboarding` |  |
-| `/api/topology` | GET | `auth` | `auth` |  |
+| `/api/topology/links` | GET | `auth` | `auth` |  |
+| `/api/topology/links` | POST | `admin` | `admin` |  |
+| `/api/topology/links/[id]` | DELETE | `admin` | `admin` |  |
+| `/api/topology/maps` | GET | `auth` | `auth` |  |
+| `/api/topology/maps` | POST | `admin` | `admin` |  |
+| `/api/topology/maps/[id]` | DELETE | `admin` | `admin` |  |
+| `/api/topology/maps/[id]` | GET | `auth` | `auth` |  |
+| `/api/topology/maps/[id]` | PATCH | `admin` | `admin` |  |
+| `/api/topology/maps/[id]` | PUT | `admin` | `admin` |  |
+| `/api/topology/maps/[id]/nodes` | PUT | `admin` | `admin` |  |
+| `/api/topology/model` | GET | `auth` | `auth` |  |
+| `/api/topology/nodes/hidden` | PUT | `admin` | `admin` |  |
 | `/api/topology/positions` | PUT | `admin` | `admin` |  |
+| `/api/topology/settings` | GET | `auth` | `auth` |  |
+| `/api/topology/settings` | PUT | `admin` | `admin` |  |
 | `/api/user/preferences` | GET | `auth` | `auth` |  |
 | `/api/user/preferences` | PUT | `auth` | `admin` | motivata: preferenze del proprio utente |
 | `/api/users` | GET | `admin` | `auth` |  |

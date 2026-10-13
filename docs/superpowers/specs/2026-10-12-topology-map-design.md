@@ -3,7 +3,8 @@
 > Spec di progettazione. **Versione 2, 2026-10-13** — riscrive da capo la versione
 > del 12/10 (in git: il motore v1, React Flow + dagre, è sul `dev` dalla v0.3.260 e
 > sul dato vero di DTS è risultato «orribile, linee a caso, caotico»). Stato:
-> **da approvare**. Decisioni prese con Riccardo il 13/10 in una sessione di
+> **approvata da Riccardo il 13/10** (piano della fase 1:
+> `docs/superpowers/plans/2026-10-13-topologia-fase1-dati.md`). Decisioni prese con Riccardo il 13/10 in una sessione di
 > progettazione con bozze sul dato vero della rete Domarc. È la **tappa 5** del piano
 > `2026-10-12-piano-miglioramento-design.md`. ADR di riferimento: 0003 (resta valida
 > la scelta di React Flow; la disposizione con dagre è superata da questa spec).
@@ -203,8 +204,9 @@ Ognuna rilasciabile e guardata a schermo sul dato vero.
 - **Collegamenti fra sedi** (fase 3): se i router delle sedi si vedono via
   LLDP/MNDP escono da soli; altrimenti si dichiarano a mano con mezzo e velocità.
   Da verificare sulla copia di DTS.
-- **Soglia del «non visto»** (fase 1): proposta un giorno, da tarare sul ritmo delle
-  letture (UniFi ogni giorno alle 03:00 a Domarc).
+- **Soglia del «non visto»**: **decisa il 13/10, 2 giorni**, modificabile (impostazione
+  `topology_link_stale_days`, 1–30). Con una lettura UniFi al giorno, un giorno esatto farebbe
+  diventare grigio tutto a ogni lettura in ritardo.
 - **Client veri** sotto porte e AP: con la tappa 4 (lettura dei client dal controller).
 - **Dato sporco** (19 «switch» che sono PC/server sull'hub): la mappa li mette in «Da
   sistemare»; correggere la classificazione è un lavoro a parte.

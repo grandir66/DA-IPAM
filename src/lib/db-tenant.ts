@@ -285,6 +285,12 @@ export function migrateTopologyPhase2(db: Database.Database): string[] {
   return added;
 }
 
+/**
+ * Quanti giorni resta una riga di mac_port_entries non più vista (spec §10.5):
+ * la usano la pulizia all'apertura del database e `cleanupOldMacPortEntries`.
+ */
+export const MAC_PORT_RETENTION_DAYS = 30;
+
 export function getTenantDb(tenantCode: string): Database.Database {
   const existing = tenantDbs.get(tenantCode);
   if (existing) {
@@ -1313,13 +1319,14 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione physical_devices fallita:`, e);
   }
 
-  // v0.2.651: cleanup one-shot mac_port_entries più vecchi di 24h al boot tenant.
-  // Su tenant esistenti con backlog accumulato (es. 9300 righe in 25 giorni),
-  // libera subito spazio e velocizza getAllHostsEnriched.
+  // v0.2.651: cleanup one-shot mac_port_entries all'apertura del DB tenant.
+  // Topologia fase 2 (spec §10.5): la soglia è la stessa del job cleanup
+  // (30 giorni), non più 24 ore — con le 24 ore ogni riavvio, o ogni riapertura
+  // dopo l'uscita dalla LRU, cancellava il «visto l'ultima volta».
   try {
     const r = newDb.prepare(
-      "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-24 hours')"
-    ).run() as { changes: number };
+      "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' days')"
+    ).run(MAC_PORT_RETENTION_DAYS) as { changes: number };
     if (r.changes > 0) {
       console.info(`[db-tenant] ${tenantCode}: mac_port_entries one-shot cleanup — ${r.changes} righe rimosse`);
     }
@@ -1949,10 +1956,14 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
     -- duplicati osservati su switch_port discovery che inserisce stessa riga ad
     -- ogni tick) → INNER JOIN moltiplicava gli host. MAX(rowid) garantisce 1 riga
     -- per mac (rowid univoco di default in SQLite).
+    -- Topologia fase 2: con le righe aggiornate sul posto (una per apparato, MAC,
+    -- porta) MAX(rowid) non è più la lettura più recente. SQLite, con un solo
+    -- MAX() nel GROUP BY, restituisce le colonne nude della riga che lo realizza:
+    -- una riga per mac, quella col timestamp più recente.
     LEFT JOIN (
       SELECT mac, port_name, device_id
       FROM mac_port_entries
-      WHERE rowid IN (SELECT MAX(rowid) FROM mac_port_entries GROUP BY mac)
+      WHERE rowid IN (SELECT rid FROM (SELECT rowid AS rid, MAX(timestamp) FROM mac_port_entries GROUP BY mac))
     ) mpe ON mpe.mac = h.mac
     LEFT JOIN network_devices sw ON sw.id = mpe.device_id
     LEFT JOIN (
@@ -2223,7 +2234,9 @@ export function getHostById(id: number): HostDetail | undefined {
     FROM mac_port_entries mpe
     JOIN network_devices nd ON nd.id = mpe.device_id
     WHERE ${MAC_HEX("mpe.mac")} = ? AND nd.device_type = 'switch'
-    ORDER BY mpe.rowid DESC LIMIT 1
+    -- Topologia fase 2: le righe si aggiornano sul posto, il rowid non dice più
+    -- «la lettura più recente»; il timestamp sì (rowid solo a parità).
+    ORDER BY mpe.timestamp DESC, mpe.rowid DESC LIMIT 1
   `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; port_name: string; vlan: number | null } | undefined : undefined;
 
   // F4: prefer FK lookup (network_devices.host_id) over fragile IP string match;
@@ -4653,41 +4666,39 @@ export function getArpEntriesByDevice(deviceId: number): (ArpEntry & { host_ip?:
 // MAC PORT ENTRIES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function upsertMacPortEntries(deviceId: number, entries: { mac: string; port_name: string; vlan: number | null; port_status: "up" | "down" | null; speed: string | null }[]): void {
+export type MacPortInput = { mac: string; port_name: string; vlan: number | null; port_status: "up" | "down" | null; speed: string | null };
+
+/**
+ * Le righe invecchiano (spec §10.5, come i vicini nell'ADR 0008): una lettura
+ * aggiorna o crea, non cancella. `timestamp` uguale per tutto il giro = «ultimo
+ * giro» riconoscibile. La pulizia a 30 giorni la fa il job cleanup.
+ * ON CONFLICT sull'indice UNIQUE (device_id, mac, port_name) del Task 1: lo
+ * stesso (MAC, porta) ripetuto nel giro (es. su due VLAN) aggiorna la riga
+ * invece di far fallire la transazione dell'intero apparato.
+ */
+export function upsertMacPortEntries(deviceId: number, entries: MacPortInput[], source: "device" | "unifi"): void {
   const d = db();
-  // ARC-01: DELETE dentro la transazione = replace atomico. Prima il DELETE era
-  // fuori (auto-commit): se l'insert falliva, il device restava con zero MAC
-  // entries. Stesso pattern già applicato a upsertSwitchPorts e alla copia db.ts.
-  const deleteStmt = d.prepare("DELETE FROM mac_port_entries WHERE device_id = ?");
+  const now = (d.prepare("SELECT datetime('now') AS t").get() as { t: string }).t;
   const stmt = d.prepare(
-    `INSERT INTO mac_port_entries (device_id, mac, port_name, vlan, port_status, speed)
-     VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO mac_port_entries (device_id, mac, port_name, vlan, port_status, speed, timestamp, first_seen, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(device_id, mac, port_name) DO UPDATE SET
+       vlan = excluded.vlan, port_status = excluded.port_status, speed = excluded.speed,
+       timestamp = excluded.timestamp, source = excluded.source`,
   );
-
-  const replaceAll = d.transaction((items: typeof entries) => {
-    deleteStmt.run(deviceId);
-    for (const entry of items) {
-      stmt.run(deviceId, entry.mac, entry.port_name, entry.vlan, entry.port_status, entry.speed);
-    }
-  });
-
-  replaceAll(entries);
+  d.transaction((items: MacPortInput[]) => {
+    for (const e of items) stmt.run(deviceId, e.mac, e.port_name, e.vlan, e.port_status, e.speed, now, now, source);
+  })(entries);
 }
 
 /**
- * v0.2.651: retention mac_port_entries — elimina row più vecchie di N ore.
- * Lo switch_port discovery inserisce fino a 4096 row per ogni run (intera MAC
- * table dello switch). Senza retention la tabella cresce indefinitamente:
- * misurato su tenant prod 70791 ~9300 righe in 25 giorni con tabelle MAC piccole;
- * su switch enterprise (4096 MAC × 4 scan/giorno) diventa milioni in poche
- * settimane. Default 24h è sicuro: getMacPortEntriesByDevice mostra solo le
- * ultime, e `upsertMacPortEntries` rimpiazza per device ad ogni scan.
+ * Retention mac_port_entries in giorni (prima v0.2.651: 24 ore, perché ogni
+ * giro riscriveva l'intera MAC table). Ora c'è una riga per (apparato, MAC,
+ * porta) aggiornata a ogni giro: il volume non cresce col numero dei giri, e
+ * una riga vecchia vuol dire «visto l'ultima volta» — si tiene 30 giorni.
  */
-export function cleanupOldMacPortEntries(retentionHours: number = 24): number {
-  const r = db().prepare(
-    "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' hours')"
-  ).run(retentionHours) as { changes: number };
-  return r.changes;
+export function cleanupOldMacPortEntries(retentionDays: number = MAC_PORT_RETENTION_DAYS): number {
+  return (db().prepare("DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' days')").run(retentionDays) as { changes: number }).changes;
 }
 
 export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { host_ip?: string; host_name?: string })[] {
@@ -4698,6 +4709,9 @@ export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { h
     FROM mac_port_entries mpe
     LEFT JOIN hosts h ON ${MAC_HEX("h.mac")} = ${MAC_HEX("mpe.mac")}
     WHERE mpe.device_id = ?
+      -- Solo l'ultimo giro di ogni fonte: le righe non viste restano (invecchiano)
+      -- ma non si mostrano come attuali. Stessa idea di NEIGHBORS_LATEST_ROUND_SQL.
+      AND mpe.timestamp = (SELECT MAX(m2.timestamp) FROM mac_port_entries m2 WHERE m2.device_id = mpe.device_id AND m2.source = mpe.source)
     ORDER BY mpe.port_name
   `).all(deviceId) as (MacPortEntry & { host_ip?: string; host_name?: string })[];
 }

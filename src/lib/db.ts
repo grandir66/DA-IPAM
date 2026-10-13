@@ -45,7 +45,6 @@ import type {
   NetworkDevice,
   Credential,
   ArpEntry,
-  MacPortEntry,
   ScheduledJob,
   StatusHistory,
   User,
@@ -2747,7 +2746,9 @@ export function getHostById(id: number): HostDetail | undefined {
     FROM mac_port_entries mpe
     JOIN network_devices nd ON nd.id = mpe.device_id
     WHERE ${MAC_HEX("mpe.mac")} = ? AND nd.device_type = 'switch'
-    ORDER BY mpe.rowid DESC LIMIT 1
+    -- Topologia fase 2: le righe si aggiornano sul posto, il rowid non dice più
+    -- «la lettura più recente»; il timestamp sì (rowid solo a parità).
+    ORDER BY mpe.timestamp DESC, mpe.rowid DESC LIMIT 1
   `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; port_name: string; vlan: number | null } | undefined : undefined;
 
   // Dispositivo gestito con stesso IP (es. WINRM, SSH, SNMP)
@@ -5462,34 +5463,18 @@ export function getArpEntriesByDevice(deviceId: number): (ArpEntry & { host_ip?:
 // MAC Port Entries
 // ========================
 
-export function upsertMacPortEntries(deviceId: number, entries: { mac: string; port_name: string; vlan: number | null; port_status: "up" | "down" | null; speed: string | null }[]): void {
-  const db = getDb();
-  const deleteStmt = db.prepare("DELETE FROM mac_port_entries WHERE device_id = ?");
-  const stmt = db.prepare(
-    `INSERT INTO mac_port_entries (device_id, mac, port_name, vlan, port_status, speed)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  );
-
-  const replaceAll = db.transaction((items: typeof entries) => {
-    deleteStmt.run(deviceId);
-    for (const entry of items) {
-      stmt.run(deviceId, entry.mac, entry.port_name, entry.vlan, entry.port_status, entry.speed);
-    }
-  });
-
-  replaceAll(entries);
+export function upsertMacPortEntries(...args: Parameters<typeof import("./db-tenant").upsertMacPortEntries>): void {
+  // Delega al sorgente db-tenant (topologia fase 2, spec §10.5): le righe
+  // invecchiano invece di essere sostituite a ogni giro. Una copia sola, come
+  // upsertNeighbors e upsertSwitchPorts (regola 12: db.ts e db-tenant non divergono).
+  const tenant = require("./db-tenant") as typeof import("./db-tenant");
+  tenant.upsertMacPortEntries(...args);
 }
 
-export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { host_ip?: string; host_name?: string })[] {
-  return getDb().prepare(`
-    SELECT mpe.*,
-      COALESCE(h.ip, (SELECT ae.ip FROM arp_entries ae WHERE ${MAC_HEX("ae.mac")} = ${MAC_HEX("mpe.mac")} AND ae.ip IS NOT NULL ORDER BY ae.timestamp DESC LIMIT 1)) as host_ip,
-      COALESCE(h.custom_name, h.hostname) as host_name
-    FROM mac_port_entries mpe
-    LEFT JOIN hosts h ON ${MAC_HEX("h.mac")} = ${MAC_HEX("mpe.mac")}
-    WHERE mpe.device_id = ?
-    ORDER BY mpe.port_name
-  `).all(deviceId) as (MacPortEntry & { host_ip?: string; host_name?: string })[];
+export function getMacPortEntriesByDevice(deviceId: number): ReturnType<typeof import("./db-tenant").getMacPortEntriesByDevice> {
+  // Delega: solo l'ultimo giro di ogni fonte, come db-tenant.ts (spec §10.5).
+  const tenant = require("./db-tenant") as typeof import("./db-tenant");
+  return tenant.getMacPortEntriesByDevice(deviceId);
 }
 
 // ========================

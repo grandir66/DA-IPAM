@@ -182,7 +182,7 @@ export async function POST(request: Request) {
             vlan: e.vlan,
             port_status: e.port_status,
             speed: e.speed,
-          })));
+          })), "device");
           const portInfos = await client.getPortSchema();
           if (portInfos.length > 0) {
             const macsByPort = new Map<string, { macs: string[]; vlan: number | null }>();

@@ -56,8 +56,35 @@ export const SPOSTATE_GRUPPO_1A = [
   "getAdDhcpLeasesPaginated", "getDistinctHostVendorHints", "getDhcpLeaseStats",
 ] as const;
 
+/**
+ * Gruppo 1b (T3-06): scritture uguali nelle due copie, le deleghe che la
+ * facciata faceva già verso `db-tenant` e le funzioni con differenze solo di
+ * forma (nomi di variabili, prefisso dei log, a capo, un valore calcolato in
+ * linea invece che in una variabile), una voce per dominio, nell'ordine dei
+ * commit. Scelte con lo stesso parser del gruppo 1a; le differenze di forma
+ * sono provate col banco di parità (`db-parity/<dominio>.test.ts`) contro la
+ * copia congelata della vecchia facciata. Restano fuori le 9 funzioni che
+ * cambiano comportamento (T3-07) e le 3 che le chiamano.
+ */
+export const SPOSTATE_GRUPPO_1B: Readonly<Record<string, readonly string[]>> = {
+  credenziali: [
+    "createCredential", "updateCredential", "deleteCredential", "replaceNetworkHostCredentials",
+    "setHostDetectCredential", "deleteHostDetectCredential", "replaceNetworkCredentials",
+    "addNetworkCredential", "removeNetworkCredential", "reorderNetworkCredentials",
+    "copyNetworkCredentials", "addHostCredential", "removeHostCredential", "reorderHostCredentials",
+    "setHostCredentialValidated", "setHostCredentialValidatedByKey", "recordCredentialFailure",
+    "recordCredentialSuccess", "getCredentialCoverageByCategory", "addDeviceCredentialBinding",
+    "updateDeviceCredentialBinding", "deleteDeviceCredentialBinding", "reorderDeviceCredentialBindings",
+    "updateBindingTestStatus",
+  ],
+};
+
 /** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */
-export const SPOSTATE: readonly string[] = [...SPOSTATE_GRUPPO_0, ...SPOSTATE_GRUPPO_1A];
+export const SPOSTATE: readonly string[] = [
+  ...SPOSTATE_GRUPPO_0,
+  ...SPOSTATE_GRUPPO_1A,
+  ...Object.values(SPOSTATE_GRUPPO_1B).flat(),
+];
 
 /** Tipi uguali nelle due copie (T3-05): `db.ts` li riesporta con `export type`. */
 export const TIPI_SPOSTATI: readonly string[] = [

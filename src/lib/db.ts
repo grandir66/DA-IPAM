@@ -25,7 +25,6 @@ import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { ipSortKey, sqlOrderByDhcpLeases, type SortDirection } from "./table-sort";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
-import type { CredProtocol } from "./credentials/resolve";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 
@@ -40,14 +39,12 @@ import type {
   HostDetail,
   ScanHistory,
   NetworkDevice,
-  Credential,
   ScheduledJob,
   User,
   NetworkInput,
   HostInput,
   HostUpdate,
   ScheduledJobInput,
-  CredentialInput,
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
@@ -58,9 +55,7 @@ import {
   getNetworkById,
   mergeOpenPortsJson,
   isIpExcluded,
-  getCredentialById,
   getHostDetectCredentialsEnriched,
-  getNetworkCredentials,
   getHostCredentials,
   getNetworkDeviceById,
   getNetworkDeviceByHost,
@@ -70,16 +65,11 @@ import {
   getInventoryAssetByHost,
   getAssetAssigneeById,
   getLocationById,
-  findExistingBinding,
   getProxmoxHostById,
   getAdIntegrationById,
 } from "./db-tenant";
 import type {
-  CredentialCoverageRow,
-  NetworkCredentialRole,
-  HostDetectCredentialRole,
   MacIpMappingSource,
-  DeviceCredentialBinding,
   AdIntegration,
   AdComputer,
   AdUser,
@@ -3181,74 +3171,6 @@ export function addScanHistory(entry: Omit<ScanHistory, "id" | "timestamp">): vo
   );
 }
 
-// Fase 4b Task 4 (§7.6) — stessa mappa categoria→protocolli di db-tenant.ts
-// (duplicata qui per il facade, coerente con la regola "coerenza funzioni DB").
-const CREDENTIAL_COVERAGE_PROTOCOLS: Record<string, readonly CredProtocol[]> = {
-  network: ["snmp"],
-  "network.router": ["snmp"],
-  "network.switch": ["snmp"],
-  "network.access_point": ["snmp"],
-  "network.firewall": ["snmp"],
-  "network.controller": ["snmp"],
-  "network.modem": ["snmp"],
-  "compute.workstation": ["winrm"],
-  "compute.laptop": ["winrm"],
-  "compute.server": ["winrm", "ssh", "redfish"],
-  "compute.hypervisor": ["winrm", "ssh", "redfish"],
-  "av.camera": ["onvif"],
-  storage: ["ssh", "snmp"],
-  "storage.nas": ["ssh", "snmp"],
-  "storage.san": ["ssh", "snmp"],
-  "storage.tape": ["ssh", "snmp"],
-};
-
-/** Facade di db-tenant.ts::getCredentialCoverageByCategory — vedi lì per i dettagli. */
-export function getCredentialCoverageByCategory(): CredentialCoverageRow[] {
-  const d = getDb();
-  let categoryRows: Array<{ category: string; hosts: number }>;
-  try {
-    categoryRows = d
-      .prepare(
-        `SELECT attr_category AS category, COUNT(*) AS hosts
-         FROM hosts
-         WHERE attr_category IS NOT NULL AND attr_category != 'unknown'
-         GROUP BY attr_category`
-      )
-      .all() as Array<{ category: string; hosts: number }>;
-  } catch (e) {
-    console.error("[db] getCredentialCoverageByCategory: query categorie fallita:", e);
-    return [];
-  }
-
-  const out: CredentialCoverageRow[] = [];
-  for (const row of categoryRows) {
-    const protocols = CREDENTIAL_COVERAGE_PROTOCOLS[row.category];
-    if (!protocols || protocols.length === 0) continue;
-    try {
-      const placeholders = protocols.map(() => "?").join(",");
-      const withValid = d
-        .prepare(
-          `SELECT COUNT(*) AS n FROM hosts h
-           WHERE h.attr_category = ? AND EXISTS (
-             SELECT 1 FROM host_credentials hc
-             WHERE hc.host_id = h.id AND hc.validated = 1 AND hc.protocol_type IN (${placeholders})
-           )`
-        )
-        .get(row.category, ...protocols) as { n: number };
-      out.push({
-        category: row.category,
-        hosts: row.hosts,
-        withValidCredential: withValid.n ?? 0,
-        expectedProtocol: protocols.join("/"),
-      });
-    } catch (e) {
-      console.error(`[db] getCredentialCoverageByCategory: query copertura fallita per ${row.category}:`, e);
-    }
-  }
-
-  return out.sort((a, b) => a.category.localeCompare(b.category));
-}
-
 // ========================
 // Network Devices
 // ========================
@@ -3271,399 +3193,11 @@ export function deleteNetworkRouter(networkId: number): void {
 // Credentials (riutilizzabili)
 // ========================
 
-export function createCredential(
-  input: CredentialInput & {
-    encrypted_username?: string | null;
-    encrypted_password?: string | null;
-    encrypted_auth_key?: string | null;
-    auth_protocol?: string | null;
-    encrypted_priv_key?: string | null;
-    priv_protocol?: string | null;
-    security_level?: string | null;
-  }
-): Credential {
-  const stmt = getDb().prepare(
-    `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password, encrypted_auth_key, auth_protocol, encrypted_priv_key, priv_protocol, security_level)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  );
-  const result = stmt.run(
-    input.name,
-    input.credential_type,
-    input.encrypted_username ?? null,
-    input.encrypted_password ?? null,
-    input.encrypted_auth_key ?? null,
-    input.auth_protocol ?? null,
-    input.encrypted_priv_key ?? null,
-    input.priv_protocol ?? null,
-    input.security_level ?? null
-  );
-  return getDb().prepare("SELECT * FROM credentials WHERE id = ?").get(result.lastInsertRowid) as Credential;
-}
-
-export function updateCredential(
-  id: number,
-  input: Partial<CredentialInput> & {
-    encrypted_username?: string | null;
-    encrypted_password?: string | null;
-    encrypted_auth_key?: string | null;
-    auth_protocol?: string | null;
-    encrypted_priv_key?: string | null;
-    priv_protocol?: string | null;
-    security_level?: string | null;
-  }
-): Credential | undefined {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  const keys = [
-    "name",
-    "credential_type",
-    "encrypted_username",
-    "encrypted_password",
-    "encrypted_auth_key",
-    "auth_protocol",
-    "encrypted_priv_key",
-    "priv_protocol",
-    "security_level",
-  ] as const;
-  for (const key of keys) {
-    if (input[key] !== undefined) {
-      fields.push(`${key} = ?`);
-      values.push(input[key]);
-    }
-  }
-  if (fields.length === 0) return getCredentialById(id);
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-  getDb().prepare(`UPDATE credentials SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  return getCredentialById(id);
-}
-
-export function deleteCredential(id: number): boolean {
-  return getDb().prepare("DELETE FROM credentials WHERE id = ?").run(id).changes > 0;
-}
-
-function credentialMatchesNetworkRole(
-  credentialType: string,
-  role: NetworkCredentialRole
-): boolean {
-  const t = credentialType.toLowerCase();
-  if (role === "windows") return t === "windows";
-  if (role === "linux") return t === "linux";
-  if (role === "ssh") return t === "ssh";
-  if (role === "snmp") return t === "snmp";
-  return false;
-}
-
-export function replaceNetworkHostCredentials(
-  networkId: number,
-  role: NetworkCredentialRole,
-  credentialIds: number[]
-): void {
-  const seen = new Set<number>();
-  const unique: number[] = [];
-  for (const id of credentialIds) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const c = getCredentialById(id);
-    if (!c || !credentialMatchesNetworkRole(String(c.credential_type), role)) {
-      throw new Error(`Credenziale #${id} non valida per ruolo ${role}`);
-    }
-    unique.push(id);
-  }
-  const db = getDb();
-  db.transaction(() => {
-    db.prepare(`DELETE FROM network_host_credentials WHERE network_id = ? AND role = ?`).run(networkId, role);
-    const ins = db.prepare(
-      `INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (?,?,?,?)`
-    );
-    unique.forEach((cid, i) => ins.run(networkId, cid, role, i));
-  })();
-}
-
-function credentialMatchesDetectRole(credentialType: string, role: HostDetectCredentialRole): boolean {
-  const t = credentialType.toLowerCase();
-  if (role === "windows") return t === "windows";
-  if (role === "linux") return t === "linux" || t === "ssh";
-  if (role === "ssh") return t === "ssh";
-  if (role === "snmp") return t === "snmp";
-  return false;
-}
-
-export function setHostDetectCredential(hostId: number, role: HostDetectCredentialRole, credentialId: number): void {
-  const c = getCredentialById(credentialId);
-  if (!c || !credentialMatchesDetectRole(String(c.credential_type), role)) return;
-  getDb()
-    .prepare(
-      `INSERT INTO host_detect_credential (host_id, role, credential_id, updated_at)
-       VALUES (?, ?, ?, datetime('now'))
-       ON CONFLICT(host_id, role) DO UPDATE SET credential_id = excluded.credential_id, updated_at = datetime('now')`
-    )
-    .run(hostId, role, credentialId);
-}
-
-export function deleteHostDetectCredential(hostId: number, role: HostDetectCredentialRole): void {
-  getDb().prepare(`DELETE FROM host_detect_credential WHERE host_id = ? AND role = ?`).run(hostId, role);
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // CREDENTIAL SYSTEM v2: network_credentials + host_credentials
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Sostituisce atomicamente la lista credenziali della subnet. */
-export function replaceNetworkCredentials(networkId: number, credentialIds: number[]): void {
-  const seen = new Set<number>();
-  const unique: number[] = [];
-  for (const id of credentialIds) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    unique.push(id);
-  }
-  const db = getDb();
-  db.transaction(() => {
-    db.prepare(`DELETE FROM network_credentials WHERE network_id = ?`).run(networkId);
-    const ins = db.prepare(
-      `INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
-    );
-    unique.forEach((cid, i) => ins.run(networkId, cid, i));
-  })();
-}
-
-/** Aggiunge una credenziale alla subnet (in coda). */
-export function addNetworkCredential(networkId: number, credentialId: number): void {
-  const db = getDb();
-  const max = db.prepare(
-    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM network_credentials WHERE network_id = ?`
-  ).get(networkId) as { m: number };
-  db.prepare(
-    `INSERT OR IGNORE INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
-  ).run(networkId, credentialId, max.m + 1);
-}
-
-/** Rimuove una credenziale dalla subnet. */
-export function removeNetworkCredential(networkId: number, credentialId: number): void {
-  getDb().prepare(
-    `DELETE FROM network_credentials WHERE network_id = ? AND credential_id = ?`
-  ).run(networkId, credentialId);
-}
-
-/** Riordina credenziali di una subnet. orderedCredentialIds = array di credential_id nell'ordine desiderato. */
-export function reorderNetworkCredentials(networkId: number, orderedCredentialIds: number[]): void {
-  const db = getDb();
-  db.transaction(() => {
-    const upd = db.prepare(
-      `UPDATE network_credentials SET sort_order = ? WHERE network_id = ? AND credential_id = ?`
-    );
-    orderedCredentialIds.forEach((cid, i) => upd.run(i, networkId, cid));
-  })();
-}
-
-/** Copia credenziali da una subnet sorgente alla destinazione (senza duplicare quelle già presenti). */
-export function copyNetworkCredentials(sourceNetworkId: number, targetNetworkId: number): number {
-  const db = getDb();
-  const source = getNetworkCredentials(sourceNetworkId);
-  const existing = new Set(
-    getNetworkCredentials(targetNetworkId).map((r) => r.credential_id)
-  );
-  const max = db.prepare(
-    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM network_credentials WHERE network_id = ?`
-  ).get(targetNetworkId) as { m: number };
-  let order = max.m + 1;
-  let added = 0;
-  const ins = db.prepare(
-    `INSERT OR IGNORE INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
-  );
-  db.transaction(() => {
-    for (const s of source) {
-      if (existing.has(s.credential_id)) continue;
-      ins.run(targetNetworkId, s.credential_id, order++);
-      added++;
-    }
-  })();
-  return added;
-}
-
 // ── host_credentials CRUD ──
-
-/** Aggiunge credenziale a un host. */
-export function addHostCredential(
-  hostId: number,
-  credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
-  port: number,
-  options?: { validated?: boolean; auto_detected?: boolean }
-): void {
-  const db = getDb();
-  const max = db.prepare(
-    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
-  ).get(hostId) as { m: number };
-  db.prepare(
-    `INSERT OR IGNORE INTO host_credentials (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected)
-     VALUES (?, ?, ?, ?, ?, ${options?.validated ? "datetime('now')" : "NULL"}, ?, ?)`
-  ).run(
-    hostId,
-    credentialId,
-    protocolType,
-    port,
-    options?.validated ? 1 : 0,
-    max.m + 1,
-    options?.auto_detected ? 1 : 0
-  );
-}
-
-/** Rimuove credenziale da un host per id riga. */
-export function removeHostCredential(id: number): void {
-  getDb().prepare(`DELETE FROM host_credentials WHERE id = ?`).run(id);
-}
-
-/** Riordina credenziali host assegnando sort_order sequenziale. */
-export function reorderHostCredentials(hostId: number, bindingIds: number[]): void {
-  const d = getDb();
-  const stmt = d.prepare(`UPDATE host_credentials SET sort_order = ? WHERE id = ? AND host_id = ?`);
-  d.transaction(() => {
-    for (let i = 0; i < bindingIds.length; i++) {
-      stmt.run(i, bindingIds[i], hostId);
-    }
-  })();
-}
-
-/** Aggiorna stato validazione di una credenziale host. */
-export function setHostCredentialValidated(id: number, validated: boolean): void {
-  getDb()
-    .prepare(
-      `UPDATE host_credentials SET validated = ?, validated_at = ${validated ? "datetime('now')" : "NULL"} WHERE id = ?`
-    )
-    .run(validated ? 1 : 0, id);
-}
-
-/** Upsert idempotente: marca un binding (host, cred, proto, port) come validato.
- * Crea il record se manca, altrimenti aggiorna validated/validated_at.
- * Chiamata dai test endpoint al successo per memorizzare cosa funziona contro un host. */
-export function setHostCredentialValidatedByKey(
-  hostId: number,
-  credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
-  port: number,
-  options?: { auto_detected?: boolean }
-): void {
-  const db = getDb();
-  const max = db.prepare(
-    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
-  ).get(hostId) as { m: number };
-  db.prepare(
-    `INSERT INTO host_credentials (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected)
-     VALUES (?, ?, ?, ?, 1, datetime('now'), ?, ?)
-     ON CONFLICT(host_id, credential_id, protocol_type, port) DO UPDATE SET
-       validated = 1,
-       validated_at = datetime('now')`
-  ).run(
-    hostId,
-    credentialId,
-    protocolType,
-    port,
-    max.m + 1,
-    options?.auto_detected ? 1 : 0
-  );
-}
-
-/** Bridge host→device best-effort per il cross-update dei binding: FK prima, poi match IP. */
-function findDeviceIdForHostCred(hostId: number): number | null {
-  const byFk = getNetworkDeviceByHostId(hostId);
-  if (byFk) return byFk.id;
-  const host = getDb().prepare(`SELECT ip FROM hosts WHERE id = ?`).get(hostId) as { ip: string } | undefined;
-  if (!host) return null;
-  const byIp = getNetworkDeviceByHost(host.ip);
-  return byIp?.id ?? null;
-}
-
-/**
- * Registra un fallimento di autenticazione su (host, credenziale, protocollo, porta) —
- * resolver unico fase 1b, §7.5. Upsert idempotente: se la riga in `host_credentials`
- * non esiste ancora la crea con fail_count=1, mai un no-op silenzioso. backoff_until =
- * now + min(2^fail_count * 5min, 24h) col fail_count AGGIORNATO (post-incremento).
- * validated viene invalidato incondizionatamente (§7.5). last_attempt_at/backoff_until
- * in ISO-8601 UTC (vedi commento sullo schema in db-tenant-schema.ts). Copia identica
- * di db-tenant.ts a parte la sorgente db (regola 12).
- */
-export function recordCredentialFailure(
-  hostId: number,
-  credentialId: number,
-  protocol: CredProtocol,
-  port: number,
-  error: string
-): void {
-  const db = getDb();
-  const existing = db
-    .prepare(
-      `SELECT id, fail_count FROM host_credentials WHERE host_id = ? AND credential_id = ? AND protocol_type = ? AND port = ?`
-    )
-    .get(hostId, credentialId, protocol, port) as { id: number; fail_count: number } | undefined;
-
-  const newFailCount = (existing?.fail_count ?? 0) + 1;
-  const backoffMs = Math.min(2 ** newFailCount * 5 * 60 * 1000, 24 * 60 * 60 * 1000);
-  const nowIso = new Date().toISOString();
-  const backoffUntil = new Date(Date.now() + backoffMs).toISOString();
-
-  if (existing) {
-    db.prepare(
-      `UPDATE host_credentials
-       SET fail_count = ?, last_error = ?, last_attempt_at = ?, backoff_until = ?,
-           validated = 0, validated_at = NULL
-       WHERE id = ?`
-    ).run(newFailCount, error, nowIso, backoffUntil, existing.id);
-  } else {
-    const max = db.prepare(
-      `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
-    ).get(hostId) as { m: number };
-    db.prepare(
-      `INSERT INTO host_credentials
-         (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until)
-       VALUES (?, ?, ?, ?, 0, NULL, ?, 0, ?, ?, ?, ?)`
-    ).run(hostId, credentialId, protocol, port, max.m + 1, newFailCount, error, nowIso, backoffUntil);
-  }
-
-  const deviceId = findDeviceIdForHostCred(hostId);
-  if (deviceId != null) {
-    const binding = findExistingBinding(deviceId, credentialId, protocol, port);
-    if (binding) updateBindingTestStatus(binding.id, "failed", error);
-  }
-}
-
-/**
- * Registra un'autenticazione riuscita su (host, credenziale, protocollo, porta):
- * azzera fail_count/last_error/backoff_until e marca validated=1 (upsert, come
- * setHostCredentialValidatedByKey). Propaga anche a device_credential_bindings se
- * esiste un binding corrispondente. Copia identica di db-tenant.ts (regola 12).
- */
-export function recordCredentialSuccess(
-  hostId: number,
-  credentialId: number,
-  protocol: CredProtocol,
-  port: number
-): void {
-  const db = getDb();
-  const nowIso = new Date().toISOString();
-  const max = db.prepare(
-    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
-  ).get(hostId) as { m: number };
-  db.prepare(
-    `INSERT INTO host_credentials
-       (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until)
-     VALUES (?, ?, ?, ?, 1, datetime('now'), ?, 0, 0, NULL, ?, NULL)
-     ON CONFLICT(host_id, credential_id, protocol_type, port) DO UPDATE SET
-       validated = 1,
-       validated_at = datetime('now'),
-       fail_count = 0,
-       last_error = NULL,
-       last_attempt_at = excluded.last_attempt_at,
-       backoff_until = NULL`
-  ).run(hostId, credentialId, protocol, port, max.m + 1, nowIso);
-
-  const deviceId = findDeviceIdForHostCred(hostId);
-  if (deviceId != null) {
-    const binding = findExistingBinding(deviceId, credentialId, protocol, port);
-    if (binding) updateBindingTestStatus(binding.id, "success", "Autenticazione riuscita");
-  }
-}
 
 // ========================
 // Network Devices
@@ -4578,91 +4112,6 @@ export function upsertRoutes(
 // ========================
 // Device Credential Bindings
 // ========================
-
-export function addDeviceCredentialBinding(input: {
-  device_id: number;
-  credential_id?: number | null;
-  protocol_type: string;
-  port: number;
-  sort_order?: number;
-  inline_username?: string | null;
-  inline_encrypted_password?: string | null;
-  auto_detected?: boolean;
-}): DeviceCredentialBinding {
-  const db = getDb();
-  // sort_order = max + 1 se non specificato
-  const maxOrder = (db.prepare(
-    "SELECT COALESCE(MAX(sort_order), -1) as m FROM device_credential_bindings WHERE device_id = ?"
-  ).get(input.device_id) as { m: number }).m;
-  const sortOrder = input.sort_order ?? maxOrder + 1;
-
-  const result = db.prepare(`
-    INSERT INTO device_credential_bindings
-      (device_id, credential_id, protocol_type, port, sort_order, inline_username, inline_encrypted_password, auto_detected)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    input.device_id,
-    input.credential_id ?? null,
-    input.protocol_type,
-    input.port,
-    sortOrder,
-    input.inline_username ?? null,
-    input.inline_encrypted_password ?? null,
-    input.auto_detected ? 1 : 0
-  );
-
-  return db.prepare(`
-    SELECT dcb.*, c.name AS credential_name, c.credential_type
-    FROM device_credential_bindings dcb
-    LEFT JOIN credentials c ON c.id = dcb.credential_id
-    WHERE dcb.id = ?
-  `).get(result.lastInsertRowid) as DeviceCredentialBinding;
-}
-
-export function updateDeviceCredentialBinding(bindingId: number, updates: {
-  credential_id?: number | null;
-  protocol_type?: string;
-  port?: number;
-  inline_username?: string | null;
-  inline_encrypted_password?: string | null;
-}): void {
-  const sets: string[] = [];
-  const params: unknown[] = [];
-  if (updates.credential_id !== undefined) { sets.push("credential_id = ?"); params.push(updates.credential_id); }
-  if (updates.protocol_type !== undefined) { sets.push("protocol_type = ?"); params.push(updates.protocol_type); }
-  if (updates.port !== undefined) { sets.push("port = ?"); params.push(updates.port); }
-  if (updates.inline_username !== undefined) { sets.push("inline_username = ?"); params.push(updates.inline_username); }
-  if (updates.inline_encrypted_password !== undefined) { sets.push("inline_encrypted_password = ?"); params.push(updates.inline_encrypted_password); }
-  if (sets.length === 0) return;
-  // Quando si assegna un credential_id, rimuovi inline; viceversa se inline, rimuovi credential_id
-  if (updates.credential_id != null) {
-    sets.push("inline_username = NULL", "inline_encrypted_password = NULL");
-  } else if (updates.inline_username !== undefined || updates.inline_encrypted_password !== undefined) {
-    sets.push("credential_id = NULL");
-  }
-  params.push(bindingId);
-  getDb().prepare(`UPDATE device_credential_bindings SET ${sets.join(", ")} WHERE id = ?`).run(...params);
-}
-
-export function deleteDeviceCredentialBinding(bindingId: number): void {
-  getDb().prepare("DELETE FROM device_credential_bindings WHERE id = ?").run(bindingId);
-}
-
-export function reorderDeviceCredentialBindings(deviceId: number, orderedIds: number[]): void {
-  const db = getDb();
-  const stmt = db.prepare("UPDATE device_credential_bindings SET sort_order = ? WHERE id = ? AND device_id = ?");
-  db.transaction(() => {
-    for (let i = 0; i < orderedIds.length; i++) {
-      stmt.run(i, orderedIds[i], deviceId);
-    }
-  })();
-}
-
-export function updateBindingTestStatus(bindingId: number, status: "success" | "failed", message: string): void {
-  getDb().prepare(`
-    UPDATE device_credential_bindings SET test_status = ?, test_message = ?, tested_at = datetime('now') WHERE id = ?
-  `).run(status, message, bindingId);
-}
 
 // ========================
 // Scheduled Jobs
@@ -6418,4 +5867,34 @@ export type {
   AdUser,
   AdDhcpLease,
   AdGroup,
+} from "./db-tenant";
+
+// NUC-2 gruppo 1b (T3-06), credenziali: 24 funzioni uguali o con
+// differenze solo di forma fra le due copie, provate con la parità. Una sola copia,
+// in db-tenant.ts. Elenco: src/lib/__tests__/support/facciata-spostate.ts.
+export {
+  createCredential,
+  updateCredential,
+  deleteCredential,
+  replaceNetworkHostCredentials,
+  setHostDetectCredential,
+  deleteHostDetectCredential,
+  replaceNetworkCredentials,
+  addNetworkCredential,
+  removeNetworkCredential,
+  reorderNetworkCredentials,
+  copyNetworkCredentials,
+  addHostCredential,
+  removeHostCredential,
+  reorderHostCredentials,
+  setHostCredentialValidated,
+  setHostCredentialValidatedByKey,
+  recordCredentialFailure,
+  recordCredentialSuccess,
+  getCredentialCoverageByCategory,
+  addDeviceCredentialBinding,
+  updateDeviceCredentialBinding,
+  deleteDeviceCredentialBinding,
+  reorderDeviceCredentialBindings,
+  updateBindingTestStatus,
 } from "./db-tenant";

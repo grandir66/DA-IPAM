@@ -38,6 +38,11 @@ export interface CasoParita<R> {
    * stesso secondo.
    */
   colonneOra?: string[];
+  /**
+   * Colonne con un valore casuale (un `randomUUID()`): si confrontano solo come
+   * «presente» o «assente», perché due chiamate non generano lo stesso valore.
+   */
+  colonneCasuali?: string[];
 }
 
 export interface EsitoParita<R> {
@@ -49,21 +54,42 @@ export interface EsitoParita<R> {
 
 function minutiDaAdesso(v: unknown): unknown {
   if (typeof v !== "string") return v;
-  const ms = Date.parse(v.replace(" ", "T") + "Z");
+  // Due forme: quella di SQLite (`2026-10-13 09:00:00`, UTC senza zona) e l'ISO
+  // di `toISOString()` (`2026-10-13T09:00:00.000Z`).
+  const ms = Date.parse(/[zZ]$|[+-]\d\d:\d\d$/.test(v) ? v : v.replace(" ", "T") + "Z");
   if (Number.isNaN(ms)) return v;
   const minuti = Math.round((ms - Date.now()) / 60_000);
   return `ora${minuti >= 0 ? "+" : ""}${minuti}min`;
 }
 
-function dump(db: Database.Database, tabelle: string[], colonneOra: string[]): Record<string, unknown[]> {
+interface Normalizza {
+  colonneOra: string[];
+  colonneCasuali: string[];
+}
+
+function normalizzaRiga(r: Record<string, unknown>, n: Normalizza): Record<string, unknown> {
+  const copia: Record<string, unknown> = { ...r };
+  for (const c of n.colonneOra) if (c in copia) copia[c] = minutiDaAdesso(copia[c]);
+  for (const c of n.colonneCasuali) if (c in copia) copia[c] = copia[c] == null ? copia[c] : "<casuale>";
+  return copia;
+}
+
+/** Il valore restituito passa dalla stessa normalizzazione delle tabelle (righe singole e liste di righe). */
+function normalizzaValore(v: unknown, n: Normalizza): unknown {
+  if (Array.isArray(v)) return v.map((x) => normalizzaValore(x, n));
+  if (v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) {
+    const riga = normalizzaRiga(v as Record<string, unknown>, n);
+    for (const [k, x] of Object.entries(riga)) if (x && typeof x === "object") riga[k] = normalizzaValore(x, n);
+    return riga;
+  }
+  return v;
+}
+
+function dump(db: Database.Database, tabelle: string[], n: Normalizza): Record<string, unknown[]> {
   const out: Record<string, unknown[]> = {};
   for (const t of tabelle) {
     const righe = db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all() as Record<string, unknown>[];
-    out[t] = righe.map((r) => {
-      const copia: Record<string, unknown> = { ...r };
-      for (const c of colonneOra) if (c in copia) copia[c] = minutiDaAdesso(copia[c]);
-      return copia;
-    });
+    out[t] = righe.map((r) => normalizzaRiga(r, n));
   }
   return out;
 }
@@ -79,14 +105,14 @@ export function eseguiParita<R>(caso: CasoParita<R>): EsitoParita<R> {
   const base = `PARITA${caso.nome.toUpperCase().replace(/[^A-Z0-9]/g, "")}${process.pid}${progressivo}`;
   const a = `${base}A`;
   const b = `${base}B`;
-  const colonneOra = caso.colonneOra ?? [];
+  const norm: Normalizza = { colonneOra: caso.colonneOra ?? [], colonneCasuali: caso.colonneCasuali ?? [] };
   try {
     const lato = (codice: string, chiama: () => R) =>
       withTenant(codice, () => {
         const db = getTenantDb(codice);
         caso.fixture(db);
-        const valore = chiama();
-        return { valore, tabelle: dump(db, caso.tabelle, colonneOra) };
+        const valore = normalizzaValore(chiama(), norm) as R;
+        return { valore, tabelle: dump(db, caso.tabelle, norm) };
       });
     const fa = lato(a, caso.facciata);
     const tb = lato(b, caso.tenant);

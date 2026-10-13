@@ -4220,6 +4220,10 @@ export function upsertArpEntries(
   getNetworkIdForIp?: (ip: string) => number | null
 ): void {
   const d = db();
+  // Riferimenti orfani nei legami MAC-IP (migrazioni con foreign_keys=OFF):
+  // si puliscono prima, una volta per database, altrimenti un legame vecchio
+  // fa fallire la scrittura (portato dalla copia della facciata, T3-07).
+  cleanOrphanedForeignKeys(d);
 
   const stmt = d.prepare(
     `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name)
@@ -4238,15 +4242,19 @@ export function upsertArpEntries(
         // l'ARP table del gateway è autoritativa sul MAC. Senza questo, un host
         // creato dal discovery nmap SENZA MAC restava a mac=NULL anche se il
         // gateway ne conosce il MAC (incident 2026-06-21: 20/29 host senza MAC
-        // pur essendo in arp_entries). Aggiorna solo se l'host esiste già e ha
-        // MAC mancante/diverso. NON crea host (resta fonte passiva).
+        // pur essendo in arp_entries). Aggiorna solo se l'host esiste già e il
+        // MAC gli MANCA. NON crea host (resta fonte passiva).
+        // Un MAC già presente non si sovrascrive (T3-07): sulla copia del DB DTS
+        // 13 dei 14 host che l'ARP avrebbe cambiato avevano il loro MAC
+        // confermato da un'altra voce ARP dello stesso IP (più router, VRRP,
+        // voci vecchie): l'ultima tabella letta avrebbe vinto a caso.
         if (networkId != null) {
           const normMac = normalizeMacForStorage(entry.mac);
           if (normMac) {
             d.prepare(
               `UPDATE hosts SET mac = ?, updated_at = datetime('now')
-               WHERE network_id = ? AND ip = ? AND (mac IS NULL OR mac = '' OR mac != ?)`
-            ).run(normMac, networkId, entry.ip, normMac);
+               WHERE network_id = ? AND ip = ? AND (mac IS NULL OR mac = '')`
+            ).run(normMac, networkId, entry.ip);
             // Propaga anche il VENDOR (OUI) by-IP se l'host esiste e non ne ha uno.
             // Stesso incident MAC 2026-06-21: gli host popolati col MAC ma senza
             // vendor (updateHostIfExists non li aggiornava) restavano senza marca.

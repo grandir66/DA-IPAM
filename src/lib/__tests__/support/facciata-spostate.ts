@@ -114,11 +114,22 @@ export const SPOSTATE_GRUPPO_1B: Readonly<Record<string, readonly string[]>> = {
   ],
 };
 
+/**
+ * Gruppo 2 (T3-07): le funzioni che nelle due copie si comportavano in modo
+ * diverso. Passano alla copia tenant una per commit; il comportamento voluto è
+ * provato in `db-parity/behaviour-*.test.ts`, la differenza misurata sulla copia
+ * del DB DTS.
+ */
+export const SPOSTATE_GRUPPO_2 = [
+  "upsertArpEntries",
+] as const;
+
 /** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */
 export const SPOSTATE: readonly string[] = [
   ...SPOSTATE_GRUPPO_0,
   ...SPOSTATE_GRUPPO_1A,
   ...Object.values(SPOSTATE_GRUPPO_1B).flat(),
+  ...SPOSTATE_GRUPPO_2,
 ];
 
 /** Tipi uguali nelle due copie (T3-05): `db.ts` li riesporta con `export type`. */

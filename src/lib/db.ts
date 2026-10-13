@@ -39,7 +39,6 @@ import type {
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
-import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu } from "./db-tenant";
 // NUC-2 gruppo 1b (T3-06), ARP, vicini, rotte e porte: funzioni spostate che il resto della facciata usa ancora.
 import {
   upsertMacIpMapping,
@@ -2860,42 +2859,6 @@ export function updateHostIfExists(input: HostInput & { mac?: string; vendor?: s
 // ARP Entries
 // ========================
 
-export function upsertArpEntries(
-  deviceId: number,
-  entries: { mac: string; ip: string | null; interface_name: string | null }[],
-  getNetworkIdForIp?: (ip: string) => number | null
-): void {
-  // Sul database che la facciata ha risolto (tenant, DEFAULT o legacy), come prima.
-  cleanOrphanedForeignKeysSu(getDb());
-  const db = getDb();
-
-  const stmt = db.prepare(
-    `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name)
-     VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?)`
-  );
-
-  const replaceAll = db.transaction((items: typeof entries) => {
-    // DELETE dentro la transazione per garantire atomicità
-    db.prepare("DELETE FROM arp_entries WHERE device_id = ?").run(deviceId);
-
-    for (const entry of items) {
-      const hex = macToHex(entry.mac);
-      stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name);
-      if (entry.ip && entry.mac) {
-        const networkId = getNetworkIdForIp?.(entry.ip) ?? null;
-        upsertMacIpMapping({
-          mac: entry.mac,
-          ip: entry.ip,
-          source: "arp",
-          source_device_id: deviceId,
-          network_id: networkId,
-        });
-      }
-    }
-  });
-
-  replaceAll(entries);
-}
 
 // ========================
 // MAC-IP Mapping (cumulativo)
@@ -3929,4 +3892,12 @@ export {
   addStatusHistory,
   cleanupStaleHosts,
   recordHostHeartbeat,
+} from "./db-tenant";
+
+// NUC-2 gruppo 2 (T3-07): le funzioni che nelle due copie si comportavano in
+// modo diverso. Passano alla copia tenant una per commit, con la differenza
+// misurata sulla copia del DB DTS e provata in db-parity/behaviour-*.test.ts.
+// Elenco: src/lib/__tests__/support/facciata-spostate.ts.
+export {
+  upsertArpEntries,
 } from "./db-tenant";

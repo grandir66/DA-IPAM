@@ -133,11 +133,12 @@ function conta(tabella: string, where = "1=1", ...args: unknown[]): number {
 
 // ── Client UniFi OS ──────────────────────────────────────────────────────────
 
-test("sola lettura: col prefisso UniFi OS passano solo stat/device e self/sites, nient'altro", () => {
+test("sola lettura: col prefisso UniFi OS passano solo stat/device, stat/sta e self/sites, nient'altro", () => {
   assert.equal(isUnifiRequestAllowed("GET", "/proxy/network/api/s/default/stat/device"), true);
   assert.equal(isUnifiRequestAllowed("GET", "/proxy/network/api/self/sites"), true);
   assert.equal(isUnifiRequestAllowed("GET", "/api/self/sites"), true);
-  assert.equal(isUnifiRequestAllowed("GET", "/proxy/network/api/s/default/stat/sta"), false);
+  assert.equal(isUnifiRequestAllowed("GET", "/proxy/network/api/s/default/stat/sta"), true);
+  assert.equal(isUnifiRequestAllowed("GET", "/proxy/network/api/s/default/cmd/stamgr"), false);
   assert.equal(isUnifiRequestAllowed("POST", "/proxy/network/api/s/default/cmd/devmgr"), false);
   assert.equal(isUnifiRequestAllowed("GET", "/proxy/network/integration/v1/sites"), false);
   assert.equal(isUnifiRequestAllowed("GET", "/proxy/network/api/s/../stat/device"), false);

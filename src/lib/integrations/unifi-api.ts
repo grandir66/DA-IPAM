@@ -5,12 +5,14 @@
  *   POST /api/login {username, password, remember:false}
  *     → cookie di sessione (`unifises`, `csrf_token`) e, se c'è, X-CSRF-Token
  *   GET  /api/s/<site>/stat/device → apparati (vedi `unifi-device.ts`)
+ *   GET  /api/s/<site>/stat/sta    → client collegati (vedi `unifi-clients.ts`)
  *   POST /api/logout
  *   GET  /api/self/sites → i site, per sceglierne uno (facoltativo)
  *
  * Backend `udm` (console UniFi OS: UDM, UDM Pro/Beast, Cloud Key Gen2+), con la
  * chiave API creata sulla console, nell'app Network (Control Plane, poi Integrazioni):
  *   GET  /proxy/network/api/s/<site>/stat/device   intestazione X-API-KEY
+ *   GET  /proxy/network/api/s/<site>/stat/sta
  *   GET  /proxy/network/api/self/sites
  * Niente login né logout: la chiave vale a ogni richiesta.
  *
@@ -40,6 +42,7 @@ import { isIP } from "node:net";
 import { spkiPinFromDer } from "@/lib/vuln/scanner-edge-client";
 import { mergeCookieHeader, parseSetCookies } from "./librenms-web-session";
 import { parseStatDeviceResponse, UnifiResponseError, type UnifiDevice } from "./unifi-device";
+import { parseStatStaResponse, type UnifiStaClient } from "./unifi-clients";
 import type { ComponentConfig, UnifiCertPinStore, UnifiKind } from "./types";
 
 // ── Errori ───────────────────────────────────────────────────────────────────
@@ -145,15 +148,16 @@ const SITE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 export const UNIFI_OS_PREFIX = "/proxy/network";
 
 /**
- * true solo per login e logout (self-hosted), lettura degli apparati di un
- * site ed elenco dei site, con o senza il prefisso delle console UniFi OS.
+ * true solo per login e logout (self-hosted), lettura degli apparati e dei
+ * client collegati di un site ed elenco dei site, con o senza il prefisso
+ * delle console UniFi OS. Tutte GET di `stat/`: nessun comando (`cmd/`), mai.
  */
 export function isUnifiRequestAllowed(method: string, path: string): boolean {
   if (method === "POST") return path === "/api/login" || path === "/api/logout";
   if (method === "GET") {
     const rest = path.startsWith(`${UNIFI_OS_PREFIX}/`) ? path.slice(UNIFI_OS_PREFIX.length) : path;
     if (rest === "/api/self/sites") return true;
-    const m = /^\/api\/s\/([^/]+)\/stat\/device$/.exec(rest);
+    const m = /^\/api\/s\/([^/]+)\/stat\/(device|sta)$/.exec(rest);
     return m !== null && SITE_RE.test(m[1]);
   }
   return false;
@@ -466,6 +470,8 @@ export interface UnifiClient {
   probe(): Promise<UnifiProbeResult>;
   /** Apparati del site. Lancia `UnifiApiError`. */
   listDevices(): Promise<UnifiDevice[]>;
+  /** Client collegati del site (stat/sta). Lancia `UnifiApiError`. */
+  listClients(): Promise<UnifiStaClient[]>;
 }
 
 export interface UnifiClientOptions {
@@ -579,12 +585,29 @@ interface ReadAuth {
   apiKey: boolean;
 }
 
-async function statDevice(send: UnifiTransport, auth: ReadAuth, site: string, timeoutMs: number): Promise<UnifiDevice[]> {
-  const res = await send({ method: "GET", path: `${auth.prefix}/api/s/${site}/stat/device`, headers: auth.headers, timeoutMs });
+/** Una lettura `stat/<what>` del site: stessa gestione degli errori per apparati e client. */
+type StatReader<T> = (send: UnifiTransport, auth: ReadAuth, site: string, timeoutMs: number) => Promise<T>;
+
+function statReader<T>(what: "device" | "sta", parse: (json: unknown) => T): StatReader<T> {
+  return (send, auth, site, timeoutMs) => statGet(send, auth, site, timeoutMs, what, parse);
+}
+
+const statDevice = statReader("device", parseStatDeviceResponse);
+const statSta = statReader("sta", parseStatStaResponse);
+
+async function statGet<T>(
+  send: UnifiTransport,
+  auth: ReadAuth,
+  site: string,
+  timeoutMs: number,
+  what: "device" | "sta",
+  parse: (json: unknown) => T,
+): Promise<T> {
+  const res = await send({ method: "GET", path: `${auth.prefix}/api/s/${site}/stat/${what}`, headers: auth.headers, timeoutMs });
   if (res.status !== 200) throw httpError(res, { step: "lettura", site, apiKey: auth.apiKey });
   const json = parseJsonBody(res.body);
   try {
-    return parseStatDeviceResponse(json);
+    return parse(json);
   } catch (e) {
     if (e instanceof UnifiResponseError) {
       const c = classifyUnifiHttpError(res.status, e.controllerMsg, { step: "lettura", site, apiKey: auth.apiKey });
@@ -649,8 +672,8 @@ export function createUnifiClient(
   const loginTimeoutMs = opts.loginTimeoutMs ?? 15_000;
   const readTimeoutMs = opts.readTimeoutMs ?? 60_000;
 
-  interface ReadResult {
-    devices: UnifiDevice[];
+  interface ReadResult<T> {
+    data: T;
     sites: UnifiSite[] | null;
     pin: string | null;
     recorded: boolean;
@@ -669,18 +692,18 @@ export function createUnifiClient(
     return false;
   }
 
-  async function readSelfHosted(withSites: boolean): Promise<ReadResult> {
+  async function readSelfHosted<T>(reader: StatReader<T>, withSites: boolean): Promise<ReadResult<T>> {
     const { base, site, username, password } = validateSelfHosted(cfg);
     const pins: UnifiPinSession = { expected: pinStore.get(), recorded: null };
     const send = readOnly(factory(base, pins));
 
     const session = await login(send, username, password, loginTimeoutMs);
     const auth: ReadAuth = { prefix: "", headers: sessionHeaders(session), apiKey: false };
-    let devices: UnifiDevice[] = [];
+    let data: T | undefined;
     let sites: UnifiSite[] | null = null;
     let failure: UnifiApiError | null = null;
     try {
-      devices = await statDevice(send, auth, site, readTimeoutMs);
+      data = await reader(send, auth, site, readTimeoutMs);
       if (withSites) sites = await selfSites(send, auth, loginTimeoutMs);
     } catch (e) {
       failure = toUnifiError(e);
@@ -696,23 +719,23 @@ export function createUnifiClient(
     if (failure) throw failure;
     if (logoutFailure?.reason === "cert") throw logoutFailure;
     const recorded = commitPin(base, pins);
-    return { devices, sites, pin: pins.expected, recorded };
+    return { data: data as T, sites, pin: pins.expected, recorded };
   }
 
-  async function readUnifiOs(withSites: boolean): Promise<ReadResult> {
+  async function readUnifiOs<T>(reader: StatReader<T>, withSites: boolean): Promise<ReadResult<T>> {
     const { base, site, apiKey } = validateUnifiOs(cfg);
     const pins: UnifiPinSession = { expected: pinStore.get(), recorded: null };
     const send = readOnly(factory(base, pins));
     const auth: ReadAuth = { prefix: UNIFI_OS_PREFIX, headers: { "X-API-KEY": apiKey }, apiKey: true };
-    const devices = await statDevice(send, auth, site, readTimeoutMs);
+    const data = await reader(send, auth, site, readTimeoutMs);
     const sites = withSites ? await selfSites(send, auth, loginTimeoutMs) : null;
     const recorded = commitPin(base, pins);
-    return { devices, sites, pin: pins.expected, recorded };
+    return { data, sites, pin: pins.expected, recorded };
   }
 
-  async function read(withSites: boolean): Promise<ReadResult> {
-    if (kind === "self_hosted") return readSelfHosted(withSites);
-    if (kind === "udm") return readUnifiOs(withSites);
+  async function read<T>(reader: StatReader<T>, withSites: boolean): Promise<ReadResult<T>> {
+    if (kind === "self_hosted") return readSelfHosted(reader, withSites);
+    if (kind === "udm") return readUnifiOs(reader, withSites);
     throw new UnifiApiError(
       "not_implemented",
       `Backend «${kind}» non ancora implementato: si leggono il controller self-hosted e le console UniFi OS`,
@@ -723,10 +746,10 @@ export function createUnifiClient(
     kind,
     async probe() {
       try {
-        const r = await read(true);
+        const r = await read(statDevice, true);
         return {
           ok: true,
-          devices: r.devices.length,
+          devices: r.data.length,
           certPin: r.pin,
           certPinRecorded: r.recorded,
           ...(r.sites ? { sites: r.sites } : {}),
@@ -744,7 +767,14 @@ export function createUnifiClient(
     },
     async listDevices() {
       try {
-        return (await read(false)).devices;
+        return (await read(statDevice, false)).data;
+      } catch (e) {
+        throw toUnifiError(e);
+      }
+    },
+    async listClients() {
+      try {
+        return (await read(statSta, false)).data;
       } catch (e) {
         throw toUnifiError(e);
       }

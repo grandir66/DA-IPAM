@@ -41,6 +41,7 @@ import { isCiphertext } from "@/lib/integrations/config";
 import { normalizeSpkiPin } from "@/lib/integrations/wazuh-config";
 import {
   createUnifiClient,
+  type UnifiClient,
   type UnifiClientConfig,
   type UnifiClientOptions,
   type UnifiProbeResult,
@@ -394,6 +395,16 @@ function clientConfigOf(row: NetworkControllerRow): UnifiClientConfig {
 }
 
 /**
+ * Il client di UNA riga salvata: segreti decifrati con `safeDecrypt`, impronta
+ * della riga. Unico punto di costruzione per la lettura degli apparati
+ * (`syncController`) e dei client collegati (`unifi-clients-sync.ts`): stesse
+ * difese per tutte e due.
+ */
+export function controllerClientOf(row: NetworkControllerRow, opts: UnifiClientOptions = {}): UnifiClient {
+  return createUnifiClient(clientConfigOf(row), controllerPinStore(row.id), opts);
+}
+
+/**
  * «Prova» dal modulo, prima di salvare. Con `id` e lo stesso indirizzo usa i
  * segreti e l'impronta salvati (e al primo uso riuscito la fissa, come prima);
  * altrimenti l'impronta vale solo per questa prova e torna nel risultato: il
@@ -428,7 +439,7 @@ export async function probeSavedController(id: number, opts: UnifiClientOptions 
   const row = getNetworkController(id);
   if (!row) return { ok: false, reason: "config", message: "Controller non trovato" };
   try {
-    return await createUnifiClient(clientConfigOf(row), controllerPinStore(row.id), opts).probe();
+    return await controllerClientOf(row, opts).probe();
   } catch (e) {
     return { ok: false, reason: "unknown", message: errorMessage(e) };
   }
@@ -481,7 +492,7 @@ export async function syncController(
   } else if (row.kind === "omada") {
     result = empty("Omada non è ancora disponibile: nessuna lettura");
   } else {
-    const source = opts.source ?? createUnifiClient(clientConfigOf(row), controllerPinStore(row.id), opts.clientOptions);
+    const source = opts.source ?? controllerClientOf(row, opts.clientOptions);
     result = await syncUnifiForTenant({ source });
   }
   const failure = unifiSyncFailure(result);

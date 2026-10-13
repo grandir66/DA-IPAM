@@ -25,6 +25,7 @@ import {
 import type { UnifiCertPinStore } from "../types";
 
 const FIXTURE_BODY = fs.readFileSync(path.join(__dirname, "fixtures", "unifi-stat-device.json"), "utf-8");
+const STA_BODY = fs.readFileSync(path.join(__dirname, "fixtures", "unifi-stat-sta.json"), "utf-8");
 const PASSWORD = "Pw-Che-Non-Deve-Comparire";
 const CFG = { url: "https://10.99.0.10:8443", kind: "self_hosted" as const, site: "3oumjv0i", username: "map", password: PASSWORD };
 
@@ -98,11 +99,20 @@ test("sola lettura: ammessi solo login, logout e stat/device di un site valido",
     ["POST", "/api/s/default/stat/device"],
     ["GET", "/api/s/../stat/device"],
     ["GET", "/api/s/a%2Fb/stat/device"],
-    ["GET", "/api/s/default/stat/sta"],
     ["GET", "/api/login"],
   ] as const) {
     assert.equal(isUnifiRequestAllowed(m, p), false, `${m} ${p} deve essere rifiutata`);
   }
+});
+
+test("sola lettura: stat/sta (client collegati) ammessa in GET, con e senza prefisso UniFi OS; i comandi no", () => {
+  assert.equal(isUnifiRequestAllowed("GET", "/api/s/default/stat/sta"), true);
+  assert.equal(isUnifiRequestAllowed("GET", "/proxy/network/api/s/default/stat/sta"), true);
+  assert.equal(isUnifiRequestAllowed("GET", "/api/s/default/cmd/stamgr"), false);
+  assert.equal(isUnifiRequestAllowed("POST", "/api/s/default/cmd/stamgr"), false);
+  assert.equal(isUnifiRequestAllowed("POST", "/api/s/default/stat/sta"), false);
+  assert.equal(isUnifiRequestAllowed("GET", "/api/s/../stat/sta"), false);
+  assert.equal(isUnifiRequestAllowed("GET", "/api/s/default/stat/stations"), false);
 });
 
 // ── Classificazione ──────────────────────────────────────────────────────────
@@ -131,6 +141,8 @@ interface FakeOpts {
   presentedPin?: string;
   login?: UnifiHttpResponse;
   stat?: UnifiHttpResponse;
+  /** Risposta di stat/sta (client collegati); di serie la fixture inventata. */
+  sta?: UnifiHttpResponse;
   /** Chiamata mentre si serve stat/device: per cambiare lo stato a metà sessione. */
   duranteLettura?: () => void;
 }
@@ -152,6 +164,7 @@ function fakeController(o: FakeOpts = {}): { factory: UnifiTransportFactory; cal
     if (req.path === "/api/login") return o.login ?? LOGIN_OK;
     if (req.path === "/api/logout") return json(200, { meta: { rc: "ok" }, data: [] });
     if (req.path === "/api/self/sites") return json(200, { meta: { rc: "ok" }, data: [{ name: "3oumjv0i", desc: "Sede" }] });
+    if (req.path.endsWith("/stat/sta")) return o.sta ?? { status: 200, headers: {}, body: STA_BODY };
     o.duranteLettura?.();
     return o.stat ?? { status: 200, headers: {}, body: FIXTURE_BODY };
   };
@@ -172,6 +185,42 @@ test("flusso: login → stat/device con cookie e CSRF → logout; 4 apparati; pi
   assert.equal(calls[1].headers["X-CSRF-Token"], "CSRF1");
   assert.equal(calls[2].headers["X-CSRF-Token"], "CSRF1");
   assert.equal(store.value, "sha256/CONTROLLER=");
+});
+
+test("client collegati: login → stat/sta con la stessa sessione → logout; 3 client; pin fissato dopo il successo", async () => {
+  const store = memoryStore();
+  const { factory, calls } = fakeController();
+  const clients = await createUnifiClient(CFG, store, { transportFactory: factory }).listClients();
+  assert.equal(clients.length, 3);
+  assert.deepEqual(
+    calls.map((c) => `${c.method} ${c.path}`),
+    ["POST /api/login", "GET /api/s/3oumjv0i/stat/sta", "POST /api/logout"],
+  );
+  assert.match(calls[1].headers.Cookie, /unifises=SESS1/);
+  assert.equal(calls[1].headers["X-CSRF-Token"], "CSRF1");
+  assert.equal(store.value, "sha256/CONTROLLER=");
+});
+
+test("client collegati: rc di errore → UnifiApiError classificato (non zero client), logout fatto, pin non fissato", async () => {
+  const store = memoryStore();
+  const { factory, calls } = fakeController({ sta: json(200, { meta: { rc: "error", msg: "api.err.NoPermission" }, data: [] }) });
+  await assert.rejects(
+    createUnifiClient(CFG, store, { transportFactory: factory }).listClients(),
+    (e: unknown) => e instanceof UnifiApiError && e.reason === "auth",
+  );
+  assert.equal(calls.at(-1)?.path, "/api/logout");
+  assert.equal(store.value, null);
+});
+
+test("client collegati: certificato cambiato → cert, nessuna richiesta partita", async () => {
+  const store = memoryStore("sha256/VECCHIO=");
+  const { factory, calls } = fakeController({ presentedPin: "sha256/NUOVO=" });
+  await assert.rejects(
+    createUnifiClient(CFG, store, { transportFactory: factory }).listClients(),
+    (e: unknown) => e instanceof UnifiApiError && e.reason === "cert",
+  );
+  assert.equal(calls.length, 0);
+  assert.equal(store.value, "sha256/VECCHIO=");
 });
 
 test("il CSRF nell'intestazione della risposta vince sul cookie", async () => {

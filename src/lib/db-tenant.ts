@@ -4701,6 +4701,31 @@ export function cleanupOldMacPortEntries(retentionDays: number = MAC_PORT_RETENT
   return (db().prepare("DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' days')").run(retentionDays) as { changes: number }).changes;
 }
 
+/**
+ * Apparati del tenant col MAC del controller (UniFi) e nomi delle loro porte:
+ * l'ingresso di `mapClientsToPorts` (lettura dei client collegati). Due query,
+ * niente N+1.
+ */
+export function getControllerDevicePortNames(): {
+  devices: Array<{ id: number; controller_mac: string }>;
+  ports: Array<{ device_id: number; port_index: number; port_name: string }>;
+} {
+  const d = db();
+  return {
+    devices: d
+      .prepare("SELECT id, controller_mac FROM network_devices WHERE controller_mac IS NOT NULL AND controller_mac != '' ORDER BY id")
+      .all() as Array<{ id: number; controller_mac: string }>,
+    ports: d
+      .prepare(
+        `SELECT sp.device_id, sp.port_index, sp.port_name
+           FROM switch_ports sp
+           JOIN network_devices nd ON nd.id = sp.device_id
+          WHERE nd.controller_mac IS NOT NULL AND nd.controller_mac != ''`,
+      )
+      .all() as Array<{ device_id: number; port_index: number; port_name: string }>,
+  };
+}
+
 export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { host_ip?: string; host_name?: string })[] {
   return db().prepare(`
     SELECT mpe.*,
@@ -8627,9 +8652,12 @@ export interface ControllerRunInsert {
 /**
  * Registra una lettura, aggiorna il riepilogo sulla riga del controller e pota
  * lo storico oltre `CONTROLLER_RUNS_KEPT`. Una lettura riuscita aggiorna anche
- * i conteggi; una fallita lascia quelli dell'ultima riuscita.
+ * i conteggi; una fallita lascia quelli dell'ultima riuscita. `summary: false`
+ * registra solo lo storico (lettura dei client collegati, topologia fase 2):
+ * i conteggi della riga sono quelli degli apparati e non si sovrascrivono.
  */
-export function recordControllerRun(run: ControllerRunInsert): void {
+export function recordControllerRun(run: ControllerRunInsert, opts: { summary?: boolean } = {}): void {
+  const summary = opts.summary ?? true;
   runInTenantTransaction(() => {
     const d = db();
     d.prepare(
@@ -8639,13 +8667,15 @@ export function recordControllerRun(run: ControllerRunInsert): void {
        VALUES (@controller_id, @started_at, @finished_at, @trigger, @triggered_by, @ok, @total, @added, @updated, @skipped,
           @ports, @neighbors, @message, @errors_json, @skipped_reasons_json, @offline_json)`,
     ).run(run);
-    if (run.ok) {
+    // summary false = lettura che non è quella degli apparati (es. client
+    // collegati): solo storico, il riepilogo della riga resta quello degli apparati.
+    if (summary && run.ok) {
       d.prepare(
         `UPDATE network_controllers
             SET last_run_at = ?, last_ok = 1, last_message = ?, last_devices = ?, last_ports = ?, last_neighbors = ?
           WHERE id = ?`,
       ).run(run.finished_at, run.message, run.total, run.ports, run.neighbors, run.controller_id);
-    } else {
+    } else if (summary) {
       d.prepare("UPDATE network_controllers SET last_run_at = ?, last_ok = 0, last_message = ? WHERE id = ?").run(
         run.finished_at,
         run.message,

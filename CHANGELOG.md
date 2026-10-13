@@ -27,6 +27,26 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   serie (voluto). «Esegui ora» su un job di scansione risponde subito
   («Scansione avviata») invece di tenere aperta la richiesta per tutto il giro.
   Prova: `scansione-attesa.test.ts`.
+- **Un giro alla volta per rete (INV-1, T3-18).** Sulla stessa rete dello
+  stesso tenant potevano girare due scansioni insieme: dallo scheduler, da
+  «Esegui ora», dai pulsanti della pagina rete e dall'aggiornamento automatico
+  della pagina, che ne lancia una ogni due minuti senza guardare se la
+  precedente è finita. Due giri insieme scrivono sugli stessi host, e quello
+  partito prima può spegnere host visti dal secondo. Ora una scansione su una
+  rete già in scansione non parte. **Cosa cambia sulle installazioni del canale
+  `dev`:** il pulsante dice «Scansione non avviata: su questa rete è già in
+  corso …, partita alle …» invece di avviarne un'altra; «Esegui ora» lo dice
+  allo stesso modo; un job dello scheduler che trova la rete occupata salta il
+  giro, non aggiorna «Ultima esecuzione» e non conta né come riuscito né come
+  fallito (se salta per tre intervalli di fila il controllo di salute lo vede
+  fermo, ed è voluto: vuol dire un giro appeso o due job che partono sempre
+  allo stesso minuto); un job su tutte le reti salta solo quelle occupate. La
+  rete si libera solo quando il giro è chiuso davvero, anche se fallisce: un
+  giro che dura più di 100 minuti scrive una riga d'allarme nel registro (una
+  per giro) ma non libera la rete. La soglia si cambia per tenant con
+  l'impostazione `scan_lock_alarm_minutes`. Restano fuori dal controllo le
+  letture ARP e DHCP, che non sono giri di scansione. Prova:
+  `network-scan-lock.test.ts`.
 
 ## [Non rilasciato] — 2026-10-12
 

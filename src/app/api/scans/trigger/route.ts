@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ScanTriggerSchema } from "@/lib/validators";
 import { getNmapProfileById, getActiveNmapProfile, getHostById, relinkAdComputersForNetwork, addScanHistory } from "@/lib/db";
 import { discoverNetwork } from "@/lib/scanner/discovery";
+import { corpoScanInCorso, isScanInCorso } from "@/lib/scanner/network-scan-lock";
 import { buildCustomScanArgs } from "@/lib/scanner/ports";
 import { runArpPoll, runDhcpPollForNetwork, runDnsResolve } from "@/lib/cron/jobs";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -202,6 +203,10 @@ export async function POST(request: Request) {
 
       return NextResponse.json({ id, progress });
     } catch (error) {
+      // Un giro alla volta per rete (T3-18): rete già in scansione → 409 con il giro in corso.
+      if (isScanInCorso(error)) {
+        return NextResponse.json(corpoScanInCorso(error.giro), { status: 409 });
+      }
       console.error("Scan trigger error:", error);
       return NextResponse.json(
         { error: error instanceof Error ? error.message : "Errore nell'avvio della scansione" },

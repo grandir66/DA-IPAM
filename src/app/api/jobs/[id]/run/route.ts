@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getScheduledJobById } from "@/lib/db";
 import { eseguiJobOra } from "@/lib/cron/jobs";
+import { corpoScanInCorso } from "@/lib/scanner/network-scan-lock";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
@@ -11,6 +12,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
  * Job di scansione (T3-17): si risponde 202 appena parte il primo giro, con il
  * suo id; il giro continua in background e `last_run` si scrive alla fine.
  * Gli altri job si aspettano e rispondono 200 con la durata, come prima.
+ * Rete già in scansione (T3-18): 409 con il giro in corso, `last_run` invariato.
  */
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   return withTenantFromSession(async () => {
@@ -28,6 +30,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       if (!job) return NextResponse.json({ error: "Job non trovato" }, { status: 404 });
 
       const esito = await eseguiJobOra(jobId);
+      if (esito.modo === "saltato") {
+        return NextResponse.json(corpoScanInCorso(esito.giroInCorso), { status: 409 });
+      }
       if (esito.modo === "avviato") {
         return NextResponse.json(
           { success: true, job_id: jobId, job_type: job.job_type, scan_id: esito.scanId },

@@ -1,5 +1,6 @@
 import { getAllHostIps } from "@/lib/utils";
-import { getCurrentTenantCode, withTenant } from "@/lib/db-tenant";
+import { getCurrentTenantCode, getTenantSetting, withTenant } from "@/lib/db-tenant";
+import { CHIAVE_SOGLIA_ALLARME, prendiRete, sogliaAllarmeDa } from "./network-scan-lock";
 import { pingSweep as _localPingSweep } from "./ping";
 import { nmapDiscoverHosts as _localNmapDiscoverHosts, nmapPortScan as _localNmapPortScan, isNmapAvailable as _localIsNmapAvailable } from "./nmap";
 import { tcpConnect as _localTcpConnect, FALLBACK_TCP_PORTS } from "./tcp-check";
@@ -213,54 +214,70 @@ export async function discoverNetwork(
     }
   }
 
-  const progress: ScanProgress = {
-    id,
-    network_id: networkId,
-    scan_type: scanType,
-    status: "running",
-    total: ips.length,
-    scanned: 0,
-    found: 0,
-    phase: "Inizializzazione",
-    started_at: new Date().toISOString(),
-    logs: [],
-  };
+  // Un giro alla volta per rete (T3-18, INV-1): se la rete è occupata lancia
+  // ScanInCorsoError e il giro non parte. Si rilascia solo a giro chiuso (`done`).
+  let sogliaAllarmeMinuti: number | undefined;
+  try {
+    sogliaAllarmeMinuti = sogliaAllarmeDa(getTenantSetting(CHIAVE_SOGLIA_ALLARME));
+  } catch {
+    sogliaAllarmeMinuti = undefined; // impostazione illeggibile: soglia predefinita
+  }
+  const rilasciaRete = prendiRete(tenantCode, networkId, { scanId: id, scanType }, { sogliaAllarmeMinuti });
 
-  getProgressMap().set(id, progress);
+  try {
+    const progress: ScanProgress = {
+      id,
+      network_id: networkId,
+      scan_type: scanType,
+      status: "running",
+      total: ips.length,
+      scanned: 0,
+      found: 0,
+      phase: "Inizializzazione",
+      started_at: new Date().toISOString(),
+      logs: [],
+    };
 
-  const runInBackground = () =>
-    runDiscovery(id, network.id, network.cidr, ips, scanType, nmapArgs, snmpCommunity, network.dns_server ?? null, options);
+    getProgressMap().set(id, progress);
 
-  const done: Promise<EsitoGiro> = withTenant(tenantCode, runInBackground).then(
-    (): EsitoGiro => {
-      // Ogni ramo di runDiscovery chiude il giro; se uno ritornasse senza farlo,
-      // il giro non si dichiara riuscito.
-      if (progress.status === "running") {
+    const runInBackground = () =>
+      runDiscovery(id, network.id, network.cidr, ips, scanType, nmapArgs, snmpCommunity, network.dns_server ?? null, options);
+
+    const done: Promise<EsitoGiro> = withTenant(tenantCode, runInBackground).then(
+      (): EsitoGiro => {
+        // Ogni ramo di runDiscovery chiude il giro; se uno ritornasse senza farlo,
+        // il giro non si dichiara riuscito.
+        if (progress.status === "running") {
+          progress.status = "failed";
+          progress.error = "Giro terminato senza esito";
+          progress.logs = [...(progress.logs ?? []), "[ERRORE] Giro terminato senza esito"];
+          setTimeout(() => getProgressMap().delete(id), 300_000).unref?.();
+        }
+        return progress.status === "failed"
+          ? { status: "failed", error: progress.error ?? "Giro fallito" }
+          : { status: "completed" };
+      },
+      (error): EsitoGiro => {
+        const msg = error instanceof Error ? error.message : "Errore sconosciuto";
+        const stack = error instanceof Error ? error.stack : "";
+        console.error(`[Discovery] Fatal error (tenant: ${tenantCode}, network: ${networkId}):`, msg, stack);
         progress.status = "failed";
-        progress.error = "Giro terminato senza esito";
-        progress.logs = [...(progress.logs ?? []), "[ERRORE] Giro terminato senza esito"];
+        progress.error = msg;
+        progress.logs = [...(progress.logs ?? []), `[ERRORE] ${msg}`];
+        // v0.2.634 audit B9: anche le scan in stato `failed` devono uscire dalla
+        // progressMap dopo 5 min, come quelle `completed`. Senza questo cleanup
+        // la mappa cresce indefinitamente con ogni scan fallita (memory slow leak).
         setTimeout(() => getProgressMap().delete(id), 300_000).unref?.();
-      }
-      return progress.status === "failed"
-        ? { status: "failed", error: progress.error ?? "Giro fallito" }
-        : { status: "completed" };
-    },
-    (error): EsitoGiro => {
-      const msg = error instanceof Error ? error.message : "Errore sconosciuto";
-      const stack = error instanceof Error ? error.stack : "";
-      console.error(`[Discovery] Fatal error (tenant: ${tenantCode}, network: ${networkId}):`, msg, stack);
-      progress.status = "failed";
-      progress.error = msg;
-      progress.logs = [...(progress.logs ?? []), `[ERRORE] ${msg}`];
-      // v0.2.634 audit B9: anche le scan in stato `failed` devono uscire dalla
-      // progressMap dopo 5 min, come quelle `completed`. Senza questo cleanup
-      // la mappa cresce indefinitamente con ogni scan fallita (memory slow leak).
-      setTimeout(() => getProgressMap().delete(id), 300_000).unref?.();
-      return { status: "failed", error: msg };
-    },
-  );
+        return { status: "failed", error: msg };
+      },
+    ).finally(rilasciaRete);
 
-  return { id, progress, done };
+    return { id, progress, done };
+  } catch (error) {
+    // Partenza fallita prima del giro in background: la rete non resta occupata.
+    rilasciaRete();
+    throw error;
+  }
 }
 
 type HostScanData = {

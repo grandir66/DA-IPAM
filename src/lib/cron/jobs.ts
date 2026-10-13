@@ -25,6 +25,7 @@ import {
   updateJobLastRun,
 } from "@/lib/db";
 import { discoverNetwork, type AvvioDiscovery } from "@/lib/scanner/discovery";
+import { isScanInCorso, type GiroOccupante } from "@/lib/scanner/network-scan-lock";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
 import { pingHost } from "@/lib/scanner/ping";
 import { getScanIoOverride } from "@/lib/executor";
@@ -71,28 +72,36 @@ export interface OpzioniRunJob {
 }
 
 /**
+ * Esito di un job arrivato in fondo senza errori (T3-18). «saltato»: la rete era
+ * già occupata da un altro giro e non si è scansionato niente; chi chiama non
+ * aggiorna `last_run` e non lo conta come riuscito.
+ */
+export type EsitoRunJob =
+  | { esito: "eseguito"; motivo?: string }
+  | { esito: "saltato"; motivo: string; giroInCorso?: GiroOccupante };
+
+const ESEGUITO: EsitoRunJob = { esito: "eseguito" };
+
+/**
  * Esegue un job e torna quando il lavoro è FINITO (T3-17, INV-1): per i job di
  * scansione vuol dire a giro chiuso, e un giro fallito fa rifiutare `runJob`,
  * così lo scheduler lo conta fra i fallimenti e `last_run` segna la fine.
+ * Su una rete già in scansione il giro non parte e l'esito è «saltato» (T3-18).
  */
-export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<void> {
+export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
   // v0.2.642 audit perf MC3: SELECT WHERE id invece di full-scan + .find().
   const job = getScheduledJobById(jobId);
   if (!job) throw new Error(`Job #${jobId} non trovato`);
 
   switch (job.job_type) {
     case "ping_sweep":
-      await runPingSweep(job.network_id, opzioni);
-      break;
+      return runPingSweep(job.network_id, opzioni);
     case "fast_scan":
-      await runFastScan(job.network_id, opzioni);
-      break;
+      return runFastScan(job.network_id, opzioni);
     case "snmp_scan":
-      await runSnmpScan(job.network_id, opzioni);
-      break;
+      return runSnmpScan(job.network_id, opzioni);
     case "nmap_scan":
-      await runNmapScan(job.network_id, opzioni);
-      break;
+      return runNmapScan(job.network_id, opzioni);
     case "arp_poll":
       await runArpPoll();
       break;
@@ -188,6 +197,7 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<vo
       break;
     }
   }
+  return ESEGUITO;
 }
 
 /**
@@ -198,7 +208,9 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<vo
  */
 export type EsitoEseguiOra =
   | { modo: "avviato"; scanId: string }
-  | { modo: "eseguito"; durationMs: number };
+  | { modo: "eseguito"; durationMs: number }
+  /** Rete già in scansione (T3-18): niente giro, niente `last_run`. */
+  | { modo: "saltato"; motivo: string; giroInCorso?: GiroOccupante };
 
 export async function eseguiJobOra(jobId: number): Promise<EsitoEseguiOra> {
   const job = getScheduledJobById(jobId);
@@ -220,7 +232,15 @@ export async function eseguiJobOra(jobId: number): Promise<EsitoEseguiOra> {
         resolve({ modo: "avviato", scanId });
       },
     }).then(
-      () => {
+      (esito) => {
+        if (esito.esito === "saltato") {
+          // Nessun giro partito: la rete era già occupata. last_run resta com'era.
+          if (!risposto) {
+            risposto = true;
+            resolve({ modo: "saltato", motivo: esito.motivo, giroInCorso: esito.giroInCorso });
+          }
+          return;
+        }
         updateJobLastRun(jobId);
         if (!risposto) {
           // Nessun giro partito (nessuna rete): il job è già finito.
@@ -242,35 +262,53 @@ export async function eseguiJobOra(jobId: number): Promise<EsitoEseguiOra> {
   });
 }
 
-/** Un giro su una rete, atteso fino alla fine vera; se fallisce, lancia. */
+/**
+ * Un giro su una rete, atteso fino alla fine vera; se fallisce, lancia. Se la
+ * rete è già in scansione il giro non parte: «saltato» col giro che la tiene.
+ */
 async function giroCompleto(
   networkId: number,
   avvio: Promise<AvvioDiscovery>,
   opzioni: OpzioniRunJob | undefined,
-): Promise<void> {
-  const { id, done } = await avvio;
+): Promise<EsitoRunJob> {
+  let avviato: AvvioDiscovery;
+  try {
+    avviato = await avvio;
+  } catch (e) {
+    if (!isScanInCorso(e)) throw e;
+    console.info(
+      `[Jobs] Rete ${networkId} già in scansione (giro ${e.giro.scanId}, ${e.giro.scanType}): giro saltato`,
+    );
+    return { esito: "saltato", motivo: `rete ${networkId} già in scansione`, giroInCorso: e.giro };
+  }
+  const { id, done } = avviato;
   opzioni?.onGiroAvviato?.(id, networkId);
   const esito = await done;
   if (esito.status === "failed") {
     throw new Error(`Scansione ${id} della rete ${networkId} fallita: ${esito.error ?? "errore sconosciuto"}`);
   }
+  return ESEGUITO;
 }
 
 /**
  * Rete indicata: un giro. Rete nulla: tutte le reti, una dopo l'altra (prima
  * partivano tutte insieme); una rete che fallisce non ferma le altre e il job
- * fallisce alla fine con l'elenco degli errori.
+ * fallisce alla fine con l'elenco degli errori. Una rete già in scansione si
+ * salta (T3-18): il job è «saltato» solo se le ha saltate tutte.
  */
-async function suOgniRete(networkId: number | null, giro: (nid: number) => Promise<void>): Promise<void> {
-  if (networkId) {
-    await giro(networkId);
-    return;
-  }
+async function suOgniRete(
+  networkId: number | null,
+  giro: (nid: number) => Promise<EsitoRunJob>,
+): Promise<EsitoRunJob> {
+  if (networkId) return giro(networkId);
+
   const networks = getNetworks();
   const errori: string[] = [];
+  const saltate: Array<Extract<EsitoRunJob, { esito: "saltato" }>> = [];
   for (const net of networks) {
     try {
-      await giro(net.id);
+      const esito = await giro(net.id);
+      if (esito.esito === "saltato") saltate.push(esito);
     } catch (e) {
       errori.push(e instanceof Error ? e.message : String(e));
     }
@@ -278,33 +316,41 @@ async function suOgniRete(networkId: number | null, giro: (nid: number) => Promi
   if (errori.length > 0) {
     throw new Error(`${errori.length} reti su ${networks.length} non scansionate: ${errori.join(" · ")}`);
   }
+  if (saltate.length === 0) return ESEGUITO;
+  const motivo = `${saltate.length} ${saltate.length === 1 ? "rete" : "reti"} su ${networks.length} ${
+    saltate.length === 1 ? "saltata" : "saltate"
+  }: già in scansione`;
+  if (saltate.length === networks.length) {
+    return { esito: "saltato", motivo, giroInCorso: saltate[0].giroInCorso };
+  }
+  return { esito: "eseguito", motivo };
 }
 
-async function runPingSweep(networkId: number | null, opzioni?: OpzioniRunJob): Promise<void> {
-  await suOgniRete(networkId, (nid) => giroCompleto(nid, discoverNetwork(nid, "network_discovery"), opzioni));
+async function runPingSweep(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
+  return suOgniRete(networkId, (nid) => giroCompleto(nid, discoverNetwork(nid, "network_discovery"), opzioni));
 }
 
-async function runFastScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<void> {
+async function runFastScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
   // Scansione veloce schedulata: ICMP ping sweep + ARP/DHCP router (vedi discovery.ts blocco "fast").
   // Non fa port scan, non marca offline i non rispondenti: è una fotografia di presenza.
-  await suOgniRete(networkId, (nid) => giroCompleto(nid, discoverNetwork(nid, "fast"), opzioni));
+  return suOgniRete(networkId, (nid) => giroCompleto(nid, discoverNetwork(nid, "fast"), opzioni));
 }
 
-async function runSnmpScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<void> {
-  await suOgniRete(networkId, async (nid) => {
+async function runSnmpScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
+  return suOgniRete(networkId, async (nid) => {
     const network = getNetworkById(nid);
-    if (!network) return;
+    if (!network) return ESEGUITO;
     const snmpCommunity = network.snmp_community ?? null;
-    await giroCompleto(nid, discoverNetwork(nid, "snmp", undefined, snmpCommunity), opzioni);
+    return giroCompleto(nid, discoverNetwork(nid, "snmp", undefined, snmpCommunity), opzioni);
   });
 }
 
-async function runNmapScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<void> {
+async function runNmapScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
   const { buildCustomScanArgs } = await import("@/lib/scanner/ports");
   const profile = getActiveNmapProfile();
-  const runForNetwork = async (nid: number) => {
+  const runForNetwork = async (nid: number): Promise<EsitoRunJob> => {
     const network = getNetworkById(nid);
-    if (!network) return;
+    if (!network) return ESEGUITO;
     let nmapArgs: string | undefined;
     let tcpPorts: string | null = null;
     let udpPorts: string | null = null;
@@ -321,9 +367,9 @@ async function runNmapScan(networkId: number | null, opzioni?: OpzioniRunJob): P
       nmapArgs = buildCustomScanArgs(null);
     }
     const snmpCommunity = profile?.snmp_community || network.snmp_community || null;
-    await giroCompleto(nid, discoverNetwork(nid, "nmap", nmapArgs, snmpCommunity, { tcpPorts, udpPorts }), opzioni);
+    return giroCompleto(nid, discoverNetwork(nid, "nmap", nmapArgs, snmpCommunity, { tcpPorts, udpPorts }), opzioni);
   };
-  await suOgniRete(networkId, runForNetwork);
+  return suOgniRete(networkId, runForNetwork);
 }
 
 export type RunArpPollOptions = {

@@ -68,6 +68,15 @@ export function parseSqlUtc(value: string | null): number | null {
  *   non ha MAI funzionato non resta invisibile. Un job appena creato non e'
  *   stale: rientra nella tolleranza.
  * - senza alcun riferimento temporale → ignorato (non giudicabile).
+ *
+ * Giri saltati perché la rete era già in scansione (T3-18, decisione del
+ * 13/10): il job non aggiorna `last_run`, perché non ha scansionato niente, e
+ * qui NON si fa eccezione. Un salto isolato non basta a far scattare l'allarme
+ * (la tolleranza è di tre intervalli più 15 minuti); se il job viene saltato
+ * per tre intervalli di fila la rete è tenuta da un giro appeso, o da un altro
+ * job che parte sempre allo stesso minuto e vince sempre: in entrambi i casi la
+ * rete non viene più scansionata da quel job, ed è giusto che /api/health lo
+ * dica.
  */
 export function findStaleJobs(
   rows: SchedulerJobRow[],

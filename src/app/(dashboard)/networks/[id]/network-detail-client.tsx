@@ -797,7 +797,11 @@ export function NetworkDetailClient({
     });
 
     if (!res.ok) {
-      toast.error("Errore nell'avvio della scansione");
+      // 409: sulla rete c'è già un giro in corso (T3-18); il server manda il messaggio pronto.
+      const errore = res.status === 409
+        ? await res.json().then((d: { error?: unknown }) => (typeof d.error === "string" ? d.error : null)).catch(() => null)
+        : null;
+      toast.error(errore ?? "Errore nell'avvio della scansione");
       return { ok: false, lastProgress: null };
     }
 

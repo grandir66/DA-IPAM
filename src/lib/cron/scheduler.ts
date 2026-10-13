@@ -165,31 +165,55 @@ export function scheduleJob(
   const cronExpr = intervalToCron(intervalMinutes);
 
   const task = cron.schedule(cronExpr, async () => {
-    if (runningJobs.has(key)) {
-      console.warn(`[Scheduler] Job ${key} già in esecuzione, skip`);
-      return;
-    }
-    runningJobs.add(key);
-    console.info(`[Scheduler] Esecuzione job ${key} (tenant: ${tenantCode})`);
-    try {
-      await withTenant(tenantCode, async () => {
-        assertTenantContext(key, tenantCode);
-        await runJob(jobId);
-        updateJobLastRun(jobId);
-      });
-      recordOutcome(failureState, key, { ok: true }, Date.now());
-      console.info(`[Scheduler] Job ${key} completato`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      recordOutcome(failureState, key, { ok: false, error: message }, Date.now());
-      console.error(`[Scheduler] Job ${key} fallito:`, error);
-      escalateIfSerial(key, tenantCode);
-    } finally {
-      runningJobs.delete(key);
-    }
+    await eseguiJobProgrammato(key, jobId, tenantCode);
   });
 
   activeTasks.set(key, task);
+}
+
+/**
+ * Un tick del cron per un job. Esportata per le prove: è il corpo del cron.
+ *
+ * «saltato» (T3-18): la rete del job era già in scansione, quindi il giro non è
+ * partito. Non si scrive `last_run` (non è girato niente) e non si registra nel
+ * tracker né come riuscito né come fallito. Se la rete restasse occupata per
+ * molti intervalli, `last_run` invecchia e /api/health lo segnala: è voluto,
+ * vuol dire un giro appeso (vedi scheduler-freshness.ts).
+ */
+export async function eseguiJobProgrammato(
+  key: string,
+  jobId: number,
+  tenantCode: string,
+): Promise<"eseguito" | "saltato" | "fallito" | "gia_in_esecuzione"> {
+  if (runningJobs.has(key)) {
+    console.warn(`[Scheduler] Job ${key} già in esecuzione, skip`);
+    return "gia_in_esecuzione";
+  }
+  runningJobs.add(key);
+  console.info(`[Scheduler] Esecuzione job ${key} (tenant: ${tenantCode})`);
+  try {
+    const esito = await withTenant(tenantCode, async () => {
+      assertTenantContext(key, tenantCode);
+      const e = await runJob(jobId);
+      if (e.esito === "eseguito") updateJobLastRun(jobId);
+      return e;
+    });
+    if (esito.esito === "saltato") {
+      console.info(`[Scheduler] Job ${key} saltato: ${esito.motivo}`);
+      return "saltato";
+    }
+    recordOutcome(failureState, key, { ok: true }, Date.now());
+    console.info(`[Scheduler] Job ${key} completato${esito.motivo ? ` (${esito.motivo})` : ""}`);
+    return "eseguito";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    recordOutcome(failureState, key, { ok: false, error: message }, Date.now());
+    console.error(`[Scheduler] Job ${key} fallito:`, error);
+    escalateIfSerial(key, tenantCode);
+    return "fallito";
+  } finally {
+    runningJobs.delete(key);
+  }
 }
 
 /** Chiavi dei cron attivi in questo processo (diagnostica e prove). */

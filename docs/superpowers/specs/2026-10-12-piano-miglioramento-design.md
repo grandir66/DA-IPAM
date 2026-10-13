@@ -267,6 +267,7 @@ di rete** della tappa 2, che passa dalla card al catalogo e si completa:
   (dispositivi, porte, LLDP).
 - **Client** (decisione 7), per UniFi e Omada: MAC, IP, nome; per i cablati switch e
   porta; per i Wi-Fi access point, SSID, banda, segnale; ultimo visto.
+- **Gli apparati del controller arricchiscono il loro host** (richiesta di Riccardo, 13/10 sera): quando l'IP (o il MAC) di un apparato letto dal controller — switch, access point, gateway, il controller stesso — combacia con un host dell'inventario, i fatti del controller (tipo, modello, firmware, seriale, nome, MAC) arricchiscono quell'host e **fissano la sua tipologia**: il controller è la fonte più affidabile dopo la scelta manuale (che vince sempre, `classification_manual`), sopra l'attribuzione dalla scansione. Oggi la sync scrive solo `network_devices` e il collegamento `host_id`: l'host resta classificato dalla scansione. Da progettare: evidenza «controller» nell'attribuzione (non una scrittura diretta su `hosts`), cosa succede se l'apparato sparisce dal controller, e la misura sulla copia di DTS (quanti host cambiano tipologia) prima di accenderla.
 - **Regole di nascita dei client**:
   - diventano host con origine "controller", fusi per MAC con quelli trovati dalla
     scansione;

@@ -59,6 +59,9 @@ const CONTRACT: Contract[] = [
   { route: "users", method: "POST", guard: "requireAdmin" },
   { route: "users/[id]", method: "DELETE", guard: "requireAdmin" },
   { route: "users/[id]/reset-password", method: "POST", guard: "requireAdmin" },
+  // reset del cliente: cancella i dati del tenant (funzionante dalla fusione T3-07,
+  // decisione di Riccardo 13/10: solo superadmin, codice scritto, copia prima).
+  { route: "reset", method: "POST", guard: "requireSuperAdmin" },
   { route: "tenants", method: "POST", guard: "requireSuperAdmin" },
   { route: "tenants/[id]", method: "DELETE", guard: "requireSuperAdmin" },
 ];

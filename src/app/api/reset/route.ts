@@ -1,22 +1,35 @@
 import { NextResponse } from "next/server";
-import { resetConfiguration } from "@/lib/db";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { z } from "zod";
+import { requireSuperAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { getCurrentTenantCode } from "@/lib/db-tenant";
+import { resetTenantConCopia, ResetRifiutato } from "@/lib/reset/reset-tenant";
 
-export async function POST() {
+const Corpo = z.object({ conferma: z.string().min(1) });
+
+export async function POST(request: Request) {
+  const check = await requireSuperAdmin();
+  if (isAuthError(check)) return check;
   return withTenantFromSession(async () => {
+    let corpo: unknown;
     try {
-      const adminCheck = await requireAdmin();
-      if (isAuthError(adminCheck)) return adminCheck;
-
-      resetConfiguration();
-      return NextResponse.json({ success: true, message: "Configurazione resettata" });
+      corpo = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Scrivi il codice del cliente per confermare" }, { status: 400 });
+    }
+    const parsed = Corpo.safeParse(corpo);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Scrivi il codice del cliente per confermare" }, { status: 400 });
+    }
+    try {
+      const copia = await resetTenantConCopia(getCurrentTenantCode() ?? "", parsed.data.conferma);
+      return NextResponse.json({ success: true, message: "Configurazione resettata", copia });
     } catch (error) {
-      console.error("Reset configuration error:", error);
-      return NextResponse.json(
-        { error: "Errore durante il reset della configurazione" },
-        { status: 500 }
-      );
+      if (error instanceof ResetRifiutato) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+      console.error("Reset configurazione: errore", error instanceof Error ? error.message : error);
+      return NextResponse.json({ error: "Errore durante il reset: niente è stato cancellato" }, { status: 500 });
     }
   });
 }

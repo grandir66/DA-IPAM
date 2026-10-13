@@ -8,6 +8,15 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Modifiche
 
+- **«Reset per nuovo cliente» protetto (decisione del 13/10).** Fino a oggi il
+  pulsante rispondeva con un errore e non cancellava niente; con la fusione delle
+  copie del database avrebbe cancellato davvero tutti i dati del cliente con un
+  solo clic di conferma. Ora lo vede e lo usa solo il super amministratore, chiede
+  di scrivere il codice del cliente, e prima di cancellare fa una copia del
+  database in `data/backups/<codice>-pre-reset-<data>.db`: se la copia non riesce
+  non si cancella niente. Il testo di conferma dice cosa resta (utenti,
+  impostazioni, profilo Nmap, regole fingerprint), che prima era sbagliato.
+
 - **Le letture del database in una sola copia** (tappa 3, NUC-2 gruppo 1a).
   103 funzioni di lettura e 18 tipi esistevano due volte, nella vecchia
   facciata `db.ts` e nel modulo per tenant, con lo stesso testo: una

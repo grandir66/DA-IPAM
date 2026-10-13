@@ -451,16 +451,22 @@ function SettingsPageInner() {
   }
 
   async function handleResetConfiguration() {
-    if (!confirm("Resettare tutta la configurazione? Verranno eliminati TUTTI i dati: reti, host, dispositivi, credenziali, integrazioni Active Directory (e dati sincronizzati), utenti e impostazioni. Resteranno solo il profilo Nmap e le regole fingerprint. Dovrai rifare il setup iniziale. Procedere?")) return;
+    if (!confirm("Reset per nuovo cliente: verranno cancellati TUTTI i dati di questo cliente — reti, host, dispositivi, credenziali, Active Directory e dati sincronizzati, inventario, licenze e job pianificati. Restano utenti, impostazioni, profilo Nmap e regole fingerprint. Prima di cancellare viene fatta una copia del database. Procedere?")) return;
+    const conferma = prompt("Per confermare scrivi il codice del cliente (lo stesso dell'elenco Clienti):");
+    if (conferma === null || conferma.trim() === "") return;
     setResetting(true);
     try {
-      const res = await fetch("/api/reset", { method: "POST" });
+      const res = await fetch("/api/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conferma: conferma.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        toast.success("Configurazione resettata. Reindirizzamento al setup iniziale...");
-        window.location.href = "/setup";
+        toast.success(`Configurazione resettata. Copia del database: ${data.copia ?? "salvata"}`);
+        window.location.href = "/";
       } else {
-        const data = await res.json();
-        toast.error(data.error || "Errore nel reset");
+        toast.error(typeof data.error === "string" ? data.error : "Errore nel reset");
       }
     } catch {
       toast.error("Errore nel reset");
@@ -1357,7 +1363,7 @@ function SettingsPageInner() {
                 <CardTitle className="text-base">Dati e manutenzione</CardTitle>
               </div>
               <CardDescription>
-                Esporta dati o resetta la configurazione per un nuovo cliente. Il reset cancella tutto (incluso Active Directory) tranne il profilo Nmap e le regole fingerprint.
+                Esporta dati o resetta la configurazione per un nuovo cliente. Il reset (solo super amministratore) cancella i dati del cliente, incluso Active Directory, dopo una copia del database; restano utenti, impostazioni, profilo Nmap e regole fingerprint.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">
@@ -1375,14 +1381,16 @@ function SettingsPageInner() {
                 <Database className="h-4 w-4 mr-2" />
                 Backup database
               </Button>
-              <Button
-                variant="destructive"
-                onClick={handleResetConfiguration}
-                disabled={resetting}
-              >
-                <RotateCcw className={`h-4 w-4 mr-2 ${resetting ? "animate-spin" : ""}`} />
-                Reset per nuovo cliente
-              </Button>
+              {isSuperAdmin && (
+                <Button
+                  variant="destructive"
+                  onClick={handleResetConfiguration}
+                  disabled={resetting}
+                >
+                  <RotateCcw className={`h-4 w-4 mr-2 ${resetting ? "animate-spin" : ""}`} />
+                  Reset per nuovo cliente
+                </Button>
+              )}
             </CardContent>
           </Card>
         </div>

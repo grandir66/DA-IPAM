@@ -428,3 +428,22 @@ vive la console centrale (tappa 9).
 | 7 | da fare | — | |
 | 8 | da fare | — | |
 | 9 | da fare | — | progetto separato |
+
+### Verifiche registrate (data e fonte)
+
+- **T3-22, 13/10 — due giri sovrapposti.** Fonte: copia del database di DTS
+  presa il 12/10, lavorata in una sua copia nella cartella temporanea; niente
+  rete (esecutore finto e guardia). Rete scelta dallo script: /22, 155 host, 25
+  online. Comando: `npx tsx scripts/prova-giri-sovrapposti.ts <copia.db>
+  --cartella <scratchpad>`, soglia in `applica`.
+  - Base `dev` prima della parte 3b (`e6b49c5`, con il banco di T3-16): il giro
+    B parte durante A; A spegne 5 host visti dopo la sua partenza; il giro a
+    zero vivi spegne tutti i 20 host online; host già offline riscritti offline
+    130 (giro A) e 135 (giro a zero vivi). Esito: difetto (uscita 1).
+  - Ramo `tappa3b/scansioni` (T3-17, T3-18, T3-20, T3-21): B rifiutato; 0 host
+    visti dopo spenti (2 spenti, mai visti da nessuno); il giro a zero vivi non
+    scrive lo stato di nessun host (bloccati 23); 0 host già offline riscritti;
+    0 tentativi di uscire sulla rete. Esito: ok (uscita 0).
+  - Resta aperto: `updated_at` avanza su tutti i 155 host a ogni giro, prima e
+    dopo, perché lo riscrive l'aggiornamento delle assegnazioni IP di fine giro
+    (non il passaggio a offline). Da sistemare nel nucleo.

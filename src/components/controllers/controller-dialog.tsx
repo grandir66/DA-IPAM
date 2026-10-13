@@ -229,7 +229,7 @@ export function ControllerDialog({
                 onChange={(e) => set({ apiKey: e.target.value })}
               />
               <p className="mt-1 text-[13px] text-muted-foreground">
-                Si crea sulla console UniFi, nell'app Network: Control Plane, poi Integrazioni.
+                Si crea sulla console UniFi, nell&apos;app Network: Control Plane, poi Integrazioni.
               </p>
             </div>
           ) : (

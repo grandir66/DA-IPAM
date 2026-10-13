@@ -44,6 +44,41 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   `db-facade-als.test.ts`, il cricchetto (sceso a 64) e
   `db-createnetwork-drift.test.ts`, che ora prova l'identità invece di
   confrontare il testo di due copie.
+- **Le 9 funzioni che si comportavano in modo diverso, in una sola copia**
+  (tappa 3, NUC-2 gruppo 2, con INV-4). Qui la vecchia facciata e il modulo per
+  tenant non facevano la stessa cosa, e a seconda di quale importava, una
+  pagina o un job vedeva un comportamento o l'altro. Ognuna passa alla copia per
+  tenant con un commit suo, una prova del comportamento voluto vista fallire
+  prima, e la differenza misurata sulla copia del database di un cliente. Non
+  si possono spegnere: sono correzioni del comportamento esistente. Cosa cambia:
+  - **giro ARP**: un host senza MAC prende MAC e vendor dalla tabella ARP del
+    router. Un MAC già presente non si sovrascrive più: la copia per tenant lo
+    faceva, e sulla copia del cliente avrebbe cambiato il MAC a 11 host, quasi
+    tutti con il loro MAC confermato da un'altra voce ARP dello stesso IP. Con
+    la regola nuova, sullo stesso giro: nessun MAC cambiato, un vendor aggiunto;
+  - **MAC non valido (INV-4)**: un MAC vuoto o illeggibile non cancella più il
+    MAC buono di un host (sulla copia del cliente: 4 host esposti, per lease
+    DHCP con un identificativo non valido);
+  - **pagina di una rete**: il gruppo multi-indirizzo di un host mostra tutti
+    i peer, anche nella stessa rete, e chi è il primario, come già la pagina
+    Discovery (sulla copia del cliente: 79 host su 114 cambiano lista);
+  - **ricalcolo dei gruppi multi-indirizzo** nella discovery: raggruppa anche
+    gli host dichiarati come lo stesso apparato fisico (sulla copia del
+    cliente: nessuna differenza, 34 gruppi in entrambe le copie);
+  - **Active Directory, «attivi negli ultimi N giorni»**: niente più accessi
+    del giorno di confine contati per errore (sulla copia del cliente, a 7
+    giorni: utenti attivi da 63 a 61, computer invariati);
+  - **host con lo stesso MAC**: con un IP indicato si sceglie quell'host,
+    altrimenti il primo per id (nessuna differenza sulla copia del cliente);
+  - **nome dall'agente d'inventario**: non lo sovrascrive più una scansione;
+  - **«Reset configurazione»** in Impostazioni (solo admin): prima dentro un
+    cliente falliva e non cancellava niente, perché provava a svuotare tabelle
+    che stanno nell'hub; ora svuota davvero i dati del cliente scelto (reti,
+    host, apparati, credenziali, AD, vicini, rotte). Utenti e impostazioni
+    restano nell'hub.
+  `getHostById` era già allineata (965 host, stesso esito) e passa solo come
+  copia unica. Prove: `db-parity/behaviour-*.test.ts`, `db-facade-als.test.ts`,
+  il cricchetto (sceso a 55).
 
 ### Correzioni
 

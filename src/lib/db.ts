@@ -32,8 +32,6 @@ function ipToNum(ip: string): number {
 }
 import type {
   Host,
-  HostDetail,
-  ScanHistory,
   User,
   HostInput,
 } from "@/types";
@@ -56,10 +54,6 @@ import {
 import {
   mergeOpenPortsJson,
   isIpExcluded,
-  getHostDetectCredentialsEnriched,
-  getHostCredentials,
-  getNetworkDeviceByHost,
-  getNetworkDeviceByHostId,
 } from "./db-tenant";
 import type {
   AdComputer,
@@ -2426,86 +2420,6 @@ export function resolveMacToDevice(mac: string): { ip: string | null; hostname: 
   };
 }
 
-export function getHostById(id: number): HostDetail | undefined {
-  const host = getDb().prepare(`
-    SELECT h.*, n.cidr as network_cidr, n.name as network_name
-    FROM hosts h
-    JOIN networks n ON n.id = h.network_id
-    WHERE h.id = ?
-  `).get(id) as (Host & { network_cidr: string; network_name: string }) | undefined;
-
-  if (!host) return undefined;
-
-  const recentScans = getDb().prepare(
-    "SELECT * FROM scan_history WHERE host_id = ? ORDER BY timestamp DESC LIMIT 50"
-  ).all(id) as ScanHistory[];
-
-  // Find ARP source (router that provided this host's MAC)
-  const arpSource = host.mac ? getDb().prepare(`
-    SELECT nd.name as device_name, nd.vendor as device_vendor, ae.timestamp as last_query
-    FROM arp_entries ae
-    JOIN network_devices nd ON nd.id = ae.device_id
-    WHERE ${MAC_HEX("ae.mac")} = ? AND nd.device_type = 'router'
-    ORDER BY ae.timestamp DESC LIMIT 1
-  `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; last_query: string } | undefined : undefined;
-
-  // Find switch port mapping
-  const switchPort = host.mac ? getDb().prepare(`
-    SELECT nd.name as device_name, nd.vendor as device_vendor, mpe.port_name, mpe.vlan
-    FROM mac_port_entries mpe
-    JOIN network_devices nd ON nd.id = mpe.device_id
-    WHERE ${MAC_HEX("mpe.mac")} = ? AND nd.device_type = 'switch'
-    ORDER BY mpe.rowid DESC LIMIT 1
-  `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; port_name: string; vlan: number | null } | undefined : undefined;
-
-  // Dispositivo gestito con stesso IP (es. WINRM, SSH, SNMP)
-  // F4: prefer FK lookup, fallback al match per IP per device pre-migration.
-  const networkDevice = getNetworkDeviceByHostId(host.id) ?? getNetworkDeviceByHost(host.ip);
-
-  const scanTypesSeen = [...new Set(recentScans.map((s) => s.scan_type))];
-
-  // v0.2.603: include multihomed group info (mirror di db-tenant.ts).
-  const mhLink = getDb().prepare(
-    "SELECT group_id, match_type, is_primary FROM multihomed_links WHERE host_id = ? LIMIT 1"
-  ).get(id) as { group_id: string; match_type: string; is_primary: number } | undefined;
-  let multihomed: HostDetail["multihomed"] = null;
-  if (mhLink) {
-    const peers = getDb().prepare(
-      `SELECT ml.host_id, h.ip, n.name AS network_name, ml.is_primary
-         FROM multihomed_links ml
-         JOIN hosts h ON h.id = ml.host_id
-         JOIN networks n ON n.id = h.network_id
-        WHERE ml.group_id = ? AND ml.host_id != ?
-        ORDER BY h.ip`
-    ).all(mhLink.group_id, id) as Array<{ host_id: number; ip: string; network_name: string; is_primary: number }>;
-    const primary = getDb().prepare(
-      `SELECT ml.host_id, h.ip FROM multihomed_links ml
-         JOIN hosts h ON h.id = ml.host_id
-        WHERE ml.group_id = ? AND ml.is_primary = 1
-        LIMIT 1`
-    ).get(mhLink.group_id) as { host_id: number; ip: string } | undefined;
-    multihomed = {
-      group_id: mhLink.group_id,
-      match_type: mhLink.match_type,
-      is_primary: mhLink.is_primary === 1,
-      primary_host_id: primary?.host_id ?? null,
-      primary_ip: primary?.ip ?? null,
-      peers: peers.map((p) => ({ host_id: p.host_id, ip: p.ip, network_name: p.network_name, is_primary: p.is_primary === 1 })),
-    };
-  }
-
-  return {
-    ...host,
-    recent_scans: recentScans,
-    scan_types_used: scanTypesSeen,
-    detect_credentials: getHostDetectCredentialsEnriched(id),
-    host_credentials: getHostCredentials(id),
-    arp_source: arpSource || null,
-    switch_port: switchPort || null,
-    network_device: networkDevice ? { id: networkDevice.id, name: networkDevice.name, sysname: networkDevice.sysname, vendor: networkDevice.vendor, protocol: networkDevice.protocol } : null,
-    multihomed,
-  };
-}
 
 type PortEntry = { port: number; protocol: string; service?: string | null; version?: string | null };
 
@@ -3900,4 +3814,5 @@ export {
 export {
   upsertArpEntries,
   getHostByMac,
+  getHostById,
 } from "./db-tenant";

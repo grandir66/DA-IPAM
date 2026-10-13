@@ -79,6 +79,25 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   `getHostById` era già allineata (965 host, stesso esito) e passa solo come
   copia unica. Prove: `db-parity/behaviour-*.test.ts`, `db-facade-als.test.ts`,
   il cricchetto (sceso a 55).
+- **La vecchia facciata `db.ts` non tocca più il database** (tappa 3, NUC-2
+  gruppo 3). Era il punto in cui le due copie nascevano: da 7.797 righe
+  all'inizio della tappa è scesa a 534 e contiene solo riesportazioni,
+  `getDb()` e quattro involucri di tipo sugli utenti. Le 45 funzioni che
+  delegavano all'hub (utenti, impostazioni, profili Nmap e SNMP, regole di
+  fingerprint) sono riesportate tali e quali; le ultime tre funzioni dati
+  (risoluzione di un MAC in host o apparato, aggiornamento di un host solo se
+  esiste) passano alla copia per tenant, con lo stesso esito sulla copia del
+  database di un cliente (1.182 MAC, nessuna differenza). L'apertura del vecchio
+  database single-tenant `ipam.db` con le sue migrazioni è passata, senza
+  cambiamenti, in `db-legacy.ts`: la usano solo il ripiego senza contesto di
+  `getDb()`, che resta com'era e contato nel registro dei ripieghi, e lo script
+  del modello vuoto. Lo script ora apre sempre il file indicato: prima, su una
+  macchina con l'hub e un cliente predefinito, avrebbe aperto quello. Non è il
+  `db-legacy.ts` tolto in v0.3.151, che era una terza copia mai usata. **Cambia
+  solo un caso**, come per i gruppi precedenti: le tre funzioni dati chiamate
+  senza un cliente scelto ora danno errore invece di ripiegare. Il cricchetto
+  vieta l'accesso diretto al database nella facciata e fissa l'elenco di ciò
+  che vi resta (sceso a 6).
 
 ### Correzioni
 

@@ -1,4 +1,5 @@
 "use client";
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
@@ -50,7 +51,10 @@ export default function ArpTablePage() {
   const [networkId, setNetworkId] = useState<string>("");
   const [source, setSource] = useState<string>("");
 
+  const nextSignal = useLatestRequest();
+
   const fetchData = useCallback(async () => {
+    const signal = nextSignal();
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -59,7 +63,8 @@ export default function ArpTablePage() {
       if (q.trim()) params.set("q", q.trim());
       // uno in più del tetto: se arriva, la lista è davvero troncata
       params.set("limit", String(ARP_LIMIT + 1));
-      const r = await fetchJson<MacIpMapping[]>(`/api/mac-ip-mapping?${params}`);
+      const r = await fetchJson<MacIpMapping[]>(`/api/mac-ip-mapping?${params}`, { signal });
+      if (signal.aborted) return;
       // Prima un errore lasciava a schermo l'elenco vecchio senza messaggio (UI-7).
       if (r.ok) {
         const rows = Array.isArray(r.data) ? r.data : [];
@@ -71,10 +76,13 @@ export default function ArpTablePage() {
         setTruncated(false);
         setError(r.message);
       }
+    } catch (e) {
+      if (signal.aborted) return;
+      throw e;
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
-  }, [networkId, source, q]);
+  }, [networkId, source, q, nextSignal]);
 
   /**
    * Forza il poll ARP/DHCP reale sul router: interroga il dispositivo via SSH/SNMP

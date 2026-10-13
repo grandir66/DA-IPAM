@@ -8,6 +8,27 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **Alert sicurezza: «finestra» e «sistema» filtrano anche l'elenco.** Prima
+  cambiavano solo i grafici e l'elenco restava quello di sempre. Ora l'elenco
+  mostra gli eventi visti nel periodo scelto (di default le ultime 24 ore) e del
+  sistema scelto; l'intestazione dice il periodo e, se ce ne sono di più vecchi,
+  quanti eventi aperti ci sono in tutto, così un evento vecchio non preso in
+  carico non sparisce senza dirlo.
+- **Richieste superate annullate.** In Inventario, Tabella ARP, Analytics, Sorgenti
+  DHCP, Subnet e nella ricerca in alto una risposta lenta poteva arrivare dopo
+  quella giusta e sostituirla. Ora ogni richiesta nuova annulla la precedente. La
+  ricerca dei lease DHCP aspetta che si finisca di scrivere e torna a pagina 1
+  (prima restava sulla pagina aperta, spesso vuota).
+- **Discovery.** Due subnet con lo stesso nome si fondevano nel filtro: ora sono
+  distinte. Il filtro vulnerabilità riporta a pagina 1. A modulo LibreNMS spento
+  la pagina non fa più una richiesta a LibreNMS per ogni rete a ogni caricamento.
+- **Export CSV senza formule.** Un valore che comincia con `=`, `+`, `-` o `@`
+  (un hostname, un banner) Excel lo apriva come formula: ora gli si antepone un
+  apostrofo, che Excel non mostra. Vale per tutti gli export che usano la funzione
+  comune, compresi Discovery e software dell'host.
+- **Dispositivi: i chip delle classificazioni contano i risultati filtrati** e ci
+  sono tutti (prima solo i primi 12, con i numeri dell'insieme intero). Un errore
+  di caricamento non si presenta più come «nessun dispositivo».
 - **Impostazioni dell'hub senza segreti per chi non è admin (SEC-5, seconda
   strada).** Chiusa la configurazione delle integrazioni, la lettura generale
   delle impostazioni restituiva ancora a ogni utente con accesso tutta la

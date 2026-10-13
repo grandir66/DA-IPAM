@@ -1,4 +1,5 @@
 "use client";
+import { joinCsvRow } from "@/lib/csv-utils";
 import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -684,8 +685,14 @@ export default function DiscoveryPage() {
       if (res.ok) {
         const data: EnrichedHost[] = await res.json();
         setHosts(data);
-        // Carica librenms map per le reti presenti
-        const networkIds = [...new Set(data.map((h) => h.network_id))];
+        // Carica librenms map per le reti presenti — solo se il modulo è attivo:
+        // a modulo spento erano N richieste a vuoto a ogni caricamento (UI-13).
+        const modRes = await fetch("/api/modules").catch(() => null);
+        const mods = modRes?.ok
+          ? ((await modRes.json()) as { modules?: Array<{ key: string; enabled: boolean }> }).modules ?? []
+          : [];
+        const librenmsOn = mods.some((m) => m.key === "librenms" && m.enabled);
+        const networkIds = librenmsOn ? [...new Set(data.map((h) => h.network_id))] : [];
         const maps: LibreNMSHostMap[] = [];
         await Promise.all(
           networkIds.map(async (nid) => {
@@ -850,10 +857,11 @@ export default function DiscoveryPage() {
     return [...set].sort((a, b) => a.localeCompare(b, "it"));
   }, [hosts]);
 
+  // Per id, non per nome: due subnet con lo stesso nome si fondevano (UI-13).
   const networks = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const h of hosts) map.set(h.network_name, h.network_cidr);
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "it"));
+    const map = new Map<string, { name: string; cidr: string }>();
+    for (const h of hosts) map.set(String(h.network_id), { name: h.network_name, cidr: h.network_cidr });
+    return [...map.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name, "it") || a[1].cidr.localeCompare(b[1].cidr));
   }, [hosts]);
 
   // ---------- pre-arricchimento ----------
@@ -901,7 +909,7 @@ export default function DiscoveryPage() {
           return false;
         }
       }
-      if (networkFilter && h.network_name !== networkFilter) return false;
+      if (networkFilter && String(h.network_id) !== networkFilter) return false;
       if (vulnFilter === "critical_high" && !(h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0))) return false;
       if (vulnFilter === "critical" && !(h.vuln && h.vuln.critical > 0)) return false;
       if (vulnFilter === "with_findings" && !(h.vuln && h.vuln.total > 0)) return false;
@@ -968,7 +976,7 @@ export default function DiscoveryPage() {
   );
 
   // reset page on filter change
-  useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, networkFilter]);
+  useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, networkFilter, vulnFilter]);
 
   // persiste la dimensione pagina e torna a pagina 1 quando cambia
   const handlePageSizeChange = useCallback((size: number) => {
@@ -1365,13 +1373,8 @@ export default function DiscoveryPage() {
   // ---------- CSV export ----------
   const exportCsv = () => {
     const visibleDefs = orderedVisibleCols;
-    const header = visibleDefs.map((c) => c.label).join(";");
-    const rows = sortedRows.map((h) =>
-      visibleDefs.map((c) => {
-        const v = getCellText(h, c.id);
-        return `"${String(v).replace(/"/g, '""')}"`;
-      }).join(";"),
-    );
+    const header = joinCsvRow(visibleDefs.map((c) => c.label));
+    const rows = sortedRows.map((h) => joinCsvRow(visibleDefs.map((c) => getCellText(h, c.id))));
     const csv = [header, ...rows].join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -1944,8 +1947,8 @@ export default function DiscoveryPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Tutte le subnet</SelectItem>
-                  {networks.map(([name, cidr]) => (
-                    <SelectItem key={name} value={name}>{name} ({cidr})</SelectItem>
+                  {networks.map(([id, n]) => (
+                    <SelectItem key={id} value={id}>{n.name} ({n.cidr})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

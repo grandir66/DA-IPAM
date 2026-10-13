@@ -1,4 +1,5 @@
 "use client";
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
@@ -118,7 +119,10 @@ export default function InventoryPage() {
   const [bulkSyncing, setBulkSyncing] = useState(false);
   const [bulkForm, setBulkForm] = useState<BulkEditForm>(emptyBulkForm);
 
+  const nextSignal = useLatestRequest();
+
   const fetchAssets = useCallback(async () => {
+    const signal = nextSignal();
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -130,7 +134,8 @@ export default function InventoryPage() {
       // Una riga in più per sapere se la lista è troncata.
       params.set("limit", String(Math.min(limit + 1, INVENTORY_LIMIT_GAPS)));
       // Un 401/500 non è «inventario vuoto» (UI-7): si mostra l'errore.
-      const r = await fetchJson<InventoryRow[]>(`/api/inventory?${params}`, { cache: "no-store" });
+      const r = await fetchJson<InventoryRow[]>(`/api/inventory?${params}`, { cache: "no-store", signal });
+      if (signal.aborted) return;
       if (r.ok) {
         const rows = Array.isArray(r.data) ? r.data : [];
         setAssets(rows.slice(0, limit));
@@ -139,11 +144,16 @@ export default function InventoryPage() {
       } else {
         setError(r.message);
       }
+    } catch (e) {
+      if (signal.aborted) return;
+      throw e;
     } finally {
-      setLoading(false);
-      setSelectedIds(new Set());
+      if (!signal.aborted) {
+        setLoading(false);
+        setSelectedIds(new Set());
+      }
     }
-  }, [q, categoria, stato, scopeNis2, onlyWithGaps]);
+  }, [q, categoria, stato, scopeNis2, onlyWithGaps, nextSignal]);
 
   const fetchGaps = useCallback(async () => {
     try {

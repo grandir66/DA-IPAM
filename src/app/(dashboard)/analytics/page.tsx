@@ -1,4 +1,5 @@
 "use client";
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
@@ -131,7 +132,10 @@ export default function AnalyticsPage() {
   const [selected, setSelected] = useState<AnomalyEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const nextSignal = useLatestRequest();
+
   const fetchEvents = useCallback(async () => {
+    const signal = nextSignal();
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -142,7 +146,8 @@ export default function AnalyticsPage() {
       if (filterAck === "unacked") params.set("acknowledged", "false");
       if (filterAck === "acked") params.set("acknowledged", "true");
 
-      const r = await fetchJson<{ events: AnomalyEvent[]; total: number; unacked: number }>(`/api/analytics/anomalies?${params}`);
+      const r = await fetchJson<{ events: AnomalyEvent[]; total: number; unacked: number }>(`/api/analytics/anomalies?${params}`, { signal });
+      if (signal.aborted) return;
       // Prima un errore lasciava a schermo gli eventi vecchi senza dire niente (UI-7).
       if (!r.ok) {
         setEvents([]);
@@ -156,10 +161,13 @@ export default function AnalyticsPage() {
       setEvents(data.events.map((e) => ({ ...e, _detailParsed: parseDetail(e) })));
       setTotal(data.total);
       setUnacked(data.unacked);
+    } catch (e) {
+      if (signal.aborted) return;
+      throw e;
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
-  }, [page, filterType, filterAck]);
+  }, [page, filterType, filterAck, nextSignal]);
 
   useEffect(() => { void fetchEvents(); }, [fetchEvents]);
 

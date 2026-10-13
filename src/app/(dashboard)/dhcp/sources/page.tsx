@@ -1,4 +1,5 @@
 "use client";
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -108,13 +109,27 @@ export default function DhcpPage() {
   const [sortColumn, setSortColumn] = useState<string | null>("last_synced");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
+  // La ricerca parte 300 ms dopo l'ultimo tasto e riporta a pagina 1 (prima
+  // restava sulla pagina aperta, spesso vuota); una richiesta nuova annulla la
+  // precedente (UI-6).
+  const [searchQuery, setSearchQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchQuery(searchTerm.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+  const nextSignal = useLatestRequest();
+
   const fetchLeases = useCallback(async () => {
+    const signal = nextSignal();
     try {
       const params = new URLSearchParams({
         page: String(page),
         pageSize: String(pageSize),
       });
-      if (searchTerm) params.set("search", searchTerm);
+      if (searchQuery) params.set("search", searchQuery);
       if (sourceTypeFilter !== "all") params.set("sourceType", sourceTypeFilter);
       if (sourceDeviceFilter !== "all") params.set("sourceDeviceId", sourceDeviceFilter);
       // "Solo recenti" lo applica il server: prima filtrava solo la pagina corrente
@@ -125,17 +140,19 @@ export default function DhcpPage() {
         params.set("sortOrder", sortDirection);
       }
 
-      const res = await fetch(`/api/dhcp-leases?${params}`);
+      const res = await fetch(`/api/dhcp-leases?${params}`, { signal });
       if (!res.ok) throw new Error("Errore caricamento");
       const data = await res.json();
+      if (signal.aborted) return;
       setLeases(data.leases || []);
       setTotal(data.total || 0);
     } catch {
+      if (signal.aborted) return;
       toast.error("Impossibile caricare i lease DHCP");
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
-  }, [page, pageSize, searchTerm, sourceTypeFilter, sourceDeviceFilter, sortColumn, sortDirection, onlyRecent, recentDays]);
+  }, [page, pageSize, searchQuery, sourceTypeFilter, sourceDeviceFilter, sortColumn, sortDirection, onlyRecent, recentDays, nextSignal]);
 
   const fetchSources = useCallback(async () => {
     try {

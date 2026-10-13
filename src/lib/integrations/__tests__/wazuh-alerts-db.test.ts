@@ -225,3 +225,32 @@ test("retention keeps acknowledged events that are still recent", () => {
   assert.equal(purgeAcknowledgedOlderThan(db, 30), 0);
   assert.equal(listAlertEvents(db, {}).length, 1);
 });
+
+// UI-11 (analisi 2026-10-12): «finestra» e «sistema» filtravano solo i grafici,
+// l'elenco degli eventi restava quello di sempre.
+test("listAlertEvents filters by window (last_seen_at) and system (rule groups)", () => {
+  const db = freshDb();
+  upsertAlertEvent(db, alert({ "@timestamp": "2026-07-27T10:00:00.000Z" }, "hit-old"));
+  upsertAlertEvent(
+    db,
+    alert(
+      {
+        "@timestamp": "2026-07-28T09:00:00.000Z",
+        agent: { id: "020", name: "web01" },
+        rule: { id: "5710", level: 10, description: "sshd: brute force", groups: ["syslog", "sshd", "authentication_failures"] },
+      },
+      "hit-ssh",
+    ),
+  );
+  assert.equal(listAlertEvents(db, { since: "2026-07-28T00:00:00.000Z" }).length, 1);
+  assert.equal(listAlertEvents(db, { since: "2026-07-27T00:00:00.000Z" }).length, 2);
+  assert.deepEqual(
+    listAlertEvents(db, { groups: ["sshd", "pam", "sudo"] }).map((r) => r.agent_name),
+    ["web01"],
+  );
+  assert.deepEqual(
+    listAlertEvents(db, { groups: ["windows", "windows_security"] }).map((r) => r.agent_name),
+    ["SRV-DC"],
+  );
+  assert.equal(listAlertEvents(db, { groups: ["mikrotik"] }).length, 0);
+});

@@ -133,6 +133,9 @@ export function SecurityAlertsClient() {
         const qs = new URLSearchParams();
         if (category) qs.set("category", category);
         if (onlyOpen) qs.set("onlyOpen", "1");
+        // Finestra e sistema filtrano anche l'elenco, non solo i grafici (UI-11).
+        qs.set("window", windowId);
+        if (system) qs.set("system", system);
         // Una riga in più per sapere se la lista è troncata.
         qs.set("limit", String(ALERTS_LIMIT + 1));
         const [listRes, statsRes] = await Promise.all([
@@ -227,6 +230,13 @@ export function SecurityAlertsClient() {
   const truncated = allEvents.length > ALERTS_LIMIT;
   const events = truncated ? allEvents.slice(0, ALERTS_LIMIT) : allEvents;
   const windows = WINDOW_CHOICES;
+  const windowLabel = windows.find((w) => w.id === windowId)?.labelIt ?? windowId;
+  const systemLabel = system ? (stats?.systems.find((sy) => sy.id === system)?.labelIt ?? system) : null;
+  // Aperti fuori dal periodo: senza questa cifra un evento vecchio non preso in carico
+  // sparirebbe dall'elenco senza dirlo.
+  const openTotal = category
+    ? (openCounts[category] ?? 0)
+    : Object.values(openCounts).reduce((a, b) => a + b, 0);
   const totals = stats?.stats?.totals;
   const byCategory = stats?.stats?.byCategory ?? [];
   // I grafici rispondono a "mi stanno attaccando?": le nostre sonde e la salute
@@ -475,6 +485,13 @@ export function SecurityAlertsClient() {
         <CardHeader>
           <CardTitle className="text-base">
             {loading ? "Caricamento…" : truncated ? `Primi ${ALERTS_LIMIT} eventi` : `${events.length} eventi`}
+            {!loading && (
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                visti in: {windowLabel.toLowerCase()}
+                {systemLabel ? ` · ${systemLabel}` : ""}
+                {onlyOpen && openTotal > events.length ? ` · ${openTotal} aperti in tutto` : ""}
+              </span>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -487,8 +504,8 @@ export function SecurityAlertsClient() {
             <LoadError what="gli allarmi di sicurezza" message={loadError} onRetry={() => void load()} />
           ) : !loading && events.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              Nessun evento. Se l&apos;integrazione Wazuh è appena stata configurata,
-              usa &quot;Aggiorna ora&quot; per il primo poll.
+              Nessun evento in questo periodo. Se l&apos;integrazione Wazuh è appena stata
+              configurata, usa &quot;Aggiorna ora&quot; per il primo poll.
             </p>
           ) : (
             <div className="overflow-x-auto">

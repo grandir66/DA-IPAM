@@ -1,4 +1,5 @@
 "use client";
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { parseDbDate } from "@/lib/db-date";
 
 import { useState, useCallback, useEffect, useRef } from "react";
@@ -150,7 +151,11 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
     }
   }, []);
 
+  const nextSignal = useLatestRequest();
+
   const refreshNetworks = useCallback(async (p?: number, s?: string) => {
+    // Una pagina o ricerca nuova annulla la richiesta precedente (UI-6).
+    const signal = nextSignal();
     const currentPage = p ?? page;
     const currentSearch = s ?? search;
     try {
@@ -160,9 +165,10 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
         params.set("sortBy", sortColumn);
         params.set("sortOrder", sortDirection);
       }
-      const res = await fetch(`/api/networks?${params.toString()}`);
+      const res = await fetch(`/api/networks?${params.toString()}`, { signal });
       if (res.ok) {
         const json = await res.json();
+        if (signal.aborted) return;
         // Supporta sia formato paginato {data, totalPages, page} che array diretto (modalità __ALL__)
         if (Array.isArray(json)) {
           setNetworks(json);
@@ -175,9 +181,10 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
         }
       }
     } catch {
+      if (signal.aborted) return;
       toast.error("Impossibile aggiornare l'elenco");
     }
-  }, [page, search, pageSize, sortColumn, sortDirection]);
+  }, [page, search, pageSize, sortColumn, sortDirection, nextSignal]);
 
   const handleSortColumn = useCallback((columnId: string) => {
     if (sortColumn === columnId) {

@@ -1,4 +1,5 @@
 "use client";
+import { escapeCsvField } from "@/lib/csv-utils";
 import { parseDbDate } from "@/lib/db-date";
 
 /**
@@ -146,12 +147,10 @@ function logLevelBadge(level: SoftwareScanLog["level"]): string {
 }
 
 function csvEscape(v: string | number | null | undefined): string {
-  if (v === null || v === undefined) return "";
-  const s = String(v);
-  if (s.includes('"') || s.includes(",") || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
+  // Questo export usa la virgola come separatore: si quota sempre il campo e si
+  // neutralizzano le formule con la funzione comune.
+  const s = escapeCsvField(v);
+  return s.startsWith('"') ? s : `"${s}"`;
 }
 
 function exportInventoryCsv(label: string, scanId: number, rows: SoftwareInventoryRow[]) {

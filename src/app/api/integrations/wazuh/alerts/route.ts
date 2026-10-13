@@ -1,7 +1,8 @@
 /**
  * Alert di sicurezza Wazuh selezionati, per il tenant corrente.
  *
- *   GET   → elenco eventi + conteggi per categoria (filtri: category, onlyOpen)
+ *   GET   → elenco eventi + conteggi per categoria (filtri: category, onlyOpen,
+ *           window = eventi visti nella finestra, system = rule.groups del sistema)
  *   POST  → forza un poll immediato dell'indexer
  */
 import { NextResponse } from "next/server";
@@ -9,6 +10,7 @@ import { z } from "zod";
 import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { ALERT_CATEGORIES } from "@/lib/integrations/wazuh-alerts";
+import { sinceForWindow, systemFilterById, windowById } from "@/lib/integrations/wazuh-alerts-stats";
 import {
   countOpenByCategory,
   ensureWazuhAlertSchema,
@@ -22,6 +24,8 @@ const QuerySchema = z.object({
   category: z.string().max(40).optional(),
   onlyOpen: z.enum(["0", "1"]).optional(),
   includeDiagnostic: z.enum(["0", "1"]).optional(),
+  window: z.string().max(10).optional(),
+  system: z.string().max(20).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });
@@ -38,6 +42,7 @@ export async function GET(req: Request) {
     }
     const q = parsed.data;
 
+    const win = q.window ? windowById(q.window) : undefined;
     const db = tenantDb();
     ensureWazuhAlertSchema(db);
 
@@ -53,6 +58,8 @@ export async function GET(req: Request) {
         category: q.category,
         onlyOpen: q.onlyOpen === "1",
         includeDiagnostic: q.includeDiagnostic === "0" ? false : undefined,
+        since: win ? sinceForWindow(win.hours) : undefined,
+        groups: systemFilterById(q.system)?.match,
         limit: q.limit ?? 200,
         offset: q.offset ?? 0,
       }),

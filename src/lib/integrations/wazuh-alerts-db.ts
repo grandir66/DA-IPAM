@@ -177,6 +177,10 @@ export function listAlertEvents(
     category?: string;
     onlyOpen?: boolean;
     includeDiagnostic?: boolean;
+    /** Solo eventi visti da questo istante in poi (ISO UTC, come `last_seen_at`). */
+    since?: string;
+    /** Solo eventi con almeno uno di questi rule.groups (filtro «sistema»). */
+    groups?: string[];
     limit?: number;
     offset?: number;
   },
@@ -189,6 +193,18 @@ export function listAlertEvents(
   }
   if (filter.onlyOpen) where.push("acknowledged = 0");
   if (filter.includeDiagnostic === false) where.push("diagnostic = 0");
+  if (filter.since) {
+    where.push("last_seen_at >= ?");
+    params.push(filter.since);
+  }
+  if (filter.groups && filter.groups.length > 0) {
+    // raw_json = {"groups":[...]} scritto da upsertAlertEvent.
+    where.push(
+      `EXISTS (SELECT 1 FROM json_each(wazuh_alert_event.raw_json, '$.groups') g
+                WHERE g.value IN (${filter.groups.map(() => "?").join(", ")}))`,
+    );
+    params.push(...filter.groups);
+  }
   const sql =
     "SELECT * FROM wazuh_alert_event" +
     (where.length ? ` WHERE ${where.join(" AND ")}` : "") +

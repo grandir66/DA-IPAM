@@ -52,9 +52,13 @@ export function worstStatus(a: TopologyStatus, b: TopologyStatus): TopologyStatu
 
 /**
  * Lo stato coi nodi del modello. Un nodo che ha uno stato suo (l'apparato, o
- * l'host stesso) usa quello; solo se non ce l'ha prende il peggiore fra gli
- * host fusi dentro di lui, dove «sconosciuto» non batte «ok». Le chiavi sono
- * gli id del modello; gli host fusi non hanno una chiave loro.
+ * l'host stesso) usa quello; solo se non ce l'ha — manca, o è «sconosciuto»,
+ * cioè nessun segnale — prende il peggiore fra gli host fusi dentro di lui,
+ * dove «sconosciuto» non batte «ok». Sulla copia di un cliente (13/10) 74
+ * apparati su 85 hanno l'interrogazione spenta (`enabled = 0` → sconosciuto):
+ * senza il ripiego sugli host, quasi tutta la mappa diceva «?» anche con
+ * l'indirizzo di gestione che risponde. Le chiavi sono gli id del modello; gli
+ * host fusi non hanno una chiave loro.
  */
 export function statusForModel(
   nodes: ReadonlyArray<Pick<MapNode, "id" | "kind" | "fusedHostIds">>,
@@ -63,7 +67,7 @@ export function statusForModel(
   const out: Record<string, TopologyStatus> = {};
   for (const n of nodes) {
     const own = byNode[n.id];
-    if (own) {
+    if (own && own !== "unknown") {
       out[n.id] = own;
       continue;
     }
@@ -75,4 +79,17 @@ export function statusForModel(
     out[n.id] = s;
   }
   return out;
+}
+
+/**
+ * `librenms_host_map.last_status` → 1 (su), 0 (giù) o null (non dice niente).
+ * La sincronizzazione ci scrive lo stato dell'host di IPAM («online»/
+ * «offline»/«unknown»); la lettura capiva solo «up»/«1» e ogni «online»
+ * diventava «giù» (Task 12, 2026-10-13: 44 switch su 85 rossi a torto).
+ */
+export function libreStatusFrom(raw: string | null | undefined): 0 | 1 | null {
+  const v = raw?.trim().toLowerCase();
+  if (v === "online" || v === "up" || v === "1") return 1;
+  if (v === "offline" || v === "down" || v === "0") return 0;
+  return null;
 }

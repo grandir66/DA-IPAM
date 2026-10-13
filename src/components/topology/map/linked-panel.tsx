@@ -5,6 +5,7 @@
  * indirizzi, le azioni (solo admin), a cosa è collegato e cosa c'è attaccato
  * alle sue porte. In fondo, gli oggetti della mappa che non esistono più.
  */
+import { Fragment } from "react";
 import Link from "next/link";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -165,7 +166,7 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
                     <button type="button" className="text-left underline" onClick={() => p.onSelect(other(l))}>{o?.name ?? other(l)}</button>
                     <div className="text-muted-foreground">{o ? typeLabel(o.type) : ""}{o?.kind === "host" ? " (host)" : ""}</div>
                   </td>
-                  <td className="py-1 pr-1 break-all">{mine(l) || "?"} → {theirs(l) || "?"}</td>
+                  <td className="py-1 pr-1 [overflow-wrap:anywhere]"><Porta s={mine(l)} /> → <Porta s={theirs(l)} /></td>
                   <td className="py-1 pr-1">
                     {l.sources.map((s) => FONTE[s]).join(" + ")}
                     <div className={l.stale ? "font-semibold" : "text-muted-foreground"}>{visto(l)}</div>
@@ -222,4 +223,14 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
       )}
     </>
   );
+}
+
+/**
+ * Un nome di porta che va a capo dopo «/» e «,» («bridge/ether3», «ether1-2.5,bridge»),
+ * non a metà parola: prima con `break-all` si leggeva «bridg / e/ether3» (Task 12).
+ */
+function Porta({ s }: { s: string | null | undefined }) {
+  if (!s) return <>?</>;
+  const parts = s.split(/(?<=[/,])/);
+  return <>{parts.map((x, i) => <Fragment key={i}>{i > 0 && <wbr />}{x}</Fragment>)}</>;
 }

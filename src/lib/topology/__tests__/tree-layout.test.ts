@@ -117,7 +117,15 @@ test("ritocco: con la firma uguale sposta nodo e ramo dello stesso scarto; con f
   assert.equal(ser({ ...stale, expired: [] }), ser(base));
 });
 
-test("il riquadro è centrato sopra il blocco dei figli, anche con la fascia degli attaccati", () => {
+/** Centro del primo e dell'ultimo figlio (riquadri e gruppo AP): dove finisce la linea orizzontale. */
+function midOfChildCentres(r: LayoutResult, t: TreeResult, p: string): number {
+  const c = (t.children.get(p) ?? []).map((k) => r.nodes.get(k)).filter((n) => n?.role === "box").map((n) => n!.x + n!.w / 2);
+  const g = r.apGroups.find((x) => x.parent === p);
+  if (g) c.push(g.x + g.w / 2);
+  return (Math.min(...c) + Math.max(...c)) / 2;
+}
+
+test("il riquadro è centrato fra il primo e l'ultimo figlio, anche con la fascia degli attaccati e il gruppo AP", () => {
   const servers = ids("host", 3);
   const nodes = [node("dev:1", "router", "R"), node("dev:2", "switch", "S"), node("dev:3", "switch", "T"),
     node("dev:4", "switch", "U"), node("dev:5", "access_point"), node("dev:6", "access_point"),
@@ -131,13 +139,34 @@ test("il riquadro è centrato sopra il blocco dei figli, anche con la fascia deg
   const r = layoutTree(model(nodes), t, []);
   for (const p of ["dev:1", "dev:3"]) {
     const box = r.nodes.get(p)!;
-    const kids = (t.children.get(p) ?? []).filter((k) => r.nodes.get(k)?.role === "box");
-    const lefts = kids.map((k) => r.nodes.get(k)!.x);
-    const rights = kids.map((k) => r.nodes.get(k)!.x + r.nodes.get(k)!.w);
-    const g = r.apGroups.find((x) => x.parent === p);
-    if (g) { lefts.push(g.x); rights.push(g.x + g.w); }
-    const mid = (Math.min(...lefts) + Math.max(...rights)) / 2;
+    const mid = midOfChildCentres(r, t, p);
     assert.ok(Math.abs(box.x + box.w / 2 - mid) <= 1, `${p}: ${box.x + box.w / 2} vs ${mid}`);
     assert.ok([...r.nodes.values()].some((n) => n.role === "attached" && n.parent === p), `${p} ha la fascia`);
+  }
+});
+
+test("rami asimmetrici: il genitore sta sopra la linea dei figli, non a metà dello spazio riservato; niente si sovrappone", () => {
+  // Task 12 (copia di un cliente, 13/10): il primo figlio con un ramo largo
+  // spostava il centro dello spazio riservato sopra un altro figlio; la testa
+  // era scostata di 749 px dalla linea dei suoi figli.
+  const leaves = ids("dev:20", 0).concat(Array.from({ length: 6 }, (_, i) => `dev:${20 + i}`));
+  const servers = ids("host", 6);
+  const nodes = [node("dev:1", "router", "R"), node("dev:2", "switch", "Largo"), node("dev:3", "switch", "Solo"),
+    node("dev:4", "switch", "Ultimo"), ...leaves.map((l) => node(l, "switch")),
+    ...servers.map((h, i) => node(h, "server_linux", `srv${i}`))];
+  const t = tree(["dev:1"], {
+    "dev:1": ["dev:2", "dev:3", "dev:4", "host:1", "host:2"],
+    "dev:2": leaves,
+    "dev:4": ["host:3", "host:4", "host:5", "host:6"],
+  });
+  const r = layoutTree(model(nodes), t, []);
+  const box = r.nodes.get("dev:1")!;
+  const mid = midOfChildCentres(r, t, "dev:1");
+  assert.ok(Math.abs(box.x + box.w / 2 - mid) <= 1, `R: ${box.x + box.w / 2} vs ${mid}`);
+  // Niente si sovrappone allo stesso livello: riquadri e fascia degli attaccati.
+  const all = [...r.nodes.values()];
+  for (const a of all) for (const b of all) {
+    if (a === b || a.y + a.h <= b.y || b.y + b.h <= a.y) continue;
+    assert.ok(a.x + a.w <= b.x || b.x + b.w <= a.x, `${a.id} e ${b.id} si sovrappongono`);
   }
 });

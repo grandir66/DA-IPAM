@@ -4,7 +4,7 @@
  * figli infrastruttura in fila sotto il genitore, AP senza figli in un gruppo a
  * griglia che occupa SEMPRE AP_COLS colonne (un AP in più non sposta gli altri
  * rami), attaccati in colonna a destra del riquadro (non coprono le linee verso
- * i figli), riquadro centrato sopra i figli. Ritocchi a mano: valgono finché la
+ * i figli), riquadro a metà fra il primo e l'ultimo figlio. Ritocchi a mano: valgono finché la
  * firma (genitore + fratelli) non cambia. Logica pura: stessi dati, stesse
  * coordinate.
  */
@@ -84,20 +84,37 @@ export function layoutTree(model: TopologyModel, tree: TreeResult, tweaks: Saved
     const p = parts(id);
     const w = width.get(id)!;
     const box = nodeWidth(name(id));
-    const cx = x + w / 2;
-    nodes.set(id, { id, x: cx - box / 2, y: y[lvl], w: box, h: BOX_H, role: "box", parent });
-    p.att.slice(0, ATT_MAX).forEach((a, i) =>
-      nodes.set(a, { id: a, x: cx + box / 2 + 10, y: y[lvl] + i * ATT_ROW, w: ATT_W, h: ATT_ROW - 2, role: "attached", parent: id }));
-    if (p.att.length > ATT_MAX) moreAttached.set(id, p.att.length - ATT_MAX);
-    let cur = cx - kidsWidth(p) / 2;
-    for (const k of p.inf) { place(k, cur, lvl + 1, id); cur += width.get(k)! + GAP; }
+    // Segnaposto: il genitore resta prima dei figli nell'ordine dei nodi.
+    nodes.set(id, { id, x, y: y[lvl], w: box, h: BOX_H, role: "box", parent });
+    let cur = x + w / 2 - kidsWidth(p) / 2;
+    const centres: number[] = [];
+    for (const k of p.inf) {
+      place(k, cur, lvl + 1, id);
+      const n = nodes.get(k)!;
+      centres.push(n.x + n.w / 2);
+      cur += width.get(k)! + GAP;
+    }
     if (p.ap.length) {
       p.ap.forEach((a, i) => nodes.set(a, {
         id: a, x: cur + 4 + (i % AP_COLS) * (AP_W + 8), y: y[lvl + 1] + AP_HEAD + Math.floor(i / AP_COLS) * (AP_H + 6),
         w: AP_W, h: AP_H, role: "ap", parent: id,
       }));
       apGroups.push({ parent: id, x: cur, y: y[lvl + 1], w: AP_BLOCK, h: AP_HEAD + Math.ceil(p.ap.length / AP_COLS) * (AP_H + 6) + 4, count: p.ap.length });
+      centres.push(cur + AP_BLOCK / 2);
     }
+    // Il riquadro sta a metà fra il centro del primo e dell'ultimo figlio (dove
+    // finisce la linea orizzontale), non a metà dello spazio riservato: con un
+    // figlio di bordo dal ramo largo, o col gruppo AP, il centro dello spazio
+    // cadeva sopra un altro figlio (Task 12, copia di un cliente: 9 genitori su
+    // 16 scostati di oltre 60 px, la testa di 749). Resta dentro la sua fetta,
+    // fascia degli attaccati compresa, così non invade i rami vicini.
+    const side = box / 2 + (p.att.length ? ATT_SIDE : 0);
+    const want = centres.length ? (centres[0] + centres[centres.length - 1]) / 2 : x + w / 2;
+    const cx = Math.min(Math.max(want, x + side), x + w - side);
+    nodes.set(id, { id, x: cx - box / 2, y: y[lvl], w: box, h: BOX_H, role: "box", parent });
+    p.att.slice(0, ATT_MAX).forEach((a, i) =>
+      nodes.set(a, { id: a, x: cx + box / 2 + 10, y: y[lvl] + i * ATT_ROW, w: ATT_W, h: ATT_ROW - 2, role: "attached", parent: id }));
+    if (p.att.length > ATT_MAX) moreAttached.set(id, p.att.length - ATT_MAX);
   };
   let x = MARGIN;
   for (const r of tree.roots) { place(r, x, 0, null); x += width.get(r)! + ROOT_GAP; }

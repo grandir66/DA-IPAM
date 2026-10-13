@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeStatusByNode, statusForModel, worstStatus, type StatusData } from "@/lib/topology/status-map";
+import { computeStatusByNode, libreStatusFrom, statusForModel, worstStatus, type StatusData } from "@/lib/topology/status-map";
 
 const NOW = Date.parse("2026-10-12T10:00:00Z");
 
@@ -59,18 +59,21 @@ test("lo stato peggiore fra host: fail > warning > ok > unknown (sconosciuto non
 
 test("un apparato usa il SUO stato, non quello degli host fusi; chiavi canoniche", () => {
   const byNode = computeStatusByNode(
-    data({ devices: [{ id: 1, enabled: 1 }, { id: 2, enabled: 0 }], hosts: [host(10, "offline"), host(11, "online"), host(12, "online")] }),
+    data({ devices: [{ id: 1, enabled: 1 }, { id: 2, enabled: 0 }, { id: 3, enabled: 0 }], hosts: [host(10, "offline"), host(11, "online"), host(12, "online")] }),
     NOW,
   );
   const st = statusForModel(
     [
       { id: "dev:1", kind: "device", fusedHostIds: [10, 11] },
       { id: "dev:2", kind: "device", fusedHostIds: [11] },
+      { id: "dev:3", kind: "device", fusedHostIds: [] },
       { id: "host:12", kind: "host", fusedHostIds: [] },
     ],
     byNode,
   );
-  assert.deepEqual(st, { "dev:1": "ok", "dev:2": "unknown", "host:12": "ok" });
+  // dev:1 ha uno stato suo (attivo → ok) e non lo copre l'host offline; dev:2 è
+  // spento (sconosciuto = nessun segnale) e ripiega sul suo host che risponde.
+  assert.deepEqual(st, { "dev:1": "ok", "dev:2": "ok", "dev:3": "unknown", "host:12": "ok" });
   assert.equal(Object.keys(st).some((k) => k === "host:10" || k === "host:11"), false, "gli host fusi non hanno una chiave loro");
 });
 
@@ -91,4 +94,18 @@ test("un nodo senza stato suo prende il peggiore dei suoi host; un host sconosci
 test("un nodo senza segnali è unknown, non manca", () => {
   const st = statusForModel([{ id: "host:99", kind: "host", fusedHostIds: [] }], {});
   assert.deepEqual(st, { "host:99": "unknown" });
+});
+
+test("LibreNMS: «online» è su, «offline» è giù, il resto non dice niente", () => {
+  // Task 12 (copia di un cliente, 13/10): la sincronizzazione scrive in
+  // last_status lo stato dell'host («online»/«offline»), la lettura capiva solo
+  // «up»/«1» e trattava ogni «online» come giù: 44 switch su 85 «giù» a torto.
+  assert.equal(libreStatusFrom("online"), 1);
+  assert.equal(libreStatusFrom("up"), 1);
+  assert.equal(libreStatusFrom("1"), 1);
+  assert.equal(libreStatusFrom("offline"), 0);
+  assert.equal(libreStatusFrom("down"), 0);
+  assert.equal(libreStatusFrom("0"), 0);
+  assert.equal(libreStatusFrom("unknown"), null);
+  assert.equal(libreStatusFrom(null), null);
 });

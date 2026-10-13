@@ -29,6 +29,7 @@ import { buildStatusSeries, statusWindowStartMs, type StatusObservation, type St
 import { registraRipiego } from "./db-maintenance/ripieghi";
 import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
 import type { ControllerRunTrigger, NetworkControllerRow } from "./controllers/types";
+import { libreStatusFrom } from "./topology/status-map";
 
 import type {
   Network,
@@ -8502,9 +8503,8 @@ export function getTopologyData(): {
       .prepare("SELECT network_id, host_ip, last_status FROM librenms_host_map")
       .all() as Array<{ network_id: number; host_ip: string; last_status: string | null }>;
     for (const l of libre) {
-      if (l.last_status != null) {
-        libreStatus.set(`${l.network_id}|${l.host_ip}`, l.last_status === "up" || l.last_status === "1" ? 1 : 0);
-      }
+      const v = libreStatusFrom(l.last_status);
+      if (v !== null) libreStatus.set(`${l.network_id}|${l.host_ip}`, v);
     }
   }
 

@@ -48,6 +48,8 @@ function Handles() {
 }
 
 const STATO: Record<TopologyStatus, string | null> = { ok: null, warning: "◆ avviso", fail: "▲ giù", unknown: "?" };
+/** Lo stato in parole per il title (il «?» nel riquadro da solo non dice niente). */
+const STATO_PAROLE: Record<TopologyStatus, string> = { ok: "raggiungibile", warning: "avviso", fail: "giù", unknown: "sconosciuto (nessun segnale)" };
 
 function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
   const { node: n, w, h, status } = data;
@@ -56,7 +58,7 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
     ? "host · da promuovere"
     : [n.mgmtIp ?? typeLabel(n.type), data.clients ? `${data.clients} client` : null].filter(Boolean).join(" · ");
   const stato = STATO[status];
-  const title = [n.name, n.mgmtIp, typeLabel(n.type), stato ? `stato: ${stato}` : null].filter(Boolean).join(" · ");
+  const title = [n.name, n.mgmtIp, typeLabel(n.type), `stato: ${STATO_PAROLE[status]}`].filter(Boolean).join(" · ");
   return (
     <div
       title={title}
@@ -70,7 +72,8 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
       <Handles />
       <TopoIcon type={n.type} size={26} className="shrink-0" />
       <div className="min-w-0 flex-1 leading-4">
-        <div className={cn("truncate text-[13px] font-semibold", giu && "text-destructive")}>{fitLabel(n.name, w)}</div>
+        {/* Col «+N» in alto a destra il nome si ferma prima: lo copriva (Task 12). */}
+        <div className={cn("truncate text-[13px] font-semibold", giu && "text-destructive", data.plus > 0 && "pr-6")}>{fitLabel(n.name, w)}</div>
         <div className="truncate text-[13px] text-muted-foreground">
           {stato && <span className={cn("mr-1 font-semibold", giu ? "text-destructive" : "text-foreground")}>{stato}</span>}
           {second}
@@ -88,12 +91,16 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
       {data.start && (
         <span className="absolute -top-[19px] left-0 text-[13px] leading-4 font-semibold whitespace-nowrap text-foreground">▶ partenza</span>
       )}
+      {/* Le porte sopra il riquadro, a destra della linea; col «+N» in alto a
+          destra vanno a sinistra della linea, dove c'è la metà intera invece di
+          50 px («bridge/…», Task 12). */}
       {data.portLabel && (
         <span
           title={data.portLabel}
-          style={{ maxWidth: w / 2 - (data.plus > 0 ? 34 : 4) }}
+          style={{ maxWidth: w / 2 - 4 }}
           className={cn(
-            "absolute -top-[19px] left-1/2 ml-1 truncate text-[13px] leading-4 whitespace-nowrap",
+            "absolute -top-[19px] truncate text-[13px] leading-4 whitespace-nowrap",
+            data.plus > 0 ? "right-1/2 mr-1 text-right" : "left-1/2 ml-1",
             data.daysUnseen !== null ? "text-muted-foreground italic" : "text-muted-foreground",
           )}
         >

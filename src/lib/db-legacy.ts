@@ -4,7 +4,11 @@
  * Prima del multi-tenant ogni installazione aveva un solo database, `ipam.db`,
  * che si migrava all'apertura con le `ALTER TABLE` qui sotto. Questo codice
  * stava dentro `getDb()` nella facciata `db.ts`; ora la facciata contiene solo
- * riesportazioni e deleghe, e il ramo vive qui, senza cambiamenti.
+ * riesportazioni e deleghe, e il ramo vive qui, senza cambiamenti salvo uno:
+ * la migrazione della normalizzazione dei MAC ricalcola l'assegnazione degli
+ * indirizzi passando il proprio handle (`syncIpAssignmentsForAllNetworks(_db)`),
+ * perché la copia per tenant senza un cliente scelto lancia, e prima l'errore
+ * spariva nel `catch` della migrazione (prova: `db-legacy-mac-normalize.test.ts`).
  *
  * Chi lo usa (lo vincola `__tests__/db-facade-ratchet.test.ts`, che esclude
  * questo file dal conto delle funzioni con accesso diretto, col motivo scritto):
@@ -1379,7 +1383,8 @@ export function getLegacyDb(): Database.Database {
         /* tabella assente in DB molto vecchi */
       }
       _db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_mac_normalize_v1', '1')").run();
-      syncIpAssignmentsForAllNetworks();
+      // Sul database che si sta migrando: qui non c'è un cliente scelto (T3-08).
+      syncIpAssignmentsForAllNetworks(_db);
     }
   } catch {
     /* ignore */

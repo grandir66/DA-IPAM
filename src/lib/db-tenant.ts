@@ -6486,20 +6486,28 @@ export function upsertDhcpLease(input: { source_type: "mikrotik" | "windows" | "
   d.prepare(`INSERT INTO dhcp_leases (source_type, source_device_id, source_name, server_name, scope_id, scope_name, ip_address, mac_address, hostname, status, lease_start, lease_expires, description, dynamic_lease, last_seen, host_id, network_id, last_synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(source_device_id, ip_address) DO UPDATE SET source_name = excluded.source_name, server_name = excluded.server_name, scope_id = excluded.scope_id, scope_name = excluded.scope_name, mac_address = excluded.mac_address, hostname = excluded.hostname, status = excluded.status, lease_start = excluded.lease_start, lease_expires = excluded.lease_expires, description = excluded.description, dynamic_lease = COALESCE(excluded.dynamic_lease, dhcp_leases.dynamic_lease), last_seen = COALESCE(excluded.last_seen, dhcp_leases.last_seen), host_id = COALESCE(excluded.host_id, dhcp_leases.host_id), network_id = COALESCE(excluded.network_id, dhcp_leases.network_id), last_synced = datetime('now')`).run(input.source_type, input.source_device_id, input.source_name ?? null, input.server_name ?? null, input.scope_id ?? null, input.scope_name ?? null, input.ip_address, macNorm, input.hostname ?? null, input.status ?? null, input.lease_start ?? null, input.lease_expires ?? null, input.description ?? null, input.dynamic_lease ?? null, input.last_seen ?? null, input.host_id ?? null, input.network_id ?? null);
 }
 
-export function syncIpAssignmentsForNetwork(networkId: number): number {
-  const network = getNetworkById(networkId);
+/**
+ * `targetDb`: il database da usare al posto di quello del cliente scelto. Serve
+ * alla migrazione del vecchio `ipam.db` (`db-legacy.ts`), che gira senza un
+ * cliente scelto, sullo stesso schema (T3-08).
+ */
+export function syncIpAssignmentsForNetwork(networkId: number, targetDb?: Database.Database): number {
+  const d = targetDb ?? db();
+  const network = targetDb
+    ? (d.prepare("SELECT id FROM networks WHERE id = ?").get(networkId) as { id: number } | undefined)
+    : getNetworkById(networkId);
   if (!network) return 0;
-  const rows = db().prepare(`SELECT id, ip, mac FROM hosts WHERE network_id = ?`).all(networkId) as { id: number; ip: string; mac: string | null }[];
+  const rows = d.prepare(`SELECT id, ip, mac FROM hosts WHERE network_id = ?`).all(networkId) as { id: number; ip: string; mac: string | null }[];
   if (rows.length === 0) return 0;
-  const dhcpLeases = db().prepare(`SELECT * FROM dhcp_leases WHERE network_id = ?`).all(networkId) as DhcpLease[];
+  const dhcpLeases = d.prepare(`SELECT * FROM dhcp_leases WHERE network_id = ?`).all(networkId) as DhcpLease[];
   const ips = rows.map((r) => r.ip);
   const placeholders = ips.map(() => "?").join(",");
-  const adLeasesByIp = db().prepare(`SELECT * FROM ad_dhcp_leases WHERE ip_address IN (${placeholders})`).all(...ips) as AdDhcpLease[];
+  const adLeasesByIp = d.prepare(`SELECT * FROM ad_dhcp_leases WHERE ip_address IN (${placeholders})`).all(...ips) as AdDhcpLease[];
   const byIpAd = new Map<string, AdDhcpLease>();
   for (const a of adLeasesByIp) { if (!byIpAd.has(a.ip_address)) byIpAd.set(a.ip_address, a); }
   const needsFullAdForMac = rows.some((h) => !!h.mac?.trim() && !byIpAd.get(h.ip));
-  const adAllRows = needsFullAdForMac ? (db().prepare(`SELECT * FROM ad_dhcp_leases`).all() as AdDhcpLease[]) : [];
-  const stmt = db().prepare(`UPDATE hosts SET ip_assignment = ?, updated_at = datetime('now') WHERE id = ?`);
+  const adAllRows = needsFullAdForMac ? (d.prepare(`SELECT * FROM ad_dhcp_leases`).all() as AdDhcpLease[]) : [];
+  const stmt = d.prepare(`UPDATE hosts SET ip_assignment = ?, updated_at = datetime('now') WHERE id = ?`);
   let n = 0;
   for (const h of rows) {
     const dhcpLease = resolveDhcpLeaseForHost(h.ip, h.mac, dhcpLeases);
@@ -6511,10 +6519,12 @@ export function syncIpAssignmentsForNetwork(networkId: number): number {
   return n;
 }
 
-export function syncIpAssignmentsForAllNetworks(): number {
-  const nets = getNetworks();
+export function syncIpAssignmentsForAllNetworks(targetDb?: Database.Database): number {
+  const nets = targetDb
+    ? (targetDb.prepare("SELECT id FROM networks ORDER BY name").all() as { id: number }[])
+    : getNetworks();
   let t = 0;
-  for (const n of nets) { t += syncIpAssignmentsForNetwork(n.id); }
+  for (const n of nets) { t += syncIpAssignmentsForNetwork(n.id, targetDb); }
   return t;
 }
 

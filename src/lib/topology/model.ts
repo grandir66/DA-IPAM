@@ -18,7 +18,7 @@ export const PROMOTE_CLASSES = ["switch", "router", "access_point", "firewall"] 
 const SUSPICIOUS_TYPES = ["switch", "access_point"];
 
 export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
-  const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs);
+  const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors);
   const { links, unmatched } = buildLinks(input, idx);
   const sites = assignSites(input, idx, links);
 
@@ -59,6 +59,7 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
     unmatchedNeighbors: unmatched.length,
     isolatedDevices: isolated.length,
     fusedHosts: idx.fusedHosts,
+    mergedHosts: idx.mergedHosts,
     devicesWithoutSite: withoutSite.length,
     sitesWithHead: sites.filter((s) => s.headNodeId !== null).length,
     promoteProposals: promote.length,

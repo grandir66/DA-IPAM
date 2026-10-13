@@ -117,6 +117,10 @@ export interface MapNode {
   mgmtIp: string | null;
   /** Host assorbiti dall'apparato: niente doppi (spec §3). */
   fusedHostIds: number[];
+  /** Tutti gli indirizzi dell'oggetto fisico; virtual = IP di un MAC VRRP/HSRP (spec §10.4). */
+  addresses: Array<{ ip: string; virtual: boolean; hostId: number | null }>;
+  /** Altri nomi con cui l'oggetto si annuncia (hostname, nome personalizzato, LLDP/CDP/MNDP). */
+  aliases: string[];
   siteId: number | null;
   rackId: number | null;
   /** true = sede proposta dal sistema, non confermata da un admin. */
@@ -175,6 +179,8 @@ export interface ModelCounts {
   unmatchedNeighbors: number;
   isolatedDevices: number;
   fusedHosts: number;
+  /** Host rimasti fusi fra loro (stesso MAC vero o stesso nome) senza un apparato. */
+  mergedHosts: number;
   devicesWithoutSite: number;
   sitesWithHead: number;
   promoteProposals: number;

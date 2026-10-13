@@ -189,7 +189,7 @@ Ognuna rilasciabile e guardata a schermo sul dato vero.
 | Fase | Contenuto | Livello di controllo |
 | --- | --- | --- |
 | 1 · I dati giusti (**fatta, v0.3.277, 13/10**) | uplink UniFi salvato; abbinamento per MAC; fusione apparato↔host; proposta «promuovi ad apparato»; sede = Ubicazione con subnet e testa; correzioni; età dei collegamenti | **completo** (schema DB, dati del cliente) |
-| 2 · La mappa (progettata il 13/10, §10) | **A** raccolta dei MAC per porta + tabella delle mappe · **B** motore (identità, attaccati, albero, disposizione) · **C** pagina: «tutto automatico» e mappe «passo passo», icone, fascia degli attaccati, AP in fila, ritocchi, «Da sistemare». **Sostituisce la mappa di oggi** | A **completo** (schema, scritture a ogni lettura); B e C leggero |
+| 2 · La mappa (**fatta (13/10), in attesa del rilascio; versione: vedi CHANGELOG**; progettata il 13/10, §10) | **A** raccolta dei MAC per porta + tabella delle mappe · **B** motore (identità, attaccati, albero, disposizione) · **C** pagina: «tutto automatico» e mappe «passo passo», icone, fascia degli attaccati, AP in fila, ritocchi, «Da sistemare». **Sostituisce la mappa di oggi** | A **completo** (schema, scritture a ogni lettura); B e C leggero |
 | 3 · Le sedi | livello 1, collegamenti fra sedi, stato che risale, ricerca | leggero |
 | 4 · Il dettaglio | livello 3 (porte), filtri, correzioni col clic destro, export drawio | leggero |
 

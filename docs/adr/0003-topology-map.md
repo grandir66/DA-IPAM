@@ -4,6 +4,8 @@
 **Data:** 2026-10-12
 **Autore:** riccardo.grandi@domarc.it
 
+> La pagina e la disposizione sono superate dalla fase 2 (ADR 0009).
+
 > La disposizione con dagre è superata dalla spec v2 del 13/10; il modello dei dati dall'ADR 0008.
 
 ## Contesto

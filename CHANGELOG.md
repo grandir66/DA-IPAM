@@ -8,6 +8,19 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunte
 
+- **Mappa della rete in due modi (Topologia, ADR 0009).** «Tutto automatico» disegna
+  l'albero di tutta la rete partendo dalla testa; «passo passo» è una mappa che si
+  costruisce un oggetto alla volta, partendo da qualunque apparato, e si salva. Prima
+  esisteva solo il disegno automatico, inservibile sulle reti grandi e per chi voleva
+  mostrare solo una parte. Gli apparati senza collegamenti stanno in «Da sistemare»;
+  i client attaccati a switch e AP si contano e si elencano nel pannello.
+- **Tabella dei MAC per porta** (`mac_port_entries`): dice a quale porta è attaccato
+  ogni MAC, con prima e ultima volta visto e la fonte. Serve a mettere i PC sotto lo
+  switch giusto invece di indovinare.
+- **Lettura dei client UniFi**: un job per controller, spento di default, che gira solo
+  fra le 7:00 e le 19:59 ora di Roma, così non pesa di notte. Lo storico delle letture
+  tiene 50 giri per tipo.
+
 - **Pagina «Dati della mappa» (Topologia), testa e subnet nelle Ubicazioni, sede
   sull'apparato, uplink UniFi salvato (ADR 0008).** La nuova mappa ha bisogno di
   sapere dove sta ogni apparato e quali reti fanno capo a una sede: prima non era
@@ -32,6 +45,20 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   chiave parte solo dopo la verifica del certificato.
 
 ### Modifiche
+
+- **La tabella dei MAC per porta non si cancella più a ogni lettura; invecchia e si pota
+  a 30 giorni.** «Dove è attaccato» deve sopravvivere a un PC spento. La lettura UniFi
+  non cancella la VLAN scritta da SNMP.
+- **Un oggetto con più indirizzi è un nodo solo.** Riccardo vedeva lo stesso router tre
+  volte (indirizzo reale e due virtuali). L'identità è il MAC vero o il nome annunciato;
+  mai il MAC virtuale né il seriale dell'host (inaffidabile), e i nomi di fabbrica, corti
+  o solo numerici non fondono nulla.
+- **Una mappa salvata segue gli oggetti promossi o fusi**, così non perde nodi quando un
+  host diventa apparato.
+- **Un apparato con stato «sconosciuto» prende quello dei suoi host**: senza questo, la
+  gran parte degli apparati non interrogati sarebbe un punto interrogativo.
+- **La vecchia mappa e la libreria dagre sono tolte**: la pagina nuova le sostituisce e
+  due mappe darebbero due verità diverse.
 
 - **I collegamenti fra apparati non si cancellano più a ogni lettura.** La specifica
   della mappa chiede «non visto da N giorni» al posto di linee che spariscono, e due
@@ -60,6 +87,15 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   fallisce col motivo invece di indovinare quale controller leggere.
 
 ### Correzioni
+
+- **I MAC virtuali (VRRP/HSRP) non fondono più un host con un router**, né entrano
+  nell'indice per MAC: due apparati diversi che condividevano un MAC virtuale diventavano uno.
+- **Lo stato «online» di LibreNMS era letto come giù sulla mappa**: ora è letto come attivo.
+- **Un errore nella scrittura dei MAC per porta non salta più vicini e routing** dello
+  stesso apparato (punto 12 dell'ADR 0008).
+- **Lo storico dei controller non perde più i giri degli apparati**: quelli dei client
+  hanno il loro tetto, altrimenti i giri orari li cancellavano.
+- **Il trasferimento fra hub porta anche le mappe** e riduce i doppi di `mac_port_entries`.
 
 - **I vicini si abbinano anche per MAC, nel modello nuovo della mappa** (la pagina
   «Dati della mappa»). Prima il MAC del vicino veniva letto e poi ignorato: un

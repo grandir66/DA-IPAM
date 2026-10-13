@@ -3,7 +3,7 @@
  * Logica pura: nessun import del DB. Gli id dei nodi sono "dev:<id>" (apparato
  * di rete) e "host:<id>" (host non fuso con un apparato).
  */
-export type LinkSource = "manual" | "unifi_uplink" | "lldp" | "cdp" | "mndp";
+export type LinkSource = "manual" | "unifi_uplink" | "lldp" | "cdp" | "mndp" | "mac_table";
 
 /** Più basso = più affidabile (spec §3, «fonti in ordine di fiducia»). */
 export const LINK_SOURCE_RANK: Readonly<Record<LinkSource, number>> = {
@@ -12,6 +12,7 @@ export const LINK_SOURCE_RANK: Readonly<Record<LinkSource, number>> = {
   lldp: 2,
   cdp: 2,
   mndp: 2,
+  mac_table: 3,
 };
 
 export interface ModelDeviceRow {
@@ -83,6 +84,14 @@ export interface ModelKnownMacRow {
   mac: string;
 }
 
+export interface ModelMacPortRow {
+  device_id: number;
+  mac: string;
+  port_name: string;
+  timestamp: string;
+  source: string;
+}
+
 export interface LinkOverrideRow {
   id: number;
   action: "add" | "ignore";
@@ -101,6 +110,8 @@ export interface TopologyModelInput {
   networks: ModelNetworkRow[];
   knownMacs: ModelKnownMacRow[];
   overrides: LinkOverrideRow[];
+  /** Ultimi 30 giorni; spec §10.5. */
+  macPorts: ModelMacPortRow[];
   /** Orologio iniettato: stessi dati + stesso nowMs = stesso modello. */
   nowMs: number;
   /** Giorni dopo cui un collegamento è «non visto» (decisione 13/10: 2). */
@@ -168,6 +179,22 @@ export interface UnmatchedNeighbor {
   remoteMac: string | null;
 }
 
+/** Un MAC visto sulla porta di bordo di uno switch o AP (spec §10.5). */
+export interface PortClient {
+  mac: string;
+  nodeId: string | null;
+  name: string | null;
+  ip: string | null;
+  lastSeen: string;
+  stale: boolean;
+}
+
+export interface PortClients {
+  nodeId: string;
+  port: string;
+  clients: PortClient[];
+}
+
 export interface ModelCounts {
   nodes: number;
   devices: number;
@@ -197,4 +224,8 @@ export interface TopologyModel {
   suspicious: string[];
   withoutSite: string[];
   counts: ModelCounts;
+  /** Client per porta di bordo; i server e gli apparati sono collegamenti «mac_table». */
+  portClients: PortClients[];
+  /** Client per nodo (switch/AP), a prescindere dalla porta. */
+  clientCount: Record<string, number>;
 }

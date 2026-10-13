@@ -12,7 +12,7 @@ import type { MapLink, MapNode, TopologyModel } from "@/lib/topology/model-types
 
 type Model = TopologyModel & { staleDays: number };
 const MAX = 200;
-const FONTE: Record<string, string> = { manual: "manuale", unifi_uplink: "uplink UniFi", lldp: "LLDP", cdp: "CDP", mndp: "MNDP" };
+const FONTE: Record<string, string> = { manual: "manuale", unifi_uplink: "uplink UniFi", lldp: "LLDP", cdp: "CDP", mndp: "MNDP", mac_table: "Tabella MAC" };
 
 function Altri({ n }: { n: number }) {
   return n > MAX ? <p className="mt-2 text-sm text-muted-foreground">+ altri {n - MAX}</p> : null;

@@ -81,6 +81,7 @@ function portsOf(input: TopologyModelInput): string[] {
 }
 
 export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
+  if (input.macPorts.length > 0) throw new Error("macPorts non ancora anonimizzati (Task 13)");
   // Valori veri: gli pseudonimi li evitano.
   const rawPorts = portsOf(input).map((p) => p.trim());
   const nameFields = [

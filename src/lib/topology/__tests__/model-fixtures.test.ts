@@ -11,7 +11,7 @@ import { buildTopologyGraph } from "@/lib/topology/graph";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 
 function carica(nome: string): TopologyModelInput {
-  return JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", nome), "utf8")) as TopologyModelInput;
+  return { macPorts: [], ...JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", nome), "utf8")) } as TopologyModelInput;
 }
 
 function vecchiaMappa(i: TopologyModelInput) {

@@ -234,6 +234,57 @@ export function migrateTopologyPhase1(db: Database.Database): string[] {
   return added;
 }
 
+/**
+ * Migrazione runtime «topologia fase 2» (spec §10.5-10.6, piano
+ * 2026-10-13-topologia-fase2-mappa). La tabella dei MAC per porta invecchia
+ * invece di essere riscritta a ogni lettura: serve una riga per (apparato, MAC,
+ * porta), quindi prima si tolgono i doppi (si tiene la più recente, con la prima
+ * volta vista più vecchia) e poi l'indice unico. Più la tabella delle mappe.
+ * Tutto in una transazione. Esportata per le prove.
+ */
+export function migrateTopologyPhase2(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const exists = (name: string): boolean => !!db.prepare("SELECT 1 FROM sqlite_master WHERE name = ?").get(name);
+  db.transaction(() => {
+    if (!has("mac_port_entries", "first_seen")) {
+      db.exec("ALTER TABLE mac_port_entries ADD COLUMN first_seen TEXT");
+      added.push("mac_port_entries.first_seen");
+    }
+    if (!has("mac_port_entries", "source")) {
+      db.exec("ALTER TABLE mac_port_entries ADD COLUMN source TEXT NOT NULL DEFAULT 'device'");
+      added.push("mac_port_entries.source");
+    }
+    if (!exists("idx_mac_port_entries_key")) {
+      db.exec(`UPDATE mac_port_entries SET first_seen = (
+                 SELECT MIN(COALESCE(m2.first_seen, m2.timestamp)) FROM mac_port_entries m2
+                  WHERE m2.device_id = mac_port_entries.device_id AND m2.mac = mac_port_entries.mac AND m2.port_name = mac_port_entries.port_name)
+               WHERE first_seen IS NULL`);
+      db.exec(`DELETE FROM mac_port_entries WHERE id NOT IN (
+                 SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY device_id, mac, port_name ORDER BY timestamp DESC, id DESC) AS rn
+                                   FROM mac_port_entries) WHERE rn = 1)`);
+      db.exec("CREATE UNIQUE INDEX idx_mac_port_entries_key ON mac_port_entries(device_id, mac, port_name)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_mac_port_entries_mac ON mac_port_entries(mac)");
+    }
+    if (!exists("topology_maps")) {
+      db.exec(`CREATE TABLE topology_maps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('auto', 'passo')),
+        roots TEXT NOT NULL DEFAULT '[]',
+        head_node TEXT,
+        created_by TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec("CREATE UNIQUE INDEX idx_topology_maps_auto ON topology_maps(kind) WHERE kind = 'auto'");
+      added.push("topology_maps");
+    }
+  })();
+  return added;
+}
+
 export function getTenantDb(tenantCode: string): Database.Database {
   const existing = tenantDbs.get(tenantCode);
   if (existing) {
@@ -1467,6 +1518,18 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione topologia fase 1 fallita:`, e);
+  }
+
+  // Topologia fase 2 (piano 2026-10-13-topologia-fase2-mappa): MAC per porta
+  // che invecchiano (indice unico, doppi ridotti) e tabella delle mappe. Dopo
+  // la fase 1, per la stessa ragione (ADR 0008 punto 6).
+  try {
+    const added = migrateTopologyPhase2(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia fase 2, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia fase 2 fallita:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });

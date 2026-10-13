@@ -96,3 +96,96 @@ export function parseStaleDaysBody(raw: unknown): Parsed<number> {
     ? { ok: true, data: r.data.staleDays }
     : { ok: false, error: `La soglia va da ${LINK_STALE_DAYS_MIN} a ${LINK_STALE_DAYS_MAX} giorni` };
 }
+
+// ─── Mappe salvate, ritocchi, nascondi ───────────────────────────────────────
+
+const NODES_MAX = 2000;
+const NODE_LIST = (msg: string) => z.array(NODE, { error: msg }).max(NODES_MAX, `Troppi nodi in un colpo (massimo ${NODES_MAX})`);
+const MAP_NAME = z
+  .string({ error: "Nome della mappa non valido" })
+  .trim()
+  .min(1, "Il nome della mappa non può essere vuoto")
+  .max(80, "Nome della mappa troppo lungo (massimo 80 caratteri)");
+
+const mapCreateSchema = z.object(
+  { name: MAP_NAME, roots: NODE_LIST("Elenco delle radici non valido").default([]), nodes: NODE_LIST("Elenco dei nodi non valido").default([]) },
+  BODY,
+);
+
+export function parseMapCreateBody(raw: unknown): Parsed<{ name: string; roots: string[]; nodes: string[] }> {
+  const r = mapCreateSchema.safeParse(raw);
+  return r.success ? { ok: true, data: r.data } : { ok: false, error: first(r.error) };
+}
+
+const mapPatchSchema = z.object({ name: MAP_NAME.optional(), roots: NODE_LIST("Elenco delle radici non valido").optional() }, BODY);
+
+export function parseMapPatchBody(raw: unknown): Parsed<{ name?: string; roots?: string[] }> {
+  const r = mapPatchSchema.safeParse(raw);
+  if (!r.success) return { ok: false, error: first(r.error) };
+  const data: { name?: string; roots?: string[] } = {};
+  if (r.data.name !== undefined) data.name = r.data.name;
+  if (r.data.roots !== undefined) data.roots = r.data.roots;
+  return Object.keys(data).length > 0 ? { ok: true, data } : { ok: false, error: "Niente da modificare: serve un nome o delle radici" };
+}
+
+const mapNodesSchema = z.object(
+  { add: NODE_LIST("Elenco dei nodi da aggiungere non valido").default([]), remove: NODE_LIST("Elenco dei nodi da togliere non valido").default([]) },
+  BODY,
+);
+
+export function parseMapNodesBody(raw: unknown): Parsed<{ add: string[]; remove: string[] }> {
+  const r = mapNodesSchema.safeParse(raw);
+  return r.success ? { ok: true, data: r.data } : { ok: false, error: first(r.error) };
+}
+
+const autoHeadSchema = z.object({ head_node: NODE.nullable() }, BODY);
+
+export function parseAutoHeadBody(raw: unknown): Parsed<{ headNode: string | null }> {
+  const r = autoHeadSchema.safeParse(raw);
+  return r.success ? { ok: true, data: { headNode: r.data.head_node } } : { ok: false, error: first(r.error) };
+}
+
+const VIEW = z.string({ error: "Vista non valida" }).regex(/^(auto|mappa:\d+)$/, "Vista non valida: «auto» o «mappa:N»");
+const positionsSchema = z.object(
+  {
+    view: VIEW,
+    clear: z.boolean({ error: "«clear» non valido" }).optional(),
+    tweaks: z
+      .array(
+        z.object({
+          nodeId: NODE,
+          x: z.number({ error: "Coordinata non valida" }).finite("Coordinata non valida"),
+          y: z.number({ error: "Coordinata non valida" }).finite("Coordinata non valida"),
+          sig: z.string({ error: "Firma non valida" }).min(1, "Firma non valida").max(200, "Firma non valida"),
+        }),
+        { error: "Elenco dei ritocchi non valido" },
+      )
+      .max(5000, "Troppi ritocchi in un colpo (massimo 5000)")
+      .optional(),
+  },
+  BODY,
+);
+
+export function parsePositionsBody(raw: unknown): Parsed<{
+  view: string;
+  clear: boolean;
+  tweaks: Array<{ nodeId: string; x: number; y: number; sig: string }>;
+}> {
+  const r = positionsSchema.safeParse(raw);
+  if (!r.success) return { ok: false, error: first(r.error) };
+  if (r.data.clear !== true && r.data.tweaks === undefined) return { ok: false, error: "Servono i ritocchi da salvare oppure «clear»" };
+  return { ok: true, data: { view: r.data.view, clear: r.data.clear === true, tweaks: r.data.clear === true ? [] : (r.data.tweaks ?? []) } };
+}
+
+const hiddenSchema = z.object(
+  {
+    node_id: z.string({ error: "Apparato non valido" }).regex(/^dev:\d+$/, "Si nascondono solo gli apparati (dev:N)"),
+    hidden: z.boolean({ error: "«hidden» deve essere vero o falso" }),
+  },
+  BODY,
+);
+
+export function parseHiddenBody(raw: unknown): Parsed<{ deviceId: number; hidden: boolean }> {
+  const r = hiddenSchema.safeParse(raw);
+  return r.success ? { ok: true, data: { deviceId: Number(r.data.node_id.slice(4)), hidden: r.data.hidden } } : { ok: false, error: first(r.error) };
+}

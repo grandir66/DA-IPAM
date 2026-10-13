@@ -8821,6 +8821,155 @@ export function setSiteTopology(locationId: number, input: { headDeviceId?: numb
   return { ok: true };
 }
 
+// ─── Topologia: mappe salvate («passo passo»), ritocchi con firma, «nascondi» ──
+// Vista 'auto' = la mappa automatica; 'mappa:<id>' = una passo passo. Una riga di
+// topology_position con pinned 0 / x 0 / y 0 è solo l'appartenenza alla mappa;
+// un ritocco è pinned 1 con x, y e la firma della struttura al momento del salvataggio.
+
+export interface TopologyMapRow {
+  id: number;
+  name: string;
+  kind: "auto" | "passo";
+  roots: string[];
+  head_node: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TopologyMapDbRow extends Omit<TopologyMapRow, "roots"> {
+  roots: string;
+}
+
+function toMapRow(r: TopologyMapDbRow): TopologyMapRow {
+  let roots: string[] = [];
+  try {
+    const p: unknown = JSON.parse(r.roots);
+    if (Array.isArray(p)) roots = p.filter((x): x is string => typeof x === "string");
+  } catch {
+    roots = []; // JSON rovinato: la mappa si apre lo stesso, senza radici
+  }
+  return { ...r, roots };
+}
+
+const MAP_COLS = "id, name, kind, roots, head_node, created_by, created_at, updated_at";
+
+export function listTopologyMaps(): TopologyMapRow[] {
+  const rows = db().prepare(`SELECT ${MAP_COLS} FROM topology_maps WHERE kind = 'passo' ORDER BY name COLLATE NOCASE, id`).all() as TopologyMapDbRow[];
+  return rows.map(toMapRow);
+}
+
+export function getTopologyMap(id: number): TopologyMapRow | null {
+  const r = db().prepare(`SELECT ${MAP_COLS} FROM topology_maps WHERE id = ? AND kind = 'passo'`).get(id) as TopologyMapDbRow | undefined;
+  return r ? toMapRow(r) : null;
+}
+
+export function getAutoMap(): TopologyMapRow | null {
+  const r = db().prepare(`SELECT ${MAP_COLS} FROM topology_maps WHERE kind = 'auto'`).get() as TopologyMapDbRow | undefined;
+  return r ? toMapRow(r) : null;
+}
+
+const ADD_MEMBER_SQL = `INSERT INTO topology_position (view, node_id, x, y, pinned, updated_at)
+  VALUES (?, ?, 0, 0, 0, datetime('now')) ON CONFLICT(view, node_id) DO NOTHING`;
+
+export function createTopologyMap(input: { name: string; roots: string[]; nodes: string[] }, author: string): TopologyMapRow {
+  return runInTenantTransaction(() => {
+    const d = db();
+    const id = Number(
+      d.prepare("INSERT INTO topology_maps (name, kind, roots, created_by) VALUES (?, 'passo', ?, ?)")
+        .run(input.name, JSON.stringify([...new Set(input.roots)]), author).lastInsertRowid,
+    );
+    const ins = d.prepare(ADD_MEMBER_SQL);
+    for (const n of new Set(input.nodes)) ins.run(`mappa:${id}`, n);
+    return getTopologyMap(id) as TopologyMapRow;
+  });
+}
+
+export function updateTopologyMap(id: number, patch: { name?: string; roots?: string[] }): Esito {
+  const d = db();
+  if (!getTopologyMap(id)) return { ok: false, error: "Mappa non trovata" };
+  if (patch.name !== undefined && patch.name.trim() === "") return { ok: false, error: "Il nome della mappa non può essere vuoto" };
+  if (patch.name !== undefined) d.prepare("UPDATE topology_maps SET name = ?, updated_at = datetime('now') WHERE id = ?").run(patch.name, id);
+  if (patch.roots !== undefined) {
+    d.prepare("UPDATE topology_maps SET roots = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify([...new Set(patch.roots)]), id);
+  }
+  return { ok: true };
+}
+
+/** Aggiungere è idempotente e non tocca un ritocco già salvato; togliere toglie il nodo anche dalle radici. */
+export function setTopologyMapNodes(id: number, add: string[], remove: string[]): Esito {
+  const map = getTopologyMap(id);
+  if (!map) return { ok: false, error: "Mappa non trovata" };
+  runInTenantTransaction(() => {
+    const d = db();
+    const view = `mappa:${id}`;
+    const ins = d.prepare(ADD_MEMBER_SQL);
+    for (const n of new Set(add)) ins.run(view, n);
+    const del = d.prepare("DELETE FROM topology_position WHERE view = ? AND node_id = ?");
+    for (const n of new Set(remove)) del.run(view, n);
+    const gone = new Set(remove);
+    const roots = map.roots.filter((r) => !gone.has(r));
+    d.prepare("UPDATE topology_maps SET roots = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(roots), id);
+  });
+  return { ok: true };
+}
+
+export function deleteTopologyMap(id: number): boolean {
+  return runInTenantTransaction(() => {
+    const d = db();
+    d.prepare("DELETE FROM topology_position WHERE view = ?").run(`mappa:${id}`);
+    return d.prepare("DELETE FROM topology_maps WHERE id = ? AND kind = 'passo'").run(id).changes > 0;
+  });
+}
+
+/** Nodi della vista (anche quelli che non esistono più: li dichiara la pagina) e ritocchi salvati. */
+export function getTopologyMapView(view: string): {
+  nodes: string[];
+  tweaks: Array<{ nodeId: string; x: number; y: number; sig: string | null }>;
+} {
+  const rows = db()
+    .prepare("SELECT node_id, x, y, pinned, structure_sig FROM topology_position WHERE view = ? ORDER BY node_id")
+    .all(view) as Array<{ node_id: string; x: number; y: number; pinned: number; structure_sig: string | null }>;
+  return {
+    nodes: rows.map((r) => r.node_id),
+    tweaks: rows.filter((r) => r.pinned === 1).map((r) => ({ nodeId: r.node_id, x: r.x, y: r.y, sig: r.structure_sig })),
+  };
+}
+
+export function saveTopologyTweaks(view: string, rows: Array<{ nodeId: string; x: number; y: number; sig: string }>): void {
+  runInTenantTransaction(() => {
+    const ins = db().prepare(`
+      INSERT INTO topology_position (view, node_id, x, y, pinned, structure_sig, updated_at)
+      VALUES (?, ?, ?, ?, 1, ?, datetime('now'))
+      ON CONFLICT(view, node_id) DO UPDATE SET
+        x = excluded.x, y = excluded.y, pinned = 1, structure_sig = excluded.structure_sig, updated_at = datetime('now')`);
+    for (const r of rows) ins.run(view, r.nodeId, r.x, r.y, r.sig);
+  });
+}
+
+/** «Riordina»: nelle passo passo i nodi restano, i ritocchi spariscono; nell'automatica non c'è appartenenza, si cancella. */
+export function clearTopologyTweaks(view: string): void {
+  const d = db();
+  if (view === "auto") d.prepare("DELETE FROM topology_position WHERE view = 'auto'").run();
+  else d.prepare("UPDATE topology_position SET pinned = 0, x = 0, y = 0, structure_sig = NULL, updated_at = datetime('now') WHERE view = ?").run(view);
+}
+
+/** Testa della mappa automatica; la riga «Tutta la rete» nasce alla prima scrittura. */
+export function setAutoHead(nodeId: string | null, author: string): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    const r = d.prepare("UPDATE topology_maps SET head_node = ?, updated_at = datetime('now') WHERE kind = 'auto'").run(nodeId);
+    if (r.changes === 0) {
+      d.prepare("INSERT INTO topology_maps (name, kind, roots, head_node, created_by) VALUES ('Tutta la rete', 'auto', '[]', ?, ?)").run(nodeId, author);
+    }
+  });
+}
+
+export function setNodeHidden(deviceId: number, hidden: boolean): Esito {
+  const r = db().prepare("UPDATE network_devices SET topology_hidden = ? WHERE id = ?").run(hidden ? 1 : 0, deviceId);
+  return r.changes > 0 ? { ok: true } : { ok: false, error: "Apparato non trovato" };
+}
+
 // `extends` non accetta un `import(...)` diretto: passa da un alias di tipo.
 type LinkOverrideRowT = import("@/lib/topology/model-types").LinkOverrideRow;
 

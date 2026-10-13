@@ -104,7 +104,20 @@ test("il conto dei valori veri: zero sull'anonimo, li trova se ci sono", () => {
   assert.equal(c.nomi, 2);
 });
 
-test("macPorts non vuoti: rifiutati finché il Task 13 non li anonimizza", () => {
-  const i = { ...VERO, macPorts: [{ device_id: 1, mac: "aa:bb:cc:dd:ee:ff", port_name: "Port 1", timestamp: "2026-10-13 10:00:00", source: "device" }] };
-  assert.throws(() => anonimizzaInput(i), /macPorts non ancora anonimizzati \(Task 13\)/);
+test("macPorts: stesso MAC vero, stesso MAC finto di host e vicini; porte dal vocabolario; nessun valore vero", () => {
+  const i = {
+    ...VERO,
+    macPorts: [
+      { device_id: 2, mac: "F4-1E-57-AA-BB-01", port_name: "Port 1", timestamp: "2026-10-13 10:00:00", source: "device" },
+      { device_id: 2, mac: "aa:bb:cc:dd:ee:ff", port_name: "Sala riunioni", timestamp: "2026-10-13 10:00:00", source: "unifi" },
+    ],
+  };
+  const a = anonimizzaInput(i);
+  assert.equal(a.macPorts[0].mac, a.hosts[0].mac, "lo stesso MAC vero ha lo stesso MAC finto");
+  assert.match(a.macPorts[1].mac, /^02:0[0-9a-f](:[0-9a-f]{2}){4}$/);
+  assert.equal(a.macPorts[0].port_name, "Port 1");
+  assert.match(a.macPorts[1].port_name, /^porta-\d+$/);
+  assert.deepEqual([a.macPorts[0].device_id, a.macPorts[0].timestamp, a.macPorts[1].source], [2, "2026-10-13 10:00:00", "unifi"]);
+  assert.deepEqual(contaValoriVeri(i, JSON.parse(JSON.stringify(a))), { ip: 0, mac: 0, nomi: 0 });
+  assert.equal(contaValoriVeri(i, { x: "visto aabbccddeeff" }).mac, 1);
 });

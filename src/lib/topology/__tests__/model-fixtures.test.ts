@@ -8,6 +8,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildTopologyModel } from "@/lib/topology/model";
 import { buildTopologyGraph } from "@/lib/topology/graph";
+import { autoVisible, buildTree, proposeHead } from "@/lib/topology/tree";
+import { CHAR_W, fitLabel, layoutTree } from "@/lib/topology/tree-layout";
+import { nodeClass } from "@/lib/topology/identity";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 
 function carica(nome: string): TopologyModelInput {
@@ -48,20 +51,96 @@ test("Domarc: i doppi apparato/host si fondono (spec §2: almeno i 5 Proxmox)", 
   assert.ok(buildTopologyModel(carica("topologia-domarc.json")).counts.fusedHosts >= 5);
 });
 
-// Numeri misurati alla prima estrazione (Task 9, Step 7): si riscrivono solo sapendo perché cambiano.
+// Numeri misurati (Task 9, poi riestratti nel Task 13): si riscrivono solo sapendo perché cambiano.
 // Task 6 (regola dell'identità, spec §10.4): gli host che sono interfacce dello stesso oggetto (nome annunciato,
 // MAC vero, IP VRRP) ora sono un nodo solo. I collegamenti verso più host dello stesso oggetto si riducono a uno
 // (attachedLinks), i vicini che prima non trovavano casa ora la trovano (unmatchedNeighbors), e meno host
 // separati restano da promuovere (promoteProposals). deviceLinks e isolatedDevices non cambiano: nessun collegamento perso.
 // domarc: attached 19->18, unmatched 12->9, promote 14->12.
 // cliente-a: attached 59->36, unmatched 16->13, fusedHosts 78->87, promote 14->3.
+// Riestratte il 2026-10-13 dalle copie con la lettura dei client: stessi numeri del modello sul dato vero.
+// Cambiati rispetto a prima perché i dati sono nuovi e ci sono gli uplink UniFi (domarc: fusedHosts 58->59;
+// cliente-a: deviceLinks 78->83, attached 36->62, unmatched 13, fused 87->93, promote 3->5, suspicious 7->2, isolated 10->5).
 const MISURATI: Record<string, Partial<Record<string, number>>> = {
-  "topologia-domarc.json": { deviceLinks: 20, attachedLinks: 18, unmatchedNeighbors: 9, isolatedDevices: 22, fusedHosts: 58, promoteProposals: 12, suspiciousTypes: 17 },
-  "topologia-cliente-a.json": { deviceLinks: 78, attachedLinks: 36, unmatchedNeighbors: 13, isolatedDevices: 10, fusedHosts: 87, promoteProposals: 3, suspiciousTypes: 7 },
+  "topologia-domarc.json": { deviceLinks: 20, attachedLinks: 18, unmatchedNeighbors: 9, isolatedDevices: 22, fusedHosts: 59, promoteProposals: 12, suspiciousTypes: 17 },
+  "topologia-cliente-a.json": { deviceLinks: 83, attachedLinks: 62, unmatchedNeighbors: 13, isolatedDevices: 5, fusedHosts: 93, promoteProposals: 5, suspiciousTypes: 2 },
 };
 for (const [nome, attesi] of Object.entries(MISURATI)) {
   test(`${nome}: conteggi misurati`, () => {
     const c = buildTopologyModel(carica(nome)).counts as unknown as Record<string, number>;
     for (const [k, v] of Object.entries(attesi)) assert.equal(c[k], v, k);
+  });
+}
+
+const sommaClient = (m: ReturnType<typeof buildTopologyModel>): number => Object.values(m.clientCount).reduce((a, b) => a + b, 0);
+function alberoAuto(m: ReturnType<typeof buildTopologyModel>) {
+  const visibili = autoVisible(m);
+  const testa = proposeHead(m);
+  return buildTree(m, visibili, testa ? [testa] : []);
+}
+
+for (const nome of ["topologia-domarc.json", "topologia-cliente-a.json"]) {
+  test(`${nome}: fra l'infrastruttura nessun nome annunciato due volte`, () => {
+    // Un nodo il cui nome è un indirizzo non ha un nome annunciato. Due APPARATI registrati a mano con lo stesso
+    // nome e IP diversi (cliente A: una coppia, nel dato vero delle copie del 13/10) il modello non può fonderli:
+    // si contano e basta. Un host che ripete il nome di un altro nodo, invece, è una fusione mancata.
+    const visti = new Map<string, string>();
+    let coppieDiApparati = 0;
+    for (const n of buildTopologyModel(carica(nome)).nodes) {
+      const k = n.name.trim().toLowerCase();
+      if (n.hidden || nodeClass(n) !== "infra" || k === "" || /^[\d.]+$/.test(k)) continue;
+      const prima = visti.get(k);
+      if (prima !== undefined) {
+        assert.ok(prima.startsWith("dev:") && n.id.startsWith("dev:"), `${n.id} ripete il nome di ${prima}`);
+        coppieDiApparati++;
+      }
+      visti.set(k, n.id);
+    }
+    assert.equal(coppieDiApparati, nome === "topologia-cliente-a.json" ? 1 : 0);
+  });
+
+  test(`${nome}: albero e disposizione sono stabili (stesse coordinate due volte)`, () => {
+    const giro = () => {
+      const m = buildTopologyModel(carica(nome));
+      const r = layoutTree(m, alberoAuto(m), []);
+      return JSON.stringify([...r.nodes.values()].map((n) => [n.id, n.x, n.y, n.w, n.h]));
+    };
+    assert.equal(giro(), giro());
+  });
+
+  test(`${nome}: nessuna scritta esce dal nodo`, () => {
+    const m = buildTopologyModel(carica(nome));
+    const r = layoutTree(m, alberoAuto(m), []);
+    const byId = new Map(m.nodes.map((n) => [n.id, n]));
+    let boxes = 0;
+    for (const n of r.nodes.values()) {
+      if (n.role !== "box") continue;
+      boxes++;
+      const name = byId.get(n.id)!.name;
+      assert.ok(fitLabel(name, n.w).length * CHAR_W + 44 <= n.w, n.id);
+    }
+    assert.ok(boxes > 0);
+  });
+}
+
+test("cliente A: uplink salvati e collegamenti unifi_uplink presenti", () => {
+  const i = carica("topologia-cliente-a.json");
+  assert.ok(i.devices.filter((d) => d.uplink_mac !== null).length > 0, "nessun uplink salvato");
+  assert.ok(buildTopologyModel(i).counts.linksBySource.unifi_uplink > 0);
+});
+
+// Conteggi misurati sulle copie dei DB del 13/10/2026 (dopo la lettura dei client UniFi), e uguali a quelli
+// del modello sul dato vero: nodi, collegamenti, apparati isolati, client freschi. Se cambiano si legge il perché.
+const MISURATI_DATO_VERO: Record<string, { nodes: number; links: number; isolatedDevices: number; clients: number }> = {
+  "topologia-domarc.json": { nodes: 83, links: 38, isolatedDevices: 22, clients: 0 },
+  "topologia-cliente-a.json": { nodes: 358, links: 145, isolatedDevices: 5, clients: 168 },
+};
+for (const [nome, atteso] of Object.entries(MISURATI_DATO_VERO)) {
+  test(`${nome}: conteggi principali uguali a quelli del dato vero (copie del 13/10)`, () => {
+    const m = buildTopologyModel(carica(nome));
+    assert.deepEqual(
+      { nodes: m.counts.nodes, links: m.counts.links, isolatedDevices: m.counts.isolatedDevices, clients: sommaClient(m) },
+      atteso,
+    );
   });
 }

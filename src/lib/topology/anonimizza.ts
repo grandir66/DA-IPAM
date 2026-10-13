@@ -10,6 +10,7 @@
  */
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 import { normalizeName } from "@/lib/topology/match";
+import { identifiesByName, isVirtualMac, realOui } from "@/lib/topology/identity";
 import { normalizeMacForStorage } from "@/lib/utils";
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
 
@@ -76,12 +77,11 @@ export const VOCABOLARIO = {
 function portsOf(input: TopologyModelInput): string[] {
   return [
     ...input.neighbors.flatMap((n) => [n.local_port, n.remote_port]), ...input.uplinkPorts.map((p) => p.port_name),
-    ...input.overrides.flatMap((o) => [o.a_port, o.b_port]),
+    ...input.overrides.flatMap((o) => [o.a_port, o.b_port]), ...input.macPorts.map((m) => m.port_name),
   ].filter((p): p is string => typeof p === "string" && p.trim() !== "");
 }
 
 export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
-  if (input.macPorts.length > 0) throw new Error("macPorts non ancora anonimizzati (Task 13)");
   // Valori veri: gli pseudonimi li evitano.
   const rawPorts = portsOf(input).map((p) => p.trim());
   const nameFields = [
@@ -102,7 +102,7 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
   const realMacs = new Set<string>(
     [
       ...input.hosts.map((h) => h.mac), ...input.devices.flatMap((d) => [d.controller_mac, d.uplink_mac]),
-      ...input.knownMacs.map((k) => k.mac), ...input.neighbors.map((n) => n.remote_mac),
+      ...input.knownMacs.map((k) => k.mac), ...input.neighbors.map((n) => n.remote_mac), ...input.macPorts.map((m) => m.mac),
       ...nameFields.filter((s) => MAC.test(s.trim())), ...rawPorts.filter((p) => MAC_ANY.test(p)),
     ]
       .map((v) => normalizeMacForStorage(v))
@@ -185,16 +185,38 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
   };
 
   const macMap = new Map<string, string>();
-  let macSeq = 0;
+  const ouiMap = new Map<string, number>();
+  const macSeqByOui = new Map<number, number>();
   const mac = (v: string | null): string | null => {
     const k = normalizeMacForStorage(v);
     if (!k) return null;
     let out = macMap.get(k);
-    if (!out) {
+    if (!out && isVirtualMac(k)) {
+      // Un MAC virtuale (VRRP/HSRP) non identifica nessuno e il modello lo tratta a parte:
+      // resta virtuale (stessa famiglia, ultimo byte finto, dall'alto), o si fonderebbero oggetti che il dato vero tiene separati.
+      const famiglia = k.toLowerCase().split(":").slice(0, 5).join(":");
+      let b = 0xff;
       do {
-        macSeq++;
-        if (macSeq > 0xffffff) throw new Error("anonimizzaInput: i MAC finti sono finiti");
-        out = `02:00:00:${[16, 8, 0].map((s) => ((macSeq >> s) & 255).toString(16).padStart(2, "0")).join(":")}`;
+        out = `${famiglia}:${(b--).toString(16).padStart(2, "0")}`;
+        if (b < 0) throw new Error("anonimizzaInput: i MAC virtuali finti sono finiti");
+      } while (realMacs.has(out.toUpperCase()) || [...macMap.values()].includes(out));
+      macMap.set(k, out);
+    }
+    if (!out) {
+      // Il modello confronta i produttori (OUI): due MAC veri di OUI diversi restano di OUI diversi.
+      // Un OUI vero → un indice (02:0h:ll, indice su 12 bit), poi un progressivo sui tre byte bassi.
+      const oui = realOui(k) ?? "";
+      let o = ouiMap.get(oui);
+      if (o === undefined) {
+        o = ouiMap.size;
+        if (o > 0xfff) throw new Error("anonimizzaInput: i produttori (OUI) sono più di 4096");
+        ouiMap.set(oui, o);
+      }
+      do {
+        const n = (macSeqByOui.get(o) ?? 0) + 1;
+        if (n > 0xffffff) throw new Error("anonimizzaInput: i MAC finti sono finiti");
+        macSeqByOui.set(o, n);
+        out = `02:0${(o >> 8).toString(16)}:${(o & 255).toString(16).padStart(2, "0")}:${[16, 8, 0].map((sh) => ((n >> sh) & 255).toString(16).padStart(2, "0")).join(":")}`;
       } while (realMacs.has(out.toUpperCase()));
       macMap.set(k, out);
     }
@@ -212,6 +234,15 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
     return out;
   };
   const nameMap = new Map<string, string>();
+  // Un nome che il modello non usa come identità (di fabbrica, corto, solo esadecimale) resta tale:
+  // «fab<n>» è solo esadecimale, quindi non fonde niente, come l'originale.
+  let fabSeq = 0;
+  const freshFab = (): string => {
+    let out: string;
+    do out = `fab${++fabSeq}`;
+    while (realNameKeys.has(out));
+    return out;
+  };
   function pseudo(raw: string | null, prefix: string): string | null {
     if (raw === null || raw.trim() === "") return raw;
     if (IPV4.test(raw.trim())) return ip(raw.trim());
@@ -221,7 +252,7 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
     if (key === "") return fresh(prefix);
     let out = nameMap.get(key);
     if (!out) {
-      out = fresh(prefix);
+      out = identifiesByName(key) ? fresh(prefix) : freshFab();
       nameMap.set(key, out);
     }
     return out;
@@ -270,6 +301,8 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
     ...input, devices, hosts, neighbors, locations, networks,
     knownMacs: input.knownMacs.map((k) => ({ ...k, mac: mac(k.mac) as string })),
     uplinkPorts: input.uplinkPorts.map((p) => ({ ...p, port_name: porta(p.port_name) })),
+    // Stesso MAC vero → stesso MAC finto degli host e dei vicini; la porta passa dal vocabolario delle porte; il timestamp resta (come nei vicini).
+    macPorts: input.macPorts.map((m) => ({ ...m, mac: mac(m.mac) as string, port_name: porta(m.port_name) })),
     overrides: input.overrides.map((o) => ({ ...o, a_port: porta(o.a_port), b_port: porta(o.b_port) })),
   };
 }
@@ -308,7 +341,7 @@ export function contaValoriVeri(vero: TopologyModelInput, anonimo: unknown): { i
   const macs = new Set<string>(
     [
       ...vero.hosts.map((h) => h.mac), ...vero.devices.flatMap((d) => [d.controller_mac, d.uplink_mac]),
-      ...vero.knownMacs.map((k) => k.mac), ...vero.neighbors.map((n) => n.remote_mac),
+      ...vero.knownMacs.map((k) => k.mac), ...vero.neighbors.map((n) => n.remote_mac), ...vero.macPorts.map((m) => m.mac),
       ...[...names, ...ports].filter((s) => MAC_ANY.test(s)),
     ]
       .map((v) => normalizeMacForStorage(v))

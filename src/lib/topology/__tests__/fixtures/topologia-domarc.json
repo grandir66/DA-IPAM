@@ -119,10 +119,10 @@
    "host_id": 75,
    "physical_device_id": 3,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:00:00:00:01",
+   "uplink_mac": "02:00:01:00:00:01",
+   "uplink_remote_port": 28,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 52
   },
@@ -137,10 +137,10 @@
    "host_id": 71,
    "physical_device_id": 4,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:00:00:00:02",
+   "uplink_mac": "02:00:01:00:00:01",
+   "uplink_remote_port": 9,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 16
   },
@@ -155,7 +155,7 @@
    "host_id": 72,
    "physical_device_id": 5,
    "location_id": null,
-   "controller_mac": null,
+   "controller_mac": "02:00:02:00:00:01",
    "uplink_mac": null,
    "uplink_remote_port": null,
    "uplink_seen_at": null,
@@ -173,10 +173,10 @@
    "host_id": 73,
    "physical_device_id": 6,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:03:00:00:01",
+   "uplink_mac": "02:00:01:00:00:01",
+   "uplink_remote_port": 5,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 52
   },
@@ -191,10 +191,10 @@
    "host_id": 74,
    "physical_device_id": 7,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
+   "controller_mac": "02:00:01:00:00:01",
+   "uplink_mac": "02:00:04:00:00:01",
    "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 32
   },
@@ -209,10 +209,10 @@
    "host_id": 76,
    "physical_device_id": 8,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:05:00:00:01",
+   "uplink_mac": "02:00:01:00:00:01",
+   "uplink_remote_port": 8,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 10
   },
@@ -587,10 +587,10 @@
    "host_id": 69,
    "physical_device_id": null,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:06:00:00:01",
+   "uplink_mac": "02:00:01:00:00:01",
+   "uplink_remote_port": 4,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 10
   },
@@ -605,10 +605,10 @@
    "host_id": 64,
    "physical_device_id": null,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:00:00:00:03",
+   "uplink_mac": "02:00:06:00:00:01",
+   "uplink_remote_port": 8,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 5
   },
@@ -623,10 +623,10 @@
    "host_id": 67,
    "physical_device_id": null,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:03:00:00:02",
+   "uplink_mac": "02:00:03:00:00:01",
+   "uplink_remote_port": 48,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 0
   },
@@ -641,7 +641,7 @@
    "host_id": null,
    "physical_device_id": null,
    "location_id": null,
-   "controller_mac": null,
+   "controller_mac": "02:00:07:00:00:01",
    "uplink_mac": null,
    "uplink_remote_port": null,
    "uplink_seen_at": null,
@@ -659,10 +659,10 @@
    "host_id": null,
    "physical_device_id": null,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:08:00:00:01",
+   "uplink_mac": "02:00:01:00:00:01",
+   "uplink_remote_port": 29,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 14
   },
@@ -677,10 +677,10 @@
    "host_id": 398,
    "physical_device_id": null,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:09:00:00:01",
+   "uplink_mac": "02:00:05:00:00:01",
+   "uplink_remote_port": 2,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 0
   },
@@ -695,7 +695,7 @@
    "host_id": 65,
    "physical_device_id": null,
    "location_id": null,
-   "controller_mac": null,
+   "controller_mac": "02:00:00:00:00:04",
    "uplink_mac": null,
    "uplink_remote_port": null,
    "uplink_seen_at": null,
@@ -713,10 +713,10 @@
    "host_id": 66,
    "physical_device_id": null,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:00:00:00:05",
+   "uplink_mac": "02:00:06:00:00:01",
+   "uplink_remote_port": 6,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 5
   },
@@ -731,10 +731,10 @@
    "host_id": 399,
    "physical_device_id": null,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:0a:00:00:01",
+   "uplink_mac": "02:00:03:00:00:01",
+   "uplink_remote_port": 10,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 0
   },
@@ -749,10 +749,10 @@
    "host_id": 70,
    "physical_device_id": null,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:03:00:00:03",
+   "uplink_mac": "02:00:05:00:00:01",
+   "uplink_remote_port": 1,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 0
   },
@@ -767,10 +767,10 @@
    "host_id": 68,
    "physical_device_id": null,
    "location_id": null,
-   "controller_mac": null,
-   "uplink_mac": null,
-   "uplink_remote_port": null,
-   "uplink_seen_at": null,
+   "controller_mac": "02:00:06:00:00:02",
+   "uplink_mac": "02:00:01:00:00:01",
+   "uplink_remote_port": 26,
+   "uplink_seen_at": "2026-10-13 20:57:48",
    "topology_hidden": 0,
    "port_count": 10
   }
@@ -780,7 +780,7 @@
    "id": 1,
    "network_id": 1,
    "ip": "10.0.0.50",
-   "mac": "02:00:00:00:00:01",
+   "mac": "02:00:0b:00:00:01",
    "hostname": "SW-13",
    "custom_name": null,
    "classification": "server_windows",
@@ -788,10 +788,65 @@
    "physical_device_id": null
   },
   {
+   "id": 2,
+   "network_id": 1,
+   "ip": "10.0.0.42",
+   "mac": "02:00:0b:00:00:02",
+   "hostname": "host-1",
+   "custom_name": null,
+   "classification": "server_linux",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 3,
+   "network_id": 1,
+   "ip": "10.0.0.41",
+   "mac": "02:00:0b:00:00:03",
+   "hostname": "host-2",
+   "custom_name": null,
+   "classification": "server_linux",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 4,
+   "network_id": 1,
+   "ip": "10.0.0.40",
+   "mac": "02:00:0c:00:00:01",
+   "hostname": "host-3",
+   "custom_name": null,
+   "classification": "server_linux",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 5,
+   "network_id": 1,
+   "ip": "10.0.0.27",
+   "mac": "02:00:0d:00:00:01",
+   "hostname": "host-4",
+   "custom_name": null,
+   "classification": "storage",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 6,
+   "network_id": 1,
+   "ip": "10.0.0.22",
+   "mac": "02:00:0e:00:00:01",
+   "hostname": "host-5",
+   "custom_name": null,
+   "classification": "storage",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
    "id": 7,
    "network_id": 1,
    "ip": "10.0.0.21",
-   "mac": "02:00:00:00:00:02",
+   "mac": "02:00:0c:00:00:02",
    "hostname": "SW-12",
    "custom_name": null,
    "classification": "server_windows",
@@ -802,7 +857,7 @@
    "id": 9,
    "network_id": 1,
    "ip": "10.0.0.19",
-   "mac": "02:00:00:00:00:03",
+   "mac": "02:00:0c:00:00:03",
    "hostname": "SW-14",
    "custom_name": null,
    "classification": "server_linux",
@@ -810,10 +865,43 @@
    "physical_device_id": 15
   },
   {
+   "id": 10,
+   "network_id": 1,
+   "ip": "10.0.0.14",
+   "mac": "02:00:0b:00:00:04",
+   "hostname": "host-6",
+   "custom_name": null,
+   "classification": "server_windows",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 11,
+   "network_id": 1,
+   "ip": "10.0.0.10",
+   "mac": "02:00:0c:00:00:04",
+   "hostname": "host-7",
+   "custom_name": null,
+   "classification": "server_linux",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 12,
+   "network_id": 1,
+   "ip": "10.0.0.9",
+   "mac": "02:00:0c:00:00:05",
+   "hostname": "host-8",
+   "custom_name": null,
+   "classification": "server_linux",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
    "id": 13,
    "network_id": 1,
    "ip": "10.0.0.8",
-   "mac": "02:00:00:00:00:04",
+   "mac": "02:00:0b:00:00:05",
    "hostname": "SW-15",
    "custom_name": null,
    "classification": "server_linux",
@@ -824,7 +912,7 @@
    "id": 14,
    "network_id": 1,
    "ip": "10.0.0.5",
-   "mac": "02:00:00:00:00:05",
+   "mac": "02:00:0c:00:00:06",
    "hostname": "SW-11",
    "custom_name": null,
    "classification": "server_windows",
@@ -835,7 +923,7 @@
    "id": 15,
    "network_id": 1,
    "ip": "10.0.0.4",
-   "mac": "02:00:00:00:00:06",
+   "mac": "02:00:0c:00:00:07",
    "hostname": "SW-10",
    "custom_name": null,
    "classification": "server_windows",
@@ -846,7 +934,7 @@
    "id": 16,
    "network_id": 1,
    "ip": "10.0.0.2",
-   "mac": "02:00:00:00:00:07",
+   "mac": "02:00:0b:00:00:06",
    "hostname": "SW-7",
    "custom_name": null,
    "classification": "server_windows",
@@ -857,7 +945,7 @@
    "id": 17,
    "network_id": 1,
    "ip": "10.0.0.1",
-   "mac": "02:00:00:00:00:08",
+   "mac": "02:00:0c:00:00:08",
    "hostname": "SW-8",
    "custom_name": null,
    "classification": "server_windows",
@@ -865,10 +953,32 @@
    "physical_device_id": 9
   },
   {
+   "id": 18,
+   "network_id": 1,
+   "ip": "10.0.0.101",
+   "mac": "02:00:0f:00:00:01",
+   "hostname": "fab1",
+   "custom_name": null,
+   "classification": "notebook",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 19,
+   "network_id": 1,
+   "ip": "10.0.0.103",
+   "mac": "02:00:10:00:00:01",
+   "hostname": "fab1",
+   "custom_name": null,
+   "classification": "notebook",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 20,
    "network_id": 1,
    "ip": "10.0.0.121",
-   "mac": "02:00:00:00:00:09",
+   "mac": "02:00:11:00:00:01",
    "hostname": "SW-19",
    "custom_name": null,
    "classification": "workstation",
@@ -879,7 +989,7 @@
    "id": 21,
    "network_id": 1,
    "ip": "10.0.0.124",
-   "mac": "02:00:00:00:00:0a",
+   "mac": "02:00:12:00:00:01",
    "hostname": "SW-18",
    "custom_name": null,
    "classification": "workstation",
@@ -890,7 +1000,7 @@
    "id": 22,
    "network_id": 1,
    "ip": "10.0.0.127",
-   "mac": "02:00:00:00:00:0b",
+   "mac": "02:00:13:00:00:01",
    "hostname": "SW-17",
    "custom_name": null,
    "classification": "workstation",
@@ -901,7 +1011,7 @@
    "id": 23,
    "network_id": 1,
    "ip": "10.0.0.128",
-   "mac": "02:00:00:00:00:0c",
+   "mac": "02:00:14:00:00:01",
    "hostname": "SW-22",
    "custom_name": null,
    "classification": "workstation",
@@ -912,7 +1022,7 @@
    "id": 24,
    "network_id": 1,
    "ip": "10.0.0.132",
-   "mac": "02:00:00:00:00:0d",
+   "mac": "02:00:15:00:00:01",
    "hostname": "SW-20",
    "custom_name": null,
    "classification": "workstation",
@@ -920,11 +1030,55 @@
    "physical_device_id": null
   },
   {
+   "id": 25,
+   "network_id": 1,
+   "ip": "10.0.0.130",
+   "mac": "02:00:16:00:00:01",
+   "hostname": "host-9",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 26,
+   "network_id": 1,
+   "ip": "10.0.0.136",
+   "mac": "02:00:17:00:00:01",
+   "hostname": "host-10",
+   "custom_name": null,
+   "classification": "notebook",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 27,
    "network_id": 1,
    "ip": "10.0.0.172",
-   "mac": "02:00:00:00:00:0e",
-   "hostname": "SW-24",
+   "mac": "02:00:18:00:00:01",
+   "hostname": "host-11",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 28,
+   "network_id": 1,
+   "ip": "10.0.0.173",
+   "mac": "02:00:19:00:00:01",
+   "hostname": "host-12",
+   "custom_name": null,
+   "classification": "rete_ot",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 29,
+   "network_id": 1,
+   "ip": "10.0.0.175",
+   "mac": "02:00:1a:00:00:01",
+   "hostname": "host-13",
    "custom_name": null,
    "classification": "workstation",
    "status": "offline",
@@ -934,7 +1088,7 @@
    "id": 30,
    "network_id": 1,
    "ip": "10.0.0.178",
-   "mac": "02:00:00:00:00:0f",
+   "mac": "02:00:06:00:00:03",
    "hostname": null,
    "custom_name": null,
    "classification": "access_point",
@@ -942,11 +1096,66 @@
    "physical_device_id": null
   },
   {
+   "id": 31,
+   "network_id": 1,
+   "ip": "10.0.0.151",
+   "mac": "02:00:1b:00:00:01",
+   "hostname": "host-14",
+   "custom_name": null,
+   "classification": "smartphone",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 32,
+   "network_id": 1,
+   "ip": "10.0.0.181",
+   "mac": "02:00:0b:00:00:07",
+   "hostname": "host-15",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 33,
+   "network_id": 1,
+   "ip": "10.0.0.183",
+   "mac": "02:00:1c:00:00:01",
+   "hostname": "fab2",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 34,
+   "network_id": 1,
+   "ip": "10.0.0.188",
+   "mac": "02:00:1d:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "hypervisor",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 35,
+   "network_id": 1,
+   "ip": "10.0.0.189",
+   "mac": "02:00:1e:00:00:01",
+   "hostname": "host-14",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 36,
    "network_id": 1,
    "ip": "10.0.0.254",
-   "mac": "02:00:00:00:00:10",
-   "hostname": "host-1",
+   "mac": "02:00:04:00:00:02",
+   "hostname": "host-16",
    "custom_name": null,
    "classification": "router",
    "status": "online",
@@ -956,8 +1165,30 @@
    "id": 37,
    "network_id": 1,
    "ip": "10.0.0.129",
-   "mac": "02:00:00:00:00:11",
+   "mac": "02:00:1f:00:00:01",
    "hostname": "SW-23",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 38,
+   "network_id": 1,
+   "ip": "10.0.0.153",
+   "mac": "02:00:20:00:00:01",
+   "hostname": "host-17",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 39,
+   "network_id": 1,
+   "ip": "10.0.0.185",
+   "mac": "02:00:21:00:00:01",
+   "hostname": "host-18",
    "custom_name": null,
    "classification": "workstation",
    "status": "offline",
@@ -967,7 +1198,7 @@
    "id": 40,
    "network_id": 1,
    "ip": "10.0.0.6",
-   "mac": "02:00:00:00:00:12",
+   "mac": "02:00:0b:00:00:08",
    "hostname": "SW-16",
    "custom_name": null,
    "classification": "server_linux",
@@ -975,10 +1206,76 @@
    "physical_device_id": 17
   },
   {
+   "id": 41,
+   "network_id": 2,
+   "ip": "10.0.1.27",
+   "mac": "02:00:0b:00:00:09",
+   "hostname": "host-4",
+   "custom_name": "host-19",
+   "classification": "storage",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 42,
+   "network_id": 2,
+   "ip": "10.0.1.26",
+   "mac": "02:00:22:00:00:01",
+   "hostname": null,
+   "custom_name": "host-20",
+   "classification": "nas",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 43,
+   "network_id": 2,
+   "ip": "10.0.1.24",
+   "mac": "02:00:23:00:00:01",
+   "hostname": "host-21",
+   "custom_name": null,
+   "classification": "storage",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 44,
+   "network_id": 2,
+   "ip": "10.0.1.23",
+   "mac": "02:00:0e:00:00:02",
+   "hostname": "host-22",
+   "custom_name": "host-23",
+   "classification": "storage",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 45,
+   "network_id": 2,
+   "ip": "10.0.1.22",
+   "mac": "02:00:0e:00:00:01",
+   "hostname": "host-24",
+   "custom_name": "host-25",
+   "classification": "nas",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 48,
+   "network_id": 2,
+   "ip": "10.0.1.10",
+   "mac": "02:00:0b:00:00:0a",
+   "hostname": "host-26",
+   "custom_name": null,
+   "classification": "server_linux",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
    "id": 49,
    "network_id": 2,
    "ip": "10.0.1.5",
-   "mac": "02:00:00:00:00:13",
+   "mac": "02:00:24:00:00:01",
    "hostname": "HV-5",
    "custom_name": null,
    "classification": "hypervisor",
@@ -989,7 +1286,7 @@
    "id": 50,
    "network_id": 2,
    "ip": "10.0.1.4",
-   "mac": "02:00:00:00:00:14",
+   "mac": "02:00:25:00:00:01",
    "hostname": "HV-4",
    "custom_name": null,
    "classification": "hypervisor",
@@ -1000,7 +1297,7 @@
    "id": 51,
    "network_id": 2,
    "ip": "10.0.1.3",
-   "mac": "02:00:00:00:00:15",
+   "mac": "02:00:24:00:00:02",
    "hostname": "HV-3",
    "custom_name": null,
    "classification": "hypervisor",
@@ -1011,7 +1308,7 @@
    "id": 52,
    "network_id": 2,
    "ip": "10.0.1.2",
-   "mac": "02:00:00:00:00:16",
+   "mac": "02:00:25:00:00:02",
    "hostname": "HV-2",
    "custom_name": null,
    "classification": "hypervisor",
@@ -1022,7 +1319,7 @@
    "id": 53,
    "network_id": 2,
    "ip": "10.0.1.1",
-   "mac": "02:00:00:00:00:17",
+   "mac": "02:00:25:00:00:03",
    "hostname": "HV-1",
    "custom_name": null,
    "classification": "hypervisor",
@@ -1033,18 +1330,29 @@
    "id": 59,
    "network_id": 2,
    "ip": "10.0.1.141",
-   "mac": "02:00:00:00:00:18",
-   "hostname": "host-2",
+   "mac": "02:00:22:00:00:02",
+   "hostname": "host-27",
    "custom_name": null,
    "classification": "switch",
    "status": "online",
    "physical_device_id": null
   },
   {
+   "id": 60,
+   "network_id": 2,
+   "ip": "10.0.1.150",
+   "mac": "02:00:0c:00:00:09",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 61,
    "network_id": 2,
    "ip": "10.0.1.165",
-   "mac": "02:00:00:00:00:19",
+   "mac": "02:00:26:00:00:01",
    "hostname": null,
    "custom_name": null,
    "classification": "router",
@@ -1055,7 +1363,7 @@
    "id": 62,
    "network_id": 2,
    "ip": "10.0.1.167",
-   "mac": "02:00:00:00:00:1a",
+   "mac": "02:00:26:00:00:02",
    "hostname": null,
    "custom_name": null,
    "classification": "router",
@@ -1066,7 +1374,7 @@
    "id": 63,
    "network_id": 2,
    "ip": "10.0.1.168",
-   "mac": "02:00:00:00:00:1b",
+   "mac": "02:00:26:00:00:03",
    "hostname": null,
    "custom_name": null,
    "classification": "router",
@@ -1077,7 +1385,7 @@
    "id": 64,
    "network_id": 2,
    "ip": "10.0.1.222",
-   "mac": "02:00:00:00:00:1c",
+   "mac": "02:00:00:00:00:03",
    "hostname": "SW-28",
    "custom_name": null,
    "classification": "switch",
@@ -1088,7 +1396,7 @@
    "id": 65,
    "network_id": 2,
    "ip": "10.0.1.224",
-   "mac": "02:00:00:00:00:1d",
+   "mac": "02:00:00:00:00:04",
    "hostname": "SW-30",
    "custom_name": null,
    "classification": "switch",
@@ -1099,7 +1407,7 @@
    "id": 66,
    "network_id": 2,
    "ip": "10.0.1.223",
-   "mac": "02:00:00:00:00:1e",
+   "mac": "02:00:00:00:00:05",
    "hostname": "SW-31",
    "custom_name": null,
    "classification": "switch",
@@ -1110,7 +1418,7 @@
    "id": 67,
    "network_id": 2,
    "ip": "10.0.1.235",
-   "mac": "02:00:00:00:00:1f",
+   "mac": "02:00:03:00:00:02",
    "hostname": "AP-1",
    "custom_name": null,
    "classification": "access_point",
@@ -1121,7 +1429,7 @@
    "id": 68,
    "network_id": 2,
    "ip": "10.0.1.238",
-   "mac": "02:00:00:00:00:20",
+   "mac": "02:00:06:00:00:02",
    "hostname": "SW-32",
    "custom_name": null,
    "classification": "switch",
@@ -1132,7 +1440,7 @@
    "id": 69,
    "network_id": 2,
    "ip": "10.0.1.237",
-   "mac": "02:00:00:00:00:21",
+   "mac": "02:00:06:00:00:01",
    "hostname": "SW-27",
    "custom_name": null,
    "classification": "switch",
@@ -1143,7 +1451,7 @@
    "id": 70,
    "network_id": 2,
    "ip": "10.0.1.236",
-   "mac": "02:00:00:00:00:22",
+   "mac": "02:00:03:00:00:03",
    "hostname": "AP-4",
    "custom_name": null,
    "classification": "access_point",
@@ -1154,7 +1462,7 @@
    "id": 71,
    "network_id": 2,
    "ip": "10.0.1.241",
-   "mac": "02:00:00:00:00:23",
+   "mac": "02:00:00:00:00:02",
    "hostname": "SW-2",
    "custom_name": null,
    "classification": "switch",
@@ -1165,7 +1473,7 @@
    "id": 72,
    "network_id": 2,
    "ip": "10.0.1.240",
-   "mac": "02:00:00:00:00:24",
+   "mac": "02:00:02:00:00:01",
    "hostname": "SW-3",
    "custom_name": null,
    "classification": "switch",
@@ -1176,7 +1484,7 @@
    "id": 73,
    "network_id": 2,
    "ip": "10.0.1.239",
-   "mac": "02:00:00:00:00:25",
+   "mac": "02:00:03:00:00:01",
    "hostname": "SW-4",
    "custom_name": null,
    "classification": "switch",
@@ -1187,8 +1495,8 @@
    "id": 74,
    "network_id": 2,
    "ip": "10.0.1.243",
-   "mac": "02:00:00:00:00:26",
-   "hostname": "host-3",
+   "mac": "02:00:01:00:00:02",
+   "hostname": "host-28",
    "custom_name": null,
    "classification": "switch",
    "status": "online",
@@ -1198,7 +1506,7 @@
    "id": 75,
    "network_id": 2,
    "ip": "10.0.1.242",
-   "mac": "02:00:00:00:00:27",
+   "mac": "02:00:00:00:00:01",
    "hostname": "SW-1",
    "custom_name": null,
    "classification": "switch",
@@ -1209,7 +1517,7 @@
    "id": 76,
    "network_id": 2,
    "ip": "10.0.1.245",
-   "mac": "02:00:00:00:00:28",
+   "mac": "02:00:05:00:00:01",
    "hostname": "SW-6",
    "custom_name": null,
    "classification": "switch",
@@ -1221,20 +1529,207 @@
    "network_id": 2,
    "ip": "10.0.1.254",
    "mac": null,
-   "hostname": "host-1",
+   "hostname": "host-16",
    "custom_name": null,
    "classification": "router",
    "status": "online",
    "physical_device_id": 2
   },
   {
+   "id": 79,
+   "network_id": 1,
+   "ip": "10.0.0.190",
+   "mac": "02:00:27:00:00:01",
+   "hostname": "SW-24",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 80,
+   "network_id": 1,
+   "ip": "10.0.0.25",
+   "mac": "02:00:0b:00:00:0b",
+   "hostname": "host-29",
+   "custom_name": null,
+   "classification": "server_linux",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 81,
+   "network_id": 1,
+   "ip": "10.0.0.193",
+   "mac": "02:00:0b:00:00:0c",
+   "hostname": "host-30",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 82,
+   "network_id": 1,
+   "ip": "10.0.0.199",
+   "mac": "02:00:0b:00:00:0d",
+   "hostname": "host-31",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 83,
+   "network_id": 1,
+   "ip": "10.0.0.198",
+   "mac": "02:00:0c:00:00:0a",
+   "hostname": "host-32",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
    "id": 84,
    "network_id": 1,
    "ip": "10.0.0.171",
-   "mac": "02:00:00:00:00:29",
-   "hostname": "host-4",
+   "mac": "02:00:28:00:00:01",
+   "hostname": "fab3",
    "custom_name": null,
    "classification": "router",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 85,
+   "network_id": 1,
+   "ip": "10.0.0.200",
+   "mac": "02:00:0b:00:00:0e",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 86,
+   "network_id": 1,
+   "ip": "10.0.0.184",
+   "mac": "02:00:0b:00:00:0f",
+   "hostname": "host-11",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 87,
+   "network_id": 1,
+   "ip": "10.0.0.179",
+   "mac": "02:00:17:00:00:02",
+   "hostname": "host-33",
+   "custom_name": null,
+   "classification": "notebook",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 89,
+   "network_id": 1,
+   "ip": "10.0.0.192",
+   "mac": "02:00:29:00:00:01",
+   "hostname": "fab1",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 90,
+   "network_id": 1,
+   "ip": "10.0.0.187",
+   "mac": "02:00:2a:00:00:01",
+   "hostname": "host-11",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 91,
+   "network_id": 1,
+   "ip": "10.0.0.191",
+   "mac": "02:00:2b:00:00:01",
+   "hostname": "host-34",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 92,
+   "network_id": 1,
+   "ip": "10.0.0.174",
+   "mac": "02:00:0b:00:00:10",
+   "hostname": "host-35",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 93,
+   "network_id": 1,
+   "ip": "10.0.0.182",
+   "mac": "02:00:1e:00:00:01",
+   "hostname": "host-14",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 96,
+   "network_id": 1,
+   "ip": "10.0.0.186",
+   "mac": "02:00:1a:00:00:01",
+   "hostname": "host-13",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 98,
+   "network_id": 1,
+   "ip": "10.0.0.177",
+   "mac": "02:00:2c:00:00:01",
+   "hostname": "fab1",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 99,
+   "network_id": 1,
+   "ip": "10.0.0.180",
+   "mac": "02:00:0b:00:00:11",
+   "hostname": "host-36",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 100,
+   "network_id": 1,
+   "ip": "10.0.0.194",
+   "mac": "02:00:2d:00:00:01",
+   "hostname": "host-37",
+   "custom_name": null,
+   "classification": "workstation",
    "status": "online",
    "physical_device_id": null
   },
@@ -1242,8 +1737,8 @@
    "id": 103,
    "network_id": 2,
    "ip": "10.0.1.232",
-   "mac": "02:00:00:00:00:2a",
-   "hostname": "host-5",
+   "mac": "02:00:2e:00:00:01",
+   "hostname": "host-38",
    "custom_name": null,
    "classification": "access_point",
    "status": "offline",
@@ -1253,8 +1748,8 @@
    "id": 104,
    "network_id": 2,
    "ip": "10.0.1.244",
-   "mac": "02:00:00:00:00:2b",
-   "hostname": "host-6",
+   "mac": "02:00:01:00:00:03",
+   "hostname": "host-39",
    "custom_name": null,
    "classification": "switch",
    "status": "offline",
@@ -1264,8 +1759,8 @@
    "id": 106,
    "network_id": 2,
    "ip": "10.0.1.212",
-   "mac": "02:00:00:00:00:2c",
-   "hostname": "host-7",
+   "mac": "02:00:00:00:00:06",
+   "hostname": "host-40",
    "custom_name": null,
    "classification": "switch",
    "status": "offline",
@@ -1275,8 +1770,8 @@
    "id": 107,
    "network_id": 2,
    "ip": "10.0.1.221",
-   "mac": "02:00:00:00:00:2d",
-   "hostname": "host-8",
+   "mac": "02:00:00:00:00:07",
+   "hostname": "host-41",
    "custom_name": null,
    "classification": "switch",
    "status": "offline",
@@ -1286,21 +1781,197 @@
    "id": 108,
    "network_id": 2,
    "ip": "10.0.1.211",
-   "mac": "02:00:00:00:00:2e",
-   "hostname": "host-9",
+   "mac": "02:00:2e:00:00:02",
+   "hostname": "host-42",
    "custom_name": null,
    "classification": "switch",
    "status": "offline",
    "physical_device_id": null
   },
   {
+   "id": 111,
+   "network_id": 1,
+   "ip": "10.0.0.35",
+   "mac": "02:00:0b:00:00:12",
+   "hostname": "host-43",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 112,
+   "network_id": 1,
+   "ip": "10.0.0.176",
+   "mac": "02:00:0b:00:00:13",
+   "hostname": "host-43",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 113,
+   "network_id": 1,
+   "ip": "10.0.0.16",
+   "mac": "02:00:0c:00:00:0b",
+   "hostname": "host-44",
+   "custom_name": null,
+   "classification": "server_windows",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 118,
+   "network_id": 1,
+   "ip": "10.0.0.123",
+   "mac": "02:00:17:00:00:03",
+   "hostname": "host-45",
+   "custom_name": null,
+   "classification": "notebook",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 119,
+   "network_id": 1,
+   "ip": "10.0.0.125",
+   "mac": "02:00:2f:00:00:01",
+   "hostname": "host-46",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 120,
+   "network_id": 1,
+   "ip": "10.0.0.126",
+   "mac": "02:00:1a:00:00:02",
+   "hostname": "host-13",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 121,
+   "network_id": 1,
+   "ip": "10.0.0.154",
+   "mac": "02:00:30:00:00:01",
+   "hostname": "host-11",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 136,
+   "network_id": 3,
+   "ip": "10.0.2.253",
+   "mac": "02:00:06:00:00:04",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "storage",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 137,
+   "network_id": 3,
+   "ip": "10.0.2.159",
+   "mac": "02:00:22:00:00:03",
+   "hostname": "host-20",
+   "custom_name": null,
+   "classification": "nas",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 138,
+   "network_id": 3,
+   "ip": "10.0.2.24",
+   "mac": "02:00:22:00:00:04",
+   "hostname": "host-21",
+   "custom_name": null,
+   "classification": "storage",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 140,
+   "network_id": 3,
+   "ip": "10.0.2.189",
+   "mac": "02:00:31:00:00:01",
+   "hostname": "host-47",
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 141,
+   "network_id": 3,
+   "ip": "10.0.2.185",
+   "mac": "02:00:31:00:00:02",
+   "hostname": "host-48",
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 142,
+   "network_id": 3,
+   "ip": "10.0.2.151",
+   "mac": "02:00:32:00:00:01",
+   "hostname": "host-49",
+   "custom_name": null,
+   "classification": "iot",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 143,
+   "network_id": 3,
+   "ip": "10.0.2.213",
+   "mac": "02:00:33:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 144,
+   "network_id": 3,
+   "ip": "10.0.2.11",
+   "mac": "02:00:34:00:00:01",
+   "hostname": "fab4",
+   "custom_name": null,
+   "classification": "server",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
    "id": 146,
    "network_id": 3,
    "ip": "10.0.2.121",
-   "mac": "02:00:00:00:00:2f",
-   "hostname": "host-10",
+   "mac": "02:00:35:00:00:01",
+   "hostname": "host-50",
    "custom_name": null,
    "classification": "router",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 147,
+   "network_id": 3,
+   "ip": "10.0.2.140",
+   "mac": "02:00:36:00:00:01",
+   "hostname": "host-51",
+   "custom_name": null,
+   "classification": "storage",
    "status": "online",
    "physical_device_id": null
   },
@@ -1308,21 +1979,274 @@
    "id": 149,
    "network_id": 3,
    "ip": "10.0.2.157",
-   "mac": "02:00:00:00:00:30",
-   "hostname": "host-11",
+   "mac": "02:00:28:00:00:02",
+   "hostname": "host-52",
    "custom_name": null,
    "classification": "router",
    "status": "offline",
    "physical_device_id": null
   },
   {
+   "id": 150,
+   "network_id": 3,
+   "ip": "10.0.2.123",
+   "mac": "02:00:37:00:00:01",
+   "hostname": "host-53",
+   "custom_name": null,
+   "classification": "iot",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 151,
+   "network_id": 3,
+   "ip": "10.0.2.160",
+   "mac": "02:00:38:00:00:01",
+   "hostname": "host-54",
+   "custom_name": null,
+   "classification": "hypervisor",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 152,
+   "network_id": 3,
+   "ip": "10.0.2.152",
+   "mac": "02:00:39:00:00:01",
+   "hostname": "host-14",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 153,
+   "network_id": 3,
+   "ip": "10.0.2.188",
+   "mac": "02:00:31:00:00:03",
+   "hostname": "host-55",
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 154,
+   "network_id": 3,
+   "ip": "10.0.2.182",
+   "mac": "02:00:31:00:00:04",
+   "hostname": "host-56",
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 155,
+   "network_id": 3,
+   "ip": "10.0.2.183",
+   "mac": "02:00:31:00:00:05",
+   "hostname": "host-57",
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 156,
+   "network_id": 3,
+   "ip": "10.0.2.166",
+   "mac": "02:00:3a:00:00:01",
+   "hostname": "host-58",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 157,
+   "network_id": 3,
+   "ip": "10.0.2.175",
+   "mac": "02:00:31:00:00:06",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 158,
+   "network_id": 3,
+   "ip": "10.0.2.128",
+   "mac": "02:00:37:00:00:02",
+   "hostname": "host-53",
+   "custom_name": null,
+   "classification": "iot",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 159,
+   "network_id": 3,
+   "ip": "10.0.2.181",
+   "mac": "02:00:31:00:00:07",
+   "hostname": "host-59",
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 160,
+   "network_id": 3,
+   "ip": "10.0.2.221",
+   "mac": "02:00:3b:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "ups",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 161,
+   "network_id": 3,
+   "ip": "10.0.2.184",
+   "mac": "02:00:31:00:00:08",
+   "hostname": "host-60",
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 162,
+   "network_id": 3,
+   "ip": "10.0.2.135",
+   "mac": "02:00:38:00:00:01",
+   "hostname": "host-61",
+   "custom_name": null,
+   "classification": "smartphone",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 163,
+   "network_id": 3,
+   "ip": "10.0.2.163",
+   "mac": "02:00:38:00:00:01",
+   "hostname": "host-62",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 165,
+   "network_id": 3,
+   "ip": "10.0.2.186",
+   "mac": "02:00:31:00:00:09",
+   "hostname": "host-63",
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 166,
+   "network_id": 3,
+   "ip": "10.0.2.139",
+   "mac": "02:00:3c:00:00:01",
+   "hostname": "host-64",
+   "custom_name": null,
+   "classification": "smartphone",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 168,
+   "network_id": 3,
+   "ip": "10.0.2.150",
+   "mac": "02:00:37:00:00:03",
+   "hostname": "host-65",
+   "custom_name": null,
+   "classification": "iot",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 169,
+   "network_id": 3,
+   "ip": "10.0.2.187",
+   "mac": "02:00:31:00:00:0a",
+   "hostname": "host-66",
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
    "id": 171,
    "network_id": 3,
    "ip": "10.0.2.136",
-   "mac": "02:00:00:00:00:29",
-   "hostname": "host-4",
+   "mac": "02:00:28:00:00:01",
+   "hostname": "fab3",
    "custom_name": null,
    "classification": "router",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 172,
+   "network_id": 3,
+   "ip": "10.0.2.222",
+   "mac": "02:00:3d:00:00:01",
+   "hostname": "fab5",
+   "custom_name": null,
+   "classification": "ups",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 173,
+   "network_id": 3,
+   "ip": "10.0.2.130",
+   "mac": "02:00:3b:00:00:02",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "ups",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 174,
+   "network_id": 3,
+   "ip": "10.0.2.153",
+   "mac": "02:00:37:00:00:04",
+   "hostname": "host-65",
+   "custom_name": null,
+   "classification": "iot",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 175,
+   "network_id": 3,
+   "ip": "10.0.2.149",
+   "mac": "02:00:37:00:00:05",
+   "hostname": "host-65",
+   "custom_name": null,
+   "classification": "iot",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 177,
+   "network_id": 3,
+   "ip": "10.0.2.21",
+   "mac": "02:00:0e:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "workstation",
    "status": "online",
    "physical_device_id": null
   },
@@ -1330,8 +2254,8 @@
    "id": 178,
    "network_id": 3,
    "ip": "10.0.2.165",
-   "mac": "02:00:00:00:00:31",
-   "hostname": "host-4",
+   "mac": "02:00:38:00:00:01",
+   "hostname": "fab3",
    "custom_name": null,
    "classification": "router",
    "status": "offline",
@@ -1341,7 +2265,7 @@
    "id": 183,
    "network_id": 3,
    "ip": "10.0.2.4",
-   "mac": "02:00:00:00:00:32",
+   "mac": "02:00:25:00:00:04",
    "hostname": null,
    "custom_name": null,
    "classification": "hypervisor",
@@ -1349,10 +2273,32 @@
    "physical_device_id": 13
   },
   {
+   "id": 184,
+   "network_id": 3,
+   "ip": "10.0.2.250",
+   "mac": "02:00:3e:00:00:01",
+   "hostname": "host-67",
+   "custom_name": null,
+   "classification": "server_linux",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 186,
+   "network_id": 3,
+   "ip": "10.0.2.22",
+   "mac": "02:00:3f:00:00:01",
+   "hostname": "host-25",
+   "custom_name": null,
+   "classification": "storage",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 187,
    "network_id": 3,
    "ip": "10.0.2.2",
-   "mac": "02:00:00:00:00:33",
+   "mac": "02:00:40:00:00:01",
    "hostname": null,
    "custom_name": null,
    "classification": "hypervisor",
@@ -1360,13 +2306,79 @@
    "physical_device_id": 11
   },
   {
+   "id": 189,
+   "network_id": 3,
+   "ip": "10.0.2.124",
+   "mac": "02:00:37:00:00:06",
+   "hostname": "host-53",
+   "custom_name": null,
+   "classification": "iot",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 190,
+   "network_id": 3,
+   "ip": "10.0.2.126",
+   "mac": "02:00:37:00:00:07",
+   "hostname": "host-53",
+   "custom_name": null,
+   "classification": "iot",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 191,
+   "network_id": 3,
+   "ip": "10.0.2.191",
+   "mac": "02:00:41:00:00:01",
+   "hostname": "host-68",
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 192,
+   "network_id": 3,
+   "ip": "10.0.2.134",
+   "mac": "02:00:37:00:00:08",
+   "hostname": "host-65",
+   "custom_name": null,
+   "classification": "iot",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 195,
+   "network_id": 3,
+   "ip": "10.0.2.100",
+   "mac": "02:00:0e:00:00:03",
+   "hostname": "host-22",
+   "custom_name": null,
+   "classification": "storage",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
    "id": 200,
    "network_id": 3,
    "ip": "10.0.2.156",
-   "mac": "02:00:00:00:00:34",
-   "hostname": "host-12",
+   "mac": "02:00:35:00:00:02",
+   "hostname": "host-69",
    "custom_name": null,
    "classification": "router",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 201,
+   "network_id": 3,
+   "ip": "10.0.2.158",
+   "mac": "02:00:25:00:00:05",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "hypervisor",
    "status": "offline",
    "physical_device_id": null
   },
@@ -1374,8 +2386,8 @@
    "id": 202,
    "network_id": 3,
    "ip": "10.0.2.155",
-   "mac": "02:00:00:00:00:35",
-   "hostname": "host-13",
+   "mac": "02:00:35:00:00:03",
+   "hostname": "host-70",
    "custom_name": null,
    "classification": "router",
    "status": "offline",
@@ -1385,29 +2397,73 @@
    "id": 203,
    "network_id": 3,
    "ip": "10.0.2.154",
-   "mac": "02:00:00:00:00:36",
-   "hostname": "host-14",
+   "mac": "02:00:22:00:00:05",
+   "hostname": "host-71",
    "custom_name": null,
    "classification": "storage",
    "status": "online",
    "physical_device_id": null
   },
   {
+   "id": 204,
+   "network_id": 3,
+   "ip": "10.0.2.161",
+   "mac": "02:00:42:00:00:01",
+   "hostname": "host-72",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 205,
    "network_id": 3,
    "ip": "10.0.2.162",
-   "mac": "02:00:00:00:00:37",
-   "hostname": "host-15",
+   "mac": "02:00:35:00:00:04",
+   "hostname": "host-73",
    "custom_name": null,
    "classification": "router",
    "status": "offline",
    "physical_device_id": null
   },
   {
+   "id": 206,
+   "network_id": 3,
+   "ip": "10.0.2.164",
+   "mac": "02:00:38:00:00:01",
+   "hostname": "host-74",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 207,
+   "network_id": 3,
+   "ip": "10.0.2.190",
+   "mac": "02:00:41:00:00:02",
+   "hostname": "host-75",
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 208,
+   "network_id": 3,
+   "ip": "10.0.2.192",
+   "mac": "02:00:41:00:00:03",
+   "hostname": "host-76",
+   "custom_name": null,
+   "classification": "telecamera",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
    "id": 209,
    "network_id": 3,
    "ip": "10.0.2.3",
-   "mac": "02:00:00:00:00:38",
+   "mac": "02:00:24:00:00:03",
    "hostname": null,
    "custom_name": null,
    "classification": "hypervisor",
@@ -1418,7 +2474,7 @@
    "id": 210,
    "network_id": 3,
    "ip": "10.0.2.1",
-   "mac": "02:00:00:00:00:39",
+   "mac": "02:00:40:00:00:02",
    "hostname": null,
    "custom_name": null,
    "classification": "hypervisor",
@@ -1429,10 +2485,21 @@
    "id": 214,
    "network_id": 3,
    "ip": "10.0.2.216",
-   "mac": "02:00:00:00:00:3a",
-   "hostname": "host-16",
+   "mac": "02:00:00:00:00:08",
+   "hostname": "host-77",
    "custom_name": null,
    "classification": "switch",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 220,
+   "network_id": 3,
+   "ip": "10.0.2.45",
+   "mac": "02:00:43:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "workstation",
    "status": "offline",
    "physical_device_id": null
   },
@@ -1441,39 +2508,336 @@
    "network_id": 3,
    "ip": "10.0.2.254",
    "mac": null,
-   "hostname": "host-1",
+   "hostname": "host-16",
    "custom_name": null,
    "classification": "router",
    "status": "online",
    "physical_device_id": 2
   },
   {
+   "id": 228,
+   "network_id": 4,
+   "ip": "10.0.3.106",
+   "mac": "02:00:44:00:00:01",
+   "hostname": "host-78",
+   "custom_name": null,
+   "classification": "smart_tv",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 229,
+   "network_id": 4,
+   "ip": "10.0.3.102",
+   "mac": "02:00:45:00:00:01",
+   "hostname": "host-79",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 230,
+   "network_id": 4,
+   "ip": "10.0.3.249",
+   "mac": "02:00:0b:00:00:14",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 231,
+   "network_id": 4,
+   "ip": "10.0.3.103",
+   "mac": "02:00:46:00:00:01",
+   "hostname": "host-11",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 232,
+   "network_id": 4,
+   "ip": "10.0.3.133",
+   "mac": "02:00:1c:00:00:02",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 233,
+   "network_id": 4,
+   "ip": "10.0.3.101",
+   "mac": "02:00:47:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 234,
+   "network_id": 4,
+   "ip": "10.0.3.240",
+   "mac": "02:00:48:00:00:01",
+   "hostname": "host-80",
+   "custom_name": null,
+   "classification": "stampante",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 235,
+   "network_id": 4,
+   "ip": "10.0.3.161",
+   "mac": "02:00:49:00:00:01",
+   "hostname": "host-81",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 236,
+   "network_id": 4,
+   "ip": "10.0.3.122",
+   "mac": "02:00:4a:00:00:01",
+   "hostname": "host-82",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 237,
+   "network_id": 4,
+   "ip": "10.0.3.131",
+   "mac": "02:00:4b:00:00:01",
+   "hostname": "host-83",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 238,
+   "network_id": 4,
+   "ip": "10.0.3.121",
+   "mac": "02:00:4c:00:00:01",
+   "hostname": "host-11",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 239,
+   "network_id": 4,
+   "ip": "10.0.3.153",
+   "mac": "02:00:4b:00:00:02",
+   "hostname": "host-83",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 240,
+   "network_id": 4,
+   "ip": "10.0.3.119",
+   "mac": "02:00:4d:00:00:01",
+   "hostname": "host-84",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 241,
+   "network_id": 4,
+   "ip": "10.0.3.181",
+   "mac": "02:00:1c:00:00:03",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 242,
+   "network_id": 4,
+   "ip": "10.0.3.152",
+   "mac": "02:00:4d:00:00:02",
+   "hostname": "host-85",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 243,
+   "network_id": 4,
+   "ip": "10.0.3.159",
+   "mac": "02:00:0b:00:00:15",
+   "hostname": "host-86",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 244,
+   "network_id": 4,
+   "ip": "10.0.3.111",
+   "mac": "02:00:4e:00:00:01",
+   "hostname": "host-87",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 245,
+   "network_id": 4,
+   "ip": "10.0.3.173",
+   "mac": "02:00:1c:00:00:04",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 246,
+   "network_id": 4,
+   "ip": "10.0.3.110",
+   "mac": "02:00:4f:00:00:01",
+   "hostname": "host-11",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 247,
    "network_id": 4,
    "ip": "10.0.3.172",
-   "mac": "02:00:00:00:00:3b",
-   "hostname": "host-17",
+   "mac": "02:00:50:00:00:01",
+   "hostname": "host-15",
    "custom_name": null,
    "classification": "router",
    "status": "offline",
    "physical_device_id": null
   },
   {
+   "id": 248,
+   "network_id": 4,
+   "ip": "10.0.3.142",
+   "mac": "02:00:51:00:00:01",
+   "hostname": "host-14",
+   "custom_name": null,
+   "classification": "stampante",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 249,
+   "network_id": 4,
+   "ip": "10.0.3.176",
+   "mac": "02:00:52:00:00:01",
+   "hostname": "host-88",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
    "id": 250,
    "network_id": 4,
    "ip": "10.0.3.108",
-   "mac": "02:00:00:00:00:3c",
-   "hostname": "host-18",
+   "mac": "02:00:53:00:00:01",
+   "hostname": "host-89",
    "custom_name": null,
    "classification": "router",
    "status": "online",
    "physical_device_id": null
   },
   {
+   "id": 251,
+   "network_id": 4,
+   "ip": "10.0.3.145",
+   "mac": "02:00:54:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 252,
+   "network_id": 4,
+   "ip": "10.0.3.112",
+   "mac": "02:00:1c:00:00:05",
+   "hostname": "fab6",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 253,
+   "network_id": 4,
+   "ip": "10.0.3.168",
+   "mac": "02:00:55:00:00:01",
+   "hostname": "host-9",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 254,
+   "network_id": 4,
+   "ip": "10.0.3.105",
+   "mac": "02:00:56:00:00:01",
+   "hostname": "host-90",
+   "custom_name": null,
+   "classification": "smartphone",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 255,
+   "network_id": 4,
+   "ip": "10.0.3.241",
+   "mac": "02:00:57:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "stampante",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 256,
+   "network_id": 4,
+   "ip": "10.0.3.155",
+   "mac": "02:00:58:00:00:01",
+   "hostname": "host-91",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 257,
    "network_id": 4,
    "ip": "10.0.3.135",
-   "mac": "02:00:00:00:00:3d",
+   "mac": "02:00:59:00:00:01",
    "hostname": "SW-25",
    "custom_name": null,
    "classification": "workstation",
@@ -1481,13 +2845,123 @@
    "physical_device_id": null
   },
   {
+   "id": 258,
+   "network_id": 4,
+   "ip": "10.0.3.179",
+   "mac": "02:00:5a:00:00:01",
+   "hostname": "host-11",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 259,
+   "network_id": 4,
+   "ip": "10.0.3.157",
+   "mac": "02:00:0b:00:00:16",
+   "hostname": "host-92",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 260,
+   "network_id": 4,
+   "ip": "10.0.3.151",
+   "mac": "02:00:5b:00:00:01",
+   "hostname": "host-93",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 261,
+   "network_id": 4,
+   "ip": "10.0.3.113",
+   "mac": "02:00:1c:00:00:06",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
    "id": 262,
    "network_id": 4,
    "ip": "10.0.3.160",
-   "mac": "02:00:00:00:00:3e",
-   "hostname": "host-19",
+   "mac": "02:00:5c:00:00:01",
+   "hostname": "host-94",
    "custom_name": null,
    "classification": "router",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 263,
+   "network_id": 4,
+   "ip": "10.0.3.114",
+   "mac": "02:00:5d:00:00:01",
+   "hostname": "host-95",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 264,
+   "network_id": 4,
+   "ip": "10.0.3.169",
+   "mac": "02:00:49:00:00:01",
+   "hostname": "host-81",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 265,
+   "network_id": 4,
+   "ip": "10.0.3.149",
+   "mac": "02:00:5e:00:00:01",
+   "hostname": "host-96",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 266,
+   "network_id": 4,
+   "ip": "10.0.3.120",
+   "mac": "02:00:5d:00:00:02",
+   "hostname": "host-95",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 267,
+   "network_id": 4,
+   "ip": "10.0.3.117",
+   "mac": "02:00:5f:00:00:01",
+   "hostname": "host-97",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 268,
+   "network_id": 4,
+   "ip": "10.0.3.126",
+   "mac": "02:00:60:00:00:01",
+   "hostname": "host-98",
+   "custom_name": null,
+   "classification": "workstation",
    "status": "offline",
    "physical_device_id": null
   },
@@ -1495,21 +2969,494 @@
    "id": 269,
    "network_id": 4,
    "ip": "10.0.3.137",
-   "mac": "02:00:00:00:00:3f",
+   "mac": "02:00:16:00:00:02",
    "hostname": "SW-21",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 270,
+   "network_id": 4,
+   "ip": "10.0.3.150",
+   "mac": "02:00:0b:00:00:17",
+   "hostname": "host-99",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 271,
+   "network_id": 4,
+   "ip": "10.0.3.115",
+   "mac": "02:00:1c:00:00:07",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 272,
+   "network_id": 4,
+   "ip": "10.0.3.144",
+   "mac": "02:00:1c:00:00:08",
+   "hostname": "host-100",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 273,
+   "network_id": 4,
+   "ip": "10.0.3.132",
+   "mac": "02:00:58:00:00:02",
+   "hostname": "host-101",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 274,
+   "network_id": 4,
+   "ip": "10.0.3.140",
+   "mac": "02:00:61:00:00:01",
+   "hostname": "host-84",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 275,
+   "network_id": 4,
+   "ip": "10.0.3.141",
+   "mac": "02:00:62:00:00:01",
+   "hostname": "host-88",
    "custom_name": null,
    "classification": "workstation",
    "status": "online",
    "physical_device_id": null
   },
   {
+   "id": 276,
+   "network_id": 4,
+   "ip": "10.0.3.164",
+   "mac": "02:00:63:00:00:01",
+   "hostname": "host-102",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 277,
+   "network_id": 4,
+   "ip": "10.0.3.147",
+   "mac": "02:00:0b:00:00:17",
+   "hostname": "host-103",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 278,
+   "network_id": 4,
+   "ip": "10.0.3.148",
+   "mac": "02:00:0b:00:00:17",
+   "hostname": "host-99",
+   "custom_name": null,
+   "classification": "smartphone",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 279,
+   "network_id": 4,
+   "ip": "10.0.3.162",
+   "mac": "02:00:64:00:00:01",
+   "hostname": "host-102",
+   "custom_name": null,
+   "classification": "smartphone",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 280,
+   "network_id": 4,
+   "ip": "10.0.3.163",
+   "mac": "02:00:65:00:00:01",
+   "hostname": "host-84",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 281,
+   "network_id": 4,
+   "ip": "10.0.3.178",
+   "mac": "02:00:66:00:00:01",
+   "hostname": "host-102",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 282,
+   "network_id": 4,
+   "ip": "10.0.3.170",
+   "mac": "02:00:67:00:00:01",
+   "hostname": "host-104",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 283,
+   "network_id": 4,
+   "ip": "10.0.3.139",
+   "mac": "02:00:68:00:00:01",
+   "hostname": "host-11",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 284,
+   "network_id": 4,
+   "ip": "10.0.3.171",
+   "mac": "02:00:69:00:00:01",
+   "hostname": "host-105",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 285,
+   "network_id": 4,
+   "ip": "10.0.3.109",
+   "mac": "02:00:6a:00:00:01",
+   "hostname": "host-85",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 286,
+   "network_id": 4,
+   "ip": "10.0.3.128",
+   "mac": "02:00:6b:00:00:01",
+   "hostname": "fab1",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 287,
+   "network_id": 4,
+   "ip": "10.0.3.107",
+   "mac": "02:00:6c:00:00:01",
+   "hostname": "fab1",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 288,
+   "network_id": 4,
+   "ip": "10.0.3.118",
+   "mac": "02:00:6d:00:00:01",
+   "hostname": "host-11",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 289,
+   "network_id": 4,
+   "ip": "10.0.3.186",
+   "mac": "02:00:1c:00:00:09",
+   "hostname": "fab2",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 290,
+   "network_id": 4,
+   "ip": "10.0.3.104",
+   "mac": "02:00:6e:00:00:01",
+   "hostname": "host-106",
+   "custom_name": null,
+   "classification": "smartphone",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 291,
+   "network_id": 4,
+   "ip": "10.0.3.130",
+   "mac": "02:00:55:00:00:01",
+   "hostname": "host-9",
+   "custom_name": null,
+   "classification": "smartphone",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 292,
+   "network_id": 4,
+   "ip": "10.0.3.127",
+   "mac": "02:00:58:00:00:03",
+   "hostname": "host-107",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 293,
+   "network_id": 4,
+   "ip": "10.0.3.129",
+   "mac": "02:00:1c:00:00:0a",
+   "hostname": "host-108",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 294,
+   "network_id": 4,
+   "ip": "10.0.3.134",
+   "mac": "02:00:4b:00:00:03",
+   "hostname": "host-109",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 295,
+   "network_id": 4,
+   "ip": "10.0.3.136",
+   "mac": "02:00:16:00:00:01",
+   "hostname": "host-9",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 296,
+   "network_id": 4,
+   "ip": "10.0.3.138",
+   "mac": "02:00:6f:00:00:01",
+   "hostname": "host-110",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 297,
+   "network_id": 4,
+   "ip": "10.0.3.143",
+   "mac": "02:00:70:00:00:01",
+   "hostname": "host-110",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 298,
+   "network_id": 4,
+   "ip": "10.0.3.156",
+   "mac": "02:00:0b:00:00:16",
+   "hostname": "host-111",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 299,
+   "network_id": 4,
+   "ip": "10.0.3.158",
+   "mac": "02:00:0b:00:00:15",
+   "hostname": "host-112",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 300,
+   "network_id": 4,
+   "ip": "10.0.3.154",
+   "mac": "02:00:0b:00:00:17",
+   "hostname": "host-99",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 301,
    "network_id": 4,
    "ip": "10.0.3.165",
-   "mac": "02:00:00:00:00:40",
-   "hostname": "host-20",
+   "mac": "02:00:1c:00:00:0b",
+   "hostname": "host-113",
    "custom_name": null,
    "classification": "router",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 302,
+   "network_id": 4,
+   "ip": "10.0.3.166",
+   "mac": "02:00:45:00:00:01",
+   "hostname": "host-79",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 303,
+   "network_id": 4,
+   "ip": "10.0.3.167",
+   "mac": "02:00:13:00:00:02",
+   "hostname": "host-114",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 304,
+   "network_id": 4,
+   "ip": "10.0.3.174",
+   "mac": "02:00:71:00:00:01",
+   "hostname": "host-115",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 305,
+   "network_id": 4,
+   "ip": "10.0.3.177",
+   "mac": "02:00:72:00:00:01",
+   "hostname": "host-116",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 306,
+   "network_id": 4,
+   "ip": "10.0.3.175",
+   "mac": "02:00:0b:00:00:18",
+   "hostname": "fab7",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 307,
+   "network_id": 4,
+   "ip": "10.0.3.198",
+   "mac": "02:00:73:00:00:01",
+   "hostname": "host-117",
+   "custom_name": null,
+   "classification": "tablet",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 308,
+   "network_id": 4,
+   "ip": "10.0.3.146",
+   "mac": "02:00:74:00:00:01",
+   "hostname": "host-118",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 309,
+   "network_id": 4,
+   "ip": "10.0.3.220",
+   "mac": "02:00:75:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 310,
+   "network_id": 4,
+   "ip": "10.0.3.125",
+   "mac": "02:00:12:00:00:02",
+   "hostname": "host-119",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 311,
+   "network_id": 5,
+   "ip": "10.0.4.26",
+   "mac": "02:00:76:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "storage",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 312,
+   "network_id": 5,
+   "ip": "10.0.4.123",
+   "mac": "02:00:77:00:00:01",
+   "hostname": "host-120",
+   "custom_name": null,
+   "classification": "server_linux",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 313,
+   "network_id": 5,
+   "ip": "10.0.4.23",
+   "mac": "02:00:0e:00:00:04",
+   "hostname": "host-22",
+   "custom_name": null,
+   "classification": "storage",
    "status": "online",
    "physical_device_id": null
   },
@@ -1517,7 +3464,7 @@
    "id": 314,
    "network_id": 5,
    "ip": "10.0.4.1",
-   "mac": "02:00:00:00:00:41",
+   "mac": "02:00:25:00:00:06",
    "hostname": null,
    "custom_name": null,
    "classification": "hypervisor",
@@ -1528,7 +3475,7 @@
    "id": 315,
    "network_id": 5,
    "ip": "10.0.4.3",
-   "mac": "02:00:00:00:00:38",
+   "mac": "02:00:24:00:00:03",
    "hostname": null,
    "custom_name": null,
    "classification": "hypervisor",
@@ -1536,10 +3483,32 @@
    "physical_device_id": 12
   },
   {
+   "id": 316,
+   "network_id": 5,
+   "ip": "10.0.4.241",
+   "mac": "02:00:0b:00:00:19",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 317,
+   "network_id": 5,
+   "ip": "10.0.4.240",
+   "mac": "02:00:0b:00:00:1a",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 318,
    "network_id": 5,
    "ip": "10.0.4.5",
-   "mac": "02:00:00:00:00:42",
+   "mac": "02:00:24:00:00:04",
    "hostname": null,
    "custom_name": null,
    "classification": "hypervisor",
@@ -1550,7 +3519,7 @@
    "id": 319,
    "network_id": 5,
    "ip": "10.0.4.2",
-   "mac": "02:00:00:00:00:43",
+   "mac": "02:00:25:00:00:07",
    "hostname": null,
    "custom_name": null,
    "classification": "hypervisor",
@@ -1558,10 +3527,43 @@
    "physical_device_id": 11
   },
   {
+   "id": 320,
+   "network_id": 5,
+   "ip": "10.0.4.21",
+   "mac": "02:00:0e:00:00:01",
+   "hostname": "host-121",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 321,
+   "network_id": 5,
+   "ip": "10.0.4.22",
+   "mac": "02:00:0e:00:00:01",
+   "hostname": "host-25",
+   "custom_name": null,
+   "classification": "storage",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 322,
+   "network_id": 5,
+   "ip": "10.0.4.24",
+   "mac": "02:00:76:00:00:02",
+   "hostname": "host-21",
+   "custom_name": null,
+   "classification": "storage",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
    "id": 323,
    "network_id": 5,
    "ip": "10.0.4.4",
-   "mac": "02:00:00:00:00:32",
+   "mac": "02:00:25:00:00:04",
    "hostname": null,
    "custom_name": null,
    "classification": "hypervisor",
@@ -1569,10 +3571,32 @@
    "physical_device_id": 13
   },
   {
+   "id": 324,
+   "network_id": 5,
+   "ip": "10.0.4.25",
+   "mac": "02:00:76:00:00:03",
+   "hostname": "host-21",
+   "custom_name": null,
+   "classification": "storage",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 325,
+   "network_id": 5,
+   "ip": "10.0.4.27",
+   "mac": "02:00:0b:00:00:1b",
+   "hostname": "host-4",
+   "custom_name": null,
+   "classification": "storage",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 327,
    "network_id": 6,
    "ip": "10.0.5.254",
-   "mac": "02:00:00:00:00:44",
+   "mac": "02:00:0c:00:00:0c",
    "hostname": null,
    "custom_name": null,
    "classification": "firewall",
@@ -1583,8 +3607,8 @@
    "id": 328,
    "network_id": 6,
    "ip": "10.0.5.251",
-   "mac": "02:00:00:00:00:45",
-   "hostname": "host-21",
+   "mac": "02:00:35:00:00:05",
+   "hostname": "host-122",
    "custom_name": null,
    "classification": "router",
    "status": "online",
@@ -1594,10 +3618,87 @@
    "id": 329,
    "network_id": 6,
    "ip": "10.0.5.250",
-   "mac": "02:00:00:00:00:46",
-   "hostname": "host-22",
+   "mac": "02:00:0c:00:00:0d",
+   "hostname": "host-123",
    "custom_name": null,
    "classification": "router",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 330,
+   "network_id": 7,
+   "ip": "10.0.6.2",
+   "mac": "02:00:0c:00:00:0e",
+   "hostname": "host-124",
+   "custom_name": null,
+   "classification": "server_windows",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 331,
+   "network_id": 7,
+   "ip": "10.0.6.5",
+   "mac": "02:00:0c:00:00:0f",
+   "hostname": "host-125",
+   "custom_name": null,
+   "classification": "server",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 332,
+   "network_id": 7,
+   "ip": "10.0.6.11",
+   "mac": "02:00:0b:00:00:1c",
+   "hostname": "host-126",
+   "custom_name": null,
+   "classification": "server_windows",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 333,
+   "network_id": 7,
+   "ip": "10.0.6.12",
+   "mac": "02:00:0c:00:00:10",
+   "hostname": "host-127",
+   "custom_name": null,
+   "classification": "server_windows",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 334,
+   "network_id": 7,
+   "ip": "10.0.6.14",
+   "mac": "02:00:0c:00:00:11",
+   "hostname": "host-128",
+   "custom_name": null,
+   "classification": "server_linux",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 335,
+   "network_id": 7,
+   "ip": "10.0.6.25",
+   "mac": "02:00:0b:00:00:1d",
+   "hostname": "host-129",
+   "custom_name": null,
+   "classification": "server_linux",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 336,
+   "network_id": 7,
+   "ip": "10.0.6.26",
+   "mac": "02:00:0b:00:00:1e",
+   "hostname": "host-130",
+   "custom_name": null,
+   "classification": "server_linux",
    "status": "online",
    "physical_device_id": null
   },
@@ -1605,7 +3706,7 @@
    "id": 337,
    "network_id": 7,
    "ip": "10.0.6.254",
-   "mac": "02:00:00:00:00:47",
+   "mac": "02:00:0c:00:00:12",
    "hostname": null,
    "custom_name": null,
    "classification": "vm",
@@ -1616,8 +3717,8 @@
    "id": 338,
    "network_id": 4,
    "ip": "10.0.3.254",
-   "mac": "02:00:00:00:00:10",
-   "hostname": "host-1",
+   "mac": "02:00:04:00:00:02",
+   "hostname": "host-16",
    "custom_name": null,
    "classification": "router",
    "status": "online",
@@ -1627,23 +3728,67 @@
    "id": 339,
    "network_id": 6,
    "ip": "10.0.5.253",
-   "mac": "02:00:00:00:00:10",
-   "hostname": "host-1",
+   "mac": "02:00:04:00:00:02",
+   "hostname": "host-16",
    "custom_name": null,
    "classification": "router",
    "status": "online",
    "physical_device_id": 2
   },
   {
+   "id": 343,
+   "network_id": 4,
+   "ip": "10.0.3.180",
+   "mac": "02:00:50:00:00:01",
+   "hostname": "host-15",
+   "custom_name": null,
+   "classification": "notebook",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 344,
    "network_id": 5,
    "ip": "10.0.4.254",
    "mac": null,
-   "hostname": "host-1",
+   "hostname": "host-16",
    "custom_name": null,
    "classification": "router",
    "status": "online",
    "physical_device_id": 2
+  },
+  {
+   "id": 345,
+   "network_id": 1,
+   "ip": "10.0.0.195",
+   "mac": "02:00:0b:00:00:1f",
+   "hostname": "host-35",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 346,
+   "network_id": 1,
+   "ip": "10.0.0.196",
+   "mac": "02:00:1c:00:00:0c",
+   "hostname": "fab8",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 348,
+   "network_id": 1,
+   "ip": "10.0.0.197",
+   "mac": "02:00:0e:00:00:05",
+   "hostname": "host-131",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "online",
+   "physical_device_id": null
   },
   {
    "id": 354,
@@ -1668,10 +3813,21 @@
    "physical_device_id": 14
   },
   {
+   "id": 358,
+   "network_id": 4,
+   "ip": "10.0.3.182",
+   "mac": "02:00:78:00:00:01",
+   "hostname": "fab1",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 366,
    "network_id": 2,
    "ip": "10.0.1.50",
-   "mac": "02:00:00:00:00:48",
+   "mac": "02:00:0c:00:00:13",
    "hostname": "SW-26",
    "custom_name": "SW-26",
    "classification": "windows",
@@ -1679,11 +3835,198 @@
    "physical_device_id": null
   },
   {
+   "id": 367,
+   "network_id": 4,
+   "ip": "10.0.3.185",
+   "mac": "02:00:58:00:00:04",
+   "hostname": "host-132",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 368,
+   "network_id": 4,
+   "ip": "10.0.3.187",
+   "mac": "02:00:79:00:00:01",
+   "hostname": "host-114",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 369,
+   "network_id": 4,
+   "ip": "10.0.3.197",
+   "mac": "02:00:4a:00:00:01",
+   "hostname": "host-82",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 370,
+   "network_id": 4,
+   "ip": "10.0.3.196",
+   "mac": "02:00:7a:00:00:01",
+   "hostname": "fab1",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 371,
+   "network_id": 4,
+   "ip": "10.0.3.191",
+   "mac": "02:00:4d:00:00:01",
+   "hostname": "host-84",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 372,
+   "network_id": 4,
+   "ip": "10.0.3.193",
+   "mac": "02:00:7b:00:00:01",
+   "hostname": "fab1",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 373,
+   "network_id": 4,
+   "ip": "10.0.3.189",
+   "mac": "02:00:5f:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 374,
+   "network_id": 4,
+   "ip": "10.0.3.190",
+   "mac": "02:00:58:00:00:05",
+   "hostname": "host-133",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 375,
+   "network_id": 4,
+   "ip": "10.0.3.188",
+   "mac": "02:00:7c:00:00:01",
+   "hostname": "host-11",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 376,
+   "network_id": 4,
+   "ip": "10.0.3.195",
+   "mac": "02:00:51:00:00:01",
+   "hostname": "host-14",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 377,
+   "network_id": 4,
+   "ip": "10.0.3.192",
+   "mac": "02:00:7d:00:00:01",
+   "hostname": "SW-24",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 378,
+   "network_id": 4,
+   "ip": "10.0.3.199",
+   "mac": "02:00:4e:00:00:01",
+   "hostname": "host-87",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 379,
+   "network_id": 4,
+   "ip": "10.0.3.194",
+   "mac": "02:00:17:00:00:04",
+   "hostname": "host-134",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 380,
+   "network_id": 4,
+   "ip": "10.0.3.123",
+   "mac": "02:00:7d:00:00:01",
+   "hostname": "SW-24",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 381,
+   "network_id": 4,
+   "ip": "10.0.3.124",
+   "mac": "02:00:7e:00:00:01",
+   "hostname": "host-103",
+   "custom_name": null,
+   "classification": "storage",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 384,
+   "network_id": 3,
+   "ip": "10.0.2.200",
+   "mac": "02:00:0b:00:00:20",
+   "hostname": "host-135",
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 385,
+   "network_id": 2,
+   "ip": "10.0.1.35",
+   "mac": "02:00:43:00:00:02",
+   "hostname": "host-136",
+   "custom_name": null,
+   "classification": "server",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
    "id": 386,
    "network_id": 2,
    "ip": "10.0.1.112",
-   "mac": "02:00:00:00:00:29",
-   "hostname": "host-4",
+   "mac": "02:00:28:00:00:01",
+   "hostname": "fab3",
    "custom_name": null,
    "classification": "router",
    "status": "online",
@@ -1693,19 +4036,118 @@
    "id": 387,
    "network_id": 1,
    "ip": "10.0.0.11",
-   "mac": "02:00:00:00:00:49",
-   "hostname": "host-23",
-   "custom_name": "host-24",
+   "mac": "02:00:7f:00:00:01",
+   "hostname": "host-137",
+   "custom_name": "host-138",
    "classification": "storage",
    "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 388,
+   "network_id": 3,
+   "ip": "10.0.2.51",
+   "mac": "02:00:0b:00:00:21",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 389,
+   "network_id": 3,
+   "ip": "10.0.2.55",
+   "mac": "02:00:0b:00:00:22",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 390,
+   "network_id": 3,
+   "ip": "10.0.2.56",
+   "mac": "02:00:0b:00:00:23",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 391,
+   "network_id": 3,
+   "ip": "10.0.2.60",
+   "mac": "02:00:0b:00:00:24",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 392,
+   "network_id": 7,
+   "ip": "10.0.6.8",
+   "mac": "02:00:0b:00:00:25",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 393,
+   "network_id": 6,
+   "ip": "10.0.5.8",
+   "mac": "02:00:0b:00:00:25",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 394,
+   "network_id": 4,
+   "ip": "10.0.3.8",
+   "mac": "02:00:0b:00:00:25",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "vm",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 395,
+   "network_id": 4,
+   "ip": "10.0.3.184",
+   "mac": "02:00:80:00:00:01",
+   "hostname": "fab1",
+   "custom_name": null,
+   "classification": "voip",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 396,
+   "network_id": 4,
+   "ip": "10.0.3.116",
+   "mac": "02:00:5a:00:00:01",
+   "hostname": "host-11",
+   "custom_name": null,
+   "classification": "workstation",
+   "status": "offline",
    "physical_device_id": null
   },
   {
    "id": 397,
    "network_id": 3,
    "ip": "10.0.2.252",
-   "mac": "02:00:00:00:00:4a",
-   "hostname": "host-25",
+   "mac": "02:00:08:00:00:01",
+   "hostname": "host-139",
    "custom_name": null,
    "classification": "server",
    "status": "online",
@@ -1715,7 +4157,7 @@
    "id": 398,
    "network_id": 2,
    "ip": "10.0.1.233",
-   "mac": "02:00:00:00:00:4b",
+   "mac": "02:00:09:00:00:01",
    "hostname": null,
    "custom_name": null,
    "classification": "storage",
@@ -1726,11 +4168,462 @@
    "id": 399,
    "network_id": 2,
    "ip": "10.0.1.234",
-   "mac": "02:00:00:00:00:4c",
+   "mac": "02:00:0a:00:00:01",
    "hostname": null,
    "custom_name": null,
    "classification": "server_linux",
    "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 401,
+   "network_id": 5,
+   "ip": "10.0.4.40",
+   "mac": "02:00:0b:00:00:26",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 402,
+   "network_id": 5,
+   "ip": "10.0.4.50",
+   "mac": "02:00:0c:00:00:14",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 403,
+   "network_id": 6,
+   "ip": "10.0.5.10",
+   "mac": "02:00:0b:00:00:27",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 404,
+   "network_id": 7,
+   "ip": "10.0.6.40",
+   "mac": "02:00:0b:00:00:28",
+   "hostname": "host-140",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 405,
+   "network_id": 1,
+   "ip": "10.0.0.15",
+   "mac": "02:00:0b:00:00:29",
+   "hostname": "host-141",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 406,
+   "network_id": 7,
+   "ip": "10.0.6.15",
+   "mac": "02:00:0b:00:00:2a",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 407,
+   "network_id": 3,
+   "ip": "10.0.2.172",
+   "mac": "02:00:81:00:00:01",
+   "hostname": "host-142",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 408,
+   "network_id": 3,
+   "ip": "10.0.2.178",
+   "mac": "02:00:38:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 409,
+   "network_id": 3,
+   "ip": "10.0.2.168",
+   "mac": "02:00:38:00:00:01",
+   "hostname": "fab1",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 410,
+   "network_id": 4,
+   "ip": "10.0.3.183",
+   "mac": "02:00:82:00:00:01",
+   "hostname": "host-143",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 411,
+   "network_id": 3,
+   "ip": "10.0.2.137",
+   "mac": "02:00:16:00:00:01",
+   "hostname": "host-9",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 412,
+   "network_id": 3,
+   "ip": "10.0.2.138",
+   "mac": "02:00:38:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 413,
+   "network_id": 3,
+   "ip": "10.0.2.141",
+   "mac": "02:00:83:00:00:01",
+   "hostname": "host-14",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 414,
+   "network_id": 3,
+   "ip": "10.0.2.142",
+   "mac": "02:00:38:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 415,
+   "network_id": 3,
+   "ip": "10.0.2.143",
+   "mac": "02:00:38:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 416,
+   "network_id": 3,
+   "ip": "10.0.2.145",
+   "mac": "02:00:0e:00:00:01",
+   "hostname": "host-144",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 417,
+   "network_id": 7,
+   "ip": "10.0.6.13",
+   "mac": "02:00:0b:00:00:2b",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 418,
+   "network_id": 3,
+   "ip": "10.0.2.146",
+   "mac": "02:00:38:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 419,
+   "network_id": 3,
+   "ip": "10.0.2.147",
+   "mac": "02:00:38:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 420,
+   "network_id": 3,
+   "ip": "10.0.2.148",
+   "mac": "02:00:38:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 421,
+   "network_id": 3,
+   "ip": "10.0.2.129",
+   "mac": "02:00:38:00:00:01",
+   "hostname": "host-14",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 422,
+   "network_id": 3,
+   "ip": "10.0.2.167",
+   "mac": "02:00:84:00:00:01",
+   "hostname": "host-96",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 423,
+   "network_id": 3,
+   "ip": "10.0.2.170",
+   "mac": "02:00:38:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 424,
+   "network_id": 3,
+   "ip": "10.0.2.171",
+   "mac": "02:00:38:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 425,
+   "network_id": 3,
+   "ip": "10.0.2.173",
+   "mac": "02:00:85:00:00:01",
+   "hostname": "host-145",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 426,
+   "network_id": 2,
+   "ip": "10.0.1.161",
+   "mac": "02:00:0b:00:00:2c",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 427,
+   "network_id": 2,
+   "ip": "10.0.1.162",
+   "mac": "02:00:0b:00:00:2d",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 428,
+   "network_id": 2,
+   "ip": "10.0.1.170",
+   "mac": "02:00:0b:00:00:2e",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 429,
+   "network_id": 2,
+   "ip": "10.0.1.171",
+   "mac": "02:00:0b:00:00:2f",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 430,
+   "network_id": 2,
+   "ip": "10.0.1.138",
+   "mac": "02:00:0b:00:00:30",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 431,
+   "network_id": 2,
+   "ip": "10.0.1.136",
+   "mac": "02:00:0b:00:00:31",
+   "hostname": "host-146",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 432,
+   "network_id": 2,
+   "ip": "10.0.1.151",
+   "mac": "02:00:0b:00:00:32",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 433,
+   "network_id": 3,
+   "ip": "10.0.2.174",
+   "mac": "02:00:38:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 434,
+   "network_id": 2,
+   "ip": "10.0.1.137",
+   "mac": "02:00:0b:00:00:33",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 435,
+   "network_id": 1,
+   "ip": "10.0.0.43",
+   "mac": "02:00:0b:00:00:34",
+   "hostname": "host-147",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 436,
+   "network_id": 3,
+   "ip": "10.0.2.177",
+   "mac": "02:00:38:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 437,
+   "network_id": 2,
+   "ip": "10.0.1.134",
+   "mac": "02:00:63:00:00:01",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 438,
+   "network_id": 2,
+   "ip": "10.0.1.133",
+   "mac": "02:00:52:00:00:02",
+   "hostname": "host-148",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
+   "physical_device_id": null
+  },
+  {
+   "id": 439,
+   "network_id": 7,
+   "ip": "10.0.6.20",
+   "mac": "02:00:0c:00:00:0e",
+   "hostname": null,
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 440,
+   "network_id": 2,
+   "ip": "10.0.1.11",
+   "mac": "02:00:0b:00:00:35",
+   "hostname": "host-26",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "online",
+   "physical_device_id": null
+  },
+  {
+   "id": 441,
+   "network_id": 2,
+   "ip": "10.0.1.21",
+   "mac": "02:00:0e:00:00:01",
+   "hostname": "host-121",
+   "custom_name": null,
+   "classification": "unknown",
+   "status": "offline",
    "physical_device_id": null
   }
  ],
@@ -1742,9 +4635,9 @@
    "remote_port": "Port 10",
    "protocol": "lldp",
    "remote_ip": "10.0.1.237",
-   "remote_mac": "02:00:00:00:00:21",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:06:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
@@ -1753,9 +4646,9 @@
    "remote_port": "Port 49",
    "protocol": "lldp",
    "remote_ip": "10.0.1.239",
-   "remote_mac": "02:00:00:00:00:25",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:03:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
@@ -1764,9 +4657,9 @@
    "remote_port": "Port 50",
    "protocol": "lldp",
    "remote_ip": "10.0.1.239",
-   "remote_mac": "02:00:00:00:00:25",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:03:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
@@ -1775,9 +4668,9 @@
    "remote_port": "te1",
    "protocol": "lldp",
    "remote_ip": "10.0.1.245",
-   "remote_mac": "02:00:00:00:00:28",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:05:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
@@ -1786,97 +4679,97 @@
    "remote_port": "Port 1",
    "protocol": "lldp",
    "remote_ip": "10.0.1.241",
-   "remote_mac": "02:00:00:00:00:23",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:00:00:00:02",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
    "local_port": "porta-6",
-   "remote_device_name": "02:00:00:00:00:4d",
+   "remote_device_name": "02:00:35:00:00:06",
    "remote_port": "sfp-sfpplus12",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:4d",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:35:00:00:06",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
    "local_port": "porta-6",
-   "remote_device_name": "02:00:00:00:00:4d",
+   "remote_device_name": "02:00:35:00:00:06",
    "remote_port": "porta-7",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:4d",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:35:00:00:06",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
    "local_port": "porta-8",
-   "remote_device_name": "02:00:00:00:00:4e",
+   "remote_device_name": "02:00:06:00:00:05",
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:4e",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:06:00:00:05",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
    "local_port": "porta-9",
-   "remote_device_name": "02:00:00:00:00:38",
+   "remote_device_name": "02:00:24:00:00:03",
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:38",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:24:00:00:03",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
    "local_port": "porta-10",
-   "remote_device_name": "02:00:00:00:00:43",
+   "remote_device_name": "02:00:25:00:00:07",
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:43",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:25:00:00:07",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
    "local_port": "porta-11",
-   "remote_device_name": "02:00:00:00:00:41",
+   "remote_device_name": "02:00:25:00:00:06",
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:41",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:25:00:00:06",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
    "local_port": "porta-12",
-   "remote_device_name": "02:00:00:00:00:4f",
+   "remote_device_name": "02:00:25:00:00:08",
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:4f",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:25:00:00:08",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
    "local_port": "porta-13",
-   "remote_device_name": "02:00:00:00:00:32",
+   "remote_device_name": "02:00:25:00:00:04",
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:32",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:25:00:00:04",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
@@ -1885,9 +4778,9 @@
    "remote_port": "Port 10",
    "protocol": "lldp",
    "remote_ip": "10.0.1.238",
-   "remote_mac": "02:00:00:00:00:20",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:06:00:00:02",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
@@ -1896,9 +4789,9 @@
    "remote_port": "Port 49",
    "protocol": "lldp",
    "remote_ip": "10.0.1.242",
-   "remote_mac": "02:00:00:00:00:27",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:00:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
@@ -1907,42 +4800,42 @@
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": "172.31.0.1",
-   "remote_mac": "02:00:00:00:00:4a",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:08:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
    "local_port": "porta-17",
-   "remote_device_name": "02:00:00:00:00:50",
+   "remote_device_name": "02:00:04:00:00:01",
    "remote_port": "sfp28-2",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:50",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:04:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
    "local_port": "porta-17",
-   "remote_device_name": "02:00:00:00:00:50",
+   "remote_device_name": "02:00:04:00:00:01",
    "remote_port": "porta-18",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:50",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:04:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 11,
    "local_port": "porta-19",
-   "remote_device_name": "02:00:00:00:00:50",
+   "remote_device_name": "02:00:04:00:00:01",
    "remote_port": "sfp28-1",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:50",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:04:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 182,
@@ -1951,9 +4844,9 @@
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": "10.0.1.223",
-   "remote_mac": "02:00:00:00:00:1e",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:00:00:00:05",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 182,
@@ -1962,9 +4855,9 @@
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": "10.0.1.222",
-   "remote_mac": "02:00:00:00:00:1c",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:00:00:00:03",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 182,
@@ -1973,9 +4866,9 @@
    "remote_port": "Port 4",
    "protocol": "lldp",
    "remote_ip": "10.0.1.243",
-   "remote_mac": "02:00:00:00:00:51",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:01:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 12,
@@ -1984,9 +4877,9 @@
    "remote_port": "porta-20",
    "protocol": "lldp",
    "remote_ip": "10.0.1.236",
-   "remote_mac": "02:00:00:00:00:22",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:03:00:00:03",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 12,
@@ -1995,53 +4888,53 @@
    "remote_port": "porta-21",
    "protocol": "lldp",
    "remote_ip": "10.0.1.233",
-   "remote_mac": "02:00:00:00:00:4b",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:09:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 12,
    "local_port": "Port 3",
-   "remote_device_name": "02:00:00:00:00:29",
+   "remote_device_name": "02:00:28:00:00:01",
    "remote_port": "vlan40",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:29",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:28:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 12,
    "local_port": "Port 3",
-   "remote_device_name": "02:00:00:00:00:29",
+   "remote_device_name": "02:00:28:00:00:01",
    "remote_port": "ether1",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:29",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:28:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 12,
    "local_port": "Port 3",
-   "remote_device_name": "02:00:00:00:00:29",
+   "remote_device_name": "02:00:28:00:00:01",
    "remote_port": "vlan4",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:29",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:28:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 12,
    "local_port": "Port 4",
-   "remote_device_name": "02:00:00:00:00:36",
+   "remote_device_name": "02:00:22:00:00:05",
    "remote_port": "7",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:36",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:22:00:00:05",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 12,
@@ -2050,64 +4943,64 @@
    "remote_port": "Port 8",
    "protocol": "lldp",
    "remote_ip": "10.0.1.243",
-   "remote_mac": "02:00:00:00:00:51",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:01:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 7,
    "local_port": "Port 5",
-   "remote_device_name": "02:00:00:00:00:52",
-   "remote_port": "",
-   "protocol": "lldp",
-   "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:52",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
-  },
-  {
-   "device_id": 7,
-   "local_port": "Port 5",
-   "remote_device_name": "02:00:00:00:00:3a",
-   "remote_port": "",
-   "protocol": "lldp",
-   "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:3a",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
-  },
-  {
-   "device_id": 7,
-   "local_port": "Port 5",
-   "remote_device_name": "02:00:00:00:00:2c",
-   "remote_port": "",
-   "protocol": "lldp",
-   "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:2c",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
-  },
-  {
-   "device_id": 7,
-   "local_port": "Port 5",
-   "remote_device_name": "02:00:00:00:00:2d",
-   "remote_port": "",
-   "protocol": "lldp",
-   "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:2d",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
-  },
-  {
-   "device_id": 7,
-   "local_port": "Port 22",
    "remote_device_name": "02:00:00:00:00:09",
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": null,
    "remote_mac": "02:00:00:00:00:09",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
+  },
+  {
+   "device_id": 7,
+   "local_port": "Port 5",
+   "remote_device_name": "02:00:00:00:00:08",
+   "remote_port": "",
+   "protocol": "lldp",
+   "remote_ip": null,
+   "remote_mac": "02:00:00:00:00:08",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
+  },
+  {
+   "device_id": 7,
+   "local_port": "Port 5",
+   "remote_device_name": "02:00:00:00:00:06",
+   "remote_port": "",
+   "protocol": "lldp",
+   "remote_ip": null,
+   "remote_mac": "02:00:00:00:00:06",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
+  },
+  {
+   "device_id": 7,
+   "local_port": "Port 5",
+   "remote_device_name": "02:00:00:00:00:07",
+   "remote_port": "",
+   "protocol": "lldp",
+   "remote_ip": null,
+   "remote_mac": "02:00:00:00:00:07",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
+  },
+  {
+   "device_id": 7,
+   "local_port": "Port 22",
+   "remote_device_name": "02:00:11:00:00:01",
+   "remote_port": "",
+   "protocol": "lldp",
+   "remote_ip": null,
+   "remote_mac": "02:00:11:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 7,
@@ -2116,9 +5009,9 @@
    "remote_port": "Port 28",
    "protocol": "lldp",
    "remote_ip": "10.0.1.243",
-   "remote_mac": "02:00:00:00:00:51",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:01:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 183,
@@ -2127,9 +5020,9 @@
    "remote_port": "Port 8",
    "protocol": "lldp",
    "remote_ip": "10.0.1.237",
-   "remote_mac": "02:00:00:00:00:21",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:06:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 10,
@@ -2138,42 +5031,42 @@
    "remote_port": "eth0",
    "protocol": "lldp",
    "remote_ip": "10.0.1.234",
-   "remote_mac": "02:00:00:00:00:4c",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:0a:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 10,
    "local_port": "Port 13",
-   "remote_device_name": "02:00:00:00:00:19",
+   "remote_device_name": "02:00:26:00:00:01",
    "remote_port": "ether1",
    "protocol": "lldp",
    "remote_ip": "172.31.0.2",
-   "remote_mac": "02:00:00:00:00:19",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:26:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 10,
    "local_port": "Port 32",
-   "remote_device_name": "02:00:00:00:00:3c",
+   "remote_device_name": "02:00:53:00:00:01",
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:3c",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:53:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 10,
    "local_port": "Port 44",
-   "remote_device_name": "02:00:00:00:00:0c",
+   "remote_device_name": "02:00:14:00:00:01",
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:0c",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:14:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 10,
@@ -2182,9 +5075,9 @@
    "remote_port": "eth0",
    "protocol": "lldp",
    "remote_ip": "10.0.1.235",
-   "remote_mac": "02:00:00:00:00:1f",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:03:00:00:02",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 10,
@@ -2193,9 +5086,9 @@
    "remote_port": "Port 5",
    "protocol": "lldp",
    "remote_ip": "10.0.1.243",
-   "remote_mac": "02:00:00:00:00:51",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:01:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 10,
@@ -2204,9 +5097,9 @@
    "remote_port": "Port 6",
    "protocol": "lldp",
    "remote_ip": "10.0.1.243",
-   "remote_mac": "02:00:00:00:00:51",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:01:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 8,
@@ -2215,20 +5108,20 @@
    "remote_port": "Port 9",
    "protocol": "lldp",
    "remote_ip": "10.0.1.243",
-   "remote_mac": "02:00:00:00:00:51",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:01:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 8,
    "local_port": "porta-24",
-   "remote_device_name": "02:00:00:00:00:2f",
+   "remote_device_name": "02:00:35:00:00:01",
    "remote_port": "sfp-sfpplus2",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:2f",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:35:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 184,
@@ -2237,9 +5130,9 @@
    "remote_port": "Port 48",
    "protocol": "lldp",
    "remote_ip": "10.0.1.239",
-   "remote_mac": "02:00:00:00:00:25",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:03:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 186,
@@ -2248,9 +5141,9 @@
    "remote_port": "Port 25",
    "protocol": "lldp",
    "remote_ip": "10.0.1.243",
-   "remote_mac": "02:00:00:00:00:51",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:01:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 186,
@@ -2259,9 +5152,9 @@
    "remote_port": "Port 29",
    "protocol": "lldp",
    "remote_ip": "10.0.1.243",
-   "remote_mac": "02:00:00:00:00:51",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:01:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 187,
@@ -2270,9 +5163,9 @@
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": "10.0.1.245",
-   "remote_mac": "02:00:00:00:00:28",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:05:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 189,
@@ -2281,20 +5174,20 @@
    "remote_port": "Port 6",
    "protocol": "lldp",
    "remote_ip": "10.0.1.237",
-   "remote_mac": "02:00:00:00:00:21",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:06:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 189,
    "local_port": "eth0",
-   "remote_device_name": "02:00:00:00:00:53",
+   "remote_device_name": "02:00:06:00:00:06",
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:53",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:06:00:00:06",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 190,
@@ -2303,9 +5196,9 @@
    "remote_port": "Port 10",
    "protocol": "lldp",
    "remote_ip": "10.0.1.239",
-   "remote_mac": "02:00:00:00:00:25",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:03:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 191,
@@ -2314,20 +5207,20 @@
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": "10.0.1.245",
-   "remote_mac": "02:00:00:00:00:28",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:05:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 191,
    "local_port": "porta-25",
-   "remote_device_name": "02:00:00:00:00:49",
+   "remote_device_name": "02:00:7f:00:00:01",
    "remote_port": "",
    "protocol": "lldp",
    "remote_ip": "172.31.0.3",
-   "remote_mac": "02:00:00:00:00:49",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:7f:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 192,
@@ -2336,30 +5229,30 @@
    "remote_port": "Port 26",
    "protocol": "lldp",
    "remote_ip": "10.0.1.243",
-   "remote_mac": "02:00:00:00:00:51",
-   "timestamp": "2026-10-13 12:14:53",
-   "source": "device"
+   "remote_mac": "02:00:01:00:00:01",
+   "timestamp": "2026-10-13 20:57:48",
+   "source": "unifi"
   },
   {
    "device_id": 1,
    "local_port": "porta-26",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "sfp-sfpplus2",
    "protocol": "mndp",
    "remote_ip": "172.31.0.4",
-   "remote_mac": "02:00:00:00:00:54",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:07",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-27",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "sfp-sfpplus4",
    "protocol": "mndp",
    "remote_ip": "172.31.0.5",
-   "remote_mac": "02:00:00:00:00:55",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:08",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
@@ -2369,8 +5262,8 @@
    "remote_port": "",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:56",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:24:00:00:05",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
@@ -2380,41 +5273,41 @@
    "remote_port": "",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:57",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:25:00:00:09",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-30",
-   "remote_device_name": "host-2",
+   "remote_device_name": "host-27",
    "remote_port": "porta-31",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:18",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:22:00:00:02",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-32",
-   "remote_device_name": "host-2",
+   "remote_device_name": "host-27",
    "remote_port": "porta-31",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:18",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:22:00:00:02",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-33",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "porta-34",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:58",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:09",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
@@ -2424,41 +5317,41 @@
    "remote_port": "SFP28",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:59",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:01:00:00:04",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-33",
-   "remote_device_name": "host-10",
+   "remote_device_name": "host-50",
    "remote_port": "porta-35",
    "protocol": "mndp",
    "remote_ip": "10.0.2.121",
-   "remote_mac": "02:00:00:00:00:5a",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:0a",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-33",
-   "remote_device_name": "host-4",
+   "remote_device_name": "fab3",
    "remote_port": "ether1",
    "protocol": "mndp",
    "remote_ip": "10.0.2.136",
-   "remote_mac": "02:00:00:00:00:29",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:28:00:00:01",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-36",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "porta-34",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:58",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:09",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
@@ -2468,129 +5361,129 @@
    "remote_port": "SFP28",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:59",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:01:00:00:04",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-36",
-   "remote_device_name": "host-10",
+   "remote_device_name": "host-50",
    "remote_port": "porta-35",
    "protocol": "mndp",
    "remote_ip": "10.0.2.121",
-   "remote_mac": "02:00:00:00:00:5a",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:0a",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-36",
-   "remote_device_name": "host-4",
+   "remote_device_name": "fab3",
    "remote_port": "ether1",
    "protocol": "mndp",
    "remote_ip": "10.0.2.136",
-   "remote_mac": "02:00:00:00:00:29",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:28:00:00:01",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-37",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "porta-37",
    "protocol": "mndp",
    "remote_ip": "172.31.0.6",
-   "remote_mac": "02:00:00:00:00:45",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:05",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-38",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "porta-38",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:45",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:05",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-38",
-   "remote_device_name": "host-4",
+   "remote_device_name": "fab3",
    "remote_port": "vlan4",
    "protocol": "mndp",
    "remote_ip": "10.0.0.171",
-   "remote_mac": "02:00:00:00:00:29",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:28:00:00:01",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-39",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "porta-39",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:45",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:05",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-39",
-   "remote_device_name": "02:00:00:00:00:3c",
+   "remote_device_name": "02:00:53:00:00:01",
    "remote_port": "gi10",
    "protocol": "mndp",
    "remote_ip": "10.0.3.108",
-   "remote_mac": "02:00:00:00:00:5b",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:53:00:00:02",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-40",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "porta-40",
    "protocol": "mndp",
    "remote_ip": "172.31.0.7",
-   "remote_mac": "02:00:00:00:00:45",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:05",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-41",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "porta-41",
    "protocol": "mndp",
    "remote_ip": "172.31.0.8",
-   "remote_mac": "02:00:00:00:00:45",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:05",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-42",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "porta-42",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:45",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:05",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-43",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "porta-43",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:45",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:05",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
@@ -2600,30 +5493,30 @@
    "remote_port": "porta-45",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:5c",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:26:00:00:04",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-44",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "porta-44",
    "protocol": "mndp",
    "remote_ip": null,
-   "remote_mac": "02:00:00:00:00:45",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:05",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-44",
-   "remote_device_name": "host-4",
+   "remote_device_name": "fab3",
    "remote_port": "vlan40",
    "protocol": "mndp",
    "remote_ip": "10.0.1.112",
-   "remote_mac": "02:00:00:00:00:29",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:28:00:00:01",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
@@ -2633,8 +5526,8 @@
    "remote_port": "porta-46",
    "protocol": "mndp",
    "remote_ip": "10.0.1.165",
-   "remote_mac": "02:00:00:00:00:19",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:26:00:00:01",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
@@ -2644,8 +5537,8 @@
    "remote_port": "ether1",
    "protocol": "mndp",
    "remote_ip": "10.0.1.167",
-   "remote_mac": "02:00:00:00:00:1a",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:26:00:00:02",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
@@ -2655,56 +5548,107 @@
    "remote_port": "ether1",
    "protocol": "mndp",
    "remote_ip": "10.0.1.168",
-   "remote_mac": "02:00:00:00:00:1b",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:26:00:00:03",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-7",
-   "remote_device_name": "host-22",
+   "remote_device_name": "host-123",
    "remote_port": "ether1",
    "protocol": "mndp",
    "remote_ip": "10.0.5.250",
-   "remote_mac": "02:00:00:00:00:46",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:0c:00:00:0d",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-7",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "porta-7",
    "protocol": "mndp",
    "remote_ip": "10.0.5.251",
-   "remote_mac": "02:00:00:00:00:45",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:05",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-47",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "sfp-sfpplus2",
    "protocol": "mndp",
    "remote_ip": "172.31.0.4",
-   "remote_mac": "02:00:00:00:00:54",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:07",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   },
   {
    "device_id": 1,
    "local_port": "porta-47",
-   "remote_device_name": "host-21",
+   "remote_device_name": "host-122",
    "remote_port": "sfp-sfpplus4",
    "protocol": "mndp",
    "remote_ip": "172.31.0.5",
-   "remote_mac": "02:00:00:00:00:55",
-   "timestamp": "2026-10-13 14:15:15",
+   "remote_mac": "02:00:35:00:00:08",
+   "timestamp": "2026-10-13 20:00:19",
    "source": "device"
   }
  ],
- "uplinkPorts": [],
+ "uplinkPorts": [
+  {
+   "device_id": 7,
+   "port_index": 49,
+   "port_name": "porta-48"
+  },
+  {
+   "device_id": 8,
+   "port_index": 1,
+   "port_name": "porta-48"
+  },
+  {
+   "device_id": 10,
+   "port_index": 49,
+   "port_name": "porta-48"
+  },
+  {
+   "device_id": 11,
+   "port_index": 31,
+   "port_name": "porta-17"
+  },
+  {
+   "device_id": 12,
+   "port_index": 9,
+   "port_name": "porta-48"
+  },
+  {
+   "device_id": 182,
+   "port_index": 10,
+   "port_name": "Port 10"
+  },
+  {
+   "device_id": 183,
+   "port_index": 1,
+   "port_name": "Port 1"
+  },
+  {
+   "device_id": 186,
+   "port_index": 12,
+   "port_name": "porta-49"
+  },
+  {
+   "device_id": 189,
+   "port_index": 1,
+   "port_name": "Port 1"
+  },
+  {
+   "device_id": 192,
+   "port_index": 10,
+   "port_name": "Port 10"
+  }
+ ],
  "locations": [],
  "networks": [
   {
@@ -2760,222 +5704,223 @@
  "knownMacs": [
   {
    "device_id": 1,
-   "mac": "02:00:00:00:00:50"
+   "mac": "02:00:04:00:00:01"
   },
   {
    "device_id": 2,
-   "mac": "02:00:00:00:00:17"
+   "mac": "02:00:25:00:00:03"
   },
   {
    "device_id": 2,
-   "mac": "02:00:00:00:00:17"
+   "mac": "02:00:25:00:00:03"
   },
   {
    "device_id": 3,
-   "mac": "02:00:00:00:00:16"
+   "mac": "02:00:25:00:00:02"
   },
   {
    "device_id": 3,
-   "mac": "02:00:00:00:00:16"
+   "mac": "02:00:25:00:00:02"
   },
   {
    "device_id": 4,
-   "mac": "02:00:00:00:00:15"
+   "mac": "02:00:24:00:00:02"
   },
   {
    "device_id": 5,
-   "mac": "02:00:00:00:00:14"
+   "mac": "02:00:25:00:00:01"
   },
   {
    "device_id": 5,
-   "mac": "02:00:00:00:00:14"
+   "mac": "02:00:25:00:00:01"
   },
   {
    "device_id": 6,
-   "mac": "02:00:00:00:00:13"
+   "mac": "02:00:24:00:00:01"
   },
   {
    "device_id": 6,
-   "mac": "02:00:00:00:00:13"
+   "mac": "02:00:24:00:00:01"
   },
   {
    "device_id": 7,
-   "mac": "02:00:00:00:00:27"
-  },
-  {
-   "device_id": 7,
-   "mac": "02:00:00:00:00:5d"
-  },
-  {
-   "device_id": 8,
-   "mac": "02:00:00:00:00:23"
-  },
-  {
-   "device_id": 8,
-   "mac": "02:00:00:00:00:5e"
-  },
-  {
-   "device_id": 9,
-   "mac": "02:00:00:00:00:24"
-  },
-  {
-   "device_id": 9,
-   "mac": "02:00:00:00:00:5f"
-  },
-  {
-   "device_id": 10,
-   "mac": "02:00:00:00:00:25"
-  },
-  {
-   "device_id": 10,
-   "mac": "02:00:00:00:00:25"
-  },
-  {
-   "device_id": 11,
-   "mac": "02:00:00:00:00:26"
-  },
-  {
-   "device_id": 11,
-   "mac": "02:00:00:00:00:59"
-  },
-  {
-   "device_id": 12,
-   "mac": "02:00:00:00:00:28"
-  },
-  {
-   "device_id": 12,
-   "mac": "02:00:00:00:00:60"
-  },
-  {
-   "device_id": 13,
-   "mac": "02:00:00:00:00:07"
-  },
-  {
-   "device_id": 14,
-   "mac": "02:00:00:00:00:08"
-  },
-  {
-   "device_id": 14,
-   "mac": "02:00:00:00:00:08"
-  },
-  {
-   "device_id": 15,
-   "mac": "02:00:00:00:00:44"
-  },
-  {
-   "device_id": 15,
-   "mac": "02:00:00:00:00:61"
-  },
-  {
-   "device_id": 16,
-   "mac": "02:00:00:00:00:06"
-  },
-  {
-   "device_id": 17,
-   "mac": "02:00:00:00:00:05"
-  },
-  {
-   "device_id": 18,
-   "mac": "02:00:00:00:00:02"
-  },
-  {
-   "device_id": 19,
    "mac": "02:00:00:00:00:01"
   },
   {
-   "device_id": 20,
-   "mac": "02:00:00:00:00:03"
-  },
-  {
-   "device_id": 22,
-   "mac": "02:00:00:00:00:04"
-  },
-  {
-   "device_id": 23,
-   "mac": "02:00:00:00:00:12"
-  },
-  {
-   "device_id": 23,
-   "mac": "02:00:00:00:00:12"
-  },
-  {
-   "device_id": 24,
-   "mac": "02:00:00:00:00:0b"
-  },
-  {
-   "device_id": 25,
+   "device_id": 7,
    "mac": "02:00:00:00:00:0a"
   },
   {
+   "device_id": 8,
+   "mac": "02:00:00:00:00:02"
+  },
+  {
+   "device_id": 8,
+   "mac": "02:00:00:00:00:0b"
+  },
+  {
+   "device_id": 9,
+   "mac": "02:00:02:00:00:01"
+  },
+  {
+   "device_id": 9,
+   "mac": "02:00:02:00:00:02"
+  },
+  {
+   "device_id": 10,
+   "mac": "02:00:03:00:00:01"
+  },
+  {
+   "device_id": 10,
+   "mac": "02:00:03:00:00:01"
+  },
+  {
+   "device_id": 11,
+   "mac": "02:00:01:00:00:02"
+  },
+  {
+   "device_id": 11,
+   "mac": "02:00:01:00:00:04"
+  },
+  {
+   "device_id": 12,
+   "mac": "02:00:05:00:00:01"
+  },
+  {
+   "device_id": 12,
+   "mac": "02:00:05:00:00:02"
+  },
+  {
+   "device_id": 13,
+   "mac": "02:00:0b:00:00:06"
+  },
+  {
+   "device_id": 14,
+   "mac": "02:00:0c:00:00:08"
+  },
+  {
+   "device_id": 14,
+   "mac": "02:00:0c:00:00:08"
+  },
+  {
+   "device_id": 15,
+   "mac": "02:00:0c:00:00:0c"
+  },
+  {
+   "device_id": 15,
+   "mac": "02:00:0c:00:00:15"
+  },
+  {
+   "device_id": 16,
+   "mac": "02:00:0c:00:00:07"
+  },
+  {
+   "device_id": 17,
+   "mac": "02:00:0c:00:00:06"
+  },
+  {
+   "device_id": 18,
+   "mac": "02:00:0c:00:00:02"
+  },
+  {
+   "device_id": 19,
+   "mac": "02:00:0b:00:00:01"
+  },
+  {
+   "device_id": 20,
+   "mac": "02:00:0c:00:00:03"
+  },
+  {
+   "device_id": 22,
+   "mac": "02:00:0b:00:00:05"
+  },
+  {
+   "device_id": 23,
+   "mac": "02:00:0b:00:00:08"
+  },
+  {
+   "device_id": 23,
+   "mac": "02:00:0b:00:00:08"
+  },
+  {
+   "device_id": 24,
+   "mac": "02:00:13:00:00:01"
+  },
+  {
+   "device_id": 25,
+   "mac": "02:00:12:00:00:01"
+  },
+  {
    "device_id": 26,
-   "mac": "02:00:00:00:00:09"
+   "mac": "02:00:11:00:00:01"
   },
   {
    "device_id": 27,
-   "mac": "02:00:00:00:00:0d"
+   "mac": "02:00:15:00:00:01"
   },
   {
    "device_id": 28,
-   "mac": "02:00:00:00:00:3f"
+   "mac": "02:00:16:00:00:02"
   },
   {
    "device_id": 29,
-   "mac": "02:00:00:00:00:0c"
+   "mac": "02:00:14:00:00:01"
   },
   {
    "device_id": 30,
-   "mac": "02:00:00:00:00:11"
+   "mac": "02:00:1f:00:00:01"
   },
   {
    "device_id": 31,
-   "mac": "02:00:00:00:00:0e"
+   "mac": "02:00:18:00:00:01"
   },
   {
    "device_id": 32,
-   "mac": "02:00:00:00:00:3d"
+   "mac": "02:00:59:00:00:01"
   },
   {
    "device_id": 33,
-   "mac": "02:00:00:00:00:48"
+   "mac": "02:00:0c:00:00:13"
   },
   {
    "device_id": 182,
-   "mac": "02:00:00:00:00:21"
+   "mac": "02:00:06:00:00:01"
   },
   {
    "device_id": 183,
-   "mac": "02:00:00:00:00:1c"
+   "mac": "02:00:00:00:00:03"
   },
   {
    "device_id": 184,
-   "mac": "02:00:00:00:00:1f"
+   "mac": "02:00:03:00:00:02"
   },
   {
    "device_id": 187,
-   "mac": "02:00:00:00:00:4b"
+   "mac": "02:00:09:00:00:01"
   },
   {
    "device_id": 188,
-   "mac": "02:00:00:00:00:1d"
+   "mac": "02:00:00:00:00:04"
   },
   {
    "device_id": 189,
-   "mac": "02:00:00:00:00:1e"
+   "mac": "02:00:00:00:00:05"
   },
   {
    "device_id": 190,
-   "mac": "02:00:00:00:00:4c"
+   "mac": "02:00:0a:00:00:01"
   },
   {
    "device_id": 191,
-   "mac": "02:00:00:00:00:22"
+   "mac": "02:00:03:00:00:03"
   },
   {
    "device_id": 192,
-   "mac": "02:00:00:00:00:20"
+   "mac": "02:00:06:00:00:02"
   }
  ],
  "overrides": [],
- "nowMs": 1791904007583,
+ "macPorts": [],
+ "nowMs": 1791925267781,
  "staleDays": 2
 }

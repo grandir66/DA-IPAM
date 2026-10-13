@@ -17,10 +17,12 @@ const MAC_FORME = [
   /\b[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}\b/gi,
   /\b[0-9a-f]{12}\b/gi,
 ];
-const NOME = /^(RTR|SW|AP|FW|HV|NAS|SRV|DEV|host|ext|Sede|Ubicazione|Rete)-\d+$/;
+const NOME = /^(((RTR|SW|AP|FW|HV|NAS|SRV|DEV|host|ext|Sede|Ubicazione|Rete)-)|fab)\d+$/;
 const IP_FINTO = /^(10\.\d{1,3}|172\.31)\.\d{1,3}\.\d{1,3}$/;
 const IPV6_FINTO = /^fd00::[0-9a-f]+$/;
-const MAC_FINTO = /^02:00:00(:[0-9a-f]{2}){3}$/;
+// I MAC virtuali (VRRP/HSRP) restano virtuali con l'ultimo byte finto: il modello li tratta a parte e non identificano nessuno.
+const MAC_VIRTUALE_COMPATTO = /^(00005e0001|00005e0002|00000c07ac)[0-9a-f]{2}$/;
+const MAC_FINTO = /^(02:0[0-9a-f](:[0-9a-f]{2}){4}|(00:00:5e:00:0[12]|00:00:0c:07:ac):[0-9a-f]{2})$/;
 const DATA = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
 type Regola = (v: unknown) => boolean;
@@ -56,6 +58,7 @@ const FORMA: Record<string, Record<string, Regola>> = {
     gateway: o(nul, s(IP_FINTO), s(IPV6_FINTO), s(NOME)), location_id: numN,
   },
   knownMacs: { device_id: num, mac: s(MAC_FINTO) },
+  macPorts: { device_id: num, mac: s(MAC_FINTO), port_name: porta, timestamp: s(DATA), source: tra(VOCABOLARIO.source) },
   overrides: {
     id: num, action: tra(["add", "ignore"]), a_node: s(/^(dev|host):\d+$/), a_port: porta, b_node: s(/^(dev|host):\d+$/), b_port: porta,
   },
@@ -71,7 +74,7 @@ for (const f of FILES) {
     const ipVeri = (testo.match(IP) ?? []).filter((ip) => !(ip.startsWith("10.") || ip.startsWith("172.31."))).length;
     assert.equal(ipVeri, 0, `${ipVeri} IP non finti`);
     for (const re of MAC_FORME) {
-      const veri = (testo.match(re) ?? []).filter((m) => !m.replace(/[^0-9a-f]/gi, "").toLowerCase().startsWith("020000")).length;
+      const veri = (testo.match(re) ?? []).filter((m) => !/^020[0-9a-f]/.test(m.replace(/[^0-9a-f]/gi, "").toLowerCase()) && !MAC_VIRTUALE_COMPATTO.test(m.replace(/[^0-9a-f]/gi, "").toLowerCase())).length;
       assert.equal(veri, 0, `${veri} MAC non finti (${re.source})`);
     }
     assert.equal(testo.toLowerCase().includes("domarc"), false, "domarc");

@@ -2,7 +2,7 @@
  * Estrae una fixture ANONIMA del modello della topologia da una COPIA del DB di
  * un tenant (piano topologia fase 1, Task 9). Copia della copia in una cartella
  * temporanea (stesse guardie di prova-giri-sovrapposti), migrazione applicata
- * lì, sola lettura. Tiene solo gli host che servono al modello. Stampa solo
+ * lì, sola lettura. Tiene tutti gli host (il modello li conta). Stampa solo
  * conteggi. Rifiuta di scrivere (exit 1/2) se il modello della fixture non dà i
  * conteggi del dato vero, o se nella fixture c'è un IP, un MAC o un nome veri.
  *
@@ -50,61 +50,12 @@ async function main(): Promise<number> {
 
   const { withTenant, getTopologyModelInput } = await import("../src/lib/db-tenant");
   const { anonimizzaInput, contaValoriVeri } = await import("../src/lib/topology/anonimizza");
-  const { buildNodeIndex, resolveNode } = await import("../src/lib/topology/node-index");
-  const { PROMOTE_CLASSES, buildTopologyModel } = await import("../src/lib/topology/model");
-  const { normalizeName } = await import("../src/lib/topology/match");
-  const { normalizeMacForStorage } = await import("../src/lib/utils");
+    const { buildTopologyModel } = await import("../src/lib/topology/model");
 
   const input = withTenant(tenant, () => getTopologyModelInput(2));
-  // Solo gli host che servono al modello: fusi, abbinati da un vicino o da un uplink,
-  // candidati alla promozione, citati da una correzione, col MAC di un apparato
-  // (testa della sede), e quelli che contendono una chiave cercata da un vicino o da
-  // un uplink (toglierli renderebbe unica una chiave contesa e cambierebbe il modello).
-  const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
-  const MAC = /^[0-9a-f]{2}([:-]?)[0-9a-f]{2}(\1[0-9a-f]{2}){4}$/i;
-  const nameKey = (raw: string | null | undefined): string | null => {
-    const s = raw?.trim();
-    if (!s || IPV4.test(s) || MAC.test(s)) return null;
-    return normalizeName(s) || null;
-  };
-  const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs);
-  const servono = new Set<number>([...idx.alias.keys()].map((k) => Number(k.slice(5))));
-  const keepHost = (id: string | null) => {
-    if (id?.startsWith("host:")) servono.add(Number(id.slice(5)));
-  };
-  const ipCercati = new Set<string>();
-  const macCercati = new Set<string>();
-  const nomiCercati = new Set<string>();
-  for (const n of input.neighbors) {
-    keepHost(resolveNode(idx, { ip: n.remote_ip, mac: n.remote_mac, name: n.remote_device_name }));
-    const nome = n.remote_device_name?.trim() ?? "";
-    if (n.remote_ip) ipCercati.add(n.remote_ip);
-    if (IPV4.test(nome)) ipCercati.add(nome);
-    for (const m of [normalizeMacForStorage(n.remote_mac), MAC.test(nome) ? normalizeMacForStorage(nome) : null]) if (m) macCercati.add(m);
-    const k = nameKey(nome);
-    if (k) nomiCercati.add(k);
-  }
-  for (const d of input.devices) {
-    if (!d.uplink_mac) continue;
-    keepHost(resolveNode(idx, { mac: d.uplink_mac }));
-    const m = normalizeMacForStorage(d.uplink_mac);
-    if (m) macCercati.add(m);
-  }
-  for (const o of input.overrides) for (const id of [o.a_node, o.b_node]) keepHost(id);
-  for (const h of input.hosts) {
-    const m = normalizeMacForStorage(h.mac);
-    const owner = m ? idx.byMac.get(m) : undefined;
-    if (
-      (PROMOTE_CLASSES as readonly string[]).includes(h.classification ?? "") ||
-      (typeof owner === "string" && owner.startsWith("dev:")) ||
-      (h.ip && ipCercati.has(h.ip)) ||
-      (m && macCercati.has(m)) ||
-      [nameKey(h.hostname), nameKey(h.custom_name)].some((k) => k !== null && nomiCercati.has(k))
-    ) {
-      servono.add(h.id);
-    }
-  }
-  const ridotto = { ...input, hosts: input.hosts.filter((h) => servono.has(h.id)) };
+  // Tutti gli host: dalla fase 2 il modello conta ogni host come nodo (`nodes`) e i gruppi di host
+  // fusi fra loro (`mergedHosts`), quindi togliere host «che non servono» cambierebbe i conteggi.
+  const ridotto = input;
   const anonimo = anonimizzaInput(ridotto);
 
   // Il modello della fixture dev'essere quello vero: stessi conteggi, o niente fixture.
@@ -125,7 +76,7 @@ async function main(): Promise<number> {
   process.stdout.write("valori veri nella fixture: 0 IP · 0 MAC · 0 nomi\n");
   fs.writeFileSync(path.resolve(uscita), `${JSON.stringify(anonimo, null, 1)}\n`);
   process.stdout.write(
-    `apparati ${anonimo.devices.length} · host ${anonimo.hosts.length} (di ${input.hosts.length}) · vicini ${anonimo.neighbors.length} · reti ${anonimo.networks.length} · ubicazioni ${anonimo.locations.length}\n`,
+    `apparati ${anonimo.devices.length} · host ${anonimo.hosts.length} · vicini ${anonimo.neighbors.length} · reti ${anonimo.networks.length} · ubicazioni ${anonimo.locations.length} · MAC per porta ${anonimo.macPorts.length}\n`,
   );
   return 0;
 }

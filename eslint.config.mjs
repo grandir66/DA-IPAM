@@ -31,6 +31,9 @@ const eslintConfig = defineConfig([
       "src/lib/scanner/snmp-vendor-profiles.ts",
       "src/app/onboarding/page.tsx",
       "src/app/api/onboarding/status/route.ts",
+      // Copie congelate della vecchia facciata db.ts per il banco di parità
+      // (NUC-2, T3-06): testo identico all'originale, require() compresi.
+      "src/lib/__tests__/db-parity/gruppo1b/*-vecchia-facciata.ts",
     ],
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },

@@ -27,6 +27,7 @@ import {
   Building2,
   ClipboardList,
   Radar,
+  Router,
   AlertTriangle,
   ShieldAlert,
   Siren,
@@ -66,6 +67,7 @@ const inventorySubItems: readonly SubItem[] = [
 const networkSubItems: readonly SubItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
+  { href: "/controllers", label: "Controller di rete", icon: Router },
   { href: "/topology", label: "Topologia", icon: Workflow },
   { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert },
   { href: "/security-alerts", label: "Alert sicurezza", icon: Siren },

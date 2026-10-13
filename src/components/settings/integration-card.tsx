@@ -14,7 +14,7 @@ import { containerRemovalConfirmText } from "@/lib/modules/uninstall-copy";
 import type { ConfigIntegrazioneVista } from "@/lib/permessi/politica";
 
 interface Props {
-  /** Solo i componenti installati come container: UniFi ha la sua scheda (UnifiCard). */
+  /** Solo i componenti installati come container: UniFi ha la sua pagina (Controller di rete). */
   component: ContainerIntegrationComponent;
   title: string;
   description: string;

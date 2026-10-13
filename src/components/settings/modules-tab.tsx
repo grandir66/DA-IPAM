@@ -2,6 +2,7 @@
 import { parseDbDate } from "@/lib/db-date";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -37,7 +38,6 @@ import {
 import { IntegrationCard } from "./integration-card";
 import { ScannerEdgeCard } from "./scanner-edge-card";
 import { WazuhCard } from "./wazuh-card";
-import { UnifiCard } from "./unifi-card";
 import { InventoryAgentCard } from "./inventory-agent-card";
 import { MeshCentralCard } from "./meshcentral-card";
 import { MeshCentralInstallDialog } from "./meshcentral-install-dialog";
@@ -426,10 +426,14 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
         <NetServicesConfigCard isAdmin={isAdmin} />
       </ModuleSection>
 
-      {/* Fonte di dati, non dashboard esterna: switch e AP del controller del
-          cliente in DA-IPAM. Niente import JSON (nessun installer). */}
-      <ModuleSection id="module-unifi" title="Controller UniFi">
-        <UnifiCard isAdmin={isAdmin} />
+      <ModuleSection id="module-unifi" title="Controller di rete">
+        <p className="text-sm text-muted-foreground">
+          I controller si gestiscono in{" "}
+          <Link href="/controllers" className="underline underline-offset-2 hover:text-foreground">
+            Rete → Controller di rete
+          </Link>
+          .
+        </p>
       </ModuleSection>
 
       <Separator />

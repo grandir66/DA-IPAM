@@ -19,7 +19,12 @@
  * bloccato X»: il freno si toglie contando quelle righe, non a sensazione.
  *
  * I candidati in sospeso stanno in `tenant_settings`, una chiave per rete: un
- * riavvio per aggiornamento non azzera la conferma.
+ * riavvio per aggiornamento non azzera la conferma. Un giro decide solo dentro
+ * il suo perimetro, cioè gli host di cui ha scansionato l'IP: i sospesi fuori
+ * restano come sono. Senza questo un giro mirato (host selezionati, oppure IP
+ * esclusi perché il ping non ha potuto girare) cancellava la conferma di tutta
+ * la rete, e con un giro mirato fra due giri completi la guardia non
+ * confermava mai niente (revisione 3b).
  *
  * La decisione (`decidiPassaggioOffline`) è pura; `passaggioOfflineConSoglia`
  * legge impostazioni e candidati dal DB del tenant corrente e scrive.
@@ -27,6 +32,7 @@
 import {
   contaHostAttiviScansionati,
   getCurrentTenantCode,
+  idHostScansionati,
   getTenantSetting,
   markHostsOffline,
   selectOfflineCandidates,
@@ -80,6 +86,12 @@ export interface IngressoDecisione {
   attivi: number;
   /** Id in sospeso dal giro prima (vuoto se nessuno). */
   inSospeso: readonly number[];
+  /**
+   * Id degli host di cui il giro ha scansionato l'IP. I sospesi fuori da qui
+   * non li decide questo giro: restano in sospeso e non contano come conferme.
+   * Assente: tutti i sospesi stanno nel perimetro.
+   */
+  perimetro?: readonly number[];
   impostazioni: ImpostazioniSogliaOffline;
 }
 
@@ -90,7 +102,7 @@ export interface DecisioneOffline {
   bloccati: number;
   /** Fra quelli da applicare, quanti erano in sospeso dal giro prima. */
   confermati: number;
-  /** Nuovo insieme in sospeso da conservare (vuoto = niente in sospeso). */
+  /** Nuovo insieme in sospeso da conservare, compresi i sospesi fuori dal perimetro (vuoto = niente in sospeso). */
   nuovoInSospeso: number[];
   /** Il giro supera la soglia. */
   sogliaSuperata: boolean;
@@ -105,37 +117,40 @@ export function decidiPassaggioOffline(ingresso: IngressoDecisione): DecisioneOf
   const sogliaSuperata =
     candidati.length >= imp.min && candidati.length * 100 > imp.pct * ingresso.attivi;
 
+  // Sospesi che questo giro non ha guardato: li decide un giro che li scansiona.
+  const nelPerimetro = ingresso.perimetro ? new Set(ingresso.perimetro) : null;
+  const fuori = nelPerimetro ? [...new Set(ingresso.inSospeso)].filter((id) => !nelPerimetro.has(id)) : [];
+  const prima = new Set(nelPerimetro ? ingresso.inSospeso.filter((id) => nelPerimetro.has(id)) : ingresso.inSospeso);
+
   if (imp.modo === "registra") {
     return {
       daApplicare: candidati,
       bloccati: 0,
       confermati: 0,
-      nuovoInSospeso: [],
+      nuovoInSospeso: fuori,
       sogliaSuperata,
       avreiBloccato: sogliaSuperata ? candidati.length : 0,
     };
   }
 
   if (!sogliaSuperata) {
-    const prima = new Set(ingresso.inSospeso);
     return {
       daApplicare: candidati,
       bloccati: 0,
       confermati: candidati.filter((id) => prima.has(id)).length,
-      nuovoInSospeso: [],
+      nuovoInSospeso: fuori,
       sogliaSuperata,
       avreiBloccato: 0,
     };
   }
 
-  const prima = new Set(ingresso.inSospeso);
   const confermati = candidati.filter((id) => prima.has(id));
   const trattenuti = candidati.filter((id) => !prima.has(id));
   return {
     daApplicare: confermati,
     bloccati: trattenuti.length,
     confermati: confermati.length,
-    nuovoInSospeso: trattenuti,
+    nuovoInSospeso: [...fuori, ...trattenuti],
     sogliaSuperata,
     avreiBloccato: 0,
   };
@@ -194,10 +209,14 @@ export function passaggioOfflineConSoglia(
     console.warn(`[SogliaOffline] rete=${networkId}: candidati in sospeso illeggibili, si riparte da zero`);
   }
 
+  // Sospesi di host che non esistono più nella rete: si lasciano cadere.
+  const perimetro = idHostScansionati(networkId, scannedIps);
+  const esistenti = new Set([...perimetro.dentro, ...perimetro.fuori]);
   const dec = decidiPassaggioOffline({
     candidati: candidati.map((c) => c.id),
     attivi,
-    inSospeso: sospeso.ids,
+    inSospeso: sospeso.ids.filter((id) => esistenti.has(id)),
+    perimetro: perimetro.dentro,
     impostazioni: imp,
   });
 

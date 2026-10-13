@@ -2760,6 +2760,26 @@ export function contaHostAttiviScansionati(networkId: number, scannedIps: readon
 }
 
 /**
+ * Id degli host della rete divisi fra quelli di cui il giro ha scansionato l'IP
+ * (`dentro`) e gli altri (`fuori`): il perimetro della soglia offline (T3-21,
+ * revisione 3b).
+ */
+export function idHostScansionati(
+  networkId: number,
+  scannedIps: readonly string[],
+): { dentro: number[]; fuori: number[] } {
+  const scansionati = new Set(scannedIps);
+  const righe = db().prepare("SELECT id, ip FROM hosts WHERE network_id = ?").all(networkId) as Array<{
+    id: number;
+    ip: string;
+  }>;
+  const dentro: number[] = [];
+  const fuori: number[] = [];
+  for (const r of righe) (scansionati.has(r.ip) ? dentro : fuori).push(r.id);
+  return { dentro, fuori };
+}
+
+/**
  * Marca offline gli host scansionati che non hanno risposto, col filtro di
  * `selectOfflineCandidates` (T3-20). Una lista di scansionati vuota non tocca
  * niente (prima valeva come «tutta la rete»). Restituisce quanti host ha

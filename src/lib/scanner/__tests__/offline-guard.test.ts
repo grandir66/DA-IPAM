@@ -317,3 +317,68 @@ test("sospesi illeggibili nel DB: il giro trattiene di nuovo invece di applicare
   assert.equal(g.passati, 0);
   assert.equal(g.bloccati, 10);
 });
+
+// Revisione 3b: i sospesi sono una chiave per rete, ma un giro mirato (host
+// selezionati dalla pagina rete, oppure IP esclusi perché il ping non ha potuto
+// girare, T3-19) vede solo una parte della rete. Prima riscriveva la chiave
+// guardando solo i suoi IP e cancellava la conferma degli host fuori dal suo
+// perimetro: con un giro mirato fra due giri completi la guardia non
+// confermava mai niente e gli host spenti davvero restavano online.
+test("un giro mirato fra due giri completi non cancella la conferma degli host fuori dal suo perimetro", () => {
+  const tutti = da(1, 12);
+  const reteId = withTenant(T, () => preparaRete(tutti.map((i) => ({ ip: i, status: "online" as const }))));
+  withTenant(T, () => impostazione("offline_guard_mode", "applica"));
+  const tranne = (giu: string[]) => tutti.filter((i) => !giu.includes(i));
+
+  // Giro completo 1: giù 1-8 (8 su 12): bloccato, 8 in sospeso.
+  const g1 = passaggio(reteId, tutti, tranne(da(1, 8)));
+  assert.equal(g1.bloccati, 8);
+
+  // Giro mirato su 10, 11 e 1: giù il 10 e l'1 (2 su 3, sotto il minimo di 5):
+  // si applica subito. L'1 era in sospeso: confermato e marcato.
+  const mirati = [ip(1), ip(10), ip(11)];
+  const m = passaggio(reteId, mirati, [ip(11)]);
+  assert.equal(m.passati, 2);
+  assert.deepEqual(offline(reteId), [ip(1), ip(10)].sort());
+
+  // Giro completo 2: giù ancora 2-8 (e 1, 10 già offline): sopra soglia (7 su 10).
+  // Gli host 2-8 erano in sospeso dal giro 1: confermati e marcati.
+  const g2 = passaggio(reteId, tutti, tranne([...da(1, 8), ip(10)]));
+  assert.equal(g2.confermati, 7, "il giro mirato ha cancellato la conferma degli host fuori dal suo perimetro");
+  assert.equal(g2.passati, 7);
+  assert.deepEqual(offline(reteId), [...da(1, 8), ip(10)].sort());
+});
+
+test("un giro mirato sopra soglia tiene i sospesi fuori dal suo perimetro e aggiunge i suoi", () => {
+  const tutti = da(1, 12);
+  const reteId = withTenant(T, () => preparaRete(tutti.map((i) => ({ ip: i, status: "online" as const }))));
+  withTenant(T, () => {
+    impostazione("offline_guard_mode", "applica");
+    impostazione("offline_guard_min", "2");
+  });
+  const tranne = (giu: string[]) => tutti.filter((i) => !giu.includes(i));
+
+  // Giro completo: giù 1-8: tutti in sospeso.
+  passaggio(reteId, tutti, tranne(da(1, 8)));
+  // Giro mirato su 9-11, giù 9 e 10 (2 su 3, sopra soglia col minimo a 2): trattenuti.
+  const m = passaggio(reteId, da(9, 11), [ip(11)]);
+  assert.equal(m.bloccati, 2);
+  assert.equal(m.passati, 0);
+  // Giro completo: giù 1-10. Confermati 1-8 (giro 1) e 9-10 (giro mirato).
+  const g = passaggio(reteId, tutti, tranne(da(1, 10)));
+  assert.equal(g.confermati, 10);
+  assert.deepEqual(offline(reteId), da(1, 10).sort());
+});
+
+test("decisione: i sospesi fuori dal perimetro del giro restano in sospeso e non contano", () => {
+  const d = decidiPassaggioOffline({
+    candidati: [10],
+    attivi: 3,
+    inSospeso: ids(1, 8),
+    perimetro: [1, 10, 11],
+    impostazioni: APPLICA,
+  });
+  assert.deepEqual(d.daApplicare, [10]);
+  assert.equal(d.confermati, 0);
+  assert.deepEqual(d.nuovoInSospeso, ids(2, 8), "fuori perimetro: 2-8 restano; l'1 è stato visto vivo");
+});

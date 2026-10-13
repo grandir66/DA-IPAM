@@ -37,13 +37,10 @@ import type {
   Host,
   HostDetail,
   ScanHistory,
-  NetworkDevice,
-  ScheduledJob,
   User,
   NetworkInput,
   HostInput,
   HostUpdate,
-  ScheduledJobInput,
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
@@ -64,10 +61,8 @@ import {
   isIpExcluded,
   getHostDetectCredentialsEnriched,
   getHostCredentials,
-  getNetworkDeviceById,
   getNetworkDeviceByHost,
   getNetworkDeviceByHostId,
-  getProxmoxHostById,
 } from "./db-tenant";
 import type {
   AdComputer,
@@ -3174,71 +3169,6 @@ export function deleteNetworkRouter(networkId: number): void {
 // Network Devices
 // ========================
 
-type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll" | "physical_device_id"> & {
-  classification?: string | null;
-  scan_target?: string | null;
-  product_profile?: string | null;
-  use_for_arp_poll?: number | boolean | null;
-  /** F4: opzionale — se non passato, lookup automatico via IP. */
-  host_id?: number | null;
-};
-
-export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
-  // F4: auto-lookup host_id da IP se non passato esplicitamente.
-  let hostId: number | null = input.host_id ?? null;
-  if (hostId === null && input.host) {
-    const match = getDb().prepare("SELECT id FROM hosts WHERE ip = ? ORDER BY id LIMIT 1").get(input.host) as { id: number } | undefined;
-    if (match) hostId = match.id;
-  }
-
-  const stmt = getDb().prepare(
-    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll, host_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  );
-  const result = stmt.run(
-    input.name, input.host, input.device_type, input.vendor,
-    input.vendor_subtype ?? null, input.protocol,
-    input.credential_id ?? null, (input as { snmp_credential_id?: number | null }).snmp_credential_id ?? null,
-    input.username, input.encrypted_password,
-    input.community_string, input.api_token, input.api_url, input.port, input.enabled,
-    (input as { classification?: string | null }).classification ?? null,
-    (input as { scan_target?: string | null }).scan_target ?? null,
-    (input as { product_profile?: string | null }).product_profile ?? null,
-    ((): number => {
-      const f = (input as { use_for_arp_poll?: number | boolean | null }).use_for_arp_poll;
-      if (f === 1 || f === true) return 1;
-      if (f === 0 || f === false) return 0;
-      return input.device_type === "router" || input.device_type === "firewall" || input.vendor === "stormshield" ? 1 : 0;
-    })(),
-    hostId
-  );
-  return getDb().prepare("SELECT * FROM network_devices WHERE id = ?").get(result.lastInsertRowid) as NetworkDevice;
-}
-
-export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevice, "id" | "created_at" | "updated_at">>): NetworkDevice | undefined {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id"] as const;
-  for (const key of keys) {
-    if (input[key] !== undefined) {
-      fields.push(`${key} = ?`);
-      values.push(input[key]);
-    }
-  }
-
-  if (fields.length === 0) return getNetworkDeviceById(id);
-
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-  getDb().prepare(`UPDATE network_devices SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  return getNetworkDeviceById(id);
-}
-
-export function deleteNetworkDevice(id: number): boolean {
-  return getDb().prepare("DELETE FROM network_devices WHERE id = ?").run(id).changes > 0;
-}
-
 // Cleanup FK orfani: vive in db-tenant.ts (riesportata in fondo, NUC-2 gruppo 0).
 
 // ========================
@@ -3333,37 +3263,6 @@ export function upsertArpEntries(
 // ========================
 // Scheduled Jobs
 // ========================
-
-export function createScheduledJob(input: ScheduledJobInput): ScheduledJob {
-  const stmt = getDb().prepare(
-    `INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, config, next_run)
-     VALUES (?, ?, ?, ?, datetime('now', '+' || ? || ' minutes'))`
-  );
-  const result = stmt.run(
-    input.network_id || null,
-    input.job_type,
-    input.interval_minutes,
-    JSON.stringify(input.config || {}),
-    input.interval_minutes
-  );
-  return getDb().prepare("SELECT * FROM scheduled_jobs WHERE id = ?").get(result.lastInsertRowid) as ScheduledJob;
-}
-
-export function updateJobLastRun(id: number): void {
-  const job = getDb().prepare("SELECT interval_minutes FROM scheduled_jobs WHERE id = ?").get(id) as { interval_minutes: number } | undefined;
-  if (!job) return;
-  getDb().prepare(
-    `UPDATE scheduled_jobs SET last_run = datetime('now'), next_run = datetime('now', '+' || ? || ' minutes'), updated_at = datetime('now') WHERE id = ?`
-  ).run(job.interval_minutes, id);
-}
-
-export function toggleJob(id: number, enabled: boolean): void {
-  getDb().prepare("UPDATE scheduled_jobs SET enabled = ?, updated_at = datetime('now') WHERE id = ?").run(enabled ? 1 : 0, id);
-}
-
-export function deleteScheduledJob(id: number): boolean {
-  return getDb().prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
-}
 
 // ========================
 // Status History
@@ -3711,215 +3610,13 @@ export function resetConfiguration(): void {
 // Proxmox Hosts
 // ========================
 
-export function createProxmoxHost(input: {
-  name: string;
-  host: string;
-  port?: number;
-  credential_id?: number | null;
-}): import("@/types").ProxmoxHost {
-  const result = getDb().prepare(
-    "INSERT INTO proxmox_hosts (name, host, port, credential_id) VALUES (?, ?, ?, ?)"
-  ).run(
-    input.name,
-    input.host,
-    input.port ?? 8006,
-    input.credential_id ?? null
-  );
-  return getDb().prepare("SELECT * FROM proxmox_hosts WHERE id = ?").get(result.lastInsertRowid) as import("@/types").ProxmoxHost;
-}
-
-export function updateProxmoxHost(id: number, input: {
-  name?: string;
-  host?: string;
-  port?: number;
-  credential_id?: number | null;
-  enabled?: number;
-}): import("@/types").ProxmoxHost | undefined {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
-  if (input.host !== undefined) { fields.push("host = ?"); values.push(input.host); }
-  if (input.port !== undefined) { fields.push("port = ?"); values.push(input.port); }
-  if (input.credential_id !== undefined) { fields.push("credential_id = ?"); values.push(input.credential_id); }
-  if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled); }
-  if (fields.length === 0) return getProxmoxHostById(id);
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-  getDb().prepare(`UPDATE proxmox_hosts SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  return getProxmoxHostById(id);
-}
-
-export function updateProxmoxHostScanResult(id: number, resultJson: string): void {
-  getDb().prepare(
-    "UPDATE proxmox_hosts SET last_scan_at = datetime('now'), last_scan_result = ?, updated_at = datetime('now') WHERE id = ?"
-  ).run(resultJson, id);
-}
-
-export function deleteProxmoxHost(id: number): boolean {
-  return getDb().prepare("DELETE FROM proxmox_hosts WHERE id = ?").run(id).changes > 0;
-}
-
 // ========================
 // Device-to-Host Sync
 // ========================
 
-/** Sincronizza info del device sull'host collegato (stesso IP). */
-export function syncDeviceToHost(deviceId: number): void {
-  const device = getNetworkDeviceById(deviceId);
-  if (!device) return;
-
-  const host = getDb().prepare("SELECT id, vendor, device_manufacturer FROM hosts WHERE ip = ? LIMIT 1")
-    .get(device.host) as { id: number; vendor: string | null; device_manufacturer: string | null } | undefined;
-  if (!host) return;
-
-  let extInfo: Record<string, unknown> = {};
-  if (device.last_device_info_json) {
-    try { extInfo = JSON.parse(device.last_device_info_json); } catch { /* ignore */ }
-  }
-
-  const updates: string[] = ["updated_at = datetime('now')"];
-  const values: unknown[] = [];
-
-  if (device.model) { updates.push("model = ?"); values.push(device.model); }
-  if (device.serial_number) { updates.push("serial_number = ?"); values.push(device.serial_number); }
-  if (device.firmware) { updates.push("firmware = ?"); values.push(device.firmware); }
-  if (device.sysname && !device.sysname.match(/^[\d.]+$/)) {
-    updates.push("hostname = ?"); values.push(device.sysname);
-    updates.push("hostname_source = ?"); values.push("snmp");
-  }
-
-  const osName = typeof extInfo.os_name === "string" ? extInfo.os_name : null;
-  const osVersion = typeof extInfo.os_version === "string" ? extInfo.os_version : null;
-  if (osName) {
-    updates.push("os_info = ?");
-    values.push(osVersion ? `${osName} ${osVersion}` : osName);
-  } else if (device.sysdescr) {
-    updates.push("os_info = ?");
-    values.push(device.sysdescr);
-  }
-
-  const mfr = typeof extInfo.manufacturer === "string" ? extInfo.manufacturer : null;
-  const manufacturer = mfr || host.vendor || null;
-  if (manufacturer && !host.device_manufacturer) {
-    updates.push("device_manufacturer = ?");
-    values.push(manufacturer);
-  } else if (mfr) {
-    updates.push("device_manufacturer = ?");
-    values.push(mfr);
-  }
-
-  if (values.length > 0) {
-    values.push(host.id);
-    getDb().prepare(`UPDATE hosts SET ${updates.join(", ")} WHERE id = ?`).run(...values);
-  }
-}
-
-/** Traccia cambiamenti device info. Ritorna lista campi modificati. */
-export function trackDeviceInfoChanges(deviceId: number, newInfoObj: object): string[] {
-  const device = getNetworkDeviceById(deviceId);
-  if (!device || !device.last_device_info_json) return [];
-
-  const newInfo = newInfoObj as Record<string, unknown>;
-  let oldInfo: Record<string, unknown>;
-  try { oldInfo = JSON.parse(device.last_device_info_json); } catch { return []; }
-
-  const changes: string[] = [];
-  const importantFields = ["firmware", "model", "serial_number", "os_name", "os_version", "hostname", "sysname", "sysdescr"];
-
-  for (const field of importantFields) {
-    const oldVal = oldInfo[field];
-    const newVal = newInfo[field];
-    if (newVal != null && oldVal != null && String(oldVal) !== String(newVal)) {
-      changes.push(field);
-    }
-  }
-
-  if (changes.length > 0) {
-    // Log in scan_history come tipo 'snmp' (il più vicino a device info change)
-    const hostRow = getDb().prepare("SELECT id FROM hosts WHERE ip = ? LIMIT 1").get(device.host) as { id: number } | undefined;
-    getDb().prepare(
-      "INSERT INTO scan_history (host_id, network_id, scan_type, status, raw_output, duration_ms) VALUES (?, NULL, 'snmp', ?, ?, 0)"
-    ).run(
-      hostRow?.id ?? null,
-      `device_info_changed: ${changes.join(", ")}`,
-      JSON.stringify({ device_id: deviceId, device_name: device.name, changes: changes.map(f => ({ field: f, old: String(oldInfo[f] ?? ""), new: String(newInfo[f] ?? "") })) })
-    );
-  }
-
-  return changes;
-}
-
 // ========================
 // Sync network_device da scan host
 // ========================
-
-/**
- * Aggiorna network_devices.port e classification basandosi sui dati host appena scansionati.
- * Non modifica mai **vendor** (resta impostazione manuale; vedi `vendor-device-profile.ts`).
- * - port: se la porta attuale del device non è tra le porte rilevate, assegna una porta candidata
- *   appropriata per protocollo/vendor; se il device ha già una porta presente nei dati scan, non tocca.
- * - classification: allinea se l'host ha una classificazione più specifica (solo per router/switch/hypervisor).
- * Chiamare subito dopo upsertHost quando getNetworkDeviceByHost(ip) esiste.
- */
-export function syncNetworkDeviceFromHostScan(ip: string, hostOpenPorts: Array<{ port: number; protocol?: string }>, hostClassification: string | null): void {
-  const device = getNetworkDeviceByHost(ip);
-  if (!device) return;
-
-  const tcpPorts = new Set(hostOpenPorts.filter((p) => (p.protocol ?? "tcp") === "tcp").map((p) => p.port));
-  const updates: Partial<NetworkDevice> = {};
-
-  // Euristica porta per protocollo / vendor
-  const candidatesMap: Record<string, number[]> = {
-    ssh: [22, 2222],
-    snmp_v2: [161],
-    snmp_v3: [161],
-    api: [443, 8728, 8006, 80],
-    winrm: [5985, 5986],
-  };
-  const candidatesVendor: Record<string, number[]> = {
-    mikrotik: [8291, 8728, 22, 443],
-    proxmox: [8006, 443],
-    omada: [443],
-    cisco: [22, 23, 443],
-    ubiquiti: [443, 22],
-    hp: [22, 23, 443],
-    fortinet: [443, 22],
-    vmware: [443],
-    generic: [22, 443, 80],
-  };
-
-  const currentPort = device.port ?? 22;
-  const protocol = device.protocol ?? "ssh";
-  const vendor = (device.vendor ?? "generic").toLowerCase();
-
-  if (!tcpPorts.has(currentPort)) {
-    const vendorCandidates = candidatesVendor[vendor] ?? [];
-    const protoCandidates = candidatesMap[protocol] ?? [];
-    const orderedCandidates = [...new Set([...vendorCandidates, ...protoCandidates])];
-    for (const c of orderedCandidates) {
-      if (tcpPorts.has(c)) {
-        updates.port = c;
-        break;
-      }
-    }
-  }
-
-  // Allinea classification se l'host ha valore più specifico
-  if (hostClassification && hostClassification !== "unknown") {
-    const deviceClassification = device.classification ?? device.device_type;
-    const isInfra = ["router", "switch", "hypervisor"].includes(device.device_type);
-    if (isInfra && deviceClassification !== hostClassification) {
-      const infraSpecific = ["router", "switch", "hypervisor", "firewall", "access_point", "load_balancer", "vpn_gateway", "server", "server_linux", "server_windows", "nas", "nas_synology", "nas_qnap", "storage"];
-      if (infraSpecific.includes(hostClassification)) {
-        updates.classification = hostClassification;
-      }
-    }
-  }
-
-  if (Object.keys(updates).length > 0) {
-    updateNetworkDevice(device.id, updates);
-  }
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ACTIVE DIRECTORY INTEGRATIONS
@@ -4538,4 +4235,24 @@ export {
   upsertRoutes,
   upsertSwitchPorts,
   markHostsOffline,
+} from "./db-tenant";
+
+// NUC-2 gruppo 1b (T3-06), apparati, job e Proxmox: 14 funzioni uguali o con
+// differenze solo di forma fra le due copie, provate con la parità. Una sola copia,
+// in db-tenant.ts. Elenco: src/lib/__tests__/support/facciata-spostate.ts.
+export {
+  createNetworkDevice,
+  updateNetworkDevice,
+  deleteNetworkDevice,
+  syncDeviceToHost,
+  trackDeviceInfoChanges,
+  syncNetworkDeviceFromHostScan,
+  createScheduledJob,
+  updateJobLastRun,
+  toggleJob,
+  deleteScheduledJob,
+  createProxmoxHost,
+  updateProxmoxHost,
+  updateProxmoxHostScanResult,
+  deleteProxmoxHost,
 } from "./db-tenant";

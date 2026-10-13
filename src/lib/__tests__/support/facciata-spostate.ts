@@ -99,6 +99,12 @@ export const SPOSTATE_GRUPPO_1B: Readonly<Record<string, readonly string[]>> = {
     "upsertMacIpMapping", "getMacIpMappings", "upsertMacPortEntries", "upsertNeighbors", "upsertRoutes",
     "upsertSwitchPorts", "markHostsOffline",
   ],
+  dispositivi: [
+    "createNetworkDevice", "updateNetworkDevice", "deleteNetworkDevice", "syncDeviceToHost",
+    "trackDeviceInfoChanges", "syncNetworkDeviceFromHostScan", "createScheduledJob", "updateJobLastRun",
+    "toggleJob", "deleteScheduledJob", "createProxmoxHost", "updateProxmoxHost",
+    "updateProxmoxHostScanResult", "deleteProxmoxHost",
+  ],
 };
 
 /** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */

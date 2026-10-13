@@ -3029,42 +3029,6 @@ export function deleteUser(userId: number): boolean {
   return hub.deleteUser(userId);
 }
 
-/** Reset all networks and devices for new client. Keeps nmap_profiles e regole fingerprint (vedi corpo transazione). */
-export function resetConfiguration(): void {
-  const db = getDb();
-  db.transaction(() => {
-    db.exec(`
-      DELETE FROM scan_history;
-      DELETE FROM status_history;
-      DELETE FROM host_detect_credential;
-      DELETE FROM network_host_credentials;
-      DELETE FROM arp_entries;
-      DELETE FROM mac_port_entries;
-      DELETE FROM mac_ip_history;
-      DELETE FROM mac_ip_mapping;
-      DELETE FROM switch_ports;
-      DELETE FROM network_router;
-      DELETE FROM hosts;
-      DELETE FROM network_devices;
-      DELETE FROM networks;
-      DELETE FROM ad_integrations;
-      DELETE FROM credentials;
-      DELETE FROM users;
-      DELETE FROM scheduled_jobs;
-      DELETE FROM settings;
-      DELETE FROM proxmox_hosts;
-      DELETE FROM inventory_audit_log;
-      DELETE FROM license_seats;
-      DELETE FROM licenses;
-      DELETE FROM asset_assignees;
-      DELETE FROM inventory_assets;
-      DELETE FROM locations;
-      DELETE FROM device_fingerprint_rules;
-    `);
-    db.exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('server_port', '3000')");
-    db.exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('onboarding_completed', '0')");
-  })();
-}
 
 // ========================
 // Proxmox Hosts
@@ -3572,4 +3536,5 @@ export {
   getHostById,
   getHostsByNetworkWithDevices,
   recomputeMultihomedLinks,
+  resetConfiguration,
 } from "./db-tenant";

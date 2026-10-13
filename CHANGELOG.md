@@ -51,17 +51,28 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   tenant con un commit suo, una prova del comportamento voluto vista fallire
   prima, e la differenza misurata sulla copia del database di un cliente. Non
   si possono spegnere: sono correzioni del comportamento esistente. Cosa cambia:
-  - **giro ARP**: un host senza MAC prende MAC e vendor dalla tabella ARP del
-    router. Un MAC già presente non si sovrascrive più: la copia per tenant lo
-    faceva, e sulla copia del cliente avrebbe cambiato il MAC a 11 host, quasi
-    tutti con il loro MAC confermato da un'altra voce ARP dello stesso IP. Con
-    la regola nuova, sullo stesso giro: nessun MAC cambiato, un vendor aggiunto;
+  - **scrittura della tabella ARP** (`upsertArpEntries`): un host senza MAC
+    prende MAC e vendor dalla tabella ARP del router, e un MAC già presente non
+    si sovrascrive (la copia per tenant lo faceva: da sola avrebbe cambiato il
+    MAC a 11 host, quasi tutti con il loro MAC confermato da un'altra voce ARP
+    dello stesso IP). **Nel giro ARP però non cambia niente**: il giro aggiorna
+    prima l'host dalla stessa voce, e quell'aggiornamento il MAC lo sovrascrive
+    come sempre. Rigiocando il giro intero sulla copia del cliente, prima e
+    dopo: 11 host cambiano MAC, e per 10 il MAC finale dipende dall'ordine in
+    cui si leggono i router. Se estendere la regola anche lì è una decisione
+    aperta. Un legame MAC-IP che non si riesce a scrivere ora si salta invece
+    di annullare tutta la tabella ARP dell'apparato (come già nella copia per
+    tenant): il giro risulta riuscito e il log dice quanti legami sono
+    saltati, senza indirizzi;
   - **MAC non valido (INV-4)**: un MAC vuoto o illeggibile non cancella più il
     MAC buono di un host (sulla copia del cliente: 4 host esposti, per lease
     DHCP con un identificativo non valido);
   - **pagina di una rete**: il gruppo multi-indirizzo di un host mostra tutti
     i peer, anche nella stessa rete, e chi è il primario, come già la pagina
-    Discovery (sulla copia del cliente: 79 host su 114 cambiano lista);
+    Discovery (sulla copia del cliente: 79 host su 114 cambiano lista). Cambia
+    allo stesso modo la colonna del gruppo nell'export CSV degli host di una
+    rete: il JSON ha in più il primario e i peer della stessa rete. Un host
+    rimasto solo nel suo gruppo resta senza gruppo, come prima;
   - **ricalcolo dei gruppi multi-indirizzo** nella discovery: raggruppa anche
     gli host dichiarati come lo stesso apparato fisico (sulla copia del
     cliente: nessuna differenza, 34 gruppi in entrambe le copie);
@@ -88,8 +99,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   (risoluzione di un MAC in host o apparato, aggiornamento di un host solo se
   esiste) passano alla copia per tenant, con lo stesso esito sulla copia del
   database di un cliente (1.182 MAC, nessuna differenza). L'apertura del vecchio
-  database single-tenant `ipam.db` con le sue migrazioni è passata, senza
-  cambiamenti, in `db-legacy.ts`: la usano solo il ripiego senza contesto di
+  database single-tenant `ipam.db` con le sue migrazioni è passata in
+  `db-legacy.ts`, con una sola correzione: la migrazione della normalizzazione
+  dei MAC ricalcola di nuovo l'assegnazione degli indirizzi sul file che sta
+  migrando (nel primo spostamento la chiamata finiva sulla copia per tenant,
+  falliva senza un cliente scelto e l'errore spariva). La usano solo il ripiego
+  senza contesto di
   `getDb()`, che resta com'era e contato nel registro dei ripieghi, e lo script
   del modello vuoto. Lo script ora apre sempre il file indicato: prima, su una
   macchina con l'hub e un cliente predefinito, avrebbe aperto quello. Non è il

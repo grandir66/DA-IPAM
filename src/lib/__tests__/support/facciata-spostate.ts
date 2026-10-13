@@ -77,6 +77,11 @@ export const SPOSTATE_GRUPPO_1B: Readonly<Record<string, readonly string[]>> = {
     "updateDeviceCredentialBinding", "deleteDeviceCredentialBinding", "reorderDeviceCredentialBindings",
     "updateBindingTestStatus",
   ],
+  ad: [
+    "createAdIntegration", "updateAdIntegration", "deleteAdIntegration", "upsertAdComputer",
+    "linkAdComputerToHost", "relinkAdComputersForNetwork", "upsertAdUser", "upsertAdGroup",
+    "clearAdData", "upsertAdDhcpLease", "clearAdDhcpLeases",
+  ],
 };
 
 /** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */

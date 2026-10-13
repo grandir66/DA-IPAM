@@ -66,11 +66,9 @@ import {
   getAssetAssigneeById,
   getLocationById,
   getProxmoxHostById,
-  getAdIntegrationById,
 } from "./db-tenant";
 import type {
   MacIpMappingSource,
-  AdIntegration,
   AdComputer,
   AdUser,
   AdDhcpLease,
@@ -4708,74 +4706,6 @@ export function syncNetworkDeviceFromHostScan(ip: string, hostOpenPorts: Array<{
 // ACTIVE DIRECTORY INTEGRATIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function createAdIntegration(input: {
-  name: string;
-  dc_host: string;
-  domain: string;
-  base_dn: string;
-  encrypted_username: string;
-  encrypted_password: string;
-  use_ssl?: number;
-  port?: number;
-  enabled?: number;
-  winrm_credential_id?: number | null;
-}): AdIntegration {
-  const stmt = getDb().prepare(`INSERT INTO ad_integrations
-    (name, dc_host, domain, base_dn, encrypted_username, encrypted_password, use_ssl, port, enabled, winrm_credential_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  const r = stmt.run(
-    input.name,
-    input.dc_host,
-    input.domain,
-    input.base_dn,
-    input.encrypted_username,
-    input.encrypted_password,
-    input.use_ssl ?? 1,
-    input.port ?? 636,
-    input.enabled ?? 1,
-    input.winrm_credential_id ?? null
-  );
-  return getAdIntegrationById(Number(r.lastInsertRowid))!;
-}
-
-export function updateAdIntegration(id: number, input: Partial<{
-  name: string;
-  dc_host: string;
-  domain: string;
-  base_dn: string;
-  encrypted_username: string;
-  encrypted_password: string;
-  use_ssl: number;
-  port: number;
-  enabled: number;
-  winrm_credential_id: number | null;
-  dhcp_leases_count: number;
-  last_sync_at: string | null;
-  last_sync_status: string | null;
-  computers_count: number;
-  users_count: number;
-  groups_count: number;
-}>): AdIntegration | undefined {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  for (const [k, v] of Object.entries(input)) {
-    if (v !== undefined) {
-      fields.push(`${k} = ?`);
-      values.push(v);
-    }
-  }
-  if (fields.length === 0) return getAdIntegrationById(id);
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-  getDb().prepare(`UPDATE ad_integrations SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  return getAdIntegrationById(id);
-}
-
-export function deleteAdIntegration(id: number): boolean {
-  const r = getDb().prepare("DELETE FROM ad_integrations WHERE id = ?").run(id);
-  return r.changes > 0;
-}
-
 // AD Computers
 export function getAdComputersPaginated(integrationId: number, page: number, pageSize: number, search?: string, activeDays?: number): { rows: AdComputer[]; total: number } {
   const offset = (page - 1) * pageSize;
@@ -4792,186 +4722,6 @@ export function getAdComputersPaginated(integrationId: number, page: number, pag
   const total = (getDb().prepare(`SELECT COUNT(*) as c FROM ad_computers ${whereClause}`).get(...params) as { c: number }).c;
   const rows = getDb().prepare(`SELECT * FROM ad_computers ${whereClause} ORDER BY sam_account_name LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdComputer[];
   return { rows, total };
-}
-
-export function upsertAdComputer(integrationId: number, input: {
-  object_guid: string;
-  sam_account_name: string;
-  dns_host_name?: string | null;
-  display_name?: string | null;
-  distinguished_name: string;
-  operating_system?: string | null;
-  operating_system_version?: string | null;
-  last_logon_at?: string | null;
-  enabled?: number;
-  host_id?: number | null;
-  ip_address?: string | null;
-  ou?: string | null;
-  raw_data?: string | null;
-}): void {
-  getDb().prepare(`INSERT INTO ad_computers
-    (integration_id, object_guid, sam_account_name, dns_host_name, display_name, distinguished_name, operating_system, operating_system_version, last_logon_at, enabled, host_id, ip_address, ou, raw_data, synced_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(integration_id, object_guid) DO UPDATE SET
-      sam_account_name = excluded.sam_account_name,
-      dns_host_name = excluded.dns_host_name,
-      display_name = excluded.display_name,
-      distinguished_name = excluded.distinguished_name,
-      operating_system = excluded.operating_system,
-      operating_system_version = excluded.operating_system_version,
-      last_logon_at = excluded.last_logon_at,
-      enabled = excluded.enabled,
-      host_id = excluded.host_id,
-      ip_address = excluded.ip_address,
-      ou = excluded.ou,
-      raw_data = excluded.raw_data,
-      synced_at = datetime('now')
-  `).run(
-    integrationId,
-    input.object_guid,
-    input.sam_account_name,
-    input.dns_host_name ?? null,
-    input.display_name ?? null,
-    input.distinguished_name,
-    input.operating_system ?? null,
-    input.operating_system_version ?? null,
-    input.last_logon_at ?? null,
-    input.enabled ?? 1,
-    input.host_id ?? null,
-    input.ip_address ?? null,
-    input.ou ?? null,
-    input.raw_data ?? null
-  );
-}
-
-export function linkAdComputerToHost(integrationId: number, objectGuid: string, hostId: number): void {
-  getDb().prepare("UPDATE ad_computers SET host_id = ? WHERE integration_id = ? AND object_guid = ?").run(hostId, integrationId, objectGuid);
-}
-
-/**
- * Re-link AD computers ai host di una rete specifica.
- * Usa hostname, IP e MAC per fare il matching. Non crea nuovi host.
- * Chiamato dopo la scoperta rete per agganciare i dati AD già sincronizzati.
- */
-export function relinkAdComputersForNetwork(networkId: number): { linked: number; enriched: number } {
-  const db = getDb();
-  let linked = 0;
-  let enriched = 0;
-
-  // Host della rete
-  const hosts = db.prepare(
-    `SELECT id, ip, mac, hostname, dns_forward, dns_reverse, os_info FROM hosts WHERE network_id = ?`
-  ).all(networkId) as Array<{
-    id: number; ip: string; mac: string | null; hostname: string | null;
-    dns_forward: string | null; dns_reverse: string | null;
-    os_info: string | null;
-  }>;
-  if (hosts.length === 0) return { linked: 0, enriched: 0 };
-
-  // Computer AD non ancora linkati (o linkati a host di altre reti)
-  const unlinked = db.prepare(
-    `SELECT ac.id, ac.integration_id, ac.object_guid, ac.dns_host_name, ac.sam_account_name,
-            ac.ip_address, ac.operating_system, ac.host_id
-     FROM ad_computers ac
-     WHERE ac.host_id IS NULL
-        OR ac.host_id IN (SELECT id FROM hosts WHERE network_id = ?)`
-  ).all(networkId) as Array<{
-    id: number; integration_id: number; object_guid: string;
-    dns_host_name: string | null; sam_account_name: string;
-    ip_address: string | null; operating_system: string | null;
-    host_id: number | null;
-  }>;
-
-  // Indici per lookup rapido
-  const hostByIp = new Map(hosts.map((h) => [h.ip, h]));
-  const hostByHostname = new Map<string, typeof hosts[0]>();
-  for (const h of hosts) {
-    if (h.hostname) hostByHostname.set(h.hostname.toLowerCase(), h);
-    if (h.dns_reverse) hostByHostname.set(h.dns_reverse.toLowerCase(), h);
-    if (h.dns_forward) hostByHostname.set(h.dns_forward.toLowerCase(), h);
-  }
-
-  const linkStmt = db.prepare(
-    `UPDATE ad_computers SET host_id = ? WHERE integration_id = ? AND object_guid = ?`
-  );
-
-  // Funzione di arricchimento: AD è fonte autoritativa per hostname.
-  // Fase 4: l'euristica server_windows/workstation (da os_info) è stata
-  // rimossa — l'evidenza "ad" già emessa in emitters.ts (dimension category,
-  // claim compute.server/compute.workstation) la sostituisce nella fusione
-  // v2. os_info/hostname restano: sono anagrafica, non attribuzione.
-  function enrichHost(hostId: number, comp: typeof unlinked[0], currentHost: typeof hosts[0]) {
-    const adHostname = comp.dns_host_name || comp.sam_account_name.replace(/\$$/, "");
-    const osRaw = comp.operating_system ?? "";
-
-    // AD è la fonte più affidabile: hostname viene SEMPRE sovrascritto
-    const sets: string[] = [];
-    const vals: unknown[] = [];
-
-    // Hostname: AD vince sempre
-    if (adHostname) {
-      sets.push("hostname = ?", "hostname_source = 'ad'");
-      vals.push(adHostname);
-    }
-
-    // custom_name: se vuoto, usa il nome AD per dare un nome leggibile
-    if (adHostname && !currentHost.hostname) {
-      sets.push("custom_name = CASE WHEN custom_name IS NULL OR custom_name = '' THEN ? ELSE custom_name END");
-      vals.push(adHostname);
-    }
-
-    // OS: AD sovrascrive se l'host non ha OS o ha "unknown"
-    if (osRaw && (!currentHost.os_info || currentHost.os_info === "unknown")) {
-      sets.push("os_info = ?");
-      vals.push(osRaw);
-    }
-
-    if (sets.length > 0) {
-      sets.push("updated_at = datetime('now')");
-      db.prepare(`UPDATE hosts SET ${sets.join(", ")} WHERE id = ?`).run(...vals, hostId);
-      enriched++;
-    }
-  }
-
-  const touchedHostIds: number[] = [];
-  db.transaction(() => {
-    for (const comp of unlinked) {
-      const dnsHostName = comp.dns_host_name?.toLowerCase() ?? "";
-      const samName = comp.sam_account_name.replace(/\$$/, "").toLowerCase();
-      const shortDns = dnsHostName.split(".")[0];
-
-      // Match per hostname
-      let host = hostByHostname.get(dnsHostName)
-        ?? hostByHostname.get(samName)
-        ?? hostByHostname.get(shortDns);
-
-      // Match per IP
-      if (!host && comp.ip_address) {
-        host = hostByIp.get(comp.ip_address);
-      }
-
-      if (!host) continue;
-
-      // Link + enrich (anche se già linkato allo stesso host, aggiorna hostname AD)
-      if (comp.host_id !== host.id) {
-        linkStmt.run(host.id, comp.integration_id, comp.object_guid);
-        linked++;
-      }
-
-      enrichHost(host.id, comp, host);
-      touchedHostIds.push(host.id);
-    }
-  })();
-
-  // Attribution v2 (fase 1, parallel-run): rifusione evidenze sugli host toccati
-  try {
-    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
-    for (const id of touchedHostIds) recomputeAttributionSafe(id, "scan");
-  } catch (e) {
-    console.error("[attribution] recompute da relinkAdComputersForNetwork fallito:", e);
-  }
-
-  return { linked, enriched };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -5177,141 +4927,6 @@ export function getAdUsersPaginated(integrationId: number, page: number, pageSiz
   const total = (getDb().prepare(`SELECT COUNT(*) as c FROM ad_users ${whereClause}`).get(...params) as { c: number }).c;
   const rows = getDb().prepare(`SELECT * FROM ad_users ${whereClause} ORDER BY sam_account_name LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as AdUser[];
   return { rows, total };
-}
-
-export function upsertAdUser(integrationId: number, input: {
-  object_guid: string;
-  sam_account_name: string;
-  user_principal_name?: string | null;
-  display_name?: string | null;
-  email?: string | null;
-  department?: string | null;
-  title?: string | null;
-  phone?: string | null;
-  ou?: string | null;
-  enabled?: number;
-  last_logon_at?: string | null;
-  password_last_set_at?: string | null;
-  raw_data?: string | null;
-}): void {
-  getDb().prepare(`INSERT INTO ad_users
-    (integration_id, object_guid, sam_account_name, user_principal_name, display_name, email, department, title, phone, ou, enabled, last_logon_at, password_last_set_at, raw_data, synced_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(integration_id, object_guid) DO UPDATE SET
-      sam_account_name = excluded.sam_account_name,
-      user_principal_name = excluded.user_principal_name,
-      display_name = excluded.display_name,
-      email = excluded.email,
-      department = excluded.department,
-      title = excluded.title,
-      phone = excluded.phone,
-      ou = excluded.ou,
-      enabled = excluded.enabled,
-      last_logon_at = excluded.last_logon_at,
-      password_last_set_at = excluded.password_last_set_at,
-      raw_data = excluded.raw_data,
-      synced_at = datetime('now')
-  `).run(
-    integrationId,
-    input.object_guid,
-    input.sam_account_name,
-    input.user_principal_name ?? null,
-    input.display_name ?? null,
-    input.email ?? null,
-    input.department ?? null,
-    input.title ?? null,
-    input.phone ?? null,
-    input.ou ?? null,
-    input.enabled ?? 1,
-    input.last_logon_at ?? null,
-    input.password_last_set_at ?? null,
-    input.raw_data ?? null
-  );
-}
-
-// AD Groups
-export function upsertAdGroup(integrationId: number, input: {
-  object_guid: string;
-  sam_account_name: string;
-  display_name?: string | null;
-  description?: string | null;
-  distinguished_name: string;
-  group_type?: number | null;
-  member_guids?: string | null;
-}): void {
-  getDb().prepare(`INSERT INTO ad_groups
-    (integration_id, object_guid, sam_account_name, display_name, description, distinguished_name, group_type, member_guids, synced_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(integration_id, object_guid) DO UPDATE SET
-      sam_account_name = excluded.sam_account_name,
-      display_name = excluded.display_name,
-      description = excluded.description,
-      distinguished_name = excluded.distinguished_name,
-      group_type = excluded.group_type,
-      member_guids = excluded.member_guids,
-      synced_at = datetime('now')
-  `).run(
-    integrationId,
-    input.object_guid,
-    input.sam_account_name,
-    input.display_name ?? null,
-    input.description ?? null,
-    input.distinguished_name,
-    input.group_type ?? null,
-    input.member_guids ?? null
-  );
-}
-
-export function clearAdData(integrationId: number): void {
-  getDb().prepare("DELETE FROM ad_computers WHERE integration_id = ?").run(integrationId);
-  getDb().prepare("DELETE FROM ad_users WHERE integration_id = ?").run(integrationId);
-  getDb().prepare("DELETE FROM ad_groups WHERE integration_id = ?").run(integrationId);
-  getDb().prepare("DELETE FROM ad_dhcp_leases WHERE integration_id = ?").run(integrationId);
-}
-
-// AD DHCP Leases
-export function upsertAdDhcpLease(integrationId: number, input: {
-  scope_id: string;
-  scope_name?: string | null;
-  ip_address: string;
-  mac_address: string;
-  hostname?: string | null;
-  lease_expires?: string | null;
-  address_state?: string | null;
-  description?: string | null;
-  last_seen?: string | null;
-}): void {
-  const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
-  // v0.2.659: aggiunto last_seen.
-  getDb().prepare(`INSERT INTO ad_dhcp_leases
-    (integration_id, scope_id, scope_name, ip_address, mac_address, hostname, lease_expires, address_state, description, last_seen, last_synced)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(integration_id, ip_address) DO UPDATE SET
-      scope_id = excluded.scope_id,
-      scope_name = excluded.scope_name,
-      mac_address = excluded.mac_address,
-      hostname = excluded.hostname,
-      lease_expires = excluded.lease_expires,
-      address_state = excluded.address_state,
-      description = excluded.description,
-      last_seen = excluded.last_seen,
-      last_synced = datetime('now')
-  `).run(
-    integrationId,
-    input.scope_id,
-    input.scope_name ?? null,
-    input.ip_address,
-    macNorm,
-    input.hostname ?? null,
-    input.lease_expires ?? null,
-    input.address_state ?? null,
-    input.description ?? null,
-    input.last_seen ?? null
-  );
-}
-
-export function clearAdDhcpLeases(integrationId: number): void {
-  getDb().prepare("DELETE FROM ad_dhcp_leases WHERE integration_id = ?").run(integrationId);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -5897,4 +5512,21 @@ export {
   deleteDeviceCredentialBinding,
   reorderDeviceCredentialBindings,
   updateBindingTestStatus,
+} from "./db-tenant";
+
+// NUC-2 gruppo 1b (T3-06), AD: 11 funzioni uguali o con
+// differenze solo di forma fra le due copie, provate con la parità. Una sola copia,
+// in db-tenant.ts. Elenco: src/lib/__tests__/support/facciata-spostate.ts.
+export {
+  createAdIntegration,
+  updateAdIntegration,
+  deleteAdIntegration,
+  upsertAdComputer,
+  linkAdComputerToHost,
+  relinkAdComputersForNetwork,
+  upsertAdUser,
+  upsertAdGroup,
+  clearAdData,
+  upsertAdDhcpLease,
+  clearAdDhcpLeases,
 } from "./db-tenant";

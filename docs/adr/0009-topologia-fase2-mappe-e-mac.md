@@ -55,8 +55,8 @@ per 30 giorni, scritta da SNMP/SSH e dai client UniFi.**
 - **Un errore sui MAC per porta non ferma il giro**: vicini e routing continuano (punto 12 dell'ADR
   0008); la riga `[MacPorta]` nel log dice quale apparato.
 - Fatto emerso: a metà lavoro il file `DEFAULT.db` orfano dell'hub è risultato **malformato** al
-  `quick_check` del 13/10 (nessun tenant attivo lo usa). Decisione sul da farsi in sospeso con
-  Riccardo.
+  `quick_check` del 13/10 (nessun tenant attivo lo usa). Ricostruito con `.dump` il 13/10 sera, prima del
+  rilascio (81 tabelle, righe identiche, integrità ok); originale `DEFAULT.db.bak-20261013-214254`.
 
 ## Alternative scartate
 

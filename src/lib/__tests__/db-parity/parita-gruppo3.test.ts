@@ -55,6 +55,13 @@ const MAC = [
   ["sconosciuto", "00:1A:2B:3C:4D:FF"],
 ] as const;
 
+/**
+ * Colonne d'orario: la fixture le scrive con `datetime('now')` sui due lati, che
+ * non cadono sempre nello stesso secondo (il 13/10 la suite intera, sotto
+ * carico, ha visto `created_at` di un host differire di un secondo).
+ */
+const ORA = ["first_seen", "last_seen", "updated_at", "created_at", "attr_at", "changed_at", "discovered_at", "timestamp"];
+
 test("resolveMacToNetworkDevice: stesso apparato in ogni ramo, anche con l'apparato escluso", () => {
   for (const [nome, mac] of MAC) {
     for (const escludi of [undefined, APPARATO.switchCore]) {
@@ -65,6 +72,7 @@ test("resolveMacToNetworkDevice: stesso apparato in ogni ramo, anche con l'appar
         tenant: () => tenant.resolveMacToNetworkDevice(mac, escludi),
         funzioni: [vecchia.resolveMacToNetworkDevice, tenant.resolveMacToNetworkDevice],
         tabelle: ["arp_entries", "network_devices"],
+        colonneOra: ORA,
       });
     }
   }
@@ -79,12 +87,12 @@ test("resolveMacToDevice: stesso host, ARP o legame MAC-IP in ogni ramo", () => 
       tenant: () => tenant.resolveMacToDevice(mac),
       funzioni: [vecchia.resolveMacToDevice, tenant.resolveMacToDevice],
       tabelle: ["hosts", "mac_ip_mapping"],
+      colonneOra: ORA,
     });
   }
 });
 
 test("updateHostIfExists: aggiorna l'host che c'è, non crea quello che manca", () => {
-  const ORA = ["first_seen", "last_seen", "updated_at", "created_at", "attr_at", "changed_at", "discovered_at", "timestamp"];
   const casi = [
     ["esiste", { network_id: RETE_UFFICI, ip: "10.40.0.20", hostname: "pc-ammin-nuovo", hostname_source: "dns", status: "online" as const }],
     ["esiste-mac", { network_id: RETE_SERVER, ip: "10.41.0.11", mac: "00:1a:2b:3c:4d:06", vendor: "Dell" }],

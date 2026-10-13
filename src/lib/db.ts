@@ -5526,46 +5526,12 @@ export interface DbNeighborEntry {
   timestamp: string;
 }
 
-export function upsertNeighbors(
-  deviceId: number,
-  neighbors: Array<{
-    localPort: string;
-    remoteDevice: string;
-    remotePort: string;
-    protocol: string;
-    remoteIp?: string;
-    remoteMac?: string;
-    remotePlatform?: string;
-  }>
-): void {
-  const db = getDb();
-  const del = db.prepare("DELETE FROM device_neighbors WHERE device_id = ?");
-  // OR IGNORE: vedi nota in db-tenant.ts — duplicati di chiave nello stesso
-  // batch LLDP/CDP non devono interrompere la persistenza dei vicini.
-  const ins = db.prepare(`
-    INSERT OR IGNORE INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  db.transaction(() => {
-    del.run(deviceId);
-    for (const n of neighbors) {
-      ins.run(deviceId, n.localPort, n.remoteDevice, n.remotePort, n.protocol, n.remoteIp ?? null, n.remoteMac ?? null, n.remotePlatform ?? null);
-    }
-  })();
-
-  // Attribution v2: i vicini LLDP/CDP appena scritti sono evidenza per gli host remoti
-  try {
-    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
-    const touched = db.prepare(
-      `SELECT DISTINCT h.id FROM hosts h
-       JOIN device_neighbors dn ON dn.device_id = ?
-        AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
-          OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))`
-    ).all(deviceId) as Array<{ id: number }>;
-    for (const t of touched) recomputeAttributionSafe(t.id, "scan");
-  } catch (e) {
-    console.error("[attribution] recompute da neighbors fallito:", e);
-  }
+export function upsertNeighbors(...args: Parameters<typeof import("./db-tenant").upsertNeighbors>): void {
+  // Delega al sorgente db-tenant (topologia fase 1: età e fonte dei vicini, niente
+  // DELETE del giro): una copia sola, come upsertSwitchPorts. Il ramo
+  // tappa3b/nucleo toglie questa funzione dal facade: nel rebase vince il nucleo.
+  const tenant = require("./db-tenant") as typeof import("./db-tenant");
+  tenant.upsertNeighbors(...args);
 }
 
 export function getNeighborsByDevice(deviceId: number): DbNeighborEntry[] {

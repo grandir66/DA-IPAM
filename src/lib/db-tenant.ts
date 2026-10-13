@@ -4709,6 +4709,11 @@ export interface DbNeighborEntry {
   timestamp: string;
 }
 
+export type NeighborSource = "device" | "unifi";
+
+/** Un vicino non visto da più di tanti giorni si toglie alla scrittura successiva del suo apparato. */
+const NEIGHBOR_RETENTION_DAYS = 90;
+
 export function upsertNeighbors(
   deviceId: number,
   neighbors: Array<{
@@ -4719,23 +4724,31 @@ export function upsertNeighbors(
     remoteIp?: string;
     remoteMac?: string;
     remotePlatform?: string;
-  }>
+  }>,
+  source: NeighborSource = "device",
 ): void {
   const d = db();
-  const del = d.prepare("DELETE FROM device_neighbors WHERE device_id = ?");
-  // OR IGNORE: lo stesso batch LLDP/CDP può contenere due vicini con identica
-  // chiave (device_id, local_port, remote_device_name, remote_port) — es. doppio
-  // annuncio CDP/LLDP sulla stessa porta. Senza OR IGNORE il 2° INSERT lancia
-  // UNIQUE constraint e interrompe la persistenza dei vicini del device.
+  // Topologia fase 1: niente DELETE del giro. Chi c'è si aggiorna (timestamp =
+  // adesso, first_seen resta), chi non c'è invecchia e diventa «non visto».
+  // Due fonti sullo stesso apparato (poll SNMP/SSH e UniFi) non si cancellano
+  // più a vicenda. ON CONFLICT copre anche due voci uguali nello stesso giro.
   const ins = d.prepare(`
-    INSERT OR IGNORE INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform, source, first_seen, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    ON CONFLICT(device_id, local_port, remote_device_name, remote_port) DO UPDATE SET
+      protocol = excluded.protocol,
+      remote_ip = excluded.remote_ip,
+      remote_mac = excluded.remote_mac,
+      remote_platform = excluded.remote_platform,
+      source = excluded.source,
+      timestamp = excluded.timestamp
   `);
+  const prune = d.prepare("DELETE FROM device_neighbors WHERE device_id = ? AND timestamp < datetime('now', ?)");
   d.transaction(() => {
-    del.run(deviceId);
     for (const n of neighbors) {
-      ins.run(deviceId, n.localPort, n.remoteDevice, n.remotePort, n.protocol, n.remoteIp ?? null, n.remoteMac ?? null, n.remotePlatform ?? null);
+      ins.run(deviceId, n.localPort, n.remoteDevice, n.remotePort, n.protocol, n.remoteIp ?? null, n.remoteMac ?? null, n.remotePlatform ?? null, source);
     }
+    prune.run(deviceId, `-${NEIGHBOR_RETENTION_DAYS} days`);
   })();
 
   // Attribution v2: i vicini LLDP/CDP appena scritti sono evidenza per gli host remoti

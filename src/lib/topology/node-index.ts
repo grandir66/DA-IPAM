@@ -88,6 +88,30 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
   for (const r of knownMacs) {
     if (idx.nodes.has(`dev:${r.device_id}`)) put(idx.byMac, normalizeMacForStorage(r.mac), `dev:${r.device_id}`, false);
   }
+  // Un host col MAC di UN solo apparato è un'altra interfaccia (VLAN, VRRP) dello stesso oggetto fisico:
+  // si fonde con lui. Un MAC di due o più apparati (VRRP condiviso) è ambiguo e non assorbe nulla.
+  // Viene dopo le regole per host_id, IP e identità fisica: un host già assorbito non si sposta.
+  const macOwners = new Map<string, Set<string>>();
+  const own = (mac: string | null | undefined, devId: string): void => {
+    const m = normalizeMacForStorage(mac ?? null);
+    if (!m) return;
+    const set = macOwners.get(m) ?? new Set<string>();
+    set.add(devId);
+    macOwners.set(m, set);
+  };
+  for (const d of devices) own(d.controller_mac, `dev:${d.id}`);
+  for (const r of knownMacs) if (idx.nodes.has(`dev:${r.device_id}`)) own(r.mac, `dev:${r.device_id}`);
+  for (const h of sortedHosts) {
+    if (absorbedBy.has(h.id)) continue;
+    const m = normalizeMacForStorage(h.mac);
+    const owners = m ? macOwners.get(m) : undefined;
+    if (!owners || owners.size !== 1) continue;
+    const devId = [...owners][0];
+    const node = idx.nodes.get(devId);
+    if (!node) continue;
+    absorbedBy.set(h.id, devId);
+    node.fusedHostIds = [...node.fusedHostIds, h.id].sort((a, b) => a - b);
+  }
   for (const [hostId, devId] of absorbedBy) {
     const h = idx.hostById.get(hostId);
     if (!h) continue;

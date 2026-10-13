@@ -65,3 +65,46 @@ test("un host non fuso diventa nodo solo quando serve", () => {
   assert.equal(idx.nodes.get("host:60")?.name, "SRV-BACKUP");
   assert.equal(nodeFor(idx, "host:999"), null);
 });
+
+test("un host con IP diverso ma il MAC (controller_mac) di un solo apparato si fonde con lui", () => {
+  const idx = buildNodeIndex(
+    [dev(1, { host: "10.0.0.1", controller_mac: "AA-BB-CC-00-00-01" })],
+    [host(60, { ip: "10.0.50.1", mac: "aa:bb:cc:00:00:01" })],
+    [],
+  );
+  assert.equal(canonical(idx, "host:60"), "dev:1");
+  assert.equal(resolveNode(idx, { ip: "10.0.50.1" }), "dev:1");
+  assert.equal(idx.fusedHosts, 1);
+  assert.deepEqual(idx.nodes.get("dev:1")?.fusedHostIds, [60]);
+});
+
+test("lo stesso vale per un MAC delle righe knownMacs", () => {
+  const idx = buildNodeIndex(
+    [dev(1, { host: "10.0.0.1" })],
+    [host(61, { ip: "10.0.60.1", mac: "AA:BB:CC:00:00:09" })],
+    [{ device_id: 1, mac: "aa-bb-cc-00-00-09" }],
+  );
+  assert.equal(canonical(idx, "host:61"), "dev:1");
+  assert.equal(resolveNode(idx, { ip: "10.0.60.1" }), "dev:1");
+});
+
+test("un MAC di due apparati (VRRP) non fonde nessun host", () => {
+  const idx = buildNodeIndex(
+    [dev(1, { controller_mac: "00:00:5e:00:01:01" }), dev(2)],
+    [host(62, { ip: "10.0.70.1", mac: "00:00:5E:00:01:01" })],
+    [{ device_id: 2, mac: "00:00:5e:00:01:01" }],
+  );
+  assert.equal(canonical(idx, "host:62"), "host:62");
+  assert.equal(idx.fusedHosts, 0);
+});
+
+test("un host già fuso per host_id non si sposta per MAC", () => {
+  const idx = buildNodeIndex(
+    [dev(1, { host: "10.0.0.1", host_id: 63 }), dev(2, { controller_mac: "aa:bb:cc:00:00:63" })],
+    [host(63, { ip: "10.0.0.1", mac: "aa:bb:cc:00:00:63" })],
+    [],
+  );
+  assert.equal(canonical(idx, "host:63"), "dev:1");
+  assert.equal(idx.fusedHosts, 1);
+  assert.deepEqual(idx.nodes.get("dev:2")?.fusedHostIds, []);
+});

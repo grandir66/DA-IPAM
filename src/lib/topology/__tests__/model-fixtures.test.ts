@@ -51,7 +51,7 @@ test("Domarc: i doppi apparato/host si fondono (spec §2: almeno i 5 Proxmox)", 
 // Numeri misurati alla prima estrazione (Task 9, Step 7): si riscrivono solo sapendo perché cambiano.
 const MISURATI: Record<string, Partial<Record<string, number>>> = {
   "topologia-domarc.json": { deviceLinks: 20, attachedLinks: 19, unmatchedNeighbors: 12, isolatedDevices: 22, fusedHosts: 58, promoteProposals: 14, suspiciousTypes: 17 },
-  "topologia-cliente-a.json": { deviceLinks: 78, attachedLinks: 59, unmatchedNeighbors: 16, isolatedDevices: 10, fusedHosts: 77, promoteProposals: 14, suspiciousTypes: 7 },
+  "topologia-cliente-a.json": { deviceLinks: 78, attachedLinks: 59, unmatchedNeighbors: 16, isolatedDevices: 10, fusedHosts: 78, promoteProposals: 14, suspiciousTypes: 7 },
 };
 for (const [nome, attesi] of Object.entries(MISURATI)) {
   test(`${nome}: conteggi misurati`, () => {

@@ -1928,7 +1928,9 @@ export function getHostsByNetworkWithDevices(networkId: number): (Host & {
         const allPeers = peersByGroup.get(_mh_group)!;
         const otherPeers = allPeers.filter((p) => p.host_id !== h.id);
         const primary = primaryByGroup.get(_mh_group) ?? null;
-        multihomed = {
+        // Un host rimasto solo nel gruppo (l'altro cancellato, ricalcolo non
+        // ancora passato) non ha un gruppo da mostrare: null, come la vecchia facciata.
+        if (otherPeers.length > 0) multihomed = {
           group_id: _mh_group,
           match_type: _mh_type ?? "hostname",
           is_primary: _mh_is_primary === 1,

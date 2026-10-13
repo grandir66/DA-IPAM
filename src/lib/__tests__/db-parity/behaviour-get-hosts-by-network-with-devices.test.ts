@@ -76,3 +76,20 @@ test("getHostsByNetworkWithDevices: un host fuori dai gruppi resta senza gruppo,
   const senza = nelTenant("ghbnwdsenza2", retiHostCredenziali, () => facciata.getHostsByNetworkWithDevices(RETE_UFFICI));
   assert.ok(senza.every((h) => h.multihomed === null));
 });
+
+test("getHostsByNetworkWithDevices: un host rimasto solo nel suo gruppo resta senza gruppo", () => {
+  // Cancellando un host, ON DELETE CASCADE toglie solo la sua riga di
+  // multihomed_links: il superstite resta da solo nel gruppo fino al prossimo
+  // ricalcolo. Come nella vecchia facciata, niente badge vuoto e niente oggetto
+  // con `peers: []` nella colonna dell'export (revisione della parte 3b, 13/10).
+  const h = nelTenant(
+    "ghbnwdsolo",
+    (db) => {
+      conGruppi(db);
+      db.prepare("DELETE FROM hosts WHERE id = ?").run(HOST.pcAmmin);
+    },
+    () => perId(RETE_UFFICI).get(HOST.switchCore),
+  );
+  assert.ok(h, "lo switch è nella rete");
+  assert.equal(h.multihomed, null);
+});

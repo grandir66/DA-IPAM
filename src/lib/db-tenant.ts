@@ -2743,6 +2743,23 @@ export function selectOfflineCandidates(
 }
 
 /**
+ * Host della rete non offline (online, `unknown` o senza stato) fra gli IP
+ * scansionati: il denominatore della soglia offline (T3-21). Usa la stessa
+ * idea di «non offline» del filtro dei candidati, così i candidati sono sempre
+ * un sottoinsieme; gli host già offline non entrano nel conto.
+ */
+export function contaHostAttiviScansionati(networkId: number, scannedIps: readonly string[]): number {
+  if (scannedIps.length === 0) return 0;
+  const scansionati = new Set(scannedIps);
+  const righe = db()
+    .prepare("SELECT ip FROM hosts WHERE network_id = ? AND (status IS NULL OR status <> 'offline')")
+    .all(networkId) as Array<{ ip: string }>;
+  let n = 0;
+  for (const r of righe) if (scansionati.has(r.ip)) n++;
+  return n;
+}
+
+/**
  * Marca offline gli host scansionati che non hanno risposto, col filtro di
  * `selectOfflineCandidates` (T3-20). Una lista di scansionati vuota non tocca
  * niente (prima valeva come «tutta la rete»). Restituisce quanti host ha

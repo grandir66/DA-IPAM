@@ -70,6 +70,32 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   gli host eventualmente spenti per errore tornano online al primo giro che li
   vede. Prova: `mark-hosts-offline.test.ts`.
 
+### Aggiunte
+
+- **Soglia di sicurezza sugli spegnimenti in massa, con conferma al giro dopo
+  (INV-2, T3-21).** Un giro che non vedeva nessuno (un ping che non esce, un
+  apparato in mezzo che filtra, un esecutore remoto che risponde male)
+  mandava offline in un colpo tutti gli host della rete. Un calo così è più
+  spesso un guasto della scansione che della rete. Ora, se un giro spegnerebbe
+  più della metà degli host non offline fra gli indirizzi scansionati, e
+  almeno 5, la soglia scatta. In modo `applica` il giro non spegne nessuno e
+  lo dice nel registro del giro e nella storia delle scansioni («soglia
+  superata, N non marcati»); il giro dopo manda offline solo gli host che
+  erano candidati in tutti e due i giri, così un calo vero arriva con un giro
+  di ritardo e la guardia non resta bloccata. Un calo sotto soglia si applica
+  subito come prima. I candidati in attesa di conferma si conservano nel
+  database del tenant, quindi un riavvio per aggiornamento non azzera la
+  conferma. Impostazioni per tenant: `offline_guard_mode` (`registra` o
+  `applica`), `offline_guard_pct` (50), `offline_guard_min` (5). **Cosa
+  cambia sulle installazioni del canale `dev`:** niente sullo stato degli
+  host, perché il modo predefinito è `registra`: si spegne come prima e, quando
+  la soglia sarebbe scattata, si scrive «qui avrei bloccato N» nel registro
+  del giro, nella storia delle scansioni e una riga `[SogliaOffline]` nel
+  journal. Il passaggio ad `applica` è un'impostazione per tenant e si fa
+  contando quelle righe. Rigiocando la storia di un'installazione (2.172 giri
+  in 147 giorni) la soglia sarebbe scattata 11 volte, e tutte le volte il calo
+  c'era ancora al giro dopo. Prova: `offline-guard.test.ts`.
+
 ## [Non rilasciato] — 2026-10-12
 
 ### Correzioni

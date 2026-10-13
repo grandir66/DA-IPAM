@@ -2,11 +2,11 @@ import { getAllHostIps } from "@/lib/utils";
 import {
   getCurrentTenantCode,
   getTenantSetting,
-  markHostsOffline,
   oraDelDatabase,
   withTenant,
 } from "@/lib/db-tenant";
 import { CHIAVE_SOGLIA_ALLARME, prendiRete, sogliaAllarmeDa } from "./network-scan-lock";
+import { passaggioOfflineConSoglia } from "./offline-guard";
 import { pingSweep as _localPingSweep } from "./ping";
 import { nmapDiscoverHosts as _localNmapDiscoverHosts, nmapPortScan as _localNmapPortScan, isNmapAvailable as _localIsNmapAvailable } from "./nmap";
 import { tcpConnect as _localTcpConnect, FALLBACK_TCP_PORTS } from "./tcp-check";
@@ -3222,14 +3222,18 @@ async function runDiscovery(
   // ═══════════════════════════════════════════════════════════════
   // T3-19: gli IP col ping «sconosciuto» restano fuori, né offline né annotati.
   const ipsDecisi = pingSconosciuti.size > 0 ? ips.filter((ip) => !pingSconosciuti.has(ip)) : ips;
+  let codaStoriaSoglia = "";
   if (scanType === "network_discovery" || scanType === "fast" || scanType === "scan_naabu") {
     progress.phase = "Aggiornamento host offline";
     noteHostsNonResponding(networkId, onlineIps, ipsDecisi, scanType);
     // T3-20: solo host non ancora offline e non visti dopo l'inizio del giro.
-    const passatiOffline = markHostsOffline(networkId, onlineIps, ipsDecisi, inizioGiro);
+    // T3-21: con la soglia di sicurezza (conferma per intersezione).
+    const soglia = passaggioOfflineConSoglia(networkId, onlineIps, ipsDecisi, inizioGiro);
+    codaStoriaSoglia = soglia.codaStoria;
     const onlineSet = new Set(onlineIps);
     const nonRispondenti = ipsDecisi.filter((ip) => !onlineSet.has(ip)).length;
-    log(`Host non rispondenti (${nonRispondenti}) dopo ICMP + TCP fallback: ${passatiOffline} passati offline`);
+    log(`Host non rispondenti (${nonRispondenti}) dopo ICMP + TCP fallback: ${soglia.passati} passati offline`);
+    if (soglia.riga) log(soglia.riga);
   } else if (scanType === "nmap" || scanType === "ipam_full") {
     progress.phase = "Annotazione host non rispondenti";
     noteHostsNonResponding(networkId, onlineIps, ipsDecisi, scanType);
@@ -3242,8 +3246,10 @@ async function runDiscovery(
     // ping e altri sweep ICMP-only: marca offline. I sub-step UI additivi
     // (nmap_base / snmp_verify) non devono flippare host non in target.
     progress.phase = "Aggiornamento host offline";
-    const passatiOffline = markHostsOffline(networkId, onlineIps, ipsDecisi, inizioGiro);
-    log(`Host passati offline: ${passatiOffline}`);
+    const soglia = passaggioOfflineConSoglia(networkId, onlineIps, ipsDecisi, inizioGiro);
+    codaStoriaSoglia = soglia.codaStoria;
+    log(`Host passati offline: ${soglia.passati}`);
+    if (soglia.riga) log(soglia.riga);
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -3298,7 +3304,7 @@ async function runDiscovery(
     host_id: null,
     network_id: networkId,
     scan_type: scanType,
-    status: `${onlineIps.length} online, ${ips.length - onlineIps.length} offline${totalPorts > 0 ? `, ${totalPorts} porte aperte` : ""}`,
+    status: `${onlineIps.length} online, ${ips.length - onlineIps.length} offline${totalPorts > 0 ? `, ${totalPorts} porte aperte` : ""}${codaStoriaSoglia}`,
     ports_open: null,
     raw_output: null,
     duration_ms: Date.now() - startTime,

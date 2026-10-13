@@ -100,6 +100,13 @@ modello lo calcola a ogni richiesta e non lo salva.**
 11. Note per la fase 2: le porte di un collegamento vengono dalla fonte di rango più alto (a parità,
     dalla prima arrivata), non da quella vista più di recente; e la propagazione della sede
     (`sites.ts`) percorre anche i collegamenti «non visto».
+12. Se `migrateTopologyPhase2` fallisce all'apertura (aggiunto il 13/10 con la revisione finale
+    della fase 2), il tenant si apre lo stesso ma manca l'indice unico di `mac_port_entries`: ogni
+    scrittura dei MAC per porta fallisce e la mappa non conta più i client. Vicini e routing invece
+    continuano, perché nel giro SNMP la scrittura dei MAC per porta ha il suo try
+    (`salvaMacPorta` in `cron/jobs.ts`, una riga `[MacPorta]` per apparato nel log). Mancano anche le
+    mappe (`topology_maps`): `/api/topology/maps` risponde 500 e la pagina Topologia mostra
+    l'errore di caricamento con «Riprova».
 
 ## Riferimenti
 

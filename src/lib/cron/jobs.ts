@@ -558,6 +558,29 @@ async function runNmapScan(networkId: number | null, opzioni?: OpzioniRunJob): P
   return suOgniRete(networkId, opzioni, runForNetwork);
 }
 
+/**
+ * Salva i MAC per porta di un apparato (spec §10.5) senza fermare il resto del
+ * giro (revisione finale I1): nel ramo SNMP vicini e routing vengono dopo, e una
+ * scrittura che lancia (indice unico mancante perché la migrazione di fase 2 è
+ * fallita all'apertura del tenant, una riga storta) li saltava tutti e due fino
+ * al riavvio. Una riga di log col solo id dell'apparato e il codice d'errore:
+ * niente MAC, nomi o IP. `scrivi` si passa nelle prove.
+ */
+export function salvaMacPorta(
+  deviceId: number,
+  entries: Parameters<typeof upsertMacPortEntries>[1],
+  scrivi: typeof upsertMacPortEntries = upsertMacPortEntries,
+): boolean {
+  try {
+    scrivi(deviceId, entries, "device");
+    return true;
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code;
+    console.warn(`[MacPorta] apparato #${deviceId}: MAC per porta non salvati (${typeof code === "string" ? code : "errore"})`);
+    return false;
+  }
+}
+
 export type RunArpPollOptions = {
   /** Se impostato, aggiorna solo questi IP (nessun nuovo host da voci ARP fuori elenco). */
   onlyEnrichIps?: string[];
@@ -785,12 +808,11 @@ export async function runArpPoll(
 
           upsertSwitchPorts(device.id, switchPorts);
           // Spec §10.5: l'elenco dei MAC per porta si salva (prima si contava e si buttava).
-          upsertMacPortEntries(
+          salvaMacPorta(
             device.id,
             macPortListFromPorts(portInfos, macsByPortByIndex, macsByPortByName, normalizePortNameForMatch).map((e) => ({
               ...e, vlan: null, port_status: null, speed: null,
             })),
-            "device",
           );
         }
 
@@ -820,13 +842,13 @@ export async function runArpPoll(
       } else {
         const client = await createSwitchClient(device);
         const entries = await client.getMacTable();
-        upsertMacPortEntries(device.id, entries.map((e) => ({
+        salvaMacPorta(device.id, entries.map((e) => ({
           mac: e.mac,
           port_name: e.port_name.trim(),
           vlan: e.vlan,
           port_status: e.port_status,
           speed: e.speed,
-        })), "device");
+        })));
 
         // Popola mac_ip_mapping con MAC da switch risolti a IP (hosts/ARP)
         const switchNetwork = networks.find((n) => isIpInCidr(device.host, n.cidr));

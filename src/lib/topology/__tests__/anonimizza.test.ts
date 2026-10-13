@@ -19,7 +19,7 @@ const VERO: TopologyModelInput = {
     { id: 2, cidr: "192.168.20.0/24", name: "Server", gateway: "192.168.20.1", location_id: 1 },
   ],
   knownMacs: [{ device_id: 1, mac: "f4:1e:57:aa:bb:01" }],
-  overrides: [], nowMs: Date.parse("2026-10-13T12:00:00Z"), staleDays: 2,
+  overrides: [], macPorts: [], nowMs: Date.parse("2026-10-13T12:00:00Z"), staleDays: 2,
 };
 
 test("nessun nome, IP o MAC vero esce", () => {

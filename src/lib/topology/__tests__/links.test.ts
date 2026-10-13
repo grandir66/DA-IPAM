@@ -10,7 +10,7 @@ const ADESSO = Date.parse("2026-10-13T12:00:00Z");
 function input(over: Partial<TopologyModelInput>): TopologyModelInput {
   return {
     devices: [], hosts: [], neighbors: [], uplinkPorts: [], locations: [], networks: [], knownMacs: [],
-    overrides: [], nowMs: ADESSO, staleDays: 2, ...over,
+    overrides: [], macPorts: [], nowMs: ADESSO, staleDays: 2, ...over,
   };
 }
 function nb(device_id: number, over: Partial<ModelNeighborRow> = {}): ModelNeighborRow {

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
 import {
   addLinkOverride, deleteLinkOverride, deleteTenantDatabase, getSiteTopology, getTenantDb, getTopologyModelInput,
-  listLinkOverrides, setDeviceLocation, setSiteTopology, withTenant,
+  listLinkOverrides, setDeviceLocation, setSiteTopology, upsertMacPortEntries, withTenant,
 } from "@/lib/db-tenant";
 import { getLinkStaleDays, setLinkStaleDays } from "@/lib/topology/settings";
 
@@ -13,7 +13,7 @@ const db = () => getTenantDb(T);
 const w = <R>(fn: () => R): R => withTenant(T, fn);
 
 beforeEach(() => {
-  db().exec("DELETE FROM topology_link_overrides; DELETE FROM switch_ports; DELETE FROM device_neighbors; DELETE FROM network_devices; DELETE FROM hosts; DELETE FROM networks; DELETE FROM locations;");
+  db().exec("DELETE FROM mac_port_entries; DELETE FROM topology_link_overrides; DELETE FROM switch_ports; DELETE FROM device_neighbors; DELETE FROM network_devices; DELETE FROM hosts; DELETE FROM networks; DELETE FROM locations;");
   db().exec(`
     INSERT INTO locations (id, name, parent_id) VALUES (1, 'Sede A', NULL), (2, 'Armadio 1', 1), (3, 'Sede B', NULL);
     INSERT INTO networks (id, cidr, name, gateway) VALUES (1, '10.0.0.0/24', 'LAN', '10.0.0.1'), (2, '10.0.1.0/24', 'VOIP', '10.0.1.1'), (3, '10.0.2.0/24', 'OSPITI', NULL);
@@ -34,6 +34,19 @@ test("getTopologyModelInput: righe nella forma del modello", () => {
   assert.deepEqual(i.devices.map((d) => [d.id, d.port_count, d.topology_hidden, d.location_id]), [[1, 0, 0, null], [2, 2, 0, null]]);
   assert.deepEqual(i.uplinkPorts, [{ device_id: 2, port_index: 1, port_name: "Port 1" }]);
   assert.equal(i.locations.length, 3);
+});
+
+test("getTopologyModelInput: i MAC per porta degli ultimi 30 giorni, con la fonte", () => {
+  w(() => upsertMacPortEntries(2, [{ mac: "02:00:00:00:00:0a", port_name: "Port 2", vlan: null, port_status: null, speed: null }], "device"));
+  // Una riga di 40 giorni fa non entra: il modello vede solo gli ultimi 30.
+  db().prepare(`INSERT INTO mac_port_entries (device_id, mac, port_name, timestamp, first_seen, source)
+                VALUES (2, '02:00:00:00:00:0b', 'Port 2', datetime('now', '-40 days'), datetime('now', '-40 days'), 'unifi')`).run();
+  const i = w(() => getTopologyModelInput(2, 1_000));
+  assert.equal(i.macPorts.length, 1);
+  const [r] = i.macPorts;
+  assert.deepEqual({ device_id: r.device_id, mac: r.mac, port_name: r.port_name, source: r.source },
+    { device_id: 2, mac: "02:00:00:00:00:0a", port_name: "Port 2", source: "device" });
+  assert.match(r.timestamp, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
 });
 
 test("sede dell'apparato: scritta con autore e data; ubicazione inesistente rifiutata", () => {

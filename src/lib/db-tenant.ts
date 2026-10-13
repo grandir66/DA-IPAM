@@ -8873,6 +8873,9 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
     networks: d.prepare("SELECT id, cidr, name, gateway, location_id FROM networks ORDER BY id").all() as ModelInput["networks"],
     knownMacs: getNetworkDeviceKnownMacs(),
     overrides: d.prepare("SELECT id, action, a_node, a_port, b_node, b_port FROM topology_link_overrides ORDER BY id").all() as ModelInput["overrides"],
+    macPorts: d.prepare(`
+      SELECT device_id, mac, port_name, timestamp, source FROM mac_port_entries
+       WHERE timestamp >= datetime('now', '-30 days') ORDER BY device_id, port_name, mac`).all() as ModelInput["macPorts"],
     nowMs,
     staleDays,
   };

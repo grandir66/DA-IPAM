@@ -3,8 +3,7 @@ import { getTopologyData, getTopologyPositions } from "@/lib/db";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { buildTopologyGraph } from "@/lib/topology/graph";
-import { deriveNodeStatus } from "@/lib/topology/status";
-import type { TopologyStatus } from "@/lib/topology/types";
+import { computeStatusByNode } from "@/lib/topology/status-map";
 
 export async function GET(request: Request) {
   return withTenantFromSession(async () => {
@@ -14,30 +13,7 @@ export async function GET(request: Request) {
       const { searchParams } = new URL(request.url);
       const view = searchParams.get("view") || "default";
       const data = getTopologyData();
-      const now = Date.now();
-
-      const statusByNode = new Map<string, TopologyStatus>();
-      for (const h of data.hosts) {
-        const id = `host:${h.id}`;
-        statusByNode.set(
-          id,
-          deriveNodeStatus({
-            hostStatus: (h.status as "online" | "offline" | "unknown" | null) ?? null,
-            latencyMs: h.last_response_time_ms,
-            lastSeen: h.last_seen,
-            libreStatus: data.libreStatus.get(`${h.network_id}|${h.ip}`) ?? null,
-            anomalySeverity: data.anomalyBySeverity.get(id) ?? null,
-            nowMs: now,
-          }),
-        );
-      }
-      for (const d of data.devices) {
-        const id = `dev:${d.id}`;
-        statusByNode.set(
-          id,
-          deriveNodeStatus({ deviceEnabled: d.enabled === 1, uplinkDown: data.portsDown.has(d.id), nowMs: now }),
-        );
-      }
+      const statusByNode = new Map(Object.entries(computeStatusByNode(data, Date.now())));
 
       const graph = buildTopologyGraph({
         devices: data.devices,

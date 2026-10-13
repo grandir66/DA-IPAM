@@ -8958,7 +8958,8 @@ export function clearTopologyTweaks(view: string): void {
 export function setAutoHead(nodeId: string | null, author: string): void {
   runInTenantTransaction(() => {
     const d = db();
-    const r = d.prepare("UPDATE topology_maps SET head_node = ?, updated_at = datetime('now') WHERE kind = 'auto'").run(nodeId);
+    // Sulla riga «auto» created_by è chi ha scelto la testa per ultimo: la pagina scrive «scelta da <autore>».
+    const r = d.prepare("UPDATE topology_maps SET head_node = ?, created_by = ?, updated_at = datetime('now') WHERE kind = 'auto'").run(nodeId, author);
     if (r.changes === 0) {
       d.prepare("INSERT INTO topology_maps (name, kind, roots, head_node, created_by) VALUES ('Tutta la rete', 'auto', '[]', ?, ?)").run(nodeId, author);
     }

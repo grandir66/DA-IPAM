@@ -102,9 +102,10 @@ test("roots con JSON rovinato: si legge come elenco vuoto", () => {
 test("testa della mappa automatica: la seconda scrittura aggiorna la stessa riga", () => {
   assert.equal(w(() => getAutoMap()), null);
   w(() => setAutoHead("dev:1", "riccardo"));
-  w(() => setAutoHead("dev:2", "riccardo"));
+  w(() => setAutoHead("dev:2", "secondo"));
   const a = w(() => getAutoMap());
   assert.equal(a?.head_node, "dev:2");
+  assert.equal(a?.created_by, "secondo", "la pagina dice chi ha scelto la testa per ultimo");
   assert.equal(a?.kind, "auto");
   assert.equal((db().prepare("SELECT COUNT(*) AS n FROM topology_maps WHERE kind = 'auto'").get() as { n: number }).n, 1);
   w(() => setAutoHead(null, "riccardo"));

@@ -22,9 +22,8 @@ import { resolveDataDir } from "./data-dir";
 import fs from "fs";
 import { SCHEMA_SQL } from "./db-schema";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
-import { ipSortKey, sqlOrderByDhcpLeases, type SortDirection } from "./table-sort";
+import { ipSortKey } from "./table-sort";
 import { randomUUID } from "crypto";
-import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 
@@ -49,9 +48,13 @@ import type {
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
 import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu } from "./db-tenant";
+// NUC-2 gruppo 1b (T3-06), DHCP: funzioni spostate che il resto della facciata usa ancora.
+import {
+  syncIpAssignmentsForNetwork,
+  syncIpAssignmentsForAllNetworks,
+} from "./db-tenant";
 // NUC-2 gruppo 1a (T3-05): letture spostate che il resto della facciata usa ancora.
 import {
-  getNetworks,
   getNetworkById,
   mergeOpenPortsJson,
   isIpExcluded,
@@ -71,7 +74,6 @@ import type {
   MacIpMappingSource,
   AdComputer,
   AdUser,
-  AdDhcpLease,
 } from "./db-tenant";
 
 const DATA_DIR = resolveDataDir();
@@ -5039,275 +5041,6 @@ export function importSnmpVendorProfiles(profiles: Array<{
 // DHCP LEASES (unified table)
 // ═══════════════════════════════════════════════════════════════════════════
 
-export interface DhcpLease {
-  id: number;
-  source_type: "mikrotik" | "windows" | "cisco" | "other";
-  source_device_id: number | null;
-  source_name: string | null;
-  server_name: string | null;
-  scope_id: string | null;
-  scope_name: string | null;
-  ip_address: string;
-  mac_address: string;
-  hostname: string | null;
-  status: string | null;
-  lease_start: string | null;
-  lease_expires: string | null;
-  description: string | null;
-  /** 1=dinamico (MikroTik pool), 0=statico, NULL=non noto / altra fonte */
-  dynamic_lease: number | null;
-  host_id: number | null;
-  network_id: number | null;
-  last_synced: string;
-}
-
-export interface DhcpLeaseWithRelations extends DhcpLease {
-  host_hostname?: string | null;
-  host_ip?: string | null;
-  network_name?: string | null;
-  network_cidr?: string | null;
-  device_name?: string | null;
-}
-
-export function getDhcpLeases(): DhcpLeaseWithRelations[] {
-  return getDb().prepare(`
-    SELECT 
-      d.*,
-      h.hostname as host_hostname,
-      h.ip as host_ip,
-      n.name as network_name,
-      n.cidr as network_cidr,
-      nd.name as device_name
-    FROM dhcp_leases d
-    LEFT JOIN hosts h ON h.id = d.host_id
-    LEFT JOIN networks n ON n.id = d.network_id
-    LEFT JOIN network_devices nd ON nd.id = d.source_device_id
-    ORDER BY d.last_synced DESC
-  `).all() as DhcpLeaseWithRelations[];
-}
-
-export function getDhcpLeasesPaginated(
-  page: number,
-  pageSize: number,
-  filters?: {
-    search?: string;
-    sourceType?: string;
-    sourceDeviceId?: number;
-    networkId?: number;
-    /** Solo lease visti negli ultimi N giorni (prima filtrato nel browser sulla sola pagina, UI-4). */
-    recentDays?: number;
-    sortKey?: string;
-    sortDir?: SortDirection;
-  }
-): { rows: DhcpLeaseWithRelations[]; total: number } {
-  const offset = (page - 1) * pageSize;
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-
-  if (filters?.search?.trim()) {
-    const s = `%${filters.search.trim()}%`;
-    conditions.push("(d.ip_address LIKE ? OR d.mac_address LIKE ? OR d.hostname LIKE ?)");
-    params.push(s, s, s);
-  }
-  if (filters?.sourceType) {
-    conditions.push("d.source_type = ?");
-    params.push(filters.sourceType);
-  }
-  if (filters?.sourceDeviceId) {
-    conditions.push("d.source_device_id = ?");
-    params.push(filters.sourceDeviceId);
-  }
-  if (filters?.networkId) {
-    conditions.push("d.network_id = ?");
-    params.push(filters.networkId);
-  }
-  if (filters?.recentDays && filters.recentDays > 0) {
-    conditions.push("datetime(d.last_seen) >= datetime('now', ?)");
-    params.push(`-${Math.floor(filters.recentDays)} days`);
-  }
-
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
-  const total = (getDb().prepare(`SELECT COUNT(*) as c FROM dhcp_leases d ${whereClause}`).get(...params) as { c: number }).c;
-  const orderSql = sqlOrderByDhcpLeases(filters?.sortKey, filters?.sortDir ?? "desc");
-  const rows = getDb().prepare(`
-    SELECT 
-      d.*,
-      h.hostname as host_hostname,
-      h.ip as host_ip,
-      n.name as network_name,
-      n.cidr as network_cidr,
-      nd.name as device_name
-    FROM dhcp_leases d
-    LEFT JOIN hosts h ON h.id = d.host_id
-    LEFT JOIN networks n ON n.id = d.network_id
-    LEFT JOIN network_devices nd ON nd.id = d.source_device_id
-    ${whereClause}
-    ORDER BY ${orderSql}
-    LIMIT ? OFFSET ?
-  `).all(...params, pageSize, offset) as DhcpLeaseWithRelations[];
-
-  return { rows, total };
-}
-
-export function getDhcpLeasesByDevice(deviceId: number): DhcpLease[] {
-  return getDb().prepare("SELECT * FROM dhcp_leases WHERE source_device_id = ? ORDER BY ip_address").all(deviceId) as DhcpLease[];
-}
-
-export function upsertDhcpLease(input: {
-  source_type: "mikrotik" | "windows" | "cisco" | "other";
-  source_device_id: number;
-  source_name?: string | null;
-  server_name?: string | null;
-  scope_id?: string | null;
-  scope_name?: string | null;
-  ip_address: string;
-  mac_address: string;
-  hostname?: string | null;
-  status?: string | null;
-  lease_start?: string | null;
-  lease_expires?: string | null;
-  description?: string | null;
-  host_id?: number | null;
-  network_id?: number | null;
-  dynamic_lease?: number | null;
-  last_seen?: string | null;
-}): void {
-  const db = getDb();
-  const macNorm = normalizeMacForStorage(input.mac_address) ?? input.mac_address.trim();
-  // v0.2.659: aggiunto last_seen.
-  db.prepare(`INSERT INTO dhcp_leases
-    (source_type, source_device_id, source_name, server_name, scope_id, scope_name,
-     ip_address, mac_address, hostname, status, lease_start, lease_expires, description,
-     dynamic_lease, last_seen, host_id, network_id, last_synced)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(source_device_id, ip_address) DO UPDATE SET
-      source_name = excluded.source_name,
-      server_name = excluded.server_name,
-      scope_id = excluded.scope_id,
-      scope_name = excluded.scope_name,
-      mac_address = excluded.mac_address,
-      hostname = excluded.hostname,
-      status = excluded.status,
-      lease_start = excluded.lease_start,
-      lease_expires = excluded.lease_expires,
-      description = excluded.description,
-      dynamic_lease = COALESCE(excluded.dynamic_lease, dhcp_leases.dynamic_lease),
-      last_seen = COALESCE(excluded.last_seen, dhcp_leases.last_seen),
-      host_id = COALESCE(excluded.host_id, dhcp_leases.host_id),
-      network_id = COALESCE(excluded.network_id, dhcp_leases.network_id),
-      last_synced = datetime('now')
-  `).run(
-    input.source_type,
-    input.source_device_id,
-    input.source_name ?? null,
-    input.server_name ?? null,
-    input.scope_id ?? null,
-    input.scope_name ?? null,
-    input.ip_address,
-    macNorm,
-    input.hostname ?? null,
-    input.status ?? null,
-    input.lease_start ?? null,
-    input.lease_expires ?? null,
-    input.description ?? null,
-    input.dynamic_lease ?? null,
-    input.last_seen ?? null,
-    input.host_id ?? null,
-    input.network_id ?? null
-  );
-}
-
-/** Aggiorna hosts.ip_assignment da dhcp_leases (rete) e ad_dhcp_leases, con match preferito su MAC poi su IP. */
-export function syncIpAssignmentsForNetwork(networkId: number): number {
-  const network = getNetworkById(networkId);
-  if (!network) return 0;
-  const rows = getDb().prepare(`SELECT id, ip, mac FROM hosts WHERE network_id = ?`).all(networkId) as {
-    id: number;
-    ip: string;
-    mac: string | null;
-  }[];
-  if (rows.length === 0) return 0;
-  const dhcpLeases = getDb().prepare(`SELECT * FROM dhcp_leases WHERE network_id = ?`).all(networkId) as DhcpLease[];
-  const ips = rows.map((r) => r.ip);
-  const placeholders = ips.map(() => "?").join(",");
-  const adLeasesByIp = getDb()
-    .prepare(`SELECT * FROM ad_dhcp_leases WHERE ip_address IN (${placeholders})`)
-    .all(...ips) as AdDhcpLease[];
-  const byIpAd = new Map<string, AdDhcpLease>();
-  for (const a of adLeasesByIp) {
-    if (!byIpAd.has(a.ip_address)) byIpAd.set(a.ip_address, a);
-  }
-  const needsFullAdForMac = rows.some((h) => !!h.mac?.trim() && !byIpAd.get(h.ip));
-  const adAllRows = needsFullAdForMac
-    ? (getDb().prepare(`SELECT * FROM ad_dhcp_leases`).all() as AdDhcpLease[])
-    : [];
-  const stmt = getDb().prepare(`UPDATE hosts SET ip_assignment = ?, updated_at = datetime('now') WHERE id = ?`);
-  let n = 0;
-  for (const h of rows) {
-    const dhcpLease = resolveDhcpLeaseForHost(h.ip, h.mac, dhcpLeases);
-    const adLease = resolveAdDhcpLeaseForHost(h.ip, h.mac, byIpAd, adAllRows);
-    const next = inferIpAssignment(dhcpLease, adLease);
-    stmt.run(next, h.id);
-    n++;
-  }
-  return n;
-}
-
-/** Ricalcola assegnazione IP per tutte le reti (es. dopo sync AD DHCP). */
-export function syncIpAssignmentsForAllNetworks(): number {
-  const nets = getNetworks();
-  let t = 0;
-  for (const n of nets) {
-    t += syncIpAssignmentsForNetwork(n.id);
-  }
-  return t;
-}
-
-export function bulkUpsertDhcpLeases(leases: Array<{
-  source_type: "mikrotik" | "windows" | "cisco" | "other";
-  source_device_id: number;
-  source_name?: string | null;
-  server_name?: string | null;
-  ip_address: string;
-  mac_address: string;
-  hostname?: string | null;
-  status?: string | null;
-  lease_expires?: string | null;
-  description?: string | null;
-  network_id?: number | null;
-  dynamic_lease?: number | null;
-}>): { inserted: number; updated: number } {
-  let inserted = 0;
-  let updated = 0;
-
-  const netIds = new Set<number | null>();
-  const t = getDb().transaction(() => {
-    for (const lease of leases) {
-      const existing = getDb().prepare(
-        "SELECT id FROM dhcp_leases WHERE source_device_id = ? AND ip_address = ?"
-      ).get(lease.source_device_id, lease.ip_address);
-
-      upsertDhcpLease(lease);
-      if (existing) updated++;
-      else inserted++;
-      if (lease.network_id != null) netIds.add(lease.network_id);
-    }
-  });
-  t();
-
-  for (const nid of netIds) {
-    if (nid != null) syncIpAssignmentsForNetwork(nid);
-  }
-
-  return { inserted, updated };
-}
-
-export function deleteDhcpLeasesByDevice(deviceId: number): number {
-  const r = getDb().prepare("DELETE FROM dhcp_leases WHERE source_device_id = ?").run(deviceId);
-  return r.changes;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // MULTI-TENANT: Re-export hub e tenant per transizione graduale
 // I consumer esistenti continuano a usare le funzioni da @/lib/db (single-tenant).
@@ -5529,4 +5262,23 @@ export {
   clearAdData,
   upsertAdDhcpLease,
   clearAdDhcpLeases,
+} from "./db-tenant";
+
+// NUC-2 gruppo 1b (T3-06), DHCP: 8 funzioni e 2 tipi uguali o con
+// differenze solo di forma fra le due copie, provate con la parità. Una sola copia,
+// in db-tenant.ts. Elenco: src/lib/__tests__/support/facciata-spostate.ts.
+export {
+  upsertDhcpLease,
+  syncIpAssignmentsForNetwork,
+  syncIpAssignmentsForAllNetworks,
+  bulkUpsertDhcpLeases,
+  deleteDhcpLeasesByDevice,
+  getDhcpLeases,
+  getDhcpLeasesPaginated,
+  getDhcpLeasesByDevice,
+} from "./db-tenant";
+
+export type {
+  DhcpLease,
+  DhcpLeaseWithRelations,
 } from "./db-tenant";

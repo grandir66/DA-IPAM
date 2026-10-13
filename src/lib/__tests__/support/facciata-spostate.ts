@@ -82,6 +82,11 @@ export const SPOSTATE_GRUPPO_1B: Readonly<Record<string, readonly string[]>> = {
     "linkAdComputerToHost", "relinkAdComputersForNetwork", "upsertAdUser", "upsertAdGroup",
     "clearAdData", "upsertAdDhcpLease", "clearAdDhcpLeases",
   ],
+  dhcp: [
+    "upsertDhcpLease", "syncIpAssignmentsForNetwork", "syncIpAssignmentsForAllNetworks",
+    "bulkUpsertDhcpLeases", "deleteDhcpLeasesByDevice", "getDhcpLeases", "getDhcpLeasesPaginated",
+    "getDhcpLeasesByDevice",
+  ],
 };
 
 /** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */
@@ -98,4 +103,6 @@ export const TIPI_SPOSTATI: readonly string[] = [
   "NetworkCredentialRow", "HostCredentialRow", "MacIpMappingSource", "DbNeighborEntry",
   "DbRouteEntry", "DeviceCredentialBinding", "AdIntegration", "AdComputer", "AdUser",
   "AdDhcpLease", "AdGroup",
+  // Gruppo 1b (T3-06), DHCP: la copia tenant ha in più `last_seen`, che la tabella ha già.
+  "DhcpLease", "DhcpLeaseWithRelations",
 ];

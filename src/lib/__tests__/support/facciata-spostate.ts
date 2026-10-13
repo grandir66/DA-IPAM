@@ -132,12 +132,25 @@ export const SPOSTATE_GRUPPO_2 = [
   "upsertHost",
 ] as const;
 
+/**
+ * Gruppo 3 (T3-08): le ultime tre funzioni dati della facciata. Testo uguale
+ * alla copia tenant salvo `getDb()` contro `db()` (lo stesso criterio del gruppo
+ * 1a); provate col banco di parità contro la copia congelata
+ * (`db-parity/parita-gruppo3.test.ts`).
+ */
+export const SPOSTATE_GRUPPO_3 = [
+  "resolveMacToNetworkDevice",
+  "resolveMacToDevice",
+  "updateHostIfExists",
+] as const;
+
 /** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */
 export const SPOSTATE: readonly string[] = [
   ...SPOSTATE_GRUPPO_0,
   ...SPOSTATE_GRUPPO_1A,
   ...Object.values(SPOSTATE_GRUPPO_1B).flat(),
   ...SPOSTATE_GRUPPO_2,
+  ...SPOSTATE_GRUPPO_3,
 ];
 
 /**
@@ -176,6 +189,13 @@ export const TIPI_HUB: readonly string[] = [
   "SysObjLookupRow", "MacProductMapRow", "FingerprintClassificationMapRow",
   "DeviceFingerprintRuleRow", "NmapProfileRow", "SnmpVendorProfileRow",
 ];
+
+/**
+ * Le sole funzioni che `db.ts` definisce ancora (T3-08): `getDb` per i suoi
+ * importatori, il controllo del contesto usato dallo scheduler e i quattro
+ * involucri dell'hub. Tutto il resto è riesportazione.
+ */
+export const RESTANO_IN_FACCIATA: readonly string[] = ["getDb", "currentFacadeTenant", ...INVOLUCRI_HUB];
 
 /** Tipi uguali nelle due copie (T3-05): `db.ts` li riesporta con `export type`. */
 export const TIPI_SPOSTATI: readonly string[] = [

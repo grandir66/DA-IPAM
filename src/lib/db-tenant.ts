@@ -2628,7 +2628,10 @@ export function getExcludedIps(networkId?: number): ExcludedIpWithNetwork[] {
 
 /**
  * UPDATE-only: aggiorna solo host già esistenti (network_id+ip). MAI inserisce.
- * Da usare nelle fonti passive (ARP/DHCP/AD/DNS): vedi commento in db.ts.
+ * Da usare nelle fonti passive (ARP/DHCP/AD/DNS): un router risponde con entry ARP
+ * o lease DHCP anche per dispositivi spenti/dismessi — non vogliamo che riempiano
+ * il DB. Solo i probe attivi (ICMP/TCP/nmap di discovery.ts) creano host nuovi.
+ * Ritorna null se l'host non esiste.
  */
 export function updateHostIfExists(input: HostInput & { mac?: string; vendor?: string; hostname?: string; hostname_source?: string; dns_forward?: string; dns_reverse?: string; status?: "online" | "offline" | "unknown"; os_info?: string; model?: string; serial_number?: string; firmware?: string | null; device_manufacturer?: string | null }): Host | null {
   const existing = db()

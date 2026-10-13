@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { DELEGHE_HUB, SPOSTATE, TIPI_HUB, TIPI_SPOSTATI } from "./support/facciata-spostate";
+import { DELEGHE_HUB, RESTANO_IN_FACCIATA, SPOSTATE, TIPI_HUB, TIPI_SPOSTATI } from "./support/facciata-spostate";
 
 /**
  * Funzioni esportate definite in db.ts: 275 all'inizio, 271 dopo il gruppo 0
@@ -33,9 +33,11 @@ import { DELEGHE_HUB, SPOSTATE, TIPI_HUB, TIPI_SPOSTATI } from "./support/faccia
  * 83 dopo apparati, job e Proxmox, 64 dopo reti e host; nel gruppo 2 (T3-07),
  * una per commit: 63 dopo upsertArpEntries, 62 dopo getHostByMac, 61 dopo getHostById, 60 dopo getHostsByNetworkWithDevices, 59 dopo recomputeMultihomedLinks, 58 dopo resetConfiguration, 57 dopo getAdComputersPaginated, 56 dopo getAdUsersPaginated, 55 dopo upsertHost;
  * nel gruppo 3 (T3-08): 54 dopo il ramo del vecchio ipam.db (`closeDb` passa a db-legacy.ts),
- * 9 dopo le deleghe all'hub (45 riesportate, 4 involucri restano).
+ * 9 dopo le deleghe all'hub (45 riesportate, 4 involucri restano), 6 dopo le ultime
+ * tre funzioni dati. Restano getDb, currentFacadeTenant e i 4 involucri
+ * (RESTANO_IN_FACCIATA).
  */
-const SOGLIA = 9;
+const SOGLIA = 6;
 
 interface Dichiarazione {
   nome: string;
@@ -88,6 +90,25 @@ const ESCLUSI: Readonly<Record<string, { motivo: string; importatori: readonly s
   },
 };
 
+/** Ogni funzione (a qualsiasi profondità) di `file` che contiene `.prepare(` o `.exec(`. */
+function funzioniConAccessoDiretto(file: string): string[] {
+  const testo = fs.readFileSync(file, "utf8");
+  const sf = ts.createSourceFile(path.basename(file), testo, ts.ScriptTarget.Latest, true);
+  const out: string[] = [];
+  const visita = (n: ts.Node): void => {
+    if (ts.isFunctionLike(n) && "body" in n && n.body) {
+      if (/\.(prepare|exec)\(/.test(n.body.getText(sf))) {
+        const riga = sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+        const nome = n.name && ts.isIdentifier(n.name) ? n.name.text : "(anonima)";
+        out.push(`${nome}:${riga}`);
+      }
+    }
+    ts.forEachChild(n, visita);
+  };
+  visita(sf);
+  return out;
+}
+
 /** File sotto `dir` (ricorsivo) con estensione .ts/.tsx/.mjs/.cjs/.js, percorsi relativi alla radice. */
 function sorgenti(dir: string): string[] {
   const radice = process.cwd();
@@ -108,6 +129,14 @@ test("db.ts: le funzioni definite sono esattamente SOGLIA", () => {
   const n = funzioniDefinite(DB_TS).length;
   assert.ok(n <= SOGLIA, `db.ts definisce ${n} funzioni, la soglia è ${SOGLIA}: una funzione nuova va in db-tenant.ts`);
   assert.equal(n, SOGLIA, `db.ts definisce ${n} funzioni, meno della soglia ${SOGLIA}: sono scese, abbassa SOGLIA a ${n}`);
+});
+
+test("db.ts: nessuna funzione contiene prepare( o exec( (T3-08: solo riesportazioni e deleghe)", () => {
+  assert.deepEqual(funzioniConAccessoDiretto(DB_TS), [], "db.ts accede ancora direttamente al database");
+});
+
+test("db.ts: definisce solo le funzioni che restano in facciata", () => {
+  assert.deepEqual(funzioniDefinite(DB_TS).sort(), [...RESTANO_IN_FACCIATA].sort());
 });
 
 test("db.ts: le deleghe all'hub sono riesportazioni, non ridichiarazioni; db-hub.ts le definisce", () => {

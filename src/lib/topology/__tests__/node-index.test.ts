@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildNodeIndex, resolveNode, useNode, canonical } from "@/lib/topology/node-index";
+import { buildNodeIndex, resolveNode, nodeFor, canonical } from "@/lib/topology/node-index";
 import { dev, host } from "./support/righe";
 
 test("l'host collegato all'apparato si fonde: IP, MAC e nome portano all'apparato", () => {
@@ -63,5 +63,5 @@ test("un host non fuso diventa nodo solo quando serve", () => {
   const id = resolveNode(idx, { ip: "10.0.1.60" });
   assert.equal(id, "host:60");
   assert.equal(idx.nodes.get("host:60")?.name, "SRV-BACKUP");
-  assert.equal(useNode(idx, "host:999"), null);
+  assert.equal(nodeFor(idx, "host:999"), null);
 });

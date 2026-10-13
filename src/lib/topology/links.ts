@@ -13,7 +13,7 @@ import {
   type TopologyModelInput,
   type UnmatchedNeighbor,
 } from "@/lib/topology/model-types";
-import { canonical, resolveNode, useNode, type NodeIndex } from "@/lib/topology/node-index";
+import { canonical, resolveNode, nodeFor, type NodeIndex } from "@/lib/topology/node-index";
 
 export const DEFAULT_STALE_DAYS = 2;
 const DAY_MS = 86_400_000;
@@ -74,10 +74,8 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex): { links: 
 
   // 1. Correzioni manuali (la scelta manuale vince sempre).
   for (const o of [...input.overrides].sort((x, y) => x.id - y.id)) {
-    // eslint-disable-next-line react-hooks/rules-of-hooks -- useNode non è un hook React (nome fissato dall'interfaccia)
-    const a = useNode(idx, canonical(idx, o.a_node));
-    // eslint-disable-next-line react-hooks/rules-of-hooks -- useNode non è un hook React (nome fissato dall'interfaccia)
-    const b = useNode(idx, canonical(idx, o.b_node));
+    const a = nodeFor(idx, canonical(idx, o.a_node));
+    const b = nodeFor(idx, canonical(idx, o.b_node));
     if (!a || !b || a === b) continue;
     if (o.action === "ignore") ignored.add(pairKey(a, b));
     else candidates.push({ a, aPort: o.a_port, b, bPort: o.b_port, source: "manual", lastSeen: null, uplinkFrom: null });

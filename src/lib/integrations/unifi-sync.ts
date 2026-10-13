@@ -62,6 +62,7 @@ import {
   getPortAndNeighborCountsByDevice,
   linkNetworkDeviceToPhysicalDevice,
   runInTenantTransaction,
+  setNetworkDeviceControllerFacts,
   updateNetworkDevice,
   upsertNeighbors,
   upsertSwitchPorts,
@@ -74,6 +75,7 @@ import {
   mapUnifiDevice,
   mapUnifiLldp,
   mapUnifiPorts,
+  mapUnifiUplink,
   type UnifiMacIndex,
   type UnifiMappedDevice,
   type UnifiNeighbor,
@@ -106,6 +108,8 @@ export interface UnifiSyncResult {
   skippedReasons: string[];
   portsUpserted: number;
   neighborsUpserted: number;
+  /** Apparati di cui si è salvato l'uplink in questo giro. */
+  uplinksSaved: number;
   errors: string[];
   /**
    * Apparati che il controller non vede connessi («nome (ip)»): i fatti si
@@ -236,6 +240,7 @@ interface WriteOutcome {
   movedFrom: string | null;
   ports: number;
   neighbors: number;
+  uplink: boolean;
   warnings: string[];
 }
 
@@ -347,13 +352,19 @@ function writeDevice(
   if (!connected && before.neighbors > 0) {
     // vicini dell'ultima sync: l'apparato è in `offline[]`
   } else if (neighbors.length > 0) {
-    upsertNeighbors(nd.id, neighbors);
+    upsertNeighbors(nd.id, neighbors, "unifi");
     neighborsWritten = neighbors.length;
   } else if (before.neighbors > 0) {
     warnings.push(`${m.name}: il controller non riporta vicini LLDP, nel DB ce ne sono ${before.neighbors}: non li cancello`);
   }
 
-  return { device: nd, created, movedFrom, ports: portsWritten, neighbors: neighborsWritten, warnings };
+  // Uplink e MAC del controller (topologia fase 1). Offline: il controller
+  // manda l'ultimo uplink noto, ma non è una lettura di adesso: si scrive solo il MAC.
+  const facts = mapUnifiUplink(d);
+  setNetworkDeviceControllerFacts(nd.id, connected ? facts : { ...facts, uplinkMac: null, uplinkRemotePort: null });
+  const uplink = connected && facts.uplinkMac !== null;
+
+  return { device: nd, created, movedFrom, ports: portsWritten, neighbors: neighborsWritten, uplink, warnings };
 }
 
 function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult): void {
@@ -417,6 +428,7 @@ function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult): void {
     }
     result.portsUpserted += out.ports;
     result.neighborsUpserted += out.neighbors;
+    if (out.uplink) result.uplinksSaved++;
     result.errors.push(...out.warnings);
     if (d.state !== 1) result.offline.push(`${m.name} (${m.host})`);
   }
@@ -439,6 +451,7 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
     skippedReasons: [],
     portsUpserted: 0,
     neighborsUpserted: 0,
+    uplinksSaved: 0,
     errors: [],
     offline: [],
   };

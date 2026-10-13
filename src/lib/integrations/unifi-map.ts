@@ -218,6 +218,27 @@ export function mapUnifiLldp(d: UnifiDevice, index: UnifiMacIndex): UnifiNeighbo
   return lldpLinks(d, index).map((l) => l.neighbor);
 }
 
+/** Ciò che il controller sa di un apparato oltre a porte e vicini: il suo MAC e verso chi esce. */
+export interface UnifiUplinkFacts {
+  controllerMac: string | null;
+  uplinkMac: string | null;
+  uplinkRemotePort: number | null;
+}
+
+/**
+ * MAC dell'apparato e uplink (`uplink.uplink_mac`, `uplink_remote_port`), finora
+ * letti e buttati (ADR 0005, limite «uplink non usato»). Un uplink verso se
+ * stessi o senza MAC non è un collegamento: null.
+ */
+export function mapUnifiUplink(d: UnifiDevice): UnifiUplinkFacts {
+  const controllerMac = normalizeMacForStorage(d.mac);
+  const uplinkMac = normalizeMacForStorage(d.uplink?.uplink_mac ?? null);
+  if (!uplinkMac || uplinkMac === controllerMac) {
+    return { controllerMac, uplinkMac: null, uplinkRemotePort: null };
+  }
+  return { controllerMac, uplinkMac, uplinkRemotePort: d.uplink?.uplink_remote_port ?? null };
+}
+
 function portStatus(p: UnifiPort): UnifiSwitchPortRow["status"] {
   if (p.enable === false) return "disabled";
   if (p.up === true) return "up";
@@ -275,6 +296,7 @@ export function mapUnifiPorts(d: UnifiDevice, index: UnifiMacIndex): UnifiSwitch
       trunk_primary_device_id: null,
       trunk_primary_name: null,
       stp_state: p.stp_state,
+      is_uplink: p.is_uplink ? 1 : 0,
     };
   });
 }

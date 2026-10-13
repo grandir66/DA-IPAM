@@ -662,6 +662,7 @@ export interface SwitchPort {
   trunk_primary_device_id: number | null;
   trunk_primary_name: string | null;
   stp_state: string | null;
+  is_uplink?: number;
   timestamp: string;
 }
 

@@ -469,6 +469,7 @@ export async function syncController(
     skippedReasons: [],
     portsUpserted: 0,
     neighborsUpserted: 0,
+    uplinksSaved: 0,
     errors: [msg],
     offline: [],
   });

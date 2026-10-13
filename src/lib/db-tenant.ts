@@ -4670,8 +4670,8 @@ export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types"
   }
 
   const stmt = d.prepare(
-    `INSERT INTO switch_ports (device_id, port_index, port_name, status, speed, duplex, vlan, poe_status, poe_power_mw, mac_count, is_trunk, single_mac, single_mac_vendor, single_mac_ip, single_mac_hostname, host_id, trunk_neighbor_name, trunk_neighbor_port, trunk_primary_device_id, trunk_primary_name, stp_state)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO switch_ports (device_id, port_index, port_name, status, speed, duplex, vlan, poe_status, poe_power_mw, mac_count, is_trunk, single_mac, single_mac_vendor, single_mac_ip, single_mac_hostname, host_id, trunk_neighbor_name, trunk_neighbor_port, trunk_primary_device_id, trunk_primary_name, stp_state, is_uplink)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   const replaceAll = d.transaction((items: typeof ports) => {
@@ -4679,7 +4679,7 @@ export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types"
     for (const p of items) {
       const hostId = p.host_id != null && validHosts.has(p.host_id) ? p.host_id : null;
       const trunkDeviceId = p.trunk_primary_device_id != null && validDevices.has(p.trunk_primary_device_id) ? p.trunk_primary_device_id : null;
-      stmt.run(deviceId, p.port_index, p.port_name, p.status, p.speed, p.duplex, p.vlan, p.poe_status, p.poe_power_mw, p.mac_count, p.is_trunk, p.single_mac, p.single_mac_vendor, p.single_mac_ip, p.single_mac_hostname, hostId, p.trunk_neighbor_name ?? null, p.trunk_neighbor_port ?? null, trunkDeviceId, trunkDeviceId ? (p.trunk_primary_name ?? null) : null, p.stp_state ?? null);
+      stmt.run(deviceId, p.port_index, p.port_name, p.status, p.speed, p.duplex, p.vlan, p.poe_status, p.poe_power_mw, p.mac_count, p.is_trunk, p.single_mac, p.single_mac_vendor, p.single_mac_ip, p.single_mac_hostname, hostId, p.trunk_neighbor_name ?? null, p.trunk_neighbor_port ?? null, trunkDeviceId, trunkDeviceId ? (p.trunk_primary_name ?? null) : null, p.stp_state ?? null, p.is_uplink ?? 0);
     }
   });
 
@@ -4833,6 +4833,26 @@ export function linkNetworkDeviceToPhysicalDevice(deviceId: number, physicalDevi
   db().prepare(
     "UPDATE network_devices SET physical_device_id = ?, updated_at = datetime('now') WHERE id = ?"
   ).run(physicalDeviceId, deviceId);
+}
+
+/**
+ * MAC del controller e uplink di un apparato (topologia fase 1). L'uplink si
+ * scrive solo quando il controller lo riporta: se sparisce, quello di prima
+ * resta con la sua data e invecchia («non visto»), come i vicini.
+ */
+export function setNetworkDeviceControllerFacts(
+  deviceId: number,
+  f: { controllerMac: string | null; uplinkMac: string | null; uplinkRemotePort: number | null },
+): void {
+  const d = db();
+  if (f.controllerMac) {
+    d.prepare("UPDATE network_devices SET controller_mac = ? WHERE id = ?").run(f.controllerMac, deviceId);
+  }
+  if (f.uplinkMac) {
+    d.prepare(
+      "UPDATE network_devices SET uplink_mac = ?, uplink_remote_port = ?, uplink_seen_at = datetime('now') WHERE id = ?",
+    ).run(f.uplinkMac, f.uplinkRemotePort, deviceId);
+  }
 }
 
 /**

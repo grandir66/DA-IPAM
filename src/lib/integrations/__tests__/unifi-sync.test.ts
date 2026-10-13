@@ -15,6 +15,7 @@ import { closeHubDb } from "@/lib/db-hub";
 import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { UnifiApiError } from "../unifi-api";
 import { parseStatDeviceResponse, parseUnifiDevice, type UnifiDevice } from "../unifi-device";
+import { mapUnifiUplink } from "../unifi-map";
 import {
   syncUnifiForTenant,
   unifiSyncFailure,
@@ -542,6 +543,7 @@ function esito(campi: Partial<UnifiSyncResult> = {}): UnifiSyncResult {
     skippedReasons: [],
     portsUpserted: 39,
     neighborsUpserted: 7,
+    uplinksSaved: 0,
     errors: [],
     offline: [],
     ...campi,
@@ -609,4 +611,40 @@ test("il job unifi_sync non nasce da solo: la sync non lo crea", async () => {
   await sync();
   assert.equal(conta(T, "scheduled_jobs", "job_type = 'unifi_sync'"), 0);
   assert.equal(conta(T_ALTRO, "scheduled_jobs", "job_type = 'unifi_sync'"), 0);
+});
+
+// ── Uplink e MAC del controller (topologia fase 1) ─────────────────────────
+
+test("uplink salvato: MAC e porta dell'uplink, data della lettura, porta di uplink segnata", async () => {
+  const r = await sync();
+  const conUplink = FIXTURE_DEVICES.filter((d) => d.state === 1 && mapUnifiUplink(d).uplinkMac !== null);
+  assert.ok(conUplink.length > 0);
+  assert.equal(r.uplinksSaved, conUplink.length);
+  for (const d of conUplink) {
+    const f = mapUnifiUplink(d);
+    const row = getTenantDb(T).prepare("SELECT id, controller_mac, uplink_mac, uplink_remote_port, uplink_seen_at FROM network_devices WHERE name = ?").get(d.name) as Record<string, unknown>;
+    assert.equal(row.controller_mac, f.controllerMac);
+    assert.equal(row.uplink_mac, f.uplinkMac);
+    assert.equal(row.uplink_remote_port, f.uplinkRemotePort);
+    assert.ok(row.uplink_seen_at, "data della lettura scritta");
+    const porte = getTenantDb(T).prepare("SELECT port_index FROM switch_ports WHERE device_id = ? AND is_uplink = 1").all(row.id) as Array<{ port_index: number }>;
+    assert.deepEqual(porte.map((p) => p.port_index).sort(), d.port_table.filter((p) => p.is_uplink).map((p) => p.port_idx).sort());
+  }
+});
+
+test("apparato offline: l'uplink di prima resta con la sua data", async () => {
+  const nome = FIXTURE_DEVICES.find((x) => x.state === 1 && mapUnifiUplink(x).uplinkMac !== null)?.name;
+  assert.ok(nome, "la fixture vera ha un apparato connesso con uplink e nome");
+  await sync();
+  getTenantDb(T).prepare("UPDATE network_devices SET uplink_seen_at = '2026-10-01 03:00:00' WHERE name = ?").run(nome);
+  const lista = risposta().map((x) => (x.name === nome ? offline(nome) : x));
+  await sync(lista);
+  const row = getTenantDb(T).prepare("SELECT uplink_seen_at FROM network_devices WHERE name = ?").get(nome) as { uplink_seen_at: string };
+  assert.equal(row.uplink_seen_at, "2026-10-01 03:00:00");
+});
+
+test("i vicini scritti dalla sync hanno fonte «unifi»", async () => {
+  await sync();
+  const fonti = getTenantDb(T).prepare("SELECT DISTINCT source FROM device_neighbors").all() as Array<{ source: string }>;
+  assert.deepEqual(fonti.map((f) => f.source), ["unifi"]);
 });

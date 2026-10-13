@@ -15,7 +15,9 @@ import {
   mapUnifiDeviceType,
   mapUnifiLldp,
   mapUnifiPorts,
+  mapUnifiUplink,
 } from "../unifi-map";
+import { normalizeMacForStorage } from "@/lib/utils";
 
 const FIXTURE = path.join(__dirname, "fixtures", "unifi-stat-device.json");
 const devices = parseStatDeviceResponse(JSON.parse(fs.readFileSync(FIXTURE, "utf-8")));
@@ -341,4 +343,29 @@ test("indice per MAC: un apparato per MAC, gli apparati senza MAC restano fuori"
   assert.equal(index.size, 4);
   assert.equal(index.get("02:00:00:00:00:04")?.name, "SW-11");
   assert.equal(buildUnifiMacIndex([device({ type: "usw", ip: "10.0.0.1" })]).size, 0);
+});
+
+test("mapUnifiUplink: MAC del controller e uplink normalizzati; nessun uplink verso se stessi", () => {
+  for (const d of devices) {
+    const f = mapUnifiUplink(d);
+    assert.equal(f.controllerMac, normalizeMacForStorage(d.mac));
+    const atteso = normalizeMacForStorage(d.uplink?.uplink_mac ?? null);
+    if (!atteso || atteso === f.controllerMac) {
+      assert.equal(f.uplinkMac, null);
+      assert.equal(f.uplinkRemotePort, null);
+    } else {
+      assert.equal(f.uplinkMac, atteso);
+      assert.equal(f.uplinkRemotePort, d.uplink?.uplink_remote_port ?? null);
+    }
+  }
+  assert.ok(devices.some((d) => mapUnifiUplink(d).uplinkMac !== null), "la fixture vera ha almeno un uplink");
+});
+
+test("mapUnifiPorts: is_uplink come lo dice il controller", () => {
+  for (const d of devices) {
+    const righe = mapUnifiPorts(d, buildUnifiMacIndex(devices));
+    for (const p of d.port_table) {
+      assert.equal(righe.find((r) => r.port_index === p.port_idx)?.is_uplink, p.is_uplink ? 1 : 0);
+    }
+  }
 });

@@ -65,9 +65,8 @@ const ALLOWED_FILES: Record<string, string> = {
     "ciclo di vita per la pipeline di pulizia/cancellazione, semanticamente estraneo " +
     "all'attribuzione.",
 
-  "src/lib/db.ts":
-    "Facade di db-tenant.ts (fallback DEFAULT tenant): stesse tre scritture " +
-    "legittime e per lo stesso motivo — vedi src/lib/db-tenant.ts.",
+  // src/lib/db.ts non c'è più: dal T3-07 (NUC-2) upsertHost, updateHost e
+  // cleanupStaleHosts vivono solo in db-tenant.ts e la facciata li riesporta.
 
   "src/lib/classification/persist.ts":
     "Motore di classificazione legacy SEPARATO e preesistente (applyClassificationDecision). " +

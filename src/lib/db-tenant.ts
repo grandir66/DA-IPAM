@@ -2182,9 +2182,13 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     const fields: string[] = ["updated_at = datetime('now')"];
     const values: unknown[] = [];
 
-    if (input.mac !== undefined) {
+    // INV-4: un MAC presente ma non valido (vuoto, troncato, illeggibile) si
+    // normalizza a NULL; scriverlo cancellerebbe un MAC buono. Si scrive solo
+    // un MAC valido.
+    const macValido = input.mac !== undefined ? normalizeMacForStorage(input.mac) : null;
+    if (macValido) {
       fields.push("mac = ?");
-      values.push(normalizeMacForStorage(input.mac) ?? null);
+      values.push(macValido);
     }
     if (input.vendor !== undefined) { fields.push("vendor = ?"); values.push(input.vendor); }
     if (input.hostname !== undefined) {
@@ -2304,7 +2308,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     // UPDATE+ricalcoli inutili al minuto. Gate con shouldRecomputeClassification
     // (preservato dall'audit, i segnali rilevanti non cambiano con l'engine).
     // Fase 4: applyAutoClassification (legacy) rimosso — un solo scrittore
-    // (attribution v2, vedi src/lib/attribution/). recomputeAttributionSafe
+    // (attribution v2, vedi src/lib/attribution/). recomputeAttributionForDb
     // emette evidenza dai segnali già in DB e proietta classification/inferred_*.
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -2319,8 +2323,10 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       if (input.os_info !== undefined && input.os_info !== existingRow?.os_info) changedSignals.add("os_info");
       if (shouldRecomputeClassification(changedSignals)) {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
-        recomputeAttributionSafe(host.id, "scan");
+        const { recomputeAttributionForDb } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+        if (recomputeAttributionForDb(db(), host.id, "scan") === null) {
+          console.warn(`[attribution] upsertHost (update): ricalcolo non riuscito per l'host ${host.id}`);
+        }
       }
     } catch { /* non blocca l'upsert se il recompute fallisce */ }
     // F4 v0.2.597: reverse trigger — se esiste un network_device con host = IP
@@ -2388,12 +2394,16 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     });
   }
   // F1: prima attribuzione all'insert. Fase 4: applyAutoClassification
-  // (legacy) rimosso — recomputeAttributionSafe emette evidenza dai segnali
+  // (legacy) rimosso — recomputeAttributionForDb emette evidenza dai segnali
   // già scritti sopra e proietta classification/inferred_* (un solo scrittore).
+  // Sul database del tenant già aperto, con un avviso se non riesce (dalla
+  // copia della facciata, T3-07).
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
-    recomputeAttributionSafe(host.id, "scan");
+    const { recomputeAttributionForDb } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    if (recomputeAttributionForDb(db(), host.id, "scan") === null) {
+      console.warn(`[attribution] upsertHost (insert): ricalcolo non riuscito per l'host ${host.id}`);
+    }
   } catch { /* non blocca l'insert se il recompute fallisce */ }
   // F4 v0.2.597: reverse trigger anche nel branch INSERT (host nuovo) — un device
   // potrebbe già esistere col suo IP e attendere il host_id.

@@ -1,0 +1,78 @@
+import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolato";
+import { test, after, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { closeHubDb } from "@/lib/db-hub";
+import {
+  addLinkOverride, deleteLinkOverride, deleteTenantDatabase, getSiteTopology, getTenantDb, getTopologyModelInput,
+  listLinkOverrides, setDeviceLocation, setSiteTopology, withTenant,
+} from "@/lib/db-tenant";
+import { getLinkStaleDays, setLinkStaleDays } from "@/lib/topology/settings";
+
+const T = "TESTTOPODB";
+const db = () => getTenantDb(T);
+const w = <R>(fn: () => R): R => withTenant(T, fn);
+
+beforeEach(() => {
+  db().exec("DELETE FROM topology_link_overrides; DELETE FROM switch_ports; DELETE FROM device_neighbors; DELETE FROM network_devices; DELETE FROM hosts; DELETE FROM networks; DELETE FROM locations;");
+  db().exec(`
+    INSERT INTO locations (id, name, parent_id) VALUES (1, 'Sede A', NULL), (2, 'Armadio 1', 1), (3, 'Sede B', NULL);
+    INSERT INTO networks (id, cidr, name, gateway) VALUES (1, '10.0.0.0/24', 'LAN', '10.0.0.1'), (2, '10.0.1.0/24', 'VOIP', '10.0.1.1'), (3, '10.0.2.0/24', 'OSPITI', NULL);
+    INSERT INTO network_devices (id, name, host, device_type, vendor, protocol) VALUES (1, 'RTR-1', '10.0.0.1', 'router', 'mikrotik', 'ssh'), (2, 'SW-2', '10.0.0.2', 'switch', 'ubiquiti', 'api');
+    INSERT INTO switch_ports (device_id, port_index, port_name, is_uplink) VALUES (2, 1, 'Port 1', 1), (2, 2, 'Port 2', 0);
+  `);
+});
+after(() => {
+  deleteTenantDatabase(T);
+  closeHubDb();
+  removeTestHubDb();
+});
+
+test("getTopologyModelInput: righe nella forma del modello", () => {
+  const i = w(() => getTopologyModelInput(2, 1_000));
+  assert.equal(i.staleDays, 2);
+  assert.equal(i.nowMs, 1_000);
+  assert.deepEqual(i.devices.map((d) => [d.id, d.port_count, d.topology_hidden, d.location_id]), [[1, 0, 0, null], [2, 2, 0, null]]);
+  assert.deepEqual(i.uplinkPorts, [{ device_id: 2, port_index: 1, port_name: "Port 1" }]);
+  assert.equal(i.locations.length, 3);
+});
+
+test("sede dell'apparato: scritta con autore e data; ubicazione inesistente rifiutata", () => {
+  assert.deepEqual(w(() => setDeviceLocation(2, 2, "riccardo")), { ok: true });
+  const r = db().prepare("SELECT location_id, location_set_by, location_set_at FROM network_devices WHERE id = 2").get() as Record<string, unknown>;
+  assert.equal(r.location_id, 2);
+  assert.equal(r.location_set_by, "riccardo");
+  assert.ok(r.location_set_at);
+  assert.equal(w(() => setDeviceLocation(2, 99, "riccardo")).ok, false);
+  assert.deepEqual(w(() => setDeviceLocation(2, null, "riccardo")), { ok: true });
+});
+
+test("testa e subnet: solo su una sede; l'elenco delle subnet si sostituisce", () => {
+  assert.equal(w(() => setSiteTopology(2, { headDeviceId: 1 }, "riccardo")).ok, false, "un armadio non ha testa");
+  assert.deepEqual(w(() => setSiteTopology(1, { headDeviceId: 1, networkIds: [1, 2] }, "riccardo")), { ok: true });
+  assert.deepEqual(w(() => getSiteTopology(1))?.network_ids, [1, 2]);
+  assert.deepEqual(w(() => setSiteTopology(1, { networkIds: [2, 3] }, "riccardo")), { ok: true });
+  assert.deepEqual(w(() => getSiteTopology(1))?.network_ids, [2, 3]);
+  assert.equal(w(() => getSiteTopology(1))?.head_device_id, 1, "la testa resta se non la si tocca");
+  assert.equal(w(() => setSiteTopology(1, { networkIds: [99] }, "riccardo")).ok, false);
+  assert.equal(w(() => setSiteTopology(1, { headDeviceId: 99 }, "riccardo")).ok, false);
+  const net1 = db().prepare("SELECT location_id, location_set_by FROM networks WHERE id = 1").get() as Record<string, unknown>;
+  assert.deepEqual(net1, { location_id: null, location_set_by: "riccardo" });
+});
+
+test("correzioni ai collegamenti: aggiungi, elenca, togli", () => {
+  const id = w(() => addLinkOverride({ action: "ignore", a_node: "dev:1", a_port: "", b_node: "host:5", b_port: "", note: "doppio" }, "riccardo"));
+  const lista = w(() => listLinkOverrides());
+  assert.equal(lista.length, 1);
+  assert.equal(lista[0].created_by, "riccardo");
+  assert.equal(w(() => deleteLinkOverride(id)), true);
+  assert.equal(w(() => deleteLinkOverride(id)), false);
+});
+
+test("soglia «non visto»: 2 di partenza, limiti 1-30", () => {
+  assert.equal(getLinkStaleDays(), 2);
+  setLinkStaleDays(5);
+  assert.equal(getLinkStaleDays(), 5);
+  assert.throws(() => setLinkStaleDays(0));
+  assert.throws(() => setLinkStaleDays(31));
+  setLinkStaleDays(2);
+});

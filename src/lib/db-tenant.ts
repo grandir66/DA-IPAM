@@ -8622,3 +8622,126 @@ export function attachOrphanUnifiJobs(controllerId: number): number {
     )
     .run(controllerId).changes;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOPOLOGIA — modello (fase 1, piano 2026-10-13): letture in blocco (no N+1)
+// e le sole scritture che un admin conferma (sede, testa, subnet, correzioni).
+// ═══════════════════════════════════════════════════════════════════════════
+
+type ModelInput = import("@/lib/topology/model-types").TopologyModelInput;
+type Esito = { ok: true } | { ok: false; error: string };
+
+export function getTopologyModelInput(staleDays: number, nowMs: number = Date.now()): ModelInput {
+  const d = db();
+  return {
+    devices: d.prepare(`
+      SELECT nd.id, nd.name, nd.host, nd.device_type, nd.vendor, nd.model, nd.enabled, nd.host_id, nd.physical_device_id,
+             nd.location_id, nd.controller_mac, nd.uplink_mac, nd.uplink_remote_port, nd.uplink_seen_at, nd.topology_hidden,
+             COALESCE(sp.n, 0) AS port_count
+        FROM network_devices nd
+        LEFT JOIN (SELECT device_id, COUNT(*) AS n FROM switch_ports GROUP BY device_id) sp ON sp.device_id = nd.id
+       ORDER BY nd.id`).all() as ModelInput["devices"],
+    hosts: d.prepare(`
+      SELECT id, network_id, ip, mac, hostname, custom_name, classification, status, physical_device_id
+        FROM hosts ORDER BY id`).all() as ModelInput["hosts"],
+    neighbors: d.prepare(`
+      SELECT device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, timestamp, source
+        FROM device_neighbors`).all() as ModelInput["neighbors"],
+    uplinkPorts: d.prepare(`
+      SELECT device_id, port_index, port_name FROM switch_ports WHERE is_uplink = 1 ORDER BY device_id, port_index`).all() as ModelInput["uplinkPorts"],
+    locations: d.prepare("SELECT id, name, parent_id, head_device_id FROM locations ORDER BY id").all() as ModelInput["locations"],
+    networks: d.prepare("SELECT id, cidr, name, gateway, location_id FROM networks ORDER BY id").all() as ModelInput["networks"],
+    knownMacs: getNetworkDeviceKnownMacs(),
+    overrides: d.prepare("SELECT id, action, a_node, a_port, b_node, b_port FROM topology_link_overrides ORDER BY id").all() as ModelInput["overrides"],
+    nowMs,
+    staleDays,
+  };
+}
+
+export function setDeviceLocation(deviceId: number, locationId: number | null, author: string): Esito {
+  const d = db();
+  if (!d.prepare("SELECT 1 FROM network_devices WHERE id = ?").get(deviceId)) return { ok: false, error: "Apparato non trovato" };
+  if (locationId !== null && !d.prepare("SELECT 1 FROM locations WHERE id = ?").get(locationId)) {
+    return { ok: false, error: "Ubicazione non trovata" };
+  }
+  d.prepare("UPDATE network_devices SET location_id = ?, location_set_by = ?, location_set_at = datetime('now') WHERE id = ?")
+    .run(locationId, author, deviceId);
+  return { ok: true };
+}
+
+export interface SiteTopologyRow {
+  location_id: number;
+  head_device_id: number | null;
+  head_set_by: string | null;
+  head_set_at: string | null;
+  network_ids: number[];
+}
+
+export function getSiteTopology(locationId: number): SiteTopologyRow | null {
+  const d = db();
+  const loc = d.prepare("SELECT id, head_device_id, head_set_by, head_set_at FROM locations WHERE id = ?").get(locationId) as
+    | { id: number; head_device_id: number | null; head_set_by: string | null; head_set_at: string | null }
+    | undefined;
+  if (!loc) return null;
+  const nets = d.prepare("SELECT id FROM networks WHERE location_id = ? ORDER BY id").all(locationId) as Array<{ id: number }>;
+  return { location_id: loc.id, head_device_id: loc.head_device_id, head_set_by: loc.head_set_by, head_set_at: loc.head_set_at, network_ids: nets.map((n) => n.id) };
+}
+
+/** Testa e subnet di una SEDE (ubicazione di primo livello). `networkIds` sostituisce l'elenco. */
+export function setSiteTopology(locationId: number, input: { headDeviceId?: number | null; networkIds?: number[] }, author: string): Esito {
+  const d = db();
+  const loc = d.prepare("SELECT parent_id FROM locations WHERE id = ?").get(locationId) as { parent_id: number | null } | undefined;
+  if (!loc) return { ok: false, error: "Ubicazione non trovata" };
+  if (loc.parent_id !== null) return { ok: false, error: "Testa e subnet si scelgono solo per una sede (ubicazione di primo livello)" };
+  if (input.headDeviceId != null && !d.prepare("SELECT 1 FROM network_devices WHERE id = ?").get(input.headDeviceId)) {
+    return { ok: false, error: "Apparato di testa non trovato" };
+  }
+  const ids = [...new Set(input.networkIds ?? [])];
+  if (ids.length > 0) {
+    const found = d.prepare(`SELECT COUNT(*) AS n FROM networks WHERE id IN (${ids.map(() => "?").join(",")})`).get(...ids) as { n: number };
+    if (found.n !== ids.length) return { ok: false, error: "Una delle subnet non esiste" };
+  }
+  d.transaction(() => {
+    if (input.headDeviceId !== undefined) {
+      d.prepare("UPDATE locations SET head_device_id = ?, head_set_by = ?, head_set_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
+        .run(input.headDeviceId, author, locationId);
+    }
+    if (input.networkIds !== undefined) {
+      const keep = ids.length > 0 ? `AND id NOT IN (${ids.map(() => "?").join(",")})` : "";
+      d.prepare(`UPDATE networks SET location_id = NULL, location_set_by = ?, location_set_at = datetime('now') WHERE location_id = ? ${keep}`)
+        .run(author, locationId, ...ids);
+      if (ids.length > 0) {
+        d.prepare(`UPDATE networks SET location_id = ?, location_set_by = ?, location_set_at = datetime('now') WHERE id IN (${ids.map(() => "?").join(",")})`)
+          .run(locationId, author, ...ids);
+      }
+    }
+  })();
+  return { ok: true };
+}
+
+// `extends` non accetta un `import(...)` diretto: passa da un alias di tipo.
+type LinkOverrideRowT = import("@/lib/topology/model-types").LinkOverrideRow;
+
+export interface LinkOverrideView extends LinkOverrideRowT {
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export function listLinkOverrides(): LinkOverrideView[] {
+  return db().prepare("SELECT * FROM topology_link_overrides ORDER BY id").all() as LinkOverrideView[];
+}
+
+export function addLinkOverride(
+  input: { action: "add" | "ignore"; a_node: string; a_port: string; b_node: string; b_port: string; note: string | null },
+  author: string,
+): number {
+  const r = db().prepare(
+    "INSERT INTO topology_link_overrides (action, a_node, a_port, b_node, b_port, note, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(input.action, input.a_node, input.a_port, input.b_node, input.b_port, input.note, author);
+  return Number(r.lastInsertRowid);
+}
+
+export function deleteLinkOverride(id: number): boolean {
+  return db().prepare("DELETE FROM topology_link_overrides WHERE id = ?").run(id).changes > 0;
+}

@@ -62,9 +62,13 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   usano lo stesso filtro, che servirà alla soglia di sicurezza sugli
   spegnimenti in massa. Una scansione che non ha nessun indirizzo da decidere
   non tocca niente (prima valeva come «tutta la rete»). **Cosa cambia sulle
-  installazioni del canale `dev`:** la data di modifica degli host offline
-  smette di avanzare a ogni giro (la pulizia degli host vecchi guarda «ultimo
-  visto», non questa data, e non cambia); un host visto vivo mentre un giro
+  installazioni del canale `dev`:** lo stato degli host già offline non si
+  riscrive più a ogni giro; la loro data di modifica invece avanza ancora,
+  perché a fine giro l'aggiornamento delle assegnazioni IP la riscrive su tutti
+  gli host della rete, cambiati o no (misurato con la prova dei giri
+  sovrapposti, T3-22: tutte le righe della rete a ogni giro, prima e dopo):
+  si sistema a parte. La pulizia degli host vecchi guarda «ultimo visto», non
+  questa data, e non cambia. Un host visto vivo mentre un giro
   era in corso resta online fino al giro successivo che non lo vede; il
   registro del giro dice quanti host sono passati offline. Nessuna bonifica:
   gli host eventualmente spenti per errore tornano online al primo giro che li
@@ -72,6 +76,23 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunte
 
+- **Prova dei giri sovrapposti su una copia del database (INV-1, INV-2,
+  T3-22).** Le correzioni sulle scansioni (un giro alla volta per rete, un
+  giro vecchio che non spegne host visti dopo, la soglia sugli spegnimenti in
+  massa) erano provate su dati finti; mancava la prova sul dato vero. Lo script
+  `scripts/prova-giri-sovrapposti.ts` copia il database di un tenant in una
+  cartella temporanea e ci fa girare la scansione vera con un esecutore finto
+  (niente esce sulla rete): un giro lento, un secondo giro sulla stessa rete
+  mentre il primo è fermo, host visti vivi da altri nel frattempo, poi un giro
+  in cui non risponde nessuno. Stampa solo conteggi e rifiuta di partire se un
+  percorso esce dalla cartella temporanea. Su una copia del database di
+  un'installazione, rete con 155 host di cui 25 online: col codice di prima il
+  secondo giro partiva, il primo spegneva 5 host visti dopo la sua partenza e
+  il giro senza risposte spegneva tutti i 20 rimasti; con le correzioni il
+  secondo giro è rifiutato, nessun host visto dopo viene spento e il giro senza
+  risposte non scrive lo stato di nessun host (soglia in `applica`). Nessun
+  cambio di comportamento. Prova: `giri-sovrapposti.test.ts` (stessa sequenza
+  su un tenant di prova).
 - **Soglia di sicurezza sugli spegnimenti in massa, con conferma al giro dopo
   (INV-2, T3-21).** Un giro che non vedeva nessuno (un ping che non esce, un
   apparato in mezzo che filtra, un esecutore remoto che risponde male)

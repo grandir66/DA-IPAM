@@ -44,6 +44,12 @@ function put(map: Map<string, string | null>, key: string | null, id: string, we
   map.set(key, null);
 }
 
+/** Un MAC VRRP/HSRP passa da un router all'altro: non entra nell'indice per MAC (spec §10.4 punto 1). */
+function putMac(map: Map<string, string | null>, raw: string | null | undefined, id: string, weak: boolean): void {
+  const m = normalizeMacForStorage(raw ?? null);
+  if (m && !isVirtualMac(m)) put(map, m, id, weak);
+}
+
 function hostNode(h: ModelHostRow): MapNode {
   return {
     id: `host:${h.id}`, kind: "host", refId: h.id, name: h.custom_name || h.hostname || h.ip,
@@ -89,10 +95,10 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     });
     put(idx.byIp, d.host || null, id, false);
     put(idx.byName, nameKey(d.name), id, false);
-    put(idx.byMac, normalizeMacForStorage(d.controller_mac), id, false);
+    putMac(idx.byMac, d.controller_mac, id, false);
   }
   for (const r of knownMacs) {
-    if (idx.nodes.has(`dev:${r.device_id}`)) put(idx.byMac, normalizeMacForStorage(r.mac), `dev:${r.device_id}`, false);
+    if (idx.nodes.has(`dev:${r.device_id}`)) putMac(idx.byMac, r.mac, `dev:${r.device_id}`, false);
   }
   // Un host col MAC di UN solo apparato è un'altra interfaccia (VLAN, VRRP) dello stesso oggetto fisico:
   // si fonde con lui. Un MAC di due o più apparati (VRRP condiviso) è ambiguo e non assorbe nulla.
@@ -100,7 +106,7 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
   const macOwners = new Map<string, Set<string>>();
   const own = (mac: string | null | undefined, devId: string): void => {
     const m = normalizeMacForStorage(mac ?? null);
-    if (!m) return;
+    if (!m || isVirtualMac(m)) return; // un MAC virtuale non ha padrone
     const set = macOwners.get(m) ?? new Set<string>();
     set.add(devId);
     macOwners.set(m, set);
@@ -177,7 +183,7 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     if (!h) continue;
     idx.alias.set(`host:${hostId}`, devId);
     put(idx.byIp, h.ip || null, devId, false);
-    put(idx.byMac, normalizeMacForStorage(h.mac), devId, false);
+    putMac(idx.byMac, h.mac, devId, false);
     put(idx.byName, nameKey(h.hostname), devId, false);
     put(idx.byName, nameKey(h.custom_name), devId, false);
   }
@@ -186,7 +192,7 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     if (absorbedBy.has(h.id)) continue;
     const id = `host:${repOf.get(h.id) ?? h.id}`;
     put(idx.byIp, h.ip || null, id, true);
-    put(idx.byMac, normalizeMacForStorage(h.mac), id, true);
+    putMac(idx.byMac, h.mac, id, true);
     put(idx.byName, nameKey(h.hostname), id, true);
     put(idx.byName, nameKey(h.custom_name), id, true);
   }

@@ -108,3 +108,19 @@ test("un host già fuso per host_id non si sposta per MAC", () => {
   assert.equal(idx.fusedHosts, 1);
   assert.deepEqual(idx.nodes.get("dev:2")?.fusedHostIds, []);
 });
+
+test("un MAC virtuale non identifica nessuno: né dall'host assorbito, né dall'host rimasto, né dai MAC del router (I2)", () => {
+  const idx = buildNodeIndex(
+    [dev(1, { host: "10.0.0.1", device_type: "router", name: "RTR-1" })],
+    [
+      host(70, { ip: "10.0.0.1", mac: "00:00:5E:00:01:07" }), // assorbito per IP
+      host(71, { ip: "10.0.9.71", mac: "00:00:0C:07:AC:02", classification: "workstation" }), // rimasto
+    ],
+    [{ device_id: 1, mac: "00:00:5e:00:01:05" }],
+  );
+  assert.equal(canonical(idx, "host:70"), "dev:1");
+  assert.equal(resolveNode(idx, { mac: "00:00:5e:00:01:07" }), null);
+  assert.equal(resolveNode(idx, { mac: "00:00:5e:00:01:05" }), null);
+  assert.equal(resolveNode(idx, { mac: "00:00:0c:07:ac:02" }), null);
+  assert.equal(idx.byMac.size, 0);
+});

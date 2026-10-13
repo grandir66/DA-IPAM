@@ -101,3 +101,11 @@ test("stessi dati, stesso risultato", () => {
   const i = input({ macPorts: [mp(2, mac(1), "Port 3"), mp(3, mac(2), "Port 5"), mp(1, mac(2), "bridge")] });
   assert.deepEqual(run(i), run(i));
 });
+
+test("un MAC VRRP su una porta di bordo non crea un collegamento mac_table e non prende il nome del router (I2)", () => {
+  const vrrp = "00:00:5e:00:01:0a";
+  const hosts = [host(20, { ip: "10.0.0.1", mac: vrrp, classification: "router" })]; // assorbito dal router per IP
+  const r = run(input({ hosts, knownMacs: [{ device_id: 1, mac: vrrp }], macPorts: [mp(3, vrrp, "Port 4")] }));
+  assert.deepEqual(r.attachLinks, []);
+  assert.deepEqual(r.portClients.map((p) => p.clients.map((c) => [c.nodeId, c.name])), [[[null, null]]]);
+});

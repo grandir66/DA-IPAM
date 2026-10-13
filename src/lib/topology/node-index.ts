@@ -7,7 +7,7 @@
 import type { MapNode, ModelDeviceRow, ModelHostRow, ModelKnownMacRow, ModelNeighborRow } from "@/lib/topology/model-types";
 import { normalizeName } from "@/lib/topology/match";
 import { normalizeMacForStorage } from "@/lib/utils";
-import { IDENTITY_TYPES, announcedNames, isVirtualMac } from "@/lib/topology/identity";
+import { IDENTITY_TYPES, announcedNames, identifiesByName, isVirtualMac, realOui } from "@/lib/topology/identity";
 
 export interface NodeIndex {
   nodes: Map<string, MapNode>;
@@ -29,6 +29,12 @@ function nameKey(raw: string | null | undefined): string | null {
   const s = raw?.trim();
   if (!s || IPV4.test(s) || MAC.test(s)) return null;
   return normalizeName(s) || null;
+}
+
+/** Chiave di nome che vale per fondere (spec §10.4 punti 2-3): niente nomi di fabbrica né pezzi di MAC. */
+function identityKey(raw: string | null | undefined): string | null {
+  const k = nameKey(raw);
+  return k && identifiesByName(k) ? k : null;
 }
 
 /** weak = la chiave la mette un host: non la toglie a un apparato. */
@@ -128,12 +134,12 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
   // Spec §10.4 punto 3: il nome annunciato da un host già fuso è un alias dell'apparato.
   const announced = announcedNames(sortedHosts, neighbors);
   const namesOf = (h: ModelHostRow): string[] =>
-    [h.hostname, h.custom_name, ...(announced.get(h.id) ?? [])].map((s) => nameKey(s)).filter((k): k is string => !!k);
+    [h.hostname, h.custom_name, ...(announced.get(h.id) ?? [])].map((s) => identityKey(s)).filter((k): k is string => !!k);
   const aliasOwner = new Map<string, string | null>();
   const claim = (k: string, devId: string): void => {
     aliasOwner.set(k, aliasOwner.has(k) && aliasOwner.get(k) !== devId ? null : devId);
   };
-  for (const d of devices) { const k = nameKey(d.name); if (k) claim(k, `dev:${d.id}`); }
+  for (const d of devices) { const k = identityKey(d.name); if (k) claim(k, `dev:${d.id}`); }
   for (const [hostId, devId] of absorbedBy) { const h = idx.hostById.get(hostId); if (h) for (const k of namesOf(h)) claim(k, devId); }
   for (const h of sortedHosts) {
     if (absorbedBy.has(h.id) || !IDENTITY_TYPES.includes(h.classification ?? "")) continue;
@@ -150,12 +156,33 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
   const find = (x: number): number => { const p = parent.get(x) ?? x; if (p === x) return x; const r = find(p); parent.set(x, r); return r; };
   const union = (a: number, b: number): void => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(Math.max(ra, rb), Math.min(ra, rb)); };
   const firstBy = new Map<string, number>();
-  const join = (key: string, id: number): void => { const f = firstBy.get(key); if (f === undefined) firstBy.set(key, id); else union(f, id); };
   for (const h of sortedHosts) {
     if (absorbedBy.has(h.id)) continue;
     const m = normalizeMacForStorage(h.mac);
-    if (m && !isVirtualMac(m)) join(`mac:${m}`, h.id);
-    if (IDENTITY_TYPES.includes(h.classification ?? "")) for (const k of namesOf(h)) join(`nome:${k}`, h.id);
+    if (!m || isVirtualMac(m)) continue;
+    const f = firstBy.get(m);
+    if (f === undefined) firstBy.set(m, h.id); else union(f, h.id);
+  }
+  // Per nome solo se nessun MAC vero lo contraddice: due gruppi con MAC veri di OUI diversi sono due oggetti.
+  const ouis = new Map<number, Set<string>>(); // rappresentante → OUI dei MAC veri del gruppo
+  for (const h of sortedHosts) {
+    const o = absorbedBy.has(h.id) ? null : realOui(normalizeMacForStorage(h.mac));
+    if (o) ouis.set(find(h.id), new Set([...(ouis.get(find(h.id)) ?? []), o]));
+  }
+  const compatible = (a: number, b: number): boolean => new Set([...(ouis.get(find(a)) ?? []), ...(ouis.get(find(b)) ?? [])]).size <= 1;
+  const byName = new Map<string, number[]>();
+  for (const h of sortedHosts) {
+    if (absorbedBy.has(h.id) || !IDENTITY_TYPES.includes(h.classification ?? "")) continue;
+    for (const k of namesOf(h)) {
+      const seen = byName.get(k) ?? [];
+      const other = seen.find((x) => find(x) !== find(h.id) && compatible(x, h.id));
+      if (other !== undefined) {
+        const merged = new Set([...(ouis.get(find(other)) ?? []), ...(ouis.get(find(h.id)) ?? [])]);
+        union(other, h.id);
+        ouis.set(find(h.id), merged);
+      }
+      byName.set(k, [...seen, h.id]);
+    }
   }
   const groupMembers = new Map<number, ModelHostRow[]>(); // rappresentante (id più basso) → membri in ordine di id
   const repOf = new Map<number, number>();

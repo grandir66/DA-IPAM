@@ -12,6 +12,32 @@ export function isVirtualMac(mac: string | null | undefined): boolean {
   return !!mac && VIRTUALI.some((r) => r.test(mac.replace(/-/g, ":")));
 }
 
+/**
+ * Nomi di fabbrica: li portano tanti apparati diversi (l'identità predefinita di
+ * ogni MikroTik è «MikroTik»), quindi non fondono niente (revisione finale I3).
+ */
+const NOMI_DI_FABBRICA = new Set([
+  "mikrotik", "routeros", "localhost", "ubnt", "unifi", "ubiquiti", "router", "switch", "ap", "gateway", "default",
+  "unknown", "ubuntu", "debian", "raspberrypi", "openwrt",
+]);
+
+/**
+ * Una chiave di nome (già normalizzata) vale come identità per fondere? No se è
+ * un nome di fabbrica, se è più corta di 4 caratteri, o se è solo cifre o
+ * esadecimale: è il pezzo di un MAC a punti («0050.56ab.0001» → «0050»).
+ */
+export function identifiesByName(key: string): boolean {
+  const k = key.toLowerCase();
+  return k.length >= 4 && !/^[0-9a-f]+$/.test(k) && !NOMI_DI_FABBRICA.has(k);
+}
+
+/** I primi tre byte di un MAC vero (già normalizzato), o null se manca o è virtuale. */
+export function realOui(mac: string | null | undefined): string | null {
+  if (!mac || isVirtualMac(mac)) return null;
+  const parts = mac.toLowerCase().split(/[:-]/);
+  return parts.length === 6 ? parts.slice(0, 3).join(":") : null;
+}
+
 export const IDENTITY_TYPES: readonly string[] = [
   "router", "firewall", "switch", "access_point", "server", "server_linux", "server_windows", "hypervisor", "nas", "storage",
 ];

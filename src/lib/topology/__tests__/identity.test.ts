@@ -80,3 +80,37 @@ test("un nome annunciato non porta via un host il cui MAC vero è di un altro ap
   assert.ok(idx.nodes.get("dev:2")!.fusedHostIds.includes(40));
   assert.ok(!idx.nodes.get("dev:1")!.fusedHostIds.includes(40));
 });
+
+test("due host «MikroTik» con MAC veri diversi restano due; un apparato «MikroTik» non li assorbe (I3)", () => {
+  const hosts = [
+    host(50, "192.0.2.50", "02:00:00:00:00:50", "MikroTik"),
+    host(51, "192.0.2.51", "02:00:00:00:00:51", "MikroTik"),
+  ];
+  const idx = buildNodeIndex([], hosts, [], []);
+  assert.equal(idx.mergedHosts, 0);
+  const idx2 = buildNodeIndex([dev(1, "MikroTik", "192.0.2.1")], hosts, [], []);
+  assert.deepEqual(idx2.nodes.get("dev:1")!.fusedHostIds, []);
+  assert.equal(idx2.fusedHosts, 0);
+});
+
+test("altri nomi di fabbrica e chiavi corte non fondono (I3)", () => {
+  for (const nome of ["localhost", "UBNT", "router", "Gateway", "unknown", "ap", "sw1", "12345"]) {
+    const idx = buildNodeIndex([], [host(60, "192.0.2.60", null, nome), host(61, "192.0.2.61", null, nome)], [], []);
+    assert.equal(idx.mergedHosts, 0, nome);
+  }
+});
+
+test("due ponti radio con nomi diversi e la stessa identità annunciata: OUI diversi non si fondono, stesso OUI sì (I3)", () => {
+  const vicini = [vicino("192.0.2.70", "PTP-LINK", "02:00:00:00:00:70"), vicino("192.0.2.71", "PTP-LINK", "06:00:00:00:00:71")];
+  const diversi = [host(70, "192.0.2.70", "02:00:00:00:00:70", "PONTE-NORD"), host(71, "192.0.2.71", "06:00:00:00:00:71", "PONTE-SUD")];
+  assert.equal(buildNodeIndex([], diversi, [], vicini).mergedHosts, 0);
+  const stessoOui = [host(70, "192.0.2.70", "02:00:00:00:00:70", "PONTE-NORD"), host(71, "192.0.2.71", "02:00:00:00:00:71", "PONTE-SUD")];
+  assert.equal(buildNodeIndex([], stessoOui, [], vicini).mergedHosts, 1);
+});
+
+test("un nome-chassis a punti (MAC Cisco) non diventa la chiave del suo prefisso (I3)", () => {
+  const hosts = [host(80, "192.0.2.80", null, "0050.56ab.0001"), host(81, "192.0.2.81", null, "0050.56ab.0002")];
+  assert.equal(buildNodeIndex([], hosts, [], []).mergedHosts, 0);
+  const lettere = [host(82, "192.0.2.82", null, "a0b1.c2d3.e4f5"), host(83, "192.0.2.83", null, "a0b1.c2d3.e4f6")];
+  assert.equal(buildNodeIndex([], lettere, [], []).mergedHosts, 0);
+});

@@ -283,6 +283,15 @@ righe al giorno aggiunge, confronto dei numeri con l'interfaccia del controller.
 Si aggiornano la spec e il piano esistenti (`2026-10-12-topology-map*`), non se ne
 scrivono di nuovi. Comprende la fase F della spec UniFi.
 
+**Il motore di rappresentazione si ripensa (Riccardo, 13/10).** Vista la mappa di DTS
+piena dei 74 apparati UniFi: «orribile, le linee sono messe a caso, è caotica». La
+disposizione automatica di oggi non regge un impianto vero; non si rattoppa. La tappa
+comincia da un progetto del motore, discusso con Riccardo prima di scrivere codice:
+disposizione per livelli (centro → distribuzione → accesso → access point → client),
+collegamenti che non si incrociano a caso, raggruppamento per sito e per armadio,
+posizioni salvate che sopravvivono alle letture nuove. Riferimento per giudicarlo: gli
+schemi drawio di DTS fatti a mano. Le altre tappe vanno avanti intanto.
+
 - **Archi**: LLDP da SNMP e SSH e dal controller, abbinati anche per MAC del vicino
   e non solo per nome o IP; tabella MAC delle porte (SNMP) per collocare i client
   anche dietro switch che non sono UniFi; collegamenti correggibili a mano
@@ -414,7 +423,7 @@ vive la console centrale (tappa 9).
 | 2 | fatta, ACCESA su DTS (v0.3.270) | 12/10 | Provata sul controller vero di DTS (sola lettura) verso una COPIA del DB: migrazione v8 ok; 74 apparati aggiunti (50 switch, 24 AP), 753 porte, 168 vicini LLDP su 69 apparati (138 col nome risolto), 0 errori; secondo giro 0 aggiunti; dati esistenti intatti (11 dispositivi, 138 vicini MNDP, 965 host). Mappa di DTS piena a schermo. Da fare: accendere su DTS (scrittura sul DB del cliente: backup + conferma di Riccardo); rimandati: uplink non usato, due scrittori sulle porte (sync e poll ARP), tenant del controller da fissare, anonimizzatore della fixture |
 | 3 | in corso: parte 3a fatta (v0.3.273) | 12-13/10 | Piano di dettaglio solo locale (`docs/tappa3-fondamenta-piano.md`), divisa in 3a/3b/3c (decisione di Riccardo). 3a su DTS verificata (app ok, segreti LibreNMS salvati cifrati, 0 ripieghi); hub ancora a v0.3.272, si aggiorna a mano. Un cambio sui permessi d'accesso rimandato a dopo una verifica in DA-Auth. Prossimo: osservazione del registro dei ripieghi, poi 3b |
 | 4 | da fare | — | |
-| 5 | da fare | — | la mappa di base è già su `dev` (v0.3.260) |
+| 5 | da fare | — | la mappa di base è su `dev` (v0.3.260); il motore di rappresentazione va ripensato (13/10: caotica sul dato vero di DTS) |
 | 6 | da fare | — | |
 | 7 | da fare | — | |
 | 8 | da fare | — | |

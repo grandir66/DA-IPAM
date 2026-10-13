@@ -68,5 +68,6 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
     promoteProposals: promote.length,
     suspiciousTypes: suspicious.length,
   };
-  return { nodes, links, sites, promote, unmatched, isolated, suspicious, withoutSite, counts, portClients, clientCount };
+  const canonical = Object.fromEntries([...idx.alias.entries()].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)));
+  return { nodes, links, sites, promote, unmatched, isolated, suspicious, withoutSite, counts, portClients, clientCount, canonical };
 }

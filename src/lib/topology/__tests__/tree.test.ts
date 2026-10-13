@@ -16,7 +16,7 @@ function link(a: string, b: string, source: LinkSource = "lldp", stale = false):
 function model(nodes: MapNode[], links: MapLink[], over: Partial<TopologyModel> = {}): TopologyModel {
   return {
     nodes, links, sites: [], promote: [], unmatched: [], isolated: [], suspicious: [], withoutSite: [],
-    counts: {} as TopologyModel["counts"], portClients: [], clientCount: {}, ...over,
+    counts: {} as TopologyModel["counts"], portClients: [], clientCount: {}, canonical: {}, ...over,
   };
 }
 const all = (m: TopologyModel) => new Set(m.nodes.map((n) => n.id));

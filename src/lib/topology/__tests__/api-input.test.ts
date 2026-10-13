@@ -69,9 +69,14 @@ test("mappe: nome 1-80 caratteri, nodi dev:N/host:N, al massimo 2000 per colpo",
 test("ritocchi e nascondi: vista auto o mappa:N; hidden solo dev:N", async () => {
   const m = await import("@/lib/topology/api-input");
   assert.deepEqual(m.parsePositionsBody({ view: "mappa:4", tweaks: [{ nodeId: "dev:1", x: 1.5, y: -2, sig: "abc" }] }), {
-    ok: true, data: { view: "mappa:4", clear: false, tweaks: [{ nodeId: "dev:1", x: 1.5, y: -2, sig: "abc" }] },
+    ok: true, data: { view: "mappa:4", clear: false, tweaks: [{ nodeId: "dev:1", x: 1.5, y: -2, sig: "abc" }], rename: [] },
   });
-  assert.deepEqual(m.parsePositionsBody({ view: "auto", clear: true }), { ok: true, data: { view: "auto", clear: true, tweaks: [] } });
+  assert.deepEqual(m.parsePositionsBody({ view: "auto", clear: true }), { ok: true, data: { view: "auto", clear: true, tweaks: [], rename: [] } });
+  assert.deepEqual(m.parsePositionsBody({ view: "mappa:4", rename: [{ from: "host:7", to: "dev:3" }] }), {
+    ok: true, data: { view: "mappa:4", clear: false, tweaks: [], rename: [{ from: "host:7", to: "dev:3" }] },
+  });
+  assert.equal(m.parsePositionsBody({ view: "mappa:4", rename: [{ from: "host:7", to: "host:7" }] }).ok, false, "rinomina su se stesso");
+  assert.equal(m.parsePositionsBody({ view: "mappa:4", rename: [{ from: "x", to: "dev:3" }] }).ok, false);
   assert.equal(m.parsePositionsBody({ view: "default", tweaks: [] }).ok, false);
   assert.equal(m.parsePositionsBody({ view: "auto" }).ok, false, "né ritocchi né riordino");
   assert.equal(m.parsePositionsBody({ view: "auto", tweaks: [{ nodeId: "dev:1", x: "a", y: 0, sig: "" }] }).ok, false);

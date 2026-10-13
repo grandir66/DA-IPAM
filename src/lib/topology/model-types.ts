@@ -228,4 +228,10 @@ export interface TopologyModel {
   portClients: PortClients[];
   /** Client freschi (visti entro la soglia) per nodo (switch/AP), a prescindere dalla porta: il numero sul riquadro. */
   clientCount: Record<string, number>;
+  /**
+   * Id di ogni host fuso in un altro nodo («host:N» → id del nodo): un host
+   * promosso ad apparato, assorbito o fuso con altri host. Le mappe salvate
+   * passano da qui, così un oggetto promosso non risulta «non più presente».
+   */
+  canonical: Record<string, string>;
 }

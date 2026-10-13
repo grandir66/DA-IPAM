@@ -7,10 +7,11 @@
  * della pagina (modo, mappa, oggetto scelto) e le scritture; albero e
  * disposizione sono la logica pura di src/lib/topology.
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { LoadError } from "@/components/shared/load-error";
 import { nodeClass } from "@/lib/topology/identity";
+import { resolveMapView } from "@/lib/topology/map-view";
 import { autoVisible, buildTree, missingNeighbors, proposeHead } from "@/lib/topology/tree";
 import { layoutTree, structureSig, type SavedTweak } from "@/lib/topology/tree-layout";
 import { LinkedPanel } from "./linked-panel";
@@ -35,6 +36,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const [showExtra, setShowExtra] = useState(false);
   const [centerKey, setCenterKey] = useState(1);
   const [pending, setPending] = useState<{ view: string; tweak: SavedTweak } | null>(null);
+  const renamesSent = useRef<string | null>(null);
 
   const viewKey = mode === "auto" ? "auto" : chosenMap !== null ? String(chosenMap) : null;
   const { data, error, refreshError, reload, send } = useTopologyData(viewKey);
@@ -55,6 +57,14 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     const model = data.model;
     const ids = new Set(model.nodes.map((n) => n.id));
     const auto = data.maps.auto;
+    // Gli id salvati passano dall'id canonico: un oggetto promosso o fuso resta nella mappa (I5).
+    const saved = resolveMapView(
+      mode === "auto"
+        ? { members: [], roots: [], tweaks: view?.tweaks ?? [], head: auto?.head_node ?? null }
+        : { members: view?.nodes ?? [], roots: view?.map?.roots ?? [], tweaks: view?.tweaks ?? [], head: null },
+      ids,
+      model.canonical,
+    );
     let visible: Set<string>;
     let roots: string[];
     let missing: string[] = [];
@@ -62,19 +72,18 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     let headOrigin = "";
     if (mode === "auto") {
       visible = autoVisible(model);
-      const chosen = auto?.head_node && ids.has(auto.head_node) ? auto.head_node : null;
+      const chosen = saved.head;
       head = chosen ?? proposeHead(model);
       headOrigin = chosen ? `scelta da ${auto?.created_by ?? "un amministratore"}` : "proposta dal sistema";
       roots = head ? [head] : [];
     } else {
-      const members = view?.nodes ?? [];
-      visible = new Set(members.filter((id) => ids.has(id)));
-      missing = members.filter((id) => !ids.has(id));
-      roots = (view?.map?.roots ?? []).filter((r) => visible.has(r));
+      visible = new Set(saved.visible);
+      missing = saved.missing;
+      roots = saved.roots.filter((r) => visible.has(r));
     }
     const tree = buildTree(model, visible, roots);
     const own = pending && pending.view === viewKey ? pending.tweak : null;
-    const tweaks = [...(view?.tweaks ?? []).filter((t) => t.nodeId !== own?.nodeId), ...(own ? [own] : [])];
+    const tweaks = [...saved.tweaks.filter((t) => t.nodeId !== own?.nodeId), ...(own ? [own] : [])];
     const layout = layoutTree(model, tree, tweaks);
     const plus = new Map<string, number>();
     if (mode === "passo") {
@@ -87,7 +96,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     const starts = new Set(mode === "passo" ? roots.filter((r) => tree.roots.includes(r)) : []);
     const promoteIds = new Set(model.promote.map((p) => `host:${p.hostId}`));
     const byId = new Map(model.nodes.map((n) => [n.id, n]));
-    return { model, visible, roots, missing, head, headOrigin, tree, layout, plus, starts, promoteIds, byId };
+    return { model, visible, roots, missing, head, headOrigin, tree, layout, plus, starts, promoteIds, byId, savedRoots: saved.roots, renames: saved.renames };
   }, [data, mode, view, pending, viewKey]);
 
   if (error) return <LoadError what="i dati della mappa" message={error} onRetry={() => void reload()} />;
@@ -97,17 +106,29 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const canEditMap = isAdmin && mode === "passo" && chosenMap !== null && !viewLoading;
   const changeMode = (m: Mode) => { setMode(m); setSelected(null); setCenterKey((k) => k + 1); };
 
+  /**
+   * Gli id salvati di oggetti poi promossi o fusi si riscrivono sull'id canonico
+   * alla prima modifica della mappa, non alla lettura (I5). Una volta per vista.
+   */
+  async function persistRenames(): Promise<boolean> {
+    if (!d || d.renames.length === 0) return true;
+    const key = `${positionsView}|${JSON.stringify(d.renames)}`;
+    if (renamesSent.current === key) return true;
+    const ok = (await send("/api/topology/positions", "PUT", { view: positionsView, rename: d.renames })).ok;
+    if (ok) renamesSent.current = key;
+    return ok;
+  }
   async function addNodes(ids: string[]): Promise<boolean> {
-    if (chosenMap === null || ids.length === 0) return false;
+    if (chosenMap === null || ids.length === 0 || !(await persistRenames())) return false;
     return (await send(`${mapPath}/nodes`, "PUT", { add: ids, remove: [] })).ok;
   }
   async function removeNode(id: string) {
-    if (chosenMap !== null) await send(`${mapPath}/nodes`, "PUT", { add: [], remove: [id] });
+    if (chosenMap !== null && (await persistRenames())) await send(`${mapPath}/nodes`, "PUT", { add: [], remove: [id] });
   }
   async function setStart(id: string) {
-    if (chosenMap === null) return;
-    if (!d?.visible.has(id) && !(await addNodes([id]))) return;
-    await send(mapPath, "PATCH", { roots: [...new Set([...(view?.map?.roots ?? []), id])] });
+    if (chosenMap === null || !d || !(await persistRenames())) return;
+    if (!d.visible.has(id) && !(await addNodes([id]))) return;
+    await send(mapPath, "PATCH", { roots: [...new Set([...d.savedRoots, id])] });
   }
   async function insert(id: string) {
     setSelected(id);
@@ -115,12 +136,12 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     // Diventa una partenza se la mappa non ne ha, o se non è collegato a niente di ciò che c'è già.
     const linked = d.model.links.some((l) => (l.a === id && d.visible.has(l.b)) || (l.b === id && d.visible.has(l.a)));
     if (d.roots.length === 0 || (!linked && nodeClass(d.byId.get(id) ?? { type: "" }) !== "client")) {
-      await send(mapPath, "PATCH", { roots: [...new Set([...(view?.map?.roots ?? []), id])] });
+      await send(mapPath, "PATCH", { roots: [...new Set([...d.savedRoots, id])] });
       if (d.roots.length === 0) setCenterKey((k) => k + 1);
     }
   }
   async function move(nodeId: string, x: number, y: number) {
-    if (!d || !viewKey) return;
+    if (!d || !viewKey || !(await persistRenames())) return;
     const tweak: SavedTweak = { nodeId, x, y, sig: structureSig(d.tree, nodeId) };
     setPending({ view: viewKey, tweak });
     await send("/api/topology/positions", "PUT", { view: positionsView, tweaks: [tweak] });
@@ -194,7 +215,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         showExtra={showExtra}
         onShowExtra={setShowExtra}
         canRiordina={(view?.tweaks.length ?? 0) > 0}
-        onRiordina={() => void send("/api/topology/positions", "PUT", { view: positionsView, clear: true })}
+        onRiordina={() => void send("/api/topology/positions", "PUT", { view: positionsView, clear: true, rename: d.renames })}
         refreshFailedAt={refreshError?.at ?? null}
         refreshMessage={refreshError?.message ?? null}
         onRetry={() => void reload()}
@@ -224,7 +245,11 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
             onAdd={(ids) => void addNodes(ids)}
             onRemove={(id) => void removeNode(id)}
             onStart={(id) => void setStart(id)}
-            onHead={(id) => { void send("/api/topology/maps/auto", "PATCH", { head_node: id }).then(() => setCenterKey((k) => k + 1)); }}
+            onHead={(id) => {
+              void persistRenames()
+                .then((ok) => (ok ? send("/api/topology/maps/auto", "PATCH", { head_node: id }) : null))
+                .then(() => setCenterKey((k) => k + 1));
+            }}
             onHide={(id, hidden) => void send("/api/topology/nodes/hidden", "PUT", { node_id: id, hidden })}
             onClose={() => setSelected(null)}
           />

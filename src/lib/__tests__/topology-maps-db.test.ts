@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
 import {
   clearTopologyTweaks, createTopologyMap, deleteTenantDatabase, deleteTopologyMap, getAutoMap, getTenantDb, getTopologyMap,
-  getTopologyMapView, listTopologyMaps, saveTopologyTweaks, setAutoHead, setNodeHidden, setTopologyMapNodes, updateTopologyMap, withTenant,
+  getTopologyMapView, listTopologyMaps, renameTopologyNodes, saveTopologyTweaks, setAutoHead, setNodeHidden, setTopologyMapNodes, updateTopologyMap, withTenant,
 } from "@/lib/db-tenant";
 
 const T = "TESTTOPOMAPS";
@@ -118,4 +118,25 @@ test("nascondi: l'apparato c'è o no", () => {
   assert.equal((db().prepare("SELECT topology_hidden AS h FROM network_devices WHERE id = 1").get() as { h: number }).h, 1);
   assert.deepEqual(w(() => setNodeHidden(1, false)), { ok: true });
   assert.equal(w(() => setNodeHidden(99, true)).ok, false);
+});
+
+test("rinomina degli id (I5): membri, partenze e ritocchi passano all'id canonico; un doppio si toglie", () => {
+  const m = w(() => createTopologyMap({ name: "S", roots: ["host:7"], nodes: ["host:7", "host:8", "dev:3", "dev:1"] }, "r"));
+  const view = `mappa:${m.id}`;
+  w(() => saveTopologyTweaks(view, [{ nodeId: "host:7", x: 4, y: 5, sig: "s" }]));
+  w(() => renameTopologyNodes(view, [{ from: "host:7", to: "dev:9" }, { from: "host:8", to: "dev:3" }]));
+  const v = w(() => getTopologyMapView(view));
+  assert.deepEqual(v.nodes, ["dev:1", "dev:3", "dev:9"]);
+  assert.deepEqual(v.tweaks, [{ nodeId: "dev:9", x: 4, y: 5, sig: "s" }]);
+  assert.deepEqual(w(() => getTopologyMap(m.id))?.roots, ["dev:9"]);
+});
+
+test("rinomina nella mappa automatica: testa e ritocchi, senza cambiare chi ha scelto la testa (I5)", () => {
+  w(() => setAutoHead("host:12", "riccardo"));
+  w(() => saveTopologyTweaks("auto", [{ nodeId: "host:12", x: 1, y: 1, sig: "z" }]));
+  w(() => renameTopologyNodes("auto", [{ from: "host:12", to: "host:9" }]));
+  const a = w(() => getAutoMap());
+  assert.equal(a?.head_node, "host:9");
+  assert.equal(a?.created_by, "riccardo");
+  assert.deepEqual(w(() => getTopologyMapView("auto")).tweaks.map((t) => t.nodeId), ["host:9"]);
 });

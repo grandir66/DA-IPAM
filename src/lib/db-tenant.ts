@@ -9078,6 +9078,42 @@ export function saveTopologyTweaks(view: string, rows: Array<{ nodeId: string; x
   });
 }
 
+/**
+ * Riscrive gli id di una vista sull'id canonico del modello (revisione finale
+ * I5): un host promosso o fuso cambia id, e la mappa salvata lo seguirebbe solo
+ * in lettura. Lo chiama la pagina alla prima modifica della mappa, mai alla
+ * lettura. Righe di topology_position (membri e ritocchi), partenze di una
+ * passo passo e testa dell'automatica (senza cambiare chi l'ha scelta). Se il
+ * nuovo id è già nella vista, la riga vecchia si toglie.
+ */
+export function renameTopologyNodes(view: string, renames: Array<{ from: string; to: string }>): void {
+  if (renames.length === 0) return;
+  runInTenantTransaction(() => {
+    const d = db();
+    const has = d.prepare("SELECT 1 FROM topology_position WHERE view = ? AND node_id = ?");
+    const del = d.prepare("DELETE FROM topology_position WHERE view = ? AND node_id = ?");
+    const upd = d.prepare("UPDATE topology_position SET node_id = ?, updated_at = datetime('now') WHERE view = ? AND node_id = ?");
+    for (const { from, to } of renames) {
+      if (from === to) continue;
+      if (has.get(view, to)) del.run(view, from);
+      else upd.run(to, view, from);
+    }
+    const to = new Map(renames.map((r) => [r.from, r.to]));
+    const m = /^mappa:(\d+)$/.exec(view);
+    if (m) {
+      const map = getTopologyMap(Number(m[1]));
+      if (map && map.roots.some((r) => to.has(r))) {
+        const roots = [...new Set(map.roots.map((r) => to.get(r) ?? r))];
+        d.prepare("UPDATE topology_maps SET roots = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(roots), map.id);
+      }
+    } else if (view === "auto") {
+      const head = getAutoMap()?.head_node;
+      const next = head ? to.get(head) : undefined;
+      if (next) d.prepare("UPDATE topology_maps SET head_node = ?, updated_at = datetime('now') WHERE kind = 'auto'").run(next);
+    }
+  });
+}
+
 /** «Riordina»: nelle passo passo i nodi restano, i ritocchi spariscono; nell'automatica non c'è appartenenza, si cancella. */
 export function clearTopologyTweaks(view: string): void {
   const d = db();

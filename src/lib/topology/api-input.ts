@@ -162,19 +162,29 @@ const positionsSchema = z.object(
       )
       .max(5000, "Troppi ritocchi in un colpo (massimo 5000)")
       .optional(),
+    rename: z
+      .array(z.object({ from: NODE, to: NODE }), { error: "Elenco delle rinomine non valido" })
+      .max(NODES_MAX, `Troppe rinomine in un colpo (massimo ${NODES_MAX})`)
+      .optional(),
   },
   BODY,
 );
 
+/** `rename` (revisione finale I5): id della vista da riscrivere sull'id canonico, prima del resto. */
 export function parsePositionsBody(raw: unknown): Parsed<{
   view: string;
   clear: boolean;
   tweaks: Array<{ nodeId: string; x: number; y: number; sig: string }>;
+  rename: Array<{ from: string; to: string }>;
 }> {
   const r = positionsSchema.safeParse(raw);
   if (!r.success) return { ok: false, error: first(r.error) };
-  if (r.data.clear !== true && r.data.tweaks === undefined) return { ok: false, error: "Servono i ritocchi da salvare oppure «clear»" };
-  return { ok: true, data: { view: r.data.view, clear: r.data.clear === true, tweaks: r.data.clear === true ? [] : (r.data.tweaks ?? []) } };
+  const rename = r.data.rename ?? [];
+  if (rename.some((x) => x.from === x.to)) return { ok: false, error: "Una rinomina porta un nodo su un id diverso" };
+  if (r.data.clear !== true && r.data.tweaks === undefined && rename.length === 0) {
+    return { ok: false, error: "Servono i ritocchi da salvare, «clear» oppure le rinomine" };
+  }
+  return { ok: true, data: { view: r.data.view, clear: r.data.clear === true, tweaks: r.data.clear === true ? [] : (r.data.tweaks ?? []), rename } };
 }
 
 const hiddenSchema = z.object(

@@ -17,7 +17,7 @@ function node(id: string, type: string, name = id): MapNode {
 function model(nodes: MapNode[]): TopologyModel {
   return {
     nodes, links: [], sites: [], promote: [], unmatched: [], isolated: [], suspicious: [], withoutSite: [],
-    counts: {} as TopologyModel["counts"], portClients: [], clientCount: {},
+    counts: {} as TopologyModel["counts"], portClients: [], clientCount: {}, canonical: {},
   };
 }
 /** Albero a mano: ogni id nei valori è anche una chiave (foglie con []). */

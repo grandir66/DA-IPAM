@@ -57,3 +57,18 @@ test("stessi dati, stesso modello; un AP in più non cambia sedi e collegamenti 
   for (const l of a.links) assert.deepEqual(b.links.find((x) => x.id === l.id), l);
   for (const n of a.nodes) assert.deepEqual(b.nodes.find((x) => x.id === n.id), n);
 });
+
+test("un host promosso (apparato con host_id = N) ha l'id canonico dell'apparato; un host fuso con un altro host quello del gruppo (I5)", () => {
+  const m = buildTopologyModel(input({
+    devices: [...input().devices, dev(9, { name: "SW-NUOVO", host: "10.0.0.40", host_id: 40 })],
+    hosts: [
+      ...input().hosts,
+      host(50, { ip: "10.0.0.50", mac: "02:00:00:00:00:50", classification: "switch", hostname: "sw-50" }),
+      host(51, { ip: "10.0.5.51", mac: "02:00:00:00:00:50", classification: "switch" }),
+    ],
+  }));
+  assert.equal(m.canonical["host:40"], "dev:9");
+  assert.equal(m.canonical["host:51"], "host:50");
+  assert.equal(m.canonical["host:41"], undefined, "un host non fuso non ha alias");
+  assert.ok(m.nodes.some((n) => n.id === "dev:9"));
+});

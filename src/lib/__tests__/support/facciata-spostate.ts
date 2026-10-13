@@ -95,6 +95,10 @@ export const SPOSTATE_GRUPPO_1B: Readonly<Record<string, readonly string[]>> = {
     "assignLicenseSeat", "assignLicenseSeatToAssignee", "unassignLicenseSeat", "getLicenses",
     "getLicenseById",
   ],
+  arp: [
+    "upsertMacIpMapping", "getMacIpMappings", "upsertMacPortEntries", "upsertNeighbors", "upsertRoutes",
+    "upsertSwitchPorts", "markHostsOffline",
+  ],
 };
 
 /** Funzioni che vivono in `db-tenant.ts`: `db.ts` le riesporta e basta. */

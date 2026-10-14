@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BOX_H } from "@/lib/topology/tree-layout";
-import { MM_PER_PX, PAPER_MM, TILE_HEADER_MM, neighbours, planSheets, type SheetPlan } from "@/lib/topology/print-tiles";
+import { MM_PER_PX, PAPER_MM, TILE_HEADER_MM, gridLabelSize, gridSummary, neighbours, planSheets, type SheetPlan } from "@/lib/topology/print-tiles";
 
 // Stampa della mappa (spec topologia §12.3, Review Focus 4). Valori alla lettera: area A4 190 × 277 mm,
 // A3 277 × 400 mm, 1 px = 0,2646 mm, sovrapposizione 15 mm. Ogni tassello riserva in testa TILE_HEADER_MM
@@ -158,4 +158,27 @@ test("l'orientamento del foglio conta i tasselli da stampare, non quelli vuoti",
   const p = planSheets({ width: 2617, height: 2462, boxes: [{ x: 40, y: 40, w: 200, h: BOX_H }] }, A3);
   assert.equal(p.printed, 1);
   assert.equal(p.landscape, false);
+});
+
+// Task 5, visto nel PDF della copia del cliente A: in orizzontale (13.121 × 930 px, A3 al 100 %) la panoramica
+// è una striscia e i numeri «1-3» al 6 % del tassello uscivano alti ~2 mm, illeggibili.
+test("numeri della griglia sulla panoramica: almeno 5 mm sulla carta, mai più grandi del tassello", () => {
+  const grid = { w: 13121, h: 930 };
+  const plan = planSheets({ width: grid.w, height: grid.h }, { paper: "A3", scale: 1, overlapMm: 15 });
+  const px = gridLabelSize(plan, grid);
+  // La panoramica sta nella larghezza del foglio: 1 px del disegno = pageMm.w / 13.121 mm.
+  const mm = px * (plan.pageMm.w / grid.w);
+  assert.ok(mm >= 4.9, `alto ${mm.toFixed(2)} mm`);
+  const minH = Math.min(...plan.tiles.map((t) => t.h));
+  assert.ok(px <= minH * 0.35, "più alto di un terzo del tassello");
+  // In verticale (2.608 × 3.078 px) non scende sotto il 6 % del tassello di prima.
+  const g2 = { w: 2608, h: 3078 };
+  const p2 = planSheets({ width: g2.w, height: g2.h }, { paper: "A3", scale: 1, overlapMm: 15 });
+  assert.ok(gridLabelSize(p2, g2) >= Math.min(...p2.tiles.map((t) => Math.min(t.w, t.h))) * 0.06);
+});
+
+test("riga del primo foglio: singolare e plurale («1 riga», «1 vuoto non stampato»)", () => {
+  assert.equal(gridSummary({ rows: 1, cols: 10, tiles: 10, printed: 10 }), "griglia 1 riga × 10 colonne");
+  assert.equal(gridSummary({ rows: 3, cols: 1, tiles: 3, printed: 2 }), "griglia 3 righe × 1 colonna, 1 vuoto non stampato");
+  assert.equal(gridSummary({ rows: 4, cols: 4, tiles: 16, printed: 13 }), "griglia 4 righe × 4 colonne, 3 vuoti non stampati");
 });

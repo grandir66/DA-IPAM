@@ -7,6 +7,8 @@
  */
 import type { EdgeLook, Pt } from "@/lib/topology/edge-look";
 import { speedLabel } from "@/lib/topology/edge-look";
+import { LR_TRUNK } from "@/lib/topology/map-screen";
+import { CHAR_W } from "@/lib/topology/tree-layout-consts";
 import type { MapLink, MapOrientation } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
 import type { LayoutResult } from "@/lib/topology/tree-layout";
@@ -23,13 +25,14 @@ export interface Rect { x: number; y: number; w: number; h: number }
 /**
  * Il tratto a gradini (raggio 0) dal genitore al figlio. Orizzontale (`tb`): dal fondo del genitore
  * alla cima del figlio, gradino a metà altezza. Verticale (`lr`, spec §12.2): dal lato destro del
- * genitore al lato sinistro del figlio, gradino a metà larghezza.
+ * genitore al lato sinistro del figlio, gradino a LR_TRUNK dal genitore (come a schermo).
  */
 export function stepPoints(orientation: MapOrientation, from: Rect, to: Rect): Pt[] {
   if (orientation === "lr") {
     const sx = from.x + from.w, sy = from.y + from.h / 2;
     const tx = to.x, ty = to.y + to.h / 2;
-    const mx = (sx + tx) / 2;
+    // Il tronco dei figli a LR_TRUNK dal genitore, come a schermo: il braccio verso il figlio è lungo e porta la scritta.
+    const mx = sx + LR_TRUNK;
     return sy === ty ? [{ x: sx, y: sy }, { x: tx, y: ty }] : [{ x: sx, y: sy }, { x: mx, y: sy }, { x: mx, y: ty }, { x: tx, y: ty }];
   }
   const sx = from.x + from.w / 2, sy = from.y + from.h;
@@ -105,5 +108,22 @@ export function redundantCables(tree: TreeResult, drawn: ReadonlySet<string>, na
 export function drawingBoxes(layout: LayoutResult): Rect[] {
   const out: Rect[] = [];
   for (const n of layout.nodes.values()) out.push(n.role === "box" && n.parent ? { x: n.x, y: n.y - 18, w: n.w, h: n.h + 18 } : { x: n.x, y: n.y, w: n.w, h: n.h });
+  return out;
+}
+
+/**
+ * La scritta di una linea su più righe, a capo solo fra un pezzo e l'altro («1G ·» / «⚡ 1,7 W»),
+ * larga al più `maxWidth` px stimati a CHAR_W per carattere; un pezzo più largo resta intero.
+ * In verticale come a schermo (lrLabelMaxWidth): oltre il braccio verso il figlio toccava il tronco (Task 5).
+ */
+export function wrapLabel(tokens: readonly string[], maxWidth: number): string[] {
+  const pieces = tokens.map((t, i) => (i < tokens.length - 1 ? `${t} ·` : t));
+  const out: string[] = [];
+  let line = "";
+  for (const p of pieces) {
+    const next = line ? `${line} ${p}` : p;
+    if (line && next.length * CHAR_W > maxWidth) { out.push(line); line = p; } else line = next;
+  }
+  if (line) out.push(line);
   return out;
 }

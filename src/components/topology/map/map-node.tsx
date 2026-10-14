@@ -115,15 +115,39 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
         <TopoIcon type={n.type} size={26} className="shrink-0" />
         <div className="min-w-0 flex-1 leading-4">
           {/* Col «+N» in alto a destra il nome si ferma prima: lo copriva (Task 12). */}
+          {/* Il nome ha tutta la riga: «⇄ N» sta in fondo all'ultima riga (Task 5: accanto al nome lo
+              accorciava a «DTS 1-CORE-…», e due centrali diversi avevano lo stesso nome a schermo). */}
           <div className={cn("flex min-w-0 items-center gap-1", data.plus > 0 && "pr-6")}>
-            <div className={cn("min-w-0 flex-1 truncate text-[13px] font-semibold", giu && "text-destructive")}>{fitLabel(n.name, red > 0 ? w - 40 : w)}</div>
+            <div className={cn("min-w-0 flex-1 truncate text-[13px] font-semibold", giu && "text-destructive")}>{fitLabel(n.name, w)}</div>
+          </div>
+          {/* Spec §12.5: il nome è quello del nodo Proxmox; sotto, il nome DNS di prima. */}
+          {n.dnsName && (
+            <div className="truncate text-[13px] text-muted-foreground" title={`Nome DNS dell'apparato: ${n.dnsName}`}>{fitLabel(dnsLine(n) ?? "", w)}</div>
+          )}
+          <div className="flex min-w-0 items-center gap-1">
+            {data.vms && data.onToggleVms ? (
+              <button
+                type="button"
+                className="nodrag block min-w-0 truncate text-left text-[13px] underline-offset-2 hover:underline"
+                title={data.vms.open ? "Nascondi le VM" : "Mostra le VM dentro il riquadro"}
+                onClick={(e) => { e.stopPropagation(); data.onToggleVms?.(); }}
+              >
+                {stato && <span className={cn("mr-1 font-semibold", giu ? "text-destructive" : "text-foreground")}>{stato}</span>}
+                {data.vms.label} {data.vms.open ? "▾" : "▸"}
+              </button>
+            ) : (
+              <div className="min-w-0 truncate text-[13px] text-muted-foreground">
+                {stato && <span className={cn("mr-1 font-semibold", giu ? "text-destructive" : "text-foreground")}>{stato}</span>}
+                {second}
+              </div>
+            )}
             {red > 0 && (
               <span
                 title={data.redundantShown
                   ? `${red} ${red === 1 ? "cavo" : "cavi"} di ridondanza, disegnati sulla mappa`
                   : `${red} ${red === 1 ? "cavo" : "cavi"} di ridondanza: fai clic sul riquadro per vederli, o «Mostra ridondanze»`}
                 className={cn(
-                  "shrink-0 rounded-sm border border-foreground px-1 text-[13px] leading-4",
+                  "ml-auto shrink-0 rounded-sm border border-foreground px-1 text-[13px] leading-4",
                   data.redundantShown ? "bg-foreground font-semibold text-background" : "bg-card text-foreground",
                 )}
               >
@@ -131,26 +155,6 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
               </span>
             )}
           </div>
-          {/* Spec §12.5: il nome è quello del nodo Proxmox; sotto, il nome DNS di prima. */}
-          {n.dnsName && (
-            <div className="truncate text-[13px] text-muted-foreground" title={`Nome DNS dell'apparato: ${n.dnsName}`}>{fitLabel(dnsLine(n) ?? "", w)}</div>
-          )}
-          {data.vms && data.onToggleVms ? (
-            <button
-              type="button"
-              className="nodrag block max-w-full truncate text-left text-[13px] underline-offset-2 hover:underline"
-              title={data.vms.open ? "Nascondi le VM" : "Mostra le VM dentro il riquadro"}
-              onClick={(e) => { e.stopPropagation(); data.onToggleVms?.(); }}
-            >
-              {stato && <span className={cn("mr-1 font-semibold", giu ? "text-destructive" : "text-foreground")}>{stato}</span>}
-              {data.vms.label} {data.vms.open ? "▾" : "▸"}
-            </button>
-          ) : (
-            <div className="truncate text-[13px] text-muted-foreground">
-              {stato && <span className={cn("mr-1 font-semibold", giu ? "text-destructive" : "text-foreground")}>{stato}</span>}
-              {second}
-            </div>
-          )}
         </div>
       </div>
       {data.attached && !lr && <span className="absolute top-[9px] left-full w-[10px] border-t border-muted-foreground" />}

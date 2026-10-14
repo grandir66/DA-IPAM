@@ -20,7 +20,8 @@
 import { Fragment } from "react";
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, type Edge, type EdgeProps } from "@xyflow/react";
 import { edgeLook, pathPoints, wavyPath } from "@/lib/topology/edge-look";
-import { LR_TRUNK, lrLabelMaxWidth } from "@/lib/topology/map-screen";
+import { LR_TRUNK, lrLabelMaxWidth, redundantLabelAt, type Rect } from "@/lib/topology/map-screen";
+import { CHAR_W } from "@/lib/topology/tree-layout-consts";
 import type { MapLink, MapOrientation } from "@/lib/topology/model-types";
 
 /** Il tratto dell'albero senza un collegamento proprio (verso il gruppo degli AP). */
@@ -34,6 +35,8 @@ export type MapEdgeData = {
   /** Da che parte della verticale va l'etichetta (le porte del riquadro stanno dall'altra). */
   labelSide: "left" | "right";
   orientation: MapOrientation;
+  /** Ridondanza: i riquadri su cui la sua parola non deve finire (Task 5). */
+  avoid?: readonly Rect[] | null;
 };
 
 const DOUBLE_GAP = 2.6;
@@ -56,7 +59,7 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
     ? `translate(${targetX - 4}px, ${targetY - 1}px) translate(-100%, -100%)`
     : data.inTree
       ? `translate(${targetX}px, ${labelY}px) translate(${data.labelSide === "left" ? "calc(-100% - 4px)" : "4px"}, calc(-100% - 1px))`
-      : `translate(${labelX}px, ${labelY}px) translate(-50%, -50%)`;
+      : redundantAt(path, look.tokens, data.avoid, labelX, labelY);
   return (
     <>
       <BaseEdge id={id} path={d} interactionWidth={18} style={{ stroke, strokeWidth: outer, strokeDasharray: dash, strokeLinecap: cap, fill: "none" }} />
@@ -92,6 +95,14 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
       )}
     </>
   );
+}
+
+/** La parola di una ridondanza: vicino alla metà, ma fuori dai riquadri (si leggeva «…nza» sotto il gruppo degli AP). */
+function redundantAt(path: string, tokens: readonly string[], avoid: readonly Rect[] | null | undefined, midX: number, midY: number): string {
+  const p = avoid?.length
+    ? redundantLabelAt(pathPoints(path), { w: tokens.join(" · ").length * CHAR_W + 8, h: 16 }, avoid)
+    : { x: midX, y: midY };
+  return `translate(${p.x}px, ${p.y}px) translate(-50%, -50%)`;
 }
 
 /** Verticale: dal fondo del riquadro giù fino alla riga dell'attaccato, poi dentro da sinistra (un trattino a squadra). */

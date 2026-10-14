@@ -122,3 +122,28 @@ export function neighbours(plan: Pick<SheetPlan, "rows" | "cols" | "tiles">, t: 
   const at = (row: number, col: number) => (plan.tiles.some((u) => u.row === row && u.col === col && !u.empty) ? `${row}-${col}` : null);
   return { up: at(t.row - 1, t.col), down: at(t.row + 1, t.col), left: at(t.row, t.col - 1), right: at(t.row, t.col + 1) };
 }
+
+/** Quanta parte del primo foglio resta almeno alla panoramica (il resto: intestazione, legenda, cavi). */
+const PANORAMA_SHARE_H = 0.45;
+/** I numeri «r-c» della panoramica non scendono sotto questa altezza sulla carta. */
+const GRID_LABEL_MM = 5;
+
+/**
+ * Grandezza dei numeri «r-c» sulla panoramica, in px del disegno (Task 5). Almeno 5 mm sulla carta
+ * (al 6 % del tassello, in una panoramica a striscia uscivano alti 2 mm) e almeno il 6 % del tassello;
+ * mai più alti di un terzo del tassello né più larghi di lui («3-3 vuoto» compreso).
+ */
+export function gridLabelSize(plan: Pick<SheetPlan, "tiles" | "pageMm">, grid: { w: number; h: number }): number {
+  const minW = Math.min(...plan.tiles.map((t) => t.w)), minH = Math.min(...plan.tiles.map((t) => t.h));
+  const mmPerPx = Math.min(plan.pageMm.w / Math.max(1, grid.w), (plan.pageMm.h * PANORAMA_SHARE_H) / Math.max(1, grid.h));
+  const longest = Math.max(...plan.tiles.map((t) => `${t.row}-${t.col}${t.empty ? " vuoto" : ""}`.length));
+  const want = Math.max(Math.min(minW, minH) * 0.06, GRID_LABEL_MM / mmPerPx);
+  return Math.min(want, minH * 0.35, minW / (longest * 0.6));
+}
+
+/** «griglia 1 riga × 10 colonne, 1 vuoto non stampato»: la riga del primo foglio, al singolare quando serve. */
+export function gridSummary(p: { rows: number; cols: number; tiles: number; printed: number }): string {
+  const empty = p.tiles - p.printed;
+  return `griglia ${p.rows} ${p.rows === 1 ? "riga" : "righe"} × ${p.cols} ${p.cols === 1 ? "colonna" : "colonne"}`
+    + (empty > 0 ? `, ${empty} ${empty === 1 ? "vuoto non stampato" : "vuoti non stampati"}` : "");
+}

@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectionMode, ReactFlow, useReactFlow, type Edge, type Node, type NodeChange, type OnConnectEnd } from "@xyflow/react";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { isUncensusedVmId } from "@/lib/topology/map-menus";
-import { centerViewport, lineHandles, moreAttachedAt, redundancyCounts, redundantEnds, visibleEdges } from "@/lib/topology/map-screen";
+import { centerViewport, labelBoxes, lineHandles, moreAttachedAt, redundancyCounts, redundantEnds, visibleEdges, type Rect } from "@/lib/topology/map-screen";
 import type { LayoutResult } from "@/lib/topology/tree-layout";
 import type { MapLink } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
@@ -198,12 +198,15 @@ export function MapCanvas(p: Props) {
       }
     }
     // Ridondanze a richiesta (spec §12.5): tutte con «Mostra ridondanze», altrimenti solo quelle del riquadro scelto.
+    // La parola «ridondanza» si scrive dove non copre un riquadro (Task 5): servono i riquadri da evitare.
+    let avoid: Rect[] | null = null;
     for (const l of visibleEdges(drawable, { showAll: p.showExtra, selected: p.selected })) {
       if (!l.redundant) continue;
+      avoid ??= labelBoxes(layout.nodes.values(), layout.apGroups);
       const a = layout.nodes.get(l.a)!, b = layout.nodes.get(l.b)!;
       // Orizzontale: scende dal riquadro più in alto; verticale: dal più a sinistra al più a destra.
       const [s, t] = redundantEnds(o, a, b);
-      const data: MapEdgeData = { link: l, inTree: false, labelSide: "left", orientation: o };
+      const data: MapEdgeData = { link: l, inTree: false, labelSide: "left", orientation: o, avoid };
       out.push({ id: `x:${l.id}`, source: s, target: t, sourceHandle: h.source, targetHandle: h.target, type: "map", selectable: false, focusable: false, data });
     }
     return out;

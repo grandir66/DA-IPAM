@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   FIT_MAX, FIT_MIN, HANDLE_ATT, HANDLE_IN, HANDLE_IN_LR, HANDLE_OUT, HANDLE_OUT_LR, LR_TRUNK,
-  centerViewport, fitWidthViewport, lineHandles, lrLabelMaxWidth, moreAttachedAt, printHref, redundancyCounts, redundantEnds, visibleEdges,
+  centerViewport, fitWidthViewport, labelBoxes, lineHandles, lrLabelMaxWidth, moreAttachedAt, printHref, redundancyCounts, redundantEnds, redundantLabelAt, visibleEdges,
 } from "@/lib/topology/map-screen";
 import { ATT_INDENT, ATT_MAX, ATT_ROW } from "@/lib/topology/tree-layout-consts";
 
@@ -126,4 +126,47 @@ test("redundancyCounts: «⇄ N» conta le ridondanze di ogni riquadro, da tutte
   assert.equal(c.get("dev:4"), 2);
   assert.equal(c.has("dev:1"), false);
   assert.equal(c.size, 3);
+});
+
+// Task 5 (visto a schermo sulla copia del cliente A): con «Mostra ridondanze» 6 parole «ridondanza» su 8
+// stavano a metà della linea sopra un riquadro o sotto il gruppo degli AP, e si leggeva «…nza».
+const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+test("parola della ridondanza: a metà se lì non c'è niente", () => {
+  const pts = [{ x: 0, y: 0 }, { x: 400, y: 0 }];
+  assert.deepEqual(redundantLabelAt(pts, { w: 80, h: 16 }, []), { x: 200, y: 0 });
+});
+
+test("parola della ridondanza: si sposta lungo la linea fuori dai riquadri, mai sopra uno", () => {
+  // Un gradino che passa dietro a un riquadro proprio a metà percorso.
+  const pts = [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 400 }, { x: 600, y: 400 }];
+  const box = { x: 250, y: 150, w: 120, h: 100 };
+  const size = { w: 90, h: 16 };
+  const at = redundantLabelAt(pts, size, [box]);
+  assert.equal(overlaps({ x: at.x - size.w / 2, y: at.y - size.h / 2, ...size }, box), false);
+  // Sta sulla linea: sul tratto verticale x=300, o su uno dei due orizzontali.
+  assert.ok(at.x === 300 || at.y === 0 || at.y === 400, JSON.stringify(at));
+  // Il più vicino possibile a metà (la metà del percorso è a y=200 sul tratto verticale).
+  assert.equal(at.x, 300);
+});
+
+test("parola della ridondanza: se tutto il percorso è coperto resta a metà (non sparisce)", () => {
+  const pts = [{ x: 0, y: 0 }, { x: 200, y: 0 }];
+  assert.deepEqual(redundantLabelAt(pts, { w: 60, h: 16 }, [{ x: -50, y: -50, w: 300, h: 100 }]), { x: 100, y: 0 });
+});
+
+test("riquadri da evitare: riquadri con la riga delle porte sopra, gruppi degli AP, attaccati", () => {
+  const boxes = labelBoxes(
+    [
+      { x: 10, y: 100, w: 170, h: 44, role: "box" as const },
+      { x: 10, y: 160, w: 160, h: 18, role: "attached" as const },
+    ],
+    [{ x: 300, y: 0, w: 316, h: 120 }],
+  );
+  assert.deepEqual(boxes, [
+    { x: 10, y: 82, w: 170, h: 62 },
+    { x: 10, y: 160, w: 160, h: 18 },
+    { x: 300, y: 0, w: 316, h: 120 },
+  ]);
 });

@@ -104,3 +104,60 @@ export function redundancyCounts(links: readonly Ends[]): Map<string, number> {
   }
   return out;
 }
+
+export type Rect = { x: number; y: number; w: number; h: number };
+type Pt = { x: number; y: number };
+
+/** Alta quanto la riga delle porte scritta sopra un riquadro («Port 11 → SFP+ 1»). */
+const PORT_ROW = 18;
+
+/**
+ * Dove una scritta non deve finire (Task 5): i riquadri con la riga delle porte sopra, gli
+ * attaccati, i gruppi degli AP. Coordinate della disposizione.
+ */
+export function labelBoxes(
+  nodes: Iterable<Rect & { role: "box" | "ap" | "attached" }>,
+  groups: Iterable<Rect>,
+): Rect[] {
+  const out: Rect[] = [];
+  for (const n of nodes) out.push(n.role === "box" ? { x: n.x, y: n.y - PORT_ROW, w: n.w, h: n.h + PORT_ROW } : { x: n.x, y: n.y, w: n.w, h: n.h });
+  for (const g of groups) out.push({ x: g.x, y: g.y, w: g.w, h: g.h });
+  return out;
+}
+
+/**
+ * Il centro della parola di una ridondanza («1G · ridondanza», Task 5). A metà percorso se lì
+ * non tocca niente; altrimenti il punto della linea più vicino alla metà in cui la scritta non
+ * tocca nessun riquadro. Se la linea è tutta coperta resta a metà: meglio sopra un riquadro
+ * che sparita. Si prova un punto ogni 8 px.
+ */
+export function redundantLabelAt(points: readonly Pt[], size: { w: number; h: number }, avoid: readonly Rect[]): Pt {
+  const segs: Array<{ a: Pt; b: Pt; len: number; from: number }> = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len === 0) continue;
+    segs.push({ a, b, len, from: total });
+    total += len;
+  }
+  const at = (s: number): Pt => {
+    const seg = segs.find((g) => s <= g.from + g.len) ?? segs[segs.length - 1];
+    const t = seg ? Math.min(1, Math.max(0, (s - seg.from) / seg.len)) : 0;
+    return seg ? { x: seg.a.x + (seg.b.x - seg.a.x) * t, y: seg.a.y + (seg.b.y - seg.a.y) * t } : (points[0] ?? { x: 0, y: 0 });
+  };
+  const free = (p: Pt) => {
+    const r = { x: p.x - size.w / 2 - 2, y: p.y - size.h / 2 - 2, w: size.w + 4, h: size.h + 4 };
+    return !avoid.some((b) => r.x < b.x + b.w && b.x < r.x + r.w && r.y < b.y + b.h && b.y < r.y + r.h);
+  };
+  const mid = total / 2;
+  const STEP = 8;
+  for (let d = 0; d <= mid; d += STEP) {
+    for (const s of d === 0 ? [mid] : [mid - d, mid + d]) {
+      const p = at(s);
+      if (free(p)) return { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 };
+    }
+  }
+  const m = at(mid);
+  return { x: Math.round(m.x * 10) / 10, y: Math.round(m.y * 10) / 10 };
+}

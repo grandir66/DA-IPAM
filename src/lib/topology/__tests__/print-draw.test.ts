@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { edgeLook } from "@/lib/topology/edge-look";
 import { LINK_ATTRS_DEFAULT, type MapLink, type MapNode, type TopologyModel } from "@/lib/topology/model-types";
-import { GREY, INK, PAPER, edgeLabelAt, printStrokes, redundantCables, stepPoints } from "@/lib/topology/print-draw";
+import { GREY, INK, PAPER, edgeLabelAt, printStrokes, redundantCables, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
 import { buildPrintView } from "@/lib/topology/print-view";
 import type { TreeResult } from "@/lib/topology/tree";
 
@@ -29,7 +29,9 @@ function model(nodes: MapNode[], links: MapLink[] = []): TopologyModel {
 
 test("linea a gradini: in verticale dal lato destro del genitore al lato sinistro del figlio", () => {
   const p = stepPoints("lr", { x: 40, y: 100, w: 200, h: 44 }, { x: 330, y: 300, w: 180, h: 44 });
-  assert.deepEqual(p, [{ x: 240, y: 122 }, { x: 285, y: 122 }, { x: 285, y: 322 }, { x: 330, y: 322 }]);
+  // Il gradino corre a LR_TRUNK (14 px) dal genitore, come a schermo (Task 5: a metà fra le colonne la
+  // scritta «1G · ⚡ 1,7 W», più lunga del braccio, stava a cavallo del tronco).
+  assert.deepEqual(p, [{ x: 240, y: 122 }, { x: 254, y: 122 }, { x: 254, y: 322 }, { x: 330, y: 322 }]);
   // Alla stessa altezza: un tratto solo.
   assert.equal(stepPoints("lr", { x: 40, y: 100, w: 200, h: 44 }, { x: 330, y: 100, w: 180, h: 44 }).length, 2);
 });
@@ -105,4 +107,14 @@ test("vista da stampare: orientamento della mappa, verticale se non detto, ridon
   assert.deepEqual(lr.tree.links.filter((l) => l.redundant).map((l) => l.id), ["c"]);
   const tb = buildPrintView(m, 3, { map, nodes: ["dev:1", "dev:2", "dev:3"], tweaks: [], orientation: "tb" }, false);
   assert.ok(tb.ok && tb.layout.orientation === "tb");
+});
+
+// Task 5, visto nel PDF: «1G · ⚡ 1,7 W» più lunga del braccio verso il figlio toccava il tronco. A schermo
+// va a capo fra una parola e l'altra (lrLabelMaxWidth); in stampa uguale.
+test("scritta della linea in verticale: va a capo fra un pezzo e l'altro se non ci sta", () => {
+  assert.deepEqual(wrapLabel(["1G", "⚡ 1,7 W"], 200), ["1G · ⚡ 1,7 W"]);
+  assert.deepEqual(wrapLabel(["1G", "⚡ 1,7 W"], 60), ["1G ·", "⚡ 1,7 W"]);
+  // Un pezzo più largo dello spazio resta intero (non si spezza «⚡ 1,7 W»).
+  assert.deepEqual(wrapLabel(["10G", "⚡ 12,5 W", "★"], 40), ["10G ·", "⚡ 12,5 W ·", "★"]);
+  assert.deepEqual(wrapLabel([], 60), []);
 });

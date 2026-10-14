@@ -11,7 +11,7 @@ import { FUSO_UTENTI } from "@/lib/db-date";
 import { edgeLook, wavyPath } from "@/lib/topology/edge-look";
 import { LINK_ATTRS_DEFAULT, type MapLink, type TopologyModel } from "@/lib/topology/model-types";
 import { DARK, GREY, INK, LIGHT, MID, PAPER, printStrokes, type RedundantCable } from "@/lib/topology/print-draw";
-import { TILE_HEADER_MM, cablePages, cableRows, neighbours, type SheetPlan, type Tile } from "@/lib/topology/print-tiles";
+import { TILE_HEADER_MM, cablePages, cableRows, gridLabelSize, gridSummary, neighbours, type SheetPlan, type Tile } from "@/lib/topology/print-tiles";
 import type { PrintView } from "@/lib/topology/print-view";
 import type { TopologyStatus } from "@/lib/topology/types";
 import { PrintMap, PrintMapContent } from "./print-map";
@@ -158,8 +158,9 @@ export function PrintSheets({ view, plan, cables, at, withVms }: {
   const { first, perPage } = cableRows(plan.pageMm);
   const L = view.layout;
   const content = <PrintMapContent model={view.model} tree={view.tree} layout={L} orientation={view.orientation} />;
-  // La griglia dei fogli sulla panoramica: numeri grandi quanto il 6 % del tassello, tratto sottile a ogni scala.
-  const label = Math.min(...plan.tiles.map((t) => Math.min(t.w, t.h))) * 0.06;
+  const gridW = Math.max(L.width, ...plan.tiles.map((t) => t.x + t.w)), gridH = Math.max(L.height, ...plan.tiles.map((t) => t.y + t.h));
+  // La griglia dei fogli sulla panoramica: numeri alti almeno 5 mm sulla carta (gridLabelSize), tratto sottile a ogni scala.
+  const label = gridLabelSize(plan, { w: gridW, h: gridH });
   const grid = (
     <g>
       {plan.tiles.map((t) => (
@@ -175,7 +176,6 @@ export function PrintSheets({ view, plan, cables, at, withVms }: {
       ))}
     </g>
   );
-  const gridW = Math.max(L.width, ...plan.tiles.map((t) => t.x + t.w)), gridH = Math.max(L.height, ...plan.tiles.map((t) => t.y + t.h));
   return (
     <>
       <style>{`@page { size: ${plan.paper} ${plan.landscape ? "landscape" : "portrait"}; margin: 10mm; }`}</style>
@@ -186,7 +186,7 @@ export function PrintSheets({ view, plan, cables, at, withVms }: {
             Stampata il {quando.format(at)} · disposizione {view.orientation === "lr" ? "verticale" : "orizzontale"} ·{" "}
             foglio {plan.paper} {plan.landscape ? "orizzontale" : "verticale"} · scala {Math.round(plan.scale * 100)} % ·{" "}
             mappa in {plan.printed === 1 ? "un foglio" : `${plan.printed} fogli`}
-            {plan.tiles.length > 1 ? ` (griglia ${plan.rows} righe × ${plan.cols} colonne${plan.printed < plan.tiles.length ? `, ${plan.tiles.length - plan.printed} vuoti non stampati` : ""})` : ""}
+            {plan.tiles.length > 1 ? ` (${gridSummary({ rows: plan.rows, cols: plan.cols, tiles: plan.tiles.length, printed: plan.printed })})` : ""}
             {withVms ? " · con le VM" : ""}
             {view.missing > 0 ? ` · ${view.missing} oggetti salvati non sono più nell'inventario` : ""}
           </p>

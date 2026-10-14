@@ -10,7 +10,8 @@ import type { ReactNode } from "react";
 import { edgeLook, pathPoints, wavyPath, type Pt } from "@/lib/topology/edge-look";
 import { isUncensusedVmId } from "@/lib/topology/map-menus";
 import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
-import { DARK, GREY, INK, LIGHT, MID, PAPER, edgeLabelAt, pointsPath, printStrokes, stepPoints } from "@/lib/topology/print-draw";
+import { DARK, GREY, INK, LIGHT, MID, PAPER, edgeLabelAt, pointsPath, printStrokes, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
+import { lrLabelMaxWidth } from "@/lib/topology/map-screen";
 import type { TreeResult } from "@/lib/topology/tree";
 import { ATT_INDENT, ATT_MAX, ATT_ROW, CHAR_W, DNS_H, dnsLine, fitLabel, type LayoutResult } from "@/lib/topology/tree-layout";
 import type { TopologyStatus } from "@/lib/topology/types";
@@ -79,7 +80,11 @@ export function PrintMapContent({ model, tree, layout, orientation }: PrintMapPr
     ));
     if (look.tokens.length) {
       const at = edgeLabelAt(orientation, pts);
-      labels.push(<Label key={`t:${child}`} x={at.x} y={at.y} anchor={at.anchor}>{look.tokens.join(" · ")}</Label>);
+      // In verticale va a capo come a schermo: righe impilate verso l'alto, l'ultima appena sopra il braccio.
+      const rows = orientation === "lr" ? wrapLabel(look.tokens, lrLabelMaxWidth(pts[0].x, pts[pts.length - 1].x)) : [look.tokens.join(" · ")];
+      rows.forEach((r, i) => labels.push(
+        <Label key={`t:${child}:${i}`} x={at.x} y={at.y - (rows.length - 1 - i) * 16} anchor={at.anchor}>{r}</Label>,
+      ));
     }
     // Le porte sopra il riquadro: «porta del genitore → porta mia»; in grigio corsivo se non visto.
     const parentPort = link.a === child ? link.bPort : link.aPort;

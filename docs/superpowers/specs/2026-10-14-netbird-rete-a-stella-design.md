@@ -102,6 +102,10 @@ E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
 | 21 | **Una CA interna rilascia un certificato a ogni installazione**, riconosciuto in automatico dagli applicativi: due radici sulle YubiKey in cassaforte, intermedia in DA-Link limitata ai nomi interni, motore `step-ca`, certificati di 4 settimane rinnovati col segreto. | certificati auto-firmati con pin al primo contatto (oggi); una CA a un livello sola in DA-Link; una CA scritta a mano |
 | 22 | **La flotta sopravvive a DA-Link.** Un rinnovo non accorcia mai la licenza in corso (una più restrittiva vale dalla fine di quella attuale); nessuna risposta di DA-Link cambia la configurazione dell'istanza; il firewall locale accetta solo i centrali; la verifica R1–R5 la fa anche DA-ZABBIX. | fiducia piena in DA-Link |
 | 23 | **Chiave di emergenza sulle YubiKey**, più forte della firma di DA-Link: firma bollettini che ritirano la fiducia a un DA-Link compromesso, fanno lavorare la flotta in modalità autonoma fino a una data e presentano il DA-Link nuovo. Arrivano da un canale di riserva o a mano. La flotta si riconfigura senza reinstallarla. | reinstallare ogni oggetto dopo una compromissione; un DA-Link di riserva sempre acceso |
+| 24 | **Il nome stabile di da-vulcan è `da-vulcan.netbird.selfhosted`** (14/10, fase 0). Lo risolve NetBird su ogni peer, edge compresi, senza DNS in più; il client si installa con `--hostname da-vulcan`. Sostituisce il nome MagicDNS nei 193 file censiti (appendice A.5) prima della fase 4. | un nome nel DNS interno (`domarc.it` sui DC), che andrebbe distribuito anche ai remoti |
+| 25 | **La fase 3 è solo di laboratorio** (14/10). DTS è il pilota della fase 2 e l'unico cliente esterno su Tailscale; poi entra il PX-NAS di casa. L'istanza di sede resta in LAN, DA-VA-OVH va su VPN diretta (fase 4), i nodi superati escono dalla tailnet in fase 4. | DA-VA-OVH in NetBird |
+| 26 | **L'agente Python remoto di DA-IPAM si toglie nella tappa C1** (14/10). Nessuno lo usa: una sola riga sull'hub, mai collegata (appendice A.3). | portarlo su NetBird (rischio 9) |
+| 27 | **Il tenant `70791a` (DOMARC-OVH) si fonde in `70791`** nella tappa che porta DA-IPAM in DA-Link, con un backup prima; la sua rete diventa una rete del tenant Domarc. | cancellarlo; tenerlo separato con un campo `codcli` a parte |
 
 ## 3. Da dove si parte (verificato nel codice il 2026-10-14)
 
@@ -1080,9 +1084,9 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
   bollettino può concedere.
 - Come i centrali riconoscono gli oggetti durante l'emergenza, se i loro certificati
   scadono prima della riconfigurazione.
-- Il nome stabile per da-vulcan (rischio 3).
+- ~~Il nome stabile per da-vulcan (rischio 3).~~ Chiuso il 14/10: decisione 24.
 - Il rimedio alla convivenza in `100.64.0.0/10`, se la prova della fase 0 lo richiede.
-- **L'agente Python remoto di DA-IPAM** (`agent/`, raggiunto oggi via Tailscale dalla VM 533).
+- ~~**L'agente Python remoto di DA-IPAM**~~ chiuso il 14/10, decisione 26 (`agent/`, raggiunto oggi via Tailscale dalla VM 533).
   Con un'istanza IPAM per cliente forse non serve più. Si decide se toglierlo o portarlo su
   NetBird, contando prima chi lo usa davvero.
 - Il nome dei due livelli come lo legge il cliente (oggi «solo stato» e «stato + inventario»).

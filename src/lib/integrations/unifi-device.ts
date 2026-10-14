@@ -68,8 +68,15 @@ export interface UnifiUplink {
   uplink_device_name: string | null;
   /** Come il controller lo ha saputo (es. "lldp_uplink"). */
   uplink_source: string | null;
-  /** "wire" o "wireless". */
-  type: string | null;
+  /** "wire" (cavo) o "wireless" (mesh/radio); un valore che non si conosce → null. */
+  type: UnifiUplinkType | null;
+}
+
+export type UnifiUplinkType = "wire" | "wireless";
+
+/** Il tipo di uplink come lo manda il controller: solo i due valori noti, il resto null. */
+function uplinkType(v: unknown): UnifiUplinkType | null {
+  return v === "wire" || v === "wireless" ? v : null;
 }
 
 export interface UnifiDevice {
@@ -181,7 +188,7 @@ function parseUplink(raw: unknown): UnifiUplink | null {
     uplink_remote_port: int(r.uplink_remote_port),
     uplink_device_name: str(r.uplink_device_name),
     uplink_source: str(r.uplink_source),
-    type: str(r.type),
+    type: uplinkType(r.type),
   };
 }
 

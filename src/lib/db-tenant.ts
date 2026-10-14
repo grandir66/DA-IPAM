@@ -5098,16 +5098,24 @@ export function linkNetworkDeviceToPhysicalDevice(deviceId: number, physicalDevi
  */
 export function setNetworkDeviceControllerFacts(
   deviceId: number,
-  f: { controllerMac: string | null; uplinkMac: string | null; uplinkRemotePort: number | null },
+  f: {
+    controllerMac: string | null;
+    uplinkMac: string | null;
+    uplinkRemotePort: number | null;
+    /** Cavo o wireless (topologia fase 2b): si scrive insieme all'uplink, mai da solo. */
+    uplinkType: "wire" | "wireless" | null;
+  },
 ): void {
   const d = db();
   if (f.controllerMac) {
     d.prepare("UPDATE network_devices SET controller_mac = ? WHERE id = ?").run(f.controllerMac, deviceId);
   }
+  // Senza uplink nella lettura (offline, o il controller non lo riporta) restano
+  // MAC, porta, tipo e data di prima: la lettura non sa niente di nuovo.
   if (f.uplinkMac) {
     d.prepare(
-      "UPDATE network_devices SET uplink_mac = ?, uplink_remote_port = ?, uplink_seen_at = datetime('now') WHERE id = ?",
-    ).run(f.uplinkMac, f.uplinkRemotePort, deviceId);
+      "UPDATE network_devices SET uplink_mac = ?, uplink_remote_port = ?, uplink_type = ?, uplink_seen_at = datetime('now') WHERE id = ?",
+    ).run(f.uplinkMac, f.uplinkRemotePort, f.uplinkType, deviceId);
   }
 }
 

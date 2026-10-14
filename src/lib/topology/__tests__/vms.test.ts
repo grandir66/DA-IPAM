@@ -167,3 +167,50 @@ test("senza MAC e senza nome noto, l'IP che la VM dichiara la riconosce (una mac
   const altro = cluster({ vms: [vm(131, "pve-a", { ips: ["198.51.100.99"] })] });
   assert.equal(buildTopologyModel(altro).vms[0].nodeId, null);
 });
+
+test("i MAC delle scansioni si validano: le scansioni vecchie hanno un IP nel campo MAC (dodici cifre che sembrano un MAC)", () => {
+  const raw = JSON.stringify({
+    scanned_at: "2026-05-22T10:00:00.000Z",
+    hosts: [{
+      hostname: "pve-a",
+      network_interfaces: [
+        { name: "vmbr0", mac_address: "192.168.100.123", ip_addresses: "192.0.2.11/24" },
+        { name: "eno1", mac_address: "02-00-00-aa-bb-02", master: "bond0" },
+        { name: "eno2", mac_address: "0200.00aa.bb03", master: "bond0" },
+      ],
+    }],
+    vms: [{ node: "pve-a", vmid: 140, name: "vm-140", status: "running", type: "qemu", ip_addresses: [],
+      networks_details: [{ id: "net0", mac: "192.168.100.124" }, { id: "net1", mac: "02:00:00:aa:cc:04" }] }],
+  });
+  const r = parseProxmoxScan(5, raw);
+  assert.deepEqual(r.hosts[0].macs, ["02:00:00:AA:BB:02"], "l'IP non diventa un MAC; la forma xx-xx-… si normalizza; la forma a tre gruppi no");
+  assert.deepEqual(r.vms[0].macs, ["02:00:00:AA:CC:04"]);
+  // Anche ciò che arriva a placeVms già «in forma di riga» si rivaluta.
+  const i = cluster({ vms: [vm(141, "pve-a", { macs: ["192.168.100.125", "02:00:00:aa:cc:05"] })] });
+  const { vmMacs } = placeVms(i, buildNodeIndex(i.devices, i.hosts, i.knownMacs, i.neighbors));
+  assert.deepEqual([...vmMacs], ["02:00:00:AA:CC:05"]);
+});
+
+test("due letture della stessa VM: IP e MAC della vecchia valgono se la nuova non li ha (VM riconosciuta per IP)", () => {
+  const due = (nuova: Partial<ModelVmRow>) => cluster({
+    devices: [...cluster().devices, dev(7, { name: "srv-windows", device_type: "switch", vendor: "windows", host: "198.51.100.77", port_count: 0 })],
+    vms: [
+      vm(130, "pve-a", { scannedDeviceId: 3, scannedAt: "2026-05-22T10:00:00.000Z", name: "altro-nome", ips: ["198.51.100.77"], macs: ["02:00:00:cc:00:09"] }),
+      vm(130, "pve-a", { scannedDeviceId: 4, scannedAt: "2026-10-13T06:00:00.000Z", name: "altro-nome", ...nuova }),
+    ],
+    scanHosts: [
+      { scannedDeviceId: 3, hostname: "pve-a", ips: ["192.0.2.11"], macs: [] },
+      { scannedDeviceId: 4, hostname: "pve-a", ips: ["192.0.2.11"], macs: [] },
+    ],
+  });
+  const m = buildTopologyModel(due({ ips: [], macs: [] }));
+  assert.equal(m.vms.length, 1);
+  assert.equal(m.vms[0].id, "vm:4:130", "l'id resta quello della lettura più recente");
+  assert.deepEqual(m.vms[0].ips, ["198.51.100.77"]);
+  assert.equal(m.vms[0].nodeId, "dev:7", "riconosciuta per l'IP che solo la lettura vecchia riportava");
+  assert.ok(!m.isolated.includes("dev:7"));
+  // La lettura nuova ha i suoi IP: valgono quelli, la vecchia non aggiunge un indirizzo forse riassegnato.
+  const n = buildTopologyModel(due({ ips: ["198.51.100.99"], macs: ["02:00:00:cc:00:10"] }));
+  assert.deepEqual(n.vms[0].ips, ["198.51.100.99"]);
+  assert.equal(n.vms[0].nodeId, null);
+});

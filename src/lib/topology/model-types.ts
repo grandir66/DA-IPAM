@@ -30,7 +30,7 @@ export interface ModelDeviceRow {
   uplink_mac: string | null;
   uplink_remote_port: number | null;
   uplink_seen_at: string | null;
-  /** Tipo dell'uplink UniFi: 'wire' | 'wireless' (Task 3). Finché non si unisce il ramo D vale null. */
+  /** Tipo dell'uplink UniFi: 'wire' | 'wireless' (Task 3); null se la lettura non l'ha riportato. */
   uplink_type: string | null;
   topology_hidden: number;
   port_count: number;
@@ -101,7 +101,7 @@ export interface LinkOverrideRow {
   a_port: string;
   b_node: string;
   b_port: string;
-  /** 'cavo' | 'fibra' | 'wireless' o null; null anche se la colonna non c'è ancora. */
+  /** 'cavo' | 'fibra' | 'wireless' o null (tipo non indicato); le rotte non scrivono altro. */
   medium: string | null;
 }
 

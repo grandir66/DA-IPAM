@@ -13,7 +13,7 @@ const db = () => getTenantDb(T);
 const w = <R>(fn: () => R): R => withTenant(T, fn);
 
 beforeEach(() => {
-  db().exec("DELETE FROM mac_port_entries; DELETE FROM topology_link_overrides; DELETE FROM switch_ports; DELETE FROM device_neighbors; DELETE FROM network_devices; DELETE FROM hosts; DELETE FROM networks; DELETE FROM locations;");
+  db().exec("DELETE FROM mac_port_entries; DELETE FROM topology_link_overrides; DELETE FROM topology_link_primary; DELETE FROM switch_ports; DELETE FROM device_neighbors; DELETE FROM network_devices; DELETE FROM hosts; DELETE FROM networks; DELETE FROM locations;");
   db().exec(`
     INSERT INTO locations (id, name, parent_id) VALUES (1, 'Sede A', NULL), (2, 'Armadio 1', 1), (3, 'Sede B', NULL);
     INSERT INTO networks (id, cidr, name, gateway) VALUES (1, '10.0.0.0/24', 'LAN', '10.0.0.1'), (2, '10.0.1.0/24', 'VOIP', '10.0.1.1'), (3, '10.0.2.0/24', 'OSPITI', NULL);
@@ -90,10 +90,18 @@ test("soglia «non visto»: 2 di partenza, limiti 1-30", () => {
   setLinkStaleDays(2);
 });
 
-test("getTopologyModelInput: VM dalle scansioni Proxmox (JSON rovinato = nessuna VM), velocità delle porte e ripieghi della fase 2b", () => {
+test("getTopologyModelInput: VM dalle scansioni Proxmox (JSON rovinato = nessuna VM), velocità delle porte, dati della fase 2b dal DB", () => {
   const scan = JSON.stringify({
     scanned_at: "2026-10-13T06:00:00.000Z",
-    hosts: [{ hostname: "pve-a", network_interfaces: [{ name: "vmbr0", mac_address: null, ip_addresses: "192.0.2.11" }] }],
+    hosts: [{
+      hostname: "pve-a", live_read_at: "2026-10-13T06:00:00.000Z",
+      network_interfaces: [
+        // Scansione vecchia (prima della fase 2b): nel campo MAC c'era l'IP. Non è un MAC.
+        { name: "vmbr0", mac_address: "192.168.100.123", ip_addresses: "192.0.2.11" },
+        // Scheda viva (chiave `master`): MAC, stato, velocità dalla macchina.
+        { name: "eno1", type: "eth", mac_address: "02:00:00:00:10:01", state: "up", speed_mbps: "1000", master: "bond0", ip_addresses: null },
+      ],
+    }],
     vms: [{ node: "pve-a", vmid: 100, name: "vm-100", status: "running", type: "qemu", ip_addresses: [], networks_details: [{ id: "net0", mac: "02:00:00:aa:00:01" }] }],
   });
   db().prepare("UPDATE network_devices SET last_proxmox_scan_result = ? WHERE id = 1").run(scan);
@@ -102,9 +110,20 @@ test("getTopologyModelInput: VM dalle scansioni Proxmox (JSON rovinato = nessuna
   w(() => addLinkOverride({ action: "add", a_node: "dev:1", a_port: "ether1", b_node: "dev:2", b_port: "Port 2", note: null }, "prova"));
   const i = w(() => getTopologyModelInput(2, 1_000));
   assert.deepEqual(i.vms.map((v) => [v.scannedDeviceId, v.vmid, v.macs]), [[1, 100, ["02:00:00:AA:00:01"]]]);
-  assert.deepEqual(i.scanHosts.map((h) => [h.scannedDeviceId, h.hostname, h.ips]), [[1, "pve-a", ["192.0.2.11"]]]);
+  assert.deepEqual(i.scanHosts.map((h) => [h.scannedDeviceId, h.hostname, h.ips, h.macs]), [[1, "pve-a", ["192.0.2.11"], ["02:00:00:00:10:01"]]],
+    "entra il MAC della scheda viva, non l'IP che le scansioni vecchie avevano nel campo MAC");
   assert.deepEqual(i.portInfo.map((p) => [p.device_id, p.port_name, p.speed, p.poe_power_mw]), [[2, "Port 2", "1000 Mbps", 4500]]);
-  assert.ok(i.overrides.length >= 1 && i.overrides.every((o) => o.medium === null), "medium si legge null anche se la colonna non c'è");
+  assert.deepEqual(i.overrides.map((o) => o.medium), [null], "una correzione senza tipo resta null");
   assert.deepEqual(i.primaries, []);
   assert.ok(i.devices.every((d) => d.uplink_type === null));
+
+  // I dati della fase 2b vengono dal DB: tipo del collegamento, principale scelto a mano, tipo di uplink.
+  db().prepare("UPDATE topology_link_overrides SET medium = 'fibra'").run();
+  db().prepare("INSERT INTO topology_link_primary (node_id, other_node, node_port, other_port, set_by) VALUES ('dev:2', 'dev:1', 'Port 1', 'ether1', 'prova')").run();
+  db().prepare("UPDATE network_devices SET uplink_type = 'wireless' WHERE id = 2").run();
+  const j = w(() => getTopologyModelInput(2, 1_000));
+  assert.deepEqual(j.overrides.map((o) => o.medium), ["fibra"]);
+  assert.deepEqual(j.primaries, [{ node_id: "dev:2", other_node: "dev:1", node_port: "Port 1", other_port: "ether1" }]);
+  assert.deepEqual(j.devices.map((d) => [d.id, d.uplink_type]), [[1, null], [2, "wireless"]]);
+  db().exec("DELETE FROM topology_link_primary");
 });

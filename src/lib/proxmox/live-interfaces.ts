@@ -24,13 +24,14 @@ export type LiveInterface = {
 };
 
 /**
- * Il comando, alla lettera (piano fase 2b): elenco delle schede in JSON, una riga
- * «---», poi «<percorso> <velocità>» per ogni scheda. Solo letture (`ip link
- * show`, `cat` di /sys): niente che cambi la macchina. Senza `-d`, quindi senza
- * `linkinfo`: il tipo si ricava dal nome quando `linkinfo` manca.
+ * Il comando (piano fase 2b, con `-d` deciso all'unione): elenco delle schede in
+ * JSON, una riga «---», poi «<percorso> <velocità>» per ogni scheda. Solo letture
+ * (`ip link show`, `cat` di /sys): niente che cambi la macchina. `-d` (dettagli)
+ * serve perché solo così `ip -j` stampa `linkinfo.info_kind` (bond, bridge, vlan…):
+ * senza, il tipo verrebbe solo dal nome.
  */
 export const LIVE_INTERFACES_COMMAND =
-  'ip -j link show; echo ---; for f in /sys/class/net/*/speed; do echo "$f $(cat $f 2>/dev/null)"; done';
+  'ip -d -j link show; echo ---; for f in /sys/class/net/*/speed; do echo "$f $(cat $f 2>/dev/null)"; done';
 
 /** Schede virtuali delle VM e del firewall di Proxmox: non sono cavi, si scartano. */
 const VIRTUALI = /^(tap|fwbr|veth|fwpr|fwln)/;
@@ -39,12 +40,19 @@ function asRecord(v: unknown): Record<string, unknown> | null {
   return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
-function kindOf(name: string, info: Record<string, unknown> | null): LiveInterfaceKind {
+/**
+ * Il tipo della scheda: da `linkinfo.info_kind` quando c'è. Con `-d` (l'uscita ha i
+ * campi di dettaglio, `promiscuity` su ogni scheda) una scheda Ethernet SENZA
+ * `info_kind` è fisica, qualunque nome abbia (es. `nic0`): le schede virtuali
+ * dichiarano tutte il loro tipo. Senza dettagli si ripiega sul nome.
+ */
+function kindOf(name: string, info: Record<string, unknown> | null, detailed: boolean, ether: boolean): LiveInterfaceKind {
   const infoKind = info?.info_kind;
   if (typeof infoKind === "string") {
     if (infoKind === "bond" || infoKind === "bridge" || infoKind === "vlan") return infoKind;
     return "other";
   }
+  if (detailed && ether) return "eth";
   if (name.includes(".")) return "vlan";
   if (/^bond/.test(name)) return "bond";
   if (/^(vmbr|br)/.test(name)) return "bridge";
@@ -59,7 +67,7 @@ function stateOf(operstate: unknown): LiveInterface["state"] {
 }
 
 /**
- * L'uscita di `ip -j link show` più le velocità (da `parseSpeedLines`) in schede.
+ * L'uscita di `ip -d -j link show` più le velocità (da `parseSpeedLines`) in schede.
  * Il MAC è quello della scheda (`permaddr`, per i membri di un bond che prendono
  * il MAC del bond), altrimenti `address`; solo per le schede Ethernet. Velocità
  * ≤ 0 o ignota = null. Loopback e schede virtuali (tap, fwbr, veth, fwpr, fwln)
@@ -82,7 +90,7 @@ export function parseLiveInterfaces(ipLinkJson: unknown, speeds: Record<string, 
       state: stateOf(o.operstate),
       speedMbps: typeof speed === "number" && Number.isFinite(speed) && speed > 0 ? speed : null,
       master: typeof o.master === "string" && o.master ? o.master : null,
-      kind: kindOf(name, asRecord(o.linkinfo)),
+      kind: kindOf(name, asRecord(o.linkinfo), "promiscuity" in o, o.link_type === "ether"),
     });
   }
   return out;

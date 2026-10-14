@@ -1,5 +1,5 @@
 // Schede vive di un hypervisor (spec §11.5, piano fase 2b Task 4): un solo
-// comando SSH in sola lettura (`ip -j link show` + velocità da /sys/class/net)
+// comando SSH in sola lettura (`ip -d -j link show` + velocità da /sys/class/net)
 // e la sua lettura, logica pura. Dati inventati con la forma vera dell'uscita di
 // iproute2 su un nodo Proxmox (bond attivo/riserva, bridge, VLAN, tap delle VM).
 import { test } from "node:test";
@@ -52,6 +52,28 @@ test("parseLiveInterfaces: il tipo viene da linkinfo.info_kind quando c'è, altr
   );
 });
 
+test("parseLiveInterfaces con `-d`: info_kind dice bond, bridge e VLAN; una scheda Ethernet senza info_kind è fisica anche con un nome nuovo", () => {
+  // Forma vera di `ip -d -j link show`: ogni scheda ha promiscuity, min_mtu…; i membri hanno solo info_slave_kind.
+  const d = { promiscuity: 0, allmulti: 0, min_mtu: 68, max_mtu: 9000, num_tx_queues: 1, num_rx_queues: 1 };
+  const live = parseLiveInterfaces(
+    [
+      { ifname: "nic0", operstate: "UP", link_type: "ether", master: "lan0", address: "02:00:00:00:30:01", ...d, linkinfo: { info_slave_kind: "bridge", info_slave_data: { state: "forwarding" } } },
+      { ifname: "nic1", operstate: "DOWN", link_type: "ether", address: "02:00:00:00:30:02", ...d },
+      { ifname: "lan0", operstate: "UP", link_type: "ether", address: "02:00:00:00:30:01", ...d, linkinfo: { info_kind: "bridge", info_data: { stp_state: 0 } } },
+      { ifname: "dummy0", operstate: "UNKNOWN", link_type: "ether", address: "02:00:00:00:30:03", ...d, linkinfo: { info_kind: "dummy" } },
+    ],
+    {},
+  );
+  assert.deepEqual(live.map((l) => [l.name, l.kind, l.master]), [
+    ["nic0", "eth", "lan0"],
+    ["nic1", "eth", null],
+    ["lan0", "bridge", null],
+    ["dummy0", "other", null],
+  ]);
+  // Senza `-d` (nessun campo di dettaglio) un nome che non si riconosce resta «other»: il nome è solo il ripiego.
+  assert.equal(parseLiveInterfaces([{ ifname: "nic1", operstate: "UP", link_type: "ether", address: "02:00:00:00:30:02" }], {})[0].kind, "other");
+});
+
 test("parseLiveInterfaces: un'uscita che non è un elenco, o voci senza nome, non fanno danni", () => {
   assert.deepEqual(parseLiveInterfaces(null, {}), []);
   assert.deepEqual(parseLiveInterfaces({ ifname: "eno1" }, {}), []);
@@ -84,7 +106,8 @@ test("parseLiveOutput: JSON di ip, poi «---», poi le velocità", () => {
 test("il comando è uno solo e in sola lettura, scritto alla lettera", () => {
   assert.equal(
     LIVE_INTERFACES_COMMAND,
-    'ip -j link show; echo ---; for f in /sys/class/net/*/speed; do echo "$f $(cat $f 2>/dev/null)"; done',
+    // `-d`: senza, `ip -j link` non stampa `linkinfo` e il tipo verrebbe solo dal nome.
+    'ip -d -j link show; echo ---; for f in /sys/class/net/*/speed; do echo "$f $(cat $f 2>/dev/null)"; done',
   );
   // Sola lettura: l'unica redirezione è quella degli errori verso /dev/null; nessun verbo che scrive.
   const senzaErrori = LIVE_INTERFACES_COMMAND.replaceAll("2>/dev/null", "");

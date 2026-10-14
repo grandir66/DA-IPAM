@@ -1,5 +1,5 @@
 // Uscita del comando delle schede vive di un nodo Proxmox INVENTATO, con la
-// forma vera di iproute2 (`ip -j link show`, senza -d: linkinfo solo dove serve
+// forma vera di iproute2 (`ip -j link show` senza i campi di -d: linkinfo solo dove serve
 // a provarne la lettura) e del ciclo sulle velocità di /sys/class/net.
 // MAC 02:00:00:…, nessun dato di clienti.
 

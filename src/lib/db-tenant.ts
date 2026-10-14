@@ -9081,18 +9081,14 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
     vms.push(...p.vms);
     scanHosts.push(...p.hosts);
   }
-  // `medium` arriva con la migrazione 2b (ramo D): su un DB che non ce l'ha ancora si legge come null.
-  const hasMedium = (d.prepare("PRAGMA table_info(topology_link_overrides)").all() as Array<{ name: string }>).some((c) => c.name === "medium");
   return {
-    devices: (d.prepare(`
+    devices: d.prepare(`
       SELECT nd.id, nd.name, nd.host, nd.device_type, nd.vendor, nd.model, nd.enabled, nd.host_id, nd.physical_device_id,
-             nd.location_id, nd.controller_mac, nd.uplink_mac, nd.uplink_remote_port, nd.uplink_seen_at, nd.topology_hidden,
+             nd.location_id, nd.controller_mac, nd.uplink_mac, nd.uplink_remote_port, nd.uplink_type, nd.uplink_seen_at, nd.topology_hidden,
              COALESCE(sp.n, 0) AS port_count
         FROM network_devices nd
         LEFT JOIN (SELECT device_id, COUNT(*) AS n FROM switch_ports GROUP BY device_id) sp ON sp.device_id = nd.id
-       ORDER BY nd.id`).all() as Array<Omit<ModelInput["devices"][number], "uplink_type">>)
-      // fase 2b: si legge dal DB all'unione con la tappa D
-      .map((r) => ({ ...r, uplink_type: null })),
+       ORDER BY nd.id`).all() as ModelInput["devices"],
     hosts: d.prepare(`
       SELECT id, network_id, ip, mac, hostname, custom_name, classification, status, physical_device_id
         FROM hosts ORDER BY id`).all() as ModelInput["hosts"],
@@ -9105,12 +9101,12 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
     networks: d.prepare("SELECT id, cidr, name, gateway, location_id FROM networks ORDER BY id").all() as ModelInput["networks"],
     knownMacs: getNetworkDeviceKnownMacs(),
     overrides: d
-      .prepare(`SELECT id, action, a_node, a_port, b_node, b_port, ${hasMedium ? "medium" : "NULL AS medium"} FROM topology_link_overrides ORDER BY id`)
+      .prepare("SELECT id, action, a_node, a_port, b_node, b_port, medium FROM topology_link_overrides ORDER BY id")
       .all() as ModelInput["overrides"],
     macPorts: d.prepare(`
       SELECT device_id, mac, port_name, timestamp, source FROM mac_port_entries
        WHERE timestamp >= datetime('now', '-30 days') ORDER BY device_id, port_name, mac`).all() as ModelInput["macPorts"],
-    primaries: [], // fase 2b: si legge dal DB all'unione con la tappa D
+    primaries: listTopologyLinkPrimaries(),
     portInfo: d.prepare(`
       SELECT device_id, port_name, speed, poe_status, poe_power_mw FROM switch_ports
        WHERE COALESCE(speed, '') <> '' OR COALESCE(poe_power_mw, 0) > 0 ORDER BY device_id, port_index`).all() as ModelInput["portInfo"],

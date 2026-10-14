@@ -69,6 +69,8 @@ export function attachMacs(
     const otherId = resolveNode(idx, { mac });
     const other = otherId ? idx.nodes.get(otherId) : undefined;
     if (other && other.id !== best.node && nodeClass(other) !== "client") {
+      // Spec §11.1: ciò che un router vede sul bridge o su una VLAN non prova nessun cavo.
+      if (!best.counting) continue;
       const key = [best.node, other.id].sort().join("|");
       if (!linked.has(key)) {
         linked.add(key);

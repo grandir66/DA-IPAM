@@ -130,3 +130,42 @@ test("un MAC VRRP su una porta di bordo non crea un collegamento mac_table e non
   assert.deepEqual(r.attachLinks, []);
   assert.deepEqual(r.portClients.map((p) => p.clients.map((c) => [c.nodeId, c.name])), [[[null, null]]]);
 });
+
+// Spec §11.1: ciò che un router vede sul bridge non prova nessun cavo.
+for (const tipo of ["server_linux", "server"] as const) {
+  test(`${tipo} visto solo dal router sul bridge: nessun collegamento, nessun client`, () => {
+    const m = mac(7);
+    const i = input({
+      hosts: [host(1, { ip: "10.0.1.50", mac: m, classification: tipo })],
+      devices: [
+        dev(1, { name: "RTR-1", device_type: "router", host: "10.0.0.1" }),
+        dev(2, { name: "SW-2", host: "10.0.0.2" }),
+        dev(3, { name: "SRV-3", device_type: tipo, host: "10.0.1.50" }),
+      ],
+      neighbors: [],
+      uplinkPorts: [],
+      knownMacs: [{ device_id: 3, mac: m }],
+      macPorts: [mp(1, m, "bridge")],
+    });
+    const r = run(i);
+    assert.deepEqual(r.attachLinks, []);
+    assert.deepEqual(r.portClients, []);
+  });
+
+  test(`${tipo} visto anche sullo switch (Port 15): collegamento mac_table switch ↔ server`, () => {
+    const m = mac(7);
+    const i = input({
+      devices: [
+        dev(1, { name: "RTR-1", device_type: "router", host: "10.0.0.1" }),
+        dev(2, { name: "SW-2", host: "10.0.0.2" }),
+        dev(3, { name: "SRV-3", device_type: tipo, host: "10.0.1.50" }),
+      ],
+      neighbors: [],
+      uplinkPorts: [],
+      knownMacs: [{ device_id: 3, mac: m }],
+      macPorts: [mp(1, m, "bridge"), mp(2, m, "Port 15")],
+    });
+    const r = run(i);
+    assert.deepEqual(r.attachLinks.map((l) => [l.a, l.aPort, l.b, l.source]), [["dev:2", "Port 15", "dev:3", "mac_table"]]);
+  });
+}

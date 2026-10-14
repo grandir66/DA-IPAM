@@ -104,3 +104,57 @@ test("stessi dati in ordine diverso: stesso risultato", () => {
   const b = run(input({ devices: [...devices].reverse(), neighbors: [...neighbors].reverse() }));
   assert.deepEqual(a, b);
 });
+
+// Spec §11.1: un router aggiunge solo gli apparati direttamente collegati.
+const rtr = (id: number) => dev(id, { name: `RTR-${id}`, device_type: "router", vendor: "mikrotik" });
+const via = (n: number, over: Partial<ModelNeighborRow> = {}) => nb(1, { remote_ip: `10.0.0.${n}`, remote_device_name: `SW-${n}`, protocol: "mndp", ...over });
+
+test("router: cinque vicini MNDP sul bridge non creano collegamenti", () => {
+  const i = input({
+    devices: [rtr(1), dev(2), dev(3), dev(4), dev(5), dev(6)],
+    neighbors: [2, 3, 4, 5, 6].map((n) => via(n, { local_port: "bridge" })),
+  });
+  const { links, unmatched } = run(i);
+  assert.deepEqual(links, []);
+  assert.equal(unmatched.length, 0, "i vicini abbinati restano abbinati: non diventano «non abbinati»");
+});
+
+test("router: un solo vicino LLDP su una porta fisica è diretto", () => {
+  const i = input({ devices: [rtr(1), dev(2)], neighbors: [via(2, { local_port: "ether3", protocol: "lldp" })] });
+  assert.deepEqual(run(i).links.map((l) => [l.a, l.aPort, l.b, l.source]), [["dev:1", "ether3", "dev:2", "lldp"]]);
+});
+
+test("router: porte logiche (VLAN, VRRP, liste con punto o virgola) non sono dirette", () => {
+  for (const porta of ["vlan10", "vrrp1", "ether1-2.5,bridge", "ether1.20"]) {
+    const i = input({ devices: [rtr(1), dev(2)], neighbors: [via(2, { local_port: porta })] });
+    assert.deepEqual(run(i).links, [], porta);
+  }
+});
+
+test("router: tre vicini su ether1, solo lo switch che vede il router sulla sua Port 24 è collegato", () => {
+  const i = input({
+    devices: [rtr(1), dev(2), dev(3), dev(4)],
+    neighbors: [
+      via(2, { local_port: "ether1" }), via(3, { local_port: "ether1" }), via(4, { local_port: "ether1" }),
+      nb(3, { local_port: "Port 24", remote_ip: "10.0.0.1", remote_device_name: "RTR-1", remote_port: "ether1" }),
+    ],
+  });
+  assert.deepEqual(run(i).links.map((l) => [l.a, l.b]), [["dev:1", "dev:3"]]);
+});
+
+test("router: due vicini su una porta fisica, confermati dall'uplink UniFi dell'altro lato", () => {
+  const i = input({
+    devices: [rtr(1), dev(2, { uplink_mac: "aa:bb:cc:00:00:01", uplink_seen_at: "2026-10-13 03:00:00" }), dev(3)],
+    neighbors: [via(2, { local_port: "ether1" }), via(3, { local_port: "ether1" })],
+  });
+  i.devices[0].controller_mac = "aa:bb:cc:00:00:01";
+  assert.deepEqual(run(i).links.map((l) => [l.a, l.b, l.source]).sort(), [["dev:2", "dev:1", "unifi_uplink"]].sort());
+});
+
+test("switch (non router) con più vicini su una porta: comportamento invariato", () => {
+  const i = input({
+    devices: [dev(1), dev(2), dev(3)],
+    neighbors: [via(2, { local_port: "bridge" }), via(3, { local_port: "bridge" })],
+  });
+  assert.deepEqual(run(i).links.map((l) => [l.a, l.b]), [["dev:1", "dev:2"], ["dev:1", "dev:3"]]);
+});

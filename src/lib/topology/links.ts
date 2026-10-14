@@ -48,6 +48,17 @@ function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+function isRouterNode(idx: NodeIndex, id: string): boolean {
+  const t = idx.nodes.get(id)?.type;
+  return t === "router" || t === "firewall";
+}
+
+/** Porta fisica: non bridge, VLAN, VRRP, né un nome logico («ether1-2.5,bridge», liste, sottointerfacce). */
+function isPhysicalPort(port: string): boolean {
+  const p = port.trim().toLowerCase();
+  return p !== "" && !/^(bridge|vlan|vrrp)/.test(p) && !/[.,]/.test(p);
+}
+
 function mergeInto(link: MapLink, c: Candidate): void {
   const same = c.a === link.a;
   const cA = same ? c.aPort : c.bPort;
@@ -102,6 +113,7 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex): { links: 
   const neighbors = [...input.neighbors].sort(
     (x, y) => x.device_id - y.device_id || cmp(x.local_port, y.local_port) || cmp(x.remote_device_name, y.remote_device_name) || cmp(x.remote_port, y.remote_port),
   );
+  const resolved: Array<{ n: (typeof neighbors)[number]; a: string; b: string }> = [];
   for (const n of neighbors) {
     const a = `dev:${n.device_id}`;
     if (!idx.nodes.has(a)) continue;
@@ -111,6 +123,23 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex): { links: 
       continue;
     }
     if (b === a) continue;
+    resolved.push({ n, a, b });
+  }
+  // Spec §11.1: un router sente tutti gli annunci del suo segmento, anche quelli dietro uno switch.
+  // Un suo vicino diventa collegamento solo se è diretto; gli altri restano negli indici (abbinamento, «non visto»).
+  const conferme = new Set<string>(); // «x>y»: x vede y su una sua porta, o c'è un uplink fra loro
+  for (const c of candidates) if (c.source === "unifi_uplink") { conferme.add(`${c.a}>${c.b}`); conferme.add(`${c.b}>${c.a}`); }
+  for (const r of resolved) if (!isRouterNode(idx, r.a) || isPhysicalPort(r.n.local_port)) conferme.add(`${r.a}>${r.b}`);
+  const sullaPorta = new Map<string, Set<string>>();
+  for (const r of resolved) {
+    const k = `${r.a}|${r.n.local_port}`;
+    sullaPorta.set(k, (sullaPorta.get(k) ?? new Set()).add(r.b));
+  }
+  for (const { n, a, b } of resolved) {
+    if (isRouterNode(idx, a)) {
+      const diretto = isPhysicalPort(n.local_port) && (sullaPorta.get(`${a}|${n.local_port}`)?.size ?? 0) === 1;
+      if (!diretto && !conferme.has(`${b}>${a}`)) continue;
+    }
     candidates.push({ a, aPort: n.local_port, b, bPort: n.remote_port, source: sourceOfProtocol(n.protocol), lastSeen: n.timestamp, uplinkFrom: null });
   }
 

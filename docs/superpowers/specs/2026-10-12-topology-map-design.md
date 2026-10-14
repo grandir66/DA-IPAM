@@ -551,14 +551,56 @@ striscia:
   larga del riquadro più alto).
 - L'export drawio della tappa 5 userà le stesse coordinate; qui non si fa.
 
+### 12.5 Linee più pulite e hypervisor sui core (14/10 pomeriggio, decisioni con Riccardo)
+
+**Cosa ha mostrato il dato vero (copia del cliente A del 14/10).** Due switch centrali, quasi ogni
+apparato collegato a entrambi: l'albero dà un solo padre, ogni secondo cavo diventa una linea
+«ridondanza» che attraversa la mappa, ed è il groviglio. Gli hypervisor del cluster stavano sotto uno
+switch di accesso, sulla porta 1G di gestione: sui centrali, dove arrivano i loro cavi 10G, passano
+solo i MAC delle schede (sconosciuti finché `hypervisor_sync` non legge le schede vive) e delle VM; il
+MAC di gestione mai. Ma le VM parlano chiaro: su una porta passavano 15 VM accese, **tutte** dello
+stesso server; su un'altra 11, tutte di un altro. I cavi di riserva dei bond non portano VM e il LLDP
+della scheda manda solo un MAC senza nome. Il nome DNS di due hypervisor non era quello del nodo
+Proxmox (un nome vecchio rimasto nel DNS).
+
+**Decisioni.**
+
+- **Ridondanze a richiesta.** Si disegna solo il collegamento principale. Le ridondanze (tutti i
+  collegamenti non principali: automatici, a mano, ripieghi) non si disegnano; il riquadro porta
+  «⇄ N» (N = sue ridondanze, testo e simbolo, mai solo colore). Un clic sul riquadro mostra le sue
+  ridondanze (stile di §11.4: doppia linea sottile + «ridondanza»); un interruttore «Mostra
+  ridondanze» nella barra le mostra tutte (ricordato per chi guarda, `localStorage` in try/catch).
+  Il dettaglio dell'oggetto le elenca sempre. In stampa non si disegnano: sul primo foglio un
+  elenco «Cavi di ridondanza» (oggetto · porta → oggetto · porta, velocità). La disposizione non
+  cambia: usa già solo i principali.
+- **Hypervisor dalle VM sulla porta.** Una porta di bordo di uno switch o AP (non uplink, non
+  porta di un collegamento fra apparati) su cui, entro la soglia «non visto», passano MAC di VM
+  **accese** e **tutte** dello stesso hypervisor H (almeno 1) propone il collegamento porta ↔ H, fonte
+  nuova `vm_mac` («dalle VM», in parole nei dettagli: «N VM di H passano da questa porta»). VM di due
+  hypervisor sulla stessa porta = porta di passaggio: niente. Resta valida l'esclusione delle VM dai
+  client della porta. Si somma alle schede vive (§11.5), non le sostituisce: quando
+  `hypervisor_sync` porterà i MAC delle schede, ogni cavo, anche di riserva, si troverà da solo.
+- **Principale di un hypervisor.** Fra i collegamenti dai dati di un hypervisor vince il più
+  veloce (velocità della porta dello switch); a parità, quello con più VM; poi le regole di §11.3.
+  «★ Rendi principale» vince sempre. Così il cavo 10G verso il centrale è il principale e il 1G
+  di gestione una ridondanza.
+- **Nome dal Proxmox.** Se l'IP di un apparato hypervisor sta nelle schede di un host della
+  scansione Proxmox e il nome di quell'host è diverso, sulla mappa il riquadro si chiama col nome
+  del Proxmox e sotto, in piccolo, «DNS: <nome di prima>». Solo la mappa (e la stampa): l'inventario
+  non si rinomina.
+
+Tappa nuova **H2 · Dati della mappa** (leggero, logica pura): `vm_mac`, principale dell'hypervisor,
+nome dal Proxmox. Le ridondanze a richiesta stanno nelle tappe I (schermo) e L (stampa).
+
 ### 12.4 Tappe e livelli
 
 | Tappa | Contenuto | Livello |
 | --- | --- | --- |
 | G · Dati | `orientation` su `topology_maps` e `topology_position`, rotte | **completo** (schema dei DB clienti) |
 | H · Disposizione | `layoutTree` verticale, logica pura | leggero |
-| I · Pagina | interruttore, maniglie e linee ruotate, «Adatta» in larghezza, rotellina | leggero |
-| L · Stampa | pagina di stampa, tasselli, panoramica, legenda | leggero |
+| I · Pagina | interruttore, maniglie e linee ruotate, «Adatta» in larghezza, rotellina, ridondanze a richiesta (§12.5) | leggero |
+| H2 · Dati della mappa | `vm_mac`, principale dell'hypervisor, nome dal Proxmox (§12.5) | leggero |
+| L · Stampa | pagina di stampa, tasselli, panoramica, legenda, elenco delle ridondanze | leggero |
 
 Rilascio unico con la misura sulle copie e la conferma di Riccardo (la migrazione tocca i DB dei
 clienti).

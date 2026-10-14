@@ -39,7 +39,7 @@
 - **Tappa I**: `src/components/topology/map/{map-node,map-canvas,map-edge,map-toolbar,topology-map-client,use-topology-data,api}.ts(x)`.
 - **Tappa L**: nuovi `src/lib/topology/print-tiles.ts` (logica pura), `src/components/topology/print/{print-map.tsx,print-sheet.tsx}`, `src/app/(dashboard)/topology/stampa/page.tsx` (o fuori dal layout del cruscotto se la barra laterale non si toglie con la stampa), CSS `@page`; prova `src/lib/topology/__tests__/print-tiles.test.ts`.
 
-**Ordine**: Task 1 (G) e Task 2 (H) in parallelo, due agenti, due worktree (H non legge il DB: riceve l'orientamento come argomento). Poi Task 3 (I) sopra l'unione, poi Task 4 (L), che può partire dopo il Task 2 in parallelo al 3 (non tocca la pagina della mappa, solo il pulsante «Stampa» all'unione). Task 5-6 nella sessione principale.
+**Ordine** (aggiornato 14/10 pomeriggio): Task 1 (G) e Task 2 (H) in parallelo, due agenti, due worktree (H non legge il DB: riceve l'orientamento come argomento). Poi Task 3 (I) e Task 4 (L) in parallelo sopra l'unione. Poi Task 2b (H2, logica del modello, spec §12.5). Task 5-6 nella sessione principale.
 
 ---
 
@@ -88,6 +88,25 @@ Regole (spec §12.2): colonna `c` a `x = MARGIN + Σ(larghezza colonne precedent
 
 ---
 
+## Tappa H2 — dati della mappa (livello leggero, logica pura)
+
+### Task 2b: hypervisor dalle VM sulla porta, principale dell'hypervisor, nome dal Proxmox
+
+**Spec:** §12.5 (vincolante). **Files:** `src/lib/topology/attach.ts` (o un file nuovo `vm-ports.ts` chiamato da lì), `src/lib/topology/model-types.ts` (`LinkSource` += `"vm_mac"` con il suo posto in `LINK_SOURCE_RANK`, subito dopo `mac_table`), `src/lib/topology/tree.ts` (scelta del principale), `src/lib/topology/model.ts` / `vms.ts` / `known-ports.ts` (nome dal Proxmox, riusando come oggi si trova l'host giusto di un apparato: l'IP dell'apparato nelle schede dell'host), le etichette in parole della fonte dove le altre fonti hanno la loro (dettagli del collegamento); prove in `src/lib/topology/__tests__/` (dati inventati, forma vera: VM con `node`, `status`, MAC nelle schede di rete).
+
+**Produces:**
+- Fonte `vm_mac`: per ogni porta di bordo di uno switch o AP (non in `linkPorts`, non uplink) i MAC di VM **accese** freschi (entro la soglia «non visto») su quella porta; se appartengono **tutti** allo stesso hypervisor H (≥ 1 VM) → collegamento porta ↔ H, `source: "vm_mac"`, `uplinkFrom: H`, con il numero di VM disponibile ai dettagli («N VM di H passano da questa porta»). VM di due hypervisor sulla stessa porta → niente. Le VM restano fuori dai client della porta (come oggi). Se H ha già un collegamento fra gli stessi due oggetti da un'altra fonte, si fonde come le altre fonti (`sources`).
+- Principale di un hypervisor (nodo con VM / tipo hypervisor): fra i suoi collegamenti dai dati vince quello con la porta dello switch più veloce (`portInfo.speed`), a parità quello con più VM, poi le regole di oggi. `★` scelto a mano vince sempre. Gli altri apparati: invariati.
+- Nome dal Proxmox: se l'IP dell'apparato hypervisor sta nelle schede di un host della scansione e il `hostname` dell'host è diverso (confronto senza dominio e senza maiuscole), il nodo della mappa ha `name` = nome del Proxmox e un campo `dnsName` = nome di prima; il riquadro (schermo e stampa) mostra sotto «DNS: <dnsName>» in piccolo (≥ 13 px). L'inventario non cambia.
+
+- [ ] **Step 1: prove che falliscono** — porta con 3 VM accese tutte di H → collegamento `vm_mac` verso H; porta con VM di H e di K → niente; porta che è uplink o di un collegamento fra apparati → niente; VM spente non contano; VM vecchie oltre la soglia non contano; H con un cavo `mac_table` 1G e uno `vm_mac` 10G → principale il 10G, l'altro ridondanza; con `★` sul 1G → il 1G; due cavi 10G → vince quello con più VM; nome: apparato «px-02.dominio» il cui IP sta nell'host «PX-DOWN» → `name` «PX-DOWN», `dnsName` «px-02.dominio»; stesso nome con dominio diverso → nessun `dnsName`.
+- [ ] **Step 2: vederle fallire.**
+- [ ] **Step 3: il codice.**
+- [ ] **Step 4: verdi** + tutte le prove della topologia; `npx tsc --noEmit`, `npm run lint`; `scripts/misura-topologia.ts` sulla copia del cliente A (path passato come argomento, mai nel repo) per contare i collegamenti `vm_mac` e i principali cambiati: numeri nel report, non nel repo.
+- [ ] **Step 5: commit** `feat(topologia): hypervisor dalle VM sulla porta, principale più veloce, nome dal Proxmox`.
+
+---
+
 ## Tappa I — la pagina (livello leggero)
 
 ### Task 3: la mappa in verticale a schermo
@@ -103,6 +122,7 @@ Regole (spec §12.2): colonna `c` a `x = MARGIN + Σ(larghezza colonne precedent
 - **Etichette delle linee** (porte, velocità, ⚡, ★, «✎ ✓/?»): in `lr` stanno sopra il tratto orizzontale vicino al figlio e non coprono i riquadri (≥ 13 px).
 - **Ritocchi**: il trascinamento salva l'orientamento corrente.
 - Pulsante **«Stampa»** nella barra: apre `/topology/stampa?mappa=<id|auto>` in una scheda nuova (Task 4).
+- **Ridondanze a richiesta (spec §12.5)**, in tutti e due gli orientamenti: le linee con `redundant` (o comunque non principali) non si disegnano; il riquadro mostra «⇄ N» (≥ 13 px, testo, mai solo colore) con N = sue ridondanze; clic sul riquadro → si disegnano le sue (stile di oggi: doppia linea sottile + «ridondanza»), clic altrove le toglie; interruttore «Mostra ridondanze» nella barra (per tutti, non solo admin; ricordato in `localStorage` in try/catch, predefinito spento); il pannello dei dettagli continua a elencarle. Funzione pura `visibleEdges(edges, { showAll, selected })` provata con `node --test` (nessuna ridondanza visibile di base, solo quelle del selezionato, tutte con l'interruttore, i principali sempre). La disposizione non cambia.
 
 - [ ] Prove pure dove c'è logica (scelta delle maniglie, zoom di «Adatta» in `lr`, verso delle ridondanze) con `node --import tsx --test`; `npx tsc --noEmit`, `npm run lint`, `npm run build`.
 - [ ] Commit `feat(topologia): mappa verticale a schermo — interruttore, linee da sinistra a destra, «Adatta» in larghezza`.
@@ -119,7 +139,7 @@ Regole (spec §12.2): colonna `c` a `x = MARGIN + Σ(larghezza colonne precedent
 **Produces:**
 - `planSheets(drawing: { width: number; height: number }, opts: { paper: "A4" | "A3"; scale: 1 | 0.8; overlapMm: number }): SheetPlan` con `SheetPlan = { paper; landscape: boolean; rows: number; cols: number; tiles: Array<{ row: number; col: number; x: number; y: number; w: number; h: number }> }` — coordinate dei tasselli nel sistema del disegno (px a scala 1). Area stampabile alla lettera: A4 190 × 277 mm, A3 277 × 400 mm; `pxPerMm = 1 / 0.2646`; `landscape` = quello con meno tasselli (a parità, verticale).
 - `<PrintMap layout tree model orientation viewBox />` — SVG statico: riquadri (nome con `fitLabel`, tipo in parole), gruppi AP, attaccati, linee ortogonali con lo stile di `edgeLook` in nero/grigi (spessore, tratteggio, doppia linea, onda, etichette «10G», «≋ Wi-Fi», «▲ non visto da N g», «⚡ N W», «★», «✎ ✓/?»).
-- Pagina: legge `mappa`, `foglio` (A4|A3, predefinito A3), `scala` (100|80, predefinito 100), `vm` (0|1); carica la vista con `fetchJson` + `LoadError`; in errore mostra il messaggio in parole (Review Focus 5). Primo foglio: nome della mappa, data e ora italiana (`FUSO_UTENTI`), legenda, panoramica a tutta pagina con la griglia dei tasselli «riga-colonna». Poi un foglio per tassello (`<svg viewBox>` sullo stesso disegno) con «Foglio r-c di R×C» e le frecce ai vicini. CSS: `@page { size: A3 portrait|landscape; margin: 10mm }`, `break-after: page`, nessuna barra dell'app in stampa. Sopra i fogli, solo a schermo, una barra con foglio, scala, «con le VM» e «Stampa» (`window.print()`).
+- Pagina: legge `mappa`, `foglio` (A4|A3, predefinito A3), `scala` (100|80, predefinito 100), `vm` (0|1); carica la vista con `fetchJson` + `LoadError`; in errore mostra il messaggio in parole (Review Focus 5). Primo foglio: nome della mappa, data e ora italiana (`FUSO_UTENTI`), legenda, panoramica a tutta pagina con la griglia dei tasselli «riga-colonna». Sul primo foglio, sotto la legenda, l'elenco **«Cavi di ridondanza»** (oggetto · porta → oggetto · porta, velocità; spec §12.5): nei tasselli le ridondanze **non** si disegnano. Poi un foglio per tassello (`<svg viewBox>` sullo stesso disegno) con «Foglio r-c di R×C» e le frecce ai vicini. CSS: `@page { size: A3 portrait|landscape; margin: 10mm }`, `break-after: page`, nessuna barra dell'app in stampa. Sopra i fogli, solo a schermo, una barra con foglio, scala, «con le VM» e «Stampa» (`window.print()`).
 
 - [ ] **Step 1: prove che falliscono** — `planSheets`: un disegno più piccolo di un foglio → 1 tassello; 2.617 × 2.462 px in A3 al 100 % → righe × colonne uguali al conto a mano scritto nella prova; ogni punto del disegno sta in almeno un tassello e tasselli vicini si sovrappongono di 15 mm (Review Focus 4); un riquadro alto `BOX_H` tagliato dal bordo compare intero nel tassello vicino; orientamento del foglio scelto col minor numero di fogli.
 - [ ] **Step 2-4**: rosso, codice, verde; `npx tsc --noEmit`, `npm run lint`, `npm run build`.

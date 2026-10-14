@@ -132,3 +132,12 @@ test("un hypervisor è una foglia raggiungibile da più switch e non fa da ponte
   assert.deepEqual(t.children.get("dev:4"), []);
   assert.ok(t.roots.includes("dev:3"), "dev:3 si raggiunge solo attraverso l'hypervisor: radice in più");
 });
+
+test("una VM che è un nodo censito, senza collegamenti propri, sta dentro il suo hypervisor e non è nella mappa automatica", () => {
+  const vm = (nodeId: string | null) => ({ id: "vm:4:100", name: "vm", status: "running", ips: [], hypervisorNodeId: "dev:4", nodeId, scannedAt: null });
+  const nodi = [node("dev:1", "router"), node("dev:4", "server", { vendor: "proxmox" }), node("host:9", "server")];
+  const m = model(nodi, [link("dev:1", "dev:4")], { vms: [vm("host:9")] });
+  assert.deepEqual([...autoVisible(m)].sort(), ["dev:1", "dev:4"]);
+  assert.deepEqual([...autoVisible(model(nodi, [link("dev:1", "dev:4"), link("dev:1", "host:9")], { vms: [vm("host:9")] }))].sort(), ["dev:1", "dev:4", "host:9"]);
+  assert.deepEqual([...autoVisible(model(nodi, [link("dev:1", "dev:4")], { vms: [vm(null)] }))].sort(), ["dev:1", "dev:4", "host:9"]);
+});

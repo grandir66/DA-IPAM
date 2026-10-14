@@ -4,7 +4,8 @@
  * figli infrastruttura in fila sotto il genitore, AP senza figli in un gruppo a
  * griglia che occupa SEMPRE AP_COLS colonne (un AP in più non sposta gli altri
  * rami), attaccati in colonna a destra del riquadro (non coprono le linee verso
- * i figli), riquadro a metà fra il primo e l'ultimo figlio. Ritocchi a mano: valgono finché la
+ * i figli), riquadro a metà fra il primo e l'ultimo figlio. Un hypervisor è un riquadro come uno switch;
+ * espanso (spec §11.5) si allarga e si allunga per le sue VM, che diventano `vmChips`. Ritocchi a mano: valgono finché la
  * firma (genitore + fratelli) non cambia. Logica pura: stessi dati, stesse
  * coordinate.
  */
@@ -13,6 +14,7 @@ import { nodeClass } from "@/lib/topology/identity";
 import type { TreeResult } from "@/lib/topology/tree";
 
 export const BOX_H = 44, GAP = 18, LEVEL_GAP = 56, AP_W = 150, AP_H = 40, AP_COLS = 4, AP_HEAD = 18;
+export const VM_COLS = 3, VM_W = 150, VM_H = 22, VM_ROW = 26;
 export const ATT_W = 160, ATT_ROW = 20, ATT_MAX = 4, CHAR_W = 7, ROOT_GAP = 60, MARGIN = 40;
 const AP_BLOCK = AP_COLS * (AP_W + 8);
 const ATT_SIDE = ATT_W + 10;
@@ -35,19 +37,30 @@ export function structureSig(tree: TreeResult, nodeId: string): string {
 
 export interface SavedTweak { nodeId: string; x: number; y: number; sig: string | null }
 export interface LayoutNode { id: string; x: number; y: number; w: number; h: number; role: "box" | "ap" | "attached"; parent: string | null }
+/** Una VM dentro il riquadro espanso del suo hypervisor; `label` è il nome già accorciato per entrare in `w`. */
+export interface VmChip { vmId: string; hypervisor: string; x: number; y: number; w: number; h: number; label: string }
 export interface LayoutResult {
   nodes: Map<string, LayoutNode>;
   apGroups: Array<{ parent: string; x: number; y: number; w: number; h: number; count: number }>;
   moreAttached: Map<string, number>;
+  vmChips: VmChip[];
   width: number;
   height: number;
   expired: string[];
 }
 
-export function layoutTree(model: TopologyModel, tree: TreeResult, tweaks: SavedTweak[]): LayoutResult {
+export function layoutTree(
+  model: TopologyModel, tree: TreeResult, tweaks: SavedTweak[], expanded: ReadonlySet<string> = new Set(),
+): LayoutResult {
   const byId = new Map(model.nodes.map((n) => [n.id, n]));
   const name = (id: string) => byId.get(id)?.name ?? id;
   const cls = (id: string) => { const n = byId.get(id); return n ? nodeClass(n) : "client"; };
+  const vmsOf = new Map<string, TopologyModel["vms"]>();
+  for (const v of model.vms) if (v.hypervisorNodeId) vmsOf.set(v.hypervisorNodeId, [...(vmsOf.get(v.hypervisorNodeId) ?? []), v]);
+  for (const [k, list] of vmsOf) vmsOf.set(k, [...list].sort((a, b) => a.name.localeCompare(b.name, "it") || (a.id < b.id ? -1 : 1)));
+  const isOpen = (id: string) => expanded.has(id) && cls(id) === "hyper" && (vmsOf.get(id)?.length ?? 0) > 0;
+  const boxW = (id: string) => (isOpen(id) ? VM_COLS * (VM_W + 8) + 16 : nodeWidth(name(id)));
+  const boxH = (id: string) => (isOpen(id) ? BOX_H + 12 + Math.ceil(vmsOf.get(id)!.length / VM_COLS) * VM_ROW : BOX_H);
   const order = (a: string, b: string) =>
     Number(cls(a) !== "infra") - Number(cls(b) !== "infra") || name(a).localeCompare(name(b), "it") || (a < b ? -1 : 1);
   const parts = (id: string) => {
@@ -67,11 +80,11 @@ export function layoutTree(model: TopologyModel, tree: TreeResult, tweaks: Saved
   const measure = (id: string, lvl: number): void => {
     const p = parts(id);
     const shown = Math.min(p.att.length, ATT_MAX) + (p.att.length > ATT_MAX ? 1 : 0);
-    levelH[lvl] = Math.max(levelH[lvl] ?? 0, BOX_H, shown * ATT_ROW);
+    levelH[lvl] = Math.max(levelH[lvl] ?? 0, boxH(id), shown * ATT_ROW);
     for (const k of p.inf) measure(k, lvl + 1);
     if (p.ap.length) levelH[lvl + 1] = Math.max(levelH[lvl + 1] ?? 0, AP_HEAD + Math.ceil(p.ap.length / AP_COLS) * (AP_H + 6));
     // Il riquadro sta al centro: lo spazio della fascia si riserva da tutti e due i lati.
-    width.set(id, Math.max(nodeWidth(name(id)) + (p.att.length ? 2 * ATT_SIDE : 0), kidsWidth(p)));
+    width.set(id, Math.max(boxW(id) + (p.att.length ? 2 * ATT_SIDE : 0), kidsWidth(p)));
   };
   for (const r of tree.roots) measure(r, 0);
   const y: number[] = [MARGIN];
@@ -80,12 +93,14 @@ export function layoutTree(model: TopologyModel, tree: TreeResult, tweaks: Saved
   const nodes = new Map<string, LayoutNode>();
   const apGroups: LayoutResult["apGroups"] = [];
   const moreAttached = new Map<string, number>();
+  const vmChips: VmChip[] = [];
   const place = (id: string, x: number, lvl: number, parent: string | null): void => {
     const p = parts(id);
     const w = width.get(id)!;
-    const box = nodeWidth(name(id));
+    const box = boxW(id);
+    const bh = boxH(id);
     // Segnaposto: il genitore resta prima dei figli nell'ordine dei nodi.
-    nodes.set(id, { id, x, y: y[lvl], w: box, h: BOX_H, role: "box", parent });
+    nodes.set(id, { id, x, y: y[lvl], w: box, h: bh, role: "box", parent });
     let cur = x + w / 2 - kidsWidth(p) / 2;
     const centres: number[] = [];
     for (const k of p.inf) {
@@ -111,7 +126,13 @@ export function layoutTree(model: TopologyModel, tree: TreeResult, tweaks: Saved
     const side = box / 2 + (p.att.length ? ATT_SIDE : 0);
     const want = centres.length ? (centres[0] + centres[centres.length - 1]) / 2 : x + w / 2;
     const cx = Math.min(Math.max(want, x + side), x + w - side);
-    nodes.set(id, { id, x: cx - box / 2, y: y[lvl], w: box, h: BOX_H, role: "box", parent });
+    nodes.set(id, { id, x: cx - box / 2, y: y[lvl], w: box, h: bh, role: "box", parent });
+    if (isOpen(id)) {
+      vmsOf.get(id)!.forEach((v, i) => vmChips.push({
+        vmId: v.id, hypervisor: id, x: cx - box / 2 + 8 + (i % VM_COLS) * (VM_W + 8), y: y[lvl] + BOX_H + 6 + Math.floor(i / VM_COLS) * VM_ROW,
+        w: VM_W, h: VM_H, label: fitLabel(v.name, VM_W),
+      }));
+    }
     p.att.slice(0, ATT_MAX).forEach((a, i) =>
       nodes.set(a, { id: a, x: cx + box / 2 + 10, y: y[lvl] + i * ATT_ROW, w: ATT_W, h: ATT_ROW - 2, role: "attached", parent: id }));
     if (p.att.length > ATT_MAX) moreAttached.set(id, p.att.length - ATT_MAX);
@@ -131,9 +152,10 @@ export function layoutTree(model: TopologyModel, tree: TreeResult, tweaks: Saved
     while (q.length) for (const k of tree.children.get(q.shift()!) ?? []) if (!branch.has(k)) { branch.add(k); q.push(k); }
     for (const id of branch) { const m = nodes.get(id); if (m) nodes.set(id, { ...m, x: m.x + dx, y: m.y + dy }); }
     for (const g of apGroups) if (branch.has(g.parent)) { g.x += dx; g.y += dy; }
+    for (const c of vmChips) if (branch.has(c.hypervisor)) { c.x += dx; c.y += dy; }
   }
   let maxX = 0, maxY = 0;
   for (const n of nodes.values()) { maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h); }
   for (const g of apGroups) { maxX = Math.max(maxX, g.x + g.w); maxY = Math.max(maxY, g.y + g.h); }
-  return { nodes, apGroups, moreAttached, width: maxX + MARGIN, height: maxY + MARGIN, expired };
+  return { nodes, apGroups, moreAttached, vmChips, width: maxX + MARGIN, height: maxY + MARGIN, expired };
 }

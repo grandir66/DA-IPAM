@@ -83,10 +83,15 @@ export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, ro
   return { roots: outRoots, children, via, links };
 }
 
-/** Mappa automatica (spec §10.2): niente client, niente isolati («Da sistemare»), niente nascosti. */
+/**
+ * Mappa automatica (spec §10.2): niente client, niente isolati («Da sistemare»), niente nascosti.
+ * Un nodo che è una VM e non ha collegamenti propri sta dentro il suo hypervisor (spec §11.5): non è un oggetto in più.
+ */
 export function autoVisible(model: TopologyModel): Set<string> {
   const isolated = new Set(model.isolated);
-  return new Set(model.nodes.filter((n) => nodeClass(n) !== "client" && !n.hidden && !isolated.has(n.id)).map((n) => n.id));
+  const linked = new Set(model.links.flatMap((l) => [l.a, l.b]));
+  const inside = new Set(model.vms.flatMap((v) => (v.nodeId !== null && !linked.has(v.nodeId) ? [v.nodeId] : [])));
+  return new Set(model.nodes.filter((n) => nodeClass(n) !== "client" && !n.hidden && !isolated.has(n.id) && !inside.has(n.id)).map((n) => n.id));
 }
 
 /** Testa confermata di una sede; altrimenti il router (apparato) che raggiunge più nodi coi collegamenti non vecchi. */

@@ -2,7 +2,7 @@
  * Hypervisor e VM nel modello (spec §11.5). Logica pura: legge le VM dalla
  * scansione Proxmox già salvata (`parseProxmoxScan`, tollerante a ogni forma
  * rovinata), le mette nel loro host (`placeVms`) e dice quali sono già un nodo
- * censito e quali MAC non vanno contati come client di una porta.
+ * censito (per MAC; senza MAC per nome; infine per l'IP che la VM dichiara) e quali MAC non vanno contati come client di una porta.
  */
 import { parseDbDate } from "@/lib/db-date";
 import { nodeClass, identifiesByName } from "@/lib/topology/identity";
@@ -140,6 +140,14 @@ export function placeVms(input: Pick<TopologyModelInput, "vms" | "scanHosts">, i
       const id = k && identifiesByName(k) ? idx.byName.get(k) : undefined;
       const n = typeof id === "string" ? nodeAt(idx, id) : undefined;
       if (n && n.id !== hypervisorNodeId && ["att", "client"].includes(nodeClass(n))) nodeId = n.id;
+    }
+    if (nodeId === null) {
+      // L'IP letto dalla VM stessa: una macchina Windows censita come «switch» non ha un MAC noto ma ha il suo indirizzo.
+      for (const ip of v.ips) {
+        const id = idx.byIp.get(ip);
+        const n = typeof id === "string" ? nodeAt(idx, id) : undefined;
+        if (n && n.id !== hypervisorNodeId && nodeClass(n) !== "hyper") { nodeId = n.id; break; }
+      }
     }
     return { v, hypervisorNodeId, nodeId };
   });

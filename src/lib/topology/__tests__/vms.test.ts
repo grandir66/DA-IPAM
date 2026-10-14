@@ -155,3 +155,15 @@ test("parseProxmoxScan legge la forma vera: VM con le schede e gli IP, host con 
     macs: ["02:00:00:AA:CC:01"], ips: ["198.51.100.7"], scannedAt: "2026-10-13T06:00:00.000Z",
   });
 });
+
+test("senza MAC e senza nome noto, l'IP che la VM dichiara la riconosce (una macchina censita con un tipo sbagliato)", () => {
+  const i = cluster({
+    devices: [...cluster().devices, dev(7, { name: "srv-windows", device_type: "switch", vendor: "windows", host: "198.51.100.77", port_count: 0 })],
+    vms: [vm(130, "pve-a", { name: "altro-nome", macs: ["02:00:00:cc:00:09"], ips: ["198.51.100.77"] })],
+  });
+  const m = buildTopologyModel(i);
+  assert.equal(m.vms[0].nodeId, "dev:7");
+  assert.ok(!m.isolated.includes("dev:7") && !m.withoutSite.includes("dev:7"));
+  const altro = cluster({ vms: [vm(131, "pve-a", { ips: ["198.51.100.99"] })] });
+  assert.equal(buildTopologyModel(altro).vms[0].nodeId, null);
+});

@@ -28,11 +28,24 @@ export function fitLabel(label: string, width: number): string {
   return label.length > max ? `${label.slice(0, Math.max(1, max - 1))}…` : label;
 }
 
+/**
+ * La firma della struttura attorno a un nodo: il ritocco vale finché non cambia. Per un figlio è
+ * il genitore con i fratelli; per una partenza (radice) è solo «|»: la sua posizione non dipende
+ * dalle altre partenze, che nascono a ogni oggetto non collegato trascinato sulla mappa (fase 2b,
+ * Task 12: prima ogni rilascio faceva tornare in fila le partenze già posate).
+ */
 export function structureSig(tree: TreeResult, nodeId: string): string {
   let parent = "";
   for (const [p, kids] of tree.children) if (kids.includes(nodeId)) { parent = p; break; }
-  const siblings = parent ? [...(tree.children.get(parent) ?? [])].sort() : [...tree.roots].sort();
-  return `${parent}|${siblings.join(",")}`;
+  if (!parent) return ROOT_SIG;
+  return `${parent}|${[...(tree.children.get(parent) ?? [])].sort().join(",")}`;
+}
+
+const ROOT_SIG = "|";
+
+/** Un ritocco vale con la firma di oggi; quello di una partenza anche con la firma di prima della fase 2b («|a,b,…»). */
+function tweakHolds(saved: string | null, now: string): boolean {
+  return saved === now || (now === ROOT_SIG && saved !== null && saved.startsWith(ROOT_SIG));
 }
 
 export interface SavedTweak { nodeId: string; x: number; y: number; sig: string | null }
@@ -145,7 +158,7 @@ export function layoutTree(
   for (const t of [...tweaks].sort((a, b) => (a.nodeId < b.nodeId ? -1 : 1))) {
     const n = nodes.get(t.nodeId);
     if (!n || n.role !== "box") continue;
-    if (t.sig !== structureSig(tree, t.nodeId)) { expired.push(t.nodeId); continue; }
+    if (!tweakHolds(t.sig, structureSig(tree, t.nodeId))) { expired.push(t.nodeId); continue; }
     const dx = t.x - n.x, dy = t.y - n.y;
     const branch = new Set<string>([t.nodeId]);
     const q = [t.nodeId];

@@ -37,9 +37,12 @@ function ContextMenuGroup({ ...props }: ContextMenuPrimitive.Group.Props) {
   return <ContextMenuPrimitive.Group data-slot="context-menu-group" {...props} />
 }
 
-function ContextMenuLabel({ className, ...props }: ContextMenuPrimitive.GroupLabel.Props) {
+// Intestazione del menu (nome dell'oggetto, linea in parole): un div, non il
+// GroupLabel di base-ui, che fuori da un <ContextMenu.Group> lancia
+// «MenuGroupRootContext is missing» e fa cadere la pagina (visto il 14/10).
+function ContextMenuLabel({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <ContextMenuPrimitive.GroupLabel
+    <div
       data-slot="context-menu-label"
       className={cn("px-1.5 py-1 text-[13px] font-medium text-muted-foreground", className)}
       {...props}

@@ -12,7 +12,7 @@ import { Fragment } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { parseDbDate } from "@/lib/db-date";
-import { linkWords } from "@/lib/topology/edge-look";
+import { linkWords, seenWords } from "@/lib/topology/edge-look";
 import { nodeClass } from "@/lib/topology/identity";
 import { LINK_SOURCE_RANK, type LinkSource, type MapLink, type MapNode, type MapVm } from "@/lib/topology/model-types";
 import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
@@ -31,11 +31,8 @@ function quando(s: string): string {
   return Number.isNaN(d.getTime()) ? s : d.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
 }
 
-export function visto(l: MapLink): string {
-  if (l.stale) return `▲ non visto da ${l.daysUnseen ?? "?"} g`;
-  if (!l.daysUnseen) return "✓ visto oggi";
-  return `✓ visto ${l.daysUnseen} g fa`;
-}
+/** Le parole «visto oggi / non visto da N g» stanno con la logica pura delle linee. */
+export const visto = seenWords;
 
 interface Props {
   model: ModelData;

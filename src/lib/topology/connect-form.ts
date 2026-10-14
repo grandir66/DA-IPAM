@@ -9,18 +9,10 @@
 import { parseSpeedMbps } from "@/lib/topology/link-attrs";
 import { poeLabel, speedLabel } from "@/lib/topology/edge-look";
 import type { LinkMedium } from "@/lib/topology/model-types";
+import type { KnownPort } from "@/lib/topology/api-input";
 
-/** Una porta nota di un oggetto: una porta dello switch (switch_ports) o una scheda dell'hypervisor (scansione). */
-export interface KnownPort {
-  name: string;
-  /** Velocità come la scrive la fonte («1000 Mbps», «10G»); null se non nota. */
-  speed: string | null;
-  /** Potenza PoE erogata in W; null se nessuna o non nota. */
-  poeW: number | null;
-  kind: "switch_port" | "hypervisor_nic";
-  /** Altro da dire in parole, già in italiano: «uplink», «membro di bond0», «giù». */
-  note: string | null;
-}
+// La porta nota ha la forma della risposta di GET /api/topology/ports: si definisce una volta sola, in api-input.ts.
+export type { KnownPort };
 
 export const PORT_NONE = "__nessuna__";
 export const PORT_MANUAL = "__a_mano__";

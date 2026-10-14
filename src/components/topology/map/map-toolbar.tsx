@@ -80,7 +80,7 @@ export function MapToolbar(p: Props) {
             {p.headName && <span className="text-muted-foreground"> ({p.headOrigin})</span>}
           </span>
           {p.isAdmin && (
-            <Button size="sm" variant="outline" onClick={() => setAsked("fromAuto")}>Crea una mappa passo passo da qui</Button>
+            <Button size="sm" className="text-[13px]" variant="outline" onClick={() => setAsked("fromAuto")}>Crea una mappa passo passo da qui</Button>
           )}
         </>
       ) : (
@@ -97,9 +97,9 @@ export function MapToolbar(p: Props) {
           )}
           {p.isAdmin && (
             <>
-              <Button size="sm" variant="outline" onClick={() => setAsked("new")}>Nuova mappa…</Button>
-              {current && <Button size="sm" variant="outline" onClick={() => setAsked("rename")}>Rinomina</Button>}
-              {current && <Button size="sm" variant="destructive" onClick={() => setAsked("delete")}>Elimina</Button>}
+              <Button size="sm" className="text-[13px]" variant="outline" onClick={() => setAsked("new")}>Nuova mappa…</Button>
+              {current && <Button size="sm" className="text-[13px]" variant="outline" onClick={() => setAsked("rename")}>Rinomina</Button>}
+              {current && <Button size="sm" className="text-[13px]" variant="destructive" onClick={() => setAsked("delete")}>Elimina</Button>}
             </>
           )}
         </>
@@ -116,16 +116,17 @@ export function MapToolbar(p: Props) {
         <input type="checkbox" checked={p.showExtra} onChange={(e) => p.onShowExtra(e.target.checked)} className="size-4" />
         Ridondanze
       </label>
-      <Button size="sm" variant="outline" onClick={() => void rf.zoomOut()} aria-label="Rimpicciolisci">−</Button>
-      <Button size="sm" variant="outline" onClick={() => void rf.zoomIn()} aria-label="Ingrandisci">+</Button>
-      <Button size="sm" variant="outline" onClick={() => void rf.fitView({ padding: 0.05 })}>Adatta</Button>
+      <Button size="sm" className="text-[13px]" variant="outline" onClick={() => void rf.zoomOut()} aria-label="Rimpicciolisci">−</Button>
+      <Button size="sm" className="text-[13px]" variant="outline" onClick={() => void rf.zoomIn()} aria-label="Ingrandisci">+</Button>
+      <Button size="sm" className="text-[13px]" variant="outline" onClick={() => void rf.fitView({ padding: 0.05 })}>Adatta</Button>
       {p.isAdmin && (
-        <Button size="sm" variant="outline" disabled={!p.canRiordina} onClick={p.onRiordina} title="Toglie gli spostamenti fatti a mano">
+        <Button size="sm" className="text-[13px]" variant="outline" disabled={!p.canRiordina} onClick={p.onRiordina} title="Toglie gli spostamenti fatti a mano">
           Riordina
         </Button>
       )}
       {p.detailsAvailable && <Button
         size="sm"
+        className="text-[13px]"
         variant="outline"
         aria-pressed={p.detailsOpen}
         onClick={p.onToggleDetails}

@@ -126,3 +126,15 @@ export function linkWords(l: MapLink): string[] {
   else if (l.redundant) out.push("ridondanza: non è il collegamento principale");
   return out;
 }
+
+/**
+ * Quando le letture hanno visto il collegamento, in parole (barra dei dettagli, menu della linea).
+ * Senza una data di lettura non si dice «visto oggi»: un collegamento solo a mano nessuno lo ha letto
+ * (prima diceva «✓ visto oggi» accanto a «✎ ? le letture non lo vedono», Task 12 della fase 2b).
+ */
+export function seenWords(l: MapLink): string {
+  if (l.stale) return `▲ non visto da ${l.daysUnseen ?? "?"} g`;
+  if (l.lastSeen === null) return l.sources.every((s) => s === "manual") ? "dichiarato a mano, nessuna lettura lo vede" : "data della lettura non nota";
+  if (!l.daysUnseen) return "✓ visto oggi";
+  return `✓ visto ${l.daysUnseen} g fa`;
+}

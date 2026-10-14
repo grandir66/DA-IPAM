@@ -238,3 +238,22 @@ test("espandere un hypervisor senza VM o non hypervisor non cambia niente; un ri
   assert.equal(mosso.vmChips[0].x - base.vmChips[0].x, 30);
   assert.equal(mosso.vmChips[0].y - base.vmChips[0].y, 50);
 });
+
+// Visto a schermo il 2026-10-14 (fase 2b, Task 12): trascinando dall'elenco tre oggetti non collegati in
+// tre punti della mappa passo passo, ogni rilascio aggiungeva una partenza e faceva scadere il ritocco delle
+// partenze già posate (la loro firma elencava tutte le partenze): tornavano in fila in alto.
+test("una partenza ritoccata resta dov'è quando si aggiunge un'altra partenza; scade se diventa figlia", () => {
+  const m = model([node("dev:1", "switch"), node("dev:2", "switch"), node("dev:9", "switch")]);
+  const t1 = tree(["dev:1"], {});
+  const tw: SavedTweak = { nodeId: "dev:1", x: 640, y: 380, sig: structureSig(t1, "dev:1") };
+  const t2 = tree(["dev:1", "dev:9"], {});
+  const r = layoutTree(m, t2, [tw]);
+  assert.deepEqual(r.expired, []);
+  assert.deepEqual([r.nodes.get("dev:1")!.x, r.nodes.get("dev:1")!.y], [640, 380]);
+  // un ritocco salvato con la firma di prima (tutte le partenze) vale ancora finché il nodo è una partenza
+  const vecchio = layoutTree(m, t2, [{ ...tw, sig: "|dev:1,dev:5" }]);
+  assert.deepEqual(vecchio.expired, []);
+  // se la partenza diventa figlia di un altro, la struttura è cambiata davvero: il ritocco scade
+  const t3 = tree(["dev:2"], { "dev:2": ["dev:1"] });
+  assert.deepEqual(layoutTree(m, t3, [tw]).expired, ["dev:1"]);
+});

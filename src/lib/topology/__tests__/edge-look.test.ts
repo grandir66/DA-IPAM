@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { edgeLook, linkWords, pathPoints, poeLabel, speedLabel, speedWidth, wavyPath } from "@/lib/topology/edge-look";
+import { edgeLook, linkWords, pathPoints, poeLabel, seenWords, speedLabel, speedWidth, wavyPath } from "@/lib/topology/edge-look";
 import { LINK_ATTRS_DEFAULT, type MapLink } from "@/lib/topology/model-types";
 
 function link(over: Partial<MapLink> = {}): MapLink {
@@ -98,4 +98,14 @@ test("la barra dei dettagli dice in parole perché una linea è così", () => {
     ["velocità 2,5G", "PoE 12 W", "✎ ✓ a mano, confermato: le letture lo vedono", "principale (scelto dal sistema)"],
   );
   assert.deepEqual(linkWords(link({ redundant: true, medium: "wireless" })), ["tipo: wireless", "ridondanza: non è il collegamento principale"]);
+});
+
+// Visto a schermo il 2026-10-14 (fase 2b, Task 12): un collegamento fatto solo a mano, che nessuna lettura
+// vede, diceva «✓ visto oggi» accanto a «✎ ? solo a mano: le letture non lo vedono».
+test("«visto»: oggi, N giorni fa, non visto; mai «visto oggi» per ciò che nessuna lettura ha visto", () => {
+  assert.equal(seenWords(link({ lastSeen: "2026-10-14 05:00:00", daysUnseen: 0 })), "✓ visto oggi");
+  assert.equal(seenWords(link({ lastSeen: "2026-10-12 05:00:00", daysUnseen: 2 })), "✓ visto 2 g fa");
+  assert.equal(seenWords(link({ lastSeen: "2026-10-01 05:00:00", daysUnseen: 13, stale: true })), "▲ non visto da 13 g");
+  assert.equal(seenWords(link({ source: "manual", sources: ["manual"], lastSeen: null })), "dichiarato a mano, nessuna lettura lo vede");
+  assert.equal(seenWords(link({ lastSeen: null })), "data della lettura non nota");
 });

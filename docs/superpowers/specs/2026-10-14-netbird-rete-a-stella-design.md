@@ -867,6 +867,22 @@ finestra per cliente.
    traffico NetBird. Si prova in fase 0. Rimedi possibili, da scegliere dopo la prova:
    - Tailscale con le regole firewall disattivate sui remoti durante il doppio binario;
    - una fascia NetBird diversa nelle impostazioni dell'account.
+
+   **Misurato il 14/10** su una VM di prova (Ubuntu 24.04 sul PX-NAS di casa, Tailscale
+   1.104.1 e NetBird 0.80.0, poi cancellata). Esito:
+   - Se NetBird parte dopo Tailscale, il traffico passa: la sua regola di accettazione sta
+     in testa alla catena `INPUT`.
+   - **Basta riavviare `tailscaled` perché `ts-input` torni in testa.** La regola
+     `-s 100.64.0.0/10 ! -i tailscale0 -j DROP` scarta allora il traffico NetBird: ssh in
+     timeout, 27 pacchetti scartati.
+   - Con **`tailscale set --netfilter-mode=off`** passano tutti e due. La prova è stata
+     fatta dopo il riavvio di `tailscaled` e dopo il riavvio della VM: ssh via NetBird per
+     nome, ssh da da-vulcan via Tailscale, `tailscale ping`.
+
+   **Rimedio scelto: `--netfilter-mode=off` su ogni nodo Linux a doppio binario**, da
+   mettere prima di installare NetBird. Senza le regole di Tailscale l'unica barriera locale
+   è il firewall della macchina. Sull'edge oggi c'è `ufw allow in on tailscale0`, e la
+   barriera vera resta la policy (rischio 10). La fascia NetBird diversa non serve.
 2. **Spegnere `Default` o togliere `All` taglia i colleghi** se le loro policy non esistono
    già a parte. Per questo §6.2 viene prima di tutto, con la fotografia per tornare indietro.
 3. **Il nome `da-vulcan` lo risolve Tailscale**, ed è scritto in documenti, script e regole
@@ -1085,7 +1101,7 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
 - Come i centrali riconoscono gli oggetti durante l'emergenza, se i loro certificati
   scadono prima della riconfigurazione.
 - ~~Il nome stabile per da-vulcan (rischio 3).~~ Chiuso il 14/10: decisione 24.
-- Il rimedio alla convivenza in `100.64.0.0/10`, se la prova della fase 0 lo richiede.
+- ~~Il rimedio alla convivenza in `100.64.0.0/10`~~ chiuso il 14/10: `--netfilter-mode=off` (rischio 1, misurato).
 - ~~**L'agente Python remoto di DA-IPAM**~~ chiuso il 14/10, decisione 26 (`agent/`, raggiunto oggi via Tailscale dalla VM 533).
   Con un'istanza IPAM per cliente forse non serve più. Si decide se toglierlo o portarlo su
   NetBird, contando prima chi lo usa davvero.

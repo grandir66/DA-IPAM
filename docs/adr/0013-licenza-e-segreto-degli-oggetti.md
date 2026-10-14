@@ -4,6 +4,7 @@
 **Data:** 2026-10-14
 **Autore:** Riccardo Grandi, con Claude
 **Completa:** [ADR 0011](0011-netbird-rete-a-stella.md)
+**Superata in parte da:** [ADR 0014](0014-chiavi-in-file-cifrati-ca-un-livello.md) — custodia nelle YubiKey e CA a due livelli (14/10 sera)
 **Documento di progetto:** [`docs/superpowers/specs/2026-10-14-netbird-rete-a-stella-design.md`](../superpowers/specs/2026-10-14-netbird-rete-a-stella-design.md), §8 e §9
 
 ## Contesto

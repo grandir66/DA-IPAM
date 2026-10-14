@@ -25,14 +25,15 @@ Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUD
 
 ## 6. Stato e igiene (fotografia 2026-10-14)
 
-- **Da Tailscale a NetBird, rete a stella, e DA-Link (14/10, disegno approvato a voce e rivisto, documento da rileggere)**: al centro da-vulcan, DA-ZABBIX e **DA-Link** (progetto nuovo in `Domarc/DA-Link`, inizio della tappa 9): fa entrare gli oggetti in NetBird da solo (chiavi monouso), riceve dalle istanze lo stato e, solo se l'istanza lo consente, i numeri d'inventario (privacy decisa sull'istanza, default solo stato), dà il quadro a DA-CRM. Dai clienti edge, proxy Zabbix e istanze IPAM, ciechi fra loro; Wazuh e DA-VA-OVH fuori; cliente = `codcli` del gestionale. Licenza con segreto ruotato ogni 4 settimane (+2 di tolleranza) che firma gli scambi e protegge i dati a busta, CA interna (radice fuori linea), DA-Link con accesso ristretto e sblocco a mano all'avvio. Spec `docs/superpowers/specs/2026-10-14-netbird-rete-a-stella-design.md`, ADR 0011 e 0013. **Fase 0 eseguita il 14/10** (conferme di Riccardo: Task 3, 4 e 5 sì). Fatti:
+- **Da Tailscale a NetBird, rete a stella, e DA-Link (14/10, disegno approvato a voce e rivisto, documento da rileggere)**: al centro da-vulcan, DA-ZABBIX e **DA-Link** (progetto nuovo in `Domarc/DA-Link`, inizio della tappa 9): fa entrare gli oggetti in NetBird da solo (chiavi monouso), riceve dalle istanze lo stato e, solo se l'istanza lo consente, i numeri d'inventario (privacy decisa sull'istanza, default solo stato), dà il quadro a DA-CRM. Dai clienti edge, proxy Zabbix e istanze IPAM, ciechi fra loro; Wazuh e DA-VA-OVH fuori; cliente = `codcli` del gestionale. Licenza con segreto ruotato ogni 4 settimane (+2 di tolleranza) che firma gli scambi e protegge i dati a busta, CA interna a un livello in DA-Link, DA-Link con accesso ristretto e sblocco a mano all'avvio. Spec `docs/superpowers/specs/2026-10-14-netbird-rete-a-stella-design.md`, ADR 0011 e 0013. **Fase 0 eseguita il 14/10** (conferme di Riccardo: Task 3, 4 e 5 sì). Fatti:
   - `All` è fuori dalle policy accese e dai nameserver di NetBird; `users` è gruppo automatico
     di ogni persona; `Default` era già spenta;
   - da-vulcan e DA-ZABBIX sono nei gruppi `centro-*`, e Tailscale resta acceso;
   - censimento nell'appendice A della spec, decisioni 24-27.
 
-  Aperti: la verifica di un collega che sta solo in `users` e le YubiKey (piano generale,
-  «Avanzamento»).
+  Aperta: la verifica di un collega che sta solo in `users` (piano generale, «Avanzamento»).
+  **Niente YubiKey** (14/10 sera, decisione 28, ADR 0014): chiavi in file `age` in due
+  copie, CA a un livello in DA-Link.
 
   **Trappole nuove:**
   - Tailscale col firewall acceso scarta il traffico NetBird appena `tailscaled` si

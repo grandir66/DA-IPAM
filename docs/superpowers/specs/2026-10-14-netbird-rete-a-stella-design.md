@@ -3,7 +3,7 @@
 **Stato:** disegno approvato a voce da Riccardo il 2026-10-14, rivisto sette volte lo stesso
 giorno (moduli; DA-Link e DA-CRM; privacy decisa dall'istanza; licenza e custodia dei segreti;
 CA interna; YubiKey al posto della macchina scollegata;
-resilienza della flotta); documento da rileggere
+resilienza della flotta); il 14/10 sera niente YubiKey (decisione 28); documento da rileggere
 **Data:** 2026-10-14
 **Autore:** Riccardo Grandi, con Claude
 **Decisioni architetturali:** [ADR 0011](../../adr/0011-netbird-rete-a-stella.md) (rete),
@@ -98,14 +98,15 @@ E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
 | 17 | **Il segreto vale 4 settimane, con 2 di tolleranza**; la licenza vale per istanze IPAM ed edge. | 2+1 settimane; 12+4; solo istanze; anche il proxy con un guardiano |
 | 18 | **Per ora il portachiavi di DA-Link si sblocca a mano a ogni avvio**; la YubiKey si valuta dopo. | modulo hardware subito; TPM virtuale + disco cifrato |
 | 19 | **All'interfaccia di DA-Link entrano poche persone nominate, con MFA**, solo dal gruppo NetBird `link-admin`; nessuna seconda conferma. | quattro occhi sulle azioni gravi; solo Riccardo |
-| 20 | **Chiavi di recupero e radici della CA vivono dentro due YubiKey in cassaforte**, generate nel dispositivo; niente macchina scollegata dedicata. DA-Link non le possiede. | nel vault delle credenziali; divisa fra persone (Shamir); macchina scollegata per la CA; radice in un file cifrato |
-| 21 | **Una CA interna rilascia un certificato a ogni installazione**, riconosciuto in automatico dagli applicativi: due radici sulle YubiKey in cassaforte, intermedia in DA-Link limitata ai nomi interni, motore `step-ca`, certificati di 4 settimane rinnovati col segreto. | certificati auto-firmati con pin al primo contatto (oggi); una CA a un livello sola in DA-Link; una CA scritta a mano |
+| 20 | *(superata dalla 28)* **Chiavi di recupero e radici della CA vivono dentro due YubiKey in cassaforte**, generate nel dispositivo; niente macchina scollegata dedicata. DA-Link non le possiede. | nel vault delle credenziali; divisa fra persone (Shamir); macchina scollegata per la CA; radice in un file cifrato |
+| 21 | *(i due livelli e le YubiKey superati dalla 28)* **Una CA interna rilascia un certificato a ogni installazione**, riconosciuto in automatico dagli applicativi: due radici sulle YubiKey in cassaforte, intermedia in DA-Link limitata ai nomi interni, motore `step-ca`, certificati di 4 settimane rinnovati col segreto. | certificati auto-firmati con pin al primo contatto (oggi); una CA a un livello sola in DA-Link; una CA scritta a mano |
 | 22 | **La flotta sopravvive a DA-Link.** Un rinnovo non accorcia mai la licenza in corso (una più restrittiva vale dalla fine di quella attuale); nessuna risposta di DA-Link cambia la configurazione dell'istanza; il firewall locale accetta solo i centrali; la verifica R1–R5 la fa anche DA-ZABBIX. | fiducia piena in DA-Link |
-| 23 | **Chiave di emergenza sulle YubiKey**, più forte della firma di DA-Link: firma bollettini che ritirano la fiducia a un DA-Link compromesso, fanno lavorare la flotta in modalità autonoma fino a una data e presentano il DA-Link nuovo. Arrivano da un canale di riserva o a mano. La flotta si riconfigura senza reinstallarla. | reinstallare ogni oggetto dopo una compromissione; un DA-Link di riserva sempre acceso |
+| 23 | *(la custodia superata dalla 28)* **Chiave di emergenza sulle YubiKey**, più forte della firma di DA-Link: firma bollettini che ritirano la fiducia a un DA-Link compromesso, fanno lavorare la flotta in modalità autonoma fino a una data e presentano il DA-Link nuovo. Arrivano da un canale di riserva o a mano. La flotta si riconfigura senza reinstallarla. | reinstallare ogni oggetto dopo una compromissione; un DA-Link di riserva sempre acceso |
 | 24 | **Il nome stabile di da-vulcan è `da-vulcan.netbird.selfhosted`** (14/10, fase 0). Lo risolve NetBird su ogni peer, edge compresi, senza DNS in più; il client si installa con `--hostname da-vulcan`. Sostituisce il nome MagicDNS nei 193 file censiti (appendice A.5) prima della fase 4. | un nome nel DNS interno (`domarc.it` sui DC), che andrebbe distribuito anche ai remoti |
 | 25 | **La fase 3 è solo di laboratorio** (14/10). DTS è il pilota della fase 2 e l'unico cliente esterno su Tailscale; poi entra il PX-NAS di casa. L'istanza di sede resta in LAN, DA-VA-OVH va su VPN diretta (fase 4), i nodi superati escono dalla tailnet in fase 4. | DA-VA-OVH in NetBird |
 | 26 | **L'agente Python remoto di DA-IPAM si toglie nella tappa C1** (14/10). Nessuno lo usa: una sola riga sull'hub, mai collegata (appendice A.3). | portarlo su NetBird (rischio 9) |
 | 27 | **Il tenant `70791a` (DOMARC-OVH) si fonde in `70791`** nella tappa che porta DA-IPAM in DA-Link, con un backup prima; la sua rete diventa una rete del tenant Domarc. | cancellarlo; tenerlo separato con un campo `codcli` a parte |
+| 28 | **Niente YubiKey per ora** (Riccardo, 14/10 sera: «anche meno sicuro»). Supera in parte la 20, la 21 e la 23. **La CA ha un livello solo**: la sua chiave vive nel portachiavi di DA-Link. Le chiavi che non devono stare in DA-Link sono la chiave di recupero dei dati, la chiave di emergenza e la copia della chiave della CA. Stanno in **file cifrati con `age` e una frase lunga**, in **due copie**: una nel vault delle credenziali, una su una chiavetta USB in cassaforte. La frase la conoscono due persone. ADR 0014. | due YubiKey in cassaforte (rimandate); solo il vault; tutto dentro DA-Link; CA a due livelli |
 
 ## 3. Da dove si parte (verificato nel codice il 2026-10-14)
 
@@ -491,8 +492,8 @@ cifra una terza volta.
 - **Chi la protegge.** È conservata «in busta» due volte:
   - con la chiave `archivio` ricavata dal segreto che ruota: ogni 4 settimane si rifà solo
     la busta, i dati non si ricifrano;
-  - con le **due chiavi pubbliche di recupero** di Domarc (§9.3); ne basta una per riaprirla.
-    Le parti private stanno dentro due YubiKey in cassaforte.
+  - con la **chiave pubblica di recupero** di Domarc (§9.3). La parte privata sta in un file
+    cifrato, in due copie (decisione 28).
 - **Licenza scaduta.** La chiave dei dati resta utilizzabile per la sola lettura e
   l'esportazione (decisione 15). La licenza ferma il lavoro, non i dati.
 - **Segreto perso** (istanza ripristinata da una copia vecchia, scollegata oltre la
@@ -508,7 +509,7 @@ cifra una terza volta.
 - **Quali dati si cifrano** si decide nel piano. Almeno le credenziali, i backup e le
   esportazioni; l'intero database solo se il costo lo regge (§15).
 
-### 8.4 Il certificato dell'oggetto: la CA interna (decisione 21)
+### 8.4 Il certificato dell'oggetto: la CA interna (decisioni 21 e 28)
 
 Oggi ogni edge si fa un certificato **auto-firmato**, e DA-IPAM si fida del primo che vede
 (pin SPKI al primo «Test connessione»). Con la CA interna ogni installazione riceve un
@@ -521,13 +522,16 @@ certificato emesso da Domarc, e gli applicativi lo riconoscono da soli.
 
   Gira sulla macchina di DA-Link come servizio a sé, e **DA-Link è l'unico che lo autorizza a
   emettere**. Una CA non si scrive a mano.
-- **Due livelli** (custodia in §9.4):
-  - le **radici** (due, una per YubiKey) stanno in cassaforte, e servono solo a firmare
-    l'intermedia;
-  - l'**intermedia** sta in DA-Link e firma i certificati.
-- **Limiti sui nomi.** L'intermedia porta i *name constraints*: può firmare solo nomi
-  interni (`*.netbird.selfhosted` e il dominio interno scelto nel piano), mai nomi pubblici.
-  Anche rubata, non serve a impersonare un sito vero.
+- **Un livello solo** (decisione 28, custodia in §9.4): una radice, la cui chiave sta nel
+  portachiavi di DA-Link e firma direttamente i certificati. Una copia della chiave sta nel
+  file cifrato fuori da DA-Link (§9.3), così un guasto di DA-Link non obbliga a cambiare
+  radice.
+- **Limiti sui nomi.** La radice porta i *name constraints*: può firmare solo nomi interni
+  (`*.netbird.selfhosted` e il dominio interno scelto nel piano), mai nomi pubblici.
+  - I vincoli su una radice li rispettano OpenSSL, Go e i browser principali, ma la norma
+    non li impone a tutti. Ogni applicativo che riceve la radice si prova una volta con un
+    certificato fuori dai limiti, che deve rifiutare (fase 1).
+  - Anche rubata, la chiave non serve a impersonare un sito vero davanti a quei client.
 - **La chiave privata nasce sull'oggetto e non lo lascia mai.**
   - All'ingresso l'oggetto genera la sua coppia di chiavi e manda a DA-Link solo la
     richiesta di firma.
@@ -616,57 +620,62 @@ ricava la chiave con Argon2id.
 - **Il backup di DA-Link** contiene il portachiavi **ancora cifrato**, e si prova a
   ripristinarlo su una VM pulita prima di dichiararlo buono.
 
-### 9.3 Le due YubiKey in cassaforte (decisioni 20 e 21)
+### 9.3 Le chiavi fuori da DA-Link: file cifrati in due copie (decisione 28)
 
-Niente macchina scollegata dedicata alla CA (Riccardo, 14/10). Le chiavi che non devono mai
-stare su un computer acceso vivono **dentro due YubiKey**, chiuse in cassaforte.
+Niente macchina scollegata (Riccardo, 14/10) e, per ora, niente YubiKey (14/10 sera). Le
+chiavi che non devono vivere in DA-Link stanno in **file cifrati**.
 
-- **Cosa contiene ogni YubiKey** (A e B), con le chiavi **generate dentro il dispositivo**,
-  che non ne escono mai:
-  - una **radice della CA**;
-  - una **chiave di recupero** dei dati;
-  - una **chiave di emergenza**, per i bollettini (§9.5).
-- **Due radici, entrambe affidabili.** Gli applicativi si fidano di tutte e due le radici
-  (A e B); l'intermedia è firmata da A. È la copia di riserva fatta senza mai copiare una
-  chiave: una YubiKey persa o rotta non ferma niente (§9.4).
-- **Due chiavi di recupero, ne basta una.** Ogni istanza mette la chiave dei dati in busta per
-  entrambe le chiavi pubbliche di recupero (§8.3): per riaprirla basta A oppure B.
-- **DA-Link non le possiede.** Chi entra in DA-Link non può leggere i dati dei clienti né
-  firmare una nuova intermedia.
+- **Cosa c'è**, in un file cifrato per chiave:
+  - la **chiave di recupero** dei dati (§8.3);
+  - la **chiave di emergenza**, per i bollettini (§9.5);
+  - la **copia della chiave della CA** (§9.4).
+- **Come sono cifrati.** Con `age` e una **frase lunga** (almeno sei parole casuali), diversa
+  dalla frase di sblocco di DA-Link. Nascono nella **sessione delle chiavi** sul Mac di una
+  persona di `link-admin`. La chiave in chiaro passa solo per la memoria: si genera, si
+  cifra subito e non si scrive mai su disco.
+- **Due copie, in due posti.** Una nel vault delle credenziali
+  (`~/Documents/da-appliance-credentials/`, chmod 600), una su una chiavetta USB in
+  cassaforte. La frase la conoscono due persone, e una copia scritta sta in busta chiusa in
+  cassaforte, accanto alla frase di sblocco di DA-Link (§9.2), non sulla chiavetta.
+- **Cosa si perde rispetto alle YubiKey, detto onestamente.**
+  - Chi copia un file può provare a indovinare la frase quanto vuole, senza PIN che si
+    blocca dopo pochi tentativi. La difesa è la lunghezza della frase.
+  - Chi usa una chiave la vede in chiaro in memoria sul suo Mac per il tempo dell'uso.
+  - Il vault sta su un computer acceso: la copia in cassaforte serve se il vault va perso,
+    non lo protegge.
+- **DA-Link non possiede la chiave di recupero né quella di emergenza.** Chi entra in DA-Link
+  non può leggere i dati dei clienti né firmare un bollettino.
 - **Come si usano**, sempre con la procedura scritta:
-  - si prende una YubiKey dalla cassaforte;
-  - si inserisce in DA-Link o nel Mac di una persona di `link-admin`;
-  - la si usa col PIN, per firmare l'intermedia o per riaprire la chiave dei dati di
-    un'istanza;
-  - si rimette in cassaforte.
+  - sul Mac di una persona di `link-admin`, si decifra il file in memoria
+    (`age -d … | strumento`), mai in un file in chiaro;
+  - si firma il bollettino o si riapre la chiave dei dati di un'istanza;
+  - si chiude la sessione.
 
   Ogni uso finisce nel registro di audit: chi, perché, quale istanza.
-- **Dove stanno.** Le due YubiKey sono in due luoghi diversi, ciascuna col suo PIN in busta
-  chiusa accanto alla frase di sblocco di DA-Link (§9.2).
-- **La prova annuale.** Una volta all'anno si riapre con ciascuna YubiKey la chiave dei dati
-  di un'istanza di prova, e si verifica che le due radici siano ancora negli archivi di
-  fiducia.
-- **Più avanti** le stesse YubiKey, o altre dello stesso modello, potranno sbloccare DA-Link
-  all'avvio (§9.2).
+- **La prova annuale.** Una volta all'anno si decifrano **tutte e due le copie**, e con la
+  chiave di recupero si riapre la chiave dei dati di un'istanza di prova.
+- **Più avanti, le YubiKey.** Si potranno aggiungere senza rifare niente sugli oggetti:
+  - una chiave di recupero nuova si aggiunge alle buste al rinnovo successivo;
+  - una chiave di emergenza nuova si presenta con un bollettino firmato da quella vecchia.
 
-### 9.4 Le chiavi della CA
+### 9.4 La chiave della CA (decisione 28)
 
-- **Le radici** (A e B) nascono nelle YubiKey durante la **cerimonia iniziale**: una
-  sessione con la procedura scritta, fatta su DA-Link o sul Mac di una persona di
-  `link-admin`, senza una macchina dedicata. Servono solo per firmare o rinnovare
-  l'intermedia, ogni qualche anno.
-- **L'intermedia** sta nel portachiavi di DA-Link (§9.2). Si apre con lo stesso sblocco
-  all'avvio. Finché DA-Link è bloccato non si emettono certificati: gli oggetti hanno davanti
+- **Una radice sola**, nata nella sessione delle chiavi. La chiave sta nel portachiavi di
+  DA-Link (§9.2), che la apre con lo sblocco all'avvio; la copia sta nel file cifrato
+  (§9.3). Finché DA-Link è bloccato non si emettono certificati: gli oggetti hanno davanti
   fino a sei settimane (validità più tolleranza).
-- **Se l'intermedia viene compromessa**:
-  - la radice A la revoca;
-  - se ne firma una nuova;
-  - gli oggetti la ricevono al rinnovo successivo.
-- **Se si perde o si rompe la YubiKey A**: si firma una nuova intermedia con la B, e si
-  prepara una YubiKey nuova per tornare a due.
-
-In nessuno dei due casi si reinstalla una radice nei computer, perché le radici affidabili
-restano le stesse. È il motivo dei due livelli e delle due radici.
+- **Se DA-Link si guasta** (non compromesso): DA-Link si ripristina dal backup o, se il
+  backup non c'è, su una VM nuova con la copia della chiave. La radice non cambia, e nessuno
+  se ne accorge.
+- **Se DA-Link viene compromesso, la radice è bruciata** e se ne fa una nuova. È il prezzo
+  del livello solo:
+  - **agli oggetti** la radice nuova arriva col bollettino di emergenza «il nuovo DA-Link è
+    questo» (§9.5), che la chiave di emergenza rende affidabile. La flotta non si
+    reinstalla;
+  - **ai centrali e ai computer dei tecnici** va ridistribuita a mano: da-vulcan,
+    DA-ZABBIX, DA-CRM, DA-Link e i Mac. Va nella procedura di compromissione, con l'elenco
+    dei posti;
+  - la radice vecchia si toglie dagli archivi di fiducia nello stesso giro.
 
 ### 9.5 Resilienza: se DA-Link si guasta o viene compromesso (decisioni 22 e 23)
 
@@ -686,8 +695,8 @@ Il disegno limita il danno prima ancora che serva l'emergenza:
 - **Non può comandare le istanze.** Non ha porte verso di loro (decisione 7), e nessuna sua
   risposta cambia la configurazione di un'istanza (§5.3). Il rinnovo consegna solo segreto,
   licenza e certificato.
-- **Non può leggere i dati dei clienti.** Le chiavi dei dati stanno sulle istanze, quelle di
-  recupero nelle YubiKey (§9.3).
+- **Non può leggere i dati dei clienti.** Le chiavi dei dati stanno sulle istanze, quella di
+  recupero nei file cifrati (§9.3).
 - **Non può aprire varchi fra i clienti senza che si veda.** Col token NetBird potrebbe
   scrivere policy fra remoti. Due difese:
   - il firewall locale di ogni istanza ed edge accetta in ingresso sull'interfaccia NetBird
@@ -696,28 +705,27 @@ Il disegno limita il danno prima ancora che serva l'emergenza:
   - la verifica R1–R5 la fa **anche DA-ZABBIX**, con una lettura sua, non solo DA-Link: un
     DA-Link compromesso non può dichiararsi verde da solo.
 - **Può emettere certificati falsi per nomi interni.** Il danno resta limitato ai nomi
-  interni (§8.4) e finisce con la revoca dell'intermedia (sotto).
+  interni (§8.4) e finisce quando la radice viene sostituita (§9.4).
 
 #### La chiave di emergenza
 
-- Sulle due YubiKey (§9.3), accanto a radice e recupero, c'è una **chiave di emergenza**
-  (Ed25519) generata dentro il dispositivo. Ogni oggetto ne riceve la parte pubblica
+- In un file cifrato fuori da DA-Link (§9.3) c'è una **chiave di emergenza** (Ed25519). Ogni oggetto ne riceve la parte pubblica
   all'installazione, e la riconosce come **più forte** della firma di DA-Link.
 - **DA-Link non la possiede.** Con la chiave di emergenza si firma un solo tipo di
   documento: il **bollettino di emergenza**. Può dire quattro cose:
   1. **«Non fidarti più di questo DA-Link»**: ritira la chiave di firma delle licenze e
-     l'intermedia della CA indicate. Da quel momento l'oggetto rifiuta ogni rinnovo firmato
+     la radice della CA indicate. Da quel momento l'oggetto rifiuta ogni rinnovo firmato
      con quelle chiavi.
   2. **«Continua a lavorare fino al giorno X»**: prolunga licenza e tolleranza, per tutta la
      flotta o per i `codcli` elencati. È la «chiave di sblocco»: l'oggetto lavora in
      **modalità autonoma**, senza DA-Link, fino a quella data.
-  3. **«Il nuovo DA-Link è questo»**: indirizzo, chiave di firma e intermedia nuove, a cui
+  3. **«Il nuovo DA-Link è questo»**: indirizzo, chiave di firma e radice della CA nuove, a cui
      l'oggetto passa da solo.
   4. **«Fine dell'emergenza»**.
 - **Cosa il bollettino non può fare**: leggere dati, cambiare la configurazione delle
   istanze, eseguire comandi. Anche la chiave di emergenza, se rubata, servirebbe solo a
-  prolungare licenze o a indicare un DA-Link: per questo sta nelle YubiKey, mai su un
-  computer.
+  prolungare licenze o a indicare un DA-Link, e anche una radice nuova agli oggetti: per
+  questo sta solo nei file cifrati, mai in DA-Link.
 - **Ha una data e un numero progressivo.** L'oggetto accetta solo bollettini più nuovi
   dell'ultimo visto, così un bollettino vecchio non si può ripresentare.
 
@@ -733,7 +741,7 @@ consegna.
   copia via SSH. Serve quando l'oggetto non raggiunge il canale automatico, o per sbloccare
   un solo cliente.
 - **A ogni bollettino applicato** l'oggetto lo mostra a schermo (modalità autonoma, fino a
-  quando, firmato da quale YubiKey) e lo dichiara nel segnale di vita.
+  quando, numero del bollettino) e lo dichiara nel segnale di vita.
 
 #### La procedura di compromissione (scritta, provata una volta all'anno)
 
@@ -741,14 +749,14 @@ consegna.
    - Un amministratore di NetBird, una persona e non DA-Link, disattiva l'utente di servizio
      di DA-Link.
    - La VM di DA-Link si spegne e si conserva per l'analisi.
-2. **Sbloccare la flotta.** Con una YubiKey si firma il bollettino: «non fidarti più di
+2. **Sbloccare la flotta.** Con la chiave di emergenza (§9.3) si firma il bollettino: «non fidarti più di
    questo DA-Link» + «continua fino al giorno X» (di norma 90 giorni). Si pubblica sul
    canale di riserva; dove serve, si incolla a mano.
-3. **Revocare.** Con la radice si revoca l'intermedia compromessa. La lista di revoca
-   aggiornata viaggia nel bollettino.
+3. **Sostituire la CA.** La radice di DA-Link è bruciata: se ne fa una nuova (§9.4), e la
+   vecchia si toglie dagli archivi di fiducia dei centrali e dei computer dei tecnici.
 4. **Ricostruire.**
-   - DA-Link si reinstalla su una VM nuova, da zero, con chiave di firma nuova, intermedia
-     nuova firmata da una YubiKey e utente di servizio NetBird nuovo.
+   - DA-Link si reinstalla su una VM nuova, da zero, con chiave di firma nuova, radice
+     della CA nuova e utente di servizio NetBird nuovo.
    - Nessun segreto del vecchio si riusa.
 5. **Riconfigurare la flotta senza reinstallarla.**
    - Un secondo bollettino presenta il DA-Link nuovo.
@@ -794,9 +802,10 @@ Ogni fase si chiude da sola. Ci si può fermare dopo qualunque fase senza lascia
 - da-vulcan e DA-ZABBIX entrano in NetBird nei gruppi `centro-*`, **senza lasciare
   Tailscale**.
 - Il nome stabile per da-vulcan (§11, rischio 3).
-- **La cerimonia delle chiavi** con la procedura scritta: le due YubiKey generano radici,
-  chiavi di recupero e chiavi di emergenza, e vanno in cassaforte (§9.3, §9.4). L'intermedia nasce dopo, quando c'è
-  la macchina di DA-Link.
+- ~~La cerimonia delle chiavi con le YubiKey~~ (decisione 28): la **sessione delle chiavi**
+  si fa nella tappa B, quando c'è la macchina di DA-Link. Nascono la chiave di recupero e la
+  chiave di emergenza nei file cifrati, e la radice della CA nel portachiavi di DA-Link, con
+  la sua copia (§9.3, §9.4).
 
 Esce quando: i centrali sono connessi in NetBird, la verifica R1–R4 fatta a mano è verde e i
 colleghi raggiungono ciò che raggiungevano prima.
@@ -807,7 +816,7 @@ colleghi raggiungono ciò che raggiungevano prima.
   vuole `AVVIO-PROGETTO.md`).
 - DA-Link nasce coi compiti di §1 e le interfacce di §7, sulla sua VM in sede (§9.1), in
   `centro-link`.
-- Portachiavi con sblocco all'avvio (§9.2), `step-ca` con l'intermedia (§8.4), licenze e
+- Portachiavi con sblocco all'avvio (§9.2), `step-ca` con la radice (§8.4), licenze e
   segreti (§8).
 - Sugli oggetti l'arresto per licenza nasce **col freno**: segnala soltanto (§8.2).
 - Nei repo esistenti, le modifiche del §12, con Tailscale ancora supportato accanto.
@@ -822,7 +831,7 @@ Esce quando:
   certificato;
 - un riavvio di DA-Link lo lascia bloccato finché non si sblocca, e la VM nel frattempo
   continua a lavorare;
-- **la prova di compromissione**, sulla VM di prova: bollettino firmato con la YubiKey,
+- **la prova di compromissione**, sulla VM di prova: bollettino firmato con la chiave di emergenza, radice nuova,
   modalità autonoma, DA-Link nuovo, rientro con la chiave del certificato, fine
   dell'emergenza;
 - chiave e VM si tolgono subito dopo.
@@ -924,10 +933,15 @@ finestra per cliente.
 13. **DA-Link bloccato dopo un riavvio** (§9.2). Gli oggetti reggono sei settimane, ma un
     riavvio non notato durante le ferie si somma alla tolleranza che sta finendo. Per questo
     DA-ZABBIX lo segnala subito e la frase di sblocco la conoscono più persone.
-14. **La frase di sblocco o le YubiKey perse.** Senza frase DA-Link non firma più. Senza
-    entrambe le YubiKey non si rinnova l'intermedia, e i computer vanno rifatti con radici
-    nuove; con una sola si continua. Le copie in cassaforte non sono facoltative, e la procedura si prova una volta
-    all'anno.
+14. **La frase di sblocco o le chiavi perse.** Senza frase DA-Link non firma più. Senza la
+    frase dei file cifrati non si recuperano i dati, non si firmano bollettini e non si
+    ripristina la CA. Con una sola copia dei file si continua. Le copie in cassaforte non
+    sono facoltative, e la procedura si prova una volta all'anno.
+14b. **I file cifrati si possono attaccare senza limiti di tentativi** (decisione 28). Chi
+    copia il vault o la chiavetta può provare frasi quanto vuole. Difese:
+    - frase lunga e casuale;
+    - nessuna copia fuori dai due posti dichiarati;
+    - le YubiKey restano la strada per chiudere questo rischio più avanti.
 15. **La radice della CA va distribuita davvero**: negli applicativi, nei container e nei
     computer dei tecnici. Un applicativo che non la conosce darà errore di certificato, e la
     tentazione sarà disattivare la verifica. Non si fa: la verifica spenta è peggio del
@@ -955,10 +969,10 @@ finestra per cliente.
 - Audit di emissione, revoca, cancellazione e riallineamento.
 - Registro delle licenze per `codcli`, firma delle licenze, rinnovo di segreti e certificati
   (§8).
-- Portachiavi con sblocco all'avvio; `step-ca` con l'intermedia; copia del registro di audit
+- Portachiavi con sblocco all'avvio; `step-ca` con la radice a un livello; copia del registro di audit
   verso Graylog (§9).
-- La procedura scritta per le due YubiKey: cerimonia iniziale, firma dell'intermedia,
-  recupero, prova annuale (§9.3, §9.4).
+- La procedura scritta per le chiavi: sessione iniziale, file cifrati in due copie, recupero,
+  firma dei bollettini, radice nuova dopo una compromissione, prova annuale (§9.3, §9.4).
 - Gli standard del parco: cancello, `CONTEXT.md`, `ACCESSI.md`, scheda nel censimento.
 
 **DA-IPAM**

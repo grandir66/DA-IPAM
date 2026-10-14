@@ -312,7 +312,7 @@ ssh root@<vm> 'iptables -S | grep -E "ts-input|100.64" ; ip rule ; ip route show
   - nessun `All`;
   - nessuna rotta da remoti.
 
-### Task 6: YubiKey (Riccardo)
+### Task 6: YubiKey (Riccardo) — **annullato il 14/10, decisione 28 / ADR 0014: niente YubiKey per ora**
 
 - [ ] **Passo 1:** ordinare **due YubiKey 5 con firmware 5.7 o superiore**. Serve per avere
   chiavi Ed25519 dentro la chiavetta (PIV), per la chiave di emergenza e le radici; con un

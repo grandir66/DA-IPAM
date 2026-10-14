@@ -3,7 +3,8 @@
 /**
  * La barra sopra la mappa: «Tutto automatico» / «Passo passo» (il segmento
  * attivo ha il fondo pieno E il «●»: doppio segnale), la scelta della mappa o
- * la testa, e a destra collegamenti in più, zoom, «Adatta», «Riordina».
+ * la testa, e a destra collegamenti in più, zoom, «Adatta», «Riordina» e
+ * «◂ Dettagli» / «Dettagli ▸» (apre e chiude la barra di destra).
  * Le scritture (mappe, testa, riordina) si vedono solo agli admin.
  */
 import { useState } from "react";
@@ -41,6 +42,11 @@ interface Props {
   refreshFailedAt: number | null;
   refreshMessage: string | null;
   onRetry: () => void;
+  /** La barra dei dettagli è aperta (scelta ricordata). */
+  detailsOpen: boolean;
+  /** C'è qualcosa da mostrare (un oggetto scelto, oggetti spariti): solo allora il pulsante c'è. */
+  detailsAvailable: boolean;
+  onToggleDetails: () => void;
 }
 
 type Asked = null | "new" | "rename" | "fromAuto" | "delete";
@@ -118,6 +124,15 @@ export function MapToolbar(p: Props) {
           Riordina
         </Button>
       )}
+      {p.detailsAvailable && <Button
+        size="sm"
+        variant="outline"
+        aria-pressed={p.detailsOpen}
+        onClick={p.onToggleDetails}
+        title={p.detailsOpen ? "Chiude la barra dei dettagli: la mappa prende tutto lo spazio" : "Apre la barra dei dettagli dell'oggetto scelto"}
+      >
+        {p.detailsOpen ? "Dettagli ▸" : "◂ Dettagli"}
+      </Button>}
 
       <NameDialog
         open={asked === "new" || asked === "fromAuto"}
@@ -147,7 +162,15 @@ export function MapToolbar(p: Props) {
   );
 }
 
-function NameDialog(props: { open: boolean; title: string; initial: string; onClose: () => void; onSubmit: (name: string) => Promise<boolean> }) {
+export function NameDialog(props: {
+  open: boolean;
+  title: string;
+  initial: string;
+  /** Una riga sotto il titolo (es. quale oggetto entra nella mappa nuova). */
+  hint?: string;
+  onClose: () => void;
+  onSubmit: (name: string) => Promise<boolean>;
+}) {
   return (
     <Dialog open={props.open} onOpenChange={(o) => { if (!o) props.onClose(); }}>
       <DialogContent>
@@ -158,7 +181,9 @@ function NameDialog(props: { open: boolean; title: string; initial: string; onCl
   );
 }
 
-function NameForm({ title, initial, onClose, onSubmit }: { title: string; initial: string; onClose: () => void; onSubmit: (name: string) => Promise<boolean> }) {
+function NameForm({ title, initial, hint, onClose, onSubmit }: {
+  title: string; initial: string; hint?: string; onClose: () => void; onSubmit: (name: string) => Promise<boolean>;
+}) {
   const [name, setName] = useState(initial);
   const [busy, setBusy] = useState(false);
   const ok = name.trim().length > 0 && name.trim().length <= 80;
@@ -175,6 +200,7 @@ function NameForm({ title, initial, onClose, onSubmit }: { title: string; initia
       className="grid gap-3"
     >
       <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+      {hint && <p className="text-[13px]">{hint}</p>}
       <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={80} aria-label="Nome della mappa" placeholder="Nome della mappa" />
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onClose}>Annulla</Button>

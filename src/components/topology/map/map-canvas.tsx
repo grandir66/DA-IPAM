@@ -6,10 +6,14 @@
  * collegamento vecchio è grigio tratteggiato. I collegamenti fuori dall'albero
  * si vedono solo con «Collegamenti in più». Un admin può spostare un riquadro:
  * al rilascio si salva il ritocco (lo calcola il chiamante con la firma).
+ * Gli archi si disegnano da `tree.links` (copie della vista con principale e
+ * ridondanza), non da `model.links`. Il tasto destro su un oggetto o su una
+ * linea apre il menu (spec §11.2): il contenuto lo dà il chiamante.
  */
 import "@xyflow/react/dist/style.css";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ReactFlow, useReactFlow, type Edge, type Node, type NodeChange } from "@xyflow/react";
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { ATT_MAX, ATT_ROW, type LayoutResult } from "@/lib/topology/tree-layout";
 import type { MapLink } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
@@ -24,6 +28,9 @@ const EXTRA_EDGE = { stroke: "var(--primary)", strokeWidth: 1.2, strokeDasharray
 export function portsFrom(l: MapLink, child: string): { parentPort: string; childPort: string } {
   return l.a === child ? { parentPort: l.bPort, childPort: l.aPort } : { parentPort: l.aPort, childPort: l.bPort };
 }
+
+/** Su cosa si è premuto il tasto destro. */
+export type MenuTarget = { kind: "node"; id: string } | { kind: "edge"; link: MapLink };
 
 interface Props {
   model: ModelData;
@@ -41,6 +48,8 @@ interface Props {
   centerKey: number;
   onSelect: (id: string | null) => void;
   onMove: (nodeId: string, x: number, y: number) => void;
+  /** Il contenuto del menu del tasto destro; `close` lo chiude (dopo un'azione che apre un dialogo). */
+  renderMenu: (t: MenuTarget, close: () => void) => ReactNode;
 }
 
 export function MapCanvas(p: Props) {
@@ -49,6 +58,10 @@ export function MapCanvas(p: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const centeredRef = useRef<number | null>(null);
   const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null);
+  // Il bersaglio lo fissano i gestori di React Flow (sull'elemento interno) prima che
+  // il ContextMenuTrigger (sul contenitore) chieda di aprire: sul vuoto non si apre.
+  const targetRef = useRef<MenuTarget | null>(null);
+  const [menu, setMenu] = useState<MenuTarget | null>(null);
 
   const baseNodes = useMemo((): Node[] => {
     const byId = new Map(model.nodes.map((n) => [n.id, n]));
@@ -118,20 +131,19 @@ export function MapCanvas(p: Props) {
       }
       out.push({
         id: `t:${child}`, source: ln.parent, target: child, type: "step",
-        style: link.stale ? STALE_EDGE : TREE_EDGE, selectable: false, focusable: false,
+        style: link.stale ? STALE_EDGE : TREE_EDGE, selectable: false, focusable: false, data: { link },
       });
     }
     if (p.showExtra) {
-      const inTree = new Set(tree.via.values());
-      for (const l of model.links) {
-        if (inTree.has(l)) continue;
+      for (const l of tree.links) {
+        if (!l.redundant) continue;
         const a = layout.nodes.get(l.a), b = layout.nodes.get(l.b);
         if (!a || !b || a.role === "attached" || b.role === "attached") continue;
-        out.push({ id: `x:${l.id}`, source: l.a, target: l.b, type: "straight", style: EXTRA_EDGE, selectable: false, focusable: false });
+        out.push({ id: `x:${l.id}`, source: l.a, target: l.b, type: "straight", style: EXTRA_EDGE, selectable: false, focusable: false, data: { link: l } });
       }
     }
     return out;
-  }, [tree, layout, model.links, p.showExtra]);
+  }, [tree, layout, p.showExtra]);
 
   // Centra (zoom 100 %) sulla testa o sulla prima partenza quando cambia modo o mappa.
   const { centerOn, centerKey } = p;
@@ -149,7 +161,8 @@ export function MapCanvas(p: Props) {
   }
 
   return (
-    <div ref={wrapRef} className="h-full w-full">
+    <ContextMenu open={menu !== null} onOpenChange={(o) => setMenu(o ? targetRef.current : null)}>
+    <ContextMenuTrigger ref={wrapRef} className="h-full w-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -165,6 +178,19 @@ export function MapCanvas(p: Props) {
           if (node.type === "box" || node.type === "attached") p.onSelect(node.id);
         }}
         onPaneClick={() => p.onSelect(null)}
+        // Un gestore del clic rende la linea «attiva» per React Flow (altrimenti niente tasto destro):
+        // il clic su una linea apre i dettagli dell'oggetto di arrivo, che la descrivono.
+        onEdgeClick={(_e, edge) => {
+          if ((edge.data as { link?: MapLink } | undefined)?.link) p.onSelect(edge.target);
+        }}
+        onNodeContextMenu={(_e, node) => {
+          targetRef.current = node.type === "box" || node.type === "attached" ? { kind: "node", id: node.id } : null;
+        }}
+        onEdgeContextMenu={(_e, edge) => {
+          const link = (edge.data as { link?: MapLink } | undefined)?.link;
+          targetRef.current = link ? { kind: "edge", link } : null;
+        }}
+        onPaneContextMenu={() => { targetRef.current = null; }}
         nodesDraggable={p.draggable}
         nodesConnectable={false}
         zoomOnDoubleClick={false}
@@ -173,6 +199,8 @@ export function MapCanvas(p: Props) {
         maxZoom={2}
         defaultViewport={{ x: 0, y: 0, zoom: 1 }}
       />
-    </div>
+    </ContextMenuTrigger>
+    <ContextMenuContent>{menu && p.renderMenu(menu, () => setMenu(null))}</ContextMenuContent>
+    </ContextMenu>
   );
 }

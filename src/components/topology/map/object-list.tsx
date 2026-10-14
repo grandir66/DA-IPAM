@@ -2,28 +2,37 @@
 
 /**
  * L'elenco degli oggetti a sinistra (300 px): ricerca per nome, IP o alias,
- * gruppi apribili, «✓ nella mappa» o «Inserisci» (passo passo, admin). Oltre
+ * gruppi apribili, «✓ nella mappa». Un oggetto si aggiunge alla mappa passo
+ * passo trascinandolo sulla mappa (spec §11.2: «Inserisci» non c'è più); in
+ * «Tutto automatico» il trascinamento non c'è e il suggerimento lo dice. Oltre
  * 200 voci per gruppo si mostra «+ altri N» (altre 200 a ogni clic).
  */
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { nodeClass } from "@/lib/topology/identity";
 import type { MapNode, TopologyModel } from "@/lib/topology/model-types";
 import { TopoIcon, typeLabel } from "./topology-icons";
 
 const MAX = 200;
 const CLIENT = "Client";
+/** Il tipo del dato trascinato: l'id del nodo. Lo legge il contenitore della mappa. */
+export const DRAG_MIME = "application/x-da-ipam-node";
+
+/** «on» = si trascina (admin, passo passo); «auto» = Tutto automatico, non serve; «off» = non admin. */
+export type ListDrag = "on" | "auto" | "off";
+const DRAG_HINT: Record<ListDrag, string | null> = {
+  on: "trascinalo sulla mappa per aggiungerlo",
+  auto: "in «Tutto automatico» la mappa mostra già tutto: per trascinarlo passa a «Passo passo»",
+  off: null,
+};
 
 interface Props {
   model: TopologyModel;
   visible: ReadonlySet<string>;
   selected: string | null;
-  /** Passo passo, admin, con una mappa scelta. */
-  canInsert: boolean;
+  drag: ListDrag;
   onSelect: (id: string) => void;
-  onInsert: (id: string) => void;
 }
 
 function matches(n: MapNode, q: string): boolean {
@@ -36,7 +45,7 @@ function matches(n: MapNode, q: string): boolean {
   );
 }
 
-export function ObjectList({ model, visible, selected, canInsert, onSelect, onInsert }: Props) {
+export function ObjectList({ model, visible, selected, drag, onSelect }: Props) {
   const [q, setQ] = useState("");
   const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set([CLIENT]));
   const [limit, setLimit] = useState<Readonly<Record<string, number>>>({});
@@ -92,16 +101,24 @@ export function ObjectList({ model, visible, selected, canInsert, onSelect, onIn
               {!isClosed &&
                 shown.map((n) => {
                   const why = groups.why(n);
+                  const inMap = visible.has(n.id);
+                  const canDrag = drag === "on" && !inMap;
                   return (
                     <div
                       key={n.id}
                       role="button"
                       tabIndex={0}
+                      draggable={canDrag}
+                      onDragStart={canDrag ? (e) => {
+                        e.dataTransfer.setData(DRAG_MIME, n.id);
+                        e.dataTransfer.effectAllowed = "copy";
+                      } : undefined}
                       onClick={() => onSelect(n.id)}
                       onKeyDown={(e) => { if (e.key === "Enter") onSelect(n.id); }}
-                      title={[n.name, n.mgmtIp, typeLabel(n.type), why].filter(Boolean).join(" · ")}
+                      title={[n.name, n.mgmtIp, typeLabel(n.type), why, inMap ? null : DRAG_HINT[drag]].filter(Boolean).join(" · ")}
                       className={cn(
-                        "flex cursor-pointer items-center gap-1.5 px-2.5 py-1 text-[13px] hover:bg-muted",
+                        "flex items-center gap-1.5 px-2.5 py-1 text-[13px] hover:bg-muted",
+                        canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
                         selected === n.id && "bg-muted font-semibold",
                       )}
                     >
@@ -110,18 +127,7 @@ export function ObjectList({ model, visible, selected, canInsert, onSelect, onIn
                         {n.name}
                         {why && <span className="text-muted-foreground"> · {why}</span>}
                       </span>
-                      {visible.has(n.id) ? (
-                        <span className="shrink-0 font-semibold whitespace-nowrap">✓ nella mappa</span>
-                      ) : canInsert ? (
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          className="text-[13px]"
-                          onClick={(e) => { e.stopPropagation(); onInsert(n.id); }}
-                        >
-                          Inserisci
-                        </Button>
-                      ) : null}
+                      {inMap && <span className="shrink-0 font-semibold whitespace-nowrap">✓ nella mappa</span>}
                     </div>
                   );
                 })}

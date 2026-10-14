@@ -2,22 +2,26 @@
 
 /**
  * Il pannello a destra (400 px), al clic su un oggetto: chi è, tutti i suoi
- * indirizzi, le azioni (solo admin), a cosa è collegato e cosa c'è attaccato
- * alle sue porte. In fondo, gli oggetti della mappa che non esistono più.
+ * indirizzi, a cosa è collegato e cosa c'è attaccato alle sue porte. Solo dati:
+ * le azioni stanno nel menu del tasto destro (spec §11.2). Si chiude con ✕ (la
+ * mappa prende tutto lo spazio) e si riapre dalla barra («◂ Dettagli»). In
+ * fondo, gli oggetti della mappa che non esistono più, con «Togli» (non sono
+ * sulla mappa, il tasto destro non li raggiunge).
  */
 import { Fragment } from "react";
-import Link from "next/link";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { parseDbDate } from "@/lib/db-date";
+import { linkWords } from "@/lib/topology/edge-look";
 import { nodeClass } from "@/lib/topology/identity";
-import { LINK_SOURCE_RANK, type LinkSource, type MapLink, type MapNode } from "@/lib/topology/model-types";
+import { LINK_SOURCE_RANK, type LinkSource, type MapLink, type MapNode, type MapVm } from "@/lib/topology/model-types";
+import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
 import type { TopologyStatus } from "@/lib/topology/types";
 import { TopoIcon, typeLabel } from "./topology-icons";
 import type { ModelData } from "./use-topology-data";
 
 const MAX = 200;
-const FONTE: Record<LinkSource, string> = {
+export const FONTE: Record<LinkSource, string> = {
   manual: "a mano", unifi_uplink: "uplink UniFi", lldp: "LLDP", cdp: "CDP", mndp: "MNDP", mac_table: "tabella MAC",
 };
 const STATO: Record<TopologyStatus, string> = { ok: "✓ raggiungibile", warning: "◆ avviso", fail: "▲ giù", unknown: "? stato sconosciuto" };
@@ -27,7 +31,7 @@ function quando(s: string): string {
   return Number.isNaN(d.getTime()) ? s : d.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
 }
 
-function visto(l: MapLink): string {
+export function visto(l: MapLink): string {
   if (l.stale) return `▲ non visto da ${l.daysUnseen ?? "?"} g`;
   if (!l.daysUnseen) return "✓ visto oggi";
   return `✓ visto ${l.daysUnseen} g fa`;
@@ -36,21 +40,16 @@ function visto(l: MapLink): string {
 interface Props {
   model: ModelData;
   nodeId: string | null;
-  mode: "auto" | "passo";
-  isAdmin: boolean;
   /** Passo passo, admin, con una mappa scelta. */
   canEditMap: boolean;
   visible: ReadonlySet<string>;
-  isHead: boolean;
-  isStart: boolean;
+  /** I collegamenti come li vede questa mappa (tree.links: principale, ridondanza), per id. */
+  viewLinks: ReadonlyMap<string, MapLink>;
   /** Oggetti della mappa che non esistono più. */
   missing: string[];
   onSelect: (id: string) => void;
-  onAdd: (ids: string[]) => void;
   onRemove: (id: string) => void;
-  onStart: (id: string) => void;
-  onHead: (id: string) => void;
-  onHide: (id: string, hidden: boolean) => void;
+  /** Chiude il pannello (la scelta si ricorda); l'oggetto resta scelto. */
   onClose: () => void;
 }
 
@@ -59,8 +58,16 @@ export function LinkedPanel(p: Props) {
   const byId = new Map(model.nodes.map((n) => [n.id, n]));
   const n = p.nodeId ? byId.get(p.nodeId) : undefined;
   return (
-    <aside className="w-[400px] shrink-0 overflow-auto border-l border-border bg-card px-3.5 py-3 text-[13px]">
-      {n ? <Detail {...p} n={n} byId={byId} /> : p.nodeId && <p className="text-muted-foreground">Oggetto non più presente: {p.nodeId}</p>}
+    <aside className="relative w-[400px] shrink-0 overflow-auto border-l border-border bg-card px-3.5 py-3 text-[13px]">
+      {!n && (
+        <div className="flex items-start gap-2">
+          <p className="flex-1 text-muted-foreground">
+            {p.nodeId ? `Oggetto non più presente: ${p.nodeId}` : "Nessun oggetto scelto: un clic su un oggetto della mappa ne mostra i dettagli."}
+          </p>
+          <CloseButton onClose={p.onClose} />
+        </div>
+      )}
+      {n && <Detail {...p} n={n} byId={byId} />}
       {p.missing.length > 0 && (
         <section className="mt-4 border-t border-border pt-3">
           <h3 className="mb-1 font-semibold">Oggetti della mappa che non esistono più ({p.missing.length})</h3>
@@ -80,16 +87,23 @@ export function LinkedPanel(p: Props) {
   );
 }
 
+function CloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <Button size="icon-sm" variant="ghost" onClick={onClose} aria-label="Chiudi i dettagli" title="Chiudi i dettagli: la mappa prende tutto lo spazio">
+      <X />
+    </Button>
+  );
+}
+
 function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
   const { n, model, byId } = p;
-  const passo = p.mode === "passo";
   const links = model.links
     .filter((l) => l.a === n.id || l.b === n.id)
+    .map((l) => p.viewLinks.get(l.id) ?? l)
     .sort((a, b) => Number(a.stale) - Number(b.stale) || LINK_SOURCE_RANK[a.source] - LINK_SOURCE_RANK[b.source] || (a.id < b.id ? -1 : 1));
   const other = (l: MapLink) => (l.a === n.id ? l.b : l.a);
   const mine = (l: MapLink) => (l.a === n.id ? l.aPort : l.bPort);
   const theirs = (l: MapLink) => (l.a === n.id ? l.bPort : l.aPort);
-  const addable = [...new Set(links.map(other))].filter((id) => !p.visible.has(id) && byId.get(id)?.kind === "device");
   const ports = model.portClients.filter((pc) => pc.nodeId === n.id);
   const rows = ports.flatMap((pc) => pc.clients.map((c, i) => ({ port: pc.port, first: i === 0, c })));
   const infraHost = n.kind === "host" && nodeClass(n) !== "client";
@@ -102,11 +116,13 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
           <h2 className="text-base font-semibold break-words">{n.name}</h2>
           <p className="text-muted-foreground">
             {typeLabel(n.type)}
-            {n.kind === "host" && " · host, non un apparato censito"} · {STATO[model.status[n.id] ?? "unknown"]}
+            {n.id.startsWith("vm:")
+              ? " · non è un oggetto censito (letta dalla scansione dell'hypervisor)"
+              : <>{n.kind === "host" && " · host, non un apparato censito"} · {STATO[model.status[n.id] ?? "unknown"]}</>}
             {n.hidden && " · nascosto dalla mappa"}
           </p>
         </div>
-        <Button size="icon-sm" variant="ghost" onClick={p.onClose} aria-label="Chiudi il pannello"><X /></Button>
+        <CloseButton onClose={p.onClose} />
       </div>
       {n.aliases.length > 0 && <p className="mt-1">si annuncia come {n.aliases.join(", ")}</p>}
       {n.addresses.length > 0 && (
@@ -120,31 +136,8 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
         </ul>
       )}
 
-      {p.isAdmin && (
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {passo && p.canEditMap && (p.visible.has(n.id)
-            ? <Button size="sm" variant="outline" onClick={() => p.onRemove(n.id)}>Togli dalla mappa</Button>
-            : <Button size="sm" onClick={() => p.onAdd([n.id])}>Aggiungi alla mappa</Button>)}
-          {passo && p.canEditMap && (
-            <Button size="sm" variant="outline" disabled={p.isStart} onClick={() => p.onStart(n.id)}>
-              {p.isStart ? "▶ è una partenza" : "Usa come partenza"}
-            </Button>
-          )}
-          {!passo && (
-            <Button size="sm" variant="outline" disabled={p.isHead} onClick={() => p.onHead(n.id)}>
-              {p.isHead ? "● è la testa" : "Usa come testa"}
-            </Button>
-          )}
-          {n.kind === "device" && (
-            <Button size="sm" variant="outline" onClick={() => p.onHide(n.id, !n.hidden)}>
-              {n.hidden ? "Rimostra nella mappa" : "Nascondi dalla mappa"}
-            </Button>
-          )}
-          {infraHost && (
-            <Link className="self-center underline" href={`/objects/${n.refId}?promote=1`}>Promuovi ad apparato</Link>
-          )}
-        </div>
-      )}
+      {infraHost && <p className="mt-1.5">Host che è infrastruttura: si può promuovere ad apparato (tasto destro).</p>}
+      <VmSections n={n} vms={model.vms} byId={byId} onSelect={p.onSelect} />
 
       <h3 className="mt-4 mb-1 font-semibold">Collegato a ({links.length})</h3>
       {links.length === 0 ? (
@@ -170,13 +163,10 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
                   <td className="py-1 pr-1">
                     {l.sources.map((s) => FONTE[s]).join(" + ")}
                     <div className={l.stale ? "font-semibold" : "text-muted-foreground"}>{visto(l)}</div>
+                    {linkWords(l).map((w) => <div key={w}>{w}</div>)}
                   </td>
                   <td className="py-1 whitespace-nowrap">
-                    {p.visible.has(other(l)) ? (
-                      <span className="font-semibold">✓ nella mappa</span>
-                    ) : passo && p.canEditMap ? (
-                      <Button size="xs" variant="outline" className="text-[13px]" onClick={() => p.onAdd([other(l)])}>Aggiungi</Button>
-                    ) : null}
+                    {p.visible.has(other(l)) ? <span className="font-semibold">✓ nella mappa</span> : <span className="text-muted-foreground">fuori</span>}
                   </td>
                 </tr>
               );
@@ -185,13 +175,6 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
         </table>
       )}
       {links.length > MAX && <p className="mt-1 text-muted-foreground">+ altri {links.length - MAX}</p>}
-      {passo && p.canEditMap && addable.length > 0 && (
-        <div className="mt-2">
-          <Button size="sm" variant="outline" onClick={() => p.onAdd(addable)}>Aggiungi tutti gli apparati collegati ({addable.length})</Button>
-          <p className="mt-1 text-muted-foreground">Non gli host: le interfacce dei router restano fuori.</p>
-        </div>
-      )}
-
       {rows.length > 0 && (
         <>
           <h3 className="mt-4 mb-1 font-semibold">Porte con dispositivi attaccati ({ports.length} porte, {rows.length} MAC)</h3>
@@ -220,6 +203,59 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
           </table>
           {rows.length > MAX && <p className="mt-1 text-muted-foreground">+ altri {rows.length - MAX}</p>}
         </>
+      )}
+    </>
+  );
+}
+
+/** Se l'oggetto è una VM: stato, IP, su quale hypervisor. Se è un hypervisor: le sue VM. */
+function VmSections({ n, vms, byId, onSelect }: { n: MapNode; vms: MapVm[]; byId: Map<string, MapNode>; onSelect: (id: string) => void }) {
+  const me = vms.find((v) => v.id === n.id || v.nodeId === n.id);
+  const mine = vms.filter((v) => v.hypervisorNodeId === n.id).sort((a, b) => a.name.localeCompare(b.name, "it"));
+  // Una VM si apre dal suo oggetto censito, o dal suo nodo «vm:» se è nella pagina.
+  const target = (v: MapVm): string | null => v.nodeId ?? (byId.has(v.id) ? v.id : null);
+  return (
+    <>
+      {me && (
+        <section className="mt-3">
+          <h3 className="mb-1 font-semibold">Macchina virtuale{me.name !== n.name ? ` «${me.name}»` : ""}</h3>
+          <p>
+            {isRunning(me.status) ? "▶ accesa" : `■ spenta (${me.status || "stato non letto"})`}
+            {me.ips.length > 0 && ` · ${me.ips.join(", ")}`}
+          </p>
+          {me.hypervisorNodeId && (
+            <p>
+              gira su{" "}
+              <button type="button" className="underline" onClick={() => onSelect(me.hypervisorNodeId as string)}>
+                {byId.get(me.hypervisorNodeId)?.name ?? me.hypervisorNodeId}
+              </button>
+            </p>
+          )}
+          {me.scannedAt && <p className="text-muted-foreground">letta il {quando(me.scannedAt)}</p>}
+        </section>
+      )}
+      {mine.length > 0 && (
+        <section className="mt-3">
+          <h3 className="mb-1 font-semibold">VM ({vmSummary(mine).label})</h3>
+          <table className="w-full border-collapse">
+            <tbody>
+              {mine.slice(0, MAX).map((v) => {
+                const t = target(v);
+                return (
+                  <tr key={v.id} className="border-t border-border align-top">
+                    <td className="py-0.5 pr-1 whitespace-nowrap">{isRunning(v.status) ? "▶ accesa" : "■ spenta"}</td>
+                    <td className="py-0.5 pr-1 [overflow-wrap:anywhere]">
+                      {t ? <button type="button" className="text-left underline" onClick={() => onSelect(t)}>{v.name}</button> : v.name}
+                    </td>
+                    <td className="py-0.5 [overflow-wrap:anywhere]">{v.ips.join(", ") || <span className="text-muted-foreground">IP non noto</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {mine.length > MAX && <p className="mt-1 text-muted-foreground">+ altre {mine.length - MAX}</p>}
+          {mine[0]?.scannedAt && <p className="mt-1 text-muted-foreground">lette il {quando(mine[0].scannedAt)}</p>}
+        </section>
       )}
     </>
   );

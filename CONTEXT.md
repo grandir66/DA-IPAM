@@ -25,7 +25,23 @@ Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUD
 
 ## 6. Stato e igiene (fotografia 2026-10-14)
 
-- **Da Tailscale a NetBird, rete a stella, e DA-Link (14/10, disegno approvato a voce e rivisto, documento da rileggere)**: al centro da-vulcan, DA-ZABBIX e **DA-Link** (progetto nuovo in `Domarc/DA-Link`, inizio della tappa 9): fa entrare gli oggetti in NetBird da solo (chiavi monouso), riceve dalle istanze lo stato e, solo se l'istanza lo consente, i numeri d'inventario (privacy decisa sull'istanza, default solo stato), dà il quadro a DA-CRM. Dai clienti edge, proxy Zabbix e istanze IPAM, ciechi fra loro; Wazuh e DA-VA-OVH fuori; cliente = `codcli` del gestionale. Licenza con segreto ruotato ogni 4 settimane (+2 di tolleranza) che firma gli scambi e protegge i dati a busta, CA interna (radice fuori linea), DA-Link con accesso ristretto e sblocco a mano all'avvio. Spec `docs/superpowers/specs/2026-10-14-netbird-rete-a-stella-design.md`, ADR 0011 e 0013. Prima di qualunque cliente: le policy dei colleghi escono dal gruppo `All` (spec §6.2).
+- **Da Tailscale a NetBird, rete a stella, e DA-Link (14/10, disegno approvato a voce e rivisto, documento da rileggere)**: al centro da-vulcan, DA-ZABBIX e **DA-Link** (progetto nuovo in `Domarc/DA-Link`, inizio della tappa 9): fa entrare gli oggetti in NetBird da solo (chiavi monouso), riceve dalle istanze lo stato e, solo se l'istanza lo consente, i numeri d'inventario (privacy decisa sull'istanza, default solo stato), dà il quadro a DA-CRM. Dai clienti edge, proxy Zabbix e istanze IPAM, ciechi fra loro; Wazuh e DA-VA-OVH fuori; cliente = `codcli` del gestionale. Licenza con segreto ruotato ogni 4 settimane (+2 di tolleranza) che firma gli scambi e protegge i dati a busta, CA interna (radice fuori linea), DA-Link con accesso ristretto e sblocco a mano all'avvio. Spec `docs/superpowers/specs/2026-10-14-netbird-rete-a-stella-design.md`, ADR 0011 e 0013. **Fase 0 eseguita il 14/10** (conferme di Riccardo: Task 3, 4 e 5 sì). Fatti:
+  - `All` è fuori dalle policy accese e dai nameserver di NetBird; `users` è gruppo automatico
+    di ogni persona; `Default` era già spenta;
+  - da-vulcan e DA-ZABBIX sono nei gruppi `centro-*`, e Tailscale resta acceso;
+  - censimento nell'appendice A della spec, decisioni 24-27.
+
+  Aperti: la verifica di un collega che sta solo in `users` e le YubiKey (piano generale,
+  «Avanzamento»).
+
+  **Trappole nuove:**
+  - Tailscale col firewall acceso scarta il traffico NetBird appena `tailscaled` si
+    riavvia. Ogni nodo a doppio binario va con `tailscale set --netfilter-mode=off` (spec,
+    rischio 1).
+  - Su questo Mac `grep` è ugrep e rispetta i `.gitignore`: per contare in `~/Progetti` si
+    usa `rg --no-ignore`.
+  - Le policy NetBird verso le risorse hanno destinazione vuota: si leggono con
+    `/api/networks`.
 - **Piano di miglioramento (12/10)**: nove tappe in `docs/superpowers/specs/2026-10-12-piano-miglioramento-design.md`; decisioni in ADR 0004. Bacheca: `lavori piano-miglioramento-da-ipam`.
 - **Controller di rete (ADR 0005, 0007)**: UniFi (Omada dopo) = righe di `network_controllers` nel DB del cliente, pagina `/controllers`, job `unifi_sync` spento di default; UniFi OS con chiave API (`X-API-KEY`). Il controller della rete Domarc è un UDM sull'hub; Omada dei clienti non si legge dall'hub. LLDP sta sull'apparato, mai nelle porte.
 - **Mappa topologia, fasi 1-2 (ADR 0008, 0009)**: modello in `src/lib/topology/` (`model.ts`, `identity.ts`, `attach.ts`, `tree.ts`, `tree-layout.ts`), pagina `src/components/topology/map/`, rotte `/api/topology/maps*`, misure `scripts/misura-topologia.ts`, `misura-mac-porta.ts`. **Trappole**: i vicini non si cancellano (invecchiano, pota a 90 giorni); `switch_ports.is_uplink = 0` non vuol dire «non uplink»; MAC virtuali (VRRP/HSRP) e seriale degli host non identificano nessuno; nomi di fabbrica o corti non fondono; il job dei client UniFi è spento di default e legge solo 7:00-19:59; l'abbinamento richiede apparati già letti con `controller_mac`; la mappa automatica di una rete grande è larghissima in orizzontale: si usa il verticale (ADR 0012) o «passo passo». La migrazione sta in fondo a `getTenantDb`.

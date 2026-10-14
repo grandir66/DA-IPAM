@@ -104,3 +104,14 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
 
 - 2026-10-14: spec, ADR 0011 e 0013, questo piano e il piano della fase 0 scritti.
   Nessuna tappa iniziata.
+- 2026-10-14 sera: **fase 0 quasi chiusa**. Fatti: censimento (spec, appendice A) e
+  decisioni 24-27; convivenza misurata, con rimedio `--netfilter-mode=off` (rischio 1).
+  `All` è uscito dalle 5 policy accese e dai 2 nameserver, con la fotografia nel vault, e
+  `users` è diventato gruppo automatico di tutte le persone. `Default` era già spenta.
+  Gruppi `centro-vulcan`, `centro-zabbix` e `centro-link` creati; DA-ZABBIX è in
+  `centro-zabbix`; da-vulcan è in NetBird (`da-vulcan.netbird.selfhosted`, Tailscale
+  acceso con `netfilter-mode=off`). R1–R4 sono verdi a mano.
+  Restano aperti:
+  - la verifica di un collega che sta solo in `users`, da fuori sede (Task 4, passo 5);
+  - le YubiKey da ordinare (Task 6);
+  - il nodo `prova-convivenza` da togliere dalla console di Tailscale.

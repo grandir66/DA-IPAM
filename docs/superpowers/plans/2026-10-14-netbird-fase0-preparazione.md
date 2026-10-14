@@ -3,6 +3,9 @@
 > **Per gli agenti:** REQUIRED SUB-SKILL: superpowers:executing-plans (in questa fase non c'è
 > codice di prodotto: si eseguono i compiti in ordine, nella sessione principale, e ci si
 > ferma dove è scritto **CONFERMA**). Passi con le caselle (`- [ ]`).
+>
+> **Eseguito il 2026-10-14**: esito nel piano generale, «Avanzamento». La VM del Task 3 è stata
+> fatta sul PX-NAS di casa (`192.168.99.1`) invece che su DA-PX-04, per scelta di Riccardo.
 
 **Obiettivo:** sapere esattamente cosa c'è oggi, provare che Tailscale e NetBird convivono,
 togliere `All` dalle policy dei colleghi e mettere in NetBird i centrali. Il tutto senza
@@ -49,7 +52,7 @@ su da-vulcan sono poche, ognuna con fotografia prima e modo di tornare indietro.
 
 ### Task 0: Le conferme, tutte insieme
 
-- [ ] **Passo 1: chiedere a Riccardo, in un solo messaggio, le conferme per:**
+- [x] **Passo 1: chiedere a Riccardo, in un solo messaggio, le conferme per:**
   - **Task 3**: creare una VM di prova su `DA-PX-04`, che si cancella alla fine, e un gruppo
     NetBird `prova-convivenza` con una setup key monouso e una policy
     `admins → prova-convivenza` tcp 22, che si tolgono alla fine;
@@ -57,7 +60,7 @@ su da-vulcan sono poche, ognuna con fotografia prima e modo di tornare indietro.
     spegnere `Default`;
   - **Task 5**: creare i gruppi `centro-vulcan`, `centro-zabbix`, `centro-link`; installare
     il client NetBird su da-vulcan accanto a Tailscale e aggiungere DA-ZABBIX al suo gruppo.
-- [ ] **Passo 2:** annotare nel CONTEXT di DA-IPAM (§6) cosa è confermato e cosa no. Un
+- [x] **Passo 2:** annotare nel CONTEXT di DA-IPAM (§6) cosa è confermato e cosa no. Un
   task non confermato si salta e si dice.
 
 ### Task 1: Censimento in sola lettura
@@ -66,7 +69,7 @@ su da-vulcan sono poche, ognuna con fotografia prima e modo di tornare indietro.
 - Crea, usa e getta, nello scratchpad: `censimento_netbird.py`
 - Modifica: la spec, appendice nuova «A. Censimento fase 0 (data)»
 
-- [ ] **Passo 1: Tailscale, una sola chiamata.**
+- [x] **Passo 1: Tailscale, una sola chiamata.**
 
 ```bash
 ssh -o ConnectTimeout=10 domarc@da-vulcan 'tailscale status --json' > "$SCRATCH/ts.json"; echo "exit=$?"
@@ -84,7 +87,7 @@ EOF
 Atteso: `exit=0` e una riga per nodo, compresi quelli offline. Se `exit=255` è ssh, non
 Tailscale: si prova `ssh domarc@192.168.4.6` una volta, poi ci si ferma e si chiede (REGOLA #0).
 
-- [ ] **Passo 2: NetBird, script in sola lettura.**
+- [x] **Passo 2: NetBird, script in sola lettura.**
 
 ```python
 # censimento_netbird.py — sola lettura, usa e getta (fase 0). Non stampa segreti.
@@ -149,7 +152,7 @@ python3 -I "$SCRATCH/censimento_netbird.py" > "$SCRATCH/netbird.txt"; echo "exit
 Atteso: `exit=0`. Prima di mettere l'output in contesto si controlla che non contenga
 stringhe lunghe simili a chiavi: `grep -E '[A-Za-z0-9]{32,}' "$SCRATCH/netbird.txt" | wc -l` → `0`.
 
-- [ ] **Passo 3: edge noti all'hub e tenant di DA-IPAM, una chiamata per macchina.**
+- [x] **Passo 3: edge noti all'hub e tenant di DA-IPAM, una chiamata per macchina.**
 
 ```bash
 ssh domarc@da-vulcan "sqlite3 -readonly ~/da-vul-can/data/vuln.db \"SELECT id,label,codcli,public_hostname,scanner_edge_version,substr(last_seen_at,1,16),state FROM edge_bridges ORDER BY codcli;\"" > "$SCRATCH/edge.txt"; echo "exit=$?"
@@ -159,16 +162,16 @@ ssh root@172.16.0.2 "sqlite3 -readonly /opt/da-ipam/data/hub.db \"SELECT codice_
 Se `sqlite3` manca su una macchina, lo si dice e si legge con `python3 -c` (sqlite3 della
 libreria standard): niente installazioni.
 
-- [ ] **Passo 4: confronto dei codici.** Per ogni `codice_cliente` dei tenant e ogni `codcli`
+- [x] **Passo 4: confronto dei codici.** Per ogni `codice_cliente` dei tenant e ogni `codcli`
   degli edge si controlla la ragione sociale sulla scheda del CRM (`crm.domarc.it`, ricerca
   per codice). Si elencano **per nome** i codici che non corrispondono a un `codcli` (atteso
   almeno `70791a`) e i `DEFAULT`.
 
-- [ ] **Passo 5: porte reali.** Per ogni edge attivo, la porta dell'interfaccia (6443 o
+- [x] **Passo 5: porte reali.** Per ogni edge attivo, la porta dell'interfaccia (6443 o
   8443) dalla colonna `public_hostname` o dalla configurazione del ponte in da-vulcan. Si
   chiudono le porte «da misurare» rimaste nella spec (§4.2) e si scrivono nella tabella P.
 
-- [ ] **Passo 6: l'appendice della spec.** Si aggiunge in fondo alla spec «Appendice A —
+- [x] **Passo 6: l'appendice della spec.** Si aggiunge in fondo alla spec «Appendice A —
   Censimento fase 0 (AAAA-MM-GG, fonti)»:
   - tabella dei nodi Tailscale (nome, tipo di oggetto dedotto, cliente, online, ultimo
     contatto);
@@ -179,7 +182,7 @@ libreria standard): niente installazioni.
 
   **Nessun IP pubblico di clienti, nessun segreto.**
 
-- [ ] **Passo 7: commit** (solo documentazione, su `dev` da un worktree di `origin/dev`):
+- [x] **Passo 7: commit** (solo documentazione, su `dev` da un worktree di `origin/dev`):
 ```bash
 git add docs/superpowers/specs/2026-10-14-netbird-rete-a-stella-design.md
 git commit -m "docs(netbird): censimento fase 0 — Tailscale, NetBird, edge, tenant"
@@ -187,7 +190,7 @@ git commit -m "docs(netbird): censimento fase 0 — Tailscale, NetBird, edge, te
 
 ### Task 2: Decisioni con Riccardo sul censimento
 
-- [ ] **Passo 1: un solo messaggio a Riccardo con:**
+- [x] **Passo 1: un solo messaggio a Riccardo con:**
   - **il nome stabile di da-vulcan**: `da-vulcan.netbird.selfhosted` oppure un nome nel DNS
     interno (spec, rischio 3), con il numero di riferimenti da cambiare
     (`grep -rIl --exclude-dir={node_modules,.git,.next,.venv} -w da-vulcan ~/Progetti | wc -l`);
@@ -195,17 +198,17 @@ git commit -m "docs(netbird): censimento fase 0 — Tailscale, NetBird, edge, te
   - **l'agente Python remoto di DA-IPAM**: quanti `tenant-agents` esistono davvero; se zero,
     proposta di toglierlo nella tappa C1;
   - **i codici da correggere** del Task 1, passo 4.
-- [ ] **Passo 2:** le risposte nella spec, §2 (decisioni nuove numerate) e §15 (voci chiuse).
+- [x] **Passo 2:** le risposte nella spec, §2 (decisioni nuove numerate) e §15 (voci chiuse).
   Commit come nel Task 1, passo 7.
 
 ### Task 3: Prova di convivenza Tailscale + NetBird (**CONFERMA**)
 
 Risponde al rischio 1 della spec: con Tailscale acceso, il traffico NetBird passa?
 
-- [ ] **Passo 1: VM di prova** su `DA-PX-04` (`192.168.40.4`): Ubuntu 24.04 da template,
+- [x] **Passo 1: VM di prova** su `DA-PX-04` (`192.168.40.4`): Ubuntu 24.04 da template,
   nome `prova-convivenza`. Tailscale installato e collegato alla tailnet attuale con un
   login interattivo che fa Riccardo. Niente auth-key in chiaro.
-- [ ] **Passo 2: NetBird.**
+- [x] **Passo 2: NetBird.**
   - Con lo script del Task 1, esteso con una sola funzione di scrittura, si creano il gruppo
     `prova-convivenza`, una setup key monouso valida 1 giorno con quel gruppo, e la policy
     `admins → prova-convivenza` tcp 22.
@@ -242,36 +245,36 @@ print(k["key"])                              # solo su stdout, verso ssh
 python3 -I "$SCRATCH/emetti.py" | ssh root@<vm> 'read -r K; netbird up --management-url https://netbird.domarc.it --setup-key "$K" --hostname prova-convivenza'; echo "exit=$?"
 ```
   Atteso: `exit=0` e, sulla VM, `netbird status` con `Management: Connected`.
-- [ ] **Passo 3: misura, in un solo comando sulla VM.**
+- [x] **Passo 3: misura, in un solo comando sulla VM.**
 ```bash
 ssh root@<vm> 'iptables -S | grep -E "ts-input|100.64" ; ip rule ; ip route show table all | grep -E "wt0|tailscale0" | head; netbird status | head -20; tailscale status | head -5'
 ```
   e dal Mac di un admin collegato a NetBird: `ssh -o ConnectTimeout=5 root@prova-convivenza.netbird.selfhosted true; echo exit=$?`.
-- [ ] **Passo 4: esito.**
+- [x] **Passo 4: esito.**
   - Se `exit=0`, la convivenza regge: si annota e si va avanti.
   - Se fallisce, una sola prova del rimedio `tailscale set --netfilter-mode=off` e si
     ripete il passo 3.
   - Se fallisce ancora, ci si ferma e si porta a Riccardo la seconda via: una fascia NetBird
     diversa, impostazione dell'account, che è una scrittura sul NetBird di tutti.
-- [ ] **Passo 5: pulizia.** Cancellati il peer, la chiave se non usata, la policy, il gruppo
+- [x] **Passo 5: pulizia.** Cancellati il peer, la chiave se non usata, la policy, il gruppo
   e la VM. Lo script di censimento rilanciato non deve più mostrare `prova-convivenza`.
-- [ ] **Passo 6:** l'esito e il rimedio scelto nella spec (§11, rischio 1, «misurato il …»).
+- [x] **Passo 6:** l'esito e il rimedio scelto nella spec (§11, rischio 1, «misurato il …»).
   Commit.
 
 ### Task 4: `All` fuori dalle policy dei colleghi, poi `Default` spenta (**CONFERMA**)
 
-- [ ] **Passo 1: fotografia.** Export JSON completo di gruppi, policy, rotte e nameserver,
+- [x] **Passo 1: fotografia.** Export JSON completo di gruppi, policy, rotte e nameserver,
   scritto con `chmod 600` nel vault:
   `~/Documents/da-appliance-credentials/netbird-fotografia-AAAAMMGG-HHMM.json`.
   Si verifica che il file si rilegga (`python3 -c 'import json;json.load(open(...))'`).
-- [ ] **Passo 2: prova a vuoto.** Lo script stampa, per nome, ogni policy, rotta e
+- [x] **Passo 2: prova a vuoto.** Lo script stampa, per nome, ogni policy, rotta e
   nameserver che usa `All`, e cosa diventerebbe (`users`, `admins` o entrambi, secondo la
   tabella di DA-Infra `docs/servizi/netbird.md`). Stampa anche i peer solo in `All` e cosa
   succederebbe loro. **Riccardo legge i nomi e dice sì.**
-- [ ] **Passo 3: `users` gruppo automatico di ogni persona**, con `assegna_gruppo_automatico`
+- [x] **Passo 3: `users` gruppo automatico di ogni persona**, con `assegna_gruppo_automatico`
   del client DA-Zabbix, solo per gli utenti senza gruppi. Poi si verifica che ogni persona
   abbia `users`.
-- [ ] **Passo 4: applicare** le sostituzioni del passo 2, una per una, e rileggere dopo ognuna.
+- [x] **Passo 4: applicare** le sostituzioni del passo 2, una per una, e rileggere dopo ognuna.
 - [ ] **Passo 5: verifica dal di fuori**, fatta da Riccardo dal telefono in hotspot o da un
   collega fuori sede:
   - Manager e INTEGRA si aprono;
@@ -279,20 +282,20 @@ ssh root@<vm> 'iptables -S | grep -E "ts-input|100.64" ; ip rule ; ip route show
   - `dig +short manager.domarc.it` risponde `192.168.4.42`;
   - un servizio in DMZ si apre;
   - l'exit node c'è per chi lo usava.
-- [ ] **Passo 6: spegnere `Default`** con `spegni_regola_aperta()`, e ripetere la verifica
+- [x] **Passo 6: spegnere `Default`** con `spegni_regola_aperta()`, e ripetere la verifica
   del passo 5.
-- [ ] **Passo 7: indietro, se qualcosa non va.** Si rimettono policy, rotte e nameserver
+- [x] **Passo 7: indietro, se qualcosa non va.** Si rimettono policy, rotte e nameserver
   dalla fotografia del passo 1, voce per voce, e si riaccende `Default`.
-- [ ] **Passo 8:** in DA-Infra `docs/servizi/netbird.md` la regola «`All` mai in policy,
+- [x] **Passo 8:** in DA-Infra `docs/servizi/netbird.md` la regola «`All` mai in policy,
   rotte e nameserver», con la data. Commit in DA-Infra.
 
 ### Task 5: I centrali in NetBird, senza lasciare Tailscale (**CONFERMA**)
 
-- [ ] **Passo 1:** gruppi `centro-vulcan`, `centro-zabbix`, `centro-link`, vuoti. Nessuna
+- [x] **Passo 1:** gruppi `centro-vulcan`, `centro-zabbix`, `centro-link`, vuoti. Nessuna
   policy nuova: le scriverà DA-Link (tappa A), che ne è il proprietario.
-- [ ] **Passo 2: DA-ZABBIX.** Dal censimento: se è già un peer (lo usano i proxy), lo si
+- [x] **Passo 2: DA-ZABBIX.** Dal censimento: se è già un peer (lo usano i proxy), lo si
   aggiunge a `centro-zabbix` con `metti_nel_gruppo`. P4 e P4b di DA-Zabbix restano come sono.
-- [ ] **Passo 3: da-vulcan.**
+- [x] **Passo 3: da-vulcan.**
   - Client NetBird installato da repo ufficiale; setup key monouso con gruppo
     `centro-vulcan`, passata da stdin.
   - **Tailscale resta acceso.**
@@ -300,9 +303,9 @@ ssh root@<vm> 'iptables -S | grep -E "ts-input|100.64" ; ip rule ; ip route show
     `systemctl is-active da-vul-can; curl -sk -o /dev/null -w "%{http_code}" https://localhost/api/health`.
   - Dopo, in più: `netbird status | head`.
   - Atteso: servizio attivo e 200 sia prima sia dopo.
-- [ ] **Passo 4: gli edge non cambiano niente.** Si controlla in `edge_bridges` che
+- [x] **Passo 4: gli edge non cambiano niente.** Si controlla in `edge_bridges` che
   `last_seen_at` continui ad avanzare nell'ora successiva.
-- [ ] **Passo 5:** lo script di censimento rilanciato mostra i due centrali nei gruppi giusti.
+- [x] **Passo 5:** lo script di censimento rilanciato mostra i due centrali nei gruppi giusti.
   R1–R4 a mano:
   - nessuna policy fra remoti;
   - `Default` spenta;
@@ -321,6 +324,6 @@ ssh root@<vm> 'iptables -S | grep -E "ts-input|100.64" ; ip rule ; ip route show
 
 - [ ] I centrali sono connessi in NetBird nei loro gruppi; R1–R4 verdi a mano; i colleghi
   raggiungono ciò che raggiungevano prima (Task 4, passo 5, fatto due volte).
-- [ ] La spec ha l'appendice A, il rischio 1 misurato e le decisioni del Task 2.
-- [ ] Nel piano generale, «Avanzamento»: una riga con data e cosa è fatto. CONTEXT di DA-IPAM
+- [x] La spec ha l'appendice A, il rischio 1 misurato e le decisioni del Task 2.
+- [x] Nel piano generale, «Avanzamento»: una riga con data e cosa è fatto. CONTEXT di DA-IPAM
   aggiornato.

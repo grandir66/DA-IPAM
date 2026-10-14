@@ -126,3 +126,14 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
   macchine `:8443`**: P1 e P7 passano a 8443 (spec §4.2 corretta); nome del cliente da un ruolo
   `link_ro` sul Postgres della `.42`. Da confermare con Riccardo: la revoca di un cliente tocca
   solo i nodi creati da DA-Link (§5.5), non tutto `cli-<codcli>` (§5.4).
+- 2026-10-14 ~23:00: **tappa A chiusa.** In esercizio: VM `DA-LINK` (VMID 109, `192.168.4.44`,
+  NetBird `100.107.174.252`, gruppo `centro-link`, zona rossa, volume LUKS sbloccato a mano),
+  utente di servizio NetBird `da-link` (token 365 giorni dal 14/10/2026), gruppi e policy
+  `dalink-P1`, `P2`, `P3`, `P5`, `P6a`, `P6b`, ruolo `link_ro` sul Postgres della `.42`, ingresso
+  Graylog GELF UDP 12201, voce `dalink` in DA-Auth (solo Microsoft, `sso` False). **Freno acceso**:
+  il riallineamento delle policy segnala soltanto. Prima verifica R1–R5 sulla rete vera: verde,
+  nessuna violazione altrui. Rosso altrui visto: il cancello di DA-Infra segnala macchine non
+  documentate (DA-PRESIDIO, DA-PX-DTCNTER) e DA-IPAM `:4443` non raggiungibile. Aperti: record DNS
+  `link.domarc.it` (a mano, i DC non hanno credenziali nel vault); certificato 8443 auto-firmato
+  fino alla CA della tappa B. Prossimo: tappe C1, D1, E, F in parallelo; contare le segnalazioni
+  del riallineamento prima di togliere il freno.

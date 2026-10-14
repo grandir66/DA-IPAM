@@ -13,6 +13,7 @@ import {
   type TopologyModelInput,
 } from "@/lib/topology/model-types";
 import { buildNodeIndex } from "@/lib/topology/node-index";
+import { nodeClass } from "@/lib/topology/identity";
 import { assignSites } from "@/lib/topology/sites";
 
 export const PROMOTE_CLASSES = ["switch", "router", "access_point", "firewall"] as const;
@@ -40,7 +41,10 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
       hostId: n.refId, name: n.name, ip: n.mgmtIp ?? "", classification: n.type, links: degree.get(n.id) ?? 0,
     }))
     .sort((a, b) => b.links - a.links || a.name.localeCompare(b.name, "it") || a.hostId - b.hostId);
-  const isolated = devices.filter((n) => !n.hidden && (degree.get(n.id) ?? 0) === 0).map((n) => n.id);
+  // «Da sistemare» (spec §10.2): apparati senza collegamenti e oggetti attaccati (server, NAS, hypervisor) senza collegamenti.
+  const isolated = nodes
+    .filter((n) => !n.hidden && (degree.get(n.id) ?? 0) === 0 && (n.kind === "device" || nodeClass(n) === "att"))
+    .map((n) => n.id);
   const suspicious = isolated.filter((id) => {
     const n = idx.nodes.get(id);
     return n !== undefined && SUSPICIOUS_TYPES.includes(n.type) && (portCount.get(n.refId) ?? 0) === 0;
@@ -60,7 +64,7 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
     attachedLinks: links.filter((l) => isDev(l.a) !== isDev(l.b)).length,
     staleLinks: links.filter((l) => l.stale).length,
     unmatchedNeighbors: unmatched.length,
-    isolatedDevices: isolated.length,
+    isolatedDevices: isolated.filter(isDev).length,
     fusedHosts: idx.fusedHosts,
     mergedHosts: idx.mergedHosts,
     devicesWithoutSite: withoutSite.length,

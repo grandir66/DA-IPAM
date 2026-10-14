@@ -169,3 +169,24 @@ for (const tipo of ["server_linux", "server"] as const) {
     assert.deepEqual(r.attachLinks.map((l) => [l.a, l.aPort, l.b, l.source]), [["dev:2", "Port 15", "dev:3", "mac_table"]]);
   });
 }
+
+test("host server visto solo dal router sul bridge: da sistemare, non radice dell'albero automatico", async () => {
+  const { buildTopologyModel } = await import("@/lib/topology/model");
+  const { autoVisible, buildTree } = await import("@/lib/topology/tree");
+  const m = mac(7);
+  const i = input({
+    hosts: [host(1, { ip: "10.0.1.50", mac: m, classification: "server_linux" })],
+    neighbors: [], uplinkPorts: [],
+    macPorts: [mp(1, m, "bridge"), mp(2, mac(8), "Port 3")],
+    devices: [
+      dev(1, { name: "RTR-1", device_type: "router", host: "10.0.0.1" }),
+      dev(2, { name: "SW-2", host: "10.0.0.2" }),
+    ],
+    knownMacs: [{ device_id: 1, mac: mac(9) }],
+  });
+  const model = buildTopologyModel(i);
+  assert.ok(model.isolated.includes("host:1"), "fra quelli da sistemare");
+  assert.ok(!autoVisible(model).has("host:1"));
+  assert.ok(!buildTree(model, autoVisible(model), ["dev:1"]).roots.includes("host:1"));
+  assert.equal(model.counts.isolatedDevices, 2, "il conteggio resta degli apparati");
+});

@@ -69,6 +69,8 @@ async function main(): Promise<number> {
     apparati_isolati: m.counts.isolatedDevices,
     nodi_totali: m.counts.nodes,
     collegamenti_totali: m.counts.links,
+    radici_albero_automatico: tree.roots.length,
+    da_sistemare: m.isolated.length,
     figli_di_router: Object.values(padre).filter((v) => v === "router").length,
   };
   if (salva) fs.writeFileSync(salva, JSON.stringify(padre));

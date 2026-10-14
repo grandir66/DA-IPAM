@@ -41,6 +41,9 @@ export const SCHEDULED_JOB_TYPES = [
 
 export type ScheduledJobType = (typeof SCHEDULED_JOB_TYPES)[number];
 
+/** Il job hypervisor_sync gira una volta al giorno (lo scheduler lo mette alle 03:00). */
+export const HYPERVISOR_SYNC_MINUTES = 1440;
+
 /** Il vincolo SQL, così com'è dentro `job_type TEXT NOT NULL CHECK(…)`. */
 export const SCHEDULED_JOB_TYPES_CHECK_SQL = `job_type IN (${SCHEDULED_JOB_TYPES.map((t) => `'${t}'`).join(", ")})`;
 

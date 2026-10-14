@@ -87,6 +87,7 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   wazuh_sync: "Sincronizzazione Wazuh (agent/sysc/CVE)",
   ad_sync: "Sincronizzazione Active Directory",
   unifi_sync: "Sincronizzazione controller UniFi",
+  hypervisor_sync: "Lettura hypervisor (VM e schede)",
 };
 
 const HEAVY_JOB_TYPES = new Set(["fast_scan", "ping_sweep"]);

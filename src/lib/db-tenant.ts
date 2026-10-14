@@ -16,7 +16,8 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
-import { SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
+import { HYPERVISOR_SYNC_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
+import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
@@ -8961,6 +8962,88 @@ export function setControllerSchedule(controllerId: number, minutes: number | nu
       d.prepare(
         "INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'unifi_sync', ?, 1, ?)",
       ).run(minutes, JSON.stringify({ controller_id: controllerId }));
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LETTURA DEGLI HYPERVISOR (topologia fase 2b): un job hypervisor_sync per
+// tenant, ogni giorno, SPENTO di default. Lo accende un amministratore dalla
+// pagina «Dati della mappa»; nessuna migrazione lo crea.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Gli apparati che il job legge: hypervisor con scansione Proxmox, accesi. Solo i campi che servono. */
+export function listHypervisorScanDevices(): Array<{ id: number; last_proxmox_scan_at: string | null }> {
+  const rows = db()
+    .prepare(
+      `SELECT id, vendor, protocol, device_type, classification, scan_target, product_profile, enabled, last_proxmox_scan_at
+         FROM network_devices ORDER BY id`,
+    )
+    .all() as Array<{
+    id: number;
+    vendor: string;
+    protocol: string;
+    device_type: string;
+    classification: string | null;
+    scan_target: string | null;
+    product_profile: string | null;
+    enabled: number;
+    last_proxmox_scan_at: string | null;
+  }>;
+  return rows
+    .filter((r) => r.enabled === 1 && isProxmoxVeDevice(r))
+    .map((r) => ({ id: r.id, last_proxmox_scan_at: r.last_proxmox_scan_at }));
+}
+
+export interface HypervisorSyncState {
+  /** Il job c'è ed è acceso. */
+  enabled: boolean;
+  jobId: number | null;
+  /** Fine dell'ultimo giro del job (UTC del DB), null se non è mai girato. */
+  lastRun: string | null;
+  /** Quanti apparati il job leggerebbe. */
+  hypervisors: number;
+  /** La scansione Proxmox più recente fra quegli apparati (ISO), null se nessuna. */
+  lastScanAt: string | null;
+}
+
+export function getHypervisorSyncSchedule(): HypervisorSyncState {
+  const job = db()
+    .prepare("SELECT id, enabled, last_run FROM scheduled_jobs WHERE job_type = 'hypervisor_sync' ORDER BY id LIMIT 1")
+    .get() as { id: number; enabled: number; last_run: string | null } | undefined;
+  const devices = listHypervisorScanDevices();
+  const scans = devices.map((d) => d.last_proxmox_scan_at).filter((x): x is string => !!x).sort();
+  return {
+    enabled: !!job && job.enabled === 1,
+    jobId: job?.id ?? null,
+    lastRun: job?.last_run ?? null,
+    hypervisors: devices.length,
+    lastScanAt: scans.length > 0 ? scans[scans.length - 1] : null,
+  };
+}
+
+/**
+ * Accende o spegne la lettura giornaliera degli hypervisor: `on` = un job
+ * hypervisor_sync (creato se manca, uno solo, config `{}`), `!on` = cancellato
+ * (non resta un job spento che si riaccende dalla pagina dei job senza vedere
+ * cosa fa). Chi chiama ricarica lo scheduler del tenant.
+ */
+export function setHypervisorSyncSchedule(on: boolean): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    const existing = d.prepare("SELECT id FROM scheduled_jobs WHERE job_type = 'hypervisor_sync' ORDER BY id").all() as Array<{ id: number }>;
+    const [keep, ...extra] = existing;
+    for (const j of on ? extra : existing) d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(j.id);
+    if (!on) return;
+    if (keep) {
+      d.prepare("UPDATE scheduled_jobs SET interval_minutes = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?").run(
+        HYPERVISOR_SYNC_MINUTES,
+        keep.id,
+      );
+    } else {
+      d.prepare(
+        "INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'hypervisor_sync', ?, 1, '{}')",
+      ).run(HYPERVISOR_SYNC_MINUTES);
     }
   });
 }

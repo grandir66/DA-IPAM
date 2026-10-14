@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
 import type { MapLink, MapNode, TopologyModel } from "@/lib/topology/model-types";
+import { HypervisorSyncCard } from "./hypervisor-sync-card";
 
 type Model = TopologyModel & { staleDays: number };
 const MAX = 200;
@@ -107,6 +108,8 @@ export function DatiClient() {
           </div>
         </CardContent>
       </Card>
+
+      <HypervisorSyncCard />
 
       <Card className="xl:col-span-2">
         <CardHeader><CardTitle>Proposte «promuovi ad apparato»</CardTitle></CardHeader>

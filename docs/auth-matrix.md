@@ -1,13 +1,13 @@
 # Matrice auth API — DA-IPAM
 
-> Generato da `scripts/audit-api-auth.ts` · 2026-10-13 · rilevatore e censimento di `src/lib/permessi/` (gli stessi della prova `rotte-censite.test.ts`).
+> Generato da `scripts/audit-api-auth.ts` · 2026-10-14 · rilevatore e censimento di `src/lib/permessi/` (gli stessi della prova `rotte-censite.test.ts`).
 
 ## Riepilogo
 
-- File `route.ts`: **308** · gestori (metodo × rotta): **475**
-- Forme di export: funzione 459 · destrutturata 2 · rinomina 14
-- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=52 · `auth-diretto`=3 · `auth`=127 · `admin-o-onboarding`=7 · `admin`=271 · `superadmin`=3
-- Esiti: ok **442** · eccezioni **33** · debiti **0** · scoperti **0**
+- File `route.ts`: **309** · gestori (metodo × rotta): **477**
+- Forme di export: funzione 461 · destrutturata 2 · rinomina 14
+- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=52 · `auth-diretto`=3 · `auth`=128 · `admin-o-onboarding`=7 · `admin`=272 · `superadmin`=3
+- Esiti: ok **444** · eccezioni **33** · debiti **0** · scoperti **0**
 
 Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col nome sensibile → `admin`; i livelli dichiarati stanno in `ATTESI` di `src/lib/permessi/rotte.ts`. `withTenantFromSession` (`sessione`) chiede l'accesso ma non il ruolo: per una lettura vale quanto `auth`.
 
@@ -528,6 +528,8 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/topology/positions` | PUT | `admin` | `admin` |  |
 | `/api/topology/settings` | GET | `auth` | `auth` |  |
 | `/api/topology/settings` | PUT | `admin` | `admin` |  |
+| `/api/topology/settings/hypervisor` | GET | `auth` | `auth` |  |
+| `/api/topology/settings/hypervisor` | PUT | `admin` | `admin` |  |
 | `/api/user/preferences` | GET | `auth` | `auth` |  |
 | `/api/user/preferences` | PUT | `auth` | `admin` | motivata: preferenze del proprio utente |
 | `/api/users` | GET | `admin` | `auth` |  |

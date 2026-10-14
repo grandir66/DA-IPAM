@@ -1,7 +1,13 @@
 import { getNetworkDeviceById, updateNetworkDevice, getDeviceCredentials, syncInventoryFromDevice } from "@/lib/db";
 import { ProxmoxClient, resolveProxmoxApiPortOverride, type ProxmoxHostInfo, type ProxmoxVM } from "@/lib/proxmox/proxmox-client";
-import { extractProxmoxViaSsh } from "@/lib/proxmox/proxmox-ssh";
+import { extractProxmoxViaSsh, readLiveInterfaces, type ProxmoxSshConfig } from "@/lib/proxmox/proxmox-ssh";
 import { mergeProxmoxExtractResults } from "@/lib/proxmox/proxmox-merge-results";
+import {
+  hostIndexForTarget,
+  mergeLiveIntoHost,
+  previousLive,
+  type LiveInterface,
+} from "@/lib/proxmox/live-interfaces";
 import {
   buildProxmoxApiUrlForIp,
   MAX_PROXMOX_SCAN_TARGETS,
@@ -17,6 +23,41 @@ export interface ProxmoxDeviceScanResult {
   avvisi?: string[];
 }
 
+type ProxmoxExtract = { hosts: ProxmoxHostInfo[]; vms: ProxmoxVM[] };
+
+/** Bersaglio API di un nodo: URL, porta (se diversa da quella dell'URL), utente `…@pam`. */
+export interface ProxmoxApiTarget {
+  apiUrl: string;
+  port?: number;
+  username: string;
+  password: string;
+}
+
+/**
+ * Le tre letture di un nodo e l'orologio: in esercizio quelle vere, nelle prove
+ * finte (niente rete). Le schede vive sono UN comando SSH in sola lettura.
+ */
+export interface ProxmoxScanDeps {
+  readApi: (target: ProxmoxApiTarget) => Promise<ProxmoxExtract>;
+  readSsh: (config: ProxmoxSshConfig) => Promise<ProxmoxExtract>;
+  readLive: (config: ProxmoxSshConfig) => Promise<LiveInterface[]>;
+  now: () => Date;
+}
+
+const DEPS_VERE: ProxmoxScanDeps = {
+  readApi: (t) =>
+    new ProxmoxClient({
+      host: t.apiUrl,
+      ...(t.port !== undefined ? { port: t.port } : {}),
+      username: t.username,
+      password: t.password,
+      verifySsl: false,
+    }).extractAll({ includeStopped: false, includeContainers: true }),
+  readSsh: (c) => extractProxmoxViaSsh(c, { includeStopped: false, includeContainers: true }),
+  readLive: (c) => readLiveInterfaces(c),
+  now: () => new Date(),
+};
+
 function assertProxmoxDevice(device: import("@/types").NetworkDevice): void {
   if (!isProxmoxVeDevice(device)) {
     throw new Error(
@@ -28,8 +69,38 @@ function assertProxmoxDevice(device: import("@/types").NetworkDevice): void {
   }
 }
 
-/** Esegue scan Proxmox VE (API :8006 + SSH) e persiste il risultato su network_devices. */
-export async function runProxmoxDeviceScan(deviceId: number): Promise<ProxmoxDeviceScanResult> {
+/** La scansione salvata l'ultima volta; null se non c'è o non si legge (mai un errore). */
+function previousResult(raw: string | null | undefined): ProxmoxDeviceScanResult | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as Partial<ProxmoxDeviceScanResult> | null;
+    if (!v || !Array.isArray(v.hosts) || !Array.isArray(v.vms)) return null;
+    return { hosts: v.hosts, vms: v.vms, scanned_at: String(v.scanned_at ?? "") };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Esegue scan Proxmox VE (API :8006 + SSH + schede vive) e persiste il risultato
+ * su network_devices.
+ *
+ * Review Focus 4 (piano fase 2b): una lettura fallita o incompleta non prende mai
+ * il posto della precedente.
+ * - Niente da API né da SSH: errore, il JSON e la data di prima restano.
+ * - Zero VM con errori di lettura quando l'ultima scansione ne aveva: errore,
+ *   come sopra (un «0 VM» per un nodo irraggiungibile non è un dato).
+ * - Schede vive non lette su un nodo: la scansione si salva, ma su quell'host
+ *   restano le schede vive di prima con la loro `live_read_at`; l'errore va negli
+ *   `avvisi`. Un host del cluster che non si sa riconoscere non riceve schede vive.
+ * Gli errori (che possono contenere indirizzi) tornano a chi chiama: qui non si
+ * scrive niente nel log.
+ */
+export async function runProxmoxDeviceScan(
+  deviceId: number,
+  deps: Partial<ProxmoxScanDeps> = {},
+): Promise<ProxmoxDeviceScanResult> {
+  const io: ProxmoxScanDeps = { ...DEPS_VERE, ...deps };
   const device = getNetworkDeviceById(deviceId);
   if (!device) {
     throw new Error("Dispositivo non trovato");
@@ -54,39 +125,31 @@ export async function runProxmoxDeviceScan(deviceId: number): Promise<ProxmoxDev
   const apiUsername = username.includes("@") ? username : `${username}@pam`;
   const sshUsername = proxmoxSshUsername(username);
 
-  const chunks: { hosts: ProxmoxHostInfo[]; vms: ProxmoxVM[] }[] = [];
+  const chunks: ProxmoxExtract[] = [];
   const partialErrors: string[] = [];
+  const liveByTarget: Array<{ ip: string; live: LiveInterface[] }> = [];
+  const liveErrors: string[] = [];
 
   for (const ip of targets) {
     const apiUrl = buildProxmoxApiUrlForIp(ip, device.api_url);
     try {
       const port = resolveProxmoxApiPortOverride(apiUrl, device.port ?? undefined);
-      const client = new ProxmoxClient({
-        host: apiUrl,
-        ...(port !== undefined ? { port } : {}),
-        username: apiUsername,
-        password,
-        verifySsl: false,
-      });
-      chunks.push(
-        await client.extractAll({
-          includeStopped: false,
-          includeContainers: true,
-        })
-      );
+      chunks.push(await io.readApi({ apiUrl, ...(port !== undefined ? { port } : {}), username: apiUsername, password }));
     } catch (e) {
       partialErrors.push(`API ${ip}: ${e instanceof Error ? e.message : String(e)}`);
     }
 
+    const ssh: ProxmoxSshConfig = { host: ip, port: device.port ?? 22, username: sshUsername, password };
     try {
-      chunks.push(
-        await extractProxmoxViaSsh(
-          { host: ip, port: device.port ?? 22, username: sshUsername, password },
-          { includeStopped: false, includeContainers: true }
-        )
-      );
+      chunks.push(await io.readSsh(ssh));
     } catch (e) {
       partialErrors.push(`SSH ${ip}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    try {
+      liveByTarget.push({ ip, live: await io.readLive(ssh) });
+    } catch (e) {
+      liveErrors.push(`Schede vive ${ip}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -99,11 +162,39 @@ export async function runProxmoxDeviceScan(deviceId: number): Promise<ProxmoxDev
     );
   }
 
+  const previous = previousResult(device.last_proxmox_scan_result);
+  if (merged.vms.length === 0 && partialErrors.length > 0 && (previous?.vms.length ?? 0) > 0) {
+    throw new Error(
+      `Lettura incompleta: nessuna VM letta e ${partialErrors.length} errori; resta la scansione precedente. ` +
+        partialErrors.join(" | "),
+    );
+  }
+
+  const scannedAt = io.now().toISOString();
+  const hosts = [...merged.hosts];
+  const liveHosts = new Set<number>();
+  for (const { ip, live } of liveByTarget) {
+    const idx = hostIndexForTarget(hosts, ip, previous?.hosts ?? []);
+    if (idx < 0) {
+      liveErrors.push(`Schede vive ${ip}: non si sa a quale host del cluster appartengono, non usate`);
+      continue;
+    }
+    hosts[idx] = mergeLiveIntoHost(hosts[idx], live, scannedAt);
+    liveHosts.add(idx);
+  }
+  // Dove le schede vive non sono state lette adesso restano quelle di prima, con la loro data.
+  for (let i = 0; i < hosts.length; i++) {
+    if (liveHosts.has(i)) continue;
+    const prima = previousLive(previous?.hosts.find((h) => h.hostname === hosts[i].hostname));
+    if (prima) hosts[i] = mergeLiveIntoHost(hosts[i], prima.live, prima.readAt);
+  }
+
+  const avvisi = [...partialErrors, ...liveErrors];
   const result: ProxmoxDeviceScanResult = {
-    hosts: merged.hosts,
+    hosts,
     vms: merged.vms,
-    scanned_at: new Date().toISOString(),
-    ...(partialErrors.length > 0 ? { avvisi: partialErrors } : {}),
+    scanned_at: scannedAt,
+    ...(avvisi.length > 0 ? { avvisi } : {}),
   };
 
   const updatedDevice = {

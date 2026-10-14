@@ -65,8 +65,11 @@ import {
   upsertMacPortEntries,
   cleanupOldMacPortEntries,
   MAC_PORT_RETENTION_DAYS,
+  listHypervisorScanDevices,
 } from "@/lib/db-tenant";
-import { unifiJobKind } from "@/lib/scheduled-job-types";
+import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types";
+// Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
+import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { macPortListFromPorts } from "@/lib/devices/mac-port-list";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
@@ -189,6 +192,42 @@ export async function runUnifiClientJob(controllerId: number, adesso: Date = new
   return null;
 }
 
+export { HYPERVISOR_SYNC_MINUTES };
+
+/** Resoconto del job hypervisor_sync. `errori`: uno per apparato non letto (per chi guarda, mai nel log). */
+export interface EsitoHypervisorSync {
+  hypervisors: number;
+  letti: number;
+  falliti: number;
+  errori: string[];
+}
+
+/**
+ * Lettura degli hypervisor del tenant (topologia fase 2b, spec §11.5): la
+ * scansione Proxmox esistente più le schede vive, per ogni apparato hypervisor
+ * con scansione Proxmox configurato e acceso, uno alla volta. Un apparato che
+ * non si legge non ferma gli altri e non scrive niente (la scansione tiene
+ * quella di prima, Review Focus 4). Nel log solo numeri e id: niente nomi,
+ * indirizzi o MAC. `scan` si passa nelle prove.
+ */
+export async function runHypervisorSync(
+  scan: (deviceId: number) => Promise<unknown> = (id) => runProxmoxDeviceScan(id),
+): Promise<EsitoHypervisorSync> {
+  const devices = listHypervisorScanDevices();
+  const esito: EsitoHypervisorSync = { hypervisors: devices.length, letti: 0, falliti: 0, errori: [] };
+  for (const d of devices) {
+    try {
+      await scan(d.id);
+      esito.letti++;
+    } catch (e) {
+      esito.falliti++;
+      esito.errori.push(`Apparato #${d.id}: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn(`[Scheduler] hypervisor_sync: apparato #${d.id} non letto, resta la lettura di prima`);
+    }
+  }
+  return esito;
+}
+
 export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
   // v0.2.642 audit perf MC3: SELECT WHERE id invece di full-scan + .find().
   const job = getScheduledJobById(jobId);
@@ -305,6 +344,22 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
       );
       // Gli avvisi per apparato (nomi e IP) non vanno nel log: si leggono nel
       // resoconto della sync manuale.
+      break;
+    }
+    case "hypervisor_sync": {
+      const r = await runHypervisorSync();
+      if (r.hypervisors === 0) {
+        return { esito: "eseguito", motivo: "Nessun hypervisor con scansione Proxmox configurata: niente da leggere" };
+      }
+      // Nessuno letto: si lancia, così lo scheduler lo conta fra i falliti. Il
+      // motivo per apparato (con gli indirizzi) resta fuori dal messaggio e dal log.
+      if (r.letti === 0) {
+        throw new Error(`Lettura degli hypervisor non riuscita: 0 letti su ${r.hypervisors}`);
+      }
+      console.info(`[Scheduler] hypervisor_sync: ${r.letti} hypervisor letti su ${r.hypervisors}`);
+      if (r.falliti > 0) {
+        return { esito: "eseguito", motivo: `${r.falliti} hypervisor su ${r.hypervisors} non letti: resta la lettura di prima` };
+      }
       break;
     }
   }

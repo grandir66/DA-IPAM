@@ -46,9 +46,13 @@
 
 ## Tappa 0 — correzione (rilascio subito)
 
-### Task 1: un router non crea collegamenti da ciò che vede sul bridge
+### Task 1: un router aggiunge solo ciò che gli è collegato direttamente
 
-**Files:** Modify `src/lib/topology/attach.ts:71`; Test `src/lib/topology/__tests__/attach.test.ts`
+**Files:** Modify `src/lib/topology/attach.ts:71`, `src/lib/topology/links.ts` (collegamenti dai vicini LLDP/CDP/MNDP); Test `src/lib/topology/__tests__/attach.test.ts`, `src/lib/topology/__tests__/links.test.ts`
+
+Regola (spec §11.1, Riccardo 14/10): un router (apparato `router`/`firewall`) crea un collegamento verso un vicino LLDP/CDP/MNDP **solo se è diretto**: porta locale fisica (non `bridge`, `vlan*`, `vrrp*`, nomi con `.`/`,` che indicano interfacce logiche o liste come `ether1-2.5,bridge`) **e** unico vicino su quella porta; oppure il vicino conferma dall'altro lato (ha il router fra i suoi vicini su una sua porta, o ha l'uplink UniFi verso il router). I vicini non diretti non diventano collegamenti ma restano negli indici (abbinamento, «non visto»). Dalla tabella MAC un router non crea mai collegamenti (ramo sotto).
+
+- [ ] **Step 0: prove sui vicini** in `links.test.ts` (dati inventati): router con 5 vicini MNDP su `bridge` → nessun collegamento; router con un solo vicino LLDP su `ether3` → collegamento; router con 3 vicini su `ether1` di cui uno è lo switch che vede il router sulla sua `Port 24` → solo router ↔ switch; switch (non router) con più vicini su una porta → comportamento invariato (non è un router). Vederle fallire, poi il codice in `links.ts`, poi verdi.
 
 - [ ] **Step 1: prova che fallisce** — in `attach.test.ts`: un server (host classificato `server_linux` e apparato di tipo `server`, due casi) il cui MAC è visto **solo** da un router su `bridge` → `attachLinks` vuoto e nessun client; lo stesso MAC visto anche su `sw1|Port 15` → collegamento `mac_table` sw1(Port 15) ↔ server.
 - [ ] **Step 2: vederla fallire**: `node --import tsx --test src/lib/topology/__tests__/attach.test.ts` → FAIL (oggi crea router ↔ server).
@@ -60,7 +64,8 @@
       if (!best.counting) continue;
 ```
 - [ ] **Step 4: verde** + `node --import tsx --test "src/lib/topology/__tests__/*.test.ts"`, `npx tsc --noEmit`, `npm run lint`.
-- [ ] **Step 5: commit, cancello, rilascio** — `fix(topologia): un router non crea collegamenti da ciò che vede sul bridge`; cancello completo una volta (lint, tsc, test, build) con `exit=`; `npm run version:release`; push di `dev`; hub aggiornato come da skill `deploy-prod` (script staccato con registro, come il 13/10); versione e servizio controllati su tutti e due. Nessuna migrazione, nessuna scrittura sui dati.
+- [ ] **Step 5: misura sulla copia del cliente A** (modello prima/dopo: collegamenti dei router, apparati che passano da un router a uno switch, isolati) — i numeri vanno nel messaggio a Riccardo.
+- [ ] **Step 6: commit, cancello, rilascio** — `fix(topologia): un router aggiunge solo ciò che gli è collegato direttamente`; cancello completo una volta (lint, tsc, test, build) con `exit=`; `npm run version:release`; push di `dev`; hub aggiornato come da skill `deploy-prod` (script staccato con registro, come il 13/10); versione e servizio controllati su tutti e due. Nessuna migrazione, nessuna scrittura sui dati.
 
 ---
 

@@ -371,6 +371,14 @@ prevalgono sul §10 dove lo contraddicono.
   Proxmox risultavano attaccati al router; con la lettura delle 07:00 stanno sugli switch
   giusti. Regola (era già nella spec §10.5, il codice la violava): **ciò che un router vede
   sul bridge non prova nessun cavo e non crea collegamenti**.
+- **Regola generale di Riccardo (14/10): un router (es. MikroTik) aggiunge solo gli apparati
+  direttamente collegati**, anche quando li vede via LLDP, CDP o MNDP: il router sente tutti
+  gli annunci del suo segmento, anche quelli dietro uno switch. Un vicino di un router è
+  **diretto** solo se: (a) è visto su una porta fisica (non `bridge`, VLAN, VRRP, bond
+  logico) **e** (b) è l'unico vicino su quella porta, oppure è l'apparato che dall'altro
+  lato vede il router sulla sua porta (conferma dai due lati: LLDP/MNDP dell'altro apparato
+  o uplink UniFi). Gli altri vicini del router non creano collegamenti (restano nei dati,
+  servono all'abbinamento e alla «non vista»).
 - I tre host Proxmox sono censiti come apparati di tipo **«server»**: per la mappa sono
   hypervisor (fornitore o scansione Proxmox).
 - La scansione Proxmox esistente legge la **configurazione** delle schede: nessun MAC sulle

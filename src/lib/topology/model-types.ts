@@ -3,8 +3,6 @@
  * Logica pura: nessun import del DB. Gli id dei nodi sono "dev:<id>" (apparato
  * di rete) e "host:<id>" (host non fuso con un apparato).
  */
-/** Orientamento della mappa: `lr` = «Verticale» (da sinistra a destra), `tb` = «Orizzontale» (dall'alto). */
-export type MapOrientation = "lr" | "tb";
 
 export type LinkSource = "manual" | "unifi_uplink" | "lldp" | "cdp" | "mndp" | "mac_table";
 

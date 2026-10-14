@@ -185,7 +185,7 @@
 
 ### Task 12: a schermo sulla copia
 
-- [ ] App locale sulla copia di DTS (ricetta del Task 12 della fase 2, utenza di prova con password generata in un file `chmod 600`), `playwright-core` con Chrome, 1920 e 1280, `innerWidth` stampato: trascinamento con e senza mappa (Review Focus 5), menu su oggetto e su linea, «Collega a…» verso la porta giusta e verso una sbagliata, «Rendi principale», hypervisor espanso con le VM, linee 10G/1G/100M/wireless/PoE/ridondanza visibili, barra chiusa e riaperta. Foto nello scratchpad, mai nel repo. Si corregge quello che si vede; commit `fix(topologia): quel che si è visto a schermo (fase 2b)`.
+- [ ] App locale sulla copia del cliente A (ricetta del Task 12 della fase 2, utenza di prova con password generata in un file `chmod 600`), `playwright-core` con Chrome, 1920 e 1280, `innerWidth` stampato: trascinamento con e senza mappa (Review Focus 5), menu su oggetto e su linea, «Collega a…» verso la porta giusta e verso una sbagliata, «Rendi principale», hypervisor espanso con le VM, linee 10G/1G/100M/wireless/PoE/ridondanza visibili, barra chiusa e riaperta. Foto nello scratchpad, mai nel repo. Si corregge quello che si vede; commit `fix(topologia): quel che si è visto a schermo (fase 2b)`.
 
 ---
 
@@ -197,7 +197,7 @@
 - [ ] **Una revisione finale** su Opus dell'intero lavoro, un solo giro di correzioni, una revisione mirata.
 - [ ] Cancello completo una volta (`exit=`).
 - [ ] Copie fresche, `quick_check` di tutti i tenant, `scripts/misura-fase2b.ts` sulle copie (con una scansione Proxmox in sola lettura dove ci sono le credenziali, segreto dal filtro del vault).
-- [ ] **Conferma di Riccardo** con i numeri (migrazione, VM trovate, schede vive, collegamenti proposti, VM riconosciute) e la domanda separata per accendere `hypervisor_sync` su DTS e sull'hub.
+- [ ] **Conferma di Riccardo** con i numeri (migrazione, VM trovate, schede vive, collegamenti proposti, VM riconosciute) e la domanda separata per accendere `hypervisor_sync` sul server del cliente A e sull'hub.
 - [ ] Copie sui server, `version:release`, push di `dev`, hub aggiornato, controlli dopo (versione, servizio, journal, `quick_check`). Job acceso solo se confermato, **con `json_object()` e SQL da stdin**, poi `json_valid` letto.
 
 ### Task 14: documenti e chiusura

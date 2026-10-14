@@ -3,7 +3,7 @@
 /**
  * La barra sopra la mappa: «Tutto automatico» / «Passo passo» (il segmento
  * attivo ha il fondo pieno E il «●»: doppio segnale), la scelta della mappa o
- * la testa, e a destra collegamenti in più, zoom, «Adatta», «Riordina» e
+ * la testa, e a destra le ridondanze (collegamenti fuori dall'albero), zoom, «Adatta», «Riordina» e
  * «◂ Dettagli» / «Dettagli ▸» (apre e chiude la barra di destra).
  * Le scritture (mappe, testa, riordina) si vedono solo agli admin.
  */
@@ -114,7 +114,7 @@ export function MapToolbar(p: Props) {
       )}
       <label className="flex cursor-pointer items-center gap-1.5">
         <input type="checkbox" checked={p.showExtra} onChange={(e) => p.onShowExtra(e.target.checked)} className="size-4" />
-        Collegamenti in più
+        Ridondanze
       </label>
       <Button size="sm" variant="outline" onClick={() => void rf.zoomOut()} aria-label="Rimpicciolisci">−</Button>
       <Button size="sm" variant="outline" onClick={() => void rf.zoomIn()} aria-label="Ingrandisci">+</Button>

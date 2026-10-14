@@ -12,8 +12,10 @@ import { Fragment } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { parseDbDate } from "@/lib/db-date";
+import { linkWords } from "@/lib/topology/edge-look";
 import { nodeClass } from "@/lib/topology/identity";
-import { LINK_SOURCE_RANK, type LinkSource, type MapLink, type MapNode } from "@/lib/topology/model-types";
+import { LINK_SOURCE_RANK, type LinkSource, type MapLink, type MapNode, type MapVm } from "@/lib/topology/model-types";
+import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
 import type { TopologyStatus } from "@/lib/topology/types";
 import { TopoIcon, typeLabel } from "./topology-icons";
 import type { ModelData } from "./use-topology-data";
@@ -41,6 +43,8 @@ interface Props {
   /** Passo passo, admin, con una mappa scelta. */
   canEditMap: boolean;
   visible: ReadonlySet<string>;
+  /** I collegamenti come li vede questa mappa (tree.links: principale, ridondanza), per id. */
+  viewLinks: ReadonlyMap<string, MapLink>;
   /** Oggetti della mappa che non esistono più. */
   missing: string[];
   onSelect: (id: string) => void;
@@ -95,6 +99,7 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
   const { n, model, byId } = p;
   const links = model.links
     .filter((l) => l.a === n.id || l.b === n.id)
+    .map((l) => p.viewLinks.get(l.id) ?? l)
     .sort((a, b) => Number(a.stale) - Number(b.stale) || LINK_SOURCE_RANK[a.source] - LINK_SOURCE_RANK[b.source] || (a.id < b.id ? -1 : 1));
   const other = (l: MapLink) => (l.a === n.id ? l.b : l.a);
   const mine = (l: MapLink) => (l.a === n.id ? l.aPort : l.bPort);
@@ -111,7 +116,9 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
           <h2 className="text-base font-semibold break-words">{n.name}</h2>
           <p className="text-muted-foreground">
             {typeLabel(n.type)}
-            {n.kind === "host" && " · host, non un apparato censito"} · {STATO[model.status[n.id] ?? "unknown"]}
+            {n.id.startsWith("vm:")
+              ? " · non è un oggetto censito (letta dalla scansione dell'hypervisor)"
+              : <>{n.kind === "host" && " · host, non un apparato censito"} · {STATO[model.status[n.id] ?? "unknown"]}</>}
             {n.hidden && " · nascosto dalla mappa"}
           </p>
         </div>
@@ -130,6 +137,7 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
       )}
 
       {infraHost && <p className="mt-1.5">Host che è infrastruttura: si può promuovere ad apparato (tasto destro).</p>}
+      <VmSections n={n} vms={model.vms} byId={byId} onSelect={p.onSelect} />
 
       <h3 className="mt-4 mb-1 font-semibold">Collegato a ({links.length})</h3>
       {links.length === 0 ? (
@@ -155,6 +163,7 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
                   <td className="py-1 pr-1">
                     {l.sources.map((s) => FONTE[s]).join(" + ")}
                     <div className={l.stale ? "font-semibold" : "text-muted-foreground"}>{visto(l)}</div>
+                    {linkWords(l).map((w) => <div key={w}>{w}</div>)}
                   </td>
                   <td className="py-1 whitespace-nowrap">
                     {p.visible.has(other(l)) ? <span className="font-semibold">✓ nella mappa</span> : <span className="text-muted-foreground">fuori</span>}
@@ -194,6 +203,59 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
           </table>
           {rows.length > MAX && <p className="mt-1 text-muted-foreground">+ altri {rows.length - MAX}</p>}
         </>
+      )}
+    </>
+  );
+}
+
+/** Se l'oggetto è una VM: stato, IP, su quale hypervisor. Se è un hypervisor: le sue VM. */
+function VmSections({ n, vms, byId, onSelect }: { n: MapNode; vms: MapVm[]; byId: Map<string, MapNode>; onSelect: (id: string) => void }) {
+  const me = vms.find((v) => v.id === n.id || v.nodeId === n.id);
+  const mine = vms.filter((v) => v.hypervisorNodeId === n.id).sort((a, b) => a.name.localeCompare(b.name, "it"));
+  // Una VM si apre dal suo oggetto censito, o dal suo nodo «vm:» se è nella pagina.
+  const target = (v: MapVm): string | null => v.nodeId ?? (byId.has(v.id) ? v.id : null);
+  return (
+    <>
+      {me && (
+        <section className="mt-3">
+          <h3 className="mb-1 font-semibold">Macchina virtuale{me.name !== n.name ? ` «${me.name}»` : ""}</h3>
+          <p>
+            {isRunning(me.status) ? "▶ accesa" : `■ spenta (${me.status || "stato non letto"})`}
+            {me.ips.length > 0 && ` · ${me.ips.join(", ")}`}
+          </p>
+          {me.hypervisorNodeId && (
+            <p>
+              gira su{" "}
+              <button type="button" className="underline" onClick={() => onSelect(me.hypervisorNodeId as string)}>
+                {byId.get(me.hypervisorNodeId)?.name ?? me.hypervisorNodeId}
+              </button>
+            </p>
+          )}
+          {me.scannedAt && <p className="text-muted-foreground">letta il {quando(me.scannedAt)}</p>}
+        </section>
+      )}
+      {mine.length > 0 && (
+        <section className="mt-3">
+          <h3 className="mb-1 font-semibold">VM ({vmSummary(mine).label})</h3>
+          <table className="w-full border-collapse">
+            <tbody>
+              {mine.slice(0, MAX).map((v) => {
+                const t = target(v);
+                return (
+                  <tr key={v.id} className="border-t border-border align-top">
+                    <td className="py-0.5 pr-1 whitespace-nowrap">{isRunning(v.status) ? "▶ accesa" : "■ spenta"}</td>
+                    <td className="py-0.5 pr-1 [overflow-wrap:anywhere]">
+                      {t ? <button type="button" className="text-left underline" onClick={() => onSelect(t)}>{v.name}</button> : v.name}
+                    </td>
+                    <td className="py-0.5 [overflow-wrap:anywhere]">{v.ips.join(", ") || <span className="text-muted-foreground">IP non noto</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {mine.length > MAX && <p className="mt-1 text-muted-foreground">+ altre {mine.length - MAX}</p>}
+          {mine[0]?.scannedAt && <p className="mt-1 text-muted-foreground">lette il {quando(mine[0].scannedAt)}</p>}
+        </section>
       )}
     </>
   );

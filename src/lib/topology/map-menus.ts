@@ -151,3 +151,13 @@ export function refreshVmDeviceIds(vms: readonly MapVm[], hypervisorNodeId: stri
   }
   return [...ids].sort((a, b) => a - b);
 }
+
+export type VmMenuKey = "add" | "details";
+
+/** Il tasto destro su una VM dell'hypervisor espanso (spec §11.5): aggiungerla alla mappa passo passo, vederne i dettagli. */
+export function vmMenuItems(c: { canEditMap: boolean; inMap: boolean }): Array<MenuItem<VmMenuKey>> {
+  const out: Array<MenuItem<VmMenuKey>> = [];
+  if (c.canEditMap) out.push(c.inMap ? { key: "add", label: "✓ nella mappa", disabled: true } : { key: "add", label: "Aggiungi alla mappa" });
+  out.push({ key: "details", label: "Dettagli" });
+  return out;
+}

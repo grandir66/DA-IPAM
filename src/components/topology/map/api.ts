@@ -18,24 +18,13 @@
  * Nodi: «dev:N», «host:N», «vm:N:M» (regex del piano: ^(dev|host|vm):\d+(:\d+)?$).
  */
 import { fetchJson, type FetchJsonResult } from "@/lib/fetch-json";
-import type { LinkMedium } from "@/lib/topology/model-types";
+import type { KnownPort, LinkPatchBody, ManualLinkBody } from "@/lib/topology/connect-form";
 import type { PrimaryBody } from "@/lib/topology/map-menus";
 
-export type { PrimaryBody };
+// I corpi stanno con la logica pura che li costruisce (connect-form.ts, map-menus.ts): qui si ripetono i nomi.
+export type { KnownPort, LinkPatchBody, ManualLinkBody, PrimaryBody };
 
 export type Send = <T>(url: string, method: "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown) => Promise<FetchJsonResult<T>>;
-
-/** Un collegamento a mano: porte come le scrive la fonte («Port 5», «eno1»), "" = porta non nota. */
-export interface ManualLinkBody {
-  action: "add";
-  a_node: string;
-  a_port: string;
-  b_node: string;
-  b_port: string;
-  /** null = tipo non indicato. */
-  medium: LinkMedium | null;
-  note: string | null;
-}
 
 /** Un collegamento visto dai dati che non si vuole sulla mappa (vale per tutte le mappe). */
 export interface IgnoreLinkBody {
@@ -44,14 +33,6 @@ export interface IgnoreLinkBody {
   a_port: string;
   b_node: string;
   b_port: string;
-}
-
-/** Modifica di un collegamento a mano: solo i campi presenti cambiano. */
-export interface LinkPatchBody {
-  a_port?: string;
-  b_port?: string;
-  medium?: LinkMedium | null;
-  note?: string | null;
 }
 
 /** Una riga di topology_link_overrides come la restituisce GET /api/topology/links. */
@@ -67,18 +48,6 @@ export interface LinkOverrideView {
   note: string | null;
   created_by: string | null;
   created_at: string;
-}
-
-/** Una porta nota di un oggetto: una porta dello switch (switch_ports) o una scheda dell'hypervisor (scansione). */
-export interface KnownPort {
-  name: string;
-  /** Velocità come la scrive la fonte («1000 Mbps», «10G»); null se non nota. */
-  speed: string | null;
-  /** Potenza PoE erogata in W; null se nessuna o non nota. */
-  poeW: number | null;
-  kind: "switch_port" | "hypervisor_nic";
-  /** Altro da dire in parole, già in italiano: «uplink», «membro di bond0», «giù». */
-  note: string | null;
 }
 
 export interface PortsResponse {

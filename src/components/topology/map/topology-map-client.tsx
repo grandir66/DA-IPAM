@@ -6,10 +6,12 @@
  * mappe «Passo passo» salvate (solo gli oggetti scelti). Qui vivono lo stato
  * della pagina (modo, mappa, oggetto scelto, barra dei dettagli) e le
  * scritture; albero e disposizione sono la logica pura di src/lib/topology.
- * Fase 2b (spec §11.2): gli oggetti entrano trascinandoli dall'elenco, le
- * azioni stanno nel menu del tasto destro, la barra di destra si chiude.
+ * Fase 2b (spec §11.2-§11.5): gli oggetti entrano trascinandoli dall'elenco, le
+ * azioni stanno nel menu del tasto destro, la barra di destra si chiude,
+ * «Collega a…» apre il dialogo delle porte, gli hypervisor si espandono con le
+ * loro VM (stato della pagina, non salvato) e una VM entra in una mappa.
  */
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { toast } from "sonner";
@@ -17,17 +19,24 @@ import { LoadError } from "@/components/shared/load-error";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { nodeClass } from "@/lib/topology/identity";
-import { addableLinked, edgeMenuItems, findManualOverride, nodeMenuItems, primaryTarget, type EdgeMenuKey, type NodeMenuKey } from "@/lib/topology/map-menus";
+import {
+  addableLinked, edgeMenuItems, findManualOverride, nodeMenuItems, primaryTarget, refreshVmDeviceIds, vmMenuItems,
+  type EdgeMenuKey, type NodeMenuKey,
+} from "@/lib/topology/map-menus";
 import { resolveMapView } from "@/lib/topology/map-view";
-import type { MapLink } from "@/lib/topology/model-types";
+import type { MapLink, MapVm } from "@/lib/topology/model-types";
+import { hangVmNodes, isRunning, vmNodes, vmSummary } from "@/lib/topology/vm-nodes";
 import { autoVisible, buildTree, missingNeighbors, proposeHead } from "@/lib/topology/tree";
 import { layoutTree, structureSig, type SavedTweak } from "@/lib/topology/tree-layout";
-import { clearPrimary, deleteManualLink, fetchLinkOverrides, ignoreLink, setPrimary } from "./api";
+import {
+  clearPrimary, createManualLink, deleteManualLink, fetchLinkOverrides, ignoreLink, patchManualLink, refreshProxmoxScan, setPrimary,
+} from "./api";
+import { ConnectDialog, type ConnectRequest } from "./connect-dialog";
 import { EdgeMenuContent } from "./edge-context-menu";
 import { FONTE, LinkedPanel, visto } from "./linked-panel";
 import { MapCanvas, type MenuTarget } from "./map-canvas";
 import { MapToolbar, NameDialog, type Mode } from "./map-toolbar";
-import { NodeMenuContent } from "./node-context-menu";
+import { NodeMenuContent, VmMenuContent } from "./node-context-menu";
 import { DRAG_MIME, ObjectList } from "./object-list";
 import { TopologyIconDefs } from "./topology-icons";
 import { useTopologyData, type MapRow } from "./use-topology-data";
@@ -65,7 +74,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const [mode, setMode] = useState<Mode>("auto");
   const [chosenMap, setChosenMap] = useState<number | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [showExtra, setShowExtra] = useState(false);
+  // Le ridondanze (spec §11.3-11.4) si vedono da subito: sono poche e dicono dove c'è un secondo cavo.
+  const [showExtra, setShowExtra] = useState(true);
   const [centerKey, setCenterKey] = useState(1);
   const [pending, setPending] = useState<{ view: string; tweak: SavedTweak } | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(true);
@@ -75,6 +85,17 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const [pendingDrop, setPendingDrop] = useState<{ view: string; nodeId: string; x: number; y: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [ignoreAsk, setIgnoreAsk] = useState<MapLink | null>(null);
+  /** Hypervisor con le VM mostrate: stato della pagina, non salvato (spec §11.5). */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  /** «Collega a…» dal menu: il prossimo clic su un oggetto è l'arrivo. */
+  const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const [connect, setConnect] = useState<ConnectRequest | null>(null);
+  const toggleVms = useCallback((id: string) => setExpanded((s) => {
+    const n = new Set(s);
+    if (n.has(id)) n.delete(id);
+    else n.add(id);
+    return n;
+  }), []);
   const renamesSent = useRef<string | null>(null);
 
   const viewKey = mode === "auto" ? "auto" : chosenMap !== null ? String(chosenMap) : null;
@@ -96,7 +117,9 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
 
   const d = useMemo(() => {
     if (!data) return null;
-    const model = data.model;
+    // Le VM non censite sono nodi della pagina («vm:…»): così entrano in una mappa passo passo (spec §11.5).
+    const vn = vmNodes(data.model);
+    const model = { ...data.model, nodes: [...data.model.nodes, ...vn.nodes], canonical: { ...vn.canonical, ...data.model.canonical } };
     const ids = new Set(model.nodes.map((n) => n.id));
     const auto = data.maps.auto;
     // Gli id salvati passano dall'id canonico: un oggetto promosso o fuso resta nella mappa (I5).
@@ -123,10 +146,10 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       missing = saved.missing;
       roots = saved.roots.filter((r) => visible.has(r));
     }
-    const tree = buildTree(model, visible, roots);
+    const tree = hangVmNodes(buildTree(model, visible, roots), vn.parentOf);
     const own = pending && pending.view === viewKey ? pending.tweak : null;
     const tweaks = [...saved.tweaks.filter((t) => t.nodeId !== own?.nodeId), ...(own ? [own] : [])];
-    const layout = layoutTree(model, tree, tweaks);
+    const layout = layoutTree(model, tree, tweaks, expanded);
     const plus = new Map<string, number>();
     if (mode === "passo") {
       for (const id of visible) {
@@ -138,8 +161,24 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     const starts = new Set(mode === "passo" ? roots.filter((r) => tree.roots.includes(r)) : []);
     const promoteIds = new Set(model.promote.map((p) => `host:${p.hostId}`));
     const byId = new Map(model.nodes.map((n) => [n.id, n]));
-    return { model, visible, roots, missing, head, headOrigin, tree, layout, plus, starts, promoteIds, byId, savedRoots: saved.roots, renames: saved.renames };
-  }, [data, mode, view, pending, viewKey]);
+    const vmsOf = new Map<string, MapVm[]>();
+    for (const v of model.vms) if (v.hypervisorNodeId) vmsOf.set(v.hypervisorNodeId, [...(vmsOf.get(v.hypervisorNodeId) ?? []), v]);
+    const vmInfo = new Map<string, { label: string; open: boolean }>();
+    for (const [h, list] of vmsOf) if (visible.has(h)) vmInfo.set(h, { label: vmSummary(list).label, open: expanded.has(h) });
+    const viewLinks = new Map(tree.links.map((l) => [l.id, l]));
+    return {
+      model, visible, roots, missing, head, headOrigin, tree, layout, plus, starts, promoteIds, byId, vmsOf, vmInfo, viewLinks,
+      savedRoots: saved.roots, renames: saved.renames,
+    };
+  }, [data, mode, view, pending, viewKey, expanded]);
+
+  // Esc annulla «scegli l'oggetto di arrivo».
+  useEffect(() => {
+    if (!connectFrom) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setConnectFrom(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [connectFrom]);
 
   const mapPath = `/api/topology/maps/${chosenMap}`;
   const canEditMap = isAdmin && mode === "passo" && chosenMap !== null && !viewLoading;
@@ -179,7 +218,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   if (error) return <LoadError what="i dati della mappa" message={error} onRetry={() => void reload()} />;
   if (!data || !d) return <p className="text-sm text-muted-foreground">Caricamento della mappa…</p>;
 
-  const changeMode = (m: Mode) => { setMode(m); setSelected(null); setCenterKey((k) => k + 1); };
+  const changeMode = (m: Mode) => { setMode(m); setSelected(null); setConnectFrom(null); setCenterKey((k) => k + 1); };
 
   async function addNodes(ids: string[]): Promise<boolean> {
     if (chosenMap === null || ids.length === 0 || !(await persistRenames())) return false;
@@ -257,8 +296,40 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       case "remove": return void removeNode(id);
       case "hide": return void send("/api/topology/nodes/hidden", "PUT", { node_id: id, hidden: !n.hidden });
       case "promote": return router.push(`/objects/${n.refId}?promote=1`);
+      case "toggleVms": return toggleVms(id);
+      case "refreshVms": return void refreshVms(id);
+      case "connect": setConnectFrom(id); return;
       default: return;
     }
+  }
+  /** «Aggiorna VM»: rilegge la scansione Proxmox degli apparati che vedono quell'hypervisor (SSH: può metterci un po'). */
+  async function refreshVms(id: string) {
+    if (!d) return;
+    const devices = refreshVmDeviceIds(d.model.vms, id);
+    const t = toast.loading(`Lettura delle VM di «${name(id)}» in corso…`);
+    let ok = 0;
+    for (const dev of devices) if ((await refreshProxmoxScan(send, dev)).ok) ok++;
+    toast.dismiss(t);
+    if (ok > 0) toast.success(ok === devices.length ? "VM aggiornate" : `VM aggiornate da ${ok} letture su ${devices.length}`);
+  }
+  function openConnect(a: string, b: string) {
+    setConnectFrom(null);
+    if (a === b) return;
+    setConnect({ a, b, aName: name(a), bName: name(b), edit: null });
+  }
+  async function editPorts(link: MapLink) {
+    if (!d) return;
+    const rows = await fetchLinkOverrides();
+    if (!rows.ok) { toast.error(`Errore: ${rows.message}`); return; }
+    const o = findManualOverride(rows.data, link, d.model.canonical);
+    if (!o) { toast.error("Errore: la correzione a mano di questa linea non c'è più (ricarico la mappa)"); void reload(); return; }
+    // Il dialogo segue l'ordine della correzione salvata, così le porte restano sul loro capo.
+    const a = d.model.canonical[o.a_node] ?? o.a_node, b = d.model.canonical[o.b_node] ?? o.b_node;
+    setConnect({ a, b, aName: name(a), bName: name(b), edit: o });
+  }
+  function onVmAction(v: MapVm, key: "add" | "details") {
+    if (key === "details") return openDetails(v.nodeId ?? (d?.byId.has(v.id) ? v.id : (v.hypervisorNodeId ?? v.id)));
+    void addNodes([v.nodeId ?? v.id]);
   }
   async function onEdgeAction(link: MapLink, key: EdgeMenuKey) {
     if (!d) return;
@@ -266,6 +337,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       case "primary": await setPrimary(send, primaryTarget(link, d.tree)); return;
       case "unprimary": await clearPrimary(send, link.primaryFor ?? primaryTarget(link, d.tree).node_id); return;
       case "ignore": setIgnoreAsk(link); return;
+      case "editPorts": await editPorts(link); return;
       case "remove": {
         const rows = await fetchLinkOverrides();
         if (!rows.ok) { toast.error(`Errore: ${rows.message}`); return; }
@@ -290,12 +362,27 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         />
       );
     }
+    if (t.kind === "vm") {
+      const v = d.model.vms.find((x) => x.id === t.vmId);
+      if (!v) return null;
+      const host = v.hypervisorNodeId ? name(v.hypervisorNodeId) : null;
+      return (
+        <VmMenuContent
+          title={v.name}
+          detail={[isRunning(v.status) ? "▶ accesa" : "■ spenta", v.ips[0], host ? `su ${host}` : null, v.nodeId ? `è «${name(v.nodeId)}»` : null].filter(Boolean).join(" · ")}
+          items={vmMenuItems({ canEditMap, inMap: d.visible.has(v.nodeId ?? v.id) })}
+          onAction={(k) => { close(); onVmAction(v, k); }}
+        />
+      );
+    }
     const n = d.byId.get(t.id);
     if (!n) return null;
     const addable = mode === "passo" && canEditMap ? addableLinked(d.model, n.id, d.visible) : [];
+    const isHyper = nodeClass(n) === "hyper";
     const items = nodeMenuItems({
       mode, isAdmin, canEditMap, inMap: d.visible.has(n.id), isHead: n.id === d.head, isStart: d.roots.includes(n.id),
-      isDevice: n.kind === "device", hidden: n.hidden, isHypervisor: false, vmCount: 0, expanded: false, canRefreshVms: false,
+      isDevice: n.kind === "device", hidden: n.hidden, isHypervisor: isHyper, vmCount: d.vmsOf.get(n.id)?.length ?? 0,
+      expanded: expanded.has(n.id), canRefreshVms: isHyper && refreshVmDeviceIds(d.model.vms, n.id).length > 0,
       infraHost: n.kind === "host" && nodeClass(n) !== "client", addableCount: addable.length,
     });
     return (
@@ -345,6 +432,12 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         onSelect={setSelected}
         onMove={(id, x, y) => void move(id, x, y)}
         renderMenu={renderMenu}
+        connectable={isAdmin}
+        onConnect={openConnect}
+        picking={connectFrom !== null}
+        onPick={(id) => { if (connectFrom) openConnect(connectFrom, id); }}
+        vmInfo={d.vmInfo}
+        onToggleVms={toggleVms}
       />
     );
   }
@@ -396,6 +489,12 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
           onDrop={(e) => onDrop(e, flowShown)}
         >
           {canvas}
+          {connectFrom && (
+            <p role="status" className="absolute top-3 left-1/2 -translate-x-1/2 rounded-md border border-foreground bg-card px-2.5 py-1 text-[13px]">
+              <b>Collega «{name(connectFrom)}» a…</b> fai clic sull&apos;oggetto di arrivo ·{" "}
+              <button type="button" className="underline" onClick={() => setConnectFrom(null)}>Annulla</button> (Esc)
+            </p>
+          )}
           {dragOver && (
             <p className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 rounded-md border border-foreground bg-card px-2.5 py-1 text-[13px] font-semibold">
               {chosenMap === null ? "Rilascia: si crea una mappa nuova con questo oggetto" : "Rilascia per aggiungerlo alla mappa"}
@@ -408,6 +507,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
             nodeId={selected}
             canEditMap={canEditMap}
             visible={d.visible}
+            viewLinks={d.viewLinks}
             missing={d.missing}
             onSelect={setSelected}
             onRemove={(id) => void removeNode(id)}
@@ -428,6 +528,12 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
           if (ok) setSelected(newMapFor);
           return ok;
         }}
+      />
+      <ConnectDialog
+        request={connect}
+        onClose={() => setConnect(null)}
+        onCreate={async (body) => (await createManualLink(send, body)).ok}
+        onPatch={async (id, body) => (await patchManualLink(send, id, body)).ok}
       />
       <Dialog open={ignoreAsk !== null} onOpenChange={(o) => { if (!o) setIgnoreAsk(null); }}>
         <DialogContent>

@@ -4,7 +4,8 @@
  * Il menu del tasto destro su un oggetto della mappa (spec §11.2). Le voci le
  * sceglie nodeMenuItems (logica pura); qui si disegnano. «Aggiungi collegati ▸»
  * è un sottomenu con una casella per ogni collegato non ancora nella mappa e
- * «Aggiungi i selezionati» in fondo.
+ * «Aggiungi i selezionati» in fondo. In fondo al file il menu di una VM
+ * dell'hypervisor espanso (spec §11.5).
  */
 import { useState } from "react";
 import {
@@ -16,7 +17,7 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
-import type { AddableLinked, MenuItem, NodeMenuKey } from "@/lib/topology/map-menus";
+import type { AddableLinked, MenuItem, NodeMenuKey, VmMenuKey } from "@/lib/topology/map-menus";
 import { typeLabel } from "./topology-icons";
 
 interface Props {
@@ -78,5 +79,24 @@ function AddLinkedSub({ label, addable, onAdd }: { label: string; addable: Addab
         </ContextMenuItem>
       </ContextMenuSubContent>
     </ContextMenuSub>
+  );
+}
+
+export function VmMenuContent({ title, detail, items, onAction }: {
+  title: string;
+  /** «▶ accesa · 192.0.2.10 · su PVE-1». */
+  detail: string;
+  items: Array<MenuItem<VmMenuKey>>;
+  onAction: (key: VmMenuKey) => void;
+}) {
+  return (
+    <>
+      <ContextMenuLabel className="max-w-72 truncate text-foreground" title={title}>{title}</ContextMenuLabel>
+      <ContextMenuLabel className="max-w-72 pt-0 [overflow-wrap:anywhere]">{detail}</ContextMenuLabel>
+      <ContextMenuSeparator />
+      {items.map((it) => (
+        <ContextMenuItem key={it.key} disabled={it.disabled} onClick={() => onAction(it.key)}>{it.label}</ContextMenuItem>
+      ))}
+    </>
   );
 }

@@ -7,6 +7,7 @@ import {
   nodeMenuItems,
   primaryTarget,
   refreshVmDeviceIds,
+  vmMenuItems,
   type NodeMenuCtx,
 } from "@/lib/topology/map-menus";
 import { LINK_ATTRS_DEFAULT, type LinkSource, type MapLink, type MapNode, type MapVm, type TopologyModel } from "@/lib/topology/model-types";
@@ -133,4 +134,13 @@ test("Aggiorna VM: gli apparati che hanno letto le VM di quell'hypervisor; senza
   assert.deepEqual(refreshVmDeviceIds(vms, "dev:4"), [12, 15]);
   assert.deepEqual(refreshVmDeviceIds([], "dev:8"), [8]);
   assert.deepEqual(refreshVmDeviceIds([], "host:8"), []);
+});
+
+test("menu della VM: Aggiungi alla mappa solo passo passo con la mappa modificabile; già dentro lo dice", () => {
+  assert.deepEqual(vmMenuItems({ canEditMap: true, inMap: false }), [
+    { key: "add", label: "Aggiungi alla mappa" },
+    { key: "details", label: "Dettagli" },
+  ]);
+  assert.deepEqual(vmMenuItems({ canEditMap: true, inMap: true })[0], { key: "add", label: "✓ nella mappa", disabled: true });
+  assert.deepEqual(vmMenuItems({ canEditMap: false, inMap: false }), [{ key: "details", label: "Dettagli" }]);
 });

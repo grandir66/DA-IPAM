@@ -1,23 +1,23 @@
-# Da Tailscale a NetBird: una rete a stella fra centrali Domarc e oggetti dei clienti
+# DA-Link e NetBird: una rete a stella fra centrali Domarc e oggetti dei clienti
 
-**Stato:** disegno approvato a voce da Riccardo il 2026-10-14, rivisto lo stesso giorno
-dopo il chiarimento sui moduli; documento da rileggere
+**Stato:** disegno approvato a voce da Riccardo il 2026-10-14, rivisto due volte lo stesso
+giorno (moduli, poi DA-Link e DA-CRM); documento da rileggere
 **Data:** 2026-10-14
 **Autore:** Riccardo Grandi, con Claude
 **Decisione architetturale:** [ADR 0011](../../adr/0011-netbird-rete-a-stella.md)
 **Livello di controllo:** completo (si toccano appliance in esercizio presso i clienti)
 
-Riguarda cinque progetti. Ognuno lo cita con una riga dal proprio `CONTEXT.md`, senza
-ricopiarlo:
+Riguarda sei progetti. Ognuno lo cita con una riga dal proprio `CONTEXT.md`, senza ricopiarlo:
 
-- **Il concentratore** (progetto nuovo, nome da scegliere all'apertura): emette le chiavi e
-  riceve i dati delle istanze IPAM. Quando il repo esiste, questo documento si sposta lì e
-  qui resta un rimando.
+- **DA-Link** (progetto nuovo, `~/Progetti/Domarc/DA-Link`): il collettore centrale. Fa
+  entrare gli oggetti remoti in NetBird da solo e raccoglie i dati delle istanze IPAM.
+  Quando il repo esiste, questo documento si sposta lì e qui resta un rimando.
 - **DA-IPAM** (`~/Progetti/Domarc/DA-IPAM`): l'istanza che va dai clienti.
-- **DA-Vul-can** (`~/Progetti/Domarc/DA-Vul-can`): hub in sede, e Scanner-Edge in
+- **DA-Vul-can** (`~/Progetti/Domarc/DA-Vul-can`): hub VA in sede, e Scanner-Edge in
   `infra/scanner-edge/`.
 - **DA-Zabbix** (`~/Progetti/DA-Zabbix`): server in sede, proxy dai clienti, e il client
   NetBird da cui si parte.
+- **DA-CRM** (`~/Progetti/DA-CRM`): legge da DA-Link il quadro tecnico del cliente.
 - **Deploy-Appliance** (`~/Progetti/Domarc/Deploy-Appliance`): l'installatore delle
   appliance.
 
@@ -40,9 +40,13 @@ presso i clienti da Tailscale a NetBird, con tre proprietà:
    monouso emessa solo per lui; una volta dentro resta connesso senza scadenza, finché
    qualcuno non lo revoca.
 
-E fa nascere il **concentratore**, nella sua forma più piccola: sa quali oggetti remoti
-esistono, li fa entrare in NetBird, li revoca, dice se sono connessi e se l'isolamento
-regge, e riceve il segnale di vita delle istanze IPAM.
+E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
+
+- sa quali oggetti remoti ha ogni cliente;
+- li fa entrare in NetBird e li revoca **da solo**: nessuno apre la console NetBird;
+- dice se sono connessi e se l'isolamento regge;
+- raccoglie il segnale di vita e i numeri dell'inventario delle istanze IPAM, e li dà in
+  lettura a DA-CRM.
 
 **Non è:**
 
@@ -51,8 +55,12 @@ regge, e riceve il segnale di vita delle istanze IPAM.
   protegge quel dialogo, e qui non si tocca;
 - un modo per raggiungere la LAN del cliente: da Domarc si raggiunge **solo l'oggetto**
   (decisione 1, §2);
-- la console centrale completa della tappa 9 (versioni, aggiornamenti, creazione di appliance):
-  quella cresce dopo, **nello stesso progetto** del concentratore;
+- la console centrale completa della tappa 9 (canale d'aggiornamento, creazione di
+  appliance): quella cresce dopo, **dentro DA-Link**;
+- **le ricerche OSINT avviate dal CRM**: il CRM chiama DA-Vul-can direttamente. È il filo
+  già aperto in DA-CRM, `docs/migrazioni/piano-e-prompt.md` punto 3: il permesso di spesa
+  verso DA-Vul-can come servizio, con un ADR del CRM che lo decide. DA-Link non c'entra
+  (decisione 10);
 - **DA-VA-OVH**: è nel cloud di Domarc e si raggiunge con la sua VPN diretta. Resta fuori da
   NetBird; alla fine si verifica solo che da-vulcan lo raggiunga ancora senza Tailscale;
 - **Wazuh**: resta isolato e non visibile, mai in NetBird (decisione 8);
@@ -65,12 +73,16 @@ regge, e riceve il segnale di vita delle istanze IPAM.
 |---|---|---|
 | 1 | Da NetBird si raggiunge **solo l'oggetto remoto**. Scansioni, SNMP e inventario partono da lui. Nessuna rotta verso la LAN del cliente. | rotta LAN solo per gli admin; rotta LAN anche ai centrali |
 | 2 | **Chiave d'ingresso monouso per oggetto**, legata ai gruppi giusti, che non scade una volta dentro. In più resta il token applicativo di ciascun dialogo. | una chiave riusabile per cliente; chiave + controlli di postura |
-| 3 | **Il concentratore crea gruppi, chiavi e policy via API**, sul modello di `zbximport/netbird.py` di DA-Zabbix, con regole di nome comuni a DA-Zabbix. | a mano dalla console; uno strumento provvisorio; la procedura guidata di DA-Zabbix estesa a tutto |
+| 3 | **DA-Link crea gruppi, chiavi e policy via API**, sul modello di `zbximport/netbird.py` di DA-Zabbix, con regole di nome comuni a DA-Zabbix. | a mano dalla console; uno strumento provvisorio; la procedura guidata di DA-Zabbix estesa a tutto |
 | 4 | **Doppio binario cliente per cliente, pilota DTS**: NetBird accanto a Tailscale, verifica, poi si toglie Tailscale. Si finisce coi centrali e si spegne la tailnet. | solo i nuovi su NetBird; taglio netto |
 | 5 | **Gruppi per ruolo, più un gruppo per cliente.** Le policy sono poche e fisse e si scrivono per ruolo; il gruppo del cliente non apre niente: serve a sapere di chi è un nodo e a revocarlo. | una policy per oggetto; centrali come «risorse» dietro un nodo d'instradamento |
-| 6 | **Il concentratore nasce subito, piccolo, come progetto separato**, installato solo in sede. Il suo primo compito è questo; il resto della tappa 9 arriva dopo, lì. | dentro DA-IPAM come modalità (finirebbe su ogni appliance col ramo `main`); dentro l'hub DA-Vul-can |
-| 7 | **Le istanze IPAM mandano i dati al concentratore** (443), come gli edge con da-vulcan e i proxy con Zabbix. Sul remoto non si apre nessuna porta in ingresso, tranne quelle per i tecnici. | il concentratore che va a prendere; entrambi |
+| 6 | **DA-Link nasce subito, piccolo, come progetto separato** in `~/Progetti/Domarc/DA-Link`, installato solo in sede. È l'inizio della console centrale della tappa 9. | dentro DA-IPAM come modalità (finirebbe su ogni appliance col ramo `main`); dentro l'hub DA-Vul-can |
+| 7 | **Le istanze IPAM mandano i dati a DA-Link** (443), come gli edge con da-vulcan e i proxy con Zabbix. Sul remoto non si apre nessuna porta in ingresso, tranne quelle per i tecnici. | DA-Link che va a prendere; entrambi |
 | 8 | **Wazuh non entra mai in NetBird** e nessuna policy porta alle sue porte. | — |
+| 9 | **DA-Link è autonomo verso NetBird.** Ha il suo utente di servizio e crea da sé gruppi, chiavi e policy al clic del tecnico. Se qualcuno modifica a mano una policy di DA-Link, la rimette com'era e lo dice. | anche l'iscrizione automatica al primo avvio (DA-Link esposto su Internet); anche la preparazione dell'oggetto chiesta dal CRM |
+| 10 | **L'OSINT avviato dal CRM va dal CRM a DA-Vul-can**, senza passare da DA-Link. | tutto attraverso DA-Link |
+| 11 | **Il CRM vede da DA-Link**, per cliente: oggetti e collegamento, salute e versioni, esito dell'isolamento, numeri dell'inventario. Solo lettura. | — |
+| 12 | **Il cliente si identifica con `codcli` del gestionale** in tutti i sistemi: gruppo `cli-<codcli>`, nome dei nodi, API di DA-Link. È già la chiave di DA-Vul-can (`/api/clients/[codcli]/…`) e del CRM. | — |
 
 ## 3. Da dove si parte (verificato nel codice il 2026-10-14)
 
@@ -103,8 +115,14 @@ NetBird invece c'è già:
   usate, scrivere una policy «quel gruppo verso quella porta», dire se `Default` è accesa e
   a chi va una rotta.
 
-La VM 533 (`192.168.4.8`) **non è il concentratore**: è l'istanza DA-IPAM di Domarc stessa.
-Sta in sede, raggiunge il concentratore in LAN e non ha bisogno di NetBird.
+Altre cose che esistono già:
+
+- **La VM 533 (`192.168.4.8`) non è DA-Link**: è l'istanza DA-IPAM di Domarc stessa. Sta in
+  sede, raggiunge DA-Link in LAN e non ha bisogno di NetBird.
+- **Il CRM mostra già un pezzo di quadro tecnico.** La scheda cliente ha il riquadro «Cosa
+  espone su internet» da DA-Vul-can (linguetta Tecnica, R4 del piano del CRM). Il Manager ha
+  un aggregatore per `codcli` col lettore Zabbix (`quadro-tecnico`, M2 dello stesso piano).
+  DA-Link si affianca a quelle fonti: non le sostituisce.
 
 ## 4. L'architettura
 
@@ -116,7 +134,8 @@ Sta in sede, raggiunge il concentratore in LAN e non ha bisogno di NetBird.
 |---|---|
 | da-vulcan (hub VA) | `centro-vulcan` |
 | DA-ZABBIX (server) | `centro-zabbix` |
-| Concentratore (nuovo) | `centro-concentratore` |
+| DA-Link (nuovo) | `centro-link` |
+| DA-CRM (`.42` live, `.41` dev) | nessuno: parla con DA-Link e DA-Vul-can in LAN |
 
 **Dai clienti**:
 
@@ -129,12 +148,12 @@ Sta in sede, raggiunge il concentratore in LAN e non ha bisogno di NetBird.
 
 **Persone**: `admins` (tecnici) e `users` (colleghi), esistono già.
 
-Un nodo remoto sta sempre anche nel gruppo del suo cliente `cli-<codice>` (es. `cli-71734`).
+Un nodo remoto sta sempre anche nel gruppo del suo cliente `cli-<codcli>` (es. `cli-71734`).
 Un'istanza IPAM che contiene edge e proxy è **un nodo solo**, in tre gruppi di ruolo. Gli altri
 applicativi dell'istanza (LibreNMS, Graylog leggero, …) non hanno policy proprie: si
 raggiungono solo passando dall'interfaccia dell'istanza.
 
-**Nomi nella rete NetBird**: `<codice>-<tipo>`, cioè `-edge`, `-zbx`, `-ipam`; per esempio
+**Nomi nella rete NetBird**: `<codcli>-<tipo>`, cioè `-edge`, `-zbx`, `-ipam`; per esempio
 `71734-ipam.netbird.selfhosted`.
 
 ### 4.2 Le policy
@@ -144,16 +163,16 @@ Tutte **a senso unico**, protocollo TCP, porte esplicite. Le risposte tornano in
 
 | # | Sorgente | Destinazione | Porte | Perché | Di chi è |
 |---|---|---|---|---|---|
-| P1 | `remoto-ipam` | `centro-concentratore` | 443 | l'istanza manda segnale di vita e dati (decisione 7) | concentratore |
-| P2 | `remoto-edge` | `centro-vulcan` | 443 | heartbeat, risultati, tarball degli aggiornamenti | concentratore |
-| P3 | `centro-vulcan` | `remoto-edge` | 6443 (8443 sugli edge vecchi) | l'hub comanda gli scan: dialogo esistente, non si cambia | concentratore |
+| P1 | `remoto-ipam` | `centro-link` | 443 | l'istanza manda segnale di vita e inventario (decisione 7) | DA-Link |
+| P2 | `remoto-edge` | `centro-vulcan` | 443 | heartbeat, risultati, tarball degli aggiornamenti | DA-Link |
+| P3 | `centro-vulcan` | `remoto-edge` | 6443 (8443 sugli edge vecchi) | l'hub comanda gli scan: dialogo esistente, non si cambia | DA-Link |
 | P4 | `zabbix-proxy` | `centro-zabbix` | 10051 | proxy in modalità active | DA-Zabbix (esiste già) |
-| P5 | `admins` | `remoto-ipam`, `remoto-edge`, `zabbix-proxy` | 22, 443, 6443 | assistenza tecnica | concentratore |
-| P6 | `admins` | `centro-*` | 22, 443 | amministrazione dei centrali | concentratore |
+| P5 | `admins` | `remoto-ipam`, `remoto-edge`, `zabbix-proxy` | 22, 443, 6443 | assistenza tecnica | DA-Link |
+| P6 | `admins` | `centro-*` | 22, 443 | amministrazione dei centrali | DA-Link |
 
-Non ci sono policy dal concentratore verso le istanze: è l'istanza a chiamare (decisione 7).
-Se in futuro servisse un comando dal centro verso un'istanza, viaggerebbe come risposta a una
-sua chiamata, non come porta aperta.
+Non ci sono policy da DA-Link verso le istanze: è l'istanza a chiamare (decisione 7). Se in
+futuro servisse un comando dal centro verso un'istanza, viaggerebbe come risposta a una sua
+chiamata, non come porta aperta.
 
 ### 4.3 Le regole che tengono ciechi i remoti
 
@@ -176,19 +195,19 @@ e ognuno diventa una regola verificata (§6.1):
   - nessuna policy verso un remoto contiene porte Wazuh (1514, 1515, 55000, 9200 e la porta
     della dashboard);
   - sull'istanza IPAM il firewall dell'interfaccia NetBird non apre porte Wazuh. Lo dice
-    l'istanza stessa nel suo segnale di vita (§5.2) e il concentratore lo confronta con
-    l'elenco atteso.
+    l'istanza stessa nel suo segnale di vita (§5.2) e DA-Link lo confronta con l'elenco
+    atteso.
 
 ## 5. La vita di un oggetto remoto
 
 ### 5.1 Ingresso
 
-1. Il tecnico apre nel concentratore «nuovo oggetto»: cliente, tipo (edge / proxy / istanza
-   IPAM con i moduli che contiene), nome.
-2. Il concentratore, via API NetBird:
-   - crea se manca il gruppo `cli-<codice>` (idempotente);
+1. Il tecnico apre in DA-Link «nuovo oggetto»: cliente (`codcli`, con il nome letto dal CRM),
+   tipo (edge / proxy / istanza IPAM con i moduli che contiene), nome.
+2. DA-Link, da solo, via API NetBird:
+   - crea se manca il gruppo `cli-<codcli>` (idempotente);
    - emette una **setup key monouso**: un solo utilizzo, valida 24 ore, non effimera,
-     gruppi automatici `cli-<codice>` + i ruoli. Il nome è `<codice>-<tipo>-<AAAAMMGG>`,
+     gruppi automatici `cli-<codcli>` + i ruoli. Il nome è `<codcli>-<tipo>-<AAAAMMGG>`,
      così si riconosce chi l'ha emessa.
    - per un'istanza IPAM, genera anche il **token** con cui l'istanza manderà i dati (P1).
 3. Chiave e token compaiono **una volta**, dentro il comando d'installazione. Non si salvano in
@@ -196,10 +215,10 @@ e ognuno diventa una regola verificata (§6.1):
    e la chiave non usata si revoca da sola.
 4. L'installatore (edge, istanza IPAM con Deploy-Appliance, in futuro il `/setup`
    dell'immagine della tappa 8, proxy dalla procedura guidata di DA-Zabbix) fa
-   `netbird up --management-url https://netbird.domarc.it --setup-key … --hostname <codice>-<tipo>`.
+   `netbird up --management-url https://netbird.domarc.it --setup-key … --hostname <codcli>-<tipo>`.
    Il servizio `netbird` resta abilitato all'avvio.
-5. Il concentratore controlla che il nodo sia comparso connesso nei gruppi giusti e, per
-   un'istanza IPAM, che sia arrivato il primo segnale di vita. Se non succede entro il tempo
+5. DA-Link controlla che il nodo sia comparso connesso nei gruppi giusti e, per un'istanza
+   IPAM, che sia arrivato il primo segnale di vita. Se non succede entro il tempo
    d'installazione lo dice; non lo dà per fatto.
 
 I nodi entrati con setup key non hanno scadenza del login: è il comportamento di NetBird
@@ -208,43 +227,46 @@ per i nodi non legati a una persona. Si verifica sulla versione installata in fa
 ### 5.2 A regime
 
 - La connessione è sempre accesa: NetBird si ricollega da solo dopo riavvii e cambi di rete.
-- **Segnale di vita dell'istanza IPAM** verso il concentratore (P1), a intervalli fissi:
+- **Segnale di vita dell'istanza IPAM** verso DA-Link (P1), a intervalli fissi:
   - versione e moduli accesi;
   - salute dei moduli;
-  - **porte aperte sull'interfaccia NetBird** (per R5);
-  - ultimo errore.
-- È il primo mattone della tappa 9; lì il contenuto crescerà.
+  - ultimo errore;
+  - **numeri dell'inventario**: dispositivi, reti, ultima scansione e suo esito;
+  - **porte aperte sull'interfaccia NetBird** (per R5).
+- Solo numeri e stati, **non l'inventario riga per riga**: il dato del cliente resta
+  sull'istanza. Se un giorno servisse il dettaglio, è una decisione nuova.
+- Il contenuto crescerà con la tappa 9.
 - L'heartbeat dell'edge verso da-vulcan dice su quale rete passa (§6.3).
 - I token applicativi restano com'erano: il token dell'edge verso l'hub, il token
-  dell'istanza verso il concentratore. NetBird decide chi può arrivare alla porta; il token
-  decide che cosa può fare chi ci arriva.
+  dell'istanza verso DA-Link. NetBird decide chi può arrivare alla porta; il token decide
+  che cosa può fare chi ci arriva.
 
 ### 5.3 Revoca
 
-- **Un oggetto**: il concentratore cancella il nodo in NetBird, revoca le sue chiavi non usate
-  e il token dell'istanza. Il tunnel cade subito.
-- **Un cliente intero**: si cancellano tutti i nodi del gruppo `cli-<codice>`. Si legge prima
+- **Un oggetto**: DA-Link cancella il nodo in NetBird, revoca le sue chiavi non usate e il
+  token dell'istanza. Il tunnel cade subito.
+- **Un cliente intero**: si cancellano tutti i nodi del gruppo `cli-<codcli>`. Si legge prima
   l'**elenco dei nomi** e lo si conferma (regola 10 del parco: i nomi, non i totali).
-- Ogni revoca resta nel registro di audit del concentratore, con chi l'ha fatta e quando.
+- Ogni revoca resta nel registro di audit di DA-Link, con chi l'ha fatta e quando.
 
 ### 5.4 Chi scrive in NetBird
 
 Ci sono due scrittori, con una divisione netta:
 
-- **Il concentratore** gestisce i nodi edge e istanze IPAM, i gruppi `cli-*`, `remoto-*`,
-  `centro-*` e le policy P1–P3, P5, P6.
+- **DA-Link** gestisce i nodi edge e istanze IPAM, i gruppi `cli-*`, `remoto-*`, `centro-*`
+  e le policy P1–P3, P5, P6.
 - **La procedura guidata di DA-Zabbix** gestisce i proxy che vivono da soli, nel gruppo
-  `zabbix-proxy` e nello stesso `cli-<codice>`, e la policy P4.
+  `zabbix-proxy` e nello stesso `cli-<codcli>`, e la policy P4.
 
 Nessuno dei due cancella ciò che non ha creato: si riconosce dal prefisso del nome della chiave
 e del nodo. Il proxy che vive dentro un'istanza IPAM non riceve una seconda chiave: è lo stesso
-nodo, e lo mette in `zabbix-proxy` il concentratore all'ingresso.
+nodo, e lo mette in `zabbix-proxy` DA-Link all'ingresso.
 
-## 6. Controlli e visibilità
+## 6. Controlli, autonomia e visibilità
 
-### 6.1 Verifica dell'isolamento
+### 6.1 Verifica dell'isolamento e riallineamento
 
-Un controllo in **sola lettura** nel concentratore legge da NetBird policy, rotte, gruppi di
+Un controllo in **sola lettura** in DA-Link legge da NetBird policy, rotte, gruppi di
 nameserver e nodi, insieme alle porte dichiarate dalle istanze, e verifica R1–R5. Gira:
 
 - a ogni emissione di chiave;
@@ -255,6 +277,15 @@ Se una regola salta, la pagina diventa rossa e dice **quale** policy, rotta o is
 varco, per nome. Va anche nel monitoraggio (DA-ZABBIX): un controllo che fallisce in silenzio
 non serve (regola 6 del parco). Le cinque regole sono anche **prove automatiche**: con dati
 finti nella forma vera dell'API NetBird, ogni prova va vista fallire prima di passare.
+
+**Riallineamento** (decisione 9):
+- **Le policy di DA-Link** (P1–P3, P5, P6) sono descritte nel suo codice. Se in NetBird
+  risultano diverse — porte cambiate, gruppi aggiunti, spente — DA-Link le rimette come
+  da descrizione e scrive nel registro cosa ha trovato e cosa ha cambiato.
+- **Le policy degli altri** non le tocca mai: se rompono R1–R5, le segnala e basta.
+- Il riallineamento parte con un **freno**: nasce spento, segnala soltanto («qui avrei
+  rimesso X») e si accende contando, dopo che le segnalazioni si sono dimostrate giuste
+  (regola dei freni del parco).
 
 ### 6.2 Prerequisito: tirare fuori `All` dalle policy dei colleghi
 
@@ -274,61 +305,93 @@ primo cliente entra. Prima di qualunque oggetto remoto:
 
 ### 6.3 Si vede nell'interfaccia
 
-- **Concentratore**: un elenco degli oggetti remoti per cliente.
+- **DA-Link**: un elenco degli oggetti remoti per cliente.
   - Per ogni oggetto: tipo e moduli, rete (NetBird / Tailscale / nessuna), nome e IP NetBird,
-    connesso o no, ultimo contatto NetBird, ultimo segnale di vita.
-  - In cima: esito della verifica R1–R5, con data e fonte della lettura.
+    connesso o no, ultimo contatto NetBird, ultimo segnale di vita, numeri dell'inventario.
+  - In cima: esito della verifica R1–R5, con data e fonte della lettura, e l'ultimo
+    riallineamento.
   - La **scadenza del token API** verso NetBird, con avviso 30 giorni prima: un token scaduto
     fermerebbe in silenzio ogni nuova installazione.
+- **DA-CRM**: nella scheda del cliente, linguetta Tecnica, accanto a «Cosa espone su
+  internet», il quadro letto da DA-Link (§7.3). L'interfaccia si propone oggetto per oggetto
+  prima di scriverla (regola grafica del parco).
 - **DA-Vul-can**: sulla pagina delle sonde, la rete da cui arriva l'heartbeat. È l'indicatore
   D15 del suo BACKLOG, generalizzato.
 
-## 7. Il passaggio
+## 7. Le interfacce di DA-Link
+
+### 7.1 Verso NetBird
+
+- API di `netbird.domarc.it` con un **utente di servizio dedicato** a DA-Link, che non è una
+  persona. Il token sta nel vault (`secret_ref` nell'`ACCESSI.md` di DA-Link).
+- I permessi sono quelli minimi che consentono gruppi, chiavi, policy e nodi. Se la versione
+  di NetBird non ne ha di più fini dell'admin, si dichiara così.
+
+### 7.2 Dalle istanze IPAM (via NetBird, P1)
+
+- `POST` del segnale di vita (§5.2), con il token dell'istanza.
+- Un token vale per un'istanza sola: DA-Link rifiuta un segnale che dichiara un `codcli`
+  diverso da quello del token.
+
+### 7.3 Verso DA-CRM (in LAN, sede)
+
+- Una lettura per cliente, `GET /api/v1/clienti/<codcli>/quadro`, solo lettura, con **chiave
+  di servizio** come le altre fonti del CRM.
+- Restituisce:
+  - gli oggetti, con il loro collegamento;
+  - salute e versioni;
+  - l'esito dell'isolamento per quel cliente;
+  - i numeri dell'inventario.
+- **Mai** chiavi, token, IP NetBird o nomi di policy.
+- Ogni parte che non ha dati lo dichiara (`non_disponibili`), come l'aggregatore del Manager:
+  un quadro vuoto deve dire «non so», non «niente».
+
+## 8. Il passaggio
 
 Ogni fase si chiude da sola. Ci si può fermare dopo qualunque fase senza lasciare niente a metà.
 
 **Fase 0 — Preparazione. Niente codice, niente clienti.**
 
 - Censimento dei nodi Tailscale (`tailscale status` da un centrale): quali clienti, quale tipo
-  di oggetto, quale macchina. L'elenco diventa la lista della fase 3 e il primo contenuto del
-  concentratore.
-- **Prova di convivenza su una VM di prova** con Tailscale e NetBird accesi insieme (§8,
+  di oggetto, quale macchina. L'elenco diventa la lista della fase 3 e il primo contenuto di
+  DA-Link.
+- Verifica che il codice tenant delle istanze DA-IPAM sia il `codcli` del gestionale
+  (decisione 12), istanza per istanza.
+- **Prova di convivenza su una VM di prova** con Tailscale e NetBird accesi insieme (§9,
   rischio 1). Se non passa, si decide il rimedio prima di toccare DTS.
 - Versione del server NetBird; comportamento di scadenza dei nodi entrati con setup key;
-  quali permessi servono al token API.
+  quali permessi servono all'utente di servizio.
 - §6.2: `All` fuori dalle policy dei colleghi, `Default` spenta.
 - da-vulcan e DA-ZABBIX entrano in NetBird nei gruppi `centro-*`, **senza lasciare
   Tailscale**.
-- Il nome stabile per da-vulcan (§8, rischio 3).
+- Il nome stabile per da-vulcan (§9, rischio 3).
 
 Esce quando: i centrali sono connessi in NetBird, la verifica R1–R4 fatta a mano è verde e i
 colleghi raggiungono ciò che raggiungevano prima.
 
-**Fase 1 — Il concentratore e il codice, sul dev.**
+**Fase 1 — DA-Link e il codice, sul dev.**
 
-- Si apre il progetto del concentratore (`bin/nuovo-progetto`, poi una sessione nuova come
+- Si apre DA-Link (`bin/nuovo-progetto DA-Link` sotto `Domarc/`, poi una sessione nuova come
   vuole `AVVIO-PROGETTO.md`).
-- Il concentratore nasce col solo compito di §1: elenco, chiavi, revoca, stato, R1–R5,
-  ricezione del segnale di vita. Gira in sede, in `centro-concentratore`.
-- Il suo token API NetBird va nel vault (`secret_ref` nel suo `ACCESSI.md`).
-- Nei repo esistenti, le modifiche del §9, con Tailscale ancora supportato accanto.
+- DA-Link nasce coi compiti di §1 e le interfacce di §7. Gira in sede, in `centro-link`.
+- Nei repo esistenti, le modifiche del §10, con Tailscale ancora supportato accanto.
 
 Esce quando:
 - i cancelli dei repo sono verdi;
-- una chiave emessa dal concentratore sul NetBird vero fa entrare una VM di prova nei gruppi
-  giusti;
+- una chiave emessa da DA-Link sul NetBird vero fa entrare una VM di prova nei gruppi giusti;
 - la VM manda il segnale di vita;
+- il quadro arriva al CRM di sviluppo;
 - chiave e VM si tolgono subito dopo.
 
 **Fase 2 — Pilota DTS**: istanza IPAM `172.16.0.2`, edge `172.16.1.141`, `proxy-dts`.
 
-1. NetBird accanto a Tailscale sulle macchine di DTS, con chiavi emesse dal concentratore. Il
-   proxy, se vive da solo, passa dalla procedura guidata di DA-Zabbix.
+1. NetBird accanto a Tailscale sulle macchine di DTS, con chiavi emesse da DA-Link. Il proxy,
+   se vive da solo, passa dalla procedura guidata di DA-Zabbix.
 2. Gli indirizzi con cui centrali e DTS si cercano passano ai nomi NetBird.
 3. Si verifica **dal di fuori**, flusso per flusso, come lo usa chi lo usa:
    - heartbeat dell'edge arrivato a da-vulcan con rete = NetBird;
    - uno scan comandato da da-vulcan;
-   - segnale di vita dell'istanza nel concentratore;
+   - segnale di vita dell'istanza in DA-Link, e il quadro di DTS nel CRM;
    - ultimo contatto di `proxy-dts` in Zabbix.
 4. Prova d'isolamento in negativo:
    - da un nodo DTS non si raggiunge nessun altro remoto, né un centrale fuori dalle porte
@@ -347,12 +410,12 @@ finestra per cliente.
 - Tailscale si toglie dai centrali.
 - Si verifica che da-vulcan raggiunga DA-VA-OVH sulla VPN diretta.
 - Tutti i riferimenti a `da-vulcan` risolto da MagicDNS e all'IP Tailscale di DA-VA passano
-  al nome nuovo (§8, rischio 3).
+  al nome nuovo (§9, rischio 3).
 - Si toglie il codice Tailscale: campi della procedura guidata, tipo di credenziale,
   `tailscale_ip` nell'heartbeat, ruolo Ansible, `infra/tailscale/`.
 - La tailnet personale si cancella.
 
-## 8. Rischi e trappole note in anticipo
+## 9. Rischi e trappole note in anticipo
 
 1. **Tailscale e NetBird nella stessa fascia di indirizzi.** Entrambi usano `100.64.0.0/10`.
    Sui nodi Linux Tailscale mette una regola firewall che scarta il traffico da quella fascia
@@ -371,45 +434,57 @@ finestra per cliente.
    - Va monitorato da DA-ZABBIX.
    - Va ricordata la trappola di DA-Infra: Traefik v3 taglia gli stream a 60 secondi,
      `readTimeout: 0` non è opzionale.
-5. **Il concentratore diventa necessario per far entrare oggetti nuovi**, non per far
-   funzionare quelli che ci sono: i tunnel e i dialoghi edge↔da-vulcan e proxy↔Zabbix non
-   passano da lui. Se è giù si perde il segnale di vita delle istanze, e lo si vede.
-6. **Il token API del concentratore verso NetBird scade.** Senza avviso, le installazioni
-   smettono di funzionare il giorno dopo. Per questo la scadenza si vede in pagina (§6.3).
-7. **L'agente Python di DA-IPAM accetta la fascia `100.64.0.0/10`.** Con NetBird quel
-   controllo passa ancora ma non distingue più nulla. Se l'agente resta (§12), la fonte
+5. **DA-Link diventa necessario per far entrare oggetti nuovi**, non per far funzionare quelli
+   che ci sono: i tunnel e i dialoghi edge↔da-vulcan e proxy↔Zabbix non passano da lui. Se è
+   giù si perde il segnale di vita delle istanze e il quadro nel CRM dice «non disponibile».
+6. **L'utente di servizio di DA-Link ha poteri ampi su NetBird.** Probabilmente quelli di
+   admin, se la versione non ne offre di più fini (§7.1). Il suo token è il segreto più
+   delicato del disegno:
+   - sta solo nel vault e nel `.env` della macchina di DA-Link;
+   - DA-Link non lo espone in nessuna API;
+   - la sua scadenza si vede in pagina (§6.3).
+7. **Il riallineamento automatico può combattere con una persona.** Un tecnico che cambia a
+   mano una policy di DA-Link se la vede rimettere com'era. Per questo nasce col freno (§6.1)
+   e ogni rimessa a posto finisce nel registro con il prima e il dopo.
+8. **Il `codcli` dell'istanza potrebbe non essere quello del gestionale** (decisione 12): i
+   tenant DA-IPAM sono nati prima di questa regola. Si verifica in fase 0. Un'istanza con un
+   codice diverso si corregge prima di entrare in DA-Link, non dopo.
+9. **L'agente Python di DA-IPAM accetta la fascia `100.64.0.0/10`.** Con NetBird quel
+   controllo passa ancora ma non distingue più nulla. Se l'agente resta (§13), la fonte
    ammessa diventa la rete NetBird dell'account letta all'installazione, più bearer e scope
    come oggi.
-8. **Il firewall dell'edge si fida di tutta l'interfaccia Tailscale** (`ufw allow in on tailscale0`).
-   Su NetBird si aprono solo le porte delle policy: 6443 e 22 sull'edge, 22 e 443
-   sull'istanza IPAM. La barriera vera è la policy, e il firewall è la seconda linea.
-9. **Il certificato dell'edge** contiene oggi nome DNS e IP della LAN. Si aggiunge il nome
-   NetBird ai SAN (`tls_extra_sans`) e si verifica in fase 2 che da-vulcan lo accetti.
-10. **Il firewall del cliente in uscita.** NetBird prova la via diretta in UDP e ripiega sul
+10. **Il firewall dell'edge si fida di tutta l'interfaccia Tailscale** (`ufw allow in on tailscale0`).
+    Su NetBird si aprono solo le porte delle policy: 6443 e 22 sull'edge, 22 e 443
+    sull'istanza IPAM. La barriera vera è la policy, e il firewall è la seconda linea.
+11. **Il certificato dell'edge** contiene oggi nome DNS e IP della LAN. Si aggiunge il nome
+    NetBird ai SAN (`tls_extra_sans`) e si verifica in fase 2 che da-vulcan lo accetti.
+12. **Il firewall del cliente in uscita.** NetBird prova la via diretta in UDP e ripiega sul
     relay in 443 TCP. Su un cliente che chiude tutto in uscita si verifica che il relay passi,
     prima di togliere Tailscale.
 
-## 9. Cosa cambia, repo per repo
+## 10. Cosa cambia, repo per repo
 
-**Concentratore (nuovo)**
+**DA-Link (nuovo)**
 
 - Client API NetBird: gruppi, chiavi, revoca, nodi, policy. Si parte da
   `DA-Zabbix/zbximport/netbird.py`.
-- Elenco degli oggetti remoti per cliente.
+- Descrizione delle sue policy e riallineamento col freno (§6.1).
+- Elenco degli oggetti remoti per `codcli`, con il nome del cliente letto dal CRM.
 - Emissione del comando d'installazione con chiave e token.
-- Ricezione del segnale di vita (P1).
+- Ricezione del segnale di vita (§7.2).
 - Verifica R1–R5 e pagina di §6.3.
-- Audit di emissione, revoca e cancellazione.
+- Lettura per il CRM (§7.3).
+- Audit di emissione, revoca, cancellazione e riallineamento.
 - Gli standard del parco: cancello, `CONTEXT.md`, `ACCESSI.md`, scheda nel censimento.
 
 **DA-IPAM**
 
-- Il segnale di vita verso il concentratore: URL e token dalla configurazione
-  d'installazione, e porte aperte sull'interfaccia NetBird fra i dati mandati.
-- Installatore e `/setup` con `NETBIRD_SETUP_KEY` e token del concentratore.
+- Il segnale di vita verso DA-Link, con i numeri dell'inventario e le porte aperte
+  sull'interfaccia NetBird. URL e token vengono dalla configurazione d'installazione.
+- Installatore e `/setup` con `NETBIRD_SETUP_KEY` e token di DA-Link.
 - Firewall sull'interfaccia NetBird: solo 22 e 443, più 6443 se l'istanza contiene l'edge.
 - Tailscale tolto da procedura guidata e credenziali nella fase 4. Prima si decide che fine
-  fa l'agente remoto (§12).
+  fa l'agente remoto (§13).
 
 **DA-Vul-can / Scanner-Edge**
 
@@ -419,55 +494,68 @@ finestra per cliente.
 - Primo avvio, `install.sh`, `harden.sh`: setup key NetBird; firewall per porta su `wt0`;
   nome NetBird nei SAN.
 - Bridge-node Ansible: ruolo `netbird` accanto a `tailscale`, poi al suo posto.
+- L'OSINT avviato dal CRM **non è in questo lavoro**: segue il filo del CRM (decisione 10).
 
 **DA-Zabbix**
 
-- La procedura guidata dei proxy mette il nodo anche in `cli-<codice>`, usa le stesse regole
-  di nome (`<codice>-zbx`) e non tocca ciò che ha creato il concentratore.
+- La procedura guidata dei proxy mette il nodo anche in `cli-<codcli>`, usa le stesse regole
+  di nome (`<codcli>-zbx`) e non tocca ciò che ha creato DA-Link.
 - Per un proxy dentro un'istanza IPAM non emette chiavi: il nodo c'è già.
-- DA-ZABBIX tiene d'occhio la verifica R1–R5 e il server NetBird (§6.1, §8).
+- DA-ZABBIX tiene d'occhio la verifica R1–R5, DA-Link e il server NetBird (§6.1, §9).
+
+**DA-CRM**
+
+- Una fonte nuova nella scheda cliente, linguetta Tecnica: il quadro di DA-Link (§7.3).
+- La chiave di servizio di DA-Link va nel vault e nella configurazione del CRM come
+  `secret_ref`.
+- L'interfaccia si propone prima di scriverla.
 
 **Deploy-Appliance**
 
-- Parametro setup key NetBird e token del concentratore nell'installatore, al posto
-  dell'auth-key Tailscale.
+- Parametro setup key NetBird e token di DA-Link nell'installatore, al posto dell'auth-key
+  Tailscale.
 - La VM Wazuh non riceve mai NetBird.
 
-**DA-Infra** — solo documentazione: `docs/servizi/netbird.md` aggiornato con gruppi, policy
-e le regole «`All` mai» e «Wazuh mai».
+**DA-Infra** — solo documentazione: `docs/servizi/netbird.md` aggiornato con gruppi, policy,
+l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
 
-## 10. Rapporto col piano di miglioramento di DA-IPAM
+## 11. Rapporto col piano di miglioramento di DA-IPAM
 
-- **Tappa 9** (console centrale): il concentratore **è** il suo inizio. La sua spec, quando ci
-  si arriva, parte dal progetto che nasce qui invece che da zero, e lo fa crescere: versioni,
-  canale d'aggiornamento, creazione di appliance.
+- **Tappa 9** (console centrale): DA-Link **è** il suo inizio. La sua spec, quando ci si
+  arriva, parte da DA-Link invece che da zero, e lo fa crescere: canale d'aggiornamento,
+  creazione di appliance.
 - **Tappa 7** (edge guidato da DA-IPAM): non si tocca il contratto con l'hub; si cambia la
   rete sotto. La migrazione edge per edge (7e) e la fase 3 si fanno insieme dove coincidono.
 - **Tappa 8** (installazione dall'immagine): il `/setup` del primo avvio chiede setup key e
-  token del concentratore, non l'auth-key Tailscale. Se la tappa 8 parte prima, nasce già così.
+  token di DA-Link, non l'auth-key Tailscale. Se la tappa 8 parte prima, nasce già così.
 - Questo lavoro non dipende dalle tappe 1–6, e quelle non dipendono da lui.
 
-## 11. Come si verifica che funziona
+## 12. Come si verifica che funziona
 
 - **Prove automatiche**:
   - R1–R5 su dati finti nella forma vera dell'API NetBird;
   - emissione della chiave coi gruppi e il nome giusti;
-  - revoca che tocca solo ciò che il concentratore ha creato;
-  - segnale di vita accettato col token giusto e rifiutato senza;
+  - revoca che tocca solo ciò che DA-Link ha creato;
+  - riallineamento che, col freno, segnala senza scrivere, e senza freno rimette solo le
+    policy sue;
+  - segnale di vita accettato col token giusto, rifiutato senza token e con un `codcli` non
+    suo;
+  - lettura del CRM senza segreti nella risposta, e con `non_disponibili` quando una parte
+    manca;
   - heartbeat dell'edge coi campi nuovi e quelli vecchi.
 - **Sul vero, dal di fuori**, in fase 2 e per ogni cliente in fase 3:
-  - i quattro flussi della fase 2, punto 3;
+  - i flussi della fase 2, punto 3;
   - la prova d'isolamento in negativo, Wazuh compreso;
   - un riavvio dell'oggetto remoto, dopo il quale torna connesso da solo.
-- **Verifica isolamento** verde nella pagina del concentratore, con la data e la fonte della
-  lettura.
+- **Verifica isolamento** verde nella pagina di DA-Link, con la data e la fonte della lettura.
 
-## 12. Cosa resta da decidere nel piano operativo
+## 13. Cosa resta da decidere nel piano operativo
 
-- Il nome del progetto del concentratore e la macchina in sede dove gira.
+- La macchina in sede dove gira DA-Link, e il suo stack (in linea col parco).
 - Il nome stabile per da-vulcan (rischio 3).
 - Il rimedio alla convivenza in `100.64.0.0/10`, se la prova della fase 0 lo richiede.
 - **L'agente Python remoto di DA-IPAM** (`agent/`, raggiunto oggi via Tailscale dalla VM 533).
   Con un'istanza IPAM per cliente forse non serve più. Si decide se toglierlo o portarlo su
   NetBird, contando prima chi lo usa davvero.
-- Il contenuto del segnale di vita oltre al minimo di §5.2: lo fissa la spec della tappa 9.
+- Quali numeri dell'inventario entrano nel segnale di vita, oltre a dispositivi, reti e
+  ultima scansione. Si fissa col CRM, guardando cosa serve nella scheda.

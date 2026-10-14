@@ -19,7 +19,11 @@ export async function GET() {
   });
 }
 
-/** POST /api/topology/links — aggiunge un collegamento («add») o ne nasconde uno visto («ignore»). */
+/**
+ * POST /api/topology/links — aggiunge un collegamento («add», con le porte e il tipo
+ * `medium`: cavo, fibra, wireless o null) o ne nasconde uno visto («ignore», senza tipo).
+ * Nodi `dev:N`, `host:N` o `vm:N:M`. Risposta 201 `{ id }`.
+ */
 export async function POST(req: Request) {
   return withTenantFromSession(async () => {
     const s = await requireAdmin();

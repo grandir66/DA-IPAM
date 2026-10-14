@@ -4,7 +4,7 @@ import { parseLinkOverrideBody, parseSiteTopologyBody, parseDeviceLocationBody, 
 
 test("correzione: nodi nella forma dev:N / host:N, azione nota, porte facoltative", () => {
   assert.deepEqual(parseLinkOverrideBody({ action: "add", a_node: "dev:1", b_node: "host:2" }), {
-    ok: true, data: { action: "add", a_node: "dev:1", a_port: "", b_node: "host:2", b_port: "", note: null },
+    ok: true, data: { action: "add", a_node: "dev:1", a_port: "", b_node: "host:2", b_port: "", medium: null, note: null },
   });
   assert.equal(parseLinkOverrideBody({ action: "add", a_node: "dev:1", b_node: "dev:1" }).ok, false, "un nodo con se stesso");
   assert.equal(parseLinkOverrideBody({ action: "sposta", a_node: "dev:1", b_node: "dev:2" }).ok, false);
@@ -83,4 +83,76 @@ test("ritocchi e nascondi: vista auto o mappa:N; hidden solo dev:N", async () =>
   assert.deepEqual(m.parseHiddenBody({ node_id: "dev:7", hidden: true }), { ok: true, data: { deviceId: 7, hidden: true } });
   assert.equal(m.parseHiddenBody({ node_id: "host:7", hidden: true }).ok, false);
   assert.equal(m.parseHiddenBody({ node_id: "dev:7" }).ok, false);
+});
+
+// ─── Fase 2b (Task 9): tipo del collegamento, modifica, principale, porte note ───
+
+test("collegamento a mano col tipo; le VM sono nodi; il tipo non vale per «ignora»", async () => {
+  const m = await import("@/lib/topology/api-input");
+  assert.deepEqual(
+    m.parseLinkOverrideBody({ action: "add", a_node: "vm:3:100", a_port: "net0", b_node: "dev:2", b_port: "Port 5", medium: "fibra", note: "armadio 2" }),
+    { ok: true, data: { action: "add", a_node: "vm:3:100", a_port: "net0", b_node: "dev:2", b_port: "Port 5", medium: "fibra", note: "armadio 2" } },
+  );
+  assert.equal(m.parseLinkOverrideBody({ action: "add", a_node: "dev:1", b_node: "dev:2", medium: null }).ok, true);
+  for (const bad of [
+    { action: "add", a_node: "dev:1", b_node: "dev:2", medium: "rame" },
+    { action: "ignore", a_node: "dev:1", b_node: "dev:2", medium: "cavo" },
+    { action: "add", a_node: "vm:x:1", b_node: "dev:2" },
+    { action: "add", a_node: "dev:1:2:3", b_node: "dev:2" },
+  ]) {
+    const r = m.parseLinkOverrideBody(bad);
+    assert.equal(r.ok, false, JSON.stringify(bad));
+    if (!r.ok) assert.doesNotMatch(r.error, /Invalid|expected|received/);
+  }
+  const ign = m.parseLinkOverrideBody({ action: "ignore", a_node: "dev:1", b_node: "dev:2", medium: "cavo" });
+  assert.deepEqual(ign, { ok: false, error: "Il tipo (cavo, fibra, wireless) si indica solo per un collegamento aggiunto a mano" });
+});
+
+test("modifica di un collegamento a mano: solo i campi presenti; almeno uno", async () => {
+  const m = await import("@/lib/topology/api-input");
+  assert.deepEqual(m.parseLinkPatchBody({ a_port: "Port 7" }), { ok: true, data: { a_port: "Port 7" } });
+  assert.deepEqual(m.parseLinkPatchBody({ medium: null, note: null }), { ok: true, data: { medium: null, note: null } });
+  assert.deepEqual(m.parseLinkPatchBody({ b_port: "", medium: "wireless" }), { ok: true, data: { b_port: "", medium: "wireless" } });
+  assert.deepEqual(m.parseLinkPatchBody({}), { ok: false, error: "Niente da modificare: servono le porte, il tipo o la nota" });
+  for (const bad of [null, { medium: "rame" }, { a_port: 5 }, { a_port: "x".repeat(101) }, { note: "x".repeat(501) }]) {
+    const r = m.parseLinkPatchBody(bad);
+    assert.equal(r.ok, false, JSON.stringify(bad));
+    if (!r.ok) assert.doesNotMatch(r.error, /Invalid|expected|received/);
+  }
+});
+
+test("principale scelto a mano: due nodi diversi, porte facoltative; per toglierlo basta il nodo", async () => {
+  const m = await import("@/lib/topology/api-input");
+  assert.deepEqual(m.parsePrimaryBody({ node_id: "dev:5", other_node: "dev:2", node_port: "eno1", other_port: "Port 17" }), {
+    ok: true, data: { node_id: "dev:5", other_node: "dev:2", node_port: "eno1", other_port: "Port 17" },
+  });
+  assert.deepEqual(m.parsePrimaryBody({ node_id: "vm:3:100", other_node: "host:9" }), {
+    ok: true, data: { node_id: "vm:3:100", other_node: "host:9", node_port: "", other_port: "" },
+  });
+  assert.deepEqual(m.parsePrimaryBody({ node_id: "dev:5", other_node: "dev:5" }), { ok: false, error: "Un collegamento unisce due nodi diversi" });
+  for (const bad of [null, {}, { node_id: "dev:5" }, { node_id: "ext:1", other_node: "dev:2" }, { node_id: "dev:5", other_node: "dev:2", node_port: 3 }]) {
+    const r = m.parsePrimaryBody(bad);
+    assert.equal(r.ok, false, JSON.stringify(bad));
+    if (!r.ok) assert.doesNotMatch(r.error, /Invalid|expected|received/);
+  }
+  assert.deepEqual(m.parsePrimaryDeleteBody({ node_id: "dev:5" }), { ok: true, data: { node_id: "dev:5" } });
+  assert.equal(m.parsePrimaryDeleteBody({}).ok, false);
+  assert.equal(m.parsePrimaryDeleteBody(null).ok, false);
+});
+
+test("porte note: il nodo nella query, nella forma dev:N, host:N o vm:N:M", async () => {
+  const m = await import("@/lib/topology/api-input");
+  assert.deepEqual(m.parsePortsQuery("dev:4"), { ok: true, data: "dev:4" });
+  assert.deepEqual(m.parsePortsQuery("vm:3:100"), { ok: true, data: "vm:3:100" });
+  assert.deepEqual(m.parsePortsQuery(null), { ok: false, error: "Manca il nodo: ?node=dev:N" });
+  assert.equal(m.parsePortsQuery("dev:x").ok, false);
+});
+
+test("mappe, radici e ritocchi accettano anche le VM (vm:<apparato>:<vmid>)", async () => {
+  const m = await import("@/lib/topology/api-input");
+  assert.equal(m.parseMapCreateBody({ name: "x", nodes: ["vm:3:100"], roots: ["vm:3:100"] }).ok, true);
+  assert.deepEqual(m.parseMapNodesBody({ add: ["vm:3:100"] }), { ok: true, data: { add: ["vm:3:100"], remove: [] } });
+  assert.equal(m.parsePositionsBody({ view: "mappa:1", tweaks: [{ nodeId: "vm:3:100", x: 0, y: 0, sig: "s" }] }).ok, true);
+  assert.equal(m.parseMapNodesBody({ add: ["vm:3"] }).ok, true, "la regex del piano ammette anche vm:N");
+  assert.equal(m.parseMapNodesBody({ add: ["vm:a:1"] }).ok, false);
 });

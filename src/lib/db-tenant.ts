@@ -32,6 +32,8 @@ import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolv
 import type { ControllerRunKind, ControllerRunStoredTrigger, NetworkControllerRow } from "./controllers/types";
 import { libreStatusFrom } from "./topology/status-map";
 import { parseProxmoxScan } from "./topology/vms";
+import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
+import type { KnownPort } from "./topology/api-input";
 
 import type {
   Network,
@@ -9388,13 +9390,36 @@ export function listLinkOverrides(): LinkOverrideView[] {
 }
 
 export function addLinkOverride(
-  input: { action: "add" | "ignore"; a_node: string; a_port: string; b_node: string; b_port: string; note: string | null },
+  input: {
+    action: "add" | "ignore"; a_node: string; a_port: string; b_node: string; b_port: string;
+    /** Tipo del collegamento a mano (fase 2b); null = non indicato, sempre null per «ignore». */
+    medium: "cavo" | "fibra" | "wireless" | null;
+    note: string | null;
+  },
   author: string,
 ): number {
   const r = db().prepare(
-    "INSERT INTO topology_link_overrides (action, a_node, a_port, b_node, b_port, note, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).run(input.action, input.a_node, input.a_port, input.b_node, input.b_port, input.note, author);
+    "INSERT INTO topology_link_overrides (action, a_node, a_port, b_node, b_port, medium, note, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(input.action, input.a_node, input.a_port, input.b_node, input.b_port, input.medium, input.note, author);
   return Number(r.lastInsertRowid);
+}
+
+/**
+ * Modifica un collegamento aggiunto a mano (fase 2b, «Modifica porte»): cambiano
+ * solo i campi presenti. Un «ignora» non si modifica (si toglie e si rifà).
+ */
+export function updateLinkOverride(
+  id: number,
+  patch: { a_port?: string; b_port?: string; medium?: "cavo" | "fibra" | "wireless" | null; note?: string | null },
+): "ok" | "assente" | "non_a_mano" {
+  const d = db();
+  const row = d.prepare("SELECT action FROM topology_link_overrides WHERE id = ?").get(id) as { action: string } | undefined;
+  if (!row) return "assente";
+  if (row.action !== "add") return "non_a_mano";
+  const cols = (["a_port", "b_port", "medium", "note"] as const).filter((k) => patch[k] !== undefined);
+  if (cols.length === 0) return "ok";
+  d.prepare(`UPDATE topology_link_overrides SET ${cols.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...cols.map((k) => patch[k] ?? null), id);
+  return "ok";
 }
 
 export function deleteLinkOverride(id: number): boolean {
@@ -9410,4 +9435,45 @@ export function listTopologyLinkPrimaries(): Array<{ node_id: string; other_node
   return db()
     .prepare("SELECT node_id, other_node, node_port, other_port FROM topology_link_primary ORDER BY node_id")
     .all() as Array<{ node_id: string; other_node: string; node_port: string; other_port: string }>;
+}
+
+/** «★ Rendi principale» (spec §11.3): una scelta per oggetto; una nuova sostituisce quella di prima. */
+export function setTopologyLinkPrimary(
+  input: { node_id: string; other_node: string; node_port: string; other_port: string },
+  author: string,
+): void {
+  db().prepare(
+    `INSERT INTO topology_link_primary (node_id, other_node, node_port, other_port, set_by, set_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(node_id) DO UPDATE SET other_node = excluded.other_node, node_port = excluded.node_port,
+       other_port = excluded.other_port, set_by = excluded.set_by, set_at = excluded.set_at`,
+  ).run(input.node_id, input.other_node, input.node_port, input.other_port, author);
+}
+
+/** «Togli la scelta»: il principale torna a sceglierlo il sistema. true se c'era una scelta. */
+export function deleteTopologyLinkPrimary(nodeId: string): boolean {
+  return db().prepare("DELETE FROM topology_link_primary WHERE node_id = ?").run(nodeId).changes > 0;
+}
+
+/**
+ * Porte note di un oggetto per «Collega a…» (GET /api/topology/ports): per un
+ * apparato le sue porte (`switch_ports`), oppure, se non ne ha, le schede della
+ * scansione Proxmox dell'host che è lui. Host e VM: nessuna porta nota (elenco
+ * vuoto). null = apparato inesistente.
+ */
+export function getTopologyKnownPorts(nodeId: string): KnownPort[] | null {
+  const m = /^dev:(\d+)$/.exec(nodeId);
+  if (!m) return [];
+  const d = db();
+  const id = Number(m[1]);
+  const dev = d.prepare("SELECT id, host, name FROM network_devices WHERE id = ?").get(id) as { id: number; host: string; name: string } | undefined;
+  if (!dev) return null;
+  const ports = d.prepare(
+    "SELECT port_name, speed, poe_power_mw, status, is_uplink, is_trunk FROM switch_ports WHERE device_id = ? ORDER BY port_index",
+  ).all(id) as SwitchPortRow[];
+  if (ports.length > 0) return switchPortsToKnown(ports);
+  const scans = d.prepare(
+    "SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id",
+  ).all() as Array<{ id: number; raw: string }>;
+  return hypervisorNics({ id: dev.id, host: dev.host ?? "", name: dev.name ?? "" }, scans);
 }

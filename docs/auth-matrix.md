@@ -4,10 +4,10 @@
 
 ## Riepilogo
 
-- File `route.ts`: **309** · gestori (metodo × rotta): **477**
-- Forme di export: funzione 461 · destrutturata 2 · rinomina 14
-- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=52 · `auth-diretto`=3 · `auth`=128 · `admin-o-onboarding`=7 · `admin`=272 · `superadmin`=3
-- Esiti: ok **444** · eccezioni **33** · debiti **0** · scoperti **0**
+- File `route.ts`: **311** · gestori (metodo × rotta): **481**
+- Forme di export: funzione 465 · destrutturata 2 · rinomina 14
+- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=52 · `auth-diretto`=3 · `auth`=129 · `admin-o-onboarding`=7 · `admin`=275 · `superadmin`=3
+- Esiti: ok **448** · eccezioni **33** · debiti **0** · scoperti **0**
 
 Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col nome sensibile → `admin`; i livelli dichiarati stanno in `ATTESI` di `src/lib/permessi/rotte.ts`. `withTenantFromSession` (`sessione`) chiede l'accesso ma non il ruolo: per una lettura vale quanto `auth`.
 
@@ -516,6 +516,7 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/topology/links` | GET | `auth` | `auth` |  |
 | `/api/topology/links` | POST | `admin` | `admin` |  |
 | `/api/topology/links/[id]` | DELETE | `admin` | `admin` |  |
+| `/api/topology/links/[id]` | PATCH | `admin` | `admin` |  |
 | `/api/topology/maps` | GET | `auth` | `auth` |  |
 | `/api/topology/maps` | POST | `admin` | `admin` |  |
 | `/api/topology/maps/[id]` | DELETE | `admin` | `admin` |  |
@@ -525,7 +526,10 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/topology/maps/[id]/nodes` | PUT | `admin` | `admin` |  |
 | `/api/topology/model` | GET | `auth` | `auth` |  |
 | `/api/topology/nodes/hidden` | PUT | `admin` | `admin` |  |
+| `/api/topology/ports` | GET | `auth` | `auth` |  |
 | `/api/topology/positions` | PUT | `admin` | `admin` |  |
+| `/api/topology/primary` | DELETE | `admin` | `admin` |  |
+| `/api/topology/primary` | PUT | `admin` | `admin` |  |
 | `/api/topology/settings` | GET | `auth` | `auth` |  |
 | `/api/topology/settings` | PUT | `admin` | `admin` |  |
 | `/api/topology/settings/hypervisor` | GET | `auth` | `auth` |  |

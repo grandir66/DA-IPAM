@@ -12,7 +12,7 @@ import type { TopologyModel } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
 import type { LayoutNode, LayoutResult, VmChip } from "@/lib/topology/tree-layout";
 import {
-  AP_BLOCK_LR, AP_COLS_LR, AP_H, AP_HEAD, AP_W, ATT_INDENT, ATT_MAX, ATT_ROW, ATT_W, BOX_H, GAP, LEVEL_GAP_LR, MARGIN,
+  AP_BLOCK_LR, AP_COLS_LR, AP_H, AP_HEAD, AP_W, ATT_INDENT, ATT_MAX, ATT_ROW, ATT_W, GAP, LEVEL_GAP_LR, MARGIN,
   ROOT_GAP, VM_COLS_LR, VM_H, VM_ROW, VM_W, fitLabel,
 } from "@/lib/topology/tree-layout-consts";
 
@@ -21,6 +21,8 @@ export interface LrContext {
   parts: (id: string) => { inf: string[]; ap: string[]; att: string[] };
   boxW: (id: string) => number;
   boxH: (id: string) => number;
+  /** L'intestazione del riquadro (BOX_H, più la riga «DNS:»): le VM aperte partono sotto. */
+  headH: (id: string) => number;
   isOpen: (id: string) => boolean;
   vmsOf: Map<string, TopologyModel["vms"]>;
 }
@@ -88,7 +90,7 @@ export function layoutLr(c: LrContext, tree: TreeResult): Pick<LayoutResult, "no
     nodes.set(id, { id, x, y, w: bw, h: bh, role: "box", parent });
     if (c.isOpen(id)) {
       c.vmsOf.get(id)!.forEach((v, i) => vmChips.push({
-        vmId: v.id, hypervisor: id, x: x + 8 + (i % VM_COLS_LR) * (VM_W + 8), y: y + BOX_H + 6 + Math.floor(i / VM_COLS_LR) * VM_ROW,
+        vmId: v.id, hypervisor: id, x: x + 8 + (i % VM_COLS_LR) * (VM_W + 8), y: y + c.headH(id) + 6 + Math.floor(i / VM_COLS_LR) * VM_ROW,
         w: VM_W, h: VM_H, label: fitLabel(v.name, VM_W),
       }));
     }

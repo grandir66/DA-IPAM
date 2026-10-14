@@ -4,9 +4,12 @@
  * di rete) e "host:<id>" (host non fuso con un apparato).
  */
 
-export type LinkSource = "manual" | "unifi_uplink" | "lldp" | "cdp" | "mndp" | "mac_table";
+export type LinkSource = "manual" | "unifi_uplink" | "lldp" | "cdp" | "mndp" | "mac_table" | "vm_mac";
 
-/** Più basso = più affidabile (spec §3, «fonti in ordine di fiducia»). */
+/**
+ * Più basso = più affidabile (spec §3, «fonti in ordine di fiducia»). `vm_mac` (spec §12.5, «dalle VM»: su una porta
+ * passano solo VM accese di un hypervisor) viene subito dopo la tabella MAC: la porta la dice una prova indiretta.
+ */
 export const LINK_SOURCE_RANK: Readonly<Record<LinkSource, number>> = {
   manual: 0,
   unifi_uplink: 1,
@@ -14,6 +17,7 @@ export const LINK_SOURCE_RANK: Readonly<Record<LinkSource, number>> = {
   cdp: 2,
   mndp: 2,
   mac_table: 3,
+  vm_mac: 3.5,
 };
 
 export interface ModelDeviceRow {
@@ -197,6 +201,12 @@ export interface MapNode {
   vendor: string | null;
   /** L'apparato ha la scansione Proxmox (revisione finale M-2); assente = no. */
   proxmoxScan?: boolean;
+  /**
+   * Spec §12.5, «nome dal Proxmox»: un hypervisor il cui IP sta nelle schede di un host della scansione Proxmox
+   * con un altro nome si chiama come il nodo Proxmox (`name`); qui resta il nome di prima, che la mappa mostra come
+   * «DNS: …». Solo la mappa: l'inventario non cambia. Assente = nessun cambio di nome.
+   */
+  dnsName?: string;
 }
 
 export type LinkMedium = "cavo" | "fibra" | "wireless";
@@ -232,6 +242,8 @@ export interface MapLink {
   primaryFor: string | null;
   /** Collegamento verso un nodo visibile che l'albero non usa: ridondanza (lo imposta l'albero). */
   redundant: boolean;
+  /** Solo con la fonte `vm_mac` (spec §12.5): quante VM accese dell'hypervisor (`uplinkFrom`) passano dalla porta. */
+  vmCount?: number;
 }
 
 /** Attributi del collegamento che nascono neutri; li riempiono link-attrs.ts (dati) e l'albero (principale, ridondanza). */

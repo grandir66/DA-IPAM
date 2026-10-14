@@ -13,10 +13,11 @@ import {
   type TopologyModel,
   type TopologyModelInput,
 } from "@/lib/topology/model-types";
-import { addNodeMacs, buildNodeIndex } from "@/lib/topology/node-index";
+import { addNodeMacs, buildNodeIndex, nameKey, type NodeIndex } from "@/lib/topology/node-index";
 import { nodeClass } from "@/lib/topology/identity";
 import { assignSites } from "@/lib/topology/sites";
 import { placeVms, resolveScanHosts } from "@/lib/topology/vms";
+import { normalizeName } from "@/lib/topology/match";
 
 export const PROMOTE_CLASSES = ["switch", "router", "access_point", "firewall"] as const;
 const SUSPICIOUS_TYPES = ["switch", "access_point"];
@@ -25,9 +26,9 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
   const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors);
   // Spec §11.5: le schede vive di un hypervisor (MAC veri) lo identificano sulla tabella MAC degli switch.
   for (const { row, nodeId } of resolveScanHosts(input.scanHosts, idx)) if (nodeId) addNodeMacs(idx, nodeId, row.macs);
-  const { vms, vmNodeIds, vmMacs } = placeVms(input, idx);
+  const { vms, vmNodeIds, vmMacs, runningVmMacs } = placeVms(input, idx);
   const { links: baseLinks, unmatched } = buildLinks(input, idx);
-  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, vmMacs);
+  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, vmMacs, runningVmMacs);
   const links = [...baseLinks, ...attachLinks].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   enrichLinks(links, input, idx);
   const sites = assignSites(input, idx, links);
@@ -37,7 +38,13 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
     degree.set(l.a, (degree.get(l.a) ?? 0) + 1);
     degree.set(l.b, (degree.get(l.b) ?? 0) + 1);
   }
-  const nodes = [...idx.nodes.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const proxmoxName = proxmoxNames(input, idx);
+  const nodes = [...idx.nodes.values()]
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map((n) => {
+      const pn = proxmoxName.get(n.id);
+      return pn === undefined ? n : { ...n, name: pn, ...(nameKey(n.name) ? { dnsName: n.name } : {}) };
+    });
   const portCount = new Map(input.devices.map((d) => [d.id, d.port_count]));
   const devices = nodes.filter((n) => n.kind === "device");
 
@@ -85,4 +92,25 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
   };
   const canonical = Object.fromEntries([...idx.alias.entries()].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)));
   return { nodes, links, sites, promote, unmatched, isolated, suspicious, withoutSite, counts, portClients, clientCount, canonical, vms };
+}
+
+/**
+ * Nome dal Proxmox (spec §12.5): un hypervisor il cui IP sta nelle schede di un host della scansione Proxmox con un
+ * altro nome (confronto senza dominio e senza maiuscole) si chiama sulla mappa come il nodo Proxmox; il nome di prima
+ * diventa `dnsName` («DNS: …»), tranne quando era solo un IP. Solo l'abbinamento per IP: per nome i nomi coincidono già.
+ * Due host del cluster con nomi diversi per lo stesso nodo: non si sceglie, il nome resta.
+ */
+function proxmoxNames(input: TopologyModelInput, idx: NodeIndex): Map<string, string> {
+  const found = new Map<string, string | null>();
+  for (const { row, nodeId, byIp } of resolveScanHosts(input.scanHosts, idx)) {
+    if (!nodeId || !byIp) continue;
+    const cur = found.get(nodeId);
+    found.set(nodeId, cur === undefined || (cur !== null && normalizeName(cur) === normalizeName(row.hostname)) ? (cur ?? row.hostname) : null);
+  }
+  const out = new Map<string, string>();
+  for (const [id, hostname] of found) {
+    const n = idx.nodes.get(id);
+    if (hostname && n && normalizeName(n.name) !== normalizeName(hostname)) out.set(id, hostname);
+  }
+  return out;
 }

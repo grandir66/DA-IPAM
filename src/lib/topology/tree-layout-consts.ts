@@ -9,6 +9,21 @@ export const AP_BLOCK_LR = AP_COLS_LR * (AP_W + 8);
 export const AP_BLOCK = AP_COLS * (AP_W + 8);
 export const ATT_SIDE = ATT_W + 10;
 
+/**
+ * La riga «DNS: <nome di prima>» sotto il nome di un hypervisor rinominato dal Proxmox (spec §12.5): 13 px su una
+ * riga alta 16. Allunga l'intestazione del riquadro (schermo e stampa), e le VM aperte partono sotto.
+ */
+export const DNS_H = 16;
+
+export function dnsLine(n: { dnsName?: string }): string | null {
+  return n.dnsName ? `DNS: ${n.dnsName}` : null;
+}
+
+/** L'altezza dell'intestazione di un riquadro: BOX_H, più la riga «DNS:» se c'è. */
+export function headHeight(n: { dnsName?: string }): number {
+  return BOX_H + (n.dnsName ? DNS_H : 0);
+}
+
 export function nodeWidth(label: string): number {
   return Math.min(230, Math.max(170, label.length * CHAR_W + 44));
 }

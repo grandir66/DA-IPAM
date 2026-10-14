@@ -12,7 +12,7 @@
 import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
 import {
   AP_BLOCK, AP_COLS, AP_H, AP_HEAD, AP_W, ATT_MAX, ATT_ROW, ATT_SIDE, ATT_W, BOX_H, GAP, LEVEL_GAP, MARGIN, ROOT_GAP,
-  VM_COLS, VM_COLS_LR, VM_H, VM_ROW, VM_W, fitLabel, nodeWidth,
+  VM_COLS, VM_COLS_LR, VM_H, VM_ROW, VM_W, dnsLine, fitLabel, headHeight, nodeWidth,
 } from "@/lib/topology/tree-layout-consts";
 import { layoutLr, type LrContext } from "@/lib/topology/tree-layout-lr";
 import { nodeClass } from "@/lib/topology/identity";
@@ -68,8 +68,11 @@ export function layoutTree(
   for (const [k, list] of vmsOf) vmsOf.set(k, [...list].sort((a, b) => a.name.localeCompare(b.name, "it") || (a.id < b.id ? -1 : 1)));
   const isOpen = (id: string) => expanded.has(id) && cls(id) === "hyper" && (vmsOf.get(id)?.length ?? 0) > 0;
   const vmCols = orientation === "lr" ? VM_COLS_LR : VM_COLS;
-  const boxW = (id: string) => (isOpen(id) ? vmCols * (VM_W + 8) + 16 : nodeWidth(name(id)));
-  const boxH = (id: string) => (isOpen(id) ? BOX_H + 12 + Math.ceil(vmsOf.get(id)!.length / vmCols) * VM_ROW : BOX_H);
+  // La riga «DNS:» (spec §12.5) allunga l'intestazione e, se è più lunga del nome, allarga il riquadro.
+  const headH = (id: string) => headHeight(byId.get(id) ?? {});
+  const widest = (id: string) => { const d = dnsLine(byId.get(id) ?? {}); return d && d.length > name(id).length ? d : name(id); };
+  const boxW = (id: string) => (isOpen(id) ? vmCols * (VM_W + 8) + 16 : nodeWidth(widest(id)));
+  const boxH = (id: string) => (isOpen(id) ? headH(id) + 12 + Math.ceil(vmsOf.get(id)!.length / vmCols) * VM_ROW : headH(id));
   const order = (a: string, b: string) =>
     Number(cls(a) !== "infra") - Number(cls(b) !== "infra") || name(a).localeCompare(name(b), "it") || (a < b ? -1 : 1);
   const parts = (id: string) => {
@@ -82,7 +85,7 @@ export function layoutTree(
 
   let base: Pick<LayoutResult, "nodes" | "apGroups" | "moreAttached" | "vmChips">;
   if (orientation === "lr") {
-    const ctx: LrContext = { parts, boxW, boxH, isOpen, vmsOf };
+    const ctx: LrContext = { parts, boxW, boxH, headH, isOpen, vmsOf };
     base = layoutLr(ctx, tree);
   } else {
     base = layoutTb();
@@ -148,7 +151,7 @@ export function layoutTree(
     nodes.set(id, { id, x: cx - box / 2, y: y[lvl], w: box, h: bh, role: "box", parent });
     if (isOpen(id)) {
       vmsOf.get(id)!.forEach((v, i) => vmChips.push({
-        vmId: v.id, hypervisor: id, x: cx - box / 2 + 8 + (i % VM_COLS) * (VM_W + 8), y: y[lvl] + BOX_H + 6 + Math.floor(i / VM_COLS) * VM_ROW,
+        vmId: v.id, hypervisor: id, x: cx - box / 2 + 8 + (i % VM_COLS) * (VM_W + 8), y: y[lvl] + headH(id) + 6 + Math.floor(i / VM_COLS) * VM_ROW,
         w: VM_W, h: VM_H, label: fitLabel(v.name, VM_W),
       }));
     }

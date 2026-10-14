@@ -12,7 +12,7 @@ import { isUncensusedVmId } from "@/lib/topology/map-menus";
 import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
 import { DARK, GREY, INK, LIGHT, MID, PAPER, edgeLabelAt, pointsPath, printStrokes, stepPoints } from "@/lib/topology/print-draw";
 import type { TreeResult } from "@/lib/topology/tree";
-import { ATT_INDENT, ATT_MAX, ATT_ROW, CHAR_W, fitLabel, type LayoutResult } from "@/lib/topology/tree-layout";
+import { ATT_INDENT, ATT_MAX, ATT_ROW, CHAR_W, DNS_H, dnsLine, fitLabel, type LayoutResult } from "@/lib/topology/tree-layout";
 import type { TopologyStatus } from "@/lib/topology/types";
 import { isRunning, vmChipText, vmSummary } from "@/lib/topology/vm-nodes";
 import { typeLabel } from "@/components/topology/map/topology-icons";
@@ -123,6 +123,8 @@ export function PrintMapContent({ model, tree, layout, orientation }: PrintMapPr
         ? `${vmSummary(vms).label}${open.has(ln.id) ? "" : " (chiuse)"}`
         : [typeLabel(n.type), n.mgmtIp, clients].filter(Boolean).join(" · ");
     const kind = isUncensusedVmId(ln.id) ? "macchina virtuale" : null;
+    // Spec §12.5: sotto il nome dal Proxmox, «DNS: <nome di prima>» (l'intestazione è più alta di DNS_H).
+    const dns = dnsLine(n);
     boxes.push(
       <g key={ln.id}>
         <rect
@@ -130,7 +132,8 @@ export function PrintMapContent({ model, tree, layout, orientation }: PrintMapPr
           strokeWidth={giu ? 2.8 : 1.5} strokeDasharray={isPromote ? "5 3" : undefined}
         />
         <text x={ln.x + 8} y={ln.y + 18} fontSize={FONT} fontWeight={700} fill={INK}>{fitLabel(n.name, ln.w)}</text>
-        <text x={ln.x + 8} y={ln.y + 35} fontSize={FONT} fill={DARK}>
+        {dns && <text x={ln.x + 8} y={ln.y + 18 + DNS_H} fontSize={FONT} fill={DARK}>{clip(dns, ln.w - 16)}</text>}
+        <text x={ln.x + 8} y={ln.y + 35 + (dns ? DNS_H : 0)} fontSize={FONT} fill={DARK}>
           {stato && <tspan fontWeight={700} fill={INK}>{stato} </tspan>}
           {clip(kind ?? second, ln.w - 16 - (stato ? (stato.length + 1) * CHAR_W : 0))}
         </text>

@@ -8,6 +8,7 @@ import { parseDbDate } from "@/lib/db-date";
 import { nodeClass, identifiesByName } from "@/lib/topology/identity";
 import type { MapNode, MapVm, ModelScanHostRow, ModelVmRow, TopologyModelInput } from "@/lib/topology/model-types";
 import { nameKey, nodeFor, type NodeIndex } from "@/lib/topology/node-index";
+import { isRunning } from "@/lib/topology/vm-nodes";
 import { normalizeMacForStorage } from "@/lib/utils";
 
 type Rec = Record<string, unknown>;
@@ -90,10 +91,13 @@ function nodeAt(idx: NodeIndex, id: string): MapNode | undefined {
 
 const hostKey = (scannedDeviceId: number, hostname: string): string => `${scannedDeviceId}|${hostname.trim().toLowerCase()}`;
 
-/** Il nodo hypervisor di ogni host di cluster: per IP, poi per nome (alias compresi); null se non si abbina. */
+/**
+ * Il nodo hypervisor di ogni host di cluster: per IP, poi per nome (alias compresi); null se non si abbina.
+ * `byIp` dice se l'abbinamento viene da un IP del nodo nelle schede dell'host (serve al nome dal Proxmox, §12.5).
+ */
 export function resolveScanHosts(
   hosts: readonly ModelScanHostRow[], idx: NodeIndex,
-): Array<{ row: ModelScanHostRow; nodeId: string | null }> {
+): Array<{ row: ModelScanHostRow; nodeId: string | null; byIp: boolean }> {
   const hyper = (id: unknown): string | null => {
     const n = typeof id === "string" ? nodeAt(idx, id) : undefined;
     return n && nodeClass(n) === "hyper" ? n.id : null;
@@ -111,11 +115,12 @@ export function resolveScanHosts(
       nodeId = hyper(idx.byIp.get(ip));
       if (nodeId) break;
     }
+    const byIp = nodeId !== null;
     if (!nodeId) {
       const k = nameKey(row.hostname);
       if (k) nodeId = hyper(idx.byName.get(k)) ?? hyper(byAlias.get(k));
     }
-    return { row, nodeId };
+    return { row, nodeId, byIp };
   });
 }
 
@@ -125,6 +130,12 @@ export interface PlacedVms {
   vmNodeIds: Set<string>;
   /** Tutti i MAC delle VM: non sono client di nessuna porta e non creano collegamenti. */
   vmMacs: Set<string>;
+  /**
+   * MAC delle VM accese → la VM e il suo hypervisor (spec §12.5, fonte `vm_mac`), secondo la lettura più recente
+   * che riporta quel MAC. `hypervisor` null = non si sa di chi è: hypervisor non trovato, o lo stesso MAC in VM
+   * accese di due hypervisor nella stessa lettura. Le VM spente nell'ultima lettura non ci sono.
+   */
+  runningVmMacs: Map<string, { vm: string; hypervisor: string | null }>;
 }
 
 const ts = (s: string | null): number => {
@@ -192,11 +203,27 @@ export function placeVms(input: Pick<TopologyModelInput, "vms" | "scanHosts">, i
     return { v, hypervisorNodeId, nodeId, idDeviceId };
   });
 
+  const perMac = new Map<string, Array<{ vm: string; hypervisor: string | null; running: boolean; t: number }>>();
   const vms: MapVm[] = placed
     .sort((x, y) => x.idDeviceId - y.idDeviceId || x.v.vmid - y.v.vmid)
     .map(({ v, hypervisorNodeId, nodeId, idDeviceId }) => {
       if (nodeId) vmNodeIds.add(nodeId);
-      return { id: `vm:${idDeviceId}:${v.vmid}`, name: v.name, status: v.status, ips: v.ips, hypervisorNodeId, nodeId, scannedAt: v.scannedAt };
+      const id = `vm:${idDeviceId}:${v.vmid}`;
+      for (const m of v.macs) {
+        perMac.set(m, [...(perMac.get(m) ?? []), { vm: id, hypervisor: hypervisorNodeId, running: isRunning(v.status), t: ts(v.scannedAt) }]);
+      }
+      return { id, name: v.name, status: v.status, ips: v.ips, hypervisorNodeId, nodeId, scannedAt: v.scannedAt };
     });
-  return { vms, vmNodeIds, vmMacs };
+  // Di chi è oggi il MAC di una VM accesa (spec §12.5): conta solo la lettura più recente che lo riporta. Una
+  // scansione vecchia di un altro cluster (la VM girava altrove, a maggio) o una replica spenta con lo stesso MAC
+  // non lo rendono «di due hypervisor»; due VM accese nella stessa lettura più recente su due hypervisor sì.
+  const runningVmMacs = new Map<string, { vm: string; hypervisor: string | null }>();
+  for (const [m, list] of perMac) {
+    const latest = Math.max(...list.map((r) => r.t));
+    const run = list.filter((r) => r.t === latest && r.running);
+    if (run.length === 0) continue; // spenta nell'ultima lettura
+    const hyps = new Set(run.map((r) => r.hypervisor));
+    runningVmMacs.set(m, { vm: run[0].vm, hypervisor: hyps.size === 1 ? run[0].hypervisor : null });
+  }
+  return { vms, vmNodeIds, vmMacs, runningVmMacs };
 }

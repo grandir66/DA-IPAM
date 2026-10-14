@@ -9,7 +9,9 @@
  * server) diventa un collegamento «mac_table»; gli altri sono client contati
  * sulla porta, con nome e IP se l'host è noto; il numero sul riquadro conta
  * solo i client freschi, i vecchi restano nell'elenco «visto l'ultima volta».
- * I MAC delle VM (vmMacs) non sono client e non creano collegamenti.
+ * I MAC delle VM (vmMacs) non sono client e non creano collegamenti «mac_table»; quelli delle VM accese
+ * (runningVmMacs) propongono i collegamenti «dalle VM» verso il loro hypervisor (vm-ports.ts, spec §12.5),
+ * calcolati prima del ripiego del router, che così li conosce come padri.
  *
  * Router (Task 1b): una riga del router su una porta fisica (bridge host: ether, sfp, bond) propone
  * un collegamento solo come RIPIEGO, per un apparato che nessuno switch o AP vede su una porta di
@@ -27,6 +29,7 @@ import { nodeClass } from "@/lib/topology/identity";
 import { isPhysicalPort } from "@/lib/topology/links";
 import { normalizeMacForStorage, normalizePortNameForMatch } from "@/lib/utils";
 import { parseDbDate } from "@/lib/db-date";
+import { vmPortLinks, type RunningVmMacs } from "@/lib/topology/vm-ports";
 
 const CLIENT_COUNTING = ["switch", "access_point"];
 const DAY = 86_400_000;
@@ -38,6 +41,7 @@ export function attachMacs(
   idx: NodeIndex,
   links: MapLink[],
   vmMacs: ReadonlySet<string> = new Set(),
+  runningVmMacs: RunningVmMacs = new Map(),
 ): { portClients: PortClients[]; clientCount: Record<string, number>; attachLinks: MapLink[] } {
   const portKey = (node: string, port: string) => `${node}|${normalizePortNameForMatch(port)}`;
   const linkPorts = new Set<string>();
@@ -118,6 +122,10 @@ export function attachMacs(
     pc.clients.push({ mac, nodeId: other?.id ?? null, name: other?.name ?? null, ip: other?.mgmtIp ?? null, lastSeen: best.ts, stale });
     byPort.set(pk, pc);
     if (!stale) clientCount[best.node] = (clientCount[best.node] ?? 0) + 1;
+  }
+  for (const l of vmPortLinks(input, idx, [...links, ...attachLinks], runningVmMacs)) {
+    linked.add([l.a, l.b].sort().join("|"));
+    attachLinks.push(l);
   }
   attachLinks.push(...ripiegoRouter(idx, [...links, ...attachLinks], ripiego, sullaPortaDelRouter, linked, portKey, input.nowMs, soglia));
   const portClients = [...byPort.values()].sort((a, b) =>

@@ -12,7 +12,7 @@ import { Fragment } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { parseDbDate } from "@/lib/db-date";
-import { linkWords, seenWords } from "@/lib/topology/edge-look";
+import { SOURCE_WORDS, linkWords, seenWords, vmPortWords } from "@/lib/topology/edge-look";
 import { nodeClass } from "@/lib/topology/identity";
 import { LINK_SOURCE_RANK, type LinkSource, type MapLink, type MapNode, type MapVm } from "@/lib/topology/model-types";
 import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
@@ -21,9 +21,8 @@ import { TopoIcon, typeLabel } from "./topology-icons";
 import type { ModelData } from "./use-topology-data";
 
 const MAX = 200;
-export const FONTE: Record<LinkSource, string> = {
-  manual: "a mano", unifi_uplink: "uplink UniFi", lldp: "LLDP", cdp: "CDP", mndp: "MNDP", mac_table: "tabella MAC",
-};
+/** Le fonti in parole stanno con la logica pura delle linee (anche «dalle VM», spec §12.5). */
+export const FONTE: Readonly<Record<LinkSource, string>> = SOURCE_WORDS;
 const STATO: Record<TopologyStatus, string> = { ok: "✓ raggiungibile", warning: "◆ avviso", fail: "▲ giù", unknown: "? stato sconosciuto" };
 
 function quando(s: string): string {
@@ -111,6 +110,7 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
         <TopoIcon type={n.type} size={26} className="mt-0.5 shrink-0" />
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-semibold break-words">{n.name}</h2>
+          {n.dnsName && <p className="break-words" title="Il nome è quello del nodo Proxmox; nel DNS l'apparato ha questo nome">DNS: {n.dnsName}</p>}
           <p className="text-muted-foreground">
             {typeLabel(n.type)}
             {n.id.startsWith("vm:")
@@ -150,6 +150,7 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
           <tbody>
             {links.slice(0, MAX).map((l) => {
               const o = byId.get(other(l));
+              const vmWords = vmPortWords(l, (id) => byId.get(id)?.name ?? id);
               return (
                 <tr key={l.id} className="border-t border-border align-top">
                   <td className="py-1 pr-1">
@@ -160,6 +161,7 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
                   <td className="py-1 pr-1">
                     {l.sources.map((s) => FONTE[s]).join(" + ")}
                     <div className={l.stale ? "font-semibold" : "text-muted-foreground"}>{visto(l)}</div>
+                    {vmWords && <div>{vmWords}</div>}
                     {linkWords(l).map((w) => <div key={w}>{w}</div>)}
                   </td>
                   <td className="py-1 whitespace-nowrap">

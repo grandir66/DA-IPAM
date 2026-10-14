@@ -3,16 +3,14 @@
  * della pagina della mappa — VM non censite come nodi, id salvati passati dall'id canonico, testa
  * della mappa automatica, partenze della mappa passo passo, ritocchi nel loro orientamento — così la
  * carta ha le coordinate dello schermo. Le VM restano chiuse, a meno di «con le VM».
- * Ripete i passi del calcolo della pagina (`topology-map-client.tsx`) con le stesse funzioni pure.
+ * Il calcolo è quello della pagina (`computeMapView`, map-compute.ts), una funzione sola per schermo e carta.
  * Logica pura: una vista senza oggetti torna come messaggio in parole, mai come mappa vuota.
  */
-import { nodeClass } from "@/lib/topology/identity";
-import { resolveMapView } from "@/lib/topology/map-view";
+import { computeMapView } from "@/lib/topology/map-compute";
 import type { Paper, PrintScale } from "@/lib/topology/print-tiles";
 import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
-import { autoVisible, buildTree, proposeHead, type TreeResult } from "@/lib/topology/tree";
-import { layoutTree, type LayoutResult, type SavedTweak } from "@/lib/topology/tree-layout";
-import { hangVmNodes, vmNodes } from "@/lib/topology/vm-nodes";
+import type { TreeResult } from "@/lib/topology/tree";
+import type { LayoutResult, SavedTweak } from "@/lib/topology/tree-layout";
 
 /** Quel che serve della risposta di GET /api/topology/maps/[id]. */
 export interface PrintViewInput {
@@ -50,28 +48,18 @@ export function printQuery(p: PrintParams): string {
 }
 
 export function buildPrintView<M extends TopologyModel>(base: M, key: "auto" | number, view: PrintViewInput, withVms: boolean): PrintView<M> {
-  const vn = vmNodes(base);
-  const model: M = { ...base, nodes: [...base.nodes, ...vn.nodes], canonical: { ...vn.canonical, ...base.canonical } };
-  const ids = new Set(model.nodes.map((n) => n.id));
   const auto = key === "auto";
-  const saved = resolveMapView(
-    auto
-      ? { members: [], roots: [], tweaks: view.tweaks, head: view.map?.head_node ?? null }
-      : { members: view.nodes, roots: view.map?.roots ?? [], tweaks: view.tweaks, head: null },
-    ids,
-    model.canonical,
-  );
-  let visible: Set<string>;
-  let roots: string[];
-  if (auto) {
-    visible = autoVisible(model);
-    const head = saved.head ?? proposeHead(model);
-    roots = head ? [head] : [];
-  } else {
-    visible = new Set(saved.visible);
-    roots = saved.roots.filter((r) => visible.has(r));
-  }
-  if (visible.size === 0) {
+  const orientation: MapOrientation = view.orientation ?? view.map?.orientation ?? "lr";
+  const c = computeMapView(base, {
+    auto,
+    members: view.nodes,
+    roots: view.map?.roots ?? [],
+    head: auto ? (view.map?.head_node ?? null) : null,
+    tweaks: view.tweaks,
+    expanded: withVms ? "tutti" : new Set(),
+    orientation,
+  });
+  if (c.visible.size === 0) {
     return {
       ok: false,
       message: auto
@@ -79,12 +67,6 @@ export function buildPrintView<M extends TopologyModel>(base: M, key: "auto" | n
         : "Questa mappa non contiene oggetti: non c'è niente da stampare.",
     };
   }
-  const orientation: MapOrientation = view.orientation ?? view.map?.orientation ?? "lr";
-  const tree = hangVmNodes(buildTree(model, visible, roots), vn.parentOf);
-  const byId = new Map(model.nodes.map((n) => [n.id, n]));
-  const expanded = new Set<string>();
-  if (withVms) for (const v of model.vms) if (v.hypervisorNodeId && visible.has(v.hypervisorNodeId) && byId.get(v.hypervisorNodeId) && nodeClass(byId.get(v.hypervisorNodeId)!) === "hyper") expanded.add(v.hypervisorNodeId);
-  const layout = layoutTree(model, tree, saved.tweaks, expanded, orientation);
   const title = auto ? "Tutto automatico" : (view.map?.name ?? "Mappa");
-  return { ok: true, title, orientation, model, tree, layout, missing: saved.missing.length };
+  return { ok: true, title, orientation, model: c.model, tree: c.tree, layout: c.layout, missing: c.missing.length };
 }

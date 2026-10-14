@@ -5,7 +5,7 @@
  */
 import { nodeClass } from "@/lib/topology/identity";
 import { linkCost } from "@/lib/topology/link-attrs";
-import type { MapLink, TopologyModel } from "@/lib/topology/model-types";
+import type { MapLink, MapNode, TopologyModel } from "@/lib/topology/model-types";
 
 export interface TreeResult {
   roots: string[];
@@ -28,7 +28,8 @@ export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, ro
     adj.set(l.b, [...(adj.get(l.b) ?? []), l]);
   }
   // Un nodo con un principale scelto a mano si appende solo a quel collegamento (a meno che non sia irraggiungibile).
-  const chosen = new Map<string, MapLink>();
+  // Un hypervisor senza scelta a mano si appende al suo collegamento preferito (spec §12.5), con la stessa regola.
+  const chosen = hypervisorPreferred(model, nodes, adj);
   for (const l of model.links) {
     if (l.primary === "user" && l.primaryFor && visible.has(l.a) && visible.has(l.b)) chosen.set(l.primaryFor, l);
   }
@@ -81,6 +82,37 @@ export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, ro
   const byId = new Map(links.map((l) => [l.id, l]));
   for (const [k, l] of via) via.set(k, byId.get(l.id) ?? l);
   return { roots: outRoots, children, via, links };
+}
+
+/**
+ * Il principale di un hypervisor (spec §12.5): fra i suoi collegamenti dai dati (non solo a mano) verso un oggetto
+ * che può fargli da padre vince quello non
+ * vecchio, poi il più veloce (la porta dello switch), poi quello con più VM che passano dalla porta, poi le regole di
+ * oggi (`linkCost`, poi l'id). Con un collegamento solo non c'è niente da scegliere. «★» scelto a mano vince sempre:
+ * lo applica chi chiama, sopra questa scelta. Così il cavo 10G verso il centrale è il principale e il 1G di gestione
+ * una ridondanza. Gli altri oggetti: invariati.
+ */
+function hypervisorPreferred(
+  model: TopologyModel, nodes: ReadonlyMap<string, MapNode>, adj: ReadonlyMap<string, MapLink[]>,
+): Map<string, MapLink> {
+  const hypers = new Set(model.vms.flatMap((v) => (v.hypervisorNodeId ? [v.hypervisorNodeId] : [])));
+  const out = new Map<string, MapLink>();
+  for (const [id, links] of adj) {
+    const n = nodes.get(id);
+    if (!n || (nodeClass(n) !== "hyper" && !hypers.has(id))) continue;
+    // Solo verso chi può fargli da padre: attaccati, client e hypervisor sono foglie nell'albero.
+    const padre = (l: MapLink) => { const o = nodes.get(l.a === id ? l.b : l.a); return !!o && !["att", "client", "hyper"].includes(nodeClass(o)); };
+    const dati = links.filter((l) => l.sources.some((s) => s !== "manual") && padre(l));
+    if (dati.length < 2) continue;
+    const best = [...dati].sort((x, y) =>
+      Number(x.stale) - Number(y.stale)
+      || (y.speedMbps ?? 0) - (x.speedMbps ?? 0)
+      || (y.vmCount ?? 0) - (x.vmCount ?? 0)
+      || linkCost(x) - linkCost(y)
+      || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))[0];
+    out.set(id, best);
+  }
+  return out;
 }
 
 /**

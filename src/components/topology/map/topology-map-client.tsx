@@ -28,12 +28,12 @@ import {
   addableLinked, connectRefusal, edgeMenuItems, findManualOverride, isUncensusedVmId, nodeMenuItems, primaryTarget, refreshVmDeviceIds, vmMenuItems,
   type EdgeMenuKey, type NodeMenuKey,
 } from "@/lib/topology/map-menus";
-import { resolveMapView } from "@/lib/topology/map-view";
+import { computeMapView } from "@/lib/topology/map-compute";
 import { printHref } from "@/lib/topology/map-screen";
 import type { MapLink, MapOrientation, MapVm } from "@/lib/topology/model-types";
-import { hangVmNodes, isRunning, vmNodes, vmSummary } from "@/lib/topology/vm-nodes";
-import { autoVisible, buildTree, missingNeighbors, proposeHead } from "@/lib/topology/tree";
-import { layoutTree, structureSig, type SavedTweak } from "@/lib/topology/tree-layout";
+import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
+import { missingNeighbors } from "@/lib/topology/tree";
+import { structureSig, type SavedTweak } from "@/lib/topology/tree-layout";
 import {
   clearPrimary, createManualLink, deleteManualLink, fetchLinkOverrides, ignoreLink, patchManualLink, refreshProxmoxScan, setMapOrientation, setPrimary,
 } from "./api";
@@ -145,39 +145,21 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
 
   const d = useMemo(() => {
     if (!data) return null;
-    // Le VM non censite sono nodi della pagina («vm:…»): così entrano in una mappa passo passo (spec §11.5).
-    const vn = vmNodes(data.model);
-    const model = { ...data.model, nodes: [...data.model.nodes, ...vn.nodes], canonical: { ...vn.canonical, ...data.model.canonical } };
-    const ids = new Set(model.nodes.map((n) => n.id));
+    // Un calcolo solo per schermo e stampa (map-compute.ts): stesso albero, stessa disposizione, stessi nomi.
     const auto = data.maps.auto;
-    // Gli id salvati passano dall'id canonico: un oggetto promosso o fuso resta nella mappa (I5).
-    const saved = resolveMapView(
-      mode === "auto"
-        ? { members: [], roots: [], tweaks: view?.tweaks ?? [], head: auto?.head_node ?? null }
-        : { members: view?.nodes ?? [], roots: view?.map?.roots ?? [], tweaks: view?.tweaks ?? [], head: null },
-      ids,
-      model.canonical,
-    );
-    let visible: Set<string>;
-    let roots: string[];
-    let missing: string[] = [];
-    let head: string | null = null;
-    let headOrigin = "";
-    if (mode === "auto") {
-      visible = autoVisible(model);
-      const chosen = saved.head;
-      head = chosen ?? proposeHead(model);
-      headOrigin = chosen ? `scelta da ${auto?.created_by ?? "un amministratore"}` : "proposta dal sistema";
-      roots = head ? [head] : [];
-    } else {
-      visible = new Set(saved.visible);
-      missing = saved.missing;
-      roots = saved.roots.filter((r) => visible.has(r));
-    }
-    const tree = hangVmNodes(buildTree(model, visible, roots), vn.parentOf);
     const own = pending && pending.view === viewKey ? pending.tweak : null;
-    const tweaks = [...saved.tweaks.filter((t) => t.nodeId !== own?.nodeId), ...(own ? [own] : [])];
-    const layout = layoutTree(model, tree, tweaks, expanded, orientation);
+    const c = computeMapView(data.model, {
+      auto: mode === "auto",
+      members: view?.nodes ?? [],
+      roots: view?.map?.roots ?? [],
+      head: mode === "auto" ? (auto?.head_node ?? null) : null,
+      tweaks: view?.tweaks ?? [],
+      ownTweak: own,
+      expanded,
+      orientation,
+    });
+    const { model, visible, roots, missing, head, tree, layout } = c;
+    const headOrigin = mode === "auto" ? (c.headChosen ? `scelta da ${auto?.created_by ?? "un amministratore"}` : "proposta dal sistema") : "";
     const plus = new Map<string, number>();
     if (mode === "passo") {
       for (const id of visible) {
@@ -196,7 +178,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     const viewLinks = new Map(tree.links.map((l) => [l.id, l]));
     return {
       model, visible, roots, missing, head, headOrigin, tree, layout, plus, starts, promoteIds, byId, vmsOf, vmInfo, viewLinks,
-      savedRoots: saved.roots, renames: saved.renames,
+      savedRoots: c.savedRoots, renames: c.renames,
     };
   }, [data, mode, view, pending, viewKey, expanded, orientation]);
 

@@ -6,7 +6,7 @@
  * stato ha la sua parola o il suo simbolo sulla linea. Logica pura: il
  * componente della linea (map-edge.tsx) disegna quello che dice qui.
  */
-import type { MapLink } from "@/lib/topology/model-types";
+import type { LinkSource, MapLink } from "@/lib/topology/model-types";
 
 /** Spessore del tratto in px dalla velocità in Mbps. */
 export function speedWidth(mbps: number | null): number {
@@ -109,6 +109,17 @@ export function wavyPath(points: readonly Pt[], amp = 3, wave = 12): string {
     }
   }
   return d;
+}
+
+/** Le fonti di un collegamento in parole (dettagli, menu della linea, pagina dei dati). */
+export const SOURCE_WORDS: Readonly<Record<LinkSource, string>> = {
+  manual: "a mano", unifi_uplink: "uplink UniFi", lldp: "LLDP", cdp: "CDP", mndp: "MNDP", mac_table: "tabella MAC", vm_mac: "dalle VM",
+};
+
+/** Per un collegamento «dalle VM» (spec §12.5): «N VM di <hypervisor> passano da questa porta»; altrimenti null. */
+export function vmPortWords(l: Pick<MapLink, "sources" | "vmCount" | "uplinkFrom">, nameOf: (id: string) => string): string | null {
+  if (!l.sources.includes("vm_mac") || !l.vmCount || !l.uplinkFrom) return null;
+  return `${l.vmCount} VM di ${nameOf(l.uplinkFrom)} ${l.vmCount === 1 ? "passa" : "passano"} da questa porta`;
 }
 
 /** La linea in parole, per la barra dei dettagli: velocità, tipo, PoE, a mano (confermata o no), principale o ridondanza. */

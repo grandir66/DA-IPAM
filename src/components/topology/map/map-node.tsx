@@ -17,7 +17,7 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { cn } from "@/lib/utils";
 import { HANDLE_ATT, HANDLE_IN, HANDLE_IN_LR, HANDLE_OUT, HANDLE_OUT_LR } from "@/lib/topology/map-screen";
-import { ATT_INDENT, BOX_H, fitLabel } from "@/lib/topology/tree-layout";
+import { ATT_INDENT, dnsLine, fitLabel, headHeight } from "@/lib/topology/tree-layout";
 import { isRunning } from "@/lib/topology/vm-nodes";
 import type { MapNode, MapOrientation, MapVm } from "@/lib/topology/model-types";
 import type { TopologyStatus } from "@/lib/topology/types";
@@ -87,7 +87,7 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
     ? "host · da promuovere"
     : [n.mgmtIp ?? typeLabel(n.type), data.clients ? `${data.clients} client` : null].filter(Boolean).join(" · ");
   const stato = STATO[status];
-  const title = [n.name, n.mgmtIp, typeLabel(n.type), `stato: ${STATO_PAROLE[status]}`].filter(Boolean).join(" · ");
+  const title = [n.name, dnsLine(n), n.mgmtIp, typeLabel(n.type), `stato: ${STATO_PAROLE[status]}`].filter(Boolean).join(" · ");
   const lr = data.orientation === "lr";
   const red = data.redundant;
   return (
@@ -111,7 +111,7 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
         />
       )}
       {/* L'intestazione resta alta come un riquadro normale: sotto, nell'hypervisor espanso, stanno le VM. */}
-      <div className="flex items-center gap-1.5 px-1.5" style={{ height: Math.min(h, BOX_H) - 3 }}>
+      <div className="flex items-center gap-1.5 px-1.5" style={{ height: Math.min(h, headHeight(n)) - 3 }}>
         <TopoIcon type={n.type} size={26} className="shrink-0" />
         <div className="min-w-0 flex-1 leading-4">
           {/* Col «+N» in alto a destra il nome si ferma prima: lo copriva (Task 12). */}
@@ -131,6 +131,10 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
               </span>
             )}
           </div>
+          {/* Spec §12.5: il nome è quello del nodo Proxmox; sotto, il nome DNS di prima. */}
+          {n.dnsName && (
+            <div className="truncate text-[13px] text-muted-foreground" title={`Nome DNS dell'apparato: ${n.dnsName}`}>{fitLabel(dnsLine(n) ?? "", w)}</div>
+          )}
           {data.vms && data.onToggleVms ? (
             <button
               type="button"

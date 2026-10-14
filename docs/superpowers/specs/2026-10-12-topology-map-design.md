@@ -215,6 +215,20 @@ Ognuna rilasciabile e guardata a schermo sul dato vero.
 - **Client veri** sotto porte e AP: con la tappa 4 (lettura dei client dal controller).
 - **Dato sporco** (19 «switch» che sono PC/server sull'hub): la mappa li mette in «Da
   sistemare»; correggere la classificazione è un lavoro a parte.
+- **LLDP sugli host Proxmox** (Riccardo, 14/10: «se dovesse servire possiamo installarlo»).
+  - **Perché.** Oggi gli hypervisor si attaccano alle porte deducendolo dalle VM sulla porta
+    (§12.5). Quel metodo non vale per le porte senza VM accese, come i cavi di riserva dei
+    bond.
+  - **Cosa cambia.** `lldpd` su ogni nodo annuncia nome del sistema e nome dell'interfaccia,
+    e lo switch lo mostra fra i vicini. Il collegamento porta ↔ host diventa una lettura
+    diretta, con la stessa fonte degli switch fra loro.
+  - **La trappola nota.** Su alcune schede (Intel X710/XL710, driver `i40e`) è il firmware
+    a rispondere al LLDP e a mangiarsi i pacchetti: è il «solo un MAC senza nome» della
+    §12.5. Va spento (`ethtool --set-priv-flags <if> disable-fw-lldp on`), altrimenti
+    `lldpd` non si vede. Gli annunci si fanno sulle schede fisiche, non su bridge o bond.
+  - **Prima di installarlo.** Si misura su un nodo di prova cosa vede lo switch prima e dopo.
+  - **Sugli host dei clienti** è una scrittura su apparati del cliente: serve la conferma.
+    Se si generalizza, il posto naturale è Deploy-Appliance.
 
 ## 9. Fuori da questa spec
 

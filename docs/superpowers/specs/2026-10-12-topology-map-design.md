@@ -357,3 +357,91 @@ una riga MAC non vista oggi resta con «visto l'ultima volta» e sparisce dopo 3
 Fixture riestratte (anonimizzate) dopo la tappa A dalle copie del cliente A e dell'hub,
 con uplink, MAC per porta e oggetti con più IP veri (le fixture della fase 1 hanno sedi
 e uplink a zero).
+
+## 11. Fase 2b — interazione, collegamenti a mano, hypervisor e VM (14/10, decisioni con Riccardo)
+
+Nasce dall'uso della v0.3.278 sul dato vero (14/10 mattina) e da una bozza statica
+approvata («fantastico»). Le decisioni qui sotto **non si riaprono senza chiedere** e
+prevalgono sul §10 dove lo contraddicono.
+
+### 11.1 Cosa ha mostrato il dato vero (cliente A, copia del 14/10)
+
+- **Difetto della v0.3.278**: un MAC visto **solo dal router** (sul bridge o su una VLAN)
+  creava un collegamento router → oggetto. Prima della prima lettura dei client tre host
+  Proxmox risultavano attaccati al router; con la lettura delle 07:00 stanno sugli switch
+  giusti. Regola (era già nella spec §10.5, il codice la violava): **ciò che un router vede
+  sul bridge non prova nessun cavo e non crea collegamenti**.
+- I tre host Proxmox sono censiti come apparati di tipo **«server»**: per la mappa sono
+  hypervisor (fornitore o scansione Proxmox).
+- La scansione Proxmox esistente legge la **configurazione** delle schede: nessun MAC sulle
+  schede fisiche, stato sempre «down»; ultima scansione di maggio, nessun job la ripete.
+  Ha però **25 VM** con l'host su cui girano: **28 schede di VM su 33** compaiono nella
+  tabella dei MAC per porta (oggi contate come client della porta dello switch), e
+  **6 dei 10 «apparati isolati» sono VM** di quel cluster.
+- Sulle porte: velocità nota su 326 porte su 828 (10M-10G), PoE su 461 (consumo su 81).
+  Il tipo di uplink degli AP (cavo o wireless/mesh) la lettura UniFi di oggi non lo salva.
+
+### 11.2 Interazione
+
+- **Trascinare** un oggetto dall'elenco di sinistra sulla mappa lo aggiunge alla mappa passo
+  passo; «Inserisci» sparisce. Senza una mappa scelta, il primo trascinamento chiede il nome
+  e crea la mappa (così non c'è più un pulsante che manca senza spiegazione).
+- **Tasto destro** su un oggetto: Dettagli · Mostra VM / Nascondi VM (hypervisor) · Aggiorna
+  VM · Collega a… · Aggiungi collegati ▸ (sottomenu con i collegati spuntabili) · Usa come
+  partenza / Usa come testa · Togli dalla mappa · Nascondi da tutte le mappe · Promuovi ad
+  apparato (host). **Tasto destro su una linea**: Modifica porte (solo a mano) · ★ Rendi
+  principale · Rimuovi (a mano) / Ignora (automatico).
+- **La barra di destra resta** con i dettagli di oggi, con un pulsante per chiuderla e
+  riaprirla (la mappa prende tutto lo spazio quando è chiusa).
+- Gli oggetti **si spostano trascinandoli** sulla mappa (ritocchi con la firma, come oggi).
+
+### 11.3 Collegamenti a mano e collegamento principale
+
+- **«Collega a…»** col tasto destro, oppure trascinando dal pallino sul bordo di un oggetto
+  fino a un altro: scheda con **porta di partenza** e **porta di arrivo** (scelte fra le porte
+  note — porte dello switch, schede dell'hypervisor — o scritte a mano), **tipo** (cavo,
+  fibra, wireless) e nota. Si salva in `topology_link_overrides` (`add`, con le porte) più
+  il tipo.
+- **Verifica**: un collegamento a mano è **confermato** se i dati lo vedono (un collegamento
+  automatico fra gli stessi oggetti, o un MAC dell'oggetto di arrivo — anche di una sua
+  scheda — sulla porta dichiarata, entro la soglia «non visto»); altrimenti è **«solo a
+  mano»**. Si dice in parole sulla linea e nei dettagli.
+- **Principale**: quando un oggetto ha più collegamenti verso l'albero, **decide il sistema**
+  (confermati e recenti prima, poi la fonte più affidabile: uplink UniFi, LLDP/CDP/MNDP,
+  tabella MAC, a mano confermato, a mano non confermato, vecchi); **Riccardo può
+  cambiarlo** con «★ Rendi principale», che vince sempre. Gli altri sono **ridondanza**.
+
+### 11.4 Come si disegna un collegamento (stile A della bozza)
+
+Mai il solo colore. **Spessore = velocità** con etichetta («10G» e oltre, «2,5G», «1G»,
+«100M»; nessuna etichetta se non nota). **Forma = tipo e stato**: ondulata + «≋ Wi-Fi»
+per wireless; doppia linea sottile + «ridondanza»; grigia tratteggiata + «▲ non visto da
+N g»; «✎ ✓» a mano confermato; puntinata + «✎ ?» a mano non confermato. **«⚡ N W»**
+vicino alla porta per il PoE; **★** sul principale scelto a mano. Velocità e PoE vengono
+dalla porta dello switch (`switch_ports`); il wireless dal tipo di uplink UniFi (da salvare),
+dai client wireless e dal tipo dato a mano.
+
+### 11.5 Hypervisor e VM
+
+- Hypervisor = apparato `hypervisor`, oppure `server` con fornitore o scansione Proxmox
+  (VMware dopo, stesso schema). Nell'albero sta come uno switch: può avere collegamenti
+  ridondanti verso più switch.
+- **VM a richiesta**: il riquadro dice «N VM, M accese ▸»; «Mostra VM» lo espande con le VM
+  (nome, ▶ accesa / ■ spenta, IP se noto); ogni VM col tasto destro si aggiunge alla mappa
+  come oggetto. Le VM escono dal conteggio dei client della porta dello switch e da «Da
+  sistemare»; un host o apparato che è una VM (stesso MAC o stesso nome) sta dentro il suo
+  hypervisor.
+- **Job «lettura hypervisor»** ogni giorno, spento di default, più «Aggiorna VM» col tasto
+  destro: la scansione Proxmox esistente più le **schede vive** via SSH (`ip -j link`,
+  velocità da `/sys/class/net`): MAC, stato, velocità, membri del bond. Con i MAC veri il
+  sistema trova da solo le schede sugli switch (tabella MAC per porta) e propone i
+  collegamenti, ridondanza compresa.
+
+### 11.6 Tappe e livelli
+
+| Tappa | Contenuto | Livello |
+| --- | --- | --- |
+| 0 · Correzione | un router non crea collegamenti da ciò che vede sul bridge (11.1) | leggero, rilascio subito |
+| D · Raccolta | tipo e principale dei collegamenti nel DB; tipo di uplink UniFi; job «lettura hypervisor» con le schede vive | **completo** (schema, scritture a ogni lettura, nuovo tipo di job) |
+| E · Motore | verifica dei collegamenti a mano, scelta del principale, attributi del collegamento, hypervisor e VM | leggero |
+| F · Pagina | trascinamento, tasto destro, barra chiudibile, «Collega a…», VM espandibili, stile dei collegamenti | leggero |

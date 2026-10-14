@@ -592,6 +592,7 @@ Proxmox (un nome vecchio rimasto nel DNS).
   scansione Proxmox e il nome di quell'host è diverso, sulla mappa il riquadro si chiama col nome
   del Proxmox e sotto, in piccolo, «DNS: <nome di prima>». Solo la mappa (e la stampa): l'inventario
   non si rinomina.
+  Solo da una scansione degli ultimi 30 giorni (Riccardo, 14/10).
 
 Tappa nuova **H2 · Dati della mappa** (leggero, logica pura): `vm_mac`, principale dell'hypervisor,
 nome dal Proxmox. Le ridondanze a richiesta stanno nelle tappe I (schermo) e L (stampa).

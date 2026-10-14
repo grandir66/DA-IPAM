@@ -152,6 +152,8 @@ export interface ModelScanHostRow {
   hostname: string;
   ips: string[];
   macs: string[];
+  /** `scanned_at` della scansione Proxmox da cui viene (serve al nome dal Proxmox: solo ultimi 30 giorni). */
+  scannedAt?: string | null;
 }
 
 export interface TopologyModelInput {

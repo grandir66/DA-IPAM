@@ -77,7 +77,7 @@ export function parseProxmoxScan(scannedDeviceId: number, raw: string | null): {
     hosts.push({
       scannedDeviceId, hostname: text(h.hostname),
       ips: [...new Set(ifaces.flatMap((i) => ipsOf(i.ip_addresses)))],
-      macs: macsOf(ifaces.map((i) => i.mac_address)),
+      macs: macsOf(ifaces.map((i) => i.mac_address)), scannedAt,
     });
   }
   return { vms, hosts };

@@ -192,7 +192,7 @@ test("un apparato che non è un hypervisor: la scelta resta quella di oggi (font
 test("nome dal Proxmox: l'IP dell'apparato sta nell'host «PVE-GIU» → name «PVE-GIU», dnsName «pve-02.esempio»", () => {
   const i = rete({
     devices: [...rete().devices.filter((d) => d.id !== 5), dev(5, { name: "pve-02.esempio", device_type: "server", vendor: "proxmox", host: "192.0.2.15", port_count: 0 })],
-    scanHosts: [{ scannedDeviceId: 5, hostname: "PVE-GIU", ips: ["192.0.2.15", "198.51.100.15"], macs: [] }],
+    scanHosts: [{ scannedDeviceId: 5, hostname: "PVE-GIU", ips: ["192.0.2.15", "198.51.100.15"], macs: [], scannedAt: "2026-10-13T06:00:00.000Z" }],
   });
   const n = buildTopologyModel(i).nodes.find((x) => x.id === "dev:5")!;
   assert.deepEqual([n.name, n.dnsName], ["PVE-GIU", "pve-02.esempio"]);
@@ -218,10 +218,27 @@ test("nome dal Proxmox solo per IP: un host del cluster abbinato per nome non ri
 test("apparato che si chiama col suo IP: prende il nome dal Proxmox, senza «DNS:»", () => {
   const i = rete({
     devices: [...rete().devices.filter((d) => d.id !== 5), dev(5, { name: "192.0.2.15", device_type: "server", vendor: "proxmox", host: "192.0.2.15", port_count: 0 })],
-    scanHosts: [{ scannedDeviceId: 5, hostname: "px-h", ips: ["192.0.2.15"], macs: [] }],
+    scanHosts: [{ scannedDeviceId: 5, hostname: "px-h", ips: ["192.0.2.15"], macs: [], scannedAt: "2026-10-13T06:00:00.000Z" }],
   });
   const n = buildTopologyModel(i).nodes.find((x) => x.id === "dev:5")!;
   assert.deepEqual([n.name, n.dnsName], ["px-h", undefined]);
+});
+
+// Riccardo 14/10: il nome dal Proxmox vale solo da una scansione degli ultimi 30 giorni (nowMs = 2026-10-13T12:00Z).
+test("nome dal Proxmox: scansione di 31 giorni fa → nessun nome Proxmox e nessun «DNS:»; di 29 giorni fa → nome; senza data → niente", () => {
+  const con = (scannedAt: string | null | undefined) => {
+    const i = rete({
+      devices: [...rete().devices.filter((d) => d.id !== 5), dev(5, { name: "pve-02.esempio", device_type: "server", vendor: "proxmox", host: "192.0.2.15", port_count: 0 })],
+      scanHosts: [{ scannedDeviceId: 5, hostname: "PVE-GIU", ips: ["192.0.2.15"], macs: [], ...(scannedAt === undefined ? {} : { scannedAt }) }],
+    });
+    const n = buildTopologyModel(i).nodes.find((x) => x.id === "dev:5")!;
+    return [n.name, n.dnsName];
+  };
+  assert.deepEqual(con("2026-09-12T06:00:00.000Z"), ["pve-02.esempio", undefined]); // 31 giorni
+  assert.deepEqual(con("2026-09-14 12:00:00"), ["PVE-GIU", "pve-02.esempio"]); // 29 giorni, formato SQLite
+  assert.deepEqual(con(undefined), ["pve-02.esempio", undefined]);
+  assert.deepEqual(con(null), ["pve-02.esempio", undefined]);
+  assert.deepEqual(con("non una data"), ["pve-02.esempio", undefined]);
 });
 
 test("parole: la fonte «dalle VM» e «N VM di H passano da questa porta»", () => {

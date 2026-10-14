@@ -18,6 +18,7 @@ import { nodeClass } from "@/lib/topology/identity";
 import { assignSites } from "@/lib/topology/sites";
 import { placeVms, resolveScanHosts } from "@/lib/topology/vms";
 import { normalizeName } from "@/lib/topology/match";
+import { parseDbDate } from "@/lib/db-date";
 
 export const PROMOTE_CLASSES = ["switch", "router", "access_point", "firewall"] as const;
 const SUSPICIOUS_TYPES = ["switch", "access_point"];
@@ -99,11 +100,18 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
  * altro nome (confronto senza dominio e senza maiuscole) si chiama sulla mappa come il nodo Proxmox; il nome di prima
  * diventa `dnsName` («DNS: …»), tranne quando era solo un IP. Solo l'abbinamento per IP: per nome i nomi coincidono già.
  * Due host del cluster con nomi diversi per lo stesso nodo: non si sceglie, il nome resta.
+ * Solo da una scansione degli ultimi 30 giorni (Riccardo, 14/10); senza data valida la scansione è vecchia.
  */
+const PROXMOX_NAME_MAX_AGE_MS = 30 * 24 * 3600 * 1000;
+function scanIsRecent(scannedAt: string | null | undefined, nowMs: number): boolean {
+  const t = parseDbDate(scannedAt).getTime();
+  return Number.isFinite(t) && nowMs - t <= PROXMOX_NAME_MAX_AGE_MS;
+}
+
 function proxmoxNames(input: TopologyModelInput, idx: NodeIndex): Map<string, string> {
   const found = new Map<string, string | null>();
   for (const { row, nodeId, byIp } of resolveScanHosts(input.scanHosts, idx)) {
-    if (!nodeId || !byIp) continue;
+    if (!nodeId || !byIp || !scanIsRecent(row.scannedAt, input.nowMs)) continue;
     const cur = found.get(nodeId);
     found.set(nodeId, cur === undefined || (cur !== null && normalizeName(cur) === normalizeName(row.hostname)) ? (cur ?? row.hostname) : null);
   }

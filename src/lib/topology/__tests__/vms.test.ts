@@ -148,7 +148,7 @@ test("parseProxmoxScan legge la forma vera: VM con le schede e gli IP, host con 
     ],
   });
   const r = parseProxmoxScan(5, raw);
-  assert.deepEqual(r.hosts, [{ scannedDeviceId: 5, hostname: "pve-a", ips: ["192.0.2.11"], macs: ["02:00:00:AA:BB:01"] }]);
+  assert.deepEqual(r.hosts, [{ scannedDeviceId: 5, hostname: "pve-a", ips: ["192.0.2.11"], macs: ["02:00:00:AA:BB:01"], scannedAt: "2026-10-13T06:00:00.000Z" }]);
   assert.equal(r.vms.length, 2);
   assert.deepEqual(r.vms[0], {
     scannedDeviceId: 5, vmid: 106, name: "w-server", node: "pve-a", status: "running", type: "qemu",

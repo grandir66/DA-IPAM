@@ -38,8 +38,12 @@ piano di miglioramento, «progetto separato, dopo».
   - Ha un suo utente di servizio NetBird e crea da solo gruppi, chiavi monouso e policy al
     clic del tecnico.
   - Rimette com'erano le sue policy se qualcuno le modifica (col freno all'inizio).
-  - Riceve dalle istanze IPAM il segnale di vita e i numeri dell'inventario.
+  - Riceve dalle istanze IPAM il segnale di vita, e i numeri dell'inventario solo se
+    l'istanza li condivide.
   - Dà a DA-CRM, in sola lettura, il quadro di ogni cliente.
+- **Cosa esce da un'istanza IPAM lo decide l'istanza**, con due livelli: «solo stato» oppure
+  «stato + inventario». Senza una scelta dichiarata esce solo lo stato, e dal centro non si
+  cambia. Se il cliente toglie il consenso, DA-Link cancella anche i numeri già ricevuti.
 - Da Domarc si raggiunge solo l'oggetto, mai la LAN del cliente.
 - Il passaggio si fa a doppio binario cliente per cliente, partendo da DTS.
 - Restano fuori: DA-VA-OVH, sulla sua VPN, e l'OSINT avviato dal CRM, che va dal CRM a
@@ -67,6 +71,8 @@ che vive solo in sede, non nel codice che va a ogni cliente.
 - **DA-Link che va a prendere i dati**: una porta in ingresso aperta su ogni istanza.
 - **Iscrizione automatica al primo avvio**: DA-Link dovrebbe stare su Internet.
 - **Oggetti preparati dal CRM**: si possono aggiungere dopo.
+- **Livello di condivisione deciso dal centro, o inventario condiviso finché il cliente non
+  lo blocca**: la privacy del cliente dipenderebbe da Domarc invece che da lui.
 - **OSINT del CRM attraverso DA-Link**: DA-Link si allargherebbe oltre la rete e diventerebbe
   necessario anche per l'OSINT.
 - **Restare su Tailscale passando a una tailnet aziendale**: due reti da tenere invece di una.
@@ -95,3 +101,6 @@ che vive solo in sede, non nel codice che va a ogni cliente.
 - Una policy cambiata a mano di proposito verrà rimessa com'era da DA-Link: si cambia nella
   sua descrizione, non nella console.
 - Se `netbird.domarc.it` o DA-Link sono giù non entra nessun oggetto nuovo.
+- Ogni dato nuovo che si vorrà far uscire da un'istanza dovrà passare dal livello di
+  privacy dell'istanza, e un cliente a «solo stato» non lo darà: il quadro centrale
+  avrà sempre dei buchi dichiarati.

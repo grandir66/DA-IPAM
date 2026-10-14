@@ -1,7 +1,7 @@
 # DA-Link e NetBird: una rete a stella fra centrali Domarc e oggetti dei clienti
 
-**Stato:** disegno approvato a voce da Riccardo il 2026-10-14, rivisto due volte lo stesso
-giorno (moduli, poi DA-Link e DA-CRM); documento da rileggere
+**Stato:** disegno approvato a voce da Riccardo il 2026-10-14, rivisto tre volte lo stesso
+giorno (moduli, poi DA-Link e DA-CRM, poi la privacy decisa dall'istanza); documento da rileggere
 **Data:** 2026-10-14
 **Autore:** Riccardo Grandi, con Claude
 **Decisione architetturale:** [ADR 0011](../../adr/0011-netbird-rete-a-stella.md)
@@ -45,8 +45,8 @@ E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
 - sa quali oggetti remoti ha ogni cliente;
 - li fa entrare in NetBird e li revoca **da solo**: nessuno apre la console NetBird;
 - dice se sono connessi e se l'isolamento regge;
-- raccoglie il segnale di vita e i numeri dell'inventario delle istanze IPAM, e li dà in
-  lettura a DA-CRM.
+- raccoglie il segnale di vita delle istanze IPAM, e i numeri dell'inventario **solo dove
+  l'istanza lo consente** (decisione 13), e li dà in lettura a DA-CRM.
 
 **Non è:**
 
@@ -81,8 +81,9 @@ E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
 | 8 | **Wazuh non entra mai in NetBird** e nessuna policy porta alle sue porte. | — |
 | 9 | **DA-Link è autonomo verso NetBird.** Ha il suo utente di servizio e crea da sé gruppi, chiavi e policy al clic del tecnico. Se qualcuno modifica a mano una policy di DA-Link, la rimette com'era e lo dice. | anche l'iscrizione automatica al primo avvio (DA-Link esposto su Internet); anche la preparazione dell'oggetto chiesta dal CRM |
 | 10 | **L'OSINT avviato dal CRM va dal CRM a DA-Vul-can**, senza passare da DA-Link. | tutto attraverso DA-Link |
-| 11 | **Il CRM vede da DA-Link**, per cliente: oggetti e collegamento, salute e versioni, esito dell'isolamento, numeri dell'inventario. Solo lettura. | — |
+| 11 | **Il CRM vede da DA-Link**, per cliente: oggetti e collegamento, salute e versioni, esito dell'isolamento, numeri dell'inventario **se l'istanza li condivide** (decisione 13). Solo lettura. | — |
 | 12 | **Il cliente si identifica con `codcli` del gestionale** in tutti i sistemi: gruppo `cli-<codcli>`, nome dei nodi, API di DA-Link. È già la chiave di DA-Vul-can (`/api/clients/[codcli]/…`) e del CRM. | — |
+| 13 | **Cosa esce dall'istanza IPAM verso il centro lo decide l'istanza.** Due livelli, impostati solo da un amministratore dell'istanza: **solo stato** oppure **stato + numeri dell'inventario**. Dal centro non si cambia. Senza una scelta dichiarata esce solo lo stato. Se il cliente vuole privacy la ha: in quel caso Domarc gestisce solo lo stato. | livello deciso da DA-Link o dal CRM; inventario condiviso finché il cliente non lo blocca |
 
 ## 3. Da dove si parte (verificato nel codice il 2026-10-14)
 
@@ -227,21 +228,62 @@ per i nodi non legati a una persona. Si verifica sulla versione installata in fa
 ### 5.2 A regime
 
 - La connessione è sempre accesa: NetBird si ricollega da solo dopo riavvii e cambi di rete.
-- **Segnale di vita dell'istanza IPAM** verso DA-Link (P1), a intervalli fissi:
-  - versione e moduli accesi;
-  - salute dei moduli;
-  - ultimo errore;
-  - **numeri dell'inventario**: dispositivi, reti, ultima scansione e suo esito;
-  - **porte aperte sull'interfaccia NetBird** (per R5).
-- Solo numeri e stati, **non l'inventario riga per riga**: il dato del cliente resta
-  sull'istanza. Se un giorno servisse il dettaglio, è una decisione nuova.
+- **Segnale di vita dell'istanza IPAM** verso DA-Link (P1), a intervalli fissi. Il contenuto
+  dipende dal livello scelto sull'istanza (decisione 13, §5.3):
+  - **sempre (solo stato)**:
+    - versione e moduli accesi;
+    - salute dei moduli;
+    - ultimo errore;
+    - **porte aperte sull'interfaccia NetBird** (per R5): riguardano l'appliance, non la
+      rete del cliente, e servono a dimostrare che Wazuh resta invisibile;
+    - il livello scelto.
+  - **solo con il livello «stato + inventario»**: numeri dell'inventario, cioè dispositivi,
+    reti, ultima scansione e suo esito.
+- Anche col livello più aperto passano solo numeri e stati, **mai l'inventario riga per
+  riga**: il dato del cliente resta sull'istanza. Se un giorno servisse il dettaglio, è una
+  decisione nuova, e passerebbe comunque dal consenso dell'istanza.
 - Il contenuto crescerà con la tappa 9.
 - L'heartbeat dell'edge verso da-vulcan dice su quale rete passa (§6.3).
 - I token applicativi restano com'erano: il token dell'edge verso l'hub, il token
   dell'istanza verso DA-Link. NetBird decide chi può arrivare alla porta; il token decide
   che cosa può fare chi ci arriva.
 
-### 5.3 Revoca
+### 5.3 Privacy: decide l'istanza
+
+Il cliente sceglie cosa esce, e la scelta vale **all'origine**: è l'istanza che costruisce
+il segnale di vita, quindi un dato bloccato non parte proprio, invece di essere scartato
+all'arrivo.
+
+- **Dove si sceglie**: sull'istanza DA-IPAM, in una pagina «Cosa esce da questa istanza»,
+  riservata al ruolo amministratore dell'istanza. Ogni cambio finisce nel registro di audit
+  locale, con chi e quando.
+- **Il valore di partenza**: un'istanza che non ha dichiarato niente manda **solo lo stato**
+  (regola dei freni del parco: ciò che non è dichiarato non esce). All'installazione il
+  tecnico chiede al cliente e imposta il livello. La domanda sta nel `/setup` e in
+  Deploy-Appliance, e non ha un valore pre-selezionato.
+- **Il centro non può cambiarlo.**
+  - Non esiste un'API da DA-Link, dal CRM o da altri verso l'istanza per alzare il livello.
+  - Comunque non c'è una porta per arrivarci (decisione 7).
+  - Una risposta di DA-Link non modifica mai la configurazione dell'istanza.
+- **Quando il cliente abbassa il livello**:
+  - il segnale successivo lo dichiara;
+  - DA-Link **cancella i numeri dell'inventario già ricevuti** per quel cliente e risponde
+    con la conferma;
+  - l'istanza mostra la conferma nella pagina, con data e ora. Finché la conferma non
+    arriva, la pagina dice «in attesa di conferma», non «fatto».
+- **DA-Link fa da seconda linea.** Se riceve campi d'inventario da un'istanza che dichiara
+  «solo stato», li scarta senza salvarli e lo segnala come anomalia (un'istanza che manda
+  più di quanto dichiara è un difetto).
+- **La pagina mostra tutto ciò che esce verso Domarc**, non solo DA-Link:
+  - lo stato e, se consentito, i numeri verso DA-Link;
+  - i risultati delle scansioni verso da-vulcan, se l'edge è acceso;
+  - i dati del monitoraggio verso Zabbix, se il proxy è acceso.
+
+  Quei due flussi sono il servizio stesso che il cliente ha chiesto, e si fermano spegnendo
+  il modulo. La pagina lo dice con quelle parole.
+- L'interfaccia si propone oggetto per oggetto prima di scriverla (regola grafica del parco).
+
+### 5.4 Revoca
 
 - **Un oggetto**: DA-Link cancella il nodo in NetBird, revoca le sue chiavi non usate e il
   token dell'istanza. Il tunnel cade subito.
@@ -249,7 +291,7 @@ per i nodi non legati a una persona. Si verifica sulla versione installata in fa
   l'**elenco dei nomi** e lo si conferma (regola 10 del parco: i nomi, non i totali).
 - Ogni revoca resta nel registro di audit di DA-Link, con chi l'ha fatta e quando.
 
-### 5.4 Chi scrive in NetBird
+### 5.5 Chi scrive in NetBird
 
 Ci sono due scrittori, con una divisione netta:
 
@@ -307,7 +349,8 @@ primo cliente entra. Prima di qualunque oggetto remoto:
 
 - **DA-Link**: un elenco degli oggetti remoti per cliente.
   - Per ogni oggetto: tipo e moduli, rete (NetBird / Tailscale / nessuna), nome e IP NetBird,
-    connesso o no, ultimo contatto NetBird, ultimo segnale di vita, numeri dell'inventario.
+    connesso o no, ultimo contatto NetBird, ultimo segnale di vita, livello di privacy scelto dall'istanza, numeri dell'inventario se
+    condivisi.
   - In cima: esito della verifica R1–R5, con data e fonte della lettura, e l'ultimo
     riallineamento.
   - La **scadenza del token API** verso NetBird, con avviso 30 giorni prima: un token scaduto
@@ -329,7 +372,9 @@ primo cliente entra. Prima di qualunque oggetto remoto:
 
 ### 7.2 Dalle istanze IPAM (via NetBird, P1)
 
-- `POST` del segnale di vita (§5.2), con il token dell'istanza.
+- `POST` del segnale di vita (§5.2), con il token dell'istanza e il livello di privacy
+  dichiarato (§5.3). La risposta conferma le cancellazioni chieste, e non porta mai
+  istruzioni che cambino la configurazione dell'istanza.
 - Un token vale per un'istanza sola: DA-Link rifiuta un segnale che dichiara un `codcli`
   diverso da quello del token.
 
@@ -341,8 +386,11 @@ primo cliente entra. Prima di qualunque oggetto remoto:
   - gli oggetti, con il loro collegamento;
   - salute e versioni;
   - l'esito dell'isolamento per quel cliente;
-  - i numeri dell'inventario.
+  - i numeri dell'inventario, solo se l'istanza li condivide.
 - **Mai** chiavi, token, IP NetBird o nomi di policy.
+- Se il cliente ha scelto «solo stato», l'inventario risulta **«non condiviso per scelta del
+  cliente»** (`non_condivisi`), distinto da «non disponibile»: sono due cose diverse e il CRM
+  le mostra diverse.
 - Ogni parte che non ha dati lo dichiara (`non_disponibili`), come l'aggregatore del Manager:
   un quadro vuoto deve dire «non so», non «niente».
 
@@ -479,7 +527,10 @@ finestra per cliente.
 
 **DA-IPAM**
 
-- Il segnale di vita verso DA-Link, con i numeri dell'inventario e le porte aperte
+- La pagina «Cosa esce da questa istanza» e il livello di privacy (§5.3); il livello
+  si chiede anche al `/setup`.
+- Il segnale di vita verso DA-Link, costruito secondo il livello: stato sempre, numeri
+  dell'inventario solo se consentiti, porte aperte
   sull'interfaccia NetBird. URL e token vengono dalla configurazione d'installazione.
 - Installatore e `/setup` con `NETBIRD_SETUP_KEY` e token di DA-Link.
 - Firewall sull'interfaccia NetBird: solo 22 e 443, più 6443 se l'istanza contiene l'edge.
@@ -540,6 +591,12 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
     policy sue;
   - segnale di vita accettato col token giusto, rifiutato senza token e con un `codcli` non
     suo;
+  - un'istanza a «solo stato» non mette **mai** campi d'inventario nel segnale (prova sul
+    costruttore del segnale, vista fallire);
+  - un'istanza senza livello dichiarato si comporta come «solo stato»;
+  - DA-Link scarta e segnala i campi d'inventario arrivati da un'istanza a «solo stato»;
+  - abbassando il livello, DA-Link cancella i numeri già ricevuti e conferma;
+  - nessuna risposta di DA-Link cambia il livello sull'istanza;
   - lettura del CRM senza segreti nella risposta, e con `non_disponibili` quando una parte
     manca;
   - heartbeat dell'edge coi campi nuovi e quelli vecchi.
@@ -557,5 +614,6 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
 - **L'agente Python remoto di DA-IPAM** (`agent/`, raggiunto oggi via Tailscale dalla VM 533).
   Con un'istanza IPAM per cliente forse non serve più. Si decide se toglierlo o portarlo su
   NetBird, contando prima chi lo usa davvero.
-- Quali numeri dell'inventario entrano nel segnale di vita, oltre a dispositivi, reti e
+- Il nome dei due livelli come lo legge il cliente (oggi «solo stato» e «stato + inventario»).
+- Quali numeri dell'inventario entrano nel livello «stato + inventario», oltre a dispositivi, reti e
   ultima scansione. Si fissa col CRM, guardando cosa serve nella scheda.

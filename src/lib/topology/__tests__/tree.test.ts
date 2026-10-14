@@ -1,22 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { autoVisible, buildTree, missingNeighbors, proposeHead } from "@/lib/topology/tree";
-import type { LinkSource, MapLink, MapNode, SiteInfo, TopologyModel } from "@/lib/topology/model-types";
+import { LINK_ATTRS_DEFAULT, type LinkSource, MapLink, MapNode, SiteInfo, TopologyModel } from "@/lib/topology/model-types";
 
 function node(id: string, type: string, over: Partial<MapNode> = {}): MapNode {
   const [k, n] = id.split(":");
   return {
     id, kind: k === "dev" ? "device" : "host", refId: Number(n), name: id, type, mgmtIp: null,
-    fusedHostIds: [], addresses: [], aliases: [], siteId: null, rackId: null, siteProposed: false, hidden: false, ...over,
+    fusedHostIds: [], addresses: [], aliases: [], siteId: null, rackId: null, siteProposed: false, hidden: false, vendor: null, ...over,
   };
 }
 function link(a: string, b: string, source: LinkSource = "lldp", stale = false): MapLink {
-  return { id: `${a}~${b}~${source}`, a, aPort: "p", b, bPort: "p", source, sources: [source], uplinkFrom: null, lastSeen: null, daysUnseen: null, stale };
+  return { id: `${a}~${b}~${source}`, a, aPort: "p", b, bPort: "p", source, sources: [source], uplinkFrom: null, lastSeen: null, daysUnseen: null, stale, ...LINK_ATTRS_DEFAULT };
 }
 function model(nodes: MapNode[], links: MapLink[], over: Partial<TopologyModel> = {}): TopologyModel {
   return {
     nodes, links, sites: [], promote: [], unmatched: [], isolated: [], suspicious: [], withoutSite: [],
-    counts: {} as TopologyModel["counts"], portClients: [], clientCount: {}, canonical: {}, ...over,
+    counts: {} as TopologyModel["counts"], portClients: [], clientCount: {}, canonical: {}, vms: [], ...over,
   };
 }
 const all = (m: TopologyModel) => new Set(m.nodes.map((n) => n.id));

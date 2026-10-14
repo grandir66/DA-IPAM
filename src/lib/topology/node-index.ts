@@ -25,7 +25,7 @@ const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 const MAC = /^[0-9a-f]{2}([:-]?)[0-9a-f]{2}(\1[0-9a-f]{2}){4}$/i;
 
 /** Chiave di nome, o null se il «nome» è un IP o un MAC (normalizeName taglierebbe al primo punto). */
-function nameKey(raw: string | null | undefined): string | null {
+export function nameKey(raw: string | null | undefined): string | null {
   const s = raw?.trim();
   if (!s || IPV4.test(s) || MAC.test(s)) return null;
   return normalizeName(s) || null;
@@ -56,12 +56,17 @@ function putMac(map: Map<string, string | null>, raw: string | null | undefined,
   if (m && !isVirtualMac(m)) put(map, m, id, weak);
 }
 
+/** Registra altri MAC veri di un nodo (le schede vive di un hypervisor): come un host, non tolgono nulla a un apparato. */
+export function addNodeMacs(idx: NodeIndex, nodeId: string, macs: readonly string[]): void {
+  for (const m of macs) putMac(idx.byMac, m, nodeId, true);
+}
+
 function hostNode(h: ModelHostRow): MapNode {
   return {
     id: `host:${h.id}`, kind: "host", refId: h.id, name: h.custom_name || h.hostname || h.ip,
     type: h.classification || "unknown", mgmtIp: h.ip || null, fusedHostIds: [],
     addresses: h.ip ? [{ ip: h.ip, virtual: isVirtualMac(h.mac), hostId: h.id }] : [], aliases: [],
-    siteId: null, rackId: null, siteProposed: false, hidden: false,
+    siteId: null, rackId: null, siteProposed: false, hidden: false, vendor: null,
   };
 }
 
@@ -97,7 +102,7 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     idx.nodes.set(id, {
       id, kind: "device", refId: d.id, name: d.name, type: d.device_type, mgmtIp: d.host || null,
       fusedHostIds: fused.sort((a, b) => a - b), addresses: [], aliases: [], siteId: null, rackId: null, siteProposed: false,
-      hidden: d.topology_hidden === 1,
+      hidden: d.topology_hidden === 1, vendor: d.vendor || null,
     });
     put(idx.byIp, d.host || null, id, false);
     put(idx.byName, nameKey(d.name), id, false);

@@ -26,7 +26,7 @@ function input(over: Partial<TopologyModelInput> = {}): TopologyModelInput {
       { device_id: 2, local_port: "Port 1", remote_device_name: "SW-3", remote_port: "Port 1", protocol: "lldp", remote_ip: "10.0.0.3", remote_mac: null, timestamp: RECENTE, source: "device" },
     ],
     uplinkPorts: [{ device_id: 3, port_index: 9, port_name: "Port 9" }],
-    locations: [], networks: [], knownMacs: [], overrides: [], macPorts: [], nowMs: NOW, staleDays: 2, ...over,
+    locations: [], networks: [], knownMacs: [], overrides: [], macPorts: [], primaries: [], portInfo: [], vms: [], scanHosts: [], nowMs: NOW, staleDays: 2, ...over,
   };
 }
 function run(i: TopologyModelInput) {

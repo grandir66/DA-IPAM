@@ -10,7 +10,7 @@ const ADESSO = Date.parse("2026-10-13T12:00:00Z");
 function input(over: Partial<TopologyModelInput>): TopologyModelInput {
   return {
     devices: [], hosts: [], neighbors: [], uplinkPorts: [], locations: [], networks: [], knownMacs: [],
-    overrides: [], macPorts: [], nowMs: ADESSO, staleDays: 2, ...over,
+    overrides: [], macPorts: [], primaries: [], portInfo: [], vms: [], scanHosts: [], nowMs: ADESSO, staleDays: 2, ...over,
   };
 }
 function nb(device_id: number, over: Partial<ModelNeighborRow> = {}): ModelNeighborRow {
@@ -63,9 +63,9 @@ test("uplink verso un MAC che il DB non conosce: nessun collegamento, nessun err
 
 test("la correzione manuale vince su LLDP: «ignora» toglie, «aggiungi» non invecchia mai", () => {
   const base = { devices: [dev(1), dev(2), dev(3)], neighbors: [nb(1, { remote_ip: "10.0.0.2", timestamp: "2026-09-01 03:00:00" })] };
-  const ignorato = run(input({ ...base, overrides: [{ id: 1, action: "ignore", a_node: "dev:2", a_port: "", b_node: "dev:1", b_port: "" }] }));
+  const ignorato = run(input({ ...base, overrides: [{ id: 1, action: "ignore", a_node: "dev:2", a_port: "", b_node: "dev:1", b_port: "", medium: null }] }));
   assert.equal(ignorato.links.length, 0);
-  const aggiunto = run(input({ ...base, overrides: [{ id: 2, action: "add", a_node: "dev:1", a_port: "Port 9", b_node: "dev:3", b_port: "Port 1" }] }));
+  const aggiunto = run(input({ ...base, overrides: [{ id: 2, action: "add", a_node: "dev:1", a_port: "Port 9", b_node: "dev:3", b_port: "Port 1", medium: null }] }));
   const man = aggiunto.links.find((l) => l.source === "manual")!;
   assert.deepEqual([man.a, man.aPort, man.b, man.bPort, man.stale, man.daysUnseen], ["dev:1", "Port 9", "dev:3", "Port 1", false, null]);
 });
@@ -74,7 +74,7 @@ test("una correzione su un host poi promosso segue il nodo (Review Focus 4)", ()
   const i = input({
     devices: [dev(1), dev(2, { host_id: 40, host: "10.0.1.40" })],
     hosts: [host(40, { ip: "10.0.1.40" })],
-    overrides: [{ id: 1, action: "add", a_node: "dev:1", a_port: "", b_node: "host:40", b_port: "" }],
+    overrides: [{ id: 1, action: "add", a_node: "dev:1", a_port: "", b_node: "host:40", b_port: "", medium: null }],
   });
   assert.deepEqual(run(i).links.map((l) => [l.a, l.b]), [["dev:1", "dev:2"]]);
 });

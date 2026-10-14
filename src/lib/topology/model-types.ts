@@ -30,6 +30,8 @@ export interface ModelDeviceRow {
   uplink_mac: string | null;
   uplink_remote_port: number | null;
   uplink_seen_at: string | null;
+  /** Tipo dell'uplink UniFi: 'wire' | 'wireless' (Task 3). Finché non si unisce il ramo D vale null. */
+  uplink_type: string | null;
   topology_hidden: number;
   port_count: number;
 }
@@ -99,6 +101,46 @@ export interface LinkOverrideRow {
   a_port: string;
   b_node: string;
   b_port: string;
+  /** 'cavo' | 'fibra' | 'wireless' o null; null anche se la colonna non c'è ancora. */
+  medium: string | null;
+}
+
+/** Il collegamento principale scelto a mano: «per node_id il principale è quello verso other_node». */
+export interface ModelPrimaryRow {
+  node_id: string;
+  other_node: string;
+  node_port: string;
+  other_port: string;
+}
+
+export interface ModelPortInfoRow {
+  device_id: number;
+  port_name: string;
+  speed: string | null;
+  poe_status: string | null;
+  poe_power_mw: number | null;
+}
+
+/** Una VM letta dalla scansione Proxmox di un apparato (spec §11.5). */
+export interface ModelVmRow {
+  scannedDeviceId: number;
+  vmid: number;
+  name: string;
+  /** Il nome dell'host Proxmox su cui gira. */
+  node: string;
+  status: string;
+  type: string;
+  macs: string[];
+  ips: string[];
+  scannedAt: string | null;
+}
+
+/** Un host del cluster letto dalla scansione Proxmox: serve ad abbinare le VM al loro hypervisor. */
+export interface ModelScanHostRow {
+  scannedDeviceId: number;
+  hostname: string;
+  ips: string[];
+  macs: string[];
 }
 
 export interface TopologyModelInput {
@@ -112,6 +154,13 @@ export interface TopologyModelInput {
   overrides: LinkOverrideRow[];
   /** Ultimi 30 giorni; spec §10.5. */
   macPorts: ModelMacPortRow[];
+  /** Collegamenti principali scelti a mano (tabella topology_link_primary). */
+  primaries: ModelPrimaryRow[];
+  /** Velocità e PoE delle porte degli switch. */
+  portInfo: ModelPortInfoRow[];
+  /** VM delle scansioni Proxmox e host dei cluster. */
+  vms: ModelVmRow[];
+  scanHosts: ModelScanHostRow[];
   /** Orologio iniettato: stessi dati + stesso nowMs = stesso modello. */
   nowMs: number;
   /** Giorni dopo cui un collegamento è «non visto» (decisione 13/10: 2). */
@@ -137,7 +186,11 @@ export interface MapNode {
   /** true = sede proposta dal sistema, non confermata da un admin. */
   siteProposed: boolean;
   hidden: boolean;
+  /** Fornitore dell'apparato (proxmox, vmware… per riconoscere un hypervisor); null per un host. */
+  vendor: string | null;
 }
+
+export type LinkMedium = "cavo" | "fibra" | "wireless";
 
 export interface MapLink {
   id: string;
@@ -153,6 +206,38 @@ export interface MapLink {
   lastSeen: string | null;
   daysUnseen: number | null;
   stale: boolean;
+  /** Tipo a mano; altrimenti wireless se l'uplink è wireless o la porta è «wifi»; altrimenti null. */
+  medium: LinkMedium | null;
+  /** Presente solo per un collegamento dichiarato a mano: confermato se i dati lo vedono. */
+  manual: { confirmed: boolean } | null;
+  /** Velocità della porta dello switch sul collegamento (Mbps). */
+  speedMbps: number | null;
+  /** Potenza PoE erogata sulla porta (W). */
+  poeW: number | null;
+  /** «user» = scelto a mano dall'admin; «auto» = scelto dal sistema (lo imposta l'albero); null = non è un principale. */
+  primary: "user" | "auto" | null;
+  /** Per primary «user»: il nodo (il figlio) per cui l'admin ha scelto questo collegamento. */
+  primaryFor: string | null;
+  /** Collegamento verso un nodo visibile che l'albero non usa: ridondanza (lo imposta l'albero). */
+  redundant: boolean;
+}
+
+/** Attributi del collegamento che nascono neutri; li riempiono link-attrs.ts (dati) e l'albero (principale, ridondanza). */
+export const LINK_ATTRS_DEFAULT: Pick<MapLink, "medium" | "manual" | "speedMbps" | "poeW" | "primary" | "primaryFor" | "redundant"> = {
+  medium: null, manual: null, speedMbps: null, poeW: null, primary: null, primaryFor: null, redundant: false,
+};
+
+/** Una VM dentro il suo hypervisor (spec §11.5). */
+export interface MapVm {
+  /** "vm:<scannedDeviceId>:<vmid>" */
+  id: string;
+  name: string;
+  status: string;
+  ips: string[];
+  hypervisorNodeId: string | null;
+  /** Il nodo esistente (host o apparato) che è questa VM: stesso MAC, o stesso nome se la VM non ha MAC. */
+  nodeId: string | null;
+  scannedAt: string | null;
 }
 
 export interface SiteInfo {
@@ -212,6 +297,10 @@ export interface ModelCounts {
   sitesWithHead: number;
   promoteProposals: number;
   suspiciousTypes: number;
+  vms: number;
+  hypervisors: number;
+  /** VM che coincidono con un nodo già censito. */
+  vmsOnNodes: number;
 }
 
 export interface TopologyModel {
@@ -234,4 +323,6 @@ export interface TopologyModel {
    * passano da qui, così un oggetto promosso non risulta «non più presente».
    */
   canonical: Record<string, string>;
+  /** VM degli hypervisor, ognuna col suo host (spec §11.5). */
+  vms: MapVm[];
 }

@@ -51,7 +51,7 @@ export function ObjectList({ model, visible, selected, canInsert, onSelect, onIn
       ["Router e firewall", (n) => nodeClass(n) === "infra" && n.type !== "switch"],
       ["Switch", (n) => n.type === "switch"],
       ["Access point", (n) => nodeClass(n) === "ap"],
-      ["Server e attaccati", (n) => nodeClass(n) === "att"],
+      ["Server e attaccati", (n) => nodeClass(n) === "att" || nodeClass(n) === "hyper"],
       [CLIENT, (n) => nodeClass(n) === "client"],
     ];
     const sorted = [...model.nodes].sort((a, b) => a.name.localeCompare(b.name, "it") || (a.id < b.id ? -1 : 1));

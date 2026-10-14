@@ -89,3 +89,22 @@ test("soglia «non visto»: 2 di partenza, limiti 1-30", () => {
   assert.throws(() => setLinkStaleDays(31));
   setLinkStaleDays(2);
 });
+
+test("getTopologyModelInput: VM dalle scansioni Proxmox (JSON rovinato = nessuna VM), velocità delle porte e ripieghi della fase 2b", () => {
+  const scan = JSON.stringify({
+    scanned_at: "2026-10-13T06:00:00.000Z",
+    hosts: [{ hostname: "pve-a", network_interfaces: [{ name: "vmbr0", mac_address: null, ip_addresses: "192.0.2.11" }] }],
+    vms: [{ node: "pve-a", vmid: 100, name: "vm-100", status: "running", type: "qemu", ip_addresses: [], networks_details: [{ id: "net0", mac: "02:00:00:aa:00:01" }] }],
+  });
+  db().prepare("UPDATE network_devices SET last_proxmox_scan_result = ? WHERE id = 1").run(scan);
+  db().prepare("UPDATE network_devices SET last_proxmox_scan_result = ? WHERE id = 2").run("{rovinato");
+  db().prepare("UPDATE switch_ports SET speed = '1000 Mbps', poe_power_mw = 4500 WHERE device_id = 2 AND port_index = 2").run();
+  w(() => addLinkOverride({ action: "add", a_node: "dev:1", a_port: "ether1", b_node: "dev:2", b_port: "Port 2", note: null }, "prova"));
+  const i = w(() => getTopologyModelInput(2, 1_000));
+  assert.deepEqual(i.vms.map((v) => [v.scannedDeviceId, v.vmid, v.macs]), [[1, 100, ["02:00:00:AA:00:01"]]]);
+  assert.deepEqual(i.scanHosts.map((h) => [h.scannedDeviceId, h.hostname, h.ips]), [[1, "pve-a", ["192.0.2.11"]]]);
+  assert.deepEqual(i.portInfo.map((p) => [p.device_id, p.port_name, p.speed, p.poe_power_mw]), [[2, "Port 2", "1000 Mbps", 4500]]);
+  assert.ok(i.overrides.length >= 1 && i.overrides.every((o) => o.medium === null), "medium si legge null anche se la colonna non c'è");
+  assert.deepEqual(i.primaries, []);
+  assert.ok(i.devices.every((d) => d.uplink_type === null));
+});

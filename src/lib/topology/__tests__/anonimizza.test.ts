@@ -19,7 +19,7 @@ const VERO: TopologyModelInput = {
     { id: 2, cidr: "192.168.20.0/24", name: "Server", gateway: "192.168.20.1", location_id: 1 },
   ],
   knownMacs: [{ device_id: 1, mac: "f4:1e:57:aa:bb:01" }],
-  overrides: [], macPorts: [], nowMs: Date.parse("2026-10-13T12:00:00Z"), staleDays: 2,
+  overrides: [], macPorts: [], primaries: [], portInfo: [], vms: [], scanHosts: [], nowMs: Date.parse("2026-10-13T12:00:00Z"), staleDays: 2,
 };
 
 test("nessun nome, IP o MAC vero esce", () => {
@@ -120,4 +120,15 @@ test("macPorts: stesso MAC vero, stesso MAC finto di host e vicini; porte dal vo
   assert.deepEqual([a.macPorts[0].device_id, a.macPorts[0].timestamp, a.macPorts[1].source], [2, "2026-10-13 10:00:00", "unifi"]);
   assert.deepEqual(contaValoriVeri(i, JSON.parse(JSON.stringify(a))), { ip: 0, mac: 0, nomi: 0 });
   assert.equal(contaValoriVeri(i, { x: "visto aabbccddeeff" }).mac, 1);
+});
+
+test("le VM e gli host dei cluster non entrano nelle fixture: nomi, IP e MAC dei clienti restano fuori", () => {
+  const conVm: TopologyModelInput = {
+    ...VERO,
+    vms: [{ scannedDeviceId: 1, vmid: 100, name: "SRV-CLIENTE-X", node: "px-cliente", status: "running", type: "qemu", macs: ["BC:24:11:AA:BB:CC"], ips: ["192.168.15.77"], scannedAt: null }],
+    scanHosts: [{ scannedDeviceId: 1, hostname: "px-cliente", ips: ["192.168.15.5"], macs: ["BC:24:11:AA:BB:01"] }],
+  };
+  const anonimo = anonimizzaInput(conVm);
+  assert.deepEqual([anonimo.vms, anonimo.scanHosts], [[], []]);
+  assert.equal(JSON.stringify(anonimo).includes("CLIENTE"), false);
 });

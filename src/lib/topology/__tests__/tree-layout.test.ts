@@ -11,13 +11,13 @@ function node(id: string, type: string, name = id): MapNode {
   const [k, n] = id.split(":");
   return {
     id, kind: k === "dev" ? "device" : "host", refId: Number(n), name, type, mgmtIp: null,
-    fusedHostIds: [], addresses: [], aliases: [], siteId: null, rackId: null, siteProposed: false, hidden: false,
+    fusedHostIds: [], addresses: [], aliases: [], siteId: null, rackId: null, siteProposed: false, hidden: false, vendor: null,
   };
 }
 function model(nodes: MapNode[]): TopologyModel {
   return {
     nodes, links: [], sites: [], promote: [], unmatched: [], isolated: [], suspicious: [], withoutSite: [],
-    counts: {} as TopologyModel["counts"], portClients: [], clientCount: {}, canonical: {},
+    counts: {} as TopologyModel["counts"], portClients: [], clientCount: {}, canonical: {}, vms: [],
   };
 }
 /** Albero a mano: ogni id nei valori è anche una chiave (foglie con []). */

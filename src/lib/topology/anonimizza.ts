@@ -78,6 +78,7 @@ function portsOf(input: TopologyModelInput): string[] {
   return [
     ...input.neighbors.flatMap((n) => [n.local_port, n.remote_port]), ...input.uplinkPorts.map((p) => p.port_name),
     ...input.overrides.flatMap((o) => [o.a_port, o.b_port]), ...input.macPorts.map((m) => m.port_name),
+    ...input.primaries.flatMap((p) => [p.node_port, p.other_port]), ...input.portInfo.map((p) => p.port_name),
   ].filter((p): p is string => typeof p === "string" && p.trim() !== "");
 }
 
@@ -304,6 +305,11 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
     // Stesso MAC vero → stesso MAC finto degli host e dei vicini; la porta passa dal vocabolario delle porte; il timestamp resta (come nei vicini).
     macPorts: input.macPorts.map((m) => ({ ...m, mac: mac(m.mac) as string, port_name: porta(m.port_name) })),
     overrides: input.overrides.map((o) => ({ ...o, a_port: porta(o.a_port), b_port: porta(o.b_port) })),
+    primaries: input.primaries.map((p) => ({ ...p, node_port: porta(p.node_port), other_port: porta(p.other_port) })),
+    portInfo: input.portInfo.map((p) => ({ ...p, port_name: porta(p.port_name) })),
+    // Le VM e gli host dei cluster portano nomi, IP e MAC veri dei clienti: nelle fixture non entrano.
+    vms: [],
+    scanHosts: [],
   };
 }
 

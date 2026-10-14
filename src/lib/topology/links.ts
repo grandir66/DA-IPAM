@@ -7,6 +7,7 @@
  */
 import { parseDbDate } from "@/lib/db-date";
 import {
+  LINK_ATTRS_DEFAULT,
   LINK_SOURCE_RANK,
   type LinkSource,
   type MapLink,
@@ -154,7 +155,7 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex): { links: 
     }
     merged.set(key, {
       id: `link:${key}`, a: c.a, aPort: c.aPort, b: c.b, bPort: c.bPort, source: c.source, sources: [c.source],
-      uplinkFrom: c.uplinkFrom, lastSeen: c.lastSeen, daysUnseen: null, stale: false,
+      uplinkFrom: c.uplinkFrom, lastSeen: c.lastSeen, daysUnseen: null, stale: false, ...LINK_ATTRS_DEFAULT,
     });
   }
 

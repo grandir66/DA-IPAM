@@ -9,9 +9,9 @@
  * server) diventa un collegamento «mac_table»; gli altri sono client contati
  * sulla porta, con nome e IP se l'host è noto; il numero sul riquadro conta
  * solo i client freschi, i vecchi restano nell'elenco «visto l'ultima volta».
- * Logica pura.
+ * I MAC delle VM (vmMacs) non sono client e non creano collegamenti. Logica pura.
  */
-import type { MapLink, PortClients, TopologyModelInput } from "@/lib/topology/model-types";
+import { LINK_ATTRS_DEFAULT, type MapLink, type PortClients, type TopologyModelInput } from "@/lib/topology/model-types";
 import { type NodeIndex, resolveNode } from "@/lib/topology/node-index";
 import { nodeClass } from "@/lib/topology/identity";
 import { normalizeMacForStorage, normalizePortNameForMatch } from "@/lib/utils";
@@ -26,6 +26,7 @@ export function attachMacs(
   input: TopologyModelInput,
   idx: NodeIndex,
   links: MapLink[],
+  vmMacs: ReadonlySet<string> = new Set(),
 ): { portClients: PortClients[]; clientCount: Record<string, number>; attachLinks: MapLink[] } {
   const portKey = (node: string, port: string) => `${node}|${normalizePortNameForMatch(port)}`;
   const linkPorts = new Set<string>();
@@ -44,6 +45,8 @@ export function attachMacs(
     const n = idx.nodes.get(node);
     const mac = normalizeMacForStorage(r.mac);
     if (!n || !mac || linkPorts.has(portKey(node, r.port_name))) continue;
+    // Spec §11.5: il MAC di una VM sta dentro il suo hypervisor, non su una porta dello switch.
+    if (vmMacs.has(mac)) continue;
     const k = portKey(node, r.port_name);
     const ms = parseDbDate(r.timestamp).getTime();
     if (input.nowMs - ms <= soglia) perPort.set(k, (perPort.get(k) ?? new Set()).add(mac));
@@ -76,7 +79,7 @@ export function attachMacs(
         linked.add(key);
         attachLinks.push({
           id: `mac:${key}`, a: best.node, aPort: best.port, b: other.id, bPort: "", source: "mac_table", sources: ["mac_table"],
-          uplinkFrom: other.id, lastSeen: best.ts, daysUnseen, stale,
+          uplinkFrom: other.id, lastSeen: best.ts, daysUnseen, stale, ...LINK_ATTRS_DEFAULT,
         });
       }
       continue;

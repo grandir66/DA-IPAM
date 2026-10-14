@@ -6,7 +6,7 @@ import type { ModelDeviceRow, ModelHostRow, ModelNeighborRow } from "@/lib/topol
 
 const dev = (id: number, name: string, host: string): ModelDeviceRow => ({
   id, name, host, device_type: "router", vendor: "mikrotik", model: null, enabled: 1, host_id: null, physical_device_id: null,
-  location_id: null, controller_mac: null, uplink_mac: null, uplink_remote_port: null, uplink_seen_at: null, topology_hidden: 0, port_count: 0,
+  location_id: null, controller_mac: null, uplink_mac: null, uplink_remote_port: null, uplink_seen_at: null, uplink_type: null, topology_hidden: 0, port_count: 0,
 });
 const host = (id: number, ip: string, mac: string | null, hostname: string | null, classification = "router"): ModelHostRow => ({
   id, network_id: 1, ip, mac, hostname, custom_name: null, classification, status: "online", physical_device_id: null,

@@ -42,13 +42,19 @@ export const IDENTITY_TYPES: readonly string[] = [
   "router", "firewall", "switch", "access_point", "server", "server_linux", "server_windows", "hypervisor", "nas", "storage",
 ];
 
-export type NodeClass = "infra" | "ap" | "att" | "client";
+export type NodeClass = "infra" | "ap" | "hyper" | "att" | "client";
 
-/** Ruolo nella mappa (spec §10.3): i client non sono nodi della mappa automatica. */
-export function nodeClass(n: Pick<MapNode, "type">): NodeClass {
+/**
+ * Ruolo nella mappa (spec §10.3, §11.5): i client non sono nodi della mappa automatica.
+ * Un hypervisor è un apparato `hypervisor`, oppure un server/NAS con fornitore Proxmox o VMware.
+ */
+export function nodeClass(n: Pick<MapNode, "type"> & { vendor?: string | null }): NodeClass {
   if (n.type === "router" || n.type === "firewall" || n.type === "switch") return "infra";
   if (n.type === "access_point") return "ap";
-  if (["server", "server_linux", "server_windows", "hypervisor", "nas", "storage"].includes(n.type)) return "att";
+  if (n.type === "hypervisor") return "hyper";
+  if (["server", "server_linux", "server_windows", "hypervisor", "nas", "storage"].includes(n.type)) {
+    return /^(proxmox|vmware)/i.test(n.vendor?.trim() ?? "") ? "hyper" : "att";
+  }
   return "client";
 }
 

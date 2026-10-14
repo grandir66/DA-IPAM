@@ -190,3 +190,122 @@ test("host server visto solo dal router sul bridge: da sistemare, non radice del
   assert.ok(!buildTree(model, autoVisible(model), ["dev:1"]).roots.includes("host:1"));
   assert.equal(model.counts.isolatedDevices, 2, "il conteggio resta degli apparati");
 });
+
+// Task 1b: i MAC che il router vede sulle sue porte fisiche (bridge host) propongono
+// ciò che c'è attaccato, ma solo come RIPIEGO. Una porta del router che porta a un
+// ramo intero vede decine di apparati: sul cliente A, trattare ogni MAC su una
+// porta fisica come un cavo avrebbe dato ~230 collegamenti falsi.
+const RTR = dev(1, { name: "RTR-1", device_type: "router", host: "10.0.0.1" });
+const SRV_MAC = "02:00:00:00:bb:07";
+
+test("router: un server visto solo su ether7 del router → collegamento router ↔ server", () => {
+  const i = input({
+    devices: [RTR, dev(2), dev(3), dev(7, { name: "SRV-7", device_type: "server", host: "10.0.1.7" })],
+    knownMacs: [{ device_id: 7, mac: SRV_MAC }],
+    macPorts: [mp(1, SRV_MAC, "ether7")],
+  });
+  assert.deepEqual(run(i).attachLinks.map((l) => [l.a, l.aPort, l.b, l.source]), [["dev:1", "ether7", "dev:7", "mac_table"]]);
+});
+
+test("router: le righe vecchie dell'ARP (bridge, VLAN, VRRP) restano ignorate", () => {
+  const i = input({
+    devices: [RTR, dev(2), dev(3), dev(7, { name: "SRV-7", device_type: "server", host: "10.0.1.7" })],
+    knownMacs: [{ device_id: 7, mac: SRV_MAC }],
+    macPorts: [mp(1, SRV_MAC, "bridge"), mp(1, SRV_MAC, "vlan10"), mp(1, SRV_MAC, "vrrp_vlan10")],
+  });
+  assert.deepEqual(run(i).attachLinks, []);
+});
+
+// Switch SW-4 su ether2 del router; dietro 20 MAC: 18 client, l'AP-5 (che SW-4 vede sulla sua Port 5,
+// una porta di bordo) e lo switch SW-6 (uplink UniFi verso SW-4).
+function ramoSuEther2() {
+  const swMac = "02:00:00:00:cc:04", apMac = "02:00:00:00:cc:05", sw6Mac = "02:00:00:00:cc:06";
+  const clienti = Array.from({ length: 18 }, (_, k) => mac(300 + k));
+  return input({
+    devices: [
+      RTR, dev(2), dev(3),
+      dev(4, { name: "SW-4", host: "10.0.0.4", controller_mac: swMac }),
+      dev(5, { name: "AP-5", device_type: "access_point", host: "10.0.0.5" }),
+      dev(6, { name: "SW-6", host: "10.0.0.6", controller_mac: sw6Mac, uplink_mac: swMac, uplink_seen_at: RECENTE }),
+    ],
+    knownMacs: [{ device_id: 5, mac: apMac }],
+    macPorts: [
+      ...[swMac, apMac, sw6Mac, ...clienti].map((m) => mp(1, m, "ether2")),
+      mp(4, apMac, "Port 5"),
+    ],
+  });
+}
+
+test("router: uno switch su ether2 con dietro 20 MAC → router ↔ switch; l'AP che lo switch vede su una porta di bordo sta sotto lo switch", () => {
+  const r = run(ramoSuEther2());
+  const coppie = [...r.links, ...r.attachLinks].map((l) => [l.a, l.b].sort().join("—")).sort();
+  assert.ok(coppie.includes("dev:1—dev:4"), `router ↔ SW-4: ${coppie.join(", ")}`);
+  assert.ok(coppie.includes("dev:4—dev:5"), "AP-5 sotto SW-4");
+  assert.ok(!coppie.includes("dev:1—dev:5"), "AP-5 non sotto il router");
+  assert.ok(!coppie.includes("dev:1—dev:6"), "SW-6 ha già il padre (uplink UniFi)");
+  const rl = r.attachLinks.find((l) => l.a === "dev:1" && l.b === "dev:4");
+  assert.equal(rl?.aPort, "ether2");
+  assert.equal(r.clientCount["dev:1"], undefined, "i 18 MAC dietro lo switch non diventano client del router");
+});
+
+test("router: un apparato con uplink UniFi verso uno switch e visto anche su una porta del router resta sotto lo switch", () => {
+  const swMac = "02:00:00:00:cc:04", apMac = "02:00:00:00:cc:05";
+  const i = input({
+    devices: [
+      RTR, dev(2), dev(3),
+      dev(4, { name: "SW-4", host: "10.0.0.4", controller_mac: swMac }),
+      dev(5, { name: "AP-5", device_type: "access_point", host: "10.0.0.5", controller_mac: apMac, uplink_mac: swMac, uplink_seen_at: RECENTE }),
+    ],
+    macPorts: [mp(1, apMac, "ether5")],
+  });
+  const r = run(i);
+  const coppie = [...r.links, ...r.attachLinks].map((l) => [l.a, l.b].sort().join("—"));
+  assert.ok(coppie.includes("dev:4—dev:5"));
+  assert.ok(!coppie.includes("dev:1—dev:5"), coppie.join(", "));
+});
+
+test("router: un server sulla stessa porta di uno switch, che nessuno switch vede, non si attacca al router (lo switch può essere il suo padre)", () => {
+  const swMac = "02:00:00:00:cc:04";
+  const i = input({
+    devices: [
+      RTR, dev(2), dev(3),
+      dev(4, { name: "SW-4", host: "10.0.0.4", controller_mac: swMac }),
+      dev(7, { name: "SRV-7", device_type: "server", host: "10.0.1.7" }),
+    ],
+    knownMacs: [{ device_id: 7, mac: SRV_MAC }],
+    macPorts: [mp(1, swMac, "sfp-sfpplus1"), mp(1, SRV_MAC, "sfp-sfpplus1")],
+  });
+  const coppie = run(i).attachLinks.map((l) => [l.a, l.b].join("—"));
+  assert.deepEqual(coppie, ["dev:1—dev:4"]);
+});
+
+test("router: un server con un LLDP verso uno switch fuori da quel ramo ha già il padre: niente collegamento dal router", () => {
+  const i = input({
+    devices: [RTR, dev(2), dev(3), dev(7, { name: "SRV-7", device_type: "server", host: "10.0.1.7" })],
+    knownMacs: [{ device_id: 7, mac: SRV_MAC }],
+    neighbors: [
+      { device_id: 2, local_port: "Port 1", remote_device_name: "SW-3", remote_port: "Port 1", protocol: "lldp", remote_ip: "10.0.0.3", remote_mac: null, timestamp: RECENTE, source: "device" },
+      { device_id: 2, local_port: "Port 8", remote_device_name: "SRV-7", remote_port: "eno1", protocol: "lldp", remote_ip: "10.0.1.7", remote_mac: null, timestamp: RECENTE, source: "device" },
+    ],
+    macPorts: [mp(1, SRV_MAC, "ether7")],
+  });
+  const r = run(i);
+  assert.deepEqual(r.attachLinks, []);
+  assert.ok(r.links.some((l) => l.a === "dev:2" && l.b === "dev:7"));
+});
+
+test("router: due switch su ether2 legati da un LLDP, nessuno col verso noto: non si sa chi sta sopra, niente collegamento", () => {
+  const a = "02:00:00:00:cc:04", b = "02:00:00:00:cc:08";
+  const i = input({
+    devices: [
+      RTR, dev(2), dev(3),
+      dev(4, { name: "SW-4", host: "10.0.0.4", controller_mac: a }),
+      dev(8, { name: "SW-8", host: "10.0.0.8", controller_mac: b }),
+    ],
+    neighbors: [
+      { device_id: 4, local_port: "Port 2", remote_device_name: "SW-8", remote_port: "Port 1", protocol: "lldp", remote_ip: "10.0.0.8", remote_mac: null, timestamp: RECENTE, source: "device" },
+    ],
+    macPorts: [mp(1, a, "ether2"), mp(1, b, "ether2")],
+  });
+  assert.deepEqual(run(i).attachLinks.filter((l) => l.a === "dev:1"), []);
+});

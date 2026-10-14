@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildLinks } from "@/lib/topology/links";
+import { buildLinks, isPhysicalPort } from "@/lib/topology/links";
 import { buildNodeIndex } from "@/lib/topology/node-index";
 import type { ModelNeighborRow, TopologyModelInput } from "@/lib/topology/model-types";
 import { dev, host } from "./support/righe";
@@ -124,8 +124,8 @@ test("router: un solo vicino LLDP su una porta fisica è diretto", () => {
   assert.deepEqual(run(i).links.map((l) => [l.a, l.aPort, l.b, l.source]), [["dev:1", "ether3", "dev:2", "lldp"]]);
 });
 
-test("router: porte logiche (VLAN, VRRP, liste con punto o virgola) non sono dirette", () => {
-  for (const porta of ["vlan10", "vrrp1", "ether1-2.5,bridge", "ether1.20"]) {
+test("router: porte logiche (VLAN, VRRP, sottointerfacce, tunnel, bridge in testa a una lista) non sono dirette", () => {
+  for (const porta of ["vlan10", "vrrp1", "ether1.20", "eoip-tunnel1", "wlan1", "bridge,ether3"]) {
     const i = input({ devices: [rtr(1), dev(2)], neighbors: [via(2, { local_port: porta })] });
     assert.deepEqual(run(i).links, [], porta);
   }
@@ -157,4 +157,47 @@ test("switch (non router) con più vicini su una porta: comportamento invariato"
     neighbors: [via(2, { local_port: "bridge" }), via(3, { local_port: "bridge" })],
   });
   assert.deepEqual(run(i).links.map((l) => [l.a, l.b]), [["dev:1", "dev:2"], ["dev:1", "dev:3"]]);
+});
+
+// Task 1b: `ether1-2.5` è una porta da 2,5G rinominata (su tutti e tre i router del cliente A), e MNDP
+// riporta la porta di un bridge come «ether3,bridge»: sono porte fisiche. Si decide dal prefisso.
+test("porta fisica: ether1-2.5 e «ether3,bridge» sì; VLAN, sottointerfacce, tunnel e wlan no", () => {
+  for (const p of ["ether1-2.5", "ether3,bridge", "ether7", "sfp-sfpplus1", "sfp1", "sfp28-1", "combo1", "qsfp28-1-1", "bond1", "Port 24", "GigabitEthernet0/1"]) {
+    assert.equal(isPhysicalPort(p), true, p);
+  }
+  for (const p of ["", "bridge", "bridge,ether3", "vlan10", "vrrp_vlan10", "ether1.20", "eoip-tunnel1", "wlan1", "wifi1", "wg0", "lo", "pppoe-out1", "Gi0/1.10"]) {
+    assert.equal(isPhysicalPort(p), false, p);
+  }
+});
+
+test("router: un solo vicino MNDP su «ether3,bridge» è diretto, sulla porta ether3", () => {
+  const i = input({ devices: [rtr(1), dev(2)], neighbors: [via(2, { local_port: "ether3,bridge" })] });
+  assert.deepEqual(run(i).links.map((l) => [l.a, l.aPort, l.b, l.source]), [["dev:1", "ether3", "dev:2", "mndp"]]);
+});
+
+// Task 1b: MNDP è un broadcast UDP e attraversa gli switch: «ti vedo e mi vedi» via MNDP non prova un cavo.
+// Sul cliente A il router 1 sentiva il router 2 su ether1-2.5, che invece va allo switch 112 (LLDP).
+function dueRouter(protocollo: "mndp" | "lldp") {
+  return input({
+    devices: [rtr(1), rtr(2), dev(3), dev(4)],
+    neighbors: [
+      nb(1, { local_port: "ether1-2.5", remote_ip: "10.0.0.3", remote_device_name: "SW-3", protocol: "lldp" }),
+      nb(1, { local_port: "ether1-2.5", remote_ip: "10.0.0.2", remote_device_name: "RTR-2", protocol: protocollo }),
+      nb(2, { local_port: "ether3", remote_ip: "10.0.0.1", remote_device_name: "RTR-1", protocol: protocollo }),
+      nb(2, { local_port: "ether3", remote_ip: "10.0.0.4", remote_device_name: "SW-4", protocol: "lldp" }),
+      nb(3, { local_port: "Port 47", remote_ip: "10.0.0.1", remote_device_name: "RTR-1", remote_port: "ether1-2.5", protocol: "lldp" }),
+    ],
+  });
+}
+
+test("router: MNDP su ether1-2.5 confermato dai due lati via MNDP → nessun collegamento fra i router", () => {
+  const coppie = run(dueRouter("mndp")).links.map((l) => [l.a, l.b]);
+  assert.ok(!coppie.some(([a, b]) => a === "dev:1" && b === "dev:2"), JSON.stringify(coppie));
+  assert.ok(coppie.some(([a, b]) => a === "dev:1" && b === "dev:3"), "lo switch che vede il router via LLDP resta");
+});
+
+test("router: lo stesso caso via LLDP dai due lati → collegamento fra i router", () => {
+  const l = run(dueRouter("lldp")).links.find((x) => x.a === "dev:1" && x.b === "dev:2");
+  assert.ok(l);
+  assert.equal(l.source, "lldp");
 });

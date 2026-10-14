@@ -1,7 +1,8 @@
 import type { NetworkDevice } from "@/types";
 import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString, getDb } from "@/lib/db";
 import { safeDecrypt } from "@/lib/crypto";
-import type { PortInfo } from "./switch-client";
+import type { MacTableEntry, PortInfo } from "./switch-client";
+import { parseMikrotikInterfaceTypes, parseMikrotikMacTable } from "./mikrotik-porte";
 import { getSnmpPortSchema } from "./snmp-port-schema";
 import { sshExec as transportSshExec } from "./ssh-transport";
 import type { SshOptions } from "./ssh-transport";
@@ -94,6 +95,10 @@ export interface RouterClient {
   getNeighbors?(): Promise<NeighborEntry[]>;
   /** Tabella di routing (multi-vendor SSH + SNMP) */
   getRoutingTable?(): Promise<RouteEntry[]>;
+  /** Solo MikroTik SSH: `/interface bridge host print terse` — il MAC sulla porta del cavo (sola lettura). */
+  getBridgeHosts?(): Promise<MacTableEntry[]>;
+  /** Solo MikroTik SSH: `/interface print terse` — nome dell'interfaccia → tipo (sola lettura). */
+  getInterfaceTypes?(): Promise<Map<string, string>>;
 }
 
 /**
@@ -157,6 +162,9 @@ export async function createRouterClient(device: NetworkDevice): Promise<RouterC
         return snmpClient.testConnection();
       },
       getDhcpLeases: client.getDhcpLeases,
+      // Niente ripiego SNMP: un errore qui deve arrivare al resoconto, non diventare «nessuna riga».
+      getBridgeHosts: client.getBridgeHosts,
+      getInterfaceTypes: client.getInterfaceTypes,
       getNeighbors: client.getNeighbors
         ? async () => {
             try { return await client.getNeighbors!(); } catch { /* ignore */ }
@@ -668,6 +676,12 @@ async function createMikrotikClient(device: NetworkDevice, creds: DeviceCreds): 
     async getRoutingTable() {
       const output = await execCommand("/ip route print terse");
       return parseMikrotikRoutes(output);
+    },
+    async getBridgeHosts() {
+      return parseMikrotikMacTable(await execCommand("/interface bridge host print terse"));
+    },
+    async getInterfaceTypes() {
+      return parseMikrotikInterfaceTypes(await execCommand("/interface print terse"));
     },
   };
 }

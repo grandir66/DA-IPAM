@@ -67,7 +67,7 @@ import {
   MAC_PORT_RETENTION_DAYS,
 } from "@/lib/db-tenant";
 import { unifiJobKind } from "@/lib/scheduled-job-types";
-import { macPortListFromPorts } from "@/lib/devices/mac-port-list";
+import { leggiMacPorteRouter } from "@/lib/devices/mikrotik-porte";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
 // db-tenant, che sotto tsx non va mai caricato con `await import()` (ADR 0002).
@@ -584,6 +584,8 @@ export type RunArpPollOptions = {
   onlyEnrichIps?: string[];
   /** Se true, non importa lease DHCP MikroTik (evita host extra durante scoperta rete). */
   skipDhcpLeases?: boolean;
+  /** Solo per le prove: il client del router al posto di quello vero (SSH/SNMP). */
+  creaClientRouter?: typeof createRouterClient;
 };
 
 export async function runArpPoll(
@@ -614,13 +616,14 @@ export async function runArpPoll(
     devices = [device];
   }
 
+  const porteNonLette: string[] = []; // router la cui bridge host non si è letta: nel resoconto
   for (const device of devices) {
     try {
       if (device.device_type === "hypervisor") {
         continue;
       }
       if (networkDeviceUsesArpPoll(device)) {
-        const client = await createRouterClient(device);
+        const client = await (options?.creaClientRouter ?? createRouterClient)(device);
         const entries = await client.getArpTable();
 
         // Prima aggiorna hosts con MAC e vendor, poi upsertArpEntries (così host_id in arp_entries è corretto)
@@ -805,13 +808,18 @@ export async function runArpPoll(
           });
 
           upsertSwitchPorts(device.id, switchPorts);
-          // Spec §10.5: l'elenco dei MAC per porta si salva (prima si contava e si buttava).
-          salvaMacPorta(
-            device.id,
-            macPortListFromPorts(portInfos, macsByPortByIndex, macsByPortByName, normalizePortNameForMatch).map((e) => ({
-              ...e, vlan: null, port_status: null, speed: null,
-            })),
-          );
+          // Fase 2b, Task 1b: l'ARP di un router non va più in mac_port_entries — la sua
+          // `interface=` è bridge/VLAN/VRRP, non il cavo. I MAC per porta vengono dalla bridge host, sotto.
+        }
+
+        // MAC per porta del router: la bridge host sulle porte fisiche (ether, bond), in sola lettura.
+        // Un errore non ferma il resto del giro: va nel resoconto, col solo codice (niente MAC né IP).
+        const porte = await leggiMacPorteRouter(client);
+        if (porte.righe) {
+          salvaMacPorta(device.id, porte.righe.map((e) => ({ ...e, port_name: e.port_name.trim() })));
+        } else if (porte.errore) {
+          console.warn(`[ARP Poll] apparato #${device.id}: porte fisiche non lette (${porte.errore})`);
+          porteNonLette.push(`${device.name} (${porte.errore})`);
         }
 
         // Neighbors LLDP/CDP/MNDP
@@ -945,9 +953,10 @@ export async function runArpPoll(
     }
   }
   const network = networkId != null ? networks.find((n) => n.id === networkId) : null;
-  const phase = networkId != null && network
+  const base = networkId != null && network
     ? `ARP poll completato per ${network.name}`
     : "ARP poll completato";
+  const phase = porteNonLette.length > 0 ? `${base}; porte fisiche non lette: ${porteNonLette.join(", ")}` : base;
   return { phase };
 }
 

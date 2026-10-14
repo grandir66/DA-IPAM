@@ -54,10 +54,31 @@ function isRouterNode(idx: NodeIndex, id: string): boolean {
   return t === "router" || t === "firewall";
 }
 
-/** Porta fisica: non bridge, VLAN, VRRP, né un nome logico («ether1-2.5,bridge», liste, sottointerfacce). */
-function isPhysicalPort(port: string): boolean {
-  const p = port.trim().toLowerCase();
-  return p !== "" && !/^(bridge|vlan|vrrp)/.test(p) && !/[.,]/.test(p);
+/**
+ * Porte fisiche MikroTik per prefisso (Task 1b): `ether1-2.5` è una ether rinominata (porta da 2,5G),
+ * `sfp-sfpplus1`, `sfp28-1`, `combo1`, `qsfp28-1-1`, `bond1` (un fascio di cavi verso un apparato).
+ * Dopo il numero può venire solo un suffisso col trattino: `ether1.20` resta una sottointerfaccia.
+ */
+const MIKROTIK_FISICA = /^(ether|sfp-sfpplus|sfp28-|sfp|combo|qsfp\w*?-?|bond)\d+(-[\w.]+)?$/;
+/** Interfacce che non sono un cavo: bridge, VLAN, VRRP, tunnel, wireless, loopback, PPP. */
+const LOGICA = /^(bridge|vlan|vrrp|eoip|gre|ipip|6to4|vxlan|wg|wireguard|ovpn|pppoe|pptp|l2tp|sstp|lte|wlan|wifi|lo$|loopback|veth)/;
+
+/**
+ * La porta fisica di un nome di porta, o null. MNDP riporta la porta di un bridge come «ether3,bridge»:
+ * conta il primo elemento. Un nome MikroTik si riconosce dal prefisso (`MIKROTIK_FISICA`); per gli
+ * altri vale la regola della tappa 0 (niente bridge/VLAN/VRRP, niente punti: «Gi0/1.10» è una sottointerfaccia).
+ */
+export function physicalPortName(port: string): string | null {
+  const primo = port.split(",")[0].trim();
+  const p = primo.toLowerCase();
+  if (p === "" || LOGICA.test(p)) return null;
+  if (MIKROTIK_FISICA.test(p)) return primo;
+  if (port.includes(",") || p.includes(".")) return null;
+  return primo;
+}
+
+export function isPhysicalPort(port: string): boolean {
+  return physicalPortName(port) !== null;
 }
 
 function mergeInto(link: MapLink, c: Candidate): void {
@@ -128,20 +149,30 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex): { links: 
   }
   // Spec §11.1: un router sente tutti gli annunci del suo segmento, anche quelli dietro uno switch.
   // Un suo vicino diventa collegamento solo se è diretto; gli altri restano negli indici (abbinamento, «non visto»).
-  const conferme = new Set<string>(); // «x>y»: x vede y su una sua porta, o c'è un uplink fra loro
+  // Task 1b: la conferma vale per LLDP e CDP, che gli switch non inoltrano; MNDP è un broadcast UDP
+  // che attraversa gli switch, quindi «ti vedo e mi vedi» via MNDP non prova un cavo.
+  const conferme = new Set<string>(); // «x>y»: x vede y su una sua porta via LLDP/CDP, o c'è un uplink fra loro
   for (const c of candidates) if (c.source === "unifi_uplink") { conferme.add(`${c.a}>${c.b}`); conferme.add(`${c.b}>${c.a}`); }
-  for (const r of resolved) if (!isRouterNode(idx, r.a) || isPhysicalPort(r.n.local_port)) conferme.add(`${r.a}>${r.b}`);
+  for (const r of resolved) {
+    if (sourceOfProtocol(r.n.protocol) === "mndp") continue;
+    if (!isRouterNode(idx, r.a) || isPhysicalPort(r.n.local_port)) conferme.add(`${r.a}>${r.b}`);
+  }
+  // «ether3» e «ether3,bridge» sono la stessa porta: si contano i vicini sulla porta fisica.
+  const portaDi = (local: string) => physicalPortName(local) ?? local;
   const sullaPorta = new Map<string, Set<string>>();
   for (const r of resolved) {
-    const k = `${r.a}|${r.n.local_port}`;
+    const k = `${r.a}|${portaDi(r.n.local_port)}`;
     sullaPorta.set(k, (sullaPorta.get(k) ?? new Set()).add(r.b));
   }
   for (const { n, a, b } of resolved) {
+    let aPort = n.local_port;
     if (isRouterNode(idx, a)) {
-      const diretto = isPhysicalPort(n.local_port) && (sullaPorta.get(`${a}|${n.local_port}`)?.size ?? 0) === 1;
+      const fisica = physicalPortName(n.local_port);
+      const diretto = fisica !== null && (sullaPorta.get(`${a}|${fisica}`)?.size ?? 0) === 1;
       if (!diretto && !conferme.has(`${b}>${a}`)) continue;
+      if (fisica) aPort = fisica;
     }
-    candidates.push({ a, aPort: n.local_port, b, bPort: n.remote_port, source: sourceOfProtocol(n.protocol), lastSeen: n.timestamp, uplinkFrom: null });
+    candidates.push({ a, aPort, b, bPort: n.remote_port, source: sourceOfProtocol(n.protocol), lastSeen: n.timestamp, uplinkFrom: null });
   }
 
   const merged = new Map<string, MapLink>();

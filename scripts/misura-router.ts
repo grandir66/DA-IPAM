@@ -52,6 +52,7 @@ async function main(): Promise<number> {
   tenantDb.getTenantDb(tenant);
   const { buildTopologyModel } = await import("../src/lib/topology/model");
   const { buildTree, autoVisible, proposeHead } = await import("../src/lib/topology/tree");
+  const { nodeClass } = await import("../src/lib/topology/identity");
   const m = tenantDb.withTenant(tenant, () => buildTopologyModel(tenantDb.getTopologyModelInput(2)));
 
   const tipo = new Map(m.nodes.map((n) => [n.id, n.type]));
@@ -64,6 +65,8 @@ async function main(): Promise<number> {
   const tree = buildTree(m, autoVisible(m), head ? [head] : []);
   const padre: Record<string, string> = {};
   for (const [padreId, figli] of tree.children) for (const f of figli) padre[f] = isRouter(padreId) ? "router" : "altro";
+  // Task 1b: apparati (non client) senza un padre nell'albero automatico, radice proposta esclusa.
+  const senzaPadre = m.nodes.filter((n) => nodeClass(n) !== "client" && n.id !== head && !(n.id in padre)).length;
   const out: Record<string, unknown> = {
     collegamenti_che_toccano_un_router_per_fonte: toccano,
     apparati_isolati: m.counts.isolatedDevices,
@@ -72,6 +75,7 @@ async function main(): Promise<number> {
     radici_albero_automatico: tree.roots.length,
     da_sistemare: m.isolated.length,
     figli_di_router: Object.values(padre).filter((v) => v === "router").length,
+    apparati_senza_padre: senzaPadre,
   };
   if (salva) fs.writeFileSync(salva, JSON.stringify(padre));
   if (confronta) {

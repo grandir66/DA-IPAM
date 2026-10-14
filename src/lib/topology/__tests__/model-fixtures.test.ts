@@ -63,9 +63,12 @@ test("Domarc: i doppi apparato/host si fondono (spec §2: almeno i 5 Proxmox)", 
 // cliente-a: deviceLinks 78->83, attached 36->62, unmatched 13, fused 87->93, promote 3->5, suspicious 7->2, isolated 10->5).
 // Task 1 fase 2b (spec §11.1, 14/10): ciò che un router vede sul bridge non è un cavo, e un suo vicino conta solo se diretto:
 // attached domarc 18->11, cliente-a 62->50 (links 38->31 e 145->133), promote 12->9 e 5->3. Gli apparati collegati agli switch non cambiano.
+// Task 1b fase 2b (14/10): «ti vedo e mi vedi» via MNDP non conferma più un collegamento di un router (MNDP attraversa
+// gli switch). Cliente A: cade il collegamento MNDP fra i router 2 e 3, confermato solo da MNDP (deviceLinks 83->82,
+// links 133->132). Le porte della fixture sono anonime («porta-N»): le regole sul nome della porta qui non si vedono.
 const MISURATI: Record<string, Partial<Record<string, number>>> = {
   "topologia-domarc.json": { deviceLinks: 20, attachedLinks: 11, unmatchedNeighbors: 9, isolatedDevices: 22, fusedHosts: 59, promoteProposals: 9, suspiciousTypes: 17 },
-  "topologia-cliente-a.json": { deviceLinks: 83, attachedLinks: 50, unmatchedNeighbors: 13, isolatedDevices: 5, fusedHosts: 93, promoteProposals: 3, suspiciousTypes: 2 },
+  "topologia-cliente-a.json": { deviceLinks: 82, attachedLinks: 50, unmatchedNeighbors: 13, isolatedDevices: 5, fusedHosts: 93, promoteProposals: 3, suspiciousTypes: 2 },
 };
 for (const [nome, attesi] of Object.entries(MISURATI)) {
   test(`${nome}: conteggi misurati`, () => {
@@ -135,7 +138,7 @@ test("cliente A: uplink salvati e collegamenti unifi_uplink presenti", () => {
 // del modello sul dato vero: nodi, collegamenti, apparati isolati, client freschi. Se cambiano si legge il perché.
 const MISURATI_DATO_VERO: Record<string, { nodes: number; links: number; isolatedDevices: number; clients: number }> = {
   "topologia-domarc.json": { nodes: 83, links: 31, isolatedDevices: 22, clients: 0 },
-  "topologia-cliente-a.json": { nodes: 358, links: 133, isolatedDevices: 5, clients: 168 },
+  "topologia-cliente-a.json": { nodes: 358, links: 132, isolatedDevices: 5, clients: 168 }, // 133->132: Task 1b, vedi MISURATI
 };
 for (const [nome, atteso] of Object.entries(MISURATI_DATO_VERO)) {
   test(`${nome}: conteggi principali uguali a quelli del dato vero (copie del 13/10)`, () => {

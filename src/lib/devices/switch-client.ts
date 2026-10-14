@@ -22,6 +22,8 @@ import {
 } from "./hp-vendor";
 import { createWinrmClient } from "./winrm-client";
 import { sshExec as transportSshExec } from "./ssh-transport";
+// Un solo parser della bridge host per switch e router (scarta le righe locali, legge vid).
+import { parseMikrotikMacTable } from "./mikrotik-porte";
 
 type DeviceCreds = { username?: string; password?: string };
 
@@ -595,25 +597,6 @@ function createGenericSwitchClient(device: NetworkDevice, creds: DeviceCreds): P
 }
 
 // Parsers
-function parseMikrotikMacTable(output: string): MacTableEntry[] {
-  const entries: MacTableEntry[] = [];
-  for (const line of output.split("\n")) {
-    const macMatch = line.match(/mac-address=([0-9A-Fa-f:]+)/);
-    const ifMatch = line.match(/on-interface=(\S+)/);
-
-    if (macMatch) {
-      entries.push({
-        mac: macMatch[1].toUpperCase(),
-        port_name: ifMatch?.[1] || "unknown",
-        vlan: null,
-        port_status: null,
-        speed: null,
-      });
-    }
-  }
-  return entries;
-}
-
 function parseCiscoMacTable(output: string): MacTableEntry[] {
   const entries: MacTableEntry[] = [];
   for (const line of output.split("\n")) {

@@ -376,8 +376,11 @@ prevalgono sul §10 dove lo contraddicono.
   gli annunci del suo segmento, anche quelli dietro uno switch. Un vicino di un router è
   **diretto** solo se: (a) è visto su una porta fisica (non `bridge`, VLAN, VRRP, bond
   logico) **e** (b) è l'unico vicino su quella porta, oppure è l'apparato che dall'altro
-  lato vede il router sulla sua porta (conferma dai due lati: LLDP/MNDP dell'altro apparato
-  o uplink UniFi). Gli altri vicini del router non creano collegamenti (restano nei dati,
+  lato vede il router sulla sua porta (conferma dai due lati: LLDP/CDP dell'altro apparato
+  o uplink UniFi). **MNDP non conferma**: è un annuncio di segmento che attraversa gli
+  switch, quindi due router che si sentono via MNDP non provano un cavo fra loro (sul cliente
+  A creava un falso collegamento fra due router; revisione finale, M-5, 14/10). MNDP vale
+  solo come «unico vicino su una porta fisica». Gli altri vicini del router non creano collegamenti (restano nei dati,
   servono all'abbinamento e alla «non vista»).
 - I tre host Proxmox sono censiti come apparati di tipo **«server»**: per la mappa sono
   hypervisor (fornitore o scansione Proxmox).
@@ -388,6 +391,26 @@ prevalgono sul §10 dove lo contraddicono.
   **6 dei 10 «apparati isolati» sono VM** di quel cluster.
 - Sulle porte: velocità nota su 326 porte su 828 (10M-10G), PoE su 461 (consumo su 81).
   Il tipo di uplink degli AP (cavo o wireless/mesh) la lettura UniFi di oggi non lo salva.
+
+### 11.1 bis Le porte fisiche del router (14/10, dopo l'indagine sulla v0.3.279)
+
+Riccardo: «i link proposti dal router dovrebbero prevedere tutto quello che è collegato alle
+porte». L'indagine ha trovato che le righe MAC del router non venivano dalla tabella bridge host
+ma dall'**ARP**, che riporta l'interfaccia di livello 3 (bridge, VLAN, VRRP): porte fisiche
+quasi zero. Regola:
+
+- il router legge `/interface bridge host` (porta del bridge e VLAN, righe locali scartate) e
+  `/interface print` (il tipo); si salvano in `mac_port_entries` solo le righe su porte di tipo
+  `ether` (sfp compresi) o `bond`. Bridge, VLAN, VRRP, tunnel e wlan non sono cavi. L'ARP non
+  scrive più le porte; resta per gli indirizzi;
+- **ripiego «porta di bordo»**: una porta fisica con un solo apparato dietro, non spiegato da
+  collegamenti più forti (correzioni, uplink, LLDP/CDP, tabella MAC degli switch), è un
+  collegamento del router. Una porta di passaggio (un ramo intero dietro) non genera nulla; con
+  due apparati di rete sulla stessa porta, nessun collegamento;
+- le porte instradate fuori dal bridge (WAN, ponti radio) si vedono con ARP e con MNDP/LLDP, non
+  con la bridge host. Il nome non basta a dire se una porta è fisica (`ether1-2.5` lo è);
+- la lettura dei router parte da un job `arp_poll` senza rete, perché la regola d'avvio dello
+  scheduler spegne la scansione veloce sulle reti da /22 in su (incidente del 25/05).
 
 ### 11.2 Interazione
 
@@ -453,3 +476,7 @@ dai client wireless e dal tipo dato a mano.
 | D · Raccolta | tipo e principale dei collegamenti nel DB; tipo di uplink UniFi; job «lettura hypervisor» con le schede vive | **completo** (schema, scritture a ogni lettura, nuovo tipo di job) |
 | E · Motore | verifica dei collegamenti a mano, scelta del principale, attributi del collegamento, hypervisor e VM | leggero |
 | F · Pagina | trascinamento, tasto destro, barra chiudibile, «Collega a…», VM espandibili, stile dei collegamenti | leggero |
+
+**Rilasciato (14/10).** v0.3.279: tappa 0. v0.3.280: tappe D, E, F più la lettura delle porte
+fisiche del router (§11.1 bis, Task 1b) e le correzioni della revisione finale. Cosa è stato
+deciso strada facendo, e cosa resta aperto: `docs/adr/0010-topologia-fase2b-collegamenti-e-vm.md`.

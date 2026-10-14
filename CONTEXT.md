@@ -1,105 +1,55 @@
 # DA-IPAM — Context per onboarding agente / sviluppatore
 
-Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUDE.md) per le regole tecniche vincolanti. Mappa ecosistema → `~/Progetti/Domarc/README.md`.
-
-Versione corrente: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non scriverla qui: va stale). Creato 2026-07-25 dall'analisi post-spostamento in `~/Progetti/Domarc/`.
-
-> **Manutenzione**: aggiorna questo file quando cambia architettura, moduli, flusso di rilascio o stato prod — non per ogni release. Le voci datate portano la data.
+Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUDE.md). Mappa ecosistema → `~/Progetti/Domarc/README.md`. Versione: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non scriverla qui). Accessi, IP e utenze: `ACCESSI.md` + vault (repo pubblico: niente nomi di clienti, IP, MAC).
+> **Manutenzione**: aggiorna quando cambia architettura, moduli, rilascio o stato prod. Le voci datate portano la data. Tetto ~10k caratteri: il dettaglio storico va negli ADR.
 
 ## 1. Cos'è
 
-> **Decisione 2026-10-12 (Riccardo) — non riaprire: la logica multi-tenant è morta, un'installazione = un cliente.** Il codice resta a tenant (hub + un DB per tenant) e `withTenantFromSession` resta obbligatorio, perché senza contesto si scrive in `DEFAULT.db` e i dati spariscono. Ma il tenant **non è un confine di sicurezza**: passaggi di un utente fra tenant, dati di un cliente visibili a un altro, Wazuh o LibreNMS condivisi fra clienti **non sono difetti da correggere**.
+> **Decisione 2026-10-12 (Riccardo) — non riaprire: la logica multi-tenant è morta, un'installazione = un cliente.** Il codice resta a tenant (hub + un DB per tenant) e `withTenantFromSession` resta obbligatorio (senza contesto si scrive in `DEFAULT.db`). Il tenant **non è un confine di sicurezza**: dati di un cliente visibili a un altro non sono difetti.
 
-**DA-INVENT** (alias DA-IPAM): IPAM/inventario per appliance cliente Domarc (nato multi-tenant, vedi decisione sopra) + hub di **9 moduli** security/network. Next.js 16 App Router + React 19 + TS strict, custom server [server.ts](server.ts) (tsx) che ospita lo scheduler node-cron. better-sqlite3 WAL, NextAuth v5 beta, Tailwind v4 + shadcn v4 (`@base-ui/react`), Zod v4.
+**DA-INVENT** (alias DA-IPAM): IPAM/inventario per appliance cliente + hub di **9 moduli** security/network (`src/lib/modules/registry.ts`, `access: native|external`). Next.js 16 + React 19 + TS strict, custom server `server.ts` (tsx) con scheduler node-cron. better-sqlite3 WAL, NextAuth v5 beta, Tailwind v4 + shadcn v4 (`@base-ui/react`), Zod v4. Facade `src/lib/db.ts` → `db-tenant.ts` / `db-hub.ts`. Nessun framework migrazioni: `ALTER TABLE` idempotente inline. `agent/` = pacchetto Python con versioning proprio.
 
-- **Hub + spoke**: un DB SQLite per tenant (`data/tenants/<CODE>.db`) + `data/hub.db` (utenti, registry tenant, settings globali, profili template). Facade: `src/lib/db.ts` → `db-tenant.ts` / `db-hub.ts`; contesto tenant via `withTenantFromSession()` (`src/lib/api-tenant.ts`, ~65 route).
-- **Nessun framework migrazioni**: `ALTER TABLE` idempotente inline negli `*-schema.ts`.
-- UI: 33 route in `src/app/(dashboard)/`; API in `src/app/api/`.
-- `agent/`: pacchetto Python `da_invent_agent` con versioning indipendente (`agent-vX.Y.Z`).
+> **Regola di Riccardo (12/10) — non riaprire:** le appliance dei clienti **non** si integrano in DA-Auth: niente `DAAUTH_URL` né pulsante Domarc. L'accesso Domarc vale solo per l'hub. Il codice di T3-29 è annullato (`fbca510`): per rimetterlo `git revert fbca510`.
 
-> **Regola di Riccardo (2026-10-12) — non riaprire:** le appliance dei clienti (DTS e le prossime) **non** si integrano nell'autenticazione Domarc (DA-Auth): niente `DAAUTH_URL` né pulsante Domarc su un'appliance cliente. L'accesso Domarc vale solo per l'hub di Domarc (VM 533). Il controllo «solo chi è dichiarato» (SEC-4, T3-29) è rimandato finché non si verifica in DA-Auth chi dei 3 utenti dell'hub è dichiarato per DA-IPAM. Il codice di T3-29 è nella storia di `dev` e annullato (`6c8a415`, annullato da `fbca510`): per rimetterlo basta `git revert fbca510`. Il ramo `tappa3a/permessi` è stato cancellato il 13/10 nella pulizia dei rami (copia di tutti i rami in `~/Documents/backup-git/DA-IPAM-rami-20261013.bundle`).
+## 3. Flusso di rilascio (CRITICO)
 
-## 2. I 9 moduli (sorgente di verità: `src/lib/modules/registry.ts`)
-
-`edge · patch_management · network_services · librenms · graylog · wazuh · meshcentral · inventory_agent · nis2_inventory` — ciascuno con `access: native` (UI dentro DA-IPAM) o `external` (dashboard esterna). Gating menu via `/api/modules` ← `resolveModules()`. Doc per-modulo: `docs/modules/`.
-
-**Salute moduli**: `src/lib/modules/health.ts` (cache 60s) sonda solo i 7 moduli con servizio esterno/probe — `inventory_agent` e `nis2_inventory` sono toggle locali, **di proposito** senza probe né repair (la route `/api/modules/[key]/repair` li rifiuta).
-
-## 3. Flusso di rilascio (CRITICO — non violare)
-
-- Branch di lavoro: **`dev`** (unico pushabile). `main` avanza SOLO via **promote in-app**: `src/app/api/system/promote/route.ts` (merge `--no-ff origin/dev` + push, PAT cifrato in `hub.settings`). `main` indietro di ~100+ commit su dev = **fisiologico**: le appliance cliente pullano `main`.
-- Canale update appliance: `src/app/api/system/update-channel/route.ts` → `DA_INVENT_BRANCH` in `.env.local`, consumato da `da-invent-update.service`.
-- Ogni modifica: `npm run version:release` + `git push origin dev` (vedi skill `release`).
-- Prod ufficiale hub: **VM 533, `192.168.4.8`**, `/opt/da-invent`, `da-invent.service`; dopo `git pull` sempre `npm run build` (skill `deploy-prod`). **L'hub segue il ramo `dev`**, non `main` (verificato 2026-10-12: v0.3.258, gira con `tsx server.ts`); `main` è il canale delle appliance cliente.
-- **ATTENZIONE — `dev` arriva anche a DTS** (verificato 2026-10-12): l'appliance DTS (`DTS-Inventory`, 172.16.0.2, tenant 71734, `/opt/da-ipam`, servizio `da-ipam`) segue **`dev`** con `da-ipam-update.timer` ogni 15 minuti (`scripts/auto-update.sh` → git pull + npm install + setup-winrm-venv + build + restart). Quindi **un push di codice su `dev` è un rilascio al cliente DTS** (build + riavvio entro 15 minuti): su `dev` solo codice pronto per la produzione. Un commit di soli `docs/` o `.md` aggiorna i file senza riavviare (dalla v0.3.267). Riparato il 12/10 (v0.3.265-267): venv WinRM senza pip, restart che cercava solo `da-invent`, «Aggiorna» dall'interfaccia che lasciava l'app spenta. **Mai `npm run build` a mano senza riavviare subito dopo**: Next carica i file della build a richiesta e il processo acceso smette di funzionare. Proxmox di DTS: 172.16.1.141, .142, .144.
-
-## 4. Integrazione cross-repo (loose-coupled HTTP)
-
-- **DA-Vul-can / Scanner-Edge**: gestione findings nativa in `/vulnerabilities`; connessione = sola config (tabella tenant `vuln_scanners`); pin SPKI del cert edge al primo Test connessione. Sync: `src/lib/vuln/sync-job.ts` (`runVulnSync`). Health-check hub: `/api/system-credentials/[id]/test` → `/scanner-edge-version`. Vault credenziali condiviso: `src/lib/credentials-vault.ts`.
-- L'edge parla con DA-IPAM via `infra/scanner-edge/.../routes/api_v1_ipam.py` (lato DA-Vul-can): ensure-network, sync host, trigger Greenbone.
-- **Deploy-Appliance**: installa DA-IPAM via git clone (`main`); punti di contatto locali: `scripts/appliance-*.sh|ts`, `src/lib/integrations/meshcentral/install.ts`, `.env.example` (variabili iniettate dall'installer).
+- Branch: **`dev`** (unico pushabile). `main` avanza SOLO via promote in-app; le appliance cliente pullano `main`. Ogni modifica: `npm run version:release` + `git push origin dev`.
+- L'hub (VM 533, `/opt/da-invent`) segue **`dev`**; dopo `git pull` sempre `npm run build`. **Mai `npm run build` senza riavviare subito**: Next carica i file a richiesta e il processo acceso smette di funzionare.
+- **ATTENZIONE: `dev` arriva anche all'appliance del cliente A** (`da-ipam-update.timer` ogni 15 minuti: pull + build + restart). Un push di codice su `dev` è un rilascio al cliente: su `dev` solo codice pronto. Un commit di soli `docs/` o `.md` non riavvia.
+- Integrazioni: DA-Vul-can / Scanner-Edge (`vuln_scanners`, pin SPKI), Deploy-Appliance (installa via git `main`). Vedi README del padre.
 
 ## 5. Tooling
 
-- `.claude/`: hook PostToolUse (tsc incrementale) + PreToolUse (blocca force-push main e `--no-verify`); skill `release`, `deploy-prod`, `winrm-kerberos`; rules `api-routes`, `client-components`, `db-access`.
-- Test: `npm test` (node test runner, **1.440 test verdi** il 2026-10-12 sera, v0.3.272). Lanciarli con `DA_INVENT_DATA_DIR` puntato a una cartella temporanea: alcuni test aprono hub/tenant DB. Type-check: `npx tsc --noEmit` (pulito). Lint: 0 errori, 81 avvisi.
-- CI `.github/workflows/ci.yml`: Node 22, lint advisory, type-check, test, build, pytest agente. Nessun test di interfaccia. **Permessi delle API** (dal 12/10, T3-24/T3-30): il censimento `src/lib/permessi/rotte.ts` (prova `rotte-censite.test.ts`, debiti vuoti) e la verifica dal di fuori `scripts/verifica-permessi.sh`, **solo in locale** con l'app accesa; matrice in `docs/auth-matrix.md` (`npx tsx scripts/audit-api-auth.ts docs/auth-matrix.md`).
+- `npm test` (node test runner; **~2.030 test verdi** il 14/10, ultimo cancello completo). Con `DA_INVENT_DATA_DIR` su una cartella temporanea. `npx tsc --noEmit`; lint 0 errori. CI: Node 22, type-check, test, build, pytest agente. Permessi API: `src/lib/permessi/rotte.ts`, `scripts/verifica-permessi.sh` (solo in locale).
+- `.claude/`: hook tsc + blocco force-push main; skill `release`, `deploy-prod`, `winrm-kerberos`; rules `api-routes`, `client-components`, `db-access`.
 
-## 6. Stato & igiene (fotografia 2026-10-12)
+## 6. Stato e igiene (fotografia 2026-10-14)
 
-- **Piano di miglioramento (2026-10-12 sera) — leggere prima di toccare moduli, edge, installazione o UniFi**: nove tappe in `docs/superpowers/specs/2026-10-12-piano-miglioramento-design.md` (stato nel suo §9), decisioni in `docs/adr/0004-da-ipam-appliance-edge-guidato.md` (DA-IPAM è l'appliance; edge guidato con canale verso DA-Vul-can invariato; controller UniFi/Omada che creano oggetti). Il piano UniFi è la tappa 2, con dieci correzioni in testa. In bacheca: `lavori piano-miglioramento-da-ipam`.
-- **Controller di rete (ADR 0007, ramo `feat/controller-rete` del 13/10)**: i controller UniFi (e più avanti Omada) sono righe di `network_controllers` nel DB del cliente, con storico in `network_controller_runs` e pagina **Rete → Controller di rete** (`/controllers`); la card in Impostazioni e `/api/integrations/unifi/*` non ci sono più. Lettura in sola lettura di `stat/device` (logica della tappa 2 invariata, `src/lib/integrations/unifi-sync.ts`, ADR 0005), self-hosted con utente e password o **UniFi OS con chiave API** (`X-API-KEY`, prefisso `/proxy/network`). Pianificazione = job `unifi_sync` con `config.controller_id`, spenta di default; «ogni giorno» = 03:00. «Stato moduli» legge l'ultima lettura, non contatta i controller. La configurazione vecchia dell'hub (`integration_unifi_*`) passa da sola nella tabella una volta per tenant, solo con un tenant attivo (DTS: un controller, misurato sulla copia del 12/10). Fixture anonimizzata `src/lib/integrations/__tests__/fixtures/unifi-stat-device.json`. LLDP sta sull'apparato, mai nelle porte. Limiti aperti nell'ADR 0005 (uplink non usato, due scrittori su porte e vicini) e nell'ADR 0007 (gli apparati non sanno da quale controller vengono).
-- **Controller della rete Domarc**: UniFi OS su **UDM Beast `192.168.15.252`** (`DA-UDM-Beast`, Network 10.6.106); `192.168.15.11` è un Cloud Key (UCKP). La console fa parte dell'organizzazione cloud «Domarc» (Fabric): **gli utenti si gestiscono solo da Site Manager, un utente locale non si crea**; la chiave API si crea sulla console, app Network → icona spina in basso a sinistra (Integrations), **non** in Site Manager (una chiave cloud qui risponde 401). Chiave nel vault `da-IPAM-accessi.md`, sezione «UNIFI DOMARC». Sull'hub (tenant 70791) è il controller #1 dal 13/10: prima lettura 17 apparati (11 nuovi, 6 riconosciuti), 317 porte, 55 vicini LLDP; lettura pianificata ogni giorno alle 03:00 (job 22). Copia prima della scrittura: `data/backups/70791-pre-udm-20261013-121450.db`. **`da-omada.domarc.it` (192.168.20.5) è il controller Omada dei clienti, non della rete Domarc**: non si legge dall'hub di Domarc.
-- **DB del tenant 70791 sull'hub: 4 pagine «never used»** (`pragma quick_check`, 13/10): spazio perso, non dati rovinati; si toglie con `VACUUM` in una finestra tranquilla (2 GB, il servizio va fermato).
-- **Mappa topologia, fase 1 dati (ADR 0008, v0.3.277 su dev, cliente A e hub dal 13/10 sera)**: il modello nuovo è in `src/lib/topology/model.ts`, (la mappa vecchia `getTopologyData` è stata sostituita dalla fase 2, ADR 0009). Pagina `/topology/dati` per sede, testa e subnet. Misura sulle copie con `scripts/misura-topologia.ts`. **Trappola: i vicini non si cancellano più** (`device_neighbors` invecchia e si pota a 90 giorni solo quando l'apparato viene riscritto; l'uplink UniFi sta su `uplink_mac`/`uplink_seen_at` dell'apparato, e `switch_ports.is_uplink = 0` non vuol dire «non è un uplink»). La migrazione sta in fondo a `getTenantDb`, dopo le ricostruzioni di `network_devices`. Dove il controller non si legge da solo (cliente A) tutto è «non visto» dopo 2 giorni. Elenco completo in ADR 0008.
-- **Hub, tenant 70791a riparato il 13/10**: mancava l'indice automatico del vincolo UNIQUE di `multihomed_links` (`quick_check` → «malformed»; tabella vuota, nessun dato perso). Ricostruito con `.dump` in un file nuovo (79 tabelle, conteggi identici, integrità ok); originale in `data/tenants/70791a.db.bak-20261013-163610`. Il `sqlite3` di Ubuntu non ha `.recover` (manca `sqlite_dbpage`): si usa `.dump`. Il tenant 70791 ha ancora le 4 pagine «never used» (VACUUM da fare). Su questa VM `systemctl stop da-invent` lascia lo stato `failed`: normale, il processo esce con codice ≠0 al SIGTERM.
-- **Mappa topologia, fase 2 (ADR 0009, v0.3.278 su dev, DTS e hub dal 13/10 sera; lettura dei client UniFi accesa su DTS e sull'hub, ogni ora 7–19)**: identità degli oggetti in `src/lib/topology/identity.ts` e `node-index.ts`, "attaccati" (client sotto switch e AP, da MAC per porta) in `attach.ts`, albero in `tree.ts`, disposizione in `tree-layout.ts`, pagina in `src/components/topology/map/`, rotte `/api/topology/maps*`, misura con `scripts/misura-mac-porta.ts`. Mappe passo passo salvate (`topology_maps`), automatica ricalcolata. **Trappole**: i MAC virtuali (VRRP/HSRP) e il seriale degli host non identificano nessuno; i nomi di fabbrica, corti o numerici non fondono; il job dei client UniFi è spento di default e legge solo fra le 7:00 e le 19:59; l'abbinamento dei client richiede apparati già letti una volta col codice della fase 1 (hanno `controller_mac`); la mappa automatica di una rete grande è molto larga: si usa "passo passo". Il `DEFAULT.db` orfano dell'hub è malformato (decisione in sospeso con Riccardo).
-- **Mappa topologia (`/topology`, in `dev` dalla v0.3.260)**: React Flow + dagre, logica in `src/lib/topology/`, tabella tenant `topology_position`, API `GET/PUT /api/topology[/positions]`; spec/piano/ADR in `docs/superpowers/{specs,plans}/2026-10-12-topology-map*` e `docs/adr/0003-topology-map.md`. **Superata dalla fase 2 (ADR 0009). Sul dato vero era inservibile** (Riccardo, 13/10: «orribile, linee a caso, caotica»): la tappa 5 riparte da un progetto del motore di rappresentazione discusso con lui prima del codice, non da ritocchi.
-- Rami remoti già interamente in `dev`, da potare: `auth/accesso-domarc`, `feat/ad-health-native`, `feature/attribution-fase-3-probe`, `fix/probe-real-world`. `claude/project-thread-7swirj` ha 18 commit non in `dev`: da rivedere prima di toccarlo. Worktree orfani e stash del 07/25: non ci sono più.
-- Produzione: in `data/tenants/` oltre ai tenant registrati (`70791`, `70791a`) ci sono `DEFAULT.db` (orfano, vedi §7; sull'hub era malformato, ricostruito con `.dump` il 13/10 sera: 81 tabelle e righe identiche, originale `DEFAULT.db.bak-20261013-214254`) e un `.db` di 0 byte senza nome (apertura con codice tenant vuoto).
-- Doc superata: gli audit di maggio-luglio (`docs/audit-bug-sintesi.md`, `docs/audit/`, `WAVE-0-report.md`, `db-drift.md`) — lo stato attuale di ogni loro punto è nell'analisi del §8. `scripts/verify-bug-report.ts` è rotto (cerca una rotta rimossa). `ROADMAP-EVOLUZIONE.md` superata; `CHANGELOG.md` non rispecchia le release recenti. `docs/CLAUDE-legacy-20260511.md` = narrativa storica intenzionale.
-
-## 8. Analisi di sistema (2026-10-12)
-
-Analisi completa — architettura, difetti per area con codici (`SEC`, `NUC`, `DB`, `INV`, `MOD`, `UI`, `IG`), cosa è solido, piano a blocchi — in **`docs/analisi-sistema.md`**. È **solo locale** (escluso da git con `.git/info/exclude`) perché contiene dettagli di sicurezza e il repo GitHub è pubblico: se manca su questa macchina, chiederla sul MacBook. Le trappole che chi tocca il codice deve sapere subito:
-
-- **Corretti il 12/10 (v0.3.261-263), da non reintrodurre**: il wrapper `Select` (`components/ui/select.tsx`) ricava `items` dalle `SelectItem`, altrimenti base-ui mostra il valore grezzo; **le date del DB si leggono con `parseDbDate`** (`lib/db-date.ts`), mai `new Date(x)`, perché SQLite salva UTC senza fuso; nelle pagine rese sul server si aggiunge `timeZone: FUSO_UTENTI`; **un caricamento usa `fetchJson` + `LoadError`**, così un errore non diventa «lista vuota». Regole anche in `.claude/rules/client-components.md`.
-- **`db.ts` e `db-tenant.ts` divergono** (~43 funzioni): prima di correggere una funzione DB, guardare **da quale dei due** la importa il chiamante.
-- **Scansioni (dal 13/10, tappa 3b, [ADR 0006](docs/adr/0006-una-scansione-per-rete-e-soglia-offline.md))**: `last_run` dei job di scansione vuol dire **fine** del giro (si attende `done` di `discoverNetwork`); un giro alla volta per tenant e rete, con un lucchetto **in memoria** che vale solo perché il processo è uno: separare lo scheduler, o più processi che scansionano lo stesso tenant, richiede prima un lucchetto sul DB. Il lucchetto non ha timeout: un giro appeso tiene la rete fino al riavvio; dopo `scan_lock_alarm_minutes` il job che lo aspettava scrive la riga d'allarme, fallisce e passa alle altre reti. Lo scheduler su rete occupata aspetta la chiusura del giro altrui (non salta). La soglia offline decide solo per gli host scansionati dal giro: i sospesi degli altri restano. Ogni passaggio a offline passa da `passaggioOfflineConSoglia` (filtro sulla partenza del giro + soglia, predefinita `registra`): una scansione nuova che spegne host per un'altra via è fuori da tutto questo. La scansione veloce **manda** offline (i vecchi commenti dicevano di no): se debba farlo è ancora da decidere.
-- **Crescita del DB**: niente retention sugli storici; `mac_ip_history` registra un "cambio" ogni volta che un MAC con più IP viene visto con l'altro IP (~31.000 righe/giorno sul tenant 70791, 2,1 GB in tutto).
+- **Piano di miglioramento (12/10)**: nove tappe in `docs/superpowers/specs/2026-10-12-piano-miglioramento-design.md`; decisioni in ADR 0004. Bacheca: `lavori piano-miglioramento-da-ipam`.
+- **Controller di rete (ADR 0005, 0007)**: UniFi (Omada dopo) = righe di `network_controllers` nel DB del cliente, pagina `/controllers`, job `unifi_sync` spento di default; UniFi OS con chiave API (`X-API-KEY`). Il controller della rete Domarc è un UDM sull'hub; Omada dei clienti non si legge dall'hub. LLDP sta sull'apparato, mai nelle porte.
+- **Mappa topologia, fasi 1-2 (ADR 0008, 0009)**: modello in `src/lib/topology/` (`model.ts`, `identity.ts`, `attach.ts`, `tree.ts`, `tree-layout.ts`), pagina `src/components/topology/map/`, rotte `/api/topology/maps*`, misure `scripts/misura-topologia.ts`, `misura-mac-porta.ts`. **Trappole**: i vicini non si cancellano (invecchiano, pota a 90 giorni); `switch_ports.is_uplink = 0` non vuol dire «non uplink»; MAC virtuali (VRRP/HSRP) e seriale degli host non identificano nessuno; nomi di fabbrica o corti non fondono; il job dei client UniFi è spento di default e legge solo 7:00-19:59; l'abbinamento richiede apparati già letti con `controller_mac`; la mappa automatica di una rete grande è larghissima: si usa «passo passo». La migrazione sta in fondo a `getTenantDb`.
+- **Mappa topologia, fase 2b (ADR 0010, v0.3.279-280, spec §11)**: collegamenti a mano col principale, VM dentro gli hypervisor, tasto destro, router con le sue porte fisiche. Rilasciata il 14/10 (cliente A e hub). **Trappole nuove**:
+  - le righe MAC dei router vengono **solo dalla bridge host** sulle porte `ether`/`bond`; l'ARP non scrive più le porte (lo faceva su bridge/VLAN/VRRP). MNDP non conferma dai due lati: solo LLDP/CDP;
+  - `arp_poll` **senza rete legge tutti gli apparati**, router compresi: è il job con cui si leggono i router (acceso sul cliente A). `hypervisor_sync` acceso su cliente A e hub; si spegne cancellando il job;
+  - la regola d'avvio `scheduler-defaults` (incidente 25/05) **spegne `fast_scan`/`ping_sweep` sotto i 720 minuti sulle reti da 1024 indirizzi in su**: riaccenderli non regge al riavvio;
+  - sull'appliance del cliente A `/api/version` dà la versione nuova appena fatto il pull, **prima del riavvio**: per sapere se gira davvero si guarda `MainPID`/`ActiveEnterTimestamp` o la riga della migrazione nel journal;
+  - un INSERT diretto in `scheduled_jobs` vuole un riavvio perché lo scheduler lo veda;
+  - l'id `vm:<apparato>:<vmid>` viene dall'apparato con l'id **più basso** del cluster (anche «Aggiorna VM» rilegge quello);
+  - le VM spente ora si leggono, e i **template Proxmox contano come spente** (aperto: gonfiano «N VM»);
+  - aperti minori: principale che cade per coppia, `ether1-gateway` non più fisica per MNDP, collegamento principale `DELETE` sempre `ok`, apparato+host stessa macchina in «Da sistemare», «Aggiorna VM» mai provata con un server vero. Elenco in ADR 0010.
+- **DB dell'hub**: tenant con 4 pagine «never used» (`quick_check`): `VACUUM` in una finestra tranquilla (servizio fermo; `systemctl stop da-invent` lascia `failed`, normale). Il sqlite3 di Ubuntu non ha `.recover`: si usa `.dump`. `DEFAULT.db` orfano ricostruito il 13/10 (originale `.bak-20261013-*`); un `.db` di 0 byte senza nome.
+- **Mappa vecchia (`/topology`, ADR 0003)** superata dalla fase 2. Rami remoti già in `dev` da potare: `auth/accesso-domarc`, `feat/ad-health-native`, `feature/attribution-fase-3-probe`, `fix/probe-real-world`; `claude/project-thread-7swirj` ha 18 commit non in `dev`.
+- Doc superata: audit maggio-luglio (`docs/audit*`, `WAVE-0-report.md`), `ROADMAP-EVOLUZIONE.md`, `docs/CLAUDE-legacy-20260511.md` (storico intenzionale).
 
 ## 7. Trappola: `db-tenant` e le due istanze sotto `tsx` (2026-09-02)
 
-L'appliance esegue `tsx server.ts`, cioè **dai sorgenti**, mentre i build Next
-deduplicano i moduli. Conseguenza: **`await import()` di `db-tenant` restituisce
-una SECONDA istanza** del modulo, con la propria `AsyncLocalStorage` vuota — e da
-quel momento anche il `require()` del facade `db.ts` risolve su quella, quindi il
-contesto tenant è perso per **tutto il processo** fino al riavvio.
+L'appliance gira da sorgenti (`tsx server.ts`): **`await import()` di `db-tenant` dà una SECONDA istanza** con `AsyncLocalStorage` vuota, e il contesto tenant si perde per tutto il processo (340 job falliti in 4h40, 179 host scritti in `DEFAULT.db`). **Regola**: `db-tenant` si importa **staticamente** (prova `no-dynamic-db-tenant-import.test.ts`; restano leciti `require` e `typeof import`). Difese: `assertTenantContext()` nello scheduler, tracker `job-failure-tracker.ts`. Dettaglio: [ADR 0002](docs/adr/0002-static-db-tenant-import.md). `DEFAULT` non è un tenant registrato: il fallback silenzioso di `db.ts` è il motivo per cui una scrittura fuori contesto non fa rumore.
 
-Il difetto è **invisibile in produzione sui build Next** (DTS, appliance cliente):
-si manifesta solo dove si gira da sorgente. Costo reale: 340 job falliti in 4h40
-sul tenant 70791, con il messaggio fuorviante `Job #N non trovato` (il facade
-ripiegava in silenzio sul tenant DEFAULT, che quei job non li ha), e 179 host del
-tenant scritti dentro `DEFAULT.db` dai `fast_scan` già in corso.
+## 8. Analisi di sistema (2026-10-12)
 
-- **Regola**: `db-tenant` si importa **staticamente**. Presidiata dal test
-  invariante `src/lib/__tests__/no-dynamic-db-tenant-import.test.ts`.
-- Restano leciti `require("./db-tenant")` e `typeof import(...)` (tipo, cancellato
-  a compile-time). Importare dinamicamente **altri** moduli è sano, anche se
-  quelli importano `db-tenant` staticamente — verificato sull'appliance.
-- **Difese aggiunte**: guardia `assertTenantContext()` in `cron/scheduler.ts` (via
-  `currentFacadeTenant()` di `db.ts`: interroga la risoluzione del facade, non il
-  proprio import statico — quello vede sempre il contesto giusto e darebbe un
-  falso "tutto bene"); tracker dei fallimenti in serie
-  `src/lib/health/job-failure-tracker.ts`; allarme via
-  `src/lib/health/scheduler-health-notify.ts`.
-- Dettaglio e alternative scartate: [ADR 0002](docs/adr/0002-static-db-tenant-import.md).
-- **Rapporto dell'intervento** (sede unica, si aggiorna — non scriverne uno nuovo
-  accanto, vedi `~/Progetti/CLAUDE.md` §«I rapporti si integrano»):
-  <https://claude.ai/code/artifact/722a75ac-e824-4828-8e8a-0f20bb8c5b50>
+`docs/analisi-sistema.md` è **solo locale** (esclusa da git: dettagli di sicurezza, repo pubblico); se manca, chiederla sul MacBook. Trappole da non reintrodurre:
 
-**Igiene nota**: `data/tenants/DEFAULT.db` esiste ma `DEFAULT` **non è un tenant
-registrato** nel hub (ci sono solo `70791` e `70791a`), quindi è un file orfano:
-i 179 host contaminati non sono raggiungibili da alcuna interfaccia. Il fallback
-silenzioso a DEFAULT in `db.ts` resta il motivo per cui una scrittura fuori
-contesto non fa rumore da sola.
+- `Select` (`components/ui/select.tsx`) ricava `items` dalle `SelectItem`; **date del DB con `parseDbDate`**, mai `new Date(x)`; pagine sul server con `timeZone: FUSO_UTENTI`; **un caricamento usa `fetchJson` + `LoadError`**.
+- **`db.ts` e `db-tenant.ts` divergono** (~43 funzioni): guarda da quale dei due importa il chiamante.
+- **Scansioni (ADR 0006)**: `last_run` = **fine** del giro; un giro alla volta per tenant e rete con lucchetto **in memoria** (separare lo scheduler richiede prima un lucchetto sul DB); la soglia offline decide solo per gli host scansionati dal giro (`passaggioOfflineConSoglia`). La scansione veloce **manda** offline: se debba farlo è da decidere.
+- **Crescita del DB**: niente retention sugli storici; `mac_ip_history` ~31.000 righe/giorno sull'hub (2,1 GB).

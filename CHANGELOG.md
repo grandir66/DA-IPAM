@@ -4,6 +4,82 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-14
+
+Fase 2b della mappa (ADR 0010): rilasciata in due passi, v0.3.279 (la correzione dei
+router) e v0.3.280 (tutto il resto).
+
+### Aggiunte
+
+- **Trascinare gli oggetti sulla mappa e tasto destro.** Si trascina un oggetto
+  dall'elenco per aggiungerlo alla mappa passo passo (senza una mappa scelta, il primo
+  trascinamento chiede il nome e la crea); il tasto destro su un oggetto o su una linea
+  porta le azioni (collega, aggiungi i collegati, nascondi, promuovi ad apparato, rendi
+  principale, ignora). Prima c'era un pulsante «Inserisci» che spariva senza spiegare
+  perché. La barra dei dettagli si chiude, così la mappa prende tutto lo spazio.
+- **Collegamenti a mano con porte e tipo.** «Collega a…» chiede porta di partenza e di
+  arrivo (fra quelle note o scritte a mano), il tipo (cavo, fibra, wireless) e una nota.
+  Un collegamento a mano è «✓ confermato» se i dati lo vedono e «? solo a mano» se no, e
+  la linea lo dice in parole: chi lo ha disegnato deve poter sapere se il sistema gli dà ragione.
+- **Collegamento principale.** Quando un oggetto ha più strade verso l'albero, decide il
+  sistema (confermati e recenti, poi la fonte più affidabile); «★ Rendi principale»
+  decide Riccardo e vince sempre. Le altre strade sono «ridondanza» e si disegnano a parte,
+  accese all'apertura.
+- **Stile delle linee.** Spessore = velocità (10G, 2,5G, 1G, 100M), forma = tipo e stato
+  (ondulata per il wireless, tratteggiata «non visto da N g», puntinata per il solo a
+  mano), «⚡ N W» per il PoE. Mai il solo colore: Riccardo è daltonico.
+- **Hypervisor con le VM dentro.** Un riquadro dice «N VM, M accese ▸» e si espande con le
+  VM (accesa/spenta, IP); le VM si riconoscono dal MAC, dal nome o dall'IP che dichiarano e
+  non contano più come client della porta dello switch né come «Da sistemare» (sul cliente A,
+  23 MAC di VM tolti dai client).
+- **Job «lettura hypervisor» (`hypervisor_sync`)** una volta al giorno, spento di default, e
+  «Aggiorna VM» dal tasto destro: legge le schede vive via SSH (MAC vero, stato, velocità,
+  membri del bond), così le schede si trovano da sole sugli switch.
+- **Tipo di uplink UniFi (cavo o wireless)** salvato sull'apparato: serve a distinguere un AP
+  in mesh. Prima si buttava via.
+- **Elenco «Collegamenti ignorati»** in «Dati della mappa», con «Ripristina»: «Ignora» prima
+  non si poteva annullare dall'interfaccia.
+- Script di misura `scripts/misura-fase2b.ts` per vedere l'effetto sulla copia di un DB prima
+  di rilasciare.
+
+### Modifiche
+
+- **Un router aggiunge solo ciò che gli è collegato direttamente** (v0.3.279). Un MAC visto
+  solo dal router, sul bridge o su una VLAN, non crea più nessun collegamento, e un vicino
+  LLDP/CDP/MNDP del router vale solo se è visto su una porta fisica ed è l'unico lì, o se
+  l'altro lato lo conferma. Il router sente gli annunci di tutto il suo segmento, anche
+  quelli dietro uno switch: prima tre host Proxmox risultavano attaccati al router.
+- **Il router legge le sue porte fisiche** (bridge host e tipo delle interfacce) e propone ciò
+  che c'è su una porta di bordo come ripiego. Le righe MAC del router venivano dall'ARP, che
+  riporta l'interfaccia di livello 3 (bridge, VLAN, VRRP) e mai la porta del cavo: i router
+  mostravano pochi collegati e i due piccoli nessuno. L'ARP non scrive più le porte; le righe
+  vecchie invecchiano e si potano a 30 giorni.
+- **Conferma dai due lati solo per LLDP/CDP, non per MNDP.** MNDP attraversa gli switch e
+  confermava un collegamento falso fra due router (tolto sul cliente A).
+- **Le VM spente si leggono.** Senza, con il job acceso una VM spenta spariva dalla mappa.
+- **Una VM letta da più apparati è una sola**, con l'id dell'apparato con l'id più basso: sul
+  cliente A due apparati scansionano lo stesso cluster e le VM comparivano doppie.
+- **Un server con la scansione Proxmox è un hypervisor**, non solo chi ha il fornitore giusto.
+- **Gli apparati senza collegamenti vanno in «Da sistemare»**, non diventano radici staccate
+  dell'albero (v0.3.279).
+
+### Correzioni
+
+- **Un collegamento a mano verso una VM non censita si salvava e non compariva mai.** Ora si
+  rifiuta in parole e il menu non lo propone.
+- **Togliere un collegamento a mano toglie anche il suo «principale»**, nella stessa
+  transazione: restava una scelta orfana.
+- **Il menu del tasto destro faceva cadere la pagina**; corretto, con 13 px come minimo.
+- **Il MAC delle schede nella scheda dell'apparato Proxmox era l'indirizzo IP** (la
+  colonna prendeva il campo sbagliato).
+- **I MAC letti dalle scansioni Proxmox si validano**: le scansioni vecchie avevano un IP in
+  `mac_address`, e un IP a 12 cifre sembrava un MAC.
+- **Il log della scansione Proxmox non riporta più nomi di nodi né indirizzi**: il job ora gira
+  da solo ogni giorno.
+- **Un nome MikroTik come `ether1-vlan20` non è più una porta fisica**; `ether1-2.5` (porta
+  da 2,5G rinominata) lo è.
+- La casella del job `hypervisor_sync` si disabilita per chi non è amministratore, col motivo.
+
 ## [Non rilasciato] — 2026-10-13
 
 ### Aggiunte

@@ -58,6 +58,19 @@ contiene:
   toccano mai DA-Link**. Niente macchina scollegata dedicata: quando servono si inseriscono
   in DA-Link o nel Mac di una persona di `link-admin`, con la procedura scritta.
 
+**Resilienza della flotta** (Riccardo, 14/10: non compromettere la flotta dei servizi
+rivenduti)
+- Un rinnovo non accorcia mai la licenza in corso: una più restrittiva vale dalla fine di
+  quella attuale. Nessuna risposta di DA-Link cambia la configurazione di un'istanza.
+- Il firewall locale accetta solo i centrali, e la verifica dell'isolamento la fa anche
+  DA-ZABBIX.
+- Sulle YubiKey c'è anche una **chiave di emergenza**, più forte della firma di DA-Link.
+  Firma bollettini che ritirano la fiducia a un DA-Link compromesso, fanno lavorare la
+  flotta in modalità autonoma fino a una data e presentano il DA-Link nuovo.
+- I bollettini arrivano da un canale di riserva o si incollano a mano. La flotta si
+  riconfigura senza reinstallarla: ogni oggetto rientra con la chiave privata del proprio
+  certificato, che non è mai stata su DA-Link.
+
 Il motivo: la licenza si applica senza aprire porte verso i clienti e senza un comando di
 spegnimento che qualcuno potrebbe abusare. Un oggetto fuori regola si ferma da solo. I dati
 del cliente non diventano ostaggio della licenza. Un attacco a DA-Link non dà né i dati dei
@@ -83,6 +96,9 @@ clienti né una radice con cui impersonare siti veri.
 - **Una macchina scollegata dedicata alla CA** (Riccardo, 14/10: da evitare): le YubiKey
   tengono le chiavi fuori dai computer senza una macchina in più.
 - **Radice in un file cifrato in cassaforte**: per firmare passerebbe da una macchina accesa.
+- **Reinstallare ogni oggetto dopo una compromissione di DA-Link**: settimane di lavoro e
+  clienti fermi.
+- **Un DA-Link di riserva sempre acceso**: un secondo bersaglio con le stesse chiavi.
 - **Quattro occhi sulle azioni gravi**: non ora. Pochi nomi e MFA bastano; tutto resta nel
   registro.
 
@@ -99,6 +115,12 @@ clienti né una radice con cui impersonare siti veri.
   quell'applicativo non si collega: la verifica del certificato non si spegne.
 
 **Cosa diventa difficile in futuro:**
+
+- La chiave di emergenza è la più potente di tutte: prolunga licenze e indica il DA-Link a
+  tutta la flotta. Sta solo nelle YubiKey, e ogni bollettino resta nel registro con quale
+  YubiKey l'ha firmato.
+- Il canale di riserva va tenuto vivo anche quando non serve. Un canale mai usato è un
+  canale che il giorno dell'emergenza non funziona: per questo c'è la prova annuale.
 
 - Perdere insieme la frase di sblocco e la sua copia in cassaforte ferma tutti i clienti
   entro sei settimane. Perdere entrambe le YubiKey costringe a rifare la fiducia in ogni

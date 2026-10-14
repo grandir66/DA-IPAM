@@ -1,8 +1,9 @@
 # DA-Link e NetBird: una rete a stella fra centrali Domarc e oggetti dei clienti
 
-**Stato:** disegno approvato a voce da Riccardo il 2026-10-14, rivisto sei volte lo stesso
+**Stato:** disegno approvato a voce da Riccardo il 2026-10-14, rivisto sette volte lo stesso
 giorno (moduli; DA-Link e DA-CRM; privacy decisa dall'istanza; licenza e custodia dei segreti;
-CA interna; YubiKey al posto della macchina scollegata); documento da rileggere
+CA interna; YubiKey al posto della macchina scollegata;
+resilienza della flotta); documento da rileggere
 **Data:** 2026-10-14
 **Autore:** Riccardo Grandi, con Claude
 **Decisioni architetturali:** [ADR 0011](../../adr/0011-netbird-rete-a-stella.md) (rete),
@@ -99,6 +100,8 @@ E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
 | 19 | **All'interfaccia di DA-Link entrano poche persone nominate, con MFA**, solo dal gruppo NetBird `link-admin`; nessuna seconda conferma. | quattro occhi sulle azioni gravi; solo Riccardo |
 | 20 | **Chiavi di recupero e radici della CA vivono dentro due YubiKey in cassaforte**, generate nel dispositivo; niente macchina scollegata dedicata. DA-Link non le possiede. | nel vault delle credenziali; divisa fra persone (Shamir); macchina scollegata per la CA; radice in un file cifrato |
 | 21 | **Una CA interna rilascia un certificato a ogni installazione**, riconosciuto in automatico dagli applicativi: due radici sulle YubiKey in cassaforte, intermedia in DA-Link limitata ai nomi interni, motore `step-ca`, certificati di 4 settimane rinnovati col segreto. | certificati auto-firmati con pin al primo contatto (oggi); una CA a un livello sola in DA-Link; una CA scritta a mano |
+| 22 | **La flotta sopravvive a DA-Link.** Un rinnovo non accorcia mai la licenza in corso (una più restrittiva vale dalla fine di quella attuale); nessuna risposta di DA-Link cambia la configurazione dell'istanza; il firewall locale accetta solo i centrali; la verifica R1–R5 la fa anche DA-ZABBIX. | fiducia piena in DA-Link |
+| 23 | **Chiave di emergenza sulle YubiKey**, più forte della firma di DA-Link: firma bollettini che ritirano la fiducia a un DA-Link compromesso, fanno lavorare la flotta in modalità autonoma fino a una data e presentano il DA-Link nuovo. Arrivano da un canale di riserva o a mano. La flotta si riconfigura senza reinstallarla. | reinstallare ogni oggetto dopo una compromissione; un DA-Link di riserva sempre acceso |
 
 ## 3. Da dove si parte (verificato nel codice il 2026-10-14)
 
@@ -459,6 +462,12 @@ cifra una terza volta.
   - **l'interfaccia resta aperta in sola lettura**, con l'avviso e la data;
   - **il cliente consulta ed esporta i suoi dati**;
   - al rinnovo riparte tutto da solo, senza intervento.
+- **Un rinnovo non accorcia mai la licenza in corso.** Una licenza nuova più restrittiva
+  (scadenza più vicina, meno moduli, dichiarata scaduta) si accetta, ma **entra in vigore
+  solo quando finisce quella in corso**.
+  - Le riduzioni legittime, come un modulo disdetto, avvengono al giro successivo.
+  - Un DA-Link compromesso non può togliere niente prima della scadenza naturale, e quindi
+    non può fermare la flotta con un colpo solo (§9.5).
 - **«Spegnere» un oggetto** vuol dire non rinnovargli la licenza. Non esiste un comando di
   spegnimento: un oggetto rubato o scollegato si ferma da solo. Per tagliarlo subito fuori
   dalla rete, DA-Link lo toglie anche da NetBird (§5.4).
@@ -610,7 +619,8 @@ stare su un computer acceso vivono **dentro due YubiKey**, chiuse in cassaforte.
 - **Cosa contiene ogni YubiKey** (A e B), con le chiavi **generate dentro il dispositivo**,
   che non ne escono mai:
   - una **radice della CA**;
-  - una **chiave di recupero** dei dati.
+  - una **chiave di recupero** dei dati;
+  - una **chiave di emergenza**, per i bollettini (§9.5).
 - **Due radici, entrambe affidabili.** Gli applicativi si fidano di tutte e due le radici
   (A e B); l'intermedia è firmata da A. È la copia di riserva fatta senza mai copiare una
   chiave: una YubiKey persa o rotta non ferma niente (§9.4).
@@ -653,6 +663,113 @@ stare su un computer acceso vivono **dentro due YubiKey**, chiuse in cassaforte.
 In nessuno dei due casi si reinstalla una radice nei computer, perché le radici affidabili
 restano le stesse. È il motivo dei due livelli e delle due radici.
 
+### 9.5 Resilienza: se DA-Link si guasta o viene compromesso (decisioni 22 e 23)
+
+Riccardo (14/10): la flotta dei servizi rivenduti non deve dipendere dalla salute di DA-Link.
+Se DA-Link viene compromesso, le istanze **devono continuare a lavorare** con una chiave di
+sblocco finché non si riconfigura.
+
+#### Cosa NON può fare un DA-Link in mano a un attaccante
+
+Il disegno limita il danno prima ancora che serva l'emergenza:
+
+- **Non può fermare la flotta con un colpo solo.** Un rinnovo non accorcia mai la licenza
+  in corso: una licenza più restrittiva entra in vigore solo quando finisce quella attuale
+  (§8.2). Fermare un oggetto si può solo
+  smettendo di rinnovare (§8.2), e questo lascia **almeno sei settimane** (validità più
+  tolleranza) per accorgersene e reagire.
+- **Non può comandare le istanze.** Non ha porte verso di loro (decisione 7), e nessuna sua
+  risposta cambia la configurazione di un'istanza (§5.3). Il rinnovo consegna solo segreto,
+  licenza e certificato.
+- **Non può leggere i dati dei clienti.** Le chiavi dei dati stanno sulle istanze, quelle di
+  recupero nelle YubiKey (§9.3).
+- **Non può aprire varchi fra i clienti senza che si veda.** Col token NetBird potrebbe
+  scrivere policy fra remoti. Due difese:
+  - il firewall locale di ogni istanza ed edge accetta in ingresso sull'interfaccia NetBird
+    **solo gli indirizzi dei centrali e di `admins`**, sulle porte previste. R1 vale anche
+    sulla macchina, non solo in NetBird;
+  - la verifica R1–R5 la fa **anche DA-ZABBIX**, con una lettura sua, non solo DA-Link: un
+    DA-Link compromesso non può dichiararsi verde da solo.
+- **Può emettere certificati falsi per nomi interni.** Il danno resta limitato ai nomi
+  interni (§8.4) e finisce con la revoca dell'intermedia (sotto).
+
+#### La chiave di emergenza
+
+- Sulle due YubiKey (§9.3), accanto a radice e recupero, c'è una **chiave di emergenza**
+  (Ed25519) generata dentro il dispositivo. Ogni oggetto ne riceve la parte pubblica
+  all'installazione, e la riconosce come **più forte** della firma di DA-Link.
+- **DA-Link non la possiede.** Con la chiave di emergenza si firma un solo tipo di
+  documento: il **bollettino di emergenza**. Può dire quattro cose:
+  1. **«Non fidarti più di questo DA-Link»**: ritira la chiave di firma delle licenze e
+     l'intermedia della CA indicate. Da quel momento l'oggetto rifiuta ogni rinnovo firmato
+     con quelle chiavi.
+  2. **«Continua a lavorare fino al giorno X»**: prolunga licenza e tolleranza, per tutta la
+     flotta o per i `codcli` elencati. È la «chiave di sblocco»: l'oggetto lavora in
+     **modalità autonoma**, senza DA-Link, fino a quella data.
+  3. **«Il nuovo DA-Link è questo»**: indirizzo, chiave di firma e intermedia nuove, a cui
+     l'oggetto passa da solo.
+  4. **«Fine dell'emergenza»**.
+- **Cosa il bollettino non può fare**: leggere dati, cambiare la configurazione delle
+  istanze, eseguire comandi. Anche la chiave di emergenza, se rubata, servirebbe solo a
+  prolungare licenze o a indicare un DA-Link: per questo sta nelle YubiKey, mai su un
+  computer.
+- **Ha una data e un numero progressivo.** L'oggetto accetta solo bollettini più nuovi
+  dell'ultimo visto, così un bollettino vecchio non si può ripresentare.
+
+#### Come arriva il bollettino, senza DA-Link
+
+È firmato, quindi **il canale non deve essere fidato**: conta la firma, non chi lo
+consegna.
+
+- **Canale automatico.** Ogni oggetto controlla una volta al giorno un indirizzo di riserva
+  indipendente da DA-Link: un file statico pubblicato fuori dalla sua macchina. Quale
+  indirizzo, si decide nel piano (§15).
+- **Canale a mano.** Il tecnico incolla il bollettino nell'interfaccia dell'istanza o lo
+  copia via SSH. Serve quando l'oggetto non raggiunge il canale automatico, o per sbloccare
+  un solo cliente.
+- **A ogni bollettino applicato** l'oggetto lo mostra a schermo (modalità autonoma, fino a
+  quando, firmato da quale YubiKey) e lo dichiara nel segnale di vita.
+
+#### La procedura di compromissione (scritta, provata una volta all'anno)
+
+1. **Isolare.**
+   - Un amministratore di NetBird, una persona e non DA-Link, disattiva l'utente di servizio
+     di DA-Link.
+   - La VM di DA-Link si spegne e si conserva per l'analisi.
+2. **Sbloccare la flotta.** Con una YubiKey si firma il bollettino: «non fidarti più di
+   questo DA-Link» + «continua fino al giorno X» (di norma 90 giorni). Si pubblica sul
+   canale di riserva; dove serve, si incolla a mano.
+3. **Revocare.** Con la radice si revoca l'intermedia compromessa. La lista di revoca
+   aggiornata viaggia nel bollettino.
+4. **Ricostruire.**
+   - DA-Link si reinstalla su una VM nuova, da zero, con chiave di firma nuova, intermedia
+     nuova firmata da una YubiKey e utente di servizio NetBird nuovo.
+   - Nessun segreto del vecchio si riusa.
+5. **Riconfigurare la flotta senza reinstallarla.**
+   - Un secondo bollettino presenta il DA-Link nuovo.
+   - Ogni oggetto rientra dimostrando di possedere la **chiave privata del proprio
+     certificato** (nata sull'oggetto, mai stata su DA-Link: §8.4). I segreti vecchi si
+     considerano bruciati, e l'oggetto riceve un pacchetto tutto nuovo.
+   - Un oggetto che non riesce a rientrare, per esempio con il certificato scaduto, rientra
+     con un codice monouso del tecnico, come all'ingresso.
+6. **Chiudere.**
+   - Bollettino «fine dell'emergenza».
+   - Verifica R1–R5 da DA-ZABBIX.
+   - Rapporto nel registro.
+
+#### DA-Link solo guasto (non compromesso)
+
+Si usa solo il passo 2, senza ritirare la fiducia: «continua fino al giorno X». Poi si
+ripristina DA-Link dal backup (§9.2). La flotta non se ne accorge.
+
+#### Cosa continua a funzionare in modalità autonoma
+
+- **L'istanza fa tutto il suo lavoro locale**: scansioni, inventario, moduli, interfaccia.
+- **I flussi verso i centrali** (heartbeat a da-vulcan, segnale di vita) reggono finché
+  valgono il certificato e il tunnel, e riprendono alla riconfigurazione. È Domarc a vedere
+  meno, non il cliente a perdere il servizio.
+- **La chiave dei dati resta quella**: si riprotegge col primo segreto nuovo.
+
 ## 10. Il passaggio
 
 Ogni fase si chiude da sola. Ci si può fermare dopo qualunque fase senza lasciare niente a metà.
@@ -672,8 +789,8 @@ Ogni fase si chiude da sola. Ci si può fermare dopo qualunque fase senza lascia
 - da-vulcan e DA-ZABBIX entrano in NetBird nei gruppi `centro-*`, **senza lasciare
   Tailscale**.
 - Il nome stabile per da-vulcan (§11, rischio 3).
-- **La cerimonia delle chiavi** con la procedura scritta: le due YubiKey generano radici e
-  chiavi di recupero, e vanno in cassaforte (§9.3, §9.4). L'intermedia nasce dopo, quando c'è
+- **La cerimonia delle chiavi** con la procedura scritta: le due YubiKey generano radici,
+  chiavi di recupero e chiavi di emergenza, e vanno in cassaforte (§9.3, §9.4). L'intermedia nasce dopo, quando c'è
   la macchina di DA-Link.
 
 Esce quando: i centrali sono connessi in NetBird, la verifica R1–R4 fatta a mano è verde e i
@@ -700,6 +817,9 @@ Esce quando:
   certificato;
 - un riavvio di DA-Link lo lascia bloccato finché non si sblocca, e la VM nel frattempo
   continua a lavorare;
+- **la prova di compromissione**, sulla VM di prova: bollettino firmato con la YubiKey,
+  modalità autonoma, DA-Link nuovo, rientro con la chiave del certificato, fine
+  dell'emergenza;
 - chiave e VM si tolgono subito dopo.
 
 **Fase 2 — Pilota DTS**: istanza IPAM `172.16.0.2`, edge `172.16.1.141`, `proxy-dts`.
@@ -916,7 +1036,19 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
     chiave di recupero (di prova) la chiave dei dati si riapre;
   - DA-Link bloccato non emette, non rinnova e non legge segnali;
   - un certificato per un nome fuori dai limiti viene rifiutato dalla CA; un certificato
-    revocato viene rifiutato dagli applicativi.
+    revocato viene rifiutato dagli applicativi;
+  - una licenza di rinnovo più restrittiva non cambia niente prima della fine di quella in
+    corso, e dopo si applica;
+  - un bollettino con firma non di emergenza, o più vecchio dell'ultimo visto, viene
+    rifiutato;
+  - dopo «non fidarti più di questo DA-Link», un rinnovo firmato da quello viene
+    rifiutato;
+  - in modalità autonoma l'oggetto lavora fino alla data del bollettino, e dopo si ferma
+    come a licenza scaduta;
+  - il rientro nel DA-Link nuovo riesce con la chiave del certificato dell'oggetto e
+    fallisce col solo segreto vecchio;
+  - il firewall locale rifiuta in ingresso un indirizzo NetBird che non è di un centrale
+    o di `admins`.
 - **Sul vero, dal di fuori**, in fase 2 e per ogni cliente in fase 3:
   - i flussi della fase 2, punto 3;
   - la prova d'isolamento in negativo, Wazuh compreso;
@@ -938,6 +1070,13 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
 - **Da dove viene la licenza.** Per ora la imposta in DA-Link una persona di `link-admin`.
   Più avanti potrebbe derivare dai contratti del CRM: è una decisione a parte.
 - Quando passare dalla frase di sblocco alla YubiKey (decisione 18).
+- **Il canale di riserva dei bollettini**: dove sta il file statico, indipendente da
+  DA-Link (sito pubblico Domarc, altro server, entrambi), e se gli oggetti dei clienti
+  senza uscita su Internet lo raggiungono.
+- La durata di norma della modalità autonoma (proposta: 90 giorni) e il massimo che un
+  bollettino può concedere.
+- Come i centrali riconoscono gli oggetti durante l'emergenza, se i loro certificati
+  scadono prima della riconfigurazione.
 - Il nome stabile per da-vulcan (rischio 3).
 - Il rimedio alla convivenza in `100.64.0.0/10`, se la prova della fase 0 lo richiede.
 - **L'agente Python remoto di DA-IPAM** (`agent/`, raggiunto oggi via Tailscale dalla VM 533).

@@ -480,3 +480,85 @@ dai client wireless e dal tipo dato a mano.
 **Rilasciato (14/10).** v0.3.279: tappa 0. v0.3.280: tappe D, E, F più la lettura delle porte
 fisiche del router (§11.1 bis, Task 1b) e le correzioni della revisione finale. Cosa è stato
 deciso strada facendo, e cosa resta aperto: `docs/adr/0010-topologia-fase2b-collegamenti-e-vm.md`.
+
+## 12. Mappa verticale e stampa (14/10, decisioni con Riccardo)
+
+Nasce da una domanda di Riccardo dopo il rilascio della 2b: «non avrebbe più senso una
+rappresentazione verticale, se poi si deve andare in stampa? Le caselle sono più larghe che
+alte». Le decisioni qui sotto **non si riaprono senza chiedere** e prevalgono sul §4-§5 e sul
+§10 dove li contraddicono.
+
+### 12.1 Cosa ha mostrato il dato vero (copie del 14/10, `scripts/misura-orientamento.ts`)
+
+Oggi l'albero parte dall'alto e mette i figli **affiancati**: ogni fratello costa una larghezza
+di riquadro (170-230 px), ogni livello solo un'altezza (44 px). La mappa automatica viene una
+striscia:
+
+| Mappa automatica | Oggi (dall'alto) | Da sinistra a destra (stima) |
+| --- | --- | --- |
+| cliente A (59 apparati, 24 AP, 7 livelli, 3 partenze) | 13.581 × 870 px | 2.617 × 2.462 px |
+| hub (39 apparati, 5 livelli, 5 partenze) | 9.180 × 620 px | 1.582 × 2.386 px |
+| cliente A, fogli A3 al 70 % | 7 (strisce) | 4 |
+| cliente A, fogli A4 al 70 % | 10 | 6 |
+| cliente A, «Adatta» su 1920 px | scala 0,14 (illeggibile) | larghezza piena a scala 0,73, poi si scorre |
+
+### 12.2 L'orientamento
+
+- **Due orientamenti**: **«Verticale»** (albero da sinistra a destra: un livello per colonna,
+  i fratelli **impilati**; si legge dall'alto in basso come un elenco) e **«Orizzontale»** (quello
+  di oggi). Nei dati: `lr` e `tb`.
+- **Verticale è il predefinito** per tutte le mappe, anche quelle già salvate. Ogni mappa ricorda
+  il suo orientamento (colonna `topology_maps.orientation`, per tutti quelli che la guardano: è
+  una scelta di come si consegna la mappa, non una preferenza personale). L'automatica lo ricorda
+  nella sua riga `auto`, che nasce alla prima scelta come per la testa.
+- **Interruttore** nella barra della mappa: «Verticale | Orizzontale», a due voci con il testo
+  (mai la sola icona); lo cambia un admin, gli altri vedono quello salvato.
+- **Disposizione verticale** (stesse regole di oggi, ruotate):
+  - colonna di un livello larga quanto il suo elemento più largo; fra due colonne 90 px (le
+    linee e le etichette di porta e velocità);
+  - un genitore a metà, in altezza, fra il primo e l'ultimo figlio;
+  - gli **attaccati** in elenco **sotto** il riquadro (rientro 12 px), al massimo 4 più «+ altri N»;
+  - gli **AP** senza figli in un blocco di **2 colonne** nella colonna dei figli;
+  - un hypervisor espanso si allunga verso il basso con le VM in **2 colonne**;
+  - più partenze una sotto l'altra, 60 px fra l'una e l'altra.
+- **Linee**: in verticale escono dal **lato destro** del genitore ed entrano dal **lato sinistro**
+  del figlio (a gradini, raggio 0); verso gli attaccati un tratto corto dal fondo del riquadro.
+  Lo stile delle linee (§11.4) non cambia.
+- **A schermo**: in verticale «Adatta» adatta **la larghezza** e porta in cima; la rotellina
+  **scorre** in verticale (Ctrl/pizzico per lo zoom; i pulsanti di zoom restano). In
+  orizzontale tutto come oggi.
+- **Ritocchi a mano**: un ritocco vale **nell'orientamento in cui è fatto** (colonna
+  `topology_position.orientation`; le righe di oggi valgono per `tb`). Cambiando orientamento la
+  mappa si ridispone da sola e i ritocchi dell'altro restano da parte; un ritocco nuovo sullo stesso
+  oggetto sostituisce il vecchio (una riga per mappa e oggetto). L'appartenenza alla mappa passo
+  passo (`pinned = 0`) non dipende dall'orientamento.
+
+### 12.3 La stampa
+
+- Pulsante **«Stampa»** nella barra della mappa: apre `/topology/stampa?mappa=<id|auto>` in una
+  scheda nuova, una pagina fatta per la carta (nessuna barra laterale), con **foglio** A4 o A3
+  (predefinito **A3**) e **scala** 100 % o 80 % (predefinita **100 %**: a 80 % le scritte da 13 px
+  restano sopra i 10 px). Orientamento del foglio scelto da solo (verticale od orizzontale, quello
+  con meno fogli). Si stampa o si salva in PDF dal browser.
+- **Disegno statico** (SVG, non React Flow) con le **stesse coordinate** della mappa a schermo
+  (stessa disposizione, stesso orientamento, ritocchi compresi; VM chiuse, a meno di «con le VM»)
+  e lo **stesso stile delle linee** (`edgeLook`), in bianco e nero leggibile: mai il solo colore.
+- **Fogli**: il primo foglio ha nome della mappa, data e ora (ora italiana), legenda delle linee
+  e la **panoramica** della mappa intera rimpicciolita, con la griglia dei fogli numerati
+  («riga-colonna»). Gli altri sono **tasselli** della mappa alla scala scelta, con **15 mm di
+  sovrapposizione** e in testa «Foglio 2-3 di 3×4», con le frecce ai fogli vicini. Un riquadro
+  tagliato dal bordo di un foglio compare intero in un foglio vicino (la sovrapposizione è più
+  larga del riquadro più alto).
+- L'export drawio della tappa 5 userà le stesse coordinate; qui non si fa.
+
+### 12.4 Tappe e livelli
+
+| Tappa | Contenuto | Livello |
+| --- | --- | --- |
+| G · Dati | `orientation` su `topology_maps` e `topology_position`, rotte | **completo** (schema dei DB clienti) |
+| H · Disposizione | `layoutTree` verticale, logica pura | leggero |
+| I · Pagina | interruttore, maniglie e linee ruotate, «Adatta» in larghezza, rotellina | leggero |
+| L · Stampa | pagina di stampa, tasselli, panoramica, legenda | leggero |
+
+Rilascio unico con la misura sulle copie e la conferma di Riccardo (la migrazione tocca i DB dei
+clienti).

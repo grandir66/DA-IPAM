@@ -40,7 +40,8 @@ contiene:
 - **L'arresto per licenza nasce col freno**: per un primo periodo l'oggetto segnala soltanto.
 - **I dati archiviati sono cifrati a busta.** La chiave dei dati è fissa sull'istanza ed è
   protetta due volte: dalla chiave ricavata dal segreto e dalla chiave pubblica di recupero.
-- **La CA ha due livelli e gira su `step-ca`.** La radice è fuori linea in cassaforte;
+- **La CA ha due livelli e gira su `step-ca`.** Le radici sono due, ciascuna dentro una
+  YubiKey in cassaforte;
   l'intermedia sta in DA-Link, limitata ai nomi interni. La chiave privata del certificato
   nasce sull'oggetto e non lo lascia.
 
@@ -52,8 +53,10 @@ contiene:
 
 **Custodia dei segreti**
 - Il portachiavi di DA-Link si sblocca a mano a ogni avvio; più avanti con una YubiKey.
-- La chiave di recupero dei dati e la radice della CA stanno **fuori linea, in cassaforte**,
-  in due copie, e **non toccano mai DA-Link**.
+- Le chiavi di recupero dei dati e le radici della CA nascono e restano **dentro due
+  YubiKey in cassaforte**, una radice e una chiave di recupero per ciascuna, e **non
+  toccano mai DA-Link**. Niente macchina scollegata dedicata: quando servono si inseriscono
+  in DA-Link o nel Mac di una persona di `link-admin`, con la procedura scritta.
 
 Il motivo: la licenza si applica senza aprire porte verso i clienti e senza un comando di
 spegnimento che qualcuno potrebbe abusare. Un oggetto fuori regola si ferma da solo. I dati
@@ -77,6 +80,9 @@ clienti né una radice con cui impersonare siti veri.
 - **TPM virtuale**: chi è root sulla VM accesa userebbe le chiavi.
 - **CA a un livello in DA-Link**: compromessa quella, si rifà la fiducia in tutti i computer.
 - **CA scritta a mano**: si usa un componente esistente e collaudato.
+- **Una macchina scollegata dedicata alla CA** (Riccardo, 14/10: da evitare): le YubiKey
+  tengono le chiavi fuori dai computer senza una macchina in più.
+- **Radice in un file cifrato in cassaforte**: per firmare passerebbe da una macchina accesa.
 - **Quattro occhi sulle azioni gravi**: non ora. Pochi nomi e MFA bastano; tutto resta nel
   registro.
 
@@ -86,7 +92,8 @@ clienti né una radice con cui impersonare siti veri.
   della CA, il token NetBird e i segreti degli oggetti.
 - Dopo ogni riavvio DA-Link resta fermo finché qualcuno non lo sblocca. Gli oggetti reggono
   sei settimane, e DA-ZABBIX lo deve segnalare subito.
-- Serve una **cerimonia delle chiavi** iniziale (radice e recupero) con procedura scritta,
+- Serve una **cerimonia delle chiavi** iniziale (due YubiKey: radici e recupero) con
+  procedura scritta,
   provata una volta all'anno.
 - La radice della CA va in tutti gli applicativi e nei computer dei tecnici. Finché non c'è,
   quell'applicativo non si collega: la verifica del certificato non si spegne.
@@ -94,9 +101,10 @@ clienti né una radice con cui impersonare siti veri.
 **Cosa diventa difficile in futuro:**
 
 - Perdere insieme la frase di sblocco e la sua copia in cassaforte ferma tutti i clienti
-  entro sei settimane. Perdere la radice costringe a rifare la fiducia in ogni applicativo e
+  entro sei settimane. Perdere entrambe le YubiKey costringe a rifare la fiducia in ogni
+  applicativo e
   computer.
-- Recuperare i dati di un'istanza senza segreto richiede la procedura fuori linea, con una
+- Recuperare i dati di un'istanza senza segreto richiede la procedura scritta, con una
   persona fisicamente alla cassaforte: non è un'operazione da fare di notte da remoto.
 - Ogni applicativo nuovo dell'ecosistema deve nascere con la radice nel suo archivio di
   fiducia.

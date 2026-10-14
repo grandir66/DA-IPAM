@@ -713,20 +713,25 @@ export class ProxmoxClient {
     const hosts: ProxmoxHostInfo[] = [];
     const vms: ProxmoxVM[] = [];
 
-    for (const n of nodes) {
+    // Nel log solo la posizione del nodo e il tipo d'errore: il nome del nodo e il
+    // messaggio (che può contenere l'indirizzo) non ci vanno, la lettura gira
+    // anche da sola ogni giorno (job hypervisor_sync, topologia fase 2b).
+    const tipo = (e: unknown): string => (e instanceof Error ? e.name : "errore");
+    for (const [i, n] of nodes.entries()) {
       const nodeName = n.node as string;
+      const dove = `[proxmox] nodo ${i + 1} di ${nodes.length}`;
       try {
         const hostInfo = await this.getHostInfo(nodeName);
         hosts.push(hostInfo);
       } catch (e) {
-        console.error(`Errore host ${nodeName}:`, e);
+        console.error(`${dove}: dati dell'host non letti (${tipo(e)})`);
       }
 
       try {
         const nodeVms = await this.getVMs(nodeName, options?.includeStopped ?? false);
         vms.push(...nodeVms);
       } catch (e) {
-        console.error(`Errore VM nodo ${nodeName}:`, e);
+        console.error(`${dove}: VM non lette (${tipo(e)})`);
       }
 
       if (options?.includeContainers) {
@@ -734,7 +739,7 @@ export class ProxmoxClient {
           const nodeCts = await this.getContainers(nodeName, options?.includeStopped ?? false);
           vms.push(...nodeCts);
         } catch (e) {
-          console.error(`Errore LXC nodo ${nodeName}:`, e);
+          console.error(`${dove}: container non letti (${tipo(e)})`);
         }
       }
     }

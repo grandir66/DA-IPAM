@@ -31,7 +31,7 @@ Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUD
   - da-vulcan e DA-ZABBIX sono nei gruppi `centro-*`, e Tailscale resta acceso;
   - censimento nell'appendice A della spec, decisioni 24-27.
 
-  Aperta: la verifica di un collega che sta solo in `users` (piano generale, «Avanzamento»).
+  La verifica da un collega che sta solo in `users` è fatta (14/10): **fase 0 chiusa**.
   **Niente YubiKey** (14/10 sera, decisione 28, ADR 0014): chiavi in file `age` in due
   copie, CA a un livello in DA-Link.
 

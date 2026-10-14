@@ -275,7 +275,7 @@ ssh root@<vm> 'iptables -S | grep -E "ts-input|100.64" ; ip rule ; ip route show
   del client DA-Zabbix, solo per gli utenti senza gruppi. Poi si verifica che ogni persona
   abbia `users`.
 - [x] **Passo 4: applicare** le sostituzioni del passo 2, una per una, e rileggere dopo ognuna.
-- [ ] **Passo 5: verifica dal di fuori**, fatta da Riccardo dal telefono in hotspot o da un
+- [x] **Passo 5: verifica dal di fuori**, fatta da Riccardo dal telefono in hotspot o da un
   collega fuori sede:
   - Manager e INTEGRA si aprono;
   - RDP verso RDH funziona;
@@ -322,7 +322,7 @@ ssh root@<vm> 'iptables -S | grep -E "ts-input|100.64" ; ip rule ; ip route show
 
 ### Uscita dalla fase 0
 
-- [ ] I centrali sono connessi in NetBird nei loro gruppi; R1–R4 verdi a mano; i colleghi
+- [x] I centrali sono connessi in NetBird nei loro gruppi; R1–R4 verdi a mano; i colleghi
   raggiungono ciò che raggiungevano prima (Task 4, passo 5, fatto due volte).
 - [x] La spec ha l'appendice A, il rischio 1 misurato e le decisioni del Task 2.
 - [x] Nel piano generale, «Avanzamento»: una riga con data e cosa è fatto. CONTEXT di DA-IPAM

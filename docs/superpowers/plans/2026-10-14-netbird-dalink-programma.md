@@ -116,3 +116,13 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
     (INTEGRA, Manager, RDP, DMZ, uscita);
   - ~~le YubiKey da ordinare (Task 6)~~: niente YubiKey per ora (decisione 28, ADR 0014);
   - il nodo `prova-convivenza` da togliere dalla console di Tailscale.
+- 2026-10-14 notte: **tappa A avviata, non eseguita.** Progetto DA-Link aperto in
+  `~/Progetti/Domarc/DA-Link` (remote privato `grandir66/DA-Link`, censito, cancello verde).
+  Piano dettagliato in `DA-Link/docs/superpowers/plans/2026-10-14-tappa-a-nucleo.md`, da
+  approvare ed eseguire in una sessione nuova. Decisioni dell'apertura (Riccardo, «tutto come
+  proponi»; dettaglio in `DA-Link/CONTEXT.md` §5): Python/FastAPI + SQLite; login **Entra
+  diretto** con MFA e ruolo `LinkAdmin`, non DA-Auth; VM dedicata `DA-LINK` (proposta
+  `192.168.4.44`) con dati e configurazione su volume LUKS; interfaccia `:443`, **API per le
+  macchine `:8443`**: P1 e P7 passano a 8443 (spec §4.2 corretta); nome del cliente da un ruolo
+  `link_ro` sul Postgres della `.42`. Da confermare con Riccardo: la revoca di un cliente tocca
+  solo i nodi creati da DA-Link (§5.5), non tutto `cli-<codcli>` (§5.4).

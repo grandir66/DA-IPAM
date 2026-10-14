@@ -187,14 +187,14 @@ Tutte **a senso unico**, protocollo TCP, porte esplicite. Le risposte tornano in
 
 | # | Sorgente | Destinazione | Porte | Perché | Di chi è |
 |---|---|---|---|---|---|
-| P1 | `remoto-ipam` | `centro-link` | 443 | l'istanza manda segnale di vita e inventario (decisione 7) | DA-Link |
+| P1 | `remoto-ipam` | `centro-link` | 8443 | l'istanza manda segnale di vita e inventario (decisione 7); 8443 e non 443 perché le API per le macchine stanno su una porta diversa dall'interfaccia (§9.1, deciso il 14/10 all'apertura di DA-Link) | DA-Link |
 | P2 | `remoto-edge` | `centro-vulcan` | 443 | heartbeat, risultati, tarball degli aggiornamenti | DA-Link |
 | P3 | `centro-vulcan` | `remoto-edge` | 6443 (8443 sugli edge vecchi) | l'hub comanda gli scan: dialogo esistente, non si cambia | DA-Link |
 | P4 | `zabbix-proxy` | `centro-zabbix` | 10051 | proxy in modalità active | DA-Zabbix (esiste già) |
 | P4b | `centro-zabbix` | `zabbix-proxy` | 22 | la procedura guidata di DA-Zabbix entra nel proxy per sondare le reti del cliente: è da lì che si vedono | DA-Zabbix (esiste già) |
 | P5 | `admins` | `remoto-ipam`, `remoto-edge`, `zabbix-proxy` | 22, 443, 6443 | assistenza tecnica | DA-Link |
 | P6 | `link-admin` per DA-Link, `admins` per gli altri | `centro-*` | 22, 443 | amministrazione dei centrali; DA-Link solo da `link-admin` (§9.1) | DA-Link |
-| P7 | `remoto-edge` | `centro-link` | 443 (solo API di rinnovo) | l'edge rinnova licenza e segreto (§8.2) | DA-Link |
+| P7 | `remoto-edge` | `centro-link` | 8443 (solo API di rinnovo) | l'edge rinnova licenza e segreto (§8.2) | DA-Link |
 
 Non ci sono policy da DA-Link verso le istanze: è l'istanza a chiamare (decisione 7). Se in
 futuro servisse un comando dal centro verso un'istanza, viaggerebbe come risposta a una sua

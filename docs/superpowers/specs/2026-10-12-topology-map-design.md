@@ -609,3 +609,5 @@ nome dal Proxmox. Le ridondanze a richiesta stanno nelle tappe I (schermo) e L (
 
 Rilascio unico con la misura sulle copie e la conferma di Riccardo (la migrazione tocca i DB dei
 clienti).
+
+Rilasciato in v0.3.281 il 14/10 (cliente A e hub).

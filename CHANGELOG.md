@@ -4,6 +4,63 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [0.3.281] — 2026-10-14
+
+Mappa verticale e stampa (ADR 0012, spec §12): rilasciata il 14/10 alle 14:25 ora italiana,
+sul cliente A e sull'hub.
+
+### Aggiunte
+
+- **Mappa «Verticale», predefinita.** L'albero va da sinistra a destra: un livello per
+  colonna, i fratelli uno sotto l'altro, si legge dall'alto in basso come un elenco.
+  Interruttore «Verticale | Orizzontale» nella barra; lo cambia un amministratore e vale
+  per tutti quelli che guardano quella mappa. Perché: la mappa automatica del cliente A
+  era una striscia larga più di 13.000 px, e «Adatta» la portava a uno zoom illeggibile.
+  In verticale «Adatta» riempie la larghezza e la rotellina scorre (Ctrl o il pizzico per
+  lo zoom).
+- **Stampa della mappa** («Stampa» nella barra, si apre in una scheda nuova). Foglio A3 o
+  A4, scala 100 % o 80 %, «con le VM». Il primo foglio ha nome, data e ora, legenda, la
+  mappa intera rimpicciolita con la griglia dei fogli e l'elenco dei cavi di ridondanza;
+  gli altri sono pezzi della mappa che si sovrappongono di 15 mm, numerati, con le frecce
+  ai vicini, e un riquadro tagliato dal bordo compare intero nel foglio accanto. Perché:
+  la mappa va consegnata al cliente su carta o in PDF. Il PDF si fa dal browser, con
+  margini e scala lasciati su «Predefiniti».
+- **Ridondanze a richiesta.** Si disegna solo il collegamento principale; il riquadro dice
+  «⇄ N», un clic mostra le sue ridondanze, «Mostra ridondanze» le mostra tutte. Perché: con
+  due switch centrali quasi ogni apparato ha due cavi, e le linee di riserva coprivano la
+  mappa. In stampa stanno nell'elenco «Cavi di ridondanza».
+- **Hypervisor trovati dalle VM sulla porta** (fonte «dalle VM»). Una porta di switch da
+  cui escono solo VM accese di uno stesso hypervisor è il suo cavo. Perché: sui cavi 10G
+  degli hypervisor non passa il loro MAC di gestione ma passano le VM; prima i server del
+  cluster finivano sotto lo switch di accesso, sulla porta 1G.
+- **Nome dal Proxmox sulla mappa**, con «DNS: nome di prima» sotto, quando il nome DNS di
+  un hypervisor è diverso da quello del nodo Proxmox. Solo da una scansione degli ultimi
+  30 giorni. Perché: un nome vecchio rimasto nel DNS non diceva quale server fosse.
+  L'inventario non si rinomina.
+- Script `scripts/misura-orientamento.ts`: misura sulla copia di un DB quanto è grande la
+  mappa nei due orientamenti e quanti fogli servono, prima di rilasciare.
+
+### Modifiche
+
+- **Il collegamento principale di un hypervisor è il più veloce**, poi quello con più VM;
+  «★ Rendi principale» vince sempre. Così il 10G verso il centrale è il principale e il 1G
+  di gestione una ridondanza.
+- **Un ritocco a mano vale nell'orientamento in cui è fatto.** I ritocchi di prima sono
+  orizzontali: in verticale restano da parte e ricompaiono passando a «Orizzontale». Una
+  pagina della mappa aperta prima del rilascio va ricaricata: senza, lo spostamento di un
+  oggetto non si salva (la richiesta non dice l'orientamento e viene rifiutata, invece di
+  finire nel disegno sbagliato) e «Riordina» toglierebbe i ritocchi di tutti e due.
+- «Riordina» toglie solo i ritocchi dell'orientamento a schermo.
+- Pagina della mappa e stampa usano lo stesso calcolo: la carta è identica allo schermo.
+
+### Correzioni
+
+- **«Ignora il collegamento…» non toglieva le linee nate dalla tabella MAC** (e dal ripiego
+  del router): la scelta si salvava e compariva fra gli ignorati, ma la linea restava sulla
+  mappa. Ora vale per tutte le fonti, anche per «dalle VM».
+- **La parola «ridondanza» finiva sopra i riquadri**: ora si sposta lungo la linea nel primo
+  punto libero.
+
 ## [Non rilasciato] — 2026-10-14
 
 Fase 2b della mappa (ADR 0010): rilasciata in due passi, v0.3.279 (la correzione dei

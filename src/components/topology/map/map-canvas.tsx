@@ -3,8 +3,11 @@
 /**
  * Il disegno della mappa: React Flow con i nodi FISSI nelle coordinate di
  * layoutTree. Le linee (map-edge.tsx) sono ad angolo retto con lo stile della
- * spec §11.4; le ridondanze (collegamenti fuori dall'albero) si vedono con
- * «Ridondanze». Un admin può spostare un riquadro: al rilascio si salva il
+ * spec §11.4. Le ridondanze (collegamenti fuori dall'albero) sono a richiesta
+ * (spec §12.5): il riquadro dice «⇄ N», il clic su un riquadro disegna le sue,
+ * «Mostra ridondanze» tutte (visibleEdges). Verticale (spec §12.2): linee da
+ * destra a sinistra, tratto dal fondo verso gli attaccati, la rotellina scorre
+ * (Ctrl o il pizzico per lo zoom). Un admin può spostare un riquadro: al rilascio si salva il
  * ritocco (lo calcola il chiamante con la firma), e trascinare il pallino sul
  * bordo di un riquadro fino a un altro apre «Collega a…».
  * Le linee si disegnano da `tree.links` (copie della vista con principale e
@@ -16,15 +19,14 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectionMode, ReactFlow, useReactFlow, type Edge, type Node, type NodeChange, type OnConnectEnd } from "@xyflow/react";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { isUncensusedVmId } from "@/lib/topology/map-menus";
-import { ATT_MAX, ATT_ROW, type LayoutResult } from "@/lib/topology/tree-layout";
+import { centerViewport, lineHandles, moreAttachedAt, redundancyCounts, redundantEnds, visibleEdges } from "@/lib/topology/map-screen";
+import type { LayoutResult } from "@/lib/topology/tree-layout";
 import type { MapLink } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
 import { vmChipText } from "@/lib/topology/vm-nodes";
-import { MAP_EDGE_TYPES, type MapEdgeData } from "./map-edge";
-import { HANDLE_IN, HANDLE_OUT, MAP_NODE_TYPES } from "./map-node";
+import { MAP_EDGE_TYPES, TREE_EDGE, type MapEdgeData } from "./map-edge";
+import { HANDLE_ATT, HANDLE_IN_LR, MAP_NODE_TYPES } from "./map-node";
 import type { ModelData } from "./use-topology-data";
-
-const TREE_EDGE = { stroke: "var(--foreground)", strokeWidth: 1.8 };
 
 /** Le porte viste dal genitore: «porta sua → porta mia» per il figlio `child`. */
 export function portsFrom(l: MapLink, child: string): { parentPort: string; childPort: string } {
@@ -39,6 +41,7 @@ interface Props {
   tree: TreeResult;
   layout: LayoutResult;
   selected: string | null;
+  /** «Mostra ridondanze»: tutte disegnate; altrimenti solo quelle del riquadro scelto. */
   showExtra: boolean;
   /** Solo admin: i riquadri si spostano e il ritocco si salva. */
   draggable: boolean;
@@ -84,6 +87,14 @@ export function MapCanvas(p: Props) {
   const [menu, setMenu] = useState<MenuTarget | null>(null);
 
   const { connectable, vmInfo, onToggleVms } = p;
+  const o = layout.orientation;
+  // Le ridondanze che si possono disegnare: fra due riquadri della disposizione (gli attaccati sono righe di un elenco).
+  const drawable = useMemo(() => tree.links.filter((l) => {
+    const a = layout.nodes.get(l.a), b = layout.nodes.get(l.b);
+    return !!a && !!b && a.role !== "attached" && b.role !== "attached";
+  }), [tree, layout]);
+  const redCount = useMemo(() => redundancyCounts(drawable), [drawable]);
+
   const baseNodes = useMemo((): Node[] => {
     const byId = new Map(model.nodes.map((n) => [n.id, n]));
     const out: Node[] = [];
@@ -123,6 +134,9 @@ export function MapCanvas(p: Props) {
           connectable: connectable && ln.role === "box" && !isUncensusedVmId(ln.id),
           vms: vmInfo.get(ln.id) ?? null,
           onToggleVms: vmInfo.has(ln.id) ? () => onToggleVms(ln.id) : null,
+          orientation: o,
+          redundant: redCount.get(ln.id) ?? 0,
+          redundantShown: p.showExtra || p.selected === ln.id,
         },
       });
     }
@@ -139,12 +153,12 @@ export function MapCanvas(p: Props) {
       const b = layout.nodes.get(parent);
       if (!b) continue;
       out.push({
-        id: `more:${parent}`, type: "more", position: { x: b.x + b.w + 14, y: b.y + ATT_MAX * ATT_ROW },
+        id: `more:${parent}`, type: "more", position: moreAttachedAt(o, b),
         data: { n: more }, draggable: false, selectable: false, zIndex: 2,
       });
     }
     return out;
-  }, [model, tree, layout, p.selected, p.draggable, p.plus, p.starts, p.promoteIds, connectable, vmInfo, onToggleVms]);
+  }, [model, tree, layout, o, redCount, p.showExtra, p.selected, p.draggable, p.plus, p.starts, p.promoteIds, connectable, vmInfo, onToggleVms]);
 
   const nodes = useMemo(
     () => (drag ? baseNodes.map((n) => (n.id === drag.id ? { ...n, position: { x: drag.x, y: drag.y } } : n)) : baseNodes),
@@ -153,6 +167,7 @@ export function MapCanvas(p: Props) {
 
   const edges = useMemo((): Edge[] => {
     const out: Edge[] = [];
+    const h = lineHandles(o);
     const apEdge = new Set<string>();
     for (const [child, link] of tree.via) {
       const ln = layout.nodes.get(child);
@@ -160,29 +175,39 @@ export function MapCanvas(p: Props) {
       if (ln.role === "ap") {
         if (apEdge.has(ln.parent)) continue;
         apEdge.add(ln.parent);
-        out.push({ id: `t:apg:${ln.parent}`, source: ln.parent, target: `apg:${ln.parent}`, sourceHandle: HANDLE_OUT, targetHandle: HANDLE_IN, type: "step", style: TREE_EDGE, selectable: false, focusable: false });
+        // In verticale anche questa passa dal tronco vicino al genitore, come le altre dei figli.
+        const apData: MapEdgeData = { link: null, inTree: true, labelSide: "left", orientation: o };
+        out.push({
+          id: `t:apg:${ln.parent}`, source: ln.parent, target: `apg:${ln.parent}`, sourceHandle: h.source, targetHandle: h.target,
+          ...(o === "lr" ? { type: "map", data: apData } : { type: "step", style: TREE_EDGE }), selectable: false, focusable: false,
+        });
         continue;
       }
       // L'etichetta della linea va dalla parte opposta alle porte scritte sopra il riquadro (a sinistra col «+N»).
-      const data: MapEdgeData = { link, inTree: true, labelSide: p.plus.has(child) ? "right" : "left" };
+      const data: MapEdgeData = { link, inTree: true, labelSide: p.plus.has(child) ? "right" : "left", orientation: o };
       out.push({
-        id: `t:${child}`, source: ln.parent, target: child, sourceHandle: HANDLE_OUT, targetHandle: HANDLE_IN, type: "map",
+        id: `t:${child}`, source: ln.parent, target: child, sourceHandle: h.source, targetHandle: h.target, type: "map",
         selectable: false, focusable: false, data,
       });
     }
-    if (p.showExtra) {
-      for (const l of tree.links) {
-        if (!l.redundant) continue;
-        const a = layout.nodes.get(l.a), b = layout.nodes.get(l.b);
-        if (!a || !b || a.role === "attached" || b.role === "attached") continue;
-        // Dall'alto in basso: la linea scende dal riquadro più in alto.
-        const [s, t] = a.y <= b.y ? [l.a, l.b] : [l.b, l.a];
-        const data: MapEdgeData = { link: l, inTree: false, labelSide: "left" };
-        out.push({ id: `x:${l.id}`, source: s, target: t, sourceHandle: HANDLE_OUT, targetHandle: HANDLE_IN, type: "map", selectable: false, focusable: false, data });
+    // Verticale: gli attaccati sono un elenco sotto il riquadro, legato dal fondo (in orizzontale c'è il trattino nel riquadro).
+    if (o === "lr") {
+      for (const ln of layout.nodes.values()) {
+        if (ln.role !== "attached" || !ln.parent) continue;
+        out.push({ id: `a:${ln.id}`, source: ln.parent, target: ln.id, sourceHandle: HANDLE_ATT, targetHandle: HANDLE_IN_LR, type: "att", selectable: false, focusable: false });
       }
     }
+    // Ridondanze a richiesta (spec §12.5): tutte con «Mostra ridondanze», altrimenti solo quelle del riquadro scelto.
+    for (const l of visibleEdges(drawable, { showAll: p.showExtra, selected: p.selected })) {
+      if (!l.redundant) continue;
+      const a = layout.nodes.get(l.a)!, b = layout.nodes.get(l.b)!;
+      // Orizzontale: scende dal riquadro più in alto; verticale: dal più a sinistra al più a destra.
+      const [s, t] = redundantEnds(o, a, b);
+      const data: MapEdgeData = { link: l, inTree: false, labelSide: "left", orientation: o };
+      out.push({ id: `x:${l.id}`, source: s, target: t, sourceHandle: h.source, targetHandle: h.target, type: "map", selectable: false, focusable: false, data });
+    }
     return out;
-  }, [tree, layout, p.showExtra, p.plus]);
+  }, [tree, layout, o, drawable, p.showExtra, p.selected, p.plus]);
 
   // Centra (zoom 100 %) sulla testa o sulla prima partenza quando cambia modo o mappa.
   const { centerOn, centerKey } = p;
@@ -192,7 +217,7 @@ export function MapCanvas(p: Props) {
     const el = wrapRef.current;
     if (!n || !el) return;
     centeredRef.current = centerKey;
-    void rf.setViewport({ x: el.clientWidth / 2 - (n.x + n.w / 2), y: 10, zoom: 1 });
+    void rf.setViewport(centerViewport(layout.orientation, n, { width: el.clientWidth, height: el.clientHeight }));
   }, [centerKey, centerOn, layout, rf]);
 
   const onConnectEnd: OnConnectEnd = (e, state) => {
@@ -252,6 +277,8 @@ export function MapCanvas(p: Props) {
         connectionMode={ConnectionMode.Loose}
         onConnectEnd={onConnectEnd}
         zoomOnDoubleClick={false}
+        // Verticale (spec §12.2): la mappa è alta, la rotellina scorre; lo zoom con Ctrl (o ⌘) e il pizzico.
+        {...(o === "lr" ? { panOnScroll: true, zoomOnScroll: false, zoomOnPinch: true, zoomActivationKeyCode: ["Control", "Meta"] } : {})}
         onlyRenderVisibleElements
         minZoom={0.1}
         maxZoom={2}

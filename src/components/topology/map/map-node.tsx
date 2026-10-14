@@ -8,12 +8,18 @@
  * bordo destro (admin, al passaggio del mouse) si trascina fino a un altro
  * oggetto per «Collega a…»; l'hypervisor dice «N VM, M accese ▸» e, espanso,
  * tiene in sé le etichette delle VM (nodi `vm` sopra il suo riquadro).
+ * Mappa verticale (spec §12.2): le linee entrano da sinistra ed escono da destra
+ * (maniglie `sx`/`dx`), verso gli attaccati elencati sotto il riquadro parte un
+ * tratto dal fondo (`fondo`); le maniglie dell'orizzontale (`su`/`giu`) restano.
+ * Ridondanze a richiesta (spec §12.5): «⇄ N» nel riquadro, pieno quando sono
+ * disegnate (fondo e bordo scuri, testo in grassetto: non solo il colore).
  */
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { cn } from "@/lib/utils";
-import { BOX_H, fitLabel } from "@/lib/topology/tree-layout";
+import { HANDLE_ATT, HANDLE_IN, HANDLE_IN_LR, HANDLE_OUT, HANDLE_OUT_LR } from "@/lib/topology/map-screen";
+import { ATT_INDENT, BOX_H, fitLabel } from "@/lib/topology/tree-layout";
 import { isRunning } from "@/lib/topology/vm-nodes";
-import type { MapNode, MapVm } from "@/lib/topology/model-types";
+import type { MapNode, MapOrientation, MapVm } from "@/lib/topology/model-types";
 import type { TopologyStatus } from "@/lib/topology/types";
 import { TopoIcon, typeLabel } from "./topology-icons";
 
@@ -40,6 +46,11 @@ export type BoxData = {
   /** Hypervisor con VM: «N VM, M accese» e se sono mostrate. */
   vms: { label: string; open: boolean } | null;
   onToggleVms: (() => void) | null;
+  orientation: MapOrientation;
+  /** «⇄ N»: le ridondanze di questo oggetto (spec §12.5), 0 = nessuna. */
+  redundant: number;
+  /** Le sue ridondanze sono disegnate (riquadro scelto o «Mostra ridondanze»). */
+  redundantShown: boolean;
 };
 export type VmData = { vm: MapVm; text: string; w: number; h: number; selected: boolean };
 export type AttachedData = { node: MapNode; port: string | null; selected: boolean };
@@ -48,14 +59,19 @@ export type MoreData = { n: number };
 
 const HIDDEN_HANDLE = "!pointer-events-none !opacity-0 !min-h-0 !min-w-0 !h-px !w-px !border-0";
 
-/** Le linee si agganciano qui (id fissi: il pallino di «Collega a…» è un'altra maniglia). */
-export const HANDLE_IN = "su", HANDLE_OUT = "giu";
+/** Le linee si agganciano qui (id fissi, in map-screen.ts: il pallino di «Collega a…» è un'altra maniglia). */
+export { HANDLE_ATT, HANDLE_IN, HANDLE_IN_LR, HANDLE_OUT, HANDLE_OUT_LR };
 
-function Handles() {
+/** Le maniglie dei due orientamenti ci sono sempre: quale si usa lo dice la linea (map-canvas). */
+function Handles({ att = false }: { att?: boolean }) {
   return (
     <>
       <Handle id={HANDLE_IN} type="target" position={Position.Top} isConnectable={false} className={HIDDEN_HANDLE} />
       <Handle id={HANDLE_OUT} type="source" position={Position.Bottom} isConnectable={false} className={HIDDEN_HANDLE} />
+      <Handle id={HANDLE_IN_LR} type="target" position={Position.Left} isConnectable={false} className={HIDDEN_HANDLE} />
+      <Handle id={HANDLE_OUT_LR} type="source" position={Position.Right} isConnectable={false} className={HIDDEN_HANDLE} />
+      {/* Verso gli attaccati (verticale): dal fondo, a metà del rientro con cui sono elencati. */}
+      {att && <Handle id={HANDLE_ATT} type="source" position={Position.Bottom} isConnectable={false} className={HIDDEN_HANDLE} style={{ left: ATT_INDENT / 2 }} />}
     </>
   );
 }
@@ -72,6 +88,8 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
     : [n.mgmtIp ?? typeLabel(n.type), data.clients ? `${data.clients} client` : null].filter(Boolean).join(" · ");
   const stato = STATO[status];
   const title = [n.name, n.mgmtIp, typeLabel(n.type), `stato: ${STATO_PAROLE[status]}`].filter(Boolean).join(" · ");
+  const lr = data.orientation === "lr";
+  const red = data.redundant;
   return (
     <div
       title={title}
@@ -82,7 +100,7 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
         data.selected && "ring-[3px] ring-primary ring-offset-1",
       )}
     >
-      <Handles />
+      <Handles att={lr && data.attached} />
       {data.connectable && (
         <Handle
           id="collega"
@@ -97,7 +115,22 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
         <TopoIcon type={n.type} size={26} className="shrink-0" />
         <div className="min-w-0 flex-1 leading-4">
           {/* Col «+N» in alto a destra il nome si ferma prima: lo copriva (Task 12). */}
-          <div className={cn("truncate text-[13px] font-semibold", giu && "text-destructive", data.plus > 0 && "pr-6")}>{fitLabel(n.name, w)}</div>
+          <div className={cn("flex min-w-0 items-center gap-1", data.plus > 0 && "pr-6")}>
+            <div className={cn("min-w-0 flex-1 truncate text-[13px] font-semibold", giu && "text-destructive")}>{fitLabel(n.name, red > 0 ? w - 40 : w)}</div>
+            {red > 0 && (
+              <span
+                title={data.redundantShown
+                  ? `${red} ${red === 1 ? "cavo" : "cavi"} di ridondanza, disegnati sulla mappa`
+                  : `${red} ${red === 1 ? "cavo" : "cavi"} di ridondanza: fai clic sul riquadro per vederli, o «Mostra ridondanze»`}
+                className={cn(
+                  "shrink-0 rounded-sm border border-foreground px-1 text-[13px] leading-4",
+                  data.redundantShown ? "bg-foreground font-semibold text-background" : "bg-card text-foreground",
+                )}
+              >
+                ⇄ {red}
+              </span>
+            )}
+          </div>
           {data.vms && data.onToggleVms ? (
             <button
               type="button"
@@ -116,7 +149,7 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
           )}
         </div>
       </div>
-      {data.attached && <span className="absolute top-[9px] left-full w-[10px] border-t border-muted-foreground" />}
+      {data.attached && !lr && <span className="absolute top-[9px] left-full w-[10px] border-t border-muted-foreground" />}
       {data.plus > 0 && (
         <span
           title={`${data.plus} apparati collegati non ancora nella mappa`}
@@ -130,14 +163,16 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
       )}
       {/* Le porte sopra il riquadro, a destra della linea; col «+N» in alto a
           destra vanno a sinistra della linea, dove c'è la metà intera invece di
-          50 px («bridge/…», Task 12). */}
+          50 px («bridge/…», Task 12). In verticale la linea entra da sinistra:
+          le porte stanno sopra il riquadro da sinistra, prima del «+N», dentro
+          i 18 px fra un fratello e l'altro. */}
       {data.portLabel && (
         <span
           title={data.portLabel}
-          style={{ maxWidth: w / 2 - 4 }}
+          style={{ maxWidth: lr ? w - (data.plus > 0 ? 34 : 6) : w / 2 - 4 }}
           className={cn(
-            "absolute -top-[19px] truncate text-[13px] leading-4 whitespace-nowrap",
-            data.plus > 0 ? "right-1/2 mr-1 text-right" : "left-1/2 ml-1",
+            "absolute truncate text-[13px] leading-4 whitespace-nowrap",
+            lr ? "-top-[18px] left-1" : data.plus > 0 ? "-top-[19px] right-1/2 mr-1 text-right" : "-top-[19px] left-1/2 ml-1",
             data.daysUnseen !== null ? "text-muted-foreground italic" : "text-muted-foreground",
           )}
         >
@@ -159,6 +194,7 @@ function AttachedNode({ data }: NodeProps<Node<AttachedData, "attached">>) {
         data.selected && "ring-2 ring-primary",
       )}
     >
+      <Handle id={HANDLE_IN_LR} type="target" position={Position.Left} isConnectable={false} className={HIDDEN_HANDLE} />
       <TopoIcon type={n.type} size={16} className="shrink-0" />
       <span className="truncate text-[13px] leading-4">{n.name}</span>
     </div>

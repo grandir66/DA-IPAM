@@ -3,14 +3,18 @@
 /**
  * La barra sopra la mappa: «Tutto automatico» / «Passo passo» (il segmento
  * attivo ha il fondo pieno E il «●»: doppio segnale), la scelta della mappa o
- * la testa, e a destra le ridondanze (collegamenti fuori dall'albero), zoom, «Adatta», «Riordina» e
+ * la testa, e a destra «Verticale | Orizzontale» (spec §12.2: lo cambia un admin, vale per tutti),
+ * «Mostra ridondanze» (spec §12.5: per chi guarda), zoom, «Adatta» (in verticale adatta la
+ * larghezza e porta in cima), «Riordina», «Stampa» (scheda nuova, spec §12.3) e
  * «◂ Dettagli» / «Dettagli ▸» (apre e chiude la barra di destra).
- * Le scritture (mappe, testa, riordina) si vedono solo agli admin.
+ * Le scritture (mappe, testa, orientamento, riordina) si vedono solo agli admin.
  */
 import { useState } from "react";
-import { useReactFlow } from "@xyflow/react";
+import { useReactFlow, useStoreApi } from "@xyflow/react";
 import { cn } from "@/lib/utils";
 import { oraItaliana } from "@/lib/topology/load-state";
+import { fitWidthViewport } from "@/lib/topology/map-screen";
+import type { MapOrientation } from "@/lib/topology/model-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -36,6 +40,14 @@ interface Props {
   onCreateFromAuto: (name: string) => Promise<boolean>;
   showExtra: boolean;
   onShowExtra: (v: boolean) => void;
+  /** L'orientamento della mappa a schermo; null finché la vista non è caricata. */
+  orientation: MapOrientation | null;
+  /** Solo admin, a vista caricata: cambia l'orientamento salvato della mappa. */
+  onOrientation: ((o: MapOrientation) => void) | null;
+  /** Larghezza della disposizione (per «Adatta» in verticale). */
+  layoutWidth: number | null;
+  /** La pagina di stampa della mappa che si guarda; null se non c'è una mappa. */
+  printHref: string | null;
   canRiordina: boolean;
   onRiordina: () => void;
   /** L'ultimo aggiornamento automatico non è riuscito (ms): la mappa è quella di prima. */
@@ -51,8 +63,17 @@ interface Props {
 
 type Asked = null | "new" | "rename" | "fromAuto" | "delete";
 
+const ORIENTAMENTI: Array<{ o: MapOrientation; label: string }> = [{ o: "lr", label: "Verticale" }, { o: "tb", label: "Orizzontale" }];
+
 export function MapToolbar(p: Props) {
   const rf = useReactFlow();
+  const store = useStoreApi();
+  /** In verticale la larghezza nel riquadro della mappa, poi in cima; in orizzontale tutta la mappa, come prima. */
+  const adatta = () => {
+    if (p.orientation === "lr" && p.layoutWidth) void rf.setViewport(fitWidthViewport(p.layoutWidth, store.getState().width));
+    else void rf.fitView({ padding: 0.05 });
+  };
+  const lockedWhy = p.onOrientation ? undefined : "Lo sceglie un amministratore: vale per tutti quelli che guardano questa mappa";
   const [asked, setAsked] = useState<Asked>(null);
   const current = p.maps.find((m) => m.id === p.mapId) ?? null;
 
@@ -112,17 +133,62 @@ export function MapToolbar(p: Props) {
           <button type="button" onClick={p.onRetry} className="underline underline-offset-2 hover:no-underline">Riprova</button>
         </span>
       )}
-      <label className="flex cursor-pointer items-center gap-1.5">
+      {p.orientation && (
+        // Per chi non è admin il valore in parole, fermo; il motivo al passaggio del mouse (sul gruppo: un pulsante spento non lo mostra).
+        <div className="inline-flex overflow-hidden rounded-md border border-foreground" role="group" aria-label="Orientamento della mappa" title={lockedWhy}>
+          {ORIENTAMENTI.map(({ o, label }) => (
+            <button
+              key={o}
+              type="button"
+              aria-pressed={p.orientation === o}
+              disabled={!p.onOrientation}
+              onClick={() => { if (p.orientation !== o) p.onOrientation?.(o); }}
+              className={cn(
+                "px-3 py-1 disabled:pointer-events-none",
+                p.orientation === o ? "bg-foreground font-semibold text-background" : "bg-card text-foreground hover:bg-muted",
+                !p.onOrientation && p.orientation !== o && "text-muted-foreground",
+              )}
+            >
+              {p.orientation === o && "● "}
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      <label className="flex cursor-pointer items-center gap-1.5" title="Le linee dei secondi cavi: spente, si vedono quelle del riquadro su cui fai clic">
         <input type="checkbox" checked={p.showExtra} onChange={(e) => p.onShowExtra(e.target.checked)} className="size-4" />
-        Ridondanze
+        Mostra ridondanze
       </label>
       <Button size="sm" className="text-[13px]" variant="outline" onClick={() => void rf.zoomOut()} aria-label="Rimpicciolisci">−</Button>
       <Button size="sm" className="text-[13px]" variant="outline" onClick={() => void rf.zoomIn()} aria-label="Ingrandisci">+</Button>
-      <Button size="sm" className="text-[13px]" variant="outline" onClick={() => void rf.fitView({ padding: 0.05 })}>Adatta</Button>
+      <Button
+        size="sm"
+        className="text-[13px]"
+        variant="outline"
+        onClick={adatta}
+        title={p.orientation === "lr" ? "Tutta la larghezza della mappa, dalla cima: poi si scorre con la rotellina" : "Tutta la mappa nel riquadro"}
+      >
+        Adatta
+      </Button>
       {p.isAdmin && (
         <Button size="sm" className="text-[13px]" variant="outline" disabled={!p.canRiordina} onClick={p.onRiordina} title="Toglie gli spostamenti fatti a mano">
           Riordina
         </Button>
+      )}
+      {p.printHref ? (
+        <Button
+          size="sm"
+          className="text-[13px]"
+          variant="outline"
+          nativeButton={false}
+          render={<a href={p.printHref} target="_blank" rel="noopener noreferrer" />}
+          title="Apre in una scheda nuova la mappa pronta per la carta (A4 o A3, più fogli)"
+        >
+          Stampa
+        </Button>
+      ) : (
+        // Il motivo sul contenitore: un pulsante spento non mostra il suo.
+        <span title="Scegli prima una mappa da stampare"><Button size="sm" className="text-[13px]" variant="outline" disabled>Stampa</Button></span>
       )}
       {p.detailsAvailable && <Button
         size="sm"

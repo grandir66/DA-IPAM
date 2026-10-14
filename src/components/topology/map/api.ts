@@ -15,12 +15,16 @@
  * - GET    /api/topology/ports?node=ID  → PortsResponse (porte note; elenco vuoto se non se ne conoscono)
  * - POST   /api/devices/[id]/proxmox-scan  (c'è già) → rilegge VM e schede dell'hypervisor
  * - PUT    /api/topology/maps/[id]/nodes e POST /api/topology/maps: accettano anche «vm:<apparato>:<vmid>»
+ * - PATCH  /api/topology/maps/[id|auto] corpo { orientation } (da solo, admin) → la riga della mappa (spec §12.2)
+ * - PUT    /api/topology/positions      { view, orientation, tweaks } salva i ritocchi nell'orientamento in cui sono
+ *          fatti (senza: 400); { view, clear: true, orientation } «Riordina» toglie solo quelli di quell'orientamento
  * Nodi: «dev:N», «host:N», «vm:N:M» (regex del piano: ^(dev|host|vm):\d+(:\d+)?$); collegamenti e
  * principale rifiutano «vm:» (revisione finale I-1: il modello non li disegnerebbe).
  */
 import { fetchJson, type FetchJsonResult } from "@/lib/fetch-json";
 import type { KnownPort, LinkPatchBody, ManualLinkBody } from "@/lib/topology/connect-form";
 import type { PrimaryBody } from "@/lib/topology/map-menus";
+import type { MapOrientation } from "@/lib/topology/model-types";
 
 // I corpi stanno con la logica pura che li costruisce (connect-form.ts, map-menus.ts): qui si ripetono i nomi.
 export type { KnownPort, LinkPatchBody, ManualLinkBody, PrimaryBody };
@@ -82,6 +86,11 @@ export function clearPrimary(send: Send, nodeId: string) {
 
 export function refreshProxmoxScan(send: Send, deviceId: number) {
   return send<unknown>(`/api/devices/${deviceId}/proxmox-scan`, "POST");
+}
+
+/** Cambia l'orientamento salvato della mappa (`auto` o l'id di una passo passo). */
+export function setMapOrientation(send: Send, view: "auto" | number, orientation: MapOrientation) {
+  return send<unknown>(`/api/topology/maps/${view}`, "PATCH", { orientation });
 }
 
 export function fetchLinkOverrides(signal?: AbortSignal) {

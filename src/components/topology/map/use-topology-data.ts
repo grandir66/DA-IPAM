@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { fetchJson, type FetchJsonResult } from "@/lib/fetch-json";
 import { afterLoadFailure } from "@/lib/topology/load-state";
-import type { TopologyModel } from "@/lib/topology/model-types";
+import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
 import type { TopologyStatus } from "@/lib/topology/types";
 import type { SavedTweak } from "@/lib/topology/tree-layout";
 
@@ -25,6 +25,8 @@ export interface MapRow {
   kind: "auto" | "passo";
   roots: string[];
   head_node: string | null;
+  /** «Verticale» (`lr`, predefinito) o «Orizzontale» (`tb`), per tutti quelli che la guardano (spec §12.2). */
+  orientation: MapOrientation;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -38,7 +40,10 @@ export interface MapsData {
 export interface ViewData {
   map: MapRow | null;
   nodes: string[];
+  /** Ognuno con l'orientamento in cui è stato fatto (le righe di prima: `tb`). */
   tweaks: SavedTweak[];
+  /** L'orientamento della mappa (l'automatica senza riga: `lr`). */
+  orientation: MapOrientation;
 }
 
 export interface Loaded {

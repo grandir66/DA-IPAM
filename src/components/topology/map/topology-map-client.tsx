@@ -10,6 +10,10 @@
  * azioni stanno nel menu del tasto destro, la barra di destra si chiude,
  * «Collega a…» apre il dialogo delle porte, gli hypervisor si espandono con le
  * loro VM (stato della pagina, non salvato) e una VM entra in una mappa.
+ * Spec §12: ogni mappa ha il suo orientamento (letto dalla vista, cambiato da un
+ * admin), i ritocchi si salvano con l'orientamento in cui sono fatti e «Riordina»
+ * toglie solo quelli; le ridondanze sono a richiesta («Mostra ridondanze»,
+ * ricordato per chi guarda).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -25,12 +29,13 @@ import {
   type EdgeMenuKey, type NodeMenuKey,
 } from "@/lib/topology/map-menus";
 import { resolveMapView } from "@/lib/topology/map-view";
-import type { MapLink, MapVm } from "@/lib/topology/model-types";
+import { printHref } from "@/lib/topology/map-screen";
+import type { MapLink, MapOrientation, MapVm } from "@/lib/topology/model-types";
 import { hangVmNodes, isRunning, vmNodes, vmSummary } from "@/lib/topology/vm-nodes";
 import { autoVisible, buildTree, missingNeighbors, proposeHead } from "@/lib/topology/tree";
 import { layoutTree, structureSig, type SavedTweak } from "@/lib/topology/tree-layout";
 import {
-  clearPrimary, createManualLink, deleteManualLink, fetchLinkOverrides, ignoreLink, patchManualLink, refreshProxmoxScan, setPrimary,
+  clearPrimary, createManualLink, deleteManualLink, fetchLinkOverrides, ignoreLink, patchManualLink, refreshProxmoxScan, setMapOrientation, setPrimary,
 } from "./api";
 import { ConnectDialog, type ConnectRequest } from "./connect-dialog";
 import { EdgeMenuContent } from "./edge-context-menu";
@@ -61,6 +66,25 @@ function writeDetailsOpen(open: boolean): void {
   }
 }
 
+/** «Mostra ridondanze» (spec §12.5): spento di base, ricordato per chi guarda, in questo browser. */
+const REDUNDANT_KEY = "da-ipam.topologia.ridondanze";
+
+function readShowRedundant(): boolean {
+  try {
+    return window.localStorage.getItem(REDUNDANT_KEY) === "mostra";
+  } catch {
+    return false; // storage non disponibile: spento, come di base
+  }
+}
+
+function writeShowRedundant(show: boolean): void {
+  try {
+    window.localStorage.setItem(REDUNDANT_KEY, show ? "mostra" : "nascondi");
+  } catch {
+    // storage non disponibile: la scelta vale solo per questa visita
+  }
+}
+
 export function TopologyMapClient({ isAdmin }: { isAdmin: boolean }) {
   return (
     <ReactFlowProvider>
@@ -75,8 +99,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const [mode, setMode] = useState<Mode>("auto");
   const [chosenMap, setChosenMap] = useState<number | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  // Le ridondanze (spec §11.3-11.4) si vedono da subito: sono poche e dicono dove c'è un secondo cavo.
-  const [showExtra, setShowExtra] = useState(true);
+  // Le ridondanze (spec §12.5) sono a richiesta: con due switch centrali erano un groviglio di linee.
+  const [showExtra, setShowExtra] = useState(false);
   const [centerKey, setCenterKey] = useState(1);
   const [pending, setPending] = useState<{ view: string; tweak: SavedTweak } | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(true);
@@ -103,8 +127,9 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const { data, error, refreshError, reload, send } = useTopologyData(viewKey);
   const maps = useMemo(() => data?.maps.maps ?? [], [data]);
 
-  useEffect(() => { setDetailsOpen(readDetailsOpen()); }, []);
+  useEffect(() => { setDetailsOpen(readDetailsOpen()); setShowExtra(readShowRedundant()); }, []);
   const changeDetails = (open: boolean) => { setDetailsOpen(open); writeDetailsOpen(open); };
+  const changeShowExtra = (show: boolean) => { setShowExtra(show); writeShowRedundant(show); };
 
   // La mappa scelta non c'è più (cancellata, anche da un altro) o non è ancora scelta: si passa alla prima.
   const effectiveMap = data ? (maps.some((m) => m.id === chosenMap) ? chosenMap : (maps[0]?.id ?? null)) : chosenMap;
@@ -115,6 +140,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const view = data && data.viewKey === viewKey ? data.view : null;
   const viewLoading = !data || data.viewKey !== viewKey;
   const positionsView = mode === "auto" ? "auto" : `mappa:${chosenMap}`;
+  /** L'orientamento salvato della mappa (spec §12.2): la vista lo porta sempre; finché carica, il predefinito. */
+  const orientation: MapOrientation = view?.orientation ?? "lr";
 
   const d = useMemo(() => {
     if (!data) return null;
@@ -150,7 +177,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     const tree = hangVmNodes(buildTree(model, visible, roots), vn.parentOf);
     const own = pending && pending.view === viewKey ? pending.tweak : null;
     const tweaks = [...saved.tweaks.filter((t) => t.nodeId !== own?.nodeId), ...(own ? [own] : [])];
-    const layout = layoutTree(model, tree, tweaks, expanded, "tb");
+    const layout = layoutTree(model, tree, tweaks, expanded, orientation);
     const plus = new Map<string, number>();
     if (mode === "passo") {
       for (const id of visible) {
@@ -171,7 +198,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       model, visible, roots, missing, head, headOrigin, tree, layout, plus, starts, promoteIds, byId, vmsOf, vmInfo, viewLinks,
       savedRoots: saved.roots, renames: saved.renames,
     };
-  }, [data, mode, view, pending, viewKey, expanded]);
+  }, [data, mode, view, pending, viewKey, expanded, orientation]);
 
   // Esc annulla «scegli l'oggetto di arrivo».
   useEffect(() => {
@@ -198,9 +225,10 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   }
   async function move(nodeId: string, x: number, y: number) {
     if (!d || !viewKey || !(await persistRenames())) return;
-    const tweak: SavedTweak = { nodeId, x, y, sig: structureSig(d.tree, nodeId) };
+    // Il ritocco vale nell'orientamento in cui è fatto (spec §12.2): senza, la rotta risponde 400.
+    const tweak: SavedTweak = { nodeId, x, y, sig: structureSig(d.tree, nodeId), orientation };
     setPending({ view: viewKey, tweak });
-    await send("/api/topology/positions", "PUT", { view: positionsView, tweaks: [tweak] });
+    await send("/api/topology/positions", "PUT", { view: positionsView, orientation, tweaks: [{ nodeId, x, y, sig: tweak.sig }] });
     setPending(null);
   }
 
@@ -247,6 +275,12 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       if (d.roots.length === 0) setCenterKey((k) => k + 1);
     }
     return true;
+  }
+  /** «Verticale | Orizzontale» (admin): si salva sulla mappa, si ricarica e si ricentra sulla disposizione nuova. */
+  async function changeOrientation(o: MapOrientation) {
+    if (o === orientation || viewLoading || (mode === "passo" && chosenMap === null)) return;
+    const r = await setMapOrientation(send, mode === "auto" ? "auto" : (chosenMap as number), o);
+    if (r.ok) setCenterKey((k) => k + 1);
   }
   async function createMap(name: string, from?: { roots: string[]; nodes: string[] }): Promise<boolean> {
     const r = await send<MapRow>("/api/topology/maps", "POST", { name, roots: from?.roots ?? [], nodes: from?.nodes ?? [] });
@@ -467,9 +501,14 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         headOrigin={d.headOrigin}
         onCreateFromAuto={(n) => createMap(n, { roots: d.head ? [d.head] : [], nodes: [...d.visible] })}
         showExtra={showExtra}
-        onShowExtra={setShowExtra}
-        canRiordina={(view?.tweaks.length ?? 0) > 0}
-        onRiordina={() => void send("/api/topology/positions", "PUT", { view: positionsView, clear: true, rename: d.renames })}
+        onShowExtra={changeShowExtra}
+        orientation={viewLoading || (mode === "passo" && chosenMap === null) ? null : orientation}
+        onOrientation={isAdmin ? (o) => void changeOrientation(o) : null}
+        layoutWidth={flowShown ? d.layout.width : null}
+        printHref={printHref(mode, chosenMap)}
+        // «Riordina» toglie solo i ritocchi dell'orientamento a schermo: quelli dell'altro restano da parte (spec §12.2).
+        canRiordina={(view?.tweaks ?? []).some((t) => t.orientation === orientation)}
+        onRiordina={() => void send("/api/topology/positions", "PUT", { view: positionsView, clear: true, orientation, rename: d.renames })}
         refreshFailedAt={refreshError?.at ?? null}
         refreshMessage={refreshError?.message ?? null}
         onRetry={() => void reload()}

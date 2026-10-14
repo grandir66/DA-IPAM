@@ -28,10 +28,10 @@ test("ritocchi e testa seguono l'id canonico; il ritocco già sull'id canonico v
   const v = resolveMapView({
     members: [],
     roots: [],
-    tweaks: [{ nodeId: "host:7", x: 1, y: 1, sig: "a" }, { nodeId: "dev:3", x: 2, y: 2, sig: "b" }, { nodeId: "host:12", x: 3, y: 3, sig: "c" }],
+    tweaks: [{ nodeId: "host:7", x: 1, y: 1, sig: "a", orientation: "tb" }, { nodeId: "dev:3", x: 2, y: 2, sig: "b", orientation: "tb" }, { nodeId: "host:12", x: 3, y: 3, sig: "c", orientation: "tb" }],
     head: "host:12",
   }, ids, canonical);
-  assert.deepEqual(v.tweaks, [{ nodeId: "dev:3", x: 2, y: 2, sig: "b" }, { nodeId: "host:9", x: 3, y: 3, sig: "c" }]);
+  assert.deepEqual(v.tweaks, [{ nodeId: "dev:3", x: 2, y: 2, sig: "b", orientation: "tb" }, { nodeId: "host:9", x: 3, y: 3, sig: "c", orientation: "tb" }]);
   assert.equal(v.head, "host:9");
   assert.deepEqual(v.renames, [{ from: "host:7", to: "dev:3" }, { from: "host:12", to: "host:9" }]);
   assert.equal(resolveMapView({ members: [], roots: [], tweaks: [], head: "dev:99" }, ids, canonical).head, null);

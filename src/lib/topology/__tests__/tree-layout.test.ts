@@ -104,7 +104,7 @@ test("ritocco: con la firma uguale sposta nodo e ramo dello stesso scarto; con f
   const base = layoutTree(m, t, []);
   const sig = structureSig(t, "dev:2");
   const target = base.nodes.get("dev:2")!;
-  const tw: SavedTweak = { nodeId: "dev:2", x: target.x + 37, y: target.y + 11, sig };
+  const tw: SavedTweak = { nodeId: "dev:2", x: target.x + 37, y: target.y + 11, sig, orientation: "tb" };
   const r = layoutTree(m, t, [tw]);
   assert.deepEqual(r.expired, []);
   for (const id of ["dev:2", "dev:100", "dev:101", "dev:102"]) {
@@ -238,7 +238,7 @@ test("espandere un hypervisor senza VM o non hypervisor non cambia niente; un ri
   const base = layoutTree(m2, t2, [], new Set(["dev:5"]));
   const h = base.nodes.get("dev:5")!;
   const sig = structureSig(t2, "dev:5");
-  const mosso = layoutTree(m2, t2, [{ nodeId: "dev:5", x: h.x + 30, y: h.y + 50, sig }], new Set(["dev:5"]));
+  const mosso = layoutTree(m2, t2, [{ nodeId: "dev:5", x: h.x + 30, y: h.y + 50, sig, orientation: "tb" }], new Set(["dev:5"]));
   assert.equal(mosso.vmChips[0].x - base.vmChips[0].x, 30);
   assert.equal(mosso.vmChips[0].y - base.vmChips[0].y, 50);
 });
@@ -249,7 +249,7 @@ test("espandere un hypervisor senza VM o non hypervisor non cambia niente; un ri
 test("una partenza ritoccata resta dov'è quando si aggiunge un'altra partenza; scade se diventa figlia", () => {
   const m = model([node("dev:1", "switch"), node("dev:2", "switch"), node("dev:9", "switch")]);
   const t1 = tree(["dev:1"], {});
-  const tw: SavedTweak = { nodeId: "dev:1", x: 640, y: 380, sig: structureSig(t1, "dev:1") };
+  const tw: SavedTweak = { nodeId: "dev:1", x: 640, y: 380, sig: structureSig(t1, "dev:1"), orientation: "tb" };
   const t2 = tree(["dev:1", "dev:9"], {});
   const r = layoutTree(m, t2, [tw]);
   assert.deepEqual(r.expired, []);

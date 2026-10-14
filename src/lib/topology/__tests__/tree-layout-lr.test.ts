@@ -179,8 +179,7 @@ test("ritocchi: quello tb si ignora in lr e non scade; quello lr sposta tutto il
   const s = base.nodes.get("dev:2")!;
   const sig = "dev:1|dev:2";
   const tb: SavedTweak = { nodeId: "dev:2", x: s.x + 500, y: s.y + 500, sig, orientation: "tb" };
-  const senza: SavedTweak = { nodeId: "dev:2", x: s.x + 500, y: s.y + 500, sig };
-  const ignorato = lr(m, t, [tb, senza]);
+  const ignorato = lr(m, t, [tb]);
   assert.deepEqual(ignorato.expired, []);
   assert.equal(ser(ignorato), ser(base));
   // tornando in orizzontale il ritocco ricompare

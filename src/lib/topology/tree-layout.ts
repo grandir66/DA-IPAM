@@ -40,8 +40,8 @@ function tweakHolds(saved: string | null, now: string): boolean {
   return saved === now || (now === ROOT_SIG && saved !== null && saved.startsWith(ROOT_SIG));
 }
 
-/** `orientation` assente = `tb` (i ritocchi di prima dell'orientamento valgono per l'orizzontale). */
-export interface SavedTweak { nodeId: string; x: number; y: number; sig: string | null; orientation?: MapOrientation }
+/** `orientation`: dove è stato fatto il ritocco (la vista lo porta sempre; le righe di prima valgono `tb`). */
+export interface SavedTweak { nodeId: string; x: number; y: number; sig: string | null; orientation: MapOrientation }
 export interface LayoutNode { id: string; x: number; y: number; w: number; h: number; role: "box" | "ap" | "attached"; parent: string | null }
 /** Una VM dentro il riquadro espanso del suo hypervisor; `label` è il nome già accorciato per entrare in `w`. */
 export interface VmChip { vmId: string; hypervisor: string; x: number; y: number; w: number; h: number; label: string }
@@ -171,7 +171,7 @@ function finish(
 
   // Ritocchi dell'orientamento in uso (gli altri restano da parte, non scadono): lo scarto vale per il nodo e tutto il suo ramo (attaccati e gruppo AP compresi).
   const expired: string[] = [];
-  for (const t of [...tweaks].filter((w) => (w.orientation ?? "tb") === orientation).sort((a, b) => (a.nodeId < b.nodeId ? -1 : 1))) {
+  for (const t of [...tweaks].filter((w) => w.orientation === orientation).sort((a, b) => (a.nodeId < b.nodeId ? -1 : 1))) {
     const n = nodes.get(t.nodeId);
     if (!n || n.role !== "box") continue;
     if (!tweakHolds(t.sig, structureSig(tree, t.nodeId))) { expired.push(t.nodeId); continue; }

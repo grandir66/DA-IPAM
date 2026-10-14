@@ -4,6 +4,7 @@
 **Data:** 2026-10-14
 **Autore:** Riccardo Grandi, con Claude
 **Documento di progetto:** [`docs/superpowers/specs/2026-10-14-netbird-rete-a-stella-design.md`](../superpowers/specs/2026-10-14-netbird-rete-a-stella-design.md)
+**Completato da:** [ADR 0013](0013-licenza-e-segreto-degli-oggetti.md) (licenza, segreto degli oggetti, CA interna, custodia)
 
 ## Contesto
 

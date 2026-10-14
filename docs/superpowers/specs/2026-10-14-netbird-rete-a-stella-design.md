@@ -1,10 +1,12 @@
 # DA-Link e NetBird: una rete a stella fra centrali Domarc e oggetti dei clienti
 
-**Stato:** disegno approvato a voce da Riccardo il 2026-10-14, rivisto tre volte lo stesso
-giorno (moduli, poi DA-Link e DA-CRM, poi la privacy decisa dall'istanza); documento da rileggere
+**Stato:** disegno approvato a voce da Riccardo il 2026-10-14, rivisto cinque volte lo stesso
+giorno (moduli; DA-Link e DA-CRM; privacy decisa dall'istanza; licenza e custodia dei segreti;
+CA interna); documento da rileggere
 **Data:** 2026-10-14
 **Autore:** Riccardo Grandi, con Claude
-**Decisione architetturale:** [ADR 0011](../../adr/0011-netbird-rete-a-stella.md)
+**Decisioni architetturali:** [ADR 0011](../../adr/0011-netbird-rete-a-stella.md) (rete),
+[ADR 0013](../../adr/0013-licenza-e-segreto-degli-oggetti.md) (licenza, custodia, CA interna)
 **Livello di controllo:** completo (si toccano appliance in esercizio presso i clienti)
 
 Riguarda sei progetti. Ognuno lo cita con una riga dal proprio `CONTEXT.md`, senza ricopiarlo:
@@ -46,7 +48,12 @@ E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
 - li fa entrare in NetBird e li revoca **da solo**: nessuno apre la console NetBird;
 - dice se sono connessi e se l'isolamento regge;
 - raccoglie il segnale di vita delle istanze IPAM, e i numeri dell'inventario **solo dove
-  l'istanza lo consente** (decisione 13), e li dà in lettura a DA-CRM.
+  l'istanza lo consente** (decisione 13), e li dà in lettura a DA-CRM;
+- emette e rinnova da solo la **licenza** e il **segreto** di ogni oggetto, che servono anche
+  a firmare gli scambi e a proteggere i dati archiviati (§8). Custodisce le chiavi più
+  delicate del parco, con accesso ristretto (§9);
+- rilascia a ogni installazione un **certificato della CA interna** Domarc, riconosciuto in
+  automatico dagli applicativi (§8.4).
 
 **Non è:**
 
@@ -83,7 +90,15 @@ E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
 | 10 | **L'OSINT avviato dal CRM va dal CRM a DA-Vul-can**, senza passare da DA-Link. | tutto attraverso DA-Link |
 | 11 | **Il CRM vede da DA-Link**, per cliente: oggetti e collegamento, salute e versioni, esito dell'isolamento, numeri dell'inventario **se l'istanza li condivide** (decisione 13). Solo lettura. | — |
 | 12 | **Il cliente si identifica con `codcli` del gestionale** in tutti i sistemi: gruppo `cli-<codcli>`, nome dei nodi, API di DA-Link. È già la chiave di DA-Vul-can (`/api/clients/[codcli]/…`) e del CRM. | — |
-| 13 | **Cosa esce dall'istanza IPAM verso il centro lo decide l'istanza.** Due livelli, impostati solo da un amministratore dell'istanza: **solo stato** oppure **stato + numeri dell'inventario**. Dal centro non si cambia. Senza una scelta dichiarata esce solo lo stato. Se il cliente vuole privacy la ha: in quel caso Domarc gestisce solo lo stato. | livello deciso da DA-Link o dal CRM; inventario condiviso finché il cliente non lo blocca |
+| 13 | **Cosa esce dall'istanza IPAM verso il centro lo decide l'istanza.** Due livelli, impostati solo dall'amministratore dell'istanza (confermato da Riccardo): **solo stato** oppure **stato + numeri dell'inventario**. Dal centro non si cambia. Senza una scelta dichiarata esce solo lo stato. Se il cliente vuole privacy la ha: in quel caso Domarc gestisce solo lo stato. | livello deciso da DA-Link o dal CRM; inventario condiviso finché il cliente non lo blocca |
+| 14 | **DA-Link può spegnere un oggetto remoto se la licenza scade**: non con un comando, ma non rinnovandogli la licenza; per tagliarlo fuori subito lo toglie anche da NetBird. | un comando di spegnimento dal centro |
+| 15 | **A licenza scaduta l'oggetto smette di lavorare, ma i dati restano leggibili ed esportabili** dal cliente. | spegnimento totale coi dati illeggibili; solo avviso prolungato |
+| 16 | **Un solo segreto per oggetto, generato e rinnovato da DA-Link**, da cui si ricavano tre chiavi distinte: licenza/rinnovo, firma degli scambi, protezione dei dati archiviati. Dati archiviati **cifrati a busta con copia di recupero**. | dati cifrati direttamente con la chiave della licenza; busta senza recupero; dati fuori dalla licenza |
+| 17 | **Il segreto vale 4 settimane, con 2 di tolleranza**; la licenza vale per istanze IPAM ed edge. | 2+1 settimane; 12+4; solo istanze; anche il proxy con un guardiano |
+| 18 | **Per ora il portachiavi di DA-Link si sblocca a mano a ogni avvio**; la YubiKey si valuta dopo. | modulo hardware subito; TPM virtuale + disco cifrato |
+| 19 | **All'interfaccia di DA-Link entrano poche persone nominate, con MFA**, solo dal gruppo NetBird `link-admin`; nessuna seconda conferma. | quattro occhi sulle azioni gravi; solo Riccardo |
+| 20 | **La chiave di recupero dei dati sta fuori linea, in cassaforte**, in due copie; DA-Link non la possiede. | nel vault delle credenziali; divisa fra persone (Shamir) |
+| 21 | **Una CA interna rilascia un certificato a ogni installazione**, riconosciuto in automatico dagli applicativi: radice fuori linea, intermedia in DA-Link limitata ai nomi interni, motore `step-ca`, certificati di 4 settimane rinnovati col segreto. | certificati auto-firmati con pin al primo contatto (oggi); una CA a un livello sola in DA-Link; una CA scritta a mano |
 
 ## 3. Da dove si parte (verificato nel codice il 2026-10-14)
 
@@ -169,7 +184,8 @@ Tutte **a senso unico**, protocollo TCP, porte esplicite. Le risposte tornano in
 | P3 | `centro-vulcan` | `remoto-edge` | 6443 (8443 sugli edge vecchi) | l'hub comanda gli scan: dialogo esistente, non si cambia | DA-Link |
 | P4 | `zabbix-proxy` | `centro-zabbix` | 10051 | proxy in modalità active | DA-Zabbix (esiste già) |
 | P5 | `admins` | `remoto-ipam`, `remoto-edge`, `zabbix-proxy` | 22, 443, 6443 | assistenza tecnica | DA-Link |
-| P6 | `admins` | `centro-*` | 22, 443 | amministrazione dei centrali | DA-Link |
+| P6 | `link-admin` per DA-Link, `admins` per gli altri | `centro-*` | 22, 443 | amministrazione dei centrali; DA-Link solo da `link-admin` (§9.1) | DA-Link |
+| P7 | `remoto-edge` | `centro-link` | 443 (solo API di rinnovo) | l'edge rinnova licenza e segreto (§8.2) | DA-Link |
 
 Non ci sono policy da DA-Link verso le istanze: è l'istanza a chiamare (decisione 7). Se in
 futuro servisse un comando dal centro verso un'istanza, viaggerebbe come risposta a una sua
@@ -394,7 +410,230 @@ primo cliente entra. Prima di qualunque oggetto remoto:
 - Ogni parte che non ha dati lo dichiara (`non_disponibili`), come l'aggregatore del Manager:
   un quadro vuoto deve dire «non so», non «niente».
 
-## 8. Il passaggio
+## 8. Licenza e segreto degli oggetti
+
+Vale per le **istanze IPAM e gli edge** (decisione 17): sono codice nostro e controllano la
+licenza da sé. Il proxy Zabbix che vive da solo si ferma togliendolo da NetBird.
+
+### 8.1 Cosa riceve un oggetto
+
+DA-Link dà a ogni oggetto, e gli rinnova da solo, un **pacchetto di licenza** con due parti:
+
+- **il segreto dell'oggetto**: 256 bit casuali, generati da DA-Link, diversi per ogni oggetto,
+  validi **4 settimane**;
+- **la licenza firmata**: un documento breve firmato da DA-Link con la sua chiave di firma
+  (Ed25519). Contiene codcli, oggetto, moduli consentiti, scadenza della licenza e scadenza
+  del segreto. L'oggetto la verifica da sé, anche senza rete, con la chiave pubblica di
+  DA-Link che riceve all'installazione.
+
+Dal segreto non si usa mai il valore tale e quale. Se ne **ricavano tre chiavi distinte**
+(HKDF, una per scopo):
+
+| Chiave ricavata | A cosa serve |
+|---|---|
+| `scambio` | firma (HMAC) di ogni messaggio fra oggetto e DA-Link, con data e numero unico contro il replay: dimostra chi lo manda e che non è stato alterato |
+| `archivio` | protegge la chiave dei dati archiviati dell'istanza (§8.3) |
+| `rinnovo` | dimostra a DA-Link che l'oggetto possiede il segreto attuale, senza mai inviarlo |
+
+Così si rinnova un segreto solo, e una chiave esposta per uno scopo non apre gli altri due.
+
+Lo scambio è già cifrato due volte (tunnel NetBird e HTTPS): la chiave `scambio` **firma**, non
+cifra una terza volta.
+
+### 8.2 Rinnovo e scadenza
+
+- **Chi chiama.** È l'oggetto a chiedere il rinnovo, nell'ultima settimana di validità; DA-Link
+  non apre porte verso di lui (decisione 7). L'istanza usa P1, l'edge una policy nuova, P7
+  (§4.2).
+- **Il passaggio da un segreto all'altro** (ogni 4 settimane):
+  1. l'oggetto dimostra di avere il segreto attuale con la chiave `rinnovo`;
+  2. DA-Link controlla la licenza del cliente e risponde con il pacchetto nuovo;
+  3. l'oggetto riprotegge la chiave dei dati con la nuova chiave `archivio` (§8.3) e
+     conferma;
+  4. solo allora DA-Link ritira il segreto vecchio. Fino alla conferma valgono tutti e due.
+- **Tolleranza: 2 settimane.** Se DA-Link non risponde, l'oggetto continua a lavorare per due
+  settimane oltre la scadenza del segreto e lo dice a schermo, con i giorni che restano.
+  Copre ferie, guasti e DA-Link bloccato dopo un riavvio (§9.2).
+- **Licenza scaduta, o tolleranza finita** (decisione 15):
+  - **l'oggetto smette di lavorare**: si fermano scansioni, raccolta, invii e moduli;
+  - **l'interfaccia resta aperta in sola lettura**, con l'avviso e la data;
+  - **il cliente consulta ed esporta i suoi dati**;
+  - al rinnovo riparte tutto da solo, senza intervento.
+- **«Spegnere» un oggetto** vuol dire non rinnovargli la licenza. Non esiste un comando di
+  spegnimento: un oggetto rubato o scollegato si ferma da solo. Per tagliarlo subito fuori
+  dalla rete, DA-Link lo toglie anche da NetBird (§5.4).
+- **Il freno.** L'arresto per licenza è un automatismo che ferma un cliente, e nasce col
+  freno. Per un primo periodo l'oggetto scrive soltanto «qui mi sarei fermato» e lo manda
+  nello stato. Si accende contando, oggetto per oggetto, quando le segnalazioni si sono
+  dimostrate giuste.
+- **Si vede sull'oggetto**: scadenza della licenza, scadenza del segreto, ultimo rinnovo
+  riuscito, giorni di tolleranza rimasti. Lo stesso vale in DA-Link, e nel CRM come parte
+  dello stato.
+
+### 8.3 Dati archiviati: cifratura a busta con recupero (decisione 16)
+
+- **La chiave dei dati.** Ogni istanza ha una propria chiave dei dati, casuale e **fissa**, che
+  cifra i dati archiviati.
+- **Chi la protegge.** È conservata «in busta» due volte:
+  - con la chiave `archivio` ricavata dal segreto che ruota: ogni 4 settimane si rifà solo
+    la busta, i dati non si ricifrano;
+  - con la **chiave pubblica di recupero** di Domarc (§9.3). La parte privata non sta su
+    nessun computer acceso.
+- **Licenza scaduta.** La chiave dei dati resta utilizzabile per la sola lettura e
+  l'esportazione (decisione 15). La licenza ferma il lavoro, non i dati.
+- **Segreto perso** (istanza ripristinata da una copia vecchia, scollegata oltre la
+  tolleranza):
+  - il tecnico la fa rientrare con un codice monouso emesso da DA-Link, come all'ingresso;
+  - se la vecchia busta non si apre più, la chiave dei dati si recupera con la chiave di
+    recupero, con la procedura di §9.3.
+- **Da cosa protegge, detto onestamente.**
+  - Protegge i dati che **escono dalla macchina** (backup, esportazioni, archivi, copie del
+    database fatte da sole) e chi trova il disco senza il segreto.
+  - Non protegge da chi è root sull'istanza accesa: lì segreto e dati stanno sulla stessa
+    macchina. Un TPM virtuale si potrà aggiungere dopo.
+- **Quali dati si cifrano** si decide nel piano. Almeno le credenziali, i backup e le
+  esportazioni; l'intero database solo se il costo lo regge (§15).
+
+### 8.4 Il certificato dell'oggetto: la CA interna (decisione 21)
+
+Oggi ogni edge si fa un certificato **auto-firmato**, e DA-IPAM si fida del primo che vede
+(pin SPKI al primo «Test connessione»). Con la CA interna ogni installazione riceve un
+certificato emesso da Domarc, e gli applicativi lo riconoscono da soli.
+
+- **Il motore** è `step-ca` (Smallstep, open source), un componente esistente e collaudato:
+  - ACME;
+  - certificati brevi rinnovati da soli;
+  - limiti sui nomi.
+
+  Gira sulla macchina di DA-Link come servizio a sé, e **DA-Link è l'unico che lo autorizza a
+  emettere**. Una CA non si scrive a mano.
+- **Due livelli** (custodia in §9.4):
+  - la **radice** è fuori linea, in cassaforte, e serve solo a firmare l'intermedia;
+  - l'**intermedia** sta in DA-Link e firma i certificati.
+- **Limiti sui nomi.** L'intermedia porta i *name constraints*: può firmare solo nomi
+  interni (`*.netbird.selfhosted` e il dominio interno scelto nel piano), mai nomi pubblici.
+  Anche rubata, non serve a impersonare un sito vero.
+- **La chiave privata nasce sull'oggetto e non lo lascia mai.**
+  - All'ingresso l'oggetto genera la sua coppia di chiavi e manda a DA-Link solo la
+    richiesta di firma.
+  - DA-Link la autorizza con un permesso monouso emesso insieme alla setup key (§5.1).
+- **Cosa c'è nel certificato**:
+  - nome NetBird dell'oggetto, più eventuale nome e IP della LAN del cliente;
+  - un identificativo con `codcli` e oggetto (URI nel SAN), che serve alle API per sapere
+    chi sta chiamando.
+- **Durata: 4 settimane**, rinnovato insieme al segreto (§8.2), nello stesso giro. Un
+  certificato breve non ha bisogno di una lista di revoca complicata. DA-Link pubblica
+  comunque la lista dei certificati revocati, e la revoca di un oggetto (§5.4) ci finisce
+  subito.
+- **A licenza scaduta** il certificato non si rinnova. Le chiamate verso i centrali si fermano
+  da sole, coerente con «smette di lavorare» (§8.2). L'interfaccia locale in sola lettura
+  resta raggiungibile dal cliente.
+- **Chi si fida della radice, automaticamente.**
+  - **Gli applicativi dell'ecosistema**: da-vulcan, DA-ZABBIX, DA-CRM, DA-Link, le istanze
+    IPAM e gli edge. La ricevono all'installazione o al deploy, nel loro archivio di fiducia.
+  - **I computer dei tecnici Domarc**: distribuita come criterio di gestione dei dispositivi,
+    non a mano.
+  - **I browser dei clienti** sulla LAN: si decide nel piano (§15).
+- **Cosa sostituisce.**
+  - Il pin SPKI di DA-IPAM sull'edge (`vuln_scanners`): si fida della radice. Il pin resta
+    accettato durante il doppio binario.
+  - Il certificato auto-firmato dell'edge (`tls_cert.py`): resta solo come ripiego per
+    un'installazione senza DA-Link.
+- **Identità reciproca.** Con un certificato per oggetto, le API per le macchine (segnale di
+  vita, rinnovo, heartbeat verso da-vulcan) possono chiedere il certificato anche a chi
+  chiama (**mTLS**). Il certificato dice chi è l'oggetto prima ancora del token. Come mTLS si
+  combina con la firma `scambio` (§8.1), per non tenere due meccanismi che fanno la stessa
+  cosa, si decide nel piano (§15).
+
+## 9. DA-Link: accesso e custodia dei segreti
+
+DA-Link custodisce le chiavi più delicate del parco. Il principio: **pochi accessi, ognuno
+registrato, e nessun segreto che basti da solo a fare danni a tutti i clienti.**
+
+### 9.1 Chi entra e da dove (decisione 19)
+
+- **La macchina.**
+  - VM dedicata in sede, senza altri servizi.
+  - Disco cifrato.
+  - SSH solo con chiave, solo dal gruppo NetBird `link-admin`.
+  - Aggiornamenti di sicurezza automatici.
+- **L'interfaccia.**
+  - Raggiungibile **solo** dal gruppo NetBird `link-admin`: poche persone nominate, distinto
+    da `admins`.
+  - Login Entra con **MFA obbligatoria**.
+  - Nessuna esposizione su Internet.
+- **Le API per le macchine** sono separate dall'interfaccia, su un'altra porta e un altro
+  percorso:
+  - gli oggetti remoti arrivano solo a segnale di vita e rinnovo (P1, P7);
+  - il CRM arriva solo alla lettura del quadro (§7.3), dal suo indirizzo e con la sua chiave
+    di servizio.
+- **Il registro.** Ogni azione — accesso, emissione, revoca, cambio di licenza, sblocco —
+  finisce nel registro di audit. Una copia parte **fuori da DA-Link** in tempo reale, verso
+  Graylog, così chi entra in DA-Link non può cancellare le proprie tracce.
+- **Gli allarmi.** DA-ZABBIX avvisa su tre cose:
+  - troppe emissioni o revoche in poco tempo;
+  - accessi fuori orario;
+  - DA-Link bloccato.
+
+### 9.2 Il portachiavi di DA-Link e lo sblocco all'avvio (decisione 18)
+
+I segreti di DA-Link stanno in un **portachiavi cifrato** su disco:
+
+- la chiave di firma delle licenze;
+- la chiave che cifra i segreti degli oggetti nel suo database;
+- il token del suo utente di servizio NetBird.
+
+Il portachiavi si apre con una **frase di sblocco**: resta solo in memoria, e da essa si
+ricava la chiave con Argon2id.
+
+- **A ogni avvio DA-Link parte bloccato.** Una persona di `link-admin` lo sblocca
+  dall'interfaccia o da SSH. Finché è bloccato:
+  - non emette, non rinnova, non legge segnali;
+  - risponde «riprova più tardi», e gli oggetti riprovano da soli;
+  - gli oggetti continuano a lavorare con la licenza e la tolleranza che hanno (§8.2);
+  - DA-ZABBIX lo segnala.
+- **La frase** la conoscono le persone di `link-admin`, e una copia sta in cassaforte con la
+  chiave di recupero. Persa la frase senza copia, DA-Link non firma più e tutti gli oggetti
+  si fermano entro sei settimane: per questo la copia non è facoltativa.
+- **Più avanti, la YubiKey.** Si sostituisce la frase con una chiave hardware: lo sblocco
+  resta un passo solo, cambia il «come». Il codice tiene lo sblocco dietro un'interfaccia
+  sola, così il cambio non tocca il resto.
+- **Il backup di DA-Link** contiene il portachiavi **ancora cifrato**, e si prova a
+  ripristinarlo su una VM pulita prima di dichiararlo buono.
+
+### 9.3 La chiave di recupero (decisione 20)
+
+- È una coppia di chiavi creata **fuori linea**.
+  - La parte pubblica va su ogni istanza all'installazione.
+  - La parte privata sta su una chiave hardware, o su carta, in **cassaforte**, in due copie
+    in luoghi diversi.
+- **DA-Link non la possiede.** Chi entra in DA-Link non può leggere i dati dei clienti.
+- **Si usa solo con una procedura scritta**:
+  - chi la chiede e perché;
+  - quale istanza;
+  - l'operazione fatta su una macchina scollegata;
+  - la registrazione nel registro di audit.
+
+  La procedura si prova una volta all'anno su un'istanza di prova.
+
+### 9.4 Le chiavi della CA
+
+- **La radice** si crea fuori linea, su una macchina scollegata. La sua chiave privata sta in
+  cassaforte con la chiave di recupero, in due copie (chiave hardware o carta cifrata), e
+  **non tocca mai DA-Link**. Serve solo per firmare o rinnovare l'intermedia, ogni qualche
+  anno, con la stessa procedura scritta della chiave di recupero (§9.3).
+- **L'intermedia** sta nel portachiavi di DA-Link (§9.2). Si apre con lo stesso sblocco
+  all'avvio, e più avanti con la stessa YubiKey. Finché DA-Link è bloccato non si emettono
+  certificati: gli oggetti hanno davanti fino a sei settimane (validità più tolleranza).
+- **Se l'intermedia viene compromessa**:
+  - la radice la revoca;
+  - se ne firma una nuova;
+  - gli oggetti la ricevono al rinnovo successivo.
+
+  Nessuno deve reinstallare la radice nei computer, perché la radice non cambia. È il motivo
+  dei due livelli.
+
+## 10. Il passaggio
 
 Ogni fase si chiude da sola. Ci si può fermare dopo qualunque fase senza lasciare niente a metà.
 
@@ -405,14 +644,17 @@ Ogni fase si chiude da sola. Ci si può fermare dopo qualunque fase senza lascia
   DA-Link.
 - Verifica che il codice tenant delle istanze DA-IPAM sia il `codcli` del gestionale
   (decisione 12), istanza per istanza.
-- **Prova di convivenza su una VM di prova** con Tailscale e NetBird accesi insieme (§9,
+- **Prova di convivenza su una VM di prova** con Tailscale e NetBird accesi insieme (§11,
   rischio 1). Se non passa, si decide il rimedio prima di toccare DTS.
 - Versione del server NetBird; comportamento di scadenza dei nodi entrati con setup key;
   quali permessi servono all'utente di servizio.
 - §6.2: `All` fuori dalle policy dei colleghi, `Default` spenta.
 - da-vulcan e DA-ZABBIX entrano in NetBird nei gruppi `centro-*`, **senza lasciare
   Tailscale**.
-- Il nome stabile per da-vulcan (§9, rischio 3).
+- Il nome stabile per da-vulcan (§11, rischio 3).
+- **La cerimonia delle chiavi**, su una macchina scollegata e con la procedura scritta:
+  radice della CA, chiave di recupero, copie in cassaforte (§9.3, §9.4). L'intermedia nasce
+  dopo, quando c'è la macchina di DA-Link.
 
 Esce quando: i centrali sono connessi in NetBird, la verifica R1–R4 fatta a mano è verde e i
 colleghi raggiungono ciò che raggiungevano prima.
@@ -421,14 +663,23 @@ colleghi raggiungono ciò che raggiungevano prima.
 
 - Si apre DA-Link (`bin/nuovo-progetto DA-Link` sotto `Domarc/`, poi una sessione nuova come
   vuole `AVVIO-PROGETTO.md`).
-- DA-Link nasce coi compiti di §1 e le interfacce di §7. Gira in sede, in `centro-link`.
-- Nei repo esistenti, le modifiche del §10, con Tailscale ancora supportato accanto.
+- DA-Link nasce coi compiti di §1 e le interfacce di §7, sulla sua VM in sede (§9.1), in
+  `centro-link`.
+- Portachiavi con sblocco all'avvio (§9.2), `step-ca` con l'intermedia (§8.4), licenze e
+  segreti (§8).
+- Sugli oggetti l'arresto per licenza nasce **col freno**: segnala soltanto (§8.2).
+- Nei repo esistenti, le modifiche del §12, con Tailscale ancora supportato accanto.
 
 Esce quando:
 - i cancelli dei repo sono verdi;
 - una chiave emessa da DA-Link sul NetBird vero fa entrare una VM di prova nei gruppi giusti;
 - la VM manda il segnale di vita;
 - il quadro arriva al CRM di sviluppo;
+- la VM riceve licenza, segreto e certificato, li rinnova a scadenza ravvicinata (prova
+  con validità di minuti), e un'applicazione centrale la riconosce senza eccezioni di
+  certificato;
+- un riavvio di DA-Link lo lascia bloccato finché non si sblocca, e la VM nel frattempo
+  continua a lavorare;
 - chiave e VM si tolgono subito dopo.
 
 **Fase 2 — Pilota DTS**: istanza IPAM `172.16.0.2`, edge `172.16.1.141`, `proxy-dts`.
@@ -458,12 +709,12 @@ finestra per cliente.
 - Tailscale si toglie dai centrali.
 - Si verifica che da-vulcan raggiunga DA-VA-OVH sulla VPN diretta.
 - Tutti i riferimenti a `da-vulcan` risolto da MagicDNS e all'IP Tailscale di DA-VA passano
-  al nome nuovo (§9, rischio 3).
+  al nome nuovo (§11, rischio 3).
 - Si toglie il codice Tailscale: campi della procedura guidata, tipo di credenziale,
   `tailscale_ip` nell'heartbeat, ruolo Ansible, `infra/tailscale/`.
 - La tailnet personale si cancella.
 
-## 9. Rischi e trappole note in anticipo
+## 11. Rischi e trappole note in anticipo
 
 1. **Tailscale e NetBird nella stessa fascia di indirizzi.** Entrambi usano `100.64.0.0/10`.
    Sui nodi Linux Tailscale mette una regola firewall che scarta il traffico da quella fascia
@@ -498,7 +749,7 @@ finestra per cliente.
    tenant DA-IPAM sono nati prima di questa regola. Si verifica in fase 0. Un'istanza con un
    codice diverso si corregge prima di entrare in DA-Link, non dopo.
 9. **L'agente Python di DA-IPAM accetta la fascia `100.64.0.0/10`.** Con NetBird quel
-   controllo passa ancora ma non distingue più nulla. Se l'agente resta (§13), la fonte
+   controllo passa ancora ma non distingue più nulla. Se l'agente resta (§15), la fonte
    ammessa diventa la rete NetBird dell'account letta all'installazione, più bearer e scope
    come oggi.
 10. **Il firewall dell'edge si fida di tutta l'interfaccia Tailscale** (`ufw allow in on tailscale0`).
@@ -509,8 +760,24 @@ finestra per cliente.
 12. **Il firewall del cliente in uscita.** NetBird prova la via diretta in UDP e ripiega sul
     relay in 443 TCP. Su un cliente che chiude tutto in uscita si verifica che il relay passi,
     prima di togliere Tailscale.
+13. **DA-Link bloccato dopo un riavvio** (§9.2). Gli oggetti reggono sei settimane, ma un
+    riavvio non notato durante le ferie si somma alla tolleranza che sta finendo. Per questo
+    DA-ZABBIX lo segnala subito e la frase di sblocco la conoscono più persone.
+14. **La frase di sblocco o la radice della CA perse.** Senza frase DA-Link non firma più.
+    Senza radice non si rinnova l'intermedia, e i computer vanno rifatti con una radice
+    nuova. Le copie in cassaforte non sono facoltative, e la procedura si prova una volta
+    all'anno.
+15. **La radice della CA va distribuita davvero**: negli applicativi, nei container e nei
+    computer dei tecnici. Un applicativo che non la conosce darà errore di certificato, e la
+    tentazione sarà disattivare la verifica. Non si fa: la verifica spenta è peggio del
+    certificato auto-firmato di oggi. La distribuzione si controlla per ogni applicativo in
+    fase 1.
+16. **L'arresto per licenza ferma un cliente.** Un difetto nel calcolo delle date, un
+    orologio sbagliato sull'oggetto o un DA-Link irraggiungibile non devono fermare chi è in
+    regola. Per questo ci sono il freno (§8.2), la tolleranza e la licenza firmata
+    verificabile senza rete. L'ora dell'oggetto si controlla nel segnale di vita.
 
-## 10. Cosa cambia, repo per repo
+## 12. Cosa cambia, repo per repo
 
 **DA-Link (nuovo)**
 
@@ -523,6 +790,11 @@ finestra per cliente.
 - Verifica R1–R5 e pagina di §6.3.
 - Lettura per il CRM (§7.3).
 - Audit di emissione, revoca, cancellazione e riallineamento.
+- Registro delle licenze per `codcli`, firma delle licenze, rinnovo di segreti e certificati
+  (§8).
+- Portachiavi con sblocco all'avvio; `step-ca` con l'intermedia; copia del registro di audit
+  verso Graylog (§9).
+- La procedura scritta per la chiave di recupero e la radice (§9.3, §9.4).
 - Gli standard del parco: cancello, `CONTEXT.md`, `ACCESSI.md`, scheda nel censimento.
 
 **DA-IPAM**
@@ -533,9 +805,14 @@ finestra per cliente.
   dell'inventario solo se consentiti, porte aperte
   sull'interfaccia NetBird. URL e token vengono dalla configurazione d'installazione.
 - Installatore e `/setup` con `NETBIRD_SETUP_KEY` e token di DA-Link.
+- Rinnovo di licenza, segreto e certificato; arresto per licenza col freno e sola lettura a
+  licenza scaduta; pagina con scadenze e tolleranza (§8.2).
+- Cifratura a busta dei dati archiviati, con la busta di recupero (§8.3).
+- Certificato della CA interna per l'interfaccia; radice nell'archivio di fiducia, al posto
+  del pin SPKI verso l'edge (§8.4).
 - Firewall sull'interfaccia NetBird: solo 22 e 443, più 6443 se l'istanza contiene l'edge.
 - Tailscale tolto da procedura guidata e credenziali nella fase 4. Prima si decide che fine
-  fa l'agente remoto (§13).
+  fa l'agente remoto (§15).
 
 **DA-Vul-can / Scanner-Edge**
 
@@ -545,6 +822,10 @@ finestra per cliente.
 - Primo avvio, `install.sh`, `harden.sh`: setup key NetBird; firewall per porta su `wt0`;
   nome NetBird nei SAN.
 - Bridge-node Ansible: ruolo `netbird` accanto a `tailscale`, poi al suo posto.
+- Edge: rinnovo di licenza, segreto e certificato, con P7; arresto per licenza col freno
+  (§8.2); `tls_cert.py` usa il certificato della CA e tiene l'auto-firmato solo come
+  ripiego (§8.4).
+- Hub: radice della CA nell'archivio di fiducia; verifica del certificato degli edge.
 - L'OSINT avviato dal CRM **non è in questo lavoro**: segue il filo del CRM (decisione 10).
 
 **DA-Zabbix**
@@ -552,7 +833,7 @@ finestra per cliente.
 - La procedura guidata dei proxy mette il nodo anche in `cli-<codcli>`, usa le stesse regole
   di nome (`<codcli>-zbx`) e non tocca ciò che ha creato DA-Link.
 - Per un proxy dentro un'istanza IPAM non emette chiavi: il nodo c'è già.
-- DA-ZABBIX tiene d'occhio la verifica R1–R5, DA-Link e il server NetBird (§6.1, §9).
+- DA-ZABBIX tiene d'occhio la verifica R1–R5, DA-Link e il server NetBird (§6.1, §11).
 
 **DA-CRM**
 
@@ -566,11 +847,15 @@ finestra per cliente.
 - Parametro setup key NetBird e token di DA-Link nell'installatore, al posto dell'auth-key
   Tailscale.
 - La VM Wazuh non riceve mai NetBird.
+- La radice della CA va nell'immagine e nell'installatore.
+
+**Tutti gli applicativi centrali** (da-vulcan, DA-ZABBIX, DA-CRM): radice della CA
+nell'archivio di fiducia, al deploy.
 
 **DA-Infra** — solo documentazione: `docs/servizi/netbird.md` aggiornato con gruppi, policy,
 l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
 
-## 11. Rapporto col piano di miglioramento di DA-IPAM
+## 13. Rapporto col piano di miglioramento di DA-IPAM
 
 - **Tappa 9** (console centrale): DA-Link **è** il suo inizio. La sua spec, quando ci si
   arriva, parte da DA-Link invece che da zero, e lo fa crescere: canale d'aggiornamento,
@@ -581,7 +866,7 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
   token di DA-Link, non l'auth-key Tailscale. Se la tappa 8 parte prima, nasce già così.
 - Questo lavoro non dipende dalle tappe 1–6, e quelle non dipendono da lui.
 
-## 12. Come si verifica che funziona
+## 14. Come si verifica che funziona
 
 - **Prove automatiche**:
   - R1–R5 su dati finti nella forma vera dell'API NetBird;
@@ -599,16 +884,39 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
   - nessuna risposta di DA-Link cambia il livello sull'istanza;
   - lettura del CRM senza segreti nella risposta, e con `non_disponibili` quando una parte
     manca;
-  - heartbeat dell'edge coi campi nuovi e quelli vecchi.
+  - heartbeat dell'edge coi campi nuovi e quelli vecchi;
+  - le tre chiavi ricavate dal segreto sono diverse fra loro e cambiano col segreto;
+  - una licenza con firma alterata, scaduta o di un altro oggetto viene rifiutata
+    dall'oggetto, anche senza rete;
+  - durante il rinnovo valgono vecchio e nuovo segreto, dopo la conferma solo il nuovo;
+  - nella tolleranza l'oggetto lavora e conta i giorni; finita, col freno spento, si
+    ferma, e i dati restano leggibili ed esportabili;
+  - al rinnovo la busta della chiave dei dati si rifà e i dati non si ricifrano; con la sola
+    chiave di recupero (di prova) la chiave dei dati si riapre;
+  - DA-Link bloccato non emette, non rinnova e non legge segnali;
+  - un certificato per un nome fuori dai limiti viene rifiutato dalla CA; un certificato
+    revocato viene rifiutato dagli applicativi.
 - **Sul vero, dal di fuori**, in fase 2 e per ogni cliente in fase 3:
   - i flussi della fase 2, punto 3;
   - la prova d'isolamento in negativo, Wazuh compreso;
   - un riavvio dell'oggetto remoto, dopo il quale torna connesso da solo.
 - **Verifica isolamento** verde nella pagina di DA-Link, con la data e la fonte della lettura.
 
-## 13. Cosa resta da decidere nel piano operativo
+## 15. Cosa resta da decidere nel piano operativo
 
 - La macchina in sede dove gira DA-Link, e il suo stack (in linea col parco).
+- Il dominio interno della CA, oltre a `*.netbird.selfhosted`, e i nomi LAN ammessi nei
+  certificati.
+- **I browser dei clienti sulla LAN**: si fidano della radice Domarc (distribuita dal loro
+  IT), oppure l'interfaccia locale tiene un certificato a parte?
+- **mTLS e firma `scambio`**: se le API per le macchine chiedono il certificato di chi
+  chiama, la firma HMAC dei messaggi resta solo per il rinnovo o si toglie. Un meccanismo
+  per scopo, non due.
+- **Quali dati archiviati si cifrano a busta**: credenziali, backup ed esportazioni di
+  sicuro; l'intero database (SQLCipher) solo se costo e prestazioni lo reggono.
+- **Da dove viene la licenza.** Per ora la imposta in DA-Link una persona di `link-admin`.
+  Più avanti potrebbe derivare dai contratti del CRM: è una decisione a parte.
+- Quando passare dalla frase di sblocco alla YubiKey (decisione 18).
 - Il nome stabile per da-vulcan (rischio 3).
 - Il rimedio alla convivenza in `100.64.0.0/10`, se la prova della fase 0 lo richiede.
 - **L'agente Python remoto di DA-IPAM** (`agent/`, raggiunto oggi via Tailscale dalla VM 533).

@@ -25,7 +25,7 @@ function tree(roots: string[], kids: Record<string, string[]>): TreeResult {
   const children = new Map<string, string[]>();
   for (const [p, ks] of Object.entries(kids)) { children.set(p, ks); for (const k of ks) if (!children.has(k)) children.set(k, []); }
   for (const r of roots) if (!children.has(r)) children.set(r, []);
-  return { roots, children, via: new Map() };
+  return { roots, children, via: new Map(), links: [] };
 }
 const ser = (r: LayoutResult) => JSON.stringify({ n: [...r.nodes.entries()], g: r.apGroups, m: [...r.moreAttached.entries()], w: r.width, h: r.height, e: r.expired });
 const ids = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}:${i + 1}`);

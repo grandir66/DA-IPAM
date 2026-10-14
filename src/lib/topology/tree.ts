@@ -4,12 +4,19 @@
  * attaccati e client sono foglie (non fanno da ponte).
  */
 import { nodeClass } from "@/lib/topology/identity";
-import { LINK_SOURCE_RANK, type MapLink, type TopologyModel } from "@/lib/topology/model-types";
+import { linkCost } from "@/lib/topology/link-attrs";
+import type { MapLink, TopologyModel } from "@/lib/topology/model-types";
 
 export interface TreeResult {
   roots: string[];
   children: Map<string, string[]>;
+  /** Il collegamento con cui ogni nodo è appeso al genitore (copia annotata di quella in `links`). */
   via: Map<string, MapLink>;
+  /**
+   * I collegamenti fra nodi visibili, copie del modello annotate per questa vista: `primary: "auto"` su quelli che
+   * l'albero usa («user» se è la scelta dell'admin), `redundant: true` su quelli che non usa. Il modello non cambia.
+   */
+  links: MapLink[];
 }
 
 export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, roots: readonly string[]): TreeResult {
@@ -20,7 +27,11 @@ export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, ro
     adj.set(l.a, [...(adj.get(l.a) ?? []), l]);
     adj.set(l.b, [...(adj.get(l.b) ?? []), l]);
   }
-  const cost = (l: MapLink) => (l.stale ? 100 : 0) + LINK_SOURCE_RANK[l.source];
+  // Un nodo con un principale scelto a mano si appende solo a quel collegamento (a meno che non sia irraggiungibile).
+  const chosen = new Map<string, MapLink>();
+  for (const l of model.links) {
+    if (l.primary === "user" && l.primaryFor && visible.has(l.a) && visible.has(l.b)) chosen.set(l.primaryFor, l);
+  }
   const taken = new Set<string>();
   const children = new Map<string, string[]>();
   const via = new Map<string, MapLink>();
@@ -29,18 +40,23 @@ export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, ro
     taken.add(r);
     children.set(r, []);
     outRoots.push(r);
-    for (;;) {
+    const pick = (strict: boolean) => {
       let best: { c: number; from: string; to: string; l: MapLink } | null = null;
       for (const x of [...taken].sort()) {
         const cls = nodeClass(nodes.get(x)!);
-        if (cls === "att" || cls === "client") continue;
+        if (cls === "att" || cls === "client" || cls === "hyper") continue; // foglie: non fanno da ponte
         for (const l of adj.get(x) ?? []) {
           const to = l.a === x ? l.b : l.a;
           if (taken.has(to)) continue;
-          const c = cost(l);
+          if (strict && chosen.has(to) && chosen.get(to) !== l) continue;
+          const c = linkCost(l);
           if (!best || c < best.c || (c === best.c && x + "|" + to < best.from + "|" + best.to)) best = { c, from: x, to, l };
         }
       }
+      return best;
+    };
+    for (;;) {
+      const best = pick(true) ?? pick(false);
       if (!best) return;
       taken.add(best.to);
       children.set(best.to, []);
@@ -58,7 +74,13 @@ export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, ro
         (a < b ? -1 : 1),
     );
   for (const r of rest) if (!taken.has(r)) grow(r);
-  return { roots: outRoots, children, via };
+  const used = new Set([...via.values()].map((l) => l.id));
+  const links = model.links
+    .filter((l) => visible.has(l.a) && visible.has(l.b) && nodes.has(l.a) && nodes.has(l.b))
+    .map((l): MapLink => ({ ...l, primary: used.has(l.id) ? (l.primary === "user" ? "user" : "auto") : l.primary, redundant: !used.has(l.id) }));
+  const byId = new Map(links.map((l) => [l.id, l]));
+  for (const [k, l] of via) via.set(k, byId.get(l.id) ?? l);
+  return { roots: outRoots, children, via, links };
 }
 
 /** Mappa automatica (spec §10.2): niente client, niente isolati («Da sistemare»), niente nascosti. */

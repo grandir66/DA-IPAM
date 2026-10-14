@@ -105,3 +105,30 @@ test("autoVisible: niente client, isolati, nascosti", () => {
   );
   assert.deepEqual([...autoVisible(m)], ["dev:1"]);
 });
+
+test("anello fra switch: il collegamento che l'albero non usa è ridondanza; il modello non viene toccato", () => {
+  const m = model(
+    [node("dev:1", "router"), node("dev:2", "switch"), node("dev:3", "switch")],
+    [link("dev:1", "dev:2"), link("dev:1", "dev:3"), link("dev:2", "dev:3", "mac_table")],
+  );
+  const t = buildTree(m, all(m), ["dev:1"]);
+  assert.deepEqual(t.links.filter((l) => l.redundant).map((l) => l.id), ["dev:2~dev:3~mac_table"]);
+  assert.equal(t.links.filter((l) => l.primary === "auto").length, 2);
+  assert.ok(m.links.every((l) => !l.redundant && l.primary === null), "le copie dell'albero non cambiano il modello");
+});
+
+test("un collegamento verso un nodo non visibile non è ridondanza", () => {
+  const m = model([node("dev:1", "router"), node("dev:2", "switch"), node("dev:3", "switch")], [link("dev:1", "dev:2"), link("dev:2", "dev:3")]);
+  const t = buildTree(m, new Set(["dev:1", "dev:2"]), ["dev:1"]);
+  assert.deepEqual(t.links.map((l) => l.id), ["dev:1~dev:2~lldp"]);
+});
+
+test("un hypervisor è una foglia raggiungibile da più switch e non fa da ponte", () => {
+  const m = model(
+    [node("dev:1", "router"), node("dev:2", "switch"), node("dev:3", "switch"), node("dev:4", "server", { vendor: "proxmox" })],
+    [link("dev:1", "dev:2"), link("dev:4", "dev:2", "unifi_uplink"), link("dev:4", "dev:3", "mac_table")],
+  );
+  const t = buildTree(m, all(m), ["dev:1"]);
+  assert.deepEqual(t.children.get("dev:4"), []);
+  assert.ok(t.roots.includes("dev:3"), "dev:3 si raggiunge solo attraverso l'hypervisor: radice in più");
+});

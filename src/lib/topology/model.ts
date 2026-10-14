@@ -5,6 +5,7 @@
  */
 import { attachMacs } from "@/lib/topology/attach";
 import { buildLinks } from "@/lib/topology/links";
+import { enrichLinks } from "@/lib/topology/link-attrs";
 import {
   LINK_SOURCE_RANK,
   type LinkSource,
@@ -28,6 +29,7 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
   const { links: baseLinks, unmatched } = buildLinks(input, idx);
   const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, vmMacs);
   const links = [...baseLinks, ...attachLinks].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  enrichLinks(links, input, idx);
   const sites = assignSites(input, idx, links);
 
   const degree = new Map<string, number>();

@@ -42,6 +42,12 @@ export interface ProxmoxScanDeps {
   readSsh: (config: ProxmoxSshConfig) => Promise<ProxmoxExtract>;
   readLive: (config: ProxmoxSshConfig) => Promise<LiveInterface[]>;
   now: () => Date;
+  /**
+   * Credenziali al posto di quelle salvate sull'apparato: solo per la misura su
+   * una copia (`scripts/misura-fase2b.ts`), dove i segreti cifrati della copia
+   * non si decifrano e la password arriva da stdin.
+   */
+  credentials?: () => { username: string; password: string };
 }
 
 const DEPS_VERE: ProxmoxScanDeps = {
@@ -108,7 +114,7 @@ export async function runProxmoxDeviceScan(
 
   assertProxmoxDevice(device);
 
-  const creds = getDeviceCredentials(device);
+  const creds = io.credentials ? io.credentials() : getDeviceCredentials(device);
   if (!creds) {
     throw new Error("Configura le credenziali (SSH o API) per questo dispositivo. Per Proxmox usa root e password.");
   }

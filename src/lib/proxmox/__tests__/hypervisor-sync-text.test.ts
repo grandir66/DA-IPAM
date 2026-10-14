@@ -19,7 +19,16 @@ test("spenta con hypervisor: come si aggiornano e quando sono stati letti (ora i
 test("accesa: ogni giorno alle 3; mai letti", () => {
   assert.deepEqual(statoLetturaHypervisor({ ...base, enabled: true, jobId: 5, hypervisors: 1 }), [
     "Accesa: ogni giorno alle 3:00 legge 1 hypervisor (VM e schede).",
-    "Gli hypervisor non sono mai stati letti.",
+    "L'hypervisor non è mai stato letto.",
   ]);
   assert.match(statoLetturaHypervisor({ ...base, enabled: true, jobId: 5 })[0], /niente da leggere/);
+});
+
+// Revisione finale M-4: con un solo hypervisor il testo diceva «dei 1 hypervisor».
+test("un solo hypervisor: singolare in ogni frase", () => {
+  assert.deepEqual(statoLetturaHypervisor({ ...base, hypervisors: 1, lastScanAt: "2026-10-13T22:51:06.323Z" }), [
+    "Spenta: VM e schede dell'unico hypervisor si aggiornano solo a mano, con la scansione Proxmox dell'apparato.",
+    "Ultima lettura dell'hypervisor: 14/10/2026, 00:51.",
+  ]);
+  for (const frase of statoLetturaHypervisor({ ...base, hypervisors: 1 })) assert.doesNotMatch(frase, /dei 1|gli hypervisor/i);
 });

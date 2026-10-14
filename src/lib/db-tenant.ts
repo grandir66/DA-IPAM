@@ -9087,7 +9087,8 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
     devices: d.prepare(`
       SELECT nd.id, nd.name, nd.host, nd.device_type, nd.vendor, nd.model, nd.enabled, nd.host_id, nd.physical_device_id,
              nd.location_id, nd.controller_mac, nd.uplink_mac, nd.uplink_remote_port, nd.uplink_type, nd.uplink_seen_at, nd.topology_hidden,
-             COALESCE(sp.n, 0) AS port_count
+             COALESCE(sp.n, 0) AS port_count,
+             CASE WHEN nd.scan_target = 'proxmox' OR COALESCE(nd.last_proxmox_scan_result, '') <> '' THEN 1 ELSE 0 END AS proxmox_scan
         FROM network_devices nd
         LEFT JOIN (SELECT device_id, COUNT(*) AS n FROM switch_ports GROUP BY device_id) sp ON sp.device_id = nd.id
        ORDER BY nd.id`).all() as ModelInput["devices"],
@@ -9422,8 +9423,26 @@ export function updateLinkOverride(
   return "ok";
 }
 
+/**
+ * Toglie una correzione. Se è un collegamento a mano, nella stessa transazione toglie anche la scelta
+ * del principale fra gli stessi due oggetti (revisione finale M-3): altrimenti la riga restava, e un
+ * collegamento automatico comparso dopo fra quei due diventava «★ scelto a mano» senza che nessuno
+ * l'avesse scelto. Ripristinare un «ignora» non tocca i principali.
+ */
 export function deleteLinkOverride(id: number): boolean {
-  return db().prepare("DELETE FROM topology_link_overrides WHERE id = ?").run(id).changes > 0;
+  const d = db();
+  return d.transaction((): boolean => {
+    const row = d.prepare("SELECT action, a_node, b_node FROM topology_link_overrides WHERE id = ?").get(id) as
+      | { action: string; a_node: string; b_node: string }
+      | undefined;
+    if (!row) return false;
+    d.prepare("DELETE FROM topology_link_overrides WHERE id = ?").run(id);
+    if (row.action === "add") {
+      d.prepare("DELETE FROM topology_link_primary WHERE (node_id = ? AND other_node = ?) OR (node_id = ? AND other_node = ?)")
+        .run(row.a_node, row.b_node, row.b_node, row.a_node);
+    }
+    return true;
+  })();
 }
 
 /**

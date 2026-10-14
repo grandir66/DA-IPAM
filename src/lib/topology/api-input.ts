@@ -5,6 +5,7 @@
  */
 import { z } from "zod";
 import { LINK_STALE_DAYS_MAX, LINK_STALE_DAYS_MIN } from "@/lib/topology/settings";
+import { VM_NON_COLLEGABILE } from "@/lib/topology/vm-nodes";
 
 export type Parsed<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -49,10 +50,18 @@ const BODY = { error: "Corpo della richiesta non valido" };
 const NODE = z.string({ error: "Nodo non valido" }).regex(/^(dev|host):\d+$/, "Nodo non valido");
 /**
  * Un nodo che può essere anche una VM (`vm:<apparato>:<vmid>`, fase 2b): regex del
- * piano. Vale dove un oggetto della mappa può essere una VM (collegamenti, principale,
- * porte, nodi e ritocchi delle mappe); testa e «nascondi» restano agli apparati e host.
+ * piano. Vale dove un oggetto della mappa può essere una VM (porte, nodi e ritocchi delle
+ * mappe, togliere una scelta del principale); collegamenti e principale no (LINK_NODE);
+ * testa e «nascondi» restano agli apparati e host.
  */
 const NODE_ANY = z.string({ error: "Nodo non valido" }).regex(/^(dev|host|vm):\d+(:\d+)?$/, "Nodo non valido");
+/**
+ * Revisione finale I-1: nel modello una VM non censita non è un capo di collegamento (`buildLinks` non
+ * la trova), quindi un collegamento a mano o un principale verso di lei si salverebbe e non comparirebbe
+ * mai. Si rifiuta in parole; le mappe passo passo continuano ad accettarla (NODE_ANY).
+ */
+export { VM_NON_COLLEGABILE };
+const LINK_NODE = NODE_ANY.refine((v) => !v.startsWith("vm:"), { message: VM_NON_COLLEGABILE });
 const MEDIUM = z.enum(["cavo", "fibra", "wireless"], { error: "Tipo non valido: «cavo», «fibra» o «wireless»" });
 const NOTE = z.string({ error: "Nota non valida" }).max(500, "Nota troppo lunga (massimo 500 caratteri)");
 const id = (msg: string) => z.number({ error: msg }).int({ error: msg }).positive({ error: msg });
@@ -65,9 +74,9 @@ function first(e: z.ZodError): string {
 const linkSchema = z.object(
   {
     action: z.enum(["add", "ignore"], { error: "Azione non valida: «add» o «ignore»" }),
-    a_node: NODE_ANY,
+    a_node: LINK_NODE,
     a_port: PORT.optional().default(""),
-    b_node: NODE_ANY,
+    b_node: LINK_NODE,
     b_port: PORT.optional().default(""),
     medium: MEDIUM.nullish().transform((v) => v ?? null),
     note: NOTE.nullish().transform((v) => v ?? null),
@@ -105,7 +114,7 @@ export function parseLinkPatchBody(raw: unknown): Parsed<LinkPatch> {
 }
 
 const primarySchema = z.object(
-  { node_id: NODE_ANY, other_node: NODE_ANY, node_port: PORT.optional().default(""), other_port: PORT.optional().default("") },
+  { node_id: LINK_NODE, other_node: LINK_NODE, node_port: PORT.optional().default(""), other_port: PORT.optional().default("") },
   BODY,
 );
 

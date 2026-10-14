@@ -8,6 +8,7 @@
 import { nodeClass } from "@/lib/topology/identity";
 import type { LinkOverrideRow, MapLink, MapVm, TopologyModel } from "@/lib/topology/model-types";
 import { missingNeighbors, type TreeResult } from "@/lib/topology/tree";
+import { VM_NON_COLLEGABILE } from "@/lib/topology/vm-nodes";
 
 export interface NodeMenuCtx {
   mode: "auto" | "passo";
@@ -31,6 +32,19 @@ export interface NodeMenuCtx {
   infraHost: boolean;
   /** Collegati non ancora nella mappa (per «Aggiungi collegati ▸»). */
   addableCount: number;
+  /** VM non censita (`vm:N:M`): non si collega a mano (revisione finale I-1). */
+  isUncensusedVm: boolean;
+}
+
+/** Una VM non censita: un nodo della pagina, non un capo di collegamento del modello. */
+export const isUncensusedVmId = (id: string): boolean => id.startsWith("vm:");
+
+/**
+ * «Collega a…» fra due oggetti: null se si può, altrimenti il motivo in parole. Una VM non censita
+ * non è un capo di collegamento: la rotta la rifiuterebbe (revisione finale I-1).
+ */
+export function connectRefusal(a: string, b: string): string | null {
+  return isUncensusedVmId(a) || isUncensusedVmId(b) ? VM_NON_COLLEGABILE : null;
 }
 
 export type NodeMenuKey =
@@ -49,7 +63,7 @@ export function nodeMenuItems(c: NodeMenuCtx): Array<MenuItem<NodeMenuKey>> {
   const passo = c.mode === "passo" && c.canEditMap;
   if (c.isHypervisor && c.vmCount > 0) out.push({ key: "toggleVms", label: c.expanded ? "Nascondi VM" : `Mostra VM (${c.vmCount})` });
   if (c.isAdmin && c.isHypervisor && c.canRefreshVms) out.push({ key: "refreshVms", label: "Aggiorna VM" });
-  if (c.isAdmin) out.push({ key: "connect", label: "Collega a…" });
+  if (c.isAdmin && !c.isUncensusedVm) out.push({ key: "connect", label: "Collega a…" });
   if (passo && c.addableCount > 0) out.push({ key: "addLinked", label: `Aggiungi collegati (${c.addableCount})` });
   if (passo && c.inMap) out.push(c.isStart ? { key: "start", label: "▶ è una partenza", disabled: true } : { key: "start", label: "Usa come partenza" });
   if (c.mode === "auto" && c.isAdmin) out.push(c.isHead ? { key: "head", label: "● è la testa", disabled: true } : { key: "head", label: "Usa come testa" });
@@ -67,7 +81,10 @@ export function edgeMenuItems(l: MapLink, isAdmin: boolean): Array<MenuItem<Edge
   const manual = l.sources.includes("manual");
   const out: Array<MenuItem<EdgeMenuKey>> = [];
   if (manual) out.push({ key: "editPorts", label: "Modifica porte…" });
-  if (l.primary === "user") out.push({ key: "unprimary", label: "Togli la scelta del principale" });
+  // Una linea verso una VM non censita non ha un principale da scegliere: la rotta lo rifiuterebbe (I-1).
+  if (connectRefusal(l.a, l.b) !== null) {
+    /* niente voce del principale */
+  } else if (l.primary === "user") out.push({ key: "unprimary", label: "Togli la scelta del principale" });
   else out.push({ key: "primary", label: l.primary === "auto" ? "★ Fissa come principale" : "★ Rendi principale" });
   out.push(manual ? { key: "remove", label: "Rimuovi il collegamento a mano" } : { key: "ignore", label: "Ignora il collegamento…" });
   return out;

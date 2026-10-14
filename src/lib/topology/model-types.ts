@@ -34,6 +34,12 @@ export interface ModelDeviceRow {
   uplink_type: string | null;
   topology_hidden: number;
   port_count: number;
+  /**
+   * 1 = l'apparato ha la scansione Proxmox (tipo di scansione «proxmox» o un risultato salvato): per la
+   * mappa un server così è un hypervisor anche con un altro fornitore (spec §11.5, revisione finale M-2).
+   * Facoltativo: le fixture anonime precedenti non ce l'hanno (vale 0).
+   */
+  proxmox_scan?: number;
 }
 
 export interface ModelHostRow {
@@ -188,6 +194,8 @@ export interface MapNode {
   hidden: boolean;
   /** Fornitore dell'apparato (proxmox, vmware… per riconoscere un hypervisor); null per un host. */
   vendor: string | null;
+  /** L'apparato ha la scansione Proxmox (revisione finale M-2); assente = no. */
+  proxmoxScan?: boolean;
 }
 
 export type LinkMedium = "cavo" | "fibra" | "wireless";

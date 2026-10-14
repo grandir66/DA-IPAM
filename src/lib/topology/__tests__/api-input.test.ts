@@ -87,11 +87,11 @@ test("ritocchi e nascondi: vista auto o mappa:N; hidden solo dev:N", async () =>
 
 // ─── Fase 2b (Task 9): tipo del collegamento, modifica, principale, porte note ───
 
-test("collegamento a mano col tipo; le VM sono nodi; il tipo non vale per «ignora»", async () => {
+test("collegamento a mano col tipo; il tipo non vale per «ignora»", async () => {
   const m = await import("@/lib/topology/api-input");
   assert.deepEqual(
-    m.parseLinkOverrideBody({ action: "add", a_node: "vm:3:100", a_port: "net0", b_node: "dev:2", b_port: "Port 5", medium: "fibra", note: "armadio 2" }),
-    { ok: true, data: { action: "add", a_node: "vm:3:100", a_port: "net0", b_node: "dev:2", b_port: "Port 5", medium: "fibra", note: "armadio 2" } },
+    m.parseLinkOverrideBody({ action: "add", a_node: "host:3", a_port: "net0", b_node: "dev:2", b_port: "Port 5", medium: "fibra", note: "armadio 2" }),
+    { ok: true, data: { action: "add", a_node: "host:3", a_port: "net0", b_node: "dev:2", b_port: "Port 5", medium: "fibra", note: "armadio 2" } },
   );
   assert.equal(m.parseLinkOverrideBody({ action: "add", a_node: "dev:1", b_node: "dev:2", medium: null }).ok, true);
   for (const bad of [
@@ -106,6 +106,22 @@ test("collegamento a mano col tipo; le VM sono nodi; il tipo non vale per «igno
   }
   const ign = m.parseLinkOverrideBody({ action: "ignore", a_node: "dev:1", b_node: "dev:2", medium: "cavo" });
   assert.deepEqual(ign, { ok: false, error: "Il tipo (cavo, fibra, wireless) si indica solo per un collegamento aggiunto a mano" });
+});
+
+// Revisione finale I-1: il modello non ha nodi `vm:` nei collegamenti, quindi un collegamento a mano o un
+// principale verso una VM non censita si salverebbe senza mai comparire (ripiego muto). Si rifiuta in parole.
+test("I-1: collegamenti e principale rifiutano una VM non censita (vm:N:M), con il motivo in italiano", async () => {
+  const m = await import("@/lib/topology/api-input");
+  const atteso = { ok: false, error: m.VM_NON_COLLEGABILE };
+  assert.match(m.VM_NON_COLLEGABILE, /VM non censita/);
+  for (const action of ["add", "ignore"]) {
+    assert.deepEqual(m.parseLinkOverrideBody({ action, a_node: "vm:3:100", a_port: "net0", b_node: "dev:2", b_port: "Port 5" }), atteso, action);
+    assert.deepEqual(m.parseLinkOverrideBody({ action, a_node: "dev:2", b_node: "vm:3:100" }), atteso, action);
+  }
+  assert.deepEqual(m.parsePrimaryBody({ node_id: "vm:3:100", other_node: "host:9" }), atteso);
+  assert.deepEqual(m.parsePrimaryBody({ node_id: "dev:5", other_node: "vm:3:100" }), atteso);
+  // Le mappe continuano ad accettare le VM (test più sotto); togliere una scelta resta possibile per qualunque nodo.
+  assert.deepEqual(m.parsePrimaryDeleteBody({ node_id: "vm:3:100" }), { ok: true, data: { node_id: "vm:3:100" } });
 });
 
 test("modifica di un collegamento a mano: solo i campi presenti; almeno uno", async () => {
@@ -126,8 +142,8 @@ test("principale scelto a mano: due nodi diversi, porte facoltative; per toglier
   assert.deepEqual(m.parsePrimaryBody({ node_id: "dev:5", other_node: "dev:2", node_port: "eno1", other_port: "Port 17" }), {
     ok: true, data: { node_id: "dev:5", other_node: "dev:2", node_port: "eno1", other_port: "Port 17" },
   });
-  assert.deepEqual(m.parsePrimaryBody({ node_id: "vm:3:100", other_node: "host:9" }), {
-    ok: true, data: { node_id: "vm:3:100", other_node: "host:9", node_port: "", other_port: "" },
+  assert.deepEqual(m.parsePrimaryBody({ node_id: "host:3", other_node: "host:9" }), {
+    ok: true, data: { node_id: "host:3", other_node: "host:9", node_port: "", other_port: "" },
   });
   assert.deepEqual(m.parsePrimaryBody({ node_id: "dev:5", other_node: "dev:5" }), { ok: false, error: "Un collegamento unisce due nodi diversi" });
   for (const bad of [null, {}, { node_id: "dev:5" }, { node_id: "ext:1", other_node: "dev:2" }, { node_id: "dev:5", other_node: "dev:2", node_port: 3 }]) {

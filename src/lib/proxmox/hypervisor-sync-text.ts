@@ -22,19 +22,19 @@ function quando(x: string): string {
 /** Due frasi: se è accesa e cosa fa, e quando sono stati letti l'ultima volta. */
 export function statoLetturaHypervisor(s: HypervisorSyncState): string[] {
   const n = s.hypervisors;
-  const quanti = n === 1 ? "1 hypervisor" : `${n} hypervisor`;
+  const uno = n === 1; // singolare in ogni frase (revisione finale M-4: diceva «dei 1 hypervisor»)
   const prima =
     n === 0
       ? s.enabled
         ? "Accesa, ma nessun hypervisor ha la scansione Proxmox configurata: non c'è niente da leggere."
         : "Spenta. Nessun hypervisor ha la scansione Proxmox configurata."
       : s.enabled
-        ? `Accesa: ogni giorno alle 3:00 legge ${quanti} (VM e schede).`
-        : `Spenta: VM e schede dei ${quanti} si aggiornano solo a mano, con la scansione Proxmox dell'apparato.`;
+        ? `Accesa: ogni giorno alle 3:00 legge ${n} hypervisor (VM e schede).`
+        : `Spenta: VM e schede ${uno ? "dell'unico hypervisor" : `dei ${n} hypervisor`} si aggiornano solo a mano, con la scansione Proxmox dell'apparato.`;
   const seconda = s.lastScanAt
-    ? `Ultima lettura degli hypervisor: ${quando(s.lastScanAt)}.`
+    ? `Ultima lettura ${uno ? "dell'hypervisor" : "degli hypervisor"}: ${quando(s.lastScanAt)}.`
     : n > 0
-      ? "Gli hypervisor non sono mai stati letti."
+      ? uno ? "L'hypervisor non è mai stato letto." : "Gli hypervisor non sono mai stati letti."
       : null;
   return seconda ? [prima, seconda] : [prima];
 }

@@ -15,12 +15,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import { useRouter } from "next/navigation";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { toast } from "sonner";
+import { IGNORA_SI_ANNULLA } from "@/lib/topology/ignored-links";
 import { LoadError } from "@/components/shared/load-error";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { nodeClass } from "@/lib/topology/identity";
 import {
-  addableLinked, edgeMenuItems, findManualOverride, nodeMenuItems, primaryTarget, refreshVmDeviceIds, vmMenuItems,
+  addableLinked, connectRefusal, edgeMenuItems, findManualOverride, isUncensusedVmId, nodeMenuItems, primaryTarget, refreshVmDeviceIds, vmMenuItems,
   type EdgeMenuKey, type NodeMenuKey,
 } from "@/lib/topology/map-menus";
 import { resolveMapView } from "@/lib/topology/map-view";
@@ -315,6 +316,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   function openConnect(a: string, b: string) {
     setConnectFrom(null);
     if (a === b) return;
+    const no = connectRefusal(a, b);
+    if (no) { toast.error(no); return; }
     setConnect({ a, b, aName: name(a), bName: name(b), edit: null });
   }
   async function editPorts(link: MapLink) {
@@ -383,7 +386,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       mode, isAdmin, canEditMap, inMap: d.visible.has(n.id), isHead: n.id === d.head, isStart: d.roots.includes(n.id),
       isDevice: n.kind === "device", hidden: n.hidden, isHypervisor: isHyper, vmCount: d.vmsOf.get(n.id)?.length ?? 0,
       expanded: expanded.has(n.id), canRefreshVms: isHyper && refreshVmDeviceIds(d.model.vms, n.id).length > 0,
-      infraHost: n.kind === "host" && nodeClass(n) !== "client", addableCount: addable.length,
+      infraHost: n.kind === "host" && nodeClass(n) !== "client", addableCount: addable.length, isUncensusedVm: isUncensusedVmId(n.id),
     });
     return (
       <NodeMenuContent
@@ -544,6 +547,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
             La linea sparisce da tutte le mappe, anche se le letture continuano a vederla
             ({ignoreAsk ? ignoreAsk.sources.map((s) => FONTE[s]).join(" + ") : ""}). I dati letti non si toccano.
           </p>
+          <p className="text-[13px]">{IGNORA_SI_ANNULLA}</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIgnoreAsk(null)}>Annulla</Button>
             <Button

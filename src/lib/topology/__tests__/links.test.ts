@@ -201,3 +201,15 @@ test("router: lo stesso caso via LLDP dai due lati → collegamento fra i router
   assert.ok(l);
   assert.equal(l.source, "lldp");
 });
+
+// Revisione finale M-7: il suffisso dopo `ether1-` era qualunque cosa, così `ether1-vlan20` (una VLAN rinominata)
+// passava per porta fisica e un unico vicino MNDP su di lei diventava un collegamento. Ora il suffisso è una
+// velocità o un numero: cifre e punti (`-2.5`), oppure `10g`/`2.5g`.
+test("M-7: ether1-<suffisso> è fisica solo con cifre e punti o una velocità in g; ether1-vlan20 no", () => {
+  for (const p of ["ether1-2.5", "ether1-10g", "ether1-2.5g", "ether1-10G", "sfp-sfpplus1-10g", "qsfp28-1-1", "ether2-1.1"]) {
+    assert.equal(isPhysicalPort(p), true, p);
+  }
+  for (const p of ["ether1-vlan20", "ether1-wan", "ether1-lan.10", "ether1-2.5x", "sfp1-uplink"]) {
+    assert.equal(isPhysicalPort(p), false, p);
+  }
+});

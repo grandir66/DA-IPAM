@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addableLinked,
+  connectRefusal,
   edgeMenuItems,
   findManualOverride,
   nodeMenuItems,
@@ -34,7 +35,7 @@ function model(nodes: MapNode[], links: MapLink[], over: Partial<TopologyModel> 
 }
 const ctx = (over: Partial<NodeMenuCtx> = {}): NodeMenuCtx => ({
   mode: "passo", isAdmin: true, canEditMap: true, inMap: true, isHead: false, isStart: false, isDevice: true, hidden: false,
-  isHypervisor: false, vmCount: 0, expanded: false, canRefreshVms: false, infraHost: false, addableCount: 0, ...over,
+  isHypervisor: false, vmCount: 0, expanded: false, canRefreshVms: false, infraHost: false, addableCount: 0, isUncensusedVm: false, ...over,
 });
 const keys = (xs: Array<{ key: string }>) => xs.map((x) => x.key);
 
@@ -143,4 +144,18 @@ test("menu della VM: Aggiungi alla mappa solo passo passo con la mappa modificab
   ]);
   assert.deepEqual(vmMenuItems({ canEditMap: true, inMap: true })[0], { key: "add", label: "✓ nella mappa", disabled: true });
   assert.deepEqual(vmMenuItems({ canEditMap: false, inMap: false }), [{ key: "details", label: "Dettagli" }]);
+});
+
+// Revisione finale I-1: una VM non censita (vm:N:M) è un nodo della pagina, non del modello: un collegamento a
+// mano o un principale verso di lei si salverebbe senza mai comparire. Il menu non li propone.
+test("I-1: su una VM non censita niente «Collega a…»; una linea con una VM non propone il principale", () => {
+  const vm = nodeMenuItems(ctx({ isDevice: false, isUncensusedVm: true }));
+  assert.ok(!keys(vm).includes("connect"), "niente «Collega a…» su una VM non censita");
+  assert.deepEqual(keys(vm), ["details", "start", "remove"]);
+  assert.deepEqual(keys(edgeMenuItems(link("dev:1", "vm:3:100"), true)), ["ignore"]);
+  assert.deepEqual(keys(edgeMenuItems(link("vm:3:100", "dev:1", "lldp", { primary: "user" }), true)), ["ignore"]);
+  // Il clic sull'oggetto di arrivo (o il pallino) verso una VM si rifiuta in parole; fra apparati e host no.
+  assert.match(connectRefusal("dev:1", "vm:3:100") ?? "", /VM non censita/);
+  assert.match(connectRefusal("vm:3:100", "host:2") ?? "", /VM non censita/);
+  assert.equal(connectRefusal("dev:1", "host:2"), null);
 });

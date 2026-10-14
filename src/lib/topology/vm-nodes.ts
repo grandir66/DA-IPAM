@@ -10,6 +10,14 @@ import { CHAR_W } from "@/lib/topology/tree-layout";
 import type { MapNode, MapVm, TopologyModel } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
 
+/**
+ * Revisione finale I-1: una VM non censita è un nodo della pagina, non un capo di collegamento del
+ * modello. Un collegamento a mano o un principale verso di lei si salverebbe senza mai comparire: le
+ * rotte lo rifiutano con queste parole, e la pagina non lo propone.
+ */
+export const VM_NON_COLLEGABILE =
+  "Una VM non censita non si collega a mano: collega l'host o l'apparato che la rappresenta, oppure il suo hypervisor";
+
 export function isRunning(status: string): boolean {
   return status.trim().toLowerCase() === "running";
 }

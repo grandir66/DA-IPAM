@@ -13,8 +13,9 @@ type Stato = HypervisorSyncState & { warning?: string };
 /**
  * Lettura giornaliera degli hypervisor (topologia fase 2b, spec §11.5): una
  * casella che accende o spegne il job, e lo stato in parole. Spenta di default.
+ * Chi non è admin vede la casella disabilitata col motivo (revisione finale M-4).
  */
-export function HypervisorSyncCard() {
+export function HypervisorSyncCard({ isAdmin }: { isAdmin: boolean }) {
   const [s, setS] = useState<Stato | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -60,10 +61,13 @@ export function HypervisorSyncCard() {
           <p className="text-sm text-muted-foreground">Caricamento…</p>
         ) : (
           <>
-            <label className="flex cursor-pointer items-center gap-3 text-sm">
-              <Checkbox checked={s.enabled} disabled={saving} onCheckedChange={(c) => void cambia(c === true)} />
+            <label className={isAdmin ? "flex cursor-pointer items-center gap-3 text-sm" : "flex items-center gap-3 text-sm"}>
+              <Checkbox checked={s.enabled} disabled={saving || !isAdmin} onCheckedChange={(c) => void cambia(c === true)} />
               <span>Leggi gli hypervisor ogni giorno (VM e schede)</span>
             </label>
+            {!isAdmin && (
+              <p className="text-sm text-muted-foreground">Sola lettura: solo un amministratore accende o spegne la lettura degli hypervisor.</p>
+            )}
             {statoLetturaHypervisor(s).map((frase) => (
               <p key={frase} className="text-sm">{frase}</p>
             ))}

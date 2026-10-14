@@ -15,6 +15,7 @@ import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectionMode, ReactFlow, useReactFlow, type Edge, type Node, type NodeChange, type OnConnectEnd } from "@xyflow/react";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { isUncensusedVmId } from "@/lib/topology/map-menus";
 import { ATT_MAX, ATT_ROW, type LayoutResult } from "@/lib/topology/tree-layout";
 import type { MapLink } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
@@ -118,7 +119,8 @@ export function MapCanvas(p: Props) {
           portLabel: ports && ln.role === "box" ? `${ports.parentPort || "?"} → ${ports.childPort || "?"}` : null,
           daysUnseen: via?.stale ? (via.daysUnseen ?? 0) : null,
           attached: (tree.children.get(ln.id) ?? []).some((k) => layout.nodes.get(k)?.role === "attached"),
-          connectable: connectable && ln.role === "box",
+          // Il pallino non c'è su una VM non censita: non si collega a mano (revisione finale I-1).
+          connectable: connectable && ln.role === "box" && !isUncensusedVmId(ln.id),
           vms: vmInfo.get(ln.id) ?? null,
           onToggleVms: vmInfo.has(ln.id) ? () => onToggleVms(ln.id) : null,
         },

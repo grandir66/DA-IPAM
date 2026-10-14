@@ -22,7 +22,7 @@ export async function GET() {
 /**
  * POST /api/topology/links — aggiunge un collegamento («add», con le porte e il tipo
  * `medium`: cavo, fibra, wireless o null) o ne nasconde uno visto («ignore», senza tipo).
- * Nodi `dev:N`, `host:N` o `vm:N:M`. Risposta 201 `{ id }`.
+ * Nodi `dev:N` o `host:N`: una VM non censita (`vm:N:M`) si rifiuta con 400. Risposta 201 `{ id }`.
  */
 export async function POST(req: Request) {
   return withTenantFromSession(async () => {

@@ -10,11 +10,13 @@ import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolat
 import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
-import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
+import { deleteTenantDatabase, getTenantDb, getTopologyModelInput, withTenant } from "@/lib/db-tenant";
 import { encrypt } from "@/lib/crypto";
 import { runProxmoxDeviceScan, type ProxmoxDeviceScanResult, type ProxmoxScanDeps } from "@/lib/proxmox/run-proxmox-device-scan";
 import { parseLiveInterfaces, parseSpeedLines } from "@/lib/proxmox/live-interfaces";
-import type { ProxmoxHostInfo, ProxmoxVM } from "@/lib/proxmox/proxmox-client";
+import { ProxmoxClient, type ProxmoxHostInfo, type ProxmoxVM } from "@/lib/proxmox/proxmox-client";
+import { buildTopologyModel } from "@/lib/topology/model";
+import { vmSummary } from "@/lib/topology/vm-nodes";
 import { IP_LINK, SPEED_LINES } from "./fixtures/live-node";
 
 const T = "TESTPROXMOXSCAN";
@@ -171,7 +173,7 @@ test("Review Focus 4: VM a zero con errori quando prima c'erano → non si scriv
   assert.deepEqual(riga(id), prima);
 });
 
-test("zero VM senza errori (tutte spente) si scrive: è una lettura vera", async () => {
+test("zero VM senza errori si scrive: è una lettura vera (un cluster che non ha VM, nemmeno spente)", async () => {
   const prima = { at: "2026-10-13T03:00:00.000Z", result: JSON.stringify({ hosts: CLUSTER.hosts, vms: CLUSTER.vms, scanned_at: "2026-10-13T03:00:00.000Z" }) };
   const id = hypervisor(prima);
   const { deps } = finti({
@@ -221,4 +223,46 @@ test("scansione di prima rovinata (JSON non valido): si legge e si scrive lo ste
   const id = hypervisor({ at: "2026-10-13T03:00:00.000Z", result: "{non json" });
   await withTenant(T, () => runProxmoxDeviceScan(id, finti().deps));
   assert.equal(json(riga(id).result).hosts.length, 2);
+});
+
+// Revisione finale I-2: la scansione leggeva solo le VM accese (`includeStopped: false`). Con il job giornaliero
+// una VM spenta alle 03:00 spariva: i suoi MAC tornavano client della porta dello switch, «■ spenta» non
+// compariva mai e «M accese» era sempre uguale a N. Qui l'API è quella vera (ProxmoxClient), con la rete finta:
+// si guarda cosa chiede la scansione e che la VM spenta arrivi fino al modello della mappa.
+test("I-2: le VM spente si leggono: restano nel modello col loro stato e i loro MAC non sono client della porta", async () => {
+  const id = hypervisor();
+  const sw = Number(getTenantDb(T).prepare(
+    "INSERT INTO network_devices (name, host, device_type, vendor, protocol, enabled) VALUES ('SW-1', '192.0.2.2', 'switch', 'ubiquiti', 'api', 1)",
+  ).run().lastInsertRowid);
+  const spenta: ProxmoxVM = { ...vm(12, "pve-a"), status: "stopped" };
+  getTenantDb(T).prepare("INSERT INTO mac_port_entries (device_id, mac, port_name, timestamp, source) VALUES (?, ?, 'Port 7', datetime('now'), 'device')")
+    .run(sw, String(spenta.networks_details[0].mac).toUpperCase());
+  const opzioni: Array<{ includeStopped?: boolean; includeContainers?: boolean } | undefined> = [];
+  const originale = ProxmoxClient.prototype.extractAll;
+  // Come il client vero: senza includeStopped le VM spente non arrivano.
+  ProxmoxClient.prototype.extractAll = async function (o?: { includeStopped?: boolean; includeContainers?: boolean }) {
+    opzioni.push(o);
+    const tutte = [...structuredClone(CLUSTER.vms), structuredClone(spenta)];
+    return { hosts: structuredClone(CLUSTER.hosts), vms: o?.includeStopped ? tutte : tutte.filter((v) => v.status === "running") };
+  } as typeof originale;
+  try {
+    const { deps } = finti({ readSsh: async () => ({ hosts: [], vms: [] }) });
+    const senzaApi: Partial<ProxmoxScanDeps> = { ...deps };
+    delete senzaApi.readApi; // l'API resta quella vera
+    await withTenant(T, () => runProxmoxDeviceScan(id, senzaApi));
+  } finally {
+    ProxmoxClient.prototype.extractAll = originale;
+  }
+  assert.equal(opzioni.length, 1);
+  assert.equal(opzioni[0]?.includeStopped, true, "la scansione chiede anche le VM spente");
+  const salvata = json(riga(id).result).vms.find((v) => v.vmid === 12);
+  assert.equal(salvata?.status, "stopped");
+
+  const m = buildTopologyModel(withTenant(T, () => getTopologyModelInput(2)));
+  const v12 = m.vms.find((v) => v.id === `vm:${id}:12`);
+  assert.equal(v12?.status, "stopped", "la VM spenta resta nel modello col suo stato");
+  assert.equal(v12?.hypervisorNodeId, `dev:${id}`);
+  assert.equal(vmSummary(m.vms.filter((v) => v.hypervisorNodeId === `dev:${id}`)).label, "3 VM, 2 accese");
+  const porta = m.portClients.find((p) => p.nodeId === `dev:${sw}` && p.port === "Port 7");
+  assert.equal(porta?.clients.length ?? 0, 0, "il MAC della VM spenta non è un client della porta");
 });

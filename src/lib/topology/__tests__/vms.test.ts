@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildTopologyModel } from "@/lib/topology/model";
 import { buildNodeIndex } from "@/lib/topology/node-index";
 import { nodeClass } from "@/lib/topology/identity";
-import { parseProxmoxScan, placeVms } from "@/lib/topology/vms";
+import { macOf, parseProxmoxScan, placeVms } from "@/lib/topology/vms";
 import type { ModelVmRow, TopologyModelInput } from "@/lib/topology/model-types";
 import { baseInput, dev, host } from "./support/righe";
 
@@ -111,7 +111,7 @@ test("senza MAC la VM coincide con un nodo attaccato o client dello stesso nome;
   assert.deepEqual([...vmNodeIds], ["host:50"]);
 });
 
-test("la stessa VM letta da due apparati scansionati è una sola (vince la lettura più recente)", () => {
+test("la stessa VM letta da due apparati scansionati è una sola (id dall'apparato con l'id più basso)", () => {
   const i = cluster({
     vms: [vm(100, "pve-a", { scannedDeviceId: 3, scannedAt: "2026-05-22T10:00:00.000Z" }), vm(100, "pve-a", { scannedDeviceId: 4, scannedAt: "2026-10-13T06:00:00.000Z" })],
     scanHosts: [
@@ -120,7 +120,7 @@ test("la stessa VM letta da due apparati scansionati è una sola (vince la lettu
     ],
   });
   const { vms } = placeVms(i, buildNodeIndex(i.devices, i.hosts, i.knownMacs, i.neighbors));
-  assert.deepEqual(vms.map((v) => v.id), ["vm:4:100"]);
+  assert.deepEqual(vms.map((v) => v.id), ["vm:3:100"]);
 });
 
 test("JSON della scansione rovinato o di forma inattesa: nessuna VM, nessun errore", () => {
@@ -205,7 +205,7 @@ test("due letture della stessa VM: IP e MAC della vecchia valgono se la nuova no
   });
   const m = buildTopologyModel(due({ ips: [], macs: [] }));
   assert.equal(m.vms.length, 1);
-  assert.equal(m.vms[0].id, "vm:4:130", "l'id resta quello della lettura più recente");
+  assert.equal(m.vms[0].id, "vm:3:130", "l'id è quello dell'apparato con l'id più basso, non della lettura più recente");
   assert.deepEqual(m.vms[0].ips, ["198.51.100.77"]);
   assert.equal(m.vms[0].nodeId, "dev:7", "riconosciuta per l'IP che solo la lettura vecchia riportava");
   assert.ok(!m.isolated.includes("dev:7"));
@@ -213,4 +213,49 @@ test("due letture della stessa VM: IP e MAC della vecchia valgono se la nuova no
   const n = buildTopologyModel(due({ ips: ["198.51.100.99"], macs: ["02:00:00:cc:00:10"] }));
   assert.deepEqual(n.vms[0].ips, ["198.51.100.99"]);
   assert.equal(n.vms[0].nodeId, null);
+});
+
+// Revisione finale M-1: sul cliente A più apparati leggono lo stesso cluster, uno dopo l'altro. Se l'id della VM
+// seguisse la lettura più recente, basterebbe che l'ultima lettura fallisse una notte per cambiare gli id: le VM
+// salvate in una mappa diventerebbero «sparite». L'id viene dall'apparato con l'id più basso; i dati dalla più recente.
+test("M-1: l'id di una VM letta da più apparati non cambia con l'ordine delle letture; i dati sono della più recente", () => {
+  const due = (at3: string, at4: string) => cluster({
+    vms: [
+      vm(100, "pve-a", { scannedDeviceId: 3, scannedAt: at3, name: "da-3", ips: ["198.51.100.3"] }),
+      vm(100, "pve-a", { scannedDeviceId: 4, scannedAt: at4, name: "da-4", ips: ["198.51.100.4"] }),
+    ],
+    scanHosts: [
+      { scannedDeviceId: 3, hostname: "pve-a", ips: ["192.0.2.11"], macs: [] },
+      { scannedDeviceId: 4, hostname: "pve-a", ips: ["192.0.2.11"], macs: [] },
+    ],
+  });
+  const leggi = (i: TopologyModelInput) => placeVms(i, buildNodeIndex(i.devices, i.hosts, i.knownMacs, i.neighbors)).vms;
+  const quattroUltimo = leggi(due("2026-10-13T03:00:00.000Z", "2026-10-14T03:05:00.000Z"));
+  assert.deepEqual(quattroUltimo.map((v) => [v.id, v.name, v.ips[0], v.scannedAt]), [["vm:3:100", "da-4", "198.51.100.4", "2026-10-14T03:05:00.000Z"]]);
+  // Stanotte la lettura del 4 è fallita: il 3 è il più recente. L'id resta lo stesso, i dati sono del 3.
+  const treUltimo = leggi(due("2026-10-15T03:00:00.000Z", "2026-10-14T03:05:00.000Z"));
+  assert.deepEqual(treUltimo.map((v) => [v.id, v.name]), [["vm:3:100", "da-3"]]);
+});
+
+// Revisione finale M-2 (spec §11.5): un hypervisor è anche un server con la scansione Proxmox, non solo uno col
+// fornitore giusto. Prima un server «dell» con la scansione restava «att»: «N VM ▸» che non si espande.
+test("M-2: un server con la scansione Proxmox è un hypervisor anche con un altro fornitore", () => {
+  assert.equal(nodeClass({ type: "server", vendor: "dell", proxmoxScan: true }), "hyper");
+  assert.equal(nodeClass({ type: "server", vendor: "dell", proxmoxScan: false }), "att");
+  assert.equal(nodeClass({ type: "switch", vendor: null, proxmoxScan: true }), "infra", "il tipo vince: uno switch resta uno switch");
+  const i = cluster({
+    devices: cluster().devices.map((d) => (d.id === 4 ? { ...d, proxmox_scan: 1 } : d)),
+    scanHosts: [{ scannedDeviceId: 4, hostname: "pve-z", ips: ["192.0.2.51"], macs: [] }],
+    vms: [vm(150, "pve-z", { scannedDeviceId: 4 })],
+  });
+  const m = buildTopologyModel(i);
+  assert.equal(nodeClass(m.nodes.find((n) => n.id === "dev:4")!), "hyper");
+  assert.equal(m.vms[0].hypervisorNodeId, "dev:4", "la VM sta nel suo host, riconosciuto per IP");
+});
+
+// Revisione finale M-6: una sola forma del MAC per il modello e per lo script di misura (`scripts/misura-fase2b.ts`).
+test("M-6: macOf vale un MAC solo nella forma a sei ottetti; un IP con dodici cifre non è un MAC", () => {
+  assert.equal(macOf("02-00-00-aa-bb-cc"), "02:00:00:AA:BB:CC");
+  assert.equal(macOf(" 02:00:00:aa:bb:cd "), "02:00:00:AA:BB:CD");
+  for (const x of ["192.168.100.123", "0200.00aa.bb03", "020000aabbcc", "00:00:00:00:00:00", "", null, 42]) assert.equal(macOf(x), null, String(x));
 });

@@ -33,6 +33,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import readline from "node:readline";
 import { controllaPercorsi } from "../src/lib/scanner/__tests__/support/percorsi-prova";
+import { macOf } from "../src/lib/topology/vms";
 
 const USO =
   "Uso: npx tsx scripts/misura-fase2b.ts <copia.db> --cartella <scratchpad> [--hypervisor <id> --segreto-stdin [--utente <nome>]] [--json]\n";
@@ -79,14 +80,9 @@ function fotografia(d: Righe): { jobs: unknown[]; overrides: Array<Record<string
   };
 }
 
-const MAC = /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/;
-const macNorm = (x: unknown): string | null => {
-  if (typeof x !== "string") return null;
-  const hex = x.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
-  if (hex.length !== 12 || hex === "000000000000") return null;
-  const m = hex.match(/.{2}/g)?.join(":") ?? "";
-  return MAC.test(m) ? m : null;
-};
+// La stessa forma del modello (revisione finale M-6): prima si toglieva tutto ciò che non è esadecimale,
+// e un IP con dodici cifre nel campo MAC (scansioni vecchie) diventava un MAC nei conteggi «con MAC».
+const macNorm = macOf;
 const nomeChiave = (x: unknown): string | null => {
   if (typeof x !== "string") return null;
   const n = x.trim().toLowerCase().split(".")[0];

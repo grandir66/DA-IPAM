@@ -10,6 +10,7 @@ import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
 import type { MapLink, MapNode, TopologyModel } from "@/lib/topology/model-types";
 import { HypervisorSyncCard } from "./hypervisor-sync-card";
+import { IgnoredLinksCard } from "./ignored-links-card";
 
 type Model = TopologyModel & { staleDays: number };
 const MAX = 200;
@@ -19,7 +20,7 @@ function Altri({ n }: { n: number }) {
   return n > MAX ? <p className="mt-2 text-sm text-muted-foreground">+ altri {n - MAX}</p> : null;
 }
 
-export function DatiClient() {
+export function DatiClient({ isAdmin }: { isAdmin: boolean }) {
   const [m, setM] = useState<Model | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [soglia, setSoglia] = useState("");
@@ -109,7 +110,7 @@ export function DatiClient() {
         </CardContent>
       </Card>
 
-      <HypervisorSyncCard />
+      <HypervisorSyncCard isAdmin={isAdmin} />
 
       <Card className="xl:col-span-2">
         <CardHeader><CardTitle>Proposte «promuovi ad apparato»</CardTitle></CardHeader>
@@ -149,6 +150,8 @@ export function DatiClient() {
           </CardContent>
         </Card>
       ))}
+
+      <IgnoredLinksCard isAdmin={isAdmin} model={m} onChanged={() => void load()} />
 
       <Card className="xl:col-span-2">
         <CardHeader><CardTitle>Collegamenti non visti</CardTitle></CardHeader>

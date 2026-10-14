@@ -15,7 +15,8 @@
  * - GET    /api/topology/ports?node=ID  → PortsResponse (porte note; elenco vuoto se non se ne conoscono)
  * - POST   /api/devices/[id]/proxmox-scan  (c'è già) → rilegge VM e schede dell'hypervisor
  * - PUT    /api/topology/maps/[id]/nodes e POST /api/topology/maps: accettano anche «vm:<apparato>:<vmid>»
- * Nodi: «dev:N», «host:N», «vm:N:M» (regex del piano: ^(dev|host|vm):\d+(:\d+)?$).
+ * Nodi: «dev:N», «host:N», «vm:N:M» (regex del piano: ^(dev|host|vm):\d+(:\d+)?$); collegamenti e
+ * principale rifiutano «vm:» (revisione finale I-1: il modello non li disegnerebbe).
  */
 import { fetchJson, type FetchJsonResult } from "@/lib/fetch-json";
 import type { KnownPort, LinkPatchBody, ManualLinkBody } from "@/lib/topology/connect-form";

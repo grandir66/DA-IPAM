@@ -171,3 +171,28 @@ test("porte note: switch dalle sue porte; hypervisor dalla scansione; host e VM 
   assert.deepEqual(w(() => getTopologyKnownPorts("vm:3:100")), []);
   assert.equal(w(() => getTopologyKnownPorts("dev:99")), null);
 });
+
+// Revisione finale M-3: togliere un collegamento a mano che era il principale lasciava la riga in
+// topology_link_primary; un collegamento automatico comparso dopo fra gli stessi oggetti diventava
+// «★ scelto a mano» senza che nessuno l'avesse scelto. Si toglie insieme, nella stessa transazione.
+test("M-3: togliere un collegamento a mano toglie anche la scelta del principale con quella coppia", () => {
+  const add = w(() => addLinkOverride({ action: "add", a_node: "dev:1", a_port: "ether2", b_node: "dev:2", b_port: "Port 2", medium: null, note: null }, "riccardo"));
+  const ign = w(() => addLinkOverride({ action: "ignore", a_node: "dev:1", a_port: "", b_node: "host:7", b_port: "", medium: null, note: null }, "riccardo"));
+  w(() => setTopologyLinkPrimary({ node_id: "dev:2", other_node: "dev:1", node_port: "Port 2", other_port: "ether2" }, "riccardo"));
+  w(() => setTopologyLinkPrimary({ node_id: "dev:5", other_node: "dev:1", node_port: "Port 9", other_port: "" }, "riccardo"));
+  w(() => setTopologyLinkPrimary({ node_id: "host:7", other_node: "dev:1", node_port: "", other_port: "" }, "riccardo"));
+  assert.equal(w(() => deleteLinkOverride(ign)), true);
+  assert.equal(w(() => listTopologyLinkPrimaries()).length, 3, "ripristinare un «ignora» non tocca le scelte del principale");
+  assert.equal(w(() => deleteLinkOverride(add)), true);
+  assert.deepEqual(w(() => listTopologyLinkPrimaries()).map((p) => p.node_id), ["dev:5", "host:7"], "via solo la scelta con la coppia dev:1–dev:2");
+  db().exec("DELETE FROM topology_link_primary");
+});
+
+// Revisione finale M-2: «ha una scansione Proxmox» entra nell'ingresso del modello (tipo di scansione o risultato salvato).
+test("M-2: getTopologyModelInput dice quali apparati hanno la scansione Proxmox", () => {
+  db().prepare("UPDATE network_devices SET scan_target = 'proxmox' WHERE id = 1").run();
+  assert.deepEqual(w(() => getTopologyModelInput(2, 1_000)).devices.map((d) => [d.id, d.proxmox_scan]), [[1, 1], [2, 0]]);
+  db().prepare("UPDATE network_devices SET scan_target = NULL WHERE id = 1").run();
+  db().prepare("UPDATE network_devices SET last_proxmox_scan_result = '{}' WHERE id = 2").run();
+  assert.deepEqual(w(() => getTopologyModelInput(2, 1_000)).devices.map((d) => [d.id, d.proxmox_scan]), [[1, 0], [2, 1]]);
+});

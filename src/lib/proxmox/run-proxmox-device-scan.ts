@@ -50,6 +50,13 @@ export interface ProxmoxScanDeps {
   credentials?: () => { username: string; password: string };
 }
 
+/**
+ * Cosa si legge di VM e container, per l'API e per l'SSH. Anche quelli spenti (revisione finale I-2):
+ * con il job giornaliero una VM spenta alle 03:00 spariva dalla mappa, i suoi MAC tornavano client della
+ * porta dello switch, e «■ spenta» e «N VM, M accese» (spec §11.5) non potevano mai comparire.
+ */
+export const LETTURA_VM = { includeStopped: true, includeContainers: true } as const;
+
 const DEPS_VERE: ProxmoxScanDeps = {
   readApi: (t) =>
     new ProxmoxClient({
@@ -58,8 +65,8 @@ const DEPS_VERE: ProxmoxScanDeps = {
       username: t.username,
       password: t.password,
       verifySsl: false,
-    }).extractAll({ includeStopped: false, includeContainers: true }),
-  readSsh: (c) => extractProxmoxViaSsh(c, { includeStopped: false, includeContainers: true }),
+    }).extractAll(LETTURA_VM),
+  readSsh: (c) => extractProxmoxViaSsh(c, LETTURA_VM),
   readLive: (c) => readLiveInterfaces(c),
   now: () => new Date(),
 };

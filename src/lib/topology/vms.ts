@@ -27,16 +27,18 @@ function ipsOf(v: unknown): string[] {
 const MAC_FORM = /^[0-9a-f]{2}([:-])[0-9a-f]{2}(\1[0-9a-f]{2}){4}$/i;
 
 /**
- * I MAC validi di un elenco, nella forma del DB. Prima si controlla la forma e poi si
+ * Un MAC valido nella forma del DB, o null; I MAC validi di un elenco (macsOf). Lo usa anche
+ * `scripts/misura-fase2b.ts` (revisione finale M-6). Prima si controlla la forma e poi si
  * normalizza: le scansioni salvate prima della fase 2b hanno l'IP nel campo MAC
  * (`getNodeNetwork` copiava `address`), e `normalizeMacForStorage` da solo, che toglie
  * tutto ciò che non è esadecimale, trasformerebbe «192.168.100.123» in un MAC.
  */
+export function macOf(x: unknown): string | null {
+  return typeof x === "string" && MAC_FORM.test(x.trim()) ? normalizeMacForStorage(x) : null;
+}
+
 function macsOf(values: unknown[]): string[] {
-  const out = values
-    .map((x) => (typeof x === "string" && MAC_FORM.test(x.trim()) ? normalizeMacForStorage(x) : null))
-    .filter((x): x is string => x !== null);
-  return [...new Set(out)];
+  return [...new Set(values.map(macOf).filter((x): x is string => x !== null))];
 }
 
 /**
@@ -142,10 +144,12 @@ export function placeVms(input: Pick<TopologyModelInput, "vms" | "scanHosts">, i
     return { v, hypervisorNodeId: resolved.get(hostKey(v.scannedDeviceId, v.node)) ?? scanned(v.scannedDeviceId) };
   });
 
-  // La stessa VM letta da due apparati scansionati (un cluster con due schede): una sola, la lettura più recente
-  // (a pari data l'apparato con id più basso). Se la lettura più recente non riporta IP o MAC, valgono quelli della
-  // lettura precedente più recente che li ha: l'agent non sempre risponde, e senza quegli indirizzi una VM già
-  // riconosciuta tornerebbe «da sistemare».
+  // La stessa VM letta da due apparati scansionati (un cluster con due schede): una sola, coi dati della lettura più
+  // recente (a pari data l'apparato con id più basso). Se la lettura più recente non riporta IP o MAC, valgono quelli
+  // della lettura precedente più recente che li ha: l'agent non sempre risponde, e senza quegli indirizzi una VM già
+  // riconosciuta tornerebbe «da sistemare». L'id invece viene dall'apparato con l'id più basso del gruppo (revisione
+  // finale M-1): se seguisse la lettura più recente, una notte in cui l'ultima lettura fallisce cambierebbe gli id, e
+  // le VM salvate in una mappa passo passo diventerebbero «sparite».
   const groups = new Map<string, Array<(typeof readings)[number]>>();
   const lone: typeof readings = [];
   for (const r of readings) {
@@ -160,10 +164,11 @@ export function placeVms(input: Pick<TopologyModelInput, "vms" | "scanHosts">, i
     const [newest, ...older] = g;
     const ips = newest.v.ips.length > 0 ? newest.v.ips : (older.find((o) => o.v.ips.length > 0)?.v.ips ?? []);
     const macs = newest.v.macs.length > 0 ? newest.v.macs : (older.find((o) => o.v.macs.length > 0)?.v.macs ?? []);
-    return { v: { ...newest.v, ips, macs }, hypervisorNodeId: newest.hypervisorNodeId };
+    const idDeviceId = Math.min(...g.map((r) => r.v.scannedDeviceId));
+    return { v: { ...newest.v, ips, macs }, hypervisorNodeId: newest.hypervisorNodeId, idDeviceId };
   });
 
-  const placed = [...merged, ...lone].map(({ v, hypervisorNodeId }) => {
+  const placed = [...merged, ...lone.map((r) => ({ ...r, idDeviceId: r.v.scannedDeviceId }))].map(({ v, hypervisorNodeId, idDeviceId }) => {
     let nodeId: string | null = null;
     for (const m of v.macs) {
       const id = idx.byMac.get(m);
@@ -184,14 +189,14 @@ export function placeVms(input: Pick<TopologyModelInput, "vms" | "scanHosts">, i
         if (n && n.id !== hypervisorNodeId && nodeClass(n) !== "hyper") { nodeId = n.id; break; }
       }
     }
-    return { v, hypervisorNodeId, nodeId };
+    return { v, hypervisorNodeId, nodeId, idDeviceId };
   });
 
   const vms: MapVm[] = placed
-    .sort((x, y) => x.v.scannedDeviceId - y.v.scannedDeviceId || x.v.vmid - y.v.vmid)
-    .map(({ v, hypervisorNodeId, nodeId }) => {
+    .sort((x, y) => x.idDeviceId - y.idDeviceId || x.v.vmid - y.v.vmid)
+    .map(({ v, hypervisorNodeId, nodeId, idDeviceId }) => {
       if (nodeId) vmNodeIds.add(nodeId);
-      return { id: `vm:${v.scannedDeviceId}:${v.vmid}`, name: v.name, status: v.status, ips: v.ips, hypervisorNodeId, nodeId, scannedAt: v.scannedAt };
+      return { id: `vm:${idDeviceId}:${v.vmid}`, name: v.name, status: v.status, ips: v.ips, hypervisorNodeId, nodeId, scannedAt: v.scannedAt };
     });
   return { vms, vmNodeIds, vmMacs };
 }

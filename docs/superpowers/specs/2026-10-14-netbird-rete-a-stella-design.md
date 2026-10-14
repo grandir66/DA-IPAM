@@ -1088,3 +1088,124 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
 - Il nome dei due livelli come lo legge il cliente (oggi «solo stato» e «stato + inventario»).
 - Quali numeri dell'inventario entrano nel livello «stato + inventario», oltre a dispositivi, reti e
   ultima scansione. Si fissa col CRM, guardando cosa serve nella scheda.
+
+## Appendice A — Censimento fase 0 (2026-10-14, fonti)
+
+Fonti, tutte in sola lettura il 14/10: `tailscale status --json` da da-vulcan; API di
+`netbird.domarc.it` (gruppi, policy, reti e risorse, rotte, nameserver, peer, utenti, chiavi;
+nomi soltanto); `edge_bridges` di da-vulcan; `tenants` e `tenant_agents` dell'hub DA-IPAM
+(VM 533) e dell'istanza DTS; `anagrafiche_gestionale` del CRM; porte provate da da-vulcan
+attraverso Tailscale. Le date sono giorni (gli orari delle fonti sono UTC).
+
+### A.1 Nodi Tailscale
+
+È la vista di da-vulcan: un nodo che la policy Tailscale nasconde a da-vulcan non compare.
+La tailnet ha 10 nodi, offline compresi.
+
+| Nodo | Oggetto (dedotto) | Cliente | Online | Ultimo contatto |
+|---|---|---|---|---|
+| `da-vulcan` | centrale (hub VA) | — | sì | — |
+| `da-invent` | istanza DA-IPAM di Domarc (VM 533), con l'edge «DOMARC» (id 1) | 70791 | sì | — |
+| `dts-appliance` | istanza IPAM di DTS (`172.16.0.2`), con l'edge «DTS» (id 2) | 71734 | sì | — |
+| `bridge-domarc-ovh` (`tag:domarc-bridge`) | edge DA-VA-OVH (id 5) | 70791 | sì | — |
+| `appliance-pxnas-domarc` | istanza IPAM di laboratorio sul PX-NAS di casa, con l'edge «PX-NAS» (id 3) | 70791 | sì | — |
+| `appliance-px-lab-domarc-local` | istanza IPAM di laboratorio | 70791 | no | 05/10 |
+| `appliance-pxrg-consolidated-domarc-local` | appliance di prova superata | 70791 | no | 26/05 |
+| `da-va` | VA vecchia, sostituita da DA-VA-OVH | 70791 | no | 19/07 |
+| `MacBook Pro`, `S25 Ultra di riccardo` | dispositivi di Riccardo | — | no | 02/09 |
+
+**Per la fase 3 l'elenco è corto.** L'unico cliente esterno su Tailscale è **DTS (71734)**, che
+è anche il pilota della fase 2. Tutto il resto appartiene a Domarc (70791): l'istanza di sede,
+DA-VA-OVH e i laboratori. I proxy Zabbix dei clienti sono già in NetBird (A.2).
+
+### A.2 NetBird oggi
+
+- **`Default` è già spenta**, e lo è anche `da-sns Policy` (`All → All`). Il passo 6 del
+  Task 4 non ha niente da spegnere: resta solo la verifica.
+- **I proxy Zabbix non stanno in un solo gruppo `zabbix-proxy`** (come dice il §3): c'è un
+  gruppo per cliente, `zbx-proxy-<nome>` (gao, bagatti, dts, metalrota, grafana, domarc-rg,
+  domarc-ovh). Ogni gruppo ha la sua coppia di policy: proxy → `zbx-server` tcp 10051 e
+  `zbx-server` → proxy tcp 22. Sono P4 e P4b, scritte per cliente.
+- **DA-ZABBIX è già un peer**, `da-zabbix`, nei gruppi `zbx-server` e `server-interni`.
+- Le persone stanno in `users` e in `admins`. Gli accessi alle LAN di sede (4, 15, 30, 40,
+  51) sono **risorse della rete NetBird «Domarc»**, con router `da-netbird`. Le policy verso
+  le risorse hanno destinazione vuota e la risorsa come `destinationResource`: per vederle,
+  lo script del censimento deve leggere anche `/api/networks`.
+
+**Dove si usa `All`** (dettaglio per il Task 4):
+
+| Oggetto | Cosa apre oggi | Stato |
+|---|---|---|
+| policy `AD01 Access` | `All` → risorsa AD01 `192.168.4.1`, tutte le porte | accesa |
+| policy `AD02 Access` | `All` → risorsa AD02 `192.168.4.2`, tutte le porte | accesa |
+| policy `da-rdh Access` | `All` → risorsa da-rdh `192.168.4.21`, tcp 3389 | accesa |
+| policy `DA-sns Access` | `All` → risorsa DA-sns `192.168.4.42`, tcp 80 e 443 | accesa |
+| policy `da-sns-dev Access` | `All` → risorsa da-sns-dev `192.168.4.41`, tcp 80 e 443 | accesa |
+| policy `Default` | `All` ↔ `All` | **spenta** |
+| policy `da-sns Policy` | `All` → `All` | spenta |
+| nameserver `da-dc01`, `da-dc02` | DNS di `domarc.it` distribuito a `All` | acceso |
+| rotte | nessuna usa `All`: `DMZ ACCESS` va a `admins`+`users`, le due uscite a `users` e `uscita-sempre` | — |
+
+**R2 e R3 sono rosse già oggi, non solo quando entrerà il primo cliente.** I proxy Zabbix
+dei clienti stanno in `All` come tutti i peer. Per questo raggiungono AD01 e AD02 su tutte le
+porte, RDH in 3389 e le `.41`/`.42` in 80/443. Il Task 4 chiude anche questo.
+
+**Peer che stanno solo in `All`.** Dopo il Task 4 perderebbero tutto:
+- `MacBook-Air-di-Simone.local`, di Simone Annovi, connesso il 14/10;
+- `NB-AGUZZOLI`, di Luca Aguzzoli;
+- `q5qxeea`, un Android, ultimo contatto 13/10.
+
+Simone Annovi e Luca Aguzzoli sono anche gli unici utenti senza gruppi automatici.
+
+**Igiene, non urgente:**
+- peer doppi di dispositivi rientrati più volte: `a52sxqeea` ×6, `pa3qxeea` ×3,
+  `VER-N49EEA` ×2, `proxy-domarc-ovh` ×3;
+- le 20 setup key esistenti sono tutte scadute o consumate.
+
+### A.3 Codici cliente (decisione 12)
+
+| Codice | Dove | Ragione sociale nel CRM | Esito |
+|---|---|---|---|
+| `70791` | tenant dell'hub; edge 1, 3, 4 (revocato), 5 | DOMARC SRL | corretto |
+| `71734` | tenant dell'istanza DTS; edge 2 | DUERRE TUBI STYLE GROUP SPA | corretto |
+| `70791a` | tenant dell'hub «DOMARC-OVH» | — (non è un `codcli`) | **da correggere** |
+
+Nessun tenant `DEFAULT` è registrato. Il `public_hostname` dell'edge 5, `da-va-ovh`, non
+risolve da da-vulcan: il nome Tailscale vero è `bridge-domarc-ovh`.
+
+**Agente Python di DA-IPAM (`tenant_agents`).** Sull'hub ce n'è uno solo: tenant `70791a`,
+`bridge-domarc-ovh:8443`, **mai visto** (`last_seen_at` vuoto). Sull'istanza DTS non ce n'è
+nessuno. In pratica non lo usa nessuno.
+
+### A.4 Porte degli edge (provate da da-vulcan via Tailscale)
+
+| Edge | Nodo | 6443 | 8443 | Altre |
+|---|---|---|---|---|
+| DTS (2) | `dts-appliance` | aperta | chiusa | 22 |
+| DA-VA-OVH (5) | `bridge-domarc-ovh` | aperta | aperta | 22 |
+| DOMARC (1) | `da-invent` | chiusa | chiusa | 22 e 443. Un `uvicorn` ascolta su `0.0.0.0:8443` ma via Tailscale non risponde: l'interfaccia dell'edge di sede si raggiunge in LAN |
+| PX-NAS (3) | `appliance-pxnas-domarc` | chiusa | chiusa | 22. L'ultimo contatto dell'edge è dell'08/09: è fermo |
+
+Per P3 basta quindi **6443**. Fa eccezione DA-VA-OVH, che risponde anche su 8443; resta in
+VPN diretta (fase 4).
+
+### A.5 Riferimenti a `da-vulcan` (rischio 3)
+
+Con `rg -w --no-ignore` su `~/Progetti` (esclusi `node_modules`, `.git`, `.next`, `.venv`,
+`worktrees` e `_archive`) risultano **193 file e 522 occorrenze**:
+
+| Progetto | File |
+|---|---|
+| DA-Vul-can | 125 |
+| DA-News | 17 |
+| DA-Infra | 17 |
+| Deploy-Appliance | 8 |
+| DA-IPAM | 6 |
+| DA-Zabbix | 4 |
+| DA-Manager | 3 |
+| DA-Auth | 3 |
+
+Il resto sta nei documenti di `Domarc/` e nel catalogo.
+
+Attenzione: in questa macchina `grep` rispetta i `.gitignore`, e la radice di `~/Progetti`
+ignora i sotto-repo. Senza `--no-ignore` il conteggio esce 2.

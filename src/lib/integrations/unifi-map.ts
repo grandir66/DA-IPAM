@@ -23,7 +23,7 @@
 
 import { normalizeMacForStorage, normalizePortNameForMatch } from "@/lib/utils";
 import type { SwitchPort } from "@/types";
-import type { UnifiDevice, UnifiLldpEntry, UnifiPort } from "./unifi-device";
+import type { UnifiDevice, UnifiLldpEntry, UnifiPort, UnifiUplinkType } from "./unifi-device";
 
 export type UnifiNetworkDeviceType = "switch" | "access_point" | "router";
 
@@ -223,6 +223,8 @@ export interface UnifiUplinkFacts {
   controllerMac: string | null;
   uplinkMac: string | null;
   uplinkRemotePort: number | null;
+  /** Cavo o wireless (mesh): va con l'uplink, null se l'uplink non c'è (topologia fase 2b). */
+  uplinkType: UnifiUplinkType | null;
 }
 
 /**
@@ -234,9 +236,14 @@ export function mapUnifiUplink(d: UnifiDevice): UnifiUplinkFacts {
   const controllerMac = normalizeMacForStorage(d.mac);
   const uplinkMac = normalizeMacForStorage(d.uplink?.uplink_mac ?? null);
   if (!uplinkMac || uplinkMac === controllerMac) {
-    return { controllerMac, uplinkMac: null, uplinkRemotePort: null };
+    return { controllerMac, uplinkMac: null, uplinkRemotePort: null, uplinkType: null };
   }
-  return { controllerMac, uplinkMac, uplinkRemotePort: d.uplink?.uplink_remote_port ?? null };
+  return {
+    controllerMac,
+    uplinkMac,
+    uplinkRemotePort: d.uplink?.uplink_remote_port ?? null,
+    uplinkType: d.uplink?.type ?? null,
+  };
 }
 
 function portStatus(p: UnifiPort): UnifiSwitchPortRow["status"] {

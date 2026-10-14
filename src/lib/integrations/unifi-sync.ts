@@ -361,7 +361,10 @@ function writeDevice(
   // Uplink e MAC del controller (topologia fase 1). Offline: il controller
   // manda l'ultimo uplink noto, ma non è una lettura di adesso: si scrive solo il MAC.
   const facts = mapUnifiUplink(d);
-  setNetworkDeviceControllerFacts(nd.id, connected ? facts : { ...facts, uplinkMac: null, uplinkRemotePort: null });
+  setNetworkDeviceControllerFacts(
+    nd.id,
+    connected ? facts : { ...facts, uplinkMac: null, uplinkRemotePort: null, uplinkType: null },
+  );
   const uplink = connected && facts.uplinkMac !== null;
 
   return { device: nd, created, movedFrom, ports: portsWritten, neighbors: neighborsWritten, uplink, warnings };

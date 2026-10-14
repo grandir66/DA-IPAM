@@ -64,6 +64,11 @@ export interface ProxmoxHostInfo {
   hardware_serial: string | null;
   hardware_model: string | null;
   hardware_manufacturer: string | null;
+  /**
+   * Quando sono state lette le schede vive di questo host (ISO UTC, topologia
+   * fase 2b). Assente = mai lette: le schede sono solo la configurazione.
+   */
+  live_read_at?: string;
 }
 
 export interface ProxmoxStorageInfo {
@@ -85,6 +90,12 @@ export interface ProxmoxNetworkInterface {
   bridge: string | null;
   vlan_id: string | number | null;
   speed_mbps: string | null;
+  /**
+   * Il bond o bridge di cui la scheda è membro, dalle schede vive (fase 2b). La
+   * chiave c'è (anche null) solo sulle schede lette vive: lì anche `mac_address`,
+   * `state` e `speed_mbps` vengono dalla macchina e non dalla configurazione.
+   */
+  master?: string | null;
 }
 
 export interface ProxmoxVM {
@@ -405,7 +416,9 @@ export class ProxmoxClient {
       const type = (iface.type ?? "unknown") as string;
       const active = iface.active === true || iface.active === "1";
       const state = active ? "up" : "down";
-      const hwaddr = (iface.hwaddr ?? iface.mac ?? iface.address) as string | null;
+      // Solo hwaddr/mac: `address` è l'IP della scheda, e finiva nel MAC (misurato
+      // sulla copia del cliente A il 14/10: tutti i «MAC» delle schede erano IP).
+      const hwaddr = (iface.hwaddr ?? iface.mac ?? null) as string | null;
       const address = (iface.address ?? iface.cidr ?? iface.ip) as string | null;
       const bridge = (iface.bridge ?? iface.bridge_ports) as string | null;
       const vlan = (iface.vlan ?? iface.tag ?? iface.bridge_vids) as string | number | null;
@@ -700,20 +713,25 @@ export class ProxmoxClient {
     const hosts: ProxmoxHostInfo[] = [];
     const vms: ProxmoxVM[] = [];
 
-    for (const n of nodes) {
+    // Nel log solo la posizione del nodo e il tipo d'errore: il nome del nodo e il
+    // messaggio (che può contenere l'indirizzo) non ci vanno, la lettura gira
+    // anche da sola ogni giorno (job hypervisor_sync, topologia fase 2b).
+    const tipo = (e: unknown): string => (e instanceof Error ? e.name : "errore");
+    for (const [i, n] of nodes.entries()) {
       const nodeName = n.node as string;
+      const dove = `[proxmox] nodo ${i + 1} di ${nodes.length}`;
       try {
         const hostInfo = await this.getHostInfo(nodeName);
         hosts.push(hostInfo);
       } catch (e) {
-        console.error(`Errore host ${nodeName}:`, e);
+        console.error(`${dove}: dati dell'host non letti (${tipo(e)})`);
       }
 
       try {
         const nodeVms = await this.getVMs(nodeName, options?.includeStopped ?? false);
         vms.push(...nodeVms);
       } catch (e) {
-        console.error(`Errore VM nodo ${nodeName}:`, e);
+        console.error(`${dove}: VM non lette (${tipo(e)})`);
       }
 
       if (options?.includeContainers) {
@@ -721,7 +739,7 @@ export class ProxmoxClient {
           const nodeCts = await this.getContainers(nodeName, options?.includeStopped ?? false);
           vms.push(...nodeCts);
         } catch (e) {
-          console.error(`Errore LXC nodo ${nodeName}:`, e);
+          console.error(`${dove}: container non letti (${tipo(e)})`);
         }
       }
     }

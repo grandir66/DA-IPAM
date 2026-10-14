@@ -16,6 +16,7 @@ import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { UnifiApiError } from "../unifi-api";
 import { parseStatDeviceResponse, parseUnifiDevice, type UnifiDevice } from "../unifi-device";
 import { mapUnifiUplink } from "../unifi-map";
+import { rawApInMesh } from "./support/unifi-ap-mesh";
 import {
   syncUnifiForTenant,
   unifiSyncFailure,
@@ -641,6 +642,45 @@ test("apparato offline: l'uplink di prima resta con la sua data", async () => {
   await sync(lista);
   const row = getTenantDb(T).prepare("SELECT uplink_seen_at FROM network_devices WHERE name = ?").get(nome) as { uplink_seen_at: string };
   assert.equal(row.uplink_seen_at, "2026-10-01 03:00:00");
+});
+
+/** La risposta vera più un AP in mesh (AP-4, via radio verso AP-3), eventualmente ritoccato. */
+function conMesh(ritocco: Partial<UnifiDevice> = {}): UnifiDevice[] {
+  const mesh = parseUnifiDevice(rawApInMesh());
+  assert.ok(mesh);
+  return [...risposta(), { ...mesh, ...ritocco }];
+}
+
+test("tipo di uplink salvato sull'apparato: cavo o wireless come lo dice il controller", async () => {
+  const lista = conMesh();
+  await sync(lista);
+  const righe = getTenantDb(T).prepare("SELECT name, uplink_type FROM network_devices ORDER BY name").all() as Array<{ name: string; uplink_type: string | null }>;
+  assert.equal(righe.length, lista.length);
+  for (const r of righe) {
+    const d = lista.find((x) => x.name === r.name);
+    assert.ok(d);
+    assert.equal(r.uplink_type, d.state === 1 ? mapUnifiUplink(d).uplinkType : null, r.name);
+  }
+  assert.equal(righe.find((r) => r.name === "AP-4")?.uplink_type, "wireless");
+  assert.equal(righe.find((r) => r.name === "SW-1")?.uplink_type, "wire");
+});
+
+test("apparato offline o senza uplink: il tipo di prima resta, come uplink_mac", async () => {
+  await sync(conMesh());
+  const tipo = (nome: string) =>
+    (getTenantDb(T).prepare("SELECT uplink_type FROM network_devices WHERE name = ?").get(nome) as { uplink_type: string | null }).uplink_type;
+  assert.equal(tipo("AP-4"), "wireless");
+  // AP-4 offline: il controller manda l'ultimo uplink noto, non una lettura di adesso.
+  await sync(conMesh({ state: 0 }));
+  assert.equal(tipo("AP-4"), "wireless");
+  // AP-4 connesso ma senza uplink nella risposta: niente da scrivere, resta.
+  await sync(conMesh({ uplink: null }));
+  assert.equal(tipo("AP-4"), "wireless");
+  // Torna via cavo su SW-1: il tipo nuovo si scrive insieme all'uplink.
+  const mesh = conMesh().find((x) => x.name === "AP-4");
+  assert.ok(mesh?.uplink);
+  await sync(conMesh({ uplink: { ...mesh.uplink, type: "wire", uplink_mac: "02:00:00:00:00:08", uplink_remote_port: 5 } }));
+  assert.equal(tipo("AP-4"), "wire");
 });
 
 test("i vicini scritti dalla sync hanno fonte «unifi»", async () => {

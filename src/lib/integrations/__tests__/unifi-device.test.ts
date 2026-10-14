@@ -11,6 +11,7 @@ import {
   UnifiResponseError,
   type UnifiDevice,
 } from "../unifi-device";
+import { rawApInMesh } from "./support/unifi-ap-mesh";
 
 const FIXTURE = path.join(__dirname, "fixtures", "unifi-stat-device.json");
 const raw: unknown = JSON.parse(fs.readFileSync(FIXTURE, "utf-8"));
@@ -98,6 +99,23 @@ test("uplink: MAC e porta remota, nome del vicino quando il controller lo sa", (
   // SW-2 offline: uplink ridotto, senza nome
   assert.equal(byName(devs, "SW-2").uplink?.uplink_device_name, null);
   assert.equal(byName(devs, "SW-2").uplink?.uplink_remote_port, 2);
+});
+
+test("uplink.type: «wire» e «wireless» come li manda il controller, altro → null", () => {
+  const devs = parseStatDeviceResponse(raw);
+  assert.equal(byName(devs, "SW-1").uplink?.type, "wire");
+  // AP-4: AP in mesh, esce via radio verso AP-3 (valori inventati, forma vera).
+  const mesh = parseUnifiDevice(rawApInMesh());
+  assert.ok(mesh);
+  assert.equal(mesh.uplink?.type, "wireless");
+  assert.equal(mesh.uplink?.uplink_mac, "02:00:00:00:00:05");
+  assert.equal(mesh.uplink?.uplink_remote_port, null);
+  const base = { mac: "02:00:00:00:00:31", name: "X", type: "uap", state: 1 };
+  for (const altro of ["mesh", "WIRE", "", 42, null]) {
+    const d = parseUnifiDevice({ ...base, uplink: { uplink_mac: "02:00:00:00:00:08", type: altro } });
+    assert.equal(d?.uplink?.type, null, `type ${JSON.stringify(altro)} deve dare null`);
+  }
+  assert.equal(parseUnifiDevice({ ...base, uplink: { uplink_mac: "02:00:00:00:00:08" } })?.uplink?.type, null);
 });
 
 test("porte: indice, nome, stato, velocità, PoE in watt, LAG come numero o null", () => {

@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { parseStatDeviceResponse, parseUnifiDevice, type UnifiDevice } from "../unifi-device";
+import { rawApInMesh } from "./support/unifi-ap-mesh";
 import {
   buildUnifiMacIndex,
   mapUnifiDevice,
@@ -359,6 +360,23 @@ test("mapUnifiUplink: MAC del controller e uplink normalizzati; nessun uplink ve
     }
   }
   assert.ok(devices.some((d) => mapUnifiUplink(d).uplinkMac !== null), "la fixture vera ha almeno un uplink");
+});
+
+test("mapUnifiUplink: il tipo dell'uplink (cavo o wireless) va con l'uplink, senza uplink è null", () => {
+  const mesh = parseUnifiDevice(rawApInMesh());
+  assert.ok(mesh);
+  const tutti = [...devices, mesh];
+  for (const d of tutti) {
+    const f = mapUnifiUplink(d);
+    assert.equal(f.uplinkType, f.uplinkMac === null ? null : (d.uplink?.type ?? null), d.name ?? "");
+  }
+  assert.deepEqual(
+    tutti.map((d) => mapUnifiUplink(d).uplinkType).filter((t) => t !== null).sort(),
+    ["wire", "wire", "wire", "wire", "wireless"],
+  );
+  // Un uplink verso se stessi non è un uplink: niente tipo.
+  assert.ok(mesh.uplink);
+  assert.equal(mapUnifiUplink({ ...mesh, uplink: { ...mesh.uplink, uplink_mac: mesh.mac } }).uplinkType, null);
 });
 
 test("mapUnifiPorts: is_uplink come lo dice il controller", () => {

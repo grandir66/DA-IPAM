@@ -1,11 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  AP_COLS, ATT_MAX, BOX_H, CHAR_W, VM_COLS, VM_W, fitLabel, layoutTree, nodeWidth, structureSig,
+  AP_COLS, ATT_MAX, BOX_H, CHAR_W, VM_COLS, VM_W, fitLabel, layoutTree as layoutTreeCon, nodeWidth, structureSig,
   type LayoutResult, type SavedTweak,
 } from "@/lib/topology/tree-layout";
 import type { TreeResult } from "@/lib/topology/tree";
 import type { MapNode, MapVm, TopologyModel } from "@/lib/topology/model-types";
+
+/** Queste prove sono dell'orizzontale (`tb`): le coordinate di prima, esplicite. Il verticale è in tree-layout-lr.test.ts. */
+const layoutTree = (m: TopologyModel, t: TreeResult, tw: SavedTweak[], ex: ReadonlySet<string> = new Set()) =>
+  layoutTreeCon(m, t, tw, ex, "tb");
 
 function node(id: string, type: string, name = id): MapNode {
   const [k, n] = id.split(":");

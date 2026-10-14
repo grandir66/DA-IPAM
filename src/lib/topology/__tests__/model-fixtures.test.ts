@@ -104,18 +104,19 @@ for (const nome of ["topologia-domarc.json", "topologia-cliente-a.json"]) {
     assert.equal(coppieDiApparati, nome === "topologia-cliente-a.json" ? 1 : 0);
   });
 
-  test(`${nome}: albero e disposizione sono stabili (stesse coordinate due volte)`, () => {
+  for (const orientamento of ["lr", "tb"] as const) {
+  test(`${nome} (${orientamento}): albero e disposizione sono stabili (stesse coordinate due volte)`, () => {
     const giro = () => {
       const m = buildTopologyModel(carica(nome));
-      const r = layoutTree(m, alberoAuto(m), []);
+      const r = layoutTree(m, alberoAuto(m), [], new Set(), orientamento);
       return JSON.stringify([...r.nodes.values()].map((n) => [n.id, n.x, n.y, n.w, n.h]));
     };
     assert.equal(giro(), giro());
   });
 
-  test(`${nome}: nessuna scritta esce dal nodo`, () => {
+  test(`${nome} (${orientamento}): nessuna scritta esce dal nodo`, () => {
     const m = buildTopologyModel(carica(nome));
-    const r = layoutTree(m, alberoAuto(m), []);
+    const r = layoutTree(m, alberoAuto(m), [], new Set(), orientamento);
     const byId = new Map(m.nodes.map((n) => [n.id, n]));
     let boxes = 0;
     for (const n of r.nodes.values()) {
@@ -125,6 +126,16 @@ for (const nome of ["topologia-domarc.json", "topologia-cliente-a.json"]) {
       assert.ok(fitLabel(name, n.w).length * CHAR_W + 44 <= n.w, n.id);
     }
     assert.ok(boxes > 0);
+  });
+}
+
+  test(`${nome}: dimensioni della disposizione verticale (lr)`, () => {
+    const m = buildTopologyModel(carica(nome));
+    const r = layoutTree(m, alberoAuto(m), [], new Set(), "lr");
+    // Numeri misurati con layoutTree(…, "lr") sulla fixture anonima, albero automatico (14/10/2026, Task 2 della
+    // tappa H): se cambiano, si legge il perché (misure dei riquadri o regole della disposizione) prima di riscriverli.
+    const attesi = nome === "topologia-domarc.json" ? [1178, 1914] : [2512, 3348];
+    assert.deepEqual([Math.round(r.width), Math.round(r.height)], attesi);
   });
 }
 

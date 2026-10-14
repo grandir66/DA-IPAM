@@ -150,7 +150,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     const tree = hangVmNodes(buildTree(model, visible, roots), vn.parentOf);
     const own = pending && pending.view === viewKey ? pending.tweak : null;
     const tweaks = [...saved.tweaks.filter((t) => t.nodeId !== own?.nodeId), ...(own ? [own] : [])];
-    const layout = layoutTree(model, tree, tweaks, expanded);
+    const layout = layoutTree(model, tree, tweaks, expanded, "tb");
     const plus = new Map<string, number>();
     if (mode === "passo") {
       for (const id of visible) {

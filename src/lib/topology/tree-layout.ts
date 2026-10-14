@@ -9,24 +9,16 @@
  * firma (genitore + fratelli) non cambia. Logica pura: stessi dati, stesse
  * coordinate.
  */
-import type { TopologyModel } from "@/lib/topology/model-types";
+import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
+import {
+  AP_BLOCK, AP_COLS, AP_H, AP_HEAD, AP_W, ATT_MAX, ATT_ROW, ATT_SIDE, ATT_W, BOX_H, GAP, LEVEL_GAP, MARGIN, ROOT_GAP,
+  VM_COLS, VM_COLS_LR, VM_H, VM_ROW, VM_W, fitLabel, nodeWidth,
+} from "@/lib/topology/tree-layout-consts";
+import { layoutLr, type LrContext } from "@/lib/topology/tree-layout-lr";
 import { nodeClass } from "@/lib/topology/identity";
 import type { TreeResult } from "@/lib/topology/tree";
 
-export const BOX_H = 44, GAP = 18, LEVEL_GAP = 56, AP_W = 150, AP_H = 40, AP_COLS = 4, AP_HEAD = 18;
-export const VM_COLS = 3, VM_W = 150, VM_H = 22, VM_ROW = 26;
-export const ATT_W = 160, ATT_ROW = 20, ATT_MAX = 4, CHAR_W = 7, ROOT_GAP = 60, MARGIN = 40;
-const AP_BLOCK = AP_COLS * (AP_W + 8);
-const ATT_SIDE = ATT_W + 10;
-
-export function nodeWidth(label: string): number {
-  return Math.min(230, Math.max(170, label.length * CHAR_W + 44));
-}
-
-export function fitLabel(label: string, width: number): string {
-  const max = Math.floor((width - 44) / CHAR_W);
-  return label.length > max ? `${label.slice(0, Math.max(1, max - 1))}…` : label;
-}
+export * from "@/lib/topology/tree-layout-consts";
 
 /**
  * La firma della struttura attorno a un nodo: il ritocco vale finché non cambia. Per un figlio è
@@ -48,7 +40,8 @@ function tweakHolds(saved: string | null, now: string): boolean {
   return saved === now || (now === ROOT_SIG && saved !== null && saved.startsWith(ROOT_SIG));
 }
 
-export interface SavedTweak { nodeId: string; x: number; y: number; sig: string | null }
+/** `orientation` assente = `tb` (i ritocchi di prima dell'orientamento valgono per l'orizzontale). */
+export interface SavedTweak { nodeId: string; x: number; y: number; sig: string | null; orientation?: MapOrientation }
 export interface LayoutNode { id: string; x: number; y: number; w: number; h: number; role: "box" | "ap" | "attached"; parent: string | null }
 /** Una VM dentro il riquadro espanso del suo hypervisor; `label` è il nome già accorciato per entrare in `w`. */
 export interface VmChip { vmId: string; hypervisor: string; x: number; y: number; w: number; h: number; label: string }
@@ -60,10 +53,12 @@ export interface LayoutResult {
   width: number;
   height: number;
   expired: string[];
+  orientation: MapOrientation;
 }
 
 export function layoutTree(
   model: TopologyModel, tree: TreeResult, tweaks: SavedTweak[], expanded: ReadonlySet<string> = new Set(),
+  orientation: MapOrientation = "lr",
 ): LayoutResult {
   const byId = new Map(model.nodes.map((n) => [n.id, n]));
   const name = (id: string) => byId.get(id)?.name ?? id;
@@ -72,8 +67,9 @@ export function layoutTree(
   for (const v of model.vms) if (v.hypervisorNodeId) vmsOf.set(v.hypervisorNodeId, [...(vmsOf.get(v.hypervisorNodeId) ?? []), v]);
   for (const [k, list] of vmsOf) vmsOf.set(k, [...list].sort((a, b) => a.name.localeCompare(b.name, "it") || (a.id < b.id ? -1 : 1)));
   const isOpen = (id: string) => expanded.has(id) && cls(id) === "hyper" && (vmsOf.get(id)?.length ?? 0) > 0;
-  const boxW = (id: string) => (isOpen(id) ? VM_COLS * (VM_W + 8) + 16 : nodeWidth(name(id)));
-  const boxH = (id: string) => (isOpen(id) ? BOX_H + 12 + Math.ceil(vmsOf.get(id)!.length / VM_COLS) * VM_ROW : BOX_H);
+  const vmCols = orientation === "lr" ? VM_COLS_LR : VM_COLS;
+  const boxW = (id: string) => (isOpen(id) ? vmCols * (VM_W + 8) + 16 : nodeWidth(name(id)));
+  const boxH = (id: string) => (isOpen(id) ? BOX_H + 12 + Math.ceil(vmsOf.get(id)!.length / vmCols) * VM_ROW : BOX_H);
   const order = (a: string, b: string) =>
     Number(cls(a) !== "infra") - Number(cls(b) !== "infra") || name(a).localeCompare(name(b), "it") || (a < b ? -1 : 1);
   const parts = (id: string) => {
@@ -84,6 +80,16 @@ export function layoutTree(
     return { inf, ap, att };
   };
 
+  let base: Pick<LayoutResult, "nodes" | "apGroups" | "moreAttached" | "vmChips">;
+  if (orientation === "lr") {
+    const ctx: LrContext = { parts, boxW, boxH, isOpen, vmsOf };
+    base = layoutLr(ctx, tree);
+  } else {
+    base = layoutTb();
+  }
+  return finish(base, tree, tweaks, orientation);
+
+  function layoutTb(): typeof base {
   const levelH: number[] = [];
   const width = new Map<string, number>();
   const kidsWidth = (p: ReturnType<typeof parts>) => {
@@ -152,10 +158,20 @@ export function layoutTree(
   };
   let x = MARGIN;
   for (const r of tree.roots) { place(r, x, 0, null); x += width.get(r)! + ROOT_GAP; }
+  return { nodes, apGroups, moreAttached, vmChips };
+  }
+}
 
-  // Ritocchi: lo scarto vale per il nodo e tutto il suo ramo (attaccati e gruppo AP compresi).
+/** Ritocchi e misure finali, uguali per le due disposizioni. */
+function finish(
+  base: Pick<LayoutResult, "nodes" | "apGroups" | "moreAttached" | "vmChips">,
+  tree: TreeResult, tweaks: SavedTweak[], orientation: MapOrientation,
+): LayoutResult {
+  const { nodes, apGroups, moreAttached, vmChips } = base;
+
+  // Ritocchi dell'orientamento in uso (gli altri restano da parte, non scadono): lo scarto vale per il nodo e tutto il suo ramo (attaccati e gruppo AP compresi).
   const expired: string[] = [];
-  for (const t of [...tweaks].sort((a, b) => (a.nodeId < b.nodeId ? -1 : 1))) {
+  for (const t of [...tweaks].filter((w) => (w.orientation ?? "tb") === orientation).sort((a, b) => (a.nodeId < b.nodeId ? -1 : 1))) {
     const n = nodes.get(t.nodeId);
     if (!n || n.role !== "box") continue;
     if (!tweakHolds(t.sig, structureSig(tree, t.nodeId))) { expired.push(t.nodeId); continue; }
@@ -170,5 +186,5 @@ export function layoutTree(
   let maxX = 0, maxY = 0;
   for (const n of nodes.values()) { maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h); }
   for (const g of apGroups) { maxX = Math.max(maxX, g.x + g.w); maxY = Math.max(maxY, g.y + g.h); }
-  return { nodes, apGroups, moreAttached, vmChips, width: maxX + MARGIN, height: maxY + MARGIN, expired };
+  return { nodes, apGroups, moreAttached, vmChips, width: maxX + MARGIN, height: maxY + MARGIN, expired, orientation };
 }

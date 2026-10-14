@@ -7,7 +7,7 @@
  */
 import type { EdgeLook, Pt } from "@/lib/topology/edge-look";
 import { speedLabel } from "@/lib/topology/edge-look";
-import { LR_TRUNK } from "@/lib/topology/map-screen";
+import { LR_TRUNK, drawableLinks } from "@/lib/topology/map-screen";
 import { CHAR_W } from "@/lib/topology/tree-layout-consts";
 import type { MapLink, MapOrientation } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
@@ -83,9 +83,13 @@ export interface RedundantCable {
 /**
  * L'elenco «Cavi di ridondanza» (spec §12.5): i collegamenti della vista che l'albero non usa
  * (`redundant`), con le porte e la velocità. Parte dall'oggetto più vicino alla radice; in ordine
- * di nome. Solo quelli fra oggetti disegnati.
+ * di nome. Solo quelli fra due riquadri della disposizione (`drawableLinks`, come «⇄ N» a schermo).
  */
-export function redundantCables(tree: TreeResult, drawn: ReadonlySet<string>, nameOf: (id: string) => string): RedundantCable[] {
+export function redundantCables(
+  tree: TreeResult,
+  nodes: ReadonlyMap<string, { role: string }>,
+  nameOf: (id: string) => string,
+): RedundantCable[] {
   const depth = new Map<string, number>();
   const q: string[] = [];
   for (const r of tree.roots) { depth.set(r, 0); q.push(r); }
@@ -94,8 +98,8 @@ export function redundantCables(tree: TreeResult, drawn: ReadonlySet<string>, na
     for (const k of tree.children.get(p) ?? []) if (!depth.has(k)) { depth.set(k, depth.get(p)! + 1); q.push(k); }
   }
   const d = (id: string) => depth.get(id) ?? Number.MAX_SAFE_INTEGER;
-  const rows = tree.links
-    .filter((l: MapLink) => l.redundant && drawn.has(l.a) && drawn.has(l.b))
+  const rows = drawableLinks(tree.links, nodes)
+    .filter((l: MapLink) => l.redundant)
     .map((l): RedundantCable => {
       const aFirst = d(l.a) < d(l.b) || (d(l.a) === d(l.b) && nameOf(l.a).localeCompare(nameOf(l.b), "it") <= 0);
       const [x, xp, y, yp] = aFirst ? [l.a, l.aPort, l.b, l.bPort] : [l.b, l.bPort, l.a, l.aPort];

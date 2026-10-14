@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { attachMacs } from "@/lib/topology/attach";
 import { buildLinks } from "@/lib/topology/links";
 import { buildNodeIndex } from "@/lib/topology/node-index";
+import { buildTopologyModel } from "@/lib/topology/model";
 import type { ModelMacPortRow, TopologyModelInput } from "@/lib/topology/model-types";
-import { dev, host } from "./support/righe";
+import { baseInput, dev, host } from "./support/righe";
 
 const NOW = Date.parse("2026-10-13T12:00:00Z");
 const RECENTE = "2026-10-13 11:00:00";
@@ -31,8 +32,8 @@ function input(over: Partial<TopologyModelInput> = {}): TopologyModelInput {
 }
 function run(i: TopologyModelInput) {
   const idx = buildNodeIndex(i.devices, i.hosts, i.knownMacs, i.neighbors);
-  const { links } = buildLinks(i, idx);
-  return { links, ...attachMacs(i, idx, links) };
+  const { links, ignored } = buildLinks(i, idx);
+  return { links, ...attachMacs(i, idx, links, undefined, undefined, ignored) };
 }
 
 test("porta di bordo: mai l'uplink né la porta di un collegamento fra apparati", () => {
@@ -308,4 +309,47 @@ test("router: due switch su ether2 legati da un LLDP, nessuno col verso noto: no
     macPorts: [mp(1, a, "ether2"), mp(1, b, "ether2")],
   });
   assert.deepEqual(run(i).attachLinks.filter((l) => l.a === "dev:1"), []);
+});
+
+// Revisione finale del ramo (I-3): «Ignora il collegamento…» il menu della linea lo offre su ogni collegamento
+// non a mano. Prima valeva solo per LLDP/CDP/MNDP/uplink: la correzione si salvava, compariva fra gli ignorati
+// e la linea restava sulla mappa e sulla carta. Ora vale anche per tabella MAC, ripiego del router e «dalle VM».
+const ignora = (a: string, b: string) => [{ id: 1, action: "ignore" as const, a_node: a, a_port: "", b_node: b, b_port: "", medium: null }];
+const fra = (links: Array<{ a: string; b: string }>, x: string, y: string) => links.filter((l) => [l.a, l.b].sort().join("|") === [x, y].sort().join("|"));
+
+test("I-3: un collegamento «tabella MAC» ignorato non torna, e il MAC non diventa un client", () => {
+  const SRV = "02:00:00:00:05:01";
+  const i = baseInput({
+    devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }), dev(5, { name: "SRV-5", device_type: "server", host: "192.0.2.15", port_count: 0 })],
+    knownMacs: [{ device_id: 5, mac: SRV }],
+    macPorts: [mp(2, SRV, "Port 7")],
+  });
+  assert.equal(fra(buildTopologyModel(i).links, "dev:2", "dev:5").length, 1, "senza «Ignora» il collegamento c'è");
+  const m = buildTopologyModel({ ...i, overrides: ignora("dev:2", "dev:5") });
+  assert.deepEqual(fra(m.links, "dev:2", "dev:5"), []);
+  assert.deepEqual(m.portClients, []);
+});
+
+test("I-3: il ripiego del router ignorato non torna", () => {
+  const i = input({
+    devices: [RTR, dev(2), dev(3), dev(7, { name: "SRV-7", device_type: "server", host: "10.0.1.7" })],
+    knownMacs: [{ device_id: 7, mac: SRV_MAC }],
+    macPorts: [mp(1, SRV_MAC, "ether7")],
+  });
+  assert.equal(fra(buildTopologyModel(i).links, "dev:1", "dev:7").length, 1, "senza «Ignora» il collegamento c'è");
+  assert.deepEqual(fra(buildTopologyModel({ ...i, overrides: ignora("dev:7", "dev:1") }).links, "dev:1", "dev:7"), []);
+});
+
+test("I-3: un collegamento «dalle VM» ignorato non torna", () => {
+  const vm = (vmid: number, mac: string) => ({
+    scannedDeviceId: 5, vmid, name: `vm-${vmid}`, node: "px-h", status: "running", type: "qemu", macs: [mac], ips: [], scannedAt: "2026-10-13T06:00:00.000Z",
+  });
+  const vms = [vm(501, "02:00:00:aa:00:01"), vm(502, "02:00:00:aa:00:02")];
+  const i = baseInput({
+    devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }), dev(5, { name: "px-h", device_type: "server", vendor: "proxmox", host: "192.0.2.15", port_count: 0 })],
+    scanHosts: [{ scannedDeviceId: 5, hostname: "px-h", ips: ["192.0.2.15"], macs: [] }],
+    vms, macPorts: vms.map((v) => mp(2, v.macs[0], "Port 1")),
+  });
+  assert.equal(fra(buildTopologyModel(i).links, "dev:2", "dev:5").length, 1, "senza «Ignora» il collegamento c'è");
+  assert.deepEqual(fra(buildTopologyModel({ ...i, overrides: ignora("dev:2", "dev:5") }).links, "dev:2", "dev:5"), []);
 });

@@ -4,6 +4,8 @@ import { edgeLook } from "@/lib/topology/edge-look";
 import { LINK_ATTRS_DEFAULT, type MapLink, type MapNode, type TopologyModel } from "@/lib/topology/model-types";
 import { GREY, INK, PAPER, edgeLabelAt, printStrokes, redundantCables, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
 import { buildPrintView } from "@/lib/topology/print-view";
+import { drawableLinks, redundancyCounts } from "@/lib/topology/map-screen";
+import type { LayoutNode } from "@/lib/topology/tree-layout";
 import type { TreeResult } from "@/lib/topology/tree";
 
 // Dati inventati con la forma vera (spec topologia §12.3, §12.5, §11.4).
@@ -64,6 +66,11 @@ test("in stampa le linee sono nere o grigie, con lo spessore della velocità; ma
   for (const s of [...plain, ...stale, ...manual, ...dbl]) assert.ok([INK, GREY, PAPER].includes(s.color));
 });
 
+const boxes = (ids: string[], attached: string[] = []) => new Map<string, LayoutNode>(
+  [...ids.map((id) => [id, "box"] as const), ...attached.map((id) => [id, "attached"] as const)]
+    .map(([id, role]) => [id, { id, x: 0, y: 0, w: 1, h: 1, role, parent: null }]),
+);
+
 test("cavi di ridondanza: solo i collegamenti che l'albero non usa, dalla parte della radice, porte e velocità", () => {
   const tree: TreeResult = {
     roots: ["dev:1"],
@@ -77,7 +84,7 @@ test("cavi di ridondanza: solo i collegamenti che l'albero non usa, dalla parte 
     ],
   };
   const names: Record<string, string> = { "dev:1": "Centrale", "dev:2": "SW-A", "dev:3": "SW-B", "dev:4": "Server-1" };
-  const rows = redundantCables(tree, new Set(["dev:1", "dev:2", "dev:3", "dev:4"]), (id) => names[id] ?? id);
+  const rows = redundantCables(tree, boxes(["dev:1", "dev:2", "dev:3", "dev:4"]), (id) => names[id] ?? id);
   assert.deepEqual(rows, [
     { id: "l3", from: "SW-A", fromPort: "Port 24", to: "SW-B", toPort: "Port 23", speed: "non nota" },
     { id: "l2", from: "SW-B", fromPort: "porta non nota", to: "Server-1", toPort: "sfp2", speed: "10G" },
@@ -117,4 +124,24 @@ test("scritta della linea in verticale: va a capo fra un pezzo e l'altro se non 
   // Un pezzo più largo dello spazio resta intero (non si spezza «⚡ 1,7 W»).
   assert.deepEqual(wrapLabel(["10G", "⚡ 12,5 W", "★"], 40), ["10G ·", "⚡ 12,5 W ·", "★"]);
   assert.deepEqual(wrapLabel([], 60), []);
+});
+
+test("M-4: «⇄ N» a schermo e l'elenco «Cavi di ridondanza» contano la stessa cosa: i cavi verso gli attaccati no", () => {
+  // SRV-5 è un attaccato (riga dell'elenco sotto SW-B): a schermo il suo cavo di ridondanza non si disegna.
+  const tree: TreeResult = {
+    roots: ["dev:1"],
+    children: new Map([["dev:1", ["dev:2", "dev:3"]], ["dev:2", []], ["dev:3", ["dev:5"]], ["dev:5", []]]),
+    via: new Map(),
+    links: [
+      link({ id: "l1", a: "dev:1", b: "dev:2" }), link({ id: "l2", a: "dev:1", b: "dev:3" }), link({ id: "l3", a: "dev:3", b: "dev:5" }),
+      link({ id: "r1", a: "dev:2", b: "dev:3", redundant: true }),
+      link({ id: "r2", a: "dev:2", b: "dev:5", redundant: true }),
+    ],
+  };
+  const nodes = boxes(["dev:1", "dev:2", "dev:3"], ["dev:5"]);
+  const cables = redundantCables(tree, nodes, (id) => id);
+  const counts = redundancyCounts(drawableLinks(tree.links, nodes));
+  assert.deepEqual(cables.map((c) => c.id), ["r1"]);
+  assert.deepEqual([counts.get("dev:2"), counts.get("dev:3"), counts.get("dev:5")], [1, 1, undefined]);
+  for (const [id, n] of counts) assert.equal(n, cables.filter((c) => c.from === id || c.to === id).length, id);
 });

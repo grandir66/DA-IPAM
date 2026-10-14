@@ -116,7 +116,7 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
         <div className="min-w-0 flex-1 leading-4">
           {/* Col «+N» in alto a destra il nome si ferma prima: lo copriva (Task 12). */}
           {/* Il nome ha tutta la riga: «⇄ N» sta in fondo all'ultima riga (Task 5: accanto al nome lo
-              accorciava a «DTS 1-CORE-…», e due centrali diversi avevano lo stesso nome a schermo). */}
+              accorciava, e due centrali con lo stesso inizio del nome avevano lo stesso nome a schermo). */}
           <div className={cn("flex min-w-0 items-center gap-1", data.plus > 0 && "pr-6")}>
             <div className={cn("min-w-0 flex-1 truncate text-[13px] font-semibold", giu && "text-destructive")}>{fitLabel(n.name, w)}</div>
           </div>

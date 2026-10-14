@@ -159,7 +159,7 @@ Regole (spec §12.2): colonna `c` a `x = MARGIN + Σ(larghezza colonne precedent
 ### Task 6: unione, revisione finale, misura, conferma, rilascio, documenti
 
 - [ ] Unione dei rami in un worktree da `origin/dev`; **una revisione finale** su Opus dell'intero lavoro, un solo giro di correzioni, una revisione mirata; cancello completo una volta (`exit=`).
-- [ ] Copie fresche (API di backup), `quick_check` di tutti i tenant di DTS e dell'hub, `scripts/misura-orientamento.ts` sulle copie (larghezza, altezza e fogli nei due orientamenti, misurati davvero) e la migrazione sulla copia (durata, integrità prima e dopo, riapertura).
+- [ ] Copie fresche (API di backup), `quick_check` di tutti i tenant del cliente A e dell'hub, `scripts/misura-orientamento.ts` sulle copie (larghezza, altezza e fogli nei due orientamenti, misurati davvero) e la migrazione sulla copia (durata, integrità prima e dopo, riapertura).
 - [ ] **Conferma di Riccardo** con i numeri; poi copie sui server (`data/backups/<tenant>-pre-topologia-verticale-<data>.db`), `version:release`, push di `dev`, hub con lo script staccato (`/root/aggiorna-f2b.sh` è il modello), controlli dopo (processo riavviato davvero — `ActiveEnterTimestamp`, riga della migrazione nel journal — versione, `quick_check`).
 - [ ] ADR 0011 `docs/adr/0011-topologia-verticale-e-stampa.md` (decisione: verticale predefinito e per mappa; ritocchi per orientamento; stampa SVG con tasselli; **cosa diventa difficile**: due disposizioni da tenere allineate in ogni ritocco della disposizione; i ritocchi esistenti non valgono in verticale; la stampa dipende dal browser per il PDF), CHANGELOG, CONTEXT §6, spec §12.4 con la versione, bacheca, istruzioni passo passo a Riccardo per provare e stampare a 1920.
 

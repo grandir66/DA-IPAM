@@ -27,8 +27,8 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
   // Spec §11.5: le schede vive di un hypervisor (MAC veri) lo identificano sulla tabella MAC degli switch.
   for (const { row, nodeId } of resolveScanHosts(input.scanHosts, idx)) if (nodeId) addNodeMacs(idx, nodeId, row.macs);
   const { vms, vmNodeIds, vmMacs, runningVmMacs } = placeVms(input, idx);
-  const { links: baseLinks, unmatched } = buildLinks(input, idx);
-  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, vmMacs, runningVmMacs);
+  const { links: baseLinks, unmatched, ignored } = buildLinks(input, idx);
+  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, vmMacs, runningVmMacs, ignored);
   const links = [...baseLinks, ...attachLinks].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   enrichLinks(links, input, idx);
   const sites = assignSites(input, idx, links);

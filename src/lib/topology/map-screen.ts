@@ -94,6 +94,18 @@ export function visibleEdges<L extends Ends>(links: readonly L[], opts: { showAl
   return links.filter((l) => !l.redundant || opts.showAll || (opts.selected !== null && (l.a === opts.selected || l.b === opts.selected)));
 }
 
+/**
+ * I collegamenti fra due riquadri della disposizione: quelli che si possono disegnare (gli attaccati sono righe di
+ * un elenco). «⇄ N» a schermo e «Cavi di ridondanza» in stampa partono da qui (revisione finale M-4: prima la stampa
+ * contava anche i cavi verso gli attaccati, e lo stesso oggetto aveva «⇄ 1» a schermo e due righe sulla carta).
+ */
+export function drawableLinks<L extends Ends>(links: readonly L[], nodes: ReadonlyMap<string, { role: string }>): L[] {
+  return links.filter((l) => {
+    const a = nodes.get(l.a), b = nodes.get(l.b);
+    return !!a && !!b && a.role !== "attached" && b.role !== "attached";
+  });
+}
+
 /** «⇄ N» sul riquadro: quante ridondanze ha ogni oggetto (chi non ne ha non è nella mappa). */
 export function redundancyCounts(links: readonly Ends[]): Map<string, number> {
   const out = new Map<string, number>();

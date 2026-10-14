@@ -12,6 +12,8 @@
  * I MAC delle VM (vmMacs) non sono client e non creano collegamenti «mac_table»; quelli delle VM accese
  * (runningVmMacs) propongono i collegamenti «dalle VM» verso il loro hypervisor (vm-ports.ts, spec §12.5),
  * calcolati prima del ripiego del router, che così li conosce come padri.
+ * «Ignora il collegamento…» vale anche qui: le coppie ignorate (da `buildLinks`) non tornano come «tabella MAC»,
+ * ripiego del router o «dalle VM» (revisione finale I-3: prima la correzione si salvava e la linea restava).
  *
  * Router (Task 1b): una riga del router su una porta fisica (bridge host: ether, sfp, bond) propone
  * un collegamento solo come RIPIEGO, per un apparato che nessuno switch o AP vede su una porta di
@@ -42,6 +44,8 @@ export function attachMacs(
   links: MapLink[],
   vmMacs: ReadonlySet<string> = new Set(),
   runningVmMacs: RunningVmMacs = new Map(),
+  /** Le coppie ignorate a mano (`buildLinks`): non tornano da tabella MAC, ripiego del router, VM (I-3). */
+  ignored: ReadonlySet<string> = new Set(),
 ): { portClients: PortClients[]; clientCount: Record<string, number>; attachLinks: MapLink[] } {
   const portKey = (node: string, port: string) => `${node}|${normalizePortNameForMatch(port)}`;
   const linkPorts = new Set<string>();
@@ -50,7 +54,8 @@ export function attachMacs(
     if (l.bPort) linkPorts.add(portKey(l.b, l.bPort));
   }
   for (const u of input.uplinkPorts) linkPorts.add(portKey(`dev:${u.device_id}`, u.port_name));
-  const linked = new Set(links.map((l) => [l.a, l.b].sort().join("|")));
+  // Una coppia ignorata conta come già collegata: nessuna fonte di qui la ripropone (revisione finale I-3).
+  const linked = new Set([...links.map((l) => [l.a, l.b].sort().join("|")), ...ignored]);
 
   const soglia = input.staleDays * DAY;
   const perPort = new Map<string, Set<string>>(); // porta → MAC distinti visti entro la soglia
@@ -123,7 +128,7 @@ export function attachMacs(
     byPort.set(pk, pc);
     if (!stale) clientCount[best.node] = (clientCount[best.node] ?? 0) + 1;
   }
-  for (const l of vmPortLinks(input, idx, [...links, ...attachLinks], runningVmMacs)) {
+  for (const l of vmPortLinks(input, idx, [...links, ...attachLinks], runningVmMacs, ignored)) {
     linked.add([l.a, l.b].sort().join("|"));
     attachLinks.push(l);
   }

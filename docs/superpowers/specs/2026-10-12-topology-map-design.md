@@ -577,7 +577,11 @@ Proxmox (un nome vecchio rimasto nel DNS).
   porta di un collegamento fra apparati) su cui, entro la soglia «non visto», passano MAC di VM
   **accese** e **tutte** dello stesso hypervisor H (almeno 1) propone il collegamento porta ↔ H, fonte
   nuova `vm_mac` («dalle VM», in parole nei dettagli: «N VM di H passano da questa porta»). VM di due
-  hypervisor sulla stessa porta = porta di passaggio: niente. Resta valida l'esclusione delle VM dai
+  hypervisor sulla stessa porta = porta di passaggio: niente. Ogni MAC di VM sta su **una** porta,
+  come i client (§10.5): fra le letture del suo ultimo giro (6 ore dalla più recente: la porta di
+  prima di una migrazione non conta), la porta di un cavo già noto del suo hypervisor, poi quella
+  con meno MAC distinti freschi, poi la lettura più recente (revisione finale del ramo, 14/10).
+  «Ignora il collegamento…» vale anche per questa fonte. Resta valida l'esclusione delle VM dai
   client della porta. Si somma alle schede vive (§11.5), non le sostituisce: quando
   `hypervisor_sync` porterà i MAC delle schede, ogni cavo, anche di riserva, si troverà da solo.
 - **Principale di un hypervisor.** Fra i collegamenti dai dati di un hypervisor vince il più

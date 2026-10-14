@@ -232,3 +232,103 @@ test("parole: la fonte «dalle VM» e «N VM di H passano da questa porta»", ()
   assert.equal(vmPortWords({ ...l, vmCount: 1 }, () => "PVE-SU"), "1 VM di PVE-SU passa da questa porta");
   assert.equal(vmPortWords({ ...l, sources: ["lldp"], vmCount: undefined } as unknown as MapLink, () => "x"), null);
 });
+
+// Revisione finale del ramo (I-1, I-2): ogni MAC di VM sta su UNA porta, quella del suo ultimo giro di letture
+// con meno MAC freschi (come i client in attach.ts). Prove della revisione portate qui, dati inventati.
+
+test("I-1: porta di passaggio del centrale verso un accesso il cui collegamento non dice la porta del centrale: px-h resta sotto l'accesso", () => {
+  // L'accesso sale al centrale con l'uplink UniFi senza la porta del centrale: la Port 30 del centrale non ha
+  // proprietari. Da lì passa tutto ciò che sta dietro l'accesso: le VM di px-h, la sua gestione, l'accesso stesso.
+  const vms = vmsOf(5, "px-h", 1, 2);
+  const SW4 = "02:00:00:00:04:01", SW2 = "02:00:00:00:02:02";
+  const m = buildTopologyModel(rete({
+    devices: [
+      dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }),
+      dev(4, { name: "ACCESSO-4", host: "192.0.2.4", uplink_mac: SW2, uplink_seen_at: RECENTE }),
+      dev(5, { name: "px-h", device_type: "server", vendor: "proxmox", host: "192.0.2.15", port_count: 0 }),
+    ],
+    neighbors: [],
+    knownMacs: [{ device_id: 2, mac: SW2 }, { device_id: 4, mac: SW4 }, { device_id: 5, mac: H_MAC }],
+    uplinkPorts: [{ device_id: 4, port_index: 24, port_name: "Port 24" }],
+    portInfo: [
+      { device_id: 2, port_name: "Port 30", speed: "10G", poe_status: null, poe_power_mw: null },
+      { device_id: 4, port_name: "Port 5", speed: "1000 Mbps", poe_status: null, poe_power_mw: null },
+    ],
+    vms,
+    macPorts: [
+      mp(4, H_MAC, "Port 5"), ...vms.map((v) => mp(4, v.macs[0], "Port 5")),
+      mp(2, SW4, "Port 30"), mp(2, H_MAC, "Port 30"), ...vms.map((v) => mp(2, v.macs[0], "Port 30")),
+    ],
+  }));
+  assert.deepEqual(pair(m.links, "dev:2", "dev:5"), [], "nessun collegamento dalla porta di passaggio del centrale");
+  const t = buildTree(m, new Set(m.nodes.map((n) => n.id)), ["dev:2"]);
+  assert.equal(padre(t, "dev:5"), "dev:4");
+  assert.equal(pair(m.links, "dev:4", "dev:5")[0].vmCount, 2);
+});
+
+test("I-1: la porta di passaggio vede solo le VM (meno MAC della porta di bordo): vince la porta dove H ha già il suo cavo", () => {
+  // I dati della revisione così come sono: la Port 30 del centrale ha 2 MAC, la Port 5 dell'accesso 3 (gestione
+  // di px-h + 2 VM). Il conto da solo sceglierebbe il centrale; la Port 5 è la porta del cavo di gestione di px-h.
+  const vms = vmsOf(5, "px-h", 1, 2);
+  const SW2 = "02:00:00:00:02:02";
+  const m = buildTopologyModel(rete({
+    devices: [
+      dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }),
+      dev(4, { name: "ACCESSO-4", host: "192.0.2.4", uplink_mac: SW2, uplink_seen_at: RECENTE }),
+      dev(5, { name: "px-h", device_type: "server", vendor: "proxmox", host: "192.0.2.15", port_count: 0 }),
+    ],
+    neighbors: [],
+    knownMacs: [{ device_id: 2, mac: SW2 }, { device_id: 5, mac: H_MAC }],
+    uplinkPorts: [{ device_id: 4, port_index: 24, port_name: "Port 24" }],
+    vms,
+    macPorts: [mp(4, H_MAC, "Port 5"), ...vms.map((v) => mp(4, v.macs[0], "Port 5")), ...vms.map((v) => mp(2, v.macs[0], "Port 30"))],
+  }));
+  assert.deepEqual(pair(m.links, "dev:2", "dev:5"), []);
+  assert.equal(pair(m.links, "dev:4", "dev:5")[0].vmCount, 2);
+});
+
+test("I-1: hypervisor in bond su due centrali, le VM divise fra le due porte (e viste sul cavo fra i centrali): due collegamenti", () => {
+  const su2 = vmsOf(5, "px-h", 1, 2);
+  const su3 = vmsOf(5, "px-h", 10, 2);
+  const SW3 = "02:00:00:00:03:01";
+  const m = buildTopologyModel(rete({
+    knownMacs: [{ device_id: 3, mac: SW3 }, { device_id: 5, mac: H_MAC }],
+    vms: [...su2, ...su3],
+    macPorts: [
+      ...su2.map((v) => mp(2, v.macs[0], "Port 1")), ...su3.map((v) => mp(3, v.macs[0], "Port 1")),
+      // La Port 20 del centrale 2 va al centrale 3 (cavo che nessuna fonte conosce): vede le VM di là e il centrale 3.
+      mp(2, SW3, "Port 20"), ...su3.map((v) => mp(2, v.macs[0], "Port 20")),
+    ],
+  }));
+  assert.deepEqual(vmLinks(m.links).map((x) => [x.a, x.aPort, x.b, x.vmCount]), [["dev:2", "Port 1", "dev:5", 2], ["dev:3", "Port 1", "dev:5", 2]]);
+});
+
+const IERI = "2026-10-12 11:00:00";
+const migrazione = (vms: ModelVmRow[], macPorts: ModelMacPortRow[]) => buildTopologyModel(rete({ neighbors: rete().neighbors.filter((n) => n.device_id !== 4), vms, macPorts }));
+
+test("I-2 (A): VM migrata ieri da px-k a px-h, la porta di px-k la ricorda ancora: nessun collegamento falso porta di px-k ↔ px-h", () => {
+  const v = vm(501, "px-h", vmMac(5, 1)); // oggi su px-h
+  const m = migrazione([v], [mp(3, v.macs[0], "Port 1", IERI), mp(2, v.macs[0], "Port 1")]);
+  assert.deepEqual(vmLinks(m.links).map((x) => [x.a, x.aPort, x.b, x.vmCount]), [["dev:2", "Port 1", "dev:5", 1]]);
+});
+
+test("I-2 (B): VM migrata ieri da px-k a px-h, px-k ha le sue VM sulla sua porta: px-k non perde il suo collegamento", () => {
+  const v = vm(501, "px-h", vmMac(5, 1));
+  const k = vmsOf(6, "px-k", 1, 2);
+  const m = migrazione([v, ...k], [mp(3, v.macs[0], "Port 1", IERI), mp(2, v.macs[0], "Port 1"), ...k.map((x) => mp(3, x.macs[0], "Port 1"))]);
+  assert.deepEqual(vmLinks(m.links).map((x) => [x.a, x.aPort, x.b, x.vmCount]), [["dev:2", "Port 1", "dev:5", 1], ["dev:3", "Port 1", "dev:6", 2]]);
+});
+
+test("I-2: le letture dello stesso giro (switch letti a ore diverse, entro la finestra) contano tutte", () => {
+  // Il centrale 3 si legge alle 7, il centrale 2 alle 11: la VM sta sulla porta di bordo del 3, il 2 la vede di
+  // passaggio sulla Port 20 (cavo che nessuna fonte conosce), insieme ad altri due MAC.
+  const v = vmsOf(5, "px-h", 1, 1);
+  const m = buildTopologyModel(rete({
+    vms: v,
+    macPorts: [
+      mp(3, v[0].macs[0], "Port 1", "2026-10-13 07:00:00"),
+      mp(2, v[0].macs[0], "Port 20"), mp(2, "02:00:00:00:0c:01", "Port 20"), mp(2, "02:00:00:00:0c:02", "Port 20"),
+    ],
+  }));
+  assert.deepEqual(vmLinks(m.links).map((x) => [x.a, x.aPort, x.b]), [["dev:3", "Port 1", "dev:5"]]);
+});

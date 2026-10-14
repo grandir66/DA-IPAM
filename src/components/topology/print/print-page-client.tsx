@@ -91,7 +91,7 @@ export function PrintPageClient({ initial }: { initial: PrintParams }) {
   const cables = useMemo(() => {
     if (!view?.ok) return [];
     const names = new Map(view.model.nodes.map((n) => [n.id, n.name]));
-    return redundantCables(view.tree, new Set(view.layout.nodes.keys()), (id) => names.get(id) ?? id);
+    return redundantCables(view.tree, view.layout.nodes, (id) => names.get(id) ?? id);
   }, [view]);
 
   useEffect(() => {

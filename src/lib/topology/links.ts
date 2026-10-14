@@ -105,7 +105,10 @@ function mergeInto(link: MapLink, c: Candidate): void {
   if (c.uplinkFrom) link.uplinkFrom = c.uplinkFrom;
 }
 
-export function buildLinks(input: TopologyModelInput, idx: NodeIndex): { links: MapLink[]; unmatched: UnmatchedNeighbor[] } {
+export function buildLinks(
+  input: TopologyModelInput,
+  idx: NodeIndex,
+): { links: MapLink[]; unmatched: UnmatchedNeighbor[]; ignored: ReadonlySet<string> } {
   const ignored = new Set<string>();
   const candidates: Candidate[] = [];
   const unmatched: UnmatchedNeighbor[] = [];
@@ -208,5 +211,5 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex): { links: 
     l.daysUnseen = Math.floor(age / DAY_MS);
     l.stale = age > input.staleDays * DAY_MS;
   }
-  return { links, unmatched };
+  return { links, unmatched, ignored };
 }

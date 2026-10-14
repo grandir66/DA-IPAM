@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectionMode, ReactFlow, useReactFlow, type Edge, type Node, type NodeChange, type OnConnectEnd } from "@xyflow/react";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { isUncensusedVmId } from "@/lib/topology/map-menus";
-import { centerViewport, labelBoxes, lineHandles, moreAttachedAt, redundancyCounts, redundantEnds, visibleEdges, type Rect } from "@/lib/topology/map-screen";
+import { centerViewport, drawableLinks, labelBoxes, lineHandles, moreAttachedAt, redundancyCounts, redundantEnds, visibleEdges, type Rect } from "@/lib/topology/map-screen";
 import type { LayoutResult } from "@/lib/topology/tree-layout";
 import type { MapLink } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
@@ -89,10 +89,7 @@ export function MapCanvas(p: Props) {
   const { connectable, vmInfo, onToggleVms } = p;
   const o = layout.orientation;
   // Le ridondanze che si possono disegnare: fra due riquadri della disposizione (gli attaccati sono righe di un elenco).
-  const drawable = useMemo(() => tree.links.filter((l) => {
-    const a = layout.nodes.get(l.a), b = layout.nodes.get(l.b);
-    return !!a && !!b && a.role !== "attached" && b.role !== "attached";
-  }), [tree, layout]);
+  const drawable = useMemo(() => drawableLinks(tree.links, layout.nodes), [tree, layout]);
   const redCount = useMemo(() => redundancyCounts(drawable), [drawable]);
 
   const baseNodes = useMemo((): Node[] => {

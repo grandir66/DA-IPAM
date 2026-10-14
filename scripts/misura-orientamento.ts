@@ -2,7 +2,7 @@
 /**
  * misura-orientamento.ts — quanto è larga e alta la mappa automatica della topologia
  * oggi (albero dall'alto, fratelli affiancati) e quanto lo sarebbe da sinistra a destra
- * (livelli in colonna, fratelli impilati), e quante pagine A4/A3 servono a stamparla.
+ * (livelli in colonna, fratelli impilati), e quanti fogli A4/A3 servono a stamparla (`planSheets` della pagina di stampa).
  * Serve a decidere l'orientamento sul dato vero (spec topologia §12).
  *
  * Entrambe le disposizioni sono quelle vere di `layoutTree` (`"tb"` = orizzontale di oggi, `"lr"` =
@@ -15,19 +15,22 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { controllaPercorsi } from "../src/lib/scanner/__tests__/support/percorsi-prova";
+import { drawingBoxes } from "../src/lib/topology/print-draw";
+import { OVERLAP_MM, planSheets } from "../src/lib/topology/print-tiles";
+import type { LayoutResult } from "../src/lib/topology/tree-layout";
 
-/** Area stampabile a 96 dpi (1 px = 0,2646 mm), margini di 10 mm. */
-const FOGLI = { A4: { w: 718, h: 1047 }, A3: { w: 1047, h: 1512 } } as const;
-const SCALE = [1, 0.7] as const;
-
-function pagine(w: number, h: number) {
-  const out: Record<string, number> = {};
-  for (const s of SCALE) {
-    for (const [nome, f] of Object.entries(FOGLI)) {
-      const vert = Math.ceil((w * s) / f.w) * Math.ceil((h * s) / f.h);
-      const oriz = Math.ceil((w * s) / f.h) * Math.ceil((h * s) / f.w);
-      out[`${nome}_${Math.round(s * 100)}%`] = Math.min(vert, oriz);
-      out[`${nome}_${Math.round(s * 100)}%_foglio`] = vert <= oriz ? 1 : 0; // 1 = verticale
+/**
+ * Fogli veri della stampa (spec §12.3): `planSheets` della pagina di stampa, coi riquadri della
+ * disposizione (un riquadro non si spezza fra due fogli), A4 e A3, scala 100 % e 80 %, foglio girato
+ * se servono meno fogli. Il conto è dei tasselli stampati (i vuoti no): la pagina ne aggiunge uno per
+ * la panoramica, più uno per ogni seguito dell'elenco dei cavi di ridondanza.
+ */
+function pagine(layout: LayoutResult) {
+  const out: Record<string, string> = {};
+  for (const scale of [1, 0.8] as const) {
+    for (const paper of ["A3", "A4"] as const) {
+      const p = planSheets({ width: layout.width, height: layout.height, boxes: drawingBoxes(layout) }, { paper, scale, overlapMm: OVERLAP_MM });
+      out[`${paper}_${Math.round(scale * 100)}%`] = `${p.printed} fogli (griglia ${p.rows} righe × ${p.cols} colonne, ${p.tiles.length - p.printed} vuoti), foglio ${p.landscape ? "orizzontale" : "verticale"}`;
     }
   }
   return out;
@@ -92,9 +95,9 @@ async function main(): Promise<number> {
     livelli: colonne.size,
     fratelli_max_sotto_un_nodo: maxFratelli,
     orizzontale_px: { larghezza: Math.round(oggi.width), altezza: Math.round(oggi.height) },
-    orizzontale_pagine: pagine(oggi.width, oggi.height),
+    orizzontale_fogli: pagine(oggi),
     verticale_px: { larghezza: Math.round(verticale.width), altezza: Math.round(verticale.height) },
-    verticale_pagine: pagine(verticale.width, verticale.height),
+    verticale_fogli: pagine(verticale),
   };
   process.stdout.write(`${JSON.stringify(out, null, 1)}\n`);
   return 0;

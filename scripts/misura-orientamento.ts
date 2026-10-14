@@ -5,11 +5,8 @@
  * (livelli in colonna, fratelli impilati), e quante pagine A4/A3 servono a stamparla.
  * Serve a decidere l'orientamento sul dato vero (spec topologia §12).
  *
- * La disposizione di oggi è quella vera di `layoutTree`. Quella verticale è una STIMA
- * fatta con le stesse misure dei riquadri e con le stesse regole dell'albero:
- *   - colonna di un livello = il riquadro più largo di quel livello (con la fascia degli
- *     attaccati sotto il riquadro e gli AP in un blocco di 2 colonne);
- *   - altezza di un sottoalbero = max(il proprio blocco, la somma dei figli + spazi).
+ * Entrambe le disposizioni sono quelle vere di `layoutTree` (`"tb"` = orizzontale di oggi, `"lr"` =
+ * verticale, da sinistra a destra): niente stime.
  * Lavora su una copia della copia dentro `--cartella`. Stampa solo numeri.
  *
  * Uso:  npx tsx scripts/misura-orientamento.ts <copia.db> --cartella <scratchpad>
@@ -22,9 +19,6 @@ import { controllaPercorsi } from "../src/lib/scanner/__tests__/support/percorsi
 /** Area stampabile a 96 dpi (1 px = 0,2646 mm), margini di 10 mm. */
 const FOGLI = { A4: { w: 718, h: 1047 }, A3: { w: 1047, h: 1512 } } as const;
 const SCALE = [1, 0.7] as const;
-/** Spazio orizzontale fra due livelli nella disposizione verticale (linee + etichette di porta). */
-const LEVEL_GAP_H = 90;
-const AP_COLS_V = 2;
 
 function pagine(w: number, h: number) {
   const out: Record<string, number> = {};
@@ -81,54 +75,26 @@ async function main(): Promise<number> {
   const model = buildTopologyModel(input);
   const head = proposeHead(model);
   const tree = buildTree(model, autoVisible(model), head ? [head] : []);
-  const oggi = L.layoutTree(model, tree, []);
+  const oggi = L.layoutTree(model, tree, [], new Set(), "tb");
+  const verticale = L.layoutTree(model, tree, [], new Set(), "lr");
 
-  // Stima da sinistra a destra, con i riquadri e i figli calcolati da layoutTree.
-  const figliDi = new Map<string, { box: string[]; ap: number; att: number }>();
-  for (const n of oggi.nodes.values()) {
-    if (!n.parent) continue;
-    const f = figliDi.get(n.parent) ?? { box: [], ap: 0, att: 0 };
-    if (n.role === "box") f.box.push(n.id);
-    else if (n.role === "ap") f.ap++;
-    else f.att++;
-    figliDi.set(n.parent, f);
-  }
-  for (const [p, extra] of oggi.moreAttached) {
-    const f = figliDi.get(p) ?? { box: [], ap: 0, att: 0 };
-    f.att += extra;
-    figliDi.set(p, f);
-  }
-  const apBlocco = AP_COLS_V * (L.AP_W + 8);
-  const colonne: number[] = [];
-  const blocco = (id: string, livello: number): number => {
-    const n = oggi.nodes.get(id);
-    const f = figliDi.get(id) ?? { box: [], ap: 0, att: 0 };
-    const att = Math.min(f.att, L.ATT_MAX);
-    const altAtt = att > 0 ? att * L.ATT_ROW + (f.att > L.ATT_MAX ? L.ATT_ROW : 0) + 6 : 0;
-    const altAp = f.ap > 0 ? L.AP_HEAD + Math.ceil(f.ap / AP_COLS_V) * (L.AP_H + 8) : 0;
-    const proprio = (n?.h ?? L.BOX_H) + altAtt + altAp;
-    const larg = Math.max(n?.w ?? 150, att > 0 ? L.ATT_W : 0, f.ap > 0 ? apBlocco : 0);
-    colonne[livello] = Math.max(colonne[livello] ?? 0, larg);
-    const figli = f.box.map((c) => blocco(c, livello + 1));
-    const sommaFigli = figli.reduce((a, b) => a + b, 0) + Math.max(0, figli.length - 1) * L.GAP;
-    return Math.max(proprio, sommaFigli);
-  };
-  const altezze = tree.roots.map((r) => blocco(r, 0));
-  const vertW = colonne.reduce((a, b) => a + b, 0) + Math.max(0, colonne.length - 1) * LEVEL_GAP_H + 2 * L.MARGIN;
-  const vertH = altezze.reduce((a, b) => a + b, 0) + Math.max(0, altezze.length - 1) * L.ROOT_GAP + 2 * L.MARGIN;
+  const figliDi = new Map<string, number>();
+  for (const n of verticale.nodes.values()) if (n.parent && n.role === "box") figliDi.set(n.parent, (figliDi.get(n.parent) ?? 0) + 1);
+  const colonne = new Set([...verticale.nodes.values()].filter((n) => n.role === "box").map((n) => n.x));
 
-  const maxFratelli = Math.max(0, ...[...figliDi.values()].map((f) => f.box.length));
+  const maxFratelli = Math.max(0, ...figliDi.values());
   const out = {
     nodi_nell_albero: [...oggi.nodes.values()].filter((n) => n.role === "box").length,
     ap: [...oggi.nodes.values()].filter((n) => n.role === "ap").length,
     attaccati: [...oggi.nodes.values()].filter((n) => n.role === "attached").length,
+    attaccati_nascosti_oltre_il_limite: [...oggi.moreAttached.values()].reduce((a, b) => a + b, 0),
     radici: tree.roots.length,
-    livelli: colonne.length,
+    livelli: colonne.size,
     fratelli_max_sotto_un_nodo: maxFratelli,
-    oggi_px: { larghezza: Math.round(oggi.width), altezza: Math.round(oggi.height) },
-    oggi_pagine: pagine(oggi.width, oggi.height),
-    verticale_stima_px: { larghezza: Math.round(vertW), altezza: Math.round(vertH) },
-    verticale_pagine: pagine(vertW, vertH),
+    orizzontale_px: { larghezza: Math.round(oggi.width), altezza: Math.round(oggi.height) },
+    orizzontale_pagine: pagine(oggi.width, oggi.height),
+    verticale_px: { larghezza: Math.round(verticale.width), altezza: Math.round(verticale.height) },
+    verticale_pagine: pagine(verticale.width, verticale.height),
   };
   process.stdout.write(`${JSON.stringify(out, null, 1)}\n`);
   return 0;

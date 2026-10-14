@@ -186,6 +186,7 @@ Tutte **a senso unico**, protocollo TCP, porte esplicite. Le risposte tornano in
 | P2 | `remoto-edge` | `centro-vulcan` | 443 | heartbeat, risultati, tarball degli aggiornamenti | DA-Link |
 | P3 | `centro-vulcan` | `remoto-edge` | 6443 (8443 sugli edge vecchi) | l'hub comanda gli scan: dialogo esistente, non si cambia | DA-Link |
 | P4 | `zabbix-proxy` | `centro-zabbix` | 10051 | proxy in modalità active | DA-Zabbix (esiste già) |
+| P4b | `centro-zabbix` | `zabbix-proxy` | 22 | la procedura guidata di DA-Zabbix entra nel proxy per sondare le reti del cliente: è da lì che si vedono | DA-Zabbix (esiste già) |
 | P5 | `admins` | `remoto-ipam`, `remoto-edge`, `zabbix-proxy` | 22, 443, 6443 | assistenza tecnica | DA-Link |
 | P6 | `link-admin` per DA-Link, `admins` per gli altri | `centro-*` | 22, 443 | amministrazione dei centrali; DA-Link solo da `link-admin` (§9.1) | DA-Link |
 | P7 | `remoto-edge` | `centro-link` | 443 (solo API di rinnovo) | l'edge rinnova licenza e segreto (§8.2) | DA-Link |
@@ -317,7 +318,7 @@ Ci sono due scrittori, con una divisione netta:
 - **DA-Link** gestisce i nodi edge e istanze IPAM, i gruppi `cli-*`, `remoto-*`, `centro-*`
   e le policy P1–P3, P5, P6.
 - **La procedura guidata di DA-Zabbix** gestisce i proxy che vivono da soli, nel gruppo
-  `zabbix-proxy` e nello stesso `cli-<codcli>`, e la policy P4.
+  `zabbix-proxy` e nello stesso `cli-<codcli>`, e le policy P4 e P4b.
 
 Nessuno dei due cancella ciò che non ha creato: si riconosce dal prefisso del nome della chiave
 e del nodo. Il proxy che vive dentro un'istanza IPAM non riceve una seconda chiave: è lo stesso
@@ -922,7 +923,9 @@ finestra per cliente.
 **DA-Link (nuovo)**
 
 - Client API NetBird: gruppi, chiavi, revoca, nodi, policy. Si parte da
-  `DA-Zabbix/zbximport/netbird.py`.
+  `DA-Zabbix/zbximport/netbird.py`, **ma con la verifica del certificato del server accesa**:
+  quel client oggi la spegne (`CERT_NONE`), e con il potere che DA-Link ha su NetBird non è
+  accettabile.
 - Descrizione delle sue policy e riallineamento col freno (§6.1).
 - Elenco degli oggetti remoti per `codcli`, con il nome del cliente letto dal CRM.
 - Emissione del comando d'installazione con chiave e token.

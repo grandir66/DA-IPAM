@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { LINK_STALE_DAYS_MAX, LINK_STALE_DAYS_MIN } from "@/lib/topology/settings";
 import { VM_NON_COLLEGABILE } from "@/lib/topology/vm-nodes";
+import type { MapOrientation } from "@/lib/topology/model-types";
 
 export type Parsed<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -226,11 +227,29 @@ export function parseAutoHeadBody(raw: unknown): Parsed<{ headNode: string | nul
   return r.success ? { ok: true, data: { headNode: r.data.head_node } } : { ok: false, error: first(r.error) };
 }
 
+// ─── Orientamento (spec §12.2): «Verticale» = lr, «Orizzontale» = tb ───
+const ORIENTATION_MSG = "Orientamento non valido: si sceglie fra verticale e orizzontale";
+const ORIENTATION = z.enum(["lr", "tb"], { error: ORIENTATION_MSG });
+
+/** Il corpo di un PATCH /api/topology/maps/[id] chiede di cambiare l'orientamento (la chiave c'è: il resto lo dice il parser). */
+export function asksOrientation(raw: unknown): boolean {
+  return typeof raw === "object" && raw !== null && !Array.isArray(raw) && "orientation" in raw;
+}
+
+/** PATCH /api/topology/maps/[id] (anche `auto`): `{ orientation: "lr" | "tb" }`, da solo. */
+export function parseMapOrientationBody(raw: unknown): Parsed<{ orientation: MapOrientation }> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { ok: false, error: BODY.error };
+  if (Object.keys(raw).some((k) => k !== "orientation")) return { ok: false, error: "L'orientamento si cambia da solo, senza altri campi" };
+  const r = ORIENTATION.safeParse((raw as { orientation?: unknown }).orientation);
+  return r.success ? { ok: true, data: { orientation: r.data } } : { ok: false, error: ORIENTATION_MSG };
+}
+
 const VIEW = z.string({ error: "Vista non valida" }).regex(/^(auto|mappa:\d+)$/, "Vista non valida: «auto» o «mappa:N»");
 const positionsSchema = z.object(
   {
     view: VIEW,
     clear: z.boolean({ error: "«clear» non valido" }).optional(),
+    orientation: ORIENTATION.optional(),
     tweaks: z
       .array(
         z.object({
@@ -251,12 +270,18 @@ const positionsSchema = z.object(
   BODY,
 );
 
-/** `rename` (revisione finale I5): id della vista da riscrivere sull'id canonico, prima del resto. */
+/**
+ * `rename` (revisione finale I5): id della vista da riscrivere sull'id canonico, prima del resto.
+ * `orientation` (spec §12.2): l'orientamento in cui sono fatti i ritocchi, obbligatorio per
+ * salvarli (un ritocco senza orientamento finirebbe nell'altro disegno); con «clear» limita il
+ * riordino a quell'orientamento; senza, il riordino toglie tutti i ritocchi.
+ */
 export function parsePositionsBody(raw: unknown): Parsed<{
   view: string;
   clear: boolean;
   tweaks: Array<{ nodeId: string; x: number; y: number; sig: string }>;
   rename: Array<{ from: string; to: string }>;
+  orientation: MapOrientation | null;
 }> {
   const r = positionsSchema.safeParse(raw);
   if (!r.success) return { ok: false, error: first(r.error) };
@@ -265,7 +290,13 @@ export function parsePositionsBody(raw: unknown): Parsed<{
   if (r.data.clear !== true && r.data.tweaks === undefined && rename.length === 0) {
     return { ok: false, error: "Servono i ritocchi da salvare, «clear» oppure le rinomine" };
   }
-  return { ok: true, data: { view: r.data.view, clear: r.data.clear === true, tweaks: r.data.clear === true ? [] : (r.data.tweaks ?? []), rename } };
+  const clear = r.data.clear === true;
+  const tweaks = clear ? [] : (r.data.tweaks ?? []);
+  const orientation = r.data.orientation ?? null;
+  if (tweaks.length > 0 && orientation === null) {
+    return { ok: false, error: "Manca l'orientamento dei ritocchi: si sceglie fra verticale e orizzontale" };
+  }
+  return { ok: true, data: { view: r.data.view, clear, tweaks, rename, orientation } };
 }
 
 const hiddenSchema = z.object(

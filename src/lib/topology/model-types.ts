@@ -200,6 +200,9 @@ export interface MapNode {
 
 export type LinkMedium = "cavo" | "fibra" | "wireless";
 
+/** Orientamento della mappa (spec §12.2): `lr` «Verticale», da sinistra a destra con i fratelli impilati (predefinito); `tb` «Orizzontale», dall'alto. */
+export type MapOrientation = "lr" | "tb";
+
 export interface MapLink {
   id: string;
   a: string;

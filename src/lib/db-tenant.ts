@@ -34,6 +34,7 @@ import { libreStatusFrom } from "./topology/status-map";
 import { parseProxmoxScan } from "./topology/vms";
 import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
 import type { KnownPort } from "./topology/api-input";
+import type { MapOrientation } from "./topology/model-types";
 
 import type {
   Network,
@@ -388,6 +389,36 @@ export function migrateTopologyPhase2b(db: Database.Database): string[] {
       )`);
       added.push("topology_link_primary");
     }
+  })();
+  return added;
+}
+
+/**
+ * Migrazione runtime «orientamento della mappa» (spec §12.2, piano
+ * 2026-10-14-topologia-verticale-stampa, Task 1). Gemella di
+ * `migrateTopologyPhase2b`: solo cose nuove, in una transazione, e l'elenco di
+ * ciò che ha aggiunto.
+ * - `topology_maps.orientation`: `'lr'` «Verticale» (predefinito, anche per le
+ *   mappe già salvate) o `'tb'` «Orizzontale». Una scelta di come si consegna la
+ *   mappa, uguale per tutti quelli che la guardano.
+ * - `topology_position.orientation`: l'orientamento in cui è stato fatto un
+ *   ritocco. NULL = `'tb'`: le righe di oggi sono nate in orizzontale. Le righe
+ *   di sola appartenenza (`pinned = 0`) lo lasciano NULL.
+ * Dopo `topology_maps` (fase 2), quindi dopo la fase 2b. Esportata per le prove
+ * (`topology-orientation-migration.test.ts`).
+ */
+export function migrateTopologyOrientation(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const add = (table: string, col: string, ddl: string): void => {
+    if (has(table, col)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+    added.push(`${table}.${col}`);
+  };
+  db.transaction(() => {
+    add("topology_maps", "orientation", "TEXT NOT NULL DEFAULT 'lr' CHECK(orientation IN ('lr','tb'))");
+    add("topology_position", "orientation", "TEXT");
   })();
   return added;
 }
@@ -1667,6 +1698,19 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione topologia fase 2b fallita:`, e);
+  }
+
+  // Orientamento della mappa (piano 2026-10-14-topologia-verticale-stampa): colonne
+  // su topology_maps e topology_position. Subito dopo la fase 2b (topology_maps nasce
+  // nella fase 2). Se fallisce il tenant si apre lo stesso: le letture delle mappe
+  // che nominano la colonna falliscono finché non riesce.
+  try {
+    const added = migrateTopologyOrientation(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia orientamento, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia orientamento fallita:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -9202,14 +9246,25 @@ export interface TopologyMapRow {
   kind: "auto" | "passo";
   roots: string[];
   head_node: string | null;
+  /** «Verticale» (`lr`, predefinito) o «Orizzontale» (`tb`), spec §12.2. */
+  orientation: MapOrientation;
   created_by: string | null;
   created_at: string;
   updated_at: string;
 }
 
-interface TopologyMapDbRow extends Omit<TopologyMapRow, "roots"> {
+interface TopologyMapDbRow extends Omit<TopologyMapRow, "roots" | "orientation"> {
   roots: string;
+  orientation: string;
 }
+
+/** Vista di una mappa: l'automatica o una passo passo. */
+export type TopologyView = "auto" | `mappa:${number}`;
+
+// Il CHECK della colonna ammette solo 'lr' e 'tb'.
+const mapOrientationOf = (v: string): MapOrientation => (v === "tb" ? "tb" : "lr");
+// Un ritocco senza orientamento è nato prima della colonna, in orizzontale (spec §12.2).
+const tweakOrientationOf = (v: string | null): MapOrientation => (v === "lr" ? "lr" : "tb");
 
 function toMapRow(r: TopologyMapDbRow): TopologyMapRow {
   let roots: string[] = [];
@@ -9219,10 +9274,10 @@ function toMapRow(r: TopologyMapDbRow): TopologyMapRow {
   } catch {
     roots = []; // JSON rovinato: la mappa si apre lo stesso, senza radici
   }
-  return { ...r, roots };
+  return { ...r, roots, orientation: mapOrientationOf(r.orientation) };
 }
 
-const MAP_COLS = "id, name, kind, roots, head_node, created_by, created_at, updated_at";
+const MAP_COLS = "id, name, kind, roots, head_node, orientation, created_by, created_at, updated_at";
 
 export function listTopologyMaps(): TopologyMapRow[] {
   const rows = db().prepare(`SELECT ${MAP_COLS} FROM topology_maps WHERE kind = 'passo' ORDER BY name COLLATE NOCASE, id`).all() as TopologyMapDbRow[];
@@ -9292,28 +9347,83 @@ export function deleteTopologyMap(id: number): boolean {
   });
 }
 
-/** Nodi della vista (anche quelli che non esistono più: li dichiara la pagina) e ritocchi salvati. */
+/**
+ * Nodi della vista (anche quelli che non esistono più: li dichiara la pagina), ritocchi
+ * salvati col loro orientamento (spec §12.2: un ritocco vale nell'orientamento in cui è
+ * fatto; NULL = `tb`) e l'orientamento della mappa.
+ */
 export function getTopologyMapView(view: string): {
   nodes: string[];
-  tweaks: Array<{ nodeId: string; x: number; y: number; sig: string | null }>;
+  tweaks: Array<{ nodeId: string; x: number; y: number; sig: string | null; orientation: MapOrientation }>;
+  orientation: MapOrientation;
 } {
   const rows = db()
-    .prepare("SELECT node_id, x, y, pinned, structure_sig FROM topology_position WHERE view = ? ORDER BY node_id")
-    .all(view) as Array<{ node_id: string; x: number; y: number; pinned: number; structure_sig: string | null }>;
+    .prepare("SELECT node_id, x, y, pinned, structure_sig, orientation FROM topology_position WHERE view = ? ORDER BY node_id")
+    .all(view) as Array<{ node_id: string; x: number; y: number; pinned: number; structure_sig: string | null; orientation: string | null }>;
   return {
     nodes: rows.map((r) => r.node_id),
-    tweaks: rows.filter((r) => r.pinned === 1).map((r) => ({ nodeId: r.node_id, x: r.x, y: r.y, sig: r.structure_sig })),
+    tweaks: rows
+      .filter((r) => r.pinned === 1)
+      .map((r) => ({ nodeId: r.node_id, x: r.x, y: r.y, sig: r.structure_sig, orientation: tweakOrientationOf(r.orientation) })),
+    orientation: getMapOrientation(asTopologyView(view)),
   };
 }
 
-export function saveTopologyTweaks(view: string, rows: Array<{ nodeId: string; x: number; y: number; sig: string }>): void {
+function asTopologyView(view: string): TopologyView {
+  if (view === "auto" || /^mappa:\d+$/.test(view)) return view as TopologyView;
+  throw new Error(`Vista della mappa non valida: ${view}`);
+}
+
+/**
+ * Salva i ritocchi fatti nell'orientamento `orientation`. Una riga per mappa e
+ * oggetto: un ritocco nuovo sostituisce il vecchio anche se era dell'altro
+ * orientamento (spec §12.2). L'appartenenza non cambia: la riga c'era già o nasce qui.
+ */
+export function saveTopologyTweaks(
+  view: string,
+  rows: Array<{ nodeId: string; x: number; y: number; sig: string }>,
+  orientation: MapOrientation,
+): void {
   runInTenantTransaction(() => {
     const ins = db().prepare(`
-      INSERT INTO topology_position (view, node_id, x, y, pinned, structure_sig, updated_at)
-      VALUES (?, ?, ?, ?, 1, ?, datetime('now'))
+      INSERT INTO topology_position (view, node_id, x, y, pinned, structure_sig, orientation, updated_at)
+      VALUES (?, ?, ?, ?, 1, ?, ?, datetime('now'))
       ON CONFLICT(view, node_id) DO UPDATE SET
-        x = excluded.x, y = excluded.y, pinned = 1, structure_sig = excluded.structure_sig, updated_at = datetime('now')`);
-    for (const r of rows) ins.run(view, r.nodeId, r.x, r.y, r.sig);
+        x = excluded.x, y = excluded.y, pinned = 1, structure_sig = excluded.structure_sig,
+        orientation = excluded.orientation, updated_at = datetime('now')`);
+    for (const r of rows) ins.run(view, r.nodeId, r.x, r.y, r.sig, orientation);
+  });
+}
+
+/** Orientamento della mappa; senza riga (l'automatica prima della prima scelta, o una mappa che non c'è) è `lr`. */
+export function getMapOrientation(view: TopologyView): MapOrientation {
+  const r = (
+    view === "auto"
+      ? db().prepare("SELECT orientation FROM topology_maps WHERE kind = 'auto'").get()
+      : db().prepare("SELECT orientation FROM topology_maps WHERE id = ? AND kind = 'passo'").get(Number(view.slice("mappa:".length)))
+  ) as { orientation: string } | undefined;
+  return r ? mapOrientationOf(r.orientation) : "lr";
+}
+
+/**
+ * Cambia l'orientamento della mappa (spec §12.2). Per l'automatica la riga nasce
+ * alla prima scelta, come per la testa; la testa e chi l'ha scelta non cambiano.
+ */
+export function setMapOrientation(view: TopologyView, orientation: MapOrientation, actor: string): Esito {
+  return runInTenantTransaction((): Esito => {
+    const d = db();
+    if (view === "auto") {
+      const r = d.prepare("UPDATE topology_maps SET orientation = ?, updated_at = datetime('now') WHERE kind = 'auto'").run(orientation);
+      if (r.changes === 0) {
+        d.prepare("INSERT INTO topology_maps (name, kind, roots, head_node, orientation, created_by) VALUES ('Tutta la rete', 'auto', '[]', NULL, ?, ?)")
+          .run(orientation, actor);
+      }
+      return { ok: true };
+    }
+    const r = d
+      .prepare("UPDATE topology_maps SET orientation = ?, updated_at = datetime('now') WHERE id = ? AND kind = 'passo'")
+      .run(orientation, Number(view.slice("mappa:".length)));
+    return r.changes > 0 ? { ok: true } : { ok: false, error: "Mappa non trovata" };
   });
 }
 
@@ -9353,11 +9463,21 @@ export function renameTopologyNodes(view: string, renames: Array<{ from: string;
   });
 }
 
-/** «Riordina»: nelle passo passo i nodi restano, i ritocchi spariscono; nell'automatica non c'è appartenenza, si cancella. */
-export function clearTopologyTweaks(view: string): void {
+/**
+ * «Riordina»: nelle passo passo i nodi restano, i ritocchi spariscono; nell'automatica non c'è
+ * appartenenza, si cancella. Con `orientation` solo i ritocchi di quell'orientamento (NULL = `tb`):
+ * quelli dell'altro restano da parte (spec §12.2). Senza, tutti.
+ */
+export function clearTopologyTweaks(view: string, orientation?: MapOrientation): void {
   const d = db();
-  if (view === "auto") d.prepare("DELETE FROM topology_position WHERE view = 'auto'").run();
-  else d.prepare("UPDATE topology_position SET pinned = 0, x = 0, y = 0, structure_sig = NULL, updated_at = datetime('now') WHERE view = ?").run(view);
+  const only = orientation ? " AND pinned = 1 AND COALESCE(orientation, 'tb') = ?" : "";
+  const args = orientation ? [view, orientation] : [view];
+  if (view === "auto") d.prepare(`DELETE FROM topology_position WHERE view = ?${only}`).run(...args);
+  else {
+    d.prepare(
+      `UPDATE topology_position SET pinned = 0, x = 0, y = 0, structure_sig = NULL, orientation = NULL, updated_at = datetime('now') WHERE view = ?${only}`,
+    ).run(...args);
+  }
 }
 
 /** Testa della mappa automatica; la riga «Tutta la rete» nasce alla prima scrittura. */

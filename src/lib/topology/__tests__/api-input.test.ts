@@ -68,12 +68,12 @@ test("mappe: nome 1-80 caratteri, nodi dev:N/host:N, al massimo 2000 per colpo",
 
 test("ritocchi e nascondi: vista auto o mappa:N; hidden solo dev:N", async () => {
   const m = await import("@/lib/topology/api-input");
-  assert.deepEqual(m.parsePositionsBody({ view: "mappa:4", tweaks: [{ nodeId: "dev:1", x: 1.5, y: -2, sig: "abc" }] }), {
-    ok: true, data: { view: "mappa:4", clear: false, tweaks: [{ nodeId: "dev:1", x: 1.5, y: -2, sig: "abc" }], rename: [] },
+  assert.deepEqual(m.parsePositionsBody({ view: "mappa:4", orientation: "tb", tweaks: [{ nodeId: "dev:1", x: 1.5, y: -2, sig: "abc" }] }), {
+    ok: true, data: { view: "mappa:4", clear: false, tweaks: [{ nodeId: "dev:1", x: 1.5, y: -2, sig: "abc" }], rename: [], orientation: "tb" },
   });
-  assert.deepEqual(m.parsePositionsBody({ view: "auto", clear: true }), { ok: true, data: { view: "auto", clear: true, tweaks: [], rename: [] } });
+  assert.deepEqual(m.parsePositionsBody({ view: "auto", clear: true }), { ok: true, data: { view: "auto", clear: true, tweaks: [], rename: [], orientation: null } });
   assert.deepEqual(m.parsePositionsBody({ view: "mappa:4", rename: [{ from: "host:7", to: "dev:3" }] }), {
-    ok: true, data: { view: "mappa:4", clear: false, tweaks: [], rename: [{ from: "host:7", to: "dev:3" }] },
+    ok: true, data: { view: "mappa:4", clear: false, tweaks: [], rename: [{ from: "host:7", to: "dev:3" }], orientation: null },
   });
   assert.equal(m.parsePositionsBody({ view: "mappa:4", rename: [{ from: "host:7", to: "host:7" }] }).ok, false, "rinomina su se stesso");
   assert.equal(m.parsePositionsBody({ view: "mappa:4", rename: [{ from: "x", to: "dev:3" }] }).ok, false);
@@ -168,7 +168,48 @@ test("mappe, radici e ritocchi accettano anche le VM (vm:<apparato>:<vmid>)", as
   const m = await import("@/lib/topology/api-input");
   assert.equal(m.parseMapCreateBody({ name: "x", nodes: ["vm:3:100"], roots: ["vm:3:100"] }).ok, true);
   assert.deepEqual(m.parseMapNodesBody({ add: ["vm:3:100"] }), { ok: true, data: { add: ["vm:3:100"], remove: [] } });
-  assert.equal(m.parsePositionsBody({ view: "mappa:1", tweaks: [{ nodeId: "vm:3:100", x: 0, y: 0, sig: "s" }] }).ok, true);
+  assert.equal(m.parsePositionsBody({ view: "mappa:1", orientation: "lr", tweaks: [{ nodeId: "vm:3:100", x: 0, y: 0, sig: "s" }] }).ok, true);
   assert.equal(m.parseMapNodesBody({ add: ["vm:3"] }).ok, true, "la regex del piano ammette anche vm:N");
   assert.equal(m.parseMapNodesBody({ add: ["vm:a:1"] }).ok, false);
+});
+
+// ─── Orientamento (spec §12.2, piano 2026-10-14-topologia-verticale-stampa, Task 1) ───
+
+test("orientamento della mappa: «lr» o «tb», da solo; il resto rifiutato in italiano", async () => {
+  const m = await import("@/lib/topology/api-input");
+  assert.deepEqual(m.parseMapOrientationBody({ orientation: "lr" }), { ok: true, data: { orientation: "lr" } });
+  assert.deepEqual(m.parseMapOrientationBody({ orientation: "tb" }), { ok: true, data: { orientation: "tb" } });
+  const msg = "Orientamento non valido: si sceglie fra verticale e orizzontale";
+  for (const bad of [{ orientation: "verticale" }, { orientation: null }, { orientation: 1 }, {}]) {
+    assert.deepEqual(m.parseMapOrientationBody(bad), { ok: false, error: msg }, JSON.stringify(bad));
+  }
+  assert.deepEqual(m.parseMapOrientationBody(null), { ok: false, error: "Corpo della richiesta non valido" });
+  assert.deepEqual(m.parseMapOrientationBody({ orientation: "lr", name: "X" }), {
+    ok: false, error: "L'orientamento si cambia da solo, senza altri campi",
+  });
+  assert.equal(m.asksOrientation({ orientation: "lr" }), true);
+  assert.equal(m.asksOrientation({ orientation: undefined }), true, "la chiave c'è: decide il parser");
+  assert.equal(m.asksOrientation({ head_node: "dev:1" }), false);
+  assert.equal(m.asksOrientation(null), false);
+  assert.equal(m.asksOrientation("lr"), false);
+});
+
+test("ritocchi con l'orientamento: obbligatorio per salvarli, facoltativo per «Riordina» e per le rinomine", async () => {
+  const m = await import("@/lib/topology/api-input");
+  const tw = [{ nodeId: "dev:1", x: 1, y: 2, sig: "s" }];
+  assert.deepEqual(m.parsePositionsBody({ view: "auto", orientation: "lr", tweaks: tw }), {
+    ok: true, data: { view: "auto", clear: false, tweaks: tw, rename: [], orientation: "lr" },
+  });
+  assert.deepEqual(m.parsePositionsBody({ view: "auto", tweaks: tw }), {
+    ok: false, error: "Manca l'orientamento dei ritocchi: si sceglie fra verticale e orizzontale",
+  });
+  assert.deepEqual(m.parsePositionsBody({ view: "auto", orientation: "verticale", tweaks: tw }), {
+    ok: false, error: "Orientamento non valido: si sceglie fra verticale e orizzontale",
+  });
+  assert.deepEqual(m.parsePositionsBody({ view: "auto", tweaks: [] }), {
+    ok: true, data: { view: "auto", clear: false, tweaks: [], rename: [], orientation: null },
+  }, "niente da salvare: l'orientamento non serve");
+  assert.deepEqual(m.parsePositionsBody({ view: "mappa:2", clear: true, orientation: "tb" }), {
+    ok: true, data: { view: "mappa:2", clear: true, tweaks: [], rename: [], orientation: "tb" },
+  });
 });

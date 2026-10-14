@@ -6,7 +6,8 @@ import { parsePositionsBody } from "@/lib/topology/api-input";
 import { readJson } from "@/lib/controllers/route-helpers";
 
 /**
- * PUT /api/topology/positions — `{ view, tweaks }` salva i ritocchi con la firma; `{ view, clear: true }` è «Riordina»;
+ * PUT /api/topology/positions — `{ view, orientation, tweaks }` salva i ritocchi con la firma, nell'orientamento in cui
+ * sono fatti (spec §12.2); `{ view, clear: true, orientation? }` è «Riordina» (con l'orientamento, solo i suoi ritocchi);
  * `{ view, rename }` riscrive sugli id canonici gli oggetti promossi o fusi (lo manda la pagina alla prima modifica).
  */
 export async function PUT(request: Request) {
@@ -17,8 +18,9 @@ export async function PUT(request: Request) {
     if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
     try {
       renameTopologyNodes(body.data.view, body.data.rename);
-      if (body.data.clear) clearTopologyTweaks(body.data.view);
-      else if (body.data.tweaks.length > 0) saveTopologyTweaks(body.data.view, body.data.tweaks);
+      const { orientation } = body.data;
+      if (body.data.clear) clearTopologyTweaks(body.data.view, orientation ?? undefined);
+      else if (body.data.tweaks.length > 0 && orientation !== null) saveTopologyTweaks(body.data.view, body.data.tweaks, orientation);
       return NextResponse.json({ ok: true });
     } catch (error) {
       console.error("[topology] ritocchi:", error);

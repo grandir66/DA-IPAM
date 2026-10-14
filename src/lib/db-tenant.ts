@@ -178,6 +178,65 @@ export function migrateScheduledJobsV8(db: Database.Database): boolean {
 }
 
 /**
+ * Migrazione runtime v9 di `scheduled_jobs` (topologia fase 2b): il CHECK di
+ * `job_type` accetta `'hypervisor_sync'`. Copia esatta della v8 (CHECK dalla
+ * stessa costante dello schema, colonne copiate per nome, contatore
+ * AUTOINCREMENT conservato, indice ricreato subito, tutto in una transazione);
+ * cambia solo la guardia. Su un DB della v7 la v8 scrive già il CHECK con
+ * `hypervisor_sync` e qui non resta niente da fare.
+ *
+ * Restituisce true se ha ricostruito, false se non c'era niente da fare.
+ * Esportata per le prove (`scheduled-jobs-v9.test.ts`).
+ */
+export function migrateScheduledJobsV9(db: Database.Database): boolean {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as
+    | { sql?: string }
+    | undefined;
+  if (!row?.sql || row.sql.includes("'hypervisor_sync'")) return false;
+
+  const present = new Set(
+    (db.prepare("PRAGMA table_info(scheduled_jobs)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  const cols = SCHEDULED_JOBS_COLUMNS.filter((c) => present.has(c)).join(", ");
+
+  // PRAGMA foreign_keys non ha effetto dentro una transazione: si spegne prima.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'scheduled_jobs'").get() as
+        | { seq: number }
+        | undefined;
+      db.exec("DROP TABLE IF EXISTS scheduled_jobs_v9");
+      db.exec(`CREATE TABLE scheduled_jobs_v9 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(${SCHEDULED_JOB_TYPES_CHECK_SQL}),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      db.exec(`INSERT INTO scheduled_jobs_v9 (${cols}) SELECT ${cols} FROM scheduled_jobs`);
+      if (seq) {
+        const upd = db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'scheduled_jobs_v9'").run(seq.seq);
+        if (upd.changes === 0) {
+          db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('scheduled_jobs_v9', ?)").run(seq.seq);
+        }
+      }
+      db.exec("DROP TABLE scheduled_jobs");
+      db.exec("ALTER TABLE scheduled_jobs_v9 RENAME TO scheduled_jobs");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run)");
+    })();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+  return true;
+}
+
+/**
  * Migrazione runtime «topologia fase 1» (spec 2026-10-12-topology-map-design
  * §5, piano 2026-10-13-topologia-fase1-dati). Solo colonne e una tabella nuove,
  * in una transazione: o tutto o niente. Gli indici sulle colonne nuove stanno
@@ -281,6 +340,49 @@ export function migrateTopologyPhase2(db: Database.Database): string[] {
       )`);
       db.exec("CREATE UNIQUE INDEX idx_topology_maps_auto ON topology_maps(kind) WHERE kind = 'auto'");
       added.push("topology_maps");
+    }
+  })();
+  return added;
+}
+
+/**
+ * Migrazione runtime «topologia fase 2b» (spec §11.3-11.5, piano
+ * 2026-10-14-topologia-fase2b, Task 2). Gemella di `migrateTopologyPhase2`:
+ * solo cose nuove, in una transazione, e l'elenco di ciò che ha aggiunto.
+ * - `topology_link_overrides.medium`: tipo di un collegamento a mano
+ *   (`'cavo' | 'fibra' | 'wireless'` o NULL; senza CHECK, lo validano le rotte,
+ *   così un tipo nuovo non chiede di ricostruire la tabella). Le righe esistenti
+ *   restano con NULL.
+ * - `topology_link_primary`: per l'oggetto `node_id`, il collegamento principale
+ *   scelto a mano è quello verso `other_node` su quelle porte (vince sulla
+ *   scelta del sistema). Uno per oggetto.
+ * - `network_devices.uplink_type`: `'wire' | 'wireless'` dalla lettura UniFi.
+ *   Dopo le ricostruzioni di `network_devices` (ADR 0008 punto 6).
+ * Esportata per le prove (`topology-phase2b-migration.test.ts`).
+ */
+export function migrateTopologyPhase2b(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const add = (table: string, col: string, ddl: string): void => {
+    if (has(table, col)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+    added.push(`${table}.${col}`);
+  };
+  const exists = (name: string): boolean => !!db.prepare("SELECT 1 FROM sqlite_master WHERE name = ?").get(name);
+  db.transaction(() => {
+    add("topology_link_overrides", "medium", "TEXT");
+    add("network_devices", "uplink_type", "TEXT");
+    if (!exists("topology_link_primary")) {
+      db.exec(`CREATE TABLE topology_link_primary (
+        node_id TEXT PRIMARY KEY,
+        other_node TEXT NOT NULL,
+        node_port TEXT NOT NULL DEFAULT '',
+        other_port TEXT NOT NULL DEFAULT '',
+        set_by TEXT,
+        set_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      added.push("topology_link_primary");
     }
   })();
   return added;
@@ -740,6 +842,16 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione unifi_sync fallita:`, e);
+  }
+
+  // Migrazione runtime v9: scheduled_jobs.job_type CHECK include 'hypervisor_sync'
+  // (lettura giornaliera degli hypervisor, topologia fase 2b). Dopo la v8.
+  try {
+    if (migrateScheduledJobsV9(newDb)) {
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'hypervisor_sync' (v9)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione hypervisor_sync fallita:`, e);
   }
 
   // Migrazione runtime: vuln_scanners.{cert_pin,cert_fingerprint} per
@@ -1538,6 +1650,19 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione topologia fase 2 fallita:`, e);
+  }
+
+  // Topologia fase 2b (piano 2026-10-14-topologia-fase2b): tipo e principale dei
+  // collegamenti, tipo di uplink UniFi. Subito dopo la fase 2, per la stessa
+  // ragione (ADR 0008 punto 6). Se fallisce il tenant si apre lo stesso: le
+  // letture che nominano le colonne nuove falliscono finché non riesce.
+  try {
+    const added = migrateTopologyPhase2b(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia fase 2b, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia fase 2b fallita:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -9163,4 +9288,15 @@ export function addLinkOverride(
 
 export function deleteLinkOverride(id: number): boolean {
   return db().prepare("DELETE FROM topology_link_overrides WHERE id = ?").run(id).changes > 0;
+}
+
+/**
+ * I collegamenti principali scelti a mano (spec §11.3, «★ Rendi principale»):
+ * per ogni oggetto `node_id`, il collegamento verso `other_node` su quelle porte.
+ * Una lettura in blocco per il modello (tappa E); le scritture le fanno le rotte.
+ */
+export function listTopologyLinkPrimaries(): Array<{ node_id: string; other_node: string; node_port: string; other_port: string }> {
+  return db()
+    .prepare("SELECT node_id, other_node, node_port, other_port FROM topology_link_primary ORDER BY node_id")
+    .all() as Array<{ node_id: string; other_node: string; node_port: string; other_port: string }>;
 }

@@ -1339,16 +1339,18 @@ export function getTenantDb(tenantCode: string): Database.Database {
 
     // Fase 4b Task 2 — colonne SNMPv3 completo su credentials (§7.1): niente
     // CHECK sui protocolli (validati in TS da buildV3Options), idempotente
-    // come il pattern attrCols sopra.
+    // come il pattern attrCols sopra. Tappa 1 credenziali (15/10): `port`,
+    // NULL = porta standard del protocollo.
     const credCols = newDb.prepare("PRAGMA table_info(credentials)").all() as Array<{ name: string }>;
-    const credV3Cols: Array<{ name: string; sql: string }> = [
+    const credColsNuove: Array<{ name: string; sql: string }> = [
       { name: "encrypted_auth_key", sql: "ALTER TABLE credentials ADD COLUMN encrypted_auth_key TEXT" },
       { name: "auth_protocol", sql: "ALTER TABLE credentials ADD COLUMN auth_protocol TEXT" },
       { name: "encrypted_priv_key", sql: "ALTER TABLE credentials ADD COLUMN encrypted_priv_key TEXT" },
       { name: "priv_protocol", sql: "ALTER TABLE credentials ADD COLUMN priv_protocol TEXT" },
       { name: "security_level", sql: "ALTER TABLE credentials ADD COLUMN security_level TEXT" },
+      { name: "port", sql: "ALTER TABLE credentials ADD COLUMN port INTEGER" },
     ];
-    for (const col of credV3Cols) {
+    for (const col of credColsNuove) {
       if (!credCols.some((c) => c.name === col.name)) {
         newDb.exec(col.sql);
         console.info(`[db-tenant] ${tenantCode}: credentials.${col.name} aggiunto`);
@@ -3822,11 +3824,12 @@ export function createCredential(
     encrypted_priv_key?: string | null;
     priv_protocol?: string | null;
     security_level?: string | null;
+    port?: number | null;
   }
 ): Credential {
   const stmt = db().prepare(
-    `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password, encrypted_auth_key, auth_protocol, encrypted_priv_key, priv_protocol, security_level)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password, encrypted_auth_key, auth_protocol, encrypted_priv_key, priv_protocol, security_level, port)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name,
@@ -3837,7 +3840,8 @@ export function createCredential(
     input.auth_protocol ?? null,
     input.encrypted_priv_key ?? null,
     input.priv_protocol ?? null,
-    input.security_level ?? null
+    input.security_level ?? null,
+    input.port ?? null
   );
   return db().prepare("SELECT * FROM credentials WHERE id = ?").get(result.lastInsertRowid) as Credential;
 }
@@ -3852,6 +3856,7 @@ export function updateCredential(
     encrypted_priv_key?: string | null;
     priv_protocol?: string | null;
     security_level?: string | null;
+    port?: number | null;
   }
 ): Credential | undefined {
   const fields: string[] = [];
@@ -3866,6 +3871,7 @@ export function updateCredential(
     "encrypted_priv_key",
     "priv_protocol",
     "security_level",
+    "port",
   ] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
@@ -3934,14 +3940,14 @@ export function getCredentialLoginPair(
   return null;
 }
 
-export function getSshLinuxCredentialPair(credentialId: number): { username: string; password: string } | null {
+export function getSshLinuxCredentialPair(credentialId: number): { username: string; password: string; port: number | null } | null {
   const cred = getCredentialById(credentialId);
   if (!cred) return null;
   const type = String(cred.credential_type || "").toLowerCase();
   if (type !== "ssh" && type !== "linux") return null;
   const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
   const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
+  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim(), port: cred.port ?? null };
   return null;
 }
 
@@ -4179,13 +4185,15 @@ export interface NetworkCredentialRow {
   sort_order: number;
   credential_name: string;
   credential_type: string;
+  /** Porta propria della credenziale, NULL = standard del protocollo. */
+  credential_port: number | null;
 }
 
 export function getNetworkCredentials(networkId: number): NetworkCredentialRow[] {
   return db()
     .prepare(
       `SELECT nc.id, nc.network_id, nc.credential_id, nc.sort_order,
-              c.name AS credential_name, c.credential_type
+              c.name AS credential_name, c.credential_type, c.port AS credential_port
        FROM network_credentials nc
        JOIN credentials c ON c.id = nc.credential_id
        WHERE nc.network_id = ?

@@ -12,7 +12,7 @@ import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
-import { resolveCredentialsForDb, resolveCredentialForDb, resolveCredentialsFor, resolveCredentialFor } from "../resolve";
+import { resolveCredentialsForDb, resolveCredentialForDb, resolveCredentialsFor, resolveCredentialFor, portaCredenziale } from "../resolve";
 import { withTenant, getTenantDb, deleteTenantDatabase, recordCredentialFailure, recordCredentialSuccess } from "@/lib/db-tenant";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -153,6 +153,49 @@ describe("resolveCredentialsForDb / resolveCredentialForDb — nessun risultato"
 
   it("networkId senza rete esistente → array vuoto (non lancia)", () => {
     assert.deepEqual(resolveCredentialsForDb(db, { networkId: 999999 }, "snmp"), []);
+  });
+});
+
+// Tappa 1 credenziali (15/10): una credenziale con porta propria (SSH sulla
+// 2022) veniva proposta dalle catene sulla porta standard, quindi la prova
+// falliva sempre e la credenziale sembrava sbagliata.
+describe("resolveCredentialsForDb — porta propria della credenziale", () => {
+  it("catena di rete v2 e catene vecchie: la porta della credenziale, senza porta lo standard", () => {
+    seedNetwork(6, "10.6.0.0/24");
+    seedHost(6, 6, "10.6.0.1");
+    seedCredential(601, "ssh");
+    seedCredential(602, "linux");
+    seedCredential(603, "ssh");
+    seedCredential(604, "linux");
+    db.prepare(`UPDATE credentials SET port = 2022 WHERE id IN (601, 602)`).run();
+    db.prepare(`INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (6, 601, 0)`).run();
+    db.prepare(`INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (6, 603, 1)`).run();
+    db.prepare(`INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (6, 602, 'linux', 0)`).run();
+    db.prepare(`INSERT INTO host_detect_credential (host_id, role, credential_id) VALUES (6, 'ssh', 604)`).run();
+
+    const result = resolveCredentialsForDb(db, { hostId: 6, networkId: 6 }, "ssh");
+    const porta = new Map(result.map((r) => [r.credential_id, r.port]));
+    assert.equal(porta.get(601), 2022, "catena di rete v2");
+    assert.equal(porta.get(603), 22, "catena di rete v2 senza porta");
+    assert.equal(porta.get(602), 2022, "catena vecchia per rete");
+    assert.equal(porta.get(604), 22, "pin vecchio senza porta");
+  });
+
+  it("SNMP su porta fuori standard dalla catena di rete", () => {
+    seedNetwork(7, "10.7.0.0/24");
+    seedCredential(701, "snmp");
+    db.prepare(`UPDATE credentials SET port = 1161 WHERE id = 701`).run();
+    db.prepare(`INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (7, 701, 0)`).run();
+    const [r] = resolveCredentialsForDb(db, { networkId: 7 }, "snmp");
+    assert.equal(r.port, 1161);
+  });
+
+  it("portaCredenziale: porta propria, altrimenti lo standard del protocollo", () => {
+    assert.equal(portaCredenziale({ port: 2022 }, "ssh"), 2022);
+    assert.equal(portaCredenziale({ port: null }, "ssh"), 22);
+    assert.equal(portaCredenziale({ port: null }, "snmp"), 161);
+    assert.equal(portaCredenziale({ port: null }, "winrm"), 5985);
+    assert.equal(portaCredenziale({ port: null }, "onvif"), 80);
   });
 });
 

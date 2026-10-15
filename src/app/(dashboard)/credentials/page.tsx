@@ -42,9 +42,14 @@ interface Credential {
   encrypted_priv_key: string | null;
   priv_protocol: string | null;
   security_level: string | null;
+  /** Porta propria; null = porta standard del tipo. */
+  port: number | null;
   created_at: string;
   updated_at: string;
 }
+
+/** Porta standard per tipo di credenziale (la stessa di DEFAULT_PORTS in credentials/resolve.ts). */
+const PORTA_STANDARD: Record<string, number> = { ssh: 22, linux: 22, snmp: 161, windows: 5985, api: 443 };
 
 const SNMP_V3_AUTH_PROTOCOLS = ["MD5", "SHA", "SHA224", "SHA256", "SHA384", "SHA512"] as const;
 const SNMP_V3_PRIV_PROTOCOLS = ["DES", "AES", "AES192", "AES256"] as const;
@@ -61,6 +66,8 @@ const emptyForm = {
   auth_key: "",
   priv_protocol: "",
   priv_key: "",
+  // Porta propria: "" = porta standard del tipo.
+  port: "",
 };
 
 export default function CredentialsPage() {
@@ -114,6 +121,12 @@ export default function CredentialsPage() {
       toast.error("Community string richiesta per credenziali SNMP v2c (oppure imposta la sicurezza SNMPv3)");
       return;
     }
+    const portaScritta = form.port.trim();
+    const portaNum = portaScritta ? Number(portaScritta) : null;
+    if (portaNum !== null && (!Number.isInteger(portaNum) || portaNum < 1 || portaNum > 65535)) {
+      toast.error("Porta fra 1 e 65535, oppure vuota per la porta standard");
+      return;
+    }
     if (form.credential_type === "snmp" && form.security_level) {
       if ((form.security_level === "authNoPriv" || form.security_level === "authPriv") && !form.auth_protocol) {
         toast.error("Protocollo di autenticazione SNMPv3 richiesto");
@@ -144,9 +157,10 @@ export default function CredentialsPage() {
             priv_key: form.priv_key || undefined,
           }
         : {};
+      // In modifica `port: null` riporta alla porta standard; in creazione vuota = standard.
       const body = editingId
-        ? { name: form.name, credential_type: form.credential_type, username: form.username || undefined, password: form.password || undefined, ...snmpV3Fields }
-        : { name: form.name, credential_type: form.credential_type, username: form.username, password: form.password, ...snmpV3Fields };
+        ? { name: form.name, credential_type: form.credential_type, username: form.username || undefined, password: form.password || undefined, port: portaNum, ...snmpV3Fields }
+        : { name: form.name, credential_type: form.credential_type, username: form.username, password: form.password, port: portaNum ?? undefined, ...snmpV3Fields };
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!res.ok) {
         const err = await res.json();
@@ -199,6 +213,7 @@ export default function CredentialsPage() {
       security_level: (c.security_level as "" | "noAuthNoPriv" | "authNoPriv" | "authPriv") ?? "",
       auth_protocol: c.auth_protocol ?? "",
       priv_protocol: c.priv_protocol ?? "",
+      port: c.port != null ? String(c.port) : "",
     });
     setExistingAuthKey(!!c.encrypted_auth_key);
     setExistingPrivKey(!!c.encrypted_priv_key);
@@ -216,8 +231,8 @@ export default function CredentialsPage() {
   const openTestDialog = (c: Credential) => {
     setTestCredId(c.id);
     setTestHost("");
-    const defaultPort = c.credential_type === "ssh" || c.credential_type === "linux" ? "22" : c.credential_type === "windows" ? "5985" : c.credential_type === "snmp" ? "161" : "";
-    setTestPort(defaultPort);
+    const defaultPort = c.port ?? (c.credential_type === "api" ? null : PORTA_STANDARD[c.credential_type] ?? null);
+    setTestPort(defaultPort != null ? String(defaultPort) : "");
     setTestDialogOpen(true);
   };
 
@@ -457,6 +472,20 @@ export default function CredentialsPage() {
                     )}
                   </>
                 )}
+                <div>
+                  <Label htmlFor="cred-porta">Porta</Label>
+                  <Input
+                    id="cred-porta"
+                    inputMode="numeric"
+                    value={form.port}
+                    onChange={(e) => setForm((f) => ({ ...f, port: e.target.value.replace(/[^0-9]/g, "") }))}
+                    placeholder={`standard (${PORTA_STANDARD[form.credential_type]})`}
+                    className="w-40"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Vuota = porta standard. Serve per SSH su una porta diversa (es. 2022) o SNMP fuori dalla 161.
+                  </p>
+                </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                     Annulla
@@ -515,6 +544,7 @@ export default function CredentialsPage() {
                   <TableHead>Nome</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Username</TableHead>
+                  <TableHead>Porta</TableHead>
                   <TableHead className="w-[100px]">Azioni</TableHead>
                 </TableRow>
               </TableHeader>
@@ -526,6 +556,7 @@ export default function CredentialsPage() {
                       <span className="uppercase text-xs">{c.credential_type}</span>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{c.encrypted_username ? "●●●●●●●●" : "—"}</TableCell>
+                    <TableCell className={c.port != null ? "font-mono" : "text-muted-foreground"}>{c.port ?? "standard"}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
                         {(c.credential_type === "ssh" || c.credential_type === "snmp" || c.credential_type === "windows" || c.credential_type === "linux") && (

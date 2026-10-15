@@ -69,6 +69,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       if (data.auth_protocol !== undefined) updates.auth_protocol = data.auth_protocol || null;
       if (data.priv_protocol !== undefined) updates.priv_protocol = data.priv_protocol || null;
       if (data.security_level !== undefined) updates.security_level = data.security_level || null;
+      // Porta propria: presente nel body → si aggiorna; vuota o null → porta standard.
+      if (body && typeof body === "object" && "port" in body) updates.port = data.port ?? null;
 
       const credential = updateCredential(Number(id), updates);
       if (!credential) {

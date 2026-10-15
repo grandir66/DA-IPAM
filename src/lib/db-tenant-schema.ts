@@ -141,6 +141,9 @@ CREATE TABLE IF NOT EXISTS credentials (
   encrypted_priv_key TEXT,
   priv_protocol TEXT,
   security_level TEXT,
+  -- Porta propria (tappa 1 credenziali, 15/10): NULL = porta standard del
+  -- protocollo (DEFAULT_PORTS in src/lib/credentials/resolve.ts).
+  port INTEGER,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

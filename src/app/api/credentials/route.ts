@@ -70,6 +70,7 @@ export async function POST(request: Request) {
         encrypted_priv_key: data.priv_key ? encrypt(data.priv_key) : null,
         priv_protocol: data.priv_protocol ?? null,
         security_level: data.security_level ?? null,
+        port: data.port ?? null,
       });
 
       return NextResponse.json({

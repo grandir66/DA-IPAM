@@ -210,6 +210,8 @@ export interface Credential {
   encrypted_priv_key: string | null;
   priv_protocol: string | null;
   security_level: string | null;
+  /** Porta propria (tappa 1 credenziali): null = porta standard del protocollo. */
+  port: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -859,6 +861,8 @@ export interface CredentialInput {
   auth_key?: string;
   priv_protocol?: string | null;
   priv_key?: string;
+  /** Porta propria; null o assente = porta standard del protocollo. */
+  port?: number | null;
 }
 
 export interface ScheduledJobInput {

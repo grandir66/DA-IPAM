@@ -141,6 +141,9 @@ export const CredentialSchema = z.object({
   auth_key: z.string().max(200).optional(),
   priv_protocol: z.preprocess(emptyToUndefined, z.enum(SNMP_V3_PRIV_PROTOCOLS).optional().nullable()),
   priv_key: z.string().max(200).optional(),
+  // Porta propria (tappa 1): vuota = porta standard del protocollo; null
+  // esplicito in modifica = torna alla porta standard.
+  port: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1, "Porta fra 1 e 65535").max(65535, "Porta fra 1 e 65535").optional().nullable()),
 });
 
 export const ScheduledJobSchema = z.object({

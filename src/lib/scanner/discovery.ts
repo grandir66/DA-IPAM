@@ -1601,14 +1601,16 @@ async function runDiscovery(
       const resolved = resolveCredentialsFor({ hostId: host.id, ip, networkId }, "ssh", { includeBackoff: true });
       let ok = false;
       for (const credId of chain) {
+        // Tappa 1 credenziali: la porta propria della credenziale, poi la 22.
+        const creds = getSshLinuxCredentialPair(credId);
+        const sshPort = creds?.port ?? 22;
         const backoffUntil = resolved.find(
-          (r) => r.credential_id === credId && r.protocol === "ssh" && r.port === 22
+          (r) => r.credential_id === credId && r.protocol === "ssh" && r.port === sshPort
         )?.backoff_until ?? null;
         // credType "ssh" letterale: irrilevante se in catena c'è un cred "linux",
         // il gate distingue solo credType==="windows" (nessuna catena SSH può
         // contenerne uno — resolveCredentialsFor filtra per protocollo).
         if (!runBudget.gate({ ip, credId, credType: "ssh", hasWindowsIndicator: false, backoffUntil, nowIso })) continue;
-        const creds = getSshLinuxCredentialPair(credId);
         if (!creds) {
           log(`✗ ${ip} cred#${credId} — dati mancanti`);
           continue;
@@ -1616,7 +1618,7 @@ async function runDiscovery(
         log(`SSH ${ip} — prova cred#${credId}`);
         try {
           const res = await transportSshExec(
-            { host: ip, port: 22, username: creds.username, password: creds.password, timeout: 6000 },
+            { host: ip, port: sshPort, username: creds.username, password: creds.password, timeout: 6000 },
             "hostname -f 2>/dev/null || hostname; uname -sr 2>/dev/null; cat /etc/os-release 2>/dev/null | head -5"
           );
           const output = res.stdout + res.stderr;
@@ -1638,16 +1640,16 @@ async function runDiscovery(
           const osInfo = osName || kernel || "Linux";
 
           nmapResults.set(ip, {
-            ports: [{ port: 22, protocol: "tcp", service: "ssh", version: null }],
+            ports: [{ port: sshPort, protocol: "tcp", service: "ssh", version: null }],
             os: osInfo,
             mac: null,
             snmpHostname: hn,
           });
           setHostDetectCredential(host.id, "linux", credId);
-          addHostCredential(host.id, credId, "ssh", 22, { validated: true, auto_detected: true });
-          recordCredentialSuccess(host.id, credId, "ssh", 22);
+          addHostCredential(host.id, credId, "ssh", sshPort, { validated: true, auto_detected: true });
+          recordCredentialSuccess(host.id, credId, "ssh", sshPort);
           runBudget.recordSuccess(credId);
-          autoBindCredentialToDevice(ip, credId, "ssh", 22, host.id);
+          autoBindCredentialToDevice(ip, credId, "ssh", sshPort, host.id);
           if (boundSshForSave == null) {
             setHostDetectCredential(host.id, "ssh", credId);
           }
@@ -1658,7 +1660,7 @@ async function runDiscovery(
           const msg = sshErr instanceof SshError
             ? `[${sshErr.kind}] ${sshErr.message}`
             : (sshErr as Error).message ?? String(sshErr);
-          recordCredentialFailure(host.id, credId, "ssh", 22, msg.slice(0, 500));
+          recordCredentialFailure(host.id, credId, "ssh", sshPort, msg.slice(0, 500));
           runBudget.recordFailure(credId);
           log(`✗ ${ip} cred#${credId}: ${msg.slice(0, 160)}`);
         }
@@ -1913,15 +1915,17 @@ async function runDiscovery(
         const resolved = resolveCredentialsFor({ hostId, ip, networkId }, "ssh", { includeBackoff: true });
         let ok = false;
         for (const credId of chain) {
+          // Tappa 1 credenziali: la porta propria della credenziale, poi la 22.
+          const creds = getSshLinuxCredentialPair(credId);
+          const sshPort = creds?.port ?? 22;
           const backoffUntil = resolved.find(
-            (r) => r.credential_id === credId && r.protocol === "ssh" && r.port === 22
+            (r) => r.credential_id === credId && r.protocol === "ssh" && r.port === sshPort
           )?.backoff_until ?? null;
           if (!runBudget.gate({ ip, credId, credType: "ssh", hasWindowsIndicator: false, backoffUntil, nowIso })) continue;
-          const creds = getSshLinuxCredentialPair(credId);
           if (!creds) continue;
           try {
             const res = await transportSshExec(
-              { host: ip, port: 22, username: creds.username, password: creds.password, timeout: 8000 },
+              { host: ip, port: sshPort, username: creds.username, password: creds.password, timeout: 8000 },
               "hostname -f 2>/dev/null || hostname; uname -sr 2>/dev/null; cat /etc/os-release 2>/dev/null | head -5"
             );
             const output = res.stdout + res.stderr;
@@ -1942,21 +1946,21 @@ async function runDiscovery(
             const existing = nmapResults.get(ip);
             nmapResults.set(ip, {
               ...existing,
-              ports: existing?.ports ?? [{ port: 22, protocol: "tcp", service: "ssh", version: null }],
+              ports: existing?.ports ?? [{ port: sshPort, protocol: "tcp", service: "ssh", version: null }],
               os: osInfo,
               mac: existing?.mac ?? null,
               snmpHostname: hn ?? existing?.snmpHostname ?? null,
             });
             if (hostId != null) {
               setHostDetectCredential(hostId, "linux", credId);
-              addHostCredential(hostId, credId, "ssh", 22, { validated: true, auto_detected: true });
-              recordCredentialSuccess(hostId, credId, "ssh", 22);
+              addHostCredential(hostId, credId, "ssh", sshPort, { validated: true, auto_detected: true });
+              recordCredentialSuccess(hostId, credId, "ssh", sshPort);
               if (boundSsh == null) {
                 setHostDetectCredential(hostId, "ssh", credId);
               }
             }
             runBudget.recordSuccess(credId);
-            autoBindCredentialToDevice(ip, credId, "ssh", 22, hostId);
+            autoBindCredentialToDevice(ip, credId, "ssh", sshPort, hostId);
             log(`SSH ✓ ${ip} → ${hn || "—"}, OS: ${osInfo}`);
             ok = true;
             break;
@@ -1964,7 +1968,7 @@ async function runDiscovery(
             const msg = sshErr instanceof SshError
               ? `[${sshErr.kind}] ${sshErr.message}`
               : (sshErr as Error).message ?? String(sshErr);
-            if (hostId != null) recordCredentialFailure(hostId, credId, "ssh", 22, msg.slice(0, 500));
+            if (hostId != null) recordCredentialFailure(hostId, credId, "ssh", sshPort, msg.slice(0, 500));
             runBudget.recordFailure(credId);
             log(`SSH ✗ ${ip} cred#${credId}: ${msg.slice(0, 160)}`);
           }
@@ -2448,7 +2452,9 @@ async function runDiscovery(
 
         // Match credenziale → porte aperte (+ indicatori OS)
         // SSH: porta esplicita oppure host Linux/networking/server senza indicatore Windows
-        const hasSshPort = openPorts.some((p) => p.port === 22 || p.service === "ssh");
+        // Tappa 1 credenziali: una credenziale con porta propria vale su quella porta.
+        const credPort = nc.credential_port ?? null;
+        const hasSshPort = openPorts.some((p) => p.port === 22 || p.service === "ssh" || (credPort != null && p.port === credPort));
         const hasSshIndicator = hasSshPort
           || (!hasWindowsIndicator && (
             (host.classification ?? "").includes("server")
@@ -2457,7 +2463,7 @@ async function runDiscovery(
             || (host.os_info ?? "").toLowerCase().includes("linux")
           ));
         if ((credType === "ssh" || credType === "linux") && hasSshIndicator && !validatedProtos.has("ssh")) {
-          const sshPort = openPorts.find((p) => p.port === 22 || p.service === "ssh")?.port ?? 22;
+          const sshPort = credPort ?? openPorts.find((p) => p.port === 22 || p.service === "ssh")?.port ?? 22;
           if (!gateCredential("ssh", credId, credType, sshPort)) continue;
           const creds = getSshLinuxCredentialPair(credId);
           if (!creds) continue;
@@ -2489,7 +2495,9 @@ async function runDiscovery(
         }
 
         if (credType === "snmp" && !validatedProtos.has("snmp")) {
-          if (!gateCredential("snmp", credId, credType, 161)) continue;
+          // Tappa 1 credenziali: porta propria della credenziale, poi la 161.
+          const snmpPort = credPort ?? 161;
+          if (!gateCredential("snmp", credId, credType, snmpPort)) continue;
 
           // Fase 4b Task 2 (§7.1/§7.4): credenziali con security_level
           // impostato (noAuthNoPriv/authNoPriv/authPriv) sono SNMPv3 vero —
@@ -2501,12 +2509,12 @@ async function runDiscovery(
           const credRow = getCredentialById(credId);
           if (credRow?.security_level) {
             try {
-              const v3 = await snmpValidateV3(ip, credId, { port: 161 });
+              const v3 = await snmpValidateV3(ip, credId, { port: snmpPort });
               if (v3.ok) {
-                recordCredentialSuccess(host.id, credId, "snmp", 161);
-                autoBindCredentialToDevice(ip, credId, "snmp", 161, host.id);
+                recordCredentialSuccess(host.id, credId, "snmp", snmpPort);
+                autoBindCredentialToDevice(ip, credId, "snmp", snmpPort, host.id);
                 runBudget.recordSuccess(credId);
-                log(`✓ ${ip}:161 SNMPv3 cred#${credId} (${nc.credential_name})`);
+                log(`✓ ${ip}:${snmpPort} SNMPv3 cred#${credId} (${nc.credential_name})`);
                 validated++;
                 validatedProtos.add("snmp");
                 // Nessuna evidenza aggiuntiva qui: sysObjectID/sysDescr restano
@@ -2515,15 +2523,15 @@ async function runDiscovery(
                 // test di autenticazione, non il fingerprint completo.
               } else {
                 const msg = v3.error ?? "autenticazione SNMPv3 non riuscita";
-                recordCredentialFailure(host.id, credId, "snmp", 161, msg.slice(0, 500));
+                recordCredentialFailure(host.id, credId, "snmp", snmpPort, msg.slice(0, 500));
                 runBudget.recordFailure(credId);
-                log(`✗ ${ip}:161 SNMPv3 cred#${credId}: ${msg.slice(0, 160)}`);
+                log(`✗ ${ip}:${snmpPort} SNMPv3 cred#${credId}: ${msg.slice(0, 160)}`);
               }
             } catch (e) {
               const msg = (e as Error).message ?? String(e);
-              recordCredentialFailure(host.id, credId, "snmp", 161, msg.slice(0, 500));
+              recordCredentialFailure(host.id, credId, "snmp", snmpPort, msg.slice(0, 500));
               runBudget.recordFailure(credId);
-              log(`✗ ${ip}:161 SNMPv3 cred#${credId}: ${msg.slice(0, 60)}`);
+              log(`✗ ${ip}:${snmpPort} SNMPv3 cred#${credId}: ${msg.slice(0, 60)}`);
             }
             continue;
           }
@@ -2531,27 +2539,27 @@ async function runDiscovery(
           const com = getCredentialCommunityString(credId);
           if (!com) continue;
           try {
-            const r = await querySnmpInfoMultiCommunity(ip, [com], 161, { onLog: log });
+            const r = await querySnmpInfoMultiCommunity(ip, [com], snmpPort, { onLog: log });
             if (r.sysName || r.sysDescr || r.sysObjectID) {
-              recordCredentialSuccess(host.id, credId, "snmp", 161);
-              autoBindCredentialToDevice(ip, credId, "snmp", 161, host.id);
+              recordCredentialSuccess(host.id, credId, "snmp", snmpPort);
+              autoBindCredentialToDevice(ip, credId, "snmp", snmpPort, host.id);
               registraVersioneSnmpApparato(ip, r.snmpVersion, log, host.id);
               runBudget.recordSuccess(credId);
-              log(`✓ ${ip}:161 SNMP cred#${credId} (${nc.credential_name})`);
+              log(`✓ ${ip}:${snmpPort} SNMP cred#${credId} (${nc.credential_name})`);
               validated++;
               validatedProtos.add("snmp");
               // Nessuna evidenza aggiuntiva qui: sysObjectID/sysDescr sono già
               // emessi da emitEvidenceFromSignals sui dati persistiti (Task 4).
             } else {
-              recordCredentialFailure(host.id, credId, "snmp", 161, "Nessuna risposta SNMP (community non valida o host non raggiungibile su 161)");
+              recordCredentialFailure(host.id, credId, "snmp", snmpPort, `Nessuna risposta SNMP (community non valida o host non raggiungibile su ${snmpPort})`);
               runBudget.recordFailure(credId);
-              log(`✗ ${ip}:161 SNMP cred#${credId}: nessuna risposta`);
+              log(`✗ ${ip}:${snmpPort} SNMP cred#${credId}: nessuna risposta`);
             }
           } catch (e) {
             const msg = (e as Error).message ?? String(e);
-            recordCredentialFailure(host.id, credId, "snmp", 161, msg.slice(0, 500));
+            recordCredentialFailure(host.id, credId, "snmp", snmpPort, msg.slice(0, 500));
             runBudget.recordFailure(credId);
-            log(`✗ ${ip}:161 SNMP cred#${credId}: ${msg.slice(0, 60)}`);
+            log(`✗ ${ip}:${snmpPort} SNMP cred#${credId}: ${msg.slice(0, 60)}`);
           }
         }
 

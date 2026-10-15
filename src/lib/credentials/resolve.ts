@@ -59,7 +59,7 @@ export interface ResolveOptions {
   limit?: number;
 }
 
-/** Porta di default per protocollo quando la sorgente (network/legacy chain) non ne porta una propria. */
+/** Porta di default per protocollo quando né la sorgente né la credenziale ne portano una propria. */
 const DEFAULT_PORTS: Record<CredProtocol, number> = {
   ssh: 22,
   snmp: 161,
@@ -68,6 +68,15 @@ const DEFAULT_PORTS: Record<CredProtocol, number> = {
   redfish: 443,
   onvif: 80,
 };
+
+/**
+ * Porta con cui usare una credenziale per un protocollo: quella propria della
+ * credenziale (tappa 1, 15/10: SSH sulla 2022, SNMP fuori standard), altrimenti
+ * lo standard del protocollo.
+ */
+export function portaCredenziale(cred: { port: number | null }, protocol: CredProtocol): number {
+  return cred.port ?? DEFAULT_PORTS[protocol];
+}
 
 /** credential_type ammessi in `credentials`/`network_credentials` per protocollo. */
 function credentialTypesForProtocol(protocol: CredProtocol): string[] {
@@ -257,14 +266,14 @@ export function resolveCredentialsForDb(
     const placeholders = types.map(() => "?").join(",");
     const netRows = dbh
       .prepare(
-        `SELECT nc.credential_id
+        `SELECT nc.credential_id, c.port
          FROM network_credentials nc
          JOIN credentials c ON c.id = nc.credential_id
          WHERE nc.network_id = ? AND c.credential_type IN (${placeholders})
          ORDER BY nc.sort_order ASC, nc.id ASC`
       )
-      .all(target.networkId, ...types) as Array<{ credential_id: number }>;
-    for (const r of netRows) push(r.credential_id, DEFAULT_PORTS[protocol], "network_chain");
+      .all(target.networkId, ...types) as Array<{ credential_id: number; port: number | null }>;
+    for (const r of netRows) push(r.credential_id, portaCredenziale(r, protocol), "network_chain");
   }
 
   // Tier 6: catena legacy — pin per host, poi lista per rete, per ciascun ruolo applicabile.
@@ -272,18 +281,27 @@ export function resolveCredentialsForDb(
   if (hostId != null) {
     for (const role of roles) {
       const row = dbh
-        .prepare(`SELECT credential_id FROM host_detect_credential WHERE host_id = ? AND role = ?`)
-        .get(hostId, role) as { credential_id: number } | undefined;
-      if (row) push(row.credential_id, DEFAULT_PORTS[protocol], "legacy_chain");
+        .prepare(
+          `SELECT hdc.credential_id, c.port
+           FROM host_detect_credential hdc
+           LEFT JOIN credentials c ON c.id = hdc.credential_id
+           WHERE hdc.host_id = ? AND hdc.role = ?`
+        )
+        .get(hostId, role) as { credential_id: number; port: number | null } | undefined;
+      if (row) push(row.credential_id, portaCredenziale(row, protocol), "legacy_chain");
     }
   }
   for (const role of roles) {
     const rows = dbh
       .prepare(
-        `SELECT credential_id FROM network_host_credentials WHERE network_id = ? AND role = ? ORDER BY sort_order ASC, id ASC`
+        `SELECT nhc.credential_id, c.port
+         FROM network_host_credentials nhc
+         LEFT JOIN credentials c ON c.id = nhc.credential_id
+         WHERE nhc.network_id = ? AND nhc.role = ?
+         ORDER BY nhc.sort_order ASC, nhc.id ASC`
       )
-      .all(target.networkId, role) as Array<{ credential_id: number }>;
-    for (const r of rows) push(r.credential_id, DEFAULT_PORTS[protocol], "legacy_chain");
+      .all(target.networkId, role) as Array<{ credential_id: number; port: number | null }>;
+    for (const r of rows) push(r.credential_id, portaCredenziale(r, protocol), "legacy_chain");
   }
 
   return opts?.limit != null ? results.slice(0, opts.limit) : results;

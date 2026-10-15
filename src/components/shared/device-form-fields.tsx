@@ -155,6 +155,12 @@ export interface DeviceFormFieldsProps {
   useForArpPoll?: boolean;
   onUseForArpPollChange?: (v: boolean) => void;
   defaultUseForArpPoll?: boolean;
+  /**
+   * Promozione (tappa 1): niente username/password/community inline, che
+   * nessuno legge; resta la porta, controllata con `port` + `onPortChange`.
+   */
+  senzaCredenzialiInline?: boolean;
+  onPortChange?: (port: number) => void;
 }
 
 /**
@@ -200,6 +206,8 @@ export function DeviceFormFields({
   useForArpPoll,
   onUseForArpPollChange,
   defaultUseForArpPoll,
+  senzaCredenzialiInline = false,
+  onPortChange,
 }: DeviceFormFieldsProps) {
   const isBulk = mode === "bulk";
   const noChange = isBulk ? "Non modificare" : "";
@@ -627,10 +635,12 @@ export function DeviceFormFields({
             snmpSelectLabel={CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL}
             credentialPlaceholder={isBulk ? noChange : "Nessuna (credenziali inline)"}
             snmpPlaceholder={isBulk ? noChange : "Nessuna"}
-            showInlineCreds={!isBulk && (protocol === "ssh" || protocol === "api" || protocol === "winrm")}
+            showInlineCreds={!isBulk && !senzaCredenzialiInline && (protocol === "ssh" || protocol === "api" || protocol === "winrm")}
             inlineUsername={inlineUsername}
-            showPortAndCommunity={!isBulk}
+            showPortAndCommunity={!isBulk && !senzaCredenzialiInline}
             portDefaultValue={port}
+            port={senzaCredenzialiInline ? port : undefined}
+            onPortChange={senzaCredenzialiInline ? onPortChange : undefined}
             idPrefix={idPrefix}
           />
         </>

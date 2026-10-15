@@ -69,6 +69,12 @@ export interface CredentialAssignmentFieldsProps {
   inlinePasswordPlaceholder?: string;
   showPortAndCommunity?: boolean;
   portDefaultValue?: number;
+  /**
+   * Porta controllata (promozione, tappa 1): se c'è `onPortChange` il campo
+   * «Porta» è controllato e resta visibile anche con l'inline spento.
+   */
+  port?: number;
+  onPortChange?: (port: number) => void;
   communityPlaceholder?: string;
   idPrefix?: string;
   testButton?: React.ReactNode;
@@ -108,6 +114,8 @@ export function CredentialAssignmentFields({
   inlinePasswordPlaceholder = "Lascia vuoto per non modificare",
   showPortAndCommunity = false,
   portDefaultValue = 22,
+  port,
+  onPortChange,
   communityPlaceholder = "Lascia vuoto per non modificare",
   idPrefix = "cred",
   testButton,
@@ -218,6 +226,30 @@ export function CredentialAssignmentFields({
                 placeholder={inlinePasswordPlaceholder}
                 className="bg-background"
                 disabled={!!hasStoredCred}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Porta controllata: la propone chi apre la finestra (credenziale validata o porta propria) */}
+        {onPortChange && !showPortAndCommunity && (
+          <div className="mt-2 border-t border-border/60 pt-2">
+            <div className="space-y-1 max-w-[12rem]">
+              <Label className="text-xs flex items-center" htmlFor={`${idPrefix}-port`}>
+                Porta
+                <Tip text="Porta di connessione: quella con cui la credenziale è stata validata sull'host, o la sua porta propria, o la standard (SSH 22, SNMP 161, WinRM 5985, API 443)." />
+              </Label>
+              <Input
+                id={`${idPrefix}-port`}
+                type="number"
+                min={1}
+                max={65535}
+                value={port ?? ""}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (Number.isInteger(n) && n >= 1 && n <= 65535) onPortChange(n);
+                }}
+                className="bg-background"
               />
             </div>
           </div>

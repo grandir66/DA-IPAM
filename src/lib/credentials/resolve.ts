@@ -20,13 +20,10 @@
  */
 import type Database from "better-sqlite3";
 
-// Fase 4b Task 4: 'redfish' (BMC iLO/iDRAC/XClarity) e 'onvif' (telecamere) sono
-// protocolli dedicati (protocol_type su host_credentials/device_credential_bindings,
-// CHECK esteso in db-tenant.ts/db.ts — vedi migrazione rebuild). La credenziale
-// sottostante (`credentials.credential_type`) resta 'api' per entrambi: sono
-// semplici coppie username/password, nessuna colonna dedicata necessaria (stessa
-// scelta già presa per Redfish nel Task 1, vedi task-1-report.md).
-export type CredProtocol = "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
+import { DEFAULT_PORTS, portaCredenziale, type CredProtocol } from "./porte";
+
+export { DEFAULT_PORTS, portaCredenziale };
+export type { CredProtocol };
 
 export interface ResolveTarget {
   hostId?: number;
@@ -57,25 +54,6 @@ export interface ResolveOptions {
   includeBackoff?: boolean;
   /** Tronca il risultato a N candidati (applicato dopo l'ordinamento/dedup). */
   limit?: number;
-}
-
-/** Porta di default per protocollo quando né la sorgente né la credenziale ne portano una propria. */
-const DEFAULT_PORTS: Record<CredProtocol, number> = {
-  ssh: 22,
-  snmp: 161,
-  winrm: 5985,
-  api: 443,
-  redfish: 443,
-  onvif: 80,
-};
-
-/**
- * Porta con cui usare una credenziale per un protocollo: quella propria della
- * credenziale (tappa 1, 15/10: SSH sulla 2022, SNMP fuori standard), altrimenti
- * lo standard del protocollo.
- */
-export function portaCredenziale(cred: { port: number | null }, protocol: CredProtocol): number {
-  return cred.port ?? DEFAULT_PORTS[protocol];
 }
 
 /** credential_type ammessi in `credentials`/`network_credentials` per protocollo. */

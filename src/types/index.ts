@@ -727,6 +727,8 @@ export interface HostDetectCredentialRow {
 export interface HostDetail extends Host {
   network_cidr: string;
   network_name: string;
+  /** 1 = classificazione scelta a mano (getHostById legge h.*): la proposta d'apparato la tiene. */
+  classification_manual?: number;
   recent_scans: ScanHistory[];
   /** Tipi di scansione già eseguiti su questo host (deduplicati). */
   scan_types_used?: string[];

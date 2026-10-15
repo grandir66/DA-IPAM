@@ -148,3 +148,14 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
   confermare» nel suo piano. Prossimo: conferme di Riccardo, merge con le release, poi G1 e il
   pilota DTS. Aperti: C1b (rimozione dell'agente Python, decisione 26), R5 di DA-Link che deve
   leggere `salute.firewall_wt0 = non_so`.
+- 2026-10-15 pomeriggio: **scelte di C1, D1, E, F confermate da Riccardo** (dettaglio nei piani di
+  ciascun repo; riepilogo completo da consegnare a fine pilota). Rilasciati: **DA-Link** `8ba6d86`
+  (comando d'ingresso con `--disable-client-routes --disable-server-routes`; R5 dà «non so» con
+  `salute.firewall_wt0 = non_so`); **DA-Zabbix** `75ce703` sul ramo pubblicato, con timer orario
+  `zbx-netbird` e allarme alto in Zabbix, rinomina dei proxy solo a vuoto; **DA-Vul-can** v0.8.88
+  (rete sotto «Ultimo contatto»); **DA-IPAM** C1 su `dev` (spento senza `oggetto.env`; il segnale
+  dice anche `salute.zbx` del proxy). DA-CRM tappa F: dev poi live. Le 182 sessioni admin delle
+  prove di DA-Zabbix: solo login, nessuna scrittura (audit). Prossimo: G1 (Deploy-Appliance), poi
+  pilota in **tre gradini**: VM sul laboratorio DA-PX-05 `192.168.40.5` → VM su PX-NAS
+  `192.168.99.1` → DTS; dopo il pilota C1b e la rinomina dei proxy. Aperti: Stefano Soragni non è
+  ancora utente NetBird.

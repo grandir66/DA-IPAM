@@ -3,7 +3,7 @@
  *
  * - versione: quella di `package.json`, come `/api/version`;
  * - moduli accesi: dal registro dei moduli (`enabled`);
- * - salute: SOLO i verdetti (`ok` | `degraded` | `fail`) delle sonde dei moduli, mai il
+ * - salute: dei soli moduli accesi più il sistema, e SOLO i verdetti (`ok` | `degraded` | `fail`) delle sonde dei moduli, mai il
  *   testo di dettaglio, che può contenere indirizzi e nomi della rete del cliente. In
  *   più tre voci dell'istanza: `cliente`, `firewall_wt0`, `interfaccia_wt0`;
  * - porte su `wt0`: dal sistema vivo (`porte-wt0.ts`);
@@ -25,6 +25,9 @@ import { resolveModules } from "@/lib/modules/registry";
 import { getModulesHealth } from "@/lib/modules/health";
 import { leggiPorteWt0, type PorteWt0 } from "./porte-wt0";
 import type { FattiIstanza, Inventario } from "./segnale";
+
+/** La sonda della macchina (disco, Docker): conta anche se non è un «modulo acceso». */
+export const MODULO_SISTEMA = "appliance";
 
 export interface DipendenzeFatti {
   clienteEsiste: (codcli: string) => boolean;
@@ -80,7 +83,7 @@ export async function fattiIstanza(
   }
 
   let moduli: Record<string, boolean> = {};
-  let salute: Record<string, string> = {};
+  const salute: Record<string, string> = {};
   if (clienteTrovato) {
     try {
       moduli = await d.moduli(codcli);
@@ -89,7 +92,12 @@ export async function fattiIstanza(
       salute.moduli = "non_so";
     }
     try {
-      salute = { ...salute, ...(await d.salute(codcli)) };
+      // Solo i moduli accesi, più il sistema (la macchina): un modulo spento non
+      // ha salute, e la sua sonda direbbe «fail» (visto a schermo il 15/10).
+      const sonde = await d.salute(codcli);
+      for (const [k, v] of Object.entries(sonde)) {
+        if (moduli[k] === true || k === MODULO_SISTEMA) salute[k] = v;
+      }
     } catch {
       salute.moduli = "non_so";
     }

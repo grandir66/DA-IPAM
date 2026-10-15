@@ -74,11 +74,11 @@ test("cliente trovato: moduli accesi e solo i verdetti della salute", async () =
   const r = await fattiIstanza("99999", "segnale precedente: x", {
     clienteEsiste: () => true,
     porte: async () => ({ fonte: "ascolto", porte: [22, 80], sorgentiRistrette: false, wt0Presente: false }),
-    moduli: async () => ({ edge: true, wazuh: false }),
+    moduli: async () => ({ edge: true, wazuh: true }),
     salute: async () => ({ edge: "ok", wazuh: "degraded" }),
   });
   assert.equal(r.clienteTrovato, true);
-  assert.deepEqual(r.fatti.moduli, { edge: true, wazuh: false });
+  assert.deepEqual(r.fatti.moduli, { edge: true, wazuh: true });
   assert.deepEqual(r.fatti.salute, {
     edge: "ok",
     wazuh: "degraded",
@@ -88,6 +88,21 @@ test("cliente trovato: moduli accesi e solo i verdetti della salute", async () =
   });
   assert.equal(r.fatti.ultimoErrore, "segnale precedente: x");
   assert.match(r.fatti.versione, /^\d+\.\d+\.\d+/);
+});
+
+test("la salute riguarda solo i moduli accesi (più il sistema): un modulo spento non è «in errore»", async () => {
+  // Visto a schermo il 15/10: su un'istanza senza moduli configurati ogni sonda dava
+  // «fail», e il segnale avrebbe detto a Domarc nove moduli in errore.
+  const r = await fattiIstanza("99999", null, {
+    clienteEsiste: () => true,
+    porte: async () => ({ fonte: "non_so", porte: [], sorgentiRistrette: false, wt0Presente: false }),
+    moduli: async () => ({ edge: true, wazuh: false, librenms: false, appliance: false }),
+    salute: async () => ({ edge: "ok", wazuh: "fail", librenms: "fail", appliance: "degraded" }),
+  });
+  assert.equal(r.fatti.salute.edge, "ok");
+  assert.equal(r.fatti.salute.appliance, "degraded");
+  assert.ok(!("wazuh" in r.fatti.salute));
+  assert.ok(!("librenms" in r.fatti.salute));
 });
 
 test("una sonda che fallisce non ferma il segnale: la salute dice non_so", async () => {

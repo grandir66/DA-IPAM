@@ -8,6 +8,7 @@ import { TenantSwitcher } from "./tenant-switcher";
 import { useSidebar } from "./sidebar-context";
 import {
   LayoutDashboard,
+  ArrowUpFromLine,
   Network,
   Scan,
   Key,
@@ -277,6 +278,7 @@ export function Sidebar() {
   const { collapsed, toggle } = useSidebar();
   const userRole = (session?.user as { role?: string } | undefined)?.role;
   const isSuperadmin = userRole === "superadmin";
+  const isAdmin = isSuperadmin || userRole === "admin";
   const tenantCode = (session?.user as { tenantCode?: string } | undefined)?.tenantCode;
   const tenants = ((session?.user as Record<string, unknown>)?.tenants ?? []) as Array<{ code: string; name: string }>;
   const currentTenantName = tenantCode === "__ALL__"
@@ -470,7 +472,12 @@ export function Sidebar() {
         </div>
 
         {/* Impostazioni (globale) */}
-        <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings")} collapsed={collapsed} onNavigate={closeMobile} />
+        <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings") && !pathname.startsWith("/settings/cosa-esce")} collapsed={collapsed} onNavigate={closeMobile} />
+
+        {/* Cosa esce verso Domarc (DA-Link, tappa C1): solo gli amministratori dell'istanza */}
+        {isAdmin && (
+          <NavItem href="/settings/cosa-esce" icon={ArrowUpFromLine} label="Cosa esce" active={pathname.startsWith("/settings/cosa-esce")} collapsed={collapsed} onNavigate={closeMobile} />
+        )}
 
       </nav>
 

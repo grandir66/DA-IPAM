@@ -161,6 +161,11 @@ export interface DeviceFormFieldsProps {
    */
   senzaCredenzialiInline?: boolean;
   onPortChange?: (port: number) => void;
+  /**
+   * Modalità «bulk» usata per CREARE apparati in blocco (rete, discovery): la
+   * classificazione vuota vuol dire «da scegliere», non «Non modificare».
+   */
+  creazioneInBlocco?: boolean;
 }
 
 /**
@@ -208,6 +213,7 @@ export function DeviceFormFields({
   defaultUseForArpPoll,
   senzaCredenzialiInline = false,
   onPortChange,
+  creazioneInBlocco = false,
 }: DeviceFormFieldsProps) {
   const isBulk = mode === "bulk";
   const noChange = isBulk ? "Non modificare" : "";
@@ -407,10 +413,10 @@ export function DeviceFormFields({
                 onValueChange={(v) => onClassificationChange?.(v ?? "")}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder={noChange || "Seleziona"} />
+                  <SelectValue placeholder={creazioneInBlocco ? "Scegli la classificazione" : noChange || "Seleziona"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {isBulk && <SelectItem value="">{noChange}</SelectItem>}
+                  {isBulk && !creazioneInBlocco && <SelectItem value="">{noChange}</SelectItem>}
                   {classificationOptionsSorted.map((c) => (
                     <SelectItem key={c} value={c}>
                       {getClassificationLabel(c)}
@@ -633,7 +639,7 @@ export function DeviceFormFields({
             primarySelectLabel={primaryCredentialLabels.select}
             snmpSectionTitle="SNMP aggiuntivo (porte, LLDP, spanning tree)"
             snmpSelectLabel={CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL}
-            credentialPlaceholder={isBulk ? noChange : "Nessuna (credenziali inline)"}
+            credentialPlaceholder={isBulk ? noChange : senzaCredenzialiInline ? "Nessuna" : "Nessuna (credenziali inline)"}
             snmpPlaceholder={isBulk ? noChange : "Nessuna"}
             showInlineCreds={!isBulk && !senzaCredenzialiInline && (protocol === "ssh" || protocol === "api" || protocol === "winrm")}
             inlineUsername={inlineUsername}

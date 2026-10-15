@@ -4,6 +4,60 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15 · credenziali, promozione IP → apparato, wizard (tappa 1)
+
+Spec `docs/superpowers/specs/2026-10-15-credenziali-promozione-wizard-design.md`, piano
+`docs/superpowers/plans/2026-10-15-tappa1-credenziali-promozione.md`. Perché: in una creazione
+iniziale Riccardo ha trovato la finestra di promozione caotica, le credenziali da correggere dopo e il
+wizard che spariva; l'analisi del 15/10 ha confermato i difetti qui sotto.
+
+### Aggiunte
+
+- **Porta facoltativa sulla credenziale** (`credentials.port`, vuota = porta standard del protocollo):
+  campo e colonna nella pagina Credenziali; la usano il motore di scelta delle credenziali (catena della
+  rete e catene vecchie), la discovery (prove SSH e validazione SSH/SNMP) e le finestre di promozione.
+  Perché: una credenziale SSH sulla 2022 veniva provata sulla 22 e sembrava sbagliata. Limite: il giro
+  SNMP generale della discovery prova le community sulla 161.
+
+### Correzioni
+
+- **Una regola sola su quale credenziale vale per quale protocollo** (`tipiCredenzialePerProtocollo`):
+  SSH → SSH e Linux, WinRM → Windows, SNMP → SNMP, API → API e SSH, Redfish/ONVIF → API. Perché: c'erano
+  cinque regole; per SSH le tendine offrivano le Windows e nascondevano le Linux, per WinRM le SSH che la
+  prova WinRM rifiuta.
+- **Promuovere un IP propone l'apparato dal sistema operativo**, non dal produttore dell'hardware: un
+  server Windows su HP è Windows + WinRM (prima «hp» + SSH + ProCurve), una marca dedotta «microsoft»
+  diventa Windows; la classificazione è sempre un valore dell'elenco («printer» → stampante, la scelta
+  manuale dell'host vince, sconosciuto = da scegliere e «Crea» bloccato); credenziale proposta = quella
+  validata sull'host con tipo compatibile, sulla porta con cui è stata validata. Una sola logica
+  (`src/lib/devices/proposta-apparato.ts`) per le quattro finestre: scheda dell'oggetto, «Aggiungi
+  dispositivi» della rete (prima partiva sempre da «server + Altro + UPS + SNMP v2»), discovery, lista
+  per classificazione («Configura» proponeva «hp + SNMP» per tutto).
+- **Promozione singola senza campi finti**: tolti username/password/community inline che nessuno
+  leggeva e modello/seriale/firmware (stanno sull'host); porta modificabile; la spunta «sorgente ARP»
+  tolta resta tolta (si manda 0). Con SNMP come protocollo la tendina principale è la SNMP; al cambio di
+  protocollo una credenziale incompatibile si azzera.
+- **Creazione apparato senza ripiego su «hypervisor»**: senza classificazione vale il tipo dispositivo
+  (prima un server diventava hypervisor, anche sull'host); classificazioni fuori elenco rifiutate con un
+  messaggio; il binding SNMP usa la porta della credenziale.
+- **Modificare una credenziale non cancella più il segreto**: password e chiavi SNMPv3 vuote = non
+  modificare (prima `""` azzerava il campo, e la pagina in modifica la mandava vuota). Campo «Username
+  SNMPv3» nella pagina (il testo rimandava a un campo che non c'era).
+- **Community dei binding SNMP inline nel campo cifrato**: prima finiva nello username, in chiaro, e chi
+  legge la community non la trovava. Conversione idempotente delle righe vecchie all'apertura del tenant
+  (il 15/10 erano 0 sull'hub e sul cliente A).
+- **Prova dei binding senza ripieghi**: SNMP senza community = «Community mancante» (prima provava
+  «public»); su API/Redfish/ONVIF la prova non c'è e il binding non si marca più fallito (il motore delle
+  credenziali scarta i falliti), il pulsante «Test» lì non compare. Lo username inline dei binding lo
+  vede solo l'admin.
+- **Le scansioni non spostano la porta degli apparati in SNMP**: la 161 è UDP e non compare fra le TCP
+  aperte, quindi un MikroTik in SNMP finiva sulla 8291.
+- **Wizard**: su un tenant vuoto il flag «da configurare» si scrive all'apertura (prima il router del
+  primo passo contava come «dati presenti» e una ricarica faceva sparire il wizard); la rete creata
+  riceve la lista credenziali nuova, quella che mostra la pagina della rete; il campo della rete è vuoto
+  con 192.168.1.0/24 solo come suggerimento. La rete «192.168.0.0/24» vista da Riccardo non si riproduce
+  su hub e cliente A.
+
 ## [Non rilasciato] — 2026-10-15 · topologia T1b: il ruolo dalle prove e «Perché questo collegamento»
 
 ### Modifiche

@@ -156,8 +156,9 @@ export function piattaformaDaHost(host: HostPerProposta): string {
 /**
  * Profilo prodotto coerente con la classificazione: `getDefaultProductProfileForVendor`
  * prende il primo dell'elenco (ProCurve per ogni «hp», server per ogni Windows).
+ * Esportata: le finestre la usano anche quando si cambia la classificazione a mano.
  */
-function profiloPerClassificazione(piattaforma: string, classificazione: string): string {
+export function profiloPerClassificazione(piattaforma: string, classificazione: string): string {
   const ammessi = (PRODUCT_PROFILES_BY_VENDOR as Record<string, readonly string[]>)[piattaforma] ?? [];
   const server = classificazione.startsWith("server") || classificazione.endsWith("_server") || classificazione === "vm";
   const preferito: Record<string, string | undefined> = {
@@ -201,7 +202,7 @@ function credenzialeValidata(
 }
 
 /** Porta per la credenziale scelta: quella validata sull'host, poi la sua propria, poi lo standard. */
-function portaPer(
+export function portaPerCredenziale(
   credentialId: string | null,
   protocollo: ProtocolloApparato,
   archivio: CredenzialeArchivio[],
@@ -239,7 +240,7 @@ export function proponiApparato(host: HostPerProposta, archivio: CredenzialeArch
     classification,
     productProfile: profiloPerClassificazione(vendor, classification),
     scanTarget: coerceScanTargetForVendor(vendor, vendor === "apple" ? "macos" : host.inferred_scan_target),
-    port: principale?.port ?? portaPer(credentialId, protocol, archivio, host),
+    port: principale?.port ?? portaPerCredenziale(credentialId, protocol, archivio, host),
     credentialId,
     snmpCredentialId: snmp ? String(snmp.id) : null,
     useForArpPoll: classification === "router" || classification === "firewall",
@@ -277,6 +278,6 @@ export function riallineaAlProtocollo(
     protocol: protocollo,
     credentialId,
     snmpCredentialId,
-    port: portaPer(credentialId, protocollo, archivio, host),
+    port: portaPerCredenziale(credentialId, protocollo, archivio, host),
   };
 }

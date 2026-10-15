@@ -14,20 +14,7 @@ import {
   updateBindingTestStatus,
 } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
-
-/**
- * SNMP inline: la community va nel campo cifrato e lo username resta vuoto
- * (tappa 1). Prima la tabella la mandava come `inline_username`, in chiaro, e
- * chi legge la community guarda solo il campo cifrato.
- */
-function normalizzaInlineSnmp(
-  protocolType: string | undefined,
-  inlineUsername: string | null | undefined,
-  inlinePassword: string | null | undefined
-): { inline_username: string | null | undefined; inline_password: string | null | undefined } {
-  if (protocolType !== "snmp") return { inline_username: inlineUsername, inline_password: inlinePassword };
-  return { inline_username: null, inline_password: inlinePassword || inlineUsername || null };
-}
+import { aggiornamentiBinding, normalizzaInlineSnmp } from "@/lib/devices/aggiornamenti-binding";
 
 /**
  * GET /api/devices/:id/credentials — lista bindings credenziali per device
@@ -158,21 +145,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     if (data.action === "update") {
       if (!data.binding_id) return NextResponse.json({ error: "binding_id richiesto" }, { status: 400 });
-      const updates: Parameters<typeof updateDeviceCredentialBinding>[1] = {};
-      if (data.credential_id !== undefined) updates.credential_id = data.credential_id;
-      if (data.protocol_type !== undefined) updates.protocol_type = data.protocol_type;
-      if (data.port !== undefined) updates.port = data.port;
-      const inline = normalizzaInlineSnmp(data.protocol_type, data.inline_username, data.inline_password);
-      if (data.protocol_type === "snmp") {
-        updates.inline_username = null;
-        // Community vuota = non modificare (come le password).
-        if (inline.inline_password) updates.inline_encrypted_password = encrypt(inline.inline_password);
-      } else {
-        if (data.inline_username !== undefined) updates.inline_username = data.inline_username;
-        if (data.inline_password !== undefined) {
-          updates.inline_encrypted_password = data.inline_password ? encrypt(data.inline_password) : null;
-        }
-      }
+      // Campi inline solo in modalità inline, community SNMP nel campo cifrato
+      // (tappa 1): dettaglio in src/lib/devices/aggiornamenti-binding.ts.
+      const updates = aggiornamentiBinding(data);
       updateDeviceCredentialBinding(data.binding_id, updates);
       return NextResponse.json({ success: true });
     }

@@ -71,6 +71,7 @@ import {
   type ControllerRunView,
   type NetworkControllerRow,
   type NetworkControllerView,
+  type UnifiOsAuth,
 } from "./types";
 
 // ── Utilità ──────────────────────────────────────────────────────────────────
@@ -287,6 +288,7 @@ const ControllerBodySchema = z.object({
   username: z.string().trim().optional(),
   password: z.string().optional(),
   apiKey: z.string().trim().optional(),
+  udmAuth: z.enum(["api_key", "password"]).optional(),
   enabled: z.boolean().optional(),
   scheduleMinutes: z.number().int().nullable().optional(),
   certPin: z.string().nullable().optional(),
@@ -328,14 +330,30 @@ export function checkControllerInput(raw: unknown, existing?: NetworkControllerR
     if (!password && !(sameOrigin && existing?.password_enc)) {
       return { ok: false, error: "Per il controller self-hosted serve la password" };
     }
-  } else if (kind === "udm") {
-    // Chiave API oppure utente locale e password (ADR 0019): il metodo si deduce.
-    if (unifiOsAuthOf({ apiKey, username }) === "password") {
+  }
+  let udmAuth: UnifiOsAuth | undefined;
+  if (kind === "udm") {
+    // Chiave API oppure utente locale e password (ADR 0019): vale il metodo
+    // scelto nel modulo, dedotto dai campi solo se manca. I campi dell'altro
+    // metodo si rifiutano: una password scritta non si scarta in silenzio
+    // lasciando entrare la chiave salvata (revisione del 16/10).
+    udmAuth = unifiOsAuthOf({ apiKey, username, udmAuth: b.udmAuth });
+    if (password && !username) {
+      return { ok: false, error: "Per la console UniFi OS con utente locale serve l'utente locale, oltre alla password" };
+    }
+    if (udmAuth === "password") {
+      if (apiKey) return { ok: false, error: "Con utente locale e password la chiave API non si usa: scegli un metodo solo" };
+      if (!username) return { ok: false, error: "Per la console UniFi OS con utente locale serve l'utente locale" };
       if (!password && !(sameOrigin && existing?.password_enc)) {
         return { ok: false, error: "Per la console UniFi OS con utente locale serve la password" };
       }
-    } else if (!apiKey && !(sameOrigin && existing?.api_key_enc)) {
-      return { ok: false, error: "Per la console UniFi OS serve la chiave API, oppure utente locale e password" };
+    } else {
+      if (password) {
+        return { ok: false, error: "Con la chiave API la password non si usa: per l'accesso con utente scegli «Utente locale e password»" };
+      }
+      if (!apiKey && !(sameOrigin && existing?.api_key_enc)) {
+        return { ok: false, error: "Per la console UniFi OS serve la chiave API, oppure utente locale e password" };
+      }
     }
   }
 
@@ -352,7 +370,10 @@ export function checkControllerInput(raw: unknown, existing?: NetworkControllerR
     certPin = pin;
   }
 
-  return { ok: true, value: { name, kind, url, site, username, password, apiKey, enabled, scheduleMinutes, certPin } };
+  return {
+    ok: true,
+    value: { name, kind, url, site, username, password, apiKey, ...(udmAuth ? { udmAuth } : {}), enabled, scheduleMinutes, certPin },
+  };
 }
 
 // ── Scritture ────────────────────────────────────────────────────────────────

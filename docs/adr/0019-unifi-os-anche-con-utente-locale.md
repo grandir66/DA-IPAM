@@ -23,10 +23,14 @@ Riccardo il 16/10 ha deciso di aggiungere l'accesso con **utente locale e
 password** al tipo `udm`, accanto alla chiave API, perché non sempre la chiave si
 può creare.
 
-- **Metodo dedotto dai campi, niente colonne nuove**: chiave presente → chiave;
-  altrimenti utente (e password) → utente; nessuno dei due → errore di
-  validazione. Una riga tiene i segreti di UN metodo solo (`api_key_enc` oppure
-  `username` + `password_enc`); quelli dell'altro si tolgono al salvataggio.
+- **Metodo scelto nel modulo, niente colonne nuove**: la finestra manda il
+  metodo (`udmAuth`) e il server rifiuta i campi che non gli corrispondono (una
+  password senza utente, una password col metodo «chiave»), invece di ripiegare
+  in silenzio sulla chiave salvata. Senza `udmAuth` (accendi/spegni) il metodo si
+  deduce dai campi: chiave presente → chiave; altrimenti utente → utente; nessuno
+  dei due → errore di validazione. Una riga tiene i segreti di UN metodo solo
+  (`api_key_enc` oppure `username` + `password_enc`); quelli dell'altro si
+  tolgono al salvataggio.
 - **Protocollo**: `POST /api/auth/login` con `{username, password, rememberMe:false}`
   → cookie `TOKEN` e intestazione `x-csrf-token`; le stesse GET di oggi sotto
   `/proxy/network/api/...` con `Cookie: TOKEN=…` e `X-CSRF-Token` (aggiornato da
@@ -37,13 +41,16 @@ può creare.
   dalla console»; 403 (e 499, secondo fattore richiesto) «account senza permessi
   sull'app Network o con la verifica in due passaggi: serve un account locale
   senza 2FA»; 429 «la console ha bloccato i tentativi: riprova fra qualche
-  minuto». Il login non si ripete mai nel giro.
+  minuto». Il login non si ripete mai nel giro. Un 404 o un rinvio al login
+  vogliono dire che l'indirizzo non è una console UniFi OS: il messaggio indica
+  il tipo self-hosted.
 - **Certificato**: lo stesso `cert_pin` fissato al primo uso (TOFU); la password
   parte solo su un socket verificato.
 - **Avviso «scegli UDM»**: se un controller `self_hosted` fallisce il login senza
   la risposta tipica della Network Application, o lo si salva, una `GET /`
-  anonima (nessuna credenziale, nessun cookie, fuori da `isUnifiRequestAllowed`)
-  guarda se la pagina è «UniFi OS» e lo dice.
+  anonima guarda se la pagina è «UniFi OS» e lo dice. È fuori da
+  `isUnifiRequestAllowed` ma passa dal suo cancello stretto, `anonymousProbe`:
+  solo GET /, niente corpo, nessuna intestazione oltre Accept.
 
 ## Alternative scartate
 

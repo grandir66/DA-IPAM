@@ -205,13 +205,17 @@ export function secretPlaceholder(isSet: boolean): string {
 export function formMissing(form: ControllerForm): string | null {
   if (!form.name.trim()) return "Scrivi un nome";
   if (!form.url.trim()) return "Scrivi l'indirizzo del controller";
+  if (form.kind === "udm" && form.udmAuth === "password" && !form.username.trim()) {
+    return "Scrivi l'utente locale della console";
+  }
   return null;
 }
 
 /**
  * Corpo di POST/PUT e della prova: il server vede solo i campi del metodo. Per
  * `udm` con la chiave l'utente non si manda; per `udm` con utente locale e per
- * `self_hosted` non si manda la chiave (il server deduce il metodo da qui).
+ * `self_hosted` non si manda la chiave. Per `udm` il metodo scelto viaggia in
+ * `udmAuth`: il server rifiuta i campi che non gli corrispondono.
  */
 export function buildControllerPayload(form: ControllerForm, certPin?: string | null): ControllerInput {
   const useKey = form.kind === "udm" && form.udmAuth === "api_key";
@@ -226,6 +230,7 @@ export function buildControllerPayload(form: ControllerForm, certPin?: string | 
     enabled: form.enabled,
     scheduleMinutes: scheduleFromValue(form.schedule),
   };
+  if (form.kind === "udm") body.udmAuth = form.udmAuth;
   if (certPin) body.certPin = certPin;
   return body;
 }

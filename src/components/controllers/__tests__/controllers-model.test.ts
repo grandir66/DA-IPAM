@@ -151,6 +151,18 @@ describe("modulo e corpo del salvataggio", () => {
     assert.equal(p.username, "rgadmin");
     assert.equal(p.password, "pw");
     assert.equal(p.apiKey, "");
+    // Il metodo scelto viaggia nel corpo: il server non lo deduce dai campi.
+    assert.equal(p.udmAuth, "password");
+    assert.equal(buildControllerPayload({ ...emptyControllerForm(), name: "U", url: "https://1.1.1.1" }).udmAuth, "api_key");
+    assert.equal(
+      "udmAuth" in buildControllerPayload({ ...emptyControllerForm(), kind: "self_hosted", name: "A", url: "https://h" }),
+      false,
+    );
+    // «Utente locale» senza utente: Prova e Salva restano spenti.
+    assert.equal(
+      formMissing({ ...emptyControllerForm(), udmAuth: "password", name: "U", url: "https://1.1.1.1", password: "pw" }),
+      "Scrivi l'utente locale della console",
+    );
     // Il pilota: salvato self_hosted con utente e password; scegliendo UDM resta su «utente».
     assert.equal(formFromController(ctrl()).udmAuth, "password");
     assert.equal(formFromController(ctrl({ kind: "udm", username: "", passwordSet: false, apiKeySet: true })).udmAuth, "api_key");

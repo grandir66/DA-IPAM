@@ -24,9 +24,11 @@
  *
  * Nient'altro: ogni richiesta passa da `isUnifiRequestAllowed`, che conosce
  * solo questi percorsi. Il client non scrive mai sul controller. Unica
- * eccezione, fuori da quell'elenco e senza credenziali: `detectUnifiOs`, una
- * GET / anonima per dire «questa è una console UniFi OS» a chi ha scelto
- * self-hosted.
+ * eccezione, fuori da quell'elenco: una GET / anonima per dire «questa è una
+ * console UniFi OS» a chi ha scelto self-hosted (`detectUnifiOs` al
+ * salvataggio, e `readSelfHosted` dopo un login fallito). Passa dal suo
+ * cancello stretto, `anonymousProbe`: solo GET /, niente corpo, nessuna
+ * intestazione oltre Accept (quindi niente cookie, chiave o CSRF).
  * Backend `cloud`: «backend non ancora implementato».
  *
  * Certificato: il controller è self-signed, quindi niente CA. Si usa lo
@@ -221,6 +223,16 @@ export function classifyUnifiHttpError(
     // 499 = la console chiede il secondo fattore (MFA_AUTH_REQUIRED): stesso rimedio del 403.
     if (status === 403 || status === 499) return { reason: "auth", message: UNIFI_OS_LOGIN_MESSAGES[403] };
     if (status === 429) return { reason: "auth", message: UNIFI_OS_LOGIN_MESSAGES[429] };
+    // Niente /api/auth/login (404) o un rinvio: l'indirizzo non è una console
+    // UniFi OS. I messaggi del self-hosted qui consiglierebbero il tipo già scelto.
+    if (status === 404 || (status >= 300 && status < 400)) {
+      return {
+        reason: "config",
+        message:
+          `Questo indirizzo non risponde come console UniFi OS (nessun /api/auth/login, HTTP ${status}): ` +
+          "per una Network Application classica (di solito https://…:8443) il tipo è self-hosted",
+      };
+    }
   }
   if (ctx.unifiOs && ctx.step === "lettura" && status === 403) {
     return {
@@ -470,6 +482,23 @@ function readOnly(t: UnifiTransport): UnifiTransport {
     if (!isUnifiRequestAllowed(req.method, req.path)) {
       return Promise.reject(
         new UnifiApiError("unknown", `Richiesta non consentita verso il controller (${req.method} ${req.path}): il client è in sola lettura`),
+      );
+    }
+    return t(req);
+  };
+}
+
+/**
+ * Cancello della GET / anonima (vedi in testa): passa SOLO GET /, senza corpo
+ * e senza intestazioni oltre Accept. Nessuna credenziale può partire da qui,
+ * nemmeno per sbaglio di chi chiama.
+ */
+export function anonymousProbe(t: UnifiTransport): UnifiTransport {
+  return (req) => {
+    const extra = Object.keys(req.headers).filter((h) => h.toLowerCase() !== "accept");
+    if (req.method !== "GET" || req.path !== "/" || req.body !== undefined || extra.length > 0) {
+      return Promise.reject(
+        new UnifiApiError("unknown", `Richiesta non consentita come domanda anonima (${req.method} ${req.path})`),
       );
     }
     return t(req);
@@ -759,13 +788,13 @@ const UNIFI_OS_TITLE_RE = /<title>\s*UniFi OS\s*<\/title>/i;
 
 /**
  * GET / anonima: la pagina di una console UniFi OS ha il titolo «UniFi OS»
- * (la Network Application classica rinvia a /manage). Nessuna credenziale,
- * nessun cookie. Serve solo a spiegare un fallimento: un suo errore = false,
- * e resta il messaggio di prima.
+ * (la Network Application classica rinvia a /manage). Parte solo dal cancello
+ * `anonymousProbe`: nessuna credenziale, nessun cookie. Serve solo a spiegare
+ * un fallimento: un suo errore = false, e resta il messaggio di prima.
  */
 async function looksLikeUnifiOs(raw: UnifiTransport, timeoutMs: number): Promise<boolean> {
   try {
-    const res = await raw({ method: "GET", path: "/", headers: { Accept: "text/html" }, timeoutMs });
+    const res = await anonymousProbe(raw)({ method: "GET", path: "/", headers: { Accept: "text/html" }, timeoutMs });
     return res.status === 200 && UNIFI_OS_TITLE_RE.test(res.body);
   } catch {
     return false;

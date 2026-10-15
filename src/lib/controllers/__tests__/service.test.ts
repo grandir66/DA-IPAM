@@ -383,6 +383,35 @@ test("UDM: da chiave a utente si toglie la chiave (e la prova non la usa); da ut
   assert.equal(k?.username, "");
 });
 
+// Revisione del 16/10: su un UDM salvato con la chiave, il modulo su «Utente
+// locale e password» con la password scritta e l'utente vuoto passava il
+// controllo grazie alla chiave salvata, la password spariva in silenzio e la
+// Prova riusciva con la CHIAVE: l'utente credeva di aver attivato l'utente.
+test("UDM salvato con la chiave, modulo su «utente» senza utente: rifiutato, niente ripiego sulla chiave", () => {
+  const v = inTenant(() => createController(input()));
+  const dichiarato = checkControllerInput(
+    { ...input(), apiKey: "", username: "", password: PW_LOCALE, udmAuth: "password" },
+    rigaDb(v.id),
+  );
+  assert.equal(dichiarato.ok, false);
+  if (!dichiarato.ok) assert.match(dichiarato.error, /utente locale/);
+  // Anche senza il metodo nel corpo: una password senza utente non si scarta.
+  const dedotto = checkControllerInput({ ...input(), apiKey: "", username: "", password: PW_LOCALE }, rigaDb(v.id));
+  assert.equal(dedotto.ok, false);
+  if (!dedotto.ok) assert.match(dedotto.error, /utente locale/);
+  // Metodo «utente» scelto e campi vuoti: la chiave salvata non lo sostituisce.
+  const vuoto = checkControllerInput({ ...input(), apiKey: "", udmAuth: "password" }, rigaDb(v.id));
+  assert.equal(vuoto.ok, false);
+  // Metodo «chiave» scelto con una password: non si scarta in silenzio.
+  const misto = checkControllerInput({ ...input(), apiKey: "", password: PW_LOCALE, udmAuth: "api_key" }, rigaDb(v.id));
+  assert.equal(misto.ok, false);
+  // Il metodo scelto vale anche quando è giusto: chiave salvata e campi vuoti = chiave.
+  const chiave = checkControllerInput({ ...input(), apiKey: "", udmAuth: "api_key" }, rigaDb(v.id));
+  assert.equal(chiave.ok, true);
+  if (chiave.ok) assert.equal(chiave.value.udmAuth, "api_key");
+  assert.equal(inTenant(() => getControllerView(v.id))?.apiKeySet, true, "la riga resta com'era");
+});
+
 test("pianificazione: un job unifi_sync per controller con il suo id; spenta o controller cancellato = job via", () => {
   const v = inTenant(() => createController(input({ scheduleMinutes: 1440 })));
   assert.equal(v.scheduleMinutes, 1440);

@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  anonymousProbe,
   checkPresentedPin,
   createUnifiClient,
   detectUnifiOs,
@@ -190,6 +191,25 @@ for (const [status, re] of [
   });
 }
 
+// Revisione del 16/10: un 404 (o un rinvio) al login di una «console UniFi
+// OS» vuol dire che l'indirizzo non è una console (es. Network Application
+// classica su :8443 scelta come UDM); il messaggio diceva «per una console
+// UniFi OS il tipo è udm», cioè il tipo già scelto.
+for (const res of [json(404, {}), { status: 302, headers: { location: "/manage" }, body: "" }] as UnifiHttpResponse[]) {
+  test(`utente locale: login ${res.status} → «non è una console UniFi OS, il tipo è self-hosted», un solo tentativo`, async () => {
+    const { factory, calls } = consoleFinta({ login: res });
+    const r = await createUnifiClient(CFG, memoryStore(), { transportFactory: factory }).probe();
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(r.reason, "config");
+      assert.match(r.message, /non risponde come console UniFi OS/);
+      assert.match(r.message, /self-hosted/);
+      assert.doesNotMatch(r.message, /il tipo è «udm»/);
+    }
+    assert.deepEqual(percorsi(calls), ["POST /api/auth/login"]);
+  });
+}
+
 // ── self_hosted puntato a una console UniFi OS ───────────────────────────────
 
 const UNIFI_OS_HTML = '<!doctype html><html><head><title>UniFi OS</title></head><body></body></html>';
@@ -241,4 +261,30 @@ test("detectUnifiOs: true solo per il titolo «UniFi OS»; errori di rete = fals
   );
   assert.equal(await detectUnifiOs(CFG.url, { transportFactory: con(new Error("ECONNREFUSED")) }), false);
   assert.equal(await detectUnifiOs("http://x", { transportFactory: con({ status: 200, headers: {}, body: UNIFI_OS_HTML }) }), false);
+});
+
+// Revisione del 16/10: la GET / anonima partiva sul trasporto nudo, fuori da
+// ogni cancello; ora passa da `anonymousProbe`, che ammette solo quella.
+test("anonymousProbe: passa SOLO GET / senza corpo e senza intestazioni oltre Accept", async () => {
+  const sent: UnifiHttpRequest[] = [];
+  const gate = anonymousProbe(async (req) => {
+    sent.push(req);
+    return { status: 200, headers: {}, body: "" };
+  });
+  await gate({ method: "GET", path: "/", headers: { Accept: "text/html" }, timeoutMs: 1000 });
+  const rifiutate: Array<Omit<UnifiHttpRequest, "timeoutMs">> = [
+    { method: "GET", path: "/api/self/sites", headers: {} },
+    { method: "GET", path: "/proxy/network/api/s/default/stat/device", headers: {} },
+    { method: "POST", path: "/", headers: {} },
+    { method: "GET", path: "/", headers: {}, body: "x" },
+    { method: "GET", path: "/", headers: { Cookie: "TOKEN=x" } },
+    { method: "GET", path: "/", headers: { cookie: "TOKEN=x" } },
+    { method: "GET", path: "/", headers: { "X-API-KEY": "k" } },
+    { method: "GET", path: "/", headers: { "X-CSRF-Token": "c" } },
+    { method: "GET", path: "/", headers: { Authorization: "Bearer x" } },
+  ];
+  for (const req of rifiutate) {
+    await assert.rejects(gate({ ...req, timeoutMs: 1000 }), (e: unknown) => e instanceof UnifiApiError, JSON.stringify(req));
+  }
+  assert.equal(sent.length, 1, "solo la GET / anonima arriva al trasporto");
 });

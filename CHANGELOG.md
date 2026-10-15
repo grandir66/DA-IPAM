@@ -14,13 +14,14 @@ come self-hosted falliva sempre, anche con la password giusta, senza dire perch�
 
 - **UDM / console UniFi OS: «Chiave API» oppure «Utente locale e password»** nella finestra del controller. Con
   l'utente: `POST /api/auth/login`, letture col cookie `TOKEN` e il CSRF, `POST /api/auth/logout` alla fine; stesso
-  certificato fissato al primo uso. Il metodo si deduce dai campi, niente colonne nuove; un controller self-hosted
-  con utente e password passa a UDM senza riscrivere la password.
+  certificato fissato al primo uso. Il metodo scelto viaggia col salvataggio e il server rifiuta i campi dell'altro
+  (una password scritta senza utente non sparisce più lasciando entrare la chiave salvata); niente colonne nuove; un
+  controller self-hosted con utente e password passa a UDM senza riscrivere la password.
 - **Login rifiutato detto chiaro e mai ritentato**: 401 utente o password, 403 (o 499) account senza permessi
   sull'app Network o con la 2FA, 429 console che ha bloccato i tentativi. Un secondo tentativo potrebbe bloccare
-  l'account.
+  l'account. Un 404 o un rinvio al login dicono che l'indirizzo non è una console UniFi OS (tipo self-hosted).
 - **«Questo indirizzo è una console UniFi OS: scegli UDM»**: lo dicono la prova e il salvataggio di un controller
-  self-hosted puntato a un UDM (una `GET /` anonima, senza credenziali).
+  self-hosted puntato a un UDM (una `GET /` anonima, dal suo cancello: niente corpo, niente cookie, chiave o CSRF).
 
 ## [Non rilasciato] — 2026-10-15 · credenziali tappa 4: il wizard usa l'archivio delle credenziali
 

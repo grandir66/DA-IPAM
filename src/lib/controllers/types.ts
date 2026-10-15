@@ -21,11 +21,13 @@ export const CONTROLLER_KINDS: readonly ControllerKind[] = ["udm", "self_hosted"
 export type UnifiOsAuth = "api_key" | "password";
 
 /**
- * Il metodo di una console UniFi OS si deduce dai campi: la chiave se c'è,
- * altrimenti utente (e password) se c'è l'utente; senza nessuno dei due vale la
- * chiave già salvata (il controllo del modulo dice se c'è davvero).
+ * Il metodo di una console UniFi OS: quello scelto nel modulo (`udmAuth`) se
+ * c'è; altrimenti si deduce dai campi: la chiave se c'è, poi utente (e
+ * password) se c'è l'utente; senza nessuno dei due vale la chiave già salvata
+ * (il controllo del modulo dice se c'è davvero).
  */
-export function unifiOsAuthOf(f: { apiKey: string; username: string }): UnifiOsAuth {
+export function unifiOsAuthOf(f: { apiKey: string; username: string; udmAuth?: UnifiOsAuth }): UnifiOsAuth {
+  if (f.udmAuth) return f.udmAuth;
   if (f.apiKey.trim() !== "") return "api_key";
   return f.username.trim() !== "" ? "password" : "api_key";
 }
@@ -141,6 +143,12 @@ export interface ControllerInput {
   username: string;
   password: string;
   apiKey: string;
+  /**
+   * Solo per `udm`: il metodo scelto nel modulo. Il server rifiuta i campi che
+   * non gli corrispondono invece di ripiegare in silenzio sull'altro metodo;
+   * se manca (es. accendi/spegni) si deduce dai campi.
+   */
+  udmAuth?: UnifiOsAuth;
   enabled: boolean;
   scheduleMinutes: number | null;
   /**

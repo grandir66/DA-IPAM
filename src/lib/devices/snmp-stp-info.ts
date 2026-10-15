@@ -15,7 +15,7 @@ export interface StpInfo {
   forward_delay_s: number | null;
   max_age_s: number | null;
   is_root_bridge: boolean;
-  protocol: "stp" | "rstp" | null;
+  protocol: "stp" | "rstp" | "mstp" | null;
 }
 
 function formatBridgeId(buf: Buffer | string): string {

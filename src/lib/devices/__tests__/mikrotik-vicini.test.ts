@@ -15,7 +15,7 @@ test("valori interi: i valori con gli spazi senza virgolette finiscono alla chia
   assert.equal(v.length, 9);
   assert.deepEqual(v[0], {
     localPort: "ether1-2.5", remoteDevice: "SW-ACC-A", remotePort: "Port 47", protocol: "lldp",
-    remoteIp: undefined, remoteMac: "02:00:00:00:A1:01", remotePlatform: "UBNT",
+    remoteIp: undefined, remoteMac: "02:00:00:00:A1:01", remotePlatform: "UBNT", discoveredBy: "lldp", remoteCaps: "bridge,router",
   });
   assert.equal(v[4].remotePort, "Port 15 - WAN sede");
   assert.equal(v[6].remotePort, "Uplink verso il router");
@@ -162,4 +162,11 @@ test("le fixture sono anonime: solo MAC 02:… o virtuali, solo IP 10.x, IPv6 so
     for (const ip of testo.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g) ?? []) assert.match(ip, /^10\./, ip);
     for (const v6 of testo.match(/address6=\S+/g) ?? []) assert.match(v6, /^address6=fe80::/, v6);
   }
+});
+
+test("T2: discovered-by e capacità annunciate, in una forma sola; assenti se vuote", () => {
+  const v = parseMikrotikNeighbors(TERSE);
+  assert.deepEqual([v[0].discoveredBy, v[0].remoteCaps], ["lldp", "bridge,router"]);
+  assert.deepEqual([v[5].discoveredBy, v[5].remoteCaps], ["cdp,lldp,mndp", "bridge,router"]);
+  assert.equal("remoteCaps" in v[1], false, "system-caps-enabled= vuoto: niente campo");
 });

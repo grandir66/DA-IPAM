@@ -54,6 +54,13 @@ export interface NeighborEntry {
   remoteIp?: string;
   remoteMac?: string;
   remotePlatform?: string;
+  /**
+   * T2 (spec §13.5.2, MK1): l'elenco letto di `discovered-by` («cdp,lldp,mndp», in ordine) e le capacità annunciate
+   * attive (`system-caps-enabled`). Le legge il lettore dei MikroTik; si scrivono solo con `topologia.lettura.mikrotik`
+   * accesa (chi chiama `upsertNeighbors` le toglie altrimenti, `senzaCampiCavi`).
+   */
+  discoveredBy?: string;
+  remoteCaps?: string;
 }
 
 /** Riga della tabella di routing */

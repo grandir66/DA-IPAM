@@ -80,6 +80,12 @@ export function mikrotikProtocol(discoveredBy: string | undefined): "lldp" | "mn
   return elenco.includes("lldp") ? "lldp" : "mndp";
 }
 
+/** Un elenco separato da virgole in una forma sola: minuscolo, in ordine, senza vuoti; assente se vuoto. */
+function elenco(v: string | undefined): string | undefined {
+  const s = (v ?? "").split(",").map((x) => x.trim().toLowerCase()).filter((x) => x !== "");
+  return s.length > 0 ? [...new Set(s)].sort().join(",") : undefined;
+}
+
 /** `/ip neighbor print terse` (o `print detail`) → i vicini, coi valori interi e il protocollo vero. */
 export function parseMikrotikNeighbors(output: string): NeighborEntry[] {
   const entries: NeighborEntry[] = [];
@@ -99,6 +105,8 @@ export function parseMikrotikNeighbors(output: string): NeighborEntry[] {
       remoteIp: IPV4.test(ip) ? ip : undefined,
       remoteMac: MAC.test(mac) ? mac.toUpperCase() : undefined,
       remotePlatform: platform || undefined,
+      ...(elenco(c.get("discovered-by")) ? { discoveredBy: elenco(c.get("discovered-by")) } : {}),
+      ...(elenco(c.get("system-caps-enabled")) ? { remoteCaps: elenco(c.get("system-caps-enabled")) } : {}),
     });
   }
   return entries;

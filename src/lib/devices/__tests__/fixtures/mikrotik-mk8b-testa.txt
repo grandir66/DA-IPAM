@@ -1,0 +1,7 @@
+                    mode: 802.3ad           802.3ad           802.3ad          
+            active-ports: sfp28-1           sfp-sfpplus11     sfp-sfpplus9     
+                          sfp28-2           sfp-sfpplus12     sfp-sfpplus10    
+          inactive-ports:                                                      
+          lacp-system-id: 02:00:A0:10:62:0E 02:00:A0:10:54:0C 02:00:A0:10:46:0A
+    lacp-system-priority: 65535             65535             65535            
+  lacp-partner-system-id: 02:00:A0:10:7E:12 02:00:A0:10:85:13 02:00:A0:10:8C:14

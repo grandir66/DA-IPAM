@@ -22,8 +22,11 @@ export interface MapComputeInput {
   /** Automatica: la testa scelta da un admin (null = la propone il sistema). */
   head: string | null;
   tweaks: SavedTweak[];
-  /** Il ritocco appena fatto a schermo e non ancora tornato dal server: vale al posto di quello salvato. */
-  ownTweak?: SavedTweak | null;
+  /**
+   * I ritocchi appena fatti a schermo e non ancora tornati dal server (il nodo trascinato e i discendenti che si porta
+   * dietro): valgono al posto di quelli salvati degli stessi oggetti.
+   */
+  ownTweaks?: readonly SavedTweak[] | null;
   /** Hypervisor con le VM aperte; «tutti» = ogni hypervisor visibile (la stampa «con le VM»). */
   expanded: ReadonlySet<string> | "tutti";
   orientation: MapOrientation;
@@ -73,8 +76,9 @@ export function computeMapView<M extends TopologyModel>(base: M, inp: MapCompute
     roots = saved.roots.filter((r) => visible.has(r));
   }
   const tree = hangVmNodes(buildTree(model, visible, roots), vn.parentOf);
-  const own = inp.ownTweak ?? null;
-  const tweaks = [...saved.tweaks.filter((t) => t.nodeId !== own?.nodeId), ...(own ? [own] : [])];
+  const own = inp.ownTweaks ?? [];
+  const ownIds = new Set(own.map((t) => t.nodeId));
+  const tweaks = [...saved.tweaks.filter((t) => !ownIds.has(t.nodeId)), ...own];
   let expanded: ReadonlySet<string>;
   if (inp.expanded === "tutti") {
     const byId = new Map(model.nodes.map((n) => [n.id, n]));

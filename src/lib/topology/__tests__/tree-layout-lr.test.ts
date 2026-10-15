@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   AP_COLS_LR, AP_W, ATT_INDENT, ATT_MAX, ATT_ROW, BOX_H, LEVEL_GAP_LR, MARGIN, ROOT_GAP, VM_COLS_LR, VM_W,
-  fitLabel, layoutTree, nodeWidth, type LayoutResult, type SavedTweak,
+  dragTweaks, fitLabel, layoutTree, nodeWidth, structureSig, type LayoutResult, type SavedTweak,
 } from "@/lib/topology/tree-layout";
 import type { TreeResult } from "@/lib/topology/tree";
 import type { MapNode, MapVm, TopologyModel } from "@/lib/topology/model-types";
@@ -234,4 +234,37 @@ test("ritocchi di un ramo: il riquadro resta dove lo si lascia anche se un anten
   assert.equal(dopo2.nodes.get("dev:159")!.y - dopo1.nodes.get("dev:159")!.y, -200);
   // l'ordine in cui arrivano i ritocchi non conta
   assert.equal(ser(lr(m, t, [t120, t78])), ser(dopo2));
+});
+
+// Spec topologia §4/§11.2: «un nodo trascinato si porta dietro il suo ramo». I ritocchi sono assoluti: trascinando il
+// padre DOPO aver ritoccato un discendente, il discendente restava fermo e il ramo si spezzava a schermo.
+test("trascinare un padre porta con sé i discendenti già ritoccati; il resto non si tocca", () => {
+  const nodes = [node("dev:1", "router", "R"), node("dev:2", "switch", "S1"), node("dev:3", "switch", "S2"),
+    node("dev:4", "switch", "S3"), node("dev:5", "switch", "Fuori")];
+  const m = model(nodes);
+  const t = tree(["dev:1"], { "dev:1": ["dev:2", "dev:5"], "dev:2": ["dev:3"], "dev:3": ["dev:4"] });
+  // prima si ritocca il nipote dev:3 (e un estraneo dev:5), poi si trascina il padre dev:2
+  const b = lr(m, t);
+  const t3: SavedTweak = { nodeId: "dev:3", x: b.nodes.get("dev:3")!.x + 90, y: b.nodes.get("dev:3")!.y + 30, sig: structureSig(t, "dev:3"), orientation: "lr" };
+  const t5: SavedTweak = { nodeId: "dev:5", x: 900, y: 900, sig: structureSig(t, "dev:5"), orientation: "lr" };
+  const altro: SavedTweak = { nodeId: "dev:4", x: 5, y: 5, sig: structureSig(t, "dev:4"), orientation: "tb" };
+  const scaduto: SavedTweak = { nodeId: "dev:4", x: 7, y: 7, sig: "altra|firma", orientation: "lr" };
+  const salvati = [t3, t5, altro];
+  const prima = lr(m, t, salvati);
+  const p2 = prima.nodes.get("dev:2")!;
+  const nuovi = dragTweaks(t, prima, salvati, "dev:2", p2.x + 200, p2.y - 120, "lr");
+  assert.deepEqual(nuovi, [
+    { nodeId: "dev:2", x: p2.x + 200, y: p2.y - 120, sig: structureSig(t, "dev:2"), orientation: "lr" },
+    { nodeId: "dev:3", x: t3.x + 200, y: t3.y - 120, sig: t3.sig, orientation: "lr" },
+  ]);
+  // a schermo tutto il ramo si è mosso dello stesso scarto, l'estraneo no
+  const dopo = lr(m, t, [...salvati.filter((s) => !nuovi.some((n) => n.nodeId === s.nodeId && n.orientation === s.orientation)), ...nuovi]);
+  for (const id of ["dev:2", "dev:3", "dev:4"]) {
+    assert.deepEqual([dopo.nodes.get(id)!.x - prima.nodes.get(id)!.x, dopo.nodes.get(id)!.y - prima.nodes.get(id)!.y], [200, -120], id);
+  }
+  assert.deepEqual(dopo.nodes.get("dev:5"), prima.nodes.get("dev:5"));
+  // un ritocco scaduto o di un altro orientamento resta com'è; senza scarto, o se il nodo non è a schermo, solo il suo
+  assert.equal(dragTweaks(t, prima, [scaduto, altro], "dev:2", p2.x + 1, p2.y, "lr").length, 1);
+  assert.equal(dragTweaks(t, prima, salvati, "dev:2", p2.x, p2.y, "lr").length, 1);
+  assert.equal(dragTweaks(t, { nodes: new Map() }, salvati, "dev:2", 0, 0, "lr").length, 1);
 });

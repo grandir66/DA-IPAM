@@ -74,8 +74,17 @@ test("stampa: un ritocco che porta un ramo sopra o a sinistra dell'origine sta t
 test("il ritocco in sospeso dello schermo vale al posto di quello salvato dello stesso oggetto", () => {
   const saved = { nodeId: "dev:2", x: 500, y: 500, sig: "", orientation: "lr" as const };
   const own = { nodeId: "dev:2", x: 700, y: 700, sig: "", orientation: "lr" as const };
-  const v = computeMapView(M, { auto: true, members: [], roots: [], head: "dev:1", tweaks: [saved], ownTweak: own, expanded: new Set(), orientation: "lr" });
+  const v = computeMapView(M, { auto: true, members: [], roots: [], head: "dev:1", tweaks: [saved], ownTweaks: [own], expanded: new Set(), orientation: "lr" });
   assert.deepEqual(v.tweaks, [own]);
+});
+
+test("più ritocchi in sospeso (un padre trascinato col suo ramo): ognuno vale al posto del suo salvato, gli altri restano", () => {
+  const s2 = { nodeId: "dev:2", x: 500, y: 500, sig: "", orientation: "lr" as const };
+  const s3 = { nodeId: "dev:3", x: 600, y: 600, sig: "", orientation: "lr" as const };
+  const s9 = { nodeId: "dev:9", x: 10, y: 10, sig: "", orientation: "lr" as const };
+  const o2 = { ...s2, x: 520 }, o3 = { ...s3, x: 620 };
+  const v = computeMapView(M, { auto: true, members: [], roots: [], head: "dev:1", tweaks: [s2, s3, s9], ownTweaks: [o2, o3], expanded: new Set(), orientation: "lr" });
+  assert.deepEqual(v.tweaks, [s9, o2, o3]);
 });
 
 test("«con le VM»: si aprono tutti gli hypervisor visibili; la testa scelta e quella proposta si distinguono", () => {

@@ -198,3 +198,31 @@ function finish(
   for (const g of apGroups) { maxX = Math.max(maxX, g.x + g.w); maxY = Math.max(maxY, g.y + g.h); }
   return { nodes, apGroups, moreAttached, vmChips, width: maxX + MARGIN, height: maxY + MARGIN, expired, orientation };
 }
+
+/**
+ * I ritocchi da salvare quando si trascina `nodeId` fino a (x, y): il suo, più quelli già salvati dei suoi discendenti
+ * (stesso orientamento, ancora validi) spostati dello stesso scarto. Un nodo trascinato si porta dietro il suo ramo
+ * (spec topologia §4/§11.2): i ritocchi sono in coordinate assolute, e senza questo un discendente ritoccato prima
+ * restava fermo mentre il padre andava altrove. `layout` è la disposizione a schermo da cui parte il trascinamento.
+ */
+export function dragTweaks(
+  tree: TreeResult, layout: Pick<LayoutResult, "nodes">, tweaks: readonly SavedTweak[],
+  nodeId: string, x: number, y: number, orientation: MapOrientation,
+): Array<SavedTweak & { sig: string }> {
+  const own = { nodeId, x, y, sig: structureSig(tree, nodeId), orientation };
+  const from = layout.nodes.get(nodeId);
+  if (!from) return [own];
+  const dx = x - from.x, dy = y - from.y;
+  if (dx === 0 && dy === 0) return [own];
+  const branch = new Set<string>();
+  const q = [nodeId];
+  while (q.length) for (const k of tree.children.get(q.shift()!) ?? []) if (k !== nodeId && !branch.has(k)) { branch.add(k); q.push(k); }
+  const moved: Array<SavedTweak & { sig: string }> = [];
+  for (const t of tweaks) {
+    if (t.orientation !== orientation || !branch.has(t.nodeId)) continue;
+    const sig = structureSig(tree, t.nodeId);
+    if (!tweakHolds(t.sig, sig)) continue; // scaduto: non vale e resta com'è
+    moved.push({ nodeId: t.nodeId, x: t.x + dx, y: t.y + dy, sig, orientation });
+  }
+  return [own, ...moved.sort((a, b) => (a.nodeId < b.nodeId ? -1 : 1))];
+}

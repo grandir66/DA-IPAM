@@ -33,7 +33,7 @@ import { ELENCO_KEY, elencoAperto, printHref, salvaElenco } from "@/lib/topology
 import type { MapLink, MapOrientation, MapVm } from "@/lib/topology/model-types";
 import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
 import { missingNeighbors } from "@/lib/topology/tree";
-import { structureSig, type SavedTweak } from "@/lib/topology/tree-layout";
+import { dragTweaks, type SavedTweak } from "@/lib/topology/tree-layout";
 import {
   clearPrimary, createManualLink, deleteManualLink, fetchLinkOverrides, ignoreLink, patchManualLink, refreshProxmoxScan, setMapOrientation, setPrimary,
 } from "./api";
@@ -102,7 +102,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   // Le ridondanze (spec §12.5) sono a richiesta: con due switch centrali erano un groviglio di linee.
   const [showExtra, setShowExtra] = useState(false);
   const [centerKey, setCenterKey] = useState(1);
-  const [pending, setPending] = useState<{ view: string; tweak: SavedTweak } | null>(null);
+  /** Ritocchi appena fatti a schermo (il nodo trascinato e il suo ramo), finché il server non li restituisce. */
+  const [pending, setPending] = useState<{ view: string; tweaks: SavedTweak[] } | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(true);
   // L'elenco a sinistra si chiude per lasciare la larghezza alla mappa (spec §13.10.2); di base è aperto.
   const [listOpen, setListOpen] = useState(true);
@@ -154,14 +155,14 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     if (!data) return null;
     // Un calcolo solo per schermo e stampa (map-compute.ts): stesso albero, stessa disposizione, stessi nomi.
     const auto = data.maps.auto;
-    const own = pending && pending.view === viewKey ? pending.tweak : null;
+    const own = pending && pending.view === viewKey ? pending.tweaks : null;
     const c = computeMapView(data.model, {
       auto: mode === "auto",
       members: view?.nodes ?? [],
       roots: view?.map?.roots ?? [],
       head: mode === "auto" ? (auto?.head_node ?? null) : null,
       tweaks: view?.tweaks ?? [],
-      ownTweak: own,
+      ownTweaks: own,
       expanded,
       orientation,
     });
@@ -185,7 +186,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     const viewLinks = new Map(tree.links.map((l) => [l.id, l]));
     return {
       model, visible, roots, missing, head, headOrigin, tree, layout, plus, starts, promoteIds, byId, vmsOf, vmInfo, viewLinks,
-      savedRoots: c.savedRoots, renames: c.renames,
+      savedRoots: c.savedRoots, renames: c.renames, tweaks: c.tweaks,
     };
   }, [data, mode, view, pending, viewKey, expanded, orientation]);
 
@@ -215,9 +216,13 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   async function move(nodeId: string, x: number, y: number) {
     if (!d || !viewKey || !(await persistRenames())) return;
     // Il ritocco vale nell'orientamento in cui è fatto (spec §12.2): senza, la rotta risponde 400.
-    const tweak: SavedTweak = { nodeId, x, y, sig: structureSig(d.tree, nodeId), orientation };
-    setPending({ view: viewKey, tweak });
-    await send("/api/topology/positions", "PUT", { view: positionsView, orientation, tweaks: [{ nodeId, x, y, sig: tweak.sig }] });
+    // Il nodo si porta dietro il suo ramo (spec §4/§11.2): i ritocchi già salvati dei discendenti si spostano dello
+    // stesso scarto, nella stessa chiamata.
+    const tweaks = dragTweaks(d.tree, d.layout, d.tweaks, nodeId, x, y, orientation);
+    setPending({ view: viewKey, tweaks });
+    await send("/api/topology/positions", "PUT", {
+      view: positionsView, orientation, tweaks: tweaks.map((t) => ({ nodeId: t.nodeId, x: t.x, y: t.y, sig: t.sig })),
+    });
     setPending(null);
   }
 

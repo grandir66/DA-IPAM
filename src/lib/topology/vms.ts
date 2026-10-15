@@ -144,7 +144,26 @@ const ts = (s: string | null): number => {
 };
 
 export function placeVms(input: Pick<TopologyModelInput, "vms" | "scanHosts">, idx: NodeIndex): PlacedVms {
-  const resolved = new Map(resolveScanHosts(input.scanHosts, idx).map((r) => [hostKey(r.row.scannedDeviceId, r.row.hostname), r.nodeId]));
+  const righe = resolveScanHosts(input.scanHosts, idx);
+  const resolved = new Map(righe.map((r) => [hostKey(r.row.scannedDeviceId, r.row.hostname), r.nodeId]));
+  // Un nodo del cluster ha lo stesso nome in ogni lettura: se questa non elenca il suo host (dati dell'host non letti,
+  // proxmox-client.ts), vale l'abbinamento delle altre letture. Due abbinamenti diversi per lo stesso nome: nessuno.
+  // Solo per una lettura di cluster (più di un nodo nella stessa lettura): un hypervisor autonomo ha un nodo solo, che
+  // è lui, e il nome di fabbrica («pve») è lo stesso su macchine diverse.
+  const nomeDi = (s: string) => s.trim().toLowerCase();
+  const perNome = new Map<string, string | null>();
+  for (const r of righe) {
+    if (!r.nodeId) continue;
+    const k = nomeDi(r.row.hostname);
+    perNome.set(k, perNome.has(k) && perNome.get(k) !== r.nodeId ? null : r.nodeId);
+  }
+  const nodiLetti = new Map<number, Set<string>>();
+  for (const [id, nome] of [...input.scanHosts.map((h) => [h.scannedDeviceId, h.hostname] as const), ...input.vms.map((v) => [v.scannedDeviceId, v.node] as const)]) {
+    const s = nodiLetti.get(id) ?? new Set<string>();
+    s.add(nomeDi(nome));
+    nodiLetti.set(id, s);
+  }
+  const diCluster = (id: number) => (nodiLetti.get(id)?.size ?? 0) > 1;
   const scanned = (id: number): string | null => (idx.nodes.has(`dev:${id}`) ? `dev:${id}` : null);
   const vmMacs = new Set<string>();
   const vmNodeIds = new Set<string>();
@@ -152,7 +171,8 @@ export function placeVms(input: Pick<TopologyModelInput, "vms" | "scanHosts">, i
   const readings = input.vms.map((vm) => {
     const v = { ...vm, macs: macsOf(vm.macs) }; // sempre nella forma del DB, qualunque cosa arrivi
     for (const m of v.macs) vmMacs.add(m);
-    return { v, hypervisorNodeId: resolved.get(hostKey(v.scannedDeviceId, v.node)) ?? scanned(v.scannedDeviceId) };
+    const perNomeNodo = diCluster(v.scannedDeviceId) ? perNome.get(nomeDi(v.node)) : null;
+    return { v, hypervisorNodeId: resolved.get(hostKey(v.scannedDeviceId, v.node)) ?? perNomeNodo ?? scanned(v.scannedDeviceId) };
   });
 
   // La stessa VM letta da due apparati scansionati (un cluster con due schede): una sola, coi dati della lettura più

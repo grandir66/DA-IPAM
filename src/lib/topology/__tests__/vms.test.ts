@@ -259,3 +259,49 @@ test("M-6: macOf vale un MAC solo nella forma a sei ottetti; un IP con dodici ci
   assert.equal(macOf(" 02:00:00:aa:bb:cd "), "02:00:00:AA:BB:CD");
   for (const x of ["192.168.100.123", "0200.00aa.bb03", "020000aabbcc", "00:00:00:00:00:00", "", null, 42]) assert.equal(macOf(x), null, String(x));
 });
+
+// Cliente A, 15/10 (prima notte di hypervisor_sync): tre nodi di un cluster scansionati uno per uno. La lettura più recente
+// (dal nodo C) aveva l'elenco delle VM di tutto il cluster ma non l'host del nodo A (dati dell'host non letti,
+// proxmox-client.ts): le VM di A finivano nel nodo C, il cavo a 10G «dalle VM» di A passava a C e A restava col solo 1G
+// di gestione (sulla mappa passo passo, senza collegamenti).
+test("un host che la lettura più recente non elenca: le sue VM restano del nodo giusto, non dell'apparato scansionato", () => {
+  const nodi = [
+    dev(3, { name: "pve-a", device_type: "server", vendor: "proxmox", host: "192.0.2.11", port_count: 0 }),
+    dev(5, { name: "pve-c", device_type: "server", vendor: "proxmox", host: "192.0.2.13", port_count: 0 }),
+  ];
+  const tutto = (over: Partial<TopologyModelInput>) => cluster({ devices: [...cluster().devices, ...nodi.filter((d) => d.id !== 3)], ...over });
+  const notte = "2026-10-15T03:00:00.000Z", dopo = "2026-10-15T03:02:00.000Z";
+  const leVm = (id: number, at: string) => [
+    vm(100, "pve-a", { scannedDeviceId: id, scannedAt: at, macs: ["02:00:00:aa:00:01"] }),
+    vm(200, "pve-c", { scannedDeviceId: id, scannedAt: at, macs: ["02:00:00:aa:00:09"] }),
+  ];
+  const i = tutto({
+    scanHosts: [
+      { scannedDeviceId: 3, hostname: "pve-a", ips: ["192.0.2.11"], macs: [], scannedAt: notte },
+      { scannedDeviceId: 3, hostname: "pve-c", ips: ["192.0.2.13"], macs: [], scannedAt: notte },
+      { scannedDeviceId: 5, hostname: "pve-c", ips: ["192.0.2.13"], macs: [], scannedAt: dopo }, // pve-a: host non letto
+    ],
+    vms: [...leVm(3, notte), ...leVm(5, dopo)],
+  });
+  const { vms, runningVmMacs } = placeVms(i, buildNodeIndex(i.devices, i.hosts, i.knownMacs, i.neighbors));
+  assert.equal(runningVmMacs.get("02:00:00:AA:00:01")?.hypervisor, "dev:3");
+  assert.equal(runningVmMacs.get("02:00:00:AA:00:09")?.hypervisor, "dev:5");
+  assert.deepEqual(vms.map((v) => [v.id, v.hypervisorNodeId]), [["vm:3:100", "dev:3"], ["vm:3:200", "dev:5"]]);
+});
+
+// Il rovescio della prova sopra: due hypervisor autonomi col nome di fabbrica («pve»), uno letto a metà (nessun host
+// nella sua lettura). L'abbinamento per nome trovato nell'altra lettura NON vale: la lettura del secondo ha un nodo
+// solo, quindi è il suo, e le sue VM restano dell'apparato scansionato come prima.
+test("due hypervisor autonomi con lo stesso nome di nodo: la lettura senza host tiene le VM all'apparato letto", () => {
+  const i = cluster({
+    devices: [...cluster().devices, dev(6, { name: "pve-z", device_type: "server", vendor: "proxmox", host: "192.0.2.61", port_count: 0 })],
+    scanHosts: [{ scannedDeviceId: 3, hostname: "pve", ips: ["192.0.2.11"], macs: [] }],
+    vms: [
+      vm(100, "pve", { scannedDeviceId: 3, macs: ["02:00:00:aa:00:01"] }),
+      vm(100, "pve", { scannedDeviceId: 6, macs: ["02:00:00:aa:00:06"] }),
+      vm(101, "pve", { scannedDeviceId: 6, macs: ["02:00:00:aa:00:07"] }),
+    ],
+  });
+  const { vms } = placeVms(i, buildNodeIndex(i.devices, i.hosts, i.knownMacs, i.neighbors));
+  assert.deepEqual(vms.map((v) => [v.id, v.hypervisorNodeId]).sort(), [["vm:3:100", "dev:3"], ["vm:6:100", "dev:6"], ["vm:6:101", "dev:6"]]);
+});

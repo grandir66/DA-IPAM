@@ -132,5 +132,14 @@ app.prepare().then(() => {
     }).catch((error) => {
       console.error("WARNING: scheduler health notifier init failed:", error);
     });
+
+    // Segnale di vita verso DA-Link (tappa C1 NetBird). Spento finché non esiste
+    // /etc/dalink/oggetto.env, scritto dal comando d'installazione di DA-Link:
+    // senza quel file nessun giro arriva alla rete.
+    import("./src/lib/dalink/segnale-job").then(({ avviaSegnaleDalink }) => {
+      avviaSegnaleDalink();
+    }).catch((error) => {
+      console.error("WARNING: segnale DA-Link non avviato:", error);
+    });
   }
 });

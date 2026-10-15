@@ -4,6 +4,7 @@ import { attachMacs } from "@/lib/topology/attach";
 import { buildLinks } from "@/lib/topology/links";
 import { buildNodeIndex } from "@/lib/topology/node-index";
 import { buildTopologyModel } from "@/lib/topology/model";
+import { autoVisible } from "@/lib/topology/tree";
 import type { ModelMacPortRow, TopologyModelInput } from "@/lib/topology/model-types";
 import { baseInput, dev, host } from "./support/righe";
 
@@ -32,8 +33,8 @@ function input(over: Partial<TopologyModelInput> = {}): TopologyModelInput {
 }
 function run(i: TopologyModelInput) {
   const idx = buildNodeIndex(i.devices, i.hosts, i.knownMacs, i.neighbors);
-  const { links, ignored } = buildLinks(i, idx);
-  return { links, ...attachMacs(i, idx, links, undefined, undefined, ignored) };
+  const { links, ignored, segmenti } = buildLinks(i, idx);
+  return { links, ...attachMacs(i, idx, links, { ignored, segmenti }) };
 }
 
 test("porta di bordo: mai l'uplink né la porta di un collegamento fra apparati", () => {
@@ -352,4 +353,66 @@ test("I-3: un collegamento «dalle VM» ignorato non torna", () => {
   });
   assert.equal(fra(buildTopologyModel(i).links, "dev:2", "dev:5").length, 1, "senza «Ignora» il collegamento c'è");
   assert.deepEqual(fra(buildTopologyModel({ ...i, overrides: ignora("dev:2", "dev:5") }).links, "dev:2", "dev:5"), []);
+});
+
+// Spec §13.7.1 passo 2 e §13.3.1 riga 3: una porta che sente due o più apparati non dà linee verso di loro, nemmeno dalla
+// tabella MAC. Sull'hub gli switch di laboratorio (solo host) sulla porta 5 dello switch 48 PoE vanno in «Da sistemare» (H5).
+test("porta di segmento: la tabella MAC non rifà la linea verso chi la porta sente via LLDP; un client sulla stessa porta resta", () => {
+  const LAB1 = "02:00:00:00:0a:01", LAB2 = "02:00:00:00:0a:02", PC = "02:00:00:00:0a:09";
+  const i = baseInput({
+    devices: [dev(2, { name: "SW-48POE", host: "10.0.0.2", via: "api" })],
+    hosts: [
+      host(31, { ip: "10.0.1.31", mac: LAB1, hostname: "LAB-SW-1", classification: "switch" }),
+      host(32, { ip: "10.0.1.32", mac: LAB2, hostname: "LAB-SW-2", classification: "switch" }),
+      host(39, { ip: "10.0.1.39", mac: PC, hostname: "PC-39", classification: "workstation" }),
+    ],
+    neighbors: [
+      { device_id: 2, local_port: "Port 5", remote_device_name: "LAB-SW-1", remote_port: "Port 1", protocol: "lldp", remote_ip: null, remote_mac: LAB1, timestamp: RECENTE, source: "unifi" },
+      { device_id: 2, local_port: "Port 5", remote_device_name: "LAB-SW-2", remote_port: "Port 1", protocol: "lldp", remote_ip: null, remote_mac: LAB2, timestamp: RECENTE, source: "unifi" },
+    ],
+    macPorts: [mp(2, LAB1, "Port 5"), mp(2, LAB2, "Port 5"), mp(2, PC, "Port 5")],
+  });
+  const r = run(i);
+  assert.deepEqual([...r.links, ...r.attachLinks], [], "nessuna linea verso gli switch di laboratorio");
+  assert.deepEqual(r.portClients.map((p) => [p.nodeId, p.port, p.clients.map((c) => c.nodeId)]), [["dev:2", "Port 5", ["host:39"]]]);
+});
+
+// Spec §13.3 e H5: chi resta senza collegamenti per la regola del segmento va in «Da sistemare» («nessun collegamento»).
+// Revisione del piano (15/10): `isolated` prendeva solo apparati, attaccati e hypervisor, e gli switch di laboratorio
+// dell'hub (host classificati switch) diventavano tre radici sole della mappa automatica. Solo i membri di un segmento:
+// un host isolato per altri motivi resta com'era (sul cliente A la radio lontana a 60 GHz è e resta la seconda radice, C16).
+test("H5 — gli host classificati switch che la regola del segmento lascia senza linee sono «Da sistemare», non radici sole", () => {
+  const LAB1 = "02:00:00:00:0a:01", LAB2 = "02:00:00:00:0a:02";
+  const i = baseInput({
+    devices: [dev(1, { name: "RTR-1", device_type: "router", host: "10.0.0.1", vendor: "mikrotik", via: "ssh" }), dev(2, { name: "SW-48POE", host: "10.0.0.2", via: "api" })],
+    hosts: [
+      host(31, { ip: "10.0.1.31", mac: LAB1, hostname: "LAB-SW-1", classification: "switch" }),
+      host(32, { ip: "10.0.1.32", mac: LAB2, hostname: "LAB-SW-2", classification: "switch" }),
+    ],
+    neighbors: [
+      { device_id: 2, local_port: "Port 24", remote_device_name: "RTR-1", remote_port: "ether2", protocol: "lldp", remote_ip: "10.0.0.1", remote_mac: null, timestamp: RECENTE, source: "unifi" },
+      // Il router letto via SSH ha le sue righe (la forma vera): così la prova regge anche con T1b, che vuole una prova di ruolo.
+      { device_id: 1, local_port: "ether2", remote_device_name: "SW-48POE", remote_port: "Port 24", protocol: "lldp", remote_ip: "10.0.0.2", remote_mac: null, timestamp: RECENTE, source: "device" },
+      { device_id: 2, local_port: "Port 5", remote_device_name: "LAB-SW-1", remote_port: "Port 1", protocol: "lldp", remote_ip: null, remote_mac: LAB1, timestamp: RECENTE, source: "unifi" },
+      { device_id: 2, local_port: "Port 5", remote_device_name: "LAB-SW-2", remote_port: "Port 1", protocol: "lldp", remote_ip: null, remote_mac: LAB2, timestamp: RECENTE, source: "unifi" },
+    ],
+  });
+  const m = buildTopologyModel(i);
+  assert.deepEqual(m.isolated.filter((id) => id.startsWith("host:")), ["host:31", "host:32"]);
+  assert.deepEqual([...autoVisible(m)].sort(), ["dev:1", "dev:2"]);
+});
+
+// Verifica del piano sul dato dell'hub (15/10): il ripiego del router da una VLAN col nome scelto a mano («VL_…») appendeva
+// un hypervisor al router. Per un router col traduttore del suo prodotto il ripiego vuole `fisica: true`; col generico,
+// come prima, basta che la porta non sia logica.
+test("ripiego del router: da un'interfaccia che il traduttore del prodotto non riconosce, niente", () => {
+  const mk = dev(1, { name: "RTR-1", device_type: "router", host: "10.0.0.1", vendor: "mikrotik", via: "ssh" });
+  const i = (router: typeof mk, porta: string) => input({
+    devices: [router, dev(2), dev(3), dev(7, { name: "SRV-7", device_type: "server", host: "10.0.1.7" })],
+    knownMacs: [{ device_id: 7, mac: SRV_MAC }],
+    macPorts: [mp(1, SRV_MAC, porta)],
+  });
+  assert.deepEqual(run(i(mk, "VL_2_UFFICI")).attachLinks, []);
+  assert.deepEqual(run(i(mk, "ether7")).attachLinks.map((l) => [l.a, l.aPort, l.b]), [["dev:1", "ether7", "dev:7"]]);
+  assert.deepEqual(run(i(RTR, "VL_2_UFFICI")).attachLinks.map((l) => [l.a, l.aPort, l.b]), [["dev:1", "VL_2_UFFICI", "dev:7"]]);
 });

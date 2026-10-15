@@ -25,10 +25,10 @@
  * UniFi non registrano i MAC degli altri apparati; trattare ogni MAC su una porta fisica come un cavo
  * dava ~230 collegamenti falsi sul cliente A. Il router non conta client. Logica pura.
  */
-import { LINK_ATTRS_DEFAULT, type MapLink, type PortClients, type TopologyModelInput } from "@/lib/topology/model-types";
+import { LINK_ATTRS_DEFAULT, type MapLink, type MapNode, type PortClients, type TopologyModelInput } from "@/lib/topology/model-types";
 import { type NodeIndex, resolveNode } from "@/lib/topology/node-index";
 import { nodeClass } from "@/lib/topology/identity";
-import { isPhysicalPort } from "@/lib/topology/links";
+import { haTraduttore, traduciPorta, type ComeLetto } from "@/lib/topology/lettori/traduci";
 import { normalizeMacForStorage, normalizePortNameForMatch } from "@/lib/utils";
 import { parseDbDate } from "@/lib/db-date";
 import { vmPortLinks, type RunningVmMacs } from "@/lib/topology/vm-ports";
@@ -38,15 +38,30 @@ const DAY = 86_400_000;
 
 interface Cand { node: string; port: string; ts: string; ms: number; counting: boolean; fisica: boolean }
 
-export function attachMacs(
-  input: TopologyModelInput,
-  idx: NodeIndex,
-  links: MapLink[],
-  vmMacs: ReadonlySet<string> = new Set(),
-  runningVmMacs: RunningVmMacs = new Map(),
+export interface OpzioniAttacco {
+  vmMacs?: ReadonlySet<string>;
+  runningVmMacs?: RunningVmMacs;
   /** Le coppie ignorate a mano (`buildLinks`): non tornano da tabella MAC, ripiego del router, VM (I-3). */
-  ignored: ReadonlySet<string> = new Set(),
-): { portClients: PortClients[]; clientCount: Record<string, number>; attachLinks: MapLink[] } {
+  ignored?: ReadonlySet<string>;
+  /** Le porte di segmento (`buildLinks`, §13.7.1 passo 2): da lì niente linee verso chi la porta sente via LLDP o CDP. */
+  segmenti?: ReadonlyMap<string, ReadonlySet<string>>;
+}
+
+/**
+ * Una porta del router è fisica per il suo traduttore (spec §13.6.1): la bridge host dà ether, sfp e bond. Un router col
+ * traduttore del suo prodotto (MikroTik letto via SSH) conosce i nomi delle sue porte fisiche: un nome che il traduttore
+ * non riconosce («VL_…», `fisica: null`) non è una porta del bridge host. Col traduttore generico vale «non logica», come
+ * prima. Sull'hub, senza questa distinzione, il ripiego appendeva un hypervisor al router da una VLAN col nome scelto.
+ */
+function fisicaDelRouter(n: MapNode, porta: string): boolean {
+  const come: ComeLetto = { vendor: n.vendor, via: n.via ?? null, fonte: "device", piattaforma: null };
+  const f = traduciPorta(porta, "locale", come).fisica;
+  return haTraduttore(come) ? f === true : f !== false;
+}
+
+export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: MapLink[], opzioni: OpzioniAttacco = {}):
+  { portClients: PortClients[]; clientCount: Record<string, number>; attachLinks: MapLink[] } {
+  const { vmMacs = new Set<string>(), runningVmMacs = new Map(), ignored = new Set<string>(), segmenti = new Map() } = opzioni;
   const portKey = (node: string, port: string) => `${node}|${normalizePortNameForMatch(port)}`;
   const linkPorts = new Set<string>();
   for (const l of links) {
@@ -70,7 +85,7 @@ export function attachMacs(
     const k = portKey(node, r.port_name);
     const ms = parseDbDate(r.timestamp).getTime();
     if (input.nowMs - ms <= soglia) perPort.set(k, (perPort.get(k) ?? new Set()).add(mac));
-    const fisica = (n.type === "router" || n.type === "firewall") && isPhysicalPort(r.port_name);
+    const fisica = (n.type === "router" || n.type === "firewall") && fisicaDelRouter(n, r.port_name);
     cand.set(mac, [...(cand.get(mac) ?? []), { node, port: r.port_name, ts: r.timestamp, ms, counting: CLIENT_COUNTING.includes(n.type), fisica }]);
   }
   const macsOn = (c: Cand): number => perPort.get(portKey(c.node, c.port))?.size ?? 0;
@@ -111,6 +126,9 @@ export function attachMacs(
         if (fisiche.length > 0) ripiego.push({ node: other.id, c: fisiche[0] });
         continue;
       }
+      // Spec §13.7.1 passo 2 e §13.3.1 riga 3: una porta che sente due o più apparati non dà linee verso di loro, nemmeno
+      // dalla tabella MAC. Il ripiego del router ha le sue regole (§11.1 bis) e non passa da qui.
+      if (segmenti.get(portKey(best.node, best.port))?.has(other.id)) continue;
       const key = [best.node, other.id].sort().join("|");
       if (!linked.has(key)) {
         linked.add(key);

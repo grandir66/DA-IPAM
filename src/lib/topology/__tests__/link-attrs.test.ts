@@ -4,6 +4,7 @@ import { buildTopologyModel } from "@/lib/topology/model";
 import { autoVisible, buildTree } from "@/lib/topology/tree";
 import { linkCost, parseSpeedMbps } from "@/lib/topology/link-attrs";
 import { LINK_ATTRS_DEFAULT, type MapLink, type TopologyModelInput } from "@/lib/topology/model-types";
+import type { Regole } from "@/lib/topology/regole";
 import { baseInput, dev } from "./support/righe";
 
 // Dati inventati: MAC 02:00:00:…, IP 192.0.2.x.
@@ -169,4 +170,36 @@ test("stessi dati, stesso albero (principale e ridondanza compresi)", () => {
   const a = albero(i), b = albero(rete({ overrides: i.overrides }));
   const ser = (x: ReturnType<typeof albero>) => JSON.stringify({ c: [...x.t.children.entries()], v: [...x.t.via.entries()], l: x.t.links, r: x.t.roots });
   assert.equal(ser(a), ser(b));
+});
+
+// Spec §13.6.1: la velocità di una linea è la minima delle due porte trovate per CHIAVE. Prima si cercava per nome
+// normalizzato, e «SFP_ 17 - x» (tabella LLDP del controller) non trovava «SFP+ 17 - x» (elenco delle porte): sull'hub
+// tre hypervisor finivano sotto lo switch di gestione a 2,5G invece che sotto l'aggregazione a 10G (H9); sul cliente A
+// i cavi 8 e 9 di core 2 non avevano velocità (C9).
+test("velocità per chiave: «SFP_ 17 - x» del controller trova «SFP+ 17 - x» nell'elenco; «Port N» remota trova l'indice N", () => {
+  const i = baseInput({
+    devices: [dev(11, { name: "AGG-11", via: "api" }), dev(4, { name: "HV-4", device_type: "hypervisor", vendor: "proxmox" })],
+    ports: [{ device_id: 11, port_index: 17, port_name: "SFP+ 17 - nodo-a", speed: "10000 Mbps", status: "up", stp_state: null }],
+    neighbors: [{ device_id: 11, local_port: "SFP_ 17 - nodo-a", remote_device_name: "HV-4", remote_port: "enp1s0", protocol: "lldp", remote_ip: "10.0.0.4", remote_mac: null, timestamp: "2026-10-13 03:00:00", source: "unifi" }],
+  });
+  const l = buildTopologyModel(i).links.find((x) => x.id === "link:dev:11|dev:4")!;
+  assert.deepEqual([l.a === "dev:11" ? l.aPort : l.bPort, l.speedMbps], ["SFP+ 17 - nodo-a", 10000]);
+});
+
+// I70 (spec §13.6.1, «Un nome doppio con una velocità sola»; H13). Un nome che corrisponde a più porte non dice la porta (I14),
+// ma se tutte hanno la stessa velocità la velocità sì. Rete B: il cavo dati di un hypervisor sta su un nome di due porte a 10G,
+// e senza velocità l'hypervisor andava sotto la sua porta di gestione a 1G.
+test("I70 — un nome doppio con una velocità sola dà la velocità; con due velocità no; spenta la regola, come prima", () => {
+  const conPorte = (v2: string) => baseInput({
+    devices: [dev(11, { name: "AGG-11", via: "api" }), dev(4, { name: "HV-4", device_type: "server", vendor: "proxmox" })],
+    ports: [
+      { device_id: 11, port_index: 15, port_name: "SFP+ 15", speed: "10000 Mbps", status: "up", stp_state: null },
+      { device_id: 11, port_index: 16, port_name: "SFP+ 15", speed: v2, status: "up", stp_state: null },
+    ],
+    neighbors: [{ device_id: 11, local_port: "SFP+ 15", remote_device_name: "HV-4", remote_port: "enp1s0", protocol: "lldp", remote_ip: "10.0.0.4", remote_mac: null, timestamp: "2026-10-13 03:00:00", source: "unifi" }],
+  });
+  const velocita = (i: ReturnType<typeof conPorte>, regole?: Regole) => buildTopologyModel(i, regole).links.find((x) => x.id === "link:dev:11|dev:4")?.speedMbps;
+  assert.equal(velocita(conPorte("10000 Mbps")), 10000);
+  assert.equal(velocita(conPorte("1000 Mbps")), null);
+  assert.equal(velocita(conPorte("10000 Mbps"), new Set()), null, "regola spenta (misura C19): come prima");
 });

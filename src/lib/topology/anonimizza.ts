@@ -471,3 +471,12 @@ export function contaValoriVeri(vero: TopologyModelInput, anonimo: unknown): { i
   }
   return conto;
 }
+
+/**
+ * L'ingresso che una fixture può avere: senza le VM e gli host dei cluster, che portano nomi, IP e MAC veri dei clienti
+ * (`FASE_2B_SEZIONI.vms: null` nella prova della forma). Lo script d'estrazione confronta i conteggi del modello su
+ * questo e sulla fixture anonima: dalla fase 2b le VM cambiano il modello, e col dato vero intero il confronto falliva.
+ */
+export function ingressoDellaFixture(input: TopologyModelInput): TopologyModelInput {
+  return { ...input, vms: [], scanHosts: [] };
+}

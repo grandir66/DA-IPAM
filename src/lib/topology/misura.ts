@@ -59,7 +59,11 @@ export function lineeCucite(input: TopologyModelInput, model: Pick<TopologyModel
   for (const d of input.devices) {
     if (!d.uplink_mac || d.uplink_remote_port == null) continue;
     const y = resolveNode(idx, { mac: d.uplink_mac });
-    if (y) aggiungi(`dev:${d.id}`, primaPorta.get(d.id) ?? "", y, `Port ${d.uplink_remote_port}`);
+    if (y) {
+      aggiungi(`dev:${d.id}`, primaPorta.get(d.id) ?? "", y, `Port ${d.uplink_remote_port}`);
+      const nomeInElenco = (input.ports ?? []).find((p) => `dev:${p.device_id}` === y && p.port_index === d.uplink_remote_port)?.port_name;
+      if (nomeInElenco) aggiungi(`dev:${d.id}`, primaPorta.get(d.id) ?? "", y, nomeInElenco);
+    }
   }
   for (const o of input.overrides) if (o.action === "add") aggiungi(o.a_node, o.a_port, o.b_node, o.b_port);
   return model.links.filter((l) => l.aPort.trim() && l.bPort.trim() && !prove.has(`${l.a}|${chiaveMisura(l.aPort)}|${l.b}|${chiaveMisura(l.bPort)}`));
@@ -285,6 +289,7 @@ export function conteggi(input: TopologyModelInput, model: TopologyModel, c: Pic
     non_visti: model.counts.staleLinks,
     una_porta_vuota: model.links.filter((l) => (l.aPort.trim() === "") !== (l.bPort.trim() === "")).length,
     cucite: lineeCucite(input, model).length,
+    porte_di_segmento: Object.keys(model.segmenti ?? {}).length,
     linee_da_nome_scelto: lineeDaNomeScelto(input, model).length,
     sotto_una_sua_vm: sottoUnaSuaVm(model, padriDi(c.tree)).length,
     contro_verso: ramiControVerso(c.tree),

@@ -224,6 +224,8 @@ export interface MapNode {
   vendor: string | null;
   /** L'apparato ha la scansione Proxmox (revisione finale M-2); assente = no. */
   proxmoxScan?: boolean;
+  /** La via di lettura dell'apparato (per i traduttori, spec §13.6.1); assente per un host. */
+  via?: string;
   /**
    * Spec §12.5, «nome dal Proxmox»: un hypervisor il cui IP sta nelle schede di un host della scansione Proxmox
    * con un altro nome si chiama come il nodo Proxmox (`name`); qui resta il nome di prima, che la mappa mostra come
@@ -236,6 +238,9 @@ export type LinkMedium = "cavo" | "fibra" | "wireless";
 
 /** Orientamento della mappa (spec §12.2): `lr` «Verticale», da sinistra a destra con i fratelli impilati (predefinito); `tb` «Orizzontale», dall'alto. */
 export type MapOrientation = "lr" | "tb";
+
+/** Un altro cavo visto fra gli stessi due oggetti (spec §13.4.6, T1): una linea è una coppia fino a T3. Porte orientate come la linea. */
+export interface AltroCavo { aPort: string; bPort: string; sources: LinkSource[]; lastSeen: string | null }
 
 export interface MapLink {
   id: string;
@@ -267,6 +272,8 @@ export interface MapLink {
   redundant: boolean;
   /** Solo con la fonte `vm_mac` (spec §12.5): quante VM accese dell'hypervisor (`uplinkFrom`) passano dalla porta. */
   vmCount?: number;
+  /** Gli altri cavi visti fra gli stessi due oggetti (spec §13.4.6): servono all'«Ignora» per cavo e alla verifica a mano. */
+  altriCavi?: AltroCavo[];
 }
 
 /** Attributi del collegamento che nascono neutri; li riempiono link-attrs.ts (dati) e l'albero (principale, ridondanza). */
@@ -372,6 +379,11 @@ export interface TopologyModel {
   canonical: Record<string, string>;
   /** VM degli hypervisor, ognuna col suo host (spec §11.5). */
   vms: MapVm[];
+  /**
+   * Le porte di segmento (spec §13.7.1 passo 2): «nodo|porta normalizzata» → gli oggetti che la porta sente via LLDP o CDP.
+   * In T1 non si disegnano; le legge la misura (H5, H6, C8). Assente nei modelli costruiti a mano dalle prove.
+   */
+  segmenti?: Record<string, string[]>;
   /**
    * Di quante reti censite ogni apparato è il gateway (spec §13.8.1): a pari nodi raggiunti la testa proposta è il router
    * gateway di più reti. Assente con la regola «testa-per-reti» spenta e nei modelli costruiti a mano dalle prove.

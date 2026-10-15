@@ -1,7 +1,7 @@
 import { traduciMikrotikLocale, traduciMikrotikRemoto } from "@/lib/topology/lettori/mikrotik";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { anonimizzaInput, contaValoriVeri, portaAnonima, porteInChiaro } from "@/lib/topology/anonimizza";
+import { anonimizzaInput, contaValoriVeri, ingressoDellaFixture, portaAnonima, porteInChiaro } from "@/lib/topology/anonimizza";
 import { buildTopologyModel } from "@/lib/topology/model";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 import { dev, host } from "./support/righe";
@@ -205,4 +205,17 @@ test("porteInChiaro: un nome scelto rimasto uguale al vero ferma l'estrazione; i
   assert.equal(porteInChiaro(conPorte, fuga), 1, "lo pseudonimo tolto: il nome vero torna, e il controllo lo vede");
   const bridge = { ...out, neighbors: out.neighbors.map((n, k) => (k === 0 ? { ...n, local_port: "sfp28-1,bond1,LAN_BERGAMO" } : n)) };
   assert.equal(porteInChiaro(conPorte, bridge), 1, "anche un pezzo di un nome composto");
+});
+
+// Revisione del piano (15/10): la fixture non ha VM, e dalla fase 2b le VM cambiano il modello. L'estrazione confronta la
+// fixture con l'ingresso vero senza le VM: i conteggi del modello devono coincidere.
+test("ingressoDellaFixture: senza VM né host dei cluster; la fixture anonima dà gli stessi conteggi del modello", () => {
+  const conVm: TopologyModelInput = {
+    ...VERO,
+    vms: [{ scannedDeviceId: 1, vmid: 100, name: "vm-vera", node: "pve-vero", status: "running", type: "qemu", macs: ["02:00:00:aa:bb:09"], ips: ["192.0.2.9"], scannedAt: "2026-10-13T06:00:00.000Z" }],
+    scanHosts: [{ scannedDeviceId: 1, hostname: "pve-vero", ips: ["192.0.2.9"], macs: [] }],
+  };
+  const r = ingressoDellaFixture(conVm);
+  assert.deepEqual([r.vms, r.scanHosts], [[], []]);
+  assert.deepEqual(buildTopologyModel(anonimizzaInput(r)).counts, buildTopologyModel(r).counts);
 });

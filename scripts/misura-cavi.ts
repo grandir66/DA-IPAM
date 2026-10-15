@@ -208,6 +208,11 @@ async function main(): Promise<number> {
     for (const l of lineeDaNomeScelto(input, model)) w(`${nome(l.a)} ${l.aPort} ↔ ${nome(l.b)} ${l.bPort} · ${l.sources.join("+")}`);
     w("\n— hypervisor sotto una loro VM (H15) —");
     for (const id of sottoUnaSuaVm(model, padri)) w(`${nome(id)} sotto ${nome(padri[id])}`);
+    w("\n— porte di segmento: nessun cavo da lì (H5, H6, C8) —");
+    for (const [k, membri] of Object.entries(model.segmenti ?? {})) {
+      const [nodo, porta] = [k.slice(0, k.indexOf("|")), k.slice(k.indexOf("|") + 1)];
+      w(`${nome(nodo)} ${porta}: ${membri.map(nome).join(", ")}`);
+    }
     w("\n— linee cucite —");
     for (const l of lineeCucite(input, model)) w(`${nome(l.a)} ${l.aPort} ↔ ${nome(l.b)} ${l.bPort}`);
     w("\n— ritocchi scaduti, per mappa e orientamento (R2) —");

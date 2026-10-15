@@ -5,6 +5,7 @@
  * sceglie fra più collegamenti. Logica pura.
  */
 import { parseDbDate } from "@/lib/db-date";
+import { elenchiPorte, indiciInElenco, portaInElenco } from "@/lib/topology/cavi/porte";
 import {
   LINK_SOURCE_RANK,
   type LinkMedium,
@@ -12,6 +13,7 @@ import {
   type TopologyModelInput,
 } from "@/lib/topology/model-types";
 import { canonical, type NodeIndex } from "@/lib/topology/node-index";
+import { REGOLE_T1, type Regole } from "@/lib/topology/regole";
 import { resolveScanHosts } from "@/lib/topology/vms";
 import { normalizeMacForStorage, normalizePortNameForMatch } from "@/lib/utils";
 
@@ -77,8 +79,14 @@ function lookups(input: TopologyModelInput, idx: NodeIndex): Lookups {
  */
 export function confirmManual(link: MapLink, input: TopologyModelInput, idx: NodeIndex): boolean {
   const soglia = input.staleDays * DAY;
-  if (link.sources.some((s) => s !== "manual")) {
-    const t = link.lastSeen ? parseDbDate(link.lastSeen).getTime() : NaN;
+  // Un collegamento automatico non vecchio fra gli stessi oggetti: sulla linea o fra gli altri cavi visti. In T1 la
+  // verifica resta per coppia (§11.3); per cavo da T3 (spec §13.9).
+  const automatici = [
+    ...(link.sources.some((s) => s !== "manual") ? [link.lastSeen] : []),
+    ...(link.altriCavi ?? []).filter((c) => c.sources.some((s) => s !== "manual")).map((c) => c.lastSeen),
+  ];
+  for (const s of automatici) {
+    const t = s ? parseDbDate(s).getTime() : NaN;
     if (Number.isNaN(t) || input.nowMs - t <= soglia) return true;
   }
   const { macsOf, onPort } = lookups(input, idx);
@@ -92,9 +100,33 @@ export function confirmManual(link: MapLink, input: TopologyModelInput, idx: Nod
 }
 
 /** Riempie manual, medium, velocità, PoE e la scelta a mano del principale. Le copie del modello sono nuove: si modificano sul posto. */
-export function enrichLinks(links: MapLink[], input: TopologyModelInput, idx: NodeIndex): void {
+export function enrichLinks(links: MapLink[], input: TopologyModelInput, idx: NodeIndex, regole: Regole = REGOLE_T1): void {
   const portInfo = new Map<string, TopologyModelInput["portInfo"][number]>();
   for (const p of input.portInfo) portInfo.set(`${p.device_id}|${normalizePortNameForMatch(p.port_name)}`, p);
+  const elenchi = elenchiPorte(input.ports ?? []);
+  // Il tipo della chiave va scritto: con `as const` diventa `dev:${number}|${number}` e la lettura con una stringa non compila.
+  const velocitaPorta = new Map<string, string | null>((input.ports ?? []).map((p) => [`dev:${p.device_id}|${p.port_index}`, p.speed]));
+  /**
+   * La velocità di una porta per chiave (spec §13.6.1): l'indice nell'elenco delle porte dell'apparato. Per nome, «SFP_ N»
+   * della tabella LLDP del controller non trovava «SFP+ N» dell'elenco: sull'hub tre hypervisor finivano sotto lo switch
+   * di gestione a 2,5G invece che sotto l'aggregazione a 10G (H9). Senza elenco (prove e fixture di prima), per nome.
+   */
+  const velocita = (nodo: string, porta: string): number | null => {
+    if (!porta.trim()) return null;
+    const el = elenchi.get(nodo);
+    if (el) {
+      const i = portaInElenco(el, porta);
+      if (i !== null) return parseSpeedMbps(velocitaPorta.get(`${nodo}|${i}`) ?? null);
+      // Un nome doppio (spec §13.6.1, I70; regola «velocita-nomi-doppi»): la porta non si sa, ma se tutte le porte con quel
+      // nome hanno la stessa velocità la velocità sì. Rete B: il cavo dati di un hypervisor su un nome di due porte a 10G (H13).
+      if (!regole.has("velocita-nomi-doppi")) return null;
+      const v = [...new Set(indiciInElenco(el, porta).map((k) => parseSpeedMbps(velocitaPorta.get(`${nodo}|${k}`) ?? null)))];
+      return v.length === 1 ? v[0] : null;
+    }
+    const m = /^dev:(\d+)$/.exec(nodo);
+    const r = m ? portInfo.get(`${m[1]}|${normalizePortNameForMatch(porta)}`) : undefined;
+    return r ? parseSpeedMbps(r.speed) : null;
+  };
   const uplinkType = new Map(input.devices.map((d) => [`dev:${d.id}`, d.uplink_type]));
   const mediumByPair = new Map<string, LinkMedium>();
   for (const o of [...input.overrides].sort((x, y) => x.id - y.id)) {
@@ -113,15 +145,15 @@ export function enrichLinks(links: MapLink[], input: TopologyModelInput, idx: No
   for (const l of links) {
     const key = pairKey(l.a, l.b);
     l.manual = l.sources.includes("manual") ? { confirmed: confirmManual(l, input, idx) } : null;
-    const rows = ends(l).map((e) => portInfo.get(`${e.deviceId}|${normalizePortNameForMatch(e.port)}`)).filter((r): r is NonNullable<typeof r> => !!r);
-    const speeds = rows.map((r) => parseSpeedMbps(r.speed)).filter((v): v is number => v !== null);
+    const speeds = [velocita(l.a, l.aPort), velocita(l.b, l.bPort)].filter((v): v is number => v !== null);
     l.speedMbps = speeds.length ? Math.min(...speeds) : null;
+    const rows = ends(l).map((e) => portInfo.get(`${e.deviceId}|${normalizePortNameForMatch(e.port)}`)).filter((r): r is NonNullable<typeof r> => !!r);
     const poe = rows.map((r) => (r.poe_power_mw ?? 0) / 1000).filter((v) => v > 0);
     l.poeW = poe.length ? Math.max(...poe) : null;
     const wireless =
       (l.uplinkFrom !== null && l.sources.includes("unifi_uplink") && uplinkType.get(l.uplinkFrom) === "wireless") ||
       [l.aPort, l.bPort].some((p) => p.trim().toLowerCase() === "wifi");
-    l.medium = mediumByPair.get(key) ?? (wireless ? "wireless" : null);
+    l.medium = mediumByPair.get(key) ?? (wireless || l.medium === "wireless" ? "wireless" : null); // senza fili dal traduttore (I47)
     const child = chosen.get(key);
     if (child !== undefined) {
       l.primary = "user";

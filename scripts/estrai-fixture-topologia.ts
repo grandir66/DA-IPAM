@@ -19,6 +19,9 @@ function uso(msg?: string): number {
   return 2;
 }
 
+/** La cartella di lavoro con la copia del DB (320 MB sul cliente A, 2 GB sull'hub): si toglie a fine giro, comunque vada. */
+const copie: string[] = [];
+
 async function main(): Promise<number> {
   const a = process.argv.slice(2);
   const val = (k: string) => (a.indexOf(k) >= 0 ? a[a.indexOf(k) + 1] : undefined);
@@ -31,6 +34,7 @@ async function main(): Promise<number> {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(tenant)) return uso("Nome del file non valido come codice tenant.");
 
   const lavoro = path.join(path.resolve(cartella), `fixture-topologia-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+  copie.push(lavoro);
   const dataDir = path.join(lavoro, "data");
   const hubDb = path.join(lavoro, "hub.db");
   const errori = controllaPercorsi({ scratchpad: cartella, sorgente, dataDir, hubDb, repo: process.cwd() });
@@ -49,22 +53,27 @@ async function main(): Promise<number> {
   for (const k of ["log", "info", "warn", "debug", "error"] as const) console[k] = () => {};
 
   const { withTenant, getTopologyModelInput } = await import("../src/lib/db-tenant");
-  const { anonimizzaInput, contaValoriVeri } = await import("../src/lib/topology/anonimizza");
+  const { anonimizzaInput, contaValoriVeri, ingressoDellaFixture, porteInChiaro } = await import("../src/lib/topology/anonimizza");
     const { buildTopologyModel } = await import("../src/lib/topology/model");
 
   const input = withTenant(tenant, () => getTopologyModelInput(2));
   // Tutti gli host: dalla fase 2 il modello conta ogni host come nodo (`nodes`) e i gruppi di host
   // fusi fra loro (`mergedHosts`), quindi togliere host «che non servono» cambierebbe i conteggi.
-  const ridotto = input;
+  // Le VM e gli host dei cluster invece no: portano nomi, IP e MAC veri e la fixture non li ha (prova della forma,
+  // FASE_2B_SEZIONI.vms: null). Dalla fase 2b le VM cambiano il modello, quindi il confronto si fa fra l'ingresso vero
+  // SENZA le VM e la fixture, e la differenza dovuta alle VM si stampa a parte (revisione del piano, 15/10: confrontando
+  // col dato vero intero l'estrazione usciva con 1 su tutte e due le copie, già col codice di prima).
+  const ridotto = ingressoDellaFixture(input);
   const anonimo = anonimizzaInput(ridotto);
 
-  // Il modello della fixture dev'essere quello vero: stessi conteggi, o niente fixture.
+  // Il modello della fixture dev'essere quello vero senza le VM: stessi conteggi, o niente fixture.
   const vero = JSON.stringify(buildTopologyModel(input).counts);
   const conteggiRidotto = JSON.stringify(buildTopologyModel(ridotto).counts);
   const conteggiAnonimo = JSON.stringify(buildTopologyModel(anonimo).counts);
   process.stdout.write(`conteggi del modello: ${vero}\n`);
-  if (conteggiRidotto !== vero || conteggiAnonimo !== vero) {
-    process.stderr.write(`Conteggi diversi, fixture NON scritta.\n  ridotto: ${conteggiRidotto}\n  anonimo: ${conteggiAnonimo}\n`);
+  if (conteggiRidotto !== vero) process.stdout.write(`senza le VM (la forma della fixture): ${conteggiRidotto}\n`);
+  if (conteggiAnonimo !== conteggiRidotto) {
+    process.stderr.write(`Conteggi diversi, fixture NON scritta.\n  senza le VM: ${conteggiRidotto}\n  anonimo: ${conteggiAnonimo}\n`);
     return 1;
   }
   // Il repo è pubblico: nessun IP, MAC o nome veri (dell'input COMPLETO) nella fixture, o niente fixture.
@@ -73,7 +82,13 @@ async function main(): Promise<number> {
     process.stderr.write(`Valori veri nella fixture, NON scritta: IP ${fughe.ip} · MAC ${fughe.mac} · nomi ${fughe.nomi} (valori di testo che li contengono)\n`);
     return 2;
   }
-  process.stdout.write("valori veri nella fixture: 0 IP · 0 MAC · 0 nomi\n");
+  // I nomi di porta (spec §13.12.2): ogni pezzo rimasto uguale al vero dev'essere un nome di fabbrica, o niente fixture.
+  const porte = porteInChiaro(ridotto, anonimo);
+  if (porte > 0) {
+    process.stderr.write(`Nomi di porta veri che non sono di fabbrica nella fixture, NON scritta: ${porte}\n`);
+    return 2;
+  }
+  process.stdout.write("valori veri nella fixture: 0 IP · 0 MAC · 0 nomi · 0 nomi di porta scelti\n");
   fs.writeFileSync(path.resolve(uscita), `${JSON.stringify(anonimo, null, 1)}\n`);
   process.stdout.write(
     `apparati ${anonimo.devices.length} · host ${anonimo.hosts.length} · vicini ${anonimo.neighbors.length} · reti ${anonimo.networks.length} · ubicazioni ${anonimo.locations.length} · MAC per porta ${anonimo.macPorts.length}\n`,
@@ -81,4 +96,6 @@ async function main(): Promise<number> {
   return 0;
 }
 
-main().then((c) => process.exit(c), (e) => { process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`); process.exit(2); });
+main()
+  .catch((e: unknown) => { process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`); return 2; })
+  .then((c) => { for (const p of copie) fs.rmSync(p, { recursive: true, force: true }); process.exit(c); });

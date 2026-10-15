@@ -63,3 +63,26 @@ test("I58 — nessun prefisso di un nome scelto da un cliente in cavi/ e lettori
     .flatMap((f) => nomiScelti(fs.readFileSync(path.join(d, f), "utf8")).map((x) => `${path.basename(d)}/${f} ${x}`)));
   assert.deepEqual(trovate, []);
 });
+
+/**
+ * I37 anche per la logica dei collegamenti di T1 (spec §13.5.1: «links.ts in T1, cavi/ da T2, legge solo quei fatti»).
+ * Verifica del 15/10: links.ts sceglieva il traduttore del lato remoto con un'espressione sulla marca, copia di quella di
+ * traduci.ts. Nel CODICE di links.ts (i commenti possono dire da dove vengono i fatti) nessun nome di prodotto né forma di
+ * porta; restano i valori delle colonne del DB che il modello legge così come sono scritti: la fonte «unifi», la fonte del
+ * collegamento «unifi_uplink» e il protocollo «mndp».
+ */
+const LINKS = path.join(__dirname, "..", "links.ts");
+const VALORI_DEL_DB = /["'`](?:mndp|unifi|unifi_uplink)["'`]/g;
+function codiceDi(testo: string): string {
+  return testo.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, "")).replace(/(^|[^:\\])\/\/.*$/gm, "$1").replace(VALORI_DEL_DB, '""');
+}
+
+test("la prova di links.ts lascia i commenti e i valori del DB, e trova una marca nel codice", () => {
+  assert.deepEqual(formeDiProdotto(codiceDi('// un MikroTik letto via SSH\nconst f = "unifi";\nconst p = n.protocol === "mndp";')), []);
+  assert.equal(formeDiProdotto(codiceDi("const m = /mikrotik/i.test(c.piattaforma);")).length > 0, true);
+  assert.equal(formeDiProdotto(codiceDi('const b = porta.endsWith(",bridge");')).length > 0, true);
+});
+
+test("I37 — nel codice di links.ts nessun nome di prodotto né forma di porta", () => {
+  assert.deepEqual(formeDiProdotto(codiceDi(fs.readFileSync(LINKS, "utf8"))), []);
+});

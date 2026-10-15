@@ -9,6 +9,7 @@ import path from "node:path";
 import { buildTopologyModel } from "@/lib/topology/model";
 import { buildTopologyGraph } from "@/lib/topology/graph";
 import { autoVisible, buildTree, proposeHead } from "@/lib/topology/tree";
+import { computeMapView } from "@/lib/topology/map-compute";
 import { CHAR_W, fitLabel, layoutTree } from "@/lib/topology/tree-layout";
 import { nodeClass } from "@/lib/topology/identity";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
@@ -66,9 +67,19 @@ test("Domarc: i doppi apparato/host si fondono (spec §2: almeno i 5 Proxmox)", 
 // Task 1b fase 2b (14/10): «ti vedo e mi vedi» via MNDP non conferma più un collegamento di un router (MNDP attraversa
 // gli switch). Cliente A: cade il collegamento MNDP fra i router 2 e 3, confermato solo da MNDP (deviceLinks 83->82,
 // links 133->132). Le porte della fixture sono anonime («porta-N»): le regole sul nome della porta qui non si vedono.
+// Task 7 di T1 (spec §13.7.1), fixture riestratte il 15/10 dalle copie del 15/10 (ingresso del Task 5, senza le VM; fra
+// parentesi il valore del codice di prima sulle stesse copie, poi l'effetto del Task 7):
+// domarc: deviceLinks 20->29, isolatedDevices 22->17, suspiciousTypes 17->13 perché dati nuovi delle copie del 15/10;
+// attachedLinks 11->33 (11->36, poi -3) e promoteProposals 9->10 (9->13, poi -3) perché porta di segmento: la porta 5
+// dello switch 48 PoE sente tre switch di laboratorio (solo host), che restano senza linee e vanno in «Da sistemare» (H5);
+// unmatchedNeighbors 9->7 perché righe raggruppate per apparato (due righe dello stesso telaio sulla stessa porta
+// dell'aggregazione) e righe di RouterOS dello stesso apparato unite per nome (un vicino non abbinato in meno).
+// cliente-a: deviceLinks 82->84, fusedHosts 93->92, promoteProposals 3->5 perché dati nuovi delle copie del 15/10;
+// attachedLinks 50->49 (50->51, poi -2) perché porta di segmento (la porta 15 di core 1 sente router 1 e il router di
+// riserva: cade la linea verso il router di riserva) e una riga da una VRRP che non si abbina più per IP (I15).
 const MISURATI: Record<string, Partial<Record<string, number>>> = {
-  "topologia-domarc.json": { deviceLinks: 20, attachedLinks: 11, unmatchedNeighbors: 9, isolatedDevices: 22, fusedHosts: 59, promoteProposals: 9, suspiciousTypes: 17 },
-  "topologia-cliente-a.json": { deviceLinks: 82, attachedLinks: 50, unmatchedNeighbors: 13, isolatedDevices: 5, fusedHosts: 93, promoteProposals: 3, suspiciousTypes: 2 },
+  "topologia-domarc.json": { deviceLinks: 29, attachedLinks: 33, unmatchedNeighbors: 7, isolatedDevices: 17, fusedHosts: 59, promoteProposals: 10, suspiciousTypes: 13 },
+  "topologia-cliente-a.json": { deviceLinks: 84, attachedLinks: 49, unmatchedNeighbors: 13, isolatedDevices: 5, fusedHosts: 92, promoteProposals: 5, suspiciousTypes: 2 },
 };
 for (const [nome, attesi] of Object.entries(MISURATI)) {
   test(`${nome}: conteggi misurati`, () => {
@@ -134,7 +145,13 @@ for (const nome of ["topologia-domarc.json", "topologia-cliente-a.json"]) {
     const r = layoutTree(m, alberoAuto(m), [], new Set(), "lr");
     // Numeri misurati con layoutTree(…, "lr") sulla fixture anonima, albero automatico (14/10/2026, Task 2 della
     // tappa H): se cambiano, si legge il perché (misure dei riquadri o regole della disposizione) prima di riscriverli.
-    const attesi = nome === "topologia-domarc.json" ? [1178, 1914] : [2512, 3348];
+    // Task 7 di T1 (spec §13.7.1), fixture riestratte il 15/10 dalle copie (fra parentesi il codice di prima sulle fixture
+    // nuove): cliente-a 2512x3348->2514x3222 (2514x3222) perché dati nuovi delle copie del 15/10; domarc 1178x1914->1588x2420
+    // (1588x2606) perché dati nuovi delle copie del 15/10, poi -186 in altezza perché porta di segmento (i tre switch di
+    // laboratorio della porta 5 dello switch 48 PoE escono dall'albero e vanno in «Da sistemare», H5), niente ripiego del
+    // router da un'interfaccia che il suo traduttore non riconosce (un hypervisor esce da sotto il router) e la velocità per
+    // chiave, anche di un nome doppio (tre hypervisor passano sotto l'aggregazione a 10G, H9 e H13).
+    const attesi = nome === "topologia-domarc.json" ? [1588, 2420] : [2514, 3222];
     assert.deepEqual([Math.round(r.width), Math.round(r.height)], attesi);
   });
 }
@@ -147,12 +164,23 @@ test("cliente A: uplink salvati e collegamenti unifi_uplink presenti", () => {
 
 // Conteggi misurati sulle copie dei DB del 13/10/2026 (dopo la lettura dei client UniFi), e uguali a quelli
 // del modello sul dato vero: nodi, collegamenti, apparati isolati, client freschi. Se cambiano si legge il perché.
+// Task 7 di T1 (spec §13.7.1), fixture riestratte il 15/10 dalle copie del 15/10: uguali al modello sul dato vero SENZA
+// le VM, la forma della fixture (`ingressoDellaFixture`). Fra parentesi il codice di prima sulle stesse copie, poi il Task 7.
+// domarc: nodes 83->226, isolatedDevices 22->17, clients 0->102 perché dati nuovi delle copie del 15/10; links 31->62
+// (31->65, poi -3) perché porta di segmento: la porta 5 dello switch 48 PoE non dà le linee verso i tre switch di
+// laboratorio (H5). cliente-a: isolatedDevices 5 (non cambia); links 132->134 (132->136, poi -2) perché porta di segmento
+// (la porta 15 di core 1) e una riga da una VRRP che non si abbina più per IP (I15); clients 168->430 (168->427, poi +3)
+// perché porta di segmento: la porta 15 di core 1 non ha più la linea, e i tre MAC che la tabella vede lì sono suoi
+// client; nodes 358->551 (358->553, poi -2) perché la riga da una VRRP che non si abbina più per IP (I15) non crea più il
+// nodo dell'host dell'IP virtuale, e perché la porta del router sul cavo fra due router porta il nome tradotto ed è
+// occupata per la tabella MAC (spec §13.7.1, terza trappola): un host che la tabella vede solo su quella porta non è più
+// un nodo (era fra gli isolati, «Da sistemare»).
 const MISURATI_DATO_VERO: Record<string, { nodes: number; links: number; isolatedDevices: number; clients: number }> = {
-  "topologia-domarc.json": { nodes: 83, links: 31, isolatedDevices: 22, clients: 0 },
-  "topologia-cliente-a.json": { nodes: 358, links: 132, isolatedDevices: 5, clients: 168 }, // 133->132: Task 1b, vedi MISURATI
+  "topologia-domarc.json": { nodes: 226, links: 62, isolatedDevices: 17, clients: 102 },
+  "topologia-cliente-a.json": { nodes: 551, links: 134, isolatedDevices: 5, clients: 430 },
 };
 for (const [nome, atteso] of Object.entries(MISURATI_DATO_VERO)) {
-  test(`${nome}: conteggi principali uguali a quelli del dato vero (copie del 13/10)`, () => {
+  test(`${nome}: conteggi principali uguali a quelli del dato vero senza le VM (copie del 15/10)`, () => {
     const m = buildTopologyModel(carica(nome));
     assert.deepEqual(
       { nodes: m.counts.nodes, links: m.counts.links, isolatedDevices: m.counts.isolatedDevices, clients: sommaClient(m) },
@@ -160,3 +188,41 @@ for (const [nome, atteso] of Object.entries(MISURATI_DATO_VERO)) {
     );
   });
 }
+
+// T1 (spec §13.3.1, §13.3.3) sulle fixture riestratte dal Task 7: chiave della porta, segmenti e conferma per porta girano
+// sulla forma vera. Id (interi del DB, non identificano nessuno): cliente A router 1 = dev:1, accesso A = dev:112,
+// core 1 = dev:114; hub router = dev:1, aggregazione = dev:11, access point = dev:191.
+const alberoDa = (m: ReturnType<typeof buildTopologyModel>, testa: string) =>
+  computeMapView(m, { auto: true, members: [], roots: [], head: testa, tweaks: [], expanded: new Set(), orientation: "lr" }).tree;
+const padreDi = (t: ReturnType<typeof alberoDa>, id: string): string | null => {
+  for (const [p, figli] of t.children) if (figli.includes(id)) return p;
+  return null;
+};
+
+test("cliente A senza correzioni (S1): core 1 figlio di router 1 sul cavo sfp-sfpplus1 a 10G; accesso A sotto core 1 (C1)", () => {
+  const m = buildTopologyModel({ ...carica("topologia-cliente-a.json"), overrides: [] });
+  const t = alberoDa(m, "dev:1");
+  assert.equal(padreDi(t, "dev:114"), "dev:1");
+  assert.equal(padreDi(t, "dev:112"), "dev:114");
+  const l = t.via.get("dev:114")!;
+  assert.deepEqual([l.a === "dev:1" ? l.aPort : l.bPort, l.speedMbps], ["sfp-sfpplus1", 10000]);
+});
+
+test("cliente A, S3 (senza l'uplink di core 1): core 1 resta sotto router 1, 10G contro 2,5G (C3)", () => {
+  const i = carica("topologia-cliente-a.json");
+  const s3 = { ...i, overrides: [], devices: i.devices.map((d) => (d.id === 114 ? { ...d, uplink_mac: null, uplink_remote_port: null } : d)), uplinkPorts: i.uplinkPorts.filter((p) => p.device_id !== 114) };
+  assert.equal(padreDi(alberoDa(buildTopologyModel(s3), "dev:1"), "dev:114"), "dev:1");
+});
+
+test("hub: router–aggregazione sulle porte di un cavo solo, porta 31 ↔ sfp28-2 (H2)", () => {
+  const l = buildTopologyModel(carica("topologia-domarc.json")).links.find((x) => x.id === "link:dev:1|dev:11")!;
+  const [agg, rtrPorta] = l.a === "dev:11" ? [l.aPort, l.bPort] : [l.bPort, l.aPort];
+  assert.equal(rtrPorta, "sfp28-2");
+  assert.match(agg, /^SFP28 31( - |$)/);
+});
+
+test("hub: il client dell'access point sulla sua interfaccia senza fili resta collegato, «≋ Wi-Fi» (H10)", () => {
+  const l = buildTopologyModel(carica("topologia-domarc.json")).links.find((x) => (x.a === "dev:191" && x.aPort === "wifi2ap9") || (x.b === "dev:191" && x.bPort === "wifi2ap9"));
+  assert.ok(l);
+  assert.equal(l.medium, "wireless");
+});

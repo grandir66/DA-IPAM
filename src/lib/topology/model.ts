@@ -30,10 +30,10 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
   // Spec §11.5: le schede vive di un hypervisor (MAC veri) lo identificano sulla tabella MAC degli switch.
   for (const { row, nodeId } of resolveScanHosts(input.scanHosts, idx)) if (nodeId) addNodeMacs(idx, nodeId, row.macs);
   const { vms, vmNodeIds, vmMacs, runningVmMacs } = placeVms(input, idx);
-  const { links: baseLinks, unmatched, ignored } = buildLinks(input, idx);
-  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, vmMacs, runningVmMacs, ignored);
+  const { links: baseLinks, unmatched, ignored, segmenti } = buildLinks(input, idx, runningVmMacs, regole);
+  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, { vmMacs, runningVmMacs, ignored, segmenti });
   const links = [...baseLinks, ...attachLinks].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  enrichLinks(links, input, idx);
+  enrichLinks(links, input, idx, regole);
   const sites = assignSites(input, idx, links);
   // Spec §13.8.1 (I63, H17): le reti di cui ogni apparato è gateway, per la testa proposta della mappa automatica.
   const gatewayDi = regole.has("testa-per-reti") ? Object.fromEntries(retiDiCuiGateway(input, idx)) : undefined;
@@ -59,15 +59,20 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
       hostId: n.refId, name: n.name, ip: n.mgmtIp ?? "", classification: n.type, links: degree.get(n.id) ?? 0,
     }))
     .sort((a, b) => b.links - a.links || a.name.localeCompare(b.name, "it") || a.hostId - b.hostId);
-  // «Da sistemare» (spec §10.2): apparati senza collegamenti e oggetti attaccati (server, NAS, hypervisor) senza collegamenti.
-  // Un nodo che è una VM (spec §11.5) sta dentro il suo hypervisor: non c'è niente da sistemare.
+  // «Da sistemare» (spec §10.2): apparati senza collegamenti e oggetti attaccati (server, NAS, hypervisor) senza
+  // collegamenti; da T1 anche chi la porta di un segmento sente e, per la regola del segmento, resta senza collegamenti
+  // (H5: sull'hub gli switch di laboratorio, solo host, diventavano radici sole della mappa automatica; revisione del
+  // piano, 15/10). Solo loro: un host isolato per altri motivi resta com'era (sul cliente A la radio lontana a 60 GHz
+  // resta la seconda radice, C16). Un nodo che è una VM (spec §11.5) sta dentro il suo hypervisor: niente da sistemare.
+  const membriDiSegmento = new Set([...segmenti.values()].flatMap((m) => [...m]));
   const isolated = nodes
     .filter((n) => !n.hidden && !vmNodeIds.has(n.id) && (degree.get(n.id) ?? 0) === 0
-      && (n.kind === "device" || ["att", "hyper"].includes(nodeClass(n))))
+      && (n.kind === "device" || ["att", "hyper"].includes(nodeClass(n)) || membriDiSegmento.has(n.id)))
     .map((n) => n.id);
+  // I tipi sospetti sono degli apparati: il numero di porte è di network_devices, e ora fra gli isolati può esserci un host.
   const suspicious = isolated.filter((id) => {
     const n = idx.nodes.get(id);
-    return n !== undefined && SUSPICIOUS_TYPES.includes(n.type) && (portCount.get(n.refId) ?? 0) === 0;
+    return n !== undefined && n.kind === "device" && SUSPICIOUS_TYPES.includes(n.type) && (portCount.get(n.refId) ?? 0) === 0;
   });
   const withoutSite = devices.filter((n) => !n.hidden && !vmNodeIds.has(n.id) && n.siteId === null).map((n) => n.id);
 
@@ -96,7 +101,11 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
     vmsOnNodes: vms.filter((v) => v.nodeId !== null).length,
   };
   const canonical = Object.fromEntries([...idx.alias.entries()].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)));
-  return { nodes, links, sites, promote, unmatched, isolated, suspicious, withoutSite, counts, portClients, clientCount, canonical, vms, ...(gatewayDi ? { gatewayDi } : {}) };
+  return {
+    nodes, links, sites, promote, unmatched, isolated, suspicious, withoutSite, counts, portClients, clientCount, canonical, vms,
+    segmenti: Object.fromEntries([...segmenti].map(([k, membri]) => [k, [...membri].sort()])),
+    ...(gatewayDi ? { gatewayDi } : {}),
+  };
 }
 
 /**

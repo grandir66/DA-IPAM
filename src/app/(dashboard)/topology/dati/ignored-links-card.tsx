@@ -131,25 +131,29 @@ export function IgnoredLinksCard({
                 <TableBody>
                   {rows.slice(0, MAX).map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell>{r.a}</TableCell><TableCell>{r.aPort}</TableCell>
-                      <TableCell>{r.b}</TableCell><TableCell>{r.bPort}</TableCell><TableCell>{r.orfana ? ORFANA : "nasconde un cavo"}</TableCell>
+                      {/* A 1280 px, tutto su una riga, la tabella usciva dalla scheda e i pulsanti non si vedevano (verifica a schermo di T1, 15/10): porte, stato e pulsanti vanno a capo. */}
+                      <TableCell>{r.a}</TableCell><TableCell className="whitespace-normal">{r.aPort}</TableCell>
+                      <TableCell>{r.b}</TableCell><TableCell className="whitespace-normal">{r.bPort}</TableCell>
+                      <TableCell className="min-w-40 whitespace-normal">{r.orfana ? ORFANA : "nasconde un cavo"}</TableCell>
                       <TableCell>{r.by}</TableCell><TableCell className="tabular-nums">{r.when}</TableCell>
                       {isAdmin && (
-                        <TableCell className="space-x-1 text-right whitespace-nowrap">
-                          {r.orfana ? (
-                            <>
-                              <Button variant="outline" size="sm" className="text-[13px]" disabled={busy !== null} onClick={() => void togli(r.id, `${r.a} ↔ ${r.b}`)}>
-                                {busy === r.id ? "Tolgo…" : "Togli la correzione"}
+                        <TableCell>
+                          <div className="flex flex-wrap justify-end gap-1">
+                            {r.orfana ? (
+                              <>
+                                <Button variant="outline" size="sm" className="text-[13px]" disabled={busy !== null} onClick={() => void togli(r.id, `${r.a} ↔ ${r.b}`)}>
+                                  {busy === r.id ? "Tolgo…" : "Togli la correzione"}
+                                </Button>
+                                <Button variant="outline" size="sm" className="text-[13px]" disabled={busy !== null} onClick={() => { setScelto(null); setScegli(raw?.find((x) => x.id === r.id) ?? null); }}>
+                                  Scegli il cavo da ignorare…
+                                </Button>
+                              </>
+                            ) : (
+                              <Button variant="outline" size="sm" className="text-[13px]" disabled={busy !== null} onClick={() => void ripristina(r.id, `${r.a} ↔ ${r.b}`)}>
+                                {busy === r.id ? "Ripristino…" : "Ripristina"}
                               </Button>
-                              <Button variant="outline" size="sm" className="text-[13px]" disabled={busy !== null} onClick={() => { setScelto(null); setScegli(raw?.find((x) => x.id === r.id) ?? null); }}>
-                                Scegli il cavo da ignorare…
-                              </Button>
-                            </>
-                          ) : (
-                            <Button variant="outline" size="sm" className="text-[13px]" disabled={busy !== null} onClick={() => void ripristina(r.id, `${r.a} ↔ ${r.b}`)}>
-                              {busy === r.id ? "Ripristino…" : "Ripristina"}
-                            </Button>
-                          )}
+                            )}
+                          </div>
                         </TableCell>
                       )}
                     </TableRow>

@@ -137,3 +137,14 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
   `link.domarc.it` (a mano, i DC non hanno credenziali nel vault); certificato 8443 auto-firmato
   fino alla CA della tappa B. Prossimo: tappe C1, D1, E, F in parallelo; contare le segnalazioni
   del riallineamento prima di togliere il freno.
+- 2026-10-15 mattina: **tappe C1, D1, E, F eseguite in parallelo, ciascuna sul suo ramo, nessuna in
+  esercizio.** C1 DA-IPAM `netbird-c1` (segnale ogni 5 min, «Cosa esce», firewall `wt0`,
+  installatore; 2235 prove); D1 DA-Vul-can `netbird-d1` (heartbeat con la rete, installatore
+  `--netbird`, firewall per porta, colonna «Rete» nell'hub; sistemata anche la CI rossa su
+  `main` dalla v0.8.87); E DA-Zabbix `netbird-e` (TLS acceso verso NetBird, nomi `cli-<codcli>`,
+  policy `dazabbix-P4/P4b`, R1–R5 indipendente verde sulla rete vera, rinomina col freno; le
+  prove uscivano verso la produzione: bloccate); F DA-CRM `netbird-f` (client verso DA-Link per
+  impronta; riquadro **in attesa dell'ok all'interfaccia**). Ogni ramo ha «scelte da
+  confermare» nel suo piano. Prossimo: conferme di Riccardo, merge con le release, poi G1 e il
+  pilota DTS. Aperti: C1b (rimozione dell'agente Python, decisione 26), R5 di DA-Link che deve
+  leggere `salute.firewall_wt0 = non_so`.

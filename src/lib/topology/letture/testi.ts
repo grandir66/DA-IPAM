@@ -26,7 +26,7 @@ export const DESCRIZIONE_LETTURE: Readonly<Record<Lettura, { titolo: string; leg
     titolo: "Spanning tree, LLDP e fasci via SNMP",
     legge: "Per gli switch che non sono del controller: tipo di ogni porta, stato e verso nello spanning tree, vicini LLDP e CDP, fasci e partner.",
     apparati: "gli switch che non sono del controller e non sono MikroTik letti via SSH",
-    comandi: "Dieci letture in sola lettura: IF-MIB, BRIDGE-MIB, RSTP-MIB, LLDP-MIB, CISCO-CDP-MIB, LAG-MIB, IEEE8021-MSTP-MIB.",
+    comandi: "16 letture in sola lettura (delle tabelle grandi solo le colonne che servono): IF-MIB, BRIDGE-MIB, RSTP-MIB, LLDP-MIB, CISCO-CDP-MIB, LAG-MIB, IEEE8021-MSTP-MIB.",
   },
   host: {
     titolo: "LLDP e bond degli hypervisor",
@@ -75,11 +75,11 @@ export function testoDialogo(l: Lettura, accendi: boolean, c: { router: { minuti
   if (!accendi) return `Spegnere la lettura «${DESCRIZIONE_LETTURE[l].titolo}»? I dati già letti restano e invecchiano; la mappa non cambia.`;
   switch (l) {
     case "mikrotik":
-      return `Accendere la lettura dello spanning tree sui MikroTik di questo cliente? Il router si legge ${frequenza(c.router.minuti, c.router.daScansioni)}: le letture in più partono al più una volta l'ora, sei comandi in sola lettura su una connessione sola. ${NEIGHBORS_MIKROTIK} ${CHIUSA}`;
+      return `Accendere la lettura dello spanning tree sui MikroTik di questo cliente? Il router si legge ${frequenza(c.router.minuti, c.router.daScansioni)}: le letture in più partono al più una volta l'ora, 6 comandi in sola lettura sul router e 8 sugli switch MikroTik, su una connessione sola per apparato. ${NEIGHBORS_MIKROTIK} ${CHIUSA}`;
     case "controller":
       return `Accendere la lettura dei campi del controller? Nessuna chiamata nuova agli apparati: si salvano campi che la lettura notturna riceve già. ${CHIUSA}`;
     case "snmp":
-      return `Accendere le letture SNMP per la mappa sugli switch che non sono del controller? Il giro degli switch parte ${frequenza(c.switch, false)}: le letture in più partono al più una volta l'ora per switch, dieci letture in sola lettura. ${CHIUSA}`;
+      return `Accendere le letture SNMP per la mappa sugli switch che non sono del controller? Il giro degli switch parte ${frequenza(c.switch, false)}: le letture in più partono al più una volta l'ora per switch, 16 letture in sola lettura. ${CHIUSA}`;
     case "host":
       return `Accendere la lettura LLDP degli hypervisor? Si legge con la lettura notturna degli hypervisor, tre comandi in sola lettura per nodo. ${CHIUSA}`;
   }

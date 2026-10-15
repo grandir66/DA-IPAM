@@ -12,20 +12,23 @@ const CLIENTE_A = { router: { minuti: 60, daScansioni: false }, switch: 60 };
 
 test("il dialogo con la cadenza dell'hub e quella del cliente A, alla lettera della spec", () => {
   assert.equal(testoDialogo("mikrotik", true, HUB),
-    "Accendere la lettura dello spanning tree sui MikroTik di questo cliente? Il router si legge ogni 15 minuti dalle scansioni veloci: le letture in più partono al più una volta l'ora, sei comandi in sola lettura su una connessione sola. Sugli switch MikroTik la scheda «Neighbors» dell'apparato mostra anche le righe lette via SSH. La mappa non cambia finché non si accende la mappa nuova. Si spegne da qui.");
+    "Accendere la lettura dello spanning tree sui MikroTik di questo cliente? Il router si legge ogni 15 minuti dalle scansioni veloci: le letture in più partono al più una volta l'ora, 6 comandi in sola lettura sul router e 8 sugli switch MikroTik, su una connessione sola per apparato. Sugli switch MikroTik la scheda «Neighbors» dell'apparato mostra anche le righe lette via SSH. La mappa non cambia finché non si accende la mappa nuova. Si spegne da qui.");
   assert.ok(testoDialogo("mikrotik", true, CLIENTE_A).includes("Il router si legge ogni ora: "));
   assert.ok(testoDialogo("snmp", false, CLIENTE_A).startsWith("Spegnere la lettura"));
 });
 
 test("il dialogo di accensione tiene intero il testo della spec e dice dei Neighbors solo per i MikroTik", () => {
   const t = testoDialogo("mikrotik", true, HUB);
-  assert.ok(t.startsWith("Accendere la lettura dello spanning tree sui MikroTik di questo cliente? Il router si legge ogni 15 minuti dalle scansioni veloci: le letture in più partono al più una volta l'ora, sei comandi in sola lettura su una connessione sola. "));
+  assert.ok(t.startsWith("Accendere la lettura dello spanning tree sui MikroTik di questo cliente? Il router si legge ogni 15 minuti dalle scansioni veloci: le letture in più partono al più una volta l'ora, 6 comandi in sola lettura sul router e 8 sugli switch MikroTik, su una connessione sola per apparato. "));
   assert.ok(t.endsWith("La mappa non cambia finché non si accende la mappa nuova. Si spegne da qui."));
   for (const l of ["controller", "snmp", "host"] as const) {
     assert.ok(!testoDialogo(l, true, HUB).includes("Neighbors"), `${l}: la scheda Neighbors è un fatto dei MikroTik`);
     assert.ok(testoDialogo(l, true, HUB).endsWith("La mappa non cambia finché non si accende la mappa nuova. Si spegne da qui."), l);
   }
   assert.ok(testoDialogo("snmp", true, CLIENTE_A).includes("Il giro degli switch parte ogni ora"));
+  // Revisione finale di T2 (M2): le letture SNMP sono 16 (colonne e scalari invece delle tabelle intere), non dieci.
+  assert.ok(testoDialogo("snmp", true, CLIENTE_A).includes("16 letture in sola lettura"));
+  assert.ok(DESCRIZIONE_LETTURE.snmp.comandi.startsWith("16 letture in sola lettura"));
   assert.ok(testoDialogo("snmp", true, { router: CLIENTE_A.router, switch: null }).includes("solo quando lo chiede qualcuno"));
 });
 

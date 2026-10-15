@@ -7150,7 +7150,7 @@ si apre «Dati della mappa», si guarda e basta. «Accendi» si prova solo nel d
 - [ ] **`topologia.lettura.controller`**, dopo la lettura notturna del controller (03:00 UTC, le 5:00 italiane fino al
   25/10, poi le 4:00): l'esito per apparato, le righe di fonte `controller`, «Cosa cambierebbe».
 - [ ] **`topologia.lettura.snmp`**: la durata del giro degli switch prima e dopo (riga `[ARP Poll] giro:`), le letture SNMP
-  per switch (l'esito: `comandi` = 10), «Cosa cambierebbe».
+  per switch (l'esito: `comandi` = 16; revisione finale: colonne e scalari invece delle tabelle intere), «Cosa cambierebbe».
 - [ ] Un numero fuori misura (una scansione veloce che raddoppia, un esito con errori su tutti gli apparati) → si spegne da
   «Dati della mappa» e si guarda prima di andare avanti.
 

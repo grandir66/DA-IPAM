@@ -37,8 +37,9 @@ import {
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { LoadError } from "@/components/shared/load-error";
 import { isMacOsHost } from "@/lib/host-platform-detect";
-import { getDefaultProductProfileForVendor } from "@/lib/device-product-profiles";
 import {
+  portaPerCredenziale,
+  profiloPerClassificazione,
   proponiApparato,
   riallineaAlProtocollo,
   type CredenzialeArchivio,
@@ -254,7 +255,7 @@ export function PromoteHostDialog({ host, open, onOpenChange, onCreated }: Promo
                     classification: v,
                     device_type: inferDeviceTypeFromClassification(v),
                     vendor: nextVendor,
-                    productProfile: getDefaultProductProfileForVendor(nextVendor, v),
+                    productProfile: profiloPerClassificazione(nextVendor, v),
                     scanTarget: nextVendor === "apple" ? "macos" : f.scanTarget,
                   };
                   return nextVendor === "apple" && f.protocol !== "ssh"
@@ -275,11 +276,9 @@ export function PromoteHostDialog({ host, open, onOpenChange, onCreated }: Promo
               onScanTargetChange={(v) => aggiorna((f) => ({ ...f, scanTarget: v }))}
               onProductProfileChange={(v) => aggiorna((f) => ({ ...f, productProfile: v }))}
               onCredentialIdChange={(v) =>
-                aggiorna((f) => {
-                  // Porta della credenziale scelta: quella validata sull'host, poi la sua propria, poi lo standard.
-                  const conCred = riallineaAlProtocollo({ ...f, credentialId: v }, f.protocol, credentialsList, host);
-                  return { ...f, credentialId: conCred.credentialId, port: conCred.port };
-                })
+                // Si cambia solo la credenziale (anche «Nessuna»); la porta segue: quella
+                // validata sull'host, poi la sua propria, poi lo standard.
+                aggiorna((f) => ({ ...f, credentialId: v, port: portaPerCredenziale(v, f.protocol, credentialsList, host) }))
               }
               onSnmpCredentialIdChange={(v) => aggiorna((f) => ({ ...f, snmpCredentialId: v }))}
               onUseForArpPollChange={(v) => aggiorna((f) => ({ ...f, useForArpPoll: v }))}

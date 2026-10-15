@@ -62,7 +62,7 @@ import { NetworkCredentialsTable } from "@/components/shared/network-credentials
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { AddableSelect } from "@/components/shared/addable-select";
 import { credTypeForProtocol, CRED_TYPE_OPTIONS, tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
-import { proponiApparato, riallineaAlProtocollo, type CredenzialeArchivio, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
+import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type CredenzialeArchivio, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { HostCredentialsDialog } from "@/components/shared/host-credentials-dialog";
 import {
   getDefaultNetworkDeviceVendorOptions,
@@ -1547,7 +1547,11 @@ export function NetworkDetailClient({
               onProductProfileChange={setBulkAddProductProfile}
               credentialId={bulkAddCredentialId}
               snmpCredentialId={bulkAddSnmpCredentialId}
-              onClassificationChange={(v) => setBulkAddClassification(v)}
+              onClassificationChange={(v) => {
+                setBulkAddClassification(v);
+                if (v) setBulkAddProductProfile(profiloPerClassificazione(bulkAddVendor, v));
+              }}
+              creazioneInBlocco
               onVendorChange={(v) => {
                 setBulkAddVendor(v);
                 if (v !== "hp") setBulkAddVendorSubtype(null);
@@ -1670,6 +1674,8 @@ export function NetworkDetailClient({
                         product_profile: bulkAddProductProfile,
                         credential_id: bulkAddCredentialId && bulkAddCredentialId !== "none" ? Number(bulkAddCredentialId) : null,
                         snmp_credential_id: bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none" ? Number(bulkAddSnmpCredentialId) : null,
+                        // La stessa porta che userà la creazione: quella propria della credenziale, se c'è.
+                        port: addDeviceCredentials.find((c) => String(c.id) === bulkAddCredentialId)?.port ?? undefined,
                       }),
                     });
                     const data = await res.json();

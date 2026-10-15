@@ -34,7 +34,7 @@ import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
 import { InlineEditCell } from "@/components/shared/inline-edit-cell";
 import { AddableSelect } from "@/components/shared/addable-select";
 import { credTypeForProtocol, CRED_TYPE_OPTIONS, tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
-import { proponiApparato, riallineaAlProtocollo, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
+import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { Pagination } from "@/components/shared/pagination";
@@ -1074,8 +1074,9 @@ export default function DiscoveryPage() {
       };
       if (addProductProfile) body.product_profile = addProductProfile;
       if (addVendorSubtype) body.vendor_subtype = addVendorSubtype;
-      // 0 esplicito: una spunta tolta resta tolta.
-      body.use_for_arp_poll = addUseForArpPoll ? 1 : 0;
+      // Solo 1: in modalità «bulk» la spunta non si vede, quindi assente = il
+      // server decide dalla classificazione finale (router e firewall accesi).
+      if (addUseForArpPoll) body.use_for_arp_poll = 1;
       if (addCredentialId && addCredentialId !== "none") body.credential_id = Number(addCredentialId);
       if (addSnmpCredentialId && addSnmpCredentialId !== "none") body.snmp_credential_id = Number(addSnmpCredentialId);
       const res = await fetch("/api/devices/bulk", {
@@ -2791,7 +2792,11 @@ export default function DiscoveryPage() {
                 credentialId={addCredentialId}
                 snmpCredentialId={addSnmpCredentialId}
                 useForArpPoll={addUseForArpPoll}
-                onClassificationChange={(v) => setAddClassification(v)}
+                onClassificationChange={(v) => {
+                  setAddClassification(v);
+                  if (v) setAddProductProfile(profiloPerClassificazione(addVendor, v));
+                }}
+                creazioneInBlocco
                 onVendorChange={(v) => { setAddVendor(v); if (v !== "hp") setAddVendorSubtype(null); }}
                 onVendorSubtypeChange={setAddVendorSubtype}
                 onProtocolChange={(v) => { if (v !== addProtocol) cambiaProtocolloAggiunta(v); }}

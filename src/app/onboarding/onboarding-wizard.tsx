@@ -83,6 +83,9 @@ export function OnboardingWizard() {
   // valore precompilato veniva salvato così com'era da chi non lo cambiava.
   const [netCidr, setNetCidr] = useState("");
   const [netGateway, setNetGateway] = useState("");
+  // Rete già creata in questo giro: un nuovo tentativo dopo un completamento
+  // fallito non la ricrea (sarebbe rifiutata per sovrapposizione).
+  const [netCreataId, setNetCreataId] = useState<number | null>(null);
   const [netDns, setNetDns] = useState("");
   const [attachSnmp, setAttachSnmp] = useState(true);
   const [attachSsh, setAttachSsh] = useState(true);
@@ -241,6 +244,15 @@ export function OnboardingWizard() {
   }, [adEnabled, adCreated, adForm, credIds.windows]);
 
   const saveNetwork = useCallback(async () => {
+    if (netCreataId !== null) {
+      const fine = await fetch("/api/onboarding/complete", { method: "POST" });
+      if (!fine.ok) {
+        const data = await fine.json().catch(() => ({}));
+        throw new Error(typeof data.error === "string" ? data.error : "Il completamento della configurazione non è riuscito");
+      }
+      window.location.assign(`/networks/${netCreataId}`);
+      return;
+    }
     if (!netName.trim() || !netCidr.trim()) {
       toast.error("Nome e CIDR della rete sono obbligatori.");
       throw new Error("validation");
@@ -274,6 +286,7 @@ export function OnboardingWizard() {
       throw new Error(typeof data.error === "string" ? data.error : "Errore creazione rete");
     }
     const net = (await res.json()) as { id: number };
+    setNetCreataId(net.id);
     toast.success("Rete creata.");
     // Come finishAndExit: un completamento fallito si dice, altrimenti l'app
     // rimanderebbe al wizard senza spiegare perché.
@@ -295,6 +308,7 @@ export function OnboardingWizard() {
     attachSsh,
     attachWin,
     attachLinux,
+    netCreataId,
   ]);
 
   const goNext = async () => {

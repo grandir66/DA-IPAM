@@ -4,6 +4,7 @@
  */
 "use client";
 
+import { useEffect, useState } from "react";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -142,6 +143,12 @@ export function CredentialAssignmentFields({
     .sort((a, b) => a.name.localeCompare(b.name, "it", { sensitivity: "base" }));
 
   const hasStoredCred = credentialId && credentialId !== "none";
+  // Porta controllata: il testo si tiene a parte, così il campo si può svuotare
+  // mentre si scrive; vale solo un numero 1-65535 (all'uscita torna l'ultimo valido).
+  const [portaScritta, setPortaScritta] = useState(port != null ? String(port) : "");
+  useEffect(() => {
+    setPortaScritta(port != null ? String(port) : "");
+  }, [port]);
 
   return (
     <div className="space-y-2">
@@ -154,7 +161,7 @@ export function CredentialAssignmentFields({
             <div className="space-y-1">
               <Label className="text-xs flex items-center">
                 {primarySelectLabel}
-                <Tip text="Da archivio: usa username e password della credenziale registrata. Se 'Nessuna', usa i campi inline sotto." />
+                <Tip text={showInlineCreds ? "Da archivio: usa username e password della credenziale registrata. Se 'Nessuna', usa i campi inline sotto." : "Credenziale dall'archivio: username e password registrati lì."} />
               </Label>
               <Select value={credentialId ?? "none"} onValueChange={(v) => onCredentialIdChange(v === "none" ? null : v)}>
                 <SelectTrigger className="h-9 bg-background">
@@ -244,11 +251,13 @@ export function CredentialAssignmentFields({
                 type="number"
                 min={1}
                 max={65535}
-                value={port ?? ""}
+                value={portaScritta}
                 onChange={(e) => {
+                  setPortaScritta(e.target.value);
                   const n = Number(e.target.value);
-                  if (Number.isInteger(n) && n >= 1 && n <= 65535) onPortChange(n);
+                  if (e.target.value !== "" && Number.isInteger(n) && n >= 1 && n <= 65535) onPortChange(n);
                 }}
+                onBlur={() => setPortaScritta(port != null ? String(port) : "")}
                 className="bg-background"
               />
             </div>

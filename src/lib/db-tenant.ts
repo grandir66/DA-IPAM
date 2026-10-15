@@ -4605,7 +4605,9 @@ export function getCredentialCommunityString(credentialId: number): string | nul
   if (!cred) return null;
   const type = String(cred.credential_type || "").toLowerCase();
   if (type !== "snmp") return null;
-  const enc = cred.encrypted_password || cred.encrypted_username;
+  // Una credenziale SNMPv3 ha lo username v3, non una community: niente ripiego
+  // sullo username (tappa 1, 15/10), che finirebbe in chiaro come community v2c.
+  const enc = cred.encrypted_password || (cred.security_level ? null : cred.encrypted_username);
   if (!enc) return null;
   const s = safeDecrypt(enc);
   return s && s.trim() ? s : null;

@@ -280,6 +280,10 @@ export function getDb(): Database.Database {
       _db.exec(`ALTER TABLE credentials ADD COLUMN ${col} TEXT`);
     } catch { /* column already exists */ }
   }
+  // Tappa 1 credenziali (15/10): porta propria, come in db-tenant.ts.
+  try {
+    _db.exec("ALTER TABLE credentials ADD COLUMN port INTEGER");
+  } catch { /* column already exists */ }
   try {
     _db.exec("ALTER TABLE network_devices ADD COLUMN credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL");
   } catch { /* column already exists */ }
@@ -4436,7 +4440,9 @@ export function getCredentialCommunityString(credentialId: number): string | nul
   if (!cred) return null;
   const type = String(cred.credential_type || "").toLowerCase();
   if (type !== "snmp") return null;
-  const enc = cred.encrypted_password || cred.encrypted_username;
+  // Una credenziale SNMPv3 ha lo username v3, non una community: niente ripiego
+  // sullo username (tappa 1, 15/10), che finirebbe in chiaro come community v2c.
+  const enc = cred.encrypted_password || (cred.security_level ? null : cred.encrypted_username);
   if (!enc) return null;
   const s = safeDecrypt(enc);
   return s && s.trim() ? s : null;

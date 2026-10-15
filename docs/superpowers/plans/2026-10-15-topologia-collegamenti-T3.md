@@ -1945,8 +1945,10 @@ diventano «certo». Si rifà la misura del Task 13 sull'hub; nessun codice di T
    switch; senza ruoli vale la regola dei due switch.
 9. **Contrazioni:** una linea per ogni coppia di oggetti visibili sul bordo della parte contratta; quelle che l'albero non
    usa non si disegnano e non contano nel «⇄ N».
-10. **La ★ e la correzione tolta** (`deleteLinkOverride` con la mappa accesa): cade solo la ★ con le stesse porte; una ★
-    senza porte resta e vale per il migliore della coppia.
+10. **La ★ e la correzione tolta** (`deleteLinkOverride` con la mappa accesa): cade solo la ★ con le stesse porte, nei due
+    versi; una ★ su altre porte, o senza porte quando la correzione ha le porte, resta e vale per il migliore della coppia.
+    Le porte non sono mai NULL (`NOT NULL DEFAULT ''`): una correzione **senza porte** toglie la ★ senza porte della coppia,
+    che è quella del suo cavo (revisione del Task 8, 16/10; tenerla rifarebbe M-3).
 11. **«Candidati per porta» a richiesta**, con una rotta sua, solo con la mappa accesa: nel modello peserebbe su ogni
     apertura della pagina.
 12. **«★ non applicabile» e «seconda partenza»** solo con la mappa accesa (spento, la pagina è quella di prima).

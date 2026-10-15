@@ -18,6 +18,8 @@ import type { PortaLetta } from "./traduci";
  * le righe del router su di lei davano cavi (H7). Sulle due copie del 14/10 la restrizione non cambia nessun nome.
  */
 export const MIKROTIK_FISICA = /^((ether|sfp-sfpplus|sfp28-|sfp|combo|bond)\d+|qsfp\w*?-?\d+(-[1-8])?)(-(\d+(\.\d+)?g|2\.5))?$/;
+/** I nomi di fabbrica dei tunnel di RouterOS (spec §13.7.5): senza il tipo letto, solo questi dicono «tunnel»; un nome scelto resta non noto. */
+export const MIKROTIK_TUNNEL = /^(eoip-tunnel|gre-tunnel|ipip-tunnel|6to4-tunnel|wireguard|ovpn-out|ovpn-in|l2tp-out|l2tp-in|sstp-out|sstp-in|pptp-out|pptp-in)\d+$/;
 const MIKROTIK_RINOMINATA = /^(ether|sfp-sfpplus|sfp28-|sfp|combo|qsfp\w*?-?|bond)\d+-/;
 const LOGICA = /^(bridge|vlan|vrrp|eoip|gre|ipip|6to4|vxlan|wg|wireguard|ovpn|pppoe|pptp|l2tp|sstp|lte|lo$|loopback|veth)/;
 const SENZA_FILI = /^(wlan|wifi)/;

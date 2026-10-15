@@ -1,0 +1,55 @@
+// L'ingresso del modello per cavo (spec §13.5.7, «Chi legge che cosa»): tutte le fonti dei vicini con le colonne nuove; i
+// fatti dell'ultimo giro di ogni apparato e lettore (I44: una porta tolta dal bridge non è più nel bridge); i MAC dei
+// lettori e le schede dell'inventario in una query a parte; senza schema, elenchi vuoti (mai un errore muto).
+import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolato";
+import { test, after, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { closeHubDb } from "@/lib/db-hub";
+import { deleteTenantDatabase, getIngressoCavi, getTenantDb, rileggiSchemaCavi, scriviFattiTopologia, upsertNeighbors, withTenant } from "@/lib/db-tenant";
+
+const T = "TESTCAVIINGRESSO";
+const db = () => getTenantDb(T);
+beforeEach(() => {
+  db().exec(`DELETE FROM topology_port_facts; DELETE FROM topology_bridge_facts; DELETE FROM topology_device_macs; DELETE FROM device_neighbors;
+    DELETE FROM network_devices; DELETE FROM device_interfaces; DELETE FROM physical_devices;`);
+  db().exec("INSERT INTO network_devices (id, name, host, device_type, vendor, protocol) VALUES (1, 'RTR-1', '10.0.0.1', 'router', 'mikrotik', 'ssh'), (2, 'SW-2', '10.0.0.2', 'switch', 'cisco', 'snmp_v2')");
+  withTenant(T, () => rileggiSchemaCavi());
+});
+after(() => { deleteTenantDatabase(T); closeHubDb(); removeTestHubDb(); });
+
+test("tutte le fonti dei vicini, con le colonne nuove; il modello di oggi solo le sue", () => {
+  withTenant(T, () => {
+    upsertNeighbors(2, [{ localPort: "Gi1/0/24", remoteDevice: "RTR-1", remotePort: "ether2", protocol: "lldp", localPortIndex: 10124 }], "snmp");
+    upsertNeighbors(1, [{ localPort: "ether2", remoteDevice: "SW-2", remotePort: "Gi1/0/24", protocol: "lldp" }]);
+  });
+  const ing = withTenant(T, () => getIngressoCavi(2));
+  assert.deepEqual(ing.vicini.map((v) => [v.source, v.local_port_index]).sort(), [["device", null], ["snmp", 10124]]);
+  assert.equal(ing.t1.neighbors.length, 1);
+  assert.equal(ing.schema, true);
+});
+
+test("I44: i fatti valgono solo dall'ultimo giro dello stesso apparato e lettore", () => {
+  withTenant(T, () => {
+    scriviFattiTopologia(1, "device", { porte: [{ port_key: "n:ether2", port_name: "ether2", in_bridge: 1 }, { port_key: "n:ether3", port_name: "ether3", in_bridge: 1 }], bridge: [], macs: [] }, new Date("2026-10-15T08:00:00Z"));
+    scriviFattiTopologia(1, "device", { porte: [{ port_key: "n:ether2", port_name: "ether2", in_bridge: 0 }], bridge: [], macs: [] }, new Date("2026-10-15T09:00:00Z"));
+  });
+  const f = withTenant(T, () => getIngressoCavi(2)).fattiPorta;
+  assert.deepEqual(f.map((x) => [x.port_key, x.in_bridge]), [["n:ether2", 0]], "ether3 non è più nell'ultimo giro; ether2 fuori dal bridge");
+});
+
+test("i MAC degli apparati: dai lettori e dalle schede dell'inventario (solo identità)", () => {
+  db().exec("INSERT INTO physical_devices (id, primary_mac) VALUES (5, NULL)");
+  db().exec("UPDATE network_devices SET physical_device_id = 5 WHERE id = 1");
+  db().exec("INSERT INTO device_interfaces (physical_device_id, ifname, mac, is_virtual_mac) VALUES (5, 'eth1', '02:00:00:00:05:01', 0), (5, 'vrrp1', '00:00:5E:00:01:0A', 1)");
+  withTenant(T, () => scriviFattiTopologia(1, "device", { porte: [], bridge: [], macs: [{ mac: "02:00:00:00:01:02", port_key: "n:ether2" }] }));
+  const m = withTenant(T, () => getIngressoCavi(2)).macApparati;
+  assert.deepEqual(m.map((x) => [x.device_id, x.mac]), [[1, "02:00:00:00:01:02"], [1, "02:00:00:00:05:01"]]);
+});
+
+test("senza schema: elenchi vuoti e `schema: false`, detto", () => {
+  db().exec("ALTER TABLE device_neighbors DROP COLUMN remote_caps");
+  withTenant(T, () => rileggiSchemaCavi());
+  const ing = withTenant(T, () => getIngressoCavi(2));
+  assert.deepEqual([ing.schema, ing.fattiPorta.length, ing.macApparati.length], [false, 0, 0]);
+  db().exec("ALTER TABLE device_neighbors ADD COLUMN remote_caps TEXT");
+});

@@ -7,7 +7,7 @@
  * Si calcola alla lettura: in T1 non serve schema. Logica pura.
  */
 import { traduciGenerico } from "./generico";
-import { traduciMikrotikLocale, traduciMikrotikRemoto } from "./mikrotik";
+import { MIKROTIK_TUNNEL, traduciMikrotikLocale, traduciMikrotikRemoto } from "./mikrotik";
 import { traduciUnifiLocale } from "./unifi";
 
 export interface PortaLetta {
@@ -80,4 +80,9 @@ export function haTraduttoreRemoto(come: ComeLetto): boolean {
  */
 export function macDelTelaio(come: ComeLetto): boolean {
   return !lettoDaMikrotik(come);
+}
+
+/** Un'interfaccia tunnel dal nome di fabbrica del prodotto (spec §13.7.5), quando il tipo non è letto. Lo sa solo il traduttore. */
+export function eTunnelDiFabbrica(nome: string, come: ComeLetto): boolean {
+  return lettoDaMikrotik(come) && MIKROTIK_TUNNEL.test(nome.trim());
 }

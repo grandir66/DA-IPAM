@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   applicaScenario, chiaveMisura, giriEAttraversamenti, leggiAdesso, leggiScenario, lettureVm, lineeCucite, lineeDaNomeScelto, padriCambiati, padriDi,
-  ramiControVerso, sottoUnaSuaVm, teste, testeCambiate, type LineaMisurata,
+  ramiControVerso, sottoUnaSuaVm, teste, testeCambiate, vistiSoloViaLldp, type LineaMisurata,
 } from "@/lib/topology/misura";
 import { buildTopologyModel } from "@/lib/topology/model";
 import { LINK_ATTRS_DEFAULT, type MapLink } from "@/lib/topology/model-types";
@@ -172,4 +172,16 @@ test("S12 — lettura delle VM rinnovata: la VM indicata spenta, al suo posto un
   assert.equal(s.vms[1].scannedAt, "2026-10-13T12:00:00.000Z");
   assert.deepEqual(leggiScenario("S12:4:120"), { nome: "S12", apparato: 4, vmid: 120 });
   assert.equal(leggiScenario("S12:4"), null);
+});
+
+// Scelta 4 del §13.16 (spec §13.8.2): in T1b le capacità annunciate non sono ancora una prova; uno switch che solo l'LLDP di altri
+// vede esce dall'albero. Si contano, e sul cliente A si elencano per nome a Riccardo prima del rilascio di T1b.
+test("vistiSoloViaLldp: gli oggetti senza prove di ruolo che altri vedono via LLDP", () => {
+  const i = baseInput({
+    devices: [dev(1, { name: "RTR-1", device_type: "router", vendor: "mikrotik", via: "ssh" }), dev(9, { name: "SW-STORAGE" })],
+    neighbors: [{ device_id: 1, local_port: "sfp-sfpplus11", remote_device_name: "SW-STORAGE", remote_port: "Port 1", protocol: "lldp", remote_ip: "10.0.0.9", remote_mac: null, timestamp: "2026-10-13 11:00:00", source: "device" }],
+  });
+  const m = buildTopologyModel(i);
+  assert.deepEqual(m.daSistemare?.map((d) => d.id), ["dev:9"]);
+  assert.deepEqual(vistiSoloViaLldp(i, m), ["dev:9"]);
 });

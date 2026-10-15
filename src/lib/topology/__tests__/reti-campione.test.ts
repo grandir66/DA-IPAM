@@ -9,6 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { nodeClass } from "@/lib/topology/identity";
 import { traduciPorta } from "@/lib/topology/lettori/traduci";
 import { comeDi } from "@/lib/topology/links";
 import { computeMapView } from "@/lib/topology/map-compute";
@@ -225,6 +226,32 @@ test("G17 · famiglie 1, 2, 4 · nessuna regola conosce un nome scelto: nomi inv
     assert.deepEqual(linee(modello(j)).map(indietro), linee(modello(i)), `famiglia ${f}`);
     assert.deepEqual(albero(modello(j)), albero(modello(i)), `famiglia ${f}`);
   }
+});
+
+// ─── T1b (spec §13.8.2): la parte di G10 che resta, e «hypervisor» solo con una prova ───
+const radici = (m: TopologyModel): string[] => Object.entries(albero(m).padri).filter(([, p]) => p === null).map(([id]) => id).sort();
+
+test("G10 · famiglie 1, 2, 3, 4, 5 · T1b: nessuna radice sola, nessun ruolo di rete senza una prova", () => {
+  // famiglia 2: gli switch di laboratorio, che solo l'LLDP del controller vede, non hanno prove di ruolo
+  assert.deepEqual(modello(soloUnifi()).daSistemare?.map((d) => d.id), ["host:31", "host:32"]);
+  // famiglia 5: il modem e le due radio, che la classificazione dice router e access point, senza una prova loro
+  assert.deepEqual(modello(mista()).daSistemare?.map((d) => d.id), ["host:61", "host:71", "host:72"]);
+  for (const [f, crea] of FAMIGLIE) assert.equal(radici(modello(crea())).length, 1, `famiglia ${f}`);
+});
+
+test("G10 · famiglia 4 · T1b: «hypervisor» solo con una prova: i due nodi Proxmox restano hypervisor, l'host senza VM né scansione è un attaccato", () => {
+  const m = modello(conHypervisor());
+  const nodi = new Map(m.nodes.map((n) => [n.id, n]));
+  assert.deepEqual([nodeClass(nodi.get("dev:41")!), nodeClass(nodi.get("dev:42")!), nodeClass(nodi.get("host:49")!)], ["hyper", "hyper", "hyper"]);
+  assert.deepEqual(m.classiMappa ?? {}, { "host:49": "att" });
+  assert.equal(m.vms.some((v) => v.hypervisorNodeId === "host:49"), false);
+});
+
+// Spec §13.8.2 e §13.16, scelta 8: la prova «si annuncia come apparato (MNDP o CDP)» è confermata da Riccardo il 14/10. Un
+// telefono IP che la classificazione automatica dice router si annuncia via CDP, la passa e resta nell'albero come apparato di
+// rete. La riga dice che cosa vorrebbe la rete; se Riccardo sceglie una guardia, la prova smette di essere «da fare».
+test("G10 · famiglia 5 · T1b: un telefono che si annuncia via CDP non è un apparato di rete", { todo: "fatto da confermare a Riccardo (spec §13.16, scelta 8)" }, () => {
+  assert.equal(modello(mista()).daSistemare?.some((d) => d.id === "host:81"), true);
 });
 
 // ─── Criteri che arrivano dopo T1 (§13.3.0): saltati col perché, una riga per famiglia ───

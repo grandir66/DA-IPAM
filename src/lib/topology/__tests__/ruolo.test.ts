@@ -8,6 +8,7 @@ import { motivoDaSistemare } from "@/lib/topology/da-sistemare";
 import { buildTopologyModel } from "@/lib/topology/model";
 import { buildNodeIndex } from "@/lib/topology/node-index";
 import { autoVisible, buildTree } from "@/lib/topology/tree";
+import { computeMapView } from "@/lib/topology/map-compute";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 import { baseInput, dev, host } from "./support/righe";
 import { padriCambiati, padriDi } from "@/lib/topology/misura";
@@ -139,4 +140,54 @@ test("Review Focus 7 — un ruolo a mano che T1b non conosce: «core» e «acces
   const i = baseInput({ devices: [dev(4, { topology_role: "core" }), dev(6, { topology_role: "accesso" }), dev(7, { topology_role: "boh" })] });
   assert.deepEqual([prove(i, "dev:4"), prove(i, "dev:6"), prove(i, "dev:7")], [["a_mano"], ["a_mano"], []]);
   assert.deepEqual(buildTopologyModel(i).daSistemare?.map((d) => d.id), ["dev:7"]);
+});
+
+// ─── Passaggio universale (spec §13.16) per T1b ───
+
+// I64 (spec §13.8.2, G10; H14, C16). Rete B: cinque oggetti di rete senza collegamenti (due switch di laboratorio che si
+// annunciano via MNDP, uno switch che non risponde, un notebook e un telefono classificati router) erano radici sole della
+// mappa automatica: «Da sistemare» prendeva solo apparati, attaccati e hypervisor. Cliente A: la radio lontana a 60 GHz.
+test("I64 — nessuna radice sola: un host di rete con una prova di ruolo e nessun collegamento va in «Da sistemare», «nessun collegamento»", () => {
+  const i = baseInput({
+    devices: [dev(1, { name: "RTR-1", device_type: "router", vendor: "mikrotik", via: "ssh", host: "10.0.0.1" }), dev(2, { name: "SW-2", host: "10.0.0.2", controller_mac: "02:00:00:00:00:02" })],
+    hosts: [host(40, { ip: "10.0.1.40", mac: "02:00:00:00:00:40", hostname: "LAB-SW-40", classification: "switch" })],
+    neighbors: [
+      { device_id: 1, local_port: "ether2", remote_device_name: "SW-2", remote_port: "Port 1", protocol: "lldp", remote_ip: "10.0.0.2", remote_mac: null, timestamp: ORA, source: "device" },
+      // lo switch di laboratorio si annuncia (MNDP) su una VLAN del router: una prova di ruolo, nessun cavo
+      { device_id: 1, local_port: "vlan40", remote_device_name: "LAB-SW-40", remote_port: "bridge", protocol: "mndp", remote_ip: "10.0.1.40", remote_mac: "02:00:00:00:00:40", timestamp: ORA, source: "device" },
+    ],
+  });
+  const m = buildTopologyModel(i);
+  assert.deepEqual(prove(i, "host:40"), ["annuncio"]);
+  assert.deepEqual(m.isolated, ["host:40"]);
+  assert.deepEqual([...autoVisible(m)].sort(), ["dev:1", "dev:2"], "fuori dalla mappa automatica: non è una seconda radice");
+  // nessun oggetto perso dalle mappe passo passo: chi ce l'ha messo lo ritrova
+  const passo = computeMapView(m, { auto: false, members: ["dev:1", "host:40"], roots: ["dev:1"], head: null, tweaks: [], expanded: new Set(), orientation: "lr" });
+  assert.deepEqual([passo.missing, passo.visible.has("host:40")], [[], true]);
+});
+
+// I65 (spec §13.8.2, G10, G12). «Hypervisor» solo con una prova: ospita VM o è un hypervisor censito e letto (scansione Proxmox);
+// la classificazione da sola no (rete B: un nodo «hypervisor» fatto di host fusi su un MAC). Lo stato dello spanning tree vale
+// come prova solo se attivo: `disabled` vuol dire spanning tree spento, e su una porta giù ogni stato vale «giù».
+test("I65 — «hypervisor» solo con una prova; `disabled`, o uno stato su una porta giù, non è una prova di spanning tree", () => {
+  const i = baseInput({
+    devices: [
+      dev(60, { name: "SW-60" }), dev(61, { name: "SW-61" }), dev(62, { name: "SW-62" }),
+      dev(63, { name: "HV-63", device_type: "server", vendor: "proxmox", proxmox_scan: 1 }),
+    ],
+    // due host fusi sullo stesso MAC, classificati hypervisor (la forma del caso della rete B, che ne ha diciotto)
+    hosts: [50, 51].map((k) => host(k, { ip: `10.0.1.${k}`, mac: "02:00:00:00:00:50", hostname: "HV-FUSO", classification: "hypervisor" })),
+    ports: [
+      { device_id: 60, port_index: 1, port_name: "Port 1", speed: null, status: "up", stp_state: "disabled" },
+      { device_id: 61, port_index: 1, port_name: "Port 1", speed: null, status: "down", stp_state: "forwarding" },
+      { device_id: 62, port_index: 1, port_name: "Port 1", speed: null, status: "up", stp_state: "forwarding" },
+    ],
+  });
+  assert.deepEqual([prove(i, "dev:60"), prove(i, "dev:61"), prove(i, "dev:62")], [[], [], ["spanning_tree"]]);
+  assert.equal(classeInMappa({ type: "hypervisor" }, ["scansione"], null), "hyper", "un hypervisor censito e letto resta hypervisor");
+  const m = buildTopologyModel(i);
+  assert.deepEqual(m.daSistemare?.map((d) => d.id), ["dev:60", "dev:61"]);
+  assert.equal(m.classiMappa?.["host:50"], "att", "classificato hypervisor, senza VM né scansione: un attaccato");
+  assert.equal(m.classiMappa?.["dev:63"], undefined, "un hypervisor censito e letto resta hypervisor");
+  assert.equal(classeInMappa({ type: "hypervisor" }, ["vm"], null), "hyper", "chi ospita VM è un hypervisor");
 });

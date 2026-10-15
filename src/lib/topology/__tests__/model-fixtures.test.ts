@@ -167,7 +167,11 @@ for (const nome of ["topologia-domarc.json", "topologia-cliente-a.json"]) {
     // chiave, anche di un nome doppio (tre hypervisor passano sotto l'aggregazione a 10G, H9 e H13).
     // T1b (spec §13.8.2): domarc 1588x2420->1442x1754, cliente-a 2514x3222->2514x3104, perché gli oggetti senza prove di
     // ruolo (27 e 9) escono dalla mappa automatica; da riconfermare sulle copie nel Task 16.
-    const attesi = nome === "topologia-domarc.json" ? [1442, 1754] : [2514, 3104];
+    // T1b, passaggio universale (spec §13.8.2): domarc altezza 1754->1524 perché nessuna radice sola (I64): i due host
+    // classificati router, con una prova di ruolo e nessun collegamento, non sono più radici della mappa automatica e
+    // vanno in «Da sistemare» (da 3 radici a 1, H14). I due «hypervisor» senza VM né scansione che diventano attaccati
+    // (I65) non cambiano la disposizione. cliente-a non cambia.
+    const attesi = nome === "topologia-domarc.json" ? [1442, 1524] : [2514, 3104];
     assert.deepEqual([Math.round(r.width), Math.round(r.height)], attesi);
   });
 }
@@ -337,4 +341,17 @@ test("H15: sull'hub con la VM del firewall virtuale nessun collegamento fra la V
   assert.equal(tra(m), false);
   assert.notEqual(padreDi(automatico(m).tree, "dev:4"), "dev:15");
   assert.equal(tra(buildTopologyModel(i, new Set([...REGOLE_T1].filter((r) => r !== "vm-e-mac-propri")))), true, "regola spenta: il collegamento falso");
+});
+
+// T1b (spec §13.8.2) sulle due reti vere: H14 sull'hub, C16 sul cliente A (la radio lontana esce dall'albero), I65 sull'hub.
+test("H14 e C16, T1b: sulle due reti una radice sola, il router", () => {
+  for (const nome of FIXTURE_VERE) assert.deepEqual(automatico(buildTopologyModel(carica(nome))).tree.roots, ["dev:1"], nome);
+});
+
+test("I65, T1b: sull'hub un «hypervisor» senza VM né scansione è un attaccato (un nodo di host fusi)", () => {
+  const m = buildTopologyModel(carica("topologia-domarc.json"));
+  const nodi = new Map(m.nodes.map((n) => [n.id, n]));
+  const declassati = Object.entries(m.classiMappa ?? {}).filter(([id, k]) => k === "att" && nodeClass(nodi.get(id)!) === "hyper").map(([id]) => id);
+  assert.equal(declassati.length > 0, true);
+  for (const id of declassati) assert.equal(m.vms.some((v) => v.hypervisorNodeId === id), false, id);
 });

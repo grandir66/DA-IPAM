@@ -11,7 +11,10 @@ import type { MapVm, TopologyModelInput } from "@/lib/topology/model-types";
 import { canonical, nameKey, type NodeIndex } from "@/lib/topology/node-index";
 import { normalizeMacForStorage } from "@/lib/utils";
 
-export type ProvaRuolo = "vicini" | "spanning_tree" | "mac_dietro" | "vm" | "uplink" | "controller" | "padre_di" | "annuncio" | "radio" | "capacita" | "a_mano";
+export type ProvaRuolo = "vicini" | "spanning_tree" | "mac_dietro" | "vm" | "scansione" | "uplink" | "controller" | "padre_di" | "annuncio" | "radio" | "capacita" | "a_mano";
+
+/** Gli stati dello spanning tree che dicono che l'apparato lo parla (spec §13.8.2, I65): non `disabled`, non `broken`. */
+const STP_ATTIVO: ReadonlySet<string> = new Set(["forwarding", "learning", "listening", "blocking", "discarding"]);
 
 /** Le prove aggiunte il 14/10 sera (§13.15): nell'elenco per nome si segnano a parte gli oggetti tenuti solo da loro. */
 export const PROVE_AGGIUNTE: ReadonlySet<ProvaRuolo> = new Set<ProvaRuolo>(["uplink", "controller", "padre_di", "annuncio", "radio", "capacita"]);
@@ -45,7 +48,8 @@ export function ruoloLetto(v: string | null | undefined): "rete" | "attaccato" |
   return r === "rete" || r === "core" || r === "accesso" ? "rete" : r === "attaccato" ? "attaccato" : null;
 }
 
-export function proveDiRuolo(input: TopologyModelInput, idx: NodeIndex, extra: { vms?: readonly MapVm[]; capiRadio?: ReadonlySet<string> } = {}): Map<string, ProvaRuolo[]> {
+export function proveDiRuolo(input: TopologyModelInput, idx: NodeIndex,
+  extra: { vms?: readonly MapVm[]; capiRadio?: ReadonlySet<string>; scansioni?: ReadonlySet<string> } = {}): Map<string, ProvaRuolo[]> {
   const prove = new Map<string, Set<ProvaRuolo>>();
   const metti = (id: string | null | undefined, p: ProvaRuolo): void => {
     if (!id) return;
@@ -55,8 +59,13 @@ export function proveDiRuolo(input: TopologyModelInput, idx: NodeIndex, extra: {
   };
   // Legge vicini: lo interroghiamo come apparato di rete.
   for (const n of input.neighbors) metti(`dev:${n.device_id}`, "vicini");
-  // Ha porte con uno stato di spanning tree (la lettura di oggi; nel modello per cavo i fatti per porta).
-  for (const p of input.ports ?? []) if ((p.stp_state ?? "").trim() !== "") metti(`dev:${p.device_id}`, "spanning_tree");
+  // Ha porte con uno stato di spanning tree ATTIVO (la lettura di oggi; nel modello per cavo i fatti per porta e i BPDU
+  // ricevuti): inoltra, impara o è bloccata, su una porta accesa (I65). `disabled` vuol dire spanning tree spento (gli switch
+  // senza spanning tree della rete B: uplink acceso e `disabled`), e su una porta giù ogni stato vale «giù» (G12).
+  for (const p of input.ports ?? []) {
+    const giu = ["down", "disabled"].includes((p.status ?? "").trim().toLowerCase());
+    if (STP_ATTIVO.has((p.stp_state ?? "").trim().toLowerCase()) && !giu) metti(`dev:${p.device_id}`, "spanning_tree");
+  }
   // La sua tabella MAC vede altri apparati di rete dietro una porta.
   for (const r of input.macPorts) {
     const io = `dev:${r.device_id}`;
@@ -66,6 +75,9 @@ export function proveDiRuolo(input: TopologyModelInput, idx: NodeIndex, extra: {
   }
   // Ospita VM (allora è un hypervisor).
   for (const v of extra.vms ?? []) metti(v.hypervisorNodeId, "vm");
+  // oppure è un hypervisor censito e letto (la scansione delle sue VM, passata dal modello: il nome del prodotto qui non
+  // si scrive, prova I37).
+  for (const id of extra.scansioni ?? []) metti(id, "scansione");
   // Le sei aggiunte: porta di uplink secondo il controller; gestito da un controller; padre di un altro apparato.
   for (const u of input.uplinkPorts) metti(`dev:${u.device_id}`, "uplink");
   for (const d of input.devices) {
@@ -87,11 +99,15 @@ export function proveDiRuolo(input: TopologyModelInput, idx: NodeIndex, extra: {
 /**
  * La classe nella mappa: quella di nodeClass (identity.ts:52-60), ma «infra» e «ap» solo con una prova. Il ruolo a mano
  * decide prima di tutto: «Attaccato (server, PC)» fa foglia, «Apparato di rete» tiene nell'albero. Il tipo del nodo è
- * quello che chiede nodeClass, preso da lì: scritto qui nominerebbe un prodotto (prova I37).
+ * quello che chiede nodeClass, preso da lì: scritto qui nominerebbe un prodotto (prova I37). E «hyper» solo per chi ospita
+ * VM o è un hypervisor censito e letto: altrimenti «att».
  */
 export function classeInMappa(n: Parameters<typeof nodeClass>[0], prove: readonly ProvaRuolo[] | undefined,
   ruoloAMano: "rete" | "attaccato" | null): NodeClass | "da_sistemare" {
-  const base = nodeClass(n);
+  const nominale = nodeClass(n);
+  // «hyper» solo con una prova (spec §13.8.2, G10, I65): ospita VM, o è un hypervisor censito e letto (una scansione). La
+  // classificazione da sola no: sulla rete B un nodo «hypervisor» fatto di host fusi su un MAC resta dov'è, come attaccato.
+  const base = nominale === "hyper" && !(prove ?? []).some((p) => p === "vm" || p === "scansione") ? "att" : nominale;
   if (ruoloAMano === "attaccato") return base === "hyper" ? "hyper" : "att";
   if (ruoloAMano === "rete") return base === "ap" ? "ap" : "infra";
   if (base !== "infra" && base !== "ap") return base;

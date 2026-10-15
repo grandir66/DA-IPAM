@@ -39,7 +39,9 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
   // Spec §13.7.8: per ogni nodo che è una VM, il suo hypervisor: fra i due nessun collegamento dai dati (G9).
   const ipervisori = ipervisoriDelleVm(vms);
   // T1b (spec §13.8.2): le prove di ruolo, prima di attaccare i MAC — chi è «da sistemare» conta come un client.
-  const prove = proveDiRuolo(input, idx, { vms });
+  // La scansione delle VM di un hypervisor censito (spec §11.5): una prova del ruolo «hypervisor» (§13.8.2, I65).
+  const scansioni = new Set(input.devices.filter((d) => d.proxmox_scan === 1).map((d) => `dev:${d.id}`));
+  const prove = proveDiRuolo(input, idx, { vms, scansioni });
   const ruoloAMano = new Map<string, "rete" | "attaccato" | null>(
     input.devices.map((d) => [`dev:${d.id}`, ruoloLetto(d.topology_role)]),
   );
@@ -93,7 +95,10 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
   const membriDiSegmento = new Set([...segmenti.values()].flatMap((m) => [...m]));
   const isolated = nodes
     .filter((n) => !n.hidden && !vmNodeIds.has(n.id) && (degree.get(n.id) ?? 0) === 0
-      && (n.kind === "device" || ["att", "hyper"].includes(nodeClass(n)) || membriDiSegmento.has(n.id)))
+      && (n.kind === "device" || ["att", "hyper"].includes(nodeClass(n)) || membriDiSegmento.has(n.id)
+        // T1b (spec §13.8.2, G10, I64): nessuna radice sola — un host di rete con una prova di ruolo e nessun collegamento.
+        // Senza una prova sta già in `daSistemare` («senza prove di ruolo»). Rete B: cinque radici sole; cliente A la radio.
+        || (n.kind === "host" && ["infra", "ap"].includes(classe(n)))))
     .map((n) => n.id);
   // I tipi sospetti sono degli apparati: il numero di porte è di network_devices, e ora fra gli isolati può esserci un host.
   const suspicious = isolated.filter((id) => {

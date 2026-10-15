@@ -14,6 +14,7 @@ import { parseDbDate } from "@/lib/db-date";
 import { PROVE_AGGIUNTE, proveDiRuolo } from "@/lib/topology/cavi/ruolo";
 import { nodeClass } from "@/lib/topology/identity";
 import { haTraduttore, traduciPorta, type ComeLetto } from "@/lib/topology/lettori/traduci";
+import { righeUltimoGiro } from "@/lib/topology/links";
 import type { MapLink, MapOrientation, MapVm, ModelDeviceRow, TopologyModel, TopologyModelInput } from "@/lib/topology/model-types";
 import { addNodeMacs, buildNodeIndex, resolveNode } from "@/lib/topology/node-index";
 import { stepPoints } from "@/lib/topology/print-draw";
@@ -285,6 +286,23 @@ export function lineeDaNomeScelto(
   return model.links.filter((l) => !l.sources.includes("manual") && (scelto(l.a, l.aPort) || scelto(l.b, l.bPort)));
 }
 
+/**
+ * Gli oggetti senza prove di ruolo che altri vedono via LLDP (spec §13.8.2, scelta 4 del §13.16): in T1b le capacità annunciate
+ * non sono ancora una prova (`remote_caps` arriva con T2), e uno switch visto solo così esce dall'albero. Sulla rete B è lo
+ * switch di storage; sul cliente A si contano prima del rilascio di T1b.
+ */
+export function vistiSoloViaLldp(input: TopologyModelInput, model: Pick<TopologyModel, "daSistemare">): string[] {
+  const fuori = new Set((model.daSistemare ?? []).map((d) => d.id));
+  const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors);
+  const visti = new Set<string>();
+  for (const n of righeUltimoGiro(input)) {
+    if (n.protocol !== "lldp") continue;
+    const chi = resolveNode(idx, { ip: n.remote_ip, mac: n.remote_mac, name: n.remote_device_name });
+    if (chi && fuori.has(chi)) visti.add(chi);
+  }
+  return [...visti].sort();
+}
+
 /** Gli oggetti di rete nell'albero tenuti SOLO da una prova aggiunta il 14/10 sera (da guardare a parte con Riccardo, §13.8.2). */
 export function soloProveAggiunte(input: TopologyModelInput, model: TopologyModel): string[] {
   const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors);
@@ -322,6 +340,7 @@ export function conteggi(input: TopologyModelInput, model: TopologyModel, c: Pic
     da_sistemare_isolati: model.isolated.length,
     da_sistemare_tipi_sospetti: model.suspicious.length,
     senza_prove: model.daSistemare?.length ?? 0,
+    visti_solo_via_lldp: vistiSoloViaLldp(input, model).length,
     host_da_promuovere: model.promote.length,
     giri_oggi: oggi.giri, attraversamenti_oggi: oggi.attraversamenti,
     giri_regola_nuova: nuova.giri, attraversamenti_regola_nuova: nuova.attraversamenti,

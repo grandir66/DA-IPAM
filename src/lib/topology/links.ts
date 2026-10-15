@@ -14,6 +14,7 @@ import {
   type TopologyModelInput,
   type UnmatchedNeighbor,
 } from "@/lib/topology/model-types";
+import { traduciMikrotikLocale } from "@/lib/topology/lettori/mikrotik";
 import { canonical, resolveNode, nodeFor, type NodeIndex } from "@/lib/topology/node-index";
 
 export const DEFAULT_STALE_DAYS = 2;
@@ -55,31 +56,15 @@ function isRouterNode(idx: NodeIndex, id: string): boolean {
 }
 
 /**
- * Porte fisiche MikroTik per prefisso (Task 1b): `ether1-2.5` è una ether rinominata (porta da 2,5G),
- * `sfp-sfpplus1`, `sfp28-1`, `combo1`, `qsfp28-1-1`, `bond1` (un fascio di cavi verso un apparato).
- * Dopo il numero può venire solo un suffisso col trattino fatto di cifre e punti, con una «g» in fondo
- * per una velocità (`-2.5`, `-10g`, `-2.5g`): `ether1.20` resta una sottointerfaccia, e `ether1-vlan20`
- * (una VLAN rinominata) non è fisica (revisione finale M-7).
- */
-const MIKROTIK_FISICA = /^(ether|sfp-sfpplus|sfp28-|sfp|combo|qsfp\w*?-?|bond)\d+(-\d+(\.\d+)*g?)?$/;
-/** Un nome MikroTik rinominato col trattino (`ether1-qualcosa`): se non è in MIKROTIK_FISICA non è una porta fisica. */
-const MIKROTIK_RINOMINATA = /^(ether|sfp-sfpplus|sfp28-|sfp|combo|qsfp\w*?-?|bond)\d+-/;
-/** Interfacce che non sono un cavo: bridge, VLAN, VRRP, tunnel, wireless, loopback, PPP. */
-const LOGICA = /^(bridge|vlan|vrrp|eoip|gre|ipip|6to4|vxlan|wg|wireguard|ovpn|pppoe|pptp|l2tp|sstp|lte|wlan|wifi|lo$|loopback|veth)/;
-
-/**
- * La porta fisica di un nome di porta, o null. MNDP riporta la porta di un bridge come «ether3,bridge»:
- * conta il primo elemento. Un nome MikroTik si riconosce dal prefisso (`MIKROTIK_FISICA`); per gli
- * altri vale la regola della tappa 0 (niente bridge/VLAN/VRRP, niente punti: «Gi0/1.10» è una sottointerfaccia).
+ * La porta fisica di un nome di porta, o null. Le forme MikroTik stanno nel loro traduttore (spec §13.6.1); qui, fino
+ * al Task 7, lo stesso risultato di prima per ogni nome: MNDP riporta la porta di un bridge come «ether3,bridge» e conta
+ * il primo elemento; un nome non MikroTik con «,» o «.» non è una porta fisica.
  */
 export function physicalPortName(port: string): string | null {
-  const primo = port.split(",")[0].trim();
-  const p = primo.toLowerCase();
-  if (p === "" || LOGICA.test(p)) return null;
-  if (MIKROTIK_FISICA.test(p)) return primo;
-  if (MIKROTIK_RINOMINATA.test(p)) return null;
-  if (port.includes(",") || p.includes(".")) return null;
-  return primo;
+  const l = traduciMikrotikLocale(port);
+  if (l.fisica === true) return l.nome;
+  if (l.fisica === false || l.nome === "" || port.includes(",")) return null;
+  return l.nome;
 }
 
 export function isPhysicalPort(port: string): boolean {

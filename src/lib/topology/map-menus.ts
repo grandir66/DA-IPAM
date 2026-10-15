@@ -8,7 +8,7 @@
 import { nodeClass } from "@/lib/topology/identity";
 import type { LinkOverrideRow, MapLink, MapVm, TopologyModel } from "@/lib/topology/model-types";
 import { missingNeighbors, type TreeResult } from "@/lib/topology/tree";
-import { VM_NON_COLLEGABILE } from "@/lib/topology/vm-nodes";
+import { SEGMENTO_NON_COLLEGABILE, VM_NON_COLLEGABILE } from "@/lib/topology/vm-nodes";
 
 export interface NodeMenuCtx {
   mode: "auto" | "passo";
@@ -41,12 +41,17 @@ export interface NodeMenuCtx {
 /** Una VM non censita: un nodo della pagina, non un capo di collegamento del modello. */
 export const isUncensusedVmId = (id: string): boolean => id.startsWith("vm:");
 
+/** Un segmento (T3, spec §13.7.3): un nodo calcolato, solo con la mappa nuova accesa. */
+const isSegmentoId = (id: string): boolean => id.startsWith("seg:");
+
 /**
  * «Collega a…» fra due oggetti: null se si può, altrimenti il motivo in parole. Una VM non censita
- * non è un capo di collegamento: la rotta la rifiuterebbe (revisione finale I-1).
+ * non è un capo di collegamento: la rotta la rifiuterebbe (revisione finale I-1). Nemmeno un segmento
+ * (T3, §13.7.3): si collegano gli apparati che ne fanno parte.
  */
 export function connectRefusal(a: string, b: string): string | null {
-  return isUncensusedVmId(a) || isUncensusedVmId(b) ? VM_NON_COLLEGABILE : null;
+  if (isUncensusedVmId(a) || isUncensusedVmId(b)) return VM_NON_COLLEGABILE;
+  return isSegmentoId(a) || isSegmentoId(b) ? SEGMENTO_NON_COLLEGABILE : null;
 }
 
 export type NodeMenuKey =
@@ -93,8 +98,9 @@ export function edgeMenuItems(l: MapLink, isAdmin: boolean): Array<MenuItem<Edge
   const manual = l.sources.includes("manual");
   const out: Array<MenuItem<EdgeMenuKey>> = [];
   if (manual) out.push({ key: "editPorts", label: "Modifica porte…" });
-  // Una linea verso una VM non censita non ha un principale da scegliere: la rotta lo rifiuterebbe (I-1).
-  if (connectRefusal(l.a, l.b) !== null) {
+  // Una linea verso una VM non censita non ha un principale da scegliere: la rotta lo rifiuterebbe (I-1). Verso un
+  // segmento sì (T3, §13.7.3: la rotta della ★ accetta «seg:»), anche se «Collega a…» lo rifiuta: qui solo la VM.
+  if (isUncensusedVmId(l.a) || isUncensusedVmId(l.b)) {
     /* niente voce del principale */
   } else if (l.primary === "user") out.push({ key: "unprimary", label: "Togli la scelta del principale" });
   else out.push({ key: "primary", label: l.primary === "auto" ? "★ Fissa come principale" : "★ Rendi principale" });

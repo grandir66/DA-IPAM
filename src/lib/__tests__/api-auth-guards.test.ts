@@ -70,6 +70,10 @@ const CONTRACT: Contract[] = [
   { route: "topology/settings/letture", method: "PUT", guard: "requireAdmin" },
   { route: "topology/settings/mappa", method: "PUT", guard: "requireAdmin" },
   { route: "topology/traccia", method: "GET", guard: "requireAdmin" },
+  // T3, Task 8: le scritture coi valori nuovi (togliere una correzione con la ★ per cavo, i ruoli «core» e «accesso»)
+  // restano a un admin. I corpi li provano api-input.test.ts e topology-t3-scritture.test.ts.
+  { route: "topology/links/[id]", method: "DELETE", guard: "requireAdmin" },
+  { route: "topology/nodes/role", method: "PATCH", guard: "requireAdmin" },
 ];
 
 /** Estrae il corpo di un metodo HTTP esportato (slice fino al prossimo export). */

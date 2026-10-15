@@ -118,7 +118,7 @@ export interface LinkOverrideRow {
   a_port: string;
   b_node: string;
   b_port: string;
-  /** 'cavo' | 'fibra' | 'wireless' o null (tipo non indicato); le rotte non scrivono altro. */
+  /** 'cavo' | 'fibra' | 'wireless', da T3 'tunnel', o null (tipo non indicato); le rotte non scrivono altro. */
   medium: string | null;
   /** Chi e quando, per le frasi di T1b («Collegato a mano da ‹utente› il ‹data›»). Assenti nelle fixture di prima. */
   created_by?: string | null;

@@ -5,7 +5,10 @@ import { setTopologyRole } from "@/lib/db-tenant";
 import { parseNodeRoleBody } from "@/lib/topology/api-input";
 import { readJson } from "@/lib/controllers/route-helpers";
 
-/** PATCH /api/topology/nodes/role — «Ruolo nella mappa» di un apparato (T1b, spec §13.8.2): '', 'rete' o 'attaccato'. */
+/**
+ * PATCH /api/topology/nodes/role — «Ruolo nella mappa» di un apparato (T1b, spec §13.8.2): '', 'rete' o 'attaccato';
+ * da T3 (§13.9) anche 'core' e 'accesso'. Il valore e il messaggio d'errore li decide `parseNodeRoleBody`.
+ */
 export async function PATCH(req: Request) {
   return withTenantFromSession(async () => {
     const s = await requireAdmin();

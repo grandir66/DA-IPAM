@@ -18,6 +18,12 @@ import type { TreeResult } from "@/lib/topology/tree";
 export const VM_NON_COLLEGABILE =
   "Una VM non censita non si collega a mano: collega l'host o l'apparato che la rappresenta, oppure il suo hypervisor";
 
+/**
+ * T3 (spec §13.7.3, «Nelle rotte»): un segmento (`seg:…`) è un nodo calcolato, non salvato. Si ignora un'appartenenza e
+ * si sceglie la ★, ma un collegamento a mano verso di lui no: si collegano gli apparati che ne fanno parte.
+ */
+export const SEGMENTO_NON_COLLEGABILE = "Un segmento non si collega a mano: si collegano gli apparati che ne fanno parte.";
+
 export function isRunning(status: string): boolean {
   return status.trim().toLowerCase() === "running";
 }

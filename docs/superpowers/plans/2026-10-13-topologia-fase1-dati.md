@@ -13,7 +13,7 @@
 - a schermo alla fine della fase 1: **numeri prima/dopo + campi minimi** (testa e subnet nelle Ubicazioni, sede/armadio sull'apparato, elenco delle proposte con conferma);
 - le proposte automatiche (sede dalla subnet, testa, «promuovi») **si usano nel calcolo segnate «proposto»**; nel DB del cliente si scrive solo una scelta confermata da un admin.
 
-**Livello di controllo: COMPLETO** (schema DB e dati dei clienti). Prova vista fallire prima del codice, misura sul dato vero (copie dei DB di hub e DTS), backup prima di ogni scrittura, conferma di Riccardo prima di DTS e hub.
+**Livello di controllo: COMPLETO** (schema DB e dati dei clienti). Prova vista fallire prima del codice, misura sul dato vero (copie dei DB di hub e cliente A), backup prima di ogni scrittura, conferma di Riccardo prima del cliente A e hub.
 
 ## Global Constraints
 
@@ -26,7 +26,7 @@
 - Caricamenti nel client con `fetchJson` + `LoadError`: un errore non diventa mai «lista vuota».
 - Testi dell'interfaccia in italiano; stato mai col solo colore (Riccardo è daltonico): testo o simbolo accanto.
 - Niente segreti, IP, MAC o nomi veri nei log, negli output degli script, nelle fixture: **il repo GitHub è pubblico**.
-- `dev` arriva a DTS da solo entro 15 minuti (build + riavvio + migrazione): **nessun push su `dev` prima della conferma di Riccardo** (Task 16). Si lavora su rami propri, `main` non si tocca mai.
+- `dev` arriva al cliente A da solo entro 15 minuti (build + riavvio + migrazione): **nessun push su `dev` prima della conferma di Riccardo** (Task 16). Si lavora su rami propri, `main` non si tocca mai.
 - Segreti: mai nel trascritto; a uno script solo come prima riga di stdin, dopo una prova con un valore finto; verso un server solo con `| ssh host 'read -r T; …'` (memoria «segreti-verso-ssh-prova-finta»). Dentro ssh `pgrep -x`, mai `pgrep -f`.
 - Orari a Riccardo in ora italiana (journal e DB dei server sono UTC).
 - Esito del cancello letto dal codice di uscita (`cmd > "$LOG" 2>&1; ESITO=$?`), log nello scratchpad della sessione, mai con nome fisso in `/tmp`.
@@ -129,7 +129,7 @@ rm /Users/riccardo/Progetti/Domarc/DA-IPAM/docs/superpowers/plans/2026-10-13-top
 
 - [ ] **Step 4: copie dei DB (sola lettura sui server)**
 
-Vie d'accesso in `ACCESSI.md` (hub: VM 533 `192.168.4.8`, `/opt/da-invent`, tenant `70791`; DTS: `10.0.0.2`, `/opt/da-ipam`, tenant `71734`). Un solo ssh per server: spazio, copia coerente con l'API di backup di SQLite, impronta.
+Vie d'accesso in `ACCESSI.md` (hub: VM 533 `192.168.4.8`, `/opt/da-invent`, tenant `70791`; cliente A: `10.0.0.2`, `/opt/da-ipam`, tenant `71734`). Un solo ssh per server: spazio, copia coerente con l'API di backup di SQLite, impronta.
 
 ```bash
 S=/private/tmp/claude-501/-Users-riccardo-Progetti/<sessione>/scratchpad/topologia-f1   # scratchpad della sessione che esegue
@@ -139,7 +139,7 @@ ssh <hub> 'cd /opt/da-invent && df -h /tmp | tail -1 && du -h data/tenants/70791
   && F=$(mktemp /tmp/copia-70791.XXXXXX) && node -e "const D=require(\"better-sqlite3\");new D(\"data/tenants/70791.db\",{readonly:true}).backup(process.argv[1]).then(()=>console.log(\"backup ok\"))" "$F" \
   && sha256sum "$F" && echo "FILE=$F"'
 ```
-Poi `scp <hub>:<FILE> "$S/copie/70791.db"`, `shasum -a 256` uguale, e `ssh <hub> 'rm -f <FILE>'` (è la copia temporanea appena fatta, non dati di produzione). Stessa sequenza per DTS (`/opt/da-ipam`, `71734.db` → `$S/copie/71734.db`). Se lo spazio in `/tmp` non basta: fermarsi e dirlo, non copiare altrove a caso.
+Poi `scp <hub>:<FILE> "$S/copie/70791.db"`, `shasum -a 256` uguale, e `ssh <hub> 'rm -f <FILE>'` (è la copia temporanea appena fatta, non dati di produzione). Stessa sequenza per il cliente A (`/opt/da-ipam`, `71734.db` → `$S/copie/71734.db`). Se lo spazio in `/tmp` non basta: fermarsi e dirlo, non copiare altrove a caso.
 
 Atteso: due file in `$S/copie/`, impronte uguali alle remote. Nessuna scrittura sui server oltre al file temporaneo, poi tolto.
 
@@ -160,10 +160,10 @@ Atteso: due file in `$S/copie/`, impronte uguali alle remote. Nessuna scrittura 
   - `device_neighbors`: `first_seen TEXT`, `source TEXT NOT NULL DEFAULT 'device'`
   - `locations`: `head_device_id INTEGER REFERENCES network_devices(id) ON DELETE SET NULL`, `head_set_by TEXT`, `head_set_at TEXT`
   - `networks`: `location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL`, `location_set_by TEXT`, `location_set_at TEXT`
-  - `topology_position`: `structure_sig TEXT` (serve alla fase 2: si mette ora per fare **una** sola migrazione confermata su DTS)
+  - `topology_position`: `structure_sig TEXT` (serve alla fase 2: si mette ora per fare **una** sola migrazione confermata sul cliente A)
   - tabella `topology_link_overrides` (sotto)
 
-`topology_role`, `topology_hidden` e `structure_sig` in questa fase non li legge nessuno: si aggiungono ora perché ogni migrazione su DTS chiede una conferma, e le fasi 2-4 sono a livello leggero.
+`topology_role`, `topology_hidden` e `structure_sig` in questa fase non li legge nessuno: si aggiungono ora perché ogni migrazione sul cliente A chiede una conferma, e le fasi 2-4 sono a livello leggero.
 
 - [ ] **Step 1: la prova che fallisce**
 
@@ -387,7 +387,7 @@ git commit -m "feat(topologia): migrazione fase 1 — sede, testa, uplink, età 
 Comportamento nuovo: i vicini del giro si inseriscono o si aggiornano (`timestamp` = adesso, `first_seen` resta); quelli che il giro non riporta **restano**, con la loro data: è così che un collegamento sparito diventa «non visto da N giorni» (spec §3). Pulizia eseguita dall'app: un vicino non visto da più di 90 giorni si toglie alla scrittura successiva di quell'apparato.
 
 Conseguenze da sapere (vanno nell'ADR 0008, Task 15):
-- la mappa vecchia (`getTopologyData`) mostrerà anche i collegamenti non più visti: non la si filtra, la sostituisce la fase 2 (filtrarla svuoterebbe la mappa di DTS, dove UniFi non si legge da solo — vedi Task 16);
+- la mappa vecchia (`getTopologyData`) mostrerà anche i collegamenti non più visti: non la si filtra, la sostituisce la fase 2 (filtrarla svuoterebbe la mappa del cliente A, dove UniFi non si legge da solo — vedi Task 16);
 - l'attribuzione (`neighborSightings`, `ORDER BY dn.timestamp DESC LIMIT 5`) vede anche avvistamenti vecchi, i più recenti per primi: un host che era davvero vicino LLDP resta un'informazione vera.
 
 - [ ] **Step 1: la prova che fallisce**
@@ -2253,7 +2253,7 @@ git commit -m "feat(topologia): letture del modello in blocco, sede, testa e sub
 
 ---
 
-### Task 9: Fixture anonime di Domarc e DTS (tappa D)
+### Task 9: Fixture anonime di Domarc e cliente A (tappa D)
 
 **Files:**
 - Create: `src/lib/topology/anonimizza.ts`
@@ -2345,7 +2345,7 @@ for (const f of FILES) {
     const testo = fs.readFileSync(path.join(DIR, f), "utf8");
     for (const ip of testo.match(IP) ?? []) assert.ok(ip.startsWith("10.") || ip.startsWith("172.31."), `IP vero? ${ip}`);
     for (const mac of testo.match(MAC) ?? []) assert.ok(mac.toLowerCase().startsWith("02:00:00:"), `MAC vero? ${mac}`);
-    for (const parola of ["domarc", "dts", "bergamo"]) assert.equal(testo.toLowerCase().includes(parola), false, parola);
+    for (const parola of ["domarc", "cliente-a", "bergamo"]) assert.equal(testo.toLowerCase().includes(parola), false, parola);
     const j = JSON.parse(testo) as { devices: Array<{ name: string }>; hosts: Array<{ hostname: string | null; custom_name: string | null }>; locations: Array<{ name: string }>; networks: Array<{ name: string }> };
     for (const n of [
       ...j.devices.map((d) => d.name), ...j.locations.map((l) => l.name), ...j.networks.map((n) => n.name),
@@ -2576,7 +2576,7 @@ Atteso: `exit=0` due volte, prove PASS. **Se `fixture-anonime` fallisce, le fixt
 
 ```ts
 // src/lib/topology/__tests__/model-fixtures.test.ts
-// Il modello sulle fixture anonime di Domarc e DTS (estratte il <data> dalle
+// Il modello sulle fixture anonime di Domarc e cliente A (estratte il <data> dalle
 // copie dei DB, Task 9): il modello nuovo non perde niente rispetto alla mappa
 // vecchia, ed è stabile. I numeri fissati sotto sono quelli misurati alla prima
 // estrazione: se cambiano, si legge il perché prima di riscriverli.
@@ -2650,7 +2650,7 @@ Scrivere i due oggetti stampati in `MISURATI` e la data dell'estrazione nel comm
 
 ```bash
 git add src/lib/topology/anonimizza.ts scripts/estrai-fixture-topologia.ts src/lib/topology/__tests__/anonimizza.test.ts src/lib/topology/__tests__/fixture-anonime.test.ts src/lib/topology/__tests__/model-fixtures.test.ts src/lib/topology/__tests__/fixtures/topologia-domarc.json src/lib/topology/__tests__/fixtures/topologia-cliente-a.json
-git commit -m "test(topologia): fixture anonime di Domarc e DTS e prove del modello sulla forma vera"
+git commit -m "test(topologia): fixture anonime di Domarc e cliente A e prove del modello sulla forma vera"
 ```
 
 ---
@@ -3577,7 +3577,7 @@ Hub (Domarc, controller #1 = UDM Beast, chiave API nel vault `da-IPAM-accessi.md
 ```
 Prima di usarlo, il filtro si prova **sul vault** con l'output rediretto in `wc -c` (lunghezza, non il valore). Se il formato del vault non si capisce senza stamparlo, ci si ferma e si chiede a Riccardo come leggerlo (memoria «segreti-verso-ssh-prova-finta»: tre chiavi bruciate così).
 
-DTS (tenant 71734, controller self-hosted 10.0.1.222:8443, utente e password nel vault (`dts-appliance-credentials.md`, sezione UNIFI)): stessa cosa, **se il controller risponde dal Mac** (il 12/10 sì). Se non risponde: misura senza `--unifi` e lo si scrive nella richiesta di conferma («i numeri dell'uplink di DTS si vedranno solo dopo la prima lettura su DTS»).
+Cliente A (tenant 71734, controller self-hosted 10.0.1.222:8443, utente e password nel vault (il file delle credenziali dell'appliance del cliente A, sezione UNIFI)): stessa cosa, **se il controller risponde dal Mac** (il 12/10 sì). Se non risponde: misura senza `--unifi` e lo si scrive nella richiesta di conferma («i numeri dell'uplink del cliente A si vedranno solo dopo la prima lettura sul cliente A»).
 
 Atteso, per entrambi: `exit=0`, `integrita_*: ok`, `migrazione_ms`, `prima` e `dopo` (e `dopo_lettura`). Questi numeri vanno nella richiesta di conferma (Task 16).
 
@@ -3596,7 +3596,7 @@ git commit -m "chore(topologia): script di misura prima/dopo su una copia del DB
 - Create: `docs/adr/0008-topologia-dati-fase1.md`
 - Modify: `docs/adr/0005-unifi-controller-integration.md` (i due limiti «uplink non usato» e «due scrittori su porte e vicini» → «superato per i vicini e l'uplink dall'ADR 0008; le porte restano a un solo scrittore per apparato»), `docs/adr/0003-topology-map.md` (in testa: «La disposizione con dagre è superata dalla spec v2 del 13/10; il modello dei dati dall'ADR 0008»), `CHANGELOG.md`, `CONTEXT.md` (§6 «Mappa topologia»)
 
-- [ ] **Step 1: ADR 0008** (dal template `0000-template.md`): Stato «accettata» 2026-10-13 · Contesto (spec v2 §2: 16 collegamenti fra apparati su 88 vicini, doppi, uplink buttato) · Decisione: *«i vicini non si cancellano più: si aggiornano, invecchiano e dopo 90 giorni si tolgono; l'uplink UniFi si salva; sede, testa e subnet sono scelte confermate; tutto il resto il modello lo calcola a ogni richiesta e non lo salva»* · Alternative scartate (tabella storica dei collegamenti a parte: un secondo scrittore e un secondo posto da tenere coerente; uplink come riga di `device_neighbors`: il CHECK su `protocol` chiederebbe di ricostruire la tabella, vietato su tabelle con FK) · Conseguenze, con **«cosa diventa difficile in futuro»**: la mappa vecchia e l'attribuzione vedono anche i vicini vecchi; `device_neighbors` cresce fino alla pulizia a 90 giorni; dove un controller non si legge da solo (DTS oggi) tutto invecchia in due giorni; il ramo `tappa3b/nucleo` toglie `upsertNeighbors` dal facade `db.ts` (nel rebase vince il nucleo).
+- [ ] **Step 1: ADR 0008** (dal template `0000-template.md`): Stato «accettata» 2026-10-13 · Contesto (spec v2 §2: 16 collegamenti fra apparati su 88 vicini, doppi, uplink buttato) · Decisione: *«i vicini non si cancellano più: si aggiornano, invecchiano e dopo 90 giorni si tolgono; l'uplink UniFi si salva; sede, testa e subnet sono scelte confermate; tutto il resto il modello lo calcola a ogni richiesta e non lo salva»* · Alternative scartate (tabella storica dei collegamenti a parte: un secondo scrittore e un secondo posto da tenere coerente; uplink come riga di `device_neighbors`: il CHECK su `protocol` chiederebbe di ricostruire la tabella, vietato su tabelle con FK) · Conseguenze, con **«cosa diventa difficile in futuro»**: la mappa vecchia e l'attribuzione vedono anche i vicini vecchi; `device_neighbors` cresce fino alla pulizia a 90 giorni; dove un controller non si legge da solo (cliente A oggi) tutto invecchia in due giorni; il ramo `tappa3b/nucleo` toglie `upsertNeighbors` dal facade `db.ts` (nel rebase vince il nucleo).
 
 - [ ] **Step 2: CHANGELOG** in `## [Non rilasciato] — 2026-10-13`: *Aggiunte* — pagina «Dati della mappa», testa e subnet nelle Ubicazioni, sede sull'apparato, uplink UniFi salvato; *Modifiche* — i collegamenti non si cancellano più a ogni lettura (perché: la spec chiede «non visto da N giorni» invece di linee che spariscono, e due fonti sullo stesso apparato si cancellavano a vicenda); *Correzioni* — vicini abbinati anche per MAC (prima il MAC del vicino si leggeva e si ignorava).
 
@@ -3614,7 +3614,7 @@ Atteso: `exit=0`, `# fail 0` (al 13/10 c'era **una** prova rossa nota su 1670: s
 
 - [ ] **Step 5: a schermo, in locale, sulla copia** (non sul dato vero dei clienti fuori dal Mac)
 
-App locale sulla copia della copia di DTS, hub di prova con un utente creato al primo avvio da `/setup` (password generata sul posto, scritta in un file `chmod 600` nello scratchpad, mai stampata):
+App locale sulla copia della copia del cliente A, hub di prova con un utente creato al primo avvio da `/setup` (password generata sul posto, scritta in un file `chmod 600` nello scratchpad, mai stampata):
 
 ```bash
 U="$S/ui"; mkdir -p "$U/data/tenants" && cp "$S/copie/71734.db" "$U/data/tenants/71734.db"
@@ -3640,13 +3640,13 @@ git push origin topologia/fase1-dati
 Nessun push su `dev` prima di qui. Si presenta a Riccardo **in una volta sola**, in italiano semplice, con gli orari in ora italiana:
 
 1. **Cosa cambia** in tre righe (vicini che invecchiano invece di sparire, uplink salvato, sede/testa/subnet scelte a mano, pagina «Dati della mappa»; la mappa di oggi resta uguale).
-2. **I numeri misurati sulle copie** (Task 14), hub e DTS affiancati: integrità prima/dopo, durata della migrazione, mappa vecchia vs modello nuovo (collegamenti fra apparati, attaccati, non abbinati, isolati, doppi fusi, senza sede, proposte), e dopo la lettura UniFi (uplink salvati).
+2. **I numeri misurati sulle copie** (Task 14), hub e cliente A affiancati: integrità prima/dopo, durata della migrazione, mappa vecchia vs modello nuovo (collegamenti fra apparati, attaccati, non abbinati, isolati, doppi fusi, senza sede, proposte), e dopo la lettura UniFi (uplink salvati).
 3. **Le scritture da autorizzare, una per una**:
-   - (a) **push su `dev`** = rilascio a DTS entro 15 minuti: build, riavvio, migrazione dello schema (19 colonne e una tabella) sul DB del cliente. Prima: copia del DB di DTS sul server (`data/backups/71734-pre-topologia-f1-<ora>.db`);
+   - (a) **push su `dev`** = rilascio al cliente A entro 15 minuti: build, riavvio, migrazione dello schema (19 colonne e una tabella) sul DB del cliente. Prima: copia del DB del cliente A sul server (`data/backups/71734-pre-topologia-f1-<ora>.db`);
    - (b) **hub**: copia del DB 70791 (~2 GB, spazio controllato prima), aggiornamento come da skill `deploy-prod`, migrazione;
    - (c) **hub**: una lettura UniFi a mano del controller #1 (la UDM) per salvare subito gli uplink, invece di aspettare le 03:00;
-   - (d) **DTS**: una lettura UniFi a mano con copia del DB prima;
-   - (e) **DTS, proposta**: creare la lettura UniFi pianificata ogni giorno alle 03:00 (oggi non c'è: senza, dopo due giorni tutti i collegamenti di DTS risultano «non visti»).
+   - (d) **cliente A**: una lettura UniFi a mano con copia del DB prima;
+   - (e) **cliente A, proposta**: creare la lettura UniFi pianificata ogni giorno alle 03:00 (oggi non c'è: senza, dopo due giorni tutti i collegamenti del cliente A risultano «non visti»).
 4. **Cosa non si tocca**: edge, canale edge↔DA-Vul-can, `main`, controller (sempre in sola lettura).
 
 Si attende la risposta. Se Riccardo autorizza solo una parte, si fa solo quella e si scrive cosa resta.
@@ -3657,20 +3657,20 @@ Si attende la risposta. Se Riccardo autorizza solo una parte, si fa solo quella 
 
 Solo i punti autorizzati al Task 16. Ogni passo: comando, codice d'uscita, verifica dove la cosa succede (journal con l'ora dell'ultima riga), ora italiana nel rapporto.
 
-- [ ] **(a) DTS**: copia del DB sul server (stessa via del Task 0, ma il file resta in `/opt/da-ipam/data/backups/`), poi
+- [ ] **(a) cliente A**: copia del DB sul server (stessa via del Task 0, ma il file resta in `/opt/da-ipam/data/backups/`), poi
 
 ```bash
 cd /Users/riccardo/Progetti/Domarc/DA-IPAM/.claude/worktrees/topologia-f1
 git fetch -q origin && git rebase origin/dev && <cancello del Task 15 passo 4, verde>
 git push origin HEAD:dev
 ```
-Entro 15 minuti, **un solo ssh** a DTS: `systemctl is-active da-ipam`, versione servita (`curl -s localhost:<porta>/api/version`), `journalctl -u da-ipam --since "-20 min" | grep -E "topologia fase 1|migrazione topologia"`, `PRAGMA quick_check` in sola lettura sul DB del tenant, `pgrep -x node`. Atteso: attivo, versione nuova, «aggiunte 19 colonne» una volta, `quick_check` ok. Se la riga dice «fallita»: si legge il journal intero da quel momento, non si riprova a tentoni (REGOLA #0).
+Entro 15 minuti, **un solo ssh** al cliente A: `systemctl is-active da-ipam`, versione servita (`curl -s localhost:<porta>/api/version`), `journalctl -u da-ipam --since "-20 min" | grep -E "topologia fase 1|migrazione topologia"`, `PRAGMA quick_check` in sola lettura sul DB del tenant, `pgrep -x node`. Atteso: attivo, versione nuova, «aggiunte 19 colonne» una volta, `quick_check` ok. Se la riga dice «fallita»: si legge il journal intero da quel momento, non si riprova a tentoni (REGOLA #0).
 
 - [ ] **(b) hub**: `df` e copia del DB, poi la skill `deploy-prod` (git pull di `dev` + `npm run build` + riavvio, mai il build senza riavvio subito dopo). Stesse verifiche di (a), tenant 70791 e 70791a.
 
 - [ ] **(c)/(d) letture UniFi**: dalla pagina Rete → Controller di rete («Leggi ora») oppure via API con la sessione di Riccardo, a sua scelta; conteggi dello storico della lettura confrontati con `lettura_unifi` della misura (Task 14).
 
-- [ ] **(e) DTS**: job `unifi_sync` del controller di DTS, ogni giorno alle 03:00, dalla pagina Controller di rete.
+- [ ] **(e) cliente A**: job `unifi_sync` del controller del cliente A, ogni giorno alle 03:00, dalla pagina Controller di rete.
 
 - [ ] **A schermo sul dato vero**: Riccardo guarda sull'hub, a 1920, `/topology/dati` e la finestra «Mappa» di una sede, con istruzioni passo passo (pagina, clic, cosa vede se va bene, cosa se va male). Le foto le fa lui o le fa la sessione se gli dà l'accesso.
 
@@ -3680,6 +3680,6 @@ Entro 15 minuti, **un solo ssh** a DTS: `systemctl is-active da-ipam`, versione 
 
 ## Self-review (fatta)
 
-- **Copertura della spec (fase 1)**: uplink UniFi salvato → Task 3; abbinamento per MAC → Task 4-5; fusione apparato↔host → Task 4; «promuovi ad apparato» → Task 7 + 13 (conferma con la promozione che esiste); sede = Ubicazione con subnet e testa → Task 6, 8, 11, 12; tabella delle correzioni → Task 1, 8, 10 (interfaccia col clic destro: fase 4, spec §6); età dei collegamenti → Task 1, 2, 5; soglia «non visto» (spec §8) → Task 0, 8, 13; prove sulla forma vera con fixture DTS e Domarc (spec §7) → Task 9; garanzie «manuale vince su LLDP», «sparito diventa non visto», «stessi dati stesso risultato» → Task 5, 7; «un AP in più non sposta gli altri rami» → Task 7 per i dati (per le coordinate: fase 2); copia del DB, numeri, conferma (spec §7) → Task 0, 14, 16.
+- **Copertura della spec (fase 1)**: uplink UniFi salvato → Task 3; abbinamento per MAC → Task 4-5; fusione apparato↔host → Task 4; «promuovi ad apparato» → Task 7 + 13 (conferma con la promozione che esiste); sede = Ubicazione con subnet e testa → Task 6, 8, 11, 12; tabella delle correzioni → Task 1, 8, 10 (interfaccia col clic destro: fase 4, spec §6); età dei collegamenti → Task 1, 2, 5; soglia «non visto» (spec §8) → Task 0, 8, 13; prove sulla forma vera con fixture cliente A e Domarc (spec §7) → Task 9; garanzie «manuale vince su LLDP», «sparito diventa non visto», «stessi dati stesso risultato» → Task 5, 7; «un AP in più non sposta gli altri rami» → Task 7 per i dati (per le coordinate: fase 2); copia del DB, numeri, conferma (spec §7) → Task 0, 14, 16.
 - **Fuori di proposito** (fasi successive della spec): disposizione, icone, fascia degli attaccati, tabella MAC delle porte per gli attaccati, livelli 1-3, ricerca, filtri, export drawio, correzioni col clic destro; ruolo e nascosto hanno la colonna ma nessuna logica.
 - **Nomi coerenti**: `getTopologyModelInput(staleDays, nowMs?)`, `buildTopologyModel(input)`, `upsertNeighbors(id, list, source)`, `setNetworkDeviceControllerFacts`, `setSiteTopology`, `setDeviceLocation`, `SiteTopologyView`, `DeviceLocationView` usati con la stessa firma in tutti i task.

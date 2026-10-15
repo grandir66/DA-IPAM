@@ -19,7 +19,7 @@ type ScheduledTask = ReturnType<typeof cron.schedule>;
  * modulo. Sotto tsx (e nei bundle delle rotte) questo file può essere caricato
  * due volte nello stesso processo: con lo stato nel modulo, una rotta che
  * chiamava `reloadTenantScheduler` non vedeva i cron registrati da server.ts,
- * non li fermava e ne aggiungeva altri — su DTS il controllo host è partito due
+ * non li fermava e ne aggiungeva altri — sul cliente A il controllo host è partito due
  * volte alle 15:04 del 2026-10-12 (NUC-5). Stessa classe dell'incidente
  * db-tenant del 2026-09-02 (ADR 0002).
  */

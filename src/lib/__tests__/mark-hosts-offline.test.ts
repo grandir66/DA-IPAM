@@ -6,7 +6,7 @@
 // - un host visto vivo DOPO l'inizio del giro (da un altro giro, dal controllo
 //   degli host noti) veniva spento dal giro partito prima, che non l'aveva visto;
 // - gli host già offline si vedevano riscrivere `updated_at` a ogni giro (fino a
-//   248 righe per giro su una rete di DTS, misurato il 12/10).
+//   248 righe per giro su una rete del cliente A, misurato il 12/10).
 // Ora il filtro è uno solo, usato sia dalla lettura dei candidati
 // (`selectOfflineCandidates`, che servirà alla soglia di T3-21) sia dalla
 // scrittura: stato diverso da offline e `last_seen` nullo o anteriore

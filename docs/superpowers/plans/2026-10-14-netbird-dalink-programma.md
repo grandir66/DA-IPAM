@@ -32,7 +32,7 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
   (§6.1) e arresto per licenza (§8.2). Prima segnala soltanto, poi si accende contando.
 - **Dal centro non si cambia mai la configurazione di un'istanza** (§5.3, §9.5), e un
   rinnovo non accorcia la licenza in corso (§8.2).
-- **`dev` di DA-IPAM arriva a DTS ogni 15 minuti con build e riavvio.** Su `dev` solo codice
+- **`dev` di DA-IPAM arriva al cliente A ogni 15 minuti con build e riavvio.** Su `dev` solo codice
   pronto per la produzione. Le tappe di DA-IPAM lavorano in un ramo proprio e arrivano su
   `dev` a tappa finita e verde.
 - Ogni scrittura su NetBird di produzione, su macchine dei clienti o sui centrali in
@@ -50,12 +50,12 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
 | **E** | DA-Zabbix: nomi `cli-<codcli>`, nessuna seconda chiave sulle appliance, verifica R1–R5 indipendente | DA-Zabbix | A (regole di nome) | no |
 | **G1** | Deploy-Appliance: setup key e token DA-Link, livello di privacy al `/setup`, Wazuh mai in NetBird | Deploy-Appliance | C1 | no |
 | **F** | DA-CRM: riquadro «quadro DA-Link» nella linguetta Tecnica (interfaccia proposta prima) | DA-CRM | A (lettura §7.3) | no |
-| **2** | **Pilota DTS, rete** (doppio binario) | — | A, C1, D1, E | **sì, ogni passo** |
+| **2** | **Pilota cliente A, rete** (doppio binario) | — | A, C1, D1, E | **sì, ogni passo** |
 | **B** | DA-Link licenza e chiavi: portachiavi con sblocco, sessione delle chiavi (file cifrati in due copie, decisione 28), `step-ca` a un livello, licenze firmate, segreti, rinnovo, bollettini di emergenza | DA-Link | A | sì: sessione delle chiavi |
 | **C2** | DA-IPAM, licenza: rinnovo, licenza col freno, sola lettura a scadenza, busta dei dati, certificato della CA, bollettini, modalità autonoma | DA-IPAM | B | no, fino al pilota |
 | **D2** | Scanner-Edge, licenza: rinnovo via P7, licenza col freno, certificato della CA, bollettini | DA-Vul-can | B | no, fino al pilota |
 | **G2** | Deploy-Appliance e centrali: radici della CA, chiave di emergenza, chiave di recupero all'installazione | Deploy-Appliance + centrali | B | sì: deploy sui centrali |
-| **2b** | **Pilota DTS, licenza** (col freno: solo segnalazioni) e **prova di compromissione** sulla VM di prova | — | C2, D2, G2 | **sì** |
+| **2b** | **Pilota cliente A, licenza** (col freno: solo segnalazioni) e **prova di compromissione** sulla VM di prova | — | C2, D2, G2 | **sì** |
 | **3** | Gli altri clienti, uno per volta (lista dalla fase 0) | — | 2 (e 2b per la licenza) | **sì, per cliente** |
 | **4** | Spegnimento di Tailscale e pulizia del codice | tutti | 3 | **sì** |
 
@@ -64,7 +64,7 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
 ```
 0 ──► A ──┬──► C1 ──► G1 ─┐
           ├──► D1 (può partire già dopo 0) ──┤
-          ├──► E ──────────┼──► 2 (pilota rete DTS) ──► 3 (clienti, rete)
+          ├──► E ──────────┼──► 2 (pilota rete cliente A) ──► 3 (clienti, rete)
           └──► F           │
           A ──► B ──┬──► C2 ─┐
                     ├──► D2 ─┼──► 2b (pilota licenza) ──► licenza accesa contando

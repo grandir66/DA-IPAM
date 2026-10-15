@@ -36,7 +36,7 @@ const tipoJob: Uguali<ScheduledJob["job_type"], ScheduledJobType> = true;
 const tipoInput: Uguali<ScheduledJobInput["job_type"], ScheduledJobType> = true;
 
 // Il CHECK della v7 com'è scritto in db-tenant.ts: la forma dei DB tenant in
-// esercizio prima di questa tappa (DTS compreso).
+// esercizio prima di questa tappa (cliente A compreso).
 const V7_TYPES = [
   "ping_sweep", "snmp_scan", "nmap_scan", "arp_poll", "dns_resolve", "fast_scan", "cleanup",
   "known_host_check", "ad_sync", "anomaly_check", "librenms_sync", "vuln_sync", "wazuh_sync",

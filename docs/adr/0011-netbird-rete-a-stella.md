@@ -46,7 +46,7 @@ piano di miglioramento, «progetto separato, dopo».
   «stato + inventario». Senza una scelta dichiarata esce solo lo stato, e dal centro non si
   cambia. Se il cliente toglie il consenso, DA-Link cancella anche i numeri già ricevuti.
 - Da Domarc si raggiunge solo l'oggetto, mai la LAN del cliente.
-- Il passaggio si fa a doppio binario cliente per cliente, partendo da DTS.
+- Il passaggio si fa a doppio binario cliente per cliente, partendo dal cliente A.
 - Restano fuori: DA-VA-OVH, sulla sua VPN, e l'OSINT avviato dal CRM, che va dal CRM a
   DA-Vul-can.
 

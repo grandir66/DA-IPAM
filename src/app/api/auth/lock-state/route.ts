@@ -6,7 +6,7 @@ import { loginLockState } from "@/lib/rate-limit";
  *
  * Rivela solo se uno username è temporaneamente in cooldown e per quanto:
  * informazione che chi innesca il blocco già conosce, e che serve a distinguere
- * "aspetta N secondi" da "credenziali errate" (radice degli incidenti 99.50 e DTS).
+ * "aspetta N secondi" da "credenziali errate" (radice degli incidenti 99.50 e cliente A).
  * Nessuna indicazione sull'esistenza dell'utente: qualunque stringa può essere
  * rate-limited.
  */

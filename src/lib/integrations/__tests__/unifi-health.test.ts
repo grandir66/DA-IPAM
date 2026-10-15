@@ -67,10 +67,10 @@ test("tutti letti bene: ok, coi controller e gli apparati dell'ultima lettura, e
 test("una lettura fallita: errore col nome e il motivo; certificato → controllo del certificato", () => {
   const r = composeControllersHealth([
     c({ id: 1, lastOk: true, lastDevices: 42 }),
-    c({ id: 2, name: "DTS", lastOk: false, lastMessage: "Certificato del controller cambiato: …" }),
+    c({ id: 2, name: "Cliente A", lastOk: false, lastMessage: "Certificato del controller cambiato: …" }),
   ]);
   assert.equal(r.verdict, "fail");
-  assert.match(r.detail, /^DTS: Certificato del controller cambiato/);
+  assert.match(r.detail, /^Cliente A: Certificato del controller cambiato/);
   assert.equal(r.repair, "check_unifi_cert");
   assert.equal(r.authOk, false);
 });

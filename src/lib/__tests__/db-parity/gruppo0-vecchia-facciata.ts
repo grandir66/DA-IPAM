@@ -32,7 +32,7 @@ export function getStatusOverTime(
 ): StatusPoint[] {
   // Ultimo stato noto di ogni host portato avanti per 24 h (status-over-time.ts):
   // prima un host contava solo nell'ora in cui era stato controllato, e con il
-  // controllo ogni 3 ore il grafico andava su e giù (DTS, ottobre 2026).
+  // controllo ogni 3 ore il grafico andava su e giù (cliente A, ottobre 2026).
   const STALE_HOURS = 24;
   if (!Number.isFinite(hours)) hours = 24;
   hours = Math.min(Math.max(Math.round(hours), 1), 720);

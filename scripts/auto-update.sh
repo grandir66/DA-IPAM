@@ -65,7 +65,7 @@ if [ "$LOCAL" = "$REMOTE" ]; then
 fi
 
 # Solo documentazione: si aggiornano i file senza build né riavvio. Ogni commit di
-# docs su dev riavviava DTS e interrompeva il controllo host in corso (2026-10-12).
+# docs su dev riavviava l'appliance del cliente A e interrompeva il controllo host in corso (2026-10-12).
 # L'app legge i .md dal disco a ogni richiesta, quindi non serve la build.
 CAMBIATI="$(git diff --name-only "$LOCAL" "$REMOTE")"
 if [ -n "$CAMBIATI" ] && ! printf '%s\n' "$CAMBIATI" | grep -q -v -E '^docs/|\.md$'; then

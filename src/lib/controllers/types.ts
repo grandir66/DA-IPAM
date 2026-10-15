@@ -8,7 +8,7 @@ export type ControllerVendor = "unifi" | "omada";
 
 /**
  * Come si parla col controller:
- * - `self_hosted`: UniFi Network Application classica (VM, es. DTS), utente e password;
+ * - `self_hosted`: UniFi Network Application classica (VM, es. cliente A), utente e password;
  * - `udm`: console UniFi OS (UDM, UDM Pro/Beast, Cloud Key Gen2+), chiave API;
  * - `omada`: controller Omada (OpenAPI, client id e secret) — non ancora disponibile.
  */

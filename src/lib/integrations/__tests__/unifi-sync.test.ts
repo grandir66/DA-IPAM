@@ -1,5 +1,5 @@
 // Sync del controller UniFi nel DB del tenant (tappa 2, Task 4), provata sulla
-// risposta vera di stat/device (fixture anonimizzata del controller di DTS:
+// risposta vera di stat/device (fixture anonimizzata del controller del cliente A:
 // SW-1, SW-11, AP-3, SW-2) con un tenant temporaneo e una sorgente finta al
 // posto del controller. Niente rete.
 //
@@ -447,7 +447,7 @@ test("l'host UniFi già presente nella rete resta uno: il network_device si agga
 });
 
 test("identità fisica: si collega se esiste già, non se ne crea nessuna", async () => {
-  // A DTS physical_devices è vuota: la sync non deve riempirla di record fittizi.
+  // Al cliente A physical_devices è vuota: la sync non deve riempirla di record fittizi.
   await sync();
   assert.equal(conta(T, "physical_devices"), 0);
   assert.equal(apparato("SW-1").physical_device_id, null);

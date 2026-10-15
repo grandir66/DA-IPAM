@@ -115,7 +115,7 @@ export function getAttemptCount(key: string, windowMs: number = 15 * 60 * 1000):
  * senza controllare le credenziali e **senza** `recordFailedAttempt` — i tentativi
  * durante il cooldown non devono aggravare il blocco. `retryAfterSec` è il tempo
  * residuo, da mostrare all'utente: così sa di dover aspettare invece di credere di
- * aver perso la password (incidenti 99.50 del 2026-07-17 e appliance DTS del
+ * aver perso la password (incidenti 99.50 del 2026-07-17 e appliance cliente A del
  * 2026-08-02, entrambi da blocco "muto" indistinguibile da "credenziali errate").
  */
 export const LOGIN_FREE_ATTEMPTS = 4; // il 5° fallimento è il primo blocco

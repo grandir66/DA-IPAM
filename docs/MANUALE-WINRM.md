@@ -4,7 +4,7 @@
 >
 > Questo manuale copre **tutti** gli scenari di configurazione WinRM necessari per consentire a DA-IPAM di accedere a host Windows (workstation, server, controller di dominio) per inventario software, fingerprint OS, esecuzione patch via Chocolatey, sincronizzazione Wazuh.
 >
-> **Casi d'uso reali coperti** (incident documentati): server workgroup DOMARC (Veeam), VM domain-joined DTS, controller di dominio cliente con LDAPS hardenizzato, postazioni Windows 11 con NTLM disabilitato di default.
+> **Casi d'uso reali coperti** (incident documentati): server workgroup DOMARC (Veeam), VM domain-joined cliente A, controller di dominio cliente con LDAPS hardenizzato, postazioni Windows 11 con NTLM disabilitato di default.
 
 ---
 
@@ -107,7 +107,7 @@ netstat -ano | findstr ":5985"                         # 0.0.0.0:5985 LISTENING
 
 **Profilo**: server standalone, autenticazione con admin locale **non-builtin** (es. `da`, `manutenzione`, `svc-monitor`).
 
-**Esempio reale**: server Veeam DOMARC con account locale `da` in gruppo Administrators. Server DA-VEEAM cliente DTS.
+**Esempio reale**: server Veeam DOMARC con account locale `da` in gruppo Administrators. Server DA-VEEAM cliente A.
 
 **Tre ostacoli sovrapposti** da risolvere:
 

@@ -1243,21 +1243,21 @@ ssh -J root@192.168.40.4 root@192.168.4.19 '
 ```
 Expected: servizio `active`, `/health` risponde `{"status":"ok",...}`, `/status` restituisce il JSON dello stato.
 
-- [ ] **Step 3: Duerre — finestra sudo**
+- [ ] **Step 3: cliente A — finestra sudo**
 
-L'utente `dts` non ha sudo passwordless. Con l'operatore presente:
+L'utente `cliente-a` non ha sudo passwordless. Con l'operatore presente:
 
 ```bash
-# Sull'host Duerre, con privilegi amministrativi (una tantum):
-usermod -aG sudo dts        # oppure una regola mirata in /etc/sudoers.d/
+# Sull'host del cliente A, con privilegi amministrativi (una tantum):
+usermod -aG sudo cliente-a        # oppure una regola mirata in /etc/sudoers.d/
 ```
 
-Poi ripeti gli Step 1 e 2 con `ssh dts@10.0.1.10` e `sudo` davanti ai comandi che lo richiedono.
+Poi ripeti gli Step 1 e 2 con `ssh cliente-a@10.0.1.10` e `sudo` davanti ai comandi che lo richiedono.
 
-- [ ] **Step 4: Duerre — rimuovere il privilegio (obbligatorio)**
+- [ ] **Step 4: cliente A — rimuovere il privilegio (obbligatorio)**
 
 ```bash
-ssh dts@10.0.1.10 'sudo deluser dts sudo && id dts'
+ssh cliente-a@10.0.1.10 'sudo deluser cliente-a sudo && id cliente-a'
 ```
 Expected: nell'output di `id` **non** deve più comparire il gruppo `sudo`. Questo passo non è opzionale: annota l'esito nel report.
 
@@ -1280,7 +1280,7 @@ Expected: `exit=1` (prima era sempre 0), `runs.archive.outcome` uguale a `failed
 
 - [ ] **Step 6: Aprire il firewall verso il DA-IPAM corrispondente**
 
-Domarc: consentire `192.168.4.8` verso la porta 9443. Duerre: consentire `10.0.0.2`. Verifica dalla macchina DA-IPAM:
+Domarc: consentire `192.168.4.8` verso la porta 9443. Cliente A: consentire `10.0.0.2`. Verifica dalla macchina DA-IPAM:
 
 ```bash
 curl -sk https://<ip-wazuh>:9443/health

@@ -6,7 +6,7 @@
 ## Contesto
 
 L'appliance Domarc (VM 533) esegue il servizio con `ExecStart=tsx server.ts`,
-cioè **dai sorgenti**. Le altre installazioni (DTS, appliance cliente) girano il
+cioè **dai sorgenti**. Le altre installazioni (cliente A, appliance cliente) girano il
 build di Next, dove il bundler deduplica i moduli.
 
 Il 2026-09-02, alle 18:00:01, `librenms-sync.ts` ha eseguito

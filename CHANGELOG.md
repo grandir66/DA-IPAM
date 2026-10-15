@@ -205,10 +205,10 @@ router) e v0.3.280 (tutto il resto).
 - **La configurazione UniFi esistente passa da sola nella tabella dei
   controller**, al primo accesso dopo l'aggiornamento: una volta per cliente,
   con la password copiata cifrata com'è e il certificato già fissato. Solo
-  dove l'hub ha un cliente attivo (DTS sì; con più clienti non si indovina di
+  dove l'hub ha un cliente attivo (cliente A sì; con più clienti non si indovina di
   chi sia, e lo si scrive nel log). Le impostazioni vecchie restano nell'hub,
   non più lette, per poter tornare indietro. Misurato sulla copia del database
-  di DTS: un controller creato, nessuna tabella esistente cambiata.
+  del cliente A: un controller creato, nessuna tabella esistente cambiata.
 - **«Stato moduli» non fa più login sui controller**: legge l'esito
   dell'ultima lettura di ciascuno. Prima ogni apertura della dashboard (ogni
   cinque minuti) era un accesso nel registro del controller del cliente.
@@ -438,7 +438,7 @@ router) e v0.3.280 (tutto il resto).
   disinstallazione lo dice. Configurazione e dati restano: reinstallando il
   modulo tutto torna come prima. **Cambia sulle installazioni del canale
   `dev`** solo per chi ha il modulo spento con la configurazione salvata:
-  a DTS il modulo non è configurato, sull'hub (letture del 12/10) risulta
+  al cliente A il modulo non è configurato, sull'hub (letture del 12/10) risulta
   attivo su due clienti; resta da confermare che nessun cliente dell'hub abbia
   la configurazione col modulo spento. Prova: `disinstallato.test.ts`.
 - **Installazioni di LibreNMS e Graylog con segreti propri, mai nel registro
@@ -468,7 +468,7 @@ router) e v0.3.280 (tutto il resto).
   resta nel browser finché LibreNMS non la fa scadere. **Cambia subito sulle installazioni del canale `dev`** (deroga
   a «nasce spento», decisa nel piano): chi era viewer e apriva LibreNMS senza
   login ora vede il login; secondo la lettura del 12/10 sull'hub c'è un utente
-  viewer, a DTS nessuno. Per l'admin non cambia niente, tranne la voce
+  viewer, al cliente A nessuno. Per l'admin non cambia niente, tranne la voce
   LibreNMS del vault delle credenziali, che ora tiene l'indirizzo diretto
   dell'interfaccia (la scelta dell'accesso automatico si fa quando si apre il
   link, in base al ruolo: anche «Apri» nella scheda della credenziale porta
@@ -544,8 +544,8 @@ router) e v0.3.280 (tutto il resto).
   codice di prima. `docs/auth-matrix.md` è rigenerata dal censimento (452
   gestori, nessun debito, nessuna rotta scoperta) e torna a valere.
 
-- **Controller UniFi come fonte di dati (spento finché non lo si accende).** A
-  DTS il controller UniFi gestisce 74 apparati, ma per DA-IPAM erano solo host:
+- **Controller UniFi come fonte di dati (spento finché non lo si accende).** Al
+  cliente A il controller UniFi gestisce 74 apparati, ma per DA-IPAM erano solo host:
   nessuno fra i dispositivi di rete, nessuna porta, nessun vicino LLDP, e la
   mappa della topologia mostrava quasi solo i tre MikroTik. Ora DA-IPAM legge il
   controller in sola lettura e scrive nel tenant gli switch e gli access point,
@@ -730,13 +730,13 @@ router) e v0.3.280 (tutto il resto).
 - **Grafico «Stato host nel tempo»: niente più denti di sega.** Il grafico
   contava, ora per ora, solo gli host controllati dentro quell'ora e metteva
   tutti gli altri fra gli «Sconosciuti». Dove il controllo degli host gira ogni
-  3 ore (DTS) la curva saliva all'ora del controllo e crollava nelle due ore
+  3 ore (cliente A) la curva saliva all'ora del controllo e crollava nelle due ore
   dopo, con la salute al 3%, anche se nessun host cambiava stato. Ora ogni host
   conserva il suo ultimo stato per 24 ore (oltre torna «sconosciuto»), la serie
   ha un punto per ogni ora anche senza controlli, e la salute si calcola sugli
   host di stato noto (`src/lib/status-over-time.ts`).
 - **L'aggiornamento automatico delle appliance non si blocca più su WinRM e
-  riavvia il servizio giusto.** Su DTS da giugno ogni aggiornamento si fermava:
+  riavvia il servizio giusto.** Sul cliente A da giugno ogni aggiornamento si fermava:
   l'ambiente Python per WinRM era stato creato senza `pip` e lo script, trovando
   `python3`, non lo ricreava; dopo il `git pull` si fermava tutto e la build
   nuova non partiva mai. Ora un ambiente senza `pip` si ricrea, un guasto di
@@ -748,11 +748,11 @@ router) e v0.3.280 (tutto il resto).
   secondi che l'app risponda.
 - **L'aggiornamento automatico non riavvia per i commit di sola
   documentazione.** Un commit che cambia solo `docs/` o file `.md` aggiorna i
-  file senza build né riavvio: prima ogni nota pubblicata riavviava DTS e
+  file senza build né riavvio: prima ogni nota pubblicata riavviava l'appliance del cliente A e
   interrompeva il controllo degli host in corso.
 - **«Aggiorna» e «Riavvia» dall'interfaccia non lasciano più l'app spenta, e
   «Aggiorna ora» di Impostazioni funziona.** Il riavvio cercava solo il servizio
-  `da-invent`; sulle appliance installate con Deploy-Appliance, come DTS, si
+  `da-invent`; sulle appliance installate con Deploy-Appliance, come cliente A, si
   chiama `da-ipam`, e il pulsante ripiegava sul rilancio da sé (un processo
   staccato e un'uscita senza errore), che sotto systemd chiude tutto: l'app
   restava spenta finché qualcuno non la riavviava a mano (successo due volte il
@@ -780,14 +780,14 @@ router) e v0.3.280 (tutto il resto).
   della richiesta, che la rotta non leggeva, e riceveva «Azione non
   supportata»: ora l'azione si legge dall'indirizzo o dal corpo.
   I comandi da copiare dell'aggiornamento manuale riavviano il servizio attivo
-  fra `da-invent` e `da-ipam` (prima solo `systemctl restart da-invent`, che su
-  DTS falliva) e, se nessuno dei due è attivo, lo scrivono; il messaggio dello
+  fra `da-invent` e `da-ipam` (prima solo `systemctl restart da-invent`, che sul
+  cliente A falliva) e, se nessuno dei due è attivo, lo scrivono; il messaggio dello
   scheduler che chiede di riavviare il processo nomina tutti e due.
 - **Un job non parte più due volte nello stesso processo.** Quando una pagina
   salvava la configurazione dei job (job, AD, Wazuh, MeshCentral, Scanner-Edge,
   import moduli), lo scheduler veniva ricaricato da una seconda copia del suo
   modulo, che non vedeva i cron già attivi: non li fermava e ne aggiungeva
-  altri. Su DTS, il 12/10 alle 15:04, il controllo degli host è partito due
+  altri. Sul cliente A, il 12/10 alle 15:04, il controllo degli host è partito due
   volte insieme. Ora l'elenco dei cron è unico per processo.
 - **Tabella ARP: si vede quando la lista è troncata.** Mostra al massimo 500
   righe; arrivata al limite, ora lo dice e invita a restringere con i filtri,

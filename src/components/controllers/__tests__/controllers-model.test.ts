@@ -39,7 +39,7 @@ const PIN_B = `sha256/${Buffer.alloc(32, 2).toString("base64")}`;
 function ctrl(over: Partial<NetworkControllerView> = {}): NetworkControllerView {
   return {
     id: 3,
-    name: "DTS",
+    name: "Cliente A",
     vendor: "unifi",
     kind: "self_hosted",
     url: "https://10.0.0.5:8443",

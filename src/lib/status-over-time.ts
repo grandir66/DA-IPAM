@@ -5,7 +5,7 @@ import { parseDbDate } from "./db-date";
  *
  * Prima il grafico contava, ora per ora, solo gli host controllati DENTRO
  * quell'ora e metteva tutti gli altri fra gli "Sconosciuti". Con il controllo
- * degli host ogni 3 ore (DTS, ottobre 2026) la curva andava su e giù: picco
+ * degli host ogni 3 ore (cliente A, ottobre 2026) la curva andava su e giù: picco
  * all'ora del controllo, quasi tutti sconosciuti e Health al 3% nelle due ore
  * dopo, anche se nessun host aveva cambiato stato.
  *

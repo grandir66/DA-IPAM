@@ -4,7 +4,7 @@
  *
  * In esercizio DA-IPAM gira sotto systemd come root, con `Restart=on-failure`:
  * unità `da-invent` sulle installazioni classiche (scripts/install.sh,
- * deploy/da-invent.service), `da-ipam` sulle appliance di Deploy-Appliance (DTS).
+ * deploy/da-invent.service), `da-ipam` sulle appliance di Deploy-Appliance (cliente A).
  *
  * Regola: SOTTO SYSTEMD SI RIAVVIA LA PROPRIA UNITÀ, e non si esce mai con 0.
  *  - L'unità si legge da /proc/self/cgroup, che dice in quale servizio gira

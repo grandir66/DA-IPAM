@@ -212,7 +212,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   {
     // Non è un'integrazione ma la macchina che le ospita tutte: disco root e
     // demone Docker. Due appliance si sono fermate sul campo per disco pieno
-    // (DTS 2026-07-28, PX-NAS 2026-07-30) senza che questa griglia desse
+    // (cliente A 2026-07-28, PX-NAS 2026-07-30) senza che questa griglia desse
     // alcun segnale — questa voce esiste per non ripetere quell'incidente.
     key: "appliance",
     label: "Sistema appliance",

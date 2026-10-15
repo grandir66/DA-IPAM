@@ -2,7 +2,7 @@
 // delle righe (segreti, certificato, pianificazione), storico con potatura,
 // passaggio della configurazione unica dell'hub, giro di lettura registrato.
 // Niente rete: il controller è un trasporto finto che risponde con la
-// risposta vera di stat/device (fixture anonimizzata di DTS).
+// risposta vera di stat/device (fixture anonimizzata del cliente A).
 //
 // Hub DB isolato: `support/hub-isolato` va importato PER PRIMO (il perché sta
 // lì). I tenant stanno in DA_INVENT_DATA_DIR: lanciare con una cartella di prova.

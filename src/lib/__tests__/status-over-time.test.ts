@@ -1,5 +1,5 @@
 /**
- * Grafico "Stato host nel tempo" (dashboard). Su DTS (ottobre 2026) la curva
+ * Grafico "Stato host nel tempo" (dashboard). Sul cliente A (ottobre 2026) la curva
  * andava su e giù ogni 3 ore: picchi all'ora del controllo degli host, e in
  * mezzo quasi tutti "Sconosciuti" con Health al 3%. Gli host non cambiavano
  * stato: il grafico contava, ora per ora, solo gli host controllati IN QUELL'ORA.

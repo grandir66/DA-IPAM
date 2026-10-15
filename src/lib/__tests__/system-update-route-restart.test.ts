@@ -7,7 +7,7 @@
  * concludeva «nessun servizio» e ripiegava sul rilancio di sé con
  * `process.exit(0)`. Sotto systemd un'uscita con 0 non viene riavviata
  * (Restart=on-failure) e il figlio staccato muore col gruppo dell'unità: il
- * servizio restava spento. Lo stesso sulle appliance come DTS, che ricevono dev
+ * servizio restava spento. Lo stesso sulle appliance come cliente A, che ricevono dev
  * ogni 15 minuti. La rotta importa next/server e l'autenticazione, quindi la si
  * prova leggendone il sorgente, come le altre prove-invariante del repo.
  *

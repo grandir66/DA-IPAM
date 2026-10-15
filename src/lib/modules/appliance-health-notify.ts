@@ -1,7 +1,7 @@
 /**
  * Notifiche di salute dell'appliance (disco/Docker) con anti-rumore.
  *
- * Perché esiste: l'incident DTS 2026-07-28 (disco al 100%, build falliti in
+ * Perché esiste: l'incident cliente A 2026-07-28 (disco al 100%, build falliti in
  * silenzio per giorni) è passato inosservato proprio perché nessuno aveva la
  * dashboard aperta — il probe `appliance` in modules/health.ts rende il
  * problema VISIBILE, questo modulo lo rende RUMOROSO al momento giusto anche

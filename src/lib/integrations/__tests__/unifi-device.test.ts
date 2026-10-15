@@ -1,4 +1,4 @@
-// Lettura della risposta vera di stat/device (controller di DTS, 12/10,
+// Lettura della risposta vera di stat/device (controller del cliente A, 12/10,
 // ridotta a 4 apparati e anonimizzata): SW-1 con LLDP verso SW-11, AP-3
 // appeso a SW-1, SW-11 con LLDP verso altri, SW-2 offline senza LLDP.
 import { test } from "node:test";

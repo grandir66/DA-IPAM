@@ -157,7 +157,7 @@ stringhe lunghe simili a chiavi: `grep -E '[A-Za-z0-9]{32,}' "$SCRATCH/netbird.t
 ```bash
 ssh domarc@da-vulcan "sqlite3 -readonly ~/da-vul-can/data/vuln.db \"SELECT id,label,codcli,public_hostname,scanner_edge_version,substr(last_seen_at,1,16),state FROM edge_bridges ORDER BY codcli;\"" > "$SCRATCH/edge.txt"; echo "exit=$?"
 ssh root@192.168.4.8 "sqlite3 -readonly /opt/da-invent/data/hub.db \"SELECT codice_cliente, ragione_sociale FROM tenants ORDER BY codice_cliente;\"" > "$SCRATCH/tenant-hub.txt"; echo "exit=$?"
-ssh root@10.0.0.2 "sqlite3 -readonly /opt/da-ipam/data/hub.db \"SELECT codice_cliente, ragione_sociale FROM tenants;\"" > "$SCRATCH/tenant-dts.txt"; echo "exit=$?"
+ssh root@10.0.0.2 "sqlite3 -readonly /opt/da-ipam/data/hub.db \"SELECT codice_cliente, ragione_sociale FROM tenants;\"" > "$SCRATCH/tenant-cliente-a.txt"; echo "exit=$?"
 ```
 Se `sqlite3` manca su una macchina, lo si dice e si legge con `python3 -c` (sqlite3 della
 libreria standard): niente installazioni.

@@ -31,10 +31,10 @@
 ## Correzioni prima di eseguire (integrazione col piano di miglioramento, 12/10 sera)
 
 Questo piano è la **tappa 2** di `docs/superpowers/specs/2026-10-12-piano-miglioramento-design.md`
-e si esegue com'è, con queste correzioni. **`dev` arriva da solo all'appliance di DTS in
+e si esegue com'è, con queste correzioni. **`dev` arriva da solo all'appliance del cliente A in
 15 minuti**: niente si accende da solo, e ciò che tocca il database si prova prima su una copia.
 
-1. **Dati di prova con la forma vera.** La misura su DTS ha contato `lldp_table` **a livello
+1. **Dati di prova con la forma vera.** La misura sul cliente A ha contato `lldp_table` **a livello
    di dispositivo** (72 su 74); i test del Task 2 lo leggono dentro ogni porta, con campi
    `lldp_chassis_id` / `lldp_port_id` / `lldp_mgmt_addr` scritti a mano. **Prima del Task 2**:
    una risposta vera di `stat/device` presa in sola lettura con l'account `map`, anonimizzata
@@ -58,7 +58,7 @@ e si esegue com'è, con queste correzioni. **`dev` arriva da solo all'appliance 
    `db-tenant-schema.ts` (test che confronta i due). Si prova su una copia di un database tenant
    vero prima del push.
 7. **Prima sincronizzazione = scrittura su dati di un cliente.** Il Task 4, passo 4, si fa prima
-   su una **copia locale** del database del tenant DTS (controller letto in sola lettura),
+   su una **copia locale** del database del tenant cliente A (controller letto in sola lettura),
    contando prima e dopo; poi sull'appliance, con backup del database del tenant e conferma di
    Riccardo.
 8. **Salute e stato**: una voce nel registry dei moduli con la sonda (= test-connection), così
@@ -208,7 +208,7 @@ test("device senza MAC/port_table non crasha", () => {
 - [x] **Step 1:** Leggere `src/lib/integrations/wazuh-sync.ts` (`syncWazuhForTenant`) come template direzionale (pull→upsert, match per IP/MAC) e `librenms-sync.ts` per struttura errori/probe.
 - [x] **Step 2:** Implementare: `cfg = getIntegrationConfig("unifi")`; se `mode!=="external"` return skip. `client = createUnifiClient(cfg)`; `const p = await client.probe(); if(!p.ok) return {…errors:[p.message]}`. `devices = await client.listDevices()`. Per ogni device (dentro la transazione per-device o batch): `mapUnifiDeviceType` (skip se null); trovare il `network_device` esistente (`resolveMacToNetworkDevice(mac)` → `getNetworkDeviceByHost(ip)`) → `updateNetworkDevice` o `createNetworkDevice(mapUnifiDevice(d))`; `resolvePhysicalDevice` + `setNetworkDevicePhysicalDevice`; `upsertSwitchPorts(id, mapUnifiPorts(d))`; `upsertNeighbors(id, mapUnifiLldp(d))`. Accumulare conteggi/errori, **non lanciare**.
 - [x] **Step 3:** `npx tsc --noEmit && npm run lint && npm test` (incl. `no-dynamic-db-tenant-import.test.ts` verde). *(tsc completo, eslint sui file toccati, prove mirate UniFi + `no-dynamic-db-tenant-import` + `host-status-by-ip`; `npm test` completo non lanciato per la memoria della macchina, 12/10)*
-- [ ] **Step 4: verifica reale su DTS** (tenant 71734) — *da fare, correzione 7: prima su una copia locale del DB del tenant, poi sull'appliance con backup e conferma di Riccardo*: configurare `integration_unifi_*` (kind self_hosted, url `https://10.0.1.222:8443`, site `3oumjv0i`, user `map` dal vault), lanciare la sync e **contare** `network_devices`/`device_neighbors`/`switch_ports` prima/dopo (attesi ~74 device, molte adiacenze). Poi aprire `/topology` → mappa piena.
+- [ ] **Step 4: verifica reale sul cliente A** (tenant 71734) — *da fare, correzione 7: prima su una copia locale del DB del tenant, poi sull'appliance con backup e conferma di Riccardo*: configurare `integration_unifi_*` (kind self_hosted, url `https://10.0.1.222:8443`, site `3oumjv0i`, user `map` dal vault), lanciare la sync e **contare** `network_devices`/`device_neighbors`/`switch_ports` prima/dopo (attesi ~74 device, molte adiacenze). Poi aprire `/topology` → mappa piena.
 - [x] **Step 5:** `git commit -m "feat(unifi): sync engine pull→upsert (device/porte/adiacenze)"`.
 
 > **Esito del passo 3 (12/10), dove differisce da sopra.** `syncUnifiForTenant(opts?)` in
@@ -221,7 +221,7 @@ test("device senza MAC/port_table non crasha", () => {
 > - **Funzioni DB** solo da `@/lib/db-tenant` (correzione 3). Nuove lì: `getNetworkDeviceKnownMacs`,
 >   `getPhysicalDeviceAnchors`, `getPortAndNeighborCountsByDevice`, `linkNetworkDeviceToPhysicalDevice`,
 >   `runInTenantTransaction`. **Non** `resolvePhysicalDevice`/`physical-device-db.ts`: il primo CREA un
->   record quando non trova (a DTS `physical_devices` è vuota: sarebbero 74 record fittizi), il secondo
+>   record quando non trova (al cliente A `physical_devices` è vuota: sarebbero 74 record fittizi), il secondo
 >   passa da `getDb()` del facade, che risolve il tenant con un `require` di db-tenant.
 > - **Abbinamento** seriale → MAC noti (host collegato o con lo stesso IP, identità fisica) → IP; per IP
 >   solo se nessun MAC lo smentisce e l'apparato è `ubiquiti`/`other`, altrimenti «IP conteso»: saltato,
@@ -308,7 +308,7 @@ test("device senza MAC/port_table non crasha", () => {
 >   dentro aperto con `getTenantDb`**, copia per nome, transazione) e
 >   `src/lib/cron/__tests__/unifi-sync-job.test.ts` (2, via `runJob`, senza rete).
 > - Etichetta «Sincronizzazione controller UniFi» nell'elenco job delle impostazioni.
-> - Resta (correzione 6): provare la v8 su una **copia** di un DB tenant vero (DTS) prima del
+> - Resta (correzione 6): provare la v8 su una **copia** di un DB tenant vero (cliente A) prima del
 >   push.
 
 ---
@@ -377,8 +377,8 @@ test("device senza MAC/port_table non crasha", () => {
 
 - [x] **Step 1:** `docs/adr/0005-unifi-controller-integration.md` (template 0000; la 0004 è la decisione di prodotto, correzione 9): decisione, alternative (SNMP-only, per-tenant table), conseguenze.
 - [ ] **Step 2:** Gate completo `npm run lint && npx tsc --noEmit && npm run build && npm test`. *(12/10, passo 6: `npm test` con `DA_INVENT_DATA_DIR` temporanea → 1274 prove, 1273 verdi, 0 rosse, 1 saltata (golden del codec, preesistente); `npx tsc --noEmit` → 0 errori. Restano `npm run lint` sull'intero repo e `npm run build`, da fare prima del merge in `dev`)* *(12/10 sera, dopo la revisione del ramo — 14 rilievi: corretti offline, abbinamento per seriale con `host_id`, IP del vicino, non adottati, fixture, password al cambio d'indirizzo, impronta senza sovrascritture, prova in POST, sonda UniFi fuori dalla notifica disco, prova della v8 su vincoli e indici; rimandati nell'ADR 0005 uplink, due scrittori, tenant del controller. `npm test` → 1291 prove, 1290 verdi, 0 rosse, 1 saltata; `npx tsc --noEmit` → 0 errori; eslint sui file toccati verde)*
-- [ ] **Step 3:** `npm run version:release && git push origin dev`. *(non fatto: il ramo resta locale finché la verifica su copia del DB DTS — correzione 7, Task 4 passo 4 — non è fatta)*
-- [ ] **Step 4:** Aggiornare `CONTEXT.md` di DA-IPAM (feature UniFi) e il `CONTEXT.md` DTS. *(12/10: `CONTEXT.md` di DA-IPAM aggiornato (§6), CHANGELOG in `[Non rilasciato]`, riga della tappa 2 nel §9 del piano di miglioramento. Il `CONTEXT.md` DTS resta da fare dopo la prima sync vera)*
+- [ ] **Step 3:** `npm run version:release && git push origin dev`. *(non fatto: il ramo resta locale finché la verifica su copia del DB cliente A — correzione 7, Task 4 passo 4 — non è fatta)*
+- [ ] **Step 4:** Aggiornare `CONTEXT.md` di DA-IPAM (feature UniFi) e il `CONTEXT.md` cliente A. *(12/10: `CONTEXT.md` di DA-IPAM aggiornato (§6), CHANGELOG in `[Non rilasciato]`, riga della tappa 2 nel §9 del piano di miglioramento. Il `CONTEXT.md` cliente A resta da fare dopo la prima sync vera)*
 
 ## Self-review
 

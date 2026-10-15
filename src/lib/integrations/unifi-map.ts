@@ -5,7 +5,7 @@
  * `upsertSwitchPorts` e `upsertNeighbors` di `@/lib/db-tenant`.
  *
  * Forma d'ingresso: `UnifiDevice` di `unifi-device.ts`, cioè la risposta vera
- * di `stat/device`. Fatti misurati sul controller di DTS (12/10):
+ * di `stat/device`. Fatti misurati sul controller del cliente A (12/10):
  * - la `lldp_table` sta a livello di APPARATO; la porta locale è
  *   `local_port_idx` / `local_port_name`;
  * - una voce LLDP non porta il nome del vicino: `chassis_id` è di solito il suo
@@ -128,7 +128,7 @@ const MAC_SHAPE = /^[0-9a-f]{2}([:-]?)[0-9a-f]{2}(\1[0-9a-f]{2}){4}$/i;
 const IPV4_SHAPE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
 
 /**
- * Il primo IPv4 di `mgmt_ips`. Il campo manca nella fixture di DTS e la sua
+ * Il primo IPv4 di `mgmt_ips`. Il campo manca nella fixture del cliente A e la sua
  * forma non è misurata: un IPv6 (anche link-local) in testa non si prende,
  * perché topologia e attribuzione abbinano per IPv4 (`hosts.ip`).
  */

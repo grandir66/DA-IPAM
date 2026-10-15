@@ -41,8 +41,8 @@
 6. Wazuh server, Graylog completo e DNS/DHCP restano su macchine proprie, DA-IPAM li
    collega; nessun diritto di DA-IPAM sull'host Proxmox.
 7. I controller UniFi e Omada creano oggetti: access point, switch, router e client.
-8. L'integrazione nativa del controller UniFi è **prioritaria** (DTS, decisione del
-   12/10 nel dossier DTS).
+8. L'integrazione nativa del controller UniFi è **prioritaria** (cliente A, decisione del
+   12/10 nel dossier cliente A).
 
 Ne discende un vincolo: il codice dell'edge resta nel repo privato DA-Vul-can, perché
 questo repo è pubblico; DA-IPAM riceve l'edge come immagine pronta.
@@ -53,7 +53,7 @@ questo repo è pubblico; DA-IPAM riceve l'edge come immagine pronta.
    spento; si prova, si accende, e il vecchio si toglie in un passo successivo, con la
    prova che nessuno lo usa più.
 2. **`dev` non è un banco di prova: arriva da solo, entro 15 minuti, all'hub (VM 533)
-   e all'appliance di DTS**, un cliente. Quindi: il cancello si passa **prima** del
+   e all'appliance del cliente A**, un cliente. Quindi: il cancello si passa **prima** del
    push; tutto ciò che è nuovo nasce spento; ogni migrazione del database si prova
    prima su una copia di un database tenant vero. Le altre appliance ricevono `main`
    col promote, confermato da Riccardo. Ogni tappa si rilascia da sola e non lascia
@@ -90,7 +90,7 @@ questo repo è pubblico; DA-IPAM riceve l'edge come immagine pronta.
 | Tappa | Obiettivo | Livello | Dipende da | Dimensione | Cosa si vede |
 |---|---|---|---|---|---|
 | 1 | Correzioni visibili e difetti d'installazione | leggero (completo per permessi e installazione) | — | 1-2 sessioni | setup, utenti, link, testi giusti |
-| 2 | Controller UniFi: dispositivi, porte, LLDP | completo per migrazione e prima sync, leggero per la card | — | 2-3 sessioni | i 74 apparati UniFi di DTS fra i dispositivi; la mappa si riempie |
+| 2 | Controller UniFi: dispositivi, porte, LLDP | completo per migrazione e prima sync, leggero per la card | — | 2-3 sessioni | i 74 apparati UniFi del cliente A fra i dispositivi; la mappa si riempie |
 | 3 | Fondamenta: dati, scansioni, permessi | completo | — | 3-5 sessioni | database più piccolo, scansioni che non si accavallano |
 | 4 | Catalogo dei moduli; controller completo (Omada, client) | completo per installazioni e scritture, leggero per le pagine | 2, 3 | 4-5 sessioni | pagina Moduli nuova; client e access point visti dal controller |
 | 5 | Topologia completa | leggero | 2, 4 | 2-3 sessioni | mappa con AP, porte, client; export drawio |
@@ -142,7 +142,7 @@ il §9 di questo documento; la bacheca sul Mac (`piano-miglioramento-da-ipam`) l
 **Già fatto o in corso altrove**: il blocco dei filtri (UI-1, UI-2, UI-8 chiusi;
 restano UI-5, UI-7, UI-9) in un'altra sessione; NUC-5 chiuso in v0.3.266; INS-1
 chiuso per l'aggiornamento automatico in v0.3.265 (`update.sh` riavvia il servizio
-attivo fra `da-invent` e `da-ipam`, verificato su DTS). Non si duplica.
+attivo fra `da-invent` e `da-ipam`, verificato sul cliente A). Non si duplica.
 
 - Il setup non propone più "Multi-Tenant" (UI-17).
 - L'amministratore del cliente gestisce gli utenti del proprio cliente, con test di
@@ -182,7 +182,7 @@ locale):
   una sessione su quel repo.
 
 **Verifica**: prove mirate; foto a 1920 di setup, Utenti, Moduli, dashboard.
-**Fatto quando**: tutto su `dev`, verificato sull'hub e su DTS, promote confermato.
+**Fatto quando**: tutto su `dev`, verificato sull'hub e sul cliente A, promote confermato.
 
 ### Tappa 2 — Controller UniFi: dispositivi, porte, LLDP
 
@@ -192,7 +192,7 @@ installato a sessione, mappatura pura, sync, job, card). Si esegue com'è, con l
 **correzioni scritte in testa al piano** il 12/10 sera; in breve:
 
 - test sulla **forma vera** della risposta di `stat/device` (presa in sola lettura con
-  l'account di sola lettura di DTS e anonimizzata), non su campi scritti a mano;
+  l'account di sola lettura del cliente A e anonimizzata), non su campi scritti a mano;
 - il vicino LLDP salvato **anche per MAC**, normalizzato;
 - funzioni del database importate da `db-tenant` (le copie in `db.ts` divergono,
   NUC-2);
@@ -200,13 +200,13 @@ installato a sessione, mappatura pura, sync, job, card). Si esegue com'è, con l
 - certificato del controller fissato al primo uso;
 - migrazione del job provata su una copia di un database tenant vero, con lo stesso
   elenco dello schema (test);
-- **prima sincronizzazione su una copia del database di DTS**, poi sull'appliance con
+- **prima sincronizzazione su una copia del database del cliente A**, poi sull'appliance con
   backup e conferma;
 - voce nel registry con la sonda di salute, credenziali solo nella configurazione.
 
 **Chi fa cosa:**
 
-1. *in locale, prima* (10-15 minuti, rete DTS): la risposta vera di `stat/device`
+1. *in locale, prima* (10-15 minuti, rete cliente A): la risposta vera di `stat/device`
    presa con l'account di sola lettura, **ridotta** a pochi apparati rappresentativi
    (uno switch con LLDP verso un altro, un access point, il gateway se c'è) e
    **anonimizzata** in modo coerente (nomi, MAC, IP, seriali sostituiti; campi `x_*`
@@ -214,7 +214,7 @@ installato a sessione, mappatura pura, sync, job, card). Si esegue com'è, con l
    del commit;
 2. *con un gruppo di agenti*: i task 1-8 del piano UniFi sulla fixture, tutto spento di default,
    push su `dev`;
-3. *in locale, dopo*: la sync su una copia del database DTS, poi sull'appliance con
+3. *in locale, dopo*: la sync su una copia del database cliente A, poi sull'appliance con
    backup e conferma di Riccardo.
 
 Non crea host: per questo non aspetta le fondamenta della tappa 3. I client e Omada
@@ -223,7 +223,7 @@ un cliente che li usa, misurando prima (chiave cloud Domarc da rigenerare con
 permessi di lettura).
 
 **Verifica**: test sulla risposta vera; conteggi prima e dopo sulla copia del
-database DTS (attesi ~74 dispositivi, 50 switch e 24 AP); `/topology` di DTS a schermo.
+database cliente A (attesi ~74 dispositivi, 50 switch e 24 AP); `/topology` del cliente A a schermo.
 
 ### Tappa 3 — Fondamenta: dati, scansioni, permessi
 
@@ -267,7 +267,7 @@ di rete** della tappa 2, che passa dalla card al catalogo e si completa:
   (dispositivi, porte, LLDP).
 - **Client** (decisione 7), per UniFi e Omada: MAC, IP, nome; per i cablati switch e
   porta; per i Wi-Fi access point, SSID, banda, segnale; ultimo visto.
-- **Gli apparati del controller arricchiscono il loro host** (richiesta di Riccardo, 13/10 sera): quando l'IP (o il MAC) di un apparato letto dal controller — switch, access point, gateway, il controller stesso — combacia con un host dell'inventario, i fatti del controller (tipo, modello, firmware, seriale, nome, MAC) arricchiscono quell'host e **fissano la sua tipologia**: il controller è la fonte più affidabile dopo la scelta manuale (che vince sempre, `classification_manual`), sopra l'attribuzione dalla scansione. Oggi la sync scrive solo `network_devices` e il collegamento `host_id`: l'host resta classificato dalla scansione. Da progettare: evidenza «controller» nell'attribuzione (non una scrittura diretta su `hosts`), cosa succede se l'apparato sparisce dal controller, e la misura sulla copia di DTS (quanti host cambiano tipologia) prima di accenderla.
+- **Gli apparati del controller arricchiscono il loro host** (richiesta di Riccardo, 13/10 sera): quando l'IP (o il MAC) di un apparato letto dal controller — switch, access point, gateway, il controller stesso — combacia con un host dell'inventario, i fatti del controller (tipo, modello, firmware, seriale, nome, MAC) arricchiscono quell'host e **fissano la sua tipologia**: il controller è la fonte più affidabile dopo la scelta manuale (che vince sempre, `classification_manual`), sopra l'attribuzione dalla scansione. Oggi la sync scrive solo `network_devices` e il collegamento `host_id`: l'host resta classificato dalla scansione. Da progettare: evidenza «controller» nell'attribuzione (non una scrittura diretta su `hosts`), cosa succede se l'apparato sparisce dal controller, e la misura sulla copia del cliente A (quanti host cambiano tipologia) prima di accenderla.
 - **Dal controller tutto quello che serve a riconoscere un oggetto, anche per i client** (Riccardo, 13/10 sera): oltre a MAC/IP/porta, i campi con cui il controller classifica il client (nome e alias dati dall'amministratore, riconoscimento del dispositivo — famiglia, sistema operativo, produttore —, rete/VLAN, primo e ultimo visto) diventano evidenza «controller» nell'attribuzione, come per gli apparati. Prima di scegliere i campi: misura su una risposta vera di UniFi e di Omada, anonimizzata (quali campi ci sono davvero e quanto sono pieni).
 - **Regole di nascita dei client**:
   - diventano host con origine "controller", fusi per MAC con quelli trovati dalla
@@ -277,7 +277,7 @@ di rete** della tappa 2, che passa dalla card al catalogo e si completa:
   - storico dei collegamenti: proposta 30 giorni, configurabile.
 
 **Verifica**: test del manifesto e delle regole di nascita sulle risposte vere
-registrate; prima lettura dei client su una copia del database DTS, misura di quante
+registrate; prima lettura dei client su una copia del database cliente A, misura di quante
 righe al giorno aggiunge, confronto dei numeri con l'interfaccia del controller.
 
 ### Tappa 5 — Topologia completa
@@ -285,14 +285,14 @@ righe al giorno aggiunge, confronto dei numeri con l'interfaccia del controller.
 Si aggiornano la spec e il piano esistenti (`2026-10-12-topology-map*`), non se ne
 scrivono di nuovi. Comprende la fase F della spec UniFi.
 
-**Il motore di rappresentazione si ripensa (Riccardo, 13/10).** Vista la mappa di DTS
+**Il motore di rappresentazione si ripensa (Riccardo, 13/10).** Vista la mappa del cliente A
 piena dei 74 apparati UniFi: «orribile, le linee sono messe a caso, è caotica». La
 disposizione automatica di oggi non regge un impianto vero; non si rattoppa. La tappa
 comincia da un progetto del motore, discusso con Riccardo prima di scrivere codice:
 disposizione per livelli (centro → distribuzione → accesso → access point → client),
 collegamenti che non si incrociano a caso, raggruppamento per sito e per armadio,
 posizioni salvate che sopravvivono alle letture nuove. Riferimento per giudicarlo: gli
-schemi drawio di DTS fatti a mano. Le altre tappe vanno avanti intanto.
+schemi drawio del cliente A fatti a mano. Le altre tappe vanno avanti intanto.
 
 - **Archi**: LLDP da SNMP e SSH e dal controller, abbinati anche per MAC del vicino
   e non solo per nome o IP; tabella MAC delle porte (SNMP) per collocare i client
@@ -305,8 +305,8 @@ schemi drawio di DTS fatti a mano. Le altre tappe vanno avanti intanto.
   porta; il client con dove è collegato e un breve storico.
 - **Export drawio** (fase 2 della spec della topologia).
 
-**Verifica**: test del grafo con risposte registrate; foto della mappa di DTS
-confrontata coi drawio già fatti a mano per DTS.
+**Verifica**: test del grafo con risposte registrate; foto della mappa del cliente A
+confrontata coi drawio già fatti a mano per il cliente A.
 
 ### Tappa 6 — Tutti i moduli nel catalogo, navigazione, dashboard
 
@@ -394,13 +394,13 @@ menu e moduli.
   test-invarianti (§3, regola 9).
 - **A schermo**: a 1920 px sui dati finti in locale; sul dev o sull'hub coi dati veri
   per le tappe che toccano dati.
-- **Sul campo**: DTS per controller e topologia, prima su una copia del suo database;
+- **Sul campo**: cliente A per controller e topologia, prima su una copia del suo database;
   la nuova PX-NAS per installazione ed edge.
 - **Canale edge**: lo script di verifica sull'hub a ogni rilascio che tocca l'edge.
 
 ## 8. Rischi e come si tengono bassi
 
-- **`dev` arriva a un cliente** (DTS) in 15 minuti: tutto nasce spento, migrazioni
+- **`dev` arriva a un cliente** (cliente A) in 15 minuti: tutto nasce spento, migrazioni
   provate su copia, cancello prima del push.
 - **Più sessioni sullo stesso repo**: una tappa per volta, worktree propri, si
   pubblica da lì.
@@ -421,11 +421,11 @@ vive la console centrale (tappa 9).
 
 | Tappa | Stato | Data | Note |
 |---|---|---|---|
-| 1 | fatta (v0.3.269, verificata su DTS) | 12/10 | UI-17, UI-18, UI-20 (righe Stato moduli), UI-23 (nome), UI-24, MOD-19, EDG-1, INS-1 chiusi; INS-2 in Deploy-Appliance (`e4609c7`). Da vedere su un edge vero: l'elenco dei profili. Rimandati con motivo: import del JSON dell'edge che cancella lo storico (tappa 7), manuale utente da riallineare (igiene), finestra degli agenti che perde il token con Esc (tappa 6), `GET /api/tenants` che elenca tutti i clienti a un admin (tappa 3) |
-| 2 | fatta, ACCESA su DTS (v0.3.270) | 12/10 | Provata sul controller vero di DTS (sola lettura) verso una COPIA del DB: migrazione v8 ok; 74 apparati aggiunti (50 switch, 24 AP), 753 porte, 168 vicini LLDP su 69 apparati (138 col nome risolto), 0 errori; secondo giro 0 aggiunti; dati esistenti intatti (11 dispositivi, 138 vicini MNDP, 965 host). Mappa di DTS piena a schermo. Da fare: accendere su DTS (scrittura sul DB del cliente: backup + conferma di Riccardo); rimandati: uplink non usato, due scrittori sulle porte (sync e poll ARP), tenant del controller da fissare, anonimizzatore della fixture |
-| 3 | in corso: 3a fatta (v0.3.273); 3b scansioni rilasciata (v0.3.275); 3b nucleo pronta, si pubblica dopo il 20/10 | 12-13/10 | Piano di dettaglio solo locale (`docs/tappa3-fondamenta-piano.md`), divisa in 3a/3b/3c (decisione di Riccardo). **3b scansioni** (T3-17, 18, 20-23) su hub e DTS il 13/10: scansioni attese dallo scheduler, un giro alla volta per rete, un giro vecchio non spegne chi è stato visto dopo, soglia sugli spegnimenti in massa solo in registrazione (accenderla chiede conferma); numeri sulla copia DTS mostrati prima del push (D3). **3b nucleo** (T3-05..08, ramo `tappa3b/nucleo`, non pubblicato): una sola copia delle funzioni del database; fuori contesto è un errore invece di un ripiego, quindi si pubblica a finestra dei ripieghi chiusa (20/10) e col registro a zero; comprende il reset del cliente reso funzionante con doppia conferma (decisione del 13/10). T3-09 dopo il nucleo. Poi 3c
-| 4 | in corso: controller di rete fatto (ramo `feat/controller-rete`) | 13/10 | Anticipata la parte «controller» (decisione di Riccardo del 13/10): pagina **Rete → Controller di rete** al posto della card, più controller per cliente nel DB del cliente, storico delle letture, pianificazione per controller, **console UniFi OS con chiave API**, «Stato moduli» senza login sui controller; la configurazione vecchia dell'hub passa da sola (misurato sulla copia DTS: 1 controller, nessuna tabella esistente cambiata). ADR 0007. Omada visibile e spento (si misura su un controller di un cliente; `da-omada` è dei clienti, non si legge dall'hub Domarc). Da fare: Omada, client, catalogo dei moduli, provenienza degli apparati per controller |
-| 5 | da fare | — | la mappa di base è su `dev` (v0.3.260); il motore di rappresentazione va ripensato (13/10: caotica sul dato vero di DTS) |
+| 1 | fatta (v0.3.269, verificata sul cliente A) | 12/10 | UI-17, UI-18, UI-20 (righe Stato moduli), UI-23 (nome), UI-24, MOD-19, EDG-1, INS-1 chiusi; INS-2 in Deploy-Appliance (`e4609c7`). Da vedere su un edge vero: l'elenco dei profili. Rimandati con motivo: import del JSON dell'edge che cancella lo storico (tappa 7), manuale utente da riallineare (igiene), finestra degli agenti che perde il token con Esc (tappa 6), `GET /api/tenants` che elenca tutti i clienti a un admin (tappa 3) |
+| 2 | fatta, ACCESA sul cliente A (v0.3.270) | 12/10 | Provata sul controller vero del cliente A (sola lettura) verso una COPIA del DB: migrazione v8 ok; 74 apparati aggiunti (50 switch, 24 AP), 753 porte, 168 vicini LLDP su 69 apparati (138 col nome risolto), 0 errori; secondo giro 0 aggiunti; dati esistenti intatti (11 dispositivi, 138 vicini MNDP, 965 host). Mappa del cliente A piena a schermo. Da fare: accendere sul cliente A (scrittura sul DB del cliente: backup + conferma di Riccardo); rimandati: uplink non usato, due scrittori sulle porte (sync e poll ARP), tenant del controller da fissare, anonimizzatore della fixture |
+| 3 | in corso: 3a fatta (v0.3.273); 3b scansioni rilasciata (v0.3.275); 3b nucleo pronta, si pubblica dopo il 20/10 | 12-13/10 | Piano di dettaglio solo locale (`docs/tappa3-fondamenta-piano.md`), divisa in 3a/3b/3c (decisione di Riccardo). **3b scansioni** (T3-17, 18, 20-23) su hub e cliente A il 13/10: scansioni attese dallo scheduler, un giro alla volta per rete, un giro vecchio non spegne chi è stato visto dopo, soglia sugli spegnimenti in massa solo in registrazione (accenderla chiede conferma); numeri sulla copia cliente A mostrati prima del push (D3). **3b nucleo** (T3-05..08, ramo `tappa3b/nucleo`, non pubblicato): una sola copia delle funzioni del database; fuori contesto è un errore invece di un ripiego, quindi si pubblica a finestra dei ripieghi chiusa (20/10) e col registro a zero; comprende il reset del cliente reso funzionante con doppia conferma (decisione del 13/10). T3-09 dopo il nucleo. Poi 3c
+| 4 | in corso: controller di rete fatto (ramo `feat/controller-rete`) | 13/10 | Anticipata la parte «controller» (decisione di Riccardo del 13/10): pagina **Rete → Controller di rete** al posto della card, più controller per cliente nel DB del cliente, storico delle letture, pianificazione per controller, **console UniFi OS con chiave API**, «Stato moduli» senza login sui controller; la configurazione vecchia dell'hub passa da sola (misurato sulla copia cliente A: 1 controller, nessuna tabella esistente cambiata). ADR 0007. Omada visibile e spento (si misura su un controller di un cliente; `da-omada` è dei clienti, non si legge dall'hub Domarc). Da fare: Omada, client, catalogo dei moduli, provenienza degli apparati per controller |
+| 5 | da fare | — | la mappa di base è su `dev` (v0.3.260); il motore di rappresentazione va ripensato (13/10: caotica sul dato vero del cliente A) |
 | 6 | da fare | — | |
 | 7 | da fare | — | |
 | 8 | da fare | — | |
@@ -433,7 +433,7 @@ vive la console centrale (tappa 9).
 
 ### Verifiche registrate (data e fonte)
 
-- **T3-22, 13/10 — due giri sovrapposti.** Fonte: copia del database di DTS
+- **T3-22, 13/10 — due giri sovrapposti.** Fonte: copia del database del cliente A
   presa il 12/10, lavorata in una sua copia nella cartella temporanea; niente
   rete (esecutore finto e guardia). Rete scelta dallo script: /22, 155 host, 25
   online. Comando: `npx tsx scripts/prova-giri-sovrapposti.ts <copia.db>
@@ -450,8 +450,8 @@ vive la console centrale (tappa 9).
     dopo, perché lo riscrive l'aggiornamento delle assegnazioni IP di fine giro
     (non il passaggio a offline). Da sistemare nel nucleo.
   - Copertura: il giro della prova è di tipo «ping» sulla rete scelta dallo
-    script. Il solo job di scansione acceso su DTS è la scansione veloce di
+    script. Il solo job di scansione acceso sul cliente A è la scansione veloce di
     un'altra rete (224 host, 207 offline: sono le righe che T3-20 smette di
     riscrivere a ogni giro); la rete con più host offline (248) ha il job spento
     da luglio. Il percorso della scansione veloce (ARP/DHCP, secondo passaggio
-    TCP) non è provato sul dato vero: lo verifica il modo `registra` su DTS.
+    TCP) non è provato sul dato vero: lo verifica il modo `registra` sul cliente A.

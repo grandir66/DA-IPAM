@@ -82,7 +82,7 @@ E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
 | 1 | Da NetBird si raggiunge **solo l'oggetto remoto**. Scansioni, SNMP e inventario partono da lui. Nessuna rotta verso la LAN del cliente. | rotta LAN solo per gli admin; rotta LAN anche ai centrali |
 | 2 | **Chiave d'ingresso monouso per oggetto**, legata ai gruppi giusti, che non scade una volta dentro. In più resta il token applicativo di ciascun dialogo. | una chiave riusabile per cliente; chiave + controlli di postura |
 | 3 | **DA-Link crea gruppi, chiavi e policy via API**, sul modello di `zbximport/netbird.py` di DA-Zabbix, con regole di nome comuni a DA-Zabbix. | a mano dalla console; uno strumento provvisorio; la procedura guidata di DA-Zabbix estesa a tutto |
-| 4 | **Doppio binario cliente per cliente, pilota DTS**: NetBird accanto a Tailscale, verifica, poi si toglie Tailscale. Si finisce coi centrali e si spegne la tailnet. | solo i nuovi su NetBird; taglio netto |
+| 4 | **Doppio binario cliente per cliente, pilota cliente A**: NetBird accanto a Tailscale, verifica, poi si toglie Tailscale. Si finisce coi centrali e si spegne la tailnet. | solo i nuovi su NetBird; taglio netto |
 | 5 | **Gruppi per ruolo, più un gruppo per cliente.** Le policy sono poche e fisse e si scrivono per ruolo; il gruppo del cliente non apre niente: serve a sapere di chi è un nodo e a revocarlo. | una policy per oggetto; centrali come «risorse» dietro un nodo d'instradamento |
 | 6 | **DA-Link nasce subito, piccolo, come progetto separato** in `~/Progetti/Domarc/DA-Link`, installato solo in sede. È l'inizio della console centrale della tappa 9. | dentro DA-IPAM come modalità (finirebbe su ogni appliance col ramo `main`); dentro l'hub DA-Vul-can |
 | 7 | **Le istanze IPAM mandano i dati a DA-Link** (443), come gli edge con da-vulcan e i proxy con Zabbix. Sul remoto non si apre nessuna porta in ingresso, tranne quelle per i tecnici. | DA-Link che va a prendere; entrambi |
@@ -103,7 +103,7 @@ E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
 | 22 | **La flotta sopravvive a DA-Link.** Un rinnovo non accorcia mai la licenza in corso (una più restrittiva vale dalla fine di quella attuale); nessuna risposta di DA-Link cambia la configurazione dell'istanza; il firewall locale accetta solo i centrali; la verifica R1–R5 la fa anche DA-ZABBIX. | fiducia piena in DA-Link |
 | 23 | *(la custodia superata dalla 28)* **Chiave di emergenza sulle YubiKey**, più forte della firma di DA-Link: firma bollettini che ritirano la fiducia a un DA-Link compromesso, fanno lavorare la flotta in modalità autonoma fino a una data e presentano il DA-Link nuovo. Arrivano da un canale di riserva o a mano. La flotta si riconfigura senza reinstallarla. | reinstallare ogni oggetto dopo una compromissione; un DA-Link di riserva sempre acceso |
 | 24 | **Il nome stabile di da-vulcan è `da-vulcan.netbird.selfhosted`** (14/10, fase 0). Lo risolve NetBird su ogni peer, edge compresi, senza DNS in più; il client si installa con `--hostname da-vulcan`. Sostituisce il nome MagicDNS nei 193 file censiti (appendice A.5) prima della fase 4. | un nome nel DNS interno (`domarc.it` sui DC), che andrebbe distribuito anche ai remoti |
-| 25 | **La fase 3 è solo di laboratorio** (14/10). DTS è il pilota della fase 2 e l'unico cliente esterno su Tailscale; poi entra il PX-NAS di casa. L'istanza di sede resta in LAN, DA-VA-OVH va su VPN diretta (fase 4), i nodi superati escono dalla tailnet in fase 4. | DA-VA-OVH in NetBird |
+| 25 | **La fase 3 è solo di laboratorio** (14/10). Cliente A è il pilota della fase 2 e l'unico cliente esterno su Tailscale; poi entra il PX-NAS di casa. L'istanza di sede resta in LAN, DA-VA-OVH va su VPN diretta (fase 4), i nodi superati escono dalla tailnet in fase 4. | DA-VA-OVH in NetBird |
 | 26 | **L'agente Python remoto di DA-IPAM si toglie nella tappa C1** (14/10). Nessuno lo usa: una sola riga sull'hub, mai collegata (appendice A.3). | portarlo su NetBird (rischio 9) |
 | 27 | **Il tenant `70791a` (DOMARC-OVH) si fonde in `70791`** nella tappa che porta DA-IPAM in DA-Link, con un backup prima; la sua rete diventa una rete del tenant Domarc. | cancellarlo; tenerlo separato con un campo `codcli` a parte |
 | 28 | **Niente YubiKey per ora** (Riccardo, 14/10 sera: «anche meno sicuro»). Supera in parte la 20, la 21 e la 23. **La CA ha un livello solo**: la sua chiave vive nel portachiavi di DA-Link. Le chiavi che non devono stare in DA-Link sono la chiave di recupero dei dati, la chiave di emergenza e la copia della chiave della CA. Stanno in **file cifrati con `age` e una frase lunga**, in **due copie**: una nel vault delle credenziali, una su una chiavetta USB in cassaforte. La frase la conoscono due persone. ADR 0014. | due YubiKey in cassaforte (rimandate); solo il vault; tutto dentro DA-Link; CA a due livelli |
@@ -795,7 +795,7 @@ Ogni fase si chiude da sola. Ci si può fermare dopo qualunque fase senza lascia
 - Verifica che il codice tenant delle istanze DA-IPAM sia il `codcli` del gestionale
   (decisione 12), istanza per istanza.
 - **Prova di convivenza su una VM di prova** con Tailscale e NetBird accesi insieme (§11,
-  rischio 1). Se non passa, si decide il rimedio prima di toccare DTS.
+  rischio 1). Se non passa, si decide il rimedio prima di toccare cliente A.
 - Versione del server NetBird; comportamento di scadenza dei nodi entrati con setup key;
   quali permessi servono all'utente di servizio.
 - §6.2: `All` fuori dalle policy dei colleghi, `Default` spenta.
@@ -836,23 +836,23 @@ Esce quando:
   dell'emergenza;
 - chiave e VM si tolgono subito dopo.
 
-**Fase 2 — Pilota DTS**: istanza IPAM `10.0.0.2`, edge `10.0.1.141`, `proxy-dts`.
+**Fase 2 — Pilota cliente A**: istanza IPAM `10.0.0.2`, edge `10.0.1.141`, `proxy-cliente-a`.
 
-1. NetBird accanto a Tailscale sulle macchine di DTS, con chiavi emesse da DA-Link. Il proxy,
+1. NetBird accanto a Tailscale sulle macchine del cliente A, con chiavi emesse da DA-Link. Il proxy,
    se vive da solo, passa dalla procedura guidata di DA-Zabbix.
-2. Gli indirizzi con cui centrali e DTS si cercano passano ai nomi NetBird.
+2. Gli indirizzi con cui centrali e cliente A si cercano passano ai nomi NetBird.
 3. Si verifica **dal di fuori**, flusso per flusso, come lo usa chi lo usa:
    - heartbeat dell'edge arrivato a da-vulcan con rete = NetBird;
    - uno scan comandato da da-vulcan;
-   - segnale di vita dell'istanza in DA-Link, e il quadro di DTS nel CRM;
-   - ultimo contatto di `proxy-dts` in Zabbix.
+   - segnale di vita dell'istanza in DA-Link, e il quadro del cliente A nel CRM;
+   - ultimo contatto di `proxy-cliente-a` in Zabbix.
 4. Prova d'isolamento in negativo:
-   - da un nodo DTS non si raggiunge nessun altro remoto, né un centrale fuori dalle porte
+   - da un nodo cliente A non si raggiunge nessun altro remoto, né un centrale fuori dalle porte
      previste;
    - le porte Wazuh non rispondono dall'interfaccia NetBird.
-5. Una settimana a doppio binario, poi si toglie Tailscale da DTS.
+5. Una settimana a doppio binario, poi si toglie Tailscale dal cliente A.
 
-DTS è un cliente in esercizio: ogni passo su quelle macchine chiede conferma.
+Cliente A è un cliente in esercizio: ogni passo su quelle macchine chiede conferma.
 
 **Fase 3 — Gli altri clienti**, uno per volta, nello stesso modo, dalla lista della fase 0.
 Dove la tappa 7e del piano di miglioramento migra lo stesso edge, si fanno insieme: una sola
@@ -1128,7 +1128,7 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
 Fonti, tutte in sola lettura il 14/10: `tailscale status --json` da da-vulcan; API di
 `netbird.domarc.it` (gruppi, policy, reti e risorse, rotte, nameserver, peer, utenti, chiavi;
 nomi soltanto); `edge_bridges` di da-vulcan; `tenants` e `tenant_agents` dell'hub DA-IPAM
-(VM 533) e dell'istanza DTS; `anagrafiche_gestionale` del CRM; porte provate da da-vulcan
+(VM 533) e dell'istanza cliente A; `anagrafiche_gestionale` del CRM; porte provate da da-vulcan
 attraverso Tailscale. Le date sono giorni (gli orari delle fonti sono UTC).
 
 ### A.1 Nodi Tailscale
@@ -1140,7 +1140,7 @@ La tailnet ha 10 nodi, offline compresi.
 |---|---|---|---|---|
 | `da-vulcan` | centrale (hub VA) | — | sì | — |
 | `da-invent` | istanza DA-IPAM di Domarc (VM 533), con l'edge «DOMARC» (id 1) | 70791 | sì | — |
-| `dts-appliance` | istanza IPAM di DTS (`10.0.0.2`), con l'edge «DTS» (id 2) | 71734 | sì | — |
+| `cliente-a-appliance` | istanza IPAM del cliente A (`10.0.0.2`), con l'edge «cliente A» (id 2) | 71734 | sì | — |
 | `bridge-domarc-ovh` (`tag:domarc-bridge`) | edge DA-VA-OVH (id 5) | 70791 | sì | — |
 | `appliance-pxnas-domarc` | istanza IPAM di laboratorio sul PX-NAS di casa, con l'edge «PX-NAS» (id 3) | 70791 | sì | — |
 | `appliance-px-lab-domarc-local` | istanza IPAM di laboratorio | 70791 | no | 05/10 |
@@ -1148,7 +1148,7 @@ La tailnet ha 10 nodi, offline compresi.
 | `da-va` | VA vecchia, sostituita da DA-VA-OVH | 70791 | no | 19/07 |
 | `MacBook Pro`, `S25 Ultra di riccardo` | dispositivi di Riccardo | — | no | 02/09 |
 
-**Per la fase 3 l'elenco è corto.** L'unico cliente esterno su Tailscale è **DTS (71734)**, che
+**Per la fase 3 l'elenco è corto.** L'unico cliente esterno su Tailscale è **cliente A (71734)**, che
 è anche il pilota della fase 2. Tutto il resto appartiene a Domarc (70791): l'istanza di sede,
 DA-VA-OVH e i laboratori. I proxy Zabbix dei clienti sono già in NetBird (A.2).
 
@@ -1157,7 +1157,7 @@ DA-VA-OVH e i laboratori. I proxy Zabbix dei clienti sono già in NetBird (A.2).
 - **`Default` è già spenta**, e lo è anche `da-sns Policy` (`All → All`). Il passo 6 del
   Task 4 non ha niente da spegnere: resta solo la verifica.
 - **I proxy Zabbix non stanno in un solo gruppo `zabbix-proxy`** (come dice il §3): c'è un
-  gruppo per cliente, `zbx-proxy-<nome>` (gao, bagatti, dts, metalrota, grafana, domarc-rg,
+  gruppo per cliente, `zbx-proxy-<nome>` (gao, bagatti, cliente-a, metalrota, grafana, domarc-rg,
   domarc-ovh). Ogni gruppo ha la sua coppia di policy: proxy → `zbx-server` tcp 10051 e
   `zbx-server` → proxy tcp 22. Sono P4 e P4b, scritte per cliente.
 - **DA-ZABBIX è già un peer**, `da-zabbix`, nei gruppi `zbx-server` e `server-interni`.
@@ -1201,21 +1201,21 @@ Simone Annovi e Luca Aguzzoli sono anche gli unici utenti senza gruppi automatic
 | Codice | Dove | Ragione sociale nel CRM | Esito |
 |---|---|---|---|
 | `70791` | tenant dell'hub; edge 1, 3, 4 (revocato), 5 | DOMARC SRL | corretto |
-| `71734` | tenant dell'istanza DTS; edge 2 | DUERRE TUBI STYLE GROUP SPA | corretto |
+| `71734` | tenant dell'istanza cliente A; edge 2 | (la ragione sociale del cliente A) | corretto |
 | `70791a` | tenant dell'hub «DOMARC-OVH» | — (non è un `codcli`) | **da correggere** |
 
 Nessun tenant `DEFAULT` è registrato. Il `public_hostname` dell'edge 5, `da-va-ovh`, non
 risolve da da-vulcan: il nome Tailscale vero è `bridge-domarc-ovh`.
 
 **Agente Python di DA-IPAM (`tenant_agents`).** Sull'hub ce n'è uno solo: tenant `70791a`,
-`bridge-domarc-ovh:8443`, **mai visto** (`last_seen_at` vuoto). Sull'istanza DTS non ce n'è
+`bridge-domarc-ovh:8443`, **mai visto** (`last_seen_at` vuoto). Sull'istanza cliente A non ce n'è
 nessuno. In pratica non lo usa nessuno.
 
 ### A.4 Porte degli edge (provate da da-vulcan via Tailscale)
 
 | Edge | Nodo | 6443 | 8443 | Altre |
 |---|---|---|---|---|
-| DTS (2) | `dts-appliance` | aperta | chiusa | 22 |
+| Cliente A (2) | `cliente-a-appliance` | aperta | chiusa | 22 |
 | DA-VA-OVH (5) | `bridge-domarc-ovh` | aperta | aperta | 22 |
 | DOMARC (1) | `da-invent` | chiusa | chiusa | 22 e 443. Un `uvicorn` ascolta su `0.0.0.0:8443` ma via Tailscale non risponde: l'interfaccia dell'edge di sede si raggiunge in LAN |
 | PX-NAS (3) | `appliance-pxnas-domarc` | chiusa | chiusa | 22. L'ultimo contatto dell'edge è dell'08/09: è fermo |

@@ -1,7 +1,7 @@
 /**
  * Client del controller UniFi — SOLA LETTURA.
  *
- * Backend `self_hosted` (Network Application classica, es. DTS 10.6.1):
+ * Backend `self_hosted` (Network Application classica, es. cliente A 10.6.1):
  *   POST /api/login {username, password, remember:false}
  *     → cookie di sessione (`unifises`, `csrf_token`) e, se c'è, X-CSRF-Token
  *   GET  /api/s/<site>/stat/device → apparati (vedi `unifi-device.ts`)

@@ -1,5 +1,5 @@
 // Mapping puro controller UniFi → righe del DB tenant, provato sulla risposta
-// vera di stat/device (controller di DTS, 12/10, ridotta e anonimizzata):
+// vera di stat/device (controller del cliente A, 12/10, ridotta e anonimizzata):
 // SW-1 con LLDP verso SW-11 e AP-3, AP-3 appeso a SW-1 (porta 7), SW-11 con
 // LLDP verso altri (anche apparati fuori dalla risposta), SW-2 offline senza
 // LLDP. I test d'esempio del piano (LLDP dentro le porte, `lldp_chassis_id`)

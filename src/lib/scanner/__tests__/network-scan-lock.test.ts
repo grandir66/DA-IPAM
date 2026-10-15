@@ -3,7 +3,7 @@
 //
 // Prima di questa correzione `discoverNetwork` partiva sempre: due giri sulla
 // stessa rete scrivevano insieme sugli stessi host (21 accavallamenti misurati
-// su DTS il 12/10), e il giro partito prima poteva spegnere host visti dal
+// sul cliente A il 12/10), e il giro partito prima poteva spegnere host visti dal
 // secondo. Le partenze arrivano da scheduler, «Esegui ora», pulsanti della pagina
 // rete e aggiornamento automatico della pagina: il lucchetto sta in
 // `discoverNetwork`, dove passano tutte.

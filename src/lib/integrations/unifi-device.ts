@@ -12,7 +12,7 @@
  * scarta il resto (statistiche, radio, ecc.) e non lancia mai su un
  * apparato malformato: lo salta o lascia null il campo.
  *
- * Fatti misurati sul controller di DTS (12/10, Network Application 10.6.1):
+ * Fatti misurati sul controller del cliente A (12/10, Network Application 10.6.1):
  * - `lldp_table` sta a livello di APPARATO, mai dentro `port_table`;
  * - una voce LLDP non porta il nome del vicino: `chassis_id` è di solito il
  *   suo MAC (`chassis_id_subtype: "mac"`, non sempre presente) e il nome si

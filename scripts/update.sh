@@ -100,7 +100,7 @@ npm install --include=dev
 if [ -f "$APP_DIR/scripts/setup-winrm-venv.sh" ]; then
   echo ">>> setup-winrm-venv..."
   # WinRM è una funzione facoltativa: un suo guasto non deve fermare l'aggiornamento.
-  # Su DTS un venv senza pip ha bloccato build e restart per mesi (2026-10-12).
+  # Sul cliente A un venv senza pip ha bloccato build e restart per mesi (2026-10-12).
   bash "$APP_DIR/scripts/setup-winrm-venv.sh" || \
     echo "AVVISO: setup-winrm-venv fallito — WinRM non disponibile, l'aggiornamento prosegue." >&2
 fi
@@ -110,7 +110,7 @@ echo ">>> npm run build..."
 npm run build
 
 # Nome del servizio: da-invent sulle installazioni classiche, da-ipam sulle
-# appliance consolidate. Prima si cercava solo da-invent: su DTS (da-ipam) il
+# appliance consolidate. Prima si cercava solo da-invent: sul cliente A (da-ipam) il
 # restart veniva saltato e la build nuova non partiva mai (2026-10-12).
 SERVICE="da-invent"
 for s in da-invent da-ipam; do
@@ -148,7 +148,7 @@ if [ -f "$APP_DIR/scripts/verify-install.sh" ]; then
     VERIFY_ARGS=(--url "http://127.0.0.1:${PORT:-3001}")
     # Il servizio appena riavviato impiega qualche secondo ad ascoltare: senza
     # attesa verify-install falliva sempre, con un avviso che rimandava a WinRM
-    # (DTS, 2026-10-12). Si aspetta fino a 60 s una risposta qualsiasi, http o https.
+    # (cliente A, 2026-10-12). Si aspetta fino a 60 s una risposta qualsiasi, http o https.
     for _ in $(seq 1 30); do
       if curl -s -o /dev/null --max-time 2 "http://127.0.0.1:${PORT:-3001}/api/health" \
         || curl -sk -o /dev/null --max-time 2 "https://127.0.0.1:${PORT:-3001}/api/health"; then

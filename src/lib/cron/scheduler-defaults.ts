@@ -1,7 +1,7 @@
 /**
  * Boot-time scheduler migration multi-tenant.
  *
- * Policy (post-incident 2026-05-25 DTS):
+ * Policy (post-incident 2026-05-25 cliente A):
  * - Nessun fast_scan/ping_sweep schedulato auto su network ≥ /22.
  * - Default per network = known_host_check (ping solo host registrati).
  * - Idempotente: la migration rileva lo stato corrente e non duplica.

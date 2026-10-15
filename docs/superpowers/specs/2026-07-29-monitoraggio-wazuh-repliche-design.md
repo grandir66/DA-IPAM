@@ -9,13 +9,13 @@ Oggi DA-IPAM mostra gli **alert** di Wazuh ma non sa nulla della **salute** dell
 
 Il programma di replica (`wazuh-immutable-store`) non è osservabile dall'esterno: nessun endpoint, nessuna metrica, nessun file di stato del ciclo di archiviazione, log non strutturati su journald.
 
-**Difetto che rende il problema urgente**: `archive` esce **sempre con codice 0**. In `main.py:294-296` un backend irraggiungibile provoca un `return`, non un errore; in `main.py:303-307` gli upload falliti vengono contati e loggati ma non alterano l'esito. Quindi `systemctl status` riporta `success` anche quando non è stato replicato nulla — condizione osservata su Duerre il 2026-07-29 (ultimo run "success", esito reale ignoto).
+**Difetto che rende il problema urgente**: `archive` esce **sempre con codice 0**. In `main.py:294-296` un backend irraggiungibile provoca un `return`, non un errore; in `main.py:303-307` gli upload falliti vengono contati e loggati ma non alterano l'esito. Quindi `systemctl status` riporta `success` anche quando non è stato replicato nulla — condizione osservata sul cliente A il 2026-07-29 (ultimo run "success", esito reale ignoto).
 
 ## 2. Ambito: due installazioni
 
 | Installazione | Wazuh | DA-IPAM | Accesso all'host Wazuh |
 |---|---|---|---|
-| **Duerre** | `10.0.1.10` (`srv-wazuh`) | `10.0.0.2` | utente `dts`, **non root**, sudo non passwordless |
+| **Cliente A** | `10.0.1.10` (`srv-wazuh`) | `10.0.0.2` | utente `cliente-a`, **non root**, sudo non passwordless |
 | **Domarc** | `192.168.4.19` (`da-wazuh`) | `192.168.4.8` (VM 533) | root via jump `192.168.40.4` |
 
 Entrambe eseguono la **v1** del programma (nessuna `storage_backends/`), con timer attivi: archiviazione oraria, retention giornaliera, verifica settimanale.
@@ -165,7 +165,7 @@ Lo stato precedente sta in una tabella tenant `wazuh_health_state` (singleton, c
 - **Unit** sul modulo di salute: tabellari sulle soglie (ogni riga della tabella §7), con dati sintetici; probe fallito → `fail` isolato al suo blocco; endpoint repliche assente → blocco non configurato, non errore.
 - **Unit** sulla logica anti-rumore: cambio di verdetto → notifica; stessa condizione entro 6 ore → nessuna; dopo 6 ore → ripetizione; rientro → notifica di chiusura.
 - **Unit** sul programma di replica: serializzazione di `state.json` da dizionari sintetici; `outcome` corretto nei tre casi (tutto riuscito, parziale, backend irraggiungibile); scrittura atomica (il file non esiste mai in stato parziale).
-- **Verifica reale** su entrambe le installazioni: confronto fra ciò che mostra la fascia di stato e ciò che si osserva a mano sull'host (`systemctl list-timers`, listing della destinazione, `df`). Le repliche di Duerre e Domarc sono attive: il primo confronto va fatto lì.
+- **Verifica reale** su entrambe le installazioni: confronto fra ciò che mostra la fascia di stato e ciò che si osserva a mano sull'host (`systemctl list-timers`, listing della destinazione, `df`). Le repliche del cliente A e di Domarc sono attive: il primo confronto va fatto lì.
 - **Prova negativa**, la più importante: smontare temporaneamente la destinazione su una delle due installazioni e verificare che il run successivo produca `outcome: failed`, che la fascia diventi rossa e che arrivi la notifica. È il caso che oggi passa silenzioso.
 
 ## 9. Fasi
@@ -173,14 +173,14 @@ Lo stato precedente sta in una tabella tenant `wazuh_health_state` (singleton, c
 | Fase | Contenuto | Repository |
 |---|---|---|
 | **0** | Consolidamento (§2.1): commit della v2, ripristino del retry, guardia sui backend non pronti | `WazuhIStore_imm` |
-| **1** | `state.json`, correzione dell'esito silenzioso, comando `serve`, unit systemd, installazione su Duerre e Domarc | `WazuhIStore_imm` |
+| **1** | `state.json`, correzione dell'esito silenzioso, comando `serve`, unit systemd, installazione sul cliente A e su Domarc | `WazuhIStore_imm` |
 | **2** | Client, modulo di salute, API, fascia di stato, notifiche | `DA-IPAM` |
 
 La fase 0 mette al sicuro codice oggi a rischio di perdita e va fatta per prima; la fase 1 definisce il contratto. Fase 0 e 1 possono stare in un unico piano; la fase 2 avrà il suo.
 
 ### 9.1 Accesso per l'installazione
 
-Su **Domarc** l'accesso è root via jump host, nessun ostacolo. Su **Duerre** l'utente `dts` non ha sudo passwordless: per la finestra di installazione l'utente viene aggiunto temporaneamente ai sudoers e **rimosso al termine**. La rimozione fa parte della procedura, non è un passo opzionale: va verificata esplicitamente a fine deploy.
+Su **Domarc** l'accesso è root via jump host, nessun ostacolo. Sul **cliente A** l'utente `cliente-a` non ha sudo passwordless: per la finestra di installazione l'utente viene aggiunto temporaneamente ai sudoers e **rimosso al termine**. La rimozione fa parte della procedura, non è un passo opzionale: va verificata esplicitamente a fine deploy.
 
 ## 10. Fuori scope
 
@@ -191,6 +191,6 @@ Su **Domarc** l'accesso è root via jump host, nessun ostacolo. Su **Duerre** l'
 
 ## 11. Rischi
 
-- **Deployment su host indurita**: le due macchine hanno firewall e hardening; l'apertura della porta va fatta con regola per singolo IP. Su Duerre l'accesso è con utente non privilegiato senza sudo passwordless: l'installazione richiede una finestra concordata.
+- **Deployment su host indurita**: le due macchine hanno firewall e hardening; l'apertura della porta va fatta con regola per singolo IP. Sul cliente A l'accesso è con utente non privilegiato senza sudo passwordless: l'installazione richiede una finestra concordata.
 - **Divergenza v1/v2**: il repository contiene due copie che installano nello stesso percorso. Il modulo di stato va applicato a entrambe nello stesso momento, altrimenti la prossima installazione parte senza.
 - **Falsi allarmi da soglie troppo strette**: le soglie di §7 sono un punto di partenza; vanno riviste dopo la prima settimana di esercizio con dati reali.

@@ -4,7 +4,7 @@
 // Prima di questa correzione `runJob` di un job di scansione tornava appena il
 // giro era PARTITO: la discovery girava in background, `last_run` segnava la
 // partenza, il cron poteva farne partire un altro sulla stessa rete mentre il
-// primo scriveva ancora (21 accavallamenti misurati su DTS il 12/10), e un giro
+// primo scriveva ancora (21 accavallamenti misurati sul cliente A il 12/10), e un giro
 // fallito non faceva fallire il job (il tracker dei fallimenti non lo vedeva).
 //
 // Usa il banco delle scansioni di T3-16: hub isolato importato per primo, poi

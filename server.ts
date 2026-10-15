@@ -80,7 +80,7 @@ app.prepare().then(() => {
   function initCron() {
     // Boot migration prima dello scheduler: garantisce che ogni tenant abbia
     // known_host_check sui propri network e nessun fast_scan rischioso schedulato.
-    // Vedi src/lib/cron/scheduler-defaults.ts e incident DTS 2026-05-25.
+    // Vedi src/lib/cron/scheduler-defaults.ts e incident cliente A 2026-05-25.
     import("./src/lib/cron/scheduler-defaults").then(({ applySchedulerBootMigration }) => {
       try { applySchedulerBootMigration(); }
       catch (e) { console.error("WARNING: scheduler boot migration failed:", e); }
@@ -114,7 +114,7 @@ app.prepare().then(() => {
     });
 
     // Notifica salute appliance (disco/Docker) ogni 30 min, indipendente
-    // dalla UI: l'incident DTS 2026-07-28 (disco 100%) è passato inosservato
+    // dalla UI: l'incident cliente A 2026-07-28 (disco 100%) è passato inosservato
     // proprio perché nessuno aveva la dashboard aperta.
     import("./src/lib/modules/appliance-health-notify").then(({ initializeApplianceHealthNotifier }) => {
       initializeApplianceHealthNotifier();

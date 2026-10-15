@@ -12,7 +12,7 @@
 
 Serve una mappa di rete **fisica + logica** per tenant, con icone per tipo di
 apparato, **nodi trascinabili con posizione salvata** e **stato a semaforo**
-(OK/Warning/Fail/sconosciuto) dal monitoraggio. Nasce da un'esigenza cliente (DTS)
+(OK/Warning/Fail/sconosciuto) dal monitoraggio. Nasce da un'esigenza cliente (cliente A)
 ma deve essere **generale e multi-tenant**. I dati esistono già in DA-IPAM
 (`network_devices`, `hosts`, `device_neighbors`, `switch_ports`, LibreNMS); mancava
 solo la vista. Vincoli: additivo/non distruttivo (principio ROADMAP), stack fisso

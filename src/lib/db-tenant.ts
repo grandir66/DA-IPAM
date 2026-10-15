@@ -917,7 +917,7 @@ export function getTenantDb(tenantCode: string): Database.Database {
     // `edge_scan_id` è l'autoincrement LOCALE dell'edge: se l'edge viene
     // ricostruito riparte da 1 e collide con lo storico → UNIQUE(scanner_id,
     // edge_scan_id) faceva scartare in silenzio gli scan nuovi e attribuiva i
-    // findings a run vecchi (incident DTS 2026-07). L'UUID è stabile e unico.
+    // findings a run vecchi (incident cliente A 2026-07). L'UUID è stabile e unico.
     const runsTbl = newDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vuln_scan_runs'").get();
     if (runsTbl) {
       const rcols = newDb.prepare("PRAGMA table_info(vuln_scan_runs)").all() as Array<{ name: string }>;
@@ -5449,7 +5449,7 @@ export function deleteScheduledJob(id: number): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Default provisioning (post-incident 2026-05-25 DTS)
+// Default provisioning (post-incident 2026-05-25 cliente A)
 //
 // `known_host_check` è il default safe: pinga SOLO host già registrati,
 // scope deterministico, costo CPU proporzionale a |host noti|, non a |IP nel subnet|.
@@ -5625,7 +5625,7 @@ export function getStatusOverTime(
 ): StatusPoint[] {
   // Ultimo stato noto di ogni host portato avanti per 24 h (status-over-time.ts):
   // prima un host contava solo nell'ora in cui era stato controllato, e con il
-  // controllo ogni 3 ore il grafico andava su e giù (DTS, ottobre 2026).
+  // controllo ogni 3 ore il grafico andava su e giù (cliente A, ottobre 2026).
   const STALE_HOURS = 24;
   if (!Number.isFinite(hours)) hours = 24;
   hours = Math.min(Math.max(Math.round(hours), 1), 720);

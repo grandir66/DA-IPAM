@@ -3,7 +3,7 @@
  * modulo è caricato due volte (sotto tsx una rotta può vedere un'altra istanza
  * di `cron/scheduler`, come succedeva a `db-tenant` il 2026-09-02, ADR 0002).
  *
- * Difetto NUC-5, visto dal vivo su DTS il 2026-10-12: alle 15:04 il controllo
+ * Difetto NUC-5, visto dal vivo sul cliente A il 2026-10-12: alle 15:04 il controllo
  * degli host è partito due volte nello stesso processo. Una rotta aveva chiamato
  * `reloadTenantScheduler` sulla sua copia del modulo: non vedeva i cron registrati
  * all'avvio, non li fermava e ne aggiungeva altri.

@@ -9,7 +9,7 @@ sono le scelte tecniche della prima integrazione, la tappa 2 del piano di miglio
 
 ## Contesto
 
-Da DTS il controller UniFi (Network Application self-hosted 10.6.1) gestisce 74 apparati:
+Dal cliente A il controller UniFi (Network Application self-hosted 10.6.1) gestisce 74 apparati:
 50 switch e 24 access point, nessun gateway. In DA-IPAM 66 di questi stanno solo fra gli
 host, con classificazione switch o access point. Nessuno compare fra i dispositivi di rete,
 i vicini noti sono quelli MNDP di tre MikroTik, e la mappa `/topology` mostra quasi solo
@@ -20,14 +20,14 @@ LLDP. Il controller ha tutto questo in una sola chiamata, `stat/device`.
 Vincoli:
 
 - un'installazione serve un cliente, quindi c'è un controller per installazione;
-- il ramo `dev` arriva da solo all'appliance di DTS in 15 minuti: ciò che si aggiunge deve
+- il ramo `dev` arriva da solo all'appliance del cliente A in 15 minuti: ciò che si aggiunge deve
   nascere spento;
-- il database del tenant DTS ha già dati che non vanno rovinati: 11 dispositivi di rete,
+- il database del tenant cliente A ha già dati che non vanno rovinati: 11 dispositivi di rete,
   138 vicini MNDP, 76 porte su tre apparati;
 - le funzioni del database hanno due copie che divergono (`db.ts` e `db-tenant.ts`), e
   l'incidente del 02/09 è nato da un `db-tenant` caricato con un `require` dinamico, che
   scrive nel tenant sbagliato;
-- il controller ha un certificato autofirmato, e l'account di DTS (`map`) è in sola
+- il controller ha un certificato autofirmato, e l'account del cliente A (`map`) è in sola
   lettura.
 
 Il 12/10 una risposta vera di `stat/device` ha smentito la forma che il piano dava per
@@ -59,7 +59,7 @@ mappatura si scrive e si prova sulla risposta vera, e una risposta vuota non can
    Cambiare indirizzo o porta azzera l'impronta. La sonda di «Stato moduli» non la fissa
    mai, e senza impronta non contatta il controller.
 4. **Mappatura pura sulla forma vera** (`unifi-device.ts`, `unifi-map.ts`), provata su una
-   risposta di DTS ridotta e anonimizzata. LLDP letto dall'apparato. Il vicino si risolve
+   risposta del cliente A ridotta e anonimizzata. LLDP letto dall'apparato. Il vicino si risolve
    per MAC fra gli apparati della stessa risposta, con un indice costruito una volta. Un
    `chassis_id` con forma di MAC vale come MAC anche senza sottotipo. `remote_mac` si scrive
    come `hosts.mac` e come i vicini MNDP (`normalizeMacForStorage`), perché il ricalcolo
@@ -110,14 +110,14 @@ verificato, e le prove usano la risposta vera.
 - **Accettare qualunque certificato** (`rejectUnauthorized: false`) — scartata: la password
   del controller partirebbe verso chiunque risponda a quell'indirizzo.
 - **Identità fisica con `resolvePhysicalDevice`** — scartata: crea un record quando non
-  trova niente (a DTS sarebbero 74 identità fittizie) e passa dal facade `db.ts`.
+  trova niente (al cliente A sarebbero 74 identità fittizie) e passa dal facade `db.ts`.
 - **Funzioni del facade `db.ts`** — scartata: le copie divergono, e il suo `getDb()`
   risolve il tenant con un `require`, la stessa classe di guasto del 02/09.
 - **Apparati nuovi accesi** — scartata: il poll ARP interroga ogni apparato abilitato, e
   su uno Ubiquiti con protocollo `api` proverebbe SNMP con community `public`. I dati
   arrivano già dal controller.
 - **Job `unifi_sync` creato in automatico** — scartata: ogni giro è un login sul
-  controller del cliente, e a DTS sarebbe partito da solo con il primo aggiornamento.
+  controller del cliente, e al cliente A sarebbe partito da solo con il primo aggiornamento.
 
 ## Conseguenze
 
@@ -141,7 +141,7 @@ verificato, e le prove usano la risposta vera.
   `host_id`.
 - **Limiti lasciati aperti dalla revisione del 12/10** (da decidere, non dimenticati):
   - *(Superato per i vicini e l'uplink dall'ADR 0008; le porte restano a un solo scrittore per apparato.)*
-  - `uplink` non si usa: un apparato senza `lldp_table` (a DTS 5 su 74; nella fixture è
+  - `uplink` non si usa: un apparato senza `lldp_table` (al cliente A 5 su 74; nella fixture è
     SW-2, che è offline) resta senza collegamento anche se `uplink` dice a chi è attaccato.
     Usarlo vuol dire scegliere che protocollo scrivere e se fidarsi dell'uplink di un
     apparato offline.
@@ -189,4 +189,4 @@ verificato, e le prove usano la risposta vera.
   `src/lib/integrations/config.ts`, `src/lib/scheduled-job-types.ts`,
   `src/app/api/integrations/unifi/`, `src/components/settings/unifi-card.tsx`.
 - Fixture: `src/lib/integrations/__tests__/fixtures/unifi-stat-device.json` (risposta vera
-  di DTS del 12/10, quattro apparati, MAC, IP, nomi e seriali anonimizzati).
+  del cliente A del 12/10, quattro apparati, MAC, IP, nomi e seriali anonimizzati).

@@ -428,7 +428,7 @@ async function probePatch(tenantCode: string, probedAt: string): Promise<ModuleH
 // ── Probe: sistema appliance (disco + Docker) ────────────────────────────────
 /**
  * Salute della macchina che ospita DA-IPAM. Il disco pieno è la morte
- * silenziosa delle appliance: DTS 2026-07-28 e PX-NAS 2026-07-30 si sono
+ * silenziosa delle appliance: cliente A 2026-07-28 e PX-NAS 2026-07-30 si sono
  * fermate (build falliti, SQLite in "disk I/O error") senza che la griglia
  * moduli desse alcun segnale. Le soglie sono le stesse della fascia Wazuh
  * (`classifyDiskUsage`, ambra ≥85% / rosso ≥95%): un solo concetto di

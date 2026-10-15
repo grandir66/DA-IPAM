@@ -63,8 +63,8 @@ test("un nome d'unità diverso da da-invent e da-ipam si riconosce lo stesso", (
    * rotta ripiegava sul rilancio di sé con uscita 0, e il servizio restava spento.
    */
   assert.equal(
-    systemdUnitFromCgroup("0::/system.slice/da-ipam-dts.service\n"),
-    "da-ipam-dts.service",
+    systemdUnitFromCgroup("0::/system.slice/da-ipam-cliente-a.service\n"),
+    "da-ipam-cliente-a.service",
   );
   assert.equal(systemdUnitFromCgroup("0::/apps.slice/ipam@hub.service\n"), "ipam@hub.service");
 });

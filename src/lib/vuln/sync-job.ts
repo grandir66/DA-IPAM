@@ -89,7 +89,7 @@ export async function runVulnSync(): Promise<{
     // dell'edge. L'id locale riparte da 1 se l'edge viene ricostruito e
     // collide con lo storico: con `INSERT OR IGNORE` + UNIQUE(scanner_id,
     // edge_scan_id) gli scan nuovi venivano scartati IN SILENZIO e i loro
-    // findings attribuiti a run vecchi (incident DTS 2026-07, scoperto solo
+    // findings attribuiti a run vecchi (incident cliente A 2026-07, scoperto solo
     // dopo settimane). Qui: mai ignorare in silenzio.
     const insertScanRun = db.prepare(
       `INSERT INTO vuln_scan_runs

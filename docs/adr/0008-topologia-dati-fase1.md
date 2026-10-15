@@ -7,7 +7,7 @@
 ## Contesto
 
 La spec v2 della mappa (`docs/superpowers/specs/2026-10-12-topology-map-design.md`, §2) parte da una
-misura sul dato vero di DTS: su 88 vicini letti dagli apparati, la mappa vecchia ne disegnava 16
+misura sul dato vero del cliente A: su 88 vicini letti dagli apparati, la mappa vecchia ne disegnava 16
 come collegamento fra apparati. Gli altri erano doppi (lo stesso collegamento visto da due lati e
 da due fonti), vicini che non si abbinavano a nessun apparato, oppure scomparivano perché ogni
 lettura cancellava le righe della precedente. In più la lettura UniFi sa a chi è attaccato ogni
@@ -18,7 +18,7 @@ calcolato dai dati, non disegnato a mano.
 
 Misura sulle copie del 13/10 (`scripts/misura-topologia.ts`):
 
-| | hub | DTS |
+| | hub | Cliente A |
 |---|---|---|
 | collegamenti fra apparati, mappa vecchia | 14 | 75 |
 | collegamenti fra apparati, modello nuovo | 20 | 78 |
@@ -58,7 +58,7 @@ modello lo calcola a ogni richiesta e non lo salva.**
 - Una linea che non si vede più resta sulla mappa con la scritta «non visto», invece di sparire.
 - Due fonti sullo stesso apparato non si cancellano a vicenda.
 - I vicini si abbinano anche per MAC (prima il MAC si leggeva e si ignorava).
-- Quattordici collegamenti in più sull'hub e tre su DTS, dai dati che già c'erano.
+- Quattordici collegamenti in più sull'hub e tre sul cliente A, dai dati che già c'erano.
 
 ### Negative
 
@@ -81,8 +81,8 @@ modello lo calcola a ogni richiesta e non lo salva.**
 4. Un poll SNMP o una query manuale riscrive `switch_ports` con `is_uplink = 0` fino alla prossima
    lettura UniFi (due scrittori sulle porte). `uplink_mac`/`uplink_seen_at` dell'apparato restano:
    la fase 2 non deve leggere `is_uplink = 0` come «non è un uplink».
-5. Dove un controller non si legge da solo (DTS oggi) tutto diventa «non visto» dopo 2 giorni. Sulla
-   copia di DTS 28 collegamenti sono già vecchi, da poll SNMP/MNDP antichi, anche dopo una lettura
+5. Dove un controller non si legge da solo (cliente A oggi) tutto diventa «non visto» dopo 2 giorni. Sulla
+   copia del cliente A 28 collegamenti sono già vecchi, da poll SNMP/MNDP antichi, anche dopo una lettura
    UniFi.
 6. La migrazione gira in fondo a `getTenantDb`, perché due ricostruzioni di `network_devices`
    (CHECK `firewall` e `access_point`) copiano solo le colonne che conoscono. Ogni colonna futura di

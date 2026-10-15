@@ -4,7 +4,7 @@
 > Feature DA-IPAM: una integrazione **controller UniFi** di prima classe che
 > **arricchisce il DB** (device, porte, adiacenze LLDP) coi dati del controller.
 > A valle, la mappa `/topology` si popola da sola e ne beneficia tutto DA-IPAM.
-> Driver: DTS (controller self-hosted `10.0.1.222`, 74 device, 72 con LLDP, oggi
+> Driver: cliente A (controller self-hosted `10.0.1.222`, 74 device, 72 con LLDP, oggi
 > fuori da `network_devices`). Decisione di prodotto → ADR `0004` (DA-IPAM è
 > l'appliance; i controller creano oggetti); scelte tecniche di questa integrazione →
 > ADR `0005`. È la **tappa 2** del piano di miglioramento
@@ -37,7 +37,7 @@ cliente, quindi un controller per install. Campi:
 - `integration_unifi_mode`: `external` | `disabled`
 - `integration_unifi_kind`: `self_hosted` | `udm` | `cloud`  *(nuovo campo, vedi §6)*
 - `integration_unifi_url`: es. `https://10.0.1.222:8443` (self/udm) o vuoto (cloud)
-- `integration_unifi_site`: site name (default per self-hosted; es. `3oumjv0i` per DTS)
+- `integration_unifi_site`: site name (default per self-hosted; es. `3oumjv0i` per il cliente A)
 - `integration_unifi_username` + `integration_unifi_password` (cifrato) — self-hosted
 - `integration_unifi_api_token` (cifrato) — udm/cloud (`X-API-KEY`)
 
@@ -116,7 +116,7 @@ Funzioni **pure** (TDD node:test), separate da HTTP e DB:
 ## 4. Sicurezza
 
 - Credenziali **cifrate** (`encrypt`/`safeDecrypt`, richiede `ENCRYPTION_KEY`); config
-  secret solo via `writeSecret`. Account controller in **sola lettura** (DTS: `map`).
+  secret solo via `writeSecret`. Account controller in **sola lettura** (cliente A: `map`).
 - Auth su ogni rotta (`requireAdmin` per PUT/sync); `JSON.parse` in try-catch.
 - La sync **scrive** solo nel tenant DB (arricchimento), **mai** sul controller.
 
@@ -129,14 +129,14 @@ di porte/vicini del device sincronizzato). Nessuna modifica a SNMP/discovery esi
 ## 6. Multi-backend: il campo `kind`
 
 A differenza di LibreNMS (solo token), UniFi ha 3 famiglie. Il `kind` seleziona
-auth+endpoint nel client. DTS = `self_hosted` (session, account `map`). Domarc =
+auth+endpoint nel client. Cliente A = `self_hosted` (session, account `map`). Domarc =
 `cloud` (api.ui.com, key in vault `da-IPAM-accessi.md`, da ri-permessare in lettura).
 
 ## 7. Testing
 
 - `unifi-map.ts`: unit test puri (node:test) — fixture di `UnifiDevice` di forma reale →
   network_device/porte/vicini attesi; type mapping; porte senza LLDP; device senza MAC.
-- Client/sync/UI: build + lint + tsc verdi; verifica manuale di una sync reale su DTS
+- Client/sync/UI: build + lint + tsc verdi; verifica manuale di una sync reale sul cliente A
   (conta device/porte/vicini prima/dopo).
 
 ## 8. Fasi
@@ -144,7 +144,7 @@ auth+endpoint nel client. DTS = `self_hosted` (session, account `map`). Domarc =
 - **A — config + client**: whitelist `unifi`, campi config, `unifi-api.ts` (self_hosted
   session) + `probe`, rotta config + test-connection.
 - **B — mapping + sync**: `unifi-map.ts` (TDD) + `unifi-sync.ts` (pull→upsert) + trigger
-  manuale. **È la fase che riempie il DB** → verificare sulla mappa DTS.
+  manuale. **È la fase che riempie il DB** → verificare sulla mappa cliente A.
 - **C — scheduler**: `unifi_sync` job (migration CHECK + jobs.ts).
 - **D — backend udm/cloud**: estendere `unifi-api.ts` (X-API-KEY) + `kind`.
 - **E — UI**: `UnifiCard` in modules-tab.

@@ -5,7 +5,7 @@ import assert from "node:assert";
  * `composeApplianceHealth` è la parte PURA del probe "Sistema appliance"
  * (modules/health.ts): verdetto+messaggio da lettura disco e stato Docker.
  * I casi coprono i tre incident reali che hanno motivato la voce:
- *  - DTS 2026-07-28 / PX-NAS 2026-07-30: disco oltre soglia → ambra/rosso;
+ *  - Cliente A 2026-07-28 / PX-NAS 2026-07-30: disco oltre soglia → ambra/rosso;
  *  - da-va-ovh 2026-07-29: demone Docker giù → rosso anche a disco sano.
  */
 import { composeApplianceHealth } from "../health";
@@ -26,7 +26,7 @@ describe("composeApplianceHealth", () => {
     assert.equal(r.verdict, "degraded");
   });
 
-  it("disco ≥95% (caso DTS/PX-NAS al 100%) → fail", () => {
+  it("disco ≥95% (caso cliente A/PX-NAS al 100%) → fail", () => {
     const r = composeApplianceHealth({ disk: { usePercent: 100, freeGb: 0 }, docker: dockerOk });
     assert.equal(r.verdict, "fail");
   });

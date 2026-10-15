@@ -148,7 +148,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // tentativi durante il cooldown non aggravano il blocco). La UI mostra il
         // countdown via GET /api/auth/lock-state, così l'utente sa di dover
         // aspettare e non crede di aver perso la password. Radice degli incidenti
-        // 99.50 (17/07) e appliance DTS (blocco "muto" = "credenziali errate").
+        // 99.50 (17/07) e appliance cliente A (blocco "muto" = "credenziali errate").
         const { loginLockState, recordFailedAttempt, clearRateLimit } = await import("./rate-limit");
         const rateLimitKey = `login:${username}`;
         const lock = loginLockState(rateLimitKey);

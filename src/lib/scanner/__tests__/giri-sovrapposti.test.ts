@@ -1,12 +1,12 @@
 // T3-22 (INV-1, INV-2): due giri sovrapposti sulla stessa rete.
 //
-// Prima della parte 3b della tappa 3, su una rete di DTS:
+// Prima della parte 3b della tappa 3, su una rete del cliente A:
 // - un secondo giro partiva sulla stessa rete mentre il primo era in corso;
 // - il primo, finendo, spegneva gli host che il secondo (o un'altra fonte) aveva
 //   visto vivi dopo la sua partenza;
 // - un giro che non vedeva nessuno spegneva l'intera rete.
 // La stessa sequenza gira, con lo script `scripts/prova-giri-sovrapposti.ts`,
-// su una copia del DB di DTS; qui gira su un tenant di prova con la forma vera
+// su una copia del DB del cliente A; qui gira su un tenant di prova con la forma vera
 // delle righe, così resta nelle prove del repo.
 //
 //   DA_INVENT_DATA_DIR=$(mktemp -d "${TMPDIR:-/tmp}/x.XXXXXX") node --import tsx --test src/lib/scanner/__tests__/giri-sovrapposti.test.ts

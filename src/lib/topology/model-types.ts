@@ -220,8 +220,6 @@ export interface MapNode {
   /** true = sede proposta dal sistema, non confermata da un admin. */
   siteProposed: boolean;
   hidden: boolean;
-  /** true = apparato disabilitato (network_devices.enabled = 0): l'elenco degli oggetti non lo mostra, la mappa sì. Assente = attivo. */
-  disabled?: true;
   /** Fornitore dell'apparato (proxmox, vmware… per riconoscere un hypervisor); null per un host. */
   vendor: string | null;
   /** L'apparato ha la scansione Proxmox (revisione finale M-2); assente = no. */

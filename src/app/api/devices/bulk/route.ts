@@ -65,12 +65,13 @@ const BulkDeviceSchema = z.object({
   host_ids: z.array(z.coerce.number().int().positive()),
   classification: classificationSchema,
   protocol: z.enum(["ssh", "snmp_v2", "snmp_v3", "api", "winrm"]),
-  vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"]).optional(),
+  // apple/macos dalla tappa 1b: la tabella degli apparati li accetta.
+  vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other", "apple"]).optional(),
   vendor_subtype: z.enum(["procurve", "comware"]).optional().nullable(),
   credential_id: z.coerce.number().int().positive().optional().nullable(),
   snmp_credential_id: z.coerce.number().int().positive().optional().nullable(),
   port: z.coerce.number().int().min(1).max(65535).optional(),
-  scan_target: z.enum(["proxmox", "vmware", "windows", "linux"]).optional().nullable(),
+  scan_target: z.enum(["proxmox", "vmware", "windows", "linux", "macos"]).optional().nullable(),
   product_profile: productProfileEnum.optional().nullable(),
   inherit_host_credentials: z.boolean().optional(),
   use_for_arp_poll: z.preprocess(

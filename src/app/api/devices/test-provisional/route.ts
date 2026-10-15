@@ -15,13 +15,13 @@ const ProvisionalTestSchema = z.object({
   host: z.string().min(1, "Host richiesto"),
   vendor: z.enum([
     "mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield",
-    "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"
+    "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other", "apple"
   ]),
   protocol: z.enum(["ssh", "snmp_v2", "snmp_v3", "api", "winrm"]),
   port: z.coerce.number().int().min(1).max(65535).optional().nullable(),
   credential_id: z.coerce.number().int().positive().optional().nullable(),
   snmp_credential_id: z.coerce.number().int().positive().optional().nullable(),
-  scan_target: z.enum(["proxmox", "vmware", "windows", "linux"]).optional().nullable(),
+  scan_target: z.enum(["proxmox", "vmware", "windows", "linux", "macos"]).optional().nullable(),
   product_profile: productProfileEnum.optional().nullable(),
   api_url: z.string().optional().nullable(),
 });
